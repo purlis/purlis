@@ -8187,17 +8187,6 @@ export type PoolDisk = {
 	not_listed: number,
 };
 
-/**
- *  A pool's limits, as a row draws them: the CPUs as typed (`2`, `1.5`), memory and `/tmp` in
- *  MiB.
- */
-export type PoolLimitsShown = {
-	cpus: string,
-	memory_mib: number,
-	processes: number,
-	tmp_mib: number,
-};
-
 /**  **A limit a start was refused on**, as Start a chat offers to raise it (spec #4275). */
 export type PoolLimitHitRow = {
 	/**  The limit's key: what [`pool_limit_set`] takes. */
@@ -8216,6 +8205,17 @@ export type PoolLimitHitRow = {
 export type PoolLimitOffer = {
 	pool: string,
 	hits: Array<PoolLimitHitRow>,
+};
+
+/**
+ *  A pool's limits, as a row draws them: the CPUs as typed (`2`, `1.5`), memory and `/tmp` in
+ *  MiB.
+ */
+export type PoolLimitsShown = {
+	cpus: string,
+	memory_mib: number,
+	processes: number,
+	tmp_mib: number,
 };
 
 /**  Where a pool's runner stands, as one link to it says. */

@@ -1241,6 +1241,27 @@ fn the_typed_refusal_is_had_by_the_words_of_the_start_refused() {
     assert_eq!(over_limit("typed-refusal", "some other refusal"), None);
 }
 
+/// **Raised past what a runner tells its desktop, a profile is told as nothing** (spec #4275), so
+/// its desktop sends it whole, once, rather than a change the runner would refuse.
+#[test]
+fn a_runner_holding_more_than_it_tells_says_it_holds_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let home = runner_home(dir.path());
+    let kept = Kept::of(&desktop).unwrap();
+    let record = keep(&runner, &home, &kept, DESKTOP, 7).unwrap();
+    let many = record.folders.config.join("agents");
+    fs::create_dir_all(&many).unwrap();
+    for one in 0..=wire::MOST_PROFILE_SETTINGS_FILES {
+        fs::write(many.join(format!("{one}.md")), "x").unwrap();
+    }
+
+    let (held, more) = held_for_the_desktop(&runner, DESKTOP, &kept.name, None).unwrap();
+
+    assert_eq!((held.len(), more), (0, false));
+}
+
 /// **A harness's own settings file that cannot go refuses the chat** (#4081): it says what a chat
 /// may do, so no chat starts as if it had said nothing.
 #[test]

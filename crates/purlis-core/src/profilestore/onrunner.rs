@@ -447,7 +447,12 @@ pub fn held_for_the_desktop(
     let Some(record) = kept_record(homes, desktop, name)? else {
         return Ok((Vec::new(), false));
     };
-    let held = held_files(&record)?
+    let read = held_files(&record)?;
+    // Raised past what is told, it is sent whole rather than as a change that would be refused.
+    if !read.left_behind.is_empty() {
+        return Ok((Vec::new(), false));
+    }
+    let held = read
         .files
         .iter()
         .map(|(path, bytes)| wire::HeldSetting {
@@ -1059,6 +1064,11 @@ fn ready_on_for(
         .held_to(
             crate::runners::chosen_limits_of(config_root, pool).map_err(|why| why.to_string())?,
         );
+    // A refusal is only ever this attempt's: an earlier one offers nothing to any later words.
+    OVER_LIMITS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .remove(name);
     match keep(&kept).map_err(|why| {
         let said =
             format!("pool {pool}'s runner did not keep the profile '{shown}': {why}. {nothing}.");

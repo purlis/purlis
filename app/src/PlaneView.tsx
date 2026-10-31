@@ -4359,6 +4359,9 @@ export const PlaneView = memo(function PlaneView({
             return;
           }
           setPickerTrouble(refused);
+          // Over a pool's limit, the picker that comes up offers to raise it (spec #4275).
+          const offer = await commands.poolLimitOffer(only.name, refused).catch(() => null);
+          setPickerLimit(offer === null ? undefined : { offer, refused });
         } else setPickerTrouble(undefined);
         offerBeside();
         setPicking({ options: options.data, where });
@@ -10471,7 +10474,9 @@ export const PlaneView = memo(function PlaneView({
                         error: String(err),
                       }));
                     if (saved.status === "error") {
+                      // The offer stays beside the words that replaced the refusal.
                       setPickerTrouble(saved.error);
+                      setPickerLimit((was) => was && { ...was, refused: saved.error });
                       return false;
                     }
                   }

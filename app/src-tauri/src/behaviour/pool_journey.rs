@@ -42,10 +42,11 @@ const LONG: Duration = Duration::from_secs(300);
 const PROFILE: &str = "work";
 const WORKSPACE: &str = "app";
 
-/// How many skills the profile's settings hold, each of three files, and how large each one's
-/// data is: about 40 MiB in 4,500 files, as a person's folder of skills is.
 /// The most files a profile sends by default, which the journey goes over.
 const MOST_DEFAULT_FILES: usize = 8192;
+
+/// How many skills the profile's settings hold, each of three files, and how large each one's
+/// data is: about 40 MiB in 4,500 files, as a person's folder of skills is.
 const SKILLS: usize = 1500;
 const SKILL_DATA_BYTES: usize = 26 * 1024;
 
@@ -390,9 +391,25 @@ fn in_the_journey(
     the_row_says(machine, pool, &Standing::SignedOut);
     the_settings_went_whole_to(&runner, &settings);
 
+    step("a start while signed out");
+    // A start while signed out starts nothing, and says what to do.
+    let refused = ready_to_start(machine, &target.root, pool)
+        .expect_err("a signed-out profile starts nothing");
+    assert!(refused.contains("is not signed in on pool"), "{refused}");
+    assert!(refused.contains("Sign in on pool"), "{refused}");
+
+    step("a real Claude Code chat");
+    // Start a real Claude Code chat.
+    signed_in_on(&runner);
+    the_row_says(machine, pool, &Standing::SignedIn);
+    let (id, pane) = a_chat_runs(target, machine, pool, &a_chat(Some("Say hello."), None));
+    pane.shows_within("Say hello.", LONG);
+    let conversation = a_conversation_on(&runner);
+    target.sessions.close(id).expect("it closes");
+
     step("a profile over its pool's limit");
     // Over the limit a start says what is needed and what to raise it to; the suggestion, applied
-    // to the pool, takes it past what a runner stages by default, and the start goes on.
+    // to the pool, takes it past what a runner stages by default, and the chat starts.
     let many = settings.join("skills/many");
     std::fs::create_dir_all(&many).expect("its folder");
     for one in 0..=MOST_DEFAULT_FILES {
@@ -413,9 +430,7 @@ fn in_the_journey(
         Some(raised),
         "the value is the person's own"
     );
-    let refused = ready_to_start(machine, &target.root, pool)
-        .expect_err("it goes to the runner, and is only signed out there");
-    assert!(refused.contains("is not signed in on pool"), "{refused}");
+    ready_to_start(machine, &target.root, pool).expect("the raised limit holds it");
     assert_eq!(
         runner
             .prints(&format!(
@@ -426,23 +441,17 @@ fn in_the_journey(
         (MOST_DEFAULT_FILES + 1).to_string(),
         "all of it reached the runner"
     );
-    std::fs::remove_dir_all(&many).expect("the extra files go");
-
-    step("a start while signed out");
-    // A start while signed out starts nothing, and says what to do.
-    let refused = ready_to_start(machine, &target.root, pool)
-        .expect_err("a signed-out profile starts nothing");
-    assert!(refused.contains("is not signed in on pool"), "{refused}");
-    assert!(refused.contains("Sign in on pool"), "{refused}");
-
-    step("a real Claude Code chat");
-    // Start a real Claude Code chat.
-    signed_in_on(&runner);
-    the_row_says(machine, pool, &Standing::SignedIn);
-    let (id, pane) = a_chat_runs(target, machine, pool, &a_chat(Some("Say hello."), None));
-    pane.shows_within("Say hello.", LONG);
-    let conversation = a_conversation_on(&runner);
+    let (id, pane) = a_chat_runs(
+        target,
+        machine,
+        pool,
+        &a_chat(Some("Past the limit."), None),
+    );
+    pane.shows_within("Past the limit.", LONG);
     target.sessions.close(id).expect("it closes");
+    std::fs::remove_dir_all(&many).expect("the extra files go");
+    purlis_core::runners::set_pool_limit(&machine.config, pool, hit.limit, None)
+        .expect("back to the default");
 
     step("the chat moves back");
     // Move it back here: its conversation and the work done there come with it.

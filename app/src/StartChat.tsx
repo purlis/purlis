@@ -454,6 +454,15 @@ export function StartChat({
     else box.removeAttribute("aria-activedescendant");
   });
 
+  // A picker cancelled while a limit saves starts nothing after it.
+  const open = useRef(true);
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
+
   // A refusal is said where the eye is: the details' top, brought into view (B2 of the review).
   const told = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -634,7 +643,7 @@ export function StartChat({
                 applying={starting}
                 onApply={(values) => {
                   void onRaiseLimit(values).then((saved) => {
-                    if (saved) start();
+                    if (saved && open.current) start();
                   });
                 }}
               />
