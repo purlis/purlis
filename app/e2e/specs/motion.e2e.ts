@@ -1,7 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { browser, expect, $$ } from "@wdio/globals";
+import { $, browser, expect, $$ } from "@wdio/globals";
+import { hearAnimations } from "../animations.js";
 
 /**
  * **The motion layer, against the real app** (M7.2, `app/src/theme/motion.ts`).
@@ -111,5 +112,33 @@ describe("the motion layer", () => {
     // Numbers compared rather than strings, because an engine may print `0.2` as `.2`.
     const numbers = (text: string) => (text.match(/-?\d*\.?\d+/g) ?? []).map(Number);
     expect(numbers(read.easing)).toEqual(numbers(read.curve));
+  });
+
+  // **#3101**: reduced motion leaves an arrival's animation at `0s`, and the engine still says it
+  // started. The helper's "no animations" is what a spec can rely on with the setting on.
+  it("hears no animation with reduced motion on, as a panel arrives", async () => {
+    await untilTheStripIsRead();
+    const panel = ".slot-right";
+    const inbox = '[role="tablist"][aria-label="Attention"] [role="tab"][aria-label="Inbox"]';
+    const close = ".slot-right .side-close";
+    if (await $(close).isExisting()) await $(close).click();
+    await $(close).waitForExist({ reverse: true, timeout: 10_000 });
+
+    const was = await browser.execute(() => document.documentElement.getAttribute("data-motion"));
+    await browser.execute(() => document.documentElement.setAttribute("data-motion", "reduced"));
+    try {
+      const opening = await hearAnimations(panel);
+      await $(inbox).click();
+      await $(close).waitForExist({ timeout: 10_000 });
+      await browser.pause(400);
+      expect(await opening.on(panel)).toEqual([]);
+    } finally {
+      await browser.execute((value: string | null) => {
+        const root = document.documentElement;
+        if (value === null) root.removeAttribute("data-motion");
+        else root.setAttribute("data-motion", value);
+      }, was);
+      if (await $(close).isExisting()) await $(close).click();
+    }
   });
 });
