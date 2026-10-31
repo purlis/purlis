@@ -31,7 +31,13 @@ import {
 } from "../harness.js";
 import { showView } from "../opening.js";
 import { type Exchange, noForgeAnswers, theForgeAnswers } from "../recordedForge.js";
-import { ask, aProjectOfItsOwn, closeTheProjectsOfItsOwn, openFromTheStrip } from "../switching.js";
+import {
+  ask,
+  aProjectOfItsOwn,
+  closeTheProjectsOfItsOwn,
+  inFront,
+  openFromTheStrip,
+} from "../switching.js";
 
 /**
  * **A repo cloned from a self-hosted GitLab, in the built window, over the network** (#4090,
@@ -241,7 +247,18 @@ async function aNewWorkspaceCloning(name: string, repos: string[]): Promise<void
     }, repo);
     if (!picked) throw new Error(`the repo picker offers no ${repo}`);
   }
-  await $("button=Create workspace").click();
+  await press('[role="dialog"]', "Create workspace");
+}
+
+/** Presses the tab of the project at `path`. */
+async function theTabOf(path: string): Promise<void> {
+  await browser.execute(
+    (at: string) =>
+      document
+        .querySelector<HTMLElement>(`[data-strip="Projects"] [role="tab"][data-directory="${at}"]`)
+        ?.click(),
+    path,
+  );
 }
 
 /** A repo's row among the ones not cloned here. */
@@ -290,13 +307,17 @@ async function pictures(name: string, parts: Record<string, string>): Promise<vo
     await (await $(css)).saveScreenshot(join(WHERE_SHOTS_GO, `${name}-${part}.png`));
 }
 
-/** No clone anywhere under the folder, finished or hidden. */
+/** Nothing of the repo anywhere in the workspace, finished or hidden. */
 function nothingOf(plane: string, workspace: string, repo: string): void {
   const { landed, hidden } = foldersOf(plane, workspace, repo);
-  const there = readdirSync(join(plane, "workspaces", workspace));
-  expect({ landed: existsSync(landed), hidden: existsSync(hidden), there }).toEqual(
-    expect.objectContaining({ landed: false, hidden: false }),
+  const there = readdirSync(join(plane, "workspaces", workspace)).filter((one) =>
+    one.includes(repo),
   );
+  expect({ landed: existsSync(landed), hidden: existsSync(hidden), there }).toEqual({
+    landed: false,
+    hidden: false,
+    there: [],
+  });
 }
 
 /** Words that would name a forge's CLI to the person. */
@@ -340,24 +361,39 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     writeFileSync(join(WHERE_SHOTS_GO, `${name}.txt`), said);
   });
 
+  // Each step whatever became of the last: one app process serves the whole run, and a fake forge
+  // left named would take every later spec's git and sign-in.
   after(async () => {
+    const failed: unknown[] = [];
+    const step = async (act: () => unknown) => {
+      try {
+        await act();
+      } catch (err: unknown) {
+        failed.push(err);
+      }
+    };
     rmSync(THE_RUNS_CLONE_STALL, { force: true });
     for (const cli of clis) rmSync(cli, { force: true });
     if (gitConfigWas !== "") writeFileSync(THE_RUNS_GIT_CONFIG, gitConfigWas);
-    for (const account of await ask<Account[]>("forge_accounts"))
-      await ask("forge_sign_out", { id: account.id });
+    await step(() => forge?.stop());
+    rmSync(THE_RUNS_FAKE_FORGE, { force: true });
+    await step(async () => {
+      for (const account of await ask<Account[]>("forge_accounts"))
+        await ask("forge_sign_out", { id: account.id });
+    });
     noForgeAnswers();
-    await forge?.stop();
-    await closeTheProjectsOfItsOwn();
-    await browser.execute(
-      (path: string) =>
-        document
-          .querySelector<HTMLElement>(
-            `[data-strip="Projects"] [role="tab"][data-directory="${path}"]`,
-          )
-          ?.click(),
-      first,
-    );
+    await step(closeTheProjectsOfItsOwn);
+    await step(async () => {
+      await browser.waitUntil(
+        async () => {
+          if ((await inFront()) === first) return true;
+          await theTabOf(first);
+          return false;
+        },
+        { timeout: 20_000, interval: 250, timeoutMsg: "the launch's project never came back" },
+      );
+    });
+    if (failed.length > 0) throw failed[0];
   });
 
   it("with no sign-in, the forge refuses the clone and the row says to sign in to it", async () => {
@@ -374,7 +410,9 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
   });
 
   it("signs in once through the browser flow", async () => {
-    // With no account the fallback above is the CLI's, by design: from here on none may run.
+    // With no account the fallback above is the CLI's, by design: so the stand-ins are what the
+    // window finds, and the note would show one signing a clone. From here on none may.
+    expect(readFileSync(CLI_NOTE, "utf8")).toContain("git-credential");
     rmSync(CLI_NOTE, { force: true });
     await browser.execute((css: string) => {
       document.querySelector<HTMLElement>(css)?.click();
@@ -394,15 +432,7 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     );
     expect(forge.grants()).toBe(1);
     // Back to the project, from its tab.
-    await browser.execute(
-      (path: string) =>
-        document
-          .querySelector<HTMLElement>(
-            `[data-strip="Projects"] [role="tab"][data-directory="${path}"]`,
-          )
-          ?.click(),
-      plane,
-    );
+    await theTabOf(plane);
     await browser.waitUntil(async () => !(await $(WELCOME).isExisting()), {
       timeout: 20_000,
       timeoutMsg: "the project never came back from the sign-in page",
@@ -452,6 +482,10 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     );
     aWholeClone(landed);
     expect(Date.now() - started).toBeGreaterThan(120_000);
+    await browser.waitUntil(async () => !(await $(rowOf("long-repo")).isExisting()), {
+      timeout: 30_000,
+      timeoutMsg: "the landed repo stayed a row of the ones not cloned here",
+    });
     await untilSays('[data-testid="repos-view"]', "long-repo");
     expect(pictured).toBe(true);
     for (const seen of [onCard, onRow]) {
@@ -486,7 +520,7 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
       timeoutMsg: "the clone never got part way",
     });
     expect(existsSync(hidden)).toBe(true);
-    await $(`button[aria-label="Cancel cloning ${repo}"]`).click();
+    await press(rowOf(repo), `Cancel cloning ${repo}`);
     await browser.waitUntil(() => !existsSync(hidden), {
       timeout: 30_000,
       timeoutMsg: "the hidden folder outlived the Cancel",
