@@ -115,6 +115,32 @@ impl<'a> Studio<'a> {
             .studio(self.config_root, self.project, extension, ask)
     }
 
+    /// **Each Grader the project can grade with besides purlis's own** (#3236): each extension
+    /// that declares `grader`, by its id and the title its shape gives it, for a grade's plan to
+    /// list beside purlis's.
+    pub fn graders(&self) -> Vec<(String, String)> {
+        self.declaring(Capability::Grader)
+            .into_iter()
+            .map(|asked| {
+                let title = asked.declared.grader.clone().unwrap_or(asked.name);
+                (asked.id, title)
+            })
+            .collect()
+    }
+
+    /// **Grade `request` with the Grader extension `extension`** (protocol 4, #3236): its chats
+    /// run by `chats`, held to the plan and to `limits` ([`Executor::grade`]).
+    pub fn grade(
+        &self,
+        extension: &str,
+        request: &purlis_skills::grade::GradeRequest,
+        chats: &mut dyn purlis_skills::grade::Chats,
+        limits: Option<purlis_skills::grade::Limits>,
+    ) -> purlis_skills::grade::GradeReport {
+        self.executor
+            .grade(self.config_root, self.project, extension, request, chats, limits)
+    }
+
     /// **The lints of each extension that declares `skill-lint`**, to ask beside purlis's own.
     pub fn lints(&self) -> Vec<ExtensionLint<'a>> {
         self.declaring(Capability::SkillLint)

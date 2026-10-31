@@ -1,9 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The studio probe**: an extension that adds a skill source, a lint, a template, a panel and
-//! a skill router to the Skill studio (ADR 0101, ADR 0102), and one command, `try`, that attempts one thing from inside
-//! its sandbox and prints what happened, so a test reads what the confinement let it do.
+//! **The studio probe**: an extension that adds a skill source, a Grader, a lint, a template, a
+//! panel and a skill router to the Skill studio (ADR 0101, ADR 0102), and one command, `try`, that
+//! attempts one thing from inside its sandbox and prints what happened, so a test reads what the
+//! confinement let it do.
+//!
+//! **Its Grader runs its chats through purlis** (protocol 4, #3236): it asks for each trigger
+//! test's chats in each arm and scores what purlis says they started. Before it asks for any, it
+//! tries to reach a model's host and to start a harness itself, and writes what happened into its
+//! state folder ([`GRADER_TRIED`]), so a test reads that it could do neither.
 //!
 //! Test-only, and written as a stranger would write an extension: it knows the protocol and
 //! nothing of purlis's insides. `studio-probe assemble <dir>` puts the program and its manifest
@@ -13,7 +19,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 /// The protocol it speaks.
-pub const PROTOCOL: u64 = 3;
+pub const PROTOCOL: u64 = 4;
 
 /// Its manifest.
 pub const MANIFEST: &str = include_str!("../purlis-extension.json");
@@ -42,6 +48,157 @@ pub fn assemble(dir: &Path) -> std::io::Result<PathBuf> {
     }
     std::fs::rename(&beside, &program)?;
     Ok(program)
+}
+
+/// The file in its state folder its Grader writes what it tried to reach into.
+pub const GRADER_TRIED: &str = "grader-tried.txt";
+
+/// The file in its own folder that names a harness for its Grader to try to start, where a test
+/// put one.
+pub const HARNESS: &str = "harness";
+
+/// The skill whose grade the probe's Grader asks one run more of than the plan has.
+pub const PAST_THE_PLAN: &str = "probe-past-the-plan";
+
+/// Whether `request` asks the probe to grade: a question of many lines, answered by [`grade`].
+pub fn is_a_grade(request: &serde_json::Value) -> bool {
+    request.get("studio").and_then(serde_json::Value::as_str) == Some("grader")
+}
+
+/// **The probe's Grader**: tries a model's host and a harness ([`GRADER_TRIED`]), then asks
+/// purlis, through `lines` and `out`, for every chat the grade request in `request` plans, each
+/// trigger test in each arm, run by run, until purlis says the grade ended, and answers its
+/// report.
+pub fn grade(
+    request: &serde_json::Value,
+    lines: &mut dyn Iterator<Item = std::io::Result<String>>,
+    out: &mut dyn Write,
+) -> std::io::Result<()> {
+    try_past_the_grade();
+    let grade = &request["ask"]["request"];
+    let skill = grade["skill"].as_str().unwrap_or_default();
+    let tests: Vec<(&str, bool)> = grade["triggers"]
+        .as_array()
+        .map(|tests| {
+            tests
+                .iter()
+                .map(|test| {
+                    (
+                        test["query"].as_str().unwrap_or_default(),
+                        test["should_trigger"].as_bool().unwrap_or_default(),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let arms: Vec<&str> = grade["arms"]
+        .as_array()
+        .map(|arms| arms.iter().filter_map(serde_json::Value::as_str).collect())
+        .unwrap_or_default();
+    let runs = grade["runs"].as_u64().unwrap_or(1)
+        + u64::from(skill == PAST_THE_PLAN);
+    let mut ran: Vec<(usize, &str, serde_json::Value)> = Vec::new();
+    'runs: for _ in 0..runs {
+        for (t, (query, _)) in tests.iter().enumerate() {
+            for arm in &arms {
+                let asked = serde_json::json!({
+                    "charter": PROTOCOL,
+                    "run_chat": { "arm": arm, "prompt": query },
+                });
+                writeln!(out, "{asked}")?;
+                out.flush()?;
+                let Some(back) = lines.next() else {
+                    return Ok(());
+                };
+                let back: serde_json::Value = serde_json::from_str(&back?).unwrap_or_default();
+                let result = back["chat_ran"].clone();
+                let end = result["end"].as_str().unwrap_or_default().to_owned();
+                ran.push((t, arm, result));
+                if !["turn", "timed-out", "asked"].contains(&end.as_str()) {
+                    break 'runs;
+                }
+            }
+        }
+    }
+    let leaf = |name: &str| name.rsplit(':').next().unwrap_or(name).to_owned();
+    let mut triggers = Vec::new();
+    let mut scored = Vec::new();
+    for arm in &arms {
+        let (mut arm_runs, mut arm_all) = (0u64, 0u64);
+        for (t, (query, should)) in tests.iter().enumerate() {
+            let of: Vec<&serde_json::Value> = ran
+                .iter()
+                .filter(|(at, a, _)| *at == t && a == arm)
+                .map(|(_, _, result)| result)
+                .collect();
+            let ends = |words: &[&str]| {
+                of.iter()
+                    .filter(|one| words.contains(&one["end"].as_str().unwrap_or_default()))
+                    .count() as u64
+            };
+            let n = ends(&["turn", "timed-out"]);
+            let triggered = of
+                .iter()
+                .filter(|one| ["turn", "timed-out"].contains(&one["end"].as_str().unwrap_or_default()))
+                .filter(|one| {
+                    one["started"]
+                        .as_array()
+                        .is_some_and(|started| started.iter().any(|it| it.as_str().map(leaf).as_deref() == Some(skill)))
+                })
+                .count() as u64;
+            let rate = (n > 0).then(|| triggered as f64 / n as f64);
+            arm_runs += n;
+            arm_all += of.len() as u64;
+            triggers.push(serde_json::json!({
+                "query": query,
+                "should_trigger": should,
+                "arm": arm,
+                "runs": n,
+                "triggered": triggered,
+                "rate": rate,
+                "pass": rate.map(|rate| (rate >= 0.5) == *should),
+                "chats": of.iter().map(|one| one["chat"].clone()).collect::<Vec<_>>(),
+                "asked": ends(&["asked"]),
+            }));
+        }
+        scored.push(serde_json::json!({
+            "arm": arm,
+            "pass_rate": null,
+            "tokens": null,
+            "seconds": null,
+            "chats": arm_runs,
+            "not_run": arm_all - arm_runs,
+        }));
+    }
+    let report = serde_json::json!({
+        "charter": PROTOCOL,
+        "report": { "triggers": triggers, "arms": scored, "delta": null },
+    });
+    writeln!(out, "{report}")?;
+    out.flush()
+}
+
+/// **What the Grader tries before it grades**, each written as one line of [`GRADER_TRIED`] in its
+/// state folder: a tunnel to a model's host through its proxy, a model's address past it, and
+/// the harness its own folder names ([`HARNESS`]), where a test named one.
+fn try_past_the_grade() {
+    let mut said = vec![
+        format!("model host: {}", tried(&["proxy".into(), "api.anthropic.com".into()])),
+        format!(
+            "model address: {}",
+            tried(&["connect".into(), "160.79.104.10:443".into()])
+        ),
+    ];
+    if let Ok(harness) = std::fs::read_to_string(HARNESS) {
+        let started = std::process::Command::new(harness.trim())
+            .arg("--version")
+            .output()
+            .map(|out| format!("ok, it said {}", String::from_utf8_lossy(&out.stdout).trim()))
+            .unwrap_or_else(|why| format!("refused: {}", why.kind()));
+        said.push(format!("harness: {started}"));
+    }
+    let state = std::env::var("PURLIS_EXTENSION_STATE").unwrap_or_else(|_| "state".into());
+    let _ = std::fs::write(Path::new(&state).join(GRADER_TRIED), said.join("\n") + "\n");
 }
 
 /// The answer to one request line, and, for a command, its exit status: `None` for an answer

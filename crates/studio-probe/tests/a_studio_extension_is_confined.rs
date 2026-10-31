@@ -64,7 +64,13 @@ impl Probe {
     /// Assembled, installed and approved, the project a git repository as a project is: what
     /// purlis watches while the probe answers is what git sees.
     fn approved() -> Self {
+        Self::approved_after(|_| {})
+    }
+
+    /// [`Self::approved`], once `laid` has added to the probe's folder what a test puts there.
+    fn approved_after(laid: impl FnOnce(&Probe)) -> Self {
         let probe = Self::assembled();
+        laid(&probe);
         let init = std::process::Command::new("git")
             .args(["init", "-q"])
             .current_dir(probe.plane())
@@ -683,7 +689,229 @@ fn a_router_answers_confined_and_is_stopped_at_its_deadline() {
     assert!(real.running().is_empty(), "its program was stopped");
 }
 
+
+// ---------------------------------------------------------------------------------------
+// The Grader: its chats run through purlis, never a harness or a model's host (#3236)
+// ---------------------------------------------------------------------------------------
+
+/// A host for a grade's chats as purlis's runner is one: each chat it is asked for is "run", the
+/// skill starting where the arm has it and the query should start it, and remembered.
+#[derive(Default)]
+struct Chats {
+    asked: Vec<purlis_skills::grade::RunChat>,
+    stop_after: Option<usize>,
+}
+
+impl purlis_skills::grade::Chats for Chats {
+    fn run(
+        &mut self,
+        chat: &purlis_skills::grade::RunChat,
+        _tokens_left: Option<u64>,
+    ) -> purlis_skills::grade::ChatRan {
+        let n = self.asked.len();
+        self.asked.push(chat.clone());
+        purlis_skills::grade::ChatRan {
+            chat: Some(format!("purlis-chat-{n}")),
+            started: if chat.arm == purlis_skills::grade::Arm::With && chat.prompt.starts_with("probe")
+            {
+                vec!["purlis-project:probe-skill".into()]
+            } else {
+                Vec::new()
+            },
+            tokens: Some(100),
+            cost_usd: None,
+            ms: 10,
+            end: purlis_skills::grade::ChatEnd::Turn,
+        }
+    }
+
+    fn cancelled(&self) -> bool {
+        self.stop_after.is_some_and(|after| self.asked.len() >= after)
+    }
+}
+
+/// A grade of `skill` with two trigger tests in two arms.
+fn grade_of(skill: &str) -> purlis_skills::grade::GradeRequest {
+    use purlis_skills::grade::{Arm, GradeRequest, TriggerTest};
+    GradeRequest {
+        skill: skill.into(),
+        triggers: vec![
+            TriggerTest {
+                query: "probe the thing".into(),
+                should_trigger: true,
+            },
+            TriggerTest {
+                query: "what is a probe".into(),
+                should_trigger: false,
+            },
+        ],
+        outcomes: Vec::new(),
+        arms: vec![Arm::With, Arm::Without],
+        runs: purlis_skills::grade::RUNS,
+    }
+}
+
+fn capped(tokens: u64) -> Option<purlis_skills::grade::Limits> {
+    Some(purlis_skills::grade::Limits {
+        tokens,
+        cost_usd: None,
+        priced: None,
+        unpriced_usd_per_million: None,
+    })
+}
+
+/// The probe graded `request`, its chats run by `chats` and held to `limits`.
+fn graded_by_the_probe(
+    probe: &Probe,
+    request: &purlis_skills::grade::GradeRequest,
+    chats: &mut Chats,
+    limits: Option<purlis_skills::grade::Limits>,
+) -> (purlis_skills::grade::GradeReport, Executor) {
+    let executor = Executor::default().with_deadline(PATIENT);
+    let choices = Choices::read(&probe.plane());
+    let studio = Studio {
+        executor: &executor,
+        config_root: &probe.config(),
+        project: &choices,
+    };
+    // Listed beside purlis's own, by the title its manifest gives it.
+    assert_eq!(studio.graders(), [(ID.to_owned(), "Probe grader".to_owned())]);
+    let report = studio.grade(ID, request, chats, limits);
+    (report, executor)
+}
+
+fn a_grader_runs_its_chats_through_purlis_and_never_a_harness_or_a_model() {
+    use purlis_skills::grade::{Arm, GradeEnd};
+    // A harness it is named, which writes a mark where it ran: in a folder nothing hands it.
+    let probe = Probe::approved_after(|probe| {
+        let harness = probe.dir.path().join("beside").join("claude");
+        let mark = probe.dir.path().join("beside").join("harness-ran");
+        std::fs::write(
+            &harness,
+            format!("#!/bin/sh\ntouch '{}'\necho harness\n", mark.display()),
+        )
+        .expect("a harness");
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&harness, std::fs::Permissions::from_mode(0o755))
+            .expect("executable");
+        std::fs::write(
+            probe.ext().join(studio_probe::HARNESS),
+            harness.display().to_string(),
+        )
+        .expect("named");
+    });
+    let request = grade_of("probe-skill");
+    let mut chats = Chats::default();
+    let (report, executor) = graded_by_the_probe(&probe, &request, &mut chats, capped(100_000));
+    assert!(executor.running().is_empty(), "its program was stopped");
+
+    assert_eq!(report.failed, None, "{report:?}");
+    assert_eq!(report.ended, GradeEnd::Whole);
+    assert_eq!(report.grader, ID, "the Grader's own report");
+    // Every chat it asked for was one purlis ran: the plan's, each test in each arm, each run.
+    assert_eq!(chats.asked.len(), 2 * 2 * usize::from(purlis_skills::grade::RUNS));
+    assert_eq!(report.spent_tokens, Some(100 * chats.asked.len() as u64));
+    let with = report
+        .triggers
+        .iter()
+        .find(|test| test.arm == Arm::With && test.should_trigger)
+        .expect("scored");
+    assert_eq!((with.runs, with.triggered, with.pass), (3, 3, Some(true)));
+    assert!(
+        with.chats
+            .iter()
+            .all(|chat| chat.as_deref().is_some_and(|chat| chat.starts_with("purlis-chat-"))),
+        "each chat is one purlis ran: {:?}",
+        with.chats
+    );
+
+    // And it could reach neither a model nor a harness itself.
+    let tried = std::fs::read_to_string(probe.ext().join("state").join(studio_probe::GRADER_TRIED))
+        .expect("the Grader said what it tried");
+    eprintln!("the Grader tried:\n{tried}");
+    let line = |what: &str| {
+        tried
+            .lines()
+            .find(|line| line.starts_with(what))
+            .unwrap_or_else(|| panic!("the Grader did not try {what}: {tried}"))
+            .to_owned()
+    };
+    assert!(line("model host:").contains("403"), "{tried}");
+    refused(
+        line("model address:").trim_start_matches("model address: "),
+        "a model's address past its proxy",
+    );
+    refused(
+        line("harness:").trim_start_matches("harness: "),
+        "a harness it started itself",
+    );
+    assert!(
+        !probe.dir.path().join("beside").join("harness-ran").exists(),
+        "the harness ran"
+    );
+}
+
+fn a_grader_past_its_plan_ends_the_grade_with_a_sentence() {
+    use purlis_skills::grade::GradeEnd;
+    let probe = Probe::approved();
+    let request = grade_of(studio_probe::PAST_THE_PLAN);
+    let mut chats = Chats::default();
+    let (report, executor) = graded_by_the_probe(&probe, &request, &mut chats, capped(100_000));
+    assert!(executor.running().is_empty(), "its program was stopped");
+    assert_eq!(report.ended, GradeEnd::GraderFailed);
+    let failed = report.failed.as_deref().expect("a sentence");
+    assert!(failed.contains("more runs"), "{failed}");
+    assert_eq!(
+        chats.asked.len(),
+        2 * 2 * usize::from(purlis_skills::grade::RUNS),
+        "the plan's chats ran, and none past it"
+    );
+}
+
+fn a_grader_is_held_to_the_cap_and_answers_its_report_at_it() {
+    use purlis_skills::grade::GradeEnd;
+    let probe = Probe::approved();
+    let request = grade_of("probe-skill");
+    let mut chats = Chats::default();
+    // Two chats reach it: the next is written back as the cap's end, and the probe reports.
+    let (report, _) = graded_by_the_probe(&probe, &request, &mut chats, capped(200));
+    assert_eq!(chats.asked.len(), 2, "no chat ran past the cap");
+    assert_eq!(report.ended, GradeEnd::OverCap, "{report:?}");
+    assert_eq!(report.failed, None);
+    assert_eq!(report.grader, ID);
+    assert_eq!(report.spent_tokens, Some(200));
+}
+
+fn a_stopped_grade_stops_its_grader() {
+    use purlis_skills::grade::GradeEnd;
+    let probe = Probe::approved();
+    let request = grade_of("probe-skill");
+    let mut chats = Chats {
+        stop_after: Some(1),
+        ..Chats::default()
+    };
+    let began = std::time::Instant::now();
+    let (report, executor) = graded_by_the_probe(&probe, &request, &mut chats, capped(100_000));
+    assert!(executor.running().is_empty(), "its program was stopped");
+    assert!(began.elapsed() < PATIENT, "the Stop did not wait for the Grader");
+    assert_eq!(report.ended, GradeEnd::Cancelled);
+    assert_eq!(chats.asked.len(), 1);
+}
+
 const TESTS: &[(&str, fn())] = &[
+    (
+        "a_grader_runs_its_chats_through_purlis_and_never_a_harness_or_a_model",
+        a_grader_runs_its_chats_through_purlis_and_never_a_harness_or_a_model,
+    ),
+    (
+        "a_grader_past_its_plan_ends_the_grade_with_a_sentence",
+        a_grader_past_its_plan_ends_the_grade_with_a_sentence,
+    ),
+    (
+        "a_grader_is_held_to_the_cap_and_answers_its_report_at_it",
+        a_grader_is_held_to_the_cap_and_answers_its_report_at_it,
+    ),
+    ("a_stopped_grade_stops_its_grader", a_stopped_grade_stops_its_grader),
     (
         "a_router_answers_confined_and_is_stopped_at_its_deadline",
         a_router_answers_confined_and_is_stopped_at_its_deadline,

@@ -9,9 +9,9 @@
 //! `contributes` under its own word, read here ([`Declared`]). Five are asked now, in protocol 3,
 //! by [`crate::executor::Executor::studio`], each with a question of its own ([`Ask`]) whose
 //! answer is read here against a closed shape, failing closed with a sentence: the SkillRouter's
-//! ([`Ask::Route`], SK-15b) within its own deadline, [`ROUTER_DEADLINE`]. The Grader is declared
-//! and confined now; its questions are SK-16's (#2779), as ADR 0101 §5 says them: a grade's four
-//! messages (grade request, run-chat request, run-chat result, grade report).
+//! ([`Ask::Route`], SK-15b) within its own deadline, [`ROUTER_DEADLINE`]. The Grader's is asked
+//! in protocol 4 (#3236), one question of many lines: a grade's four messages (grade request,
+//! run-chat request, run-chat result, grade report, ADR 0105 §1), read by [`grading`].
 //!
 //! **An extension that declares one is confined** (the operator's ruling of 2026-10-20, "confine
 //! first"), for every question its program is asked, not only its studio ones:
@@ -32,6 +32,8 @@
 //!
 //! The words are known only where the `skill-studio` flag is on, and are experimental there
 //! ([`super::capability::Capability::known`]).
+
+pub mod grading;
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -820,6 +822,12 @@ pub enum Ask<'a> {
         budget: RouteBudget,
         besides: RouteBudget,
     },
+    /// **A grade of a skill** (protocol 4, #3236): the grade request, whose answer is run-chat
+    /// requests and then the grade report, asked only by
+    /// [`crate::executor::Executor::grade`] ([`grading`]).
+    Grade {
+        request: &'a purlis_skills::grade::GradeRequest,
+    },
 }
 
 /// One skill a router is asked about ([`Ask::Route`]).
@@ -851,6 +859,7 @@ impl Ask<'_> {
             Self::Template { .. } => Capability::SkillTemplate,
             Self::Panel { .. } => Capability::StudioPanel,
             Self::Route { .. } => Capability::SkillRouter,
+            Self::Grade { .. } => Capability::Grader,
         }
     }
 

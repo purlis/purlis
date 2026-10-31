@@ -112,6 +112,7 @@ use std::sync::{Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use crate::extension::{self, Extension, Standing};
+use crate::skills::grade;
 use crate::panel::{self, Subject};
 
 /// The newest protocol a request and an answer are written in — what this charter speaks.
@@ -137,7 +138,13 @@ use crate::panel::{self, Subject};
 /// - **3** (#2777, ADR 0101) — the studio questions: `studio`, the studio capability asked, and
 ///   `ask`, its question ([`crate::extension::studio::Ask`]), answered with that question's keys.
 ///   Every question to an extension that declares a studio capability is asked inside its sandbox.
-pub const PROTOCOL: u32 = 3;
+/// - **4** (#3236, ADR 0105) — the Grader's question, the first of more than one line: a grade
+///   request (`ask` `grade`), answered by run-chat requests (`run_chat`), each written back its
+///   run-chat result (`chat_ran`) once purlis has run that chat, until the Grader answers its
+///   grade report (`report`). Each answer has [`DEADLINE`] from the line before it; while purlis
+///   runs a chat the Grader has no deadline, and the question ends when the person stops the
+///   grade ([`Executor::grade`]).
+pub const PROTOCOL: u32 = 4;
 
 /// How long a program has, from being started to its answer's last byte.
 ///
@@ -378,6 +385,22 @@ struct Bound {
     deadline: Duration,
     until: Option<Instant>,
 }
+
+/// **A question of more than one line** (protocol 4, #3236): what the program's answers are
+/// read by, and what each is written back. Its program keeps its stdin open between lines, and
+/// each answer has the executor's deadline from the line before it.
+pub(crate) trait Talk {
+    /// `line`, the program's latest answer, without its newline, in `protocol`: the next line to
+    /// write the program, its newline included, or `None` once the question is over.
+    fn heard(&mut self, protocol: u32, line: &[u8]) -> Option<Vec<u8>>;
+    /// Whether the person stopped what the question is for: it ends at once, its program stopped.
+    fn stopped(&self) -> bool;
+}
+
+/// How often a question of more than one line looks whether the person stopped it, while its
+/// program has yet to answer.
+#[cfg(unix)]
+const LOOK_FOR_A_STOP: Duration = Duration::from_millis(100);
 
 /// What [`Executor::put`] came back with, before it is shaped into an [`Answer`] or an [`Acted`].
 struct Put {
@@ -711,6 +734,45 @@ impl Executor {
         self.asked_in_the_studio(config_root, project, extension, ask, Some(until))
     }
 
+    /// **Ask `extension`'s Grader to grade `request`** (protocol 4, #3236; ADR 0101 §5,
+    /// ADR 0105): the same gate, bounds, sandbox and watch as every studio question, and one
+    /// question of many lines. The Grader answers with run-chat requests, each held to the plan
+    /// and to `limits` and run by `chats`, the host purlis's own runner asks
+    /// ([`grade::Held`]), and written back what that chat did, until it answers its report.
+    ///
+    /// **Always a report**: the Grader's scores, with purlis's own count of the spend; or, where
+    /// its question ended the grade (refused before it started, an answer out of its closed shape,
+    /// past the plan or its limits, too late, or none), what ran scored as purlis's runner scores
+    /// it, ended [`grade::GradeEnd::GraderFailed`] with the sentence; or, where the person stopped
+    /// it, what ran, stopped. Its program never reaches a harness or a model's host: it is
+    /// confined (ADR 0101 §2 and §3), and every chat is one purlis runs.
+    pub fn grade(
+        &self,
+        config_root: &Path,
+        project: &extension::project::Choices,
+        extension: &str,
+        request: &grade::GradeRequest,
+        chats: &mut dyn grade::Chats,
+        limits: Option<grade::Limits>,
+    ) -> grade::GradeReport {
+        let mut grading = extension::studio::grading::Grading::new(extension, request, chats, limits);
+        let ask = extension::studio::Ask::Grade { request };
+        let talked = self
+            .put_talking(
+                config_root,
+                project,
+                extension,
+                Asked::Studio {
+                    ask: &ask,
+                    until: None,
+                },
+                |_| serde_json::Value::Null,
+                Some(&mut grading),
+            )
+            .map(|_| ());
+        grading.finished(talked)
+    }
+
     fn asked_in_the_studio(
         &self,
         config_root: &Path,
@@ -740,7 +802,22 @@ impl Executor {
         asked: Asked<'_>,
         hand: impl FnOnce(Subject) -> serde_json::Value,
     ) -> Result<Put, String> {
+        self.put_talking(config_root, project, extension, asked, hand, None)
+    }
+
+    /// [`Self::put`], its question one of more than one line where `talk` reads its answers
+    /// (protocol 4): a Grader's, and only through [`Self::grade`].
+    fn put_talking(
+        &self,
+        config_root: &Path,
+        project: &extension::project::Choices,
+        extension: &str,
+        asked: Asked<'_>,
+        hand: impl FnOnce(Subject) -> serde_json::Value,
+        talk: Option<&mut dyn Talk>,
+    ) -> Result<Put, String> {
         supported()?;
+        let talking = talk.is_some();
         let began = Instant::now();
         // The record alone first: whether this is an extension the operator said yes to at all.
         // **Before the project is asked anything**, so that no project file can stand in for this
@@ -811,6 +888,13 @@ impl Executor {
                     })?;
                 if let Some(why) = ask.unoffered(extension, studio) {
                     return Err(why);
+                }
+                // A grade is one question of many lines, asked only where its answers are read
+                // line by line ([`Self::grade`]), and only there.
+                if matches!(ask, extension::studio::Ask::Grade { .. }) != talking {
+                    return Err(format!(
+                        "'{extension}' is asked to grade only through a grade purlis runs"
+                    ));
                 }
                 (None, None)
             }
@@ -899,7 +983,15 @@ impl Executor {
             _ => self.hold(extension)?,
         };
         let started = Instant::now();
-        let said = self.converse(extension, &found, &at, &request, commanded.is_some(), bound);
+        let said = self.converse(
+            extension,
+            &found,
+            &at,
+            &request,
+            commanded.is_some(),
+            bound,
+            talk,
+        );
         let round_trip = started.elapsed();
 
         // **After every question, however it ended** — a program that wrote outside its paths
@@ -941,6 +1033,21 @@ impl Executor {
             }
         };
         let protocol = found.manifest.protocol;
+        // A question of many lines was read line by line, as it went: there is no last answer
+        // to read here.
+        if talking {
+            drop(line);
+            return Ok(Put {
+                blocks: None,
+                reply: None,
+                section: None,
+                whole: None,
+                gate,
+                round_trip,
+                overreach,
+                actions: found.manifest.actions.clone(),
+            });
+        }
         if let Asked::Studio { .. } = asked {
             // Every key but `charter` and `error` is the question's own answer, read against its
             // closed shape by `extension::studio`, which refuses a key it does not know.
@@ -1131,6 +1238,10 @@ impl Executor {
     ///
     /// One function with a platform arm rather than a twin per platform, so that a mutant of
     /// `converse` is a mutant of the code this build runs.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "each is one part of one conversation, passed through to its unix arm"
+    )]
     fn converse(
         &self,
         extension: &str,
@@ -1139,19 +1250,24 @@ impl Executor {
         request: &[u8],
         whole: bool,
         bound: Bound,
+        talk: Option<&mut dyn Talk>,
     ) -> Result<Said, String> {
         #[cfg(unix)]
         {
-            self.converse_on_unix(extension, found, program, request, whole, bound)
+            self.converse_on_unix(extension, found, program, request, whole, bound, talk)
         }
         #[cfg(not(unix))]
         {
-            let _ = (extension, found, program, request, whole, bound);
+            let _ = (extension, found, program, request, whole, bound, talk);
             Err(REFUSED_HERE.to_owned())
         }
     }
 
     #[cfg(unix)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "each is one part of one conversation"
+    )]
     fn converse_on_unix(
         &self,
         extension: &str,
@@ -1160,6 +1276,7 @@ impl Executor {
         request: &[u8],
         whole: bool,
         bound: Bound,
+        talk: Option<&mut dyn Talk>,
     ) -> Result<Said, String> {
         use std::os::fd::OwnedFd;
         use std::os::unix::process::CommandExt;
@@ -1270,12 +1387,14 @@ impl Executor {
         };
 
         // The question is written on a thread of its own, so a program that answers before it
-        // has read the whole of it cannot deadlock against charter reading the answer.
+        // has read the whole of it cannot deadlock against charter reading the answer. A
+        // question of many lines keeps its stdin open for the lines after it.
+        let talking = talk.is_some();
         let writer = match std::thread::Builder::new()
             .name(format!("extension {extension} request"))
             .spawn({
                 let request = request.to_vec();
-                move || ask_within(&ours_to_write, &request, until)
+                move || ask_within(&ours_to_write, &request, until, !talking)
             }) {
             Ok(writer) => writer,
             Err(why) => {
@@ -1284,8 +1403,20 @@ impl Executor {
             }
         };
 
+        let mut talked: Option<Result<(), String>> = None;
         let heard = if whole {
             listen_to_the_end(&ours, until)
+        } else if let Some(talk) = talk {
+            talked = Some(talk_through(
+                extension,
+                &ours,
+                &writer,
+                talk,
+                found.manifest.protocol,
+                bound.deadline,
+                until,
+            ));
+            Heard::Line(Vec::new())
         } else {
             listen(&ours, until)
         };
@@ -1321,6 +1452,11 @@ impl Executor {
                 )
             }
         };
+        if let Some(talked) = talked {
+            return talked
+                .map(|()| Said::Line(Vec::new()))
+                .map_err(|why| format!("{why}{}", last_words()));
+        }
         if whole {
             return match heard {
                 Heard::Line(_) if !exited => Err(format!(
@@ -1787,7 +1923,12 @@ fn drain(
 /// deadline on each call and over a small piece at a time, only stops a reader that takes
 /// nothing at all from being waited on past the deadline by this thread alone.
 #[cfg(unix)]
-fn ask_within(ours: &std::os::unix::net::UnixStream, request: &[u8], until: Instant) -> bool {
+fn ask_within(
+    ours: &std::os::unix::net::UnixStream,
+    request: &[u8],
+    until: Instant,
+    shut: bool,
+) -> bool {
     use std::io::Write;
     let mut ours = ours;
     let mut at = 0;
@@ -1809,8 +1950,11 @@ fn ask_within(ours: &std::os::unix::net::UnixStream, request: &[u8], until: Inst
             Err(_) => break false,
         }
     };
-    // EOF after the question: a program may read "all of stdin" rather than a line.
-    let _ = ours.shutdown(std::net::Shutdown::Write);
+    // EOF after the question: a program may read "all of stdin" rather than a line. Not for a
+    // question of many lines, whose next line follows its program's answer.
+    if shut {
+        let _ = ours.shutdown(std::net::Shutdown::Write);
+    }
     wrote
 }
 
@@ -2305,6 +2449,133 @@ fn listen(ours: &std::os::unix::net::UnixStream, until: Instant) -> Heard {
     Heard::Line(line)
 }
 
+/// **A question of many lines, talked through** (protocol 4, #3236): each answer the program
+/// writes on `ours` is read by `talk`, within `deadline` of the line before it, and written back
+/// what `talk` says, until `talk` says the question is over, the person stops it, or the program
+/// fails it. `Err` is that failure's sentence, its program's last words not yet said.
+///
+/// The question's own line is still being written by `writer` when the first answer may arrive;
+/// no line follows it until it is all written.
+#[cfg(unix)]
+fn talk_through(
+    extension: &str,
+    ours: &std::os::unix::net::UnixStream,
+    writer: &std::thread::JoinHandle<bool>,
+    talk: &mut dyn Talk,
+    protocol: u32,
+    deadline: Duration,
+    mut until: Instant,
+) -> Result<(), String> {
+    let mut pending: Vec<u8> = Vec::new();
+    let too_late = || {
+        format!(
+            "'{extension}' did not answer within {} seconds of purlis's last line, so purlis \
+             stopped it",
+            deadline.as_secs_f32()
+        )
+    };
+    loop {
+        let line = match listen_for_a_line(ours, &mut pending, until, &|| talk.stopped()) {
+            None => return Ok(()),
+            Some(Heard::Line(line)) => line,
+            Some(Heard::TooLate) => return Err(too_late()),
+            Some(Heard::TooMuch) => {
+                return Err(format!(
+                    "'{extension}' answered a line of more than {} KiB, so purlis stopped it",
+                    MOST_ANSWER_BYTES >> 10
+                ));
+            }
+            Some(Heard::Nothing(partial)) => {
+                return Err(format!(
+                    "'{extension}' ended before its question was over{}",
+                    if partial {
+                        ", part way through a line"
+                    } else {
+                        ""
+                    }
+                ));
+            }
+            Some(Heard::Broken(why)) => {
+                return Err(format!(
+                    "purlis lost its connection to '{extension}''s program: {why}"
+                ));
+            }
+        };
+        let Some(next) = talk.heard(protocol, &line) else {
+            return Ok(());
+        };
+        // An answer's next line waits for the question's own to be all written: a program that
+        // answers what it has not read is answering nothing.
+        while !writer.is_finished() {
+            if Instant::now() >= until {
+                return Err(too_late());
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        // No deadline ran while `talk` was busy (a grade's chat runs as long as it runs): the
+        // program's next answer has its own from here.
+        until = Instant::now() + deadline;
+        if !ask_within(ours, &next, until, false) {
+            return Err(format!(
+                "'{extension}' did not read purlis's line within {} seconds, so purlis stopped it",
+                deadline.as_secs_f32()
+            ));
+        }
+        until = Instant::now() + deadline;
+    }
+}
+
+/// **One line of a question of many lines**, read off `ours` by `until` into what is `pending`
+/// from the reads before, which keeps what came after it; `None` once `stopped` says the person
+/// stopped the question, looked at every [`LOOK_FOR_A_STOP`] while nothing arrives.
+#[cfg(unix)]
+fn listen_for_a_line(
+    ours: &std::os::unix::net::UnixStream,
+    pending: &mut Vec<u8>,
+    until: Instant,
+    stopped: &dyn Fn() -> bool,
+) -> Option<Heard> {
+    use std::io::Read;
+    let mut ours = ours;
+    let mut chunk = vec![0u8; 16 << 10];
+    loop {
+        if let Some(at) = memchr::memchr(b'\n', pending) {
+            let line: Vec<u8> = pending.drain(..=at).take(at).collect();
+            return Some(if line.len() > MOST_ANSWER_BYTES {
+                Heard::TooMuch
+            } else {
+                Heard::Line(line)
+            });
+        }
+        if pending.len() > MOST_ANSWER_BYTES {
+            return Some(Heard::TooMuch);
+        }
+        if stopped() {
+            return None;
+        }
+        let left = until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Some(Heard::TooLate);
+        }
+        let _ = ours.set_read_timeout(Some(left.min(LOOK_FOR_A_STOP)));
+        match ours.read(&mut chunk) {
+            Ok(0) => return Some(Heard::Nothing(!pending.is_empty())),
+            Err(why) if why.kind() == std::io::ErrorKind::ConnectionReset => {
+                return Some(Heard::Nothing(!pending.is_empty()));
+            }
+            Ok(got) => pending.extend_from_slice(&chunk[..got]),
+            Err(why)
+                if matches!(
+                    why.kind(),
+                    std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::Interrupted
+                ) => {}
+            Err(why) => return Some(Heard::Broken(why.to_string())),
+        }
+    }
+}
+
 /// Read everything a command's program writes on `ours` until it closes its output, by `until`
 /// — a command's answer is all of its stdout, not one line (charter-app#342). The whole of it
 /// comes back as [`Heard::Line`].
@@ -2456,7 +2727,7 @@ fn reply_open(
 /// `protocol` it was asked in, holding `charter`, `error` and only the `keys` this kind of
 /// answer has (charter-app#343: an event's has none, a briefing's `section`). An `error` is the
 /// refusal, quoted.
-fn reply_of(
+pub(crate) fn reply_of(
     extension: &str,
     line: &[u8],
     protocol: u32,

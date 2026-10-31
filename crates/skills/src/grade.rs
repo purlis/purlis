@@ -64,6 +64,17 @@ pub enum Arm {
 }
 
 impl Arm {
+    /// Its word, as a grade's messages spell it.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::With => "with",
+            Self::Without => "without",
+            Self::Previous => "previous",
+            Self::Router => "router",
+            Self::BuiltInRouter => "built-in-router",
+        }
+    }
+
     /// Whether this arm has the skill in it, as it is or as it was.
     pub fn has_the_skill(self) -> bool {
         !matches!(self, Self::Without)
@@ -72,7 +83,7 @@ impl Arm {
 
 /// **The grade request**: what to grade. The skill by name, its trigger tests and outcome evals,
 /// the arms to compare and how many runs each fixture has in each.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GradeRequest {
     pub skill: String,
     pub triggers: Vec<TriggerTest>,
@@ -99,8 +110,10 @@ impl GradeRequest {
     }
 }
 
-/// **The run-chat request**: one chat for the host to run, in one arm, started on `prompt`.
+/// **The run-chat request**: one chat for the host to run, in one arm, started on `prompt`. A
+/// Grader's is read against this closed shape: a key it does not know refuses it (#3236).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RunChat {
     pub arm: Arm,
     pub prompt: String,
@@ -294,6 +307,10 @@ pub enum GradeEnd {
     /// purlis stopped before the grade ended (a crash, a fault in it, or a quit), so it was never
     /// scored: recorded by the host at its next start, never by this runner (#3353).
     Interrupted,
+    /// A Grader extension's question ended it (#3236): it answered out of its closed shape, past
+    /// the plan or its limits, too late, or not at all. purlis scored what ran itself, and
+    /// [`GradeReport::failed`] says why in a sentence.
+    GraderFailed,
 }
 
 /// **The grade report**: the scores per trigger test and arm, each arm's summary, and the
@@ -326,6 +343,10 @@ pub struct GradeReport {
     /// The price the dollar limit was worked out at ([`Limits::priced`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priced: Option<Priced>,
+    /// Why a Grader's question ended the grade, where it did ([`GradeEnd::GraderFailed`]): a
+    /// sentence. Absent in every other report, and in a row written before #3236.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed: Option<String>,
 }
 
 /// **What a grade may spend**: a cap in tokens, and a dollar limit besides where one is set. It
@@ -402,218 +423,530 @@ impl GradeReport {
 
 /// **Grades `request` with purlis's built-in runner**, asking `chats` for every chat: each run in
 /// turn, every trigger test in it, every arm for each, so a grade the person stops has scored
-/// every arm alike so far. Held to `limits` where they are given: each chat is told the tokens
-/// left, the grade stops at the cap or at the dollar limit, whichever comes first, and a chat that
-/// started and did not say what it spent stops it too, however it ended, as the cap could not be
-/// held after it. Outcome evals are shown and not run by this runner (#3235): [`Plan`] says how
-/// many wait.
+/// every arm alike so far. Held to `limits` where they are given ([`Held`]): each chat is told the
+/// tokens left, the grade stops at the cap or at the dollar limit, whichever comes first, and a
+/// chat that started and did not say what it spent stops it too, however it ended, as the cap
+/// could not be held after it. Outcome evals are shown and not run by this runner (#3235):
+/// [`Plan`] says how many wait.
 pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limits>) -> GradeReport {
-    let cap = limits.as_ref().map(|limits| limits.tokens);
-    let cost_cap = limits.as_ref().and_then(|limits| limits.cost_usd);
-    let unpriced_at = limits
-        .as_ref()
-        .and_then(|limits| limits.unpriced_usd_per_million);
-    let skill = request.skill.as_str();
-    // ran[test][arm] = each run's result, in run order.
-    let mut ran: Vec<Vec<Vec<ChatRan>>> =
-        vec![vec![Vec::new(); request.arms.len()]; request.triggers.len()];
-    let mut ended = GradeEnd::Whole;
+    let mut held = Held::new(request, chats, limits);
+    'runs: for _run in 0..request.runs {
+        for test in &request.triggers {
+            for arm in &request.arms {
+                let chat = RunChat {
+                    arm: *arm,
+                    prompt: test.query.clone(),
+                };
+                // Asked in the plan's own order, so no chat is past it.
+                if held.ask(&chat).is_err() || held.ended().is_some() {
+                    break 'runs;
+                }
+            }
+        }
+    }
+    held.scored(BUILT_IN, None)
+}
+
+/// **A grade held to its plan and to its limits** (ADR 0105 §1 and §4; #3236): every chat a
+/// grade's framework asks for, whether purlis's own runner or a Grader extension, goes through
+/// this, so both are counted alike and neither can make purlis run more than the plan showed or
+/// spend more than the person accepted.
+///
+/// - **The plan**: a chat is of one of the grade's arms, on one of its trigger tests' queries, and
+///   each test runs at most [`GradeRequest::runs`] times in each arm. A chat past that is refused
+///   ([`Self::ask`]'s `Err`), and is never run.
+/// - **The limits**: each chat is told the tokens left; the grade ends at its cap, at its dollar
+///   limit, at the person's Stop, after [`NOT_STARTED_IN_A_ROW`] chats that did not start, or
+///   after a chat that did not say what it spent where the grade is capped. Once it has ended no
+///   chat is run: [`Asked::Ended`] says how it ended.
+/// - **The score**: [`Self::scored`] scores what ran as the built-in runner does, and
+///   [`Self::reported`] holds a Grader's own scores to what ran and puts purlis's own count of the
+///   spend in its report.
+pub struct Held<'a> {
+    request: &'a GradeRequest,
+    chats: &'a mut dyn Chats,
+    cap: Option<u64>,
+    cost_cap: Option<f64>,
+    unpriced_at: Option<f64>,
+    priced: Option<Priced>,
+    /// ran[test][arm] = each run's result, in run order.
+    ran: Vec<Vec<Vec<ChatRan>>>,
+    ended: Option<GradeEnd>,
     // Counted in all, and per arm: arms take turns, so a chat of one arm that starts says
     // nothing of another arm whose chats do not (a router that never answers, SK-15e).
-    let mut not_started_in_a_row = 0u32;
-    let mut not_started_in_its_arm = vec![0u32; request.arms.len()];
-    let mut not_started: Option<String> = None;
-    let mut spent: Option<u64> = None;
-    let mut spent_usd: Option<f64> = None;
+    not_started_in_a_row: u32,
+    not_started_in_its_arm: Vec<u32>,
+    not_started: Option<String>,
+    spent: Option<u64>,
+    spent_usd: Option<f64>,
     // What the limit counts: what chats cost, and the tokens of those that said no cost at the
     // dearest price; and whether any did.
-    let mut counted_usd = 0.0_f64;
-    let mut counted_unpriced = false;
-    'runs: for _run in 0..request.runs {
+    counted_usd: f64,
+    counted_unpriced: bool,
+}
+
+/// What [`Held::ask`] answers for a chat within the plan.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Asked {
+    /// The chat ran, or tried to: what it did.
+    Ran(ChatRan),
+    /// The grade had ended, so no chat was run: how it ended.
+    Ended(GradeEnd),
+}
+
+impl<'a> Held<'a> {
+    /// `request`'s grade, its chats asked of `chats` and held to `limits` where they are given.
+    pub fn new(request: &'a GradeRequest, chats: &'a mut dyn Chats, limits: Option<Limits>) -> Self {
+        Self {
+            ran: vec![vec![Vec::new(); request.arms.len()]; request.triggers.len()],
+            not_started_in_its_arm: vec![0; request.arms.len()],
+            request,
+            chats,
+            cap: limits.as_ref().map(|limits| limits.tokens),
+            cost_cap: limits.as_ref().and_then(|limits| limits.cost_usd),
+            unpriced_at: limits
+                .as_ref()
+                .and_then(|limits| limits.unpriced_usd_per_million),
+            priced: limits.and_then(|limits| limits.priced),
+            ended: None,
+            not_started_in_a_row: 0,
+            not_started: None,
+            spent: None,
+            spent_usd: None,
+            counted_usd: 0.0,
+            counted_unpriced: false,
+        }
+    }
+
+    /// How the grade ended, once it has.
+    pub fn ended(&self) -> Option<GradeEnd> {
+        self.ended
+    }
+
+    /// Whether the person stopped the grade.
+    pub fn cancelled(&self) -> bool {
+        self.chats.cancelled()
+    }
+
+    /// Why the chats stopped starting, where they did: the last one's sentence.
+    pub fn not_started(&self) -> Option<&str> {
+        self.not_started.as_deref()
+    }
+
+    /// Every chat that ran, or tried to, in no particular order.
+    pub fn ran(&self) -> impl Iterator<Item = &ChatRan> {
+        self.ran.iter().flatten().flatten()
+    }
+
+    /// **The test and arm `chat` is a run of**, or why it is past the plan: an arm the grade does
+    /// not compare, a prompt that is none of its trigger tests' queries, or a test that has run
+    /// every time the plan has it run in that arm.
+    fn slot(&self, chat: &RunChat) -> Result<(usize, usize), String> {
+        let a = self
+            .request
+            .arms
+            .iter()
+            .position(|arm| *arm == chat.arm)
+            .ok_or_else(|| {
+                format!(
+                    "it asked for a chat in an arm this grade does not compare ({})",
+                    chat.arm.word()
+                )
+            })?;
+        let mut of_the_query = self
+            .request
+            .triggers
+            .iter()
+            .enumerate()
+            .filter(|(_, test)| test.query == chat.prompt)
+            .peekable();
+        if of_the_query.peek().is_none() {
+            return Err(
+                "it asked for a chat on a prompt that is none of this grade's trigger tests"
+                    .to_owned(),
+            );
+        }
+        of_the_query
+            .map(|(t, _)| t)
+            .find(|t| self.ran[*t][a].len() < usize::from(self.request.runs))
+            .map(|t| (t, a))
+            .ok_or_else(|| {
+                format!(
+                    "it asked for more runs of a trigger test in the {} arm than the {} the plan \
+                     runs",
+                    chat.arm.word(),
+                    self.request.runs
+                )
+            })
+    }
+
+    /// **Runs `chat`, held to the plan and the limits**: `Err` where it is past the plan, and is
+    /// not run; [`Asked::Ended`] where the grade has ended, before or as it was asked; else what
+    /// it did.
+    pub fn ask(&mut self, chat: &RunChat) -> Result<Asked, String> {
+        let (t, a) = self.slot(chat)?;
+        if let Some(ended) = self.ended {
+            return Ok(Asked::Ended(ended));
+        }
+        if self.chats.cancelled() {
+            return Ok(Asked::Ended(*self.ended.insert(GradeEnd::Cancelled)));
+        }
+        let left = self
+            .cap
+            .map(|cap| cap.saturating_sub(self.spent.unwrap_or(0)));
+        if left == Some(0) {
+            return Ok(Asked::Ended(*self.ended.insert(GradeEnd::OverCap)));
+        }
+        if self.over_the_limit() {
+            return Ok(Asked::Ended(*self.ended.insert(GradeEnd::OverLimit)));
+        }
+        let result = self.chats.run(chat, left);
+        if let Some(tokens) = result.tokens {
+            self.spent = Some(self.spent.unwrap_or(0).saturating_add(tokens));
+        }
+        match result
+            .cost_usd
+            .filter(|cost| cost.is_finite() && *cost >= 0.0)
+        {
+            Some(cost) => {
+                self.spent_usd = Some(self.spent_usd.unwrap_or(0.0) + cost);
+                self.counted_usd += cost;
+            }
+            None => {
+                if let Some((tokens, at)) = result.tokens.zip(self.unpriced_at) {
+                    self.counted_usd += tokens as f64 * at / 1_000_000.0;
+                    self.counted_unpriced = true;
+                }
+            }
+        }
+        // A chat that started and did not say what it spent stops a capped grade, however it
+        // ended: an ask, a Stop or the cap itself spends as a turn does, and the cap cannot be
+        // held after a chat whose spend is unknown.
+        let unreported = self.cap.is_some()
+            && !matches!(result.end, ChatEnd::NotStarted { .. })
+            && result.tokens.is_none();
+        let stop = match &result.end {
+            ChatEnd::NotStarted { why } => {
+                self.not_started_in_a_row += 1;
+                self.not_started_in_its_arm[a] += 1;
+                self.not_started = Some(why.clone());
+                None
+            }
+            ChatEnd::Cancelled => Some(GradeEnd::Cancelled),
+            ChatEnd::OverCap => Some(GradeEnd::OverCap),
+            ChatEnd::OverLimit => Some(GradeEnd::OverLimit),
+            ChatEnd::Turn | ChatEnd::TimedOut | ChatEnd::Asked => {
+                self.not_started_in_a_row = 0;
+                self.not_started_in_its_arm[a] = 0;
+                None
+            }
+        };
+        self.ran[t][a].push(result.clone());
+        self.ended = if unreported {
+            Some(GradeEnd::SpendNotReported)
+        } else if stop.is_some() {
+            stop
+        } else if self
+            .cap
+            .is_some_and(|cap| self.spent.unwrap_or(0) >= cap)
+        {
+            Some(GradeEnd::OverCap)
+        } else if self.over_the_limit() {
+            Some(GradeEnd::OverLimit)
+        } else if self.not_started_in_a_row.max(self.not_started_in_its_arm[a])
+            >= NOT_STARTED_IN_A_ROW
+        {
+            Some(GradeEnd::ChatsDidNotStart)
+        } else {
+            None
+        };
+        Ok(Asked::Ran(result))
+    }
+
+    /// Whether what the chats cost, as the limit counts it, has reached the dollar limit.
+    fn over_the_limit(&self) -> bool {
+        self.cost_cap
+            .is_some_and(|cost_cap| self.counted_usd >= cost_cap)
+    }
+
+    /// **What ran, scored as purlis's built-in runner scores it**, graded by `grader`, ended as
+    /// the grade ended, else as `ended` says, else whole; `failed` is the sentence of a grade a
+    /// Grader's question ended ([`GradeEnd::GraderFailed`]).
+    pub fn scored(&self, grader: &str, failed: Option<String>) -> GradeReport {
+        let request = self.request;
+        let skill = request.skill.as_str();
+        let ran = &self.ran;
+        let mut triggers = Vec::new();
         for (t, test) in request.triggers.iter().enumerate() {
             for (a, arm) in request.arms.iter().enumerate() {
-                if chats.cancelled() {
-                    ended = GradeEnd::Cancelled;
-                    break 'runs;
-                }
-                let left = cap.map(|cap| cap.saturating_sub(spent.unwrap_or(0)));
-                if left == Some(0) {
-                    ended = GradeEnd::OverCap;
-                    break 'runs;
-                }
-                if cost_cap.is_some_and(|cost_cap| counted_usd >= cost_cap) {
-                    ended = GradeEnd::OverLimit;
-                    break 'runs;
-                }
-                let result = chats.run(
-                    &RunChat {
-                        arm: *arm,
-                        prompt: test.query.clone(),
-                    },
-                    left,
-                );
-                if let Some(tokens) = result.tokens {
-                    spent = Some(spent.unwrap_or(0).saturating_add(tokens));
-                }
-                match result
-                    .cost_usd
-                    .filter(|cost| cost.is_finite() && *cost >= 0.0)
-                {
-                    Some(cost) => {
-                        spent_usd = Some(spent_usd.unwrap_or(0.0) + cost);
-                        counted_usd += cost;
-                    }
-                    None => {
-                        if let Some((tokens, at)) = result.tokens.zip(unpriced_at) {
-                            counted_usd += tokens as f64 * at / 1_000_000.0;
-                            counted_unpriced = true;
-                        }
-                    }
-                }
-                // A chat that started and did not say what it spent stops a capped grade,
-                // however it ended: an ask, a Stop or the cap itself spends as a turn does, and
-                // the cap cannot be held after a chat whose spend is unknown.
-                let unreported = cap.is_some()
-                    && !matches!(result.end, ChatEnd::NotStarted { .. })
-                    && result.tokens.is_none();
-                let stop = match &result.end {
-                    ChatEnd::NotStarted { why } => {
-                        not_started_in_a_row += 1;
-                        not_started_in_its_arm[a] += 1;
-                        not_started = Some(why.clone());
-                        None
-                    }
-                    ChatEnd::Cancelled => Some(GradeEnd::Cancelled),
-                    ChatEnd::OverCap => Some(GradeEnd::OverCap),
-                    ChatEnd::OverLimit => Some(GradeEnd::OverLimit),
-                    ChatEnd::Turn | ChatEnd::TimedOut | ChatEnd::Asked => {
-                        not_started_in_a_row = 0;
-                        not_started_in_its_arm[a] = 0;
-                        None
-                    }
-                };
-                ran[t][a].push(result);
-                if unreported {
-                    ended = GradeEnd::SpendNotReported;
-                    break 'runs;
-                }
-                if let Some(stop) = stop {
-                    ended = stop;
-                    break 'runs;
-                }
-                if cap.is_some_and(|cap| spent.unwrap_or(0) >= cap) {
-                    ended = GradeEnd::OverCap;
-                    break 'runs;
-                }
-                if cost_cap.is_some_and(|cost_cap| counted_usd >= cost_cap) {
-                    ended = GradeEnd::OverLimit;
-                    break 'runs;
-                }
-                if not_started_in_a_row.max(not_started_in_its_arm[a]) >= NOT_STARTED_IN_A_ROW {
-                    ended = GradeEnd::ChatsDidNotStart;
-                    break 'runs;
-                }
+                let results = &ran[t][a];
+                let runs = results.iter().filter(|one| one.ran()).count();
+                let triggered = results
+                    .iter()
+                    .filter(|one| one.ran() && one.started(skill))
+                    .count();
+                let rate = (runs > 0).then(|| triggered as f64 / runs as f64);
+                let asked = results
+                    .iter()
+                    .filter(|one| one.end == ChatEnd::Asked)
+                    .count();
+                triggers.push(TriggerScore {
+                    query: test.query.clone(),
+                    should_trigger: test.should_trigger,
+                    arm: *arm,
+                    runs: u32::try_from(runs).unwrap_or(u32::MAX),
+                    triggered: u32::try_from(triggered).unwrap_or(u32::MAX),
+                    rate,
+                    pass: rate.map(|rate| (rate >= TRIGGER_THRESHOLD) == test.should_trigger),
+                    chats: results.iter().map(|one| one.chat.clone()).collect(),
+                    asked: u32::try_from(asked).unwrap_or(u32::MAX),
+                });
             }
         }
-    }
 
-    let mut triggers = Vec::new();
-    for (t, test) in request.triggers.iter().enumerate() {
-        for (a, arm) in request.arms.iter().enumerate() {
-            let results = &ran[t][a];
-            let runs = results.iter().filter(|one| one.ran()).count();
-            let triggered = results
-                .iter()
-                .filter(|one| one.ran() && one.started(skill))
-                .count();
-            let rate = (runs > 0).then(|| triggered as f64 / runs as f64);
-            let asked = results
-                .iter()
-                .filter(|one| one.end == ChatEnd::Asked)
-                .count();
-            triggers.push(TriggerScore {
-                query: test.query.clone(),
-                should_trigger: test.should_trigger,
-                arm: *arm,
-                runs: u32::try_from(runs).unwrap_or(u32::MAX),
-                triggered: u32::try_from(triggered).unwrap_or(u32::MAX),
-                rate,
-                pass: rate.map(|rate| (rate >= TRIGGER_THRESHOLD) == test.should_trigger),
-                chats: results.iter().map(|one| one.chat.clone()).collect(),
-                asked: u32::try_from(asked).unwrap_or(u32::MAX),
-            });
-        }
-    }
-
-    let arms: Vec<ArmScore> = request
-        .arms
-        .iter()
-        .enumerate()
-        .map(|(a, arm)| {
-            // Each run's share of the tests that passed in it, over the tests it ran.
-            let per_run: Vec<f64> = (0..usize::from(request.runs))
-                .filter_map(|r| {
-                    let in_run: Vec<bool> = request
-                        .triggers
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(t, test)| {
-                            let one = ran[t][a].get(r).filter(|one| one.ran())?;
-                            Some(one.started(skill) == test.should_trigger)
+        let arms: Vec<ArmScore> = request
+            .arms
+            .iter()
+            .enumerate()
+            .map(|(a, arm)| {
+                // Each run's share of the tests that passed in it, over the tests it ran.
+                let per_run: Vec<f64> = (0..usize::from(request.runs))
+                    .filter_map(|r| {
+                        let in_run: Vec<bool> = request
+                            .triggers
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(t, test)| {
+                                let one = ran[t][a].get(r).filter(|one| one.ran())?;
+                                Some(one.started(skill) == test.should_trigger)
+                            })
+                            .collect();
+                        (!in_run.is_empty()).then(|| {
+                            in_run.iter().filter(|passed| **passed).count() as f64
+                                / in_run.len() as f64
                         })
-                        .collect();
-                    (!in_run.is_empty()).then(|| {
-                        in_run.iter().filter(|passed| **passed).count() as f64 / in_run.len() as f64
                     })
-                })
-                .collect();
-            let all: Vec<&ChatRan> = ran.iter().flat_map(|of_test| of_test[a].iter()).collect();
-            let tokens: Vec<f64> = all
-                .iter()
-                .filter_map(|one| one.tokens)
-                .map(|tokens| tokens as f64)
-                .collect();
-            let seconds: Vec<f64> = all
-                .iter()
-                .filter(|one| one.ran())
-                .map(|one| one.ms as f64 / 1000.0)
-                .collect();
-            let chats = all.iter().filter(|one| one.ran()).count();
-            ArmScore {
-                arm: *arm,
-                pass_rate: Stat::of(&per_run),
-                tokens: Stat::of(&tokens),
-                seconds: Stat::of(&seconds),
-                chats: u32::try_from(chats).unwrap_or(u32::MAX),
-                not_run: u32::try_from(all.len() - chats).unwrap_or(u32::MAX),
+                    .collect();
+                let all: Vec<&ChatRan> =
+                    ran.iter().flat_map(|of_test| of_test[a].iter()).collect();
+                let tokens: Vec<f64> = all
+                    .iter()
+                    .filter_map(|one| one.tokens)
+                    .map(|tokens| tokens as f64)
+                    .collect();
+                let seconds: Vec<f64> = all
+                    .iter()
+                    .filter(|one| one.ran())
+                    .map(|one| one.ms as f64 / 1000.0)
+                    .collect();
+                let chats = all.iter().filter(|one| one.ran()).count();
+                ArmScore {
+                    arm: *arm,
+                    pass_rate: Stat::of(&per_run),
+                    tokens: Stat::of(&tokens),
+                    seconds: Stat::of(&seconds),
+                    chats: u32::try_from(chats).unwrap_or(u32::MAX),
+                    not_run: u32::try_from(all.len() - chats).unwrap_or(u32::MAX),
+                }
+            })
+            .collect();
+
+        let mean_of = |arm: Option<Arm>| {
+            arm.and_then(|arm| arms.iter().find(|one| one.arm == arm))
+                .and_then(|one| one.pass_rate)
+                .map(|stat| stat.mean)
+        };
+        let delta = mean_of(request.graded())
+            .zip(mean_of(request.baseline()))
+            .map(|(with, base)| with - base);
+        self.closed(grader, triggers, arms, delta, failed)
+    }
+
+    /// **The report of these scores, graded by `grader`**, with purlis's own count of what the
+    /// grade spent and the limits it was held to, never a framework's; ended as the grade ended
+    /// (whole where it did not), with why its chats did not start where that ended it, or as
+    /// `failed` says, the sentence of a Grader's question that ended it, whatever else did.
+    fn closed(
+        &self,
+        grader: &str,
+        triggers: Vec<TriggerScore>,
+        arms: Vec<ArmScore>,
+        delta: Option<f64>,
+        failed: Option<String>,
+    ) -> GradeReport {
+        let ended = match &failed {
+            Some(_) => GradeEnd::GraderFailed,
+            None => self.ended.unwrap_or(GradeEnd::Whole),
+        };
+        GradeReport {
+            grader: grader.to_owned(),
+            triggers,
+            arms,
+            delta,
+            ended,
+            not_started: (ended == GradeEnd::ChatsDidNotStart)
+                .then(|| self.not_started.clone())
+                .flatten(),
+            cap: self.cap,
+            spent_tokens: self.spent,
+            cost_cap_usd: self.cost_cap,
+            spent_usd: self.spent_usd,
+            counted_usd: (self.cost_cap.is_some() && self.counted_unpriced)
+                .then_some(self.counted_usd),
+            priced: self.priced.clone(),
+            failed,
+        }
+    }
+
+    /// **A Grader's own scores, `reported`, held to what ran** (#3236): each test one of the
+    /// grade's, in one of its arms, run no more than the plan runs it, each chat it names one
+    /// this grade ran, and each arm once. Its report is then `grader`'s scores with purlis's own
+    /// count of the spend and the limits, ended as purlis saw the grade end (whole where it saw
+    /// no other end), or why it is not one purlis records.
+    pub fn reported(&self, grader: &str, reported: Reported) -> Result<GradeReport, String> {
+        let request = self.request;
+        let triggers: Vec<TriggerScore> = reported.triggers.into_iter().map(Into::into).collect();
+        let arms: Vec<ArmScore> = reported.arms.into_iter().map(Into::into).collect();
+        let ran: Vec<&str> = self.ran().filter_map(|one| one.chat.as_deref()).collect();
+        let mut named: Vec<&str> = Vec::new();
+        for test in &triggers {
+            if !request.arms.contains(&test.arm) {
+                return Err(format!(
+                    "its report scores an arm this grade does not compare ({})",
+                    test.arm.word()
+                ));
             }
-        })
-        .collect();
+            if !request
+                .triggers
+                .iter()
+                .any(|one| one.query == test.query && one.should_trigger == test.should_trigger)
+            {
+                return Err("its report scores a trigger test this grade does not have".to_owned());
+            }
+            for chat in test.chats.iter().flatten() {
+                if !ran.contains(&chat.as_str()) {
+                    return Err("its report names a chat this grade did not run".to_owned());
+                }
+                if named.contains(&chat.as_str()) {
+                    return Err("its report names one chat twice".to_owned());
+                }
+                named.push(chat);
+            }
+        }
+        let mut scored: Vec<Arm> = Vec::new();
+        for arm in &arms {
+            if !request.arms.contains(&arm.arm) || scored.contains(&arm.arm) {
+                return Err(format!(
+                    "its report scores the {} arm twice, or one this grade does not compare",
+                    arm.arm.word()
+                ));
+            }
+            scored.push(arm.arm);
+        }
+        if triggers.len() > request.triggers.len() * request.arms.len() {
+            return Err("its report scores more tests than this grade runs".to_owned());
+        }
+        Ok(self.closed(grader, triggers, arms, reported.delta, None))
+    }
+}
 
-    let mean_of = |arm: Option<Arm>| {
-        arm.and_then(|arm| arms.iter().find(|one| one.arm == arm))
-            .and_then(|one| one.pass_rate)
-            .map(|stat| stat.mean)
-    };
-    let delta = mean_of(request.graded())
-        .zip(mean_of(request.baseline()))
-        .map(|(with, base)| with - base);
+/// **A Grader's grade report**, as its last answer carries it (#3236): its scores, and nothing of
+/// what the grade spent, how it ended or who graded it, which are purlis's to say. Read against
+/// this closed shape, each part of it closed too: a key it does not know refuses it.
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Reported {
+    triggers: Vec<ReportedTest>,
+    arms: Vec<ReportedArm>,
+    delta: Option<f64>,
+}
 
-    GradeReport {
-        grader: BUILT_IN.to_owned(),
-        triggers,
-        arms,
-        delta,
-        ended,
-        not_started: (ended == GradeEnd::ChatsDidNotStart)
-            .then_some(not_started)
-            .flatten(),
-        cap,
-        spent_tokens: spent,
-        cost_cap_usd: cost_cap,
-        spent_usd,
-        counted_usd: (cost_cap.is_some() && counted_unpriced).then_some(counted_usd),
-        priced: limits.and_then(|limits| limits.priced),
+/// A [`TriggerScore`], as a Grader says it.
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReportedTest {
+    query: String,
+    should_trigger: bool,
+    arm: Arm,
+    runs: u32,
+    triggered: u32,
+    rate: Option<f64>,
+    pass: Option<bool>,
+    chats: Vec<Option<String>>,
+    #[serde(default)]
+    asked: u32,
+}
+
+impl From<ReportedTest> for TriggerScore {
+    fn from(test: ReportedTest) -> TriggerScore {
+        let ReportedTest {
+            query,
+            should_trigger,
+            arm,
+            runs,
+            triggered,
+            rate,
+            pass,
+            chats,
+            asked,
+        } = test;
+        TriggerScore {
+            query,
+            should_trigger,
+            arm,
+            runs,
+            triggered,
+            rate,
+            pass,
+            chats,
+            asked,
+        }
+    }
+}
+
+/// An [`ArmScore`], as a Grader says it.
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReportedArm {
+    arm: Arm,
+    pass_rate: Option<ReportedStat>,
+    tokens: Option<ReportedStat>,
+    seconds: Option<ReportedStat>,
+    chats: u32,
+    not_run: u32,
+}
+
+impl From<ReportedArm> for ArmScore {
+    fn from(arm: ReportedArm) -> ArmScore {
+        ArmScore {
+            arm: arm.arm,
+            pass_rate: arm.pass_rate.map(Into::into),
+            tokens: arm.tokens.map(Into::into),
+            seconds: arm.seconds.map(Into::into),
+            chats: arm.chats,
+            not_run: arm.not_run,
+        }
+    }
+}
+
+/// A [`Stat`], as a Grader says it.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReportedStat {
+    mean: f64,
+    stddev: f64,
+    min: f64,
+    max: f64,
+}
+
+impl From<ReportedStat> for Stat {
+    fn from(stat: ReportedStat) -> Stat {
+        Stat {
+            mean: stat.mean,
+            stddev: stat.stddev,
+            min: stat.min,
+            max: stat.max,
+        }
     }
 }
 
