@@ -962,6 +962,46 @@ pub(crate) async fn skill_install_set_review(
     .await
 }
 
+/// **What installing at `level` with `grant` asks of the project skills the reviewed skills
+/// refer to** (#4185, #4172): `already`, the references the review left as they are, each
+/// project skill whose grant the install widens, or which a workspace it reaches turned off.
+/// Asked again each time the grant picked changes, with no second read of the source.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_install_widenings(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    level: SkillLevel,
+    grant: Option<SkillGrant>,
+    already: Vec<String>,
+) -> Result<Vec<SkillWidening>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading where the install reaches", move || {
+        flag_on()?;
+        Ok(widenings_shown(held.root(), &level, grant, &already))
+    })
+    .await
+}
+
+/// [`skill_install_widenings`] for the project at `root`.
+fn widenings_shown(
+    root: &std::path::Path,
+    level: &SkillLevel,
+    grant: Option<SkillGrant>,
+    already: &[String],
+) -> Vec<SkillWidening> {
+    let grant: Option<purlis_core::skills::Grant> = grant.map(Into::into);
+    source::widenings(
+        root,
+        &level.into(),
+        grant.as_ref(),
+        already.iter().map(String::as_str),
+    )
+    .iter()
+    .map(Into::into)
+    .collect()
+}
+
 /// **Installs what was reviewed** at `level`, with `grant` where it is a project skill.
 #[tauri::command]
 #[specta::specta]

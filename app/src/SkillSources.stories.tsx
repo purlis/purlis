@@ -205,6 +205,9 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
           skills: [{ ...DEBUGGING, already: ["test-driven-development"] }],
           accepted: { commit: "3".repeat(40), skills: [] },
         };
+      case "skill_install_widenings":
+        // test-driven-development is the project's, granted to the root alone (#4185).
+        return [{ name: "test-driven-development", granted: "root", added: "ops", turned_off: [] }];
       case "skill_install_set_review": {
         const names = (args as { names: string[] }).names;
         if (tooMuch)
@@ -364,6 +367,27 @@ export const InstallReview: Story = {
     await within(review).findByTestId("install-commit");
     await userEvent.click(within(review).getByRole("button", { name: "Show scripts/repro.sh" }));
     await expect(within(review).getByRole("button", { name: "Install" })).toBeVisible();
+  },
+};
+
+/** **The install review at the project level, granted to ops** (#4185): the grant picked under
+ *  Lands in, and the line saying the install grants the project skill it relies on to ops too. */
+export const InstallReviewGranted: Story = {
+  args: InstallReview.args,
+  play: async ({ canvas }) => {
+    const review = await canvas.findByTestId("install-review");
+    await within(review).findByTestId("install-commit");
+    await userEvent.click(
+      within(review).getByRole("button", { name: /Where systematic-debugging will reach/ }),
+    );
+    await userEvent.click(
+      await within(document.body).findByRole("option", { name: "The root and ops" }),
+    );
+    await expect(await within(review).findByText(/the install grants it to ops too/)).toBeVisible();
+    await expect(within(review).getByRole("button", { name: "Install" })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   },
 };
 

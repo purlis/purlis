@@ -1100,6 +1100,7 @@ export const commands = {
 	skillSourceBrowse: __WINDOW_ONLY_RESULT,
 	skillInstallReview: __WINDOW_ONLY_RESULT,
 	skillInstallSetReview: __WINDOW_ONLY_RESULT,
+	skillInstallWidenings: __WINDOW_ONLY_RESULT,
 	skillInstall: __WINDOW_ONLY_RESULT,
 	skillUpdates: __WINDOW_ONLY_RESULT,
 	skillUpdateReview: __WINDOW_ONLY_RESULT,

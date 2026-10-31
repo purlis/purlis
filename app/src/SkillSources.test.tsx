@@ -19,6 +19,7 @@ import { PLANE, STUDIO_HISTORY, forgetStudio, renderStudio } from "./SkillStudio
 import { AT_THE_ROOT, sourceKey } from "./skillStudio";
 import { openViewAt } from "./ui/panel/viewHistory";
 import { PROJECT } from "./skillChanges";
+import { pickIn } from "./ui/select/select.testkit";
 
 afterEach(() => {
   cleanup();
@@ -683,6 +684,118 @@ describe("the install review", () => {
     const install = asked.find((one) => one.cmd === "skill_install");
     expect(install?.args.level).toEqual(OPS);
     expect(install?.args.reviewed).toEqual(ACCEPTED);
+  });
+
+  it("offers the grant at the project level and says what it widens before Install (#4185)", async () => {
+    const OPS = { at: "workspace", name: "ops", local: false };
+    let widened: (answer: unknown) => void = () => undefined;
+    const asked = core({
+      answers: {
+        skill_studio: () => ({
+          on: true,
+          workspace: null,
+          persona: null,
+          workspaces: ["ops", "web"],
+          levels: [
+            { level: PROJECT, label: "project" },
+            { level: OPS, label: "ops" },
+          ],
+          harnesses: [],
+          clashes: [],
+          skills: [],
+          first: { starts: false, unmoved: null },
+        }),
+        // The project holds notify already, granted to the root alone.
+        skill_install_review: () => ({
+          ...REVIEW,
+          skills: [{ ...REVIEW.skills[0], already: ["notify"] }],
+          accepted: { ...ACCEPTED, skills: [ACCEPTED.skills[0]] },
+        }),
+        skill_install_widenings: () =>
+          new Promise((resolve) => {
+            widened = resolve;
+          }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
+    const review = await screen.findByTestId("install-review");
+    expect(await within(review).findByTestId("already-deploy-notify")).toHaveTextContent(
+      "It refers to notify, which its chats there have already: it is left as it is.",
+    );
+    // The root's grant widens nothing, so nothing is asked.
+    expect(did(asked, "skill_install_widenings")).toBe(false);
+
+    await pickIn(
+      await within(review).findByLabelText("Where deploy will reach"),
+      "The root and ops",
+      user,
+    );
+    await waitFor(() => expect(did(asked, "skill_install_widenings")).toBe(true));
+    expect(asked.find((one) => one.cmd === "skill_install_widenings")?.args).toEqual({
+      plane: PLANE,
+      level: PROJECT,
+      grant: { to: "only", workspaces: ["ops"] },
+      already: ["notify"],
+    });
+    // Install waits until what it widens is shown.
+    const install = within(review).getByRole("button", { name: "Install" });
+    expect(install).toHaveAttribute("aria-disabled", "true");
+    widened([{ name: "notify", granted: "root", added: "ops", turned_off: ["web"] }]);
+    const line = await within(review).findByText(/which is granted to root/);
+    expect(within(review).getByTestId("already-deploy-notify")).toHaveTextContent(
+      "It refers to notify, which is granted to root: it is left as it is, and the install grants it to ops too.",
+    );
+    expect(line).toBeInTheDocument();
+    expect(within(review).getByTestId("already-deploy-notify")).toHaveTextContent(
+      "web turned notify off, so its chats get deploy without it.",
+    );
+    await waitFor(() => expect(install).not.toHaveAttribute("aria-disabled", "true"));
+    await user.click(install);
+    await waitFor(() => expect(did(asked, "skill_install")).toBe(true));
+    expect(asked.find((one) => one.cmd === "skill_install")?.args.grant).toEqual({
+      to: "only",
+      workspaces: ["ops"],
+    });
+  });
+
+  it("offers no grant where the install lands in a workspace, and installs with none (#4185)", async () => {
+    const OPS = { at: "workspace", name: "ops", local: false };
+    const asked = core({
+      answers: {
+        skill_studio: () => ({
+          on: true,
+          workspace: null,
+          persona: null,
+          workspaces: ["ops"],
+          levels: [
+            { level: PROJECT, label: "project" },
+            { level: OPS, label: "ops" },
+          ],
+          harnesses: [],
+          clashes: [],
+          skills: [],
+          first: { starts: false, unmoved: null },
+        }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
+    const review = await screen.findByTestId("install-review");
+    expect(await within(review).findByLabelText("Where deploy will reach")).toBeInTheDocument();
+    await user.click(within(review).getByRole("radio", { name: "ops" }));
+    await waitFor(() =>
+      expect(within(review).queryByLabelText("Where deploy will reach")).toBeNull(),
+    );
+    await user.click(await within(review).findByRole("button", { name: "Install" }));
+    await waitFor(() => expect(did(asked, "skill_install")).toBe(true));
+    const install = asked.find((one) => one.cmd === "skill_install");
+    expect(install?.args.level).toEqual(OPS);
+    expect(install?.args.grant).toBeNull();
   });
 
   it("holds Install, saying why, until the review is read, and Cancel goes back", async () => {

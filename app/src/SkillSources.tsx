@@ -27,6 +27,7 @@ import { counted } from "./dispatches";
 import { Notice, type NoticeAction } from "./Notice";
 import { Choice, Field, SettingRow } from "./settings/components";
 import { labelOf, picking, sameLevel } from "./skillChanges";
+import { GrantPicker } from "./SkillLevelPickers";
 import { NotRead, ReadingRows } from "./SkillPanels";
 import { sourceKey, type SourcesAt } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
@@ -59,7 +60,9 @@ import { ReviewPage } from "./ui/review-page/ReviewPage";
  *   available, or with what its files do ("runs a script", "reaches 1 host"), with Check for
  *   updates and Remove source…, which keeps every skill installed from it.
  * - **The install review**: the pinned commit, what each skill adds with the risky items marked,
- *   each file one click away under its own mark, and where it lands, with Install at the foot.
+ *   each file one click away under its own mark, and where it lands, with Install at the foot. At
+ *   the project level it is granted there too, the root's until the person picks another, and
+ *   says which project skill it relies on that grant widens (#4185, #4172).
  * - **Install all…** (#4024): the source's skills ticked, every one not installed yet, to untick
  *   and narrow; then one review of those ticked, where they land chosen once at its top, each
  *   skill's risky items marked and its files read when it is unfolded, and one Install for all of
@@ -263,6 +266,7 @@ export function SkillSourcesPage({
   stillAt,
   onOpenSkill,
   levels,
+  workspaces,
   start,
   busy,
   change,
@@ -280,6 +284,8 @@ export function SkillSourcesPage({
   /** Opens an installed skill in the Library. */
   onOpenSkill: (name: string) => void;
   levels: readonly StudioLevel[];
+  /** The project's workspaces, which an install at the project level may be granted to. */
+  workspaces: readonly string[];
   /** The level an install lands at unless the person picks another: where they came from. */
   start: SkillLevel;
   busy: boolean;
@@ -376,16 +382,17 @@ export function SkillSourcesPage({
         source={sourceAt}
         named={at.skills}
         levels={levels}
+        workspaces={workspaces}
         start={start}
         busy={busy}
         // Back to the list as it was ticked.
         onCancel={() =>
           onGo({ at: "choose", source: at.source, label: at.label, ticked: at.skills })
         }
-        onInstall={(review, level) =>
+        onInstall={(review, level, grant) =>
           changeThen(
             "The skills were not installed",
-            () => commands.skillInstall(plane, sourceAt, level, review.accepted, null),
+            () => commands.skillInstall(plane, sourceAt, level, review.accepted, grant),
             toSource(at),
           )
         }
@@ -398,13 +405,14 @@ export function SkillSourcesPage({
         source={sourceAt}
         name={at.skill}
         levels={levels}
+        workspaces={workspaces}
         start={start}
         busy={busy}
         onCancel={() => onGo(toSource(at))}
-        onInstall={(review, level) =>
+        onInstall={(review, level, grant) =>
           changeThen(
             "The skill was not installed",
-            () => commands.skillInstall(plane, sourceAt, level, review.accepted, null),
+            () => commands.skillInstall(plane, sourceAt, level, review.accepted, grant),
             toSource(at),
           )
         }
@@ -1125,6 +1133,96 @@ function Relies({
   );
 }
 
+/** The grant an install starts with: chats at the project's root alone (ADR 0100 §2). */
+const ROOT: SkillGrant = { to: "root" };
+
+/** Whether an install at `level` is granted: one into the project's shared skills alone. */
+function grantedAt(level: SkillLevel): boolean {
+  return level.at === "project" && !level.local;
+}
+
+/**
+ * **Where an install reaches** (#4185, ADR 0100 §2): the grant picked in its review, the root's
+ * until the person picks another, at the project level alone; and what it asks of the project
+ * skills `review` relies on (#4172), asked again each time the grant changes, never the source.
+ * Install waits for that answer, so what it widens is shown before it is pressed.
+ */
+function useInstallGrant(plane: string, level: SkillLevel, review: InstallReview | undefined) {
+  const [grant, setGrant] = useState<SkillGrant>(ROOT);
+  const asks = grantedAt(level);
+  const already = [...new Set(review?.skills.flatMap((skill) => skill.already) ?? [])];
+  // Nothing beyond the root is widened, so only a grant past it asks.
+  const asked = review !== undefined && asks && grant.to !== "root" && already.length > 0;
+  const { read, again } = useRead(
+    asked
+      ? `${JSON.stringify(level)}\u0000${JSON.stringify(grant)}\u0000${already.join("\u0000")}`
+      : undefined,
+    () => commands.skillInstallWidenings(plane, level, grant, already),
+  );
+  return {
+    /** The grant Install hands the core: none where it is not a project install. */
+    grant: asks ? grant : null,
+    picked: grant,
+    asks,
+    setGrant,
+    /** What it widens; none while it is read, or where it could not be. */
+    widenings: asked ? read?.data : [],
+    /** Why Install waits on it, if it does. */
+    why: !asked
+      ? undefined
+      : read === undefined
+        ? "Where it reaches is being read."
+        : read.refused !== undefined
+          ? "Where it reaches could not be read."
+          : undefined,
+    read: asked ? read : undefined,
+    again,
+  };
+}
+
+/** The grant row of an install review at the project level, and why what it widens was unread. */
+function InstallGrant({
+  label,
+  workspaces,
+  busy,
+  reach,
+}: {
+  /** The picker's name: "Where deploy will reach". */
+  label: string;
+  workspaces: readonly string[];
+  busy: boolean;
+  reach: ReturnType<typeof useInstallGrant>;
+}) {
+  if (!reach.asks) return null;
+  return (
+    <>
+      <SettingRow
+        label="Reaches"
+        grouped
+        help="A project skill reaches only the chats its grant names. Change it afterwards from the Library."
+        control={() => (
+          <GrantPicker
+            label={label}
+            workspaces={workspaces}
+            now={reach.picked}
+            disabled={busy}
+            onPick={reach.setGrant}
+          />
+        )}
+      />
+      {reach.read?.refused !== undefined && (
+        <NotRead
+          what="where the install reaches"
+          why={reach.read.refused}
+          onAgain={reach.again}
+          testid="install-reach-unread"
+          size="sm"
+        />
+      )}
+    </>
+  );
+}
+
 /** One skill of a review: what it adds first, then every file under its mark, each readable.
  *  In a review of many (#4024) its box to leave it out comes first, and its files are folded
  *  under one line, read when it is unfolded. */
@@ -1225,6 +1323,7 @@ function InstallReviewPage({
   source,
   name,
   levels,
+  workspaces,
   start,
   busy,
   onCancel,
@@ -1234,10 +1333,11 @@ function InstallReviewPage({
   source: SkillSource;
   name: string;
   levels: readonly StudioLevel[];
+  workspaces: readonly string[];
   start: SkillLevel;
   busy: boolean;
   onCancel: () => void;
-  onInstall: (review: InstallReview, level: SkillLevel) => void;
+  onInstall: (review: InstallReview, level: SkillLevel, grant: SkillGrant | null) => void;
 }) {
   const [level, setLevel] = useState<SkillLevel>(start);
   // Read again where it lands changes: a skill it refers to that the level holds already is
@@ -1253,6 +1353,7 @@ function InstallReviewPage({
     level,
   );
   const review = read?.data;
+  const reach = useInstallGrant(plane, level, review);
   const risky = review?.skills.reduce((n, skill) => n + skill.summary.marked, 0) ?? 0;
   const why =
     read === undefined
@@ -1261,7 +1362,7 @@ function InstallReviewPage({
         ? "The review could not be read."
         : busy
           ? BUSY
-          : undefined;
+          : reach.why;
   return (
     <ReviewPage
       label={`Install ${name} from ${source.label}`}
@@ -1274,7 +1375,7 @@ function InstallReviewPage({
         isDisabled: why !== undefined,
         tooltip: why,
         onPress: () => {
-          if (review !== undefined) onInstall(review, level);
+          if (review !== undefined) onInstall(review, level, reach.grant);
         },
       }}
     >
@@ -1299,6 +1400,12 @@ function InstallReviewPage({
           />
         )}
       />
+      <InstallGrant
+        label={`Where ${name} will reach`}
+        workspaces={workspaces}
+        busy={busy}
+        reach={reach}
+      />
       <Held read={read} what={`the review of ${name}`} again={again}>
         {(data) => (
           <>
@@ -1311,7 +1418,7 @@ function InstallReviewPage({
               runs, and the chat&apos;s sandbox bounds that. Installing copies all of them or none.
             </p>
             {data.skills.map((skill) => (
-              <SkillReviewed key={skill.name} skill={skill} />
+              <SkillReviewed key={skill.name} skill={skill} widenings={reach.widenings} />
             ))}
           </>
         )}
@@ -1508,6 +1615,7 @@ function InstallSetReviewPage({
   source,
   named,
   levels,
+  workspaces,
   start,
   busy,
   onCancel,
@@ -1518,10 +1626,11 @@ function InstallSetReviewPage({
   /** The skills ticked on the list, in its order. */
   named: readonly string[];
   levels: readonly StudioLevel[];
+  workspaces: readonly string[];
   start: SkillLevel;
   busy: boolean;
   onCancel: () => void;
-  onInstall: (review: InstallReview, level: SkillLevel) => void;
+  onInstall: (review: InstallReview, level: SkillLevel, grant: SkillGrant | null) => void;
 }) {
   // Those still in this install: unticking one here leaves it out and reads the review again.
   const [names, setNames] = useState<readonly string[]>(named);
@@ -1542,6 +1651,7 @@ function InstallSetReviewPage({
   );
   const answer: InstallSetReview | undefined = read?.data;
   const review = answer?.kind === "review" ? answer.review : undefined;
+  const reach = useInstallGrant(plane, level, review);
   // A skill left out that another brings along is in the review, and is not listed as left out.
   const leftOut = named.filter(
     (name) => !names.includes(name) && !review?.skills.some((one) => one.name === name),
@@ -1560,7 +1670,7 @@ function InstallSetReviewPage({
               ? `Every skill ticked is in the ${labelOf(levels, level)} skills already.`
               : busy
                 ? BUSY
-                : undefined;
+                : reach.why;
   const risky = review === undefined ? 0 : riskyIn(review);
   return (
     <ReviewPage
@@ -1574,7 +1684,7 @@ function InstallSetReviewPage({
         isDisabled: why !== undefined,
         tooltip: why,
         onPress: () => {
-          if (review !== undefined) onInstall(review, level);
+          if (review !== undefined) onInstall(review, level, reach.grant);
         },
       }}
     >
@@ -1600,6 +1710,12 @@ function InstallSetReviewPage({
             }}
           />
         )}
+      />
+      <InstallGrant
+        label="Where they will reach"
+        workspaces={workspaces}
+        busy={busy}
+        reach={reach}
       />
       {names.length === 0 ? (
         <EmptyState
@@ -1654,6 +1770,7 @@ function InstallSetReviewPage({
                     key={skill.name}
                     skill={skill}
                     folded
+                    widenings={reach.widenings}
                     pick={
                       <Checkbox
                         isSelected
