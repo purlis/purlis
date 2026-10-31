@@ -275,6 +275,8 @@
 [data-scope="notice-row"][data-part="stack"] {
   --notice-row-fade: calc(var(--space-4) * 3);
   --notice-row-ground: var(--surface-base);
+  /* The keyboard brought to a way out stops clear of the fade (WCAG 2.4.11). */
+  scroll-padding-block: var(--notice-row-fade);
 }
 
 [data-scope="notice-row"][data-part="stack"]::before,
