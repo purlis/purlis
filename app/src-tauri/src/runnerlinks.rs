@@ -802,7 +802,7 @@ pub fn for_a_runner_of(
     })
 }
 
-/// `kept`, held to what a runner speaking `version` stages: one before 1.63 stages no more than
+/// `kept`, held to what a runner speaking `version` stages: one before 1.64 stages no more than
 /// it did, whatever its pool's limit says (spec #4275).
 fn as_its_runner_holds(
     version: purlis_session_protocol::version::Version,

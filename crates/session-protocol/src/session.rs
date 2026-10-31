@@ -1409,14 +1409,14 @@ pub const MOST_PROFILE_SETTINGS_BYTES: usize = 128 * 1024 * 1024;
 /// **The most settings files a runner holds for one profile** (#4081, D-4081-2).
 pub const MOST_PROFILE_SETTINGS_FILES: usize = 8192;
 
-/// **The most bytes of settings a runner of 1.63 or later stages from its desktop on one link**
+/// **The most bytes of settings a runner of 1.64 or later stages from its desktop on one link**
 /// (spec #4275): the most a pool's limit can be, 1 GiB, and room for a file rewritten without its
 /// credentials to come out longer. The pool's limit itself is the desktop's, and only the paired
 /// desktop stages settings. What a runner tells its desktop it holds stays within
 /// [`MOST_PROFILE_SETTINGS_BYTES`] and [`MOST_PROFILE_SETTINGS_FILES`].
 pub const MOST_PROFILE_SETTINGS_STAGED_BYTES: usize = 1032 * 1024 * 1024;
 
-/// **The most settings files a runner of 1.63 or later stages on one link** (spec #4275).
+/// **The most settings files a runner of 1.64 or later stages on one link** (spec #4275).
 pub const MOST_PROFILE_SETTINGS_STAGED_FILES: usize = 65_536;
 
 /// The longest path of a settings file a runner holds, the most a path names on Linux.

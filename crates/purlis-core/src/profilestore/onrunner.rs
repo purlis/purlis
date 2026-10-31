@@ -141,7 +141,7 @@ impl Kept {
         self
     }
 
-    /// This profile, going to a runner before 1.63, which stages no more than it did.
+    /// This profile, going to a runner before 1.64, which stages no more than it did.
     #[must_use]
     pub fn on_an_older_runner(mut self) -> Self {
         self.highest = highest_on_an_older_runner();
@@ -217,14 +217,14 @@ pub struct ToKeep {
     pub batches: Vec<purlis_session_protocol::session::SettingsBatch>,
 }
 
-/// What the read of a profile leaves of what a runner before 1.63 stages, as it counts it: a
+/// What the read of a profile leaves of what a runner before 1.64 stages, as it counts it: a
 /// settings file rewritten without its credentials can come out longer than it went in.
 const REWRITING_ROOM: usize = 8 * 1024 * 1024;
 
 /// What a mebibyte of a pool's limit is, in bytes.
 const MIB: u64 = 1024 * 1024;
 
-/// What a runner before 1.63 stages, as the highest of a pool's limits there.
+/// What a runner before 1.64 stages, as the highest of a pool's limits there.
 #[must_use]
 pub fn highest_on_an_older_runner() -> Chosen {
     Chosen::default()
