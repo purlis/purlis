@@ -562,8 +562,10 @@ function Chip({
               onPointerCancel={() => {
                 pressedFrom.current = undefined;
               }}
-              // A press by any pointer, or a screen reader's, which sends none.
-              onPress={() => {
+              // A press by any pointer, or a screen reader's, which sends none and lands where
+              // the keyboard's own open does (#4304).
+              onPress={(event) => {
+                const opened = event.pointerType === "virtual" ? "keys" : "press";
                 const from = pressedFrom.current ?? document.activeElement;
                 pressedFrom.current = undefined;
                 notResting();
@@ -571,11 +573,11 @@ function Chip({
                 if (dragging()) return;
                 if (open && by.current === "rest") {
                   // A press on a menu the rest opened keeps it, and gives it the keyboard.
-                  by.current = "press";
-                  setHow("press");
+                  by.current = opened;
+                  setHow(opened);
                   content.current?.focus({ preventScroll: true });
                 } else if (open) hide();
-                else show("press", from === trigger.current ? null : from);
+                else show(opened, from === trigger.current ? null : from);
               }}
               // Coming on arms nothing (see `TabTasks`): it is only where the pointer is.
               onPointerEnter={(event) => {
