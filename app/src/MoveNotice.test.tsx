@@ -6,7 +6,14 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ChatMove, PoolSignInStep } from "./bindings";
-import { chatMovesOf, forgetMove, heardMove } from "./chatMoves";
+import {
+  chatMovesOf,
+  dismissMovedAfterSignIn,
+  forgetMove,
+  heardMove,
+  movedAfterSignIn,
+  putAwayMove,
+} from "./chatMoves";
 import { MoveNotice } from "./MoveNotice";
 import { PROFILE_SIGN_IN, type ProfileSignInAsk } from "./settings/links";
 
@@ -67,6 +74,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   forgetMove(PLANE, 3);
+  dismissMovedAfterSignIn(PLANE, 8);
   clearMocks();
 });
 
@@ -242,5 +250,41 @@ describe("a move waiting on its profile's sign-in", () => {
     await waitFor(() => expect(chatMovesOf(PLANE)[3]).toBeUndefined());
     expect(chatMovesOf(PLANE)[4]?.stage).toBe("failed");
     forgetMove(PLANE, 4);
+  });
+
+  it("says the chat moved once a move that waited on a sign-in was made, until dismissed (#4135)", async () => {
+    act(() => {
+      heardMove(PLANE, waiting());
+      heardMove(PLANE, { ...waiting(), stage: "switching", sign_in: null });
+      // The core's `over` can come before the answer to the switch.
+      heardMove(PLANE, { ...waiting(), stage: "over", sign_in: null });
+      movedAfterSignIn(PLANE, 3, 8);
+    });
+    render(<MoveNotice plane={PLANE} session={8} />);
+    expect(await screen.findByText("Moved to pool builds.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /dismiss/i }));
+    expect(screen.queryByText("Moved to pool builds.")).toBeNull();
+  });
+
+  it("says nothing of a move that was put away, here or from another tab (#4135)", () => {
+    act(() => {
+      heardMove(PLANE, waiting());
+      putAwayMove(PLANE, 3);
+      movedAfterSignIn(PLANE, 3, 8);
+      heardMove(PLANE, waiting());
+      heardMove(PLANE, { ...waiting(), stage: "over", sign_in: null });
+      movedAfterSignIn(PLANE, 3, 8);
+    });
+    render(<MoveNotice plane={PLANE} session={8} />);
+    expect(screen.queryByText(/^Moved to/)).toBeNull();
+  });
+
+  it("says nothing of a move that never waited on a sign-in (#4135)", () => {
+    act(() => {
+      heardMove(PLANE, { ...waiting(), stage: "ready", sign_in: null });
+      movedAfterSignIn(PLANE, 3, 8);
+    });
+    render(<MoveNotice plane={PLANE} session={8} />);
+    expect(screen.queryByText(/^Moved to/)).toBeNull();
   });
 });

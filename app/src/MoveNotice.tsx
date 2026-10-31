@@ -4,12 +4,15 @@
 import { useState } from "react";
 import type { MoveSignIn, PlaneId, PlanRow } from "./bindings";
 import {
+  dismissMovedAfterSignIn,
   forgetMove,
   moveCancellable,
   moveSaid,
+  placeSaid,
   putAwayMove,
   signedInForMove,
   useChatMoves,
+  useMovedAfterSignIn,
 } from "./chatMoves";
 import { Notice, type NoticeAction } from "./Notice";
 import { askProfileSignIn } from "./settings/links";
@@ -28,11 +31,23 @@ import { PoolSignIn, approvesIn, drivenPlan } from "./settings/PoolSignIn";
  * serves several plans is asked which, as a pool's line asks it (#4181). Once the strip
  * says signed in, the core is told, asks the runner itself, and the move goes ahead by itself;
  * Try the move tells it the same after a sign-in elsewhere (Open in terminal). The strip's Cancel,
- * like Cancel move, cancels the move, and the chat stays here.
+ * like Cancel move, cancels the move, and the chat stays here. Having gone ahead by itself, it
+ * says it moved, until that is dismissed (#4135).
  */
 export function MoveNotice({ plane, session }: { plane: PlaneId; session: number }) {
   const one = useChatMoves(plane)[session];
-  if (one === undefined) return null;
+  const movedTo = useMovedAfterSignIn(plane, session);
+  if (one === undefined)
+    return movedTo === undefined ? null : (
+      <Notice
+        cause={`chat-moved:${session}`}
+        at="pane"
+        label="Move"
+        onDismiss={() => dismissMovedAfterSignIn(plane, session)}
+      >
+        {`Moved to ${placeSaid(movedTo)}.`}
+      </Notice>
+    );
   const said = moveSaid(one);
   if (said.trouble)
     return (

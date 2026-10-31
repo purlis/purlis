@@ -45,6 +45,18 @@ function subscribe(listener: () => void) {
 
 const NONE: Readonly<Record<number, ChatMove>> = {};
 
+/**
+ * **The moves that waited on a sign-in, by chat, and the pool each goes to** (#4135): a move that
+ * then goes ahead by itself can be missed, so its chat says it moved. Taken when the move is made
+ * ({@link movedAfterSignIn}); a move put away or failed leaves nothing here.
+ */
+const waitedOnASignIn = new Map<string, string>();
+const waitKey = (plane: PlaneId, session: number) => `${plane}\0${session}`;
+
+/** **The chats that moved after waiting on a sign-in**, each with its pool, until dismissed. */
+let movedAfterWait: Readonly<Record<string, Readonly<Record<number, string>>>> = {};
+const NOT_MOVED: Readonly<Record<number, string>> = {};
+
 /** Every chat move of `plane`, by session. */
 export function useChatMoves(plane: PlaneId): Readonly<Record<number, ChatMove>> {
   return useSyncExternalStore(subscribe, () => held[plane] ?? NONE);
@@ -60,10 +72,16 @@ export function chatMovesOf(plane: PlaneId): Readonly<Record<number, ChatMove>> 
  * put away, from this tab or another of its workspace (#3814).
  */
 export function heardMove(plane: PlaneId, told: ChatMove) {
+  const key = waitKey(plane, told.session);
   if (told.stage === "over") {
+    // `over` says the same of a move made and one put away. Only one being made has switched, and
+    // the answer to its switch may come after this.
+    if (held[plane]?.[told.session]?.stage !== "switching") waitedOnASignIn.delete(key);
     forgetMove(plane, told.session);
     return;
   }
+  if (told.stage === "failed") waitedOnASignIn.delete(key);
+  if (told.stage === "signing-in" && told.to !== null) waitedOnASignIn.set(key, told.to);
   set(plane, (was) => ({ ...was, [told.session]: told }));
 }
 
@@ -75,6 +93,36 @@ export function forgetMove(plane: PlaneId, session: number) {
       Object.entries(was).filter(([one]) => Number(one) !== session),
     ) as Record<number, ChatMove>;
   });
+}
+
+/**
+ * **Chat `was` moved and is now chat `now`** (#4135): where its move waited on a sign-in, the chat
+ * says it moved, since it went ahead by itself.
+ */
+export function movedAfterSignIn(plane: PlaneId, was: number, now: number) {
+  const key = waitKey(plane, was);
+  const pool = waitedOnASignIn.get(key);
+  if (pool === undefined) return;
+  waitedOnASignIn.delete(key);
+  movedAfterWait = {
+    ...movedAfterWait,
+    [plane]: { ...movedAfterWait[plane], [now]: pool },
+  };
+  for (const one of listeners) one();
+}
+
+/** The pool chat `session` moved to after waiting on a sign-in, until that is dismissed. */
+export function useMovedAfterSignIn(plane: PlaneId, session: number): string | undefined {
+  return useSyncExternalStore(subscribe, () => (movedAfterWait[plane] ?? NOT_MOVED)[session]);
+}
+
+/** Dismisses what chat `session` says of having moved. */
+export function dismissMovedAfterSignIn(plane: PlaneId, session: number) {
+  const left = Object.entries(movedAfterWait[plane] ?? NOT_MOVED).filter(
+    ([one]) => Number(one) !== session,
+  );
+  movedAfterWait = { ...movedAfterWait, [plane]: Object.fromEntries(left) };
+  for (const one of listeners) one();
 }
 
 /**
@@ -149,7 +197,10 @@ async function readBackMoves(plane: PlaneId) {
   if (read.status !== "ok") return;
   const holds = new Set(read.data.map((one) => one.session));
   for (const one of Object.values(chatMovesOf(plane)))
-    if (one.stage !== "failed" && !holds.has(one.session)) forgetMove(plane, one.session);
+    if (one.stage !== "failed" && !holds.has(one.session)) {
+      waitedOnASignIn.delete(waitKey(plane, one.session));
+      forgetMove(plane, one.session);
+    }
   for (const one of read.data) heardMove(plane, one);
 }
 
@@ -159,6 +210,7 @@ async function readBackMoves(plane: PlaneId) {
  * is read back, so its tab says so again (#3814).
  */
 export function putAwayMove(plane: PlaneId, session: number) {
+  waitedOnASignIn.delete(waitKey(plane, session));
   forgetMove(plane, session);
   void commands
     .putAwayChatMove(plane, session)
