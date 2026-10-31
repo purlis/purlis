@@ -371,7 +371,10 @@
   box-sizing: border-box;
   max-inline-size: 100%;
   block-size: var(--size-control);
-  padding: var(--space-1);
+  /* Its padding is the length a segment's press reaches back through (below, #4173): a theme's
+     padding is written into both (`purlis_core::theme::parts`). */
+  --segment-reach: var(--space-1);
+  padding: var(--segment-reach);
   /* A control's corner (8 in Purlis, #3113). */
   border-radius: var(--radius-control);
   color: var(--text-primary);
@@ -409,7 +412,7 @@
 [data-scope="segment"][data-part="root"]::after {
   content: "";
   position: absolute;
-  inset-block: calc(-1 * var(--space-1));
+  inset-block: calc(-1 * var(--segment-reach));
   inset-inline: 0;
 }
 
@@ -469,14 +472,15 @@
   display: contents;
 }
 
-/* Where a press lands: as tall as the thumb. */
+/* Where a press lands: the 24px target (#4173, WCAG 2.5.8), the sm button's floor. The track and
+   the thumb are centred in it, so it is no taller to the eye than the thumb. */
 [data-scope="slider"][data-part="area"] {
   position: relative;
   display: flex;
   flex: 1 1 calc(var(--space-8) * 4);
   align-items: center;
   min-inline-size: calc(var(--space-8) * 2);
-  block-size: calc(var(--size-control) / 2);
+  block-size: max(24px, var(--size-chrome), var(--space-7));
 }
 
 /* The line it moves along, 4px tall. */
