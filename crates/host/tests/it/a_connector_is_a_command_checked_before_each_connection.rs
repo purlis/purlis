@@ -98,3 +98,49 @@ async fn a_check_refusing_the_far_ends_key_is_told_as_a_changed_key_and_runs_not
     }
     assert!(!ran.exists());
 }
+
+/// **A runner removed outside purlis is not linked to again** (#4149): its check finds Docker
+/// lists no container of its id, so the kept link says it is down as gone, once, and ends,
+/// never trying the check again as it would for a runner that is only away.
+#[tokio::test]
+async fn a_check_finding_the_runner_gone_is_told_once_and_never_tried_again() {
+    use purlis_host::NotChecked;
+    use purlis_session_protocol::hostlink::{
+        self, Handshake, Identity, LinkKey, Linked, Liveness, Pinned,
+    };
+    let checks = Arc::new(AtomicUsize::new(0));
+    let connector = CommandConnector::checked("/bin/cat", Vec::new(), {
+        let checks = Arc::clone(&checks);
+        Arc::new(move || {
+            checks.fetch_add(1, Ordering::SeqCst);
+            Err(NotChecked::Gone(
+                "runner first was removed outside purlis".to_owned(),
+            ))
+        })
+    });
+    let mut links = hostlink::keep_linked(
+        connector,
+        Handshake::THIS_BUILD,
+        Identity {
+            device: "01JA0DESKT0P00000000000000".into(),
+            key: LinkKey::generate().unwrap(),
+        },
+        Pinned {
+            device: "01JB0RUNNER000000000000000".into(),
+            key: LinkKey::generate().unwrap().public(),
+        },
+        Liveness::default(),
+    );
+    match links.next().await {
+        Some(Linked::Down(down)) => {
+            assert!(down.gone, "{down:?}");
+            assert!(!down.key_changed, "{down:?}");
+            assert!(down.why.contains("removed outside purlis"), "{down:?}");
+        }
+        _ => panic!("the link came up"),
+    }
+    // Seen red: before #4149 the link was tried again after each pause, forever.
+    let next = tokio::time::timeout(std::time::Duration::from_secs(2), links.next()).await;
+    assert!(matches!(next, Ok(None)), "the kept link went on");
+    assert_eq!(checks.load(Ordering::SeqCst), 1);
+}

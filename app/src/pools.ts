@@ -10,6 +10,7 @@ import {
   type PoolAdding,
   type PoolLink,
   type PoolProfiles as PoolProfilesAnswered,
+  type PoolRemoved,
   type PoolVersion,
   type PoolsShown,
   type RunnerImageOffered,
@@ -42,6 +43,10 @@ import {
  * read ({@link checkClusterPoolKey}) and shown for the person to check before Add pool pins it
  * ({@link addClusterPool}). Its runner keeps none of this machine's profiles: it is a team's
  * cluster's, so adding one ends with nothing to sign in.
+ *
+ * **A runner removed outside purlis is made again on the person's word** ({@link
+ * makeRunnerAgain}, #4149): its row, and the Notice of a refused start, offer Make the runner
+ * again, which ends as adding a pool does, with its profiles kept there again.
  */
 type Read =
   | { state: "reading" }
@@ -65,6 +70,10 @@ export type Held = {
   added: string | undefined;
   /** The pool being removed, while it is. */
   removing: string | undefined;
+  /** The pool whose runner is being made again, while it is (#4149). */
+  remaking: string | undefined;
+  /** What Make the runner again did, by the pool's name, for its row to say (#4149). */
+  remade: Readonly<Record<string, string>>;
   /** Why the last removal was refused, or what it left, in the core's words. */
   said: string | undefined;
 };
@@ -81,6 +90,8 @@ const START: Held = {
   profiles: {},
   added: undefined,
   removing: undefined,
+  remaking: undefined,
+  remade: {},
   said: undefined,
 };
 let held: Held = START;
@@ -358,4 +369,50 @@ export async function removePool(name: string): Promise<string | undefined> {
   });
   await rereadPools();
   return left;
+}
+
+/** **The Docker pools whose runner was removed outside purlis** (#4149): what a refused start's
+ *  Notice offers to make again. None where purlis could not ask. */
+export async function readRemovedPools(): Promise<readonly PoolRemoved[]> {
+  const said = await caught(commands.dockerPoolsRemoved());
+  return said.status === "ok" && Array.isArray(said.data) ? said.data : [];
+}
+
+/** What a Notice says of a runner removed outside purlis (#4149), by whether its home is still
+ *  there. */
+export function removedSaid(name: string, homeKept: boolean): string {
+  return homeKept
+    ? `Pool ${name}'s runner was removed outside purlis: Docker has no container of its id, so purlis no longer links to it. If Docker now points at another engine, point it back instead. Its home is still there: Make the runner again makes a runner from the pool's image and limits, with the sign-ins kept there.`
+    : `Pool ${name}'s runner was removed outside purlis: Docker has no container of its id, so purlis no longer links to it. If Docker now points at another engine, point it back instead. Its home went too, and with it the sign-ins kept there: Make the runner again makes a runner from the pool's image and limits, whose profiles you sign in again.`;
+}
+
+/** What a row says once its runner was made again, by whether its sign-ins were carried. */
+export function madeAgainSaid(name: string, signInsKept: boolean): string {
+  return signInsKept
+    ? `Pool ${name}'s runner was made again, with its sign-ins.`
+    : `Pool ${name}'s runner was made again: sign its profiles in again there.`;
+}
+
+/**
+ * **Make the runner again** (#4149): pool `name`'s runner, removed outside purlis, made again
+ * from the pool's own image and limits, with the sign-ins of its home where that is still there,
+ * and paired. Then
+ * its link and version are asked again and it keeps the pool's profiles again, as after Add a
+ * pool, for the open project `plane`. `undefined` once it is made, else why not.
+ */
+export async function makeRunnerAgain(name: string, plane?: string): Promise<string | undefined> {
+  if (held.remaking !== undefined)
+    return `purlis is making pool ${held.remaking}'s runner again: try ${name} once it is done.`;
+  set((was) => ({ ...was, remaking: name }));
+  const said = await caught(commands.dockerPoolMakeAgain(name));
+  const why = said.status === "error" ? said.error : undefined;
+  set((was) => {
+    const remade = { ...was.remade };
+    if (said.status === "ok") remade[name] = madeAgainSaid(name, said.data.sign_ins_kept);
+    else Reflect.deleteProperty(remade, name);
+    return { ...was, remaking: undefined, remade };
+  });
+  if (why !== undefined) return why;
+  await Promise.all([askLink(name), askVersion(name), askProfiles(name, plane)]);
+  return undefined;
 }

@@ -657,6 +657,7 @@ fn a_link_that_is_down_says_why_safely_in_the_pools_settings() {
     let changed = purlis_session_protocol::hostlink::Down {
         why: "anything".to_owned(),
         key_changed: true,
+        gone: false,
     };
     assert_eq!(link_of(changed), PoolLink::KeyChanged);
 }

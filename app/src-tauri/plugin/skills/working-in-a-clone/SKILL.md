@@ -96,6 +96,10 @@ purlis worktree remove <repo> <piece>  # once merged: the app removes the folder
 - `purlis worktree commit` is for a sandboxed chat. A chat outside the sandbox, such as a
   terminal `claude`, is told to use git: it commits with plain `git commit` in the piece, and
   pushes with `git push` or `purlis worktree push`.
+- **A piece has one live writer.** The first chat to commit, update or push in it holds it. In a
+  piece another live chat holds, those are refused, through `purlis worktree` and with plain
+  `git commit`, `git pull`, `git rebase` or `git push` alike, naming the chat that holds it. Cut a piece of your own; the
+  holder hands it over with `purlis worktree done` or `abandon`.
 - `purlis worktree list` shows the workspace's pieces and what each declared.
 - A new workspace (`purlis workspace create`) is for a new task, not for another checkout of a
   repo you already have.

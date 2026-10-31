@@ -2180,9 +2180,10 @@ fn a_boxs_words_on_its_fill_are_held_to_their_floor() {
             .iter()
             .map(|one| one.part.as_str())
             .collect::<Vec<_>>(),
-        // The fill at rest reaches the refused box too, whose danger edge is then under 3:1 on
-        // it (#3323).
-        ["text-input.root", "text-input.root.invalid"]
+        // The fill at rest reached the refused box too, whose danger edge was then under 3:1 on
+        // it (#3323). The rest's fallback now draws the refused state's own look back after it
+        // (#4040), so the refused box is its default again and does not fall on its own.
+        ["text-input.root"]
     );
     // The prototype's look (R54): borderless on the window's fill. A border that is the box's
     // only edge on its own ground must hold 3:1; with none, its words are what is measured. A

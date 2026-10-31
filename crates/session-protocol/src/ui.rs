@@ -729,6 +729,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "remove_docker_pool",
     "docker_pool_link",
     "docker_pool_version",
+    // Which pools' runners were removed outside purlis, and making one again (#4149): it makes
+    // and pairs a container as adding a pool does, so only their own press in their window.
+    "docker_pools_removed",
+    "docker_pool_make_again",
     // The runner image this version's release names (2026-10-30): the Add a pool dialog's
     // default image, read through the updater, for the person's own window.
     "runner_image_of_this_version",

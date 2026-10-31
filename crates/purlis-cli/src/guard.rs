@@ -45,6 +45,7 @@
 //! ask for it.
 
 use std::io::Write;
+use std::path::Path;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
@@ -135,6 +136,14 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
     if let Some(verdict) = toolgate::verdict(&call, plane.as_ref()) {
         return crate::hooks::Answered::of(Answer::Deny(verdict));
     }
+    // A11: plain git that writes a branch folder another live chat holds, from a chat that runs
+    // git itself (#3931). After every refusal, because it is the one that asks the app.
+    if let Some(found) = &found
+        && !launched.sandboxed
+        && let Some(verdict) = held_branch_folder(Path::new(&found.root), &command, &cwd)
+    {
+        return crate::hooks::Answered::of(Answer::Deny(verdict));
+    }
     // Nothing refused: a dispatch or a handoff that writes and shares its call with another
     // command was refused above (#3785), and nothing here asks the person.
     // Then the persona tool gate is asked. Its answer is an allow or nothing;
@@ -147,6 +156,76 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
         return crate::hooks::Answered::of(Answer::Deny(toolgate::too_deep()));
     }
     crate::hooks::Answered::of(allowed.map_or(Answer::Nothing, Answer::Say))
+}
+
+/// How long the guard waits, in all, for the app to judge a line's branch folder claims
+/// (#3931): each is a check and one appended line, and the whole wait stays well inside the
+/// hook's [`BUDGET`], whatever the arms before it took.
+const CLAIMS_ARE_ANSWERED_WITHIN: Duration = Duration::from_millis(900);
+
+/// **The one-writer guard on a chat's plain git** (#3931): the refusal of `command`, run in
+/// `cwd` in the project at `root` by a chat that runs git itself, where any git on the line
+/// commits, updates or pushes in a branch folder another live chat holds
+/// ([`purlis_core::piececlaim`]), in the brokered refusal's words; or `None`.
+///
+/// Asked only of a chat the app started (it has a chat number): the person's own terminal runs
+/// no hook, and a harness they start themselves is theirs. The app judges each write's claim
+/// against the chats it has, and the chat takes a folder no live chat holds.
+///
+/// **No answer lets the call through** (the review of #4129). This guards against accidents
+/// and is not a wall: where no app takes the ask (none, or one older than it), or none answers
+/// within [`CLAIMS_ARE_ANSWERED_WITHIN`], the git runs. A stale claim of a chat that has ended
+/// can then never stop another, and a slow app can never cost the hook its budget.
+fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate::Verdict> {
+    use purlis_core::hookwire::{ClaimAct, GitWork};
+    crate::session::chat_number()?;
+    let ends = Instant::now() + CLAIMS_ARE_ANSWERED_WITHIN;
+    let mut asked = Vec::new();
+    for write in purlis_core::branchgit::branch_write(command, cwd, &root.display().to_string()) {
+        let Some(at) = purlis_core::worktree::locate(root, &write.folder) else {
+            continue;
+        };
+        let Some(act) = ClaimAct::of(write.what) else {
+            continue;
+        };
+        // One ask per folder and act: two commits in one folder on one line ask once.
+        if asked.contains(&(at.clone(), act)) {
+            continue;
+        }
+        asked.push((at.clone(), act));
+        let left = ends.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return None;
+        }
+        let work = GitWork::WorktreeClaim {
+            repo: at.repo.clone(),
+            piece: at.piece.clone(),
+            act,
+        };
+        // Refused only where the app says another live chat holds the folder; any other
+        // answer, a `No` included, lets the git run, as no answer does.
+        if let crate::gitask::Forwarded::Said { code, lines } =
+            crate::gitask::forwarded(&at.workspace, work, left)
+            && code == purlis_core::hookwire::CLAIM_HELD
+        {
+            use purlis_core::repocmd::Say;
+            let why: Vec<String> = lines
+                .iter()
+                .map(|line| match line {
+                    Say::Info(s) | Say::Done(s) | Say::Warn(s) | Say::Fail(s) | Say::Plain(s) => {
+                        s.to_string()
+                    }
+                    Say::Out(s) => s.clone(),
+                })
+                .collect();
+            return Some(toolgate::Verdict {
+                reason: purlis_core::piececlaim::REASON.to_owned(),
+                shape: Some(write.sub),
+                denial: why.join(" "),
+            });
+        }
+    }
+    None
 }
 
 /// The stack the guards run on: far more than any of them needs.

@@ -1054,6 +1054,14 @@ mod cluster {
         cluster.calls().contains("delete claims.runners.purlis.dev")
     }
 
+    /// The runner kept for `team` under `config`, as a gate judged it.
+    fn judged(config: &Path) -> runners::ClusterKept {
+        runners::cluster_runner_for(config, "team")
+            .unwrap()
+            .expect("a cluster pool")
+            .1
+    }
+
     use crate::clusterpool::Refused as NotVouched;
     use crate::poollogins::Bound;
 
@@ -1073,6 +1081,178 @@ mod cluster {
     fn gate(config: &Path) -> Result<Option<Bound>, String> {
         let reached = reached(config);
         Bound::of_a_cluster_pool(config, "team", Some(reached.as_str()), &vouches)
+    }
+
+    /// **A cluster runner's sign-in runs its own `purlis profile sign-in` in the pod its pairing
+    /// named** (#3819), through kubectl pointed at the pool's context, after the check every link
+    /// makes; a runner not vouched for now runs nothing.
+    #[test]
+    fn a_cluster_runners_sign_in_runs_in_its_vouched_pod_after_the_links_check() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let claim = claim_name(OURS, "team");
+        let login = cluster_sign_in(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            &judged(config.path()),
+            "work",
+            None,
+            crate::dockerpool::Typed::Driven,
+        )
+        .unwrap();
+        assert_eq!(
+            std::path::Path::new(&login.program),
+            cluster.kubectl().program()
+        );
+        let pod = format!("pod/{claim}");
+        let runners = crate::clusterpool::runner_namespace(crate::clusterpool::tests::REQUESTER);
+        let at = login.args.iter().position(|arg| arg == "exec").unwrap();
+        assert_eq!(
+            login.args[at..],
+            [
+                "exec",
+                "-i",
+                "--namespace",
+                &runners,
+                "--container",
+                "runner",
+                &pod,
+                "--",
+                crate::dockerpool::PURLIS,
+                "profile",
+                "sign-in",
+                "work",
+                "--until-input-ends",
+            ]
+        );
+        assert!(login.args.contains(&"--context".to_owned()));
+        assert!(login.cleared.contains(&"KUBECONFIG".to_owned()));
+        assert!(cluster.calls().contains("get claims.runners.purlis.dev"));
+
+        let typed = cluster_sign_in(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            &judged(config.path()),
+            "work",
+            Some("github-copilot"),
+            crate::dockerpool::Typed::InATerminal,
+        )
+        .unwrap();
+        assert!(typed.args.contains(&"-it".to_owned()));
+        assert!(!typed.args.contains(&"--until-input-ends".to_owned()));
+        assert!(
+            typed
+                .args
+                .ends_with(&["--provider".to_owned(), "github-copilot".to_owned()])
+        );
+
+        // Its claim no longer vouched for: nothing to run.
+        cluster.write("claim.json", "{}");
+        assert!(
+            cluster_sign_in(
+                config.path(),
+                &cluster.kubectl(),
+                "team",
+                &judged(config.path()),
+                "work",
+                None,
+                crate::dockerpool::Typed::Driven,
+            )
+            .is_err()
+        );
+    }
+
+    /// **A cluster runner's version and sign-out are asked of its own `purlis` in the vouched pod**
+    /// (#3819), after the check every link makes.
+    #[test]
+    fn a_cluster_runners_version_and_sign_out_run_its_own_purlis_after_the_links_check() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        cluster.write("paired.txt", "purlis 0.4.2 (release profile)\n");
+        assert_eq!(
+            cluster_runner_version(
+                config.path(),
+                &cluster.kubectl(),
+                "team",
+                &judged(config.path())
+            ),
+            Ok("0.4.2".to_owned())
+        );
+        assert!(cluster.calls().contains("/usr/local/bin/purlis --version"));
+        cluster_sign_out(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            &judged(config.path()),
+            "work",
+        )
+        .unwrap();
+        assert!(
+            cluster
+                .calls()
+                .contains("/usr/local/bin/purlis profile sign-out work")
+        );
+        // A runner other than the one the gate judged: nothing runs there.
+        let mut other = judged(config.path());
+        other.pod = "another".into();
+        let ran = cluster.calls().len();
+        assert!(
+            cluster_sign_out(config.path(), &cluster.kubectl(), "team", &other, "work").is_err()
+        );
+        assert!(!cluster.calls()[ran..].contains("sign-out"));
+        cluster.write("paired.txt", "not a version\n");
+        assert!(
+            cluster_runner_version(
+                config.path(),
+                &cluster.kubectl(),
+                "team",
+                &judged(config.path())
+            )
+            .is_err()
+        );
+        cluster.write("claim.json", "{}");
+        assert!(
+            cluster_sign_out(
+                config.path(),
+                &cluster.kubectl(),
+                "team",
+                &judged(config.path()),
+                "work"
+            )
+            .is_err()
+        );
+    }
+
+    /// **A cluster runner's claim says whether its home outlives its pod** (#3819): a kept claim's
+    /// does, a fresh one's does not, and only the claim this desktop kept is believed.
+    #[test]
+    fn a_cluster_runners_claim_says_whether_a_sign_in_there_outlives_its_pod() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let keeps = || claim_keeps_its_home_with(config.path(), &cluster.kubectl(), "team");
+        let mut claim: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(cluster.dir.path().join("claim.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            keeps(),
+            Ok(false),
+            "a claim that does not say kept is fresh"
+        );
+        claim["spec"]["kept"] = true.into();
+        cluster.write("claim.json", &claim.to_string());
+        assert_eq!(keeps(), Ok(true));
+        claim["spec"]["kept"] = "yes".into();
+        cluster.write("claim.json", &claim.to_string());
+        assert_eq!(keeps(), Ok(false), "kept is true alone");
+        claim["spec"]["kept"] = true.into();
+        claim["metadata"]["uid"] = "another".into();
+        cluster.write("claim.json", &claim.to_string());
+        assert!(keeps().is_err(), "another claim of its name says nothing");
+        cluster.write("claim.json", "");
+        assert!(keeps().is_err(), "a claim gone says nothing");
     }
 
     #[test]
@@ -1613,4 +1793,178 @@ mod cluster {
         // A Docker pool's own lookup never answers with a cluster pool's runner.
         assert!(runners::runner_for(config.path(), "team").is_err());
     }
+}
+
+/// The id Docker gives the container a runner is made again in (#4149), and its name.
+const AGAIN: &str = "a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1";
+const AGAIN_NAMED: &str = "first-0a0b0c0d";
+
+/// A pool `first` added, whose container the person then removed outside purlis: Docker lists
+/// no container of its id, and its home volume where `home_made` says when it was made. What
+/// Docker makes next answers as runner [`AGAIN_NAMED`].
+fn removed_outside_purlis(
+    config: &Path,
+    fake: &FakeDocker,
+    ours: &Pinned,
+    home_made: Option<&str>,
+) -> Kept {
+    let old = a_pool_added(config, fake, ours);
+    fake.set("containers", "");
+    fake.set(
+        "volumes",
+        if home_made.is_some() {
+            "purlis-runner-first-home\n"
+        } else {
+            ""
+        },
+    );
+    fake.set("id", &format!("{AGAIN}\n"));
+    makes(fake, AGAIN_NAMED, IMAGE_OF_FIRST, &successor_answers());
+    let mut inspect: serde_json::Value = serde_json::from_str(&fake.file("inspect")).unwrap();
+    inspect[0]["Id"] = AGAIN.into();
+    fake.set("inspect", &inspect.to_string());
+    let mut volume: serde_json::Value = serde_json::from_str(&fake.file("volume")).unwrap();
+    volume[0]["CreatedAt"] = home_made.unwrap_or("2026-01-01T00:00:00Z").into();
+    fake.set("volume", &volume.to_string());
+    std::fs::write(fake.file_path("log"), "").unwrap();
+    old
+}
+
+fn make_again_here(config: &Path, fake: &FakeDocker, ours: &Pinned) -> Result<MadeAgain, Refused> {
+    make_again_as(config, &fake.docker(), "first", AGAIN_NAMED, ours)
+}
+
+/// **Make the runner again** (#4149): a runner removed outside purlis is made again beside it,
+/// from the pool's own image and limits, on a home of its own with the sign-ins of the old home
+/// carried over where that home is the one purlis made for it, paired, and kept as the pool's
+/// runner; the gone one is removed, its home with it.
+#[test]
+fn a_runner_removed_outside_purlis_is_made_again_with_its_sign_ins_and_paired() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = removed_outside_purlis(config.path(), &fake, &ours, Some("2026-01-01T00:00:00Z"));
+
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+    assert!(again.sign_ins_kept);
+    assert_eq!(again.kept.name(), AGAIN_NAMED);
+    assert_eq!(again.kept.of.as_deref(), Some("first"));
+    assert_eq!(again.kept.made.container.as_str(), AGAIN);
+    assert_eq!(again.kept.pinned.device, successor_answers().device);
+    // Only the runner made again is kept: the gone one is removed, and never drains.
+    assert_eq!(
+        runners::read(config.path()).unwrap(),
+        vec![again.kept.clone()]
+    );
+    assert_eq!(
+        runners::runner_for(config.path(), "first").unwrap().name(),
+        AGAIN_NAMED
+    );
+    let log = fake.file("log");
+    assert!(log.contains("--cpus 2 --memory 4096m"), "{log}");
+    assert!(
+        log.contains("type=volume,source=purlis-runner-first-home,target=/from,readonly"),
+        "the sign-ins were carried from the old home: {log}"
+    );
+    assert!(
+        log.contains("volume rm --force purlis-runner-first-home"),
+        "{log}"
+    );
+    assert_ne!(old.made, again.kept.made);
+}
+
+/// Its home gone too, the runner is made again with nothing carried: its profiles are signed in
+/// again.
+#[test]
+fn a_runner_whose_home_went_with_it_is_made_again_to_sign_in_again() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    removed_outside_purlis(config.path(), &fake, &ours, None);
+
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+    assert!(!again.sign_ins_kept);
+    assert!(
+        !fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
+}
+
+/// A home made after the runner was paired is not the one purlis made for it, so none of it is
+/// carried: whoever made it could have put anything there.
+#[test]
+fn a_home_made_since_the_runner_was_paired_gives_it_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    removed_outside_purlis(config.path(), &fake, &ours, Some("2099-01-01T00:00:00Z"));
+
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+    assert!(!again.sign_ins_kept);
+    assert!(
+        !fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
+}
+
+/// A runner Docker still lists, only stopped or suspended, is never made again: it resumes.
+#[test]
+fn a_runner_docker_still_lists_is_not_made_again() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = a_pool_added(config.path(), &fake, &ours);
+    fake.set("containers", &format!("{ID}\n"));
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    let refused = make_again_here(config.path(), &fake, &ours).unwrap_err();
+
+    assert!(refused.to_string().contains("still there"), "{refused}");
+    assert!(!fake.file("log").contains("run "), "{}", fake.file("log"));
+    assert_eq!(runners::read(config.path()).unwrap(), vec![old]);
+}
+
+/// A runner made again that does not pair is taken back whole, and the pool stays as it was.
+#[test]
+fn a_runner_made_again_that_does_not_pair_is_taken_back_and_the_pool_stays() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = removed_outside_purlis(config.path(), &fake, &ours, Some("2026-01-01T00:00:00Z"));
+    fake.set("paired", "not a pin\n");
+
+    assert!(make_again_here(config.path(), &fake, &ours).is_err());
+
+    let log = fake.file("log");
+    assert!(
+        log.contains(&format!("container rm --force --volumes {AGAIN}")),
+        "{log}"
+    );
+    assert!(
+        log.contains(&format!(
+            "volume rm --force purlis-runner-{AGAIN_NAMED}-home"
+        )),
+        "{log}"
+    );
+    assert!(
+        !log.contains("volume rm --force purlis-runner-first-home\n"),
+        "{log}"
+    );
+    assert_eq!(runners::read(config.path()).unwrap(), vec![old]);
+}
+
+/// The name a runner made again is drawn: the pool's, and eight hex digits.
+#[test]
+fn a_runner_made_again_is_named_for_its_pool() {
+    let named = crate::dockerpool::remade_name("first").unwrap();
+    assert!(named.starts_with("first-"), "{named}");
+    assert_eq!(named.len(), "first-".len() + 8, "{named}");
+    let image = crate::dockerpool::Image::pinned(IMAGE_OF_FIRST).unwrap();
+    let user = crate::dockerpool::User::new(10001, 10001).unwrap();
+    assert!(Runner::new(&named, image, user, "/home/purlis").is_ok());
 }
