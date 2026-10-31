@@ -139,6 +139,21 @@ export async function askMove(
 }
 
 /**
+ * **The core's moves, read back after it refused a button** (#4138): each it holds is held here,
+ * and a move here it no longer holds is forgotten, say one whose `over` the window missed. A
+ * failed move stays: a refusal the window heard is one the core may never have held, and it stays
+ * until it is dismissed. A read that failed changes nothing.
+ */
+async function readBackMoves(plane: PlaneId) {
+  const read = await commands.chatMoves(plane);
+  if (read.status !== "ok") return;
+  const holds = new Set(read.data.map((one) => one.session));
+  for (const one of Object.values(chatMovesOf(plane)))
+    if (one.stage !== "failed" && !holds.has(one.session)) forgetMove(plane, one.session);
+  for (const one of read.data) heardMove(plane, one);
+}
+
+/**
  * Puts chat `session`'s move away: one still prepared is forgotten, for every chat of it as the
  * core tells each (`over`), and a failed one dismissed. One the core says is being made already
  * is read back, so its tab says so again (#3814).
@@ -149,8 +164,7 @@ export function putAwayMove(plane: PlaneId, session: number) {
     .putAwayChatMove(plane, session)
     .then(async (done) => {
       if (done.status === "ok") return;
-      const read = await commands.chatMoves(plane);
-      if (read.status === "ok") for (const one of read.data) heardMove(plane, one);
+      await readBackMoves(plane);
     })
     .catch(() => undefined);
 }
@@ -166,8 +180,7 @@ export function signedInForMove(plane: PlaneId, session: number) {
     .chatMoveSignedIn(plane, session)
     .then(async (said) => {
       if (said.status === "ok") return;
-      const read = await commands.chatMoves(plane);
-      if (read.status === "ok") for (const one of read.data) heardMove(plane, one);
+      await readBackMoves(plane);
     })
     .catch(() => undefined);
 }

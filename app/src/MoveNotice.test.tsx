@@ -208,4 +208,39 @@ describe("a move waiting on its profile's sign-in", () => {
     expect(await screen.findByText("Moves to pool builds at its next pause.")).toBeInTheDocument();
     expect(chatMovesOf(PLANE)[3]?.stage).toBe("ready");
   });
+
+  it("forgets a move the core no longer holds once it is read back, so its notice goes (#4138)", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "chat_move_signed_in") throw "Chat 3 has no move.";
+      if (cmd === "chat_moves") return [];
+      return null;
+    });
+    await notice(waiting());
+    await userEvent.click(screen.getByRole("button", { name: "Try the move" }));
+    await waitFor(() => expect(chatMovesOf(PLANE)[3]).toBeUndefined());
+    expect(screen.queryByText(/once work is signed in there/)).toBeNull();
+  });
+
+  it("keeps a move when the read back fails, and a failed move through a read back (#4138)", async () => {
+    let reads = 0;
+    mockIPC((cmd) => {
+      if (cmd === "chat_move_signed_in") throw "Chat 3 has no move.";
+      if (cmd === "chat_moves") {
+        reads += 1;
+        if (reads === 1) throw "no answer";
+        return [];
+      }
+      return null;
+    });
+    const failed: ChatMove = { ...waiting(), session: 4, stage: "failed", why: "refused" };
+    act(() => heardMove(PLANE, failed));
+    await notice(waiting());
+    await userEvent.click(screen.getByRole("button", { name: "Try the move" }));
+    await waitFor(() => expect(reads).toBe(1));
+    expect(chatMovesOf(PLANE)[3]?.stage).toBe("signing-in");
+    await userEvent.click(screen.getByRole("button", { name: "Try the move" }));
+    await waitFor(() => expect(chatMovesOf(PLANE)[3]).toBeUndefined());
+    expect(chatMovesOf(PLANE)[4]?.stage).toBe("failed");
+    forgetMove(PLANE, 4);
+  });
 });
