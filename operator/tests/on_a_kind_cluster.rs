@@ -16,7 +16,7 @@ use kube::api::{
     Api, DeleteParams, ListParams, LogParams, ObjectMeta, Patch, PatchParams, PostParams,
 };
 use kube::{Client, ResourceExt};
-use purlis_cluster_operator::{Claim, ClaimSpec, Pool, PoolSpec};
+use purlis_cluster_operator::{Claim, ClaimSpec, Pool, PoolForge, PoolSpec, SecretRef};
 use std::time::{Duration, Instant};
 
 /// The Secret holding the operator's signing keys, as docs/cluster-operator.md makes it.
@@ -144,6 +144,7 @@ fn claim_by(name: &str, pool: &str, requester: &str) -> Claim {
             requester: requester.to_owned(),
             kept: false,
             stopped: false,
+            forge: None,
         },
     )
 }
@@ -1572,6 +1573,431 @@ async fn a_persons_runners_run_in_their_own_namespace_within_their_quota_and_go_
 
     let _ = pools.delete("e2e-person", &DeleteParams::default()).await;
     scratch.end().await;
+}
+
+/// The Secret kind.sh names in the chart's `forge.keySecretNames` (#4204).
+const APP_KEY_SECRET: &str = "e2e-forge-app-key";
+/// One it does not name.
+const OTHER_SECRET: &str = "e2e-forge-other-key";
+const NOT_A_REAL_KEY: &str =
+    "-----BEGIN TEST KEY-----\nnot a real key, e2e\n-----END TEST KEY-----\n";
+
+fn app_key_secret(name: &str) -> Secret {
+    Secret {
+        metadata: ObjectMeta {
+            name: Some(name.to_owned()),
+            ..ObjectMeta::default()
+        },
+        string_data: Some(
+            [
+                ("app".to_owned(), "Iv23liE2e".to_owned()),
+                ("key".to_owned(), NOT_A_REAL_KEY.to_owned()),
+            ]
+            .into(),
+        ),
+        ..Secret::default()
+    }
+}
+
+fn opted_in(name: &str, secret: &str, mint: bool) -> Pool {
+    let mut spec = PoolSpec::new(runner_image());
+    spec.forge = Some(PoolForge {
+        app_key_secret_ref: SecretRef {
+            name: secret.to_owned(),
+        },
+        repos: vec!["e2e-org/*".to_owned()],
+        mint_in_cluster: mint,
+    });
+    Pool::new(name, spec)
+}
+
+/// **The operator reads only the Secret the chart names** (#4204): asked as its own service
+/// account, of the cluster itself, not of a review of its rules.
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn the_operator_reads_only_the_app_key_the_chart_names_and_only_in_its_namespace() {
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-forge-rbac").await;
+    let admin = Api::<Secret>::namespaced(client.clone(), "purlis-system");
+    let beside = Api::<Secret>::namespaced(client.clone(), &scratch.name);
+    let params = PostParams::default();
+    admin
+        .create(&params, &app_key_secret(APP_KEY_SECRET))
+        .await
+        .expect("the named Secret");
+    admin
+        .create(&params, &app_key_secret(OTHER_SECRET))
+        .await
+        .expect("another Secret");
+    beside
+        .create(&params, &app_key_secret(APP_KEY_SECRET))
+        .await
+        .expect("its name elsewhere");
+
+    let operator = acting_as(SERVICE_ACCOUNT).await;
+    let own = Api::<Secret>::namespaced(operator.clone(), "purlis-system");
+    let elsewhere = Api::<Secret>::namespaced(operator.clone(), &scratch.name);
+    let forbidden = |result: Result<Secret, kube::Error>, what: &str| match result {
+        Err(kube::Error::Api(status)) if status.is_forbidden() => {}
+        other => panic!("{what}: {other:?}"),
+    };
+    assert_eq!(
+        own.get(APP_KEY_SECRET)
+            .await
+            .expect("the Secret the chart names")
+            .metadata
+            .name
+            .as_deref(),
+        Some(APP_KEY_SECRET)
+    );
+    forbidden(
+        own.get(OTHER_SECRET).await,
+        "a Secret the chart does not name",
+    );
+    forbidden(
+        own.get(SIGNING_KEY_SECRET).await,
+        "the operator's own signing key",
+    );
+    forbidden(
+        elsewhere.get(APP_KEY_SECRET).await,
+        "its name in another namespace",
+    );
+    match own.list(&ListParams::default()).await {
+        Err(kube::Error::Api(status)) if status.is_forbidden() => {}
+        other => panic!("listing Secrets: {other:?}"),
+    }
+    // Nor writes the one it reads.
+    for (verb, name) in [
+        ("update", APP_KEY_SECRET),
+        ("patch", APP_KEY_SECRET),
+        ("delete", APP_KEY_SECRET),
+    ] {
+        let asked = Asked {
+            group: "",
+            verb,
+            resource: "secrets",
+            subresource: None,
+            namespace: Some("purlis-system"),
+            name: Some(name),
+        };
+        assert!(!may_as(&client, SERVICE_ACCOUNT, asked).await, "{verb}");
+    }
+
+    // **What the operator itself does**: it says an opted-in Pool's key is readable and that one
+    // naming another Secret's is not, and reads nothing for a Pool that is not opted in.
+    let pools = Api::<Pool>::all(client.clone());
+    for pool in [
+        opted_in("e2e-forge-in", APP_KEY_SECRET, true),
+        opted_in("e2e-forge-other", OTHER_SECRET, true),
+        opted_in("e2e-forge-named-only", APP_KEY_SECRET, false),
+        Pool::new("e2e-forge-out", PoolSpec::new(runner_image())),
+    ] {
+        pools
+            .patch(
+                &pool.name_any(),
+                &PatchParams::apply("e2e").force(),
+                &Patch::Apply(&pool),
+            )
+            .await
+            .expect("the pool");
+    }
+    let pods = Api::<Pod>::namespaced(client.clone(), "purlis-system");
+    let logs = || async {
+        let mut all = String::new();
+        for pod in pods
+            .list(&ListParams::default().labels("app.kubernetes.io/name=purlis-cluster-operator"))
+            .await
+            .expect("its pods")
+            .items
+        {
+            all.push_str(
+                &pods
+                    .logs(&pod.name_any(), &LogParams::default())
+                    .await
+                    .expect("its log"),
+            );
+        }
+        all
+    };
+    let said = eventually(
+        "the operator looks at both opted-in pools",
+        Duration::from_secs(60),
+        || async {
+            let log = logs().await;
+            (log.contains("e2e-forge-in") && log.contains("e2e-forge-other")).then_some(log)
+        },
+    )
+    .await;
+    let line = |pool: &str| {
+        said.lines()
+            .find(|l| l.contains(pool))
+            .unwrap_or_default()
+            .to_owned()
+    };
+    assert!(line("e2e-forge-in").contains("readable"), "{said}");
+    assert!(line("e2e-forge-in").contains("Iv23liE2e"), "{said}");
+    assert!(
+        line("e2e-forge-other").contains("forge.keySecretNames"),
+        "{said}"
+    );
+    assert!(!said.contains("e2e-forge-out"), "{said}");
+    assert!(!said.contains("e2e-forge-named-only"), "{said}");
+    assert!(
+        !said.contains("not a real key"),
+        "the key is in the log: {said}"
+    );
+
+    for pool in [
+        "e2e-forge-in",
+        "e2e-forge-other",
+        "e2e-forge-named-only",
+        "e2e-forge-out",
+    ] {
+        let _ = pools.delete(pool, &DeleteParams::default()).await;
+    }
+    let _ = admin.delete(APP_KEY_SECRET, &DeleteParams::default()).await;
+    let _ = admin.delete(OTHER_SECRET, &DeleteParams::default()).await;
+    scratch.end().await;
+}
+
+/// **A bad allow-list, or a key a Pool may not name, is refused at admission** (#4204), and a
+/// Claim's repos are exact ones: its wildcard would widen what a token covers.
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn admission_refuses_a_bad_allow_list_and_a_claims_wildcard() {
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-forge-shape").await;
+    let pools = Api::<kube::api::DynamicObject>::all_with(
+        client.clone(),
+        &kube::api::ApiResource::erase::<Pool>(&()),
+    );
+    let pool_with = |forge: serde_json::Value| -> kube::api::DynamicObject {
+        serde_json::from_value(serde_json::json!({
+            "apiVersion": "runners.purlis.dev/v1alpha1",
+            "kind": "Pool",
+            "metadata": { "name": "e2e-forge-bad" },
+            "spec": { "image": runner_image(), "forge": forge },
+        }))
+        .expect("a pool")
+    };
+    let key = serde_json::json!({ "name": APP_KEY_SECRET });
+    let bad_repos = [
+        serde_json::json!([]),
+        serde_json::json!(["*"]),
+        serde_json::json!(["*/*"]),
+        serde_json::json!(["acme"]),
+        serde_json::json!(["acme/"]),
+        serde_json::json!(["acme/ap*"]),
+        serde_json::json!(["*/app"]),
+        serde_json::json!(["acme/.."]),
+        serde_json::json!(["acme/app/more"]),
+        serde_json::json!(["https://github.com/acme/app"]),
+        serde_json::json!(["acme/app\n"]),
+    ];
+    for repos in bad_repos {
+        let made = pools
+            .create(
+                &PostParams::default(),
+                &pool_with(serde_json::json!({ "appKeySecretRef": key, "repos": repos })),
+            )
+            .await;
+        assert!(made.is_err(), "the allow-list {repos} was taken");
+    }
+    // Both keys are required, and the operator's own signing key is never a Pool's to name.
+    for forge in [
+        serde_json::json!({ "appKeySecretRef": key }),
+        serde_json::json!({ "repos": ["acme/*"] }),
+        serde_json::json!({ "appKeySecretRef": { "name": SIGNING_KEY_SECRET }, "repos": ["acme/*"] }),
+        serde_json::json!({ "appKeySecretRef": { "name": "Not_A_Name" }, "repos": ["acme/*"] }),
+    ] {
+        let made = pools
+            .create(&PostParams::default(), &pool_with(forge.clone()))
+            .await;
+        assert!(made.is_err(), "{forge} was taken");
+    }
+    let good = pools
+        .create(
+            &PostParams::default(),
+            &pool_with(serde_json::json!({
+                "appKeySecretRef": key, "repos": ["acme/*", "acme/.github", "other/app"], "mintInCluster": true,
+            })),
+        )
+        .await
+        .expect("a good allow-list is taken");
+    assert_eq!(good.data["spec"]["forge"]["mintInCluster"], true);
+    // A namespace on the ref is no way out of the operator's own: the API server drops it.
+    assert!(
+        good.data["spec"]["forge"]["appKeySecretRef"]
+            .get("namespace")
+            .is_none()
+    );
+
+    let claims = kube::Api::<kube::api::DynamicObject>::namespaced_with(
+        client.clone(),
+        &scratch.name,
+        &kube::api::ApiResource::erase::<Claim>(&()),
+    );
+    let claim_with = |name: &str, repos: serde_json::Value| -> kube::api::DynamicObject {
+        serde_json::from_value(serde_json::json!({
+            "apiVersion": "runners.purlis.dev/v1alpha1",
+            "kind": "Claim",
+            "metadata": { "name": name, "namespace": scratch.name },
+            "spec": { "pool": "e2e-forge-bad", "requester": "kubernetes-admin", "forge": { "repos": repos } },
+        }))
+        .expect("a claim")
+    };
+    for repos in [
+        serde_json::json!(["acme/*"]),
+        serde_json::json!(["*/*"]),
+        serde_json::json!(["acme"]),
+    ] {
+        let made = claims
+            .create(
+                &PostParams::default(),
+                &claim_with("e2e-forge-c", repos.clone()),
+            )
+            .await;
+        assert!(made.is_err(), "the claim's {repos} was taken");
+    }
+    pools
+        .delete("e2e-forge-bad", &DeleteParams::default())
+        .await
+        .expect("deleted");
+    scratch.end().await;
+}
+
+/// **Only who asked for a Claim changes the repos it names** (#4204): a peer who may patch claims
+/// in the namespace could otherwise widen what the runner's token covers. Everything else they
+/// may do to it, and the operator's own patches, go on as they did.
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn only_a_claims_requester_changes_the_repos_it_names() {
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-forge-peer").await;
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new("e2e-forge-peer", PoolSpec::new(runner_image()));
+    pools
+        .patch(
+            "e2e-forge-peer",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    apply_rbac(
+        &client,
+        "Role",
+        Some(&scratch.name),
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "Role",
+            "metadata": { "name": "e2e-claims", "namespace": scratch.name },
+            "rules": [{ "apiGroups": ["runners.purlis.dev"], "resources": ["claims"],
+                        "verbs": ["create", "get", "patch"] }]
+        }),
+    )
+    .await;
+    apply_rbac(
+        &client,
+        "RoleBinding",
+        Some(&scratch.name),
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "RoleBinding",
+            "metadata": { "name": "e2e-claims", "namespace": scratch.name },
+            "roleRef": { "apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": "e2e-claims" },
+            "subjects": [
+                { "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": "e2e-ada" },
+                { "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": "e2e-bea" }
+            ]
+        }),
+    )
+    .await;
+    apply_rbac(
+        &client,
+        "ClusterRole",
+        None,
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRole",
+            "metadata": { "name": "e2e-forge-peer-use" },
+            "rules": [{ "apiGroups": ["runners.purlis.dev"], "resources": ["pools"],
+                        "resourceNames": ["e2e-forge-peer"], "verbs": ["use"] }]
+        }),
+    )
+    .await;
+    apply_rbac(
+        &client,
+        "ClusterRoleBinding",
+        None,
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRoleBinding",
+            "metadata": { "name": "e2e-forge-peer-use" },
+            "roleRef": { "apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "e2e-forge-peer-use" },
+            "subjects": [{ "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": "e2e-ada" }]
+        }),
+    )
+    .await;
+    let ada = claims_in(&acting_as("e2e-ada").await, &scratch.name);
+    let bea = claims_in(&acting_as("e2e-bea").await, &scratch.name);
+    // A permission just bound takes the cluster a moment.
+    eventually(
+        "ada may make her claim",
+        Duration::from_secs(30),
+        || async {
+            ada.create(
+                &PostParams::default(),
+                &claim_by("e2e-forge-peer", "e2e-forge-peer", "e2e-ada"),
+            )
+            .await
+            .ok()
+        },
+    )
+    .await;
+    let repos = |repos: &[&str]| {
+        Patch::Merge(serde_json::json!({ "spec": { "forge": { "repos": repos } } }))
+    };
+    let params = PatchParams::default();
+    ada.patch("e2e-forge-peer", &params, &repos(&["acme/app"]))
+        .await
+        .expect("ada names her repos");
+    let refused = bea
+        .patch("e2e-forge-peer", &params, &repos(&["acme/secrets"]))
+        .await;
+    refused_in_words("a peer's repos", refused, "may change the repos");
+    let dropped = bea
+        .patch(
+            "e2e-forge-peer",
+            &params,
+            &Patch::Merge(serde_json::json!({ "spec": { "forge": null } })),
+        )
+        .await;
+    refused_in_words("a peer's dropping them", dropped, "may change the repos");
+    // Stopping it is not the repos: the policy leaves that as it was.
+    bea.patch(
+        "e2e-forge-peer",
+        &params,
+        &Patch::Merge(serde_json::json!({ "spec": { "stopped": true } })),
+    )
+    .await
+    .expect("a peer may still stop it");
+    let held = claims_in(&client, &scratch.name)
+        .get("e2e-forge-peer")
+        .await
+        .expect("the claim");
+    assert_eq!(held.spec.forge.expect("its forge").repos, ["acme/app"]);
+    // The operator's finalizer got through the same policy.
+    assert!(!held.metadata.finalizers.unwrap_or_default().is_empty());
+
+    let _ = pools
+        .delete("e2e-forge-peer", &DeleteParams::default())
+        .await;
+    scratch.end().await;
+    let use_pool = kube::api::ApiResource::erase::<k8s_openapi::api::rbac::v1::ClusterRole>(&());
+    let use_binding =
+        kube::api::ApiResource::erase::<k8s_openapi::api::rbac::v1::ClusterRoleBinding>(&());
+    for resource in [use_pool, use_binding] {
+        let _ = Api::<kube::api::DynamicObject>::all_with(client.clone(), &resource)
+            .delete("e2e-forge-peer-use", &DeleteParams::default())
+            .await;
+    }
 }
 
 fn claims_in(client: &Client, namespace: &str) -> Api<Claim> {

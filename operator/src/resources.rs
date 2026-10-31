@@ -76,6 +76,37 @@ pub struct PoolSpec {
     #[serde(default)]
     #[schemars(range(min = 0, max = 20))]
     pub warm_replicas: i32,
+    /// A team's GitHub App, for runners' forge tools (#4204). Left out, the operator reads no
+    /// Secret for this pool and a runner's token comes from the desktop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forge: Option<PoolForge>,
+}
+
+/// A Pool's GitHub App, and which repos its runners' tokens may ever cover (#3807).
+#[derive(KubeSchema, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PoolForge {
+    /// The Secret in the operator's own namespace holding the App's client id (`app`) and its
+    /// private key (`key`). The chart's `forge.keySecretNames` must name it too.
+    pub app_key_secret_ref: SecretRef,
+    /// The most a token may cover: `owner/name` or `owner/*`. A token covers only these and the
+    /// repos of the Claim.
+    #[schemars(length(min = 1, max = 256), inner(length(max = 140), regex(pattern = crate::forge::POOL_REPO)))]
+    pub repos: Vec<String>,
+    /// Whether the operator mints tokens for the pool's runners, with the desktop away. Anyone
+    /// who may use the Pool can use these repos through it. False unless set.
+    #[serde(default)]
+    pub mint_in_cluster: bool,
+}
+
+/// A Secret, by name, in the operator's own namespace: it says no namespace.
+#[derive(KubeSchema, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretRef {
+    /// The Secret's name, never the operator's own signing key's.
+    #[schemars(length(min = 1, max = 253), regex(pattern = crate::forge::SECRET_NAME))]
+    #[x_kube(validation = Rule::new("self != 'purlis-cluster-operator-signing-key'").message("A pool cannot name the operator's own signing key."))]
+    pub name: String,
 }
 
 fn thirty_minutes() -> String {
@@ -126,6 +157,7 @@ impl PoolSpec {
             notice_before_delete: seven_days(),
             max_age: fourteen_days(),
             warm_replicas: 0,
+            forge: None,
         }
     }
 
@@ -251,6 +283,19 @@ pub struct ClaimSpec {
     /// Its pool's `stopped` stops it too. False unless set.
     #[serde(default)]
     pub stopped: bool,
+    /// What the desktop sends the runner to work on (#4204). Changed only by who asked for the
+    /// claim (deploy/policy.yaml). A token covers only these and the Pool's allow-list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forge: Option<ClaimForge>,
+}
+
+/// The repos of the workspace a Claim's runner was sent (#3807).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimForge {
+    /// Each repo, `owner/name`: never a wildcard, which only a Pool's allow-list may hold.
+    #[schemars(length(max = 256), inner(length(max = 140), regex(pattern = crate::forge::CLAIM_REPO)))]
+    pub repos: Vec<String>,
 }
 
 /// What the operator says about a Claim.

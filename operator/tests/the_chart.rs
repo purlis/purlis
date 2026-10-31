@@ -138,7 +138,8 @@ const OPERATOR_HEADER: &str = "# Copyright 2026 Purlis
 # It makes each person's runner namespace and binds purlis-runner-owner, only to that person,
 # only in runner namespaces, as the policy purlis-runner-namespaces (policy.yaml) holds at
 # admission (#2055). Its own signing key is a Secret the kubelet mounts in its pod, made before
-# it is installed (docs/cluster-operator.md).
+# it is installed (docs/cluster-operator.md). The chart's forge.keySecretNames alone adds a Role
+# that reads the GitHub App keys it names (#4204); this default install names none.
 # operator/tests/the_install_manifests.rs holds every rule.
 ---
 # The namespace the chart is installed in, which Helm leaves to the person: only pods that meet
@@ -525,5 +526,116 @@ fn nothing_reaches_the_operators_pod_unless_the_values_name_who_scrapes_it() {
             "ports": [{ "port": "metrics", "protocol": "TCP" }],
         }]),
         "{scraped}"
+    );
+}
+
+/// The Role that reads the admin's App key (#4204, ruling Q4), when the values name any Secret.
+fn key_reader(documents: &[Value]) -> Vec<&Value> {
+    documents
+        .iter()
+        .filter(|d| {
+            d["metadata"]["name"] == "purlis-forge-key-reader"
+                && matches!(d["kind"].as_str(), Some("Role" | "RoleBinding"))
+        })
+        .collect()
+}
+
+/// `resourceNames: []` means every name, so no name must mean no Role at all.
+#[test]
+fn with_no_key_named_the_operator_may_read_no_secret_at_all() {
+    let documents = rendered(&with_digest(&[]));
+    assert_eq!(key_reader(&documents), Vec::<&Value>::new());
+    assert!(
+        !render(&with_digest(&[]))
+            .unwrap()
+            .contains("resourceNames: []")
+    );
+    let names_none = rendered(&with_digest(&["forge.keySecretNames=null"]));
+    assert_eq!(key_reader(&names_none), Vec::<&Value>::new());
+}
+
+#[test]
+fn a_named_key_is_read_by_get_alone_by_the_operator_alone_in_its_own_namespace() {
+    let documents = rendered(&with_digest(&[
+        "forge.keySecretNames[0]=org-app",
+        "forge.keySecretNames[1]=other-app",
+    ]));
+    let found = key_reader(&documents);
+    assert_eq!(found.len(), 2, "{found:?}");
+    let role = found
+        .iter()
+        .find(|d| d["kind"] == "Role")
+        .expect("the Role");
+    assert_eq!(role["metadata"]["namespace"], "purlis-system");
+    assert_eq!(
+        role["rules"],
+        json!([{
+            "apiGroups": [""],
+            "resources": ["secrets"],
+            "resourceNames": ["org-app", "other-app"],
+            "verbs": ["get"],
+        }])
+    );
+    let binding = found
+        .iter()
+        .find(|d| d["kind"] == "RoleBinding")
+        .expect("the binding");
+    assert_eq!(binding["metadata"]["namespace"], "purlis-system");
+    assert_eq!(
+        binding["roleRef"],
+        json!({
+            "apiGroup": "rbac.authorization.k8s.io",
+            "kind": "Role",
+            "name": "purlis-forge-key-reader",
+        })
+    );
+    assert_eq!(
+        binding["subjects"],
+        json!([{
+            "kind": "ServiceAccount",
+            "name": "purlis-cluster-operator",
+            "namespace": "purlis-system",
+        }])
+    );
+    // Nothing else it may do moves with the value.
+    assert_eq!(
+        access(&rendered(&with_digest(&[])))
+            .into_iter()
+            .filter(|d| d["kind"] != "Role" && d["kind"] != "RoleBinding")
+            .collect::<Vec<_>>(),
+        access(&documents)
+            .into_iter()
+            .filter(|d| d["kind"] != "Role" && d["kind"] != "RoleBinding")
+            .collect::<Vec<_>>(),
+    );
+}
+
+#[test]
+fn the_values_never_name_the_signing_key_or_a_name_rbac_would_read_as_every_name() {
+    for bad in [
+        "forge.keySecretNames[0]=purlis-cluster-operator-signing-key",
+        "forge.keySecretNames[0]=",
+        "forge.keySecretNames[0]=*",
+        "forge.keySecretNames[0]=Org_App",
+    ] {
+        assert!(render(&with_digest(&[bad])).is_err(), "{bad} was taken");
+    }
+    let twice = with_digest(&["forge.keySecretNames[0]=a", "forge.keySecretNames[1]=a"]);
+    assert!(render(&twice).is_err(), "one name twice was taken");
+    // A check the schema makes, the template makes too: a schema can be skipped.
+    let chart = chart();
+    let out = helm(&[
+        "template",
+        "purlis-cluster-operator",
+        chart.to_str().expect("a UTF-8 path"),
+        "--skip-schema-validation",
+        "--set",
+        DIGEST_VALUE,
+        "--set",
+        "forge.keySecretNames[0]=purlis-cluster-operator-signing-key",
+    ]);
+    assert!(
+        !out.status.success(),
+        "the signing key was taken with the schema skipped"
     );
 }

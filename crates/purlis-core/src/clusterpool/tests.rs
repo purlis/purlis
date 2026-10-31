@@ -539,6 +539,7 @@ fn rolling() -> PoolSeen {
             fixture("key-roll.txt"),
             fixture("key-roll-signature.txt").trim().to_owned(),
         )),
+        mints_in_cluster: false,
     }
 }
 
@@ -606,6 +607,7 @@ fn a_pools_pin_is_its_operators_key_and_its_cluster() {
             cluster: Some("c".into()),
             next_signing_key: Some("ed25519:11".into()),
             next_signing_key_vouch: Some(("s".into(), "g".into())),
+            mints_in_cluster: false,
         }
     );
 }
@@ -894,6 +896,18 @@ impl FakeCluster {
             "pool.json",
             &serde_json::json!({"status": {"signingKey": key.spelled(), "cluster": CLUSTER}})
                 .to_string(),
+        );
+    }
+
+    /// The Pool's spec says `forge`, its status as the pin says (#4204).
+    pub(crate) fn pool_says_forge(&self, forge: serde_json::Value) {
+        self.write(
+            "pool.json",
+            &serde_json::json!({
+                "spec": {"forge": forge},
+                "status": {"signingKey": self.operator.key().spelled(), "cluster": CLUSTER},
+            })
+            .to_string(),
         );
     }
 
@@ -1212,5 +1226,27 @@ fn a_context_is_named_as_its_kubeconfig_names_it_but_never_as_a_flag() {
     }
     for refused in ["", "--server=https://elsewhere", "-n", "a\nb"] {
         assert!(!is_context(refused), "{refused:?}");
+    }
+}
+
+#[test]
+fn only_a_pool_whose_spec_says_so_whole_mints_in_the_cluster() {
+    use serde_json::json;
+    let key = json!({"name": "org-app"});
+    let opted =
+        json!({"forge": {"appKeySecretRef": key, "repos": ["acme/*"], "mintInCluster": true}});
+    assert!(mints_in_cluster(&opted));
+    for not in [
+        json!({}),
+        json!({"forge": null}),
+        json!({"forge": {"appKeySecretRef": key, "repos": ["acme/*"]}}),
+        json!({"forge": {"appKeySecretRef": key, "repos": ["acme/*"], "mintInCluster": false}}),
+        // Spelled any other way is no opt-in.
+        json!({"forge": {"appKeySecretRef": key, "repos": ["acme/*"], "mintInCluster": "true"}}),
+        json!({"forge": {"repos": ["acme/*"], "mintInCluster": true}}),
+        json!({"forge": {"appKeySecretRef": key, "mintInCluster": true}}),
+        json!({"forge": {"appKeySecretRef": key, "repos": [], "mintInCluster": true}}),
+    ] {
+        assert!(!mints_in_cluster(&not), "{not}");
     }
 }

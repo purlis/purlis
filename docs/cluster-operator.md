@@ -170,6 +170,7 @@ The chart's values, all in its
 | `image.digest` | the image's digest, `sha256:` and 64 hex digits; required | none |
 | `imagePullSecrets` | secrets in the release's namespace that pull the image | none |
 | `resources` | the operator's CPU and memory | requests 10m CPU and 32Mi, limit 256Mi |
+| `forge.keySecretNames` | the Secrets in the release's namespace holding a GitHub App's key, which the Role `purlis-forge-key-reader` lets the operator `get` ([below](#minting-github-app-tokens-in-the-cluster)); empty, there is no such Role and it may read no Secret. The one value that changes what the operator may do, and never its own signing key | `[]` |
 | `perPerson.quota` | what each person's runners may hold at once, in their namespace's quota `purlis-person` ([below](#each-persons-namespace)): `claims` (a count), `cpu` and `memory` (what their runners' pods ask for), `storage` (what their kept runners' volumes ask for); a key left out is not limited | `claims: 5`, `cpu: "4"`, `memory: 8Gi`, `storage: 50Gi` |
 
 No value changes what the operator may do or how its pod is confined.
@@ -228,6 +229,10 @@ spec:
   deleteSuspendedAfter: 720h
   noticeBeforeDelete: 168h
   maxAge: 336h
+  # forge:                 # optional; see "Minting GitHub App tokens in the cluster"
+  #   appKeySecretRef: { name: org-app }
+  #   repos: [acme/*]
+  #   mintInCluster: true
 ---
 apiVersion: runners.purlis.dev/v1alpha1
 kind: Claim
@@ -661,7 +666,10 @@ it holds:
 | `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool` and `purlis-runner-namespaces` | get, list, watch |
 | `extensions.agents.x-k8s.io` | `sandboxclaims`, `sandboxtemplates`, `sandboxwarmpools` | create, delete, get, list, patch, watch |
 
-It holds no right to `exec`, `attach` or port-forward to a pod itself, and none to read a Secret.
+It holds no right to `exec`, `attach` or port-forward to a pod itself, and in that ClusterRole
+none to read a Secret. Beside it, only where the chart's `forge.keySecretNames` names any, the
+Role `purlis-forge-key-reader` in the operator's own namespace gives it `get` on those Secrets
+alone ([below](#minting-github-app-tokens-in-the-cluster)).
 It binds one cluster role, `purlis-runner-owner`, only to one person, only in runner namespaces:
 RBAC cannot say where a role may be bound, so the policy on runner namespaces (above) holds it.
 It never deletes a namespace. It reads a sandbox and a pod only by name: a Claim's, which
@@ -700,6 +708,62 @@ right and no `exec` right either.
 **Cluster admins and node owners can read everything in the cluster**, every runner's files
 and memory included. Give cluster-admin and node access accordingly.
 
+## Minting GitHub App tokens in the cluster
+
+**Not finished yet.** A Pool can be opted in, and the operator checks its key, but nothing is
+minted until #4206 and no chat uses a token minted here until #4207: this section says what the
+keys mean. Today a pool's runner gets its token from the desktop.
+
+A cluster admin opts a Pool in with three steps:
+
+```sh
+# 1. The organisation's GitHub App, as a Secret in the operator's namespace: `app` is the App's
+#    client id and `key` its private key, as a PEM.
+kubectl -n purlis-system create secret generic org-app \
+  --from-literal=app=<the App's client id> --from-file=key=<the App's private key>.pem
+
+# 2. The chart names it, which is all the operator may read: the Role purlis-forge-key-reader
+#    gets `get` on these names and no others, in this namespace.
+helm upgrade purlis-cluster-operator <chart> --namespace purlis-system --reuse-values \
+  --set 'forge.keySecretNames[0]=org-app'
+```
+
+```yaml
+# 3. The Pool says so.
+apiVersion: runners.purlis.dev/v1alpha1
+kind: Pool
+metadata:
+  name: team
+spec:
+  image: ghcr.io/purlis/purlis-runner@sha256:<digest>
+  forge:
+    appKeySecretRef: { name: org-app }  # required; in the operator's namespace, it says no other
+    repos: [acme/*, other/app]          # required; owner/name or owner/*
+    mintInCluster: true                 # false unless set
+```
+
+- **A plain install has no such Role.** `operator/deploy/` is rendered with no name set, so an
+  admin installing from it applies the Role and its RoleBinding themselves, as
+  `helm template --set 'forge.keySecretNames[0]=<name>'` renders them. With no name set there is no
+  Role at all, since an empty `resourceNames` would mean every Secret.
+- **The operator reads a Secret only for a Pool that says `mintInCluster: true`**, by name, and
+  says in its log whether that Pool's key can be read and which App it is, or why not: not named
+  by the chart, not there, or not holding both keys. It logs neither the key nor anything else of
+  the Secret. It does not keep the key.
+- **`Pool.spec.forge.repos` is the most a token may cover.** A token will cover only the repos that
+  are on this list and also on the Claim. A bare `*`, `*/*`, a partial wildcard, a path or a URL
+  is refused at admission. Keep the list as narrow as the team's work: anyone who may `use` the
+  Pool can reach these repos through it, once minting is on.
+- **`Claim.spec.forge.repos`** names the repos of the workspace the desktop sends, each exactly
+  `owner/name`: a wildcard is refused at admission. Only the Claim's `requester` may change it, as
+  the policy holds, so someone else who may patch claims in the namespace cannot widen it.
+- **A Pool never names `purlis-cluster-operator-signing-key`**, and neither do the chart's values.
+- **A tool line names one App.** A persona's tool whose `app` is not the Secret's `app` is refused,
+  by the operator, once it mints (#4206).
+- **The desktop reads `mintInCluster` from the Pool** as the pool is added, and records it
+  ([`runners.json`](plane-format.md)); the person does not choose it. To pick up a change, add the
+  pool again. The operator goes by the Pool as it is now.
+
 ## Tests
 
 - `cargo test` in `operator/`, with `helm` 4 on PATH: what a Claim asks of upstream, that
@@ -707,7 +771,7 @@ and memory included. Give cluster-admin and node access accordingly.
   clusters the tests describe (and that it only reads), that the operator acts only on Claims
   admitted under its policy, the install manifests, and the chart, rendered and linted by Helm
   itself: the plain manifests are what it renders, its image is named only by digest, and no
-  value changes what the operator may do. The definitions are generated from the Rust types and
+  value but `forge.keySecretNames` changes what the operator may do. The definitions are generated from the Rust types and
   the plain manifests from the chart; regenerate them, in this order, with
   `PURLIS_OPERATOR_BLESS=1 cargo test --test the_install_manifests` and
   `PURLIS_OPERATOR_BLESS=1 cargo test --test the_chart`.
