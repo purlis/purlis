@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   AGENT_STEERING,
+  DOCS_READ_BY_RUST,
   GATES,
   RUST_READERS,
   READ_BY_CODE,
@@ -213,11 +214,29 @@ test("an unknown path runs everything", () => {
 test("a doc that code reads runs everything", () => {
   for (const path of [
     "CHANGELOG.md",
-    "docs/plane-format.md",
-    "docs/schema/theme.v2.schema.json",
     "docs/ui-primitives.md",
   ]) {
     assert.deepEqual(of([path]), all, path);
+  }
+  for (const path of ["docs/plane-format.md", "docs/schema/theme.v2.schema.json"]) {
+    assert.deepEqual(of([path]), ["app", "docs", "rust", "scenario", "tools"], path);
+  }
+});
+
+test("no file of the window's checks reads a doc only Rust's tests read", () => {
+  const sources = git("ls-files", "--", "app/src", "app/e2e", "app/.storybook").filter((f) =>
+    /\.(ts|tsx|mts|js|mjs)$/.test(f),
+  );
+  assert.ok(sources.length > 0);
+  for (const file of sources) {
+    const text = read(file)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    for (const doc of DOCS_READ_BY_RUST) {
+      const name = posix.basename(doc);
+      const pieces = name === "schema" ? /"docs",\s*"schema"|docs\/schema/ : new RegExp(name.replace(".", "\\."));
+      assert.ok(!pieces.test(text), `${file} reads ${doc}: take it out of DOCS_READ_BY_RUST`);
+    }
   }
 });
 
@@ -409,6 +428,10 @@ test("every doc the code reads by a relative path runs everything", () => {
         ? [path]
         : [];
     for (const file of files) {
+      if (DOCS_READ_BY_RUST.some((d) => (d.endsWith("/") ? file.startsWith(d) : file === d))) {
+        assert.ok(scopesOfPath(file, new Set()).has("rust"), file);
+        continue;
+      }
       assert.deepEqual(
         [...scopesOfPath(file, new Set())].sort(),
         all,

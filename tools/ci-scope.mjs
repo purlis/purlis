@@ -23,6 +23,7 @@
 // 1. A file under `.github/`, a lockfile, the toolchain, a manifest or a shared config: every
 //    scope. So is a doc that code reads (`READ_BY_CODE`): it is compiled into a build or a test
 //    holds it.
+//    A doc only Rust's tests read (`DOCS_READ_BY_RUST`) needs what the Rust needs (5. below).
 // 2. `docs/`, `site/`, `changes/`, and `AGENTS.md` and `CLAUDE.md` (an agent's steering, which no
 //    test reads): the docs alone. Every other file at the root runs everything: tests read them
 //    by name (`community.test.ts` holds `README.md`, `CONTRIBUTING.md`, `SUPPORT.md`,
@@ -106,12 +107,15 @@ const SHARED = new Set([
 // names by a relative path and fails when one is missing here.
 export const READ_BY_CODE = [
   "CHANGELOG.md",
-  "docs/plane-format.md",
-  "docs/schema/",
   "docs/ui-primitives.md",
   "docs/design-system.md",
   "docs/adr/0076-a-run-moves-only-by-a-named-cause-and-a-chats-state-is-read-from-its-runs.md",
 ];
+
+// Docs that Rust's tests read and no window file does, so a change to one needs what a change to
+// Rust needs: `docs/plane-format.md` was in 35 of the last 199 merged pull requests, most of them
+// otherwise Rust alone (#3596). `ci-scope.test.mjs` fails when a window file comes to read one.
+export const DOCS_READ_BY_RUST = ["docs/plane-format.md", "docs/schema/"];
 
 // The files of the window's sources that Rust reads by name, so a change to one is a change to a
 // Rust build or test: the generated bindings and RPC table (held to what the Rust makes of them),
@@ -239,6 +243,7 @@ const readByCode = (path) => listed(READ_BY_CODE, path);
 // runs (`ciTools()` below).
 export function scopesOfPath(path, ciToolNames) {
   if (path.startsWith(".github/") || SHARED.has(path) || readByCode(path)) return ALL;
+  if (listed(DOCS_READ_BY_RUST, path)) return RUST;
   if (path.startsWith("app/src/")) return listed(READ_BY_RUST, path) ? ALL : WINDOW;
   if (path.startsWith("crates/") || path.startsWith("app/src-tauri/src/")) {
     return listed(READ_BY_WEB, path) ? ALL : RUST;
