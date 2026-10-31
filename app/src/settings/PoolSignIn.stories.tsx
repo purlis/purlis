@@ -3,8 +3,9 @@
 
 /**
  * **A profile's sign-in on a pool's runner, in place** (#4042, spec #4023, prototype Variant A):
- * the strip a Claude Code profile's line opens into, at each step the core says. Each is drawn in
- * every cell of the theme matrix, light and dark among them.
+ * the strip a profile's line opens into, at each step the core says, Claude Code's and, approved
+ * in the browser, Codex's (#4044). Each is drawn in every cell of the theme matrix, light and dark
+ * among them.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState, type FormEvent } from "react";
@@ -17,7 +18,15 @@ const PAGE = "https://claude.ai/oauth/authorize?code=true";
 const TERMINAL_SHOWS =
   "Select login method:\r\n \x1b[36m❯\x1b[0m 1. Claude account with subscription\r\n   2. Anthropic Console account\r\n";
 
-function Strip({ step, onPaste }: { step: StripStep; onPaste: (code: string) => void }) {
+function Strip({
+  step,
+  onPaste,
+  harness = "Claude Code",
+}: {
+  step: StripStep;
+  onPaste: (code: string) => void;
+  harness?: string;
+}) {
   const [code, setCode] = useState("");
   return (
     <div className="ui-machine-entry" style={{ inlineSize: 640 }}>
@@ -25,7 +34,8 @@ function Strip({ step, onPaste }: { step: StripStep; onPaste: (code: string) => 
       <SignInStrip
         pool="builds"
         profile="work"
-        harness="Claude Code"
+        harness={harness}
+        approves={harness !== "Claude Code"}
         step={step}
         code={code}
         setCode={setCode}
@@ -43,6 +53,7 @@ function Strip({ step, onPaste }: { step: StripStep; onPaste: (code: string) => 
             ? { printer: (print) => print?.(TERMINAL_SHOWS), onType: () => undefined }
             : undefined
         }
+        onDeviceCode={() => undefined}
       />
     </div>
   );
@@ -104,6 +115,21 @@ export const CodeRefused: Story = {
       "the code field keeps the keyboard",
     );
     expectFocusInSight();
+  },
+};
+
+/** Codex's step 1: nothing to paste, the person approves in the page that opened. */
+export const Approve: Story = {
+  args: { harness: "Codex", step: { at: "approve", url: PAGE } },
+};
+
+/** The port for the browser's answer is taken on this Mac: it says so, and a device code is left. */
+export const PortTaken: Story = {
+  args: { harness: "Codex", step: { at: "port-taken", port: 1455 } },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByRole("alert")).toHaveTextContent("Port 1455 is in use on this Mac");
+    await expect(canvas.getByText("codex login --device-auth")).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Use a device code" })).toBeVisible();
   },
 };
 

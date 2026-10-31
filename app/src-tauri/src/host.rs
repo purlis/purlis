@@ -560,7 +560,7 @@ pub trait SessionHost: Send + Sync {
     }
 
     /// **The prompt key chat `number` started with, as its host answered the start** (#3369),
-    /// where the window `minted` one for its launch: a host before 1.58 answers none and sets
+    /// where the window `minted` one for its launch: a host before 1.60 answers none and sets
     /// none in the chat's environment, so its prompts are marked under none. A chat that runs in
     /// the window's own process started with the key minted.
     fn prompt_key_started(

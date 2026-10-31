@@ -380,15 +380,32 @@ use crate::view::{Limits, Views};
 /// desktop. Carried out and refused as `keep_profile` is. A host before 1.57 refuses it
 /// `unknown_command`, and the desktop forgets nothing it was not asked to there.
 ///
-/// 1.58 added each chat's prompt key (#3369): a random secret its hooks key the digests of its
+/// 1.58 added a runner removed outside purlis (#4149): `link_down` may say `gone`, the runner a
+/// relaying host links to no longer there (a Docker runner whose container Docker no longer
+/// lists), which the host does not link to again on its own, so the window offers to make it
+/// again. A window before 1.58 ignores the field and reads it as any link that is down.
+///
+/// 1.59 added a sign-in's redirect (#4044, spec #4023): `sign_in_redirect` has a runner's host hand
+/// the browser's answer to a login waiting on the runner's loopback, and answers only whether the
+/// login took it. Its target is that login's own path alone, so nothing else on the runner's
+/// loopback is reached. The paired desktop's, on its own link. A host before 1.59 refuses it
+/// `unknown_command`, and the sign-in says so.
+///
+/// 1.60 added each chat's prompt key (#3369): a random secret its hooks key the digests of its
 /// prompts by ([`PromptKey`]). A window's `launch` may carry it (`prompt_key`); a start the host
 /// composes itself is given one by the host. The host keeps it with the program in memory alone,
 /// and answers it in `program_started` and `programs` (`prompt_key`), so the window that started
-/// or takes back the chat digests what it types under the same key. A host before 1.58 ignores
+/// or takes back the chat digests what it types under the same key. A host before 1.60 ignores
 /// the field and answers none, and its chats' prompts are marked under no key.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 58,
+    minor: 60,
+};
+
+/// The version that first hands a sign-in's redirect to a login on a runner (#4044).
+pub const KNOWS_SIGN_IN_REDIRECT: Version = Version {
+    major: 1,
+    minor: 59,
 };
 
 /// The version that first answers `relay_to` with the runner the link reached (#3417).
@@ -816,6 +833,14 @@ pub enum Command {
     /// that desktop, never one of its own or another desktop's. Carried out and refused as
     /// [`Command::KeepProfile`] is ([`crate::grants::Power::KeepProfile`]).
     KeptProfiles,
+    /// The desktop on this link hands the runner a sign-in's redirect (1.59, #4044): `target` is
+    /// the request the person's browser made of the desktop's loopback, which the runner's host
+    /// makes of a login waiting on its own, at that login's own port and path alone. Answered
+    /// [`Answer::Done`] where the login took it; nothing of the login's answer crosses the link.
+    /// Only a runner's host, on the link between hosts from the desktop it is paired with, carries
+    /// it out; every other host refuses it [`NOT_ALLOWED`]
+    /// ([`crate::grants::Power::SignInRedirect`]).
+    SignInRedirect { target: RedirectTarget },
     /// The person takes browser `program` over (1.14, #2014): an act in flight answers that it
     /// was interrupted, and every act is refused in words until [`Command::HandBack`]. The lease
     /// is the host's: it stays with the person whatever becomes of the link that took it, until
@@ -1021,6 +1046,18 @@ pub struct Confine {
     /// Whether its proxy holds a connection to a host nothing lists while the person is asked.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub asks: bool,
+}
+
+/// **The request a browser made of a sign-in's redirect** (1.59, #4044): it holds a one-time code,
+/// so it prints as nothing in a log.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RedirectTarget(pub String);
+
+impl std::fmt::Debug for RedirectTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RedirectTarget(..)")
+    }
 }
 
 /// A chat's confinement as the window planned it (1.4): its proxy's reach and ports, and what
@@ -1560,14 +1597,14 @@ pub struct Launch {
     /// program does, whether or not the link that made it does (1.4).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confinement: Option<String>,
-    /// The chat's prompt key, which the window minted for it (1.58, #3369): set in its
+    /// The chat's prompt key, which the window minted for it (1.60, #3369): set in its
     /// environment for its hooks, and kept by the host with the program for a window that takes
     /// it back.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_key: Option<PromptKey>,
 }
 
-/// **A chat's prompt key** (1.58, #3369): 32 random bytes, written as hex, that its hooks key
+/// **A chat's prompt key** (1.60, #3369): 32 random bytes, written as hex, that its hooks key
 /// the digests of its prompts by, and the window the digests of what it types into the chat.
 /// One per chat, minted where the chat is composed: by the window for a launch of its own, by
 /// the host for a start it composes. It is set in the chat's environment, never on its command
@@ -1696,7 +1733,7 @@ pub enum Answer {
         /// answers. Absent from a host before 1.29, whose window takes the run as sandboxed.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sandbox: Option<RunSandbox>,
-        /// Its prompt key (1.58, #3369): the launch's, or the one the host minted for a start
+        /// Its prompt key (1.60, #3369): the launch's, or the one the host minted for a start
         /// it composed. Absent for a program that has none, and from a host before 1.58.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         prompt_key: Option<PromptKey>,
@@ -1803,7 +1840,7 @@ pub struct HeldProgram {
     /// named is an empty one, which no note names.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub logins: Vec<String>,
-    /// Its prompt key, as its start was given it (1.58, #3369): what a window that takes the
+    /// Its prompt key, as its start was given it (1.60, #3369): what a window that takes the
     /// chat back digests what it types into it under.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_key: Option<PromptKey>,
@@ -1841,7 +1878,7 @@ pub struct ProgramStarted {
     pub confined: Option<Confined>,
     /// How its run is sandboxed, as the host applied it, where the host says (1.29).
     pub sandbox: Option<RunSandbox>,
-    /// Its prompt key, where it has one (1.58).
+    /// Its prompt key, where it has one (1.60).
     pub prompt_key: Option<PromptKey>,
 }
 
@@ -2030,6 +2067,12 @@ pub enum Pushed {
         /// #2679): it is not linked again until the person removes it and adds it anew.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         key_changed: bool,
+        /// The other host is gone for good (1.58, #4149): a Docker runner whose container Docker
+        /// no longer lists, removed outside purlis. The relaying host does not link to it again
+        /// on its own; until it is made again, each command that needs it tries once and is
+        /// refused.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        gone: bool,
     },
     /// The link a relaying host reaches the other host over is back (1.17, #2496), with what the
     /// client's link stands on carried over to it: its views draw again, each from a snapshot.
@@ -2107,6 +2150,7 @@ wire_words!(Command {
     ForgetProfile => "forget_profile",
     StageProfileSettings => "stage_profile_settings",
     KeptProfiles => "kept_profiles",
+    SignInRedirect => "sign_in_redirect",
     RelayTo => "relay_to",
     TakeCode => "take_code",
     GiveCode => "give_code",
@@ -2168,6 +2212,7 @@ impl Command {
             | Command::ForgetProfile { .. }
             | Command::StageProfileSettings(_)
             | Command::KeptProfiles => Power::KeepProfile,
+            Command::SignInRedirect { .. } => Power::SignInRedirect,
             Command::RelayTo { .. } => Power::RelayTo,
             Command::TakeCode { .. }
             | Command::GiveCode { .. }
@@ -2679,6 +2724,7 @@ impl Lane {
             | Command::ForgetProfile { .. }
             | Command::StageProfileSettings(_)
             | Command::KeptProfiles
+            | Command::SignInRedirect { .. }
             | Command::RelayTo { .. }
             | Command::TakeCode { .. }
             | Command::GiveCode { .. }
@@ -3367,6 +3413,21 @@ impl Client {
     pub async fn kept_profiles(&self) -> Result<Vec<String>, CallError> {
         match self.call(Command::KeptProfiles).await? {
             Answer::Profiles { names } => Ok(names),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Have the runner hand a login on its loopback the redirect `target` (1.59, #4044): `Ok`
+    /// once the login took it. Refused by every host but a runner's, on its link from the
+    /// desktop it is paired with.
+    pub async fn sign_in_redirect(&self, target: &str) -> Result<(), CallError> {
+        match self
+            .call(Command::SignInRedirect {
+                target: RedirectTarget(target.to_owned()),
+            })
+            .await?
+        {
+            Answer::Done => Ok(()),
             other => Err(unexpected(&other)),
         }
     }

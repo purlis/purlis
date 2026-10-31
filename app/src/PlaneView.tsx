@@ -411,6 +411,7 @@ import {
 } from "./AskPersona";
 import { SandboxOffer } from "./SandboxOffer";
 import { ProjectHostsNotice } from "./ProjectHostsNotice";
+import { RunnerGoneNotice } from "./RunnerGoneNotice";
 import { RunnerKeyChangedNotice } from "./RunnerKeyChangedNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
@@ -602,6 +603,8 @@ type Typed =
       provider?: string;
       /** The pool whose runner it is signed in on (#2049), where it is not this machine. */
       pool?: string;
+      /** By the harness's device-code flow (#4044). */
+      device?: boolean;
       line?: undefined;
       installer?: undefined;
       sandboxInstall?: undefined;
@@ -3090,6 +3093,7 @@ export const PlaneView = memo(function PlaneView({
                 typed.signIn,
                 typed.provider ?? null,
                 typed.pool ?? null,
+                typed.device ?? false,
               )
               .then((said) => {
                 if (said.status === "error") refusedBy("shell", said.error);
@@ -3307,15 +3311,16 @@ export const PlaneView = memo(function PlaneView({
    * core. The person drives the harness's flow there; purlis reads none of it.
    */
   const signIn = useCallback(
-    (profile: string, provider?: string, pool?: string) => {
-      if (root !== undefined) openShell(root, OUTSIDE, { signIn: profile, provider, pool });
+    (profile: string, provider?: string, pool?: string, device?: boolean) => {
+      if (root !== undefined) openShell(root, OUTSIDE, { signIn: profile, provider, pool, device });
     },
     [openShell, root],
   );
   useEffect(() => {
     const asked = (event: Event) => {
       const wanted = (event as CustomEvent<ProfileSignInAsk>).detail;
-      if (wanted.plane === plane) signIn(wanted.profile, wanted.provider, wanted.pool);
+      if (wanted.plane === plane)
+        signIn(wanted.profile, wanted.provider, wanted.pool, wanted.device);
     };
     window.addEventListener(PROFILE_SIGN_IN, asked);
     return () => window.removeEventListener(PROFILE_SIGN_IN, asked);
@@ -9143,6 +9148,12 @@ export const PlaneView = memo(function PlaneView({
       {/* **The runner this project's chats run on answered with another key** (#2752): said
           once for the project, where its pool is removed. */}
       <RunnerKeyChangedNotice
+        plane={plane}
+        onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
+      />
+      {/* **The runner this project's chats run on was removed outside purlis** (#4149): said
+          once for the project, with Make the runner again. */}
+      <RunnerGoneNotice
         plane={plane}
         onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
       />

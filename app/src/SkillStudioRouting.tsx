@@ -26,6 +26,14 @@ import { capitalised } from "./saving";
 /** The word a choice of the built-in router is written as (`purlis_core::skills::router`). */
 export const BUILT_IN_ROUTER = "built-in";
 
+/**
+ * **What the budget counts, and what it does not** (#3324, ADR 0102 as amended 2026-10-31): the
+ * skills purlis hands a chat. A program's own catalogue is its own, listed against its own limit:
+ * purlis never trims what it does not own, so it is shown beside the budget, never in it.
+ */
+export const BUDGET_COUNTS =
+  "It counts the skills purlis hands a chat: the built-in ones, the project's, and those of the repo the chat works in. A program's own skills, in your folders and its plugins, are not counted: the program lists them against its own limit, and the Skills view shows them beside a chat's budget.";
+
 /** What Change… sends for a persona's choice taken out: its chats take their workspace's. */
 const THE_WORKSPACES = "";
 
@@ -125,7 +133,10 @@ export function RoutingFacts({
           )}
         </Fact>
         <Fact label="Budget">
-          {`${counted(budget.skills, "skill", "skills")}, ${budget.chars.toLocaleString("en-US")} characters of descriptions, on every program`}
+          {`${counted(budget.skills, "skill", "skills")}, ${budget.chars.toLocaleString("en-US")} characters of descriptions, on every program.`}
+          <span className="honest" data-testid="skill-routing-budget-counts">
+            {` ${BUDGET_COUNTS}`}
+          </span>
         </Fact>
         {router.extension !== null && (
           <Fact label="Grade">

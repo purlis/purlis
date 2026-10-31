@@ -98,7 +98,7 @@ pub struct ToCompose<'a> {
     /// none where the host hears no channel for the project (#2000). A window's launch carries
     /// the same.
     pub reporting: Option<&'a session::Reporting>,
-    /// The chat's prompt key, which the host minted for a start it composes (1.58, #3369): set
+    /// The chat's prompt key, which the host minted for a start it composes (1.60, #3369): set
     /// in its environment for its hooks. A window's launch carries its own.
     pub prompt_key: Option<&'a session::PromptKey>,
     /// The scope of the link the start came on: what its run says started it (#2171).
@@ -875,7 +875,7 @@ struct Hosted {
     /// the last went without a quit, it is ended at once rather than kept for the grace period.
     /// Taken from this machine's window alone.
     ends_with_its_window: bool,
-    /// Its prompt key (1.58, #3369): its window's launch's, or the one minted here for a start
+    /// Its prompt key (1.60, #3369): its window's launch's, or the one minted here for a start
     /// composed here. Kept in memory alone, for the window that takes it back, and written to
     /// no record.
     prompt_key: Option<session::PromptKey>,
@@ -3666,6 +3666,13 @@ impl session::Host for Hosting {
                 code: session::NOT_ALLOWED.into(),
                 why: "this host is paired with no desktop over this link, so it keeps no \
                       desktop's profile"
+                    .into(),
+            }),
+            // Nor does it wait on a login for one (1.59, #4044).
+            Command::SignInRedirect { .. } => Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "this host is paired with no desktop over this link, so it carries no \
+                      sign-in's redirect"
                     .into(),
             }),
             // The desktop's host relays a window's link to a runner before this host hears of

@@ -13,7 +13,7 @@ import {
 } from "./chatMoves";
 import { Notice } from "./Notice";
 import { askProfileSignIn } from "./settings/links";
-import { DRIVEN } from "./settings/PoolProfiles";
+import { DRIVEN, approvesIn } from "./settings/PoolProfiles";
 import { PoolSignIn } from "./settings/PoolSignIn";
 
 /**
@@ -97,7 +97,11 @@ function WaitsOnASignIn({
   words: string;
 }) {
   const [open, setOpen] = useState(false);
-  const inTerminal = () => askProfileSignIn(plane, asked.profile, undefined, pool);
+  // A login approved in the browser has no way back to the runner from a terminal: it runs its
+  // device-code flow there (#4044).
+  const approves = approvesIn(asked.kind);
+  const inTerminal = () =>
+    askProfileSignIn(plane, asked.profile, undefined, pool, approves || undefined);
   const signIn = {
     label: "Sign in",
     onPress: DRIVEN.has(asked.kind) ? () => setOpen(true) : inTerminal,
@@ -117,12 +121,14 @@ function WaitsOnASignIn({
             pool={pool}
             profile={asked.profile}
             harness={asked.harness}
+            approves={approves}
             onSignedIn={() => signedInForMove(plane, session)}
             // Closed without signing in: the move cannot go ahead, so it is cancelled.
             onEnd={(signedIn) => {
               if (!signedIn) putAwayMove(plane, session);
             }}
             onTerminal={inTerminal}
+            onDeviceCode={() => askProfileSignIn(plane, asked.profile, undefined, pool, true)}
           />
         ) : undefined
       }

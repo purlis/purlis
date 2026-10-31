@@ -162,6 +162,7 @@ fn a_lint_of_a_harness_skill_its_switch_can_leave_out_is_a_problem_in_a_skill() 
         title: "Claude Code".to_owned(),
         skills: vec![mine, plugin],
         repo_left_out: Vec::new(),
+        own: None,
     }];
 
     let needs = of(&studio);

@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 use purlis_core::clusterpool::Kubectl;
 use purlis_core::dockerpool::Docker;
+use purlis_core::profilestore::sign_in::callback::CARRIED_WITHIN;
 use purlis_core::runners::{ClusterKept, ClusterPool, Kept};
 use purlis_host::{CommandConnector, NotChecked};
 use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
@@ -131,25 +132,31 @@ impl ToARunner {
         let checking = docker.clone();
         let preparing = docker.clone();
         let (config, of) = (machine.config.clone(), kept.clone());
-        let connector = CommandConnector::new(
+        let connector = CommandConnector::checked(
             docker.program().to_path_buf(),
             made.connect_args(),
             // The container is checked as it was made before every connection (ADR 0078 as
             // amended 2026-10-17, item 2): anything else refuses the link and runs nothing.
             Arc::new(move || {
-                if resumes {
+                let checked = if resumes {
                     // When it ran, as read before it was started, then its start (#3492).
-                    let resumed = checking.resumed(&made).map_err(|why| why.0)?;
-                    hours_seen(&config, &of, resumed.before);
-                    if resumed.started
-                        && let Ok(ran) = checking.ran(&made)
-                    {
-                        hours_seen(&config, &of, ran);
-                    }
-                    Ok(())
+                    checking.resumed(&made).map(|resumed| {
+                        hours_seen(&config, &of, resumed.before);
+                        if resumed.started
+                            && let Ok(ran) = checking.ran(&made)
+                        {
+                            hours_seen(&config, &of, ran);
+                        }
+                    })
                 } else {
-                    checking.check(&made).map_err(|why| why.0)
-                }
+                    checking.check(&made)
+                };
+                // A refusal of a container Docker no longer lists is a runner removed outside
+                // purlis, never linked to again on its own (#4149).
+                checked.map_err(|why| match checking.gone(&made) {
+                    Ok(Some(gone)) => NotChecked::Gone(gone_said(&of, gone)),
+                    _ => NotChecked::Refused(why.0),
+                })
             }),
         )
         // Each run of `docker exec` is given what every run of `docker` is: a checked copy of
@@ -234,6 +241,22 @@ impl ToARunner {
     }
 }
 
+/// **A runner removed outside purlis, in words a person reads** (#4149): and whether its home
+/// volume, and with it its sign-ins and kept work, went too.
+pub fn gone_said(kept: &Kept, gone: purlis_core::dockerpool::Gone) -> String {
+    let home = if gone.home_kept {
+        "its home volume is still there, and a runner made again takes its sign-ins"
+    } else {
+        "its home volume went too, and with it the sign-ins kept there"
+    };
+    format!(
+        "pool {}'s runner {} was removed outside purlis: Docker has no container {}; {home}",
+        kept.pool(),
+        kept.name(),
+        kept.made.container.short()
+    )
+}
+
 /// **A cluster runner's check, said to the link** (#3292): a changed runner key or a changed
 /// cluster operator key is a changed key, which the window asks the person about.
 pub fn not_checked(why: purlis_core::clusterpool::Refused) -> NotChecked {
@@ -309,7 +332,24 @@ pub fn relaying(
         }
         let resolved = format!("{}/{}", kept.pool(), kept.name());
         let to = ToARunner::of_kept_waking(&machine, &kept)?;
-        Ok((Arc::new(move || to.keep()) as purlis_host::Keep, resolved))
+        Ok((
+            Arc::new(move || {
+                // A runner removed outside purlis and made again (#4149) is kept no more: the
+                // pool's runner made in its place is linked to. A runner still kept, a draining
+                // one too, is kept to, so a pool moved after an update leaves its chats where
+                // they run.
+                let forgotten = matches!(
+                    purlis_core::runners::named(&machine.config, kept.name()),
+                    Ok(None)
+                );
+                let again = (forgotten && !kept.draining)
+                    .then(|| purlis_core::runners::runner_for(&machine.config, kept.pool()).ok())
+                    .flatten()
+                    .and_then(|now| ToARunner::of_kept_waking(&machine, &now).ok());
+                again.as_ref().unwrap_or(&to).keep()
+            }) as purlis_host::Keep,
+            resolved,
+        ))
     })
 }
 
@@ -486,6 +526,7 @@ pub fn count_of(
                 .to_owned(),
         ),
         Err(PoolLink::Suspended) => Err("the runner is suspended".to_owned()),
+        Err(PoolLink::Removed { .. }) => Err("the runner was removed outside purlis".to_owned()),
         Err(PoolLink::Linked) => Err("the runner did not list".to_owned()),
     }
 }
@@ -627,6 +668,27 @@ pub fn keep_profiles(
             }
             Ok(Some(said))
         }
+        Err(down) => Err(down.why),
+    })
+}
+
+/// Why a browser's answer did not reach a runner before 1.59.
+const OLDER_RUNNER: &str = "this pool's runner is older than this version of purlis, so your \
+                            browser's answer could not reach it: update the pool, and try again";
+
+/// **Hands the login waiting on the runner the redirect `target`, over one link of its own**
+/// (`sign_in_redirect`, 1.59, #4044): `Ok` once the login took it, or why not, in words.
+pub fn sign_in_redirect(to: &ToARunner, target: &str) -> Result<(), String> {
+    use purlis_session_protocol::session::KNOWS_SIGN_IN_REDIRECT;
+    on_one_link_within(to, CARRIED_WITHIN, async |linked| match linked {
+        Ok(client) if client.version() < KNOWS_SIGN_IN_REDIRECT => Err(OLDER_RUNNER.to_owned()),
+        Ok(client) => client
+            .sign_in_redirect(target)
+            .await
+            .map_err(|why| match why.refusal() {
+                Some(refused) => said_by_the_runner(&refused.why),
+                None => why.to_string(),
+            }),
         Err(down) => Err(down.why),
     })
 }

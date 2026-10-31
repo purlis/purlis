@@ -8641,6 +8641,108 @@ fn a_profile_a_studio_start_was_refused_on_says_which_line_needs_approving() {
     assert_eq!(NeedsApproval::of_profile("work", &root), None);
 }
 
+/// A Goose declared by the project, taking MCP servers or not (SK-30's fixture in the core).
+fn goose(mcp: bool) -> purlis_core::harness_declaration::Declaration {
+    purlis_core::harness_declaration::parse(
+        &format!(
+            "name = \"goose\"\ntitle = \"Goose\"\nprogram = \"goose\"\n\n[session]\n\n\
+             [terminal]\nready_to_type = \"raw-and-quiet\"\n\n[levels]\n\n[capabilities]\n\
+             mcp_servers = \"{}\"\n",
+            if mcp { "yes" } else { "no: it takes none" }
+        ),
+        purlis_core::harness_declaration::Origin::Project,
+        "harnesses/goose.toml",
+    )
+    .expect("a declaration")
+}
+
+/// #3585 (SK-30's follow-up): a chat on a declared harness no skill reaches is told so in one
+/// line on its tab, once, at its first start, and only where the plane's skills would reach it.
+/// A harness that takes MCP servers, one purlis ships an adapter for, and a start that is not
+/// the chat's first say nothing.
+#[test]
+fn a_chat_on_a_harness_that_takes_no_skills_is_told_so_once_at_its_first_start_3585() {
+    let without = goose(false);
+    let said = not_supported_at_start(Why::New, true, None, Some(&without)).expect("said");
+    assert_eq!(
+        Some(said),
+        purlis_core::skills::not_supported_on(&without).map(|one| one.said),
+        "the studio's and the badge's own line"
+    );
+    // The plane's skills reach no chat here (the studio is off): there is nothing to miss.
+    assert_eq!(
+        not_supported_at_start(Why::New, false, None, Some(&without)),
+        None
+    );
+    // Said at its first start alone: a relaunch, an upgrade's or a lost conversation's start
+    // is the same chat, told already.
+    for again in [Why::Relaunch, Why::Upgrade, Why::Again] {
+        assert_eq!(
+            not_supported_at_start(again, true, None, Some(&without)),
+            None
+        );
+    }
+    // A harness the fallback route reaches, one with an adapter, and a shell say nothing.
+    assert_eq!(
+        not_supported_at_start(Why::New, true, None, Some(&goose(true))),
+        None
+    );
+    assert_eq!(
+        not_supported_at_start(
+            Why::New,
+            true,
+            Some(Harness::ClaudeCode),
+            Some(Harness::ClaudeCode.declared())
+        ),
+        None
+    );
+    assert_eq!(not_supported_at_start(Why::New, true, None, None), None);
+}
+
+/// #3585, end to end: the line is among what the chat's start says on its tab, taken once.
+#[test]
+fn a_new_chat_on_goose_without_mcp_says_skills_are_not_supported_on_its_tab_3585() {
+    let dir = tempfile::tempdir().unwrap();
+    // The project requires its skills, so they reach every chat whatever this machine's flag.
+    std::fs::write(
+        dir.path().join(purlis_core::plane::MANIFEST),
+        "requires = [{ feature = \"project-skills\" }]\n",
+    )
+    .unwrap();
+    let host = Pretend::default();
+    let chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(host.clone()),
+        dir.path().to_path_buf(),
+    );
+    let on = |declared: Option<purlis_core::harness_declaration::Declaration>, name: &str| {
+        chats
+            .start_ready(
+                &chat("/bin/sh", name, None),
+                &purlis_core::start::Ready {
+                    declared,
+                    ..a_shell_ready()
+                },
+                SIZE,
+            )
+            .expect("the chat starts")
+    };
+
+    let without = on(Some(goose(false)), "goose 1");
+    let with = on(Some(goose(true)), "goose 2");
+    let shell = on(None, "a shell");
+
+    let notes = chats.start_notes(without);
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(
+        notes[0].starts_with("Skills are not supported on Goose:"),
+        "{notes:?}"
+    );
+    assert!(chats.start_notes(without).is_empty(), "said once");
+    assert!(chats.start_notes(with).is_empty());
+    assert!(chats.start_notes(shell).is_empty());
+}
+
 /// #3369: a harness chat this window composes is started with a prompt key of its own, handed
 /// to its host with the start, and Use skill… digests under that key, never under the chat's id.
 /// A shell gets none.

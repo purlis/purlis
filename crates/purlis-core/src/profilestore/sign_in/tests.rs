@@ -7,6 +7,54 @@ use std::path::PathBuf;
 
 use crate::profilestore::{Adopted, Folders, MachineProfile};
 
+/// [`super::login_for`], by the harness's own default.
+fn login_for(profile: &Profile, program: &str, provider: Option<&str>) -> Result<Login, String> {
+    super::login_for(profile, program, provider, Way::Asked)
+}
+
+/// **A flow asked for by name is the harness's own word for it**: opencode's `--method` labels on
+/// its ChatGPT plan alone, Codex's `--device-auth`, and none where a harness has no such flow
+/// (#4044).
+#[test]
+fn a_flow_is_asked_for_in_the_harnesss_own_words() {
+    let words = |kind: &str, plan, way| {
+        super::login_for(&profile(kind), "/bin/it", plan, way).map(|login| login.args)
+    };
+
+    assert_eq!(
+        words("opencode", Some("openai"), Way::Browser).unwrap()[2..],
+        [
+            "--provider",
+            "openai",
+            "--method",
+            "ChatGPT Pro/Plus (browser)"
+        ][..]
+    );
+    assert_eq!(
+        words("opencode", Some("openai"), Way::Device).unwrap()[2..],
+        [
+            "--provider",
+            "openai",
+            "--method",
+            "ChatGPT Pro/Plus (headless)"
+        ][..]
+    );
+    assert_eq!(words("codex", None, Way::Browser).unwrap(), ["login"]);
+    assert_eq!(
+        words("codex", None, Way::Device).unwrap(),
+        ["login", "--device-auth"]
+    );
+    assert!(words("claude", None, Way::Device).is_err());
+    assert!(words("opencode", Some("github-copilot"), Way::Device).is_err());
+    // Copilot's own flow is the one purlis drives: asked for by browser, it runs as it is.
+    assert_eq!(
+        words("opencode", Some("github-copilot"), Way::Browser),
+        words("opencode", Some("github-copilot"), Way::Asked)
+    );
+    assert_eq!(Way::named("device"), Some(Way::Device));
+    assert_eq!(Way::named("anything"), None);
+}
+
 /// What a [`Look`] was asked, in order: each program run with its words and folder variables,
 /// and each path whose name was looked for. A `Look` has no way to read a file, so this is
 /// every file purlis touches to tell whether a profile is signed in.

@@ -25,22 +25,26 @@ const TERMINAL: PoolSignInTerminal = { columns: 80, rows: 16 };
 
 /**
  * **The step the strip is on, in words** (spec #4023 story 12): "Step 2 of 3: …". A device code's
- * sign-in (`device`) opens no page as it starts.
+ * sign-in (`device`) opens no page as it starts. A login approved in the browser has one step
+ * fewer, with nothing to paste (`approves`, #4044).
  */
-export function stepSaid(step: StripStep, device = false): string | null {
+export function stepSaid(step: StripStep, device = false, approves = false): string | null {
+  const steps = approves ? 2 : 3;
   switch (step.at) {
     case "starting":
       if (device) return "Step 1 of 3: Starting the sign-in on the runner";
-      return "Step 1 of 3: Opening the sign-in page in your browser";
+      return `Step 1 of ${steps}: Opening the sign-in page in your browser`;
     case "open":
-      return "Step 1 of 3: Opening the sign-in page in your browser";
+      return `Step 1 of ${steps}: Opening the sign-in page in your browser`;
+    case "approve":
+      return `Step 1 of ${steps}: Approve in your browser`;
     case "device":
       return "Step 2 of 3: Enter the code on the page";
     case "code":
     case "refused":
-      return "Step 2 of 3: Paste the code the page shows";
+      return `Step 2 of ${steps}: Paste the code the page shows`;
     case "checking":
-      return "Step 3 of 3: Checking it is signed in on the runner";
+      return `Step ${steps} of ${steps}: Checking it is signed in on the runner`;
     case "could-not-follow":
       return "purlis could not follow this sign-in: the runner's own terminal is open below";
     default:
@@ -55,8 +59,10 @@ export function stepSaid(step: StripStep, device = false): string | null {
  * shows in one field and passes it back, and says Signed in once the harness's own status check
  * on the runner agrees. opencode's Copilot sign-in (#4045) shows its device code first, in the
  * window's device-code pattern (as `ForgeDeviceSignIn` shows it): the code, then the page on the
- * vendor's own https host, opened when the person asks. Nothing of this Mac's sign-in goes to the
- * runner (ADR 0095).
+ * vendor's own https host, opened when the person asks. Codex's, and opencode's ChatGPT one
+ * (#4044), have nothing to paste: the person approves in the page, and purlis carries the
+ * browser's answer to the runner. A port taken on this Mac is said, with a device code as the way
+ * out. Nothing of this Mac's sign-in goes to the runner (ADR 0095).
  *
  * Each step is said by the core (`pool_sign_in_next`); the strip draws it, says which step it is
  * on, moves the keyboard to the code field when it appears, and says each step change to a
@@ -72,8 +78,10 @@ export function PoolSignIn({
   profile,
   harness,
   provider,
+  approves = false,
   onEnd,
   onTerminal,
+  onDeviceCode,
   onSignedIn,
   onStanding,
 }: {
@@ -83,10 +91,14 @@ export function PoolSignIn({
   harness: string;
   /** The plan it signs in to, for a harness that serves several. */
   provider?: string;
+  /** Whether its login is approved in the browser, with nothing to paste. */
+  approves?: boolean;
   /** The strip is closed; `signedIn` when it ended signed in. */
   onEnd: (signedIn: boolean) => void;
   /** "Open in terminal", where the window can open one. */
   onTerminal?: () => void;
+  /** "Use a device code", where the window can open a terminal for it. */
+  onDeviceCode?: () => void;
   /** Told once the runner says it is signed in, before anything is pressed (#3477). */
   onSignedIn?: () => void;
   /** Told the standing its line says, as it changes. */
@@ -139,7 +151,7 @@ export function PoolSignIn({
           else print(now.text);
           continue;
         }
-        if (now.at === "open") {
+        if (now.at === "open" || now.at === "approve") {
           setPage(now.url);
           void openUrl(now.url).catch(() => undefined);
         }
@@ -152,7 +164,7 @@ export function PoolSignIn({
           return;
         }
         if (now.at === "signed-in") signedIn.current?.();
-        if (["signed-in", "failed", "cancelled"].includes(now.at)) {
+        if (["signed-in", "port-taken", "failed", "cancelled"].includes(now.at)) {
           flow.current = undefined;
           return;
         }
@@ -222,6 +234,7 @@ export function PoolSignIn({
       profile={profile}
       harness={harness}
       provider={provider}
+      approves={approves}
       step={step}
       code={code}
       setCode={setCode}
@@ -232,6 +245,7 @@ export function PoolSignIn({
       onEnd={onEnd}
       onTerminal={onTerminal}
       terminal={inTerminal ? { printer, onType: type } : undefined}
+      onDeviceCode={onDeviceCode}
     />
   );
 }
@@ -241,6 +255,8 @@ function standingAt(step: StripStep): SignInStanding {
   switch (step.at) {
     case "could-not-follow":
       return "in-the-terminal";
+    // A port taken on this Mac ended the sign-in: the person acts on it (#4044).
+    case "port-taken":
     case "failed":
     case "not-started":
       return "failed";
@@ -258,6 +274,8 @@ export type SignInStripProps = {
   harness: string;
   /** The plan it signs in to, for a harness that serves several. */
   provider?: string;
+  /** Whether its login is approved in the browser, with nothing to paste. */
+  approves?: boolean;
   step: StripStep;
   /** What the code field holds. */
   code: string;
@@ -272,6 +290,8 @@ export type SignInStripProps = {
   onTerminal?: () => void;
   /** The strip's terminal, while a login runs in it or just ended there. */
   terminal?: { printer: Printer; onType: (text: string) => void };
+  /** "Use a device code", where the window can open a terminal for it. */
+  onDeviceCode?: () => void;
 };
 
 /** **The strip at one step**, as {@link PoolSignIn} drives it: its head, its body, its foot. */
@@ -279,8 +299,8 @@ export function SignInStrip(props: SignInStripProps) {
   const { pool, profile, harness, provider, step, onEnd, onTerminal } = props;
   // opencode's Copilot plan signs in by a device code (#4045).
   const device = provider === "github-copilot";
-  const now = stepSaid(step, device);
-  const over = ["signed-in", "failed", "cancelled", "not-started"].includes(step.at);
+  const now = stepSaid(step, device, props.approves);
+  const over = ["signed-in", "port-taken", "failed", "cancelled", "not-started"].includes(step.at);
   const who = `${profile} (${harness})`;
   // The keyboard was in the code field, which goes once the code is sent: it goes to the strip,
   // never to the page's start.
@@ -343,13 +363,16 @@ export function SignInStrip(props: SignInStripProps) {
           </Button>
         )}
       </div>
-      <p className="ui-setting-help">
-        From a terminal:{" "}
-        <code>
-          purlis profile sign-in {profile} --pool {pool}
-          {provider === undefined ? "" : ` --provider ${provider}`}
-        </code>
-      </p>
+      {/* A login approved in the browser has no way back from a terminal here (#4044). */}
+      {!props.approves && (
+        <p className="ui-setting-help">
+          From a terminal:{" "}
+          <code>
+            purlis profile sign-in {profile} --pool {pool}
+            {provider === undefined ? "" : ` --provider ${provider}`}
+          </code>
+        </p>
+      )}
     </Card>
   );
 }
@@ -362,6 +385,8 @@ function troubleAt(step: StripStep, who: string, pool: string, pasteRefused?: st
       return pasteRefused;
     case "refused":
       return pasteRefused ?? `The sign-in refused that code: ${step.said}`;
+    case "port-taken":
+      return `Port ${step.port} is in use on this Mac, so your browser's answer cannot reach ${pool}'s runner. Close what is using it and try again, or use a device code.`;
     case "failed":
       return `${who} did not sign in on ${pool}: ${step.why}`;
     case "not-started":
@@ -403,8 +428,10 @@ function StepBody({
   setCode,
   onPaste,
   page,
+  harness,
   provider,
   onTerminal,
+  onDeviceCode,
 }: SignInStripProps & { who: string }) {
   const again = page !== undefined && (
     <Button size="sm" variant="ghost" onPress={() => void openUrl(page).catch(() => undefined)}>
@@ -430,6 +457,35 @@ function StepBody({
           pool={pool}
           terminal={onTerminal !== undefined}
         />
+      );
+    case "approve":
+      return (
+        <>
+          <p>
+            Approve the sign-in on the page that opened in your browser. There is nothing to paste:
+            purlis carries your browser&apos;s answer to {pool}&apos;s runner.
+          </p>
+          <p className="ui-setting-help">
+            This signs in {who} on {pool}&apos;s runner only. Nothing of this Mac&apos;s sign-in
+            goes there.
+          </p>
+          {again}
+        </>
+      );
+    case "port-taken":
+      return onDeviceCode === undefined ? (
+        <p className="ui-setting-help">Open a project to sign in with a device code.</p>
+      ) : (
+        <>
+          <Button size="sm" onPress={onDeviceCode}>
+            Use a device code
+          </Button>
+          {harness === "Codex" && (
+            <p className="ui-setting-help">
+              Runs <code>codex login --device-auth</code> on the runner, in a terminal.
+            </p>
+          )}
+        </>
       );
     case "code":
     case "refused":

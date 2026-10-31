@@ -79,6 +79,7 @@ mod news_and_adoption;
 mod persona_lifecycle;
 mod persona_upkeep;
 mod pieces;
+mod plain_git_in_a_held_branch_folder_is_refused_by_the_hook;
 mod plane_resolution;
 mod plane_root;
 mod plugin_install;

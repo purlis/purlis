@@ -415,3 +415,45 @@ fn install_all_reviews_every_skill_not_installed_yet_and_asks_once() {
         text(&both)
     );
 }
+
+/// #4172: an install at the project level granted to a workspace leaves the project's own
+/// notify as it is, says its grant does not reach that workspace yet, and widens it.
+#[test]
+fn install_with_a_grant_widens_the_grant_of_a_project_skill_it_refers_to() {
+    let project = Project::new();
+    let root = project.root();
+    let url = project.url();
+    std::fs::create_dir_all(root.join("skills/notify")).unwrap();
+    std::fs::write(
+        root.join("skills/notify/SKILL.md"),
+        "---\nname: notify\ndescription: Made here.\n---\n",
+    )
+    .unwrap();
+
+    let out = project.run(
+        &[
+            "skill", "install", &url, "deploy", "--folder", "skills", "--grant", "alpha", "--yes",
+        ],
+        "",
+    );
+
+    let said = text(&out);
+    assert!(out.status.success(), "{said}");
+    assert!(
+        said.contains(
+            "refers to notify, which is granted to root: it is left as it is, and the install \
+             grants it to alpha too"
+        ),
+        "{said}"
+    );
+    assert!(said.contains("notify is granted to alpha too"), "{said}");
+    for name in ["deploy", "notify"] {
+        let beside = std::fs::read_to_string(root.join(format!("skills/{name}.toml"))).unwrap();
+        assert!(beside.contains("alpha"), "{name}: {beside}");
+    }
+    assert!(
+        std::fs::read_to_string(root.join("skills/notify/SKILL.md"))
+            .unwrap()
+            .contains("Made here."),
+    );
+}

@@ -120,6 +120,27 @@ pub enum PoolLink {
     /// It suspended itself, a day without a link (#2051): its container is stopped, its home
     /// kept, and the window's next chat there starts it again. A check never wakes it.
     Suspended,
+    /// It was removed outside purlis (#4149): Docker has no container of its id, so no link to
+    /// it comes back, and the window offers Make the runner again. Whether its home volume, with
+    /// its sign-ins, is still there for the runner made again to take them from.
+    Removed { home_kept: bool },
+}
+
+/// **A pool whose runner was removed outside purlis** (#4149): what the Notice of a refused
+/// start names, with Make the runner again.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolRemoved {
+    pub name: String,
+    /// Its home volume, with its sign-ins, is still there.
+    pub home_kept: bool,
+}
+
+/// **What Make the runner again did** (#4149): whether the sign-ins of the runner removed
+/// outside purlis were carried to the runner made again; where not, its profiles are signed in
+/// again.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct MadeAgain {
+    pub sign_ins_kept: bool,
 }
 
 /// **Which version a pool's runner runs, against this desktop's** (#2749): what its row says
@@ -414,8 +435,17 @@ pub async fn docker_pool_link(name: String) -> Result<PoolLink, String> {
             let machine = Machine::here(&config)?;
             let kept = purlis_core::runners::runner_for(&machine.config, &name)
                 .map_err(|why| why.to_string())?;
-            if matches!(machine.running(&kept), Ok(false)) {
-                return Ok(PoolLink::Suspended);
+            match machine.running(&kept) {
+                Ok(false) => return Ok(PoolLink::Suspended),
+                Ok(true) => {}
+                // Docker has no container of its id: removed outside purlis (#4149).
+                Err(_) => {
+                    if let Ok(Some(gone)) = machine.docker.gone(&kept.made) {
+                        return Ok(PoolLink::Removed {
+                            home_kept: gone.home_kept,
+                        });
+                    }
+                }
             }
             crate::runnerlinks::link_state(&ToARunner::of_kept(&machine, &kept)?)
         })
@@ -425,6 +455,73 @@ pub async fn docker_pool_link(name: String) -> Result<PoolLink, String> {
     {
         Err(NOT_HERE.to_owned())
     }
+}
+
+/// **The Docker pools whose runner was removed outside purlis** (#4149): Docker has no
+/// container of its id. What a refused start's Notice offers to make again; a pool whose Docker
+/// does not answer is not among them.
+#[tauri::command]
+#[specta::specta]
+pub async fn docker_pools_removed() -> Result<Vec<PoolRemoved>, String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("asking which pools' runners were removed", move || {
+            removed_on(&Machine::here(&config_root()?)?)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        Err(NOT_HERE.to_owned())
+    }
+}
+
+#[cfg(unix)]
+/// [`docker_pools_removed`], on `machine`.
+pub fn removed_on(machine: &Machine) -> Result<Vec<PoolRemoved>, String> {
+    let pools = purlis_core::runners::pools(&machine.config).map_err(|why| why.to_string())?;
+    Ok(pools
+        .iter()
+        .filter_map(|pool| {
+            let kept = purlis_core::runners::runner_for(&machine.config, pool.name()).ok()?;
+            let gone = machine.docker.gone(&kept.made).ok()??;
+            Some(PoolRemoved {
+                name: pool.name().to_owned(),
+                home_kept: gone.home_kept,
+            })
+        })
+        .collect())
+}
+
+/// **Make the runner again** (#4149): the pool `name`'s runner, removed outside purlis, made
+/// again from the pool's own image and limits, with the sign-ins of its home where that is still
+/// there, and paired. The window then has it keep the pool's profiles, as after Add a pool. Refused for
+/// a runner Docker still has, which resumes as it is.
+#[tauri::command]
+#[specta::specta]
+pub async fn docker_pool_make_again(name: String) -> Result<MadeAgain, String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("making a pool's runner again", move || {
+            make_again_on(&Machine::here(&config_root()?)?, &name)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        Err(NOT_HERE.to_owned())
+    }
+}
+
+#[cfg(unix)]
+/// [`docker_pool_make_again`], on `machine`.
+pub fn make_again_on(machine: &Machine, name: &str) -> Result<MadeAgain, String> {
+    let desktop = machine.desktop()?.pinned();
+    let again = purlis_core::pools::make_again(&machine.config, &machine.docker, name, &desktop)
+        .map_err(|why| refused_said(&why.to_string()))?;
+    Ok(MadeAgain {
+        sign_ins_kept: again.sign_ins_kept,
+    })
 }
 
 /// **Which version the pool `name`'s runner runs, against this desktop's** (#2749).

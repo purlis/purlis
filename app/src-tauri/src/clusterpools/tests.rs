@@ -12,7 +12,7 @@ const OTHER: &str = "ed25519:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdc
 
 /// A `runners.json` holding the cluster pool `team` and its runner, under `config`.
 #[cfg(unix)]
-fn a_cluster_pool_kept(config: &Path) {
+pub(crate) fn a_cluster_pool_kept(config: &Path) {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     let folder = purlis_core::machine::dir(config);
     std::fs::create_dir_all(&folder).unwrap();

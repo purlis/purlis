@@ -23,6 +23,16 @@
 //!   chat has not come back since a restart (restoring, or waiting to start again), or no app
 //!   answered for this chat at all.
 //!
+//! **Plain git is held to it too** (#3931). A chat started without the sandbox commits, rebases
+//! and pushes with git itself, which purlis does not broker. So its Bash guard reads each line
+//! for git that writes a branch folder's branch ([`crate::branchgit::branch_write`]) and asks
+//! the app this same check before it runs ([`crate::hookwire::GitWork::WorktreeClaim`]): a
+//! folder another live chat holds is refused in the words above, and a free one is taken.
+//! **Where no app answers in time, the git runs**: unlike a brokered write, which fails closed
+//! with no app, a guard on the chat's own git with no answer lets the call through (the review
+//! of #4129). The person's own terminal runs no guard, and a shell tab is never held to a
+//! claim.
+//!
 //! The claim and the check are made under one lock, an advisory lock on a file beside the
 //! workspace's piece log taken by the app and by the command line alike, so of two chats
 //! writing at once in a free folder one takes it and the other is refused, whichever process
@@ -38,6 +48,11 @@ use serde_json::Value;
 
 use crate::pieces::{self, Event, Who};
 use crate::worktree::Located;
+
+/// The trace reason the Bash guard tallies a refusal of plain git under: a chat's own `git
+/// commit`, `push` or update in a branch folder another live chat holds (#3931), refused in the
+/// words a brokered write is refused in.
+pub const REASON: &str = "branch-folder-held";
 
 /// A chat the app has, as a claim's holder is looked for among them.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -273,19 +288,63 @@ pub fn take(
     act: Act,
     now: DateTime<Utc>,
 ) -> Result<(), String> {
+    take_telling(plane, at, who, live, act, now).map_err(Refusal::why)
+}
+
+/// Why [`take_telling`] refused: the one case a guard on a chat's own git refuses for
+/// (#3931, the review of #4129), apart from every other.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Refusal {
+    /// Another chat holds the folder, and its program runs here now: the sentence names it.
+    HeldByALiveChat(String),
+    /// Anything else: a holder that has not come back since a restart, no app to say who
+    /// lives, or a lock or a claim that could not be held or written.
+    Otherwise(String),
+}
+
+impl Refusal {
+    /// The sentence, whichever it is.
+    pub fn why(self) -> String {
+        match self {
+            Self::HeldByALiveChat(why) | Self::Otherwise(why) => why,
+        }
+    }
+}
+
+/// [`take`], saying whether a refusal is because another live chat holds the folder.
+pub fn take_telling(
+    plane: &Path,
+    at: &Located,
+    who: &Who,
+    live: Option<&[Live]>,
+    act: Act,
+    now: DateTime<Utc>,
+) -> Result<(), Refusal> {
     let refused = |why: String| {
-        format!(
+        Refusal::Otherwise(format!(
             "{why}, so a second chat could not be kept out of {}'s branch folder '{}', and \
              purlis will not {} there. Nothing was done",
             at.repo,
             at.piece,
             act.word()
-        )
+        ))
     };
     let _one_at_a_time = locked(plane, &at.workspace).map_err(refused)?;
     match writer(plane, at, who.chat.as_deref(), live, act) {
         Writer::Yours => Ok(()),
-        Writer::Refused(why) => Err(why),
+        Writer::Refused(why) => {
+            // Under the lock, so the holder read is the one `writer` judged.
+            let by_a_live_chat = holder(plane, at).is_some_and(|holder| {
+                live.into_iter()
+                    .flatten()
+                    .any(|one| one.id == holder.id && one.back)
+            });
+            Err(if by_a_live_chat {
+                Refusal::HeldByALiveChat(why)
+            } else {
+                Refusal::Otherwise(why)
+            })
+        }
         Writer::Free if who.chat.is_none() => Ok(()),
         Writer::Free => pieces::record(
             plane,

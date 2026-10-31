@@ -184,6 +184,10 @@ async fn hosting_keeping(
             keeping: keeping(kept, desktop.clone()),
             forgetting: forgetting(kept, desktop.clone()),
             listing: listing(kept, desktop),
+            delivering: Arc::new(|target| match target {
+                "/auth/callback?code=c&state=s" => Ok(()),
+                _ => Err("no sign-in is waiting on the runner".to_owned()),
+            }),
         },
     );
     let host = tokio::spawn(async move {
@@ -416,6 +420,36 @@ async fn the_paired_desktop_stages_a_profiles_settings_in_batches_and_a_keep_tak
     let handed = kept.lock().unwrap().pop().expect("it was kept");
     assert_eq!(handed.settings, Some(files));
     assert_eq!(handed.settings_staged, None);
+}
+
+/// **The paired desktop hands the runner a sign-in's redirect, and hears only how it went**
+/// (#4044).
+#[tokio::test]
+async fn the_paired_desktop_hands_the_runner_a_sign_ins_redirect() {
+    let dir = tempfile::tempdir().unwrap();
+    let place = place_in(dir.path());
+    let (runner, desktop) = (identity(RUNNER), identity(DESKTOP));
+    let runner_pinned = pinned_of(&runner);
+    let paired: Paired = Arc::new(Mutex::new(Ok(Some((runner, pinned_of(&desktop))))));
+    let (_stop, _host) = hosting(&place, &paired).await;
+
+    let linked = link(&place, &desktop, &runner_pinned)
+        .await
+        .expect("the paired desktop is linked");
+    let client = purlis_session_protocol::session::Client::new(linked).0;
+
+    client
+        .sign_in_redirect("/auth/callback?code=c&state=s")
+        .await
+        .expect("the login took it");
+    let refused = client
+        .sign_in_redirect("/auth/callback?code=late&state=s")
+        .await
+        .expect_err("no login took it");
+    assert_eq!(
+        refused.refusal().map(|refusal| refusal.why.as_str()),
+        Some("no sign-in is waiting on the runner")
+    );
 }
 
 /// **The paired desktop has the runner keep its profile** (1.43, #2049): the runner is handed the

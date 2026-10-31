@@ -960,6 +960,11 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
             })?;
             purlis_core::profilestore::onrunner::kept_for(&homes, &desktop.device)
         }),
+        // A sign-in's redirect, carried from the desktop's browser to the login listening here
+        // (#4044). The login's answer stays here.
+        delivering: std::sync::Arc::new(|target| {
+            purlis_core::profilestore::sign_in::callback::deliver(target)
+        }),
     };
     ExitCode::from(
         u8::try_from(purlis_host::serve_alone_answering(
@@ -1433,6 +1438,10 @@ enum ProfileCommand {
             conflicts_with_all = ["check", "until_input_ends", "pool"]
         )]
         in_own_terminal: Option<String>,
+        /// Which of the harness's own flows to run, `browser` or `device`: how a desktop asks
+        /// for one on a runner.
+        #[arg(long, hide = true, conflicts_with_all = ["check", "pool"])]
+        way: Option<String>,
     },
     /// Sign a profile of this machine's out on this device, through its harness's own sign-out:
     /// how a desktop signs one out on a runner.
@@ -4159,6 +4168,7 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
             pool,
             until_input_ends,
             in_own_terminal,
+            way,
         } => {
             if let Some(pool) = pool {
                 return match pool_sign_in(&store, name, pool, provider.as_deref()) {
@@ -4166,6 +4176,12 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                     Err(why) => refused(&why),
                 };
             }
+            use purlis_core::profilestore::sign_in::Way;
+            let way = match way.as_deref().map(Way::named) {
+                None => Way::Asked,
+                Some(Some(way)) => way,
+                Some(None) => return refused("--way is browser or device"),
+            };
             let held = match in_own_terminal {
                 Some(size) => match terminal_size(size) {
                     Ok(size) => Held::InOwnTerminal(size),
@@ -4174,7 +4190,7 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                 None if *until_input_ends => Held::UntilInputEnds,
                 None => Held::No,
             };
-            return profile_sign_in(&store, name, *check, provider.as_deref(), held);
+            return profile_sign_in(&store, name, *check, provider.as_deref(), held, way);
         }
         ProfileCommand::SignOut { name } => return profile_sign_out(&store, name),
         ProfileCommand::List => unreachable!("listed in run"),
@@ -4201,6 +4217,7 @@ fn profile_sign_in(
     check: bool,
     provider: Option<&str>,
     held: Held,
+    way: purlis_core::profilestore::sign_in::Way,
 ) -> ExitCode {
     use purlis_core::profilestore::{self, installs, sign_in};
     let record = match profilestore::list(store.config_root()) {
@@ -4262,7 +4279,7 @@ fn profile_sign_in(
         eprintln!("{said}");
         return ExitCode::SUCCESS;
     }
-    let login = match sign_in::login_of(&record, provider, pinned.as_deref()) {
+    let login = match sign_in::login_by(&record, provider, pinned.as_deref(), way) {
         Ok(login) => login,
         Err(why) => return refused(&why),
     };
@@ -4333,8 +4350,10 @@ fn pool_sign_in(
             named.join(" or ")
         ));
     }
+    // A login approved in the browser waits for an answer only the window carries (#4044).
     if sign_in::driven::Driven::of_plan(&record.harness, provider, std::time::Instant::now())
         .is_none()
+        || sign_in::driven::waits_for_the_browser(&record.harness, provider)
     {
         return Err(format!(
             "purlis follows only Claude Code's and opencode's Copilot sign-in on a pool so far. \
@@ -4405,7 +4424,7 @@ fn pool_sign_in(
                 .unwrap_or(sign_in::Standing::CannotTell)
         }
     };
-    let driving = sign_in::driven::drive_with(&login, &record.harness, provider, check)?;
+    let driving = sign_in::driven::drive_with(&login, &record.harness, provider, None, check)?;
     let (typed, lines) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         for line in std::io::stdin().lines().map_while(Result::ok) {

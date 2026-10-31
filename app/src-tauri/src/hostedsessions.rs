@@ -847,6 +847,9 @@ pub(crate) enum Reconnect {
     /// The host says the runner answered with another key than the one pinned for it
     /// (`key_changed`, #2752): it does not link to it again until it is removed and added anew.
     KeyChanged,
+    /// The host says the runner was removed outside purlis (`gone`, #4149): it does not link to
+    /// it again until it is made again.
+    Gone,
 }
 
 /// Told what a link hears of the runner its host relays it to.
@@ -1933,7 +1936,9 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
             Told::Pushed(Pushed::Missed {
                 device, resumes_at, ..
             }) => lock(&shared.runner_log).missed(&device, resumes_at),
-            Told::Pushed(Pushed::LinkDown { key_changed, .. }) => {
+            Told::Pushed(Pushed::LinkDown {
+                key_changed, gone, ..
+            }) => {
                 // The runner let go of every line it handed on over the link that went: each
                 // command of its that waits here has gone, its Ask with it (#3408).
                 let projects: Vec<Arc<Relayed>> = lock(&shared.hearing).values().cloned().collect();
@@ -1944,6 +1949,9 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                 reconnect(&shared, Reconnect::Started);
                 if key_changed {
                     reconnect(&shared, Reconnect::KeyChanged);
+                }
+                if gone {
+                    reconnect(&shared, Reconnect::Gone);
                 }
             }
             Told::Pushed(Pushed::LinkBack {}) => {
@@ -2034,7 +2042,7 @@ pub struct HostedSessions {
     /// this window, that nothing has reattached yet, by its number (#2006).
     left: Arc<Mutex<HashMap<u32, HeldProgram>>>,
     /// The prompt key the host answered each chat this window launched with (#3369), until the
-    /// start asks for it ([`SessionHost::prompt_key_started`]): none from a host before 1.58,
+    /// start asks for it ([`SessionHost::prompt_key_started`]): none from a host before 1.60,
     /// which set none in the chat's environment.
     keys_started: Mutex<HashMap<u32, Option<purlis_core::skillspan::PromptSalt>>>,
     /// Each browser the host still had for this project as the window first held it, from
@@ -2285,10 +2293,15 @@ fn reconnects_of(
                 (chats.into_iter().collect(), Reconnection::Reconnected)
             }
             // Said whatever chats there are: the window says it once for the project.
-            Reconnect::KeyChanged => {
+            Reconnect::KeyChanged | Reconnect::Gone => {
                 let chats: Vec<u32> = lock(&dimmed).chats.iter().copied().collect();
+                let said = if heard == Reconnect::Gone {
+                    Reconnection::RunnerGone
+                } else {
+                    Reconnection::KeyChanged
+                };
                 if let Some(tell) = lock(&dimmed).tell.clone() {
-                    tell(chats, Reconnection::KeyChanged);
+                    tell(chats, said);
                 }
                 return;
             }
@@ -2970,7 +2983,7 @@ struct Begun {
     id: u32,
     confined: Option<session::Confined>,
     ran: Option<session::RunSandbox>,
-    /// The chat's prompt key, as the host said it (1.58, #3369).
+    /// The chat's prompt key, as the host said it (1.60, #3369).
     prompt_key: Option<purlis_core::skillspan::PromptSalt>,
 }
 
