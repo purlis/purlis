@@ -4427,7 +4427,7 @@ impl Chats {
             // How this start routed its skills (#3578): what its record keeps, and what a later
             // reattach of it routes by. A runner's chat is armed by its runner, so none (#3604).
             routing: (!armed_by_its_runner)
-                .then(|| purlis_core::skills::router::Kept::of(skills.routed.as_ref())),
+                .then(|| purlis_core::skills::router::Kept::of(skills.routed.as_deref())),
             ..chat.clone()
         };
         // What a start says on its tab was said at the start it reattached to (#2006); what
