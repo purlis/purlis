@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pool limits prototype</title>
+<style>
+/* Purlis Classic, light (crates/purlis-core/src/theme/built-in/purlis-classic/theme.json). */
+:root {
+  --surface-base: #fcfbf8;
+  --surface-sunken: #f4f3ee;
+  --surface-deep: #e8e6df;
+  --surface-raised: #f0eee8;
+  --surface-overlay: #ffffff;
+  --surface-hover: #ebe9e2;
+  --control-base: #e8e6df;
+  --control-hover: #dcd9d0;
+  --control-count: #d2cfc5;
+  --text-primary: #1f1e1a;
+  --text-secondary: #403e37;
+  --text-muted: #605d54;
+  --text-quiet: #605d54;
+  --border-subtle: #d8d5cc;
+  --border-strong: #b8b4a8;
+  --border-control: #b8b4a8;
+  --accent-base: #086a56;
+  --accent-surface: #dcf1ea;
+  --accent-text: #086a56;
+  --accent-fill: #dcf1ea;
+  --accent-fill-hover: #c9e8de;
+  --accent-fill-edge: #086a56;
+  --accent-fill-text: #1f1e1a;
+  --focus-ring: #086a56;
+  --list-selected: #d3ede4;
+  --list-selected-edge: #086a56;
+  --danger-base: #a83232;
+  --danger-surface: #fbeaea;
+  --danger-text: #8a1f1f;
+  --attention-surface: #fbf1dc;
+  --attention-text: #6b4700;
+  --wash-warning: #8055001f;
+  --state-running: #0966d4;
+  --state-waiting: #7a5100;
+  --state-success: #197a35;
+  --state-failed: #cf222e;
+  --overlay-scrim: #1f1e1a66;
+  --overlay-shadow: #1f1e1a2e;
+  --terminal-background: #fcfbf8;
+  --terminal-foreground: #1f1e1a;
+  --terminal-green: #116329;
+  --terminal-yellow: #7d4e00;
+  --terminal-blue: #0969da;
+  /* Prototype chrome only: not part of the design. */
+  --proto-bar-bg: #2d2350;
+  --proto-bar-text: #f3efff;
+  --proto-bar-control: #4a3d7a;
+  --proto-bar-control-hover: #5d4e94;
+  --proto-mark: #6a4fc9;
+  --proto-mark-wash: #6a4fc914;
+
+  --space-1: calc(2rem / 14);
+  --space-2: calc(4rem / 14);
+  --space-3: calc(6rem / 14);
+  --space-4: calc(8rem / 14);
+  --space-5: calc(12rem / 14);
+  --space-6: calc(16rem / 14);
+  --space-7: calc(24rem / 14);
+  --space-8: calc(32rem / 14);
+  --font-size-2xs: calc(10rem / 14);
+  --font-size-xs: calc(11rem / 14);
+  --font-size-sm: calc(12rem / 14);
+  --font-size-md: calc(13rem / 14);
+  --font-size-base: 1rem;
+  --font-size-lg: calc(16rem / 14);
+  --font-mono: ui-monospace, Menlo, Consolas, monospace;
+  --radius-sm: 3px;
+  --radius-control: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-full: 9999px;
+  --size-control: 2rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface-base: #191917;
+    --surface-sunken: #111110;
+    --surface-deep: #141413;
+    --surface-raised: #1b1b19;
+    --surface-overlay: #1f1f1c;
+    --surface-hover: #242421;
+    --control-base: #262623;
+    --control-hover: #2e2e2a;
+    --control-count: #373733;
+    --text-primary: #dddcd6;
+    --text-secondary: #c9c8c0;
+    --text-muted: #9e9d94;
+    --text-quiet: #9e9d94;
+    --border-subtle: #2f2f2b;
+    --border-strong: #41403b;
+    --border-control: #41403b;
+    --accent-base: #52c4a6;
+    --accent-surface: #17302a;
+    --accent-text: #52c4a6;
+    --accent-fill: #17302a;
+    --accent-fill-hover: #1f3530;
+    --accent-fill-edge: #52c4a6;
+    --accent-fill-text: #dddcd6;
+    --focus-ring: #52c4a6;
+    --list-selected: #112b25;
+    --list-selected-edge: #52c4a6;
+    --danger-base: #c97474;
+    --danger-surface: #2a1a1a;
+    --danger-text: #f2a0a0;
+    --attention-surface: #2a2414;
+    --attention-text: #e8c170;
+    --wash-warning: #d299221f;
+    --state-running: #2f81f7;
+    --state-waiting: #d29922;
+    --state-success: #3fb950;
+    --state-failed: #f85149;
+    --overlay-scrim: #0000008c;
+    --overlay-shadow: #00000099;
+    --terminal-background: #111110;
+    --terminal-foreground: #dddcd6;
+    --terminal-green: #3fb950;
+    --terminal-yellow: #d29922;
+    --terminal-blue: #58a6ff;
+    --proto-bar-bg: #e6defe;
+    --proto-bar-text: #1f1640;
+    --proto-bar-control: #cfc2fa;
+    --proto-bar-control-hover: #bba9f5;
+    --proto-mark: #b6a3ff;
+    --proto-mark-wash: #b6a3ff1a;
+  }
+}
+:root[data-theme="dark"] {
+  --surface-base: #191917;
+  --surface-sunken: #111110;
+  --surface-deep: #141413;
+  --surface-raised: #1b1b19;
+  --surface-overlay: #1f1f1c;
+  --surface-hover: #242421;
+  --control-base: #262623;
+  --control-hover: #2e2e2a;
+  --control-count: #373733;
+  --text-primary: #dddcd6;
+  --text-secondary: #c9c8c0;
+  --text-muted: #9e9d94;
+  --text-quiet: #9e9d94;
+  --border-subtle: #2f2f2b;
+  --border-strong: #41403b;
+  --border-control: #41403b;
+  --accent-base: #52c4a6;
+  --accent-surface: #17302a;
+  --accent-text: #52c4a6;
+  --accent-fill: #17302a;
+  --accent-fill-hover: #1f3530;
+  --accent-fill-edge: #52c4a6;
+  --accent-fill-text: #dddcd6;
+  --focus-ring: #52c4a6;
+  --list-selected: #112b25;
+  --list-selected-edge: #52c4a6;
+  --danger-base: #c97474;
+  --danger-surface: #2a1a1a;
+  --danger-text: #f2a0a0;
+  --attention-surface: #2a2414;
+  --attention-text: #e8c170;
+  --wash-warning: #d299221f;
+  --state-running: #2f81f7;
+  --state-waiting: #d29922;
+  --state-success: #3fb950;
+  --state-failed: #f85149;
+  --overlay-scrim: #0000008c;
+  --overlay-shadow: #00000099;
+  --terminal-background: #111110;
+  --terminal-foreground: #dddcd6;
+  --terminal-green: #3fb950;
+  --terminal-yellow: #d29922;
+  --terminal-blue: #58a6ff;
+  --proto-bar-bg: #e6defe;
+  --proto-bar-text: #1f1640;
+  --proto-bar-control: #cfc2fa;
+  --proto-bar-control-hover: #bba9f5;
+  --proto-mark: #b6a3ff;
+  --proto-mark-wash: #b6a3ff1a;
+}
+
+* { box-sizing: border-box; }
+html { font-size: 14px; -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  padding: 16px 16px 160px;
+  background: var(--surface-deep);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: var(--font-size-base);
+  line-height: 1.4;
+  overflow-x: hidden;
+}
+code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
+button { font: inherit; }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* Prototype header line */
+.proto-head {
+  max-width: 1080px; margin: 0 auto var(--space-4);
+  display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); align-items: baseline;
+  font-size: var(--font-size-xs); color: var(--text-muted);
+}
+.proto-tag {
+  display: inline-block; padding: 0 var(--space-3); border-radius: var(--radius-full);
+  border: 1px dashed var(--proto-mark); color: var(--proto-mark); font-weight: 600;
+}
+.proto-state b { color: var(--text-primary); font-weight: 600; }
+
+/* The window */
+.window {
+  max-width: 1080px; margin: 0 auto;
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 8px 24px var(--overlay-shadow);
+  overflow: hidden;
+}
+.titlebar {
+  display: flex; align-items: center; gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--font-size-sm); color: var(--text-muted);
+}
+.dots { display: inline-flex; gap: 6px; }
+.dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--control-count); display: block; }
+.tabstrip { display: flex; min-width: 0; overflow: hidden; }
+.tabstrip span {
+  padding: var(--space-2) var(--space-4); border-right: 1px solid var(--border-subtle);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tabstrip span[aria-current] { background: var(--surface-base); color: var(--text-primary); }
+
+.ui-settings {
+  display: grid;
+  grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr);
+  grid-template-areas: "top top" "nav body";
+  gap: var(--space-5) var(--space-7);
+  padding: var(--space-6) var(--space-7) var(--space-7);
+}
+.ui-settings-top {
+  grid-area: top; display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: var(--space-3) var(--space-5);
+  padding-bottom: var(--space-4); border-bottom: 1px solid var(--border-subtle);
+}
+.levels { display: inline-flex; border: 1px solid var(--border-control); border-radius: var(--radius-control); overflow: hidden; }
+.levels span { padding: var(--space-2) var(--space-5); font-size: var(--font-size-sm); color: var(--text-secondary); }
+.levels span[aria-current] { background: var(--list-selected); color: var(--text-primary); box-shadow: inset 0 -2px 0 var(--list-selected-edge); }
+.ui-settings-about { margin: 0; font-size: var(--font-size-xs); color: var(--text-muted); }
+.ui-settings-nav { grid-area: nav; display: flex; flex-direction: column; gap: var(--space-1); }
+.ui-settings-nav span {
+  padding: var(--space-2) var(--space-4); color: var(--text-secondary);
+  border-radius: var(--radius-control); font-size: var(--font-size-md);
+}
+.ui-settings-nav span.sub { padding-left: var(--space-6); }
+.ui-settings-nav span[aria-current] {
+  color: var(--text-primary); background: var(--list-selected);
+  box-shadow: inset 2px 0 0 var(--list-selected-edge);
+}
+.ui-settings-body { grid-area: body; min-width: 0; }
+.group-title { margin: 0; font-size: var(--font-size-lg); font-weight: 600; }
+.ui-setting-help { margin: var(--space-1) 0 0; font-size: var(--font-size-xs); color: var(--text-muted); }
+.ui-setting-row { display: grid; gap: var(--space-2); padding-block: var(--space-5); border-bottom: 1px solid var(--border-subtle); }
+.ui-setting-label { font-weight: 500; }
+.ui-machine-list { margin: 0; padding: 0; list-style: none; }
+.ui-machine-entry {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3);
+  padding: var(--space-4) 0; border-top: 1px solid var(--border-subtle);
+}
+.ui-machine-entry:first-child { border-top: 0; }
+.ui-machine-name { font-weight: 600; }
+.ui-machine-path { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; font-size: var(--font-size-xs); color: var(--text-quiet); }
+.entry-full { flex: 1 1 100%; min-width: 0; }
+
+/* Buttons (ui/button/button.css) */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  height: var(--size-control); padding: 0 var(--space-4);
+  border: 1px solid var(--border-control); border-radius: var(--radius-control);
+  color: var(--text-primary); background: var(--control-base);
+  font-size: var(--font-size-base); line-height: 1; white-space: nowrap; cursor: pointer;
+}
+.btn:hover { background: var(--control-hover); }
+.btn.sm { height: calc(var(--size-control) * 0.8); padding: 0 var(--space-4); font-size: var(--font-size-sm); }
+.btn.primary { border-color: var(--accent-fill-edge); color: var(--accent-fill-text); background: var(--accent-fill); }
+.btn.primary:hover { background: var(--accent-fill-hover); }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn.ghost:hover { background: var(--surface-hover); }
+.btn.quiet { border-color: transparent; background: transparent; color: var(--text-quiet); }
+.btn.quiet:hover { background: var(--surface-hover); color: var(--text-primary); }
+.btn.danger { border-color: var(--danger-base); color: var(--danger-text); background: var(--danger-surface); }
+.btn[aria-disabled="true"] { opacity: .55; cursor: default; }
+.row-end { margin-inline-start: auto; }
+.btns { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+
+/* Badges (ui/badge/badge.css) */
+.badge {
+  display: inline-flex; align-items: center; gap: var(--space-2); flex: none;
+  padding: 0 var(--space-3); border-radius: var(--radius-full);
+  color: var(--text-secondary); background: var(--control-count);
+  font-size: var(--font-size-xs); line-height: 1.4; white-space: nowrap;
+}
+.badge.accent { color: var(--text-primary); background: var(--accent-surface); }
+.badge.waiting { color: var(--state-waiting); background: var(--wash-warning); }
+.badge.ok { color: var(--state-success); background: transparent; padding-left: 0; }
+.badge.trouble { color: var(--danger-text); background: var(--danger-surface); }
+
+/* Fields (ui/field/field.css) */
+.field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.field label { font-weight: 500; }
+.field .help { margin: 0; color: var(--text-quiet); font-size: var(--font-size-xs); }
+.field .error { margin: 0; color: var(--danger-text); font-size: var(--font-size-xs); min-height: calc(var(--font-size-xs) * 1.4); }
+.input {
+  height: var(--size-control); padding: 0 var(--space-4); min-width: 0; width: 100%;
+  border: 1px solid var(--border-control); border-radius: var(--radius-control);
+  background: var(--surface-sunken); color: var(--text-primary); font: inherit;
+}
+.input.mono { font-family: var(--font-mono); }
+.input:focus { outline: 2px solid var(--focus-ring); outline-offset: -1px; }
+.input-line { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
+.input-line .input { flex: 1 1 14rem; }
+
+/* Rows of the page */
+select.input { width: auto; padding-right: var(--space-2); }
+.notice { border: 1px solid var(--state-waiting); border-radius: var(--radius-lg); background: var(--surface-raised); padding: var(--space-4) var(--space-5); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
+.notice.trouble { border-color: transparent; color: var(--danger-text); background: var(--danger-surface); }
+.notice.news { border-color: var(--border-subtle); color: var(--text-primary); }
+.notice p { margin: 0 0 var(--space-2); }
+.sug-title { font-weight: 600; font-size: var(--font-size-base); }
+.sug-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-block: var(--space-3); }
+.sug-line .input { width: 6rem; flex: none; color: var(--text-primary); }
+.sug-cap { color: var(--text-muted); font-size: var(--font-size-xs); }
+.err-wrap { margin-block: var(--space-5); display: grid; gap: var(--space-2); justify-items: start; }
+.err-wrap .notice { width: 100%; }
+.dash-tag { display: inline-block; padding: 0 var(--space-3); border: 1px dashed var(--proto-mark); border-radius: var(--radius-full); color: var(--proto-mark); font-size: var(--font-size-2xs); white-space: nowrap; }
+.pool-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin: var(--space-3) 0 0; font-size: var(--font-size-xs); color: var(--text-muted); }
+.back { margin-bottom: var(--space-3); }
+.lim { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2) var(--space-6); padding-block: var(--space-4); border-bottom: 1px solid var(--border-subtle); align-items: start; }
+.lim.aimed { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-control); }
+.lim-name { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); font-weight: 500; }
+.mod { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-base); flex: none; }
+.lim-sub { margin: var(--space-1) 0 0; font-size: var(--font-size-xs); color: var(--text-muted); }
+.lim-edit { display: flex; align-items: center; gap: var(--space-3); justify-content: flex-end; }
+.lim-edit .input.num { width: 5.5rem; flex: none; }
+.lim-edit .unit { min-width: 4.4rem; font-size: var(--font-size-sm); color: var(--text-muted); }
+.lim-edit select.input { min-width: 4.4rem; }
+.lim-edit .btn { width: 4rem; }
+.input[aria-invalid="true"] { border-color: var(--danger-base); }
+.refused { grid-column: 1 / -1; margin: 0; font-size: var(--font-size-xs); color: var(--danger-text); text-align: end; }
+.pending { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin: 0; font-size: var(--font-size-xs); color: var(--attention-text); background: var(--attention-surface); padding: var(--space-2) var(--space-4); border-radius: var(--radius-control); }
+.live { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-1) var(--space-4); margin-top: var(--space-1); }
+.live-said { font-size: var(--font-size-sm); }
+.live-said b { font-weight: 600; }
+.track { grid-column: 1 / -1; height: 6px; border-radius: var(--radius-full); background: var(--control-count); overflow: hidden; }
+.fill { display: block; height: 100%; background: var(--accent-base); }
+.fill.near { background: var(--state-waiting); }
+.fill.over { background: var(--state-failed); }
+.area { margin-top: var(--space-7); }
+.area-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-4); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border-strong); }
+.area-head h3 { margin: 0; font-size: var(--font-size-base); font-weight: 600; }
+.area-head p { flex: 1 1 16rem; margin: 0; font-size: var(--font-size-xs); color: var(--text-muted); }
+.adv-toggle { margin-top: var(--space-5); }
+.said { margin: var(--space-3) 0 0; font-size: var(--font-size-sm); color: var(--state-success); }
+.scrim { position: fixed; inset: 0; z-index: 30; display: flex; align-items: flex-start; justify-content: center; padding: max(24px, 10vh) 16px 24px; background: var(--overlay-scrim); }
+.dialog { width: min(520px, 100%); background: var(--surface-overlay); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); box-shadow: 0 12px 32px var(--overlay-shadow); padding: var(--space-6); }
+.dialog h2 { margin: 0 0 var(--space-3); font-size: var(--font-size-lg); line-height: 1.2; }
+.dialog p { margin: 0 0 var(--space-5); color: var(--text-secondary); }
+.dialog .btns { justify-content: flex-end; }
+
+/* The prototype's bar */
+.bar { position: fixed; inset-inline: 0; bottom: 0; z-index: 20; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-6); padding: var(--space-3) var(--space-5); background: var(--proto-bar-bg); color: var(--proto-bar-text); font-size: var(--font-size-xs); }
+.bar b { letter-spacing: .05em; }
+.axis { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.axis > span { margin-inline-end: var(--space-2); opacity: .85; }
+.pill { border: 1px solid transparent; border-radius: var(--radius-full); padding: var(--space-1) var(--space-4); background: var(--proto-bar-control); color: inherit; font: inherit; cursor: pointer; }
+.pill:hover { background: var(--proto-bar-control-hover); }
+.pill[aria-pressed="true"] { border-color: currentColor; font-weight: 700; }
+
+@media (max-width: 720px) {
+  .ui-settings { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "nav" "body"; padding: var(--space-5) var(--space-4); }
+  .ui-settings-nav { flex-direction: row; flex-wrap: wrap; }
+  .lim { grid-template-columns: minmax(0, 1fr); }
+  .lim-edit { justify-content: flex-start; }
+  .refused { text-align: start; }
+  body { padding-bottom: 260px; }
+}
+</style>
+</head>
+<body>
+<div class="proto-head">
+  <span class="proto-tag">PROTOTYPE</span>
+  <span class="proto-state" id="headSaid"></span>
+  <span>Throwaway. Fake data, held in memory. Nothing is saved.</span>
+</div>
+<div class="window">
+  <div class="titlebar"><span class="dots"><i></i><i></i><i></i></span><div class="tabstrip"><span aria-current="page">Settings</span></div></div>
+  <div class="ui-settings">
+    <div class="ui-settings-top">
+      <div class="levels"><span aria-current="true">You</span><span>Project</span><span>Workspace</span></div>
+      <p class="ui-settings-about">Your own settings, on this machine. Kept in your purlis folder, which only you see.</p>
+    </div>
+    <nav class="ui-settings-nav" aria-label="Settings groups">
+      <span>Look</span><span>Profiles</span><span>This machine</span><span class="sub" aria-current="true">Pools</span><span>Notifications</span>
+    </nav>
+    <main class="ui-settings-body" id="app"></main>
+  </div>
+</div>
+<div id="dialog"></div>
+<div class="bar" role="toolbar" aria-label="PROTOTYPE switcher" id="bar"></div>
+<script>
+(function () {
+  "use strict";
+  var MIN = 60, HOUR = 3600, GIB = 1024;
+  function same(v) { return { docker: v, cluster: v }; }
+  /* Base units: MiB, seconds, or the count itself. */
+  var LIMITS = [
+    { id: "code-size", label: "Largest code sent to a runner", kind: "size", area: "code", def: same(GIB), team: 2 * GIB, said: "Code sent", use: 310 },
+    { id: "code-time", label: "Longest code send", kind: "time", area: "code", def: same(10 * MIN), team: 30 * MIN, docker: 2 * HOUR, said: "Last send took", use: 220 },
+    { id: "profile-size", label: "Most a profile may send: size", kind: "size", area: "signin", def: same(256), team: 512, docker: 4 * GIB, placeholder: true, said: "Profile sent", use: 18 },
+    { id: "profile-files", label: "Most a profile may send: files", kind: "count", area: "signin", def: same(20000), team: 50000, placeholder: true, said: "Files sent", use: 1840 },
+    { id: "signin-wait", label: "Longest wait for a sign-in", kind: "time", area: "signin", def: same(15 * MIN), team: 30 * MIN, said: "Last sign-in took", use: 120 },
+    { id: "vouch-wait", label: "Longest wait for a cluster runner to be vouched for", kind: "time", area: "signin", def: same(5 * MIN), team: 10 * MIN, clusterOnly: true, said: "Last vouching took", use: 4 },
+    { id: "cpus", label: "CPUs", kind: "cpus", area: "runner", def: { docker: 2, cluster: 4 }, team: 8, shaping: true, said: "CPUs in use", use: 0.6 },
+    { id: "memory", label: "Memory", kind: "size", area: "runner", def: { docker: 4 * GIB, cluster: 8 * GIB }, team: 16 * GIB, shaping: true, said: "Memory in use", use: 1229 },
+    { id: "processes", label: "Processes", kind: "count", area: "runner", def: same(1024), team: 4096, shaping: true, said: "Processes running", use: 143 },
+    { id: "tmp", label: "/tmp", kind: "size", area: "runner", def: same(GIB), team: 4 * GIB, shaping: true, said: "/tmp in use", use: 210 },
+    { id: "suspend", label: "Suspend after, with no link from this machine", kind: "time", area: "runner", def: { docker: 24 * HOUR, cluster: 8 * HOUR }, team: 72 * HOUR, shaping: true, said: "No link for", use: 12 * MIN },
+    { id: "frames", label: "Browser frames a second", kind: "rate", area: "runner", def: same(15), team: 30, shaping: true, said: "Browser frames a second", use: 14 },
+    { id: "width", label: "Browser width", kind: "pixels", area: "runner", def: same(1280), team: 1920, shaping: true, said: "Browser width", use: 1280 },
+    { id: "answer-wait", label: "Longest wait for a runner's answer", kind: "time", area: "runner", def: same(30), team: 2 * MIN, advanced: true, said: "Slowest answer this hour", use: 1.2 }
+  ];
+  var POOLS = {
+    docker: { name: "builds", said: "On your Docker", chats: 2 },
+    cluster: { name: "team-gpu", said: "Pool gpu in team-prod, namespace dev", chats: 1 }
+  };
+  var AREAS = [
+    { id: "code", label: "Code", help: "What purlis sends to the runner." },
+    { id: "signin", label: "Sign-in", help: "Profiles going to the runner and signing in there." },
+    { id: "runner", label: "Runner", help: "What the runner is made with." }
+  ];
+  var UNITS = {
+    size: [["MiB", 1], ["GiB", GIB]],
+    time: [["s", 1], ["min", MIN], ["h", HOUR]],
+    count: [["", 1]], cpus: [["CPUs", 1]], pixels: [["pixels", 1]], rate: [["a second", 1]]
+  };
+  var VARIANTS = [["A", "One list"], ["B", "Grouped"], ["C", "Beside live use"]];
+  var POOL_PICKS = [["docker", "Docker"], ["cluster", "Cluster"]];
+  var ERRORS = [["none", "No error"], ["profile", "Profile over its limit"], ["wait", "A timed wait"], ["fixed", "A fixed limit"]];
+  var REPLACED = "Applies when this runner is next replaced", NEXT = "Applies from the next attempt";
+  var NEEDS = 18, SET_LOW = 16, SUGGESTS = 32;
+
+  var S = {
+    v: "B", pool: "docker", err: "none", adv: false, asking: false, said: "",
+    set: { docker: { memory: 8192, "signin-wait": 1800 }, cluster: { memory: 12288, "signin-wait": 1800 } },
+    made: { docker: {}, cluster: {} },
+    drafts: {},
+    phase: "asked", sugText: "", applied: 0
+  };
+  var timer = null;
+
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  function round(n) { return String(Math.round(n * 100) / 100); }
+  function byId(id) { for (var i = 0; i < LIMITS.length; i++) if (LIMITS[i].id === id) return LIMITS[i]; return null; }
+  function boxed(kind, b) {
+    if (kind === "size") return b >= GIB ? { text: round(b / GIB), unit: "GiB" } : { text: round(b), unit: "MiB" };
+    if (kind === "time") {
+      if (b >= HOUR && b % HOUR === 0) return { text: round(b / HOUR), unit: "h" };
+      if (b >= MIN && b % MIN === 0) return { text: round(b / MIN), unit: "min" };
+      return { text: round(b), unit: "s" };
+    }
+    return { text: round(b), unit: UNITS[kind][0][0] };
+  }
+  function say(kind, b) {
+    if (kind === "time" && b > MIN && b < HOUR && b % MIN !== 0) return Math.floor(b / MIN) + " min " + round(b % MIN) + " s";
+    var x = boxed(kind, b);
+    var n = (kind === "count" || kind === "pixels") ? Number(x.text).toLocaleString("en") : x.text;
+    if (kind === "cpus" || kind === "rate") return n;
+    return x.unit ? n + " " + x.unit : n;
+  }
+  function defOf(d) { return d.def[S.pool]; }
+  function highest(d) { return S.pool === "cluster" ? d.team : d.docker; }
+  function setOf(d) { return S.set[S.pool][d.id]; }
+  function valueOf(d) { var v = setOf(d); return v === undefined ? defOf(d) : v; }
+  function madeOf(d) { var v = S.made[S.pool][d.id]; return v === undefined ? defOf(d) : v; }
+  function pending(d) { return !!d.shaping && valueOf(d) !== madeOf(d); }
+  function inPool() { return LIMITS.filter(function (d) { return !d.clusterOnly || S.pool === "cluster"; }); }
+  function key(d) { return S.pool + ":" + d.id; }
+  function draftOf(d) {
+    var dr = S.drafts[key(d)];
+    if (dr) return dr;
+    var v = setOf(d);
+    return v === undefined ? { text: "", unit: boxed(d.kind, defOf(d)).unit } : boxed(d.kind, v);
+  }
+  function judge(d, text, unit) {
+    var t = String(text).trim();
+    if (t === "") return { state: "empty" };
+    if (!/^\d+(\.\d+)?$/.test(t)) return { state: "refused", why: "Write a number." };
+    if ((d.kind === "count" || d.kind === "pixels" || d.kind === "rate") && t.indexOf(".") >= 0) return { state: "refused", why: "Write a whole number." };
+    var of = 1;
+    UNITS[d.kind].forEach(function (u) { if (u[0] === unit) of = u[1]; });
+    var value = Number(t) * of;
+    if (value <= 0) return { state: "refused", why: "Write a number above 0." };
+    var hi = highest(d);
+    if (hi !== undefined && value > hi) return { state: "refused", why: S.pool === "cluster" ? "Refused: your team's highest allowed on this pool is " + say(d.kind, hi) + "." : "Refused: the highest allowed is " + say(d.kind, hi) + "." };
+    return { state: "ok", value: value };
+  }
+  function write(d, v) { if (v === undefined) delete S.set[S.pool][d.id]; else S.set[S.pool][d.id] = v; }
+
+  /* --- Rows --------------------------------------------------------------------------- */
+
+  function defaultLine(d) {
+    return S.pool === "cluster"
+      ? "Your team's default " + say(d.kind, defOf(d)) + " · highest allowed " + say(d.kind, d.team)
+      : "Default " + say(d.kind, defOf(d));
+  }
+  function liveHtml(d) {
+    var of = d.shaping ? madeOf(d) : valueOf(d);
+    var share = d.use / of;
+    var cls = share > 1 ? "over" : share >= 0.9 ? "near" : "";
+    var mark = share > 1 ? '<span class="badge trouble">Over this limit</span>' : share >= 0.9 ? '<span class="badge waiting">Near this limit</span>' : "";
+    var pct = Math.min(100, Math.max(1, share * 100));
+    return '<div class="live"><span class="live-said">' + esc(d.said) + ': <b>' + esc(say(d.kind, d.use)) + '</b> of ' + esc(say(d.kind, of)) + '</span>' + (mark || "<span></span>") +
+      '<div class="track"><span class="fill ' + cls + '" style="width:' + pct + '%"></span></div></div>';
+  }
+  function row(d, o) {
+    var isSet = setOf(d) !== undefined;
+    var dr = draftOf(d), j = judge(d, dr.text, dr.unit), us = UNITS[d.kind];
+    var ph = boxed(d.kind, defOf(d));
+    var unitHtml = us.length > 1
+      ? '<select class="input" data-unit="' + d.id + '" aria-label="Unit of ' + esc(d.label) + '">' + us.map(function (u) { return '<option' + (u[0] === dr.unit ? " selected" : "") + ">" + u[0] + "</option>"; }).join("") + "</select>"
+      : '<span class="unit">' + esc(us[0][0]) + "</span>";
+    var aimed = (S.err === "profile" && d.id === "profile-size") || (S.err === "wait" && d.id === "code-time");
+    return '<div class="lim' + (aimed ? " aimed" : "") + '">' +
+      '<div><div class="lim-name">' + (isSet ? '<span class="mod" aria-hidden="true"></span>' : "") + '<label for="b-' + d.id + '">' + esc(d.label) + "</label>" +
+      (isSet ? '<span class="badge accent">You set this</span>' : "") +
+      (d.placeholder ? '<span class="dash-tag" title="The real default comes from measurement">PROTOTYPE default</span>' : "") + "</div>" +
+      '<p class="lim-sub">' + esc(defaultLine(d)) + (o.says ? " · " + (d.shaping ? REPLACED : NEXT) : "") + "</p></div>" +
+      '<div class="lim-edit"><input id="b-' + d.id + '" class="input num" inputmode="decimal" autocomplete="off" data-lim="' + d.id + '" value="' + esc(dr.text) + '"' +
+      (ph.unit === dr.unit ? ' placeholder="' + esc(ph.text) + '"' : "") + (j.state === "refused" ? ' aria-invalid="true"' : "") + ">" + unitHtml +
+      '<button class="btn sm" data-act="reset" data-id="' + d.id + '"' + (isSet || S.drafts[key(d)] ? "" : ' aria-disabled="true"') + ">Reset</button></div>" +
+      (j.state === "refused" ? '<p class="refused" role="alert">' + esc(j.why) + "</p>" : "") +
+      (o.live ? liveHtml(d) : "") +
+      (pending(d) ? '<p class="pending"><span>The runner has ' + esc(say(d.kind, madeOf(d))) + "; " + esc(say(d.kind, valueOf(d))) + " when it is replaced.</span>" + (o.replaceHere ? '<button class="btn sm" data-act="replace">Replace runner now</button>' : "") + "</p>" : "") +
+      "</div>";
+  }
+  function advanced(o) {
+    return '<button class="btn ghost adv-toggle" data-act="adv" aria-expanded="' + S.adv + '">' + (S.adv ? "▾" : "▸") + " Advanced</button>" +
+      (S.adv ? inPool().filter(function (d) { return d.advanced; }).map(function (d) { return row(d, o); }).join("") : "");
+  }
+  function variantA() {
+    var o = { says: true, replaceHere: true };
+    return inPool().filter(function (d) { return !d.advanced; }).map(function (d) { return row(d, o); }).join("") + advanced(o);
+  }
+  function variantB() {
+    var o = { says: false, replaceHere: false };
+    var any = inPool().some(pending);
+    return AREAS.map(function (a) {
+      var runner = a.id === "runner";
+      return '<section class="area"><header class="area-head"><h3>' + a.label + "</h3><p>" + a.help + " " + (runner ? REPLACED : NEXT) + ".</p>" +
+        (runner && any ? '<button class="btn sm" data-act="replace">Replace runner now</button>' : "") + "</header>" +
+        inPool().filter(function (d) { return d.area === a.id && !d.advanced; }).map(function (d) { return row(d, o); }).join("") + "</section>";
+    }).join("") + advanced({ says: true, replaceHere: true });
+  }
+  function variantC() {
+    var o = { says: true, replaceHere: true, live: true };
+    return inPool().filter(function (d) { return !d.advanced; }).map(function (d) { return row(d, o); }).join("") + advanced(o);
+  }
+
+  /* --- The error's suggestion --------------------------------------------------------- */
+
+  function sugSetup() {
+    if (S.err === "profile") {
+      S.set[S.pool]["profile-size"] = SET_LOW;
+      delete S.drafts[S.pool + ":profile-size"];
+      S.sugText = String(Math.min(SUGGESTS, highest(byId("profile-size"))));
+    } else if (S.err === "wait") {
+      var d = byId("code-time");
+      S.sugText = String(Math.min(valueOf(d) * 2, highest(d)) / MIN);
+    }
+    S.phase = "asked";
+    if (timer) { clearTimeout(timer); timer = null; }
+  }
+  function sugLeave(pool) {
+    if (S.set[pool]["profile-size"] === SET_LOW) delete S.set[pool]["profile-size"];
+  }
+  function sugState() {
+    var d = byId(S.err === "wait" ? "code-time" : "profile-size");
+    var unit = S.err === "wait" ? "min" : "MiB";
+    var j = judge(d, S.sugText, unit);
+    var refused = j.state === "refused" ? j.why : j.state === "empty" ? "Write a number." :
+      (S.err === "profile" && j.value <= NEEDS) ? "This profile is " + NEEDS + " MiB, so it needs more than that." : "";
+    return { d: d, unit: unit, j: j, refused: refused };
+  }
+  function sugHtml() {
+    if (S.err === "none") return "";
+    var inner;
+    if (S.err === "fixed") {
+      inner = '<div class="notice trouble"><p class="sug-title">This output is over what a check reads</p>' +
+        "<p>Checks read at most 1 MiB of a command's output. This limit is fixed, so nothing passes a check unread. Write the output to a file, and check a part of it.</p>" +
+        '<div class="btns"><button class="btn sm" data-act="dismiss">Dismiss</button></div></div>';
+    } else if (S.phase === "retrying") {
+      inner = '<div class="notice news"><p>Saved to this pool. Trying again…</p></div>';
+    } else if (S.phase === "done") {
+      var dd = byId(S.err === "wait" ? "code-time" : "profile-size");
+      inner = '<div class="notice news"><p>' + (S.err === "wait" ? "Sent in 14 min. " : "Sent. ") + "The limit of " + esc(say(dd.kind, S.applied)) + ' is saved to this pool.</p><div class="btns"><button class="btn sm" data-act="dismiss">Dismiss</button></div></div>';
+    } else {
+      inner = '<div class="notice trouble" id="sugBox">' + sugBody() + "</div>";
+    }
+    return '<div class="err-wrap"><span class="dash-tag">PROTOTYPE: stands where the attempt failed</span>' + inner + "</div>";
+  }
+  function sugBody() {
+    var x = sugState(), d = x.d, now = valueOf(d), hi = highest(d);
+    var typed = x.j.state === "ok" ? say(d.kind, x.j.value) : "this";
+    var title = S.err === "wait"
+      ? "Took longer than " + say(d.kind, now) + ". Wait up to " + typed + " on this pool?"
+      : "This profile is " + NEEDS + " MiB; raise to " + typed;
+    var why = S.err === "wait" ? "Code send to this pool's runner stopped at its limit." : "The most this pool lets a profile send is " + say(d.kind, now) + ".";
+    return '<p class="sug-title" id="sugTitle">' + esc(title) + "</p><p>" + esc(why) + "</p>" +
+      '<div class="sug-line"><input class="input" inputmode="decimal" autocomplete="off" aria-label="' + (S.err === "wait" ? "Wait up to" : "Raise to") + '" data-sug value="' + esc(S.sugText) + '"' + (x.refused ? ' aria-invalid="true"' : "") + "><span>" + x.unit + "</span>" +
+      '<button class="btn sm primary" data-act="apply"' + (x.refused ? ' aria-disabled="true"' : "") + ">Apply and retry</button>" +
+      '<button class="btn sm ghost" data-act="dismiss">Not now</button></div>' +
+      (x.refused ? "<p>" + esc(x.refused) + "</p>" : "") +
+      '<p class="sug-cap">Highest allowed on this pool: ' + esc(say(d.kind, hi)) + "</p>";
+  }
+
+  /* --- Draw --------------------------------------------------------------------------- */
+
+  function render() {
+    /* The boxes are drawn again as typed in, so the caret goes back where it was. */
+    var a = document.activeElement, f = null;
+    if (a && a.getAttribute) {
+      var at = a.hasAttribute("data-lim") ? '[data-lim="' + a.getAttribute("data-lim") + '"]' : a.hasAttribute("data-unit") ? '[data-unit="' + a.getAttribute("data-unit") + '"]' : a.hasAttribute("data-sug") ? "[data-sug]" : null;
+      if (at) f = { at: at, s: a.selectionStart, e: a.selectionEnd };
+    }
+    var pool = POOLS[S.pool];
+    var body = S.v === "A" ? variantA() : S.v === "B" ? variantB() : variantC();
+    document.getElementById("app").innerHTML =
+      '<button class="btn sm ghost back" data-act="back">‹ Pools</button>' +
+      '<h2 class="group-title">Limits of pool ' + esc(pool.name) + "</h2>" +
+      "<p class=\"ui-setting-help\">Every default is already the best value, so most people never change these. A limit you leave empty follows purlis's default as it improves. One you set stays, and is marked.</p>" +
+      '<p class="pool-line"><span>' + esc(pool.said) + '</span><span class="badge accent">linked</span>' + (S.pool === "cluster" ? "<span>Your team sets the defaults and the highest allowed.</span>" : "") + "</p>" +
+      sugHtml() +
+      (S.said ? '<p class="said" role="status">' + esc(S.said) + "</p>" : "") +
+      body;
+    if (f) {
+      var el = document.querySelector(f.at);
+      if (el) { el.focus(); if (f.s !== null && f.s !== undefined && el.setSelectionRange) { try { el.setSelectionRange(f.s, f.e); } catch (x) {} } }
+    }
+    var waiting = inPool().filter(pending);
+    document.getElementById("dialog").innerHTML = S.asking
+      ? '<div class="scrim"><div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlgT"><h2 id="dlgT">Replace the runner of pool ' + esc(pool.name) + " now?</h2><p>" +
+        (pool.chats === 1 ? "1 chat runs" : pool.chats + " chats run") + " on it and would stop. Its home is kept. New limits: " +
+        esc(waiting.map(function (d) { return d.label + " " + say(d.kind, valueOf(d)); }).join(", ")) +
+        '.</p><div class="btns"><button class="btn" data-act="cancel-replace">Cancel</button><button class="btn primary" data-act="do-replace">Replace runner</button></div></div></div>'
+      : "";
+    var vName = ""; VARIANTS.forEach(function (x) { if (x[0] === S.v) vName = x[1]; });
+    document.getElementById("headSaid").innerHTML = "Variant <b>" + S.v + ": " + vName + "</b>";
+    drawBar();
+    try { history.replaceState(null, "", "#" + S.v + "/" + S.pool + "/" + S.err); } catch (x) {}
+  }
+  function axis(name, list, cur, act) {
+    return '<div class="axis" role="group" aria-label="' + name + '"><span>' + name + "</span>" + list.map(function (x) {
+      return '<button class="pill" data-pick="' + act + '" data-to="' + x[0] + '" aria-pressed="' + (x[0] === cur) + '">' + (act === "v" ? x[0] + ": " : "") + x[1] + "</button>";
+    }).join("") + "</div>";
+  }
+  function drawBar() {
+    var dark = theme() === "dark";
+    document.getElementById("bar").innerHTML = "<b>PROTOTYPE</b>" + axis("Variant", VARIANTS, S.v, "v") + axis("Pool", POOL_PICKS, S.pool, "pool") + axis("Error", ERRORS, S.err, "err") +
+      '<button class="pill" data-pick="theme">◐ ' + (dark ? "Light" : "Dark") + "</button>";
+  }
+  function theme() {
+    var t = document.documentElement.getAttribute("data-theme");
+    if (t) return t;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  /* --- Events ------------------------------------------------------------------------- */
+
+  function pickError(to) {
+    sugLeave(S.pool);
+    S.err = to;
+    sugSetup();
+    render();
+  }
+  function pickPool(to) {
+    sugLeave(S.pool);
+    S.pool = to; S.said = "";
+    sugSetup();
+    render();
+  }
+  document.addEventListener("click", function (e) {
+    var el = e.target.closest ? e.target.closest("[data-act],[data-pick]") : null;
+    if (!el) return;
+    var pick = el.getAttribute("data-pick");
+    if (pick === "v") { S.v = el.getAttribute("data-to"); render(); return; }
+    if (pick === "pool") { pickPool(el.getAttribute("data-to")); return; }
+    if (pick === "err") { pickError(el.getAttribute("data-to")); return; }
+    if (pick === "theme") { document.documentElement.setAttribute("data-theme", theme() === "dark" ? "light" : "dark"); drawBar(); return; }
+    if (el.getAttribute("aria-disabled") === "true") return;
+    var d;
+    switch (el.getAttribute("data-act")) {
+      case "reset":
+        d = byId(el.getAttribute("data-id"));
+        delete S.drafts[key(d)]; write(d, undefined); render(); break;
+      case "adv": S.adv = !S.adv; render(); break;
+      case "replace": S.asking = true; render(); break;
+      case "cancel-replace": S.asking = false; render(); break;
+      case "do-replace":
+        inPool().filter(pending).forEach(function (x) { S.made[S.pool][x.id] = valueOf(x); });
+        S.asking = false; S.said = "Runner replaced. Its limits now apply."; render(); break;
+      case "dismiss": pickError("none"); break;
+      case "apply": {
+        var x = sugState();
+        if (x.refused || x.j.state !== "ok") break;
+        delete S.drafts[key(x.d)];
+        write(x.d, x.j.value);
+        S.applied = x.j.value; S.phase = "retrying";
+        timer = setTimeout(function () { S.phase = "done"; timer = null; render(); }, 1200);
+        render(); break;
+      }
+      case "back": S.said = "PROTOTYPE: goes back to the list of pools."; render(); break;
+    }
+  });
+  document.addEventListener("input", function (e) {
+    var t = e.target;
+    if (t.hasAttribute("data-lim")) {
+      var d = byId(t.getAttribute("data-lim")), dr = draftOf(d);
+      var next = { text: t.value, unit: dr.unit };
+      S.drafts[key(d)] = next;
+      var j = judge(d, next.text, next.unit);
+      if (j.state === "ok") write(d, j.value);
+      if (j.state === "empty") write(d, undefined);
+      render();
+    } else if (t.hasAttribute("data-sug")) {
+      S.sugText = t.value;
+      render();
+    }
+  });
+  document.addEventListener("change", function (e) {
+    var t = e.target;
+    if (!t.hasAttribute("data-unit")) return;
+    var d = byId(t.getAttribute("data-unit")), dr = draftOf(d);
+    var next = { text: dr.text, unit: t.value };
+    S.drafts[key(d)] = next;
+    var j = judge(d, next.text, next.unit);
+    if (j.state === "ok") write(d, j.value);
+    render();
+  });
+  document.addEventListener("keydown", function (e) {
+    var t = e.target, tag = t && t.tagName;
+    if (e.key === "Escape" && S.asking) { S.asking = false; render(); return; }
+    if (tag === "INPUT" || tag === "SELECT" || e.altKey || e.ctrlKey || e.metaKey) return;
+    var at = VARIANTS.map(function (x) { return x[0]; }).indexOf(S.v);
+    if (e.key === "ArrowLeft") { S.v = VARIANTS[(at + 2) % 3][0]; render(); }
+    if (e.key === "ArrowRight") { S.v = VARIANTS[(at + 1) % 3][0]; render(); }
+  });
+  try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawBar); } catch (x) {}
+
+  var h = (location.hash || "").replace(/^#/, "").split("/");
+  if (VARIANTS.some(function (x) { return x[0] === h[0]; })) S.v = h[0];
+  if (POOLS[h[1]]) S.pool = h[1];
+  if (ERRORS.some(function (x) { return x[0] === h[2]; })) S.err = h[2];
+  sugSetup();
+  render();
+})();
+</script>
+</body>
+</html>
