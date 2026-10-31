@@ -603,6 +603,112 @@ export const ConsentClamped: Story = {
 };
 
 /**
+ * **A narrow pane's band says it has more** (#3168): two warnings are taller than the band's
+ * room, so it scrolls. At rest a fade at its bottom says more is below; scrolled to its end, the
+ * fade is at its top alone; partway, at both. The warnings fade into the terminal's fill they
+ * stand on, and the fade is never in the way of a press. The picture is the band partway, with
+ * both.
+ */
+export const NarrowScrolled: Story = {
+  args: { warnings: ["vault-refused", "sandbox-long"], width: 400 },
+  play: async ({ canvas, canvasElement }) => {
+    const vault = await canvas.findByRole("status", { name: "Vault" });
+    const stack = vault.closest('[data-scope="notice-row"][data-part="stack"]') as HTMLElement;
+    await waitFor(() => expect(stack.scrollHeight).toBeGreaterThan(stack.clientHeight + 24));
+    const ground = getComputedStyle(rowsOf(canvasElement).frame).backgroundColor;
+    const fade = (edge: "::before" | "::after") => getComputedStyle(stack, edge);
+    const shows = async (above: boolean, below: boolean) => {
+      await waitFor(() => {
+        expect(stack.hasAttribute("data-more-above")).toBe(above);
+        expect(stack.hasAttribute("data-more-below")).toBe(below);
+      });
+      expect(fade("::before").opacity).toBe(above ? "1" : "0");
+      expect(fade("::after").opacity).toBe(below ? "1" : "0");
+    };
+    const scrollTo = (top: number) => {
+      // The person's wheel first (#3217), so the scroll is theirs and no move.
+      stack.dispatchEvent(
+        new WheelEvent("wheel", { bubbles: true, deltaY: top - stack.scrollTop }),
+      );
+      stack.scrollTop = top;
+    };
+
+    // Into the ground the warnings stand on, and never what a press lands on.
+    for (const edge of ["::before", "::after"] as const) {
+      expect(fade(edge).backgroundImage).toContain(ground);
+      expect(fade(edge).pointerEvents).toBe("none");
+    }
+    scrollTo(0);
+    await shows(false, true);
+    // The fade lies over the band and takes none of its room: the first warning is at its top.
+    expect(boxOf(vault.parentElement).top - boxOf(stack).top).toBeLessThanOrEqual(1);
+
+    scrollTo(stack.scrollHeight);
+    await shows(true, false);
+    // The last warning ends at the band's end, under the fade and not pushed past it.
+    const last = canvas.getByRole("status", { name: "Sandbox block" }).parentElement;
+    expect(boxOf(stack).bottom - boxOf(last).bottom).toBeLessThanOrEqual(1);
+
+    // The keyboard landing on a way out from below stops clear of the fade (WCAG 2.4.11).
+    const allow = within(vault).getByRole("button", { name: "Allow steward to use this vault" });
+    allow.focus();
+    await untilFocused(() => allow, "the vault's Allow, from below");
+    // Wherever the band came to rest, no fade lies over the way out.
+    if (stack.hasAttribute("data-more-above"))
+      expect(boxOf(allow).top - boxOf(stack).top).toBeGreaterThanOrEqual(
+        parseFloat(fade("::before").height) - 1,
+      );
+    atRest();
+
+    // **A fade never dims a way out**: a consent's ways, resting in the fade at either edge, read
+    // at full strength. The fade takes no pointer, so a hit test would pass through it: for this
+    // one reading it takes the pointer, and the hit test then answers in paint order.
+    const ways = within(vault).getAllByRole("button");
+    const looks = (way: Element) => {
+      const { color, backgroundColor } = getComputedStyle(way);
+      let opacity = 1;
+      for (let at: Element | null = way; at !== null; at = at.parentElement)
+        opacity *= Number(getComputedStyle(at).opacity);
+      return { color, backgroundColor, opacity };
+    };
+    scrollTo(0);
+    const undimmed = ways.map(looks);
+    const fullStrength = (edge: "::before" | "::after", from: (way: Element) => number) => {
+      const reach = parseFloat(fade(edge).height);
+      const hittable = document.createElement("style");
+      hittable.textContent = `[data-scope="notice-row"][data-part="stack"]::before,
+        [data-scope="notice-row"][data-part="stack"]::after { pointer-events: auto; }`;
+      document.head.append(hittable);
+      try {
+        ways.forEach((way, at) => {
+          expect(from(way), "the way out rests in the fade").toBeLessThan(reach);
+          const box = boxOf(way);
+          const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          expect(way.contains(top), `${way.textContent} is on top of the fade`).toBe(true);
+          expect(looks(way)).toEqual({ ...undimmed[at], opacity: 1 });
+        });
+      } finally {
+        hittable.remove();
+      }
+    };
+    // At the top edge, with more above.
+    scrollTo(stack.scrollTop + boxOf(ways[0]).top - boxOf(stack).top - 2);
+    await waitFor(() => expect(stack.hasAttribute("data-more-above")).toBe(true));
+    fullStrength("::before", (way) => boxOf(way).top - boxOf(stack).top);
+    // At the bottom edge, with more below: the band held to just under the consent's ways.
+    scrollTo(0);
+    stack.style.maxBlockSize = `${boxOf(ways[0]).bottom - boxOf(stack).top + 2}px`;
+    await waitFor(() => expect(stack.hasAttribute("data-more-below")).toBe(true));
+    fullStrength("::after", (way) => boxOf(stack).bottom - boxOf(way).bottom);
+    stack.style.maxBlockSize = "";
+
+    scrollTo(Math.round((stack.scrollHeight - stack.clientHeight) / 2));
+    await shows(true, true);
+    atRest();
+  },
+};
+
+/**
  * **The pane's actions** (`PaneActions`, shared with a view's pane, #3147): split side by side,
  * split stacked and close, one cluster at the pane's top right, drawn by the catalogue's own
  * rows. Hidden at rest in the pane with the keyboard, drawn once the keyboard is on them.

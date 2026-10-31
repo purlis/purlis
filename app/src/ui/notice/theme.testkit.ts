@@ -14,6 +14,9 @@ export default {
         "outline-style": "dotted",
         "outline-color": "CanvasText",
       },
+      // A pane band's fade is not drawn: there is no shade to fade in (#3168).
+      '[data-scope="notice-row"][data-part="stack"]::before': { display: "none" },
+      '[data-scope="notice-row"][data-part="stack"]::after': { display: "none" },
     },
   },
 } satisfies FamilyTheme;

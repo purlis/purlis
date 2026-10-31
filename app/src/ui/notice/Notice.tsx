@@ -26,6 +26,8 @@
  */
 import { CircleAlert, CircleCheck, CircleQuestionMark, LoaderCircle } from "lucide-react";
 import type { ComponentPropsWithRef, ReactNode, Ref } from "react";
+import { useObjectRef } from "react-aria";
+import { useScrollEdges } from "./scrollEdges";
 
 /** The family's variants, in the order the manifest names them. */
 export const NOTICE_VARIANTS = ["news", "trouble", "attention"] as const;
@@ -181,13 +183,17 @@ export function NoticeRow({
   );
 }
 
-/** **The Notices of a pane's row, one under another**: two stand, the rest wait behind +N more. */
+/** **The Notices of a pane's row, one under another**: two stand, the rest wait behind +N more.
+ *  Past its room it scrolls, and marks the edge it has more past for its fade (#3168). */
 export function NoticeStack({
   children,
+  ref,
   ...rest
 }: Omit<ComponentPropsWithRef<"div">, "style" | "className"> & { children: ReactNode }) {
+  const own = useObjectRef(ref);
+  useScrollEdges(own);
   return (
-    <div {...rest} data-scope="notice-row" data-part="stack">
+    <div {...rest} ref={own} data-scope="notice-row" data-part="stack">
       {children}
     </div>
   );
