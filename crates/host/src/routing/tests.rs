@@ -445,7 +445,11 @@ async fn the_windows_steps_towards_a_chat_ask_a_runner_to_run_again() {
     assert_eq!(asked.lock().unwrap().len(), 3, "a start does");
     // Named as the link reached it, `<pool>/<runner>`, as a draining runner is.
     assert!(
-        asked.lock().unwrap().iter().all(|name| name.starts_with("builds")),
+        asked
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|name| name.starts_with("builds")),
         "{asked:?}"
     );
 }
