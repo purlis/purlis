@@ -426,8 +426,7 @@ fn links_end_once_gone(
         .and_then(|docker| {
             purlis_core::runners::cluster_pools(config)
                 .map(|clusters| docker || clusters.iter().any(|pool| pool.name() == name))
-        })
-        ;
+        });
     match read {
         Ok(true) => {}
         Ok(false) => connection.pool_removed(name),
