@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793478415710,
+  "lastUpdate": 1793479674432,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34062,6 +34062,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9339055,
             "unit": "ms",
             "extra": "median of 5 runs: 101.130, 101.142, 101.934, 102.222, 103.585 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bea5857115d35e4c45ea0bb6cb7d9e6a936ccfa7",
+          "message": "Runners: where a carried sign-in waits, and which runners carry (#4306)\n\n* Runners: a carried sign-in waits under the profiles folder, and a runner a chat ran on without the sandbox carries none\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QJT60GB1CNZJEAJVZ9T8\nPurlis-Persona: steward\n\n* Runners: the behaviour suite finds the carried folder outside the chat, and an image naming its data home carries nothing\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QJT60GB1CNZJEAJVZ9T8\nPurlis-Persona: steward\n\n* Runners: a carry names the data home variables purlis reads, and the journey says whether the runner was marked\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QJT60GB1CNZJEAJVZ9T8\nPurlis-Persona: steward\n\n* Runners: a drain carries the sign-ins of the profiles purlis made, and no harness's default folder for now\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QJT60GB1CNZJEAJVZ9T8\nPurlis-Persona: steward\n\n* Runners: a sign-out's forgetting finds the carried folder where it now is\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QJT60GB1CNZJEAJVZ9T8\nPurlis-Persona: steward\n\n* The journey test says at each step whether its runner is marked\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QJT60GB1CNZJEAJVZ9T8\nPurlis-Persona: steward\n\n* The journey test prints how its chat runs on the runner\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QJT60GB1CNZJEAJVZ9T8\nPurlis-Persona: steward\n\n* Temporary: trace what marks a runner in the journey test\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QJT60GB1CNZJEAJVZ9T8\nPurlis-Persona: steward\n\n* Temporary: say why a hold could not list its programs\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QJT60GB1CNZJEAJVZ9T8\nPurlis-Persona: steward\n\n* Runners: a link's refusal to list programs does not mark its runner\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QJT60GB1CNZJEAJVZ9T8\nPurlis-Persona: steward\n\n* Runners: a default folder takes nothing carried, and a carry follows no link inside the old home\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QJT60GB1CNZJEAJVZ9T8\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T20:05:36Z",
+          "tree_id": "657eb8ace43209ca4901e3f3a285c64a447128bd",
+          "url": "https://github.com/purlis/purlis/commit/bea5857115d35e4c45ea0bb6cb7d9e6a936ccfa7"
+        },
+        "date": 1793479667817,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6677505,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.644, 0.644, 0.668, 0.677, 0.688 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.542897,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.369, 16.533, 16.543, 16.544, 16.624 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.117115,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.855, 101.543, 102.117, 102.547, 103.535 ms"
           }
         ]
       }
