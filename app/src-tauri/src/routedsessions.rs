@@ -48,6 +48,10 @@ pub type OnPools = Arc<dyn Fn() -> BTreeMap<String, Vec<String>> + Send + Sync>;
 /// The project's chats on the runner of a pool: made the first time the pool is needed.
 pub type ToAPool = Arc<dyn Fn(&str) -> Result<Box<dyn SessionHost>, String> + Send + Sync>;
 
+/// **The runners of a pool a window's restart asks for the chats it left** (#4271), each as
+/// `<pool>/<runner>`.
+pub type DrainingOf = Arc<dyn Fn(&str) -> Vec<String> + Send + Sync>;
+
 /// The least time between two fetches of the runners' branches the window's focus asks for.
 const FETCH_BACK_AT_MOST_EVERY: Duration = Duration::from_secs(60);
 
@@ -62,6 +66,7 @@ pub struct RoutedSessions {
     runs_on: RunsOn,
     on_pools: OnPools,
     to_a_pool: ToAPool,
+    draining_of: DrainingOf,
     shared: Arc<Shared>,
     /// The pool every start runs on, whatever it is ([`Self::every_start_on`]).
     every_start_on: Option<String>,
@@ -70,6 +75,8 @@ pub struct RoutedSessions {
 /// A host left with chats that stayed on a draining runner.
 struct Left {
     pool: String,
+    /// The `<pool>/<runner>` it was made for, where a restart took its chats back (#4271).
+    runner: Option<String>,
     made: u64,
     host: Arc<dyn SessionHost>,
 }
@@ -123,6 +130,7 @@ impl RoutedSessions {
             runs_on,
             on_pools,
             to_a_pool,
+            draining_of: Arc::new(|_| Vec::new()),
             shared: Arc::default(),
             every_start_on: None,
         }
@@ -146,10 +154,20 @@ impl RoutedSessions {
             let (config, plane) = (config.clone(), plane.clone());
             Arc::new(move || purlis_core::pools::workspaces_on_pools(&config, &plane))
         };
+        let draining_of: DrainingOf = {
+            let config = config.clone();
+            Arc::new(move |pool| crate::runnerlinks::draining_to_ask(&config, pool))
+        };
         let to_a_pool: ToAPool = {
             let (connection, plane) = (Arc::clone(connection), plane.clone());
             Arc::new(move |pool| {
-                purlis_core::runners::runner_of(&config, pool).map_err(|why| format!("{why}."))?;
+                if pool.contains('/') {
+                    purlis_core::runners::reachable(&config, pool)
+                        .map_err(|why| format!("{why}."))?;
+                } else {
+                    purlis_core::runners::runner_of(&config, pool)
+                        .map_err(|why| format!("{why}."))?;
+                }
                 Ok(
                     Box::new(crate::hostedsessions::HostedSessions::on_a_pools_runner(
                         connection.to_a_pool(pool),
@@ -158,7 +176,14 @@ impl RoutedSessions {
                 )
             })
         };
-        RoutedSessions::new(root, here, runs_on, on_pools, to_a_pool)
+        RoutedSessions::new(root, here, runs_on, on_pools, to_a_pool).taking_back_from(draining_of)
+    }
+
+    /// [`Self::new`], with what a window's restart asks for the chats it left on a pool's draining
+    /// runners (#4271).
+    pub(crate) fn taking_back_from(mut self, draining_of: DrainingOf) -> Self {
+        self.draining_of = draining_of;
+        self
     }
 
     /// [`Self::of_the_project`], every start on the runner of `pool`, a shell's too, and every
@@ -246,10 +271,42 @@ impl RoutedSessions {
         lock(&shared.pools).remove(pool);
         lock(&shared.left).push(Left {
             pool: pool.to_owned(),
+            runner: None,
             made,
             host,
         });
         self.pool(pool)
+    }
+
+    /// **The host of the chats a window's restart left on the draining `runner` of `pool`**
+    /// (#4271): one of its own, made the first time it is asked for, as a chat that stayed is
+    /// held. `None` where this window moved the project off a draining runner itself: a link of
+    /// its own to that runner holds what it started, and a second would be refused its name.
+    fn left_by_a_restart(&self, pool: &str, runner: &str) -> Option<(u64, Arc<dyn SessionHost>)> {
+        let _one_at_a_time = lock(&self.shared.replacing);
+        {
+            let left = lock(&self.shared.left);
+            if let Some(found) = left
+                .iter()
+                .find(|left| left.runner.as_deref() == Some(runner))
+            {
+                return Some((found.made, Arc::clone(&found.host)));
+            }
+            if left
+                .iter()
+                .any(|left| left.pool == pool && left.runner.is_none())
+            {
+                return None;
+            }
+        }
+        let (made, host) = made_for(&self.shared, &self.to_a_pool, runner, pool).ok()?;
+        lock(&self.shared.left).push(Left {
+            pool: pool.to_owned(),
+            runner: Some(runner.to_owned()),
+            made,
+            host: Arc::clone(&host),
+        });
+        Some((made, host))
     }
 
     /// The host chat `id` runs on: a pool's, where it was started there, else this machine's.
@@ -305,7 +362,24 @@ fn pool_of(
     if let Some(made) = lock(&shared.pools).get(pool) {
         return Ok(Arc::clone(made));
     }
-    let mut made = to_a_pool(pool)?;
+    let (number, made) = made_for(shared, to_a_pool, pool, pool)?;
+    let mut pools = lock(&shared.pools);
+    if let Some(already) = pools.get(pool) {
+        return Ok(Arc::clone(already));
+    }
+    lock(&shared.current).insert(pool.to_owned(), number);
+    Ok(Arc::clone(pools.entry(pool.to_owned()).or_insert(made)))
+}
+
+/// A host of `pool`, reached by the name `named`, told what every host of the project is told, with
+/// the number that names it.
+fn made_for(
+    shared: &Arc<Shared>,
+    to_a_pool: &ToAPool,
+    named: &str,
+    pool: &str,
+) -> Result<(u64, Arc<dyn SessionHost>), String> {
+    let mut made = to_a_pool(named)?;
     let number = shared.made.fetch_add(1, Ordering::Relaxed);
     if let Some(switch) = lock(&shared.switch).clone() {
         made.stopped_by(switch);
@@ -326,13 +400,7 @@ fn pool_of(
     if dealt > 0 {
         made.already_dealt(dealt);
     }
-    let made: Arc<dyn SessionHost> = Arc::from(made);
-    let mut pools = lock(&shared.pools);
-    if let Some(already) = pools.get(pool) {
-        return Ok(Arc::clone(already));
-    }
-    lock(&shared.current).insert(pool.to_owned(), number);
-    Ok(Arc::clone(pools.entry(pool.to_owned()).or_insert(made)))
+    Ok((number, Arc::from(made)))
 }
 
 /// Every host of every pool, as its pool, its number and itself: each pool's now first, so what a
@@ -816,15 +884,18 @@ impl SessionHost for RoutedSessions {
 
     /// Each pool's runner log this project's chats read (#3393).
     fn runner_logs(&self) -> Vec<(String, crate::runnerlog::RunnerLogNow)> {
-        // Each pool's runner now: a draining runner's log waits (#4271).
-        let pools: Vec<(String, Arc<dyn SessionHost>)> = lock(&self.shared.pools)
-            .iter()
-            .map(|(pool, host)| (pool.clone(), Arc::clone(host)))
-            .collect();
-        pools
-            .into_iter()
-            .filter_map(|(pool, host)| host.runner_log().map(|log| (pool, log)))
-            .collect()
+        // Each link still open for the project, a draining runner's beside its pool's (#4271).
+        let mut logs = BTreeMap::<String, crate::runnerlog::RunnerLogNow>::new();
+        for (pool, host) in self.named_pools() {
+            if let Some(log) = host.runner_log() {
+                let joined = match logs.remove(&pool) {
+                    Some(held) => held.beside(log),
+                    None => log,
+                };
+                logs.insert(pool, joined);
+            }
+        }
+        logs.into_iter().collect()
     }
 
     /// Asked of this machine's host, then of each pool a workspace of the project runs its
@@ -834,9 +905,10 @@ impl SessionHost for RoutedSessions {
         self.here.left_running(number)
     }
 
-    /// Asked of this machine's host, then of the one pool `workspace` runs its chats on: a
-    /// chat that pool says it runs is kept as that pool's. No other pool is asked, so no runner
-    /// takes a chat of a workspace that does not run on it.
+    /// Asked of this machine's host, then of the one pool `workspace` runs its chats on, its
+    /// runner now and then each that drains (#4271): a chat one of them says it runs is kept as
+    /// that pool's, on that runner's own link. No other pool is asked, so no runner takes a chat of
+    /// a workspace that does not run on it.
     fn left_running_in(&self, number: u32, workspace: Option<&str>) -> bool {
         if self.here.left_running(number) {
             return true;
@@ -844,12 +916,20 @@ impl SessionHost for RoutedSessions {
         let Ok(Some(pool)) = self.route(workspace) else {
             return false;
         };
-        let Ok(host) = self.pool(&pool) else {
-            return false;
-        };
-        if host.left_running(number) {
+        if let Ok(host) = self.pool(&pool)
+            && host.left_running(number)
+        {
             lock(&self.shared.chats).insert(number, pool);
             return true;
+        }
+        for runner in (self.draining_of)(&pool) {
+            if let Some((made, host)) = self.left_by_a_restart(&pool, &runner)
+                && host.left_running(number)
+            {
+                lock(&self.shared.stayed).insert(number, made);
+                lock(&self.shared.chats).insert(number, pool);
+                return true;
+            }
         }
         false
     }
