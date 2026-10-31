@@ -200,8 +200,6 @@ describe("forced colours", () => {
       '[role="tab"][aria-selected="true"]',
       '[role="option"][aria-selected="true"]',
       '[aria-current]:not([aria-current="false"])',
-      ".ui-menu-item[data-highlighted]",
-      '.ui-menu-item[data-state="open"]',
       ...families("selected"),
     ]) {
       const it = drawn(selected);

@@ -3,7 +3,7 @@
 
 /// <reference types="node" />
 /**
- * **One overlay surface** (`primitives/overlays.css`, #1845): a dialog, a popover, a menu and a
+ * **One overlay surface** (ADR 0094 §4, #1845): a dialog, a popover, a menu and a
  * tooltip are one ground, one border, one corner and one elevation, a dialog and a popover one
  * padding, and what is pressed inside one is the shared control.
  *
@@ -25,9 +25,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { drawnWith } from "../cascade.testkit";
-import { isGeometry } from "../theme/geometry";
-import { MOTION_TOKENS, motionProperty } from "../theme/motion";
-import { property, TOKENS } from "../theme/theme";
 import { Button } from "../ui/button/Button";
 import { Menu, MenuItem, MenuTrigger } from "../ui/menu/Menu";
 import { Dialog } from "../ui/dialog/Dialog";
@@ -38,54 +35,6 @@ afterEach(cleanup);
 const SRC = join(process.cwd(), "src");
 const sheet = (file: string) =>
   readFileSync(join(SRC, file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-const CSS = sheet("primitives/overlays.css");
-
-/** Every rule of the overlays sheet, as `[selector, body]`. */
-const RULES: [string, string][] = [...CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(
-  ([, selector, body]) => [selector.trim().replace(/\s+/g, " "), body],
-);
-
-describe("the overlays stylesheet", () => {
-  it("is in the components layer, after the control families whose controls stand on it", () => {
-    const styles = sheet("styles.css");
-    // In parts: the stylesheet guard reads a quoted path ending in the extension as an import.
-    const overlays = ['@import "./primitives/overlays', 'css" layer(components);'].join(".");
-    const button = ['@import "./ui/button/button', 'css" layer(components);'].join(".");
-    expect(styles).toContain(overlays);
-    expect(styles.indexOf(button)).toBeGreaterThan(-1);
-    expect(styles.indexOf(overlays)).toBeGreaterThan(styles.indexOf(button));
-  });
-
-  it("reads only tokens", () => {
-    const colours = new Set(TOKENS.map(property));
-    const motion = new Set(MOTION_TOKENS.map(motionProperty));
-    const read = [...CSS.matchAll(/var\((--[\w-]+)/g)].map((hit) => hit[1]);
-    expect(read.length).toBeGreaterThan(0);
-    expect(
-      read.filter((name) => !colours.has(name) && !motion.has(name) && !isGeometry(name)),
-    ).toEqual([]);
-  });
-
-  it("writes no length of its own: every size is a token, a hairline or nothing", () => {
-    const lengths = RULES.flatMap(([selector, body]) =>
-      [...body.matchAll(/(?<![\w-])(\d*\.?\d+)(px|rem|em|vh|vw|ch)\b/g)]
-        .filter(([whole]) => whole !== "1px" && whole !== "0px")
-        .map(([whole]) => `${selector} | ${whole}`),
-    );
-    expect(lengths).toEqual([]);
-  });
-
-  it("gives every colour as one token, so the contrast check reads every pair", () => {
-    const loose = RULES.flatMap(([selector, body]) =>
-      [...body.matchAll(/(?<![\w-])(color|background-color|background|fill)\s*:\s*([^;]+)/g)]
-        .map(([, , value]) => value.trim())
-        .filter((value) => !/^var\(--[\w-]+\)$/.test(value))
-        .map((value) => `${selector} | ${value}`),
-    );
-    expect(loose).toEqual([]);
-  });
-});
-
 /** A dialog the way the window draws one: a scrim, the surface, a title and its answers. */
 function Asking() {
   const [open, setOpen] = useState(true);
@@ -253,11 +202,11 @@ const FILES = Object.entries(
   >,
 ).filter(([path]) => !path.includes(".test.") && !path.includes(".stories."));
 
-/** The Radix overlay parts and the class each must wear. */
-const PARTS: [RegExp, string][] = [
-  [/^(Popover|HoverCard)\.Content$/, "ui-popover"],
-  [/^Tooltip\.Content$/, "ui-tooltip"],
-  [/^(Popover|HoverCard|Tooltip)\.Arrow$/, "ui-overlay-arrow"],
+/** The Radix overlay parts, which the popover, tooltip and dialog families replaced (#2908,
+ *  #2909, #2910): none is left, and the classes they wore are retired (#3365). */
+const PARTS: RegExp[] = [
+  /^(Popover|HoverCard|Tooltip)\.(Content|Arrow)$/,
+  /^(Dialog|AlertDialog)\.\w+$/,
 ];
 
 /** The popover and menu families' overlays (#2909), which draw their own surface. */
@@ -319,8 +268,8 @@ function overlaysIn(): { parts: Found[]; controls: Found[]; families: Found[] } 
         const tag = open.tagName.getText(source);
         const where = `${path.replace(/^\.\.\//, "")}:${source.getLineAndCharacterOfPosition(open.getStart(source)).line + 1}`;
         const classes = classesOf(open.attributes, source);
-        if (PARTS.some(([part]) => part.test(tag))) parts.push({ where, tag, classes });
-        if (/\.Content$/.test(tag) && PARTS.some(([part]) => part.test(tag))) within = true;
+        if (PARTS.some((part) => part.test(tag))) parts.push({ where, tag, classes });
+        if (/\.Content$/.test(tag) && PARTS.some((part) => part.test(tag))) within = true;
         if (FAMILY.test(tag)) {
           families.push({ where, tag, classes });
           within = true;
@@ -348,12 +297,8 @@ describe("every overlay in the window", () => {
     expect(parts.filter(({ tag }) => tag === "Popover.Content").length).toBe(0);
   });
 
-  it("wears the surface: a scrim, a dialog, a popover, a tooltip and an arrow each its class", () => {
-    const bare = parts.filter(({ tag, classes }) => {
-      const wanted = PARTS.find(([part]) => part.test(tag))?.[1] ?? "";
-      return classes.some((one) => !one.includes(wanted));
-    });
-    expect(bare.map(({ where, tag }) => `${where} ${tag}`)).toEqual([]);
+  it("has no Radix overlay part left: each is its family's (#3365)", () => {
+    expect(parts.map(({ where, tag }) => `${where} ${tag}`)).toEqual([]);
   });
 
   it("draws every button and field inside one with the shared control", () => {
@@ -382,8 +327,8 @@ describe("every overlay in the window", () => {
       if (found === undefined) throw new Error("no element");
       return classesOf(found, file);
     };
-    expect(attrs(`<button className={busy ? "ui-button ends-it" : undefined} />`)).toEqual([
-      ["ui-button", "ends-it"],
+    expect(attrs(`<button className={busy ? "ui-row ends-it" : undefined} />`)).toEqual([
+      ["ui-row", "ends-it"],
       [],
     ]);
     expect(attrs(`<button type="button" />`)).toEqual([[]]);
@@ -408,7 +353,7 @@ describe("App.css", () => {
       selector.trim().replace(/\s+/g, " "),
       body,
     ]);
-    const surfaces = /^(\.row-card|\.ui-popover|\.ui-tooltip|\.palette|\.chat-card)(\.[\w-]+)*$/;
+    const surfaces = /^(\.row-card|\.ui-tooltip|\.palette|\.chat-card)(\.[\w-]+)*$/;
     const drawn = rules.flatMap(([selector, body]) =>
       selector
         .split(/\s*,\s*/)

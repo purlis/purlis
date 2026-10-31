@@ -14,8 +14,8 @@
  *   a state (`.row:hover`), by its class, its tag or an attribute it is written with (inside the
  *   classes the rule is scoped by), or a Tailwind `bg-*` utility; the window itself (`:root`) is
  *   the ground under everything else, and what is portaled to the body;
- * - **a button** is an element of the family: one with the `ui-button` class, or the family's
- *   `data-scope="button"` wrapper;
+ * - **a button** is an element of the family: the family's `data-scope="button"` root, or a member
+ *   of `ui/button` (no class marks one: the old `ui-button` is retired, #3365);
  * - every component is read: a button is on the grounds of the elements around it, up to the
  *   first one that has a background at rest, through the components that render it, the
  *   `children` they place, and the JSX a component keeps in a variable. A class a component may
@@ -466,7 +466,6 @@ class Reader {
       const part = attribute("data-part")?.initializer;
       const named = tag.split(".").pop() ?? tag;
       const isButton =
-        carried.some((one) => one.name === "ui-button") ||
         (scope !== undefined &&
           ts.isStringLiteral(scope) &&
           scope.text === "button" &&
@@ -808,7 +807,7 @@ describe("the grounds a button is drawn on", () => {
         file(
           "A.tsx",
           `export function A() {
-             return <div className="raised"><div className="row"><button className="ui-button" /></div></div>;
+             return <div className="raised"><div className="row"><button data-scope="button" data-part="root" /></div></div>;
            }`,
         ),
       ],
@@ -824,7 +823,7 @@ describe("the grounds a button is drawn on", () => {
       [
         file(
           "Fix.tsx",
-          `export function Fix() { return <button className="ui-button">Fix</button>; }`,
+          `export function Fix() { return <button data-scope="button" data-part="root">Fix</button>; }`,
         ),
         file(
           "Box.tsx",
@@ -852,7 +851,7 @@ describe("the grounds a button is drawn on", () => {
           "N.tsx",
           `export function N({ alone }) {
              const classes = ["line", alone ? "trouble" : ""].join(" ");
-             return <div className="raised"><div className={classes}><button className={\`ui-button \${alone ? "ui-button-sm" : ""}\`} /></div></div>;
+             return <div className="raised"><div className={classes}><button data-scope="button" data-part="root" className={alone ? "sm" : ""} /></div></div>;
            }`,
         ),
       ],
@@ -869,9 +868,9 @@ describe("the grounds a button is drawn on", () => {
         file(
           "T.tsx",
           `export function T() {
-             return <><table className="secrets"><tr><td><button className="ui-button" /></td></tr></table>
-               <table className="other"><tr><td><button className="ui-button" /></td></tr></table>
-               <div role="tab"><button className="ui-button" /></div></>;
+             return <><table className="secrets"><tr><td><button data-scope="button" data-part="root" /></td></tr></table>
+               <table className="other"><tr><td><button data-scope="button" data-part="root" /></td></tr></table>
+               <div role="tab"><button data-scope="button" data-part="root" /></div></>;
            }`,
         ),
       ],
@@ -887,7 +886,7 @@ describe("the grounds a button is drawn on", () => {
       [
         file(
           "H.tsx",
-          `export function H() { return <li className="row"><button className="ui-button" /></li>; }`,
+          `export function H() { return <li className="row"><button data-scope="button" data-part="root" /></li>; }`,
         ),
       ],
       css(`li:has(> .row) { background: var(--surface-raised); }`),
@@ -922,11 +921,11 @@ describe("the grounds a button is drawn on", () => {
       [
         file(
           "B.tsx",
-          `export function B() { return <div className="bg-surface-sunken"><button className="ui-button fix" /></div>; }`,
+          `export function B() { return <div className="bg-surface-sunken"><button data-scope="button" data-part="root" className="fix" /></div>; }`,
         ),
       ],
       css(
-        `.fix { background: var(--accent-surface); } .ui-button { background: var(--control-base); }`,
+        `.fix { background: var(--accent-surface); } [data-scope="button"][data-part="root"] { background: var(--control-base); }`,
       ),
     );
     expect(found).toEqual(["surface.base", "surface.sunken"]);
@@ -938,7 +937,7 @@ describe("the grounds a button is drawn on", () => {
         file(
           "M.tsx",
           `export function Menu() {
-             const more = <button className="ui-button" />;
+             const more = <button data-scope="button" data-part="root" />;
              return <div className="raised">{more}</div>;
            }
            export function Tag({ mark }) {
@@ -963,7 +962,7 @@ describe("the grounds a button is drawn on", () => {
              return <span className="badge">{said}</span>;
            }
            export function Loud() {
-             const said = <button className="ui-button" />;
+             const said = <button data-scope="button" data-part="root" />;
              return <div className="raised">{said}</div>;
            }`,
         ),
@@ -980,7 +979,7 @@ describe("the grounds a button is drawn on", () => {
       [
         file(
           "P.tsx",
-          `const more = <button className="ui-button" />;
+          `const more = <button data-scope="button" data-part="root" />;
            export function Menu() { return <div className="raised">{more}</div>; }
            export function Tag({ more }) { return <span className="badge">{more}</span>; }
            export function Row(more) { return <span className="badge">{more}</span>; }`,
@@ -998,7 +997,7 @@ describe("the grounds a button is drawn on", () => {
       [
         file(
           "F.tsx",
-          `const said = <button className="ui-button" />;
+          `const said = <button data-scope="button" data-part="root" />;
            export function Menu() { return <div className="raised">{said}</div>; }
            export function Badge() {
              function said() { return "x"; }
@@ -1021,11 +1020,11 @@ describe("the grounds a button is drawn on", () => {
       [
         file(
           "V.tsx",
-          `const more = <button className="ui-button" />;
+          `const more = <button data-scope="button" data-part="root" />;
            export function Card({ icon = more }) { return <div>{icon}</div>; }
            export function Page() { return <section className="sunken"><Card /></section>; }
            export function Menu({ open }) {
-             if (open) { var shown = <button className="ui-button" />; }
+             if (open) { var shown = <button data-scope="button" data-part="root" />; }
              return <div className="raised">{shown}</div>;
            }`,
         ),
@@ -1048,7 +1047,7 @@ describe("the grounds a button is drawn on", () => {
            }
            export function Loud() {
              const classes = "raised";
-             return <div className={classes}><button className="ui-button" /></div>;
+             return <div className={classes}><button data-scope="button" data-part="root" /></div>;
            }`,
         ),
       ],

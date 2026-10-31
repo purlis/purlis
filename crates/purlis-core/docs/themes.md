@@ -756,7 +756,7 @@ its `density`, the `fit` it breaks, a `size`, a `line_height` and a `height` tok
 `line` and the `room` it has, in px at the default text size), or `style-without-a-face` (a
 style the theme draws in a font it brings with no face for it, so the browser makes it from
 another face: the font's `slot`, `ui`, `mono` or `terminal`, the `weight` and the `style`,
-`normal` or `italic`). A field (`.ui-input`, `size.control` tall) holds the window's words
+`normal` or `italic`). A field (the field family's text input, `[data-scope="text-input"]`, `size.control` tall) holds the window's words
 (`font-size.base`) and a strip a tab's title (`font-size.md`), each on the body line
 (`line-height.body`), in both densities. A button's label sits on a line of 1, so it fits
 wherever a field's text does. `tint` is the workspace colour it was found in, or `null` for the
