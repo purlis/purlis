@@ -666,6 +666,12 @@ warnings (2):
   text.muted on surface.hover, in the red, blue tints: down to 2.07, under 4.5
 ```
 
+A workspace's own colour can be any hue, so each pair a tint can move is read at every whole
+degree too. A pair that clears its floor at every named tint and falls between them is said once,
+at the degree it is lowest (`state.waiting on wash.warning over surface.deep, in a workspace's own
+colour at 121°: 4.49, under 4.5`). In `--json` it is a warning of kind `contrast-between-tints`,
+with the `degree`, the `pair` and the `ratio`.
+
 Then `consent floors:`, what the window draws of the theme. Every combination of appearance
 and option values is checked against the consent floors as the window draws it, with the option
 values layered first, and the line says in how many of them the window holds one (`none held
