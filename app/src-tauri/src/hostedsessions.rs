@@ -2453,6 +2453,12 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
         }
         crate::runnercode::forget(sent);
     }
+    // Read before the hold and the send, so a runner removed during them is seen as gone next.
+    let runners = if *kept_on_the_runner {
+        runners_of_the_pool(connection)
+    } else {
+        Vec::new()
+    };
     let project = purlis_core::scaffold::planefile::id_to_hold_by(root)
         .map_err(|why| format!("this project has no id the session host can name it by: {why}"))?;
     // Before the hold, so the host's first line for the project is heard.
@@ -2569,11 +2575,7 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     *held = Some(Held {
         project: project.clone(),
         on: link.id,
-        runners: if *kept_on_the_runner {
-            runners_of_the_pool(connection)
-        } else {
-            Vec::new()
-        },
+        runners,
     });
     // Held: a mark that a runner would not hold it goes (#2846).
     crate::notheld::held(root);
