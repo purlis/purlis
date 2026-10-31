@@ -1084,11 +1084,11 @@ fn ready_on_for(
 /// that is the refusal the window asks of, on `pool`.
 fn said_of_pool(name: &str, pool: &str, why: &str, said: &str) {
     let mut all = OVER_LIMITS.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(over) = all.get_mut(name) {
-        if over.said == why {
-            over.pool = Some(pool.to_owned());
-            over.said = said.to_owned();
-        }
+    if let Some(over) = all.get_mut(name)
+        && over.said == why
+    {
+        over.pool = Some(pool.to_owned());
+        over.said = said.to_owned();
     }
 }
 

@@ -723,7 +723,7 @@ pub fn chosen_limits_of(
     let cluster = held.clusters.iter().find(|pool| pool.name() == name);
     Ok(docker
         .map(|pool| pool.set.chosen)
-        .or_else(|| cluster.map(|pool| pool.chosen))
+        .or_else(|| cluster.map(|pool| *pool.chosen))
         .unwrap_or_default())
 }
 
@@ -745,7 +745,7 @@ pub fn set_pool_limit(
     if let Some(pool) = held.pools.iter_mut().find(|pool| pool.name == name) {
         pool.set.chosen = pool.set.chosen.with(id, value);
     } else if let Some(pool) = held.clusters.iter_mut().find(|pool| pool.name == name) {
-        pool.chosen = pool.chosen.with(id, value);
+        *pool.chosen = pool.chosen.with(id, value);
     } else {
         return Err(Refused::Other(format!(
             "there is no pool named {name} on this machine"
@@ -1503,7 +1503,8 @@ pub struct ClusterPool {
     /// `None` where none were.
     profiles: Option<Vec<String>>,
     /// The values this person chose for its limits ([`crate::poollimits`], spec #4275).
-    chosen: crate::poollimits::Chosen,
+    /// Held apart, as the list of limits grows and [`Reached`] carries a whole pool.
+    chosen: Box<crate::poollimits::Chosen>,
 }
 
 impl ClusterPool {
@@ -1582,7 +1583,7 @@ impl ClusterPool {
             owned: false,
             mint_in_cluster: false,
             profiles: None,
-            chosen: crate::poollimits::Chosen::default(),
+            chosen: Box::default(),
         })
     }
 
@@ -2109,7 +2110,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         owned,
         mint_in_cluster,
         profiles,
-        chosen,
+        chosen: Box::new(chosen),
         ..pool
     })
     .ok()
