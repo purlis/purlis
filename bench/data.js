@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793412863266,
+  "lastUpdate": 1793423878912,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32550,6 +32550,48 @@ window.BENCHMARK_DATA = {
             "value": 101.761651,
             "unit": "ms",
             "extra": "median of 5 runs: 101.365, 101.549, 101.762, 101.846, 102.241 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "52a2f5717a9b1c5a31e97bcc787428f948922740",
+          "message": "Skill studio: a no-skills harness says so at a chat's start, and a harness's own catalogue shows beside the budget (#3585, #3324) (#4190)\n\n* A chat on a harness that takes no skills is told so at its first start (#3585)\n\nA declared harness with no skill format and no MCP servers gets no hooks\nand no MCP server, so no briefing can say it. The chat's start now adds\nthe core's not-supported line to the notes its tab shows once, at its\nfirst start only, and only where the plane's skills would reach it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A harness's own catalogue is shown beside the budget, never counted (#3324)\n\nOption (b) of the ticket. Each harness in the studio measures the\nskills it finds itself (the person's own and its plugins'), with\nmanual-only read as that harness reads it, as OwnCatalogue. The Skills\nview adds it after a chat's budget line from the studio answer it reads\nanyway, purlis skill list prints it, and the Routing page says what the\nbudget counts. No read is added to a chat's open. Recorded as an ADR\n0102 amendment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Review fixes for #3324: leave purlis's own plugin out, plainer copy\n\n- A plugin of purlis's own (its own, or one it pins off) is no part of\n  a harness's own catalogue.\n- The line says only what there is: no \"0 skills\" beside manual-only\n  ones, and counts go through crate::counts.\n- The window takes the core's sentence alone; the CLI shares one\n  escaped-line helper.\n- The amendment records what stays uncounted or approximate.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Story baselines: the Routing page says what the budget counts (#3324)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T04:56:18Z",
+          "tree_id": "619057fd37b2e7aaf2cc6179f492ba26334fbd7b",
+          "url": "https://github.com/purlis/purlis/commit/52a2f5717a9b1c5a31e97bcc787428f948922740"
+        },
+        "date": 1793423874277,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6617139999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.653, 0.659, 0.662, 0.666, 0.671 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.49514,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.417, 16.487, 16.495, 16.518, 16.549 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.0952315,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.210, 102.357, 103.095, 103.527, 103.828 ms"
           }
         ]
       }
