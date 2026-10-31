@@ -1317,9 +1317,9 @@ up. It also writes `data-motion="reduced"` on the root, which **one global switc
 (`app/src/theme/reduced-motion.css`, R152): no transition, and every animation plays its whole
 run at once, so a motion written without a token stops too, and a component waiting for an
 animation's end still hears it. xterm blinks its cursor on a timer of its own, so under reduced
-motion every terminal is told not to blink, whatever the theme says. The switch's declarations are important in the first layer,
-so no later layer turns motion back on. A transition over no time is
-no transition, and a looping animation with a zero duration has a zero active duration (Web
+motion every terminal is told not to blink, whatever the theme says. The switch's declarations
+are important in the first layer, so no later layer turns motion back on. A transition over no
+time is no transition, and a looping animation with a zero duration has a zero active duration (Web
 Animations), so a spinner does not spin and a pulse does not pulse. **A component written
 tomorrow gets this for free, because it reads a token** — and `literals.test.ts` refuses a
 `prefers-reduced-motion` query anywhere outside `src/theme/`, so there is no second place that

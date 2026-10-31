@@ -38,6 +38,9 @@ struct AtCreation {
     /// The built-in appearances a pick names, by the pick ([`handed_built_ins`]): what a pick of
     /// one draws without asking the core.
     built_in: std::collections::BTreeMap<String, WindowTheme>,
+    /// What the person's colours left out of each of [`Self::built_in`], where any was (#3023):
+    /// what the Notice says when a pick of one is drawn without asking the core.
+    built_in_mine: std::collections::BTreeMap<String, Vec<String>>,
     /// The default theme's appearance, Purlis's dark (#3034): what the window draws when nothing
     /// else was handed.
     default_theme: WindowTheme,
@@ -76,6 +79,8 @@ struct Frame {
     theme: WindowTheme,
     /// The Notice that names the consent floors it breaks, when it breaks one.
     floors: Option<String>,
+    /// Which of the person's colours it left out (#3023): what the first frame's Notice says.
+    mine: Vec<String>,
 }
 
 /// **Where a window is created** (#2602): the project in front as it opens, and the workspace
@@ -165,10 +170,6 @@ pub(crate) struct Created {
     pub(crate) native: theme::Native,
     /// Whether the first frame follows the system: the native parts are then the system's.
     pub(crate) follows_system: bool,
-    /// The person's layer the creation read from the layout file (#2925), drawn into every
-    /// theme the window is handed.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) person: theme::Layer,
 }
 
 impl FirstFrame {
@@ -231,12 +232,14 @@ impl FirstFrame {
                     more,
                     theme: WindowTheme::from(resolved),
                     floors: one.held.map(|held| held.said()),
+                    mine: said(one.mine),
                 };
                 // A frame that more contrast draws the same as the standard one is handed once.
                 let same = frames.iter().any(|was| {
                     was.light == frame.light
                         && was.theme == frame.theme
                         && was.floors == frame.floors
+                        && was.mine == frame.mine
                 });
                 if !same {
                     frames.push(frame);
@@ -269,6 +272,8 @@ struct TheirTheme {
     /// The Notice that names the consent floors the theme breaks, when it breaks one: what is
     /// drawn has purlis's own values for those tokens.
     floors: Option<String>,
+    /// Which of the person's colours it left out (#3023), as [`Self::floors`] says its floors.
+    mine: Vec<String>,
     /// Whether it is a format 1 file in force, which the window offers, once, to move into a
     /// theme folder (#2323).
     format_1: bool,
@@ -283,6 +288,8 @@ struct TheirTheme {
 struct TheirDrawn {
     theme: WindowTheme,
     floors: Option<String>,
+    /// Which of the person's colours this appearance left out (#3023).
+    mine: Vec<String>,
 }
 
 impl TheirTheme {
@@ -297,6 +304,7 @@ impl TheirTheme {
                 Some(TheirDrawn {
                     theme: WindowTheme::from(drawn.theme.as_ref()?),
                     floors: drawn.held.map(|held| held.said()),
+                    mine: said(drawn.mine),
                 })
             })
         };
@@ -309,11 +317,19 @@ impl TheirTheme {
             trouble: theirs.trouble,
             complaints: theirs.complaints,
             floors: standard.as_ref().and_then(|it| it.floors.clone()),
+            mine: standard
+                .as_ref()
+                .map_or_else(Vec::new, |it| it.mine.clone()),
             theme: standard.map(|it| it.theme),
             more,
             format_1: theirs.format_1,
         }
     }
+}
+
+/// What drawing the person's layer left out, as the Notice says each (#3023).
+fn said(mine: Vec<Complaint>) -> Vec<String> {
+    mine.into_iter().map(|one| one.said).collect()
 }
 
 /// **The person's own theme, read once for this process** (`purlis_core::theme::TheirsKept`):
@@ -356,10 +372,15 @@ fn at_creation_from(
     let theirs = kept.get(config_root);
     let (first, native) = FirstFrame::of(config_root, on, theirs.theme.as_ref(), contrast, &layer);
     let follows_system = first.follows_system;
-    let (built_in, default_theme) = handed_with_default(&layer);
+    let Handed {
+        built_in,
+        built_in_mine,
+        default_theme,
+    } = Handed::under(&layer);
     let at = AtCreation {
         theme: TheirTheme::of(theirs, &layer),
         built_in,
+        built_in_mine,
         default_theme,
         person,
         layout,
@@ -373,7 +394,6 @@ fn at_creation_from(
         ),
         native,
         follows_system,
-        person: layer,
     }
 }
 
@@ -396,41 +416,68 @@ pub(crate) const HANDED_AT_LOAD: [&str; 2] = ["built_in", "default_theme"];
 pub(crate) fn handed_built_ins(
     layer: &theme::Layer,
 ) -> std::collections::BTreeMap<String, WindowTheme> {
-    HANDED_PICKS
-        .into_iter()
-        .filter_map(|pick| {
-            theme::built_in(pick).map(|one| (pick.to_owned(), built_in_under(one, layer)))
-        })
-        .collect()
+    Handed::under(layer).built_in
 }
 
 /// The picks [`handed_built_ins`] hands the appearance of.
 pub(crate) const HANDED_PICKS: [&str; 2] = [purlis_core::names::THEME_DARK.write, theme::CLASSIC];
 
-/// [`handed_built_ins`] and the default's appearance, `default_theme`, drawn once: the default is
-/// one of the built-ins handed, so the window is handed the same theme for both.
+/// [`handed_built_ins`] and the default's appearance, `default_theme`.
 pub(crate) fn handed_with_default(
     layer: &theme::Layer,
 ) -> (std::collections::BTreeMap<String, WindowTheme>, WindowTheme) {
-    let built_in = handed_built_ins(layer);
-    let default = built_in
-        .get(purlis_core::names::THEME_DARK.write)
-        .filter(|_| {
-            theme::built_in(purlis_core::names::THEME_DARK.write) == Some(theme::default_theme())
-        })
-        .cloned()
-        .unwrap_or_else(|| built_in_under(theme::default_theme(), layer));
-    (built_in, default)
+    let handed = Handed::under(layer);
+    (handed.built_in, handed.default_theme)
+}
+
+/// **The built-in themes a window is handed, each drawn once** (#3023): as it draws under the
+/// person's layer, what that left out, and the default's appearance, which is one of them.
+struct Handed {
+    built_in: std::collections::BTreeMap<String, WindowTheme>,
+    built_in_mine: std::collections::BTreeMap<String, Vec<String>>,
+    default_theme: WindowTheme,
+}
+
+impl Handed {
+    fn under(layer: &theme::Layer) -> Self {
+        let mut built_in = std::collections::BTreeMap::new();
+        let mut built_in_mine = std::collections::BTreeMap::new();
+        for pick in HANDED_PICKS {
+            let Some(one) = theme::built_in(pick) else {
+                continue;
+            };
+            let (drawn, mine) = built_in_under(one, layer);
+            built_in.insert(pick.to_owned(), drawn);
+            if !mine.is_empty() {
+                built_in_mine.insert(pick.to_owned(), mine);
+            }
+        }
+        let default_theme = built_in
+            .get(purlis_core::names::THEME_DARK.write)
+            .filter(|_| {
+                theme::built_in(purlis_core::names::THEME_DARK.write)
+                    == Some(theme::default_theme())
+            })
+            .cloned()
+            .unwrap_or_else(|| built_in_under(theme::default_theme(), layer).0);
+        Self {
+            built_in,
+            built_in_mine,
+            default_theme,
+        }
+    }
 }
 
 /// A built-in theme as the window is handed it: as it is, or with the person's colours and
-/// contrast drawn over it, the consent floors held, when their layer changes colours (#2925).
-fn built_in_under(one: &theme::ResolvedTheme, person: &theme::Layer) -> WindowTheme {
+/// contrast drawn over it, the consent floors held, when their layer changes colours (#2925);
+/// and which of their colours that left out (#3023).
+fn built_in_under(one: &theme::ResolvedTheme, person: &theme::Layer) -> (WindowTheme, Vec<String>) {
     if !person.colours_anything() {
-        return WindowTheme::from(one);
+        return (WindowTheme::from(one), Vec::new());
     }
     let drawn = theme::draw(one).under(person);
-    WindowTheme::from(drawn.theme.as_ref().unwrap_or(one))
+    let handed = WindowTheme::from(drawn.theme.as_ref().unwrap_or(one));
+    (handed, said(drawn.mine))
 }
 
 /// [`at_creation_from`]'s script, for a window on no project and the standard contrast.
@@ -725,14 +772,11 @@ mod tests {
                 assert_ne!(drawn, accent, "{}", one["name"]);
             }
         }
-        assert_eq!(
-            created
-                .person
-                .colours
-                .get("accent.base")
-                .map(String::as_str),
-            Some(accent)
-        );
+        // Nothing was left out: a built-in that drew every colour has no line of its own.
+        assert_eq!(at["built_in_mine"], serde_json::json!({}));
+        for frame in at["first"]["frames"].as_array().expect("frames") {
+            assert_eq!(frame["mine"], serde_json::json!([]));
+        }
 
         // More contrast in purlis is the system's more: one frame, for it, drawn raised.
         let created = layout(r#"{"contrast":"more"}"#);
@@ -742,12 +786,60 @@ mod tests {
         for frame in at["first"]["frames"].as_array().expect("frames") {
             assert_eq!(frame["more"], true);
         }
-        assert_eq!(created.person.contrast, theme::Least::More);
         let classic = &at["built_in"]["purlis-classic"]["values"];
         assert_ne!(
             classic["text.muted"],
             theme::classic().first().value("text.muted"),
             "muted words are raised to 7:1"
+        );
+    }
+
+    /// **What a window is handed says what the core would** (#3023): a colour that would put
+    /// words under their floor is left out of the first frame, of the person's own theme and of
+    /// each built-in handed, in the core's own sentence.
+    #[test]
+    fn what_a_window_is_handed_names_the_person_s_colours_it_left_out() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = purlis_core::machine::dir(home.path());
+        std::fs::create_dir_all(&dir).unwrap();
+        // A dark theme of the person's, so the words below are under its floor too.
+        std::fs::write(dir.join(windowprefs::THEME), SHARP).unwrap();
+        // The words in their own ground's colour: under the floor on every dark ground.
+        let ground = theme::default_theme().value("surface.base");
+        std::fs::write(
+            dir.join(windowprefs::LAYOUT),
+            format!(
+                r#"{{"version":2,"regions":[],"appearance":{{"colours":{{"text.primary":"{ground}"}}}}}}"#
+            ),
+        )
+        .unwrap();
+        let created = at_creation_from(
+            &TheirsKept::new(),
+            Some(home.path()),
+            None,
+            Some(Contrast::Standard),
+        );
+        let at = defined(&created.script);
+        let the_dark = at["built_in_mine"][purlis_core::names::THEME_DARK.write]
+            .as_array()
+            .expect("what the dark built-in left out");
+        assert_eq!(the_dark.len(), 1);
+        assert!(
+            the_dark[0].as_str().unwrap().contains("text.primary"),
+            "{the_dark:?}"
+        );
+        let frames = at["first"]["frames"].as_array().expect("frames");
+        assert!(!frames.is_empty());
+        for frame in frames {
+            assert!(
+                !frame["mine"].as_array().expect("mine").is_empty(),
+                "{frame}"
+            );
+        }
+        assert!(
+            !at["theme"]["mine"].as_array().expect("mine").is_empty(),
+            "{}",
+            at["theme"]
         );
     }
 

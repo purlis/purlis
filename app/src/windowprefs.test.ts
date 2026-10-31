@@ -34,6 +34,7 @@ const NO_THEME: TheirReading = {
   theme: null,
   complaints: [],
   floors: null,
+  mine: [],
   format_1: false,
   more: null,
 };
@@ -308,7 +309,7 @@ describe("the operator's own theme, for more contrast (#2328)", () => {
   });
 
   it("is its appearance tagged high contrast while the system asks for more, with its floors", () => {
-    handed({ theme: MINE, more: { theme: SHARP, floors } });
+    handed({ theme: MINE, more: { theme: SHARP, floors, mine: [] } });
     asking(true);
     forgetTheirTheme();
 
