@@ -1392,14 +1392,6 @@ fn grade_said(
             for left in &planned.left_out {
                 text.push_str(&format!("Test {} is left out: {}\n", left.at + 1, left.why));
             }
-            for eval in &request.outcomes {
-                text.push_str(&format!(
-                    "  Outcome eval {}. {}  ({} a judge checks)\n",
-                    eval.id,
-                    purlis_core::skills::review::escaped_line(&eval.prompt),
-                    counted(eval.expectations.len(), "expectation", "expectations"),
-                ));
-            }
             // The terminal knows no profile, so its limit is at the dearest known price: the
             // Skill studio's plan prices it from the model its profile's chats run on (#3469).
             let dearest = purlis_core::skills::grades::price::of_model(None);
@@ -1429,6 +1421,17 @@ fn grade_said(
         text.push_str(&format!(
             "Its outcome evals could not be read: {}\n",
             why.terminal()
+        ));
+    }
+    // Off until the person ticks them in the Skill studio's plan (the ruling of 2026-10-31).
+    for eval in &planned.offered {
+        text.push_str(&format!(
+            "  Outcome eval {}. {}  (off: {} a judge checks, {} more if ticked in the Skill \
+             studio's plan)\n",
+            eval.id,
+            purlis_core::skills::review::escaped_line(&eval.prompt),
+            counted(eval.expectations.len(), "expectation", "expectations"),
+            counted(planned.eval_chats, "chat", "chats"),
         ));
     }
     for left in &planned.outcomes_left_out {

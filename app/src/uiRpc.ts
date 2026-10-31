@@ -1054,7 +1054,7 @@ export const commands = {
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	skillLevelsConfirm: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
-	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model })),
+	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, evals: string[]) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model, evals })),
 	skillGradeStart: __WINDOW_ONLY_RESULT,
 	skillGradeStop: __WINDOW_ONLY_RESULT,
 	/**  **The scorecard of `skill`'s grade `grade`** (SK-59, #3239), as the eval record holds it. */
@@ -5590,6 +5590,9 @@ export type GradeEval = {
 	hides: boolean,
 	files: string[],
 	expectations: number,
+	/**  Whether the person ticked it (off until they do), and the chats ticking it adds. */
+	on: boolean,
+	chats: number,
 };
 
 /**  **An outcome eval a grade leaves out** (`grades::LeftOutEval`): its id, and why. */

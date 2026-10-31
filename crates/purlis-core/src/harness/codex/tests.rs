@@ -56,6 +56,7 @@ fn kit() -> Kit<'static> {
         persona: None,
         graded: false,
         judging: false,
+        writes_its_piece: false,
     }
 }
 

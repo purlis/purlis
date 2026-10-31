@@ -1331,3 +1331,34 @@ fn a_judge_reads_only_the_folder_laid_out_for_it() {
         Answer::Deny(_)
     ));
 }
+
+/// SK-55: a judge's answer is taken only where all it did was read its own folder.
+#[test]
+fn a_judges_answer_is_taken_only_from_a_turn_that_read_its_folder_alone() {
+    let plane = Plane::new();
+    let folder = plane.root.join("judge");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("task.json"), "{}").unwrap();
+    let cwd = folder.to_str().unwrap().to_owned();
+    let lookup = |name: &str| (name == JUDGE_FOLDER_ENV).then(|| cwd.clone());
+    let transcript = plane.root.join("t.jsonl");
+    let stop = serde_json::json!({"transcript_path": transcript, "cwd": cwd}).to_string();
+    let call = |name: &str, input: Value| {
+        serde_json::json!({"type": "assistant", "message": {"content": [
+            {"type": "text", "text": "x"},
+            {"type": "tool_use", "name": name, "input": input},
+        ]}})
+        .to_string()
+    };
+    assert!(!judge_may_answer(&stop, &lookup), "no transcript");
+    let wrote = |text: String| std::fs::write(&transcript, text).unwrap();
+    wrote(call("Read", serde_json::json!({"file_path": "task.json"})));
+    assert!(judge_may_answer(&stop, &lookup));
+    wrote(call("Read", serde_json::json!({"file_path": "../t.jsonl"})));
+    assert!(!judge_may_answer(&stop, &lookup));
+    wrote(call("Bash", serde_json::json!({"command": "ls"})));
+    assert!(!judge_may_answer(&stop, &lookup));
+    wrote("not json".to_owned());
+    assert!(!judge_may_answer(&stop, &lookup));
+    assert!(judge_may_answer("nothing", &|_| None), "any other chat");
+}

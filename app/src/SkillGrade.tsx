@@ -30,6 +30,7 @@ import { counted } from "./dispatches";
 import { NotRead, ReadingRows } from "./SkillPanels";
 import { Notice } from "./Notice";
 import { Button, ButtonRow } from "./ui/button/Button";
+import { Checkbox } from "./ui/choice/Checkbox";
 import { Tile, Totals } from "./ui/card/Totals";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { TextField } from "./ui/field/Field";
@@ -91,8 +92,9 @@ export function fixturesSaid(plan: SkillGradePlan, full = false): string {
     full ? "trigger test" : "test",
     full ? "trigger tests" : "tests",
   );
-  const evals = counted(plan.evals.length, "outcome eval", "outcome evals");
-  if (plan.evals.length === 0) return tests;
+  const on = plan.evals.filter((one) => one.on).length;
+  const evals = counted(on, "outcome eval", "outcome evals");
+  if (on === 0) return tests;
   if (plan.tests.length === 0) return evals;
   return `${tests} and ${evals}`;
 }
@@ -253,6 +255,8 @@ export function GradePlanPage({
   // The model the chats run on (SK-60): the profile's own where none is picked.
   const [model, setModel] = useState(DEFAULT);
   const [again, setAgain] = useState(0);
+  // The outcome evals the person ticked: none until they do, and the consent covers these.
+  const [ticked, setTicked] = useState<string[]>([]);
   const picked = profile === DEFAULT ? null : profile;
   const pickedModel = model === DEFAULT ? null : model;
   // The level as a value: a page drawn again with an equal level reads nothing anew.
@@ -263,9 +267,14 @@ export function GradePlanPage({
   });
 
   /** Reads the plan: drawn, or (`check`) held as newer where it consents to something else. */
-  const read = (on: string | null, onModel: string | null, check = false) =>
+  const read = (
+    on: string | null,
+    onModel: string | null,
+    check = false,
+    evals: string[] = ticked,
+  ) =>
     void commands
-      .skillGradePlan(plane, level, name, on, onModel)
+      .skillGradePlan(plane, level, name, on, onModel, evals)
       .then((answer) => {
         if (answer.status !== "ok") {
           if (!check) setRefused(answer.error);
@@ -322,7 +331,7 @@ export function GradePlanPage({
   const consent = plan.consent ?? "";
   const start = () =>
     void commands
-      .skillGradeStart(plane, level, name, picked, pickedModel, consent)
+      .skillGradeStart(plane, level, name, picked, pickedModel, ticked, consent)
       .then((answer) => {
         if (answer.status === "ok") onStarted(answer.data);
         else {
@@ -334,7 +343,7 @@ export function GradePlanPage({
       });
   const turnOn = () =>
     void commands
-      .skillGradeAfterEditOn(plane, level, name, picked, pickedModel, consent)
+      .skillGradeAfterEditOn(plane, level, name, picked, pickedModel, ticked, consent)
       .then((answer) => {
         if (answer.status === "ok") onAfterEdit(answer.data);
         else {
@@ -515,21 +524,31 @@ export function GradePlanPage({
                 {plan.left_out.map((left) => `Test ${left.at + 1}: ${left.why}`).join(" ")}
               </p>
             )}
-            {plan.evals.length > 0 && (
-              <ol aria-label={`Outcome evals of ${name}`}>
-                {plan.evals.map((one) => (
-                  <li key={one.id} data-testid="skill-grade-eval">
-                    <code>{one.prompt}</code> ·{" "}
-                    {counted(one.expectations, "expectation", "expectations")} a judge checks
-                    {one.files.length > 0 && ` · with ${one.files.join(", ")}`}
-                    {one.hides && (
-                      <span className="honest"> · holds a character no reader would see</span>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            )}
           </>
+        )}
+        {plan.evals.length > 0 && (
+          <ul aria-label={`Outcome evals of ${name}`} className="skill-grade-evals">
+            {plan.evals.map((one) => (
+              <li key={one.id} data-testid="skill-grade-eval">
+                <Checkbox
+                  isSelected={one.on}
+                  onChange={(on) => {
+                    const evals = on ? [...ticked, one.id] : ticked.filter((id) => id !== one.id);
+                    setTicked(evals);
+                    read(picked, pickedModel, false, evals);
+                  }}
+                >
+                  <code>{one.prompt}</code>
+                </Checkbox>{" "}
+                · {counted(one.chats, "more chat", "more chats")} ·{" "}
+                {counted(one.expectations, "expectation", "expectations")} a judge checks
+                {one.files.length > 0 && ` · with ${one.files.join(", ")}`}
+                {one.hides && (
+                  <span className="honest"> · holds a character no reader would see</span>
+                )}
+              </li>
+            ))}
+          </ul>
         )}
         {plan.outcomes_left_out.length > 0 && (
           <p className="honest" data-testid="skill-grade-evals-left-out">
@@ -594,7 +613,7 @@ export function GradePlanPage({
               cap={plan.token_cap ?? 0}
               onCap={(tokens) =>
                 void commands
-                  .skillGradeSetCap(plane, level, name, picked, pickedModel, tokens)
+                  .skillGradeSetCap(plane, level, name, picked, pickedModel, ticked, tokens)
                   .then((answer) => {
                     if (answer.status === "ok") {
                       setPlan(answer.data);

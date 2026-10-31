@@ -312,6 +312,10 @@ pub struct Kit<'a> {
     /// (`skills::verbs::drafts::judge_piece`): a grade's chat held to reading, denied every tool
     /// that writes, runs a command or reaches out, where the harness can be told so.
     pub judging: bool,
+    /// **An outcome eval's chat** of a grade (SK-55, ruled 2026-10-31), as its piece says
+    /// (`skills::verbs::drafts::outcome_piece`): it may write and edit inside its own piece,
+    /// where the harness can be told so. Anything else still asks, and ends it.
+    pub writes_its_piece: bool,
     /// The set's folder the host laid out before arming the chat
     /// ([`crate::skills::lay_out_for_chat`]): the plane's skills of its set, and on a route that
     /// names the built-in skills their own (`purlis-<name>`,

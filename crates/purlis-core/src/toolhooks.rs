@@ -364,15 +364,107 @@ fn judge_reads_outside(hook: &Hook, named: &[String]) -> Option<String> {
         "" => folder.clone(),
         cwd => Path::new(cwd).to_path_buf(),
     };
+    (!inside(&folder, &base, named)).then(refused).flatten()
+}
+
+/// How long a judge's limits have to answer, as long as the harness gives the hook.
+const JUDGE_CHECK_TIME: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// **Whether purlis's `binary` refuses a judge in `folder` a read outside it**, answered by
+/// asking it as a chat's harness would. No answer in time, or any other answer, is no.
+pub fn judge_guard_answers(binary: &Path, folder: &Path) -> bool {
+    use std::io::{Read as _, Write as _};
+    use std::process::{Command, Stdio};
+    let payload = serde_json::json!({
+        "tool_name": "Read",
+        "tool_input": {"file_path": "/"},
+        "cwd": folder,
+    });
+    let Ok(mut child) = Command::new(binary)
+        .args(["hook", "pretooluse-read"])
+        .current_dir(folder)
+        .env(JUDGE_FOLDER_ENV, folder)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(payload.to_string().as_bytes());
+    }
+    let began = std::time::Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) if began.elapsed() < JUDGE_CHECK_TIME => {
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            _ => break None,
+        }
+    };
+    let Some(status) = status else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return false;
+    };
+    let mut said = String::new();
+    if let Some(mut out) = child.stdout.take() {
+        let _ = out.read_to_string(&mut said);
+    }
+    status.code() == Some(2) || said.contains("\"deny\"")
+}
+
+/// The most of a judge's transcript read: past what a turn of a grade's chat writes.
+const MOST_TRANSCRIPT_BYTES: u64 = 64 * 1024 * 1024;
+
+/// **Whether a judge's turn may hand back its answer**, from its `Stop` hook's `payload`: `true`
+/// for every other chat. For a judge, every tool call its transcript holds has to be `Read` or
+/// `Grep` inside its folder; a transcript that does not read whole answers `false`.
+pub fn judge_may_answer(payload: &str, env: &dyn Fn(&str) -> Option<String>) -> bool {
+    let Some(folder) = env(JUDGE_FOLDER_ENV) else {
+        return true;
+    };
+    (|| {
+        let stop: Value = serde_json::from_str(payload).ok()?;
+        let path = Path::new(stop.get("transcript_path")?.as_str()?);
+        let cwd = stop.get("cwd").and_then(Value::as_str).unwrap_or(&folder);
+        if std::fs::metadata(path).ok()?.len() > MOST_TRANSCRIPT_BYTES {
+            return None;
+        }
+        let text = std::fs::read_to_string(path).ok()?;
+        let folder = std::fs::canonicalize(&folder).ok()?;
+        let cwd = Path::new(cwd);
+        for line in text.lines().filter(|line| !line.trim().is_empty()) {
+            let row: Value = serde_json::from_str(line).ok()?;
+            let Some(content) = row.pointer("/message/content").and_then(Value::as_array) else {
+                continue;
+            };
+            for call in content
+                .iter()
+                .filter(|one| one.get("type").and_then(Value::as_str) == Some("tool_use"))
+            {
+                let named = targets(call.get("input")?);
+                let tool = call.get("name")?.as_str()?;
+                if !matches!(tool, "Read" | "Grep") || !inside(&folder, cwd, &named) {
+                    return Some(false);
+                }
+            }
+        }
+        Some(true)
+    })()
+    .unwrap_or(false)
+}
+
+/// Whether each of `named`, from `base`, or `base` itself where none is named, resolves inside
+/// `folder`, links followed.
+fn inside(folder: &Path, base: &Path, named: &[String]) -> bool {
     let here = [".".to_owned()];
     let paths = if named.is_empty() { &here[..] } else { named };
-    paths
-        .iter()
-        .any(|path| {
-            std::fs::canonicalize(base.join(path)).map_or(true, |real| !real.starts_with(&folder))
-        })
-        .then(refused)
-        .flatten()
+    paths.iter().all(|path| {
+        std::fs::canonicalize(base.join(path)).is_ok_and(|real| real.starts_with(folder))
+    })
 }
 
 /// `_state_write_reason`'s sentence.

@@ -665,15 +665,41 @@ const GRADED: &str = "graded";
 /// A grade's arm's file that marks its chat as a judge's (SK-55): held to reading.
 const JUDGE: &str = "judge";
 
+/// A grade's arm's file that marks its chat as an outcome eval's (SK-55): it may write here.
+const OUTCOME: &str = "outcome";
+
+/// **Whether `cwd` is an outcome eval's chat's piece** in the project at `root` ([`stage`]): a
+/// grade's arm marked so. Only this machine's state says so, and no chat writes it.
+pub fn outcome_piece(root: &Path, cwd: &Path) -> bool {
+    graded_piece(root, cwd)
+        && try_of(root, cwd).is_some_and(|id| {
+            crate::appstate::dir(root).is_some_and(|state| {
+                read_at(&state, &format!("{TRIES_DIR}/{id}/{OUTCOME}"))
+                    .ok()
+                    .flatten()
+                    .is_some()
+            })
+        })
+}
+
 /// **Stages an outcome eval's input files into the throwaway piece of `laid`** (SK-55, #3235):
 /// each of `files` (paths in the skill's folder, as the eval names them) at the same path in the
 /// piece, from `inputs`, what the grade read of them once. A file it did not read refuses the
 /// chat, as the eval would not be the one the plan showed.
 pub fn stage(
+    root: &Path,
     laid: &Try,
     files: &[String],
     inputs: &BTreeMap<String, String>,
 ) -> Result<(), String> {
+    write_at(
+        &app_state(root)?,
+        &format!("{TRIES_DIR}/{}/{OUTCOME}", laid.id),
+        None,
+        "",
+        usize::MAX,
+    )
+    .map_err(|why| super::not_written("the grade's record of its folder", why))?;
     for path in files {
         let text = inputs.get(path).ok_or_else(|| {
             format!(

@@ -1231,6 +1231,8 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
         // Only a grade's chat is a judge's, and only in a piece laid out as one.
         judging: graded
             && cwd.is_some_and(|cwd| crate::skills::verbs::drafts::judge_piece(root, cwd)),
+        writes_its_piece: graded
+            && cwd.is_some_and(|cwd| crate::skills::verbs::drafts::outcome_piece(root, cwd)),
         laid_out: linked.as_deref(),
     };
     // Which folder the chat is handed, for its terminal to note while it runs (SK-24).

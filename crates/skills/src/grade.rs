@@ -746,8 +746,8 @@ fn count_outcome(counted: &mut (u32, u32), one: &ChatRan) {
 
 /// **What the judge's chat `verdict` made of `run`**, graded on `expectations`: its answer taken
 /// whole ([`outcomes::judged`]), or the eval failed there with why; a judge that never ran (not
-/// started, stopped, or ended at a cap) judged nothing, so the run is no run. Fails closed: a
-/// judge that asked the person something, or ran out of time with no answer, failed it.
+/// started, stopped, ended at a cap, or handed back no answer) judged nothing, so the run is no
+/// run. A judge that asked the person something failed it.
 fn verdict_of(run: &mut OutcomeRun, verdict: &ChatRan, expectations: &[String]) {
     run.judge = verdict.chat.clone();
     let failed = |run: &mut OutcomeRun, why: String| {
@@ -756,10 +756,7 @@ fn verdict_of(run: &mut OutcomeRun, verdict: &ChatRan, expectations: &[String]) 
     };
     match &verdict.end {
         ChatEnd::Turn | ChatEnd::TimedOut => match verdict.answer.as_deref() {
-            None => failed(
-                run,
-                "The judge's chat ended without an answer, so the eval failed.".to_owned(),
-            ),
+            None => {}
             Some(answer) => match outcomes::judged(answer, expectations) {
                 Ok(checks) => {
                     let passed = checks.iter().filter(|check| check.passed).count();

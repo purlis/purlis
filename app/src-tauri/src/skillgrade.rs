@@ -90,6 +90,9 @@ pub struct GradeEval {
     pub hides: bool,
     pub files: Vec<String>,
     pub expectations: u32,
+    /// Whether the person ticked it (off until they do), and the chats ticking it adds.
+    pub on: bool,
+    pub chats: u32,
 }
 
 /// **An outcome eval a grade leaves out** (`grades::LeftOutEval`): its id, and why.
@@ -399,42 +402,35 @@ impl SkillGradePlan {
                 })
                 .collect(),
             evals: planned
-                .request
-                .as_ref()
-                .map(|request| {
-                    request
-                        .outcomes
-                        .iter()
-                        .map(|eval| {
-                            let prompt = grading::outcomes::outcome_prompt(eval);
-                            GradeEval {
-                                id: eval.id.to_string(),
-                                hides: purlis_unicode::hides(&prompt, purlis_unicode::Breaks::Kept)
-                                    || eval
-                                        .expectations
+                .offered
+                .iter()
+                .map(|eval| {
+                    let prompt = grading::outcomes::outcome_prompt(eval);
+                    GradeEval {
+                        id: eval.id.to_string(),
+                        hides: purlis_unicode::hides(&prompt, purlis_unicode::Breaks::Kept)
+                            || eval
+                                .expectations
+                                .iter()
+                                .chain(&eval.expected_output)
+                                .chain(
+                                    eval.files
                                         .iter()
-                                        .chain(&eval.expected_output)
-                                        .chain(eval.files.iter().filter_map(|path| {
-                                            planned.copy.as_ref()?.inputs.get(path)
-                                        }))
-                                        .any(|text| {
-                                            purlis_unicode::hides(
-                                                text,
-                                                purlis_unicode::Breaks::Kept,
-                                            )
-                                        }),
-                                prompt: purlis_unicode::marked(
-                                    &prompt,
-                                    purlis_unicode::Breaks::Marked,
-                                ),
-                                files: eval.files.clone(),
-                                expectations: u32::try_from(eval.expectations.len())
-                                    .unwrap_or(u32::MAX),
-                            }
-                        })
-                        .collect()
+                                        .filter_map(|path| planned.copy.as_ref()?.inputs.get(path)),
+                                )
+                                .any(|text| {
+                                    purlis_unicode::hides(text, purlis_unicode::Breaks::Kept)
+                                }),
+                        prompt: purlis_unicode::marked(&prompt, purlis_unicode::Breaks::Marked),
+                        files: eval.files.clone(),
+                        expectations: u32::try_from(eval.expectations.len()).unwrap_or(u32::MAX),
+                        on: planned.request.as_ref().is_some_and(|request| {
+                            request.outcomes.iter().any(|one| one.id == eval.id)
+                        }),
+                        chats: planned.eval_chats,
+                    }
                 })
-                .unwrap_or_default(),
+                .collect(),
             outcome_evals: planned
                 .plan
                 .map(|plan| plan.outcome_evals)
@@ -618,6 +614,11 @@ fn running_of(plane: &PlaneId, skill: &str) -> Option<String> {
         .map(|(id, _)| id.clone())
 }
 
+/// **The outcome evals the window says were ticked**, by id: none are, until the person ticks them.
+pub(crate) fn ticked(evals: &[String]) -> Vec<u64> {
+    evals.iter().filter_map(|id| id.parse().ok()).collect()
+}
+
 /// **What grading the copy of `skill` at `level` would run**, before anything runs.
 #[tauri::command]
 #[specta::specta]
@@ -628,13 +629,19 @@ pub(crate) async fn skill_grade_plan(
     skill: String,
     profile: Option<String>,
     model: Option<String>,
+    evals: Vec<String>,
 ) -> Result<SkillGradePlan, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading what a grade runs", move || {
         flag_on()?;
         let on = chats_on(held.root(), profile, model);
-        let planned =
-            grades::planned(held.root(), &(&level).into(), &skill, on.profile.as_deref())?;
+        let planned = grades::planned_with(
+            held.root(),
+            &(&level).into(),
+            &skill,
+            on.profile.as_deref(),
+            &ticked(&evals),
+        )?;
         Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill), on))
     })
     .await
@@ -656,6 +663,7 @@ pub(crate) async fn skill_grade_start(
     skill: String,
     profile: Option<String>,
     model: Option<String>,
+    evals: Vec<String>,
     consent: String,
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
@@ -664,7 +672,7 @@ pub(crate) async fn skill_grade_start(
         let level: Level = (&level).into();
         let on = chats_on(held.root(), profile.clone(), model.clone());
         // The estimate is the plan's to show: a start needs none of it.
-        let planned = grades::planned(held.root(), &level, &skill, None)?;
+        let planned = grades::planned_with(held.root(), &level, &skill, None, &ticked(&evals))?;
         // What runs is what the plan showed (the review of #3229): the tests, the skill's files
         // and what its folder holds, read once here and laid out from this one copy, on the
         // profile, model and limits it showed.
@@ -974,6 +982,7 @@ pub(crate) async fn skill_grade_set_cap(
     skill: String,
     profile: Option<String>,
     model: Option<String>,
+    evals: Vec<String>,
     tokens: f64,
 ) -> Result<SkillGradePlan, String> {
     let held = planes.held(&plane)?;
@@ -981,8 +990,13 @@ pub(crate) async fn skill_grade_set_cap(
         flag_on()?;
         set_cap(held.root(), tokens)?;
         let on = chats_on(held.root(), profile, model);
-        let planned =
-            grades::planned(held.root(), &(&level).into(), &skill, on.profile.as_deref())?;
+        let planned = grades::planned_with(
+            held.root(),
+            &(&level).into(),
+            &skill,
+            on.profile.as_deref(),
+            &ticked(&evals),
+        )?;
         Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill), on))
     })
     .await
@@ -1593,7 +1607,7 @@ impl InChats<'_> {
                 )
             }
             ChatKind::Outcome { files } => (self.lay_out)(chat.arm).and_then(|laid| {
-                match purlis_core::skills::verbs::drafts::stage(&laid, files, self.inputs) {
+                match purlis_core::skills::verbs::drafts::stage(&root, &laid, files, self.inputs) {
                     Ok(()) => Ok(laid),
                     Err(why) => {
                         let _ = purlis_core::skills::verbs::drafts::end_try(&root, &laid.id);
@@ -1607,6 +1621,14 @@ impl InChats<'_> {
             Ok(laid) => laid,
             Err(why) => return not_started(why),
         };
+        if matches!(chat.kind, ChatKind::Judge { .. })
+            && !self.held.chats().binary().is_some_and(|binary| {
+                purlis_core::toolhooks::judge_guard_answers(binary, &laid.piece)
+            })
+        {
+            let _ = purlis_core::skills::verbs::drafts::end_try(&root, &laid.id);
+            return not_started("purlis could not start a judge within its limits".to_owned());
+        }
         // An outcome eval's chat and a judge's run their turn whole: only a trigger test's ends
         // once the skill under test starts.
         let whole_turn = !chat.kind.is_trigger();

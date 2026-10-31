@@ -17,6 +17,7 @@ fn accepted() -> Accepted {
         limit_usd: 3.0,
         tests: TESTS.into(),
         outcomes: None,
+        evals: Vec::new(),
         previous: None,
         runs_on: Some("sonnet".into()),
         at: "2026-10-28T10:00:00+00:00".into(),

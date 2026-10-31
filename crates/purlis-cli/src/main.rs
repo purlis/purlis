@@ -2462,6 +2462,7 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
     if event == Event::Stop
         && let Some(report) = &report
         && report.agent.is_none()
+        && purlis_core::toolhooks::judge_may_answer(&text, &purlis_core::envvar::var)
         && let Some(turn_output) = hookwire::Output::of_stop(&text)
     {
         let _ = hookwire::tell_turn_output(

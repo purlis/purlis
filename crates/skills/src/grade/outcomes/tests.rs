@@ -205,7 +205,11 @@ fn a_judge_that_asks_or_gives_no_answer_fails_the_eval_and_one_that_never_ran_ju
         judge: |_| (ChatEnd::TimedOut, None),
     };
     let report = grade(&request(), &mut silent, None);
-    assert!(report.outcomes[0].results[0].failed.is_some());
+    assert_eq!(
+        report.outcomes[0].results[0].passed, None,
+        "no answer is no verdict"
+    );
+    assert!(report.outcomes[0].results[0].failed.is_none());
 
     let mut unstarted = Judged {
         asked: Vec::new(),

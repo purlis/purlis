@@ -588,6 +588,7 @@ fn a_try_turns_off_every_harness_skill_and_plugin_on_every_harness() {
         graded: false,
         laid_out: None,
         judging: false,
+        writes_its_piece: false,
     };
     for (harness, own) in [
         (Harness::ClaudeCode, "mine"),
@@ -938,13 +939,13 @@ fn an_evals_files_are_staged_and_what_its_chat_left_reaches_its_judge_alone() {
     std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
     let arm = lay_out_arm(root, None).unwrap();
     let inputs = BTreeMap::from([("evals/files/form.txt".to_owned(), "name:\n".to_owned())]);
-    stage(&arm, &["evals/files/form.txt".to_owned()], &inputs).unwrap();
+    stage(root, &arm, &["evals/files/form.txt".to_owned()], &inputs).unwrap();
     assert_eq!(
         std::fs::read_to_string(arm.piece.join("evals/files/form.txt")).unwrap(),
         "name:\n"
     );
     assert!(
-        stage(&arm, &["evals/files/other.txt".to_owned()], &inputs)
+        stage(root, &arm, &["evals/files/other.txt".to_owned()], &inputs)
             .unwrap_err()
             .contains("was not read")
     );
@@ -959,9 +960,11 @@ fn an_evals_files_are_staged_and_what_its_chat_left_reaches_its_judge_alone() {
     assert!(left.iter().any(|(path, _)| path == "evals/files/form.txt"));
     assert!(left.iter().all(|(path, _)| !path.starts_with('.')));
     assert!(!judge_piece(root, &arm.piece), "an eval's chat is no judge");
+    assert!(outcome_piece(root, &arm.piece));
 
     let judge = lay_out_judge(root, &left, Some("All done."), "{\"prompt\": \"p\"}\n").unwrap();
     assert!(graded_piece(root, &judge.piece) && judge_piece(root, &judge.piece));
+    assert!(!outcome_piece(root, &judge.piece), "a judge writes nothing");
     let read = |path: &str| std::fs::read_to_string(judge.piece.join(path)).unwrap();
     assert_eq!(read("outcome/out.md"), "done\n");
     assert!(

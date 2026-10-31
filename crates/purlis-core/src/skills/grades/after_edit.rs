@@ -62,6 +62,10 @@ pub struct Accepted {
     /// these, so an eval a chat or a pull changes, or adds, runs nothing the person did not see.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcomes: Option<String>,
+    /// **The outcome evals the person ticked on the plan**, by id: a grade after an edit runs
+    /// these and no other, whatever the skill's evals file gains.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evals: Vec<u64>,
     /// **The version the plan compared with when it was turned on.** A grade after an edit
     /// compares with the version before that edit (#4016): each saved edit is committed, so that
     /// version moves with every edit and is not held to this one. A previous version's arm that
@@ -139,7 +143,18 @@ pub fn outcomes_of(planned: &super::Planned) -> Option<String> {
     let mut digest = sha2::Sha256::new();
     digest.update(serde_json::to_vec(&request.outcomes).unwrap_or_default());
     if let Some(copy) = &planned.copy {
-        digest.update(serde_json::to_vec(&copy.inputs).unwrap_or_default());
+        for (path, text) in &copy.inputs {
+            if request
+                .outcomes
+                .iter()
+                .any(|eval| eval.files.contains(path))
+            {
+                digest.update(path.as_bytes());
+                digest.update(b"\0");
+                digest.update(text.as_bytes());
+                digest.update(b"\0");
+            }
+        }
     }
     Some(
         digest

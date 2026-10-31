@@ -374,6 +374,8 @@ describe("Grade, cost first", () => {
               hides: false,
               files: ["evals/files/form.txt"],
               expectations: 2,
+              on: true,
+              chats: 12,
             },
           ],
           outcome_evals: 1,
@@ -393,7 +395,7 @@ describe("Grade, cost first", () => {
     );
     expect(cost.textContent).toContain("outcome evals have not been graded here before");
     expect(screen.getByTestId("skill-grade-eval").textContent).toBe(
-      "Fill in the form · 2 expectations a judge checks · with evals/files/form.txt",
+      "Fill in the form · 12 more chats · 2 expectations a judge checks · with evals/files/form.txt",
     );
     const totals = screen.getByRole("group", { name: "What a grade of deploy runs and spends" });
     expect(totals).toHaveTextContent("Chats24");

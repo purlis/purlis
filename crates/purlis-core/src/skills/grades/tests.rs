@@ -152,6 +152,7 @@ fn the_plan_comes_before_anything_runs_and_says_what_it_leaves_out() {
             why: "it has no expectations, so a judge would have nothing to check".into()
         }]
     );
+    assert!(planned.offered.is_empty());
     assert_eq!(planned.request.unwrap().arms, ARMS.to_vec());
     assert_eq!(
         planned.estimate, None,
@@ -372,6 +373,7 @@ fn a_copys_trigger_tests_are_counted_as_a_grade_would_run_them() {
         count(),
         TriggerTests {
             runs: 0,
+            evals: 0,
             refused: None
         },
         "no file: none, and nothing refused"
@@ -1535,4 +1537,52 @@ fn an_eval_with_nothing_to_judge_or_that_hands_its_chat_its_fixtures_is_left_out
             "{fixture}"
         );
     }
+}
+
+/// The operator's ruling of 2026-10-31: a skill gaining an evals file spends no more until the
+/// person ticks them, and the consent covers exactly what was ticked.
+#[test]
+fn outcome_evals_are_off_until_ticked_and_the_consent_covers_what_was() {
+    let plane = plane();
+    let root = plane.path();
+    let level = Level::project();
+    let before = planned(root, &level, "deploy", None).unwrap();
+    std::fs::create_dir_all(root.join("skills/deploy/evals/files")).unwrap();
+    std::fs::write(root.join("skills/deploy/evals/files/a.txt"), "one").unwrap();
+    std::fs::write(
+        root.join("skills/deploy/evals/evals.json"),
+        r#"{"skill_name": "deploy", "evals": [
+            {"id": 1, "prompt": "ship v2", "files": ["evals/files/a.txt"], "expectations": ["It ships"]},
+            {"id": 2, "prompt": "ship v3", "expectations": ["It ships"]}
+        ]}"#,
+    )
+    .unwrap();
+    let off = planned(root, &level, "deploy", None).unwrap();
+    assert_eq!(off.offered.len(), 2);
+    assert_eq!(
+        off.plan.unwrap().chats,
+        before.plan.unwrap().chats,
+        "nothing more runs"
+    );
+    assert!(off.request.as_ref().unwrap().outcomes.is_empty());
+    let one = planned_with(root, &level, "deploy", None, &[1]).unwrap();
+    assert_eq!(
+        one.plan.unwrap().judge_chats,
+        3 * one.request.as_ref().unwrap().arms.len() as u32
+    );
+    assert_ne!(one.consent, off.consent);
+    let other = planned_with(root, &level, "deploy", None, &[2]).unwrap();
+    assert_ne!(one.consent, other.consent);
+    // A file of an eval left off changes nothing it consented to.
+    std::fs::write(root.join("skills/deploy/evals/files/a.txt"), "two").unwrap();
+    let again = planned_with(root, &level, "deploy", None, &[2]).unwrap();
+    assert_eq!(
+        after_edit::outcomes_of(&other),
+        after_edit::outcomes_of(&again)
+    );
+    let changed = planned_with(root, &level, "deploy", None, &[1]).unwrap();
+    assert_ne!(
+        after_edit::outcomes_of(&one),
+        after_edit::outcomes_of(&changed)
+    );
 }

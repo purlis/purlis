@@ -5,12 +5,22 @@ fixtures") and the delegated decision of 2026-10-20 on #2779 (skill-creator's me
 §1, §2, §3 and §4, and builds what §1 left for later: "A judge's chat, when outcome evals arrive,
 is a run-chat request of its own, with what it reads named by purlis."
 
-**Each outcome eval runs in each arm, three times, and a judge chat grades each of its chats.**
+**Outcome evals are off until the person ticks them** (the operator's ruling of 2026-10-31). The
+plan lists each eval it can run with the chats it would add, and only those ticked reach its
+chats and its consent, which covers exactly them. A skill gaining an evals file spends no more,
+and its plan's consent does not change, until the person ticks one. An opt-in to grading after each
+edit keeps the ticked ids and their digest.
+
+**A ticked outcome eval runs in each arm, three times, and a judge chat grades each of its chats.**
 An eval with no expectation has nothing for a judge to check, so it runs no chat and the plan
 names it as left out. The run-chat request says what its chat is for (`kind`): a trigger test's,
 as before; an outcome eval's, with its `files`; or a judge's, naming the chat it judges (`of`) and
 the task it grades (`task`). The run-chat result says what the chat's turn ended saying
 (`answer`), where its harness handed it back.
+
+**An outcome eval's chat may write and edit inside its own throwaway piece** (the operator's ruling
+of 2026-10-31, adding to §3), still under the sandbox, by permission rules for that folder alone.
+Anything else still asks, and an ask still ends it. No other chat of a grade gains this.
 
 **An outcome eval's chat runs its whole turn** (§3), in a throwaway piece laid out as the arm's
 is, with the eval's input files staged into it at the paths the eval names. Each file is read as
@@ -51,10 +61,10 @@ fails.
 taken off) and taken key by key through an allow-list: every expectation it was asked about, in
 order, each `text` the one asked about, each `passed` true or false, each `evidence` text, kept at
 most 512 bytes with every control character a space; every other key is left out, and an answer
-past 64 KiB is not read. An answer that is not whole, a judge that asks the person something, and
-one whose turn ends with no answer **fail that run of the eval** (none of its expectations
+past 64 KiB is not read. An answer that is not whole and a judge that asks the person something
+**fail that run of the eval** (none of its expectations
 passed), with a sentence saying why. A judge that never ran (not started, stopped, or ended at a
-cap) judged nothing, so the run is no run. Two judges in a row that do not start end the grade, as
+cap) or handed back no answer judged nothing, so the run is no run. Two judges in a row that do not start end the grade, as
 two chats do.
 
 **Scoring** (§2): a run's score is the share of its expectations that passed; an arm's outcome

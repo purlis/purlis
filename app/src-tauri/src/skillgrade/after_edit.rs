@@ -113,6 +113,7 @@ pub(crate) async fn skill_grade_after_edit_on(
     skill: String,
     profile: Option<String>,
     model: Option<String>,
+    evals: Vec<String>,
     consent: String,
 ) -> Result<SkillGradeAfterEdit, String> {
     let held = planes.held(&plane)?;
@@ -121,7 +122,13 @@ pub(crate) async fn skill_grade_after_edit_on(
         let level: Level = (&level).into();
         let root = held.root();
         let on = chats_on(root, profile, model);
-        let planned = grades::planned(root, &level, &skill, on.profile.as_deref())?;
+        let planned = grades::planned_with(
+            root,
+            &level,
+            &skill,
+            on.profile.as_deref(),
+            &super::ticked(&evals),
+        )?;
         let accepted = accepted_of(&planned, on, &consent, &skill)?;
         after_edit::turn_on(root, &level, &skill, accepted.clone())?;
         Ok(accepted.into())
@@ -171,6 +178,7 @@ fn accepted_of(
         limit_usd: planned.cap.cost_usd(&on.priced),
         tests: after_edit::tests_of(request),
         outcomes: after_edit::outcomes_of(planned),
+        evals: request.outcomes.iter().map(|eval| eval.id).collect(),
         previous: planned.previous.as_ref().map(|one| one.commit.clone()),
         runs_on,
         at: purlis_core::dispatch::stamp(chrono::Utc::now()),
@@ -432,7 +440,13 @@ fn grade_after(
         Some(accepted.profile.clone()),
         accepted.model.clone(),
     );
-    let planned = match grades::planned(&root, &level, &skill, Some(&accepted.profile)) {
+    let planned = match grades::planned_with(
+        &root,
+        &level,
+        &skill,
+        Some(&accepted.profile),
+        &accepted.evals,
+    ) {
         Ok(planned) => planned,
         Err(why) => return not_graded(why),
     };

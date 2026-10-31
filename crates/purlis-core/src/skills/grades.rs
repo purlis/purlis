@@ -1212,6 +1212,11 @@ pub struct Planned {
     /// The outcome evals left out, each with why (SK-55, [`eval_left_out_why`]): one with no
     /// expectations, a prompt no chat can be started on, or an input file that did not read.
     pub outcomes_left_out: Vec<LeftOutEval>,
+    /// **Every outcome eval the plan can run, each off until the person ticks it** (the
+    /// operator's ruling of 2026-10-31), and the chats ticking one adds. Those ticked are in
+    /// [`Self::request`].
+    pub offered: Vec<grade::OutcomeEval>,
+    pub eval_chats: u32,
     /// The token cap the grade is held to ([`cap::token_cap`]).
     pub cap: cap::Cap,
     /// What the person consents to by pressing Grade on this plan ([`consent_of`]): a grade
@@ -1410,6 +1415,20 @@ pub fn planned(
     name: &str,
     profile: Option<&str>,
 ) -> Result<Planned, String> {
+    planned_with(root, level, name, profile, &[])
+}
+
+/// **[`planned`], with the outcome evals `ticked` on** (SK-55, the operator's ruling of
+/// 2026-10-31): they are off until the person ticks them. The plan offers every eval it can run,
+/// and only those ticked reach its request, its chats and its consent, so a skill gaining an
+/// evals file never spends more by surprise.
+pub fn planned_with(
+    root: &Path,
+    level: &Level,
+    name: &str,
+    profile: Option<&str>,
+    ticked: &[u64],
+) -> Result<Planned, String> {
     let folder = find(root, level, name)?;
     let fixtures = grade::fixtures_of(root, Path::new(&rel(root, &folder)), name);
     let mut left_out: Vec<LeftOut> = Vec::new();
@@ -1494,12 +1513,20 @@ pub fn planned(
         });
         false
     });
-    let copy = copy.filter(|_| !sendable.is_empty() || !evals.is_empty());
+    let offered = evals;
+    let evals: Vec<grade::OutcomeEval> = offered
+        .iter()
+        .filter(|eval| ticked.contains(&eval.id))
+        .cloned()
+        .collect();
+    let copy = copy.filter(|_| !sendable.is_empty() || !offered.is_empty());
     // A skill with a previous version is compared with it too, and it is the baseline (SK-57).
     let arms = match copy.as_ref().and_then(|copy| copy.previous.as_ref()) {
         Some(_) => ARMS_WITH_PREVIOUS.to_vec(),
         None => ARMS.to_vec(),
     };
+    // What ticking one adds: its chat and its judge's, in each arm and run.
+    let eval_chats = u32::from(RUNS) * u32::try_from(arms.len()).unwrap_or(u32::MAX) * 2;
     let request = (!sendable.is_empty() || !evals.is_empty()).then(|| GradeRequest {
         skill: name.to_owned(),
         triggers: sendable,
@@ -1549,6 +1576,8 @@ pub fn planned(
         unseen,
         left_out,
         outcomes_left_out,
+        offered,
+        eval_chats,
         cap: cap::token_cap(root),
         consent,
         previous,
@@ -1632,7 +1661,14 @@ pub fn consent_of(request: &GradeRequest, copy: &SkillCopy) -> String {
     if !request.outcomes.is_empty() {
         digest.update(b"\0outcomes\0");
         digest.update(serde_json::to_vec(&request.outcomes).unwrap_or_default());
-        for (path, text) in &copy.inputs {
+        // The files of what was ticked alone: an eval left off changes nothing it consents to.
+        let staged = |path: &&String| {
+            request
+                .outcomes
+                .iter()
+                .any(|eval| eval.files.contains(*path))
+        };
+        for (path, text) in copy.inputs.iter().filter(|(path, _)| staged(path)) {
             digest.update(b"\0");
             digest.update(path.as_bytes());
             digest.update(b"\0");
