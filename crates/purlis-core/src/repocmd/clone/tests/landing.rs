@@ -746,6 +746,101 @@ fn a_chats_clone_never_gets_the_persons_sign_in() {
     assert!(!chat, "a chat's clone never is");
 }
 
+// A chat's clone, heard in the session host and run in the window (#4161): the real asker over a
+// real socket, its wait shortened in place of `A_CLONE_IS_SILENT_AT_MOST`.
+
+/// What the asker of a chat's clone came to, with `script` standing in for git in the window and
+/// the asker waiting `within` on each silence.
+fn asked_through_the_host(
+    script: &'static str,
+    stall: Duration,
+    within: Duration,
+) -> (std::io::Result<crate::hookwire::Answer>, Arc<World>) {
+    use crate::hookwire::{Answer, Ask, Asking, GitAsk, GitWork, Listener, relay};
+    let world = Arc::new(World::holding(&["widget"]));
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("hooks.sock");
+    let listener = Listener::bind(dir.path(), &path).unwrap();
+    let token = listener.tokens().issue_to_this_process(3).unwrap();
+    let off = Arc::new(AtomicBool::new(false));
+    let hearing = relay::to_a_window_answering(
+        listener.tokens(),
+        Box::new({
+            let (world, off) = (Arc::clone(&world), Arc::clone(&off));
+            move |_, _| {
+                let heard = |_: Stage, _: u8| {};
+                let watch = world.watching(&heard, &off, stall, Some(script));
+                let (code, lines) = world.clone_for_a_chat(&["widget"], &watch);
+                Answer::Said { lines, code }
+            }
+        }),
+    );
+    let _reading = listener.hear(hearing);
+    let answered = Asking::on(&path, Some(token)).unwrap().ask(
+        &Ask::Git(Box::new(GitAsk {
+            chat: 3,
+            workspace: "alpha".to_owned(),
+            work: GitWork::Clone {
+                repos: vec!["widget".to_owned()],
+            },
+            alive: true,
+        })),
+        within,
+    );
+    off.store(true, std::sync::atomic::Ordering::SeqCst);
+    (answered, world)
+}
+
+#[test]
+fn a_chats_clone_through_the_host_that_keeps_making_progress_outlasts_the_askers_wait() {
+    // Four seconds of git speaking, four of the asker's waits.
+    let script = "i=0; while [ $i -lt 40 ]; do i=$((i+1)); \
+         printf 'Receiving objects: %d%% (%d/40)\r' $((i*100/40)) $i >&2; sleep 0.1; done; \
+         git init -q \"$1\"";
+    let (answered, world) =
+        asked_through_the_host(script, Duration::from_secs(60), Duration::from_secs(1));
+    let answer = answered.expect("answered, not given up on");
+    assert!(
+        matches!(answer, crate::hookwire::Answer::Said { code: 0, .. }),
+        "{answer:?}"
+    );
+    assert!(world.dest("widget").join(".git").is_dir());
+}
+
+#[test]
+fn a_chats_clone_through_the_host_that_shows_no_life_is_given_up_on_at_the_askers_wait() {
+    let within = Duration::from_millis(800);
+    let started = std::time::Instant::now();
+    let (answered, _world) =
+        asked_through_the_host("sleep 30", Duration::from_secs(60), within);
+    let gave_up = answered.expect_err("given up on");
+    assert!(
+        matches!(
+            gave_up.kind(),
+            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+        ),
+        "{gave_up:?}"
+    );
+    assert!(started.elapsed() < Duration::from_secs(20), "it waited on");
+}
+
+#[test]
+fn a_chats_stalled_clone_through_the_host_says_the_stall_to_its_asker() {
+    // As the real bounds stand: the app's stall limit ends first, so its sentence is what is read.
+    let (answered, world) = asked_through_the_host(
+        "sleep 30",
+        Duration::from_millis(500),
+        Duration::from_secs(10),
+    );
+    let answer = answered.expect("answered");
+    let crate::hookwire::Answer::Said { lines, code } = answer else {
+        panic!("{answer:?}");
+    };
+    assert_eq!(code, 1, "{lines:?}");
+    assert!(words(&lines).contains("stalled"), "{lines:?}");
+    assert!(!world.dest("widget").exists(), "{lines:?}");
+}
+
 // Git LFS (#4102): one large file silent past the stall limit.
 
 /// A smudge filter standing in for git-lfs's: a second and a half per file, as a download is,
@@ -756,6 +851,11 @@ const SLOW_SMUDGE: &str =
 impl World {
     /// [`World::holding`], with `big.bin` in `name` a Git LFS file.
     fn holding_a_large_file(name: &str) -> Self {
+        Self::holding_seeded(name, &[("big.bin", "pointer\n")], "big.bin filter=lfs\n")
+    }
+
+    /// [`World::holding`], with `name` holding `files` under `attributes`.
+    fn holding_seeded(name: &str, files: &[(&str, &str)], attributes: &str) -> Self {
         let world = Self::holding(&[]);
         let rows = json!([{
             "name": name,
@@ -768,12 +868,7 @@ impl World {
             json!({"group": "acme", "count": 1, "repos": rows}).to_string(),
         )
         .unwrap();
-        seed_with(
-            world.forge.path(),
-            name,
-            &[("big.bin", "pointer\n")],
-            Some("big.bin filter=lfs\n"),
-        );
+        seed_with(world.forge.path(), name, files, Some(attributes));
         world
     }
 
@@ -872,3 +967,4 @@ fn a_clone_with_no_large_files_never_fetches_any() {
     assert_eq!(code, 0, "{said:?}");
     assert!(!ran.exists(), "{said:?}");
 }
+
