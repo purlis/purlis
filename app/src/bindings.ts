@@ -1624,8 +1624,8 @@ export const commands = {
 	 *  Types the profile `name`'s sign-in into shell session `session`, and runs it (#2035, ADR
 	 *  0095 §3): its harness's own sign-in command, with the profile's folder variables set, to the
 	 *  plan `provider` names where purlis names one, which the person then drives in that tab. What
-	 *  its harness said of it is forgotten, and it is asked again every few seconds until it says
-	 *  the profile is signed in, when its Ask leaves the Inbox.
+	 *  its harness said of it is forgotten, and it is asked again until it says the profile is signed
+	 *  in or the person closes the shell, when its Ask leaves the Inbox (#4223).
 	 * 
 	 *  **The window names the profile, never the command.** The line is the core's, made from this
 	 *  machine's own record of the profile ([`sign_in::login_of`]), so no text from a project, a
