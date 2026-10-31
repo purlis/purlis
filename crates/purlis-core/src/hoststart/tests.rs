@@ -277,3 +277,15 @@ fn only_a_links_start_says_what_its_desktop_allowed() {
     }
     assert_eq!(said("remote-link").as_deref(), Some("d1"));
 }
+
+/// The person's ruling of 2026-10-31 (#4207): what the port's nearness refuses, and what it leaves.
+#[test]
+fn a_runner_told_of_a_mint_port_starts_nothing_outside_the_sandbox_but_a_shell() {
+    assert_eq!(
+        no_sandbox_refused(ProgramKind::Harness, Ok(true)),
+        Err(NO_SANDBOX_WHERE_A_TOKEN_IS_NEAR.to_owned())
+    );
+    assert!(no_sandbox_refused(ProgramKind::Harness, Err("unreadable".into())).is_err());
+    assert_eq!(no_sandbox_refused(ProgramKind::Harness, Ok(false)), Ok(()));
+    assert_eq!(no_sandbox_refused(ProgramKind::Shell, Ok(true)), Ok(()));
+}

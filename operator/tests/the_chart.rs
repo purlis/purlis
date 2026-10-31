@@ -623,6 +623,11 @@ fn a_named_key_is_read_by_get_alone_by_the_operator_alone_in_its_own_namespace()
             "resources": ["secrets"],
             "resourceNames": ["org-app", "other-app"],
             "verbs": ["get"],
+        }, {
+            "apiGroups": [""],
+            "resources": ["services"],
+            "resourceNames": ["purlis-cluster-operator-mint"],
+            "verbs": ["get"],
         }])
     );
     let binding = found

@@ -19,6 +19,13 @@
 //! chat may carry on: the command holds only itself. It is let go of, with nothing run, once it
 //! has waited too long, once its asker hangs up, or once its chat is gone.
 //!
+//! **On a pool that opts in to minting, a minting tool's run asks the cluster first** (#4207, the
+//! person's ruling on #3807, Q1): this host's token from the operator's mint port runs it, with
+//! nobody asked and the desktop perhaps away, since the admin's opt-in stands as consent and the
+//! operator logs each mint. It holds for mint tools alone. A host told of no port, or one the port
+//! refuses, hands the line on as above, **so what the window sends still takes the window's gate and
+//! the person's Ask**: a refusal never becomes a token without them.
+//!
 //! **An asker that hangs up is told to the window** while the window decides
 //! ([`Heard::InputEnded`] for the line, which for such a run carries no input), so the window lets
 //! go of the person's Ask and reads no vault for it. The asker writes nothing before its run has
@@ -46,6 +53,58 @@ pub type RunsHanded = Arc<
         + Sync
         + 'static,
 >;
+
+/// **What a minting tool's run gets from the cluster**: for `asker`'s tool named by the second
+/// word, the tool's key and the token, or why the port refused. `None` where none is to be asked:
+/// the tool mints nothing, or this host was told of no port.
+pub type InCluster = Arc<
+    dyn Fn(&Asker, &str) -> Option<Result<(String, zeroize::Zeroizing<String>), String>>
+        + Send
+        + Sync
+        + 'static,
+>;
+
+/// The real [`InCluster`]: this host's config home's port ([`crate::forge::mintport`]).
+#[cfg(unix)]
+pub fn in_cluster(
+    asker: &Asker,
+    tool: &str,
+) -> Option<Result<(String, zeroize::Zeroizing<String>), String>> {
+    let ready = asker
+        .confines
+        .as_ref()?
+        .tools
+        .iter()
+        .find(|ready| ready.tool.name == tool && ready.tool.mint.is_some())?;
+    let key = ready.tool.values.first()?.key.clone();
+    let config_root = crate::forge::apptoken::record_root()?;
+    let minted =
+        crate::forge::apptoken::token_in_cluster(&asker.root, asker.chat, &ready.tool, &|app| {
+            crate::forge::mintport::mint_in_time(&config_root, app)
+        });
+    match minted {
+        Ok(Some(token)) => Some(Ok((key, token))),
+        Ok(None) => None,
+        Err(why) => Some(Err(why)),
+    }
+}
+
+/// A host away from unix has no runner to serve.
+#[cfg(not(unix))]
+pub fn in_cluster(
+    _asker: &Asker,
+    _tool: &str,
+) -> Option<Result<(String, zeroize::Zeroizing<String>), String>> {
+    None
+}
+
+/// What the asker of `tool` is told where the cluster refused it a token.
+fn in_cluster_refused_said(tool: &str, why: &str) -> String {
+    format!(
+        "the cluster minted no token for {tool} ({why}), so purlis asks the person's desktop \
+         instead"
+    )
+}
 
 /// How often a `secret exec` that waits for the window tries to hand itself on, and how often
 /// one handed on looks at its asker.
@@ -160,6 +219,14 @@ impl Drop for Admitted<'_> {
 }
 
 impl Relaying {
+    /// Asks `mints` in place of this host's port: for a test.
+    #[cfg(test)]
+    pub(super) fn minting_in_cluster_with(self: Arc<Self>, mints: InCluster) -> Arc<Self> {
+        let mut relaying = Arc::try_unwrap(self).unwrap_or_else(|_| panic!("held elsewhere"));
+        relaying.in_cluster = mints;
+        Arc::new(relaying)
+    }
+
     /// Runs each `secret exec` handed its values with `runs` in place of the brokered run: for
     /// a test of what reaches the run.
     #[cfg(test)]
@@ -192,6 +259,46 @@ impl Relaying {
         let Some(input) = Input::read(reader) else {
             return brokered::not_answered(writer);
         };
+        match (self.in_cluster)(&asker, &tool) {
+            Some(Ok((key, token))) => {
+                if input.gone() {
+                    return;
+                }
+                // Held to the chat as this host keeps it now (#3407): a mint takes time.
+                let Some(now) = self
+                    .at()
+                    .and_then(|root| crate::hostedchats::asker(&root, ask.chat))
+                    .filter(|now| {
+                        brokered::armed_as(now, &ask.secret_exec).as_deref() == Ok(tool.as_str())
+                    })
+                else {
+                    // Its end may have come before this mint looked: nothing is left kept.
+                    crate::forge::apptoken::chat_ended(&asker.root, ask.chat);
+                    return brokered::refused(writer, chat_gone_said(&tool));
+                };
+                let handed = brokered::Handed::of(ask.chat, &tool, &run, [(key, token)]);
+                return self.runs_on(&now, ask.secret_exec, handed, input, writer);
+            }
+            Some(Err(why)) => {
+                tracing::info!(
+                    "purlisd: chat {}'s run of {tool} was refused a token in the cluster",
+                    ask.chat
+                );
+                let note = brokered::Frame::Note(in_cluster_refused_said(&tool, &why));
+                if serde_json::to_string(&note)
+                    .ok()
+                    .and_then(|line| {
+                        writeln!(writer, "{line}")
+                            .and_then(|()| writer.flush())
+                            .ok()
+                    })
+                    .is_none()
+                {
+                    return;
+                }
+            }
+            None => {}
+        }
         let exchanged = match self.exchange(&Heard::SecretExec(ask.clone())) {
             Some(exchanged) => exchanged,
             None => match self.waits_for_a_window(&mut ask, &tool, &input, &mut writer) {
@@ -247,16 +354,7 @@ impl Relaying {
                     if brokered::armed_as(&now, &ask.secret_exec).as_deref() != Ok(tool.as_str()) {
                         return brokered::refused(writer, chat_gone_said(&tool));
                     }
-                    let relaying = Arc::clone(self);
-                    let told: brokered::Told = Arc::new(move |run: brokered::RunBlocked| {
-                        relaying.tell(&Heard::Blocked(run.block));
-                    });
-                    let reader = Box::new(std::io::BufReader::new(Lines {
-                        lines: input.lines,
-                        pending: Vec::new(),
-                        at: 0,
-                    }));
-                    return (self.runs_handed)(&now, ask.secret_exec, handed, reader, writer, told);
+                    return self.runs_on(&now, ask.secret_exec, handed, input, writer);
                 }
                 // The window's own words: a refusal, said as it said it.
                 Replied::Wrote { text } => {
@@ -278,6 +376,27 @@ impl Relaying {
             }
         }
         self.done(id);
+    }
+
+    /// Runs `wanted` here on `handed`, its asker's input as read so far.
+    fn runs_on(
+        self: &Arc<Self>,
+        asker: &Asker,
+        wanted: brokered::Wanted,
+        handed: brokered::Handed,
+        input: Input,
+        writer: Box<dyn Write + Send>,
+    ) {
+        let relaying = Arc::clone(self);
+        let told: brokered::Told = Arc::new(move |run: brokered::RunBlocked| {
+            relaying.tell(&Heard::Blocked(run.block));
+        });
+        let reader = Box::new(std::io::BufReader::new(Lines {
+            lines: input.lines,
+            pending: Vec::new(),
+            at: 0,
+        }));
+        (self.runs_handed)(asker, wanted, handed, reader, writer, told)
     }
 
     /// **Holds `ask` until a window hears this host again** (#2047), at most

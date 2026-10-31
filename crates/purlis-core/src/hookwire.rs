@@ -919,9 +919,10 @@ impl ChatTokens {
 
     /// Chat `chat`'s program `pid` has ended: its token and its program are forgotten, so a
     /// later process given the same number speaks for nothing. A program that is not the one
-    /// recorded (an end heard after the chat started again) changes nothing.
-    pub fn program_ended(&self, chat: u32, pid: u32) {
+    /// recorded (an end heard after the chat started again) changes nothing, and answers false.
+    pub fn program_ended(&self, chat: u32, pid: u32) -> bool {
         let mut roots = self.rooted();
+        let another = roots.get(&chat).is_some_and(|program| program.pid != pid);
         if roots.get(&chat).is_some_and(|program| program.pid == pid) {
             roots.remove(&chat);
             drop(roots);
@@ -929,6 +930,7 @@ impl ChatTokens {
             self.held().remove(&chat);
             self.disarm(chat);
         }
+        !another
     }
 
     /// [`Self::issue`], with this process recorded as the chat's program: for a test that

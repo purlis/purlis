@@ -155,6 +155,14 @@ enum Command {
         /// first time; a home that keeps the runner's pairing keeps its key (#2057).
         #[arg(long, requires = "make_key", value_name = "DIR", hide = true)]
         home: Option<std::path::PathBuf>,
+        /// Keep where the operator's mint port is, as this runner's desktop says on standard
+        /// input (#4207).
+        #[arg(long, conflicts_with_all = ["pair", "make_key"], hide = true)]
+        mint_port: bool,
+        /// Ask the mint port for a token of this GitHub App, say what it covers, and revoke it:
+        /// a check of the way there, which prints no token (#4207).
+        #[arg(long, conflicts_with_all = ["pair", "make_key", "mint_port"], value_name = "APP", hide = true)]
+        mint_check: Option<String>,
     },
     /// Scaffold a fresh control plane here: charter.toml, baseline dirs, .gitignore.
     ///
@@ -906,6 +914,8 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
         purlis_core::hostsocket::here(),
         purlis_core::machine::charterd(&config),
     );
+    // A cluster runner follows a roll of the key it holds the operator's mint port to (#4207).
+    purlis_core::forge::mintport::keep_following(config.clone());
     // A runner's host answers links from the one desktop it is paired with, reading its
     // pairing as each link arrives (`runnerlink`, #2044); unpaired, it links nobody, and it
     // never mints the device id its pairing mints (#2539).
@@ -4982,11 +4992,21 @@ fn main() -> ExitCode {
         make_key,
         publish,
         home,
+        mint_port,
+        mint_check,
     } = &cli.command
     {
         #[cfg(not(unix))]
         {
-            let _ = (pair, key_made_at_start, make_key, publish, home);
+            let _ = (
+                pair,
+                key_made_at_start,
+                make_key,
+                publish,
+                home,
+                mint_port,
+                mint_check,
+            );
             return bridge();
         }
         #[cfg(unix)]
@@ -4998,6 +5018,10 @@ fn main() -> ExitCode {
             },
             _ if *pair => bridge::Asked::Pair {
                 key_made_at_start: key_made_at_start.clone(),
+            },
+            _ if *mint_port => bridge::Asked::MintPort,
+            _ if mint_check.is_some() => bridge::Asked::MintCheck {
+                app: mint_check.clone().unwrap_or_default(),
             },
             _ => bridge::Asked::Pipe,
         };

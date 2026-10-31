@@ -464,6 +464,7 @@ mod stages {
         let with = |status: &str, reason: &str| ClaimStatus {
             conditions: vec![ready(status, reason, "upstream's words")],
             link_key: None,
+            mint: None,
         };
         let staged = stage::staged(with("False", "SandboxNotReady"), None);
         assert_eq!(staged.conditions[0].reason, stage::SCHEDULING);
