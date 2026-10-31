@@ -813,6 +813,7 @@ read at that moment:
   says nothing of which claims there are;
 - the Claim and the Pool made after the policy `purlis-forge` settled. **A Pool or Claim made before
   never mints: delete it and make it again**, since what it says was not held to that policy;
+- the runner's pod running its Pool's image as it is now;
 - the Pool opted in, neither stopped nor being deleted, and at least one repo on both lists, of one
   owner;
 - **the requester still allowed `use` on the Pool**, asked of the cluster before each mint, so a
@@ -823,8 +824,10 @@ read at that moment:
 
 The token is limited to those repos by name and, also by name, to what the installation holds of
 the repo-level permissions that administer nothing: `actions`, `checks`, `contents`, `deployments`,
-`discussions`, `issues`, `metadata`, `packages`, `pull_requests`, `repository_projects` and
-`statuses`. So a minted token cannot change administration, secrets or workflow files. A token GitHub says covers anything else is revoked and not handed over.
+`discussions`, `issues`, `metadata`, `pull_requests`, `repository_projects` and `statuses`, at
+`write` at most. So a minted token cannot change administration, secrets or workflow files. It can
+still push code that an existing workflow runs, with what that workflow may use, and set checks and
+statuses: keep branch rules and environments in mind when you list repos. A token GitHub says covers anything else is revoked and not handed over.
 It is not stored, and nothing about it is written to the API server. The operator's log has every
 mint (who, which pool and App, the repos, the permission names, the expiry) and every refusal, with
 no token and no key in it.

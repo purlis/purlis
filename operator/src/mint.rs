@@ -319,6 +319,17 @@ pub fn pod_holds(pod: &Pod, key_hex: &str) -> bool {
             == Some(key_hex)
 }
 
+/// Whether every container of `pod` runs `image`, its Pool's image now: a runner from before the
+/// image changed mints nothing, even while its statement still holds.
+pub fn runs_image(pod: &Pod, image: &str) -> bool {
+    pod.spec.as_ref().is_some_and(|spec| {
+        spec.containers
+            .iter()
+            .chain(spec.init_containers.iter().flatten())
+            .all(|container| container.image.as_deref() == Some(image))
+    })
+}
+
 /// What a mint may cover, and with which key.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Grant {
@@ -693,14 +704,17 @@ impl Serving {
             .get_opt(&runner.pod)
             .await
             .map_err(|_| read_failed("runner's pod"))?;
-        if !pod.is_some_and(|pod| pod_holds(&pod, &runner.key_hex)) {
+        let Some(pod) = pod.filter(|pod| pod_holds(pod, &runner.key_hex)) else {
             return Err("the runner's pod is gone, or no longer holds this key".to_owned());
-        }
+        };
         let pool = Api::<Pool>::all(client.clone())
             .get_opt(&claim.spec.pool)
             .await
             .map_err(|_| read_failed("pool"))?
             .ok_or("the claim's pool is gone")?;
+        if !runs_image(&pod, &pool.spec.image) {
+            return Err("the runner's pod does not run its pool's image".to_owned());
+        }
         let bindings = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone());
         let claims_binding = bindings
             .get_opt(POLICY)

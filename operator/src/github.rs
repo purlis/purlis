@@ -39,7 +39,7 @@ const MOST_ANSWER: usize = 1024 * 1024;
 /// **The permissions a token may ask for, whatever the installation holds**: repo-level ones that
 /// administer nothing. Anything else, an organisation's above all, which a list of repos does not
 /// narrow, is never asked for.
-pub const MINTABLE: [&str; 11] = [
+pub const MINTABLE: [&str; 10] = [
     "actions",
     "checks",
     "contents",
@@ -47,16 +47,18 @@ pub const MINTABLE: [&str; 11] = [
     "discussions",
     "issues",
     "metadata",
-    "packages",
     "pull_requests",
     "repository_projects",
     "statuses",
 ];
 
-/// What of the installation's `held` permissions a token asks for, by name.
+/// What of the installation's `held` permissions a token asks for, by name: never at a level above
+/// `write`.
 pub fn mintable(held: &Map<String, Value>) -> Map<String, Value> {
     held.iter()
-        .filter(|(name, _)| MINTABLE.contains(&name.as_str()))
+        .filter(|(name, level)| {
+            MINTABLE.contains(&name.as_str()) && matches!(level.as_str(), Some("read" | "write"))
+        })
         .map(|(name, level)| (name.clone(), level.clone()))
         .collect()
 }

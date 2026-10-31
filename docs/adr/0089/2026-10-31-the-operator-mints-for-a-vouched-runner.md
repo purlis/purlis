@@ -26,7 +26,7 @@ to the amendment of 2026-10-31 on the App keys, and to the operator's rights in 
    one rule is the way out to its own mint port, as the policy on runner namespaces holds. Upstream's
    policy on the runner stays whole; NetworkPolicies add up.
 7. **A mint names its repositories and its permissions**, the permissions being what the
-   installation holds of a built-in list of repo-level ones that administer nothing, and what comes
+   installation holds of a built-in list of repo-level ones that administer nothing, at `write` at most (ruled 2026-10-31: no Pool key for now), and what comes
    back is held to them. A Pool cannot widen that list today.
 8. **A Secret is read as text** and parsed by the operator, which logs nothing of a body it cannot
    parse. The key is read for each mint and not kept.

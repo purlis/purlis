@@ -461,6 +461,8 @@ fn a_token_asks_only_for_repo_level_permissions_that_administer_nothing() {
         "contents": "write",
         "administration": "write",
         "secrets": "write",
+        "packages": "write",
+        "repository_projects": "admin",
         "workflows": "write",
         "members": "read",
         "organization_administration": "write",
@@ -482,6 +484,23 @@ fn pod_with(phase: &str, key: &str) -> k8s_openapi::api::core::v1::Pod {
         },
     }))
     .expect("a pod")
+}
+
+#[test]
+fn a_runner_of_another_image_than_its_pools_mints_nothing() {
+    let pod: k8s_openapi::api::core::v1::Pod = serde_json::from_value(json!({
+        "spec": {
+            "initContainers": [{ "name": "link-key", "image": "new" }],
+            "containers": [{ "name": "runner", "image": "new" }],
+        },
+    }))
+    .expect("a pod");
+    assert!(mint::runs_image(&pod, "new"));
+    assert!(!mint::runs_image(&pod, "old"));
+    assert!(!mint::runs_image(
+        &k8s_openapi::api::core::v1::Pod::default(),
+        "new"
+    ));
 }
 
 #[test]
