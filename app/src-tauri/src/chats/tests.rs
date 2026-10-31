@@ -8615,6 +8615,53 @@ fn the_routing_a_chat_started_with_is_what_its_record_keeps_3578() {
 }
 
 #[test]
+fn a_runners_chat_is_armed_by_its_runner_at_its_start_and_at_its_reattach_3604() {
+    let never = || -> bool { panic!("the host was asked") };
+    assert!(armed_by_its_runner(true, false, never));
+    assert!(armed_by_its_runner(false, true, || true));
+    // A chat reattached from a host that composes none, and any start here, are armed here.
+    assert!(!armed_by_its_runner(false, true, || false));
+    assert!(!armed_by_its_runner(false, false, never));
+}
+
+/// #3604 (SK-15g): a runner's chat this window reattaches is armed by its runner, as its start
+/// was, so the window reads none of its skills, asks no router, and its record keeps no routing,
+/// though the project's skills reach every chat here. Seen red: it was read and routed here.
+#[test]
+fn a_runners_chat_reattached_is_shown_no_skills_of_this_window_s_reading_3604() {
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::write(
+        plane.path().join(purlis_core::plane::MANIFEST),
+        "requires = [{ feature = \"project-skills\" }]\n",
+    )
+    .expect("charter.toml");
+    let host = Pretend::default();
+    host.on_a_runner();
+    host.leaves_running(3, None);
+    let chats = restartable_chats_of(plane.path(), host.clone());
+
+    chats.put_back(
+        &left_running_in(
+            plane.path(),
+            Chat {
+                plane_skills: Some(true),
+                ..a_resumable_chat_in(plane.path())
+            },
+        ),
+        SIZE,
+    );
+
+    assert_eq!(host.reattached(), [3]);
+    assert_eq!(
+        lock(&chats.open)[&3].skills_read,
+        purlis_core::hoststart::ChatSkills::default(),
+        "its runner's to arm"
+    );
+    assert_eq!(chats.record().chats[0].routing, None);
+    let _ = chats.close(3);
+}
+
+#[test]
 fn a_profile_a_studio_start_was_refused_on_says_which_line_needs_approving() {
     // #3942: the Skill studio's Approve and start reads the same approval a waiting chat's
     // Notice offers, by the profile's name, and none once it is approved.

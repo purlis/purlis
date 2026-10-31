@@ -339,6 +339,13 @@ impl SessionHost for RoutedSessions {
         }
     }
 
+    fn composes_the_harness_chat(&self, id: u32) -> bool {
+        match self.host_of(id) {
+            Some(host) => host.composes_its_harness_chats(),
+            None => self.here.composes_the_harness_chat(id),
+        }
+    }
+
     fn input(&self, id: u32, bytes: &[u8]) -> Result<(), String> {
         match self.host_of(id) {
             Some(host) => host.input(id, bytes),

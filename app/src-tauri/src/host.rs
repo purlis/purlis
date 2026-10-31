@@ -288,6 +288,16 @@ pub trait SessionHost: Send + Sync {
         self.composes_its_harness_chats()
     }
 
+    /// **Whether the host chat `id` runs on composes its harness chats** (SK-15g, #3604): asked
+    /// of a chat this window reattaches, whose start it did not see. Where the window routes
+    /// chats by workspace, that host is the one the chat was found running on, never the one its
+    /// workspace names now. Every other host answers as [`Self::composes_its_harness_chats`]
+    /// does.
+    fn composes_the_harness_chat(&self, id: u32) -> bool {
+        let _ = id;
+        self.composes_its_harness_chats()
+    }
+
     /// **The pool a chat started in `workspace` runs on** (#2049), where the window routes that
     /// workspace's chats to a pool's runner: what the profile it starts on is kept on, and
     /// signed in on, before it starts. None, where it starts on this machine.
