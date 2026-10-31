@@ -222,7 +222,8 @@ pub enum SkillCommand {
         /// The entry in that vault that holds the token.
         #[arg(long, requires = "vault")]
         key: Option<String>,
-        /// Where a project skill reaches: `root`, `all`, or workspace names (default: root).
+        /// Where a project skill reaches: `root`, `all`, or workspace names (default: root). A
+        /// project skill they refer to reaches those workspaces too: its grant is widened.
         #[arg(long, num_args = 1..)]
         grant: Vec<String>,
         /// Install without asking: for a script that printed and read the review itself.
@@ -1650,7 +1651,17 @@ fn install(
             return Ok(1);
         }
     };
-    print!("{}", review_text(&review));
+    // A project skill it relies on reaches the workspaces the grant names too (#4172).
+    let widenings = source::widenings(
+        root,
+        level,
+        grant.as_ref(),
+        review
+            .skills
+            .iter()
+            .flat_map(|skill| skill.already.iter().map(String::as_str)),
+    );
+    print!("{}", review_text(&review, &widenings));
     let question = format!(
         "Install {} at {level}, pinned to {}?",
         counted(review.skills.len(), "skill", "skills"),
@@ -1775,7 +1786,8 @@ fn summary_text(summary: &purlis_core::skills::review::Summary, pad: &str) -> St
 }
 
 /// An install review as the terminal prints it: each skill's summary first, then its files.
-fn review_text(review: &source::Review) -> String {
+/// `widenings` says what the install's grant asks of the project skills they refer to (#4172).
+fn review_text(review: &source::Review, widenings: &[source::Widening]) -> String {
     let mut out = format!(
         "Review of {} from {} at {}\n",
         counted(review.skills.len(), "skill", "skills"),
@@ -1796,10 +1808,26 @@ fn review_text(review: &source::Review) -> String {
         ));
         out.push_str(&summary_text(&skill.summary, "  "));
         for name in &skill.already {
-            out.push_str(&format!(
-                "  refers to {}, which its chats there have already: it is left as it is\n",
-                esc(name)
-            ));
+            let one = widenings.iter().find(|one| &one.name == name);
+            match one.and_then(|one| one.widened.as_ref().map(|to| (one, to))) {
+                Some((one, to)) => out.push_str(&format!(
+                    "  refers to {}, which is granted to {}: it is left as it is, and the install \
+                     grants it to {} too\n",
+                    esc(name),
+                    esc(&one.granted.to_string()),
+                    esc(&source::added(&one.granted, to))
+                )),
+                None => out.push_str(&format!(
+                    "  refers to {}, which its chats there have already: it is left as it is\n",
+                    esc(name)
+                )),
+            }
+            for line in one
+                .map(|one| one.turned_off_said(&skill.name))
+                .unwrap_or_default()
+            {
+                out.push_str(&format!("  {}\n", esc(&line)));
+            }
         }
         for line in &skill.lint {
             out.push_str(&format!("  lint: {}\n", esc(line)));
