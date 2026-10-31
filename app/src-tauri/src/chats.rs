@@ -205,7 +205,7 @@ pub struct ChatRouted {
     pub session: u32,
     pub workspace: Option<String>,
     pub persona: Option<String>,
-    pub routed: purlis_core::skills::router::Routed,
+    pub routed: std::sync::Arc<purlis_core::skills::router::Routed>,
 }
 
 /// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
@@ -5450,8 +5450,14 @@ impl Chats {
     /// its prompt hook adds to the turn, or `None`. The prompt is handed to that router and kept
     /// nowhere.
     pub fn pointed(&self, session: u32, prompt: &str) -> Option<String> {
-        // Taken out of the lock before the router is asked, which may take its 100 ms.
-        let routed = lock(&self.open).get(&session)?.skills_read.routed.clone()?;
+        // Taken out of the lock before the router is asked, which may take its 100 ms. A chat a
+        // runner's host composed is routed there, never by this machine's router.
+        let routed = lock(&self.open)
+            .get(&session)
+            .filter(|running| !running.composed_by_its_host)?
+            .skills_read
+            .routed
+            .clone()?;
         let router = lock(&self.router).clone()?;
         let prompted = routed.on_prompt(prompt, &router)?;
         if let Some(tell) = lock(&self.routed).as_ref() {

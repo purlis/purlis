@@ -319,7 +319,7 @@ fn what_a_router_hides_is_hidden_wherever_the_chat_s_set_is_routed_with_its_line
             plane: root,
             workspace: Some("smart-ide"),
             repo: &[],
-            routed: skills.routed.as_ref(),
+            routed: skills.routed.as_deref(),
         }),
         None,
         Some(&bundle),
@@ -453,7 +453,7 @@ fn a_start_that_asks_no_router_falls_back_and_says_so() {
     )
     .routed_by(Some(&bundle), Some(Harness::ClaudeCode), None);
 
-    let record = skills.routed.expect("a record").record;
+    let record = skills.routed.expect("a record").record.clone();
     assert_eq!(record.fell_back, Some(FellBack::Failed));
     assert!(
         record.error.unwrap_or_default().contains("asks no router"),
@@ -976,19 +976,8 @@ fn a_router_pointing_at_a_skill_the_list_has_is_not_taken() {
 }
 
 #[test]
-fn nothing_is_asked_of_a_router_that_reads_no_prompts_or_where_the_list_leaves_nothing_out() {
+fn nothing_is_asked_where_the_list_leaves_nothing_out_or_the_router_is_the_built_in_one() {
     let fake = Fake::answering(serde_json::json!({ "pointed": ["release"] }));
-    // Its approval said nothing of prompts: never handed one.
-    assert_eq!(
-        on_prompt(
-            relevance(),
-            &left_out(),
-            "go",
-            &as_asker(&fake),
-            ROUTER_DEADLINE
-        ),
-        None
-    );
     assert_eq!(
         on_prompt(relevance(), &[], "go", &reading(&fake), ROUTER_DEADLINE),
         None
@@ -1057,4 +1046,27 @@ fn a_start_routed_by_a_router_that_reads_prompts_keeps_what_its_list_leaves_out(
     );
     let asked = pick.asked();
     assert_eq!(asked[0].1["skills"].as_array().map(Vec::len), Some(1));
+}
+
+#[test]
+fn a_router_slow_at_the_chat_s_start_still_routes_its_prompts() {
+    let (tmp, bundle) = a_plane_of(MOST + 2);
+    let root = tmp.path();
+    workspace_skills(root, serde_json::json!({ "router": "relevance" }));
+    let slow = Arc::new(Fake {
+        wait: Duration::from_secs(2),
+        answer: Ok(serde_json::json!({ "hidden": [] })),
+        asked: Mutex::default(),
+    });
+
+    let routed = started(root, &bundle, None, &reading(&slow))
+        .routed
+        .expect("routed");
+
+    assert_eq!(routed.record.fell_back, Some(FellBack::Slow));
+    assert!(
+        routed.points(),
+        "what the built-in router left out is pointed at"
+    );
+    assert_eq!(routed.left_out.len(), MOST + 2);
 }

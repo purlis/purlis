@@ -1280,9 +1280,10 @@ pub fn messages(root: &std::path::Path, chat: u32) -> Vec<dispatchtalk::Message>
 pub fn pointed(prompt: &str) -> Option<String> {
     use purlis_core::hookwire::PromptAsk;
     let (mut asking, chat) = the_app()?;
+    // Cut here, so no more of it crosses to the app than the router is handed.
     let asked = Ask::Prompt(Box::new(PromptAsk {
         chat,
-        prompt: prompt.to_owned(),
+        prompt: purlis_core::extension::studio::prompt_handed(prompt).to_owned(),
     }));
     match asking.ask(&asked, A_ROUTER_IS_ANSWERED_WITHIN) {
         Ok(Answer::Pointed { pointer }) => pointer,

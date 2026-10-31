@@ -624,6 +624,27 @@ pub fn at_start(
             began,
         ));
     };
+    // Whether its approval said it reads prompts, read once the question is over, so its read
+    // of this machine's record is never inside the router's 100 ms; whatever came of the
+    // question, its prompts are routed (SK-15c).
+    let routed = asked_at_start(set, &id, budget, pins, asker, deadline, began);
+    Some(Routed {
+        reads_prompts: asker.reads_prompts(&id),
+        ..routed
+    })
+}
+
+/// [`at_start`]'s question of the router extension `id`, through `asker`, begun at `began`.
+fn asked_at_start(
+    set: &SkillSet,
+    id: &str,
+    budget: Budget,
+    pins: &[String],
+    asker: &Arc<dyn AskRouter>,
+    deadline: Duration,
+    began: Instant,
+) -> Routed {
+    let id = id.to_owned();
     let candidates = set.candidates(budget, pins);
     let asked = candidates.skills.len();
     let skills: Vec<RouteSkill> = candidates
@@ -654,43 +675,19 @@ pub fn at_start(
         });
     if let Err(why) = spawned {
         let why = format!("purlis could not start asking '{id}': {why}");
-        return Some(fell_back(
-            set,
-            budget,
-            pins,
-            &id,
-            FellBack::Failed,
-            why,
-            began,
-        ));
+        return fell_back(set, budget, pins, &id, FellBack::Failed, why, began);
     }
     let answered = match receive.recv_timeout(deadline.saturating_sub(began.elapsed())) {
         Ok(answered) => answered,
         Err(_) => {
             let why = format!("'{id}' did not answer within {} ms", deadline.as_millis());
-            return Some(fell_back(
-                set,
-                budget,
-                pins,
-                &id,
-                FellBack::Slow,
-                why,
-                began,
-            ));
+            return fell_back(set, budget, pins, &id, FellBack::Slow, why, began);
         }
     };
     let doc = match answered {
         Ok(doc) => doc,
         Err(why) => {
-            return Some(fell_back(
-                set,
-                budget,
-                pins,
-                &id,
-                FellBack::Failed,
-                why,
-                began,
-            ));
+            return fell_back(set, budget, pins, &id, FellBack::Failed, why, began);
         }
     };
     let taken = crate::extension::studio::routed_of(&id, asked, &doc).and_then(|hidden| {
@@ -699,18 +696,14 @@ pub fn at_start(
             .map(|routed| (routed, hidden))
             .map_err(|why| format!("'{id}' answered a routing purlis does not take: {why}"))
     });
-    let reads_prompts = asker.reads_prompts(&id);
     match taken {
-        Ok((routed, hidden)) => Some(Routed {
+        Ok((routed, hidden)) => Routed {
             record: record(&routed, &id, None, None, began),
             answer: Some(hidden),
             left_out: left_out_of(&routed),
-            reads_prompts,
-        }),
-        Err(why) => Some(Routed {
-            reads_prompts,
-            ..fell_back(set, budget, pins, &id, FellBack::Wrong, why, began)
-        }),
+            reads_prompts: false,
+        },
+        Err(why) => fell_back(set, budget, pins, &id, FellBack::Wrong, why, began),
     }
 }
 
@@ -727,10 +720,11 @@ pub struct Prompted {
 /// list leaves out, each with the line its index skill gives it ([`purlis_skills::Index::named_in`]).
 ///
 /// `None`, with nothing asked and no record, for the built-in router or a choice that names no
-/// router (its start said so), for a chat whose list leaves nothing out, and for a router that
-/// does not read prompts ([`AskRouter::reads_prompts`]). Past the deadline, or on an error or
-/// an answer it does not take, the prompt goes on with no pointer, and the record says why.
-/// The pointer names each skill with purlis's own line, never the router's words.
+/// router (its start said so), and for a chat whose list leaves nothing out. Whether the router
+/// reads prompts is its start's to have read ([`Routed::points`]): the executor refuses a prompt
+/// to one whose approval said it reads none, before anything starts. Past the deadline, or on
+/// an error or an answer it does not take, the prompt goes on with no pointer, and the record
+/// says why. The pointer names each skill with purlis's own line, never the router's words.
 pub fn on_prompt(
     chosen: Result<Chosen, String>,
     left_out: &[(String, String)],
@@ -742,7 +736,7 @@ pub fn on_prompt(
     let Ok(Chosen::Extension(id)) = chosen else {
         return None;
     };
-    if left_out.is_empty() || !asker.reads_prompts(&id) {
+    if left_out.is_empty() {
         return None;
     }
     let skills: Vec<PromptSkill> = left_out
