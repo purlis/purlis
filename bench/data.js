@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793435962676,
+  "lastUpdate": 1793437262217,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32928,6 +32928,48 @@ window.BENCHMARK_DATA = {
             "value": 102.51286999999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.727, 101.823, 102.513, 102.858, 103.608 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "0ef3e9965e72be82c4fa6d2fc40b409b603de746",
+          "message": "Skill sources: grants at the project level, for the window's install and for updates (#4185, #4186) (#4220)\n\n* Skill sources: an update at the project level grants and widens as the updated skill reaches (#4186)\n\nAn update of a project skill granted past the root now relies on what it\nrefers to as an install with that grant does (#4172). A held project skill\nits newer commit refers to is widened to reach the updated skill's\nworkspaces, and a skill the update brings along lands with the updated\nskill's grant, in the same all-or-nothing change. The update review (CLI\nand window) says both first; the update takes the grant the review showed\nand refuses, changing nothing, when the skill was regranted since.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill sources: the window's install review offers the grant at the project level (#4185)\n\nADR 0100 says an install at the project level lands granted to the root\nunless the person picks another in the review; the window passed none.\nBoth install reviews now offer the grant under Lands in for the project's\nshared skills, the root's by default, and hand it to the install. Each\ngrant picked asks `skill_install_widenings` what it widens on the project\nskills the review left as they are (#4172), never the source again, and\nInstall waits until that is shown.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill sources: story pictures for the grant row, and the granted review shown closed (#4185)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill sources: pictures of the granted install review (#4185)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T08:37:51Z",
+          "tree_id": "c5509ede70ccd52edf1fc16fa9c131ca7aac4378",
+          "url": "https://github.com/purlis/purlis/commit/0ef3e9965e72be82c4fa6d2fc40b409b603de746"
+        },
+        "date": 1793437257673,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6481295,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.643, 0.645, 0.648, 0.662, 0.664 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.646724999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.442, 16.537, 16.647, 16.655, 16.690 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.74044749999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.564, 102.083, 102.740, 103.110, 104.442 ms"
           }
         ]
       }
