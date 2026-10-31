@@ -726,6 +726,7 @@ pub mod driven;
 #[cfg(unix)]
 pub mod held;
 pub mod terminal;
+pub mod waiting;
 
 #[cfg(test)]
 mod tests;

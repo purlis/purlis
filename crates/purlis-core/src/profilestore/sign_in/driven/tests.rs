@@ -1016,3 +1016,31 @@ fn next(driving: &Driving) -> Event {
     }
     panic!("the sign-in said nothing in 30s");
 }
+
+/// **A code is carried only where it is bound to a proof the login alone holds**: a page without
+/// PKCE's S256 is not followed, as a later version of a login might print.
+#[test]
+fn a_page_that_binds_its_code_to_no_proof_is_not_followed() {
+    let page = |challenge: &str| {
+        format!(
+            "https://auth.openai.com/oauth/authorize?response_type=code&client_id={OPENAI_CLIENT}\
+             &redirect_uri=http%3A%2F%2F127.0.0.1%3A1455%2Fauth%2Fcallback{challenge}\
+             &state=Zm9yLXRoaXMtc2lnbi1pbi1hbG9uZQ"
+        )
+    };
+    let carried = |url: &str| state_on(url, callback::PORT, OPENAI_CLIENT);
+
+    assert!(carried(&page("&code_challenge=c&code_challenge_method=S256")).is_some());
+    for challenge in [
+        "",
+        "&code_challenge=c",
+        "&code_challenge_method=S256",
+        "&code_challenge=&code_challenge_method=S256",
+        "&code_challenge=c&code_challenge_method=plain",
+        "&code_challenge=c&code_challenge_method=s256",
+        "&code_challenge=c&code_challenge=d&code_challenge_method=S256",
+        "&code_challenge=c&code_challenge_method=S256&code_challenge_method=S256",
+    ] {
+        assert_eq!(carried(&page(challenge)), None, "{challenge}");
+    }
+}

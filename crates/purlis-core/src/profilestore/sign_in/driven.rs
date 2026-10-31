@@ -736,9 +736,9 @@ impl Driven {
 /// **The `state` of a login's page `url`, where it sends the browser back as purlis can carry**:
 /// to this machine on `port` and [`callback::PATH`] exactly (Codex by its address, opencode by its
 /// name), asking for a code as its own
-/// `client`, with one `state` a login made and written as it is, and every name in its query
-/// written plainly, so no vendor reads a name purlis did not. Nothing else about a page is guessed
-/// at.
+/// `client`, bound by PKCE's S256 to a proof only the login holds, with one `state` a login made
+/// and written as it is, and every name in its query written plainly, so no vendor reads a name
+/// purlis did not. Nothing else about a page is guessed at.
 fn state_on(url: &str, port: u16, client: &str) -> Option<String> {
     let (_, query) = url.split_once('?')?;
     let query = query.split('#').next()?;
@@ -769,6 +769,8 @@ fn state_on(url: &str, port: u16, client: &str) -> Option<String> {
     (written
         && one("response_type")? == "code"
         && one("client_id")? == client
+        && !one("code_challenge")?.is_empty()
+        && one("code_challenge_method")? == "S256"
         && ["127.0.0.1", "localhost"]
             .iter()
             .any(|host| back == format!("http://{host}:{port}{}", callback::PATH)))
@@ -1070,6 +1072,20 @@ fn run(
     })
 }
 
+/// The text of `read`, after what `carried` held: what ends in the middle of a character stays in
+/// `carried`, waiting for the rest of it.
+pub(super) fn whole_text(carried: &mut Vec<u8>, read: &[u8]) -> String {
+    carried.extend_from_slice(read);
+    let whole = match std::str::from_utf8(carried) {
+        Ok(_) => carried.len(),
+        Err(e) if e.error_len().is_none() => e.valid_up_to(),
+        Err(_) => carried.len(),
+    };
+    let text = String::from_utf8_lossy(&carried[..whole]).into_owned();
+    carried.drain(..whole);
+    text
+}
+
 /// Reads what the login prints on `from`, its output `stream`, feeding it to `driven` and
 /// telling its steps. A character cut between two reads is read whole. The page of a login that
 /// waits for the browser is told only once this device listens for its answer.
@@ -1088,15 +1104,7 @@ fn reading(
             if read == 0 {
                 return;
             }
-            carried.extend_from_slice(&buffer[..read]);
-            // What ends in the middle of a character waits for the rest of it.
-            let whole = match std::str::from_utf8(&carried) {
-                Ok(_) => carried.len(),
-                Err(e) if e.error_len().is_none() => e.valid_up_to(),
-                Err(_) => carried.len(),
-            };
-            let text = String::from_utf8_lossy(&carried[..whole]).into_owned();
-            carried.drain(..whole);
+            let text = whole_text(&mut carried, &buffer[..read]);
             let (said, reply) = {
                 let mut driven = driven.lock().unwrap_or_else(PoisonError::into_inner);
                 (driven.read_from(stream, &text), driven.reply())
