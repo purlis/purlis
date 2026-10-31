@@ -269,6 +269,50 @@ fn a_chat_binds_the_one_socket_it_serves_on() {
     }
 }
 
+#[test]
+fn a_program_starts_from_where_the_rules_allow_it() {
+    let roots = |text: &str| read(text).starts_from();
+    assert_eq!(roots(FULL), [PathBuf::from("/")]);
+    assert_eq!(
+        roots("(version 1)\n(allow default)\n"),
+        [PathBuf::from("/")]
+    );
+    assert_eq!(
+        roots("(version 1)\n(allow default)\n(deny process-exec (literal \"/bin/at\"))\n"),
+        [PathBuf::from("/")]
+    );
+    assert!(roots("(version 1)\n(deny default)\n(allow file-read*)\n").is_empty());
+    assert_eq!(
+        roots(
+            "(version 1)\n(deny default)\n\
+             (allow process-exec (subpath \"/usr/bin\") (literal \"/opt/one\"))\n\
+             (allow file-read* process-exec (subpath \"/opt/ext\"))\n\
+             (allow process-exec (subpath \"/usr/bin\"))\n"
+        ),
+        [
+            PathBuf::from("/usr/bin"),
+            PathBuf::from("/opt/one"),
+            PathBuf::from("/opt/ext")
+        ]
+    );
+    assert!(
+        roots("(version 1)\n(allow process-exec)\n(deny process-exec)\n").is_empty(),
+        "an unfiltered deny takes back what came before it"
+    );
+}
+
+#[test]
+fn a_start_the_kernel_cannot_name_refuses_the_profile() {
+    for filter in [
+        "(regex \"^/opt/.*\")",
+        "(require-not (subpath \"/opt\"))",
+        "(vnode-type REGULAR-FILE)",
+    ] {
+        let text = format!("(version 1)\n(deny default)\n(allow process-exec {filter})\n");
+        assert!(Profile::parse(&text).is_err(), "{filter} was read");
+    }
+}
+
 /// #2019: the supervisor binds a chat's socket only at a path its profile names to serve on,
 /// whatever else the profile allows: a floor chat, which `(allow default)` lets do nearly
 /// anything, serves on no other socket of this user's, and never replaces one.

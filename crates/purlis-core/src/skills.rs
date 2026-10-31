@@ -207,9 +207,10 @@ pub fn built_in_names(dir: Option<&Path>) -> Vec<String> {
 /// **The skills purlis ships**, by name: the bundle's `plugin/skills/<name>/SKILL.md`, each
 /// folder named as its skill (held to that folder by a test). Compiled in, so a name stays
 /// reserved ([`name_reserved`]) where this binary finds no bundle beside it.
-pub const SHIPPED: [&str; 11] = [
+pub const SHIPPED: [&str; 12] = [
     "add-curation-action",
     "browser",
+    "building-purlis-ui",
     "compact",
     "handoff",
     "persona",
@@ -1374,8 +1375,8 @@ fn ask(
 /// built-in one. At a start `outside` is the repo skills of the clone it works in; the studio's
 /// preview of a harness ([`harnesses_in_the_studio`]) holds the harness's own skills too, which
 /// count against nothing ([`SkillSet::routed`], ADR 0102 as amended 2026-10-31), so they hide
-/// none of what a chat's start lists. The one routing [`ask`] and the studio go through. The
-/// studio still routes with every clone's repo skills and the built-in router (#4215).
+/// none of what a chat's start lists. The one routing [`ask`] and the studio go through: the
+/// studio routes as a chat at the workspace's root, in no clone, by the built-in router (#4215).
 fn as_a_start_routes(
     set: SkillSet,
     route: Route,
@@ -1976,8 +1977,14 @@ pub struct HarnessInTheStudio {
     pub harness: Harness,
     /// What a chat on it gets: the plane's skills ([`in_the_studio`]) with the ones from outside
     /// the plane ([`SkillSet::with_outside`]), each clash settled as this harness's route lets
-    /// purlis settle it.
+    /// purlis settle it, with every clone's repo skills: the set of no one chat, so it is not
+    /// routed ([`Self::at_the_root`] is).
     pub set: SkillSet,
+    /// **What the studio's hidden marks preview** (#4215; ADR 0102 as amended 2026-10-31): the
+    /// set of a chat at the workspace's root on it, routed as that chat's start routes it, by
+    /// the built-in router. That chat is in no clone, so it holds no repo skill, and what the
+    /// harness finds itself is beside it and counts against nothing.
+    pub at_the_root: SkillSet,
     /// The skills from outside the plane, with whose each is and how it switches.
     pub outside: Vec<OutsideSkill>,
     /// Their studio rows (`outside_rows`): what the window and the command line list under
@@ -2129,10 +2136,9 @@ fn harnesses_in_the_studio(
         .filter_map(|adapter| {
             // Every adapter is a harness's ([`crate::harness_plugin::adapters`]).
             let harness = Harness::of_kind(adapter.harness())?;
-            let mut outside = crate::harness_plugin::harness_skills(adapter, env, &choices);
-            outside.extend(crate::harness_plugin::repo_skills(
-                adapter, &choices, &clones,
-            ));
+            // What it finds itself, and what every clone holds for it.
+            let own = crate::harness_plugin::harness_skills(adapter, env, &choices);
+            let repo = crate::harness_plugin::repo_skills(adapter, &choices, &clones);
             // Each built-in skill by the name this harness knows it by (`purlis-<name>` on
             // opencode's route), so a copy of that name is the clash, and a bare one is not.
             let route = harness.skills();
@@ -2141,16 +2147,27 @@ fn harnesses_in_the_studio(
             } else {
                 set.clone()
             };
-            // Routed as a chat's start routes it, by this harness's own budget (SK-15): what it
-            // finds itself is beside the set for its clashes and rows, and counted in nothing.
-            let set = as_a_start_routes(
+            // A chat at the workspace's root, routed as its start routes it, by this harness's
+            // own budget (SK-15; #4215): what the harness finds itself is beside the set and
+            // counted in nothing, and the chat is in no clone, so no repo skill is in it.
+            let at_the_root = as_a_start_routes(
                 set,
                 route,
-                &outside,
+                &own,
                 Some(harness.skill_budget()),
                 || pins.to_vec(),
                 None,
             );
+            // Every clone's repo skills beside that, for their clashes, their rows and what a
+            // repo leaves out: no one chat's set, so no routing.
+            let set = SkillSet {
+                routing: None,
+                ..at_the_root
+                    .clone()
+                    .with_outside(route, repo.iter().cloned())
+            };
+            let mut outside = own;
+            outside.extend(repo);
             let by_a_repo = SkillSet {
                 left_out: set.left_out_by_a_repo().cloned().collect(),
                 ..SkillSet::default()
@@ -2159,6 +2176,7 @@ fn harnesses_in_the_studio(
                 harness,
                 repo_left_out: rows_of(&by_a_repo, plane, names, reading),
                 set,
+                at_the_root,
                 own: (reading == Reading::Whole).then(|| own_catalogue(harness, &outside)),
                 outside,
                 rows: Vec::new(),
@@ -3036,19 +3054,24 @@ fn persona_rows_with(
 }
 
 /// **What each harness's router made of the rows' skills** (SK-15): on a row the chat gets,
-/// every harness whose own set, routed by its own budget, hides it, and whether a pin keeps it.
+/// every harness whose chat at the workspace's root ([`HarnessInTheStudio::at_the_root`]),
+/// routed by its own budget, hides it, and whether a pin keeps it.
 fn with_routing(rows: &mut [StudioRow], harnesses: &[HarnessInTheStudio]) {
     for row in rows.iter_mut().filter(|row| row.left_out.is_none()) {
         row.hidden = harnesses
             .iter()
             .filter_map(|one| {
-                one.set.hidden_by_router(&row.name).map(|hidden| HiddenOn {
-                    harness: one.harness,
-                    hidden: hidden.clone(),
-                })
+                one.at_the_root
+                    .hidden_by_router(&row.name)
+                    .map(|hidden| HiddenOn {
+                        harness: one.harness,
+                        hidden: hidden.clone(),
+                    })
             })
             .collect();
-        row.pinned = harnesses.iter().any(|one| one.set.is_pinned(&row.name));
+        row.pinned = harnesses
+            .iter()
+            .any(|one| one.at_the_root.is_pinned(&row.name));
     }
 }
 

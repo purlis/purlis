@@ -28,6 +28,29 @@
    field's (#3250). The compact density draws the chrome at 18px and the scale's 24 at 16, and a
    smaller text size shrinks both, so neither token alone keeps one. */
 
+/* **A choice with no words is a 24px target across too** (#4197, WCAG 2.5.8): a checkbox, a
+   radio or a switch named by `aria-label` alone is drawn its mark's size (a 14px box), so its
+   press reaches a square of at least 24px centred on it, which draws nothing. Where the root is
+   already 24px or more each way (a row with words), the reach is the root itself. */
+[data-scope="checkbox"][data-part="root"]::after,
+[data-scope="radio"][data-part="root"]::after,
+[data-scope="switch"][data-part="root"]::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: max(100%, 24px);
+  block-size: max(100%, 24px);
+  translate: -50% -50%;
+}
+
+/* Right to left, the inline start is the right: centred from there. */
+[data-scope="checkbox"][data-part="root"]:dir(rtl)::after,
+[data-scope="radio"][data-part="root"]:dir(rtl)::after,
+[data-scope="switch"][data-part="root"]:dir(rtl)::after {
+  translate: 50% -50%;
+}
+
 /* ---------------------------------------------------------------------------------------------
    The checkbox: its row (the label), its box and its words.
    --------------------------------------------------------------------------------------------- */
@@ -37,6 +60,8 @@
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 0 var(--space-4);
+  /* What its press reaches past its mark is placed on it (#4197, below). */
+  position: relative;
   box-sizing: border-box;
   min-block-size: max(24px, var(--size-chrome), var(--space-7));
   min-inline-size: 0;
@@ -175,6 +200,8 @@
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 0 var(--space-4);
+  /* What its press reaches past its mark is placed on it (#4197, below). */
+  position: relative;
   box-sizing: border-box;
   min-block-size: max(24px, var(--size-chrome), var(--space-7));
   color: var(--text-primary);
@@ -249,6 +276,8 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-4);
+  /* What its press reaches past its mark is placed on it (#4197, below). */
+  position: relative;
   box-sizing: border-box;
   min-block-size: max(24px, var(--size-chrome), var(--space-7));
   color: var(--text-primary);

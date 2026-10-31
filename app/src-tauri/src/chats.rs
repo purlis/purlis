@@ -450,6 +450,9 @@ struct Running {
     /// reattached. Held in memory alone: no record of the chat's keeps it. None for a shell, and
     /// for a chat whose host gave it none.
     prompt_key: Option<purlis_core::skillspan::PromptSalt>,
+    /// **The persona it runs as, as its start named it**: its run's `persona` (ADR 0066), what a
+    /// runner's skill run of it is logged by here (SK-20b, #3084). `None` on no persona.
+    runs_as: Option<String>,
 }
 
 /// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
@@ -502,6 +505,19 @@ fn routing_kept_at_start(
     recorded: Option<&purlis_core::skills::router::Kept>,
 ) -> Option<purlis_core::skills::router::Kept> {
     recorded.filter(|_| reattaching && flag_recorded).cloned()
+}
+
+/// **Whether a chat starting now is armed with its skills by the runner it runs on** (SK-15g,
+/// #3604): one the window starts there (`on_the_runner`, #2446), and one it reattaches
+/// (`reattaching`, #2006) that `runs_on_a_runner` says it found on a host that composes its
+/// harness chats. Such a chat's skills are the runner's: the window reads none of them here, and
+/// asks no router of its own, at the reattach as at the start. Every other chat is armed here.
+fn armed_by_its_runner(
+    on_the_runner: bool,
+    reattaching: bool,
+    runs_on_a_runner: impl FnOnce() -> bool,
+) -> bool {
+    on_the_runner || (reattaching && runs_on_a_runner())
 }
 
 /// **The personas a chat is named by** (#2691), from one read of the app's record of its run
@@ -3613,6 +3629,16 @@ impl Chats {
             && self
                 .sessions
                 .composes_its_harness_chats_in(workspace.as_deref());
+        // **Whose skills it has** (SK-15g, #3604): a runner's chat is armed by its runner, and
+        // so is one this window reattaches from a runner, which its start armed there too. Its
+        // skills are read here for neither, and its router is not asked again.
+        let armed_by_its_runner = armed_by_its_runner(on_the_runner, reattaching, || {
+            !operator_shell
+                && harness.is_some()
+                && chat
+                    .number
+                    .is_some_and(|number| self.sessions.composes_the_harness_chat(number))
+        });
         // A grade's chat is armed here, with its limits, or not at all (SK-16): a runner
         // composes its own line, and would start it with none of them.
         if on_the_runner && chat.graded {
@@ -3779,7 +3805,7 @@ impl Chats {
         );
         let routing_was_kept = kept_routing.is_some();
         let skills = std::cell::LazyCell::new(|| {
-            if on_the_runner {
+            if armed_by_its_runner {
                 return purlis_core::hoststart::ChatSkills::default();
             }
             let read = purlis_core::hoststart::ChatSkills::read(
@@ -4298,6 +4324,9 @@ impl Chats {
                                 )
                             },
                         ),
+                        // The Skill studio's flag this start read (#3445): a runner arms it by
+                        // this, not by its own machine's (SK-20b, #3084).
+                        plane_skills,
                         alone,
                         size,
                     },
@@ -4396,8 +4425,8 @@ impl Chats {
             // a later reattach of it takes.
             plane_skills: Some(plane_skills),
             // How this start routed its skills (#3578): what its record keeps, and what a later
-            // reattach of it routes by. A runner's chat is armed by its runner, so none.
-            routing: (!on_the_runner)
+            // reattach of it routes by. A runner's chat is armed by its runner, so none (#3604).
+            routing: (!armed_by_its_runner)
                 .then(|| purlis_core::skills::router::Kept::of(skills.routed.as_ref())),
             ..chat.clone()
         };
@@ -4460,13 +4489,14 @@ impl Chats {
                 plane_skills,
                 clones_at_start: clones_at_start.take(),
                 prompt_key,
+                runs_as: runs_as.clone(),
             },
         );
         // Its routing record, after its run began (SK-15b), where its router was asked now. A chat
         // reattached began no run here: one that kept its start's routing is in its run's record
         // already (#3578), and one whose record kept none had its router asked again, an answer
         // recorded under the run it is in.
-        if !on_the_runner
+        if !armed_by_its_runner
             && !routing_was_kept
             && let Some(routed) = skills.routed.as_ref()
             && let Some(tell) = lock(&self.routed).as_ref()
@@ -5533,6 +5563,56 @@ impl Chats {
             running.composed_by_its_host
                 && running.ran != Some(purlis_session_protocol::session::RunSandbox::Off)
         })
+    }
+
+    /// **Logs a skill run of a chat a pool's runner runs** (SK-20b, #3084): `run`, as the log of
+    /// `pool`'s runner says it started or ended, logged in this project's skill log as a local
+    /// run is, with this window's own word for where the chat ran: the persona it runs as, its
+    /// harness and its workspace. Only for a chat open here that runs on that pool's runner, by
+    /// its id; any other line names no chat of this window's, and nothing is logged.
+    pub fn skill_run_heard(
+        &self,
+        pool: Option<&str>,
+        run: &purlis_core::skilluse::relayed::Relayed,
+    ) {
+        let Some(pool) = pool else {
+            return;
+        };
+        let ran_as = {
+            let open = lock(&self.open);
+            open.iter()
+                .find(|(_, running)| running.chat.identity.id.as_deref() == Some(run.chat.as_str()))
+                .map(|(number, running)| {
+                    (
+                        *number,
+                        running.runs_as.clone(),
+                        running.harness.map(Harness::name),
+                        running.workspace.clone(),
+                    )
+                })
+        };
+        let Some((number, persona, harness, workspace)) = ran_as else {
+            return;
+        };
+        if self.sessions.pool_of(number).as_deref() != Some(pool) {
+            return;
+        }
+        // Under this machine's own device, as a run of its own is: the runner keeps its own file
+        // under its device in its checkout, which this machine sends it.
+        let device = self
+            .device
+            .clone()
+            .unwrap_or_else(purlis_core::dispatch::host);
+        purlis_core::skilluse::relayed::logged(
+            &self.project,
+            run,
+            &purlis_core::skilluse::relayed::RanAs {
+                persona: persona.as_deref(),
+                harness,
+                workspace: workspace.as_deref(),
+            },
+            &device,
+        );
     }
 
     /// **Runner chat `session`'s workspace clones as its session started here** (#2053): `None`

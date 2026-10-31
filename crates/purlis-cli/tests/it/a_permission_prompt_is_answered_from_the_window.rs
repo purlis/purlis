@@ -419,7 +419,7 @@ fn a_hook_inside_purlis_s_linux_sandbox_asks_the_window_the_same() {
     let host = host();
     let socket = host.path.canonicalize().expect("the socket");
     let profile = format!(
-        "(version 1)\n(deny default)\n(allow file-read*)\n\
+        "(version 1)\n(deny default)\n(allow process-exec)\n(allow file-read*)\n\
          (allow network-outbound (remote unix-socket (path-literal \"{}\")))\n\
          (allow file-write* (literal \"/dev/null\"))\n",
         socket.display()

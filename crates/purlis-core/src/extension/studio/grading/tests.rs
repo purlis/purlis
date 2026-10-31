@@ -272,7 +272,10 @@ fn a_report_that_would_not_be_read_back_ends_the_grade() {
                 "query": "make me a pdf", "should_trigger": true, "arm": "with", "runs": 1,
                 "triggered": 2, "rate": 2.0, "pass": true, "chats": ["chat-0"],
             }],
-            "arms": [],
+            "arms": [{
+                "arm": "with", "pass_rate": null, "tokens": null, "seconds": null,
+                "chats": 1, "not_run": 0,
+            }],
             "delta": null,
         },
     }));
@@ -328,8 +331,10 @@ fn a_question_that_fails_on_the_way_says_so() {
 #[test]
 fn a_stop_ends_the_question_and_what_ran_is_scored_stopped() {
     let request = request();
-    let mut host = Host::default();
-    host.stop = true;
+    let mut host = Host {
+        stop: true,
+        ..Host::default()
+    };
     let mut grading = Grading::new("probe", &request, &mut host, capped(100_000));
     assert!(grading.stopped());
     assert_eq!(grading.heard(PROTOCOL, &run_chat("with")), None);

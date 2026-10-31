@@ -405,9 +405,15 @@ use crate::view::{Limits, Views};
 /// what it names removed, only where the whole result is the digest it names. Carried out and
 /// refused as `keep_profile` is. The desktop sends such a runner all of them on any refusal, and a
 /// host before 1.61 is sent all of them, as before.
+///
+/// 1.62 added the Skill studio's flag to a chat's start on a runner (SK-20b, #3084): `start_program`
+/// may carry `plane_skills`, whether the plane's skills reach the chat as the desktop read the
+/// flag, which a runner arms the chat by in place of its own machine's flag. Taken only from the
+/// window or its host's relay. A host before 1.62 ignores the field and reads its own flag, as
+/// before.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 61,
+    minor: 62,
 };
 
 /// The version that first says which settings files it holds and keeps only what changed (#4088).
@@ -1559,6 +1565,12 @@ pub struct StartProgram {
     /// of the persona as it reads it. None where nothing is allowed there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools_allowed: Option<String>,
+    /// Whether the plane's skills reach it, as the desktop that starts it on a runner read the
+    /// Skill studio's flag (1.62, SK-20b #3084): the runner arms it with the project's skills by
+    /// this word, not its own machine's. None where the starter does not say, and the host reads
+    /// its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plane_skills: Option<bool>,
     /// The profile it runs on, or none (1.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
@@ -1647,6 +1659,7 @@ impl StartProgram {
             first_message: None,
             without_sandbox: false,
             tools_allowed: None,
+            plane_skills: None,
             launch: None,
             reach: None,
             confinement: None,
@@ -3082,6 +3095,18 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
             why: format!(
                 "what the person allowed of a persona's tools is named by purlis's window, or \
                  its host's relay, only, and this link is `{scope}`"
+            ),
+        });
+    }
+    if let Command::StartProgram(start) = command
+        && start.plane_skills.is_some()
+        && !scope.may(Power::Confine)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "whether the plane's skills reach a chat is named by purlis's window, or its \
+                 host's relay, only, and this link is `{scope}`"
             ),
         });
     }
