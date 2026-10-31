@@ -293,18 +293,23 @@ fn ignored_of(
     held: &[HeldFile],
 ) -> Result<BTreeSet<String>, String> {
     let prefix = folder.join("/");
-    let mut args = vec![
-        "check-ignore".to_owned(),
-        "-z".to_owned(),
-        "--no-index".to_owned(),
-        "--".to_owned(),
-    ];
-    args.extend(
-        held.iter()
-            .map(|file| format!("{prefix}/{}", file.parts.join("/"))),
-    );
-    let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let run = git::run(plane, &args, git::READ).map_err(|why| why.to_string())?;
+    let mut asked = Vec::new();
+    for file in held {
+        asked.extend_from_slice(format!("{prefix}/{}", file.parts.join("/")).as_bytes());
+        asked.push(0);
+    }
+    let raw = git::run_with_input(
+        plane,
+        &["check-ignore", "-z", "--stdin", "--no-index"],
+        asked,
+        git::READ,
+    )
+    .map_err(|why| why.to_string())?;
+    let run = git::Run {
+        code: raw.code,
+        out: String::from_utf8_lossy(&raw.out).into_owned(),
+        err: String::from_utf8_lossy(&raw.err).into_owned(),
+    };
     ignored_from(&run, &prefix)
 }
 

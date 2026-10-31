@@ -61,8 +61,8 @@ impl OnTheForge {
         let not_a_forge = || {
             format!(
                 "{url} is not on a GitHub or GitLab host this project knows, so no request can \
-                 be opened there. Export the skill instead, or add the host as a [[forge]] in \
-                 charter.toml"
+                 be opened there. Export the skill instead, or declare the host as a forge of this \
+                 project"
             )
         };
         if !url.starts_with("https://") {
