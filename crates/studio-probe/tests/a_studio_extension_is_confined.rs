@@ -487,9 +487,19 @@ fn runnable_in(dir: &Path) -> (String, String) {
     (script, compiled)
 }
 
-fn it_starts_programs_from_what_it_reads() {
+/// `text` as a program in the probe's own folder, which purlis fingerprints.
+fn own_script(probe: &Probe, name: &str, text: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt as _;
-    let probe = Probe::approved();
+    let at = probe.ext().join("bin").join(name);
+    std::fs::write(&at, text).expect("a script");
+    std::fs::set_permissions(&at, std::fs::Permissions::from_mode(0o755)).expect("its mode");
+    at
+}
+
+fn it_starts_programs_from_what_it_reads() {
+    let probe = Probe::assembled();
+    let script = own_script(&probe, "own.sh", "#!/bin/sh\necho its own\n");
+    let probe = probe.installed();
     let said = probe.tried(&["start", "/bin/sh", "-c", "echo from the shell"]);
     assert!(said.contains("exit status: 0"), "the shell started: {said}");
     assert!(said.ends_with("from the shell"), "{said}");
@@ -500,19 +510,17 @@ fn it_starts_programs_from_what_it_reads() {
     let own = shown(&probe.ext().join("bin/studio-probe"));
     let said = probe.tried(&["start", &own]);
     assert!(said.contains("exit status: 0"), "{own} started: {said}");
-    // A script in the folder it writes, run by the system's shell.
-    let script = probe.ext().join("state/own.sh");
-    std::fs::write(&script, "#!/bin/sh\necho its own\n").expect("a script");
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("its mode");
+    // A script of its own, run by the system's shell.
     let said = probe.tried(&["start", &shown(&script)]);
     assert!(said.ends_with("its own"), "{said}");
 }
 
 fn it_starts_no_program_outside_what_it_reads() {
-    use std::os::unix::fs::PermissionsExt as _;
-    let probe = Probe::approved();
+    let probe = Probe::assembled();
     let beside = probe.dir.path().join("beside");
     let (script, compiled) = runnable_in(&beside);
+    let by = own_script(&probe, "by.sh", &format!("#!{compiled}\n"));
+    let probe = probe.installed();
     for program in [&script, &compiled] {
         refused(&probe.tried(&["read", program]), "reading it first");
         refused(&probe.tried(&["start", program]), program);
@@ -527,9 +535,6 @@ fn it_starts_no_program_outside_what_it_reads() {
         );
     }
     // As the interpreter of a script it may start.
-    let by = probe.ext().join("state/by.sh");
-    std::fs::write(&by, format!("#!{compiled}\n")).expect("a script");
-    std::fs::set_permissions(&by, std::fs::Permissions::from_mode(0o755)).expect("its mode");
     let said = studio_probe::tried(&["start".to_owned(), shown(&by)]);
     assert!(said.contains("exit status: 0"), "unheld: {said}");
     refused(&probe.tried(&["start", &shown(&by)]), "its interpreter");
