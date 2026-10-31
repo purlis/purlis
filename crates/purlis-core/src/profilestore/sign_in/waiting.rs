@@ -5,7 +5,7 @@
 //! browser's answer belongs to a login purlis is holding, before it connects to anything.
 //!
 //! The runner's held login writes one record for the `state` its page printed ([`Waiting`]), in
-//! the app's state in the data home, which no chat's sandbox reads or writes (so none can lock
+//! a folder of the data home no chat's sandbox reads or writes (so none can lock
 //! one). Named by the state's digest, so the folder says nothing of it. The record is locked for as long as its
 //! holder runs, so one a holder left behind when it was killed counts for nothing. A record is
 //! taken once ([`take`]): one answer goes to one login.
@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 use sha2::Digest;
 
-/// The folder of the app's state these records are in.
+/// The folder of the data home these records are in.
 const DIR: &str = "sign-ins-waiting";
 
 /// **Where this machine keeps its records**: none where it has no usable data home.
@@ -28,7 +28,7 @@ pub fn kept_here() -> Option<PathBuf> {
 }
 
 pub(crate) fn in_data_home(data: &Path) -> PathBuf {
-    data.join(crate::appstate::DIR).join(DIR)
+    data.join(DIR)
 }
 
 /// **A login waiting for the browser's answer with one `state`**: the record is there, and locked,
@@ -68,7 +68,7 @@ pub fn take(dir: &Path, state: &str) -> bool {
     std::fs::remove_file(&path).is_ok() && held
 }
 
-/// `dir`, made private as the app's state is.
+/// `dir`, made private.
 fn private_folder(dir: &Path) -> io::Result<()> {
     let mut builder = std::fs::DirBuilder::new();
     builder.recursive(true);

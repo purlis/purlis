@@ -1681,6 +1681,10 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             Homes::charter_data(&machine(Os::Linux))
                 .expect("a data home")
                 .join(crate::dockerpool::settings::DIR),
+            // Which sign-ins a runner's logins wait for (#4044).
+            crate::profilestore::sign_in::waiting::in_data_home(
+                &Homes::charter_data(&machine(Os::Linux)).expect("a data home"),
+            ),
             // The browser logins this device keeps (#2021).
             Homes::charter_data(&machine(Os::Linux))
                 .expect("a data home")

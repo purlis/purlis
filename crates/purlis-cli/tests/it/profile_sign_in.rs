@@ -102,7 +102,7 @@ impl Machine {
 
     /// The records of what this machine's logins wait for.
     fn waiting(&self) -> usize {
-        fs::read_dir(self.path("data/app-state/sign-ins-waiting")).map_or(0, Iterator::count)
+        fs::read_dir(self.path("data/sign-ins-waiting")).map_or(0, Iterator::count)
     }
 
     fn said(&self, args: &[&str]) -> String {

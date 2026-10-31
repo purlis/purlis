@@ -374,7 +374,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`index/<clone-key>/` — the project's search index](#indexclone-key--the-projects-search-index)
   - [`index/<clone-key>/writer.lock`](#indexclone-keywriterlock)
   - [State purlis keeps **outside** the plane](#state-purlis-keeps-outside-the-plane)
-  - [`<data>/app-state/sign-ins-waiting/<digest>`](#dataapp-statesign-ins-waitingdigest)
+  - [`<data>/sign-ins-waiting/<digest>`](#datasign-ins-waitingdigest)
   - [`<data>/app-state/<clone key>/` — the app's own state of a project](#dataapp-stateclone-key--the-apps-own-state-of-a-project)
   - [`<data>/app-state/<clone key>/skill-drafts/<id>/`](#dataapp-stateclone-keyskill-draftsid)
   - [`<data>/app-state/<clone key>/skill-grades/<YYYY-MM>.jsonl`](#dataapp-stateclone-keyskill-gradesyyyy-mmjsonl)
@@ -7880,7 +7880,7 @@ refuses a `<data>` under a project or inside any git work tree.
 | `<config>/telemetry.json` | Machine, device-bound | **decided, not yet written** (ADR 0083). Whether telemetry is collected, its retention and cap, each project's open content gates, and the export destinations: each one's name, OTLP/HTTP URL, signals and a pointer to its auth header in the keyring. No project file opens a gate or names a destination. Device-bound because of those pointers and consents. Denied to chats (ADR 0067 §5 class 2). Backed up by FR-10 | a `local-ui` caller only (the window, or `purlis` on that scope), through `purlisd` (OB-2, OB-9) |
 | keyring item for a telemetry export destination's auth header | Keyring | **decided, not yet written** (ADR 0083). The header value an export destination sends, such as a backend's API key. Denied to chats | OB-9 |
 
-### `<data>/app-state/sign-ins-waiting/<digest>`
+### `<data>/sign-ins-waiting/<digest>`
 - **Format:** an empty file on a runner, named by the lowercase hex SHA-256 of the `state` a login's
   page printed (#4044), in a folder made `0700`. Its holder, the runner's `purlis profile sign-in`,
   keeps it locked for as long as the login runs and removes it as the login ends. The runner's host
