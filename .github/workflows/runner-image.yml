@@ -187,8 +187,10 @@ jobs:
         include:
           - arch: amd64
             runner: ubuntu-24.04
+            syft_sha256: caeedb81fb0491615f1ebd1761e4145d41ee86dd2cc7bf80669f9f5ad9d6133d
           - arch: arm64
             runner: ubuntu-24.04-arm
+            syft_sha256: c46d5e4c28e12aa4c5becfaa343ef1c7f89045b6b895f2c21d471c62db09c706
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
@@ -281,7 +283,38 @@ jobs:
           tags: purlis-runner-team-example:candidate
 
       - name: The runner image keeps the contract
-        run: node tools/runner-image-contract.mjs purlis-runner:candidate
+        run: node tools/runner-image-contract.mjs --carries gh,glab purlis-runner:candidate
+      # Confined as a Docker pool confines its runner (`Runner::create_args`), on each
+      # architecture: the chat that runs them inside purlis's wrap is the parity job's, on amd64.
+      - name: gh and glab run as a Docker pool's runner runs them
+        run: |
+          set -euo pipefail
+          docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --security-opt "seccomp=crates/purlis-core/src/dockerpool/seccomp.json" \
+            --network none --tmpfs /tmp:noexec --tmpfs /home/purlis:uid=10001,gid=10001 \
+            --entrypoint /bin/sh purlis-runner:candidate -c 'gh --version && glab --version'
+      # What each program adds to the image, in this run's log (#4354).
+      - name: The image's size, layer by layer
+        run: docker history --format '{{.Size}}  {{.CreatedBy}}' purlis-runner:candidate | cut -c1-120
+      # What `sbom` asks of the pushed images, asked of a run that pushes nothing, so a change
+      # that loses them is seen on its pull request. syft is the version `sbom` pins, for this
+      # architecture.
+      - name: This architecture's SBOM names gh and glab
+        if: env.PUBLISH != 'true'
+        env:
+          ARCH: ${{ matrix.arch }}
+          SYFT_VERSION: 1.52.0
+          SYFT_SHA256: ${{ matrix.syft_sha256 }}
+          REQUIRED_PURLS: pkg:deb/ubuntu/gh@ pkg:deb/ubuntu/glab@
+        run: |
+          set -euo pipefail
+          curl -fsSL --proto '=https' -o "$RUNNER_TEMP/syft.tar.gz" "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_${ARCH}.tar.gz"
+          echo "$SYFT_SHA256  $RUNNER_TEMP/syft.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/syft.tar.gz" -C "$RUNNER_TEMP" syft
+          purls=$("$RUNNER_TEMP/syft" scan docker:purlis-runner:candidate -o cyclonedx-json | jq -r '.components[]?.purl // empty')
+          for want in $REQUIRED_PURLS; do
+            grep -m1 "^$want" <<<"$purls" || { echo "::error::the SBOM has no $want component"; exit 1; }
+          done
       - name: The example of a team's own image keeps the contract
         run: node tools/runner-image-contract.mjs purlis-runner-team-example:candidate
 
@@ -502,10 +535,10 @@ jobs:
           "$RUNNER_TEMP/syft" scan "registry:$IMAGE@$(cat "$RUNNER_TEMP/digests/arm64")" -o "cyclonedx-json=out/purlis-runner-arm64.cdx.json"
       # An SBOM that lists nothing looks like one that lists everything until someone reads it:
       # each has to name the binary's own crate, which it does only when the binary was built
-      # with cargo auditable, and the base image's packages.
+      # with cargo auditable, the base image's packages, and the forge programs (#4354).
       - name: Each SBOM names the purlis binary and the image's packages
         env:
-          REQUIRED_PURLS: pkg:cargo/purlis-cli@ pkg:deb/
+          REQUIRED_PURLS: pkg:cargo/purlis-cli@ pkg:deb/ pkg:deb/ubuntu/gh@ pkg:deb/ubuntu/glab@
         run: |
           set -euo pipefail
           for sbom in out/*.cdx.json; do

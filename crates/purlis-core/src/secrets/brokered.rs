@@ -1669,9 +1669,16 @@ pub fn armed_as(asker: &Asker, wanted: &Wanted) -> Result<String, String> {
         .find(|word| *word != "--")
         .cloned()
         .unwrap_or_default();
+    let listed = declared_now(&asker.root, persona);
+    // A tool this runner's image has no program for says so, before anything is asked (#4354).
+    if let Some(why) =
+        crate::sandbox::tools::absent_from_the_image(&confines.tools, &listed, persona, &program)
+    {
+        return Err(why);
+    }
     let ready = crate::sandbox::tools::declared(
         &confines.tools,
-        &declared_now(&asker.root, persona),
+        &listed,
         persona,
         &crate::sandbox::tools::Asked {
             vault: &wanted.vault,

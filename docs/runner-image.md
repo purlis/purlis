@@ -93,8 +93,21 @@ own, as long as it keeps the contract below.
   builds and checks it the same way, and pushes nothing.
 
 The image is Ubuntu 26.04 LTS (its base pinned by digest) with `ca-certificates`, `git` and
-`tini`, the libraries and the font the browser engine needs (below), the `purlis` binary and
-purlis's plugin beside it, and one user, `purlis` (10001), who is not root. Its source is [`runner-image/Dockerfile`](../runner-image/Dockerfile).
+`tini`, `gh` and `glab`, the libraries and the font the browser engine needs (below), the
+`purlis` binary and purlis's plugin beside it, and one user, `purlis` (10001), who is not root.
+Its source is [`runner-image/Dockerfile`](../runner-image/Dockerfile).
+
+**`gh` and `glab`** are in purlis's image so a chat on a runner can use them. They are not part
+of the contract, so a team's own image may leave them out. Each comes from its vendor's own
+release package, GitHub's and GitLab's, pinned in the Dockerfile by version and checked by
+SHA-256 for each architecture as the build fetches it. A new version of either is a change to
+that file, made by hand, so a security fix in either reaches the image only then. They add about
+90 MB to the `amd64` image and about 84 MB to the `arm64` one, and the image's SBOM lists both.
+
+No credential comes with them. Without a tool declared for the chat's persona, `gh` on a runner
+is simply not signed in. A persona's tool named `gh` or `glab` runs as any declared tool does
+([ADR 0077](adr/0077-a-forge-sign-in-is-the-humans-through-one-registration-per-forge-host-and-it-mints-nothing-for-an-agent.md)). On an image without the program, the tool is refused with a sentence naming the
+program and the pool's image.
 
 ## The contract
 
@@ -121,7 +134,7 @@ it starts the image's default command. It prints every problem it found, one to 
 | A home | `HOME` is an absolute path to a folder the user can write. purlis keeps its config and data under it, by the XDG base directory rules. On a Docker pool a volume of the runner's own is mounted there; on a cluster pool the runner's home is made on its pod's volume from it ([below](#on-a-cluster-pool)), so `HOME` is not `/` and does not hold `/var/lib/purlis`, through a link or otherwise. |
 | `/tmp` | Writable. The session host makes its socket's folder there (`/tmp/purlis-<uid>/`, closed to every other user) unless `XDG_RUNTIME_DIR` names a folder of the user's own. With a read-only root file system, mount a writable volume at `/tmp` and at `HOME`. A Docker pool runs every runner that way: a read-only root, its home on a volume of its own, and a `tmpfs` at `/tmp` mounted `noexec`, so nothing in the image may need to run a program from `/tmp`. |
 | The default command | `purlis serve`, run under an init that reaps processes (`tini`, `dumb-init`, `catatonit` or `docker-init`) as PID 1: `ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/purlis"]` and `CMD ["serve"]`. It prints `ready` within a minute. A Docker pool runs it as `purlis serve --suspends-unlinked`, so a runner left a day without a link from its desktop stops itself, keeping its home (#2051); a pool with its own time (`suspendAfter`, #3471) runs it as `purlis serve --suspends-unlinked=<duration>`, such as `=12h`, which only a purlis since #3471 takes. A Docker pool runs `/usr/local/bin/purlis` itself, whatever the image's entrypoint (`--entrypoint /usr/local/bin/purlis`), under the runtime's own init (`--init`): the `purlis` it asks of the image before the runner is made is the one that serves (#3702). Docker brings its init with it; Podman's is `catatonit`, which a machine running rootless Podman needs installed (its `catatonit` package, or Podman's `init_path`), or a pool's runner is not made there. Its standard error is its log: purlis's own `info` lines and up, and a library's warnings, each redacted as the app's log is, kept by whatever keeps the container's log. |
-| Tools | `git` and `bash` on `PATH`, and a certificate bundle at `/etc/ssl/certs/ca-certificates.crt`. |
+| Tools | `git` and `bash` on `PATH`, and a certificate bundle at `/etc/ssl/certs/ca-certificates.crt`. Nothing more is required: `--carries gh,glab`, which `runner-image.yml` passes for purlis's own image alone, also asks that each answers `--version`. |
 | No harness | No `claude`, `codex` or `opencode` on `PATH`. A runner gets exactly the harness version its profile pins (spec #2030): as a chat first starts on it, as its profile is signed in there (Sign in on the profile's line in Settings › Pools, or `purlis profile sign-in <profile> --pool <pool>` from your own terminal, each of which says so), or as the desktop asks whether it is signed in there (fetched in the background, so the question is not held up; #4007), purlis downloads that version from the harness's own release over https, checks it against the SHA-256 its vendor publishes, and keeps it in the runner's data home on its home volume (`<data>/harnesses/`, never `/tmp`), so a runner needs to reach `storage.googleapis.com` for Claude Code and `api.github.com` and `github.com` for Codex and opencode (#3446). |
 
 ### What the team keeps
@@ -235,6 +248,6 @@ COPY --from=ghcr.io/purlis/purlis-runner@sha256:<digest> /usr/local/bin/purlis /
 ```
 
 [`runner-image/team-example.Dockerfile`](../runner-image/team-example.Dockerfile) is a
-complete example on Debian, with two tools of a team's own. CI builds it and checks it
+complete example on Debian, with two tools of a team's own, and without `gh` or `glab`. CI builds it and checks it
 against the contract on every run. That shows an image other than purlis's can keep the
 contract.

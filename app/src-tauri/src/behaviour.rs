@@ -3693,6 +3693,100 @@ fn a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(target: &Targe
     browsers.close(&browser).expect("the browser ends");
 }
 
+/// **`gh` and `glab` run in a chat on a runner, and a declared tool of them is what its persona
+/// says** (#4354): a Codex chat the runner's own host composes, inside purlis's wrap, on the runner
+/// image as it ships but for the test's own files. With no tool `gh` answers and is not signed in
+/// (ADR 0077). Declared, `gh` runs through its shim on the value its desktop sent for that run,
+/// which stands in for the person's Allow and vault. A declared program the image does not have
+/// says so, naming the image.
+fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Target) {
+    let Some(runner) = &target.runner else {
+        return;
+    };
+    const TOKEN: &str = "a-token-no-service-takes";
+    let bin = tempfile::tempdir().expect("a folder for the harness");
+    let program = stand_in::program(
+        bin.path(),
+        "codex",
+        &format!(
+            "#!/bin/sh\n\
+             [ \"$1\" = login ] && [ \"$2\" = status ] && exit 0\n\
+             for word in \"$@\"; do [ \"$word\" = --version ] && {{ echo 'codex-cli 0.147.0'; exit 0; }}; done\n\
+             gh --version | head -1 | sed 's/ version.*/ ANSWERED./'\n\
+             glab --version | head -1 | cut -c1-4 | sed 's/$/ ANSWERED./'\n\
+             if [ \"$(gh auth token 2>/dev/null)\" = {TOKEN} ]; then echo 'TOKEN handed.'; else echo 'TOKEN none.'; fi\n\
+             kubectl version; echo \"KUBECTL ended $?.\"\n\
+             printf 'TRIED.\\n'\n\
+             read line\n",
+        ),
+    );
+    a_profile_of(target, "codex", "work", &program);
+    let chat_says = |tools_allowed: Option<String>| {
+        let id = target
+            .sessions
+            .open_named(
+                None,
+                &crate::host::Named {
+                    tools_allowed,
+                    ..named("run them", false)
+                },
+                purlis_core::sandbox::plan::Hearing::default(),
+                &|_| {},
+            )
+            .expect("the sandboxed chat starts on the runner")
+            .number;
+        (id, Pane::on(target, id))
+    };
+
+    // No tool: both answer, and neither is anyone.
+    let (id, pane) = chat_says(None);
+    pane.shows("TRIED.");
+    pane.shows("gh ANSWERED.");
+    pane.shows("glab ANSWERED.");
+    pane.shows("TOKEN none.");
+    target.sessions.close(id).expect("it closes");
+
+    // Declared, in the project as the runner holds it and here, and allowed by this desktop.
+    let declared = "\n[sandbox.personas.steward]\ntools = { \
+         gh = { vault = \"forge\", as = \"GH_TOKEN env\", key = \"token\" }, \
+         kubectl = { vault = \"forge\", as = \"KUBECONFIG file\", key = \"kubeconfig\" } }\n";
+    let here = target.root.join("purlis.toml");
+    let before = std::fs::read_to_string(&here).unwrap_or_default();
+    std::fs::write(&here, format!("{before}{declared}")).expect("declared here");
+    runner.runs(
+        false,
+        &format!(
+            "cat >> '{}/purlis.toml'",
+            target.project_on_its_runner(runner)
+        ),
+        declared.as_bytes(),
+    );
+    let tools = purlis_core::sandbox::tools::declared_and_allowed_here(&target.root, "steward").0;
+    assert_eq!(tools.len(), 2, "both tools are read: {tools:?}");
+    target
+        .hooks
+        .exec_secrets_with(Arc::new(|ask, _reader, _writer, _told| {
+            let handed = purlis_core::secrets::brokered::Handed::of(
+                ask.chat,
+                ask.runs_as
+                    .as_deref()
+                    .expect("the tool its host said it runs"),
+                ask.run.as_deref().expect("the run its host numbered"),
+                [("token".to_owned(), TOKEN.to_owned())],
+            );
+            assert!(purlis_core::hookwire::relay::hand_values(handed).is_ok());
+        }));
+    let digest = purlis_core::sandbox::persona::digest_of(&[], &tools, false);
+    let (id, pane) = chat_says(Some(digest));
+    pane.shows("TRIED.");
+    pane.shows("gh ANSWERED.");
+    pane.shows("glab ANSWERED.");
+    pane.shows("TOKEN handed.");
+    pane.shows("has no kubectl");
+    pane.shows("KUBECTL ended 127.");
+    target.sessions.close(id).expect("it closes");
+}
+
 /// Where the parity image keeps the program Claude Code ships (`tests/parity/runner.Dockerfile`).
 const REAL_CLAUDE_CODE: &str = "/usr/local/lib/parity/claude-code";
 
@@ -4017,6 +4111,16 @@ mod the_persons_shell_on_a_runner_makes_no_namespace {
     fn in_a_docker_pool() {
         if let Some(target) = super::in_a_docker_pool() {
             super::the_persons_shell_on_a_runner_makes_no_namespace(&target);
+        }
+    }
+}
+
+mod a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them {
+    /// Run by the parity job, which names a runner image; elsewhere it runs nothing.
+    #[test]
+    fn in_a_docker_pool() {
+        if let Some(target) = super::in_a_docker_pool() {
+            super::a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(&target);
         }
     }
 }

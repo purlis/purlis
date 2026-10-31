@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { configProblems } from "./runner-image-contract.mjs";
+import { configProblems, parseArguments } from "./runner-image-contract.mjs";
 
 const inside = join(dirname(fileURLToPath(import.meta.url)), "runner-image-contract.sh");
 
@@ -133,6 +133,33 @@ test("an image that holds what the contract asks passes the inside check", () =>
   const { status, problems, stderr } = check(machine());
   assert.deepEqual(problems, [], stderr);
   assert.equal(status, 0);
+});
+
+test("a program the image is to carry has to answer, and one nobody named is not asked for", () => {
+  const env = machine();
+  assert.deepEqual(check(env).problems, [], "the contract itself asks for neither");
+  const carrying = { ...env, CONTRACT_CARRIES: "gh glab" };
+  const { status, problems } = check(carrying);
+  assert.equal(status, 1);
+  assert.equal(problems.length, 2, `${problems}`);
+  assert.match(problems[0], /carry gh/);
+  assert.match(problems[1], /carry glab/);
+
+  for (const tool of ["gh", "glab"]) {
+    const answers = join(env.PATH, tool);
+    writeFileSync(answers, "#!/bin/sh\n[ \"$1\" = --version ]\n");
+    chmodSync(answers, 0o755);
+  }
+  assert.deepEqual(check(carrying).problems, []);
+  assert.deepEqual(check({ ...carrying, CONTRACT_CARRIES: "" }).problems, []);
+});
+
+test("the command line takes an image, and the programs it carries before it", () => {
+  assert.deepEqual(parseArguments(["image"]), { image: "image", carries: [] });
+  assert.deepEqual(parseArguments(["--carries", "gh,glab", "image"]), { image: "image", carries: ["gh", "glab"] });
+  for (const wrong of [[], ["a", "b"], ["--carries"], ["--carries", "gh"], ["--carries", "gh;id", "image"], ["--other", "image"]]) {
+    assert.equal(parseArguments(wrong), null, wrong.join(" "));
+  }
 });
 
 test("the inside check names each thing an image lacks, and fails", () => {

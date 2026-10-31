@@ -307,7 +307,8 @@ fn a_runners_home_is_on_the_volume_its_pod_mounts_and_its_group_may_write() {
         runner["env"],
         json!([
             { "name": "HOME", "value": upstream::RUNNER_HOME },
-            { "name": upstream::IDLE_AFTER_VAR, "value": "30m" }
+            { "name": upstream::IDLE_AFTER_VAR, "value": "30m" },
+            { "name": upstream::POOL_IMAGE_VAR, "value": pool.spec.image }
         ])
     );
     assert!(upstream::RUNNER_HOME.starts_with(&format!("{}/", upstream::KEPT_FOLDER)));

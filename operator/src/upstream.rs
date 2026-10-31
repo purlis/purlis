@@ -104,6 +104,10 @@ pub const MINTING_MARK: &str = "PURLIS_MINTING_POOL";
 /// name as `crates/purlis-core/src/clusterpool/idle.rs`.
 pub const IDLE_AFTER_VAR: &str = "PURLIS_IDLE_AFTER";
 
+/// **The variable naming the image a runner runs** (`purlis_core::sandbox::tools::POOL_IMAGE_VAR`,
+/// #4354): said back to the person if a declared tool's program is not in the image.
+pub const POOL_IMAGE_VAR: &str = "PURLIS_POOL_IMAGE";
+
 /// What [`KEY_STEP`] runs, after the image's own entrypoint (`purlis`).
 pub fn key_step_args() -> Vec<String> {
     [
@@ -495,6 +499,11 @@ pub fn template_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -
             .chain(std::iter::once(EnvVar {
                 name: IDLE_AFTER_VAR.to_owned(),
                 value: Some(pool.spec.idle_after.clone()),
+                ..EnvVar::default()
+            }))
+            .chain(std::iter::once(EnvVar {
+                name: POOL_IMAGE_VAR.to_owned(),
+                value: Some(pool.spec.image.clone()),
                 ..EnvVar::default()
             }))
             .chain(pool.spec.forge.is_some().then(|| EnvVar {
