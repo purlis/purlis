@@ -581,7 +581,8 @@ pub const NO_SANDBOX_WHERE_A_TOKEN_IS_NEAR: &str = "this runner's pool mints Git
 /// read refuses too.
 #[cfg(unix)]
 fn refused_where_a_token_is_near(kind: ProgramKind) -> Result<(), String> {
-    let told = crate::machine::config_root().map_or(Ok(false), |config| {
+    // A fenced build keeps no store of this machine's, so it was told of nothing.
+    let told = crate::forge::apptoken::record_root().map_or(Ok(false), |config| {
         crate::forge::mintport::told(&config).map(|told| told.is_some())
     });
     no_sandbox_refused(kind, told)

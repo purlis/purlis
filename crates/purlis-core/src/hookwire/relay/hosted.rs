@@ -77,7 +77,7 @@ pub fn in_cluster(
         .iter()
         .find(|ready| ready.tool.name == tool && ready.tool.mint.is_some())?;
     let key = ready.tool.values.first()?.key.clone();
-    let config_root = crate::machine::config_root()?;
+    let config_root = crate::forge::apptoken::record_root()?;
     let minted =
         crate::forge::apptoken::token_in_cluster(&asker.root, asker.chat, &ready.tool, &|app| {
             crate::forge::mintport::mint_in_time(&config_root, app)
