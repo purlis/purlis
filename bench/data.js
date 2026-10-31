@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793439846056,
+  "lastUpdate": 1793441066366,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33054,6 +33054,48 @@ window.BENCHMARK_DATA = {
             "value": 101.74042,
             "unit": "ms",
             "extra": "median of 5 runs: 101.352, 101.484, 101.740, 102.375, 102.421 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f18c3c4263975c756deededed116fc0f9dec6b03",
+          "message": "theme: a notice card is read where it is drawn (#4210) (#4213)\n\nA notice card's title and mark are read on the ground each card stands\non (news on the overlay, trouble and attention on their own), unless a\ntheme sets the notice's or the part's fill; a card's mark is drawn by\ndefault in its kind's colour (news in state.success), held as a mark\nat 3:1. A new check finding, notice-way-not-apart, flags a theme whose\nnotice card's secondary way (its own button fill, or the card's mix of\ncontrol.base toward text.primary at 14% and 22%) stands under SEEN from\nany card ground. A test holds the check's mix to notice.css.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T09:29:37Z",
+          "tree_id": "c3a14eea710e5a56801651df1f52c66b9b6dcf5f",
+          "url": "https://github.com/purlis/purlis/commit/f18c3c4263975c756deededed116fc0f9dec6b03"
+        },
+        "date": 1793441060194,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.665116,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.660, 0.661, 0.665, 0.668, 0.687 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6843505,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.442, 16.490, 16.684, 16.702, 16.995 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.21939850000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.926, 102.072, 102.219, 102.567, 103.336 ms"
           }
         ]
       }
