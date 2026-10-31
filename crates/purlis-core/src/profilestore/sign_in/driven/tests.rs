@@ -921,7 +921,10 @@ fn driving_on(port: u16, login: &Login, carry: Carry) -> Driving {
         listen_on: Some(port),
         forward: Mutex::new(Forwarded::Not),
     });
-    run(login, codex(), Some(forwarding), || Standing::SignedIn).unwrap()
+    run(login, codex(), Some(forwarding), LONGEST, || {
+        Standing::SignedIn
+    })
+    .unwrap()
 }
 
 /// **A login approved in the browser, end to end**: the page is told once this device listens,

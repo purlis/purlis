@@ -1471,6 +1471,11 @@ pub async fn pool_sign_in_start(
             ),
             Yours::Cluster(_) => None,
         };
+        // The pool's limit as it stands: only the wait changes, and every check above stands.
+        let wait = purlis_core::runners::chosen_limits_of(&config, &pool)
+            .unwrap_or_default()
+            .in_force(LimitId::SignInWait);
+        let longest = Duration::from_secs(wait.saturating_mul(60));
         let login = login_on(&yours, &config, &pool, &name, provider.as_deref(), typed)?;
         let carry: callback::Carry = {
             let (config, pool, yours) = (config.clone(), pool.clone(), yours.clone());
@@ -1492,11 +1497,6 @@ pub async fn pool_sign_in_start(
                 _ => Standing::CannotTell,
             }
         };
-        // The pool's limit as it stands: only the wait changes, and every check above stands.
-        let wait = purlis_core::runners::chosen_limits_of(&config, &pool)
-            .unwrap_or_default()
-            .in_force(LimitId::SignInWait);
-        let longest = Duration::from_secs(wait.saturating_mul(60));
         let driving = Arc::new(match terminal {
             Some(_) => driven::in_a_terminal(&login, longest, check)?,
             None => driven::drive_with(
