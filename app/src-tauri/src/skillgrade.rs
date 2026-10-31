@@ -481,12 +481,15 @@ pub(crate) struct Running {
     /// The copy a saved edit of which started it (SK-58), by its opt-in's key (level and
     /// name): the next save of that copy stops it. `None` for a grade pressed by hand.
     pub(crate) after_edit: Option<String>,
-    /// Its latest step told to the window, where it is a skill's grade: what a page that opens
-    /// while it runs starts from (#3928). `None` for a router's grade.
-    pub(crate) step: Option<SkillGradeStep>,
-    /// Its latest step told to the window, where it is a router's grade (#4222): what its page
-    /// starts from when it opens while the grade runs. `None` for a skill's grade.
-    pub(crate) router_step: Option<crate::routergrade::RouterGradeStep>,
+    /// Its latest step told to the window: what a page that opens while it runs starts from
+    /// (#3928, #4222).
+    pub(crate) step: RunningStep,
+}
+
+/// The latest step of a grade running: a skill's or a router's, as the grade is (#4240).
+pub(crate) enum RunningStep {
+    Skill(SkillGradeStep),
+    Router(crate::routergrade::RouterGradeStep),
 }
 
 /// **The grades running in this app**, by id: one per project at a time.
@@ -870,8 +873,7 @@ pub(crate) fn begin(
                 after_edit: after_edit
                     .then(|| grades::after_edit::key(&level, &skill))
                     .flatten(),
-                step: Some(step_of(Spent::default(), 0, None, None)),
-                router_step: None,
+                step: RunningStep::Skill(step_of(Spent::default(), 0, None, None)),
             },
         );
     }
@@ -921,7 +923,7 @@ pub(crate) fn begin(
                     // Kept while it runs, so a page opened later starts from it; an end is told
                     // once it runs no more, and kept nowhere.
                     if let Some(one) = running().get_mut(&grade) {
-                        one.step = Some(step.clone());
+                        one.step = RunningStep::Skill(step.clone());
                     }
                     if let Some(follower) = &follower {
                         follower((&step).into());
@@ -1350,8 +1352,13 @@ impl SkillGrades {
 fn step_of_running(plane: &PlaneId, level: &Level, skill: &str) -> Option<SkillGradeStep> {
     running()
         .values()
-        .find(|one| one.plane == *plane && one.skill == skill && one.level.as_ref() == Some(level))
-        .and_then(|one| one.step.clone())
+        .filter(|one| {
+            one.plane == *plane && one.skill == skill && one.level.as_ref() == Some(level)
+        })
+        .find_map(|one| match &one.step {
+            RunningStep::Skill(step) => Some(step.clone()),
+            RunningStep::Router(_) => None,
+        })
 }
 
 /// **The grades of the copy of `skill` at `level`** (S6), as the eval record holds them: what the

@@ -189,8 +189,21 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
                 level: None,
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
-                step: None,
-                router_step: None,
+                step: RunningStep::Skill(SkillGradeStep {
+                    plane: plane.clone(),
+                    skill: "deploy".into(),
+                    level: SkillLevel::Project { local: false },
+                    grade: grade.to_owned(),
+                    ran: 0,
+                    of: 1,
+                    tokens: None,
+                    cost_usd: None,
+                    limit_usd: None,
+                    cap: 1_000.0,
+                    asked: 0,
+                    ended: None,
+                    said: None,
+                }),
             },
         );
         let failed = std::cell::Cell::new(false);
@@ -651,11 +664,39 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
                 level: Some(level.clone()),
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
-                step: Some(step(at, skill, grade)),
-                router_step: None,
+                step: RunningStep::Skill(step(at, skill, grade)),
             },
         );
     }
+    // A router's grade is no skill's, even one that names the skill and its level.
+    running().insert(
+        "g-3928-router".to_owned(),
+        Running {
+            plane: plane.clone(),
+            skill: "ship-3928".to_owned(),
+            level: Some(shared.clone()),
+            stop: Arc::new(AtomicBool::new(false)),
+            after_edit: None,
+            step: RunningStep::Router(crate::routergrade::RouterGradeStep {
+                plane: plane.clone(),
+                router: "relevance".to_owned(),
+                workspace: None,
+                persona: None,
+                grade: "g-3928-router".to_owned(),
+                ran: 0,
+                of: 1,
+                tokens: None,
+                cost_usd: None,
+                limit_usd: None,
+                cap: 1_000.0,
+                ended: None,
+                said: None,
+                recorded: false,
+            }),
+        },
+    );
+    assert_eq!(step_of_running(&plane, &shared, "ship-3928"), None);
+    running().remove("g-3928-router");
     let now = |level: &Level| {
         SkillGrades::of(
             &grades::Read::default(),
