@@ -441,7 +441,14 @@ exec into its pod can; so can whoever holds the node or the storage behind it, a
 snapshot or backup of the volume (Velero and the like), which holds a working link key for as
 long as the Claim lives. The namespace rule above holds for the volume too. A statement holds
 for ten minutes once signed, and the operator signs it again while it still vouches, so one
-it can no longer look at again stops vouching within ten minutes.
+it can no longer look at again stops vouching within ten minutes. A desktop reads none that holds
+more than fifteen minutes ahead of its own clock.
+
+**Before a vault value or a token goes to a runner the person marked as their own**, the desktop
+also asks the cluster that the Claim and the Pool are not stopped and that the Claim's
+`KeyPublished` condition says `Vouched`, and reads the pod's uid, so a pod made again under its
+name asks again for a browser login. None of those is signed, so they only ever refuse or ask
+again; the signed statement is what vouches.
 
 **The pod's group.** Every runner's pod is in group 10001 (`fsGroup`), which may write its
 volume. Where the volume's root ever loses that group or mode (a restore, a storage

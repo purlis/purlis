@@ -2956,7 +2956,8 @@ export const commands = {
 	 *  **Removes the pool `name`**: this desktop is taken out of its runner's peers over a link of
 	 *  its own while the runner answers, then its container and home volume are removed, and the
 	 *  pool with them. What could not be removed is answered, with how to remove it; nothing when
-	 *  all of it is gone.
+	 *  all of it is gone. Once it is gone from this machine, the window's links to its runner end, and
+	 *  the chats on them with them ([`links_end_once_gone`]).
 	 */
 	removeDockerPool: (name: string) => typedError<string | null, string>(__TAURI_INVOKE("remove_docker_pool", { name })),
 	/**

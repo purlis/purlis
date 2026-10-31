@@ -573,13 +573,13 @@ fn what_its_desktop_allowed(starting: &Starting<'_>) -> Option<String> {
 
 /// **Whether the plane's skills reach a chat this host composes** (SK-20b, #3084): the Skill
 /// studio's flag as the desktop that starts it on this runner read it, where its start says
-/// (1.61); a runner has no person to turn the preview on. A start that does not say, and one of
+/// (1.62); a runner has no person to turn the preview on. A start that does not say, and one of
 /// this machine's, takes this machine's own reading ([`crate::skills::reach_chats_here`]).
 fn plane_skills_of(starting: &Starting<'_>) -> bool {
     its_desktop_said(starting).unwrap_or_else(|| crate::skills::reach_chats_here(starting.root))
 }
 
-/// The desktop's word on the Skill studio's flag, where a link's start says it (1.61, #3084).
+/// The desktop's word on the Skill studio's flag, where a link's start says it (1.62, #3084).
 fn its_desktop_said(starting: &Starting<'_>) -> Option<bool> {
     (starting.started_by == purlis_session_protocol::auth::Scope::RemoteLink.word())
         .then_some(starting.start.plane_skills)

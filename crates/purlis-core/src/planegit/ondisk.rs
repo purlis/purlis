@@ -16,9 +16,12 @@
 //! opened without following a link, its descriptor is asked that it is a regular file with one
 //! name, and the bytes git stores are read from that descriptor. A file with a second name is
 //! never hashed, so its bytes never reach the repository's object store, and the bytes
-//! committed are the bytes that were checked, whatever has the name a moment later. A link, a
-//! folder (a nested repository) and a deletion are staged by `git add`, which reads no file's
-//! bytes.
+//! committed are the bytes that were checked, whatever has the name a moment later. The
+//! descriptor is asked again just before its bytes are hashed. Nothing else is read by its name
+//! either: a link is staged as the bytes it holds, read through its folder held open, a nested
+//! repository as the commit its `HEAD` names, and a deletion as its row taken out
+//! ([`stage_rows`]). The plane's Continue, a sandboxed chat's brokered commit and a branch
+//! folder's `--continue` stage the same way, each file as the bytes it looked at.
 //!
 //! **Asked before the staging, and again after it.** Before: each file the staging would take
 //! is looked at, and one with a second name refuses the save with nothing staged
@@ -577,165 +580,611 @@ fn remove_loose(objects: &Path, sha: &str) {
 #[cfg(not(unix))]
 fn remove_loose(_: &Path, _: &str) {}
 
-/// What a file a save stages is, asked of one open descriptor ([`opened`]).
-pub(super) enum OnDisk {
+/// What a path a save stages is, asked of the folders it is in held open one at a time and,
+/// for a file, of its one open descriptor ([`opened`]).
+pub(crate) enum OnDisk {
     /// A regular file with one name, open to read, and whether its owner may run it.
     File(std::fs::File, bool),
     /// A regular file with more than one name.
     SecondName,
-    /// Anything else, or nothing: a link, a folder (a nested repository), a removed file. Each
-    /// is staged by `git add`, which stages a link as the link and reads no file's bytes.
-    Other,
+    /// A symbolic link, and the bytes it holds: where it points, never what is there.
+    Link(Vec<u8>),
+    /// A folder, and whether it holds a `.git` (a nested repository).
+    Folder { nested: bool },
+    /// Nothing by that name.
+    Gone,
+    /// Reached only through a link, or through something that is not a folder.
+    Beyond,
+    /// A pipe, a socket or a device: git stages none of them, and refuses one it is asked to.
+    Odd,
+    /// What the file system said where it would not open the path.
+    Unread(String),
+    /// Not looked at here, where a folder cannot be held open: staged by `git add`.
+    #[cfg_attr(unix, allow(dead_code))]
+    ByGit,
 }
 
 /// What `path` (relative to `root`) is, opened one folder at a time and never through a link.
 #[cfg(unix)]
-pub(super) fn opened(root: &Path, path: &str) -> OnDisk {
+pub(crate) fn opened(root: &Path, path: &str) -> OnDisk {
+    use rustix::fs::FileType;
     let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
     let Some((name, folders)) = parts.split_last() else {
-        return OnDisk::Other;
+        return OnDisk::Beyond;
     };
-    let Ok(mut dir) = crate::held::Store::project(root) else {
-        return OnDisk::Other;
+    let mut dir = match crate::held::Store::project(root) {
+        Ok(dir) => dir,
+        Err(why) => return OnDisk::Unread(why.to_string()),
     };
     for folder in folders {
+        // Looked at first, so a link or a file on the way is told apart from a folder the
+        // file system would not open (no descriptor left, no permission).
+        match dir.entry(folder) {
+            Ok(None) => return OnDisk::Gone,
+            Ok(Some(entry)) if entry.kind != FileType::Directory => return OnDisk::Beyond,
+            Ok(Some(_)) => {}
+            Err(why) => return OnDisk::Unread(why),
+        }
         dir = match dir.sub(folder, false) {
             Ok(Some(below)) => below,
-            _ => return OnDisk::Other,
+            Ok(None) => return OnDisk::Gone,
+            Err(why) => return OnDisk::Unread(why.to_string()),
         };
     }
     match dir.open_checked(name) {
-        Ok(Some((file, entry))) if entry.kind == rustix::fs::FileType::RegularFile => {
-            if entry.links > 1 {
-                OnDisk::SecondName
-            } else {
+        Ok(None) | Err(rustix::io::Errno::NOENT) => OnDisk::Gone,
+        Ok(Some((file, entry))) => match entry.kind {
+            FileType::RegularFile if entry.links > 1 => OnDisk::SecondName,
+            FileType::RegularFile => {
                 OnDisk::File(file, entry.mode.contains(rustix::fs::Mode::XUSR))
             }
-        }
-        _ => OnDisk::Other,
+            FileType::Directory => OnDisk::Folder {
+                nested: matches!(
+                    dir.sub(name, false),
+                    Ok(Some(below)) if below.entry(".git").is_ok_and(|git| git.is_some_and(
+                        |git| matches!(git.kind, FileType::Directory | FileType::RegularFile)
+                    ))
+                ),
+            },
+            _ => OnDisk::Odd,
+        },
+        // Opened without following a link, a link answers that it is one.
+        Err(rustix::io::Errno::LOOP | rustix::io::Errno::MLINK) => match dir.read_link(name) {
+            Ok(target) => OnDisk::Link(target),
+            Err(why) => OnDisk::Unread(why.to_string()),
+        },
+        // A socket opens to nothing.
+        Err(rustix::io::Errno::NXIO) => OnDisk::Odd,
+        Err(why) => OnDisk::Unread(why.to_string()),
     }
 }
 
 /// Where a folder cannot be held open, each path is staged by `git add`.
 #[cfg(not(unix))]
-pub(super) fn opened(_: &Path, _: &str) -> OnDisk {
-    OnDisk::Other
+pub(crate) fn opened(_: &Path, _: &str) -> OnDisk {
+    OnDisk::ByGit
+}
+
+/// One path to stage, and what it is staged from.
+pub(crate) struct Row {
+    pub(crate) path: String,
+    pub(crate) from: Source,
+}
+
+/// What a [`Row`] is staged from. Nothing is read again by its name.
+pub(crate) enum Source {
+    /// A regular file, from its open descriptor: its bytes as the descriptor reads them, or
+    /// `checked`, the bytes already read from it and looked at, which are then what is staged.
+    /// Whether its owner may run it.
+    File {
+        file: std::fs::File,
+        runs: bool,
+        checked: Option<Vec<u8>>,
+    },
+    /// A symbolic link, staged as the bytes it holds.
+    Link(Vec<u8>),
+    /// A nested repository, staged as the commit its `HEAD` names.
+    Nested,
+    /// A deletion.
+    Gone,
+    /// Staged by `git add`, where a folder cannot be held open, or a link where the repository
+    /// does not keep links as links (`core.symlinks=false`).
+    ByGit,
+}
+
+impl Row {
+    /// The row `found` at `path` is staged as, or `Err` with the words for one that cannot be
+    /// staged as it is: a pipe, a socket or a device, refused in git's words, or one the file
+    /// system would not open. A file with a second name is not a row: the caller holds it
+    /// back.
+    pub(crate) fn of(path: String, found: OnDisk) -> Result<Row, String> {
+        let from = match found {
+            OnDisk::File(file, runs) => Source::File {
+                file,
+                runs,
+                checked: None,
+            },
+            OnDisk::Link(target) => Source::Link(target),
+            OnDisk::Folder { nested: true } => Source::Nested,
+            // A tracked file that is now a plain folder: the file's row goes, and what the
+            // folder holds is listed on its own. A tracked file now reached only through a
+            // link is gone too, as git reads it.
+            OnDisk::Folder { nested: false } | OnDisk::Gone | OnDisk::Beyond => Source::Gone,
+            OnDisk::Odd => {
+                return Err(format!(
+                    "{path}: can only add regular files, symbolic links or git-directories"
+                ));
+            }
+            OnDisk::ByGit => Source::ByGit,
+            OnDisk::SecondName => {
+                return Err(format!("{path} {}", Why::SecondName.words()));
+            }
+            OnDisk::Unread(why) => return Err(format!("{path} cannot be read: {why}")),
+        };
+        Ok(Row { path, from })
+    }
+}
+
+/// Which paths [`to_stage`] lists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Listing {
+    /// What `git add -A` stages: tracked paths changed or removed, and untracked ones git does
+    /// not ignore.
+    All,
+    /// What `git add --update` stages: tracked paths changed or removed.
+    Tracked,
+}
+
+/// **Each path a `git add` of the pathspecs `specs` (all of the tree where there are none)
+/// would stage in the repository at `root`.** `Err` with git's words where git could not list
+/// them.
+pub(crate) fn to_stage(
+    root: &Path,
+    specs: &[&str],
+    listing: Listing,
+) -> Result<Vec<String>, String> {
+    let mut args = vec!["ls-files", "-z", "--modified", "--deleted"];
+    if listing == Listing::All {
+        args.extend(["--others", "--exclude-standard"]);
+    }
+    args.extend(["--deduplicate", "--"]);
+    args.extend_from_slice(specs);
+    Ok(listed(root, &args)?
+        .into_iter()
+        // `--others` names a nested repository as its folder, with a `/` after it.
+        .map(|path| path.trim_end_matches('/').to_owned())
+        .collect())
+}
+
+/// What a staging does with one path, once it has looked at it ([`stage_listed`]).
+pub(crate) enum Take {
+    /// Stage it as this row.
+    Row(Row),
+    /// Hold it back, unstaged.
+    Held(Held),
+    /// Leave it out.
+    Out,
+}
+
+/// How many files a staging holds open at once: a large tree is looked at and staged a part
+/// at a time, so no staging runs out of descriptors.
+pub(crate) const OPEN_AT_ONCE: usize = 256;
+
+/// **Stages `paths` in the repository at `root` a part at a time**: each looked at
+/// ([`opened`]), handed to `take` with what it is, and the rows it takes staged
+/// ([`stage_rows`]) before the next part is opened. What `take` holds back and what
+/// [`stage_rows`] finds with a second name as it hashes are answered; the other parts are
+/// staged. `Err` with `take`'s words or git's, and then the parts before it stay staged.
+pub(crate) fn stage_listed(
+    root: &Path,
+    paths: Vec<String>,
+    mut take: impl FnMut(String, OnDisk) -> Result<Take, String>,
+) -> Result<Vec<Held>, String> {
+    let mut held = Vec::new();
+    for part in paths.chunks(OPEN_AT_ONCE) {
+        let mut rows = Vec::new();
+        for path in part {
+            let found = opened(root, path);
+            match take(path.clone(), found)? {
+                Take::Row(row) => rows.push(row),
+                Take::Held(one) => held.push(one),
+                Take::Out => {}
+            }
+        }
+        held.extend(stage_rows(root, rows)?);
+    }
+    Ok(held)
 }
 
 /// **Stages what a `git add -A` of the pathspecs `specs` (all of the tree where there are none)
-/// would, each regular file from one open descriptor**, leaving out each path `kept_out` names. A file whose descriptor says
-/// it has a second name is not staged, and is answered, for the save to refuse as it refuses
-/// one [`not_as_staged`] finds. A link, a folder or a removed file is staged by `git add`.
-/// `Err` with git's words where git could not list or stage them.
+/// would, each regular file from one open descriptor** ([`stage_listed`]), leaving out each
+/// path `kept_out` names. A file found with a second name, as it is looked at or as it is
+/// hashed, is not staged, and is answered, for the save to refuse as it refuses one
+/// [`not_as_staged`] finds. `Err` with git's words where git could not list or stage them.
 pub(crate) fn stage_named(
     root: &Path,
     specs: &[&str],
     kept_out: impl Fn(&str) -> bool,
 ) -> Result<Vec<Held>, String> {
-    let mut args = vec![
-        "ls-files",
-        "-z",
-        "--modified",
-        "--others",
-        "--deleted",
-        "--exclude-standard",
-        "--deduplicate",
-        "--",
-    ];
-    args.extend_from_slice(specs);
-    let mut files = Vec::new();
-    let mut by_git = Vec::new();
-    let mut held = Vec::new();
-    for path in listed(root, &args)? {
-        // `--others` names a nested repository as its folder, with a `/` after it.
-        let path = path.trim_end_matches('/').to_owned();
-        if kept_out(&path) {
-            continue;
-        }
-        match opened(root, &path) {
-            OnDisk::File(file, runs) => files.push((path, file, runs)),
-            OnDisk::SecondName => held.push(Held {
+    let held = stage_listed(root, to_stage(root, specs, Listing::All)?, |path, found| {
+        Ok(match found {
+            _ if kept_out(&path) => Take::Out,
+            OnDisk::SecondName => Take::Held(Held {
                 path,
                 why: Why::SecondName,
             }),
-            OnDisk::Other => by_git.push(path),
+            found => Take::Row(Row::of(path, found)?),
+        })
+    })?;
+    // The index write that adds git's untracked cache, as a save's `git add` did (FD-11,
+    // [`git::UNTRACKED_CACHE`]).
+    refresh(root, true)?;
+    Ok(held)
+}
+
+/// **Stages each of `rows` in the repository at `root` with nothing read again by its name**:
+/// a file's bytes from its open descriptor (`hash-object --stdin`, filtered as the file at
+/// its path would be), a link's from what it holds (unfiltered, mode `120000`), a nested
+/// repository as the commit its `HEAD` names (mode `160000`), a deletion as its row taken out.
+/// Files and links are hashed on [`HASHERS`] threads at once.
+///
+/// Each file's descriptor is asked again how many names it has just before its bytes are
+/// hashed: one with a second name by then is not hashed, and is answered. Where any is, no
+/// row is written, so nothing is staged, and the blobs written for the others leave the
+/// object store again where nothing else reaches them. Every row is one index write, staged
+/// whole or not at all. `Err` with git's words where git could not stage them, and then
+/// nothing is staged either, but for what `git add` staged.
+///
+/// The rows staged carry no times of the files on disk, which git reads as a change until the
+/// index is refreshed ([`refresh`]): the caller refreshes once it is done.
+pub(crate) fn stage_rows(root: &Path, rows: Vec<Row>) -> Result<Vec<Held>, String> {
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+    let links_as_links = !rows.iter().any(|row| matches!(row.from, Source::Link(_)))
+        || git::run(root, &["config", "--type=bool", "core.symlinks"], git::READ)
+            .map_or(true, |run| run.line().trim() != "false");
+    let file_mode = rows
+        .iter()
+        .any(|row| matches!(row.from, Source::File { .. }))
+        .then(|| file_modes(root))
+        .transpose()?
+        .flatten();
+    let mut hashing = Vec::new();
+    let mut gone = Vec::new();
+    let mut by_git = Vec::new();
+    let mut nested = Vec::new();
+    for Row { path, from } in rows {
+        match from {
+            Source::File {
+                file,
+                runs,
+                checked,
+            } => {
+                let mode = match &file_mode {
+                    None if runs => "100755",
+                    None => "100644",
+                    Some(staged) if staged.get(&path).is_some_and(|mode| mode == "100755") => {
+                        "100755"
+                    }
+                    Some(_) => "100644",
+                };
+                hashing.push(Hashing {
+                    path,
+                    mode,
+                    what: Hashed::File(file, checked),
+                });
+            }
+            Source::Link(target) if links_as_links => hashing.push(Hashing {
+                path,
+                mode: "120000",
+                what: Hashed::Link(target),
+            }),
+            Source::Link(_) | Source::ByGit => by_git.push(path),
+            Source::Nested => nested.push(path),
+            Source::Gone => gone.push(path),
         }
     }
-    stage_opened(root, files)?;
+    #[cfg(test)]
+    before_hashing(root);
+    let mut rows = Vec::new();
+    let mut blobs = Vec::new();
+    let mut held = Vec::new();
+    let mut failed = None;
+    for (path, mode, hashed) in hash_all(root, hashing) {
+        match hashed {
+            Ok(Some(sha)) => {
+                blobs.push(sha.clone());
+                rows.push((mode, sha, path));
+            }
+            Ok(None) => held.push(Held {
+                path,
+                why: Why::SecondName,
+            }),
+            Err(said) => failed = failed.or(Some(said)),
+        }
+    }
+    if failed.is_none() && held.is_empty() {
+        for path in nested {
+            match nested_head(root, &path) {
+                Ok(sha) => rows.push(("160000", sha, path)),
+                Err(said) => {
+                    failed = Some(said);
+                    break;
+                }
+            }
+        }
+    }
+    // Where no row is written, the blobs written for them leave the object store again where
+    // nothing else reaches them.
+    if let Some(said) = failed {
+        forget(root, &blobs);
+        return Err(said);
+    }
+    if !held.is_empty() {
+        forget(root, &blobs);
+        held.sort_by(|a, b| a.path.cmp(&b.path));
+        return Ok(held);
+    }
+    // One index write for every row, so it is staged whole or not at all. A deletion is a row
+    // of mode 0 (`--index-info` takes the path out, every stage of it), and comes first: a
+    // file that became a folder leaves its row before what the folder holds is written in.
+    if !gone.is_empty() || !rows.is_empty() {
+        let none = no_object(root, rows.first().map(|(_, sha, _)| sha.len()))?;
+        let mut lines = Vec::new();
+        for path in &gone {
+            lines.extend_from_slice(format!("0 {none}\t{path}\0").as_bytes());
+        }
+        for (mode, sha, path) in &rows {
+            lines.extend_from_slice(format!("{mode} {sha}\t{path}\0").as_bytes());
+        }
+        if let Err(said) = written(git::run_with_input(
+            root,
+            &["update-index", "-z", "--index-info"],
+            lines,
+            super::WRITE,
+        )) {
+            forget(root, &blobs);
+            return Err(said);
+        }
+    }
     for part in by_git.chunks(UNSTAGED_AT_ONCE) {
         let specs: Vec<String> = part.iter().map(|path| super::literally(path)).collect();
         let mut args = vec!["add", "-A", "--"];
         args.extend(specs.iter().map(String::as_str));
         run_ok(root, &args)?;
     }
-    // A row staged from its bytes carries no times of the file on disk, which git would read as
-    // a change: recorded now, where the file still holds what was staged. One that changed
-    // since stays a change, which [`not_as_staged`] then refuses. Never with paths: handed one,
-    // `update-index` stages that file again from its name.
-    // The index write that adds git's untracked cache, as a save's `git add` did (FD-11,
-    // [`git::UNTRACKED_CACHE`]).
-    run_ok(
-        root,
-        &git::with_untracked_cache(root, &["update-index", "-q", "--refresh"]),
-    )?;
     Ok(held)
 }
 
-/// **Stages each of `files` from its open descriptor**: the bytes git stores are read from the
-/// descriptor (`hash-object --stdin`, filtered as the file at its path would be), and the row
-/// is written with them (`update-index --index-info`), so nothing is read again by name. Its
-/// mode is the owner's run bit where git trusts the file system's, else the mode it is staged
-/// with already.
-fn stage_opened(root: &Path, files: Vec<(String, std::fs::File, bool)>) -> Result<(), String> {
-    if files.is_empty() {
-        return Ok(());
+/// **Records the times of each file on disk in the index of the repository at `root`**, where
+/// the file still holds what is staged: a row [`stage_rows`] wrote carries none, which git
+/// would read as a change. One that changed since stays a change, which [`not_as_staged`]
+/// then refuses. Never with paths: handed one, `update-index` stages that file again from its
+/// name. For a save (`save`), the index write also adds git's untracked cache where the
+/// person's config leaves it to purlis ([`git::with_untracked_cache`]), as a save's `git add`
+/// did. Otherwise rows still in conflict are passed over: a stopped rebase can hold files the
+/// person settles later.
+pub(crate) fn refresh(root: &Path, save: bool) -> Result<(), String> {
+    if save {
+        run_ok(
+            root,
+            &git::with_untracked_cache(root, &["update-index", "-q", "--refresh"]),
+        )
+    } else {
+        run_ok(root, &["update-index", "-q", "--unmerged", "--refresh"])
     }
+}
+
+/// The all-zero object id, as long as this repository's ids (`len`, where a row already says),
+/// for a row that takes a path out of the index.
+fn no_object(root: &Path, len: Option<usize>) -> Result<String, String> {
+    let len = match len {
+        Some(len) => len,
+        None => {
+            let run = git::run(root, &["rev-parse", "--show-object-format"], git::READ)
+                .map_err(|e| e.to_string())?;
+            if !run.ok() {
+                return Err(super::tail(&run));
+            }
+            if run.line().trim() == "sha256" {
+                64
+            } else {
+                40
+            }
+        }
+    };
+    Ok("0".repeat(len))
+}
+
+/// The mode each path is staged with now, where git does not trust the file system's run bit
+/// (`core.fileMode=false`), so a file keeps the mode it has: `None` where git trusts it. For a
+/// path in conflict, the mode git itself keeps: the stage merged, else ours (stage 2), else
+/// the first stage it has.
+fn file_modes(root: &Path) -> Result<Option<HashMap<String, String>>, String> {
     let trusted = git::run(root, &["config", "--type=bool", "core.fileMode"], git::READ)
         .map_or(true, |run| run.line().trim() != "false");
-    let staged: HashMap<String, String> = if trusted {
-        HashMap::new()
-    } else {
-        listed(root, &["ls-files", "-s", "-z"])?
-            .iter()
-            .filter_map(|row| {
-                let (meta, path) = row.split_once('\t')?;
-                Some((path.to_owned(), meta.split(' ').next()?.to_owned()))
-            })
-            .collect()
+    if trusted {
+        return Ok(None);
+    }
+    let rank = |stage: &str| match stage {
+        "0" => 0,
+        "2" => 1,
+        _ => 2,
     };
-    let mut rows = Vec::new();
-    for (path, file, runs) in files {
-        let at = format!("--path={path}");
-        let hashed = git::run_reading(
-            root,
-            &["hash-object", "-w", "--stdin", &at],
-            file,
-            super::WRITE,
-        )
-        .map_err(|e| e.to_string())?;
-        let sha = String::from_utf8_lossy(&hashed.out).trim().to_owned();
-        if hashed.code != Some(0) || !object_id(&sha) {
-            return Err(String::from_utf8_lossy(&hashed.err).trim().to_owned());
-        }
-        let mode = match (trusted, runs) {
-            (true, true) => "100755",
-            (true, false) => "100644",
-            (false, _) if staged.get(&path).is_some_and(|mode| mode == "100755") => "100755",
-            (false, _) => "100644",
+    let mut modes: HashMap<String, (String, u8)> = HashMap::new();
+    for row in listed(root, &["ls-files", "-s", "-z"])? {
+        let Some((meta, path)) = row.split_once('\t') else {
+            continue;
         };
-        rows.extend_from_slice(format!("{mode} {sha}\t{path}\0").as_bytes());
+        let mut fields = meta.split(' ');
+        let (Some(mode), Some(_), Some(stage)) = (fields.next(), fields.next(), fields.next())
+        else {
+            continue;
+        };
+        let ranked = rank(stage);
+        // `ls-files` lists a path's stages in order, so the first of a rank is the lowest.
+        if modes.get(path).is_none_or(|(_, had)| ranked < *had) {
+            modes.insert(path.to_owned(), (mode.to_owned(), ranked));
+        }
     }
-    let written = git::run_with_input(
-        root,
-        &["update-index", "-z", "--index-info"],
-        rows,
-        super::WRITE,
-    )
+    Ok(Some(
+        modes
+            .into_iter()
+            .map(|(path, (mode, _))| (path, mode))
+            .collect(),
+    ))
+}
+
+/// How many `hash-object` runs [`stage_rows`] has going at once.
+pub(crate) const HASHERS: usize = 4;
+
+/// One blob to write, and the row it is for.
+struct Hashing {
+    path: String,
+    mode: &'static str,
+    what: Hashed,
+}
+
+/// A row's path, its mode, and the blob it was written as: `None` where the file had a second
+/// name by then, and `Err` with git's words where git could not write it.
+type Blob = (String, &'static str, Result<Option<String>, String>);
+
+/// What a blob is written from.
+enum Hashed {
+    /// A file's descriptor, and the bytes already read from it where they were.
+    File(std::fs::File, Option<Vec<u8>>),
+    /// A link's bytes.
+    Link(Vec<u8>),
+}
+
+/// Each of `hashing` written to the object store of the repository at `root`, on up to
+/// [`HASHERS`] threads, each carrying this thread's git isolation: per row its path, its mode
+/// and its blob, or `None` where the file had a second name by then, in the order asked.
+fn hash_all(root: &Path, hashing: Vec<Hashing>) -> Vec<Blob> {
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .clamp(1, HASHERS)
+        .min(hashing.len().max(1));
+    if threads <= 1 {
+        return hashing
+            .into_iter()
+            .map(|one| {
+                let sha = hash_one(root, one.what, &one.path);
+                (one.path, one.mode, sha)
+            })
+            .collect();
+    }
+    let isolation = git::isolation();
+    let count = hashing.len();
+    let queue = std::sync::Mutex::new(hashing.into_iter().enumerate());
+    let done = std::sync::Mutex::new(Vec::with_capacity(count));
+    std::thread::scope(|scope| {
+        for _ in 0..threads {
+            scope.spawn(|| {
+                git::within(isolation.as_ref(), || {
+                    loop {
+                        let next = queue
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .next();
+                        let Some((at, one)) = next else {
+                            break;
+                        };
+                        let sha = hash_one(root, one.what, &one.path);
+                        done.lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .push((at, one.path, one.mode, sha));
+                    }
+                });
+            });
+        }
+    });
+    let mut done = done
+        .into_inner()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    done.sort_by_key(|(at, ..)| *at);
+    done.into_iter()
+        .map(|(_, path, mode, sha)| (path, mode, sha))
+        .collect()
+}
+
+/// The blob `what` is written as for `path`: `None` where it is a file whose descriptor has
+/// a second name now, which is then not hashed.
+fn hash_one(root: &Path, what: Hashed, path: &str) -> Result<Option<String>, String> {
+    let at = format!("--path={path}");
+    let hashed = match what {
+        Hashed::File(file, checked) => {
+            if links(&file.metadata().map_err(|why| format!("{path}: {why}"))?) > 1 {
+                return Ok(None);
+            }
+            match checked {
+                Some(bytes) => git::run_with_input(
+                    root,
+                    &["hash-object", "-w", "--stdin", &at],
+                    bytes,
+                    super::WRITE,
+                ),
+                None => git::run_reading(
+                    root,
+                    &["hash-object", "-w", "--stdin", &at],
+                    file,
+                    super::WRITE,
+                ),
+            }
+        }
+        Hashed::Link(target) => git::run_with_input(
+            root,
+            &["hash-object", "-w", "--stdin", "--no-filters"],
+            target,
+            super::WRITE,
+        ),
+    }
     .map_err(|e| e.to_string())?;
-    if written.code != Some(0) {
-        return Err(String::from_utf8_lossy(&written.err).trim().to_owned());
+    let sha = String::from_utf8_lossy(&hashed.out).trim().to_owned();
+    if hashed.code != Some(0) || !object_id(&sha) {
+        return Err(String::from_utf8_lossy(&hashed.err).trim().to_owned());
     }
-    Ok(())
+    Ok(Some(sha))
+}
+
+/// The commit the nested repository at `path` (relative to `root`) has checked out, read in
+/// this process with no configuration but its own, so no program of its runs. `Err` in git's
+/// words where it has none.
+fn nested_head(root: &Path, path: &str) -> Result<String, String> {
+    let no_commit = || format!("'{path}/' does not have a commit checked out");
+    let repo =
+        gix::open_opts(root.join(path), gix::open::Options::isolated()).map_err(|_| no_commit())?;
+    let head = repo.head_id().map_err(|_| no_commit())?;
+    Ok(head.detach().to_string())
+}
+
+/// `Ok` where an index write `run` finished, else what git said.
+fn written(run: Result<git::RawRun, git::GitUnavailable>) -> Result<(), String> {
+    let run = run.map_err(|e| e.to_string())?;
+    if run.code == Some(0) {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&run.err).trim().to_owned())
+    }
+}
+
+/// What a staging says where [`stage_rows`] answered `held`, files that had a second name as
+/// they were hashed, so nothing was staged: in the words [`refused_into`] says for `back`,
+/// since each file is as it was before, or `None` where it answered none.
+pub(crate) fn refused_unstaged(held: &[Held], back: PutBack<'_>) -> Option<Refusal> {
+    if held.is_empty() {
+        return None;
+    }
+    Some(Refusal {
+        named: named(held),
+        then: match back {
+            PutBack::AsHead => "Nothing was staged or committed.".to_owned(),
+            PutBack::Conflicted(_) => {
+                "Nothing was committed, and those files are marked as conflicted again.".to_owned()
+            }
+        },
+    })
 }
 
 /// Runs `args` in `root`, or what git said where it failed.
@@ -750,6 +1199,41 @@ fn run_ok(root: &Path, args: &[&str]) -> Result<(), String> {
 
 /// The journal's words for a save [`refused`] held back — matched whole, never searched for.
 pub const NOT_AS_STAGED: &str = "a staged file that is not the one file on disk";
+
+#[cfg(test)]
+thread_local! {
+    /// What a test does once a staging has looked at what it stages, before it hashes any of it.
+    static BEFORE_HASHING: std::cell::RefCell<Option<super::tests::Then>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs what the test set in [`BEFORE_HASHING`], if it set anything.
+#[cfg(test)]
+fn before_hashing(root: &Path) {
+    BEFORE_HASHING.with(|then| {
+        if let Some(then) = then.borrow().as_ref() {
+            then(root);
+        }
+    });
+}
+
+/// `run`, with `then` done to the repository once a staging has looked at what it stages and
+/// before it hashes any of it: the gap a file could be given a second name or be rewritten in.
+#[cfg(test)]
+pub(crate) fn before_hashing_doing<T>(
+    then: impl Fn(&Path) + 'static,
+    run: impl FnOnce() -> T,
+) -> T {
+    struct Clear;
+    impl Drop for Clear {
+        fn drop(&mut self) {
+            BEFORE_HASHING.with(|then| then.borrow_mut().take());
+        }
+    }
+    BEFORE_HASHING.with(|held| *held.borrow_mut() = Some(Box::new(then)));
+    let _clear = Clear;
+    run()
+}
 
 #[cfg(test)]
 mod tests;

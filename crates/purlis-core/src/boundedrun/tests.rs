@@ -32,6 +32,45 @@ fn a_run_given_a_time_that_does_not_answer_in_it_is_ended_and_said_not_to_have_f
     );
 }
 
+/// **What a run given a time started ends with it**: a helper it waits on is not left running
+/// once its time is up.
+#[cfg(unix)]
+#[test]
+fn what_a_run_given_a_time_started_is_ended_with_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let pid = dir.path().join("pid");
+    let script = format!("sleep 30 & echo $! > '{}'; wait", pid.display());
+    let ran = run_within(
+        &mut sh(&script),
+        None,
+        1024,
+        1024,
+        Some(Duration::from_millis(500)),
+    );
+    assert!(matches!(ran, Err(Unanswered::NotFinished(_))));
+    let helper: i32 = std::fs::read_to_string(&pid)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let alive = || {
+        rustix::process::test_kill_process(rustix::process::Pid::from_raw(helper).unwrap()).is_ok()
+    };
+    while alive() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let left = alive();
+    if left {
+        // Not left behind by a failing test either.
+        let _ = rustix::process::kill_process(
+            rustix::process::Pid::from_raw(helper).unwrap(),
+            rustix::process::Signal::KILL,
+        );
+    }
+    assert!(!left, "the helper it started is ended with it");
+}
+
 #[test]
 fn a_run_given_a_time_that_answers_in_it_is_read_as_any_run_is() {
     let ran = run_within(

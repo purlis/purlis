@@ -2698,8 +2698,17 @@ fn a_list_read_for_needs_you_has_every_row_lint_and_clash_of_the_whole_and_no_ba
             })
             .collect()
     };
-    let read =
-        |reading| studio_list_for(reading, Some(&built_in), &plane, Some("alpha"), None, &env);
+    let read = |reading| {
+        studio_list_for(
+            reading,
+            Some(&built_in),
+            &plane,
+            Some("alpha"),
+            None,
+            &env,
+            &[],
+        )
+    };
 
     let whole = read(Reading::Whole);
     let needs = read(Reading::Needs);
@@ -2815,7 +2824,7 @@ fn each_harness_s_own_catalogue_is_measured_beside_purlis_s_budget_3324() {
         "Codex: review and quiet listed, mine manual-only by its sidecar, notes turned off"
     );
     // A read for a count of needs measures nothing.
-    let needs = studio_list_for(Reading::Needs, None, &plane, None, None, &env);
+    let needs = studio_list_for(Reading::Needs, None, &plane, None, None, &env, &[]);
     assert!(needs.harnesses.iter().all(|one| one.own.is_none()));
 }
 
@@ -2858,3 +2867,5 @@ fn purlis_s_own_plugin_is_no_part_of_a_harness_s_own_catalogue_3324() {
     }
     assert!(!crate::harness_plugin::purlis_s_own_named(claude, "figma"));
 }
+
+mod read_budget;

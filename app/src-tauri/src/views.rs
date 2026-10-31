@@ -224,8 +224,9 @@ pub(crate) async fn open_view(
         // The files purlis's own proposed changes wait on: a persona's Skills line counts what
         // its studio's Needs you lists, which asks no more about those (#3695).
         let waiting = held.proposals().paths_of(crate::proposals::BY_PURLIS);
+        let executor = views.executor();
         return tauri::async_runtime::spawn_blocking(move || {
-            built_in(&root, &state, &waiting, &view, &key)
+            built_in(Some(&executor), &root, &state, &waiting, &view, &key)
         })
         .await
         .map_err(|err| format!("reading that view did not finish: {err}"))?;
@@ -461,8 +462,10 @@ fn commanded(seen: &extension::Survey) -> Vec<ExtensionCommand> {
 ///
 /// `state` is the plane's state directory, where this machine's half of the vault registry is
 /// — passed in rather than looked up so a test names its own and never reads `$CHARTER_HOME`.
-/// `waiting` is the files purlis's own proposed changes wait on (`Proposals::paths_of`).
+/// `waiting` is the files purlis's own proposed changes wait on (`Proposals::paths_of`), and
+/// `executor` asks the extensions' lints a persona's Skills line counts (#3940).
 fn built_in(
+    executor: Option<&Executor>,
     root: &std::path::Path,
     state: &std::path::Path,
     waiting: &[String],
@@ -472,7 +475,7 @@ fn built_in(
     let began = std::time::Instant::now();
     match view {
         "persona" => Ok(
-            match crate::panels::persona_view(root, state, waiting, key)? {
+            match crate::panels::persona_view(executor, root, state, waiting, key)? {
                 Some(blocks) => ViewAnswer::Answered {
                     blocks: blocks.iter().map(PanelBlock::from).collect(),
                     took_ms: millis(began.elapsed()),
@@ -777,6 +780,7 @@ mod tests {
         let plane = tempfile::tempdir().expect("a plane");
         std::fs::create_dir_all(plane.path().join("workspaces/alpha")).expect("a workspace");
         let ViewAnswer::Answered { blocks, .. } = built_in(
+            None,
             plane.path(),
             &plane.path().join(".charter"),
             &[],
@@ -812,6 +816,7 @@ mod tests {
         // panel vocabulary like the persona view.
         let plane = tempfile::tempdir().expect("a plane");
         let ViewAnswer::Answered { blocks, .. } = built_in(
+            None,
             plane.path(),
             &plane.path().join(".charter"),
             &[],
@@ -846,6 +851,7 @@ mod tests {
     fn a_harness_card_for_a_harness_the_project_does_not_have_says_so() {
         let plane = tempfile::tempdir().expect("a plane");
         let answer = built_in(
+            None,
             plane.path(),
             &plane.path().join(".charter"),
             &[],
@@ -861,6 +867,7 @@ mod tests {
         let plane = tempfile::tempdir().expect("a plane");
         std::fs::create_dir_all(plane.path().join("workspaces")).expect("workspaces");
         let answer = built_in(
+            None,
             plane.path(),
             &plane.path().join(".charter"),
             &[],
@@ -871,6 +878,7 @@ mod tests {
         assert!(matches!(answer, ViewAnswer::Gone { .. }), "{answer:?}");
         assert!(
             built_in(
+                None,
                 plane.path(),
                 &plane.path().join(".charter"),
                 &[],
@@ -898,6 +906,7 @@ mod tests {
         .expect("a memory");
 
         let ViewAnswer::Answered { blocks, .. } = built_in(
+            None,
             plane.path(),
             &plane.path().join(".charter"),
             &[],
@@ -954,6 +963,7 @@ mod tests {
         .expect("a memory");
 
         let ViewAnswer::Answered { blocks, .. } = built_in(
+            None,
             plane.path(),
             &plane.path().join(".charter"),
             &[],
@@ -979,6 +989,7 @@ mod tests {
         let plane = tempfile::tempdir().expect("a plane");
 
         let ViewAnswer::Answered { blocks, .. } = built_in(
+            None,
             plane.path(),
             &plane.path().join(".charter"),
             &[],
@@ -995,7 +1006,7 @@ mod tests {
     /// The persona view's `Vault` fact for `name`, asked with `state` as the state directory.
     fn vault_fact(root: &std::path::Path, state: &std::path::Path, name: &str) -> String {
         let ViewAnswer::Answered { blocks, .. } =
-            built_in(root, state, &[], "persona", name).expect("an answer")
+            built_in(None, root, state, &[], "persona", name).expect("an answer")
         else {
             panic!("the persona view was not answered");
         };
@@ -1025,7 +1036,7 @@ mod tests {
         );
         let profile = |name: &str| {
             let ViewAnswer::Answered { blocks, .. } =
-                built_in(plane.path(), &state, &[], "persona", name).expect("an answer")
+                built_in(None, plane.path(), &state, &[], "persona", name).expect("an answer")
             else {
                 panic!("the persona view was not answered");
             };
@@ -1119,6 +1130,7 @@ mod tests {
 
         assert!(matches!(
             built_in(
+                None,
                 plane.path(),
                 &plane.path().join(".charter"),
                 &[],
@@ -1136,6 +1148,7 @@ mod tests {
 
         assert!(matches!(
             built_in(
+                None,
                 plane.path(),
                 &plane.path().join(".charter"),
                 &[],
@@ -1152,6 +1165,7 @@ mod tests {
 
         assert!(
             built_in(
+                None,
                 plane.path(),
                 &plane.path().join(".charter"),
                 &[],

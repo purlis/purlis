@@ -10,11 +10,12 @@
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use purlis_core::profilestore::sign_in::callback::{self, Carry, Forward};
+use purlis_core::profilestore::sign_in::waiting::Waiting;
 use purlis_host::{ComposesNothing, Hosting, Pairing, Place, serve_answering};
 use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
 use purlis_session_protocol::session::{Client, ProfileStanding};
@@ -45,7 +46,12 @@ fn place_in(dir: &Path) -> Place {
 }
 
 /// A runner's host paired with `desktop`, handing redirects on as `purlis serve`'s does.
-async fn a_runner(place: &Place, runner: Identity, desktop: Pinned) -> oneshot::Sender<()> {
+async fn a_runner(
+    place: &Place,
+    runner: Identity,
+    desktop: Pinned,
+    waiting_in: PathBuf,
+) -> oneshot::Sender<()> {
     let (stop, stopped) = oneshot::channel::<()>();
     let (ready, is_ready) = oneshot::channel::<()>();
     let pairing = Pairing {
@@ -62,7 +68,8 @@ async fn a_runner(place: &Place, runner: Identity, desktop: Pinned) -> oneshot::
         keeping: Arc::new(|_, _| Ok(ProfileStanding::SignedOut)),
         forgetting: Arc::new(|_, _| Ok(())),
         listing: Arc::new(|_| Ok(Vec::new())),
-        delivering: Arc::new(callback::deliver),
+        holding: Arc::new(|_, _, _| Ok((Vec::new(), false))),
+        delivering: Arc::new(move |target| callback::deliver_waiting_in(&waiting_in, target)),
     };
     let place = place.clone();
     tokio::spawn(async move {
@@ -118,7 +125,9 @@ fn a_browsers_answer_reaches_the_login_on_its_runner_and_nothing_comes_back() {
             identity("01JA0DESKT0P00000000000000"),
         );
         let runner_pinned = pinned_of(&runner);
-        let _stop = a_runner(&place, runner, pinned_of(&desktop)).await;
+        let waiting_in = dir.path().join("sign-ins-waiting");
+        let _waiting = Waiting::record(&waiting_in, STATE).expect("the login's record");
+        let _stop = a_runner(&place, runner, pinned_of(&desktop), waiting_in).await;
         let stream = UnixStream::connect(place.link()).await.unwrap();
         let link = hostlink::connect(
             stream,

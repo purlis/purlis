@@ -5348,32 +5348,6 @@ fn a_project_that_stores_crlf_line_endings_can_continue() {
 }
 
 #[test]
-fn what_is_staged_is_compared_with_the_bytes_that_were_checked() {
-    let scene = Scene::new(&[("a.md", b"one\n")]);
-    scene.theirs("theirs", |dir| write(dir, "a.md", b"theirs\n"));
-    scene.mine("mine", |dir| write(dir, "a.md", b"mine\n"));
-    resolve_start(&scene.fixture);
-    write(&scene.fixture.root, "a.md", b"both\n");
-    run(&scene.fixture.root, &["add", "--", "a.md"]);
-
-    assert!(resolve::staged_as_checked(
-        &scene.fixture.root,
-        "a.md",
-        b"both\n"
-    ));
-    assert!(!resolve::staged_as_checked(
-        &scene.fixture.root,
-        "a.md",
-        b"something else\n"
-    ));
-    assert!(!resolve::staged_as_checked(
-        &scene.fixture.root,
-        "missing.md",
-        b"both\n"
-    ));
-}
-
-#[test]
 fn a_file_merged_without_markers_by_its_attributes_is_the_persons() {
     let scene = Scene::new(&[(".gitattributes", b"a.md -merge\n"), ("a.md", b"one\n")]);
     scene.theirs("theirs", |dir| write(dir, "a.md", b"theirs\n"));

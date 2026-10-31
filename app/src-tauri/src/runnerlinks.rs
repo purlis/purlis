@@ -188,6 +188,7 @@ impl ToARunner {
             config.to_path_buf(),
             kubectl.clone(),
             pool.name().to_owned(),
+            kept.reached(),
         );
         let kubectl = pool.kubectl(kubectl);
         let preparing = kubectl.clone();
@@ -200,11 +201,11 @@ impl ToARunner {
                 &kept.pod,
             ),
             // Before every connection: the pin as it is kept now, followed through a roll and
-            // kept again, and the runner vouched for (#3305).
+            // kept again, and the runner vouched for (#3305), still the one this link is for.
             Arc::new(move || {
-                let (config, kubectl, name) = &checking;
+                let (config, kubectl, name, reached) = &checking;
                 let now = crate::sandboxing::now_secs();
-                purlis_core::pools::before_cluster_link(config, kubectl, name, now)
+                purlis_core::pools::before_cluster_link_to(config, kubectl, name, reached, now)
                     .map_err(not_checked)
             }),
         )
@@ -636,6 +637,78 @@ async fn keep_one(
     })
 }
 
+/// The most pages of what it holds a runner is asked for: more than the most files it holds take
+/// on any sane list of paths, so one that keeps saying there are more has all the settings sent.
+const MOST_HELD_PAGES: usize = 64;
+
+/// **What the runner on `client` says it holds of `kept`** (`settings_held`, 1.61, #4088): nothing
+/// from one before 1.61 or for a profile whose settings do not go, nothing from one that refuses
+/// or whose pages do not go forward, so all the settings go. `Err` where it stopped answering.
+async fn held_by(
+    client: &purlis_session_protocol::session::Client,
+    version: purlis_session_protocol::version::Version,
+    kept: &purlis_core::profilestore::onrunner::Kept,
+) -> Result<Vec<purlis_session_protocol::session::HeldSetting>, String> {
+    use purlis_session_protocol::session::KNOWS_SETTINGS_HELD;
+    if version < KNOWS_SETTINGS_HELD || kept.settings_in.is_none() {
+        return Ok(Vec::new());
+    }
+    let mut held = Vec::new();
+    let mut after: Option<String> = None;
+    for _ in 0..MOST_HELD_PAGES {
+        let asked = client.settings_held(&kept.name, after.clone());
+        let Ok((page, more)) = tokio::time::timeout(ANSWER_WITHIN, asked)
+            .await
+            .map_err(|_| LATE.to_owned())?
+        else {
+            return Ok(Vec::new());
+        };
+        let forward = page.first().is_none_or(|first| {
+            after
+                .as_deref()
+                .is_none_or(|after| first.path.as_str() > after)
+        }) && page.windows(2).all(|two| two[0].path < two[1].path);
+        if !forward || (more && page.is_empty()) {
+            return Ok(Vec::new());
+        }
+        after = page.last().map(|last| last.path.clone()).or(after);
+        held.extend(page);
+        if held.len() > purlis_session_protocol::session::MOST_PROFILE_SETTINGS_FILES {
+            return Ok(Vec::new());
+        }
+        if !more {
+            return Ok(held);
+        }
+    }
+    Ok(Vec::new())
+}
+
+/// **`kept`, kept by the runner on `client`, with only what differs from what it holds sent**
+/// (#4088). What it said it holds decides what is sent and nothing more: refused, for whatever
+/// reason, it is sent all the settings, which replace whatever it holds. Each keep is held to its
+/// own time ([`keep_one`]).
+async fn sent_what_differs(
+    client: &purlis_session_protocol::session::Client,
+    version: purlis_session_protocol::version::Version,
+    kept: &purlis_core::profilestore::onrunner::Kept,
+) -> Result<ProfileKept, String> {
+    let held = held_by(client, version, kept).await?;
+    let sending = if held.is_empty() {
+        for_a_runner_of(version, kept)?
+    } else {
+        purlis_core::profilestore::onrunner::in_batches_beside(kept, &held)?
+    };
+    let only_changed = sending.profile.settings_changed.is_some();
+    let answer = keep_one(client, sending).await;
+    match answer {
+        Err(why) if only_changed && why != LATE => {
+            tracing::info!("purlis: a runner's keep of what changed was refused: {why}");
+            keep_one(client, for_a_runner_of(version, kept)?).await
+        }
+        answer => answer,
+    }
+}
+
 /// **Has the runner keep each of this desktop's `profiles` over one link of its own**
 /// (`keep_profile`, 1.43, #2049), in order: whether each is signed in there, or why the runner
 /// did not keep it, its own words marked as its and cut short. `None` for a runner of a purlis
@@ -651,16 +724,9 @@ pub fn keep_profiles(
             let version = client.version();
             let mut said = Vec::with_capacity(profiles.len());
             for kept in &profiles {
-                let sending = match for_a_runner_of(version, kept) {
-                    Ok(sending) => sending,
-                    Err(why) => {
-                        said.push(Err(why));
-                        continue;
-                    }
-                };
-                let kept = keep_one(&client, sending).await;
-                let gone = matches!(&kept, Err(why) if why == LATE);
-                said.push(kept);
+                let answer = sent_what_differs(&client, version, kept).await;
+                let gone = matches!(&answer, Err(why) if why == LATE);
+                said.push(answer);
                 // A runner that stopped answering is asked nothing more.
                 if gone {
                     break;

@@ -751,30 +751,31 @@ fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
     })?;
     let files = stopped.unmerged;
     if !files.is_empty() {
-        resolved(&here.folder, &files)?;
-        // As a save: a resolved file with a second name is refused before it is staged, so its
-        // bytes never reach the clone's object store (`planegit::ondisk`).
-        if let Some(refusal) = ondisk::refused_ahead(&ondisk::second_names_of(&here.folder, &files))
+        // Each resolved file is staged as the bytes looked at for a marker, read through its
+        // one open descriptor, so nothing is read again by its name.
+        // As a save: a resolved file with a second name is refused through its descriptor, so
+        // its bytes never reach the clone's object store (`planegit::ondisk`).
+        let rows = resolved(&here.folder, &files)?;
+        let held = ondisk::stage_rows(&here.folder, rows).map_err(|said| {
+            format!(
+                "git did not stage the resolved files: {}",
+                first_line(&said)
+            )
+        })?;
+        if let Some(refusal) = ondisk::refused_unstaged(&held, ondisk::PutBack::Conflicted(&files))
         {
             return Err(not_the_file(&refusal));
         }
-        let staged = git::run_with_input(
-            &here.folder,
-            &[
-                "--literal-pathspecs",
-                "add",
-                "--pathspec-from-file=-",
-                "--pathspec-file-nul",
-            ],
-            files.join("\0").into_bytes(),
-            broker::STAGING,
-        )
-        .map_err(|e| e.to_string())?;
-        if staged.code != Some(0) {
-            return Err(format!(
-                "git did not stage the resolved files: {}",
-                first_line(&String::from_utf8_lossy(&staged.err))
-            ));
+        // Staged: where the index cannot be refreshed, whether each is the file on disk cannot
+        // be asked, and every one goes back in conflict.
+        if let Err(said) = ondisk::refresh(&here.folder, false)
+            && let Some(refusal) = ondisk::refused_into(
+                &here.folder,
+                &Err(said),
+                ondisk::PutBack::Conflicted(&files),
+            )
+        {
+            return Err(not_the_file(&refusal));
         }
         // And once staged: a resolved file that is not the file on disk now, with one name, is
         // marked as conflicted again, and its blob taken out of the object store where nothing
@@ -1057,12 +1058,16 @@ fn finish(here: &Here, record: &Record) -> Result<(), String> {
     .map_err(|why| format!("purlis could not note the update it made: {why}"))
 }
 
-/// Why the files git named as conflicted may not be staged for a chat, or nothing: each a
-/// name inside the folder reached through no link, not another repository nor the file that
-/// declares them, not marked for a content filter the person's own git would run, and with no
-/// conflict marker left in it.
-fn resolved(folder: &Path, files: &[String]) -> Result<(), String> {
+/// The files git named as conflicted, each as it is staged, or why they may not be staged for
+/// a chat: each a name inside the folder reached through no link, not another repository nor
+/// the file that declares them, not marked for a content filter the person's own git would
+/// run, and with no conflict marker left in it. A file is looked at through its one open
+/// descriptor, never through a link, and staged from that same descriptor
+/// ([`ondisk::stage_rows`]).
+fn resolved(folder: &Path, files: &[String]) -> Result<Vec<ondisk::Row>, String> {
+    use std::io::Seek;
     broker::paths_ok(files)?;
+    let mut rows = Vec::with_capacity(files.len());
     for file in files {
         broker::through_no_link(folder, file)?;
         let name = file.rsplit('/').next().unwrap_or(file);
@@ -1072,27 +1077,63 @@ fn resolved(folder: &Path, files: &[String]) -> Result<(), String> {
                  the rebase from your own terminal"
             ));
         }
-        let at = folder.join(file);
-        if let Ok(meta) = std::fs::symlink_metadata(&at) {
-            if meta.is_dir() {
+        let from = match ondisk::opened(folder, file) {
+            ondisk::OnDisk::File(opened, runs) => {
+                // Read through once for a marker, then from the start again as it is staged:
+                // a file written over in between is no longer the file the index was told of,
+                // and is put back in conflict below.
+                let read = |why: std::io::Error| format!("{file} cannot be read: {why}");
+                if holds_marker(&opened).map_err(read)? {
+                    return Err(still_marked(file));
+                }
+                (&opened).seek(std::io::SeekFrom::Start(0)).map_err(read)?;
+                ondisk::Source::File {
+                    file: opened,
+                    runs,
+                    checked: None,
+                }
+            }
+            ondisk::OnDisk::SecondName => {
+                let held = Ok(vec![ondisk::Held {
+                    path: file.clone(),
+                    why: ondisk::Why::SecondName,
+                }]);
+                return Err(ondisk::refused_ahead(&held)
+                    .map(|refusal| not_the_file(&refusal))
+                    .unwrap_or_default());
+            }
+            ondisk::OnDisk::Folder { .. } => return Err(a_folder(file)),
+            ondisk::OnDisk::Link(target) => ondisk::Source::Link(target),
+            ondisk::OnDisk::Gone | ondisk::OnDisk::Beyond => ondisk::Source::Gone,
+            // Where a folder cannot be held open, looked at by its name, as `git add` stages it.
+            ondisk::OnDisk::ByGit => {
+                let at = folder.join(file);
+                match std::fs::symlink_metadata(&at) {
+                    Ok(meta) if meta.is_dir() => return Err(a_folder(file)),
+                    Ok(meta) if meta.is_file() => {
+                        let read = |why: std::io::Error| format!("{file} cannot be read: {why}");
+                        if holds_marker(&std::fs::File::open(&at).map_err(read)?).map_err(read)? {
+                            return Err(still_marked(file));
+                        }
+                    }
+                    _ => {}
+                }
+                ondisk::Source::ByGit
+            }
+            ondisk::OnDisk::Odd => {
                 return Err(format!(
-                    "{file} is a folder where git left a conflict (another repository, most \
-                     often): finish the rebase from your own terminal"
+                    "{file} is neither a file, a link nor a folder, so purlis does not stage it \
+                     for a chat: finish the rebase from your own terminal"
                 ));
             }
-            if meta.is_file()
-                && let Ok(text) = std::fs::read(&at)
-                && (text.starts_with(MARKER)
-                    || text
-                        .windows(MARKER.len() + 1)
-                        .any(|w| w[0] == b'\n' && &w[1..] == MARKER))
-            {
-                return Err(format!(
-                    "{file} still holds a conflict marker (`<<<<<<<`): resolve it, then \
-                     `purlis worktree update --continue`"
-                ));
+            ondisk::OnDisk::Unread(why) => {
+                return Err(format!("{file} cannot be read: {why}"));
             }
-        }
+        };
+        rows.push(ondisk::Row {
+            path: file.clone(),
+            from,
+        });
     }
     let attrs = git::run_with_input(
         folder,
@@ -1110,7 +1151,49 @@ fn resolved(folder: &Path, files: &[String]) -> Result<(), String> {
              does not apply: finish the rebase from your own terminal"
         ));
     }
-    Ok(())
+    Ok(rows)
+}
+
+/// What a resolved file that still holds a conflict marker is refused with.
+fn still_marked(file: &str) -> String {
+    format!(
+        "{file} still holds a conflict marker (`<<<<<<<`): resolve it, then `purlis worktree \
+         update --continue`"
+    )
+}
+
+/// What a conflict git left on a folder is refused with.
+fn a_folder(file: &str) -> String {
+    format!(
+        "{file} is a folder where git left a conflict (another repository, most often): finish \
+         the rebase from your own terminal"
+    )
+}
+
+/// Whether what `file` reads, from where its descriptor stands, holds a conflict marker at the
+/// start of a line ([`MARKER`]): read a part at a time, so a large file is never held whole.
+fn holds_marker(mut file: &std::fs::File) -> std::io::Result<bool> {
+    use std::io::Read;
+    let mut wanted = vec![b'\n'];
+    wanted.extend_from_slice(MARKER);
+    // A line starts the file, so the file is read as if a line ended just before it.
+    let mut window = vec![b'\n'];
+    let mut part = vec![0; 64 * 1024];
+    loop {
+        let read = match file.read(&mut part) {
+            Ok(0) => return Ok(false),
+            Ok(read) => read,
+            Err(why) if why.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(why) => return Err(why),
+        };
+        window.extend_from_slice(&part[..read]);
+        if window.windows(wanted.len()).any(|w| w == wanted.as_slice()) {
+            return Ok(true);
+        }
+        // What a marker split across two reads needs of this one.
+        let kept = window.len().saturating_sub(wanted.len() - 1);
+        window.drain(..kept);
+    }
 }
 
 fn abort(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
@@ -1306,4 +1389,32 @@ fn vouched(here: &Here, remote: &str, theirs: &str, ours: &str) -> Result<(), St
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A file holding `bytes`, opened to read from its start.
+    fn holding(bytes: &[u8]) -> (tempfile::NamedTempFile, std::fs::File) {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut file, bytes).unwrap();
+        let read = std::fs::File::open(file.path()).unwrap();
+        (file, read)
+    }
+
+    #[test]
+    fn a_marker_is_found_at_the_start_of_any_line_and_across_two_reads() {
+        let (_kept, start) = holding(b"<<<<<<< ours\n");
+        assert!(holds_marker(&start).unwrap());
+        // A marker that starts two bytes before one read ends.
+        let mut split = vec![b'a'; 64 * 1024 - 3];
+        split.extend_from_slice(b"\n<<<<<<< theirs\n");
+        let (_kept, split) = holding(&split);
+        assert!(holds_marker(&split).unwrap());
+        let (_kept, inside) = holding(b"text with <<<<<<< in a line\n");
+        assert!(!holds_marker(&inside).unwrap());
+        let (_kept, none) = holding(b"");
+        assert!(!holds_marker(&none).unwrap());
+    }
 }

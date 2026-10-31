@@ -213,7 +213,7 @@ fn only_a_links_start_says_whether_its_desktop_reaches_the_chat_with_the_planes_
     assert!(reach("remote-link", Some(true)));
     assert!(
         reach("remote-link", None),
-        "a desktop before 1.61: its own reading"
+        "a desktop before 1.62: its own reading"
     );
     for own in ["local-ui", "terminal", "fleet-mcp", "approval", "editor"] {
         assert!(reach(own, Some(false)), "{own}: its own reading");

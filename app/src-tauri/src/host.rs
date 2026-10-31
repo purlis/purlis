@@ -140,7 +140,7 @@ pub struct Named {
     /// runner (1.55, #4071).
     pub tools_allowed: Option<String>,
     /// Whether the plane's skills reach it, as this window read the Skill studio's flag: what a
-    /// runner arms it by (1.61, SK-20b #3084).
+    /// runner arms it by (1.62, SK-20b #3084).
     pub plane_skills: bool,
     pub alone: Vec<u16>,
     pub size: Size,

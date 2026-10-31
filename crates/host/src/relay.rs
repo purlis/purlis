@@ -1337,6 +1337,7 @@ impl session::Host for Relay {
         if let Command::KeepProfile(_)
         | Command::ForgetProfile { .. }
         | Command::StageProfileSettings(_)
+        | Command::SettingsHeld { .. }
         | Command::KeptProfiles = command
         {
             return Err(Refusal {

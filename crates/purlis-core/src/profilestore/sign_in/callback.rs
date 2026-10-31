@@ -20,17 +20,22 @@
 //! browser sent. Codex's answer redirects to its own page, with the account's values in the
 //! address, and ends only once that page is asked for. That page is asked for by its path alone, which is all it
 //! needs, so the address is not read, not sent again, and never seen by the browser: the Mac is
-//! told only whether it worked, and shows a page of its own. Nothing is kept on either side,
-//! nothing here is logged, and nothing is opened on the runner for this: the only listener there
-//! is the login's own.
+//! told only whether it worked, and shows a page of its own. None of the redirect is kept on
+//! either side, nothing here is logged, and nothing is opened on the runner for this: the only listener there
+//! is the login's own. It connects to nothing unless a login purlis holds there waits with the
+//! redirect's own `state` ([`waiting`]), once: a login that ended, or another sign-in's, gets
+//! nothing.
 
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream};
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Sender, channel};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+
+use super::waiting;
 
 /// The port Codex's and opencode's ChatGPT logins listen on, by their own code.
 pub const PORT: u16 = 1455;
@@ -60,6 +65,9 @@ const ANSWERED_WITHIN: Duration = Duration::from_secs(15);
 
 /// How long a desktop waits for its runner to say how [`deliver`] went.
 pub const CARRIED_WITHIN: Duration = Duration::from_secs(40);
+
+/// What a redirect with no login to take it answers.
+const NO_LOGIN_WAITING: &str = "no sign-in is waiting on the runner";
 
 /// **Carries one redirect's request target to the runner**: to its [`deliver`], over the link,
 /// answering whether the login there took it.
@@ -100,7 +108,9 @@ impl Forward {
                 let Some((mut browser, target)) = redirect(listeners, port, &state, &closed) else {
                     return;
                 };
-                let carried = carry(&target);
+                let Some(carried) = carried_while_open(&closed, &carry, &target) else {
+                    return;
+                };
                 answer(&mut browser, carried.is_ok());
                 told(carried);
             })
@@ -125,6 +135,16 @@ impl Drop for Forward {
             let _ = thread.join();
         }
     }
+}
+
+/// `target` carried by `carry`, unless the sign-in ended since it was read: `None`, and nothing
+/// goes to the runner.
+fn carried_while_open(
+    closed: &AtomicBool,
+    carry: &Carry,
+    target: &str,
+) -> Option<Result<(), String>> {
+    (!closed.load(Ordering::SeqCst)).then(|| carry(target))
 }
 
 /// Listeners on both of this machine's loopback addresses, the second on the port the first
@@ -276,7 +296,8 @@ fn state_in(target: &str) -> Option<&str> {
     states.next().is_none().then_some(state)
 }
 
-/// Whether `a` and `b` are the same, in the same time however much of them is.
+/// Whether `a` and `b` are the same. Of two the same length, it takes the same time wherever they
+/// differ; two of different lengths answer at once, which tells only the length.
 fn same(a: &str, b: &str) -> bool {
     a.len() == b.len()
         && a.bytes()
@@ -307,15 +328,25 @@ fn respond(browser: &mut TcpStream, status: &str, page: &str) {
     );
 }
 
-/// **Hands the redirect `target` to the login listening on this runner's loopback**, at [`PORT`]:
-/// how a runner's host carries it out. Answers only whether the login took it.
+/// **Hands the redirect `target` to the login waiting for it on this runner's loopback**, at
+/// [`PORT`]: how a runner's host carries it out. Answers only whether the login took it.
 pub fn deliver(target: &str) -> Result<(), String> {
-    deliver_on(PORT, target)
+    let kept_in = waiting::kept_here().ok_or_else(|| NO_LOGIN_WAITING.to_owned())?;
+    deliver_waiting_in(&kept_in, target)
 }
 
-fn deliver_on(port: u16, target: &str) -> Result<(), String> {
+/// [`deliver`], with what logins wait for recorded in `kept_in` ([`waiting`]).
+pub fn deliver_waiting_in(kept_in: &Path, target: &str) -> Result<(), String> {
+    deliver_on(kept_in, PORT, target)
+}
+
+fn deliver_on(kept_in: &Path, port: u16, target: &str) -> Result<(), String> {
     if !is_a_redirect(target) {
         return Err("that is not a sign-in's redirect, so it was not passed on".to_owned());
+    }
+    // Before any connection: no other login, or what else listens here, hears of it.
+    if !state_in(target).is_some_and(|state| waiting::take(kept_in, state)) {
+        return Err(NO_LOGIN_WAITING.to_owned());
     }
     match asked(port, target)? {
         Answered::Took => Ok(()),
@@ -346,7 +377,7 @@ fn asked(port: u16, target: &str) -> Result<Answered, String> {
     ]
     .iter()
     .find_map(|at| TcpStream::connect_timeout(at, REACHED_WITHIN).ok())
-    .ok_or_else(|| "no sign-in is waiting on the runner".to_owned())?;
+    .ok_or_else(|| NO_LOGIN_WAITING.to_owned())?;
     let cut_off = |_| "the sign-in on the runner stopped answering".to_owned();
     login
         .set_write_timeout(Some(REACHED_WITHIN))
