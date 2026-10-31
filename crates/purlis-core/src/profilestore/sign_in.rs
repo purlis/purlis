@@ -165,7 +165,35 @@ struct Flow {
     /// The flag that names the provider, followed by one of [`providers`]' ids, for a harness
     /// whose declaration lists plans. Empty for one that serves its own vendor's plan alone.
     provider_flag: &'static str,
+    /// The words that ask for its browser and its device-code flow by name ([`Way`]), and the
+    /// plan they are its words for, for a harness that serves several.
+    browser: &'static [&'static str],
+    device: &'static [&'static str],
+    ways_of: Option<&'static str>,
     status: Status,
+}
+
+/// **Which of a harness's sign-in flows is asked for** (#4044).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Way {
+    /// Its own default, or the list it asks from in a terminal.
+    #[default]
+    Asked,
+    /// Its browser flow, with no list to answer: how purlis drives it.
+    Browser,
+    /// Its device-code flow: what is left where the browser's answer cannot reach the login.
+    Device,
+}
+
+impl Way {
+    /// The way `word` names, as `--way` is given it.
+    pub fn named(word: &str) -> Option<Self> {
+        match word {
+            "browser" => Some(Self::Browser),
+            "device" => Some(Self::Device),
+            _ => None,
+        }
+    }
 }
 
 /// The harnesses purlis ships, each by its own documentation and help: Claude Code 2.1's
@@ -178,6 +206,9 @@ const FLOWS: [Flow; 3] = [
         login: &["auth", "login"],
         logout: Some(&["auth", "logout"]),
         provider_flag: "",
+        browser: &[],
+        device: &[],
+        ways_of: None,
         status: Status::Command(&["auth", "status"]),
     },
     Flow {
@@ -185,6 +216,10 @@ const FLOWS: [Flow; 3] = [
         login: &["login"],
         logout: Some(&["logout"]),
         provider_flag: "",
+        browser: &[],
+        // Codex's own answer for a remote machine; beta, and its account may have it off.
+        device: &["--device-auth"],
+        ways_of: None,
         status: Status::Command(&["login", "status"]),
     },
     Flow {
@@ -193,6 +228,10 @@ const FLOWS: [Flow; 3] = [
         logout: None,
         // opencode 1.18.33's `auth login --provider`: provider selection skipped.
         provider_flag: "--provider",
+        // Its `--method` names one of the list's labels; these are its ChatGPT plan's.
+        browser: &["--method", "ChatGPT Pro/Plus (browser)"],
+        device: &["--method", "ChatGPT Pro/Plus (headless)"],
+        ways_of: Some("openai"),
         status: Status::Named {
             own: "opencode",
             file: "auth.json",
@@ -498,8 +537,14 @@ impl Login {
 }
 
 /// The sign-in of `profile`, with `program` as its program, to `provider` where its harness
-/// serves several: one of [`providers`], and none for a harness that serves one.
-fn login_for(profile: &Profile, program: &str, provider: Option<&str>) -> Result<Login, String> {
+/// serves several: one of [`providers`], and none for a harness that serves one; by `way` where
+/// one is asked for.
+fn login_for(
+    profile: &Profile,
+    program: &str,
+    provider: Option<&str>,
+    way: Way,
+) -> Result<Login, String> {
     let Some(flow) = flow(&profile.kind) else {
         return Err(format!(
             "purlis cannot sign the profile '{}' in: it runs no harness purlis ships.",
@@ -531,6 +576,24 @@ fn login_for(profile: &Profile, program: &str, provider: Option<&str>) -> Result
             ));
         }
     }
+    // The words are the plan's they name; another plan of the same harness has none.
+    let of_this_plan = flow.ways_of.is_none_or(|plan| provider == Some(plan));
+    match way {
+        Way::Asked => {}
+        Way::Device if !of_this_plan || flow.device.is_empty() => {
+            return Err(format!(
+                "{} has no such sign-in for this plan, so nothing was signed in.",
+                profile.kind
+            ));
+        }
+        Way::Device => args.extend(flow.device.iter().map(|w| (*w).to_owned())),
+        // A plan with no browser flow of its own runs its default, which purlis drives as it is
+        // (opencode's Copilot, #4045).
+        Way::Browser if of_this_plan => {
+            args.extend(flow.browser.iter().map(|w| (*w).to_owned()));
+        }
+        Way::Browser => {}
+    }
     Ok(Login {
         program: program.to_owned(),
         args,
@@ -549,8 +612,18 @@ pub fn login_of(
     provider: Option<&str>,
     pinned: Option<&Path>,
 ) -> Result<Login, String> {
+    login_by(record, provider, pinned, Way::Asked)
+}
+
+/// [`login_of`], by `way` (#4044).
+pub fn login_by(
+    record: &MachineProfile,
+    provider: Option<&str>,
+    pinned: Option<&Path>,
+    way: Way,
+) -> Result<Login, String> {
     let (profile, program) = harness_of(record, pinned)?;
-    login_for(&profile, &program, provider)
+    login_for(&profile, &program, provider, way)
 }
 
 /// The profile of `record` and the program its harness runs by, as [`login_of`] finds them.
@@ -648,6 +721,7 @@ pub(super) fn asked_of(record: &MachineProfile, look: &dyn Look) -> Option<Profi
     Some(profile)
 }
 
+pub mod callback;
 pub mod driven;
 #[cfg(unix)]
 pub mod held;

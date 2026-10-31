@@ -607,6 +607,12 @@ pub enum Typed {
     Driven,
     /// Driven by the person, in a terminal the runner's `purlis` makes of this size (#4043).
     InOwnTerminal(crate::engine::Size),
+    /// In a terminal the person drives, by the harness's device-code flow: what is left where
+    /// the browser's answer cannot reach the runner (#4044).
+    DeviceInATerminal,
+    /// [`Typed::InOwnTerminal`], by the harness's device-code flow: a login that waits for the
+    /// browser's answer on the runner's loopback, which nothing carries from a terminal (#4044).
+    DeviceInOwnTerminal(crate::engine::Size),
 }
 
 impl Typed {
@@ -614,8 +620,8 @@ impl Typed {
     /// drives, `-i` with pipes purlis drives.
     pub fn exec_flag(self) -> &'static str {
         match self {
-            Typed::InATerminal => "-it",
-            Typed::Driven | Typed::InOwnTerminal(_) => "-i",
+            Typed::InATerminal | Typed::DeviceInATerminal => "-it",
+            Typed::Driven | Typed::InOwnTerminal(_) | Typed::DeviceInOwnTerminal(_) => "-i",
         }
     }
 }
@@ -632,11 +638,27 @@ pub fn sign_in_words(typed: Typed, name: &str, provider: Option<&str>) -> Vec<St
     if let Some(provider) = provider {
         words.extend(["--provider".to_owned(), provider.to_owned()]);
     }
+    // A plan's login asks from a list in a terminal, which nothing answers when driven: a plan
+    // whose login waits for the browser is told so, and only it, as a runner before #4044 knows
+    // no `--way` (Copilot's device code is its login's default). Where the browser's answer
+    // cannot reach the runner, the device-code flow is named (#4044).
+    match typed {
+        Typed::Driven
+            if provider
+                .is_some_and(crate::profilestore::sign_in::driven::plan_waits_for_the_browser) =>
+        {
+            words.extend(["--way".to_owned(), "browser".to_owned()]);
+        }
+        Typed::DeviceInATerminal | Typed::DeviceInOwnTerminal(_) => {
+            words.extend(["--way".to_owned(), "device".to_owned()]);
+        }
+        Typed::InATerminal | Typed::Driven | Typed::InOwnTerminal(_) => {}
+    }
     // Over pipes the login ends with its input (#4043), on a cluster runner too (#3819).
     match typed {
-        Typed::InATerminal => {}
+        Typed::InATerminal | Typed::DeviceInATerminal => {}
         Typed::Driven => words.push("--until-input-ends".to_owned()),
-        Typed::InOwnTerminal(size) => words.extend([
+        Typed::InOwnTerminal(size) | Typed::DeviceInOwnTerminal(size) => words.extend([
             "--in-own-terminal".to_owned(),
             format!("{}x{}", size.columns, size.rows),
         ]),
@@ -2350,6 +2372,19 @@ impl Docker {
             .line()
     }
 
+    /// [`Docker::sign_in_line`], by the harness's device-code flow (#4044): what a person is left
+    /// with where this machine's port for the browser's answer is taken.
+    pub fn device_sign_in_line(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Result<String, String> {
+        self.checked_sign_in(made, engine, name, provider, Typed::DeviceInATerminal)?
+            .line()
+    }
+
     /// **The runner's own sign-in of the profile `name`, for purlis to drive with no terminal**
     /// (#4042): [`Docker::sign_in_line`]'s, checked the same way, its input and output pipes.
     pub fn driven_sign_in(
@@ -2403,7 +2438,9 @@ impl Docker {
     }
 
     /// **The runner's own sign-in of the profile `name`, in a terminal of `size` carried over
-    /// pipes** (#4043): [`Docker::driven_sign_in`]'s, for the person to drive in the window.
+    /// pipes** (#4043): [`Docker::driven_sign_in`]'s, for the person to drive in the window. With
+    /// `device`, by the harness's device-code flow, for a login that waits for the browser's
+    /// answer on the runner's loopback, which nothing carries from a terminal (#4044).
     pub fn terminal_sign_in(
         &self,
         made: &Made,
@@ -2411,8 +2448,14 @@ impl Docker {
         name: &str,
         provider: Option<&str>,
         size: crate::engine::Size,
+        device: bool,
     ) -> Result<crate::profilestore::sign_in::Login, String> {
-        self.checked_sign_in(made, engine, name, provider, Typed::InOwnTerminal(size))
+        let typed = if device {
+            Typed::DeviceInOwnTerminal(size)
+        } else {
+            Typed::InOwnTerminal(size)
+        };
+        self.checked_sign_in(made, engine, name, provider, typed)
     }
 
     /// **Runs the runner's own sign-out of the profile `name`** (#4043), the container checked

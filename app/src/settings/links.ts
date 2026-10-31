@@ -125,21 +125,29 @@ export function askSettingsAction(plane: string, action: string): void {
 export const PROFILE_SIGN_IN = "charter-profile-sign-in";
 
 /** What Sign in asked of a project's window: which project, the profile's name, the plan's
- *  provider where purlis names one (opencode's), and the pool whose runner it is signed in on,
- *  where it is not this machine (#2049). */
-export type ProfileSignInAsk = { plane: string; profile: string; provider?: string; pool?: string };
+ *  provider where purlis names one (opencode's), the pool whose runner it is signed in on,
+ *  where it is not this machine (#2049), and whether by the harness's device-code flow (#4044). */
+export type ProfileSignInAsk = {
+  plane: string;
+  profile: string;
+  provider?: string;
+  pool?: string;
+  device?: boolean;
+};
 
 /** Asks the window of the project `plane` to sign the profile `profile` in, to `provider`'s
- *  plan where its harness serves several, on pool `pool`'s runner where one is named. */
+ *  plan where its harness serves several, on pool `pool`'s runner where one is named, by the
+ *  harness's device-code flow with `device`. */
 export function askProfileSignIn(
   plane: string,
   profile: string,
   provider?: string,
   pool?: string,
+  device?: boolean,
 ): void {
   window.dispatchEvent(
     new CustomEvent<ProfileSignInAsk>(PROFILE_SIGN_IN, {
-      detail: { plane, profile, provider, pool },
+      detail: { plane, profile, provider, pool, device },
     }),
   );
 }

@@ -1637,9 +1637,9 @@ export const commands = {
 	 *  `purlis profile sign-in`, run there through this machine's `docker`, in the runner's folder
 	 *  for the profile ([`crate::poolprofiles::sign_in_line`]); nothing of this machine's sign-in
 	 *  goes there. The runner is asked again every few seconds until it says the profile is signed
-	 *  in there.
+	 *  in there. With `device`, by the harness's device-code flow there (#4044).
 	 */
-	typeProfileSignIn: (plane: PlaneId, session: number, name: string, provider: string | null, pool: string | null) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_in", { plane, session, name, provider, pool })),
+	typeProfileSignIn: (plane: PlaneId, session: number, name: string, provider: string | null, pool: string | null, device: boolean) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_in", { plane, session, name, provider, pool, device })),
 	/**
 	 *  Puts away project `plane`'s Ask to sign the profile `profile` in (#2035): Dismiss. A chat's
 	 *  next start on it asks again while its harness says it is signed out.
@@ -3033,10 +3033,14 @@ export const commands = {
 	 *  the runner's own `purlis profile sign-in`, kept there first and run there through this
 	 *  machine's `docker` as [`sign_in_line`]'s is, but with pipes, its output read for the steps
 	 *  [`pool_sign_in_next`] answers. Nothing of this machine's sign-in goes to the runner (ADR
-	 *  0095). A sign-in of the same profile on the same pool already running is cancelled. Answers
-	 *  the sign-in's number. With `terminal`, where purlis could not follow the login, it runs in a
-	 *  terminal the runner makes, for the person to drive in the strip (#4043): what it prints is
-	 *  [`PoolSignInStep::Printed`], and what is typed goes back by [`pool_sign_in_type`].
+	 *  0095). A login that waits for the browser is answered through this machine's port, for as
+	 *  long as it runs: the redirect, and only that, is carried to the runner over a link of its own
+	 *  (`sign_in_redirect`, #4044). A sign-in of the same profile on the same pool already running is
+	 *  cancelled. Answers the sign-in's number. With `terminal`, where purlis could not follow the
+	 *  login, it runs in a terminal the runner makes, for the person to drive in the strip (#4043):
+	 *  what it prints is [`PoolSignInStep::Printed`], and what is typed goes back by
+	 *  [`pool_sign_in_type`]. A login that waits for the browser runs there by its harness's
+	 *  device-code flow, since nothing carries the browser's answer to that terminal (#4044).
 	 */
 	poolSignInStart: (pool: string, name: string, provider: string | null, terminal: {
 	columns: number,
@@ -3051,6 +3055,16 @@ export const commands = {
 { at: "open"; url: string } | 
 /**  Show this code to enter on the vendor's own page `url`, before that page is opened. */
 { at: "device"; url: string; code: string } | 
+/**
+ *  Open this page in the browser here, where the person approves: this machine is listening
+ *  for the browser's answer, which purlis carries to the runner, so nothing is pasted (#4044).
+ */
+{ at: "approve"; url: string } | 
+/**
+ *  This machine's `port` is taken, so the browser's answer could not reach the runner: no
+ *  page was opened.
+ */
+{ at: "port-taken"; port: number } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
 /**  What a login in the strip's terminal printed, escapes and all. */
@@ -10392,6 +10406,16 @@ export type PoolSignInStep =
 { at: "open"; url: string } | 
 /**  Show this code to enter on the vendor's own page `url`, before that page is opened. */
 { at: "device"; url: string; code: string } | 
+/**
+ *  Open this page in the browser here, where the person approves: this machine is listening
+ *  for the browser's answer, which purlis carries to the runner, so nothing is pasted (#4044).
+ */
+{ at: "approve"; url: string } | 
+/**
+ *  This machine's `port` is taken, so the browser's answer could not reach the runner: no
+ *  page was opened.
+ */
+{ at: "port-taken"; port: number } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
 /**  What a login in the strip's terminal printed, escapes and all. */

@@ -117,7 +117,7 @@ describe("a move waiting on its profile's sign-in", () => {
   });
 
   it("a harness whose sign-in the window does not drive signs in in a terminal, then Try the move", async () => {
-    await notice(waiting("codex"));
+    await notice(waiting("gemini"));
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(screen.queryByRole("group", { name: "Signing work in on builds" })).toBeNull();
     expect(calls("pool_sign_in_start")).toEqual([]);

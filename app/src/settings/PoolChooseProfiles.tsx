@@ -13,14 +13,14 @@ import { Button } from "../ui/button/Button";
 import { Card } from "../ui/card/Card";
 import { Checkbox } from "../ui/choice/Checkbox";
 import { askProfileSignIn } from "./links";
-import { DRIVEN, PoolProfiles } from "./PoolProfiles";
+import { DRIVEN, PoolProfiles, approvesIn } from "./PoolProfiles";
 import { PoolSignIn } from "./PoolSignIn";
 
 /** Where choosing a new pool's profiles is: choosing, signing the chosen in, or done. */
 type At =
   | { at: "choose" }
   | { at: "recording" }
-  | { at: "walk"; names: { name: string; harness: string }[]; now: number }
+  | { at: "walk"; names: { name: string; harness: string; approves: boolean }[]; now: number }
   | { at: "lines" };
 
 /** "1 profile", "2 profiles". */
@@ -92,11 +92,17 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
           pool={pool}
           profile={one.name}
           harness={one.harness}
+          approves={one.approves}
           onEnd={next}
           onTerminal={
             plane === undefined
               ? undefined
-              : () => askProfileSignIn(plane, one.name, undefined, pool)
+              : () => askProfileSignIn(plane, one.name, undefined, pool, one.approves || undefined)
+          }
+          onDeviceCode={
+            plane === undefined
+              ? undefined
+              : () => askProfileSignIn(plane, one.name, undefined, pool, true)
           }
         />
       </>
@@ -145,7 +151,11 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
                 row.standing !== "signed-in" &&
                 DRIVEN.has(row.kind),
             )
-            .map((row) => ({ name: row.name, harness: row.harness }))
+            .map((row) => ({
+              name: row.name,
+              harness: row.harness,
+              approves: approvesIn(row.kind),
+            }))
         : [];
     setAt(walked.length === 0 ? { at: "lines" } : { at: "walk", names: walked, now: 0 });
   };

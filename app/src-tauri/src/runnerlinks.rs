@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 use purlis_core::clusterpool::Kubectl;
 use purlis_core::dockerpool::Docker;
+use purlis_core::profilestore::sign_in::callback::CARRIED_WITHIN;
 use purlis_core::runners::{ClusterKept, ClusterPool, Kept};
 use purlis_host::{CommandConnector, NotChecked};
 use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
@@ -667,6 +668,27 @@ pub fn keep_profiles(
             }
             Ok(Some(said))
         }
+        Err(down) => Err(down.why),
+    })
+}
+
+/// Why a browser's answer did not reach a runner before 1.59.
+const OLDER_RUNNER: &str = "this pool's runner is older than this version of purlis, so your \
+                            browser's answer could not reach it: update the pool, and try again";
+
+/// **Hands the login waiting on the runner the redirect `target`, over one link of its own**
+/// (`sign_in_redirect`, 1.59, #4044): `Ok` once the login took it, or why not, in words.
+pub fn sign_in_redirect(to: &ToARunner, target: &str) -> Result<(), String> {
+    use purlis_session_protocol::session::KNOWS_SIGN_IN_REDIRECT;
+    on_one_link_within(to, CARRIED_WITHIN, async |linked| match linked {
+        Ok(client) if client.version() < KNOWS_SIGN_IN_REDIRECT => Err(OLDER_RUNNER.to_owned()),
+        Ok(client) => client
+            .sign_in_redirect(target)
+            .await
+            .map_err(|why| match why.refusal() {
+                Some(refused) => said_by_the_runner(&refused.why),
+                None => why.to_string(),
+            }),
         Err(down) => Err(down.why),
     })
 }

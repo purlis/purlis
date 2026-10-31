@@ -52,6 +52,20 @@ pub fn follow(
                     );
                     terminal.say("Waiting for GitHub…");
                 }
+                // Said only where the browser's answer is carried to the runner (#4044), which
+                // this does not do, so a login that waits for one is not driven here; said
+                // anyway, it is followed as far as it can be.
+                Event::Approve { url, .. } => {
+                    terminal.say(&format!("Approve the sign-in on this page: {url}"));
+                    terminal.open(&url);
+                }
+                Event::PortTaken { port } => {
+                    return Err(format!(
+                        "this machine's port {port} is taken, so your browser's answer could not \
+                         reach the runner and no page was opened. Sign in with Open in terminal \
+                         on '{profile}''s line in Settings › Pools."
+                    ));
+                }
                 Event::AskCode => {
                     terminal.say("Paste the code the page shows, then press Return:");
                     asked = true;
