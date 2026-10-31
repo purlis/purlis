@@ -21,6 +21,23 @@ export type Cloning = ReadonlyMap<string, CloneState>;
 
 const NOTHING_CLONING: Cloning = new Map();
 
+/**
+ * **The repos to draw as not cloned here**: what the workspace names, and any repo this window is
+ * cloning into it that it does not name yet. A workspace names a repo once it lands, so a new
+ * workspace's repos would otherwise have no row, and its Repos view would say it has none, for
+ * as long as their clones run.
+ */
+export function notClonedRows(
+  absent: readonly string[],
+  here: readonly string[],
+  cloning: Cloning = NOTHING_CLONING,
+): readonly string[] {
+  const coming = [...cloning]
+    .filter(([repo, state]) => underWay(state) && !absent.includes(repo) && !here.includes(repo))
+    .map(([repo]) => repo);
+  return coming.length === 0 ? absent : [...absent, ...coming];
+}
+
 /** **How far a repo's clone has got, as a bar under its row** (#4079), until it lands. */
 export function CloneBar({ repo, state }: { repo: string; state: CloneState | undefined }) {
   if (state?.state !== "cloning" || state.percent === undefined) return null;
