@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793404745136,
+  "lastUpdate": 1793407468927,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32424,6 +32424,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2993045,
             "unit": "ms",
             "extra": "median of 5 runs: 101.169, 101.902, 102.299, 102.422, 104.106 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a3ea5da1baaf9da080e3a95cb2da72d4f6961cb6",
+          "message": "The one-writer guard also covers plain git in an unsandboxed chat's branch folder (#3931) (#4184)\n\n* The one-writer guard also covers plain git in an unsandboxed chat's branch folder (#3931)\n\nA chat started without the sandbox commits, rebases and pushes with git itself. Its Bash\nguard now reads the line for git that writes a branch folder's branch and asks the app the\nbrokered write's own claim check (GitWork::WorktreeClaim): a folder another live chat holds\nis refused in the brokered refusal's words, a free one is taken. With no app to answer, the\npiece log alone decides (fail closed). The person's own terminal, a harness they start\nthemselves and a shell tab are never held to it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* branchgit: its tests move to branchgit/tests.rs (#3931)\n\nMove only, per CONTRIBUTING's Where tests live.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Plain git's one-writer guard: no answer allows, every write on the line, env -C (#3931)\n\nFrom the two-axis review of #4129:\n- No answer from the app lets the git run. The hook's local piece-log fallback is gone: its\n  lock could wait past the 2 s budget into a refusal naming nobody, and a dead chat's stale\n  claim blocked every other chat. The whole line's asks share a 0.9 s wait.\n- Every git write on the line is judged, each in its own folder, not only the first.\n- env -C <folder> git ... is placed in that folder (for the sandboxed arm too).\n- claim() takes a worktree::Located; the duplicate WorktreeClaim arm is unreachable!; the\n  walker's result is a named struct (InAFolder); ClaimAct's doc says why it is a wire enum.\n- Tests: env -C, a second write on one line, a slow app and no app (both allowed), with the\n  CLI test now driving the core broker on a real listener.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Plain git's guard refuses only where another live chat holds the folder (#3931)\n\nFrom the review of #4129: any other answer from the app lets the git run, as no answer does.\nThe app answers a claim held by another live chat with a Said whose exit is CLAIM_HELD (3) and\nthe refusal as its line (piececlaim::take_telling tells HeldByALiveChat from Otherwise); every\nother refusal stays a No (a chat it does not have open, a name it cannot read, a holder not\nback since a restart, a lock or claim it could not hold or write), and the guard lets it\nthrough.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Plain git's claim asks name no liveness: alive is false (#3931)\n\nMain added GitAsk::alive (#4080): an asker that reads Alive lines while it waits, as a clone's\ndoes. A claim ask is answered at once inside the guard's bounded wait, so it never asks for\nthem; gitask::forwarded already sends it false. The claim tests now build GitAsk with it, and\nthe WorktreeClaim doc says why.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T00:19:54Z",
+          "tree_id": "ccb0f7eee97de90b9fe06cccc72464cd4bf9636b",
+          "url": "https://github.com/purlis/purlis/commit/a3ea5da1baaf9da080e3a95cb2da72d4f6961cb6"
+        },
+        "date": 1793407462236,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6670445,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.648, 0.663, 0.667, 0.667, 0.691 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4250105,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.390, 16.416, 16.425, 16.484, 16.831 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.111401,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.986, 101.999, 102.111, 102.440, 102.558 ms"
           }
         ]
       }
