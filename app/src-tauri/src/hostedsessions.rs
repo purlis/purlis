@@ -348,6 +348,12 @@ impl Connection {
     /// that name goes too: a pool added under it is a new runner.
     pub fn pool_removed(&self, pool: &str) {
         lock(&self.untrusted).remove(pool);
+        self.links_to_pool_end(pool);
+    }
+
+    /// Every link the window holds to the runner of `pool` ends, each chat on it told it ended
+    /// with its host, and whatever comes next is dialled anew.
+    pub fn links_to_pool_end(&self, pool: &str) {
         let Some(of_it) = lock(&self.pools).get(pool).cloned() else {
             return;
         };

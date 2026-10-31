@@ -421,18 +421,20 @@ fn links_end_once_gone(
     config: &std::path::Path,
     name: &str,
 ) {
-    let kept = purlis_core::runners::pools(config)
+    let read = purlis_core::runners::pools(config)
         .map(|pools| pools.iter().any(|pool| pool.name() == name))
         .and_then(|docker| {
             purlis_core::runners::cluster_pools(config)
                 .map(|clusters| docker || clusters.iter().any(|pool| pool.name() == name))
         })
-        .unwrap_or_else(|why| {
+        ;
+    match read {
+        Ok(true) => {}
+        Ok(false) => connection.pool_removed(name),
+        Err(why) => {
             tracing::warn!("purlis: what this machine keeps of its pools was not read: {why}");
-            false
-        });
-    if !kept {
-        connection.pool_removed(name);
+            connection.links_to_pool_end(name);
+        }
     }
 }
 

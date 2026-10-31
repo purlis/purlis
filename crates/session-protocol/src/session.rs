@@ -3916,7 +3916,7 @@ async fn drive(mut link: Link, mut asked: mpsc::UnboundedReceiver<Ask>, mut push
             frame = link.control().next() => Driven::Frame(frame),
         };
         match next {
-            // Every handle is gone: nobody is left to answer.
+            // Every handle is gone, so nobody is left to answer; or a holder ended the link.
             Driven::Ask(None) | Driven::Ask(Some(Ask::End)) => return,
             Driven::Ask(Some(ask)) => {
                 let id = next_id;

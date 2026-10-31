@@ -264,4 +264,10 @@ fn a_pools_links_end_once_it_is_gone_and_not_while_it_is_kept() {
     write("not json".to_owned());
     links_end_once_gone(&window, config.path(), "builds");
     assert_eq!(window.removals_of("builds"), 2, "cannot be read");
+    let _ = window.to_a_pool("builds").ran_unsandboxed();
+    links_end_once_gone(&window, config.path(), "builds");
+    assert!(
+        window.untrusts("builds"),
+        "only a pool seen to be gone lets go of what is held against its name"
+    );
 }
