@@ -838,7 +838,7 @@ fn a_run_the_window_refused_is_not_asked_of_the_person_again_at_once() {
         .refused(&paced, "refused by the person");
     let (written, asker, done) = an_exec_through(desktop.host, gh_asked());
     soon("the asker was never told", || {
-        said(&written).contains("does not ask them again")
+        said(&written).contains("does not ask again")
     });
     asker.shutdown(std::net::Shutdown::Write).unwrap();
     let _ = done.recv_timeout(Duration::from_secs(10));

@@ -516,7 +516,7 @@ fn a_key_it_moved_on_from_is_not_taken_back_whatever_the_port_shows() {
     );
     let (home, _) = a_runner(&nobody_at(), &[old.clone(), next.clone()]);
     let settled = settled_on(&held_now(&home), &next).expect("it settles on the next");
-    assert_eq!(settled.left, [old.clone()]);
+    assert_eq!(settled.left, std::slice::from_ref(&old));
     tell(home.path(), settled).unwrap();
     assert!(tell_again(home.path(), a_desktops_word(&address, &old)).unwrap());
     let held = held_now(&home);
