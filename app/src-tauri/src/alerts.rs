@@ -312,6 +312,7 @@ fn left_messages(root: &Path) -> Vec<AlertRow> {
             severity: "warn".to_owned(),
             subject: LEFT_MESSAGES.to_owned(),
             detail: notice.notice(),
+            workspaces: Vec::new(),
             way: AlertWay::LeftMessages { report },
         })
         .collect()

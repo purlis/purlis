@@ -852,6 +852,7 @@ describe("a chat's undelivered messages (#3958)", () => {
     subject: "undelivered messages",
     detail:
       'chat 3 did not come back after purlis restarted, and 1 message it queued while purlis did not answer was never delivered, with no running dispatch left to keep them on: a follow-up to chat 9: "carry on"',
+    workspaces: [],
     way: { kind: "left-messages", report: "3.abc.unplaced.json" },
   };
 
