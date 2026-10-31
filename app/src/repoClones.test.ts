@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import {
   cloneRepos,
@@ -286,11 +286,15 @@ describe("a stop that comes too late for its run (#4176)", () => {
       throw new Error("a listener broke");
     });
     await expect.poll(() => held.length).toBe(1);
+    // A call waiting on web, which hears how it ended.
+    const waiting = cloneRepos("/p", "gamma", ["web"]);
     // web is still waiting: Cancel marks it, then the run stops part way before reaching it.
     stopRepoClones("/p", "gamma", ["web"]);
     held[0].land();
     await expect(first).rejects.toThrow("a listener broke");
-    // The Retry the "not finished" sentence asks for clones it.
+    // The person stopped it: it ends stopped, not "not finished" (#4178's review).
+    expect(await waiting).toEqual([{ repo: "web", said: "web was stopped.", stopped: true }]);
+    // And asked for again, it clones.
     const again = cloneRepos("/p", "gamma", ["web"]);
     await expect.poll(() => held.length).toBe(2);
     held[1].land();
@@ -299,9 +303,24 @@ describe("a stop that comes too late for its run (#4176)", () => {
   });
 });
 
+/** **What the store surfaces of a listener that threw** (#4178's review): each error is rethrown
+ *  in a microtask of its own, kept here instead, so the test hears it and nothing else does. */
+function surfaced() {
+  const thrown: unknown[] = [];
+  const spy = vi.spyOn(globalThis, "queueMicrotask").mockImplementation((run) => {
+    try {
+      run();
+    } catch (err: unknown) {
+      thrown.push(err);
+    }
+  });
+  return { thrown, restore: () => spy.mockRestore() };
+}
+
 describe("a store listener that throws (#4177)", () => {
   it("never leaves a waiting call unanswered, nor the workspace's next clone waiting", async () => {
     const { held } = heldCore();
+    const said = surfaced();
     let thrown = false;
     let landed = false;
     const stop = subscribeRepoClones(() => {
@@ -315,7 +334,8 @@ describe("a store listener that throws (#4177)", () => {
       await expect.poll(() => held.length).toBe(1);
       landed = true;
       held[0].land();
-      await expect(first).rejects.toThrow("a listener broke");
+      // The store's listeners each heard it on their own: the run is not stopped by one of them.
+      expect(await first).toEqual([]);
       // The call waiting on api still answers, with how it ended.
       expect(await waiting).toEqual([]);
       // And the workspace's next clone runs.
@@ -323,8 +343,49 @@ describe("a store listener that throws (#4177)", () => {
       await expect.poll(() => held.length).toBe(2);
       held[1].land();
       expect(await next).toEqual([]);
+      // The listener's throw is not lost: it is said once, after the others heard the change.
+      expect(said.thrown.map((one) => (one as Error).message)).toEqual(["a listener broke"]);
     } finally {
       stop();
+      said.restore();
+    }
+  });
+
+  it("never wedges the workspace when it throws as a repo is set waiting (#4178's review)", async () => {
+    const { held, asked } = heldCore();
+    const said = surfaced();
+    let calls = 0;
+    let others = 0;
+    // The second change the store hears is web set waiting.
+    const stop = subscribeRepoClones(() => {
+      calls += 1;
+      if (calls === 2) throw new Error("a listener broke");
+    });
+    const later = subscribeRepoClones(() => {
+      others += 1;
+    });
+    try {
+      const first = cloneRepos("/p", "gamma", ["api", "web"]);
+      // The listener after the one that threw still heard web set waiting.
+      expect(others).toBe(2);
+      await expect.poll(() => held.length).toBe(1);
+      held[0].land();
+      await expect.poll(() => held.length).toBe(2);
+      held[1].land();
+      expect(await first).toEqual([]);
+      // A second ask for api answers, and a clone of another repo runs.
+      const again = cloneRepos("/p", "gamma", ["api", "x"]);
+      await expect.poll(() => held.length).toBe(3);
+      held[2].land();
+      await expect.poll(() => held.length).toBe(4);
+      held[3].land();
+      expect(await again).toEqual([]);
+      expect(asked).toEqual(["api", "web", "api", "x"]);
+      expect(said.thrown).toHaveLength(1);
+    } finally {
+      stop();
+      later();
+      said.restore();
     }
   });
 });

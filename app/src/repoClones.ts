@@ -62,7 +62,25 @@ function set(plane: PlaneId, workspace: string, repo: string, state: CloneState)
   const next = new Map(byWorkspace.get(key) ?? EMPTY);
   next.set(repo, state);
   byWorkspace.set(key, next);
-  for (const listener of listeners) listener();
+  tell();
+}
+
+/**
+ * **Tells every listener of the store a change, each on its own** (#4177, #4178's review): one
+ * that throws neither stops the rest from hearing it nor throws out of the store, where it could
+ * stop a run before it is chained or ended and leave a repo waiting for good. Its error is
+ * thrown again once they have all heard, in a microtask of its own, so it is still reported.
+ */
+function tell() {
+  for (const listener of listeners) {
+    try {
+      listener();
+    } catch (err: unknown) {
+      queueMicrotask(() => {
+        throw err;
+      });
+    }
+  }
 }
 
 /**
@@ -225,7 +243,7 @@ async function cloneInTurn(
           .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
         answered = true;
       }
-      stopping.get(key)?.delete(repo);
+      // The stop mark, read above, is cleared by `end()`, the one place every way ends a repo.
       if (answer.status === "ok" && answer.data === null) {
         end(repo, { state: "stopped" });
         failed.push({ repo, said: STOPPED(repo), stopped: true });
@@ -253,15 +271,10 @@ async function cloneInTurn(
   } catch (err: unknown) {
     // **Stopped part way** (#4003): a repo this run never reached is not left waiting for as
     // long as the window is open, which would make every later ask answer "not finished". It
-    // ends failed, so asking again clones it. Every one is ended, though the store's listener
-    // throws again on one (#4177); then the run's own throw is said.
-    for (const repo of repos.filter((one) => !done.has(one))) {
-      try {
-        end(repo, NOT_FINISHED(repo));
-      } catch {
-        // `end` recorded and told it before the store threw: only the store's drawing is lost.
-      }
-    }
+    // ends failed, so asking again clones it; or stopped, where the person stopped it (#4178's
+    // review). Then the run's own throw is said.
+    for (const repo of repos.filter((one) => !done.has(one)))
+      end(repo, stopping.get(key)?.has(repo) ? { state: "stopped" } : NOT_FINISHED(repo));
     throw err;
   }
 }
@@ -294,7 +307,8 @@ async function seen(
 }
 
 /** **The store's subscription**, as `useRepoClones` reads it: `listener` hears every change,
- *  until the function it answers is called. */
+ *  until the function it answers is called. Exported as the tests' way to stand in a listener
+ *  (D-4177-3); keep it so rather than folding it back into the hook. */
 export function subscribeRepoClones(listener: () => void) {
   listeners.add(listener);
   return () => {
@@ -324,7 +338,7 @@ export function settleRepoClones(plane: PlaneId, workspace: string, absent: read
   );
   if (next.size === held.size) return;
   byWorkspace.set(key, next);
-  for (const listener of listeners) listener();
+  tell();
 }
 
 /** For tests: forget every clone. */
