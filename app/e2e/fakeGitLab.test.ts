@@ -48,7 +48,7 @@ function cloneWith(
         `credential.helper=${helper}`,
         "clone",
         "--",
-        forge.webUrl(repo),
+        `${forge.webUrl(repo)}.git`,
         join(dir, into),
       ],
       {
