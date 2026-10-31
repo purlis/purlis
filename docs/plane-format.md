@@ -8502,3 +8502,5 @@ so each one can be filed on its own merits.
     `charter/commands_frame.py:599`) is where the name plausibly comes from, but no writer
     in this tree mints `probe-1` itself — most likely an older release left it. A reader
     enumerating `frame/` should expect directory names it cannot account for.
+
+<!-- demo for #3596 -->
