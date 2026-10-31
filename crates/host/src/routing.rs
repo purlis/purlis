@@ -139,7 +139,7 @@ impl Routed {
                 let named = runner_named(&resolved).to_owned();
                 *lock(&self.runner) = Some(named.clone());
                 let relay = Relay::kept(keep)
-                    .claiming(self.hosting.claimed())
+                    .claiming(self.hosting.claimed(), &named)
                     .stopping_first(self.hosting.stop_first(named));
                 (relay, resolved)
             }
@@ -241,10 +241,7 @@ impl session::Host for Routed {
                 // A runner that drains keeps its chats, and starts no new one (#2865): asked at
                 // each start, so a link relayed before its runner was replaced drains with it.
                 if matches!(command, Command::StartProgram(_)) && self.drains().await {
-                    return Err(not_allowed(
-                        "this runner is being replaced by one of this desktop's version: it keeps \
-                         its chats until they end, and new chats start on its pool's runner",
-                    ));
+                    return Err(not_allowed(session::A_DRAINING_RUNNER_STARTS_NONE));
                 }
                 session::Host::call(&relay, command, peer).await
             }

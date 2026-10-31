@@ -446,10 +446,12 @@ fn a_window_on_a_pool_of(
         .build()
         .expect("a runtime");
     let host = runtime.block_on(async {
-        a_host(folder.path(), data.path()).relaying_with(crate::runnerlinks::relaying({
-            let machine = machine.clone();
-            move || Ok(machine.clone())
-        }))
+        a_host(folder.path(), data.path())
+            .relaying_with(crate::runnerlinks::relaying({
+                let machine = machine.clone();
+                move || Ok(machine.clone())
+            }))
+            .draining_with(crate::runnerlinks::drains_to(config.path().to_path_buf()))
     });
     // The window's links to it, as the window's binary dials them: its own, and each relayed
     // to a pool's runner by the host.

@@ -594,6 +594,10 @@ pub const NO_SUCH_PROJECT: &str = "no_such_project";
 /// asks for a folder or a service of this one that is not the project's own here (1.4, #2445),
 /// for a reason its `why` gives.
 pub const NOT_ALLOWED: &str = "not_allowed";
+/// **Why a start on a link relayed to a draining runner is refused** (#2865): nothing started, and
+/// the window, which knows these words, starts it again on a link to the pool's runner now.
+pub const A_DRAINING_RUNNER_STARTS_NONE: &str = "this runner is being replaced by one of this \
+     desktop's version: it keeps its chats until they end, and new chats start on its pool's runner";
 /// The host cannot carry this out now, for a reason its `why` gives (1.2): a start the host
 /// cannot compose, or a program it could not run.
 pub const NOT_STARTED: &str = "not_started";

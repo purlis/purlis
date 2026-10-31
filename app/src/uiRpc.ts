@@ -1394,6 +1394,7 @@ export const commands = {
 	harnessCards: (plane: PlaneId) => typedError<HarnessGlance[], string>(__TAURI_INVOKE("harness_cards", { plane })),
 	approveProfile: __WINDOW_ONLY_RESULT,
 	startChat: __WINDOW_ONLY_RESULT,
+	cancelChatStart: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The piece a chat's working directory sits in, or `None`.
 	 * 

@@ -2859,6 +2859,11 @@ export const commands = {
 	 */
 	startChat: (plane: PlaneId, profile: string, persona: string | null, cwd: string | null, name: string, label: string | null, boxes: Boxes, columns: number, rows: number) => typedError<Started, string>(__TAURI_INVOKE("start_chat", { plane, profile, persona, cwd, name, label, boxes, columns, rows })),
 	/**
+	 *  **The person pressed Cancel while a chat started in this project** (#4264): it stops waiting
+	 *  for the session host, and a chat that comes up after is closed.
+	 */
+	cancelChatStart: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("cancel_chat_start", { plane })),
+	/**
 	 *  The piece a chat's working directory sits in, or `None`.
 	 * 
 	 *  Called for every chat the sidebar draws. `worktree::locate` is path arithmetic and spawns

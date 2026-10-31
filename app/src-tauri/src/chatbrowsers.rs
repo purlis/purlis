@@ -124,6 +124,11 @@ pub trait Driver: Send + Sync + 'static {
     /// purlis performs `login` in browser `program` (#2016): the page it left once it handed
     /// the browser back, or why it did not go through, in words that carry no value.
     fn log_in(&self, program: &str, login: LogIn) -> Result<Browsed, Refused>;
+    /// The runner browser `program` runs on, by its name in its pool, where its link names one.
+    fn runner_of(&self, program: &str) -> Option<String> {
+        let _ = program;
+        None
+    }
     /// Ends browser `program`, and forgets it.
     fn close(&self, program: &str) -> Result<(), String>;
     /// Ends browser `program` by its id, with its reach proxy: what is tried when a close did
@@ -2625,6 +2630,26 @@ impl ChatBrowsers {
                     login, identity, ..
                 },
             ) => {
+                // Bound to the runner the chat's link reached, so it goes into a browser on no
+                // other: a project's chats and browsers may be on two runners during a drain
+                // (#4248).
+                if let (Some(asked), Some(on)) = (
+                    crate::hooks::reached_over_the_link(),
+                    driver.runner_of(&program),
+                ) && asked
+                    .split_once('/')
+                    .map(|(_, runner)| runner.split_once('@').map_or(runner, |(runner, _)| runner))
+                    != Some(on.as_str())
+                {
+                    return (
+                        no(&format!(
+                            "this chat's runner is being replaced and its browser runs on the \
+                             new one, so login {declared} was not filled: open the browser from \
+                             a chat on the new runner"
+                        )),
+                        false,
+                    );
+                }
                 // Held from the moment it is tried, whatever its answer (#2022): a login that
                 // timed out, or that the person finished by hand, may have signed it in.
                 self.signed_in_with(
