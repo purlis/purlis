@@ -763,6 +763,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // removal deletes its sign-in there, so only the person's own window does.
     "pool_profile_add",
     "pool_profile_remove",
+    // A pool's limits (spec #4275): the person changes them directly, and a chat only proposes
+    // through the edit ask (Q6), so only their own window saves one, or reads the offer to.
+    "pool_limit_offer",
+    "pool_limit_set",
     // Signing a profile in on a pool's runner with no terminal (#4042): it runs the runner's
     // own sign-in and passes the person's code to it, so only their own window drives it.
     "pool_sign_in_start",

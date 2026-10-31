@@ -418,9 +418,21 @@ use crate::view::{Limits, Views};
 /// is where a grade runs. It answers with `answer_grade`, tells each step with `grade_step`, which
 /// the asking link is pushed, and is pushed `stop_grade` once that link has gone. An older host
 /// refuses `ask_grade` `unknown_command`, and an older window is never asked.
+///
+/// 1.64 lets a runner stage more of a profile's settings (spec #4275, #4279):
+/// `stage_profile_settings` holds them to [`MOST_PROFILE_SETTINGS_STAGED_BYTES`] and
+/// [`MOST_PROFILE_SETTINGS_STAGED_FILES`], so a pool's limit above what a runner before held can
+/// be used. No frame changes. A runner before 1.64 is held to what it staged before, and the
+/// desktop says so before it sends.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 63,
+    minor: 64,
+};
+
+/// The version that first stages a profile's settings up to a pool's limit (spec #4275).
+pub const KNOWS_LARGER_PROFILE_SETTINGS: Version = Version {
+    major: 1,
+    minor: 64,
 };
 
 /// The version that first runs a grade a terminal asked for (SK-61, #3241).
@@ -1398,6 +1410,16 @@ pub const MOST_PROFILE_SETTINGS_BYTES: usize = 128 * 1024 * 1024;
 /// **The most settings files a runner holds for one profile** (#4081, D-4081-2).
 pub const MOST_PROFILE_SETTINGS_FILES: usize = 8192;
 
+/// **The most bytes of settings a runner of 1.64 or later stages from its desktop on one link**
+/// (spec #4275): the most a pool's limit can be, 1 GiB, and room for a file rewritten without its
+/// credentials to come out longer. The pool's limit itself is the desktop's, and only the paired
+/// desktop stages settings. What a runner tells its desktop it holds stays within
+/// [`MOST_PROFILE_SETTINGS_BYTES`] and [`MOST_PROFILE_SETTINGS_FILES`].
+pub const MOST_PROFILE_SETTINGS_STAGED_BYTES: usize = 1032 * 1024 * 1024;
+
+/// **The most settings files a runner of 1.64 or later stages on one link** (spec #4275).
+pub const MOST_PROFILE_SETTINGS_STAGED_FILES: usize = 65_536;
+
 /// The longest path of a settings file a runner holds, the most a path names on Linux.
 const MOST_SETTINGS_PATH_BYTES: usize = 4096;
 
@@ -1486,7 +1508,7 @@ pub fn settings_in_batches(profile: &str, files: Vec<SettingsFile>) -> Vec<Setti
 
 /// **The settings a link has staged for one profile** (1.56, #4081): whole files, held in memory
 /// and only here, so a link that ends, or a batch refused, leaves nothing of them. Held to
-/// [`MOST_PROFILE_SETTINGS_BYTES`] and [`MOST_PROFILE_SETTINGS_FILES`] as they arrive. It judges
+/// [`MOST_PROFILE_SETTINGS_STAGED_BYTES`] and [`MOST_PROFILE_SETTINGS_STAGED_FILES`] as they arrive. It judges
 /// the shape of what arrives and nothing of what it says: a runner checks the whole files as it
 /// checks files one `keep_profile` carries, once they are all here.
 #[derive(Debug, Default)]
@@ -1507,10 +1529,10 @@ impl StagedSettings {
         }
         for piece in pieces {
             self.bytes += piece.bytes.len();
-            if self.bytes > MOST_PROFILE_SETTINGS_BYTES {
+            if self.bytes > MOST_PROFILE_SETTINGS_STAGED_BYTES {
                 return Err(format!(
                     "these settings are over the {} MiB a runner holds for a profile",
-                    MOST_PROFILE_SETTINGS_BYTES / (1024 * 1024)
+                    MOST_PROFILE_SETTINGS_STAGED_BYTES / (1024 * 1024)
                 ));
             }
             if piece.path.len() > MOST_SETTINGS_PATH_BYTES {
@@ -1523,9 +1545,9 @@ impl StagedSettings {
                 }
                 continue;
             }
-            if self.files.len() >= MOST_PROFILE_SETTINGS_FILES {
+            if self.files.len() >= MOST_PROFILE_SETTINGS_STAGED_FILES {
                 return Err(format!(
-                    "these settings are over the {MOST_PROFILE_SETTINGS_FILES} files a runner \
+                    "these settings are over the {MOST_PROFILE_SETTINGS_STAGED_FILES} files a runner \
                      holds for a profile"
                 ));
             }

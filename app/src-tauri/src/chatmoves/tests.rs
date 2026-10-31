@@ -272,7 +272,7 @@ struct ProfilesOnAPool {
 }
 
 impl crate::poolprofiles::ProfilesOnPools for ProfilesOnAPool {
-    fn ready(&self, _: &std::path::Path, _: &str, _: &str) -> Result<Option<String>, String> {
+    fn ready(&self, _: &std::path::Path, _: &str, _: &str) -> Result<(), String> {
         Err("asked as a start, where a move was meant".into())
     }
 

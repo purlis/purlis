@@ -41,7 +41,6 @@
 //! chat's too, and signed out, it waits as one Ask, *Profile <profile> on pool <pool>*, whose
 //! Sign in on pool <pool> signs it in there.
 
-use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -57,21 +56,18 @@ use crate::runnerlinks::{Machine, ToARunner};
 /// pool asks before it is sent there.
 pub trait ProfilesOnPools: Send + Sync {
     /// `Ok` where a chat in the project at `root` on `profile` may start on pool `pool`'s
-    /// runner, or why not, in words. `Ok` carries what the chat's tab says of settings that
-    /// stayed behind (#4081), where some did.
-    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<Option<String>, String>;
+    /// runner, or why not, in words.
+    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String>;
 
     /// [`Self::ready`], for a chat that moves to pool `pool`'s runner (#2048): said of the move,
-    /// and a profile signed out there is the sign-in the move waits on (#3477). What stayed
-    /// behind is said by the chat's start there, which keeps its profile again.
+    /// and a profile signed out there is the sign-in the move waits on (#3477).
     fn ready_to_move(
         &self,
         root: &Path,
         pool: &str,
         profile: &str,
     ) -> Result<(), onrunner::NotYet> {
-        self.ready(root, pool, profile)?;
-        Ok(())
+        Ok(self.ready(root, pool, profile)?)
     }
 }
 
@@ -87,28 +83,15 @@ impl Linked {
 }
 
 impl ProfilesOnPools for Linked {
-    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<Option<String>, String> {
+    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
         let _readying = Readying::of(pool, profile);
         let yours = yours(&self.config, pool);
         chosen_by_a_chat(&yours, &self.config, root, pool, profile);
-        let behind = RefCell::default();
         tidy_once(&yours, &self.config, root, pool);
         // A chat's start is what wakes a suspended runner (#2051), so its keep does too.
         onrunner::ready_on(&self.config, root, pool, profile, &|kept| {
-            keep_on_as(
-                yours.clone(),
-                &self.config,
-                pool,
-                kept,
-                Waking::Yes,
-                &behind,
-            )
-        })?;
-        Ok(onrunner::left_behind_note(
-            pool,
-            profile,
-            &behind.into_inner(),
-        ))
+            keep_on_as(yours.clone(), &self.config, pool, kept, Waking::Yes)
+        })
     }
 
     fn ready_to_move(
@@ -122,14 +105,7 @@ impl ProfilesOnPools for Linked {
         chosen_by_a_chat(&yours, &self.config, root, pool, profile);
         tidy_once(&yours, &self.config, root, pool);
         onrunner::ready_to_move_on(&self.config, pool, profile, &|kept| {
-            keep_on_as(
-                yours.clone(),
-                &self.config,
-                pool,
-                kept,
-                Waking::Yes,
-                &RefCell::default(),
-            )
+            keep_on_as(yours.clone(), &self.config, pool, kept, Waking::Yes)
         })
     }
 }
@@ -638,14 +614,7 @@ pub fn keep_on(
     pool: &str,
     kept: &onrunner::Kept,
 ) -> Result<Option<Standing>, String> {
-    keep_on_as(
-        yours(config, pool),
-        config,
-        pool,
-        kept,
-        Waking::No,
-        &RefCell::default(),
-    )
+    keep_on_as(yours(config, pool), config, pool, kept, Waking::No)
 }
 
 /// Whether a link made to keep a profile starts a suspended runner again (#2051): only a chat's
@@ -702,14 +671,13 @@ fn the_same_runner(a: &purlis_core::runners::Kept, b: &purlis_core::runners::Kep
 }
 
 /// [`keep_on`], with `yours` what [`yours`] said of pool `pool`: nothing is read or sent where
-/// it said no. `behind` is told what of its settings stayed behind (#4081).
+/// it said no.
 fn keep_on_as(
     yours: Result<Yours, String>,
     config: &Path,
     pool: &str,
     kept: &onrunner::Kept,
     waking: Waking,
-    behind: &RefCell<Vec<onrunner::LeftBehind>>,
 ) -> Result<Option<Standing>, String> {
     let Ok(yours) = yours else {
         return Ok(None);
@@ -723,10 +691,85 @@ fn keep_on_as(
     said.into_iter()
         .next()
         .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
-        .map(|kept| {
-            behind.replace(kept.left_behind);
-            Some(onrunner::standing_on_the_wire(kept.standing))
-        })
+        .map(|kept| Some(onrunner::standing_on_the_wire(kept.standing)))
+}
+
+/// **A limit a start was refused on**, as Start a chat offers to raise it (spec #4275).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolLimitHitRow {
+    /// The limit's key: what [`pool_limit_set`] takes.
+    pub key: String,
+    /// Its name in plain words.
+    pub plain: String,
+    /// The word beside a number of it.
+    pub unit: String,
+    pub in_force: u32,
+    pub needed: u32,
+    /// The value offered, which the person can edit; none where no value would hold it.
+    pub suggested: Option<u32>,
+}
+
+/// **What a refused start on a pool offers**: the pool, and each limit it was refused on.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolLimitOffer {
+    pub pool: String,
+    pub hits: Vec<PoolLimitHitRow>,
+}
+
+/// The offer of the refusal `over`, where it reached a pool.
+fn offer_of(over: onrunner::OverLimit) -> Option<PoolLimitOffer> {
+    let number = |value: u64| u32::try_from(value).unwrap_or(u32::MAX);
+    Some(PoolLimitOffer {
+        pool: over.pool?,
+        hits: over
+            .hits
+            .iter()
+            .map(|hit| {
+                let limit = hit.limit.limit();
+                PoolLimitHitRow {
+                    key: limit.key.to_owned(),
+                    plain: limit.plain.to_owned(),
+                    unit: limit.unit.word().to_owned(),
+                    in_force: number(hit.in_force),
+                    needed: number(hit.needed),
+                    suggested: hit.suggested.map(number),
+                }
+            })
+            .collect(),
+    })
+}
+
+/// **The limits a start on `profile` was refused on, in the words `refused`** (spec #4275): what
+/// Start a chat offers beside that refusal. Asked of the core, never read from the words.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_limit_offer(profile: String, refused: String) -> Option<PoolLimitOffer> {
+    onrunner::over_limit(&profile, &refused).and_then(offer_of)
+}
+
+/// **Saves `value` as pool `pool`'s limit `key`** (spec #4275), the person's own press in their
+/// window: a chat has no way to it, and can only propose through the edit ask (Q6). It applies
+/// from the next attempt, with nothing restarted.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_limit_set(pool: String, key: String, value: u32) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let limit = purlis_core::poollimits::of_key(&key).ok_or_else(|| {
+            format!(
+                "a pool has no limit named {}",
+                purlis_core::shown::short(&key)
+            )
+        })?;
+        purlis_core::runners::set_pool_limit(
+            &config_root()?,
+            &pool,
+            limit.id,
+            Some(u64::from(value)),
+        )
+        .map_err(|why| why.to_string())
+    })
+    .await
+    .map_err(|why| format!("the limit was not saved: {why}"))?
 }
 
 /// One of this machine's profiles, as a pool's runner stands with it.
@@ -1070,16 +1113,7 @@ pub fn sign_in_line(
         })?;
     profilestore::sign_in::plan_named(&record.harness, provider)?;
     let kept = onrunner::Kept::of(&record)?;
-    if keep_on_as(
-        Ok(yours.clone()),
-        &config,
-        pool,
-        &kept,
-        Waking::No,
-        &RefCell::default(),
-    )?
-    .is_none()
-    {
+    if keep_on_as(Ok(yours.clone()), &config, pool, &kept, Waking::No)?.is_none() {
         return Err(format!(
             "Pool {pool}: {OLDER_RUNNER}. No sign-in was typed."
         ));
@@ -1269,16 +1303,7 @@ pub async fn pool_sign_in_start(
         let record = record_named(&config, &name)?;
         profilestore::sign_in::plan_named(&record.harness, provider.as_deref())?;
         let kept = onrunner::Kept::of(&record)?;
-        if keep_on_as(
-            Ok(yours.clone()),
-            &config,
-            &pool,
-            &kept,
-            Waking::No,
-            &RefCell::default(),
-        )?
-        .is_none()
-        {
+        if keep_on_as(Ok(yours.clone()), &config, &pool, &kept, Waking::No)?.is_none() {
             return Err(format!(
                 "Pool {pool}: {OLDER_RUNNER}. Nothing was signed in."
             ));

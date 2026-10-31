@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use std::cell::RefCell;
 
 fn work() -> onrunner::Kept {
     onrunner::Kept {
@@ -10,6 +11,8 @@ fn work() -> onrunner::Kept {
         sandbox_only: false,
         pinned: None,
         settings_in: None,
+        limits: Default::default(),
+        highest: Default::default(),
     }
 }
 
@@ -64,7 +67,6 @@ fn a_pool_not_shown_to_be_owned_is_sent_nothing_and_is_its_own_to_say() {
         "builds",
         &work(),
         Waking::No,
-        &Default::default(),
     );
 
     assert_eq!(said, Ok(None));
@@ -94,7 +96,6 @@ fn a_pool_not_shown_to_be_owned_is_sent_no_setting_and_none_is_read() {
         "builds",
         &kept,
         Waking::Yes,
-        &Default::default(),
     );
 
     assert_eq!(said, Ok(None));
@@ -112,7 +113,6 @@ fn on_an_owned_pool_it_goes_on_to_the_pool() {
         "builds",
         &work(),
         Waking::No,
-        &Default::default(),
     );
 
     assert!(said.is_err(), "{said:?}");
@@ -471,14 +471,7 @@ fn a_cluster_pool_keeps_a_profile_only_marked_and_vouched_for_now() {
     assert!(why.contains("This is my own"), "{why}");
     assert_eq!(asked.get(), 0, "an unmarked pool's cluster is never asked");
     assert_eq!(
-        keep_on_as(
-            unmarked,
-            config.path(),
-            "team",
-            &work(),
-            Waking::No,
-            &RefCell::default()
-        ),
+        keep_on_as(unmarked, config.path(), "team", &work(), Waking::No,),
         Ok(None),
         "nothing is sent"
     );

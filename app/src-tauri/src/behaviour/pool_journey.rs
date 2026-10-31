@@ -17,9 +17,7 @@
 //! is the real one, told the job's registry wherever a command names purlis's, and naming
 //! purlis's again in what it answers. The digests are real.
 
-use std::cell::RefCell;
-
-use purlis_core::profilestore::onrunner::{self, Kept, LeftBehind};
+use purlis_core::profilestore::onrunner::{self, Kept};
 use purlis_core::profilestore::sign_in::Standing;
 use purlis_core::profilestore::{self, Folders, MachineProfile};
 
@@ -43,6 +41,9 @@ const LONG: Duration = Duration::from_secs(300);
 
 const PROFILE: &str = "work";
 const WORKSPACE: &str = "app";
+
+/// The most files a profile sends by default, which the journey goes over.
+const MOST_DEFAULT_FILES: usize = 8192;
 
 /// How many skills the profile's settings hold, each of three files, and how large each one's
 /// data is: about 40 MiB in 4,500 files, as a person's folder of skills is.
@@ -185,13 +186,8 @@ fn the_runner(machine: &Machine, pool: &str) -> OnTheRunner {
 
 /// Keeps `kept` on pool `pool`'s runner over a link of its own, as a start and a pool's row do
 /// (`crate::poolprofiles::Linked`, whose machine has this build's keyring): how its harness
-/// stands there, and what of its settings stayed behind.
-fn keep(
-    machine: &Machine,
-    pool: &str,
-    kept: &Kept,
-    behind: &RefCell<Vec<LeftBehind>>,
-) -> Result<Option<Standing>, String> {
+/// stands there.
+fn keep(machine: &Machine, pool: &str, kept: &Kept) -> Result<Option<Standing>, String> {
     let runner =
         purlis_core::runners::runner_for(&machine.config, pool).map_err(|why| why.to_string())?;
     let to = ToARunner::of_kept_waking(machine, &runner)?;
@@ -201,22 +197,19 @@ fn keep(
     said.into_iter()
         .next()
         .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
-        .map(|kept| {
-            behind.replace(kept.left_behind);
-            Some(onrunner::standing_on_the_wire(kept.standing))
-        })
+        .map(|kept| Some(onrunner::standing_on_the_wire(kept.standing)))
 }
 
 /// What a start on the pool asks first (`Chats`'s start, through `Linked`).
 fn ready_to_start(machine: &Machine, root: &Path, pool: &str) -> Result<(), String> {
     onrunner::ready_on(&machine.config, root, pool, PROFILE, &|kept| {
-        keep(machine, pool, kept, &RefCell::default())
+        keep(machine, pool, kept)
     })
 }
 
 /// Waits until the pool's row says `wanted` of the profile, as the window asks again while the
-/// runner fetches its harness (#4008). What stayed behind of its settings is `behind`.
-fn the_row_says(machine: &Machine, pool: &str, wanted: &Standing) -> Vec<LeftBehind> {
+/// runner fetches its harness (#4008).
+fn the_row_says(machine: &Machine, pool: &str, wanted: &Standing) {
     let record = profilestore::list(&machine.config)
         .expect("the store reads")
         .into_iter()
@@ -227,12 +220,11 @@ fn the_row_says(machine: &Machine, pool: &str, wanted: &Standing) -> Vec<LeftBeh
         .with_settings_of(&record);
     let deadline = Instant::now() + LONG;
     loop {
-        let behind = RefCell::default();
-        let said = keep(machine, pool, &kept, &behind)
+        let said = keep(machine, pool, &kept)
             .unwrap_or_else(|why| panic!("the runner did not keep the profile: {why}"))
             .expect("this runner keeps profiles");
         if said == *wanted {
-            return behind.into_inner();
+            return;
         }
         assert!(
             Instant::now() < deadline,
@@ -383,7 +375,7 @@ fn in_the_journey(
     );
 
     step("a profile with a large settings folder");
-    // Keep a profile with a large settings folder: all of it travels, and nothing is left behind.
+    // Keep a profile with a large settings folder: all of it travels.
     let settings = tempfile::tempdir().expect("the profile's folder");
     let settings = settings.path().canonicalize().expect("its folder");
     a_large_settings_folder(&settings);
@@ -396,8 +388,7 @@ fn in_the_journey(
     step("the runner fetches the harness");
     // Fetch the harness: asked of its row, the runner fetches it from the vendor's release, and
     // Claude Code itself then says it is signed out there.
-    let behind = the_row_says(machine, pool, &Standing::SignedOut);
-    assert_eq!(behind, Vec::new(), "nothing of the settings stays behind");
+    the_row_says(machine, pool, &Standing::SignedOut);
     the_settings_went_whole_to(&runner, &settings);
 
     step("a start while signed out");
@@ -415,6 +406,52 @@ fn in_the_journey(
     pane.shows_within("Say hello.", LONG);
     let conversation = a_conversation_on(&runner);
     target.sessions.close(id).expect("it closes");
+
+    step("a profile over its pool's limit");
+    // Over the limit a start says what is needed and what to raise it to; the suggestion, applied
+    // to the pool, takes it past what a runner stages by default, and the chat starts.
+    let many = settings.join("skills/many");
+    std::fs::create_dir_all(&many).expect("its folder");
+    for one in 0..=MOST_DEFAULT_FILES {
+        std::fs::write(many.join(format!("{one}.md")), "x").expect("it is written");
+    }
+    let refused = ready_to_start(machine, &target.root, pool).expect_err("it is over the limit");
+    let over = onrunner::over_limit(PROFILE, &refused).expect("a limit said it");
+    assert_eq!(over.pool.as_deref(), Some(pool));
+    let hit = over.hits[0];
+    let raised = hit.suggested.expect("a value to raise it to");
+    assert!(hit.needed > hit.in_force && raised >= hit.needed, "{hit:?}");
+    purlis_core::runners::set_pool_limit(&machine.config, pool, hit.limit, Some(raised))
+        .expect("it is saved to the pool");
+    assert_eq!(
+        purlis_core::runners::chosen_limits_of(&machine.config, pool)
+            .expect("the pool reads")
+            .get(hit.limit),
+        Some(raised),
+        "the value is the person's own"
+    );
+    ready_to_start(machine, &target.root, pool).expect("the raised limit holds it");
+    assert_eq!(
+        runner
+            .prints(&format!(
+                "find '{}/skills/many' -type f | wc -l",
+                the_settings_on(&runner)
+            ))
+            .trim(),
+        (MOST_DEFAULT_FILES + 1).to_string(),
+        "all of it reached the runner"
+    );
+    let (id, pane) = a_chat_runs(
+        target,
+        machine,
+        pool,
+        &a_chat(Some("Past the limit."), None),
+    );
+    pane.shows_within("Past the limit.", LONG);
+    target.sessions.close(id).expect("it closes");
+    std::fs::remove_dir_all(&many).expect("the extra files go");
+    purlis_core::runners::set_pool_limit(&machine.config, pool, hit.limit, None)
+        .expect("back to the default");
 
     step("the chat moves back");
     // Move it back here: its conversation and the work done there come with it.
@@ -451,7 +488,7 @@ fn in_the_journey(
     // And there again: what was done here goes with it, and the chat goes on where it was.
     std::fs::write(clone.join("here.txt"), "made here\n").expect("its file");
     onrunner::ready_to_move_on(&machine.config, pool, PROFILE, &|kept| {
-        keep(machine, pool, kept, &RefCell::default())
+        keep(machine, pool, kept)
     })
     .unwrap_or_else(|why| panic!("the profile is ready for the move: {}", why.said()));
     target

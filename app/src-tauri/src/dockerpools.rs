@@ -305,6 +305,7 @@ pub fn pool_of(adding: &PoolAdding) -> Result<Pool, String> {
                 })
             })
             .transpose()?,
+        chosen: Default::default(),
     };
     Pool::new(adding.name.trim(), image, set).map_err(|why| why.to_string())
 }

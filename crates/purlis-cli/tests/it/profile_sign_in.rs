@@ -93,6 +93,8 @@ impl Machine {
                 sandbox_only: false,
                 pinned: None,
                 settings_in: None,
+                limits: Default::default(),
+                highest: Default::default(),
             },
             "01JA0DESKT0P00000000000000",
             7,

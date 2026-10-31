@@ -3124,6 +3124,20 @@ export const commands = {
 	 */
 	poolProfileAdd: (pool: string, name: string, open: OpenProject) => typedError<null, string>(__TAURI_INVOKE("pool_profile_add", { pool, name, open })),
 	/**
+	 *  **The limits a start on `profile` was refused on, in the words `refused`** (spec #4275): what
+	 *  Start a chat offers beside that refusal. Asked of the core, never read from the words.
+	 */
+	poolLimitOffer: (profile: string, refused: string) => __TAURI_INVOKE<{
+	pool: string,
+	hits: PoolLimitHitRow[],
+} | null>("pool_limit_offer", { profile, refused }),
+	/**
+	 *  **Saves `value` as pool `pool`'s limit `key`** (spec #4275), the person's own press in their
+	 *  window: a chat has no way to it, and can only propose through the edit ask (Q6). It applies
+	 *  from the next attempt, with nothing restarted.
+	 */
+	poolLimitSet: (pool: string, key: string, value: number) => typedError<null, string>(__TAURI_INVOKE("pool_limit_set", { pool, key, value })),
+	/**
 	 *  **Takes profile `name` off pool `pool`** (#4047): its runner forgets it first, its folder
 	 *  and its sign-in there with it, then the pool's record leaves it out, starting from the
 	 *  open project `plane`'s default where it named none. A runner that could not forget it leaves
@@ -10405,6 +10419,26 @@ export type PoolDisk = {
 	 *  said apart rather than counted as nothing.
 	 */
 	not_listed: number,
+};
+
+/**  **A limit a start was refused on**, as Start a chat offers to raise it (spec #4275). */
+export type PoolLimitHitRow = {
+	/**  The limit's key: what [`pool_limit_set`] takes. */
+	key: string,
+	/**  Its name in plain words. */
+	plain: string,
+	/**  The word beside a number of it. */
+	unit: string,
+	in_force: number,
+	needed: number,
+	/**  The value offered, which the person can edit; none where no value would hold it. */
+	suggested: number | null,
+};
+
+/**  **What a refused start on a pool offers**: the pool, and each limit it was refused on. */
+export type PoolLimitOffer = {
+	pool: string,
+	hits: PoolLimitHitRow[],
 };
 
 /**
