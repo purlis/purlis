@@ -306,3 +306,19 @@ fn a_suspended_draining_runner_is_removed_without_being_asked() {
     let log = std::fs::read_to_string(config.path().join("log")).unwrap();
     assert!(!log.contains("start "), "{log}");
 }
+
+/// A runner carried from was unpaired, so it cannot be asked, and takes no chat (#4146): the next
+/// look removes what is left without asking it.
+#[test]
+fn a_runner_carried_from_is_removed_without_being_asked_again() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    let locked = purlis_core::runners::lock(config.path());
+    purlis_core::runners::carried_locked(config.path(), "first", &locked).unwrap();
+    drop(locked);
+
+    let said = follow_and_drain(&machine, None, &|_| panic!("it is not asked"));
+
+    assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
+}

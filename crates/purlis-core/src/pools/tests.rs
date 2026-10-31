@@ -176,7 +176,7 @@ fn removing_a_pool_removes_its_runner_whole_and_then_the_pool() {
     )
     .unwrap();
     let unpaired = std::cell::Cell::new(false);
-    let unpair = |_: &Kept| {
+    let unpair = |_: &runners::Kept| {
         unpaired.set(true);
         Ok(())
     };
@@ -466,6 +466,120 @@ fn a_drained_runner_carries_its_sign_ins_to_the_pools_runner_then_goes_with_its_
         runners::desktop_label(config.path())
     )));
     assert!(copy.contains(NEW), "{copy}");
+}
+
+/// A pool `first`, followed to a new image: its old runner `first` drains beside the successor.
+/// The log is emptied.
+fn a_pool_draining(config: &std::path::Path, fake: &FakeDocker) -> String {
+    let ours = desktop();
+    a_pool_added(config, fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    makes(fake, &successor, NEW, &successor_answers());
+    follow(config, &fake.docker(), "first", &new_image, &ours).unwrap();
+    std::fs::write(fake.file_path("log"), "").unwrap();
+    successor
+}
+
+/// **A drained runner is unpaired before its sign-ins are carried** (#4146): nothing can link to
+/// it while they go.
+#[test]
+fn a_drained_runner_is_unpaired_before_its_sign_ins_are_carried() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    let log_at_unpair = std::cell::RefCell::new(None);
+    let unpair = |_: &runners::Kept| {
+        *log_at_unpair.borrow_mut() = Some(fake.file("log"));
+        Ok(())
+    };
+
+    let removed = drain(config.path(), &fake.docker(), "first", Some(&unpair)).unwrap();
+
+    assert_eq!(removed.peer, Some(Ok(())));
+    let before = log_at_unpair.borrow().clone().expect("it was unpaired");
+    assert!(!before.contains("-copy "), "{before}");
+    assert!(fake.file("log").contains("-copy "));
+}
+
+/// **A drain whose removal failed does not carry again, nor unpair again** (#4146): the next
+/// look only removes what is left.
+#[test]
+fn a_drain_whose_removal_failed_does_not_carry_again_at_the_next_look() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    fake.set("rm-fails-volume", "1");
+    fake.set("volumes", "purlis-runner-first-home\n");
+
+    let first = drain(config.path(), &fake.docker(), "first", None).unwrap();
+    assert!(!first.forgotten, "{first:?}");
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(kept.carried, "the mark is kept across a read of the file");
+
+    std::fs::write(fake.file_path("log"), "").unwrap();
+    let unpaired = std::cell::Cell::new(false);
+    let unpair = |_: &runners::Kept| {
+        unpaired.set(true);
+        Ok(())
+    };
+    drain(config.path(), &fake.docker(), "first", Some(&unpair)).unwrap();
+
+    let log = fake.file("log");
+    assert!(!log.contains("-copy "), "{log}");
+    assert!(
+        log.contains("volume rm --force purlis-runner-first-home"),
+        "{log}"
+    );
+    assert!(!unpaired.get());
+}
+
+/// **A profile signed out of the pool is signed out on its draining runners too, and no drain
+/// carries it** (#4121, #4145), what the sign-out did said runner by runner.
+#[test]
+fn signing_out_of_a_pool_reaches_its_draining_runners_and_nothing_is_carried_for_it() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    // Docker answers for the draining runner, as it was made.
+    fake.set("inspect", &inspected().to_string());
+    fake.set(
+        "volume",
+        r#"[{"Name":"purlis-runner-first-home","Driver":"local","Options":null,"Labels":null}]"#,
+    );
+
+    let said = sign_out_draining(config.path(), &fake.docker(), "first", "work").unwrap();
+
+    assert_eq!(said.len(), 1, "only the draining runner: {said:?}");
+    assert_eq!(said[0].0, "first");
+    said[0].1.as_ref().unwrap();
+    assert!(fake.file("log").contains("profile sign-out work"));
+
+    std::fs::write(fake.file_path("log"), "").unwrap();
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+    let log = fake.file("log");
+    assert!(log.contains("-copy "), "{log}");
+    assert!(
+        log.split_whitespace().any(|word| word == "work"),
+        "the carry names what it leaves: {log}"
+    );
+}
+
+/// **A draining runner the sign-out could not reach carries nothing for it either** (#4145): the
+/// mark is written first.
+#[test]
+fn a_draining_runner_a_sign_out_did_not_reach_carries_nothing_for_it() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    // Its container no longer answers as it was made, so its sign-out is refused.
+    fake.set("inspect", "[]");
+
+    let said = sign_out_draining(config.path(), &fake.docker(), "first", "work").unwrap();
+
+    assert!(said[0].1.is_err(), "{said:?}");
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert_eq!(kept.signed_out, ["work"]);
 }
 
 /// **A sign-in that cannot be carried never holds the drain back** (#4055): the draining runner

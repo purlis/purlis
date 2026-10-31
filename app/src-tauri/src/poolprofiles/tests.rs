@@ -386,14 +386,14 @@ fn nothing_is_forgotten_with_no_default_to_judge_by_or_on_a_runner_before_1_57()
 /// where there is none.
 #[test]
 fn the_pools_whose_runner_keeps_a_removed_profile_are_named_in_one_sentence() {
-    assert_eq!(older_note(&[], "work"), None);
+    assert_eq!(purlis_core::pools::older_note(&[], "work"), None);
     assert_eq!(
-        older_note(&names(&["builds"]), "work").unwrap(),
+        purlis_core::pools::older_note(&names(&["builds"]), "work").unwrap(),
         "Pool builds keeps the profile 'work' and its sign-in on its runner, which runs a \
          purlis before 1.52, until the runner is made again."
     );
     assert!(
-        older_note(&names(&["builds", "tests", "gpu"]), "work")
+        purlis_core::pools::older_note(&names(&["builds", "tests", "gpu"]), "work")
             .unwrap()
             .starts_with("Pools builds, tests and gpu keep the profile 'work'")
     );
@@ -501,6 +501,23 @@ fn a_cluster_pools_profiles_are_the_ones_chosen_for_it() {
 
 /// **A sign-out is done only once the runner's status check says signed out**: every other
 /// answer keeps the person from relying on it.
+/// **A sign-out says which draining runners it reached** (#4121).
+#[test]
+fn a_sign_out_names_the_draining_runners_it_reached_and_the_ones_it_did_not() {
+    let (a, b, c) = ("old-a".to_owned(), "old-b".to_owned(), "old-c".to_owned());
+    assert_eq!(draining_said("work", &[]), None);
+    assert_eq!(
+        draining_said(
+            "work",
+            &[(a, Ok(())), (b, Err("stopped".to_owned())), (c, Ok(()))]
+        )
+        .unwrap(),
+        "Also signed out on draining runners old-a and old-c: its chats there sign in again. \
+         Not reached on draining runner old-b: its sign-in stays there until the runner is \
+         removed, and is not carried."
+    );
+}
+
 #[test]
 fn a_sign_out_is_done_only_where_the_harness_says_signed_out() {
     let said = |asked| signed_out_by_its_harness("work", "builds", asked);
@@ -548,6 +565,8 @@ fn a_runner_in(container: char, device: &str) -> purlis_core::runners::Kept {
         paired: 0,
         of: None,
         draining: false,
+        carried: false,
+        signed_out: Vec::new(),
     }
 }
 

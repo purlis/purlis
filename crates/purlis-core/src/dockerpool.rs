@@ -69,11 +69,12 @@ pub const PURLIS: &str = "/usr/local/bin/purlis";
 /// only where nothing is (`set -C`) and put in place whole, by a link. Only a plain file inside
 /// the old home is carried, never a link or what a folder linked out of it holds. What it makes is
 /// the runner's user's alone. A file that cannot be carried is said and passed over: the profile
-/// is then signed in again, as before any was carried, and the drain goes on.
+/// is then signed in again, as before any was carried, and the drain goes on. A profile named in
+/// the colon-separated list after the two folders is not carried at all (#4145).
 pub const COPY_PROFILES: &str = r#"set -u
 umask 077
-from=$1 to=$2 stage=$3 old_stage=$4
-shift 4
+from=$1 to=$2 stage=$3 old_stage=$4 skip=$5
+shift 5
 from=$(cd -P "$from" && pwd -P) || exit 1
 cd -P "$to" || exit 1
 here=$(pwd -P)
@@ -112,6 +113,7 @@ for pair in "$@"; do
         out=${dst%%\**}$name${dst#*\*}
         ;;
     esac
+    case ":$skip:" in *":${out%%/*}:"*) continue ;; esac
     { mkdir -p "${out%/*}" && [ ! -e "$out" ] && [ ! -L "$out" ] && cat "$found" > "$out.part" \
         && ln "$out.part" "$out"; } || echo "not carried: $rel" >&2
     rm -f "$out.part"
@@ -703,7 +705,9 @@ impl Made {
     /// runner's home volume, and runs [`COPY_PROFILES`] as this runner's user. It reaches no
     /// network, holds no capability and writes nothing but the new home, so nothing of the homes
     /// leaves the Docker host.
-    pub fn copy_profiles_args(&self, from: &Made, desktop: &str) -> Vec<String> {
+    ///
+    /// The profiles in `skip`, signed out of the pool (#4145), are left where they are.
+    pub fn copy_profiles_args(&self, from: &Made, desktop: &str, skip: &[String]) -> Vec<String> {
         let mut args: Vec<String> = [
             "run",
             "--rm",
@@ -745,6 +749,7 @@ impl Made {
             "/to",
             &crate::profilestore::carried_under_a_runner_home(),
             &crate::profilestore::carried_under_an_old_runner_home(),
+            &skip.join(":"),
         ]
         .iter()
         .map(|word| (*word).to_owned())
@@ -782,6 +787,14 @@ impl Made {
     /// `docker`'s arguments that run the runner's own sign-out of its profile `name` (#4043).
     pub fn sign_out_args(&self, name: &str) -> Vec<String> {
         self.exec(&["profile", "sign-out", name])
+    }
+
+    /// [`Made::sign_out_args`], with a terminal the person answers in (#4124): for a harness whose
+    /// sign-out asks which sign-in goes.
+    pub fn sign_out_in_a_terminal_args(&self, name: &str) -> Vec<String> {
+        let mut args = self.sign_out_args(name);
+        args[1] = "-it".to_owned();
+        args
     }
 
     fn exec(&self, words: &[&str]) -> Vec<String> {
@@ -2522,6 +2535,38 @@ impl Docker {
         name: &str,
         provider: Option<&str>,
     ) -> Result<crate::profilestore::sign_in::Login, String> {
+        self.login_running(made.sign_in_args_by(by, name, provider), engine, settings)
+    }
+
+    /// **The line a shell runs for the runner's own sign-out of the profile `name`** (#4124): as
+    /// [`Docker::sign_in_line`]'s, with a terminal, for a harness whose sign-out asks there. The
+    /// container is checked as it was made first.
+    pub fn sign_out_line(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+    ) -> Result<String, String> {
+        self.check(made).map_err(|why| why.0)?;
+        let settings_in = match &self.settings_in {
+            Some(folder) => folder.clone(),
+            None => crate::datahome::root()
+                .ok_or_else(|| "purlis has no data folder to keep docker's settings in".to_owned())?
+                .join(settings::DIR),
+        };
+        let settings = settings::for_a_sign_in(&settings_in).map_err(|why| why.0)?;
+        self.login_running(made.sign_out_in_a_terminal_args(name), engine, &settings)?
+            .line()
+    }
+
+    /// What this `docker` runs for `words` on a runner, with Docker's settings the folder
+    /// `settings`, on `engine`.
+    fn login_running(
+        &self,
+        words: Vec<String>,
+        engine: &std::path::Path,
+        settings: &std::path::Path,
+    ) -> Result<crate::profilestore::sign_in::Login, String> {
         let typed = |path: &std::path::Path, what: &str| {
             path.to_str()
                 .map(str::to_owned)
@@ -2534,7 +2579,7 @@ impl Docker {
             "--host".to_owned(),
             format!("unix://{}", typed(engine, "the Docker engine's socket")?),
         ];
-        args.extend(made.sign_in_args_by(by, name, provider));
+        args.extend(words);
         Ok(crate::profilestore::sign_in::Login {
             program: typed(&self.program, "this machine's docker")?,
             args,
@@ -2861,13 +2906,19 @@ impl Docker {
     /// ([`Made::copy_profiles_args`]), for at most [`CARRIED_WITHIN`]: nothing of either home
     /// passes through this machine. What did not answer in its time is removed, and one a
     /// carry before left, of `desktop`'s, goes first so it holds no later carry back (#4055).
-    pub fn copy_profiles(&self, from: &Made, to: &Made, desktop: &str) -> Result<(), Refused> {
+    pub fn copy_profiles(
+        &self,
+        from: &Made,
+        to: &Made,
+        desktop: &str,
+        skip: &[String],
+    ) -> Result<(), Refused> {
         let prepared = self.prepared()?;
         let _ = self.remove_labelled(to.runner.name(), desktop, &[to.copy_container()]);
         let ran = self
             .ran_prepared(
                 &prepared,
-                &to.copy_profiles_args(from, desktop),
+                &to.copy_profiles_args(from, desktop, skip),
                 None,
                 MOST_INSPECTED,
                 Some(CARRIED_WITHIN),

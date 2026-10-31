@@ -1642,6 +1642,12 @@ export const commands = {
 	 */
 	typeProfileSignIn: (plane: PlaneId, session: number, name: string, provider: string | null, pool: string | null, device: boolean) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_in", { plane, session, name, provider, pool, device })),
 	/**
+	 * **Types the sign-out of `name` on pool `pool`'s runner into shell tab `session`** (#4124), for
+	 * a harness whose sign-out asks which sign-in goes: the person answers there. Only into a shell
+	 * at the project root, as a sign-in is.
+	 */
+	typeProfileSignOut: (plane: PlaneId, session: number, name: string, pool: string) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_out", { plane, session, name, pool })),
+	/**
 	 *  Puts away project `plane`'s Ask to sign the profile `profile` in (#2035): Dismiss. A chat's
 	 *  next start on it asks again while its harness says it is signed out.
 	 */
@@ -3171,7 +3177,7 @@ export const commands = {
 	 */
 	poolSignInType: (flow: number, text: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_type", { flow, text })),
 	/**  **Signs `name` out on pool `pool`'s runner** (#4043): the harness's own sign-out, run there. */
-	poolSignOut: (pool: string, name: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_out", { pool, name })),
+	poolSignOut: (pool: string, name: string) => typedError<string | null, string>(__TAURI_INVOKE("pool_sign_out", { pool, name })),
 	/**
 	 *  **Every device and what runs on it** (#2052): this machine and every runner it keeps, each
 	 *  with the chats and browsers the window has open there, and each pool's limits.

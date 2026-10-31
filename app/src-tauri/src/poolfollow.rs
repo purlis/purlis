@@ -340,7 +340,13 @@ pub fn follow_and_drain(
         // longer lists is not taken as idle on its own (#4149): Docker may only be pointing at
         // another engine, and its chats run on where it is.
         let suspended = matches!(machine.running(&kept), Ok(false));
-        let chats = if suspended { Ok(0) } else { chats_on(&to) };
+        // One carried from was unpaired, so it cannot be asked, and it takes no chat (#4146):
+        // only its removal is left.
+        let chats = if suspended || kept.carried {
+            Ok(0)
+        } else {
+            chats_on(&to)
+        };
         match chats {
             Ok(0) => {
                 lock_waiting().remove(&at);
