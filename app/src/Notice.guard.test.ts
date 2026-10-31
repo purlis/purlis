@@ -449,6 +449,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ACTION +
       ". Also a save's own output, line by line: what the last press answered, not a standing line",
   },
+  "RaiseLimit.tsx": {
+    count: 1,
+    why: "a refused save, inside the form the refusal it raises stands in: the form is its way out",
+  },
   "ReadOnlyTerminal.tsx": {
     count: 1,
     why: "a copy the clipboard refused, said beside the read-only screen it was asked of (#3676)",
@@ -606,6 +610,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ACTION +
       ". What choosing a new pool's profiles said (#4048), beside the Sign in and Not now that " +
       "did it; the pool's own lines follow it",
+  },
+  "settings/PoolLimits.tsx": {
+    count: 1,
+    why: "why a pool's limits could not be read, inside its fold beside Read again",
   },
   "settings/PoolProfiles.tsx": {
     count: 3,

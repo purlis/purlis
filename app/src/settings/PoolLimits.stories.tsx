@@ -84,8 +84,8 @@ function theCore(set: Record<string, number>, unread?: string, refuseSave?: stri
   mockIPC((cmd, args) => {
     const asked = (args ?? {}) as { key: string; typed: string; value: number | null };
     if (cmd === "pool_limits") {
-      if (unread !== undefined) throw unread;
       if (unread === "never") return new Promise(() => undefined);
+      if (unread !== undefined) throw unread;
       return LIMITS(set);
     }
     if (cmd === "pool_limit_check") {
