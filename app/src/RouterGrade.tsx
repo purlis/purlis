@@ -104,8 +104,8 @@ export function RouterGradePlanPage({
   // until the person picks others.
   const [profile, setProfile] = useState(DEFAULT);
   const [model, setModel] = useState(DEFAULT);
-  // The grade running in the project, where it is this router's: what Show it opens.
-  const [ours, setOurs] = useState<string>();
+  // The grade running in the project read as this router's: what Show it opens.
+  const [found, setFound] = useState<string>();
   const [again, setAgain] = useState(0);
   const picked = profile === DEFAULT ? null : profile;
   const pickedModel = model === DEFAULT ? null : model;
@@ -164,14 +164,15 @@ export function RouterGradePlanPage({
 
   // Whether the grade running in the project is this router's, so Show it can open it.
   const running = plan?.running ?? null;
+  // Only the grade running now: one found before it is no grade to show.
+  const ours = found !== undefined && found === running ? found : undefined;
   useEffect(() => {
-    setOurs(undefined);
     if (running === null) return;
     let live = true;
     void commands
       .routerGradeRunning(plane, running)
       .then((answer) => {
-        if (live && answer.status === "ok" && answer.data?.router === router) setOurs(running);
+        if (live && answer.status === "ok" && answer.data?.router === router) setFound(running);
       })
       .catch(() => undefined);
     return () => {
