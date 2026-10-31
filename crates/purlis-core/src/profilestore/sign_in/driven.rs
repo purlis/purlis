@@ -872,6 +872,8 @@ pub struct Driving {
     input: Input,
     driven: Arc<Mutex<Driven>>,
     cancelled: Arc<AtomicBool>,
+    /// Why it had to stop, where the person did not cancel it ([`Self::stop`]).
+    stopped: Arc<Mutex<Option<String>>>,
     /// When its next step was last asked for.
     asked: Arc<Mutex<Instant>>,
 }
@@ -1031,16 +1033,19 @@ fn run(
     })
     .collect();
     let cancelled = Arc::new(AtomicBool::new(false));
+    let stopped = Arc::new(Mutex::new(None));
     let asked = Arc::new(Mutex::new(Instant::now()));
     {
-        let (driven, cancelled, asked) = (
+        let (driven, cancelled, stopped, asked) = (
             Arc::clone(&driven),
             Arc::clone(&cancelled),
+            Arc::clone(&stopped),
             Arc::clone(&asked),
         );
         std::thread::spawn(move || {
             let outside = Outside {
                 cancelled: &cancelled,
+                stopped: &stopped,
                 asked: &asked,
             };
             watching(
@@ -1059,6 +1064,7 @@ fn run(
         input,
         driven,
         cancelled,
+        stopped,
         asked,
     })
 }
@@ -1143,10 +1149,11 @@ fn reading(
     })
 }
 
-/// **What ends a login from outside it**: Cancel, or no one asking for its next step for
-/// [`UNDRIVEN_AFTER`], as of a window that went away.
+/// **What ends a login from outside it**: Cancel, purlis having to stop it, or no one asking for
+/// its next step for [`UNDRIVEN_AFTER`], as of a window that went away.
 struct Outside<'a> {
     cancelled: &'a AtomicBool,
+    stopped: &'a Mutex<Option<String>>,
     asked: &'a Mutex<Instant>,
 }
 
@@ -1160,6 +1167,20 @@ impl Outside<'_> {
                 .unwrap_or_else(PoisonError::into_inner)
                 .elapsed()
                 > UNDRIVEN_AFTER
+    }
+
+    /// What is said of a login this ended: a failure with its reason where purlis had to stop
+    /// it, since the person cancelled nothing.
+    fn ended(&self) -> Event {
+        match self
+            .stopped
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            Some(why) => Event::Failed { why },
+            None => Event::Cancelled,
+        }
     }
 }
 
@@ -1185,7 +1206,7 @@ fn watching(
         if outside.ends_it() {
             end(&mut child);
             close();
-            tell.say_last(Event::Cancelled);
+            tell.say_last(outside.ended());
             return;
         }
         match child.try_wait() {
@@ -1316,6 +1337,13 @@ impl Driving {
     /// `docker exec` does, the login ends with its input, on the runner ([`super::held`]).
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
+    }
+
+    /// **Ends the login because it had to stop, not because the person asked** (#4277): as
+    /// [`Self::cancel`], but [`Event::Failed`] with `why` follows.
+    pub fn stop(&self, why: &str) {
+        *self.stopped.lock().unwrap_or_else(PoisonError::into_inner) = Some(why.to_owned());
+        self.cancel();
     }
 }
 

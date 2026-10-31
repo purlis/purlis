@@ -1231,6 +1231,9 @@ struct SignIn {
 static SIGN_INS: Mutex<Vec<SignIn>> = Mutex::new(Vec::new());
 static NEXT_SIGN_IN: AtomicU32 = AtomicU32::new(1);
 
+/// Why a sign-in ended, where another of the same profile on the same pool replaced it.
+const REPLACED: &str = "a later sign-in of this profile took its place";
+
 /// How long one ask for a sign-in's next step waits before it answers there is none yet.
 const STEP_WITHIN: Duration = Duration::from_secs(20);
 
@@ -1364,13 +1367,13 @@ pub async fn pool_sign_in_start(
                 drop(held);
                 driving.cancel();
                 for one in before {
-                    one.driving.cancel();
+                    one.driving.stop(REPLACED);
                 }
-                return Err("a later sign-in of this profile took its place".to_owned());
+                return Err(REPLACED.to_owned());
             }
         };
         for one in before {
-            one.driving.cancel();
+            one.driving.stop(REPLACED);
         }
         Ok(flow)
     })
@@ -1423,8 +1426,8 @@ pub async fn pool_sign_in_paste(flow: u32, code: String) -> Result<(), String> {
 
 /// **What drives sign-in `flow`, where what it was opened on still holds** (#3819): on a
 /// cluster pool, the runner the gate judged, still marked and run without the sandbox by no
-/// chat ([`still_yours`]); else the sign-in is cancelled and nothing goes to it. A sign-in no
-/// longer held is refused.
+/// chat ([`still_yours`]); else the sign-in is stopped, saying why (#4277), and nothing goes to
+/// it. A sign-in no longer held is refused.
 fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
     let (driving, judged) = SIGN_INS
         .lock()
@@ -1441,11 +1444,14 @@ fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
     if let Some((pool, judged)) = judged {
         let held = config_root().and_then(|config| still_yours(&config, &pool, &judged));
         if held.is_err() {
-            pool_sign_in_cancel(flow);
             // Not the start's words: by now something of it may have reached the runner.
-            return Err(format!(
+            let why = format!(
                 "the sign-in was stopped, as pool {pool} or its runner changed. Try again."
-            ));
+            );
+            for one in let_go(|one| one.flow == flow) {
+                one.driving.stop(&why);
+            }
+            return Err(why);
         }
     }
     Ok(driving)
@@ -1453,17 +1459,18 @@ fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
 
 /// **Cancels every sign-in running on pool `pool`** (#3819): its mark was taken back.
 pub fn cancel_sign_ins_on(pool: &str) {
-    let gone: Vec<SignIn> = {
-        let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
-        let (gone, kept) = std::mem::take(&mut *held)
-            .into_iter()
-            .partition(|one| one.pool == pool);
-        *held = kept;
-        gone
-    };
-    for one in gone {
-        one.driving.cancel();
+    let why = format!("the sign-in was stopped, as pool {pool} is no longer marked yours.");
+    for one in let_go(|one| one.pool == pool) {
+        one.driving.stop(&why);
     }
+}
+
+/// **The sign-ins `which` picks, no longer held**, for the caller to end with no lock held.
+fn let_go(which: impl Fn(&SignIn) -> bool) -> Vec<SignIn> {
+    let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
+    let (gone, kept) = std::mem::take(&mut *held).into_iter().partition(which);
+    *held = kept;
+    gone
 }
 
 /// **Passes what the person typed in the strip's terminal to sign-in `flow`**, as it is: on a
@@ -1658,15 +1665,7 @@ fn this_desktops_runner(config: &Path, pool: &str) -> Result<purlis_core::runner
 #[tauri::command]
 #[specta::specta]
 pub fn pool_sign_in_cancel(flow: u32) {
-    let gone: Vec<SignIn> = {
-        let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
-        let (gone, kept) = std::mem::take(&mut *held)
-            .into_iter()
-            .partition(|one| one.flow == flow);
-        *held = kept;
-        gone
-    };
-    for one in gone {
+    for one in let_go(|one| one.flow == flow) {
         one.driving.cancel();
     }
 }
