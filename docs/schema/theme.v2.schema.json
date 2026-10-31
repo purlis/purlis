@@ -5876,6 +5876,54 @@
         "notice.whose.attention.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
+        "notice.mark.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.mark.news.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.mark.trouble.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.mark.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.title.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.title.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.title.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "notice.title.news.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.title.news.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.title.news.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "notice.title.trouble.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.title.trouble.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.title.trouble.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "notice.title.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.title.attention.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.title.attention.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
         "option-card.root.fill": {
           "$ref": "#/$defs/part-fill"
         },

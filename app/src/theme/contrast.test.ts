@@ -107,6 +107,11 @@ const READ_BY_HAND: readonly string[] = [
   '[data-scope="view-frame"][data-part="header"] | background-color: var(--panel-fill)',
   // A review page's bar (#3672), held at the foot of the page on the panel's fill.
   '[data-scope="review-page"][data-part="bar"] | background-color: var(--panel-fill)',
+  // A secondary way on a notice card (#3478): a mix of the button's fill and the words, which no
+  // pair names; its words and its distance from each card ground are read in every built-in
+  // appearance by `ui/notice/noticeCardFill.test.ts`.
+  '[data-scope="notice"][data-part="root"][data-layout="card"] > [data-scope="button-row"] [data-scope="button"][data-part="root"][data-variant="secondary"] | background-color: color-mix(in oklab, var(--control-base), var(--text-primary) 14%)',
+  '[data-scope="notice"][data-part="root"][data-layout="card"] > [data-scope="button-row"] [data-scope="button"][data-part="root"][data-variant="secondary"]:is( [data-hovered]:not([data-disabled]) | background-color: color-mix(in oklab, var(--control-base), var(--text-primary) 22%)',
 ];
 
 /** The parts of a selector that say a state, not what is drawn: the pointer on it, the

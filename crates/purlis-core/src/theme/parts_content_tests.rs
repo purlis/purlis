@@ -87,7 +87,7 @@ fn the_content_families_are_in_the_manifest_since_next() {
     assert_eq!(
         of("notice"),
         (
-            named(&["root", "message", "whose"]),
+            named(&["root", "message", "whose", "mark", "title"]),
             vec![("news".into(), true), ("trouble".into(), true), ("attention".into(), true)]
         )
     );
@@ -682,4 +682,40 @@ fn a_chat_pane_s_band_draws_its_notices_ground_and_words_itself() {
             "{part}: {notice:?}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// A card's mark and title (#3478)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_card_s_mark_and_title_are_reached_by_their_own_attributes() {
+    let sheet = sheet_of(json!({
+        "notice.mark.text": "accent.base",
+        "notice.title.text": "text.secondary",
+        "notice.title.font-weight": 600,
+    }));
+    for part in ["mark", "title"] {
+        assert!(
+            sheet.contains(&format!("[data-scope=\"notice\"][data-part=\"{part}\"]")),
+            "{part}: {sheet}"
+        );
+    }
+    assert!(sheet.contains("var(--accent-base)"), "{sheet}");
+    assert!(sheet.contains("var(--text-secondary)"), "{sheet}");
+}
+
+#[test]
+fn a_card_s_title_is_read_on_the_card_s_ground() {
+    // Words the colour of the card's own ground cannot be read: the check names the title, and
+    // it is drawn in its default.
+    let loaded = load(&with_parts(json!({ "notice.title.text": "surface.raised" })));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    let fell: Vec<String> = loaded
+        .theme
+        .appearances
+        .iter()
+        .flat_map(|theme| parts::fallen(theme).into_iter().map(|one| one.floor))
+        .collect();
+    assert!(fell.iter().any(|one| one.contains("title")), "{fell:?}");
 }
