@@ -133,6 +133,17 @@ pub fn successor_name(pool: &str, image: &Image) -> String {
     format!("{pool}-{}", &image.digest()[..8])
 }
 
+/// **The name of a runner made again for `pool`** (#4149), after its runner was removed outside
+/// purlis: the pool's name, a dash and eight hex digits drawn at random, as long as a name made
+/// after an update ([`successor_name`]), so it fits wherever that one does.
+pub fn remade_name(pool: &str) -> Result<String, Refused> {
+    let mut drawn = [0u8; 4];
+    getrandom::fill(&mut drawn)
+        .map_err(|why| refused(format!("purlis could not draw a runner's name: {why}")))?;
+    let hex: String = drawn.iter().map(|byte| format!("{byte:02x}")).collect();
+    Ok(format!("{pool}-{hex}"))
+}
+
 /// Why a runner container was not made, checked or linked, in words a person reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Refused(pub String);
@@ -574,6 +585,11 @@ impl ContainerId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Its first twelve digits, as Docker shows a container's id.
+    pub fn short(&self) -> &str {
+        &self.0[..12]
+    }
 }
 
 /// A runner's container as it was made: what every check and every link holds it to.
@@ -832,6 +848,13 @@ pub fn standing_said(
         "the runner says: {}",
         crate::shown::short(last.unwrap_or("nothing"))
     ))
+}
+
+/// **A runner removed outside purlis** (#4149, [`Docker::gone`]): Docker lists no container
+/// of its id. Whether its home volume is still there, whose sign-ins a runner made again takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Gone {
+    pub home_kept: bool,
 }
 
 /// What [`Docker::resumed`] did: what it read of the container first, and whether it started it.
@@ -2547,6 +2570,59 @@ impl Docker {
             MOST_INSPECTED,
         )?;
         Ok(homes_held(&printed))
+    }
+
+    /// **Whether `made`'s container was removed outside purlis** (#4149): Docker lists no
+    /// container of its id, stopped or running, so no link to it can come back. `None` where
+    /// Docker still lists it (a runner only stopped or suspended); refused where Docker did not
+    /// answer, which says nothing of the runner. A gone runner says whether its home volume, and
+    /// with it the sign-ins kept there, is still there.
+    pub fn gone(&self, made: &Made) -> Result<Option<Gone>, Refused> {
+        let id = made.container.as_str();
+        let listed = self.read(
+            &[
+                "container".into(),
+                "ls".into(),
+                "--all".into(),
+                "--quiet".into(),
+                "--no-trunc".into(),
+                "--filter".into(),
+                format!("id={id}"),
+            ],
+            MOST_INSPECTED,
+        )?;
+        if listed.lines().any(|line| line.trim() == id) {
+            return Ok(None);
+        }
+        let volume = made.runner.volume();
+        let volumes = self.read(
+            &[
+                "volume".into(),
+                "ls".into(),
+                "--quiet".into(),
+                "--filter".into(),
+                format!("name={volume}"),
+            ],
+            MOST_INSPECTED,
+        )?;
+        Ok(Some(Gone {
+            home_kept: volumes.lines().any(|line| line.trim() == volume),
+        }))
+    }
+
+    /// **When `made`'s home volume was made**, in seconds since the epoch, as Docker says it
+    /// (#4149): a home made after its runner was paired is not the one purlis made for it, and
+    /// nothing of it is carried. `None` where Docker gives no time it reads.
+    pub fn home_made_at(&self, made: &Made) -> Result<Option<u64>, Refused> {
+        let inspected = self.json(
+            &["volume", "inspect", &made.runner.volume()],
+            "docker volume inspect",
+        )?;
+        Ok(inspected
+            .pointer("/0/CreatedAt")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
+            .and_then(|time| u64::try_from(time.timestamp()).ok()))
     }
 
     /// **[`MadeSuspending`] of `made`'s container** (#3717): `None` where its command is not a

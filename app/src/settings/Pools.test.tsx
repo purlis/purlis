@@ -63,6 +63,7 @@ let link: PoolLink;
 let version: PoolVersion;
 let added: unknown[];
 let removed: unknown[];
+let madeAgain: string[];
 let notHeld: { root: string; name: string; why: string; pools: string[] }[];
 let profilesAsked: unknown[];
 /** The runner image a new pool is offered, or why it could not be read. */
@@ -105,6 +106,7 @@ beforeEach(() => {
   };
   added = [];
   removed = [];
+  madeAgain = [];
   notHeld = [];
   profilesAsked = [];
   releaseImage = { state: "local_build" };
@@ -149,6 +151,11 @@ beforeEach(() => {
         return null;
       }
       if (cmd === "docker_pool_link") return link;
+      if (cmd === "docker_pool_make_again") {
+        madeAgain.push(a.name as string);
+        link = { state: "linked" };
+        return { sign_ins_kept: true };
+      }
       if (cmd === "docker_pool_version") return version;
       if (cmd === "projects_not_held") return structuredClone(notHeld);
       if (cmd === "pool_profiles") {
@@ -646,6 +653,42 @@ describe("You › This machine › Pools", () => {
     expect(await within(group).findByText(/^No pool yet\./)).toBeInTheDocument();
     expect(within(group).queryByText(/There is no undo/)).toBeNull();
     expect(within(nav).getByRole("button", { name: "Pools" })).toBeInTheDocument();
+  });
+
+  it("says a runner removed outside purlis, and Make the runner again makes it and keeps its profiles (#4149)", async () => {
+    pools = [a_pool("builds")];
+    link = { state: "removed", home_kept: true };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await within(group).findByText("removed outside purlis");
+    const notice = await waitFor(() => {
+      const found = group.querySelector('[data-cause="pool-runner-removed:builds"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(notice).toHaveTextContent(/Its home is still there/);
+    profilesAsked = [];
+
+    await userEvent.click(within(notice).getByRole("button", { name: "Make the runner again" }));
+
+    await waitFor(() => expect(madeAgain).toEqual(["builds"]));
+    await within(group).findByText("linked");
+    expect(group.querySelector('[data-cause="pool-runner-removed:builds"]')).toBeNull();
+    expect(group).toHaveTextContent(/made again, with its sign-ins/);
+    // Its profiles are kept there again, as after Add a pool.
+    await waitFor(() => expect(profilesAsked).toContain("builds"));
+  });
+
+  it("says a runner removed with its home that its sign-ins went too (#4149)", async () => {
+    pools = [a_pool("builds")];
+    link = { state: "removed", home_kept: false };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await within(group).findByText(/sign-ins kept there/);
   });
 
   it("says a suspended runner is suspended, not that it would not link (#2051)", async () => {

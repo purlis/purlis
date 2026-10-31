@@ -379,9 +379,14 @@ use crate::view::{Limits, Views};
 /// asks it before it forgets the ones no longer chosen for the pool, or no longer on the
 /// desktop. Carried out and refused as `keep_profile` is. A host before 1.57 refuses it
 /// `unknown_command`, and the desktop forgets nothing it was not asked to there.
+///
+/// 1.58 added a runner removed outside purlis (#4149): `link_down` may say `gone`, the runner a
+/// relaying host links to no longer there (a Docker runner whose container Docker no longer
+/// lists), which the host does not link to again on its own, so the window offers to make it
+/// again. A window before 1.58 ignores the field and reads it as any link that is down.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 57,
+    minor: 58,
 };
 
 /// The version that first answers `relay_to` with the runner the link reached (#3417).
@@ -1965,6 +1970,12 @@ pub enum Pushed {
         /// #2679): it is not linked again until the person removes it and adds it anew.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         key_changed: bool,
+        /// The other host is gone for good (1.58, #4149): a Docker runner whose container Docker
+        /// no longer lists, removed outside purlis. The relaying host does not link to it again
+        /// on its own; until it is made again, each command that needs it tries once and is
+        /// refused.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        gone: bool,
     },
     /// The link a relaying host reaches the other host over is back (1.17, #2496), with what the
     /// client's link stands on carried over to it: its views draw again, each from a snapshot.

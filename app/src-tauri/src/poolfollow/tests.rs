@@ -13,13 +13,16 @@ use super::*;
 const OLD: &str = "ghcr.io/purlis/purlis-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const NEW: &str = "ghcr.io/purlis/purlis-runner@sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
 
-/// A machine in `config` whose `docker` removes whatever it is asked to, and logs it.
+/// A machine in `config` whose `docker` removes whatever it is asked to, and logs it. Every
+/// container it is asked of is still there: none was removed outside purlis (#4149).
 fn a_machine(config: &std::path::Path) -> Machine {
     let docker = config.join("docker");
     std::fs::write(
         &docker,
         format!(
-            "#!/bin/sh\necho \"$*\" >> '{}'\nexit 0\n",
+            "#!/bin/sh\necho \"$*\" >> '{}'\ncase \"$1 $2\" in 'container ls') \
+             for a in \"$@\"; do case $a in id=*) echo \"${{a#id=}}\" ;; esac; done ;; esac\n\
+             exit 0\n",
             config.join("log").display()
         ),
     )
@@ -87,7 +90,7 @@ fn only_looked(config: &std::path::Path) -> bool {
     std::fs::read_to_string(config.join("log"))
         .unwrap_or_default()
         .lines()
-        .all(|line| line.starts_with("container inspect "))
+        .all(|line| line.starts_with("container inspect ") || line.starts_with("container ls "))
 }
 
 fn names(machine: &Machine) -> Vec<String> {

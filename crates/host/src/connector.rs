@@ -23,11 +23,14 @@ pub type BeforeEach = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
 
 /// **Why a check refused a connection** (#3292): in words, or because the far end's key is no
 /// longer the one it was paired with, which the link tells as a changed key
-/// ([`purlis_session_protocol::hostlink::KeyNoLongerHeld`]).
+/// ([`purlis_session_protocol::hostlink::KeyNoLongerHeld`]), or because the far end is gone for
+/// good, which the link tells once and does not try again
+/// ([`purlis_session_protocol::hostlink::FarEndGone`], #4149).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NotChecked {
     Refused(String),
     KeyChanged(String),
+    Gone(String),
 }
 
 /// [`BeforeEach`], whose refusal can say the far end's key changed ([`NotChecked`]).
@@ -118,6 +121,9 @@ impl Connector for CommandConnector {
                     NotChecked::KeyChanged(why) => std::io::Error::other(
                         purlis_session_protocol::hostlink::KeyNoLongerHeld(why),
                     ),
+                    NotChecked::Gone(why) => {
+                        std::io::Error::other(purlis_session_protocol::hostlink::FarEndGone(why))
+                    }
                 })?;
             let prepared = match this.prepare.clone() {
                 Some(prepare) => Some(

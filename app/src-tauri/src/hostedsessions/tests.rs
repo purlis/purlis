@@ -886,6 +886,7 @@ fn a_secret_exec_of_a_host_the_relay_lost_ends_here() {
         .send(session::Pushed::LinkDown {
             why: "the link to it ended".into(),
             key_changed: false,
+            gone: false,
         })
         .unwrap();
 
@@ -2329,6 +2330,7 @@ fn a_window_that_fell_behind_its_host_leaves_no_chat_reconnecting() {
         .send(session::Pushed::LinkDown {
             why: "the link to it ended".into(),
             key_changed: false,
+            gone: false,
         })
         .unwrap();
     for seq in 1..=3000 {
@@ -2369,6 +2371,7 @@ fn a_runner_whose_key_changed_leaves_its_chats_dimmed_and_says_so() {
         .send(session::Pushed::LinkDown {
             why: "the runner answered with another key".into(),
             key_changed: true,
+            gone: false,
         })
         .unwrap();
     until("the window is told the runner's key changed", || {
@@ -2376,6 +2379,40 @@ fn a_runner_whose_key_changed_leaves_its_chats_dimmed_and_says_so() {
             == [
                 (vec![id], Reconnection::Reconnecting),
                 (vec![id], Reconnection::KeyChanged),
+            ]
+    });
+    assert_eq!(hosted.sessions.reconnecting(), [id]);
+}
+
+/// A runner removed outside purlis (#4149): its chats are dimmed as for any outage, and the
+/// window is told it is gone, so it offers Make the runner again.
+#[test]
+fn a_runner_removed_outside_purlis_leaves_its_chats_dimmed_and_says_so() {
+    let runs = StandIns::default();
+    let host = Between::new(
+        Hosting::running_with(
+            crate::sessionhost::Composes::as_the_tests_ship(),
+            runs.clone(),
+        ),
+        false,
+    );
+    let pushes = host.pushes.clone();
+    let hosted = hosted_in(host, runs);
+    let told = told_of_reconnecting(&hosted);
+    let (id, _seen) = a_drawn_chat(&hosted);
+
+    pushes
+        .send(session::Pushed::LinkDown {
+            why: "pool first's runner first was removed outside purlis".into(),
+            key_changed: false,
+            gone: true,
+        })
+        .unwrap();
+    until("the window is told the runner is gone", || {
+        *told.lock().unwrap()
+            == [
+                (vec![id], Reconnection::Reconnecting),
+                (vec![id], Reconnection::RunnerGone),
             ]
     });
     assert_eq!(hosted.sessions.reconnecting(), [id]);

@@ -1476,6 +1476,8 @@ export const commands = {
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
+	dockerPoolsRemoved: __WINDOW_ONLY_RESULT,
+	dockerPoolMakeAgain: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
 	runnerImageOfThisVersion: __WINDOW_ONLY_RESULT,
 	clusterContexts: __WINDOW_ONLY_RESULT,
@@ -6443,6 +6445,15 @@ export type MachineWorkspacePin = {
 	gone: boolean,
 };
 
+/**
+ *  **What Make the runner again did** (#4149): whether the sign-ins of the runner removed
+ *  outside purlis were carried to the runner made again; where not, its profiles are signed in
+ *  again.
+ */
+export type MadeAgain = {
+	sign_ins_kept: boolean,
+};
+
 /**  A persona's MCP server that could not start for a chat, as the Notice on its tab shows it. */
 export type McpFailed = {
 	plane: PlaneId,
@@ -8140,7 +8151,13 @@ export type PoolLink =
  *  It suspended itself, a day without a link (#2051): its container is stopped, its home
  *  kept, and the window's next chat there starts it again. A check never wakes it.
  */
-{ state: "suspended" };
+{ state: "suspended" } | 
+/**
+ *  It was removed outside purlis (#4149): Docker has no container of its id, so no link to
+ *  it comes back, and the window offers Make the runner again. Whether its home volume, with
+ *  its sign-ins, is still there for the runner made again to take them from.
+ */
+{ state: "removed"; home_kept: boolean };
 
 /**  One of this machine's profiles, as a pool's runner stands with it. */
 export type PoolProfileRow = {
@@ -8173,6 +8190,16 @@ export type PoolProfiles = {
 	 *  this claim, since nothing of its home outlives its pod.
 	 */
 	fresh_claim: boolean,
+};
+
+/**
+ *  **A pool whose runner was removed outside purlis** (#4149): what the Notice of a refused
+ *  start names, with Make the runner again.
+ */
+export type PoolRemoved = {
+	name: string,
+	/**  Its home volume, with its sign-ins, is still there. */
+	home_kept: boolean,
 };
 
 /**  One pool's limits, which each of its runners that runs requests (#2052, story 55). */
@@ -8851,7 +8878,13 @@ export type Reconnection =
  *  host sends it nothing and does not link to it again until it is removed and added anew,
  *  so its chats stay dimmed and the window says why in a Notice of its own.
  */
-"key_changed";
+"key_changed" | 
+/**
+ *  The runner was removed outside purlis (#4149): its host does not link to it again until
+ *  it is made again, so its chats stay dimmed and the window offers Make the runner again in
+ *  a Notice of its own.
+ */
+"runner_gone";
 
 /**
  *  The level a referrer is changed at, when it is not the entry's own
