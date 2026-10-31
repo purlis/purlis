@@ -261,6 +261,7 @@ pub fn interrupted_report(
         spent_usd: None,
         counted_usd: None,
         priced,
+        failed: None,
     }
 }
 

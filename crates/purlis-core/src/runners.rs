@@ -308,6 +308,14 @@ pub struct Kept {
     /// It was replaced by a runner of the desktop's version (#2749): it starts no new chat,
     /// and is removed once its last chat has ended.
     pub draining: bool,
+    /// Its sign-ins were carried to its pool's runner (#4146): it is not carried from again.
+    pub carried: bool,
+    /// It answered that this desktop is out of its peers (#4146): it cannot be linked to, so it
+    /// is not asked how many chats it has, nor unpaired again.
+    pub unpaired: bool,
+    /// The profiles signed out of its pool while it drains (#4145): their sign-ins here are
+    /// never carried, even where the sign-out could not reach it.
+    pub signed_out: Vec<String>,
 }
 
 impl Kept {
@@ -851,6 +859,9 @@ fn keep_in(
         paired: now(),
         of: of.filter(|pool| *pool != name).map(str::to_owned),
         draining: false,
+        carried: false,
+        unpaired: false,
+        signed_out: Vec::new(),
     };
     kept.push(new.clone());
     Ok(new)
@@ -959,6 +970,57 @@ pub fn remove_locked(
     })
 }
 
+/// **Notes `note` on the runner kept as `name`** (#4146), under `locked`, so the next look knows
+/// how far its drain got.
+pub fn note_locked(
+    config_root: &Path,
+    name: &str,
+    note: impl FnOnce(&mut Kept),
+    _locked: &Locked,
+) -> Result<(), Refused> {
+    let mut held = load(config_root)?;
+    if let Some(kept) = held.runners.iter_mut().find(|kept| kept.name() == name) {
+        note(kept);
+        write(config_root, &held)?;
+    }
+    Ok(())
+}
+
+/// **Notes on each draining runner of `pool` that `profile` was signed out of the pool** (#4145),
+/// so no drain carries its sign-in: taken under the runners' lock, so it waits for a carry
+/// under way and holds for every carry after it. The draining runners, as they are now.
+pub fn hold_from_carrying(
+    config_root: &Path,
+    pool: &str,
+    profile: &str,
+) -> Result<Vec<Kept>, Refused> {
+    if !crate::profiles::name_ok(profile) {
+        return Err(Refused::Other(format!(
+            "'{}' is not a profile's name",
+            crate::shown::short(profile)
+        )));
+    }
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let mut changed = false;
+    let mut draining = Vec::new();
+    for kept in held
+        .runners
+        .iter_mut()
+        .filter(|kept| kept.draining && kept.pool() == pool)
+    {
+        if !kept.signed_out.iter().any(|name| name == profile) {
+            kept.signed_out.push(profile.to_owned());
+            changed = true;
+        }
+        draining.push(kept.clone());
+    }
+    if changed {
+        write(config_root, &held)?;
+    }
+    Ok(draining)
+}
+
 /// Forget the runner kept as `name`; nothing where none is.
 pub fn forget(config_root: &Path, name: &str) -> Result<(), Refused> {
     forget_locked(config_root, name, &lock(config_root))
@@ -1021,6 +1083,15 @@ fn to_row(kept: &Kept) -> serde_json::Value {
     if kept.draining {
         row["draining"] = true.into();
     }
+    if kept.carried {
+        row["carried"] = true.into();
+    }
+    if kept.unpaired {
+        row["unpaired"] = true.into();
+    }
+    if !kept.signed_out.is_empty() {
+        row["signed_out"] = kept.signed_out.clone().into();
+    }
     row
 }
 
@@ -1038,6 +1109,9 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         "paired",
         "of",
         "draining",
+        "carried",
+        "unpaired",
+        "signed_out",
     ];
     if fields.keys().any(|key| !known.contains(&key.as_str())) {
         return None;
@@ -1056,6 +1130,29 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         None => false,
         Some(serde_json::Value::Bool(true)) => true,
         Some(_) => return None,
+    };
+    let carried = match fields.get("carried") {
+        None => false,
+        Some(serde_json::Value::Bool(true)) => true,
+        Some(_) => return None,
+    };
+    let unpaired = match fields.get("unpaired") {
+        None => false,
+        Some(serde_json::Value::Bool(true)) => true,
+        Some(_) => return None,
+    };
+    // Each a profile's name, which goes to the carry's shell as a word of its own.
+    let signed_out = match fields.get("signed_out") {
+        None => Vec::new(),
+        Some(names) => names
+            .as_array()?
+            .iter()
+            .map(|name| {
+                name.as_str()
+                    .filter(|name| crate::profiles::name_ok(name))
+                    .map(str::to_owned)
+            })
+            .collect::<Option<Vec<_>>>()?,
     };
     if text("pool")? != "docker" {
         return None;
@@ -1082,6 +1179,9 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         paired: fields.get("paired")?.as_u64()?,
         of,
         draining,
+        carried,
+        unpaired,
+        signed_out,
     })
 }
 

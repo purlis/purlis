@@ -499,6 +499,23 @@ fn a_cluster_pools_profiles_are_the_ones_chosen_for_it() {
     assert!(kept_on(config.path(), "nowhere", None).is_err());
 }
 
+/// **A sign-out says which draining runners it reached** (#4121).
+#[test]
+fn a_sign_out_names_the_draining_runners_it_reached_and_the_ones_it_did_not() {
+    let (a, b, c) = ("old-a".to_owned(), "old-b".to_owned(), "old-c".to_owned());
+    assert_eq!(draining_said("work", &[]), None);
+    assert_eq!(
+        draining_said(
+            "work",
+            &[(a, Ok(())), (b, Err("stopped".to_owned())), (c, Ok(()))]
+        )
+        .unwrap(),
+        "Also signed out on draining runners old-a and old-c: its chats there sign in again. \
+         Not reached on draining runner old-b: its sign-in stays there until the runner is \
+         removed, and is not carried."
+    );
+}
+
 /// **A sign-out is done only once the runner's status check says signed out**: every other
 /// answer keeps the person from relying on it.
 #[test]
@@ -548,6 +565,9 @@ fn a_runner_in(container: char, device: &str) -> purlis_core::runners::Kept {
         paired: 0,
         of: None,
         draining: false,
+        carried: false,
+        unpaired: false,
+        signed_out: Vec::new(),
     }
 }
 

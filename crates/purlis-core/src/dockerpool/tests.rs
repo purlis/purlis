@@ -2768,6 +2768,16 @@ fn the_disk_volumes_hold_is_read_by_system_df_alone_starting_nothing() {
 /// the home `to`: whether it ended well.
 #[cfg(unix)]
 fn carried(from: &std::path::Path, to: &std::path::Path) -> std::process::Output {
+    carried_leaving(from, to, "")
+}
+
+/// [`carried`], leaving the profiles in `skip`.
+#[cfg(unix)]
+fn carried_leaving(
+    from: &std::path::Path,
+    to: &std::path::Path,
+    skip: &str,
+) -> std::process::Output {
     let mut command = std::process::Command::new("/bin/sh");
     command
         .arg("-c")
@@ -2777,8 +2787,42 @@ fn carried(from: &std::path::Path, to: &std::path::Path) -> std::process::Output
         .arg(to)
         .arg(crate::profilestore::carried_under_a_runner_home())
         .arg(crate::profilestore::carried_under_an_old_runner_home())
+        .arg(skip)
         .args(crate::profilestore::carried_in_a_runner_home());
     crate::forklock::output(&mut command).unwrap()
+}
+
+/// **A profile signed out of the pool is not carried** (#4145): by a profile's own folder or a
+/// harness's default one, and every other profile still is.
+#[cfg(unix)]
+#[test]
+fn a_carry_leaves_a_profile_signed_out_of_the_pool() {
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let profiles = from.path().join(".local/share/purlis/profiles");
+    for name in ["gone", "gone-too", "kept"] {
+        let folder = profiles.join(name).join("config");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join(".credentials.json"), name).unwrap();
+    }
+    std::fs::create_dir_all(from.path().join(".claude")).unwrap();
+    std::fs::write(from.path().join(".claude/.credentials.json"), "own").unwrap();
+    std::fs::create_dir_all(to.path().join(".local/share/purlis")).unwrap();
+
+    let out = carried_leaving(from.path(), to.path(), "gone:claude");
+    assert!(out.status.success(), "{out:?}");
+
+    let stage = the_batch(to.path());
+    assert!(!stage.join("gone").exists());
+    assert!(!stage.join("claude").exists());
+    assert_eq!(
+        std::fs::read_to_string(stage.join("gone-too/config/.credentials.json")).unwrap(),
+        "gone-too",
+        "a name that only begins as a signed-out one's is carried"
+    );
+    assert_eq!(
+        std::fs::read_to_string(stage.join("kept/config/.credentials.json")).unwrap(),
+        "kept"
+    );
 }
 
 /// Where a runner with the home `to` reads what was carried: under its data home, as it spells it
@@ -3051,4 +3095,12 @@ fn a_carry_takes_nothing_through_a_link_out_of_the_old_home() {
 
     let stage = the_stage(to.path());
     assert_eq!(std::fs::read_dir(&stage).unwrap().count(), 0);
+}
+
+/// **A sign-out that asks has a terminal, on the engine shown to be the person's** (#4124).
+#[test]
+fn a_sign_out_in_a_terminal_is_typed_with_a_terminal() {
+    let args = made().sign_out_in_a_terminal_args("work");
+    assert_eq!(args[..2], ["exec", "-it"]);
+    assert_eq!(args[args.len() - 3..], ["profile", "sign-out", "work"]);
 }
