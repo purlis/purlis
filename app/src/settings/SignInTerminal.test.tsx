@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
 import type { Terminal } from "@xterm/xterm";
 import { DEFAULT_THEME, drawIn, xtermLook, xtermTheme } from "../theme/theme";
+import { drawTerminalFont } from "../theme/terminalFont";
 import { PURLIS_LIGHT } from "../theme/handed.testkit";
 import { SignInTerminal } from "./SignInTerminal";
 
@@ -13,6 +14,10 @@ import { SignInTerminal } from "./SignInTerminal";
  * real xterm: what is asserted is its own `options`, which is what it draws from.
  */
 const made: Terminal[] = [];
+vi.mock("../theme/terminalFont", async (real) => {
+  const font = await real<typeof import("../theme/terminalFont")>();
+  return { ...font, drawTerminalFont: vi.fn(font.drawTerminalFont) };
+});
 vi.mock("@xterm/xterm", async (real) => {
   const xterm = await real<typeof import("@xterm/xterm")>();
   class Recorded extends xterm.Terminal {
@@ -63,6 +68,15 @@ describe("the sign-in strip's terminal and the theme in force", () => {
 
     expect(made[0].options.theme).toEqual(xtermTheme(PURLIS_LIGHT));
     expect(made[0].options).toMatchObject(xtermLook(PURLIS_LIGHT));
+  });
+
+  it("is told the theme's font", () => {
+    terminal();
+    vi.mocked(drawTerminalFont).mockClear();
+
+    act(() => drawIn(PURLIS_LIGHT));
+
+    expect(drawTerminalFont).toHaveBeenCalledWith(made[0], expect.any(String), false);
   });
 
   it("keeps its size: a login's screen is the runner's", () => {
