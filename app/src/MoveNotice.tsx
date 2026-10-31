@@ -114,6 +114,8 @@ function WaitsOnASignIn({
 }) {
   // The strip, once asked for, and the plan it signs in to where the harness serves several.
   const [open, setOpen] = useState<{ plan?: string }>();
+  // Choose another plan was pressed, and goes with the strip: the keyboard moves to the first plan.
+  const [leftAPlan, setLeftAPlan] = useState(false);
   // A login approved in the browser has no way back to the runner from a terminal: it runs its
   // device-code flow there (#4044).
   const inTerminal = (plan?: string) =>
@@ -121,18 +123,27 @@ function WaitsOnASignIn({
   const toPlan = (plan: PlanRow): NoticeAction => ({
     label: `Sign in to ${plan.title}`,
     onPress: drivenPlan(asked.kind, plan.id)
-      ? () => setOpen({ plan: plan.id })
+      ? () => {
+          setLeftAPlan(false);
+          setOpen({ plan: plan.id });
+        }
       : () => inTerminal(plan.id),
   });
   const [onePlan, ...otherPlans] = asked.plans;
   const signIn: NoticeAction =
     onePlan !== undefined
-      ? toPlan(onePlan)
+      ? { ...toPlan(onePlan), takesKeyboard: leftAPlan }
       : {
           label: "Sign in",
           onPress: DRIVEN.has(asked.kind) ? () => setOpen({}) : () => inTerminal(),
         };
-  const anotherPlan = { label: "Choose another plan", onPress: () => setOpen(undefined) };
+  const anotherPlan = {
+    label: "Choose another plan",
+    onPress: () => {
+      setLeftAPlan(true);
+      setOpen(undefined);
+    },
+  };
   const tryIt = { label: "Try the move", onPress: () => signedInForMove(plane, session) };
   const cancel = { label: "Cancel move", onPress: () => putAwayMove(plane, session) };
   return (
