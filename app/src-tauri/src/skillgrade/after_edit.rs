@@ -466,6 +466,7 @@ fn grade_after(
                     profile: Some(accepted.profile.clone()),
                     model: accepted.model.clone(),
                     after_edit: true,
+                    follower: None,
                 },
                 planned,
             );

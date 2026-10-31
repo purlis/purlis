@@ -1232,6 +1232,8 @@ async fn push_on(
             // Whether the link to the other host is up, and which projects it holds for the
             // client, is this host's to say, never the other host's (#2496, #2645).
             Pushed::LinkDown { .. } | Pushed::LinkBack {} | Pushed::NotHeld { .. } => {}
+            // No host pushes these to a link between hosts (`Power::RunGrade`, `Power::AskGrade`).
+            Pushed::GradeAsked { .. } | Pushed::StopGrade { .. } | Pushed::GradeStep { .. } => {}
             pushed => client.tell(pushed).await,
         }
     }
@@ -1369,6 +1371,17 @@ impl session::Host for Relay {
                 why: "every chat is stopped by the kill switch; nothing starts on a runner until \
                       it is re-armed in purlis's window"
                     .into(),
+            });
+        }
+        // A grade a terminal asks for runs in the window on this machine: no link carries it.
+        if matches!(command.power(), Power::AskGrade | Power::RunGrade) {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: format!(
+                    "`{}` is between a terminal and the window on one host, and is relayed to no \
+                     other",
+                    command.word()
+                ),
             });
         }
         if the_windows_alone(&command) && peer.scope() != Scope::LocalUi {

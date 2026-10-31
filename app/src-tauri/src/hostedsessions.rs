@@ -1993,6 +1993,58 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                     let _ = client.call(Command::MidTurn { question, chats }).await;
                 });
             }
+            // A grade a terminal asked for (SK-61, #3241): the window runs it as it runs a press
+            // of Grade, off the runtime, since it reads the skill's copy.
+            Told::Pushed(Pushed::GradeAsked {
+                question,
+                project,
+                project_path,
+                ask,
+            }) => {
+                let client = Arc::clone(&client);
+                let runtime = tokio::runtime::Handle::current();
+                tokio::spawn(async move {
+                    let steps = {
+                        let client = Arc::clone(&client);
+                        move |step: purlis_session_protocol::session::GradeStepTold| {
+                            let client = Arc::clone(&client);
+                            let grade = step.grade.clone();
+                            // Told in the order the grade's thread goes through them. Nobody to
+                            // tell, or a host that does not answer, stops the grade.
+                            let told = runtime.block_on(async move {
+                                tokio::time::timeout(
+                                    Duration::from_secs(10),
+                                    client.call(Command::GradeStep { question, step }),
+                                )
+                                .await
+                            });
+                            if !matches!(told, Ok(Ok(_))) {
+                                crate::skillgrade::stop_for_a_terminal(&grade);
+                            }
+                        }
+                    };
+                    let answer = tokio::task::spawn_blocking(move || {
+                        crate::skillgrade::asked_at_a_terminal(
+                            &project,
+                            &project_path,
+                            ask,
+                            Box::new(steps),
+                        )
+                    })
+                    .await
+                    .unwrap_or_else(|why| {
+                        purlis_session_protocol::session::GradeAnswer::Refused {
+                            why: format!("The purlis window could not answer ({why})."),
+                        }
+                    });
+                    let _ = client.call(Command::AnswerGrade { question, answer }).await;
+                });
+            }
+            Told::Pushed(Pushed::StopGrade { grade }) => {
+                crate::skillgrade::stop_for_a_terminal(&grade);
+            }
+            // The asking link's, never a window's.
+            Told::Pushed(Pushed::GradeStep { .. }) => {}
             Told::Pushed(Pushed::Sandbox { confinement, told }) => {
                 let hears = lock(&shared.sandboxes).get(&confinement).cloned();
                 if let Some(hears) = hears {
