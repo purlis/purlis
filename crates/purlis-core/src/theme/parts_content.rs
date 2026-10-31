@@ -234,6 +234,28 @@ pub(super) const NOTICE: Family = Family {
     under: &[],
 };
 
+/// **The ground a Notice's card stands on in `variant`** (#4210), as `notice.css` draws a card
+/// alone: news on the overlay, trouble and attention on their own grounds. A card's title, its
+/// mark and its ways are read on it, where a theme sets no fill of the Notice's own; a Notice's
+/// box, in a pane or alone, stands on the family's default fill instead.
+pub(super) fn notice_card_ground(variant: &str) -> &'static str {
+    match variant {
+        "trouble" => "danger.surface",
+        "attention" => "attention.surface",
+        _ => "surface.overlay",
+    }
+}
+
+/// **The colour a card's mark is drawn in by default in `variant`** (#4210), as `notice.css`
+/// draws it: news in the success colour, trouble and attention in their own words.
+pub(super) fn notice_mark_words(variant: &str) -> &'static str {
+    match variant {
+        "trouble" => "danger.text",
+        "attention" => "attention.text",
+        _ => "state.success",
+    }
+}
+
 /// **A Notice's colours as `app/src/ui/notice/notice.css` draws them**: the raised ground edged in
 /// the waiting colour (purlis speaking, #1647), trouble's danger ground and words, and
 /// attention's own ground and words (#3678).
