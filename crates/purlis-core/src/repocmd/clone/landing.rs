@@ -16,7 +16,7 @@
 //!   run that has it. The lock goes with the process, so a killed clone never wedges the next.
 //! - **Git LFS files are fetched as a stage of their own** ([`Route::large_files`], #4102): one
 //!   large file downloading in a checkout's filter says nothing for as long as it takes, so the
-//!   clone leaves pointers, and `git lfs pull` then runs with its own progress.
+//!   clone leaves pointers, and `git lfs pull` then runs with its own progress, on its stdout.
 //! - **One second try**, on a transfer that broke part way ([`cloning::is_transient`]), over
 //!   HTTP/1.1, with a fresh token check.
 //! - **The words come from the failure** ([`spoken`]). What the window says names no forge CLI.
@@ -219,8 +219,15 @@ impl Route<'_> {
     /// **Git LFS files fetched as a stage of their own** (#4102): `git lfs pull` in `hidden`,
     /// followed as the clone was. git-lfs rewrites its progress line as bytes arrive, so one
     /// large file downloading is a clone that speaks, and one gone dead says nothing and is
-    /// stopped at the stall limit.
+    /// stopped at the stall limit. The stage is said before git-lfs's first line, which waits on
+    /// its server's answer: one that never answers is a stall of this stage too.
     fn large_files(&self, hidden: &Path, climb: &mut Climb) -> Tried {
+        if let Some((stage, percent)) = climb.heard(cloning::Progress {
+            stage: Stage::LargeFiles,
+            percent: Some(0),
+        }) {
+            self.tell(stage, percent);
+        }
         let at = hidden.display().to_string();
         let mut pass = self.pass();
         // git-lfs draws its progress only on a terminal unless told.

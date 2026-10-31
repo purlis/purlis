@@ -895,13 +895,14 @@ impl World {
 }
 
 /// `git lfs pull` as a stand-in: `lines` progress lines 0.1 s apart, then the file's content
-/// written, as git-lfs draws its meter while one large file arrives. Then `after`.
+/// written, as git-lfs draws its meter while one large file arrives: on its stdout, as the real
+/// one does (`real_lfs`). Then `after`.
 fn lfs_pull(lines: u32, after: &str) -> String {
     format!(
         "i=0; while [ $i -lt {lines} ]; do i=$((i+1)); \\
-         printf 'Downloading LFS objects:   0%% (0/1), %d KB | 1 MB/s\\r' $((i*100)) >&2; \\
+         printf 'Downloading LFS objects:   0%% (0/1), %d KB | 1 MB/s\\r' $((i*100)); \\
          sleep 0.1; done; \\
-         printf 'Downloading LFS objects: 100%% (1/1), 1 MB | 1 MB/s, done.\\n' >&2; \\
+         printf 'Downloading LFS objects: 100%% (1/1), 1 MB | 1 MB/s, done.\\n'; \\
          {after}"
     )
 }
