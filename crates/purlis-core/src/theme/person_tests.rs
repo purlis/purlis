@@ -521,3 +521,95 @@ fn no_colour_of_the_person_s_draws_allow_as_the_primary() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------------------
+// What follows a colour of the person's (#3098, #3177)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn the_hot_count_follows_the_person_s_needs_you_colours() {
+    let layer = layer_of(json!({
+        "colours": { "needs-you.base": "#ff00aa", "needs-you.text": "#000000" }
+    }));
+    for theme in [classic_dark(), purlis_dark()] {
+        let (drawn, said) = layer.over(theme);
+        assert!(said.is_empty(), "{said:?}");
+        assert_eq!(drawn.value("needs-you.count"), "#ff00aa", "{}", theme.name);
+        assert_eq!(
+            drawn.value("needs-you.count-text"),
+            "#000000",
+            "{}",
+            theme.name
+        );
+    }
+}
+
+#[test]
+fn a_hot_count_the_person_names_stays_theirs() {
+    let layer = layer_of(json!({
+        "colours": { "needs-you.base": "#ff00aa", "needs-you.count": "#ffb000" }
+    }));
+    let (drawn, _) = layer.over(classic_dark());
+    assert_eq!(drawn.value("needs-you.count"), "#ffb000");
+}
+
+#[test]
+fn a_token_that_follows_the_person_s_colour_over_a_theme_that_draws_the_two_alike() {
+    let layer = layer_of(json!({ "colours": { "accent.surface": "#223355" } }));
+    let (over_classic, _) = layer.over(classic_dark());
+    assert_eq!(over_classic.value("accent.fill"), "#223355");
+    // Purlis's filled primary is its own, so it keeps it.
+    let (over_purlis, _) = layer.over(purlis_dark());
+    assert_eq!(
+        over_purlis.value("accent.fill"),
+        purlis_dark().value("accent.fill")
+    );
+}
+
+#[test]
+fn a_colour_of_the_person_s_left_out_takes_what_follows_it_and_names_only_theirs() {
+    let layer = layer_of(json!({ "colours": { "needs-you.base": "#401010" } }));
+    let (drawn, said) = layer.over(classic_dark());
+    assert_eq!(
+        drawn.value("needs-you.base"),
+        classic_dark().value("needs-you.base")
+    );
+    assert_eq!(
+        drawn.value("needs-you.count"),
+        classic_dark().value("needs-you.count")
+    );
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert!(
+        said[0].said.starts_with("your colour for needs-you.base, #401010,"),
+        "{said:?}"
+    );
+    assert!(!said[0].said.contains("your colour for needs-you.count"), "{said:?}");
+}
+
+#[test]
+fn more_contrast_keeps_a_count_that_follows_its_mark_on_it() {
+    for built in built_ins() {
+        let raised = least::raise(built);
+        assert_eq!(
+            raised.value("needs-you.count"),
+            raised.value("needs-you.base"),
+            "{}",
+            built.name
+        );
+        assert_eq!(
+            raised.value("needs-you.count-text"),
+            raised.value("needs-you.text"),
+            "{}",
+            built.name
+        );
+    }
+}
+
+#[test]
+fn more_contrast_raises_a_count_a_theme_names_on_its_own() {
+    let mut named = classic_dark().clone();
+    named.values.insert("needs-you.count", "#a06020".to_owned());
+    let raised = least::raise(&named);
+    assert_ne!(raised.value("needs-you.count"), raised.value("needs-you.base"));
+    assert_ne!(raised.value("needs-you.count"), "#a06020");
+}

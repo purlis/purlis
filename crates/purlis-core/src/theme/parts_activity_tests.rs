@@ -394,13 +394,18 @@ fn a_plain_count_rule_that_comes_near_the_hot_count_draws_its_default() {
 
 #[test]
 fn a_plain_count_rule_apart_from_the_hot_count_stays_as_written() {
-    let loaded = load(&with_parts(
-        json!({ "activity.count.fill": "surface.overlay" }),
-    ));
+    // Drawn in the hot count's own two roles the other way round: white fill, the hot colour on it.
+    let loaded = load(&json!({
+        "name": "Shaped",
+        "extends": "purlis-classic",
+        "tokens": { "needs-you.count": "#c05050" },
+        "parts": {
+            "activity.count.fill": "needs-you.count-text",
+            "activity.count.text": "needs-you.count",
+        },
+    }));
     assert!(!loaded.refused, "{:?}", said(&loaded));
-    let fell = parts::fallen(loaded.theme.first());
-    assert!(
-        fell.iter().all(|one| !one.floor.contains("the hot count")),
-        "{fell:?}"
-    );
+    assert_eq!(said(&loaded), Vec::<String>::new());
+    assert_eq!(parts::fallen(loaded.theme.first()), []);
+    assert_eq!(loaded.theme.first().value("needs-you.count"), "#c05050");
 }
