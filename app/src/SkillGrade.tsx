@@ -946,7 +946,7 @@ export function GradeRunningPage({
   onBack: () => void;
 }) {
   return (
-    <RunningGradePage<SkillGradeStep>
+    <RunningGradePage
       // Another grade is another page: nothing of this one's is drawn under its name. The level
       // as a value: an equal level reads nothing anew.
       key={JSON.stringify([plane, level, name, grade])}

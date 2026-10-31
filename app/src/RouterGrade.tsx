@@ -488,7 +488,7 @@ export function RouterGradeRunningPage({
   onBack: () => void;
 }) {
   return (
-    <RunningGradePage<RouterGradeStep>
+    <RunningGradePage
       // Another grade is another page: nothing of this one's is drawn under its name.
       key={`${plane}:${grade}`}
       whose="router"
