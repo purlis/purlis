@@ -574,7 +574,7 @@ pub fn compose(starting: &Starting<'_>, kit: &Kit, beside: &dyn Beside) -> Resul
 /// What a start with no sandbox is told on a runner told of the operator's mint port.
 pub const NO_SANDBOX_WHERE_A_TOKEN_IS_NEAR: &str = "this runner's pool mints GitHub tokens in the \
      cluster, so a chat here runs only inside purlis's sandbox, and this one would not, so nothing \
-     was started. Start it sandboxed; a terminal shell you open yourself is still allowed.";
+     was started. Start it sandboxed.";
 
 /// **Refuses a start outside the sandbox on a runner told of a mint port** (#4207, the person's
 /// ruling of 2026-10-31), a shell alone being allowed. What this runner keeps of the port and cannot
