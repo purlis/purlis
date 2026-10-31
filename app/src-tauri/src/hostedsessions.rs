@@ -492,7 +492,6 @@ impl Connection {
         let Some((window, pool)) = &self.to_a_pool else {
             return Ok(());
         };
-        eprintln!("PROBE-MARK {}", std::backtrace::Backtrace::force_capture());
         lock(&window.untrusted).insert(pool.clone());
         let kept = match window.runners_config() {
             Some(config) => purlis_core::runnertaint::mark_pool(&config, pool),
@@ -2866,9 +2865,17 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     // put back finds here is reattached rather than started again (#2006). A host started
     // again after its last ended has none.
     if link.version() >= REATTACHES {
-        match link.call_heard_in_a_start(Command::ProgramsOf {
-            project: project.clone(),
-        }) {
+        let within = if can_be_cancelled() {
+            UNTIL_THE_HOST_SAYS
+        } else {
+            ANSWER_WITHIN
+        };
+        match link.call_refused_within(
+            Command::ProgramsOf {
+                project: project.clone(),
+            },
+            within,
+        ) {
             Ok(Answer::Programs(programs)) => {
                 // Its browsers, from a host of 1.39 or later (#2025), taken back with their
                 // chats once the put back has settled: those of the first hold alone, so a
@@ -2879,7 +2886,6 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
                 // A chat taken back that runs without the sandbox on a pool's runner leaves it
                 // untrusted (D-2050-27), and the browsers there end, not taken back
                 // (D-2050-28): the host clears a browser's data folder as it ends.
-                eprintln!("PROBE-HELD {:?}", chats.iter().map(|c| (c.number, c.kind, c.sandbox.clone())).collect::<Vec<_>>());
                 let taints = |chat: &HeldProgram| {
                     purlis_core::runnertaint::taints(chat.kind, chat.sandbox.as_ref())
                 };
@@ -2905,12 +2911,17 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
             // counts as one that does (D-2050-27).
             Ok(other) => {
                 tracing::warn!("purlis: the session host answered its programs with {other:?}");
-                eprintln!("PROBE-OTHER {other:?}");
                 let _ = untrust_taking_back(connection, &link, &mut Vec::new());
             }
-            Err(why) => {
-                tracing::warn!("purlis: the session host did not say its programs: {why}");
-                eprintln!("PROBE-ERR {why}");
+            // A link between hosts is never granted this question (`Power::Reattach`), so that
+            // refusal says nothing of what runs there. This desktop keeps a mark of each chat as
+            // it starts it, and a runner is paired with this desktop alone.
+            Err(refused) if refused.code == session::NOT_ALLOWED => {}
+            Err(refused) => {
+                tracing::warn!(
+                    "purlis: the session host did not say its programs: {}",
+                    refused.why
+                );
                 let _ = untrust_taking_back(connection, &link, &mut Vec::new());
             }
         }
@@ -3475,7 +3486,6 @@ impl HostedSessions {
             Err(refused) => return Err(unclear(refused.why)),
         };
         let (program, pid, confined, ran, prompt_key) = started;
-        eprintln!("PROBE-RAN {kind:?} {ran:?}");
         // A chat that runs on a pool's runner with nothing holding its files leaves that runner
         // trusted with no browser and no login until it is made again (D-2050-27): kept here,
         // where no runner reaches, before it is kept as running. Where that cannot be kept, it
