@@ -1712,29 +1712,26 @@ pub fn repos_with(named: &[String], adding: &[String]) -> Option<Vec<String>> {
     })
 }
 
-/// **The keys a runner is told to hold its port to** (#4207), from the key a Claim's status names:
-/// the one this desktop pinned, or, during a roll this desktop has followed, the one the Pool names
-/// as rolling to the pinned key, with the pinned key. Any other refuses, so who may write a status
-/// can never move what a runner holds its port to.
-pub fn keys_to_tell(said: &str, pin: &PoolPin, seen: &PoolSeen) -> Result<Vec<String>, Refused> {
-    let pinned = pin.key.spelled();
-    if said == pinned {
-        return Ok(vec![pinned]);
+/// **What a runner is told of the port** (#4207): the address a Claim's status says, and the key
+/// this desktop pinned, whatever key that status says. A status is nobody's signed word, so it can
+/// only send a runner to an address that then fails its handshake. During a roll this desktop has
+/// followed already, the runner's mints go to its desktop until the port shows that key.
+pub fn told_of_the_port(
+    claimed: &Claimed,
+    pin: &PoolPin,
+    address: String,
+) -> crate::forge::mintport::Told {
+    crate::forge::mintport::Told {
+        namespace: claimed.namespace.clone(),
+        claim: claimed.name.clone(),
+        cluster: pin.cluster.clone(),
+        address,
+        keys: vec![pin.key.spelled()],
     }
-    if seen.signing_key.as_deref() == Some(said)
-        && seen.next_signing_key.as_deref() == Some(pinned.as_str())
-    {
-        return Ok(vec![said.to_owned(), pinned]);
-    }
-    Err(Refused::Other(
-        "the claim's status names another key than the one this desktop pinned, so its runner \
-         was not told where to ask for a token"
-            .to_owned(),
-    ))
 }
 
 /// **Tells the runner of `paired` where the mint port is** (#4207), where the Claim's status says
-/// ([`keys_to_tell`]), waiting a little where its Pool opts in and the status is yet to say. It
+/// ([`told_of_the_port`]), waiting a little where its Pool opts in and the status is yet to say. It
 /// decides nothing: the runner goes on asking this desktop, with the person's Ask, wherever it was
 /// not told.
 pub fn tell_the_mint_port(
@@ -1752,7 +1749,7 @@ pub fn tell_the_mint_port(
         return Ok(());
     }
     let mut reads = MINT_READS;
-    let (address, key) = loop {
+    let (address, _says_of_its_key) = loop {
         reads -= 1;
         match kubectl.claim_mint(namespace, name)? {
             Some(said) => break said,
@@ -1764,13 +1761,7 @@ pub fn tell_the_mint_port(
             None => std::thread::sleep(every),
         }
     };
-    let told = crate::forge::mintport::Told {
-        namespace: namespace.clone(),
-        claim: name.clone(),
-        cluster: pin.cluster.clone(),
-        address,
-        keys: keys_to_tell(&key, pin, &seen)?,
-    };
+    let told = told_of_the_port(&paired.claimed, pin, address);
     let line = serde_json::to_string(&told).map_err(|why| Refused::Other(why.to_string()))?;
     kubectl
         .run(

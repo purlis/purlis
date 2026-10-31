@@ -1292,7 +1292,7 @@ fn the_pin() -> PoolPin {
 
 #[cfg(unix)]
 #[test]
-fn a_runner_is_told_of_the_port_only_on_a_pool_that_opts_in_and_only_with_the_pinned_key() {
+fn a_runner_is_told_of_the_port_only_on_a_pool_that_opts_in() {
     let last_run = |dir: &std::path::Path| std::fs::read_to_string(dir.join("args")).unwrap();
     let every = std::time::Duration::from_millis(1);
     let pinned = operator_key().spelled();
@@ -1306,34 +1306,13 @@ fn a_runner_is_told_of_the_port_only_on_a_pool_that_opts_in_and_only_with_the_pi
     let kubectl = says_where_to_ask(dir.path(), false, &pinned);
     tell_the_mint_port(&kubectl, &the_pin(), "pool", &a_paired_runner(), every).unwrap();
     assert!(!last_run(dir.path()).contains("--mint-port"));
-
-    let dir = tempfile::tempdir().unwrap();
-    let another = format!("ed25519:{}", "11".repeat(32));
-    let kubectl = says_where_to_ask(dir.path(), true, &another);
-    tell_the_mint_port(&kubectl, &the_pin(), "pool", &a_paired_runner(), every).unwrap_err();
-    assert!(!last_run(dir.path()).contains("--mint-port"));
 }
 
 #[test]
-fn the_keys_told_are_the_pinned_one_or_during_a_roll_followed_both() {
-    let pinned = operator_key().spelled();
-    let current = format!("ed25519:{}", "22".repeat(32));
-    let quiet = PoolSeen::default();
-    assert_eq!(
-        keys_to_tell(&pinned, &the_pin(), &quiet).unwrap(),
-        [pinned.clone()]
-    );
-    let rolling = PoolSeen {
-        signing_key: Some(current.clone()),
-        next_signing_key: Some(pinned.clone()),
-        ..PoolSeen::default()
-    };
-    assert_eq!(
-        keys_to_tell(&current, &the_pin(), &rolling).unwrap(),
-        [current.clone(), pinned]
-    );
-    // A status writer's word alone moves nothing.
-    assert!(keys_to_tell(&current, &the_pin(), &quiet).is_err());
+fn a_runner_is_told_the_pinned_key_alone_whatever_a_status_says() {
+    let told = told_of_the_port(&claimed(), &the_pin(), "10.96.0.5:8443".to_owned());
+    assert_eq!(told.keys, [operator_key().spelled()]);
+    assert_eq!(told.address, "10.96.0.5:8443");
 }
 
 #[test]

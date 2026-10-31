@@ -6,7 +6,7 @@
 //! A runner on a Pool that opts in to minting is told once, by its desktop as it pairs it, where
 //! the port is and the key to hold it to ([`Told`], kept in the session host's own folder, which no
 //! chat reads). The desktop tells only the key it pinned, whatever the Claim's status says
-//! ([`crate::clusterpool::tell_the_mint_port`]).
+//! ([`crate::clusterpool::told_of_the_port`]).
 //!
 //! **A mint** ([`mint`]) answers the operator's one-use X25519 challenge with a MAC only the holder
 //! of this runner's link key can make, and takes back a token limited by name to the Pool's and the
@@ -396,7 +396,12 @@ pub fn mint_in_time(config_root: &Path, app: &str) -> Result<Option<Minted>, Str
     std::thread::Builder::new()
         .name("purlisd-mint".into())
         .spawn(move || {
-            let _ = done.send(mint(&config_root, &app));
+            // One minted after its asker gave up has nobody to hold it, so it goes at once.
+            if let Err(std::sync::mpsc::SendError(Ok(Some(late)))) =
+                done.send(mint(&config_root, &app))
+            {
+                let _ = crate::forge::apptoken::revoke_now(&late.token);
+            }
         })
         .map_err(|why| why.to_string())?;
     finished

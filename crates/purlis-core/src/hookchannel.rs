@@ -643,9 +643,11 @@ impl purlis_host::Channel for HookChannel {
     }
 
     fn ended(&self, number: u32, pid: u32) {
-        self.tokens.program_ended(number, pid);
-        // A token the operator minted for it goes as it ends, window or no window (#4207, #3808).
-        crate::forge::apptoken::chat_ended(&self.root, number);
+        // A token the operator minted for it goes as it ends, window or no window (#4207, #3808):
+        // not where the chat has started again under this number since.
+        if self.tokens.program_ended(number, pid) {
+            crate::forge::apptoken::chat_ended(&self.root, number);
+        }
     }
 
     fn forget(&self, number: u32) {

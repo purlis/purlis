@@ -863,15 +863,15 @@ holds for such tools alone. Any other tool's vault value still comes from the de
 
 **`Claim.status.mint`** holds `address` (the port as `<cluster IP>:8443`) and `operatorKey` (spelled
 as a Pool's `signingKey`), only for a runner the operator vouches for on a Pool that opts in. As the
-desktop pairs its runner it reads these, and tells the runner only the key it pinned when it added the
-pool, or during a roll that key and the current one: a status naming another tells it nothing. The runner keeps them in
+desktop pairs its runner it takes the address, and tells the runner the key it pinned when it added the
+pool, whatever key the status names. A status naming another address only fails the runner's handshake. The runner keeps them in
 [`mint-port.json`](plane-format.md) in its session host's folder, so it needs no way to the
 Kubernetes API.
 
 **The runner follows a roll of the signing key by itself.** The port's TLS shows the current key
 alone. `POST /forge/next-key` answers, during a roll, the same next key and word from the current
 key as every Pool's status holds, and a runner holding the current key checks that word as a desktop
-does, then holds both till the port shows the next. It looks about hourly and before a mint. **A
+does, then holds both till the port shows the next. It looks about hourly and before a mint. A runner paired while its desktop has already moved to the next key has its mints go to the desktop until the port shows that key. **A
 runner that was stopped through the whole roll, past the old key's removal, does not follow it:** its
 mints are refused and go to its desktop until a new runner is claimed.
 
