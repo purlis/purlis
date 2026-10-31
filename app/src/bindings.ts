@@ -7793,17 +7793,6 @@ export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" |
 "failed";
 
 /**
- *  **A Grader extension a plan can name** (#3236): its id, which is what says whose program it
- *  is, and the title it gives itself.
- */
-export type GradeGrader = {
-	id: string,
-	title: string,
-	/**  The hosts its program can send what it is handed to: the plan says each. */
-	hosts: string[],
-};
-
-/**
  *  What a grade's chats spent before, worked out for this one (`grades::Estimate`): both
  *  figures are `None` where that grade's chats did not say what they spent.
  */
@@ -7822,6 +7811,17 @@ export type GradeEstimate = {
 	same_profile: boolean | null,
 	/**  Whether that grade was interrupted before it was scored (#3602): the plan says so. */
 	interrupted: boolean,
+};
+
+/**
+ *  **A Grader extension a plan can name** (#3236): its id, which is what says whose program it
+ *  is, and the title it gives itself.
+ */
+export type GradeGrader = {
+	id: string,
+	title: string,
+	/**  The hosts its program can send what it is handed to: the plan says each. */
+	hosts: string[],
 };
 
 /**
