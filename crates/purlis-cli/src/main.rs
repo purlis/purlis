@@ -880,6 +880,13 @@ fn suspends_after(asked: Option<Option<std::time::Duration>>) -> Option<std::tim
     asked.map(|after| after.unwrap_or(a_day))
 }
 
+/// How long this runner may be idle, where its operator told it (#3980).
+#[cfg(unix)]
+fn idle_after_asked() -> Option<std::time::Duration> {
+    use purlis_core::clusterpool::idle;
+    idle::after(std::env::var(idle::AFTER_VAR).ok()?.as_str())
+}
+
 /// `purlis serve`: this user's session host, at the place the window's own host would take, so
 /// one finds the other serving and leaves it be.
 #[cfg(not(unix))]
@@ -910,6 +917,28 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
     // The skills folders a last host laid out and no running program uses, tidied as it
     // starts, as the window tidies them as it starts (#2879).
     purlis_core::skills::tidy_here_later(std::time::Duration::ZERO);
+    // A cluster runner told how long it may be idle says so to its operator as it stops (#3980).
+    // Started again in place until the operator suspends it, it serves nothing for that while.
+    let idles = idle_after_asked().map(|after| {
+        use purlis_core::clusterpool::idle;
+        let mark = std::path::Path::new(idle::MARK);
+        if let Some(left) = idle::parked_for(mark, std::time::SystemTime::now()) {
+            voice::err("this runner said it is idle: waiting for its operator to suspend it");
+            std::thread::sleep(left);
+        }
+        let _ = std::fs::remove_file(mark);
+        purlis_host::Idles {
+            after,
+            said: Box::new(|| {
+                if let Err(why) = idle::say(
+                    std::path::Path::new(idle::TERMINATION_LOG),
+                    std::path::Path::new(idle::MARK),
+                ) {
+                    voice::err(&format!("this runner could not say it is idle: {why}"));
+                }
+            }),
+        }
+    });
     let place = purlis_host::Place::at(
         purlis_core::hostsocket::here(),
         purlis_core::machine::charterd(&config),
@@ -1029,6 +1058,7 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
             },
             pairing,
             suspends_after,
+            idles,
         ))
         .unwrap_or(1),
     )

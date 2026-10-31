@@ -4270,6 +4270,18 @@ impl Hosting {
         }
     }
 
+    /// **Whether nothing keeps this runner's host from being idle** (ADR 0089 §9, as amended on
+    /// 2026-10-27; #3980): no program that has not ended, a chat waiting on the person between
+    /// turns and any browser, one holding an Ask among them, no start or saving under way, and no
+    /// link holding a project.
+    pub(crate) fn nothing_running(&self) -> bool {
+        let state = self.state();
+        state.programs.values().all(|hosted| hosted.ended)
+            && state.starting.is_empty()
+            && state.saving.is_empty()
+            && state.projects.values().all(|held| held.links.is_empty())
+    }
+
     /// Whether this host has nothing more to wait for at `now`: no window is linked since one
     /// was, and either nothing is left a window could come back for, or the grace period has
     /// passed since the last one went.

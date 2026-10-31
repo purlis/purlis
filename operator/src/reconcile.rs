@@ -17,6 +17,7 @@
 //! nothing is written for the Claim until that object is gone.
 
 use crate::admission::{POLICY, RUNNER_NAMESPACES_POLICY, admission, in_force_since};
+use crate::lifecycle;
 use crate::metrics::{Cause, Metrics};
 use crate::person::{self, QUOTA, Quota, RunnerNamespace};
 use crate::resources::{Claim, ClaimStatus, Pool, PoolStatus, READY, condition};
@@ -491,7 +492,8 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
                 // Still stopped by its own claim (#2058).
                 let runner = held.namespace().unwrap_or_default();
                 let sandbox = sandbox_of(client, &runner, &held).await?;
-                set_operating_mode(context, &claim, None, &held, sandbox.as_ref()).await?;
+                let idle = lifecycle::idle_condition(&claim).is_some();
+                set_operating_mode(context, &claim, None, &held, sandbox.as_ref(), idle).await?;
                 if upstream::is_stopped(&claim, None) {
                     let (suspension, again) =
                         suspension_seen(context, &claim, upstream::suspension_of(sandbox.as_ref()));
@@ -611,7 +613,8 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
         // way of the rest (#2058).
         if let (Found::Ours { .. }, Some(held)) = (&claim_found, claim_full.as_ref()) {
             let sandbox = sandbox_of(client, &runner_name, held).await?;
-            set_operating_mode(context, &claim, Some(&pool), held, sandbox.as_ref()).await?;
+            let idle = lifecycle::idle_condition(&claim).is_some();
+            set_operating_mode(context, &claim, Some(&pool), held, sandbox.as_ref(), idle).await?;
         }
         tracing::warn!(
             claim = %name, %namespace, runner_namespace = %runner_name, %kind, %object,
@@ -691,11 +694,33 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
         }
     };
     let sandbox = sandbox_of(client, &runner_name, &applied).await?;
-    set_operating_mode(context, &claim, Some(&pool), &applied, sandbox.as_ref()).await?;
+    // An idle runner stays suspended until its desktop asks for it (#3980), and is run again only
+    // once its pod has gone, so its pod's word that it was idle is not read a second time.
+    let gone =
+        sandbox.is_none() || upstream::suspension_of(sandbox.as_ref()) == Suspension::Suspended;
+    let stays_idle = !stopped
+        && lifecycle::idle_condition(&claim).is_some()
+        && !(lifecycle::asked_to_run_again(&claim) && gone);
+    set_operating_mode(
+        context,
+        &claim,
+        Some(&pool),
+        &applied,
+        sandbox.as_ref(),
+        stays_idle,
+    )
+    .await?;
     if stopped {
         let (suspension, again) =
             suspension_seen(context, &claim, upstream::suspension_of(sandbox.as_ref()));
         let status = status_of_a_stopped_claim(&claim, Some(&pool), suspension);
+        write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
+        return Ok(Action::requeue(again));
+    }
+    if stays_idle {
+        let (suspension, again) =
+            suspension_seen(context, &claim, upstream::suspension_of(sandbox.as_ref()));
+        let status = lifecycle::status_of_an_idle_runner(suspension);
         write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
         return Ok(Action::requeue(again));
     }
@@ -708,6 +733,17 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
         sandbox.map(|sandbox| sandbox.metadata),
     )
     .await?;
+    // The runner says it is idle (#3980): said on the Claim first, so a pass after a restart
+    // knows, and suspended by the pass this write wakes.
+    if pod
+        .as_ref()
+        .is_some_and(|pod| lifecycle::said_idle(pod, k8s_openapi::jiff::Timestamp::now()))
+    {
+        tracing::info!(claim = %name, %namespace, "its runner says it is idle");
+        let status = lifecycle::status_of_an_idle_runner(Suspension::Suspending);
+        write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
+        return Ok(Action::requeue(vouch::KEY_WAIT));
+    }
     if let Vouching::Refused(why) = &vouching {
         tracing::warn!(claim = %name, %namespace, %why, "no link key vouched for");
     }
@@ -872,8 +908,8 @@ async fn sandbox_of(
         .await?)
 }
 
-/// **A stopped claim's runner suspended, and run again once it is not** (#2058): `sandbox`'s
-/// operating mode applied as [`upstream::operating_mode_for`] says, only where the sandbox is
+/// **A stopped or idle claim's runner suspended, and run again once it is not** (#2058, #3980):
+/// `sandbox`'s operating mode applied as [`upstream::operating_mode_for`] says, only where the sandbox is
 /// the one `upstream`, the claim's upstream claim, controls by uid. Its mode is the one field
 /// the operator writes on it.
 async fn set_operating_mode(
@@ -882,6 +918,7 @@ async fn set_operating_mode(
     pool: Option<&Pool>,
     upstream: &SandboxClaim,
     sandbox: Option<&Sandbox>,
+    idle: bool,
 ) -> Result<(), Error> {
     let Some(sandbox) = sandbox else {
         return Ok(());
@@ -894,7 +931,13 @@ async fn set_operating_mode(
     ) {
         return Ok(());
     }
-    let Some(mode) = upstream::operating_mode_for(claim, pool, sandbox) else {
+    let stopped = upstream::is_stopped(claim, pool);
+    let mode = if idle && !stopped {
+        upstream::operating_mode_while_idle(sandbox)
+    } else {
+        upstream::operating_mode_for(claim, pool, sandbox)
+    };
+    let Some(mode) = mode else {
         return Ok(());
     };
     let (name, namespace) = (sandbox.name_any(), sandbox.namespace().unwrap_or_default());
@@ -906,9 +949,9 @@ async fn set_operating_mode(
             &Patch::Apply(&upstream::sandbox_in_mode(sandbox, mode)),
         )
         .await?;
-    // The operator suspends a runner only for a stopped claim or pool (#2058).
     if mode == upstream::SUSPENDED {
-        context.metrics.suspended(&claim.spec.pool, Cause::Stopped);
+        let cause = if stopped { Cause::Stopped } else { Cause::Idle };
+        context.metrics.suspended(&claim.spec.pool, cause);
     }
     Ok(())
 }

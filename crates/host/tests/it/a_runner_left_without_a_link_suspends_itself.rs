@@ -119,3 +119,30 @@ async fn a_runner_that_suspends_itself_ends_every_chat_it_runs_and_stops_serving
 
     assert!(runs.last().seen().stopped, "every chat it ran ended");
 }
+
+// **A runner idle for its pool's `idleAfter` stops (#3980)**: a clock of what runs on it, not of
+// its links.
+
+#[tokio::test]
+async fn a_paired_runner_with_nothing_running_is_idle_once_its_time_has_passed() {
+    let hosting = Hosting::new(Echo);
+    timeout(LIMIT * 10, hosting.until_idle_for(LIMIT, || true))
+        .await
+        .expect("idle once the time has passed");
+}
+
+#[tokio::test]
+async fn a_runner_no_desktop_is_paired_with_is_never_idle() {
+    let hosting = Hosting::new(Echo);
+    let waited = timeout(LIMIT * 4, hosting.until_idle_for(LIMIT, || false)).await;
+    assert!(waited.is_err(), "a warm runner never says it is idle");
+}
+
+#[tokio::test]
+async fn a_link_holding_a_project_keeps_a_runner_from_being_idle() {
+    let hosting = Hosting::new(Echo);
+    let client = the_desktops_link(&hosting).await;
+    client.hold_project(PROJECT, "").await.expect("held");
+    let waited = timeout(LIMIT * 4, hosting.until_idle_for(LIMIT, || true)).await;
+    assert!(waited.is_err(), "a held project is an open stream");
+}

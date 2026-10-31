@@ -466,6 +466,163 @@ fn field(
         .filter(|printed| !printed.is_empty())
 }
 
+/// `check`, until it answers or `patience` passes.
+fn within<T>(patience: Duration, what: &str, mut check: impl FnMut() -> Option<T>) -> T {
+    let until = std::time::Instant::now() + patience;
+    loop {
+        if let Some(answer) = check() {
+            return answer;
+        }
+        assert!(
+            std::time::Instant::now() < until,
+            "{what}, within {patience:?}"
+        );
+        std::thread::sleep(Duration::from_secs(2));
+    }
+}
+
+/// **A kept runner idle for its pool's `idleAfter` is suspended, never while a chat runs on it,
+/// and a word from its desktop runs it again, paired as it was** (#3980).
+#[test]
+#[ignore = "needs a cluster with purlis's cluster operator: operator/e2e/kind.sh"]
+fn an_idle_kept_runner_is_suspended_and_its_desktop_runs_it_again() {
+    purlis_core::unsteered!();
+    let image = std::env::var("CLUSTER_POOL_TEST_IMAGE")
+        .expect("CLUSTER_POOL_TEST_IMAGE names the runner image by digest");
+    let context = std::env::var("CLUSTER_POOL_TEST_CONTEXT")
+        .expect("CLUSTER_POOL_TEST_CONTEXT names the cluster's kubeconfig context");
+    let kubectl = Kubectl::at("kubectl").with_context(&context);
+    let suffix = ulid::Ulid::generate().to_string().to_lowercase();
+    let namespace = format!("e2e-idle-{}", &suffix[..10]);
+    let pool = format!("e2e-idle-{}", &suffix[..10]);
+    let _removes = Removes {
+        kubectl: kubectl.clone(),
+        namespace: namespace.clone(),
+        pool: pool.clone(),
+    };
+    kubectl
+        .run(
+            &kubectl.args(&["create", "namespace", &namespace]),
+            None,
+            64 * 1024,
+        )
+        .expect("a namespace of the test's own");
+    let definition = serde_json::json!({
+        "apiVersion": "runners.purlis.dev/v1alpha1",
+        "kind": "Pool",
+        "metadata": { "name": pool },
+        "spec": { "image": image, "keptVolume": { "size": "1Gi" }, "idleAfter": "1m" },
+    });
+    kubectl
+        .run(
+            &kubectl.args(&["apply", "--filename", "-"]),
+            Some(&definition.to_string()),
+            64 * 1024,
+        )
+        .expect("the pool");
+    let operator = eventually("the pool names the operator's key", || {
+        kubectl.pool_pin(&pool).ok()
+    });
+    let kept = claimed(&kubectl, &namespace, "ada-idle", &pool, Keeping::Kept);
+    let first = vouched(&kubectl, &operator, &kept);
+    let runner = clusterpool::runner_namespace(&kept.requester);
+    let ours = Identity {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: LinkKey::generate().unwrap(),
+    };
+    let desktop = Pinned {
+        device: ours.device.clone(),
+        key: ours.key.public(),
+    };
+    let paired =
+        clusterpool::pair(&kubectl, &kept, &first, &desktop).expect("the vouched runner is paired");
+    let idle = || {
+        field(
+            &kubectl,
+            &namespace,
+            "claims.runners.purlis.dev",
+            "ada-idle",
+            "{.status.conditions[?(@.type=='Idle')].status}",
+        )
+    };
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    // A chat running past the pool's time keeps its runner.
+    runtime.block_on(async {
+        let identity = Identity {
+            device: ours.device.clone(),
+            key: ours.key.clone(),
+        };
+        let (client, mut views) = linked(&kubectl, &operator, &paired, identity).await;
+        client
+            .hold_project(PROJECT, "")
+            .await
+            .expect("the runner holds the project");
+        ran(
+            &client,
+            &mut views,
+            "echo 'kept' > \"$HOME/idle-kept\" && echo written; exec sleep 600",
+            "written",
+        )
+        .await;
+        tokio::time::sleep(Duration::from_secs(120)).await;
+        assert_eq!(idle(), None, "a chat runs on it, so it is not idle");
+    });
+    runtime.shutdown_timeout(Duration::from_secs(5));
+    // Its chat ended, nothing runs on it. The link is gone with the runtime, and the chat's end
+    // is the host's: a program left is ended by asking for it.
+    in_the_pod(
+        &kubectl,
+        &runner,
+        "ada-idle",
+        "pkill -f 'sleep 600' || true",
+    );
+    within(
+        Duration::from_secs(420),
+        "the claim says its runner is idle",
+        || (idle().as_deref() == Some("True")).then_some(()),
+    );
+    within(
+        Duration::from_secs(180),
+        "the idle runner's pod ends",
+        || {
+            field(&kubectl, &runner, "pod", "ada-idle", "{.metadata.uid}")
+                .is_none()
+                .then_some(())
+        },
+    );
+    field(
+        &kubectl,
+        &runner,
+        "persistentvolumeclaim",
+        "purlis-kept-ada-idle",
+        "{.metadata.uid}",
+    )
+    .expect("its volume is kept");
+    // A word from its desktop runs it again, on its volume, with the key it was paired with.
+    kubectl
+        .run_again_if_idle(&namespace, "ada-idle")
+        .expect("the word is written");
+    let resumed = within(
+        Duration::from_secs(240),
+        "the runner run again is vouched for",
+        || {
+            let now = clusterpool::vouched_for(&kubectl, &operator, &kept).ok()??;
+            clusterpool::held_to(&paired, &now).is_ok().then_some(now)
+        },
+    );
+    assert_eq!(resumed.key, paired.pinned.key);
+    assert_eq!(idle(), None, "no longer idle");
+    assert_eq!(
+        in_the_pod(&kubectl, &runner, "ada-idle", "cat \"$HOME/idle-kept\"").trim(),
+        "kept"
+    );
+    let _ = kubectl.delete_claim(&namespace, "ada-idle");
+}
+
 #[test]
 #[ignore = "needs a cluster with purlis's cluster operator: operator/e2e/kind.sh"]
 fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_again() {

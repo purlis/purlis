@@ -305,7 +305,10 @@ fn a_runners_home_is_on_the_volume_its_pod_mounts_and_its_group_may_write() {
     let runner = &pod["containers"][0];
     assert_eq!(
         runner["env"],
-        json!([{ "name": "HOME", "value": upstream::RUNNER_HOME }])
+        json!([
+            { "name": "HOME", "value": upstream::RUNNER_HOME },
+            { "name": upstream::IDLE_AFTER_VAR, "value": "30m" }
+        ])
     );
     assert!(upstream::RUNNER_HOME.starts_with(&format!("{}/", upstream::KEPT_FOLDER)));
     let home = pod["volumes"]

@@ -1407,6 +1407,45 @@ impl Kubectl {
         .map(|_| ())
     }
 
+    /// **Asks the operator to run the Claim `namespace`/`name`'s idle runner again** (#3980), where
+    /// its `Idle` condition says it is suspended: the condition's own time is the word, so this
+    /// says nothing of any later suspension. Nothing is written otherwise.
+    pub fn run_again_if_idle(&self, namespace: &str, name: &str) -> Result<(), Refused> {
+        let Some(held) = self.claim_json(namespace, name)? else {
+            return Ok(());
+        };
+        let Some(since) = idle_since(&held) else {
+            return Ok(());
+        };
+        if held
+            .pointer("/metadata/annotations")
+            .and_then(|marks| marks.get(RUN_AGAIN_ANNOTATION))
+            .and_then(serde_json::Value::as_str)
+            == Some(since)
+        {
+            return Ok(());
+        }
+        let patch = serde_json::json!({
+            "metadata": { "annotations": { RUN_AGAIN_ANNOTATION: since } },
+        })
+        .to_string();
+        self.run(
+            &self.args(&[
+                "patch",
+                "claims.runners.purlis.dev",
+                name,
+                "--namespace",
+                namespace,
+                "--type=merge",
+                "--patch",
+                &patch,
+            ]),
+            None,
+            MOST_PRINTED,
+        )
+        .map(|_| ())
+    }
+
     /// The Claim `namespace`/`name` as the cluster has it, where it does.
     fn claim_json(
         &self,
@@ -1951,6 +1990,25 @@ fn vouched_within(
         std::thread::sleep(every);
     }
 }
+
+/// What a desktop writes on a Claim to run its idle runner again (#3980):
+/// `operator/src/lifecycle.rs` reads it.
+pub const RUN_AGAIN_ANNOTATION: &str = "runners.purlis.dev/run-again";
+
+/// When the Claim `held` says its runner was suspended for being idle, where it says so.
+pub fn idle_since(held: &serde_json::Value) -> Option<&str> {
+    held.pointer("/status/conditions")?
+        .as_array()?
+        .iter()
+        .find(|one| {
+            one.get("type").and_then(serde_json::Value::as_str) == Some("Idle")
+                && one.get("status").and_then(serde_json::Value::as_str) == Some("True")
+        })?
+        .get("lastTransitionTime")?
+        .as_str()
+}
+
+pub mod idle;
 
 #[cfg(test)]
 pub(crate) mod tests;

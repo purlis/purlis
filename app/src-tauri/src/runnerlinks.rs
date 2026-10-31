@@ -187,6 +187,28 @@ impl ToARunner {
         pool: &ClusterPool,
         kept: &ClusterKept,
     ) -> Result<ToARunner, String> {
+        ToARunner::cluster(config, kubectl, pool, kept, false)
+    }
+
+    /// [`ToARunner::of_cluster`], for the window's relayed link: an idle runner is asked to run
+    /// again before each connection (#3980), and that connection is refused until the operator
+    /// vouches for it again, which the link's own retries wait out.
+    pub fn of_cluster_waking(
+        config: &Path,
+        kubectl: &Kubectl,
+        pool: &ClusterPool,
+        kept: &ClusterKept,
+    ) -> Result<ToARunner, String> {
+        ToARunner::cluster(config, kubectl, pool, kept, true)
+    }
+
+    fn cluster(
+        config: &Path,
+        kubectl: &Kubectl,
+        pool: &ClusterPool,
+        kept: &ClusterKept,
+        waking: bool,
+    ) -> Result<ToARunner, String> {
         let keyring = purlis_core::linkkey::this_builds_keyring(config);
         let desktop = purlis_core::linkkey::kept(config, &*keyring)?.into_identity();
         let checking = (
@@ -210,6 +232,9 @@ impl ToARunner {
             Arc::new(move || {
                 let (config, kubectl, name, reached) = &checking;
                 let now = crate::sandboxing::now_secs();
+                if waking {
+                    purlis_core::pools::run_cluster_runner_again(config, kubectl, name);
+                }
                 purlis_core::pools::before_cluster_link_to(config, kubectl, name, reached, now)
                     .map_err(not_checked)
             }),
@@ -322,7 +347,7 @@ pub fn relays_to(config_root: PathBuf) -> purlis_host::RelaysTo {
         let Some((cluster, kept)) = cluster_reached(&config_root, pool)? else {
             return docker(pool);
         };
-        let to = ToARunner::of_cluster(
+        let to = ToARunner::of_cluster_waking(
             &config_root,
             &crate::clusterpools::kubectl(&config_root)?,
             &cluster,
