@@ -640,7 +640,7 @@ export const NarrowScrolled: Story = {
     scrollTo(0);
     await shows(false, true);
     // The fade lies over the band and takes none of its room: the first warning is at its top.
-    expect(boxOf(vault).top - boxOf(stack).top).toBeLessThanOrEqual(1);
+    expect(boxOf(vault.parentElement).top - boxOf(stack).top).toBeLessThanOrEqual(1);
 
     scrollTo(stack.scrollHeight);
     await shows(true, false);
