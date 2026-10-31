@@ -433,10 +433,11 @@ describe("a choice's target size (#4173)", () => {
   });
 });
 
-// WCAG 2.5.8 (#4197): a choice with no words is drawn its mark's size, 14px across; its press
-// reaches a 24 by 24 square around it, placed on its root. The story hit-tests the square.
-describe("a choice with no words (#4197)", () => {
-  it("places the press it reaches past its mark on its root", () => {
+// WCAG 2.5.8 (#4197, #4303): a choice with no words is drawn its mark's size, 14px across; its
+// press reaches a 24 by 24 square centred on the mark, so the reach is placed on the mark, not on
+// a root that may keep room for words. The story hit-tests the square, measured from the mark.
+describe("a choice with no words (#4197, #4303)", () => {
+  it("places the press it reaches on its mark", () => {
     render(
       <>
         <Checkbox aria-label="Choose the row" />
@@ -446,13 +447,21 @@ describe("a choice with no words (#4197)", () => {
         <Switch aria-label="Auto-save" />
       </>,
     );
-    for (const [role, name] of [
-      ["checkbox", "Choose the row"],
-      ["radio", "Compact"],
-      ["switch", "Auto-save"],
-    ] as const)
-      expect(drawnWith(rootOf(screen.getByRole(role, { name })), "position"), name).toBe(
-        "relative",
-      );
+    for (const [role, name, part] of [
+      ["checkbox", "Choose the row", "box"],
+      ["radio", "Compact", "mark"],
+      ["switch", "Auto-save", "track"],
+    ] as const) {
+      const mark = rootOf(screen.getByRole(role, { name })).querySelector(`[data-part="${part}"]`);
+      expect(drawnWith(mark as Element, "position"), name).toBe("relative");
+    }
+  });
+
+  it("leaves a choice with words its row as its target", () => {
+    render(<Checkbox>Sign commits</Checkbox>);
+    const mark = rootOf(screen.getByRole("checkbox", { name: "Sign commits" })).querySelector(
+      '[data-part="box"]',
+    );
+    expect(drawnWith(mark as Element, "position")).toBeUndefined();
   });
 });
