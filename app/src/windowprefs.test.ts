@@ -243,6 +243,24 @@ describe("the first frame, the levels resolved once at creation (#2602, #2582)",
     expect(firstFrameOnce()?.theme.name).toBe("Night");
   });
 
+  it("says on the first frame which of the person's colours it left out (#3023)", () => {
+    const yours = () => aboutThisMachine().filter((one) => one.subject === "your colours");
+    const why = "your colour for text.primary is left out: it would put words under their floor";
+    created({
+      follows_system: false,
+      contrast: "standard",
+      frames: [{ ...frame("Team", false, false), mine: [why] }],
+    });
+    expect(firstFrameOnce()?.mine).toEqual([why]);
+    expect(yours().map((one) => one.detail)).toEqual([why]);
+    expect(yours()[0].settings).toBe("you.colours");
+
+    // A frame that left nothing out says nothing, and an old answer is taken back.
+    created({ follows_system: false, contrast: "standard", frames: [frame("Team", false, false)] });
+    expect(firstFrameOnce()?.mine).toEqual([]);
+    expect(yours()).toEqual([]);
+  });
+
   it("is nothing when nothing was handed, or what was handed is not a frame", () => {
     created(undefined);
     expect(firstFrameOnce()).toBeUndefined();
