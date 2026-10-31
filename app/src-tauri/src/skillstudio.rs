@@ -1628,6 +1628,59 @@ pub(crate) async fn chat_skills_missing(
     Ok(held.chats().skills_missing(session))
 }
 
+/// **The repo skills of the branch folder chat `session` works in** (#4326): what the Skills view
+/// lists for it, whose rows from the studio say only what the clone's own branch holds. None for
+/// any other chat, and none while the Skill studio is off. Only the view asks, never a chat's open;
+/// on a blocking thread, as it reads the folder.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn chat_branch_folder_skills(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    session: u32,
+) -> Result<Vec<StudioSkill>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window(
+        "reading the skills of the chat's branch folder",
+        move || {
+            if !purlis_core::skills::studio_on_here() {
+                return Ok(Vec::new());
+            }
+            let Some(chat) = held.chats().skills_of(session) else {
+                return Ok(Vec::new());
+            };
+            Ok(branch_folder_skills(held.root(), &chat))
+        },
+    )
+    .await
+}
+
+/// The repo skills of the branch folder `chat` of the project at `root` works in, for the window.
+fn branch_folder_skills(
+    root: &std::path::Path,
+    chat: &crate::chats::ChatForSkills,
+) -> Vec<StudioSkill> {
+    let (Some(workspace), Some(harness), Some(cwd)) =
+        (chat.workspace.as_deref(), chat.harness, chat.cwd.as_deref())
+    else {
+        return Vec::new();
+    };
+    let built_in =
+        crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
+    purlis_core::skills::branch_folder_rows(
+        built_in.as_deref(),
+        root,
+        workspace,
+        chat.persona.as_deref(),
+        harness,
+        cwd,
+        &purlis_core::harness_plugin::Env::of(&[]),
+    )
+    .into_iter()
+    .map(outside_shown)
+    .collect()
+}
+
 /// Puts a chat's missing-skills Notice away.
 #[tauri::command]
 #[specta::specta]

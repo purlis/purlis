@@ -294,7 +294,7 @@ export function Explorer({
    * are of another branch, the workspace itself is picked first, which lists every clone's own.
    * A folder of the other kind waits until Explorer is where it is.
    */
-  reveal?: { repo: string; folder: string; asked: number };
+  reveal?: { repo: string; piece?: string; folder: string; asked: number };
   /**
    * **Search contents** (#3343): the Search view, opened on the filter's scope — `branch`, the
    * selected repo's own folder or the picked branch (`at`), or `workspace`, all its repos — with
@@ -582,7 +582,12 @@ export function Explorer({
   // as soon as it is drawn: a folder is read as it opens. A clone's folder is asked of a
   // workspace, a project's own of the plane root.
   const [revealSeen, setRevealSeen] = useState(reveal?.asked);
-  const [revealing, setRevealing] = useState<{ row: string; repo: string; workspace: string }>();
+  const [revealing, setRevealing] = useState<{
+    row: string;
+    repo: string;
+    piece: string | null;
+    workspace: string;
+  }>();
   /** The ask whose row has had the keyboard: each ask lands once. */
   const revealed = useRef(reveal?.asked);
   /** The ask Files was moved to the workspace itself for: once each, so a row the ask never
@@ -598,7 +603,7 @@ export function Explorer({
     const parts = reveal.folder.split("/").filter((part) => part !== "");
     const top = atRoot
       ? { repo: PLANE_ROOT.repo, piece: PLANE_ROOT.piece }
-      : { repo: reveal.repo, piece: null };
+      : { repo: reveal.repo, piece: reveal.piece ?? null };
     // A clone's own folder is one of several tops in a workspace, each closed until opened.
     const above = [
       ...(atRoot ? [] : [""]),
@@ -612,6 +617,7 @@ export function Explorer({
     setRevealing({
       row: fileRow({ ...top, folder: parts.join("/") }),
       repo: top.repo,
+      piece: top.piece,
       workspace: filesWorkspace,
     });
   }
@@ -628,11 +634,13 @@ export function Explorer({
       setSectionOpen("files", true, plane);
       return;
     }
-    // *Files* of another branch than the clone's own folder: the workspace itself lists it.
+    // *Files* of another branch than the one asked for: the workspace itself lists a clone's own
+    // folder, and only its own pick lists a branch folder (#4326).
     if (
       !atRoot &&
-      filesTop !== undefined &&
-      (filesTop.repo !== wanted.repo || filesTop.piece !== null)
+      (filesTop === undefined
+        ? wanted.piece !== null
+        : filesTop.repo !== wanted.repo || filesTop.piece !== wanted.piece)
     ) {
       if (movedFor.current === revealSeen) {
         // Moved once already, and the person went elsewhere: the ask is theirs to drop.
@@ -640,8 +648,15 @@ export function Explorer({
         return;
       }
       movedFor.current = revealSeen;
-      if (cockpit !== undefined) onFocus?.(undefined);
-      else onPick(undefined);
+      if (wanted.piece === null) {
+        if (cockpit !== undefined) onFocus?.(undefined);
+        else onPick(undefined);
+      } else if (cockpit !== undefined) {
+        onFocus?.({ workspace: wanted.workspace, repo: wanted.repo, piece: wanted.piece });
+      } else {
+        const path = state.pieces?.[wanted.repo]?.find((one) => one.piece === wanted.piece)?.path;
+        onPick({ repo: wanted.repo, piece: wanted.piece, path: path ?? "" });
+      }
       return;
     }
     const nav = navRef.current;

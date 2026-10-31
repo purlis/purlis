@@ -671,8 +671,8 @@ describe("a file or folder row's menu (FM-10)", () => {
 
 describe("Show in Explorer in a workspace (#3308)", () => {
   /** The explorer on `spot`, then asked to show a repo skill's folder of the `svc` clone. */
-  function revealing(spot: Spot | undefined, onPick = vi.fn()) {
-    const drawn = (reveal?: { repo: string; folder: string; asked: number }) => (
+  function revealing(spot: Spot | undefined, onPick = vi.fn(), piece?: string) {
+    const drawn = (reveal?: { repo: string; piece?: string; folder: string; asked: number }) => (
       <ChatsHere.Provider value={fixedChats(nothingKnown)}>
         <Explorer
           plane={PLANE}
@@ -689,7 +689,7 @@ describe("Show in Explorer in a workspace (#3308)", () => {
       </ChatsHere.Provider>
     );
     const { rerender } = render(drawn());
-    rerender(drawn({ repo: "svc", folder: ".claude/skills/lint-rs", asked: 1 }));
+    rerender(drawn({ repo: "svc", piece, folder: ".claude/skills/lint-rs", asked: 1 }));
     return onPick;
   }
 
@@ -713,5 +713,23 @@ describe("Show in Explorer in a workspace (#3308)", () => {
     await userEvent.click(tree());
     await new Promise((settle) => setTimeout(settle, 50));
     expect(onPick).toHaveBeenCalledTimes(1);
+  });
+
+  it("picks the branch folder a repo skill of its branch is in (#4326)", async () => {
+    core({ ":": [] });
+    const onPick = revealing(undefined, vi.fn(), "one");
+    await vi.waitFor(() => expect(onPick).toHaveBeenCalledWith(PICKED));
+  });
+
+  it("opens a branch folder's folders down to a repo skill's once picked (#4326)", async () => {
+    const asked = core({
+      "one:": [entry(".claude", { kind: "folder" })],
+      "one:.claude": [entry("skills", { kind: "folder" })],
+      "one:.claude/skills": [entry("lint-rs", { kind: "folder" })],
+    });
+    revealing(PICKED, vi.fn(), "one");
+
+    await vi.waitFor(() => expect(row("file:svc/one:.claude/skills/lint-rs")).toHaveFocus());
+    expect(asked).toEqual(expect.arrayContaining(["one:.claude", "one:.claude/skills"]));
   });
 });

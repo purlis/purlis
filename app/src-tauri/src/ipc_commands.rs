@@ -309,6 +309,7 @@ macro_rules! app_commands {
                 skillstudio::set_skill_studio_on,
                 skillstudio::skill_share,
                 skillstudio::persona_skill,
+                skillstudio::chat_branch_folder_skills,
                 skillstudio::chat_skills_missing,
                 skillstudio::put_away_chat_skills_missing,
                 skillchange::skill_templates,
