@@ -405,3 +405,8 @@ fn a_refusal_is_said_in_the_operators_words_on_one_line() {
     );
     assert_eq!(refused_in_words(500, b"oops"), "the mint port answered 500");
 }
+
+#[test]
+fn the_mark_a_runner_is_made_with_is_the_operators() {
+    assert_eq!(MARK_VAR, proof_fixture("mark-variable.txt").trim());
+}

@@ -576,11 +576,14 @@ pub const NO_SANDBOX_WHERE_A_TOKEN_IS_NEAR: &str = "this runner's pool mints Git
      cluster, so a chat here runs only inside purlis's sandbox, and this one would not, so nothing \
      was started. Start it sandboxed.";
 
-/// **Refuses a start outside the sandbox on a runner told of a mint port** (#4207, the person's
-/// ruling of 2026-10-31), a shell alone being allowed. What this runner keeps of the port and cannot
+/// **Refuses a start outside the sandbox on a runner of a Pool naming an App's key, or told of a
+/// mint port** (#4207, the person's ruling of 2026-10-31), a shell alone being allowed. What this runner keeps of the port and cannot
 /// read refuses too.
 #[cfg(unix)]
 fn refused_where_a_token_is_near(kind: ProgramKind) -> Result<(), String> {
+    if crate::envvar::var(crate::forge::mintport::MARK_VAR).is_some() {
+        return no_sandbox_refused(kind, Ok(true));
+    }
     // A fenced build keeps no store of this machine's, so it was told of nothing.
     let told = crate::forge::apptoken::record_root().map_or(Ok(false), |config| {
         crate::forge::mintport::told(&config).map(|told| told.is_some())

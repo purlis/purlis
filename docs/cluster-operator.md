@@ -853,9 +853,11 @@ holds for such tools alone. Any other tool's vault value still comes from the de
   gate is not asked: a tool line or vault tag taken away reaches a chat as it starts again. A token
   is kept about 50 minutes for a chat's next runs, so a right revoked stops the next mint, not one
   already out.
-- **A chat here runs only inside purlis's sandbox.** Once a runner has been told of the port, its
-  host refuses any start outside the sandbox, saying why. A terminal shell the person opens is still
-  allowed.
+- **A chat here runs only inside purlis's sandbox.** A runner of a Pool that names an App's key is made
+  with the variable `PURLIS_MINTING_POOL`, and from its first moment its host refuses any start outside
+  the sandbox, saying why, a terminal shell the person opens alone being allowed. The operator mints only
+  for a pod made with it. **Naming a key on a Pool changes its runners' template, as changing its image
+  does: a runner made before gets no token and is no longer vouched for, so claim a new one.**
 - **The token stays in the runner's memory**, and goes when its chat ends: the runner revokes it
   with GitHub. A revoke that fails, or a runner stopped first, leaves it to expire within its hour.
 

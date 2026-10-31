@@ -20,5 +20,9 @@ to the amendment of 2026-10-31 on the mint port, and keeps everything else in it
 6. **A runner keeps its token in memory and revokes it as the chat ends**, as a desktop does (#3808).
 7. **The operator may `get` its own mint Service, by name**, for the address, in the Role that
    otherwise reads the keys the chart names, and only where it names one.
-8. **A runner told of a mint port starts nothing outside the sandbox but a shell** (ruled
-   2026-10-31), saying why, and no chat reads the folder its pod hands its link key over in.
+8. **A runner of a Pool naming an App's key, or told of a mint port, starts nothing outside the
+   sandbox but a shell** (ruled 2026-10-31), saying why, and no chat reads the folder its pod hands
+   its link key over in.
+9. **The operator mints only for a pod made with the mark** `PURLIS_MINTING_POOL`, set from its birth
+   where the Pool names a key (ruled 2026-10-31: every runner it would mint for refuses). A pod's
+   containers never change, so this reads what has held since its first moment.

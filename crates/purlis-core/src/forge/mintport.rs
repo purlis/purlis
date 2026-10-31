@@ -40,6 +40,11 @@ use crate::clusterpool::{Following, OperatorKey, PoolPin, PoolSeen, is_label, is
 /// What a runner keeps of the port, in the session host's folder.
 pub const FILE: &str = "mint-port.json";
 
+/// **The variable a cluster runner's pod is made with on a Pool naming an App's key** (#4207;
+/// `operator/src/upstream.rs`, `fixtures/forge-proof/mark-variable.txt`): its host starts nothing
+/// outside the sandbox but a shell, from its first moment, before it is told of any port.
+pub const MARK_VAR: &str = "PURLIS_MINTING_POOL";
+
 /// The most keys held at once: the one the port shows and the next.
 const MOST_KEYS: usize = 2;
 

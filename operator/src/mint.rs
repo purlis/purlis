@@ -90,6 +90,10 @@ const MOST_REQUEST: usize = 16 * 1024;
 /// which claims there are. The log holds the reason.
 pub const NOT_VOUCHED: &str = "the operator vouches for no such key on that claim";
 
+/// What a runner made before its Pool named an App's key is told.
+pub const NOT_MARKED: &str = "this runner was made before its pool named an App's key, so it mints \
+     nothing: claim a new runner";
+
 /// What the proof is a MAC of, each value one line. `operator` is the signing key the runner holds
 /// the port to, as a Pool's status spells it, so a proof made for another key is good for nothing.
 pub fn proof_text(
@@ -337,6 +341,21 @@ pub fn runs_image(pod: &Pod, image: &str) -> bool {
             .iter()
             .chain(spec.init_containers.iter().flatten())
             .all(|container| container.image.as_deref() == Some(image))
+    })
+}
+
+/// **Whether `pod`'s runner was made to refuse any start outside the sandbox but a shell**
+/// ([`crate::upstream::MINTING_MARK`]): only such a runner's link key has been out of a chat's reach
+/// since it was made, so nothing else mints.
+pub fn marked(pod: &Pod) -> bool {
+    pod.spec.as_ref().is_some_and(|spec| {
+        spec.containers
+            .iter()
+            .filter(|container| container.name == crate::upstream::RUNNER_CONTAINER)
+            .flat_map(|container| container.env.iter().flatten())
+            .any(|var| {
+                var.name == crate::upstream::MINTING_MARK && var.value.as_deref() == Some("1")
+            })
     })
 }
 
@@ -771,6 +790,9 @@ impl Serving {
         let Some(pod) = pod.filter(|pod| pod_holds(pod, &runner.key_hex)) else {
             return Err("the runner's pod is gone, or no longer holds this key".to_owned());
         };
+        if !marked(&pod) {
+            return Err(NOT_MARKED.to_owned());
+        }
         let pool = Api::<Pool>::all(client.clone())
             .get_opt(&claim.spec.pool)
             .await

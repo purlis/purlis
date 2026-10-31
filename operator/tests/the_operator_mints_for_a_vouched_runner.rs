@@ -883,3 +883,35 @@ fn a_status_that_stops_saying_where_to_ask_takes_it_away() {
     // A pass that did not look at the runner leaves it as it was.
     assert_eq!(status_patch(Some(&held), with(None), LinkKeyIs::Kept), None);
 }
+
+#[test]
+fn the_mark_a_runner_is_made_with_is_the_desktops() {
+    assert_eq!(
+        purlis_cluster_operator::upstream::MINTING_MARK,
+        proof_fixture("mark-variable.txt").trim()
+    );
+}
+
+/// Only a runner made to refuse starts outside the sandbox mints (the person's ruling of 2026-10-31).
+#[test]
+fn a_pool_naming_a_key_makes_marked_runners_and_nothing_else_is_marked() {
+    use purlis_cluster_operator::upstream::template_for;
+    let pod_of = |pool: &Pool| k8s_openapi::api::core::v1::Pod {
+        spec: template_for(pool, "ns", Vec::new()).spec.pod_template.spec,
+        ..Default::default()
+    };
+    assert!(mint::marked(&pod_of(&a_pool_minting(true))));
+    // Opting in later moves nothing, so such a runner has refused from its first moment too.
+    assert!(mint::marked(&pod_of(&a_pool_minting(false))));
+    assert!(!mint::marked(&pod_of(&Pool::new(
+        "pool",
+        PoolSpec::new(IMAGE.to_owned())
+    ))));
+    assert!(!mint::marked(&k8s_openapi::api::core::v1::Pod::default()));
+    let wrong: k8s_openapi::api::core::v1::Pod = serde_json::from_value(json!({
+        "spec": { "containers": [{ "name": "other",
+            "env": [{ "name": "PURLIS_MINTING_POOL", "value": "1" }] }] },
+    }))
+    .expect("a pod");
+    assert!(!mint::marked(&wrong), "another container's word is nothing");
+}
