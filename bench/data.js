@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793461645865,
+  "lastUpdate": 1793462962962,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33600,6 +33600,48 @@ window.BENCHMARK_DATA = {
             "value": 101.36480900000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.508, 101.173, 101.365, 101.475, 101.767 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1cf84fbdc0225a1f74fceb0b3f28ff0901a0cff4",
+          "message": "Table: the row-selection check comes from the choice family (#3362) (#4249)\n\n* Table: the check that chooses a row is the choice family's, select-all's third state kept (red, #3362)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Table: the check that chooses a row is the choice family's Checkbox (#3362)\n\nNo React Aria checkbox is left in the table family. The select part only places the box in its\n24px square, which the box takes a press across (#4197); its look, states and theme keys are the\nchoice family's, and select-all's bar is that family's indeterminate.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Table: the row check's box is in the middle of its square (#3362)\n\nA choice root keeps a gap for words a table's check has none of, so the box stood 4px off its\nsquare's centre. The select part takes the gap away, and the story holds the box centred.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Stories: the table of hosts with the choice family's checks (#3362)\n\nTaken from stories run 41205636214 with tools/story-baselines-pull.mjs: its ten cells.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T15:19:16Z",
+          "tree_id": "6d4a29f1a4e68d870c3c4f4fc41d52d0d5ee0544",
+          "url": "https://github.com/purlis/purlis/commit/1cf84fbdc0225a1f74fceb0b3f28ff0901a0cff4"
+        },
+        "date": 1793462960301,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5437400000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.537, 0.538, 0.544, 0.553, 0.570 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.292738500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.885, 16.185, 16.293, 16.400, 16.421 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.27080000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.820, 101.153, 101.271, 101.362, 102.757 ms"
           }
         ]
       }
