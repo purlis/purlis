@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793448204598,
+  "lastUpdate": 1793460397368,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -16512,6 +16512,42 @@ window.BENCHMARK_DATA = {
             "value": 703.3,
             "unit": "MB",
             "extra": "median of 6 samples: 677.4, 693.1, 701.5, 705.2, 705.6, 767.4 MB; window 422.1 MB, session host 282 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f381b6236f0654f2297d9d3565e9e81130d5aedd",
+          "message": "Title bar: pin that a theme's count fill sets the wash, and hold it in each tint (#3442, #4250) (#4251)\n\n* theme: hold that a title-bar count's fill is its wash, over the bar's ground (#3442)\n\nA theme's titlebar.count.fill already reaches the wash, the element a\nperson sees: the ground is a wrapper of its own that no part key\nreaches. These tests pin the two elements, the selector, and that the\ndigits are measured on the fill laid over the bar's ground.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme: hold a theme's own title-bar count in each tint that can move its ground (#4250)\n\nNo built-in recipe turns surface.deep, but a theme's own tint.tokens can, and a\ntint keeps a ground's luminance but not what shows through a see-through wash.\nDigits that read as written could fall under 4.5:1 in a tint. A theme that\ncolours the count now has it measured in each tint, and it falls to the default.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T13:54:16Z",
+          "tree_id": "dc5e4f48543c0a962bca25a7a71da935442ba74d",
+          "url": "https://github.com/purlis/purlis/commit/f381b6236f0654f2297d9d3565e9e81130d5aedd"
+        },
+        "date": 1793460394290,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1834.9,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1624.5, 1834.9, 1920.9 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 706.4,
+            "unit": "MB",
+            "extra": "median of 6 samples: 679.9, 695.2, 705, 707.9, 708.8, 772.5 MB; window 418.3 MB, session host 288.6 MB"
           }
         ]
       }
