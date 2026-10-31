@@ -187,6 +187,10 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 # `patch` on upstream's sandboxes (#2058), which RBAC cannot scope to a field or an owner: the
 # operator may change only a Sandbox's spec.operatingMode, and only on a Sandbox a SandboxClaim
 # controls.
+#
+# The fourth policy, purlis-forge (#4206): whoever writes a Pool's spec.forge needs `use` on the
+# key it names (forgekeys), and only a Claim's requester changes the repos it names. The operator
+# mints only for a Claim and a Pool made once its binding has settled.
 ";
 
 /// The plain manifests the chart's default render makes: `operator.yaml` and `policy.yaml`.
@@ -468,7 +472,14 @@ fn the_operators_metrics_are_served_on_its_port_through_a_service_of_their_own()
     let port = purlis_cluster_operator::metrics::PORT;
     assert_eq!(
         deployment["spec"]["template"]["spec"]["containers"][0]["ports"],
-        json!([{ "name": "metrics", "containerPort": port, "protocol": "TCP" }]),
+        json!([
+            { "name": "metrics", "containerPort": port, "protocol": "TCP" },
+            {
+                "name": "mint",
+                "containerPort": purlis_cluster_operator::mint::PORT,
+                "protocol": "TCP",
+            },
+        ]),
         "{deployment}"
     );
     let service = documents
@@ -526,6 +537,44 @@ fn nothing_reaches_the_operators_pod_unless_the_values_name_who_scrapes_it() {
             "ports": [{ "port": "metrics", "protocol": "TCP" }],
         }]),
         "{scraped}"
+    );
+}
+
+/// The mint port opens only where the chart names a key (#4206), and only to runner namespaces.
+#[test]
+fn only_a_named_key_opens_the_mint_port_and_only_to_runner_namespaces() {
+    let mint_service = |documents: &[Value]| {
+        documents
+            .iter()
+            .find(|d| {
+                d["kind"] == "Service" && d["metadata"]["name"] == "purlis-cluster-operator-mint"
+            })
+            .cloned()
+    };
+    let plain = rendered(&with_digest(&[]));
+    assert!(mint_service(&plain).is_none());
+    assert!(network_policy(&plain)["spec"].get("ingress").is_none());
+
+    let named = rendered(&with_digest(&["forge.keySecretNames[0]=org-app"]));
+    let service = mint_service(&named).expect("the mint Service");
+    assert_eq!(service["spec"]["type"], "ClusterIP");
+    assert_eq!(
+        service["spec"]["ports"],
+        json!([{
+            "name": "mint",
+            "port": purlis_cluster_operator::mint::PORT,
+            "targetPort": "mint",
+            "protocol": "TCP",
+        }])
+    );
+    assert_eq!(
+        network_policy(&named)["spec"]["ingress"],
+        json!([{
+            "from": [{ "namespaceSelector": { "matchLabels": {
+                "app.kubernetes.io/managed-by": "purlis-cluster-operator",
+            } } }],
+            "ports": [{ "port": "mint", "protocol": "TCP" }],
+        }])
     );
 }
 

@@ -87,15 +87,15 @@ pub struct PoolSpec {
 #[serde(rename_all = "camelCase")]
 pub struct PoolForge {
     /// The Secret in the operator's own namespace holding the App's client id (`app`) and its
-    /// private key (`key`). The chart's `forge.keySecretNames` must name it too.
+    /// private key (`key`). The chart's `forge.keySecretNames` must name it too, and whoever
+    /// writes this needs `use` on it (`forgekeys`).
     pub app_key_secret_ref: SecretRef,
     /// The most a token may cover: `owner/name` or `owner/*`. A token covers only these and the
     /// repos of the Claim.
     #[schemars(length(min = 1, max = 256), inner(length(max = 140), regex(pattern = crate::forge::POOL_REPO)))]
     pub repos: Vec<String>,
-    /// Whether the pool opts in to the operator minting tokens for its runners. Nothing is minted
-    /// yet (#4206). Once it is, anyone who may use the Pool can use these repos through it. False
-    /// unless set.
+    /// Whether the pool opts in to the operator minting tokens for its runners. Anyone who may use
+    /// the Pool can use these repos through it. False unless set.
     #[serde(default)]
     pub mint_in_cluster: bool,
 }
