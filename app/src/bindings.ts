@@ -1636,8 +1636,9 @@ export const commands = {
 	 *  **With `pool`, it is signed in on that pool's runner** (#2049): the line is the runner's own
 	 *  `purlis profile sign-in`, run there through this machine's `docker`, in the runner's folder
 	 *  for the profile ([`crate::poolprofiles::sign_in_line`]); nothing of this machine's sign-in
-	 *  goes there. The runner is asked again every few seconds until it says the profile is signed
-	 *  in there. With `device`, by the harness's device-code flow there (#4044).
+	 *  goes there. The runner is asked again until it says the profile is signed in there or the
+	 *  person closes the shell (#4009). With `device`, by the harness's device-code flow there
+	 *  (#4044).
 	 */
 	typeProfileSignIn: (plane: PlaneId, session: number, name: string, provider: string | null, pool: string | null, device: boolean) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_in", { plane, session, name, provider, pool, device })),
 	/**
