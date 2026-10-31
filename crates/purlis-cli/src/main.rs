@@ -962,6 +962,14 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
                 .ok_or_else(|| "this runner has no home its profiles are in".to_owned())?;
             onrunner::forget(&homes, &home, name, &desktop.device)
         }),
+        // And says whose own folders forgetting one deletes, so none go under a chat (#4142).
+        deleting_own_folders: std::sync::Arc::new(|desktop, name| {
+            let homes = purlis_core::profilestore::Homes::here().ok_or_else(|| {
+                "this runner has no data home its profiles are in, or it is inside a project"
+                    .to_owned()
+            })?;
+            purlis_core::profilestore::onrunner::deleting_own_folders(&homes, name, &desktop.device)
+        }),
         // And names the ones it keeps for the desktop, which forgets those no longer chosen
         // (#4060).
         listing: std::sync::Arc::new(|desktop| {
@@ -4171,7 +4179,7 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                 return ExitCode::FAILURE;
             }
             Ok(removal) => profilestore::remove(&store, name, &removal).map(|gone| {
-                if gone.adopted {
+                let said = if gone.adopted {
                     format!(
                         "forgot the profile '{}'; {} stays\n",
                         gone.name,
@@ -4183,7 +4191,18 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                         gone.name,
                         gone.folder.display()
                     )
-                }
+                };
+                // Its pools' runners hear of it through the running window, which holds their
+                // links (#4141).
+                #[cfg(unix)]
+                let reached = purlis_core::windowline::reach_the_pools(
+                    store.config_root(),
+                    &gone.name,
+                    purlis_core::windowline::ask,
+                );
+                #[cfg(not(unix))]
+                let reached = "";
+                format!("{said}{reached}")
             }),
         },
         ProfileCommand::Authenticate {

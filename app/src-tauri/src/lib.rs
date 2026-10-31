@@ -3680,6 +3680,12 @@ pub fn run() {
                 }
                 Err(why) => tracing::warn!("purlis: no harness folder was adopted: {why}"),
             }
+            // Waits let go on a pool are told to the windows (#4228), and `purlis profile
+            // remove` in the person's own terminal reaches the pools' runners through this
+            // window (#4141): after the adoption, so a folder adopted now counts as a profile.
+            poolprofiles::tells_through(app.handle().clone());
+            #[cfg(unix)]
+            poolprofiles::listen_for_the_command_line();
             // From here on this app holds the config home: no rename-local of a later launch,
             // or of a terminal, moves it while the app runs.
             let mut holds_the_config_home = false;

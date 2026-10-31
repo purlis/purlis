@@ -279,6 +279,8 @@ pub mod updates;
 pub mod usage;
 pub mod version;
 #[cfg(unix)]
+pub mod windowline;
+#[cfg(unix)]
 pub mod windownames;
 pub mod windowprefs;
 pub mod wiring;

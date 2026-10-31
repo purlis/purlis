@@ -13,6 +13,44 @@ fn work() -> onrunner::Kept {
     }
 }
 
+/// **A wait let go everywhere tells each project whose wait went** (#4228), and nothing is told
+/// where none did.
+#[test]
+fn a_wait_let_go_everywhere_tells_each_project_it_went_from() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config");
+    let store = profilestore::Homes::at(&config, &dir.path().join("data"));
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let env = |_: &str| -> Option<String> { None };
+    profilestore::create(
+        &store,
+        "work",
+        "claude",
+        &profilestore::MachineSettings {
+            home: &home,
+            env: &env,
+        },
+        1,
+    )
+    .expect("made");
+    let (one, two) = (dir.path().join("one"), dir.path().join("two"));
+    for root in [&one, &two] {
+        onrunner::ready_on(&config, root, "tells", "work", &|_| {
+            Ok(Some(Standing::SignedOut))
+        })
+        .unwrap_err();
+    }
+
+    let told = RefCell::new(Vec::new());
+    let_go_telling("tells", "work", |went| told.borrow_mut().extend(went));
+    let mut told = told.into_inner();
+    told.sort();
+    assert_eq!(told, [one, two]);
+
+    let_go_telling("tells", "work", |_| panic!("none was left to tell"));
+}
+
 /// **A pool not shown to be the person's own is sent nothing** (#2049, D-2049-5): keeping a
 /// profile there answers that the runner is its own to say, and reads nothing of the pool, so a
 /// config home that holds none is never asked.

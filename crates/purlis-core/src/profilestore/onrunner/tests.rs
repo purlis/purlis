@@ -1654,6 +1654,35 @@ fn forgetting_a_profile_the_runner_does_not_keep_is_nothing() {
     );
 }
 
+/// **Only the desktop's adopted folder deletes a harness's own folders** (#4142): that is what a
+/// chat there on no profile uses, and what its host holds back for.
+#[test]
+fn only_the_desktops_adopted_folder_deletes_its_harnesss_own_folders() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let adopted = the_desktops_adopted_folder(dir.path());
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&adopted).expect("it goes"),
+        DESKTOP,
+        7,
+    )
+    .expect("kept");
+    assert_eq!(kept.name, adopted.name);
+
+    assert_eq!(
+        deleting_own_folders(&runner, &adopted.name, DESKTOP),
+        Ok(Some("claude".to_owned()))
+    );
+    assert_eq!(
+        deleting_own_folders(&runner, &adopted.name, "another desktop"),
+        Ok(None),
+        "kept for another desktop, forget leaves it as it is"
+    );
+    assert_eq!(deleting_own_folders(&runner, "nothing", DESKTOP), Ok(None));
+}
+
 /// A runner fetching the version each profile it keeps with a pin is pinned to: none is
 /// installed yet, and no harness on `PATH` answers.
 struct StillFetching;
