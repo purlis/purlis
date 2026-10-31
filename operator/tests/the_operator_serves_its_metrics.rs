@@ -23,6 +23,7 @@ fn claim(namespace: &str, name: &str, pool: &str, ready: Option<(&str, &str)>) -
             requester: "ada@example.com".into(),
             kept: false,
             stopped: false,
+            forge: None,
         },
     );
     claim.metadata.namespace = Some(namespace.into());

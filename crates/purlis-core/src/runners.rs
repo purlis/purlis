@@ -1304,6 +1304,10 @@ pub struct ClusterPool {
     /// their window ([`set_cluster_owned`]), never as it is added, and read from nothing a chat,
     /// the Pool or the operator says.
     owned: bool,
+    /// **Whether the cluster's Pool opts it in to minting there** (`mintInCluster`, #4204), as
+    /// the Pool's spec said when it was added: the admin's word, never the person's or a chat's.
+    /// The operator holds the Pool itself and refuses by it, so this says only how to ask.
+    mint_in_cluster: bool,
     /// The profiles chosen for it (`profiles`, #3819), in order, as a Docker pool's are;
     /// `None` where none were.
     profiles: Option<Vec<String>>,
@@ -1383,8 +1387,22 @@ impl ClusterPool {
             cluster,
             holds: Vec::new(),
             owned: false,
+            mint_in_cluster: false,
             profiles: None,
         })
+    }
+
+    /// This pool, as the cluster's Pool `opted_in` to minting there as it was added (#4204).
+    pub fn minting_in_cluster(self, opted_in: bool) -> ClusterPool {
+        ClusterPool {
+            mint_in_cluster: opted_in,
+            ..self
+        }
+    }
+
+    /// Whether the cluster's Pool opted it in to minting there as it was added (#4204).
+    pub fn mints_in_cluster(&self) -> bool {
+        self.mint_in_cluster
     }
 
     /// This pool, holding `holds`, the programs its kubectl runs as named, every link on the way
@@ -1794,9 +1812,10 @@ pub fn keep_cluster_pin(config_root: &Path, name: &str, pin: &PoolPin) -> Result
 }
 
 /// A cluster pool's row (#3292): `{"name", "kind": "cluster", "kubeconfig", "context", "pool",
-/// "namespace", "operatorKey", "cluster", "holds", "owned", "profiles"}`, `cluster` left out
-/// only of a pool kept before its cluster was pinned (#3305), `owned` `true` alone, left out
-/// otherwise (#4071), and `profiles` as a Docker pool's, left out where none were chosen (#3819).
+/// "namespace", "operatorKey", "cluster", "holds", "owned", "mintInCluster", "profiles"}`,
+/// `cluster` left out only of a pool kept before its cluster was pinned (#3305), `owned` and
+/// `mintInCluster` `true` alone, left out otherwise (#4071, #4204), and `profiles` as a Docker
+/// pool's, left out where none were chosen (#3819).
 fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
     let mut row = serde_json::json!({
         "name": pool.name(),
@@ -1818,6 +1837,9 @@ fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
     if pool.owned {
         row["owned"] = true.into();
     }
+    if pool.mint_in_cluster {
+        row["mintInCluster"] = true.into();
+    }
     if let Some(profiles) = pool.profiles() {
         row["profiles"] = profiles.into();
     }
@@ -1838,6 +1860,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         "cluster",
         "holds",
         "owned",
+        "mintInCluster",
         "profiles",
     ];
     if fields.keys().any(|key| !known.contains(&key.as_str())) {
@@ -1849,6 +1872,11 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
     };
     // `true` alone: a mark spelled any other way is no mark, and the row is refused.
     let owned = match fields.get("owned") {
+        None => false,
+        Some(serde_json::Value::Bool(true)) => true,
+        Some(_) => return None,
+    };
+    let mint_in_cluster = match fields.get("mintInCluster") {
         None => false,
         Some(serde_json::Value::Bool(true)) => true,
         Some(_) => return None,
@@ -1880,6 +1908,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
     .and_then(|pool| pool.holding(holds))
     .map(|pool| ClusterPool {
         owned,
+        mint_in_cluster,
         profiles,
         ..pool
     })

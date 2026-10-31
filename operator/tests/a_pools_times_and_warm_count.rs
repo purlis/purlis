@@ -76,6 +76,7 @@ fn claim_of(name: &str, requester: &str, kept: bool, stopped: bool) -> Arc<Claim
             requester: requester.into(),
             kept,
             stopped,
+            forge: None,
         },
     );
     claim.metadata.namespace = Some("ada".into());

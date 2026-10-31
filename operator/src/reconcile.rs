@@ -1168,7 +1168,8 @@ pub async fn run(client: Client, keys: MountedKeys, cluster: String, quota: Quot
     let metrics = Arc::new(Metrics::default());
     tokio::select! {
         () = run_claims(client.clone(), keys.clone(), cluster.clone(), quota, metrics) => {}
-        () = publish_pool_status(client, keys, cluster) => {}
+        () = publish_pool_status(client.clone(), keys, cluster) => {}
+        () = crate::forge::check_keys(client, vouch::RECHECK) => {}
     }
     tracing::info!("stopped; upstream {} is pinned", upstream::VERSION);
 }

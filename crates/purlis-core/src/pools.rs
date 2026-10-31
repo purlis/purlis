@@ -727,8 +727,11 @@ pub fn add_cluster(
     let _adding = adding(config_root, pool.name());
     let taken_from = pool.kubectl(kubectl);
     let pin = pool.pin()?;
-    let named = taken_from
-        .pool_pin(pool.pool())
+    // One read of the Pool, so the pin checked and the opt-in recorded are of one version of it.
+    let seen = taken_from
+        .pool(pool.pool())
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    let named = crate::clusterpool::PoolPin::first(pool.pool(), &seen)
         .map_err(|why| Refused::Other(why.to_string()))?;
     if named != pin {
         return Err(Refused::Other(format!(
@@ -750,7 +753,8 @@ pub fn add_cluster(
     // Recorded pointing at its own copy, which is kept only once its name is the pool's.
     let pool = &pool
         .kept_at(&runners::kubeconfig_kept_at(config_root, pool.name()))
-        .holding(held)?;
+        .holding(held)?
+        .minting_in_cluster(seen.mints_in_cluster);
     runners::record_cluster_pool_locked(config_root, pool, &runners::lock(config_root))?;
     if let Err(why) = runners::keep_kubeconfig(config_root, pool.name(), &context) {
         return Err(forgotten_cluster(config_root, pool.name(), why));

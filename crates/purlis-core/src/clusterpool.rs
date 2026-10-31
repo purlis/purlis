@@ -357,6 +357,24 @@ pub struct PoolSeen {
     pub next_signing_key: Option<String>,
     /// `status.nextSigningKeyVouch`, its statement and signature, during a roll.
     pub next_signing_key_vouch: Option<(String, String)>,
+    /// Whether its spec opts the pool in to minting GitHub App tokens in the cluster (#4204):
+    /// [`mints_in_cluster`].
+    pub mints_in_cluster: bool,
+}
+
+/// **Whether a Pool's `spec` opts it in to minting in the cluster** (#4204), read from the admin's
+/// Pool, never chosen by the person. `true` alone, with the key and the allow-list that go with
+/// it: anything else is not opted in.
+pub fn mints_in_cluster(spec: &serde_json::Value) -> bool {
+    spec.pointer("/forge/mintInCluster") == Some(&serde_json::Value::Bool(true))
+        && spec
+            .pointer("/forge/appKeySecretRef/name")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|name| !name.is_empty())
+        && spec
+            .pointer("/forge/repos")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|repos| !repos.is_empty())
 }
 
 impl PoolSeen {
@@ -374,6 +392,7 @@ impl PoolSeen {
             next_signing_key: text("/nextSigningKey"),
             next_signing_key_vouch: text("/nextSigningKeyVouch/statement")
                 .zip(text("/nextSigningKeyVouch/signature")),
+            mints_in_cluster: false,
         }
     }
 }
@@ -1110,9 +1129,10 @@ impl Kubectl {
             &["get", "pools.runners.purlis.dev", pool, "--output", "json"],
             None,
         )?;
-        Ok(PoolSeen::from_status(
-            held.get("status").unwrap_or(&serde_json::Value::Null),
-        ))
+        Ok(PoolSeen {
+            mints_in_cluster: held.get("spec").is_some_and(mints_in_cluster),
+            ..PoolSeen::from_status(held.get("status").unwrap_or(&serde_json::Value::Null))
+        })
     }
 
     /// **The pin of a pool being added** ([`PoolPin::first`]): the operator's key and the
