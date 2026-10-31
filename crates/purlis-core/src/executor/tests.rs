@@ -2597,6 +2597,29 @@ fn a_question_during_a_grade_fails_at_once_and_says_the_extension_is_grading() {
     assert!(began.elapsed() < Duration::from_secs(5), "it did not wait");
 
     drop(held);
+
+    // One already waiting for the slot as a grade takes it is told then, not at its deadline.
+    let executor = std::sync::Arc::new(patient());
+    let held = executor.hold("probe").expect("the slot");
+    let waiting = {
+        let executor = std::sync::Arc::clone(&executor);
+        std::thread::spawn(move || {
+            let began = Instant::now();
+            let refused = executor
+                .hold_within("probe", Instant::now() + Duration::from_secs(60))
+                .err();
+            (refused, began.elapsed())
+        })
+    };
+    std::thread::sleep(Duration::from_millis(100));
+    held.grading();
+    let (refused, took) = waiting.join().expect("the waiter");
+    assert!(
+        refused.is_some_and(|why| why.contains("is grading")),
+        "refused"
+    );
+    assert!(took < Duration::from_secs(5), "held for {took:?}");
+    drop(held);
     assert!(
         executor.hold("probe").is_ok(),
         "the grade over, it is asked again"

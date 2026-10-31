@@ -1230,6 +1230,12 @@ fn parse_knowing(text: &str, known: &[Capability]) -> Result<Manifest, String> {
     }
     // A Grader's id is what the eval record names its grades by, and a row naming more is not read
     // back (#4243): refused here, so no grade is lost after its chats were paid for.
+    // And the record reads that name as purlis's own runner, so no Grader takes it.
+    if id == purlis_skills::grade::BUILT_IN && capabilities.contains(&Capability::Grader) {
+        return Err(format!(
+            "declares \"grader\" with the id {id:?}, which names purlis's own runner"
+        ));
+    }
     if id.len() > MOST_GRADER_ID_BYTES && capabilities.contains(&Capability::Grader) {
         return Err(format!(
             "declares \"grader\" with an id of {} bytes, and a Grader's id is at most \

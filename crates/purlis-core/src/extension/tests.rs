@@ -3592,4 +3592,10 @@ fn a_graders_id_is_no_longer_than_the_eval_record_reads_back() {
     let why = parse_knowing(&manifest(&format!("{most}g")), &[Capability::Grader])
         .expect_err("past it is refused as it is declared");
     assert!(why.contains("a Grader's id is at most 64"), "{why}");
+    let why = parse_knowing(
+        &manifest(purlis_skills::grade::BUILT_IN),
+        &[Capability::Grader],
+    )
+    .expect_err("purlis's own runner's name is no Grader's");
+    assert!(why.contains("names purlis's own runner"), "{why}");
 }

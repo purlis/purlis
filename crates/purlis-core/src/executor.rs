@@ -761,6 +761,10 @@ impl Executor {
         let mut grading =
             extension::studio::grading::Grading::new(extension, request, chats, limits);
         let ask = extension::studio::Ask::Grade { request };
+        // Stopped before it began: no program is started for it.
+        if Talk::stopped(&grading) {
+            return grading.finished(Ok(()));
+        }
         let talked = self
             .put_talking(
                 config_root,
@@ -1590,6 +1594,8 @@ impl Held<'_> {
             .unwrap_or_else(PoisonError::into_inner)
             .grading
             .insert(self.extension.clone());
+        // Whoever already waits for this slot would wait out its deadline: told now.
+        self.by.freed.notify_all();
     }
 }
 
