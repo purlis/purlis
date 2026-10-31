@@ -886,6 +886,9 @@ struct Hosted {
     /// The profile it runs on, as its start named it: what a profile's forgetting on a runner
     /// waits for (#4047).
     profile: Option<String>,
+    /// The harness its start named, none for the project's default: whose own folders a chat
+    /// with no profile uses (#4142).
+    harness: Option<String>,
     /// Whether it ends with its window (1.42, #3274): once no window is linked to this host and
     /// the last went without a quit, it is ended at once rather than kept for the grace period.
     /// Taken from this machine's window alone.
@@ -920,6 +923,18 @@ impl Hosting {
             !hosted.ended
                 && hosted.kind != ProgramKind::Browser
                 && hosted.profile.as_deref() == Some(name)
+        })
+    }
+
+    /// **Whether a chat this host runs now, on no profile, uses the harness `harness`'s own
+    /// folders** (#4142): they are not deleted under it. A chat that named no harness runs on
+    /// the project's default, which this host does not hold here, so it counts for each.
+    pub fn runs_with_no_profile(&self, harness: &str) -> bool {
+        self.state().programs.values().any(|hosted| {
+            !hosted.ended
+                && hosted.kind == ProgramKind::Harness
+                && hosted.profile.is_none()
+                && hosted.harness.as_deref().is_none_or(|one| one == harness)
         })
     }
 
@@ -2181,6 +2196,7 @@ impl Hosting {
                     logins: Arc::default(),
                     opened_by: OpenedBy::ThisHost,
                     profile: start.profile.clone(),
+                    harness: start.harness.clone(),
                     ends_with_its_window,
                     prompt_key: prompt_key.clone(),
                 },

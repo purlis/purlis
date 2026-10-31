@@ -67,6 +67,7 @@ async fn a_runner(
         unpairing: Arc::new(|_| Ok(())),
         keeping: Arc::new(|_, _| Ok(ProfileStanding::SignedOut)),
         forgetting: Arc::new(|_, _| Ok(())),
+        deleting_own_folders: Arc::new(|_, _| Ok(None)),
         listing: Arc::new(|_| Ok(Vec::new())),
         holding: Arc::new(|_, _, _| Ok((Vec::new(), false))),
         delivering: Arc::new(move |target| callback::deliver_waiting_in(&waiting_in, target)),

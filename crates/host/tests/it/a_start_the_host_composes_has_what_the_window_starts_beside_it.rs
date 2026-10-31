@@ -122,6 +122,7 @@ impl Record for Log {
 }
 
 struct Linked {
+    hosting: Hosting,
     client: Client,
     runs: StandIns,
     confines: StandInConfines,
@@ -142,6 +143,7 @@ async fn linked_as(scope: Scope) -> Linked {
     );
     let hosting = Hosting::with(ComposesItself, runs.clone(), Hears, confines.clone())
         .recording_with(log.clone());
+    let kept = hosting.clone();
     let (a, b) = duplex(256 * 1024);
     let (client, served) = tokio::join!(
         link::connect(
@@ -175,6 +177,7 @@ async fn linked_as(scope: Scope) -> Linked {
         Client::new(client.unwrap()).0
     };
     Linked {
+        hosting: kept,
         client,
         runs,
         confines,
@@ -278,6 +281,47 @@ async fn a_start_with_no_launch_runs_with_its_token_in_a_confinement_of_its_own(
         linked.confines.ended(&started.confinement)
     })
     .await;
+}
+
+/// **A chat on no profile holds its harness's own folders** (#4142), and a chat that named no
+/// harness holds each harness's, since it runs on the project's default. A chat on a profile, or
+/// on another harness, holds none.
+#[tokio::test]
+async fn a_chat_on_no_profile_holds_its_harnesss_own_folders() {
+    let linked = linked().await;
+    let named = |profile: Option<&str>, harness: Option<&str>| StartProgram {
+        profile: profile.map(str::to_owned),
+        harness: harness.map(str::to_owned),
+        ..composed(None)
+    };
+
+    linked
+        .client
+        .start_program(named(Some("work"), Some("claude")))
+        .await
+        .expect("started");
+    assert!(
+        !linked.hosting.runs_with_no_profile("claude"),
+        "on a profile"
+    );
+
+    linked
+        .client
+        .start_program(named(None, Some("codex")))
+        .await
+        .expect("started");
+    assert!(linked.hosting.runs_with_no_profile("codex"));
+    assert!(
+        !linked.hosting.runs_with_no_profile("claude"),
+        "another harness"
+    );
+
+    linked
+        .client
+        .start_program(named(None, None))
+        .await
+        .expect("started");
+    assert!(linked.hosting.runs_with_no_profile("claude"), "the default");
 }
 
 #[tokio::test]

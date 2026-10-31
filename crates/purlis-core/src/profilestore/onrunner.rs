@@ -874,6 +874,22 @@ pub fn forget(homes: &Homes, home: &Path, name: &str, desktop: &str) -> Result<(
     Ok(())
 }
 
+/// **The harness whose own folders [`forget`] would delete for the profile `name`** (#4142): the
+/// desktop `desktop`'s adopted folder, kept here as that harness's default, which a chat here
+/// with no profile uses too. None for a made profile, whose folder is its own alone, and for one
+/// [`forget`] leaves as it is.
+pub fn deleting_own_folders(
+    homes: &Homes,
+    name: &str,
+    desktop: &str,
+) -> Result<Option<String>, String> {
+    Ok(super::list(homes.config_root())?
+        .into_iter()
+        .find(|p| p.name == name && p.kept_for.as_deref() == Some(desktop))
+        .filter(|record| record.adopted.is_some())
+        .map(|record| record.harness))
+}
+
 /// **Whether a chat on the desktop's profile `name` may start on pool `pool`'s runner**, for the
 /// project at `root`, with this desktop's profiles in the store under `config_root`, the runner
 /// asked to keep it through `keep`, which answers `None` where it sent nothing (a runner not
