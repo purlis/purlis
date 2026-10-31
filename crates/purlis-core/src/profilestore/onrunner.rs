@@ -1029,6 +1029,8 @@ pub struct PoolWait {
     pub harness: String,
     /// When the first start was refused, in seconds since 1970.
     pub since: u64,
+    /// When a start was last refused, to the instant: what a watcher compares (#4203).
+    pub raised: std::time::Instant,
 }
 
 static POOL_WAITS: Mutex<Vec<PoolWait>> = Mutex::new(Vec::new());
@@ -1037,10 +1039,11 @@ static POOL_WAITS: Mutex<Vec<PoolWait>> = Mutex::new(Vec::new());
 /// not signed in there.
 fn waits_on_pool(root: &Path, pool: &str, record: &MachineProfile) {
     let mut all = POOL_WAITS.lock().unwrap_or_else(PoisonError::into_inner);
-    if all
-        .iter()
-        .any(|w| w.root == root && w.pool == pool && w.profile == record.name)
+    if let Some(wait) = all
+        .iter_mut()
+        .find(|w| w.root == root && w.pool == pool && w.profile == record.name)
     {
+        wait.raised = std::time::Instant::now();
         return;
     }
     all.push(PoolWait {
@@ -1050,6 +1053,7 @@ fn waits_on_pool(root: &Path, pool: &str, record: &MachineProfile) {
         kind: record.harness.clone(),
         harness: harness_title(&record.harness),
         since: crate::halt::now(),
+        raised: std::time::Instant::now(),
     });
 }
 
@@ -1065,12 +1069,30 @@ pub fn waiting_on_pools(root: &Path) -> Vec<PoolWait> {
 }
 
 /// The profile `name` is signed in on pool `pool` now, or the person put its wait away in the
-/// project at `root` (`None`: in every project): its waits go.
-pub fn let_go(root: Option<&Path>, pool: &str, name: &str) {
+/// project at `root` (`None`: in every project): its waits go. The projects whose wait went,
+/// whose windows have an Ask to stop drawing (#4205).
+pub fn let_go(root: Option<&Path>, pool: &str, name: &str) -> Vec<PathBuf> {
+    let mut went = Vec::new();
     POOL_WAITS
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .retain(|w| !(w.pool == pool && w.profile == name && root.is_none_or(|r| w.root == r)));
+        .retain(|w| {
+            let goes = w.pool == pool && w.profile == name && root.is_none_or(|r| w.root == r);
+            if goes {
+                went.push(w.root.clone());
+            }
+            !goes
+        });
+    went
+}
+
+/// The person left the sign-in of `name` on pool `pool` in the project at `root`: its wait goes,
+/// if it was raised before `seen`, when the shell was last seen open (#4203).
+pub fn let_go_older(root: &Path, pool: &str, name: &str, seen: std::time::Instant) {
+    POOL_WAITS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .retain(|w| !(w.pool == pool && w.profile == name && w.root == root && w.raised < seen));
 }
 
 #[cfg(test)]

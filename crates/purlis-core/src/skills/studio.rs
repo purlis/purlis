@@ -28,7 +28,7 @@ use purlis_skills::{Finding, Lint, Severity, SkillFiles, SkillLint};
 use crate::executor::Executor;
 use crate::extension::capability::Capability;
 use crate::extension::project::Choices;
-use crate::extension::studio::{self as wire, Ask, HandedFile, SkillFile};
+use crate::extension::studio::{self as wire, Ask, HandedFile, LintedSkill, SkillFile};
 use crate::panel::{Block, Empty, Table, TableRow, Tone};
 
 /// What the studio asks extensions with: the app's executor, this machine's record of
@@ -122,6 +122,7 @@ impl<'a> Studio<'a> {
             .map(|asked| ExtensionLint {
                 studio: *self,
                 by: asked.declared.lint.clone().unwrap_or(asked.name),
+                many_at_once: asked.declared.lint_many_at_once,
                 id: asked.id,
                 approved: asked.approved,
             })
@@ -239,6 +240,8 @@ pub struct ExtensionLint<'a> {
     by: String,
     /// The fingerprint this machine approved it by ([`Asked::approved`]).
     approved: Option<String>,
+    /// Whether it answers many skills in one question ([`wire::Declared::lint_many_at_once`]).
+    many_at_once: bool,
 }
 
 impl SkillLint for ExtensionLint<'_> {
@@ -271,21 +274,7 @@ impl ExtensionLint<'_> {
         skill: &SkillFiles<'_>,
         until: Option<std::time::Instant>,
     ) -> Result<Vec<String>, String> {
-        let mut files = vec![HandedFile {
-            path: purlis_skills::FILE.to_owned(),
-            text: skill.text.to_owned(),
-            executable: false,
-        }];
-        let others: Vec<SkillFile> = skill
-            .others
-            .iter()
-            .map(|(path, text)| SkillFile {
-                path: path.clone(),
-                bytes: text.clone().into_bytes(),
-                executable: false,
-            })
-            .collect();
-        files.extend(wire::handed(&others));
+        let files = handed_of(skill);
         let ask = Ask::Findings {
             skill: skill.name,
             files: &files,
@@ -303,6 +292,27 @@ impl ExtensionLint<'_> {
         }
         .and_then(|doc| wire::findings_of(&self.id, &doc))
     }
+}
+
+/// **`skill`'s files as a lint question hands them**: its `SKILL.md`, then its other text files
+/// within one question's bounds ([`wire::handed`]).
+fn handed_of(skill: &SkillFiles<'_>) -> Vec<HandedFile> {
+    let mut files = vec![HandedFile {
+        path: purlis_skills::FILE.to_owned(),
+        text: skill.text.to_owned(),
+        executable: false,
+    }];
+    let others: Vec<SkillFile> = skill
+        .others
+        .iter()
+        .map(|(path, text)| SkillFile {
+            path: path.clone(),
+            bytes: text.clone().into_bytes(),
+            executable: false,
+        })
+        .collect();
+    files.extend(wire::handed(&others));
+    files
 }
 
 impl InTheList for ExtensionLint<'_> {
@@ -332,6 +342,79 @@ impl InTheList for ExtensionLint<'_> {
     ) -> Result<Vec<String>, String> {
         self.asked(skill, Some(until))
     }
+
+    fn many_at_once(&self) -> bool {
+        self.many_at_once
+    }
+
+    fn ask_each(
+        &self,
+        skills: &[&SkillFiles<'_>],
+        until: std::time::Instant,
+    ) -> Vec<Result<Vec<String>, String>> {
+        let linted: Vec<LintedSkill> = skills
+            .iter()
+            .map(|skill| LintedSkill {
+                skill: skill.name.to_owned(),
+                files: handed_of(skill),
+            })
+            .collect();
+        // Each skill counted as its request line carries it: paths, escapes and all.
+        let sizes: Vec<usize> = linted
+            .iter()
+            .map(|one| serde_json::to_vec(one).map_or(usize::MAX, |line| line.len()))
+            .collect();
+        let studio = &self.studio;
+        let mut out = Vec::with_capacity(skills.len());
+        for question in in_questions(&sizes) {
+            if std::time::Instant::now() >= until {
+                let why = format!("{} was not asked within the list's time", self.by);
+                out.extend(question.map(|_| Err(why.clone())));
+                continue;
+            }
+            let these = &linted[question.clone()];
+            let names: Vec<&str> = these.iter().map(|one| one.skill.as_str()).collect();
+            match studio
+                .executor
+                .studio_until(
+                    studio.config_root,
+                    studio.project,
+                    &self.id,
+                    &Ask::FindingsOfEach { skills: these },
+                    until,
+                )
+                .and_then(|doc| wire::findings_of_each(&self.id, &names, &doc))
+            {
+                Ok(each) => out.extend(each),
+                Err(why) => out.extend(question.map(|_| Err(why.clone()))),
+            }
+        }
+        out
+    }
+}
+
+/// **Skills of `sizes` bytes each, in questions of many at once**, in order: each question at
+/// most [`wire::MOST_AT_ONCE`] skills and [`wire::MOST_AT_ONCE_BYTES`], and a skill larger than
+/// that alone in a question of its own (its files are held to one question's bounds anyway).
+fn in_questions(sizes: &[usize]) -> Vec<std::ops::Range<usize>> {
+    let mut out: Vec<std::ops::Range<usize>> = Vec::new();
+    let mut bytes = 0usize;
+    for (at, size) in sizes.iter().enumerate() {
+        match out.last_mut() {
+            Some(last)
+                if last.len() < wire::MOST_AT_ONCE
+                    && bytes.saturating_add(*size) <= wire::MOST_AT_ONCE_BYTES =>
+            {
+                last.end = at + 1;
+                bytes += size;
+            }
+            _ => {
+                out.push(at..at + 1);
+                bytes = *size;
+            }
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------------------
@@ -345,6 +428,11 @@ pub const LIST_LINT_TIME: std::time::Duration = std::time::Duration::from_millis
 /// **How long one lint asked in a list has to answer**, its confined program's start inside it,
 /// as a router has (ADR 0102 §6). A list that started its last question just before
 /// [`LIST_LINT_TIME`] ran out spends both, at most.
+///
+/// **A lint that answers many skills at once** (#4195) is asked one question for the list's
+/// skills, by the most a list ever spends: [`LIST_LINT_TIME`] and this, from the list's first
+/// question. So its program starts once for the list, and one that takes longer than this to
+/// start still answers in it, while the list spends no more time than one asking each skill.
 pub const LIST_LINT_DEADLINE: std::time::Duration = wire::ROUTER_DEADLINE;
 
 /// **How long a lint that did not answer in a list waits before a list asks it again** about the
@@ -415,6 +503,21 @@ pub trait InTheList {
     /// Its answer about `skill`, by `until`, or why there is none.
     fn ask(&self, skill: &SkillFiles<'_>, until: std::time::Instant)
     -> Result<Vec<String>, String>;
+    /// Whether it answers many skills in one question ([`Self::ask_each`], #4195).
+    fn many_at_once(&self) -> bool {
+        false
+    }
+    /// Its answer about each of `skills`, in their order, or why there is none: in as few
+    /// questions as their bounds allow, all by `until`. Asked only where [`Self::many_at_once`].
+    fn ask_each(
+        &self,
+        skills: &[&SkillFiles<'_>],
+        until: std::time::Instant,
+    ) -> Vec<Result<Vec<String>, String>> {
+        let _ = until;
+        let why = format!("{} answers one skill at a time", self.by());
+        skills.iter().map(|_| Err(why.clone())).collect()
+    }
 }
 
 /// The time a list gives its lints, and the clock it reads.
@@ -470,26 +573,85 @@ impl<L: InTheList> ListLints<L> {
     fn said(&self, lint: &L, skill: &SkillFiles<'_>, files: [u8; 32]) -> Vec<String> {
         let key = key_of(lint.version(), files);
         let now = (self.time.now)();
+        if let Some(said) = self.before(&key, now) {
+            return said;
+        }
+        if self.began_within(now).is_none() {
+            return Vec::new();
+        }
+        let answer = lint.ask(skill, now + self.time.deadline);
+        self.keep(key, answer)
+    }
+
+    /// **What `lint`, which answers many skills at once, says of each of `skills`** (#4195): what
+    /// it said of the same files, and the rest asked at once, by the most the list spends
+    /// ([`LIST_LINT_DEADLINE`]), counted from its first question. One skill's answer that purlis
+    /// could not read leaves only that skill unanswered.
+    fn said_at_once(
+        &self,
+        lint: &L,
+        skills: &[SkillFiles<'_>],
+        files: &[[u8; 32]],
+    ) -> Vec<Vec<String>> {
+        let version = lint.version();
+        let keys: Vec<[u8; 32]> = files.iter().map(|files| key_of(version, *files)).collect();
+        let now = (self.time.now)();
+        let mut out: Vec<Vec<String>> = vec![Vec::new(); skills.len()];
+        let mut asking: Vec<usize> = Vec::new();
+        for (at, key) in keys.iter().enumerate() {
+            match self.before(key, now) {
+                Some(said) => out[at] = said,
+                None => asking.push(at),
+            }
+        }
+        if asking.is_empty() {
+            return out;
+        }
+        let Some(began) = self.began_within(now) else {
+            return out;
+        };
+        let these: Vec<&SkillFiles<'_>> = asking.iter().map(|at| &skills[*at]).collect();
+        let mut answers = lint
+            .ask_each(&these, began + self.time.time + self.time.deadline)
+            .into_iter();
+        for at in asking {
+            let answer = answers
+                .next()
+                .unwrap_or_else(|| Err("it answered fewer skills than it was asked".to_owned()));
+            out[at] = self.keep(keys[at], answer);
+        }
+        out
+    }
+
+    /// What was kept by `key` at `now`: its answer, or nothing for one that did not answer
+    /// [`ASK_AGAIN_AFTER`] ago; `None` where it is to be asked.
+    fn before(&self, key: &[u8; 32], now: std::time::Instant) -> Option<Vec<String>> {
         let before = self
             .kept
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .0
-            .get(&key)
+            .get(key)
             .cloned();
         match before {
-            Some(Was::Said(says)) => return says,
+            Some(Was::Said(says)) => Some(says),
             Some(Was::Unanswered(at)) if now.saturating_duration_since(at) < ASK_AGAIN_AFTER => {
-                return Vec::new();
+                Some(Vec::new())
             }
-            _ => {}
+            _ => None,
         }
+    }
+
+    /// When the list asked its first question, where `now` is within its time to ask another:
+    /// the first question is asked now.
+    fn began_within(&self, now: std::time::Instant) -> Option<std::time::Instant> {
         let began = self.began.get().unwrap_or(now);
         self.began.set(Some(began));
-        if now.saturating_duration_since(began) >= self.time.time {
-            return Vec::new();
-        }
-        let answer = lint.ask(skill, now + self.time.deadline);
+        (now.saturating_duration_since(began) < self.time.time).then_some(began)
+    }
+
+    /// Keep `answer` by `key`, and say what the list shows of it.
+    fn keep(&self, key: [u8; 32], answer: Result<Vec<String>, String>) -> Vec<String> {
         let was = match &answer {
             Ok(says) => Was::Said(says.clone()),
             Err(_) => Was::Unanswered((self.time.now)()),
@@ -516,14 +678,44 @@ impl<L: InTheList> ListLints<L> {
 
 impl<L: InTheList> SkillLint for ListLints<L> {
     fn findings(&self, skill: &SkillFiles<'_>) -> Vec<Finding> {
-        if self.lints.is_empty() {
-            return Vec::new();
+        self.findings_of_each(std::slice::from_ref(skill))
+            .pop()
+            .unwrap_or_default()
+    }
+
+    /// Each lint asked about every skill of the list: one that answers many at once in one
+    /// question ([`InTheList::many_at_once`], #4195), any other one skill at a time. Those that
+    /// answer many at once are asked first, so a slow one to start has the list's whole time;
+    /// each lint's findings still follow the lints' order.
+    fn findings_of_each(&self, skills: &[SkillFiles<'_>]) -> Vec<Vec<Finding>> {
+        let mut out: Vec<Vec<Finding>> = vec![Vec::new(); skills.len()];
+        if self.lints.is_empty() || skills.is_empty() {
+            return out;
         }
-        let files = files_digest(skill);
-        self.lints
+        let files: Vec<[u8; 32]> = skills.iter().map(files_digest).collect();
+        let mut said: Vec<Option<Vec<Vec<String>>>> = vec![None; self.lints.len()];
+        let at_once = |lint: &&L| lint.many_at_once();
+        for (at, lint) in self
+            .lints
             .iter()
-            .flat_map(|lint| said_by(lint.by(), self.said(lint, skill, files)))
-            .collect()
+            .enumerate()
+            .filter(|(_, lint)| at_once(lint))
+        {
+            said[at] = Some(self.said_at_once(lint, skills, &files));
+        }
+        for (at, lint) in self.lints.iter().enumerate() {
+            let said = said[at].take().unwrap_or_else(|| {
+                skills
+                    .iter()
+                    .zip(&files)
+                    .map(|(skill, files)| self.said(lint, skill, *files))
+                    .collect()
+            });
+            for (each, says) in out.iter_mut().zip(said) {
+                each.extend(said_by(lint.by(), says));
+            }
+        }
+        out
     }
 }
 

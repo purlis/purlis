@@ -98,6 +98,7 @@ fn written() -> Vec<Value> {
             // Kept, so its volume's fields are checked too (#2057).
             kept: true,
             stopped: false,
+            forge: None,
         },
         status: None,
     };

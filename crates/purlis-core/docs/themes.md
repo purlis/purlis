@@ -750,13 +750,17 @@ drawn exactly as `other`), `card-not-apart` (a side view's card row whose fill, 
 only `ratio` from the side panel's, `ground`, under the `floor` of 1.05, with no edge that
 clears a hairline's 1.2 there, in a theme whose parts, its own or inherited, choose a card
 row's look or a side panel's fill; the check only reports it and redraws nothing),
+`notice-way-not-apart` (a notice card's secondary way whose fill, at rest or `pointed` at, is
+only `distance` from the `variant` card's `ground` in OKLab, under the `floor` of 0.02: the
+fill a theme's button parts give it, or else the card's own mix of `control.base` toward
+`text.primary`, 14% at rest and 22% under the pointer; the check only reports it),
 `selection-text-alone` (a colour for selected text on a selection left to the platform),
 `line-does-not-fit` (a line of words taller than the box it is drawn in:
 its `density`, the `fit` it breaks, a `size`, a `line_height` and a `height` token, and the
 `line` and the `room` it has, in px at the default text size), or `style-without-a-face` (a
 style the theme draws in a font it brings with no face for it, so the browser makes it from
 another face: the font's `slot`, `ui`, `mono` or `terminal`, the `weight` and the `style`,
-`normal` or `italic`). A field (`.ui-input`, `size.control` tall) holds the window's words
+`normal` or `italic`). A field (the field family's text input, `[data-scope="text-input"]`, `size.control` tall) holds the window's words
 (`font-size.base`) and a strip a tab's title (`font-size.md`), each on the body line
 (`line-height.body`), in both densities. A button's label sits on a line of 1, so it fits
 wherever a field's text does. `tint` is the workspace colour it was found in, or `null` for the

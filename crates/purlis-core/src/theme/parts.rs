@@ -2154,20 +2154,7 @@ fn drawn_colour(
     states: &[State],
     property: Prop,
 ) -> Option<&'static str> {
-    let mut ordered: Vec<&Rule> = rules
-        .iter()
-        .filter(|rule| {
-            std::ptr::eq(rule.family, family) && rule.part == part && rule.reaches(variant, states)
-        })
-        .collect();
-    ordered.sort_by_key(|rule| rule.order());
-    let set = ordered
-        .iter()
-        .rev()
-        .find_map(|rule| match rule.values.get(&property) {
-            Some(PartValue::Colour(token)) => Some(*token),
-            _ => None,
-        });
+    let set = colour_set(rules, family, part, variant, states, property);
     if set.is_some() {
         return set;
     }
@@ -2180,6 +2167,66 @@ fn drawn_colour(
         Prop::Text => look.text,
         _ => look.border,
     })
+}
+
+/// The colour a theme's rules set `property` of part `part` in, for `variant` while `states`
+/// hold, as the stylesheet's order resolves them; `None` when no rule sets it, the family's
+/// default left to draw it.
+fn colour_set(
+    rules: &[Rule],
+    family: &Family,
+    part: usize,
+    variant: &str,
+    states: &[State],
+    property: Prop,
+) -> Option<&'static str> {
+    let mut ordered: Vec<&Rule> = rules
+        .iter()
+        .filter(|rule| {
+            std::ptr::eq(rule.family, family) && rule.part == part && rule.reaches(variant, states)
+        })
+        .collect();
+    ordered.sort_by_key(|rule| rule.order());
+    ordered
+        .iter()
+        .rev()
+        .find_map(|rule| match rule.values.get(&property) {
+            Some(PartValue::Colour(token)) => Some(*token),
+            _ => None,
+        })
+}
+
+/// What a part's ground or words are in a variant, by the variant's name.
+type ByVariant = fn(&str) -> &'static str;
+
+/// **Parts read on a ground of their variant's own** (#4210), by family and part: a Notice's
+/// card stands on another ground than its box, and a card's title and mark are drawn only on the
+/// card. Read there where a theme sets neither the part's fill nor the root's.
+const VARIANT_GROUNDS: &[(&str, &str, ByVariant)] = &[
+    ("notice", "title", content::notice_card_ground),
+    ("notice", "mark", content::notice_card_ground),
+];
+
+/// **Parts drawn in words of their variant's own** (#4210), by family and part, where no rule
+/// sets them: a card's mark in the colour of its kind, which one default could not say.
+const VARIANT_WORDS: &[(&str, &str, ByVariant)] = &[("notice", "mark", content::notice_mark_words)];
+
+/// The ground `part` of `family` stands on in `variant` by default, where it is its variant's own.
+fn variant_ground(family: &Family, part: usize, variant: &str) -> Option<&'static str> {
+    let name = family.parts.get(part)?.name;
+    VARIANT_GROUNDS
+        .iter()
+        .find(|(one, at, _)| *one == family.name && *at == name)
+        .map(|(_, _, ground)| ground(variant))
+}
+
+/// The words `part` of `family` is drawn in by default in `variant`, where they are its variant's.
+fn variant_words(family: &Family, part: usize, variant: &str) -> Option<&'static str> {
+    let name = family.parts.get(part)?.name;
+    VARIANT_WORDS
+        .iter()
+        .find(|(one, at, _)| *one == family.name && *at == name)
+        .map(|(_, _, words)| words(variant))
 }
 
 /// A part's look as drawn: the root's fill, border and words, and each other part's words.
@@ -2208,7 +2255,9 @@ fn drawn(rules: &[Rule], family: &Family, variant: &str, states: &[State]) -> Dr
                 if drawn_apart(family, family.parts[part].name).is_some() {
                     return family.own_words(part).unwrap_or(root_text);
                 }
-                colour(part, Prop::Text).unwrap_or(root_text)
+                colour(part, Prop::Text)
+                    .or_else(|| variant_words(family, part, variant))
+                    .unwrap_or(root_text)
             })
             .collect(),
         grounds: (0..family.parts.len())
@@ -2219,6 +2268,17 @@ fn drawn(rules: &[Rule], family: &Family, variant: &str, states: &[State]) -> Dr
                     || drawn_apart(family, family.parts[part].name).is_some()
                 {
                     return fill;
+                }
+                // A part of a variant's own ground (#4210): on the fill a theme sets it or the
+                // root, else on that ground.
+                if let Some(ground) = variant_ground(family, part, variant) {
+                    return part_fill(rules, family, part, variant, states).unwrap_or(
+                        if colour_set(rules, family, 0, variant, states, Prop::Fill).is_some() {
+                            fill
+                        } else {
+                            ground
+                        },
+                    );
                 }
                 part_fill(rules, family, part, variant, states)
                     .or_else(|| family.own_ground(part))
@@ -4167,6 +4227,40 @@ pub(super) fn card_on_side(theme: &ResolvedTheme) -> Option<CardOnSide> {
         edge: (edged && card.border != TRANSPARENT).then_some(card.border),
         ground: drawn(rules, panel, "side", &[]).fill,
     })
+}
+
+/// **A notice card's secondary way and what it stands on** (#4210): each variant's card ground,
+/// as a theme's rules draw it or by default, and the fill a theme's rules give the button
+/// family's secondary root at rest and under the pointer, where they give it one (else the card
+/// draws its own, `notice.css`'s mix, which the check works out).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct NoticeWays {
+    /// Each card variant and its ground: a token or `transparent`.
+    pub grounds: [(&'static str, &'static str); 3],
+    /// The secondary button's fill a theme sets at rest, if it sets one.
+    pub rest: Option<&'static str>,
+    /// And under the pointer.
+    pub pointed: Option<&'static str>,
+}
+
+/// What [`NoticeWays`] says of `theme`.
+pub(super) fn notice_ways(theme: &ResolvedTheme) -> NoticeWays {
+    let held = held_once(theme);
+    let rules = &held.0;
+    let notice = family("notice").expect("the notice family");
+    let button = family("button").expect("the button family");
+    let ground = |variant: &'static str| {
+        (
+            variant,
+            colour_set(rules, notice, 0, variant, &[], Prop::Fill)
+                .unwrap_or_else(|| content::notice_card_ground(variant)),
+        )
+    };
+    NoticeWays {
+        grounds: [ground("news"), ground("trouble"), ground("attention")],
+        rest: colour_set(rules, button, 0, "secondary", &[], Prop::Fill),
+        pointed: colour_set(rules, button, 0, "secondary", &[State::Hover], Prop::Fill),
+    }
 }
 
 /// The rules with the floors held, and what fell.
