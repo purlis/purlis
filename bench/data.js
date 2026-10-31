@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793464229308,
+  "lastUpdate": 1793466393385,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33684,6 +33684,48 @@ window.BENCHMARK_DATA = {
             "value": 102.359301,
             "unit": "ms",
             "extra": "median of 5 runs: 101.430, 101.646, 102.359, 102.967, 103.385 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "70e48f683994daa2c762a49044af653a5cd3fc86",
+          "message": "CI: doctests get a job of their own, so rust tests part 2 ends with the others (#4255) (#4256)\n\n* ci: even out the Rust parts: doctests in a job of their own, the long guard test first\n\nPart 2 took about 5 minutes more than the others on the same summed test\ntime. 3 of them were a doctest step that runs no test, and about 1.5 were one\n180 s test starting late and ending alone (#4255).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* ci: the long guard test keeps its place; run first it failed its own bound\n\nRun first, under load from the start, it failed its 20 s bound at 24 s on one\nattempt of three (#4255).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T16:29:46Z",
+          "tree_id": "e1136927fa73657134b87bc4bf6313f9a7b1568b",
+          "url": "https://github.com/purlis/purlis/commit/70e48f683994daa2c762a49044af653a5cd3fc86"
+        },
+        "date": 1793466389154,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.316457,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.305, 0.307, 0.316, 0.321, 0.333 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3847335,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.293, 16.307, 16.385, 16.424, 16.452 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.463145,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.170, 100.552, 101.463, 102.100, 103.362 ms"
           }
         ]
       }
