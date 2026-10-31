@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use std::cell::RefCell;
 
 fn work() -> onrunner::Kept {
     onrunner::Kept {
