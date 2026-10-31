@@ -2913,7 +2913,9 @@ fn the_stage(to: &std::path::Path) -> std::path::PathBuf {
 fn a_carry_goes_under_the_data_home_the_runner_has() {
     for (spelling, makes) in [("charter", true), ("purlis", true), ("charter", false)] {
         let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-        let signed_in = from.path().join(".claude/.credentials.json");
+        let signed_in = from
+            .path()
+            .join(".local/share/purlis/profiles/work/config/.credentials.json");
         std::fs::create_dir_all(signed_in.parent().unwrap()).unwrap();
         std::fs::write(&signed_in, "{}").unwrap();
         let data = to.path().join(".local/share").join(spelling);
@@ -2922,7 +2924,7 @@ fn a_carry_goes_under_the_data_home_the_runner_has() {
         }
         let out = carried(from.path(), to.path());
         assert!(out.status.success(), "{out:?}");
-        assert!(the_batch(to.path()).join("claude").is_dir());
+        assert!(the_batch(to.path()).join("work").is_dir());
         assert_eq!(
             to.path().join(".local/share/purlis").exists(),
             makes && spelling == "purlis",
@@ -2938,7 +2940,9 @@ fn a_carry_goes_under_the_data_home_the_runner_has() {
 fn an_image_naming_its_data_home_carries_nothing() {
     for name in ["PURLIS_DATA_HOME", "XDG_DATA_HOME"] {
         let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-        let signed_in = from.path().join(".claude/.credentials.json");
+        let signed_in = from
+            .path()
+            .join(".local/share/purlis/profiles/work/config/.credentials.json");
         std::fs::create_dir_all(signed_in.parent().unwrap()).unwrap();
         std::fs::write(&signed_in, "{}").unwrap();
 
@@ -2960,7 +2964,9 @@ fn a_link_for_the_data_home_carries_nothing() {
         |at| std::fs::write(at, "a file").unwrap(),
     ] {
         let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-        let signed_in = from.path().join(".claude/.credentials.json");
+        let signed_in = from
+            .path()
+            .join(".local/share/purlis/profiles/work/config/.credentials.json");
         std::fs::create_dir_all(signed_in.parent().unwrap()).unwrap();
         std::fs::write(&signed_in, "{}").unwrap();
         let share = to.path().join(".local/share");
@@ -3069,14 +3075,6 @@ fn a_carry_takes_the_sign_ins_of_a_home_and_nothing_else() {
         read("oc/data/opencode/auth.json").as_deref(),
         Some("oc's sign-in")
     );
-    assert_eq!(
-        read("claude/config/.credentials.json").as_deref(),
-        Some("claude's sign-in")
-    );
-    assert_eq!(
-        read("codex/config/auth.json").as_deref(),
-        Some("codex's sign-in")
-    );
     // Nothing is written in a harness's folder of the new home: its own stays as it was.
     assert_eq!(
         std::fs::read_to_string(to.path().join(".codex/auth.json")).unwrap(),
@@ -3084,7 +3082,7 @@ fn a_carry_takes_the_sign_ins_of_a_home_and_nothing_else() {
     );
     for not in [
         ".claude",
-        ".local/share/purlis/profiles",
+        ".local/share/purlis/profiles/work",
         ".config",
         ".claude.json",
         ".local/share/opencode",
@@ -3097,6 +3095,8 @@ fn a_carry_takes_the_sign_ins_of_a_home_and_nothing_else() {
     for not in [
         "work/config/settings.json",
         "opencode/data/opencode/auth.json",
+        "claude/config/.credentials.json",
+        "codex/config/auth.json",
     ] {
         assert!(
             std::fs::symlink_metadata(batch.join(not)).is_err(),
@@ -3116,7 +3116,9 @@ fn a_carry_takes_the_sign_ins_of_a_home_and_nothing_else() {
 fn a_carry_writes_nothing_through_a_link_on_its_way() {
     let from = tempfile::tempdir().unwrap();
     let to = tempfile::tempdir().unwrap();
-    let signed = from.path().join(".claude/.credentials.json");
+    let signed = from
+        .path()
+        .join(".local/share/purlis/profiles/work/config/.credentials.json");
     std::fs::create_dir_all(signed.parent().unwrap()).unwrap();
     std::fs::write(&signed, "claude's sign-in").unwrap();
     let project = to.path().join("project");
@@ -3149,7 +3151,9 @@ fn a_home_with_no_sign_in_or_one_unread_carries_nothing_and_ends_well() {
     let stage = the_stage(to.path());
     assert_eq!(std::fs::read_dir(&stage).unwrap().count(), 0);
 
-    let locked = from.path().join(".codex/auth.json");
+    let locked = from
+        .path()
+        .join(".local/share/purlis/profiles/work/config/.credentials.json");
     std::fs::create_dir_all(locked.parent().unwrap()).unwrap();
     std::fs::write(&locked, "codex's sign-in").unwrap();
     std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();

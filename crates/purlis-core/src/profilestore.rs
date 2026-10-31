@@ -390,15 +390,13 @@ pub fn carried_under_an_old_runner_home() -> String {
 }
 
 /// **What a Docker pool's new runner takes of a runner drained beside it** (#4011, #4055, ruled
-/// 2026-10-30): its profiles' sign-ins, and nothing else, each as `<from>=<to>`, `<from>` under
-/// the old home and `<to>` under the carry's batch ([`CARRIED`]). A made profile's sign-in files
-/// ([`SIGN_IN_FILES`], `*` its name, under either spelling of the data home) go under its name,
-/// and each harness's own sign-in file in its default folder (`~/.claude/.credentials.json`,
-/// `~/.codex/auth.json`, opencode's `auth.json`) under the harness's name, the name the desktop's
-/// adopted folder is kept by. Nothing is put in a harness's folder: the new runner takes each in
-/// as it keeps the profile. No setting, hook, plugin, instruction or transcript of a harness,
-/// and nothing of purlis's own: not the profiles' records, the runner's device id, link key or
-/// peers, its harness installs, its projects or its browsers.
+/// 2026-10-30): the sign-ins of the profiles purlis made there, and nothing else, each as
+/// `<from>=<to>`, `<from>` under the old home and `<to>` under the carry's batch ([`CARRIED`]). A
+/// made profile's sign-in files ([`SIGN_IN_FILES`], `*` its name, under either spelling of the
+/// data home) go under its name. A harness's own default folder is not carried for now, so a
+/// built-in default profile signs in again on the new runner. No setting, hook, plugin,
+/// instruction or transcript of a harness, and nothing of purlis's own: not the profiles' records,
+/// the runner's device id, link key or peers, its harness installs, its projects or its browsers.
 pub fn carried_in_a_runner_home() -> Vec<String> {
     let mut pairs = Vec::new();
     for data in crate::names::DATA_HOME.spellings() {
@@ -410,14 +408,6 @@ pub fn carried_in_a_runner_home() -> Vec<String> {
                 Path::new("*").join(file).display()
             ));
         }
-    }
-    for (own, harness) in [
-        (".claude/.credentials.json", "claude"),
-        (".codex/auth.json", "codex"),
-        (".local/share/opencode/auth.json", "opencode"),
-    ] {
-        let file = sign_in_file_of(harness).unwrap_or_default();
-        pairs.push(format!("{own}={harness}/{file}"));
     }
     pairs
 }
