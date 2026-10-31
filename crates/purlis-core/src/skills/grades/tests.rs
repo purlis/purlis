@@ -1513,7 +1513,11 @@ fn an_eval_with_nothing_to_judge_or_that_hands_its_chat_its_fixtures_is_left_out
     }
     let long = "x".repeat(2 * 1024);
     let many: Vec<&str> = (0..16).map(|_| long.as_str()).collect();
-    assert!(eval_left_out_why(&eval(many, Vec::new())).unwrap().contains("too long"));
+    assert!(
+        eval_left_out_why(&eval(many, Vec::new()))
+            .unwrap()
+            .contains("too long")
+    );
     assert_eq!(
         eval_left_out_why(&eval(vec!["It ships"], vec!["evals/files/a.txt"])),
         None

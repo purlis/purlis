@@ -1353,10 +1353,19 @@ fn a_judges_chat_starts_with_the_tools_that_read_and_no_other() {
         (args, env)
     };
     let (args, env) = armed(true);
-    let at = args.iter().position(|arg| arg == "--tools").expect("--tools");
+    let at = args
+        .iter()
+        .position(|arg| arg == "--tools")
+        .expect("--tools");
     assert_eq!(args[at + 1], "Read,Grep");
-    assert!(env.iter().any(|(name, _)| name == crate::toolhooks::JUDGE_FOLDER_ENV));
+    assert!(
+        env.iter()
+            .any(|(name, _)| name == crate::toolhooks::JUDGE_FOLDER_ENV)
+    );
     let (args, env) = armed(false);
     assert!(!args.contains(&"--tools".to_owned()));
-    assert!(!env.iter().any(|(name, _)| name == crate::toolhooks::JUDGE_FOLDER_ENV));
+    assert!(
+        !env.iter()
+            .any(|(name, _)| name == crate::toolhooks::JUDGE_FOLDER_ENV)
+    );
 }

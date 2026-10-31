@@ -15,8 +15,10 @@ the task it grades (`task`). The run-chat result says what the chat's turn ended
 **An outcome eval's chat runs its whole turn** (§3), in a throwaway piece laid out as the arm's
 is, with the eval's input files staged into it at the paths the eval names. Each file is read as
 text, at most 1 MiB and through no link, in the same read as the skill's copy, so the consent
-covers it; an eval that names a fixture file (it would hand its chat what it is graded by) or a
-file that does not read is left out and named. Its first message is its prompt, with one sentence
+covers it; an eval's files must be its own inputs under `evals/`: one that names a file of the skill (it
+would hand the arm without it the skill), a fixture file in any case, a chat's instruction file, or
+a file that does not read is left out and named, as is one whose expectations a judge's answer
+could not repeat within the 16 KiB a hook hands back. Its first message is its prompt, with one sentence
 naming its files where it has any, as skill-creator's executor is told them.
 
 **A harness hands back a chat's final answer by its `Stop` hook** (the open choice of the ticket):
@@ -34,7 +36,7 @@ writes, holding `task.json` (the eval's prompt, what success looks like and its 
 limit of §3, and is denied besides every tool that writes a file, runs a command or reaches the
 network (on Claude Code `Bash`, `Edit`, `MultiEdit`, `Write`, `NotebookEdit`, `WebFetch`,
 `WebSearch`), every other way to read (`Glob`, `LS`, `Skill`, and purlis's own MCP tools, which
-answer from the plane). It keeps `Read` and `Grep`, and the read guard refuses either on a path that
+answer from the plane). It starts with `--tools Read,Grep`, so a tool a later release adds is not its either, and the read guard refuses either on a path that
 does not resolve inside its folder, links followed, so it reads nothing else even where its harness
 would let it.
 
@@ -65,8 +67,8 @@ chats it shows and the person consents to, and says how many are judges'. Both a
 token cap and the dollar limit like every chat of the grade. A plan that runs outcome evals is
 estimated only from a grade that ran some: a trigger test's chat ends once the skill starts, and
 says nothing of what a whole turn and its judge spend. Grading after each edit (#3238) accepted a
-number of chats, so a skill whose plan gains outcome evals waits for the person to see the plan
-again.
+number of chats and now the evals and their files by digest, so a plan whose outcome evals changed
+in any way waits for the person to see it again, even within the chats accepted.
 
 **The record** (§5) gains `report.outcomes` (each eval in each arm, each run's chat, judge,
 verdicts and why it failed), `report.outcome_delta`, and each arm's `outcome_pass_rate`,

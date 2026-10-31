@@ -410,9 +410,19 @@ impl SkillGradePlan {
                             GradeEval {
                                 id: eval.id.to_string(),
                                 hides: purlis_unicode::hides(&prompt, purlis_unicode::Breaks::Kept)
-                                    || eval.expectations.iter().any(|text| {
-                                        purlis_unicode::hides(text, purlis_unicode::Breaks::Kept)
-                                    }),
+                                    || eval
+                                        .expectations
+                                        .iter()
+                                        .chain(&eval.expected_output)
+                                        .chain(eval.files.iter().filter_map(|path| {
+                                            planned.copy.as_ref()?.inputs.get(path)
+                                        }))
+                                        .any(|text| {
+                                            purlis_unicode::hides(
+                                                text,
+                                                purlis_unicode::Breaks::Kept,
+                                            )
+                                        }),
                                 prompt: purlis_unicode::marked(
                                     &prompt,
                                     purlis_unicode::Breaks::Marked,
@@ -1725,6 +1735,15 @@ impl InChats<'_> {
                     Ok(Watched::TurnEnded) => break ChatEnd::Turn,
                     // A grade's chat waits on nobody: ended at its first ask, with that end.
                     Ok(Watched::Asked) => break ChatEnd::Asked,
+                    // A whole turn that closed before it ended left nothing to judge or be read:
+                    // no run, never a score, so a crash is no verdict on the skill (SK-55).
+                    Ok(Watched::Closed) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected)
+                        if whole_turn =>
+                    {
+                        break ChatEnd::NotStarted {
+                            why: "its chat closed before its turn ended".to_owned(),
+                        };
+                    }
                     Ok(Watched::Closed) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                         break ChatEnd::Turn;
                     }

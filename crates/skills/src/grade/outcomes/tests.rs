@@ -245,7 +245,11 @@ fn an_eval_chat_that_did_not_run_is_never_judged() {
         .filter(|chat| matches!(chat.kind, ChatKind::Judge { .. }))
         .count();
     assert_eq!(judges, 3, "only the arm whose chats ran is judged");
-    assert_eq!(report.asked(), 3, "said in the grade, as a trigger test's asks are");
+    assert_eq!(
+        report.asked(),
+        3,
+        "said in the grade, as a trigger test's asks are"
+    );
     let with = report.arm(Arm::With).unwrap();
     assert_eq!((with.outcome_chats, with.outcome_not_run), (0, 3));
     assert_eq!(with.outcome_pass_rate, None);
@@ -329,7 +333,10 @@ fn the_judges_answer_is_taken_whole_through_the_allow_list() {
     let twice = r#"{"expectations": [
         {"text": "The name is filled", "passed": false, "passed": true, "evidence": "x"},
         {"text": "The date is ISO", "passed": true, "evidence": "x"}]}"#;
-    assert!(judged(twice, &asked).is_err(), "a verdict said twice is no verdict");
+    assert!(
+        judged(twice, &asked).is_err(),
+        "a verdict said twice is no verdict"
+    );
     assert_eq!(
         wrong(serde_json::json!({"expectations": [
             {"text": "The name is filled", "passed": true, "evidence": "  "},

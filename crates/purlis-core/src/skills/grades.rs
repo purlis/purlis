@@ -529,7 +529,9 @@ fn outcome_rates_hold(report: &GradeReport) -> bool {
     } else {
         mean(Arm::Without)
     };
-    let delta = mean(Arm::With).zip(baseline).map(|(with, base)| with - base);
+    let delta = mean(Arm::With)
+        .zip(baseline)
+        .map(|(with, base)| with - base);
     let delta_holds = match (report.outcome_delta, delta) {
         (None, None) => true,
         (Some(said), Some(is)) => (said - is).abs() < 1e-9,
