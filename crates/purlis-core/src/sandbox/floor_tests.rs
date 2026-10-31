@@ -274,7 +274,7 @@ fn wrapped_floor(
     match compile(&compiled).expect("compiled") {
         Form::Codex(wrap) => codex::floor_profile(&wrap, ports, socket),
         Form::Opencode(wrap) => opencode::floor_profile(&wrap, ports, socket),
-        Form::ClaudeCode(_) => unreachable!(),
+        Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => unreachable!(),
     }
     .expect("a profile")
 }
@@ -971,7 +971,7 @@ fn wrapped_floor_of(harness: Harness, compiled: &Compiled, ports: &[u16]) -> Str
     match compile(compiled).expect("compiled") {
         Form::Codex(wrap) => codex::floor_profile(&wrap, ports, None),
         Form::Opencode(wrap) => opencode::floor_profile(&wrap, ports, None),
-        Form::ClaudeCode(_) => unreachable!(),
+        Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => unreachable!(),
     }
     .expect("a profile")
 }
@@ -1415,7 +1415,7 @@ fn the_floor_holds_the_plugin_and_git_hooks_a_chat_is_armed_with() {
                 let profile = match form {
                     Form::Codex(wrap) => codex::floor_profile(wrap, &[], None),
                     Form::Opencode(wrap) => opencode::floor_profile(wrap, &[], None),
-                    Form::ClaudeCode(_) => unreachable!(),
+                    Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => unreachable!(),
                 }
                 .expect("a profile");
                 assert!(writes(&profile, &root.join("notes.txt")), "{harness:?}");
@@ -1757,7 +1757,7 @@ fn a_wrapped_chat_at_the_floor_serves_on_its_own_socket_and_no_other() {
             Form::Opencode(wrap) => {
                 opencode::profile_serving(&wrap, &root, &tmp, &[4040], None, served)
             }
-            Form::ClaudeCode(_) => unreachable!(),
+            Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => unreachable!(),
         }
         .expect("a profile");
         assert!(
@@ -1771,4 +1771,110 @@ fn a_wrapped_chat_at_the_floor_serves_on_its_own_socket_and_no_other() {
             "{harness:?}"
         );
     }
+}
+
+/// The same machine as [`machine_with`], on `os`, with its home at `home`.
+fn machine_on(os: Os, home: &Path) -> Machine {
+    Machine {
+        env: crate::secrets::Env::of(&[("PATH", "/opt/none")]),
+        home: Some(home.to_path_buf()),
+        os,
+    }
+}
+
+/// On Linux, Claude Code's sandbox puts a denied path that does not exist out of reach of a read
+/// too, and git stops on a home config it cannot read. So the home's git config is made, empty,
+/// before a Claude Code chat starts at the floor there: held as an existing file is, and read
+/// as none.
+#[test]
+fn on_linux_the_floor_makes_the_homes_git_config_before_a_claude_code_chat_starts() {
+    let (_dir, root) = project();
+    let home = Path::new("/home/op");
+    let on_linux = settings_of(&floor_of(decided(
+        Harness::ClaudeCode,
+        &root,
+        &machine_on(Os::Linux, home),
+    )));
+    assert_eq!(on_linux.made_empty, vec![home.join(".gitconfig")]);
+    // Still held: made, it is denied as before.
+    assert!(
+        strings(&on_linux.sandbox["filesystem"]["denyWrite"])
+            .contains(&"/home/op/.gitconfig".to_owned()),
+        "{}",
+        on_linux.sandbox
+    );
+    // macOS's sandbox reads a denied path that does not exist as none.
+    let on_macos = settings_of(&floor_of(decided(
+        Harness::ClaudeCode,
+        &root,
+        &machine_on(Os::MacOs, home),
+    )));
+    assert!(on_macos.made_empty.is_empty(), "{:?}", on_macos.made_empty);
+}
+
+/// The full sandbox writes no rule on the home's git config, so it needs none made.
+#[test]
+fn the_full_sandbox_makes_nothing_in_the_home() {
+    let (_dir, root) = project();
+    std::fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").expect("charter.toml");
+    let applied = floor_of(decided(
+        Harness::ClaudeCode,
+        &root,
+        &machine_on(Os::Linux, Path::new("/home/op")),
+    ));
+    assert_eq!(applied.level(), Level::Full);
+    assert!(settings_of(&applied).made_empty.is_empty());
+}
+
+/// What is made is an empty file where there is nothing: a file already there keeps what it
+/// holds, and a link, even to nothing, is never followed.
+#[test]
+fn the_homes_git_config_is_made_empty_only_where_there_is_none() {
+    let (_dir, root) = project();
+    let home = tempfile::tempdir().expect("a home");
+    let home = home.path().canonicalize().expect("a real folder");
+    let settings = settings_of(&floor_of(decided(
+        Harness::ClaudeCode,
+        &root,
+        &machine_on(Os::Linux, &home),
+    )));
+    let config = home.join(".gitconfig");
+
+    settings.make_empty();
+    assert_eq!(std::fs::read(&config).expect("made"), b"");
+
+    std::fs::write(&config, "[user]\n\tname = op\n").expect("the person's own");
+    settings.make_empty();
+    assert_eq!(
+        std::fs::read_to_string(&config).expect("kept"),
+        "[user]\n\tname = op\n"
+    );
+
+    #[cfg(unix)]
+    {
+        std::fs::remove_file(&config).expect("removed");
+        let target = home.join("dotfiles/gitconfig");
+        std::os::unix::fs::symlink(&target, &config).expect("a link to nothing");
+        settings.make_empty();
+        assert!(!target.exists(), "the link was followed");
+        assert!(
+            std::fs::symlink_metadata(&config)
+                .expect("still there")
+                .file_type()
+                .is_symlink()
+        );
+    }
+}
+
+/// What the floor makes is a later-code name it holds, the home's among them.
+#[test]
+fn the_homes_git_config_made_is_one_the_floor_holds() {
+    assert!(
+        PLANTED
+            .iter()
+            .any(|planted| planted.path == claude::HOME_GIT_CONFIG
+                && planted.reach == Reach::AndBelow),
+        "{} is not held",
+        claude::HOME_GIT_CONFIG
+    );
 }

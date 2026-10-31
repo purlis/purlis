@@ -9,11 +9,18 @@
 //! neither, the persona's own `dispatch-isolation: worktree` is its default, and without that
 //! the chat works where the asking chat does.
 //!
+//! **A chat whose workspace holds its clones in subfolders** (#3903, from #3897 concern 4)
+//! works in no repo itself, so `worktree` is cut from the workspace's one clone, and where it
+//! holds several, `worktree:<repo>` names which. Such a worktree is cut as `purlis worktree
+//! add` cuts one ([`Repo::from_default`]), and the task commits, updates and pushes it by the
+//! same brokered `purlis worktree` words.
+//!
 //! # What the ask chooses, and what it never does
 //!
-//! **A word, and nothing else.** The ask says `worktree`, or a workspace's name. It names no
-//! folder, no repo and no branch: there is no field to name one in. Which repo a worktree is
-//! cut from is the app's own record of where the asking chat stands ([`repo_of`]); what the
+//! **A word, and nothing else.** The ask says `worktree`, or a workspace's name, and at most
+//! the name of a clone in the asking chat's own workspace (`worktree:<repo>`, #3903). It names
+//! no folder and no branch: there is no field to name one in. Which workspace a worktree is
+//! cut in is the app's own record of where the asking chat stands ([`repo_of`]); what the
 //! worktree's folder and branch are called is purlis's ([`piece_name`]), from the task's name
 //! and the dispatch's own id, so two worktree tasks never share either; and a workspace is
 //! looked up among the ones the project has, reached through no link ([`workspace_folder`]).
@@ -50,6 +57,9 @@ pub const WORKTREE: &str = "worktree";
 /// What `--in` puts before a workspace's name.
 pub const WORKSPACE: &str = "workspace:";
 
+/// What `--in` puts before the name of the clone a worktree is cut from (#3903).
+pub const WORKTREE_OF: &str = "worktree:";
+
 /// The persona key that makes a worktree its chats' default place to work.
 pub const ISOLATION_KEY: &str = "dispatch-isolation";
 
@@ -58,8 +68,9 @@ pub const ISOLATION_KEY: &str = "dispatch-isolation";
 pub enum Where {
     /// Another workspace of the project, by name.
     Workspace(String),
-    /// A new worktree of the repo the asking chat works in.
-    Worktree,
+    /// A new worktree of the repo the asking chat works in, or of the clone of its workspace
+    /// named here (#3903): a clone's folder name, which [`asked`] held to a repo's name.
+    Worktree(Option<String>),
 }
 
 /// Why a persona chat is not started where it was asked to work. Each is a sentence the
@@ -76,6 +87,19 @@ pub enum Refused {
     WorkspaceElsewhere(String),
     /// The asking chat does not stand in a repo, so there is nothing to cut a worktree of.
     NotInARepo,
+    /// What follows `worktree:` cannot name a repo's clone (#3903).
+    RepoName(String),
+    /// The asking chat's workspace holds several clones and the dispatch named none (#3903).
+    WhichRepo {
+        workspace: String,
+        repos: Vec<String>,
+    },
+    /// The asking chat's workspace holds no clone by the name the dispatch gave (#3903).
+    NoSuchRepo {
+        workspace: String,
+        repo: String,
+        repos: Vec<String>,
+    },
     /// The worktree was not cut, and why, in the words of what refused it.
     Cut(String),
     /// A chat nobody is at asked to start a chat in another workspace, and no grant that
@@ -94,9 +118,44 @@ impl Refused {
     pub fn say(&self) -> String {
         match self {
             Self::Word(word) => format!(
-                "--in is `{WORKTREE}` or `{WORKSPACE}<name>`, not '{}'. Leave it out and the \
-                 new chat works in this chat's folder.",
+                "--in is `{WORKTREE}`, `{WORKTREE_OF}<repo>` or `{WORKSPACE}<name>`, not '{}'. \
+                 Leave it out and the new chat works in this chat's folder.",
                 crate::shown::short(word)
+            ),
+            Self::RepoName(name) => format!(
+                "'{}' cannot name a repo, so nothing is cut. A repo is named by its clone's \
+                 folder in the workspace, and by nothing else.",
+                crate::shown::short(name)
+            ),
+            Self::WhichRepo { workspace, repos } => format!(
+                "workspace '{}' holds more than one repo's clone ({}), so `--in {WORKTREE}` \
+                 does not say which one to cut a branch from. Name one: `--in \
+                 {WORKTREE_OF}<repo>`, \
+                 such as `--in {WORKTREE_OF}{}`.",
+                crate::shown::short(workspace),
+                crate::taskchanges::listed(repos),
+                repos.first().map_or("", String::as_str),
+            ),
+            Self::NoSuchRepo {
+                workspace,
+                repo,
+                repos,
+            } if repos.is_empty() => format!(
+                "workspace '{}' holds no clone called '{}', nor any other repo's clone, so \
+                 nothing is cut. Leave out `--in` and the new chat works in this chat's folder.",
+                crate::shown::short(workspace),
+                crate::shown::short(repo),
+            ),
+            Self::NoSuchRepo {
+                workspace,
+                repo,
+                repos,
+            } => format!(
+                "workspace '{}' holds no clone called '{}', so nothing is cut. Its clones are \
+                 {}: name one with `--in {WORKTREE_OF}<repo>`.",
+                crate::shown::short(workspace),
+                crate::shown::short(repo),
+                crate::taskchanges::listed(repos),
             ),
             Self::WorkspaceName(name) => format!(
                 "'{}' cannot name a workspace, so no chat is started there. A workspace is \
@@ -197,6 +256,20 @@ impl Refused {
                                  of its own from. Choose that chat's folder, or ask from a chat \
                                  that works in a repo."
                 .to_owned(),
+            Self::RepoName(name) => format!(
+                "'{}' cannot name a repo, so no branch was cut.",
+                crate::shown::short(name)
+            ),
+            Self::WhichRepo { repos, .. } => format!(
+                "That chat's workspace holds more than one repo ({}), so there is no one repo \
+                 to cut a branch of its own from. Ask from a chat that works in one of them, or \
+                 choose that chat's folder.",
+                crate::taskchanges::listed(repos),
+            ),
+            Self::NoSuchRepo { repo, .. } => format!(
+                "That chat's workspace holds no repo called '{}', so no branch was cut.",
+                crate::shown::short(repo)
+            ),
             Self::Cut(why) => format!(
                 "purlis could not cut a branch for this task: {}.",
                 why.split_whitespace()
@@ -216,7 +289,15 @@ pub fn asked(raw: Option<&str>) -> Result<Option<Where>, Refused> {
         return Ok(None);
     };
     if word == WORKTREE {
-        return Ok(Some(Where::Worktree));
+        return Ok(Some(Where::Worktree(None)));
+    }
+    if let Some(repo) = word.strip_prefix(WORKTREE_OF) {
+        // A clone's folder name, as a workspace's clones are listed by ([`crate::repos`]):
+        // never a path, and never purlis's own `.worktrees`.
+        if !crate::contain::repo_name_ok(repo) || repo.starts_with('.') {
+            return Err(Refused::RepoName(repo.to_owned()));
+        }
+        return Ok(Some(Where::Worktree(Some(repo.to_owned()))));
     }
     let Some(named) = word.strip_prefix(WORKSPACE) else {
         return Err(Refused::Word(word.to_owned()));
@@ -310,38 +391,122 @@ pub struct Repo {
     /// stands in one (#1472): its task is cut from the branch that worktree is on. `None` for
     /// a chat standing in the clone itself.
     pub piece: Option<String>,
+    /// Whether it is cut as `purlis worktree add` cuts one (#3903): from the branch the remote
+    /// names its default, moved up to the clone's last sync of it, else from its HEAD. Set where
+    /// the asking chat does not stand in this clone: in its workspace's own folder, or in
+    /// another clone of it. A chat that stands in the clone is cut from where it stands.
+    pub from_default: bool,
 }
 
 /// The repo a chat standing at `cwd` works in: the clone it stands in or below, or the clone
 /// the worktree it stands in was cut from. Path arithmetic and one existence check, as
-/// [`chatpiece::clone_at`] is; a chat at the project's root, in a workspace's own folder or
-/// outside the project works in none.
-pub fn repo_of(root: &Path, cwd: Option<&Path>) -> Result<Repo, Refused> {
+/// [`chatpiece::clone_at`] is; a chat at the project's root or outside the project works in
+/// none.
+///
+/// **A chat in its workspace's own folder** (or a folder of it that is not purlis's) works in
+/// the workspace's one clone, and `named` says which where it holds several (#3903). A chat in
+/// one clone that names another clone of its workspace is cut from that one. Either is cut as
+/// `purlis worktree add` cuts ([`Repo::from_default`]).
+pub fn repo_of(root: &Path, cwd: Option<&Path>, named: Option<&str>) -> Result<Repo, Refused> {
     let cwd = cwd.ok_or(Refused::NotInARepo)?;
-    if let Some(found) = worktree::locate(root, cwd) {
-        return Ok(Repo {
-            workspace: found.workspace,
-            repo: found.repo,
-            piece: Some(found.piece),
-        })
-        .and_then(|repo| is_a_clone(root, repo));
+    match (stands_in(root, cwd), named) {
+        (Ok(repo), None) => Ok(repo),
+        (Ok(repo), Some(named)) if repo.repo == named => Ok(repo),
+        (Ok(repo), Some(named)) => clone_of_workspace(root, &repo.workspace, Some(named)),
+        (Err(refused), named) => match workspace_standing_in(root, cwd) {
+            Some(workspace) => clone_of_workspace(root, &workspace, named),
+            None => Err(refused),
+        },
     }
-    let here = std::fs::canonicalize(cwd).map_err(|_| Refused::NotInARepo)?;
-    let workspaces =
-        std::fs::canonicalize(root.join("workspaces")).map_err(|_| Refused::NotInARepo)?;
-    let rest = here
-        .strip_prefix(&workspaces)
-        .map_err(|_| Refused::NotInARepo)?;
-    let mut parts = rest.components().map(|part| part.as_os_str().to_str());
-    let (Some(Some(ws)), Some(Some(repo))) = (parts.next(), parts.next()) else {
+}
+
+/// The clone `cwd` stands in or below, or the one the worktree it stands in was cut from.
+fn stands_in(root: &Path, cwd: &Path) -> Result<Repo, Refused> {
+    if let Some(found) = worktree::locate(root, cwd) {
+        return is_a_clone(
+            root,
+            Repo {
+                workspace: found.workspace,
+                repo: found.repo,
+                piece: Some(found.piece),
+                from_default: false,
+            },
+        );
+    }
+    let (ws, rest) = under_workspaces(root, cwd).ok_or(Refused::NotInARepo)?;
+    let Some(repo) = rest.first() else {
         return Err(Refused::NotInARepo);
     };
     is_a_clone(
         root,
         Repo {
-            workspace: ws.to_owned(),
-            repo: repo.to_owned(),
+            workspace: ws,
+            repo: repo.clone(),
             piece: None,
+            from_default: false,
+        },
+    )
+}
+
+/// The workspace whose own folder `cwd` is, or a folder of it that is not purlis's (no
+/// `.worktrees`, no `.claude`): where a chat stands that works in the workspace and in no
+/// clone of it.
+fn workspace_standing_in(root: &Path, cwd: &Path) -> Option<String> {
+    let (ws, rest) = under_workspaces(root, cwd)?;
+    let purlis_s = rest.first().is_some_and(|first| first.starts_with('.'));
+    (crate::contain::workspace_name_ok(&ws) && !purlis_s).then_some(ws)
+}
+
+/// `cwd` as the workspace it is under and the names below that workspace's folder.
+fn under_workspaces(root: &Path, cwd: &Path) -> Option<(String, Vec<String>)> {
+    let here = std::fs::canonicalize(cwd).ok()?;
+    let workspaces = std::fs::canonicalize(root.join("workspaces")).ok()?;
+    let rest = here.strip_prefix(&workspaces).ok()?;
+    let mut parts = rest
+        .components()
+        .map(|part| part.as_os_str().to_str().map(str::to_owned));
+    let ws = parts.next()??;
+    let below = parts.collect::<Option<Vec<_>>>()?;
+    Some((ws, below))
+}
+
+/// The clone of workspace `ws` a worktree is cut from: the one `named`, or its only one
+/// (#3903). Its clones are the ones [`crate::repos::clones`] lists: the folders directly under
+/// the workspace that hold a `.git` of their own and are reached through no link, as `purlis
+/// worktree add` finds a clone.
+fn clone_of_workspace(root: &Path, ws: &str, named: Option<&str>) -> Result<Repo, Refused> {
+    let repos: Vec<String> = crate::repos::clones(root, ws)
+        .map_err(|_| Refused::NotInARepo)?
+        .repos
+        .into_iter()
+        .map(|clone| clone.name)
+        .filter(|name| crate::contain::repo_name_ok(name) && name != worktree::DIR_NAME)
+        .collect();
+    let chosen = match (named, repos.as_slice()) {
+        (Some(named), _) if repos.iter().any(|repo| repo == named) => named.to_owned(),
+        (Some(named), _) => {
+            return Err(Refused::NoSuchRepo {
+                workspace: ws.to_owned(),
+                repo: named.to_owned(),
+                repos,
+            });
+        }
+        (None, [one]) => one.clone(),
+        (None, []) => return Err(Refused::NotInARepo),
+        (None, _) => {
+            return Err(Refused::WhichRepo {
+                workspace: ws.to_owned(),
+                repos,
+            });
+        }
+    };
+    is_a_clone(
+        root,
+        Repo {
+            workspace: ws.to_owned(),
+            repo: chosen,
+            piece: None,
+            from_default: true,
         },
     )
 }
@@ -453,9 +618,9 @@ pub fn ground(
             let (name, folder) = workspace_folder(root, &asked)?;
             Ok(Ground::Workspace { name, folder })
         }
-        Some(Where::Worktree) => repo_of(root, cwd).map(Ground::Worktree),
+        Some(Where::Worktree(named)) => repo_of(root, cwd, named.as_deref()).map(Ground::Worktree),
         None if persona.is_some_and(|persona| isolates(root, persona)) => {
-            Ok(match repo_of(root, cwd) {
+            Ok(match repo_of(root, cwd, None) {
                 Ok(repo) => Ground::Worktree(repo),
                 Err(_) => Ground::Asker { fell_back: true },
             })
@@ -505,16 +670,34 @@ pub fn cut(
     let judged = |clone: &Path, start: &str, folder: &Path| {
         crate::cloneupdate::judged_cut(clone, start, folder, root, None).map_or(Ok(()), Err)
     };
+    // The remote is asked over the task's own egress, never on the app's account (#3903).
+    let hosts = if repo.from_default {
+        crate::gitbroker::sandboxed_hosts(root).map_err(Refused::Cut)?
+    } else {
+        None
+    };
     crate::gitbroker::in_a_checked_clone(root, &repo.workspace, &repo.repo, isolation, || {
-        let from = start_of(root, repo);
-        chatpiece::cut_vetted(
-            root,
-            &repo.workspace,
-            &repo.repo,
-            &piece,
-            from.as_ref(),
-            &judged,
-        )
+        let (ws, name) = (&repo.workspace, &repo.repo);
+        if !repo.from_default {
+            let from = start_of(root, repo);
+            return chatpiece::cut_vetted(root, ws, name, &piece, from.as_ref(), &judged);
+        }
+        // **As `purlis worktree add` cuts** (#3903): the same base, the same call.
+        match crate::piececmd::default_base(root, ws, name, hosts.as_deref()) {
+            Some(base) => chatpiece::cut_based(root, ws, name, &piece, &base, &judged).map(
+                |(mut cut, fresh)| {
+                    cut.notes
+                        .extend(fresh.notes.into_iter().map(worktree::Note::Fresh));
+                    cut
+                },
+            ),
+            // Said, never silent: the task does not start where the asking chat may expect.
+            None => chatpiece::cut_vetted(root, ws, name, &piece, None, &judged).map(|mut cut| {
+                cut.notes
+                    .push(worktree::Note::FromHead { repo: name.clone() });
+                cut
+            }),
+        }
     })
     .map_err(Refused::Cut)?
     .map_err(|refusal| Refused::Cut(refusal.in_window()))
@@ -524,7 +707,8 @@ pub fn cut(
 /// is on, where it stands in one of this repo, so the task sees that chat's commits. Read from
 /// the clone's `git worktree list` (git's registry, by the piece's name), never from the
 /// folder the chat writes. A worktree on no branch, one whose folder is gone, or none at all:
-/// `None`, and the task is cut from the clone's HEAD as before.
+/// `None`, and the task is cut from the clone's HEAD as before. A repo the asking chat does
+/// not stand in is cut as `purlis worktree add` cuts instead ([`cut`], #3903).
 fn start_of(root: &Path, repo: &Repo) -> Option<worktree::Start> {
     let piece = repo.piece.as_deref()?;
     let listed = worktree::list(root, &repo.workspace, &repo.repo).ok()?;
@@ -566,6 +750,13 @@ pub fn starts_sandboxed(root: &Path) -> bool {
 /// refused (#1055): the app commits for it.
 pub const COMMITS_WITH: &str = "purlis worktree commit";
 
+/// The commands a sandboxed task brings its branch up to its base and pushes it with, which the
+/// app runs for it (#3831, #3903): its worktree is a branch folder like any other.
+pub const UPDATES_WITH: &str = "purlis worktree update";
+
+/// See [`UPDATES_WITH`].
+pub const PUSHES_WITH: &str = "purlis worktree push";
+
 /// Who merges a task's own branch, as both chats are told (#1511, V100-67): a chat may ask for
 /// a merge, and only the person performs one, from the window.
 pub const MERGED_BY: &str = "only the person merges it, from the task's Changes in the window (a \
@@ -585,8 +776,10 @@ pub fn told_the_chat(repo: &str, piece: &str, sandboxed: bool) -> String {
              `{piece}`, which is yours alone. This chat is sandboxed, and a worktree's git \
              data is outside the folder it may write, so `git add` and `git commit` are \
              refused here: commit your work with `{COMMITS_WITH} -m \"<message>\" --all` (or \
-             paths in place of `--all`; a new file must be named). It only commits. Nothing \
-             is merged for you: your report names the branch, and {MERGED_BY}"
+             paths in place of `--all`; a new file must be named). It only commits. \
+             `{UPDATES_WITH}` brings the branch up to its base and `{PUSHES_WITH}` pushes it, \
+             and the app runs both for you too. Nothing is merged for you: your report names \
+             the branch, and {MERGED_BY}"
         );
     }
     format!(
@@ -2020,5 +2213,4 @@ pub fn tidy_at_open(root: &Path, at_open: &AtOpen, isolation: &git::Isolated) ->
 }
 
 #[cfg(test)]
-#[path = "dispatchplace_tests.rs"]
 mod tests;

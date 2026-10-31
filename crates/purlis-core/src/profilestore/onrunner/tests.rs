@@ -214,7 +214,7 @@ fn only_an_adopted_folder_kept_for_a_desktop_is_signed_in_by_purlis() {
     let adopted = the_desktops_adopted_folder(dir.path());
 
     assert!(sign_in::profile_of(&adopted).is_none());
-    assert!(sign_in::login_of(&adopted, None).is_err());
+    assert!(sign_in::login_of(&adopted, None, None).is_err());
     assert_eq!(sign_in::standing_of(&adopted, &Answers(Some(1))), None);
 }
 
@@ -410,6 +410,88 @@ fn a_chat_on_a_profile_signed_out_on_the_pool_waits_as_one_sign_in_there() {
     );
     let_go(None, "builds", "work");
     assert!(waiting_on_pools(&project).is_empty());
+}
+
+/// **Letting a pool's waits go says whose went** (#4205): each of those windows has an Ask to
+/// stop drawing.
+#[test]
+fn letting_a_pool_s_waits_go_says_whose_went() {
+    let dir = tempfile::tempdir().unwrap();
+    a_signed_in_desktop_profile(dir.path());
+    let desktop = homes(dir.path(), "desktop");
+    let (one, two) = (dir.path().join("told-1"), dir.path().join("told-2"));
+    for root in [&one, &two] {
+        ready_on(desktop.config_root(), root, "told", "work", &|_| {
+            Ok(Some(Standing::SignedOut))
+        })
+        .unwrap_err();
+    }
+
+    let mut went = let_go(None, "told", "work");
+    went.sort();
+
+    assert_eq!(went, [one, two]);
+    assert!(let_go(None, "told", "work").is_empty(), "none left to go");
+}
+
+/// **A second refusal counts as raised then** (#4203): the usual case, a project whose Ask is why
+/// Sign in was pressed. How long it has waited does not change.
+#[test]
+fn a_start_on_a_pool_refused_again_after_the_shell_was_last_seen_keeps_the_wait() {
+    let dir = tempfile::tempdir().unwrap();
+    a_signed_in_desktop_profile(dir.path());
+    let desktop = homes(dir.path(), "desktop");
+    let project = dir.path().join("refused-again");
+    let refuse = || {
+        ready_on(desktop.config_root(), &project, "again", "work", &|_| {
+            Ok(Some(Standing::SignedOut))
+        })
+        .unwrap_err();
+    };
+    refuse();
+    let since = waiting_on_pools(&project)[0].since;
+    let last_seen = std::time::Instant::now();
+
+    refuse();
+    let_go_older(&project, "again", "work", last_seen);
+
+    let waits = waiting_on_pools(&project);
+    assert_eq!(waits.len(), 1);
+    assert_eq!(waits[0].since, since);
+    let_go(None, "again", "work");
+}
+
+/// **Leaving a sign-in on a pool lets go only waits older than the moment the shell was last
+/// seen open, and only in its project** (#4203).
+#[test]
+fn leaving_a_sign_in_on_a_pool_keeps_a_wait_raised_after_the_shell_was_last_seen() {
+    let dir = tempfile::tempdir().unwrap();
+    a_signed_in_desktop_profile(dir.path());
+    let desktop = homes(dir.path(), "desktop");
+    let (project, other) = (dir.path().join("left"), dir.path().join("other"));
+    let refuse = |root: &Path| {
+        ready_on(desktop.config_root(), root, "builds", "work", &|_| {
+            Ok(Some(Standing::SignedOut))
+        })
+        .unwrap_err();
+    };
+    refuse(&project);
+    refuse(&other);
+    let last_seen = std::time::Instant::now();
+
+    let_go_older(&project, "builds", "work", last_seen);
+    assert!(waiting_on_pools(&project).is_empty(), "older: it goes");
+    assert_eq!(waiting_on_pools(&other).len(), 1, "another project's stays");
+    let gone = std::time::Instant::now();
+
+    refuse(&project);
+    let_go_older(&project, "builds", "work", gone);
+    assert_eq!(
+        waiting_on_pools(&project).len(),
+        1,
+        "raised since: it stays"
+    );
+    let_go(None, "builds", "work");
 }
 
 /// A profile this desktop keeps no record of is the runner's own to say, and a key profile's
@@ -633,37 +715,46 @@ fn only_a_plan_its_harness_serves_is_named_for_a_sign_in() {
     assert_eq!(sign_in::plan_named("claude", None), Ok(()));
 }
 
-/// A move refused for its profile says the chat did not move and to ask for the move again,
-/// never that nothing was started or to start the chat again (#2048).
+/// A move whose profile is not signed in on the pool waits for it to sign in (#3477): it is
+/// told as a sign-in to ask, naming the profile and its harness, and no Inbox wait is added, since
+/// the move's own notice asks it. A profile the runner did not keep refuses the move, saying the
+/// chat did not move and to ask for the move again, never that nothing was started (#2048).
 #[test]
-fn a_move_refused_for_its_profile_says_to_ask_for_the_move_again() {
+fn a_move_whose_profile_is_signed_out_there_waits_for_its_sign_in() {
     let dir = tempfile::tempdir().unwrap();
     a_signed_in_desktop_profile(dir.path());
     let desktop = homes(dir.path(), "desktop");
     let project = dir.path().join("project-moving");
 
-    let signed_out = ready_to_move_on(desktop.config_root(), &project, "builds", "work", &|_| {
+    let signed_out = ready_to_move_on(desktop.config_root(), "builds", "work", &|_| {
         Ok(Some(Standing::SignedOut))
     })
     .unwrap_err();
-    let not_kept = ready_to_move_on(desktop.config_root(), &project, "builds", "work", &|_| {
+    assert_eq!(
+        signed_out,
+        NotYet::SignIn(SignInAsked {
+            pool: "builds".into(),
+            profile: "work".into(),
+            kind: "claude".into(),
+            harness: "Claude Code".into(),
+        })
+    );
+    assert!(waiting_on_pools(&project).is_empty());
+    let said = signed_out.said();
+    assert!(said.contains("not signed in on pool builds"), "{said}");
+    assert!(said.contains("The chat did not move"), "{said}");
+
+    let not_kept = ready_to_move_on(desktop.config_root(), "builds", "work", &|_| {
         Err("the runner did not answer".into())
     })
     .unwrap_err();
-    for refused in [&signed_out, &not_kept] {
-        assert!(refused.contains("The chat did not move"), "{refused}");
-        assert!(!refused.contains("Nothing was started"), "{refused}");
-        assert!(!refused.contains("start the chat again"), "{refused}");
-    }
-    assert!(
-        signed_out.contains("ask for the move again"),
-        "{signed_out}"
-    );
-    assert!(
-        signed_out.contains("Profile work on pool builds"),
-        "{signed_out}"
-    );
-    let_go(None, "builds", "work");
+    let NotYet::Refused(refused) = &not_kept else {
+        panic!("{not_kept:?}");
+    };
+    assert!(refused.contains("The chat did not move"), "{refused}");
+    assert!(!refused.contains("Nothing was started"), "{refused}");
+    assert!(!refused.contains("start the chat again"), "{refused}");
+    assert_eq!(not_kept.said(), *refused);
 }
 
 /// The desktop's made profile `work`, signed in, with settings beside its sign-in: Claude Code's
@@ -831,6 +922,399 @@ fn settings_too_large_for_the_link_are_refused_in_words() {
     assert!(refused.contains("larger than"), "{refused}");
 }
 
+/// **A profile with 17 MiB of skills reaches its runner** (#4081), the size of the one whose every
+/// chat was refused on a real pool, in batches and whole.
+#[test]
+fn a_profile_with_several_mib_of_skills_is_sent_to_its_runner() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let skill = desktop.folders.config.join("skills/large");
+    fs::create_dir_all(&skill).unwrap();
+    for one in 0..170 {
+        fs::write(skill.join(format!("{one}.md")), vec![b'a'; 100 * 1024]).unwrap();
+    }
+
+    let sent = in_batches(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap();
+    assert!(sent.batches.len() > 1, "{} batches", sent.batches.len());
+    assert!(sent.left_behind.is_empty());
+
+    let runner = homes(dir.path(), "runner");
+    let record = kept_staged(&runner, dir.path(), sent).expect("it is kept");
+    let settings = &record.folders.config;
+    assert_eq!(
+        fs::read_dir(settings.join("skills/large")).unwrap().count(),
+        170
+    );
+    assert_eq!(
+        fs::read(settings.join("skills/large/7.md")).unwrap().len(),
+        100 * 1024
+    );
+    assert_eq!(fs::read(settings.join("CLAUDE.md")).unwrap(), b"Be brief.");
+    assert!(!settings.join("agents/credentials.json").exists());
+    assert_eq!(staged_left_in(settings), 0);
+}
+
+/// [`in_batches`]'s `sent`, staged as a link stages them and kept as a runner keeps them.
+fn kept_staged(runner: &Homes, dir: &Path, sent: ToKeep) -> Result<MachineProfile, String> {
+    use purlis_session_protocol::session::StagedSettings;
+    let mut staged = StagedSettings::default();
+    for batch in sent.batches {
+        staged.add(batch)?;
+    }
+    let mut profile = sent.profile;
+    let files = profile.settings_staged.take().expect("it names its files");
+    profile.settings = Some(staged.finished(&profile.name, files)?);
+    kept_for_the_desktop(
+        runner,
+        &runner_home(dir),
+        DESKTOP,
+        &profile,
+        &Answers(Some(0)),
+        7,
+    )?;
+    Ok(list(runner.config_root())
+        .unwrap()
+        .into_iter()
+        .find(|p| p.name == profile.name)
+        .expect("kept"))
+}
+
+/// How many stages a keep left in the settings folder `settings`.
+fn staged_left_in(settings: &Path) -> usize {
+    fs::read_dir(settings)
+        .unwrap()
+        .filter(|one| {
+            let name = one.as_ref().unwrap().file_name();
+            name.to_string_lossy().contains("staged")
+        })
+        .count()
+}
+
+/// **Nothing refused before is sent now, however many batches they take**: a file named like a
+/// credential and a sign-in inside a settings file stay behind, one split across batches too,
+/// and a settings file that does not parse refuses all of them.
+#[test]
+fn batches_send_nothing_that_was_refused_before() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let config = &desktop.folders.config;
+    fs::write(
+        config.join("settings.json"),
+        r#"{"env":{"TOKEN":"a-signed-in-token"},"theme":"dark"}"#,
+    )
+    .unwrap();
+    fs::create_dir_all(config.join("skills/large")).unwrap();
+    fs::write(
+        config.join("skills/large/SKILL.md"),
+        vec![b'a'; 3 * 1024 * 1024],
+    )
+    .unwrap();
+    fs::write(config.join(".credentials.json"), "a sign-in").unwrap();
+    fs::create_dir_all(config.join("skills/one")).unwrap();
+    fs::write(config.join("skills/one/.env"), "a secret").unwrap();
+    let kept = Kept::of(&desktop).unwrap().with_settings_of(&desktop);
+
+    let sent = in_batches(&kept).unwrap();
+
+    let pieces: Vec<_> = sent.batches.iter().flat_map(|b| &b.pieces).collect();
+    assert!(
+        pieces
+            .iter()
+            .filter(|p| p.path == "skills/large/SKILL.md")
+            .count()
+            > 1
+    );
+    assert!(pieces.iter().all(|p| p.path != ".credentials.json"
+        && p.path != "skills/one/.env"
+        && p.path != "agents/credentials.json"));
+    let settings: Vec<u8> = pieces
+        .iter()
+        .filter(|p| p.path == "settings.json")
+        .flat_map(|p| p.bytes.clone())
+        .collect();
+    assert!(!String::from_utf8_lossy(&settings).contains("a-signed-in-token"));
+
+    fs::write(config.join("settings.json"), "{ not json").unwrap();
+    assert!(in_batches(&kept).is_err());
+}
+
+/// **A runner checks what it stages as it checks what one keep carries**: a sign-in split across
+/// a desktop's pieces is removed once the file is whole, whatever sent it.
+#[test]
+fn a_runner_removes_a_sign_in_a_sender_split_across_pieces() {
+    use purlis_session_protocol::session::{SettingsBatch, SettingsPiece};
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let runner = homes(dir.path(), "runner");
+    fs::remove_file(desktop.folders.config.join("settings.json")).unwrap();
+    let whole = br#"{"env":{"TOKEN":"a-signed-in-token"},"theme":"dark"}"#;
+    let (first, second) = whole.split_at(20);
+    let mut sent = in_batches(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap();
+    sent.batches.push(SettingsBatch {
+        profile: desktop.name.clone(),
+        pieces: vec![
+            SettingsPiece {
+                path: "settings.json".to_owned(),
+                continues: false,
+                bytes: first.to_vec(),
+            },
+            SettingsPiece {
+                path: "settings.json".to_owned(),
+                continues: true,
+                bytes: second.to_vec(),
+            },
+        ],
+    });
+    sent.profile.settings_staged = sent.profile.settings_staged.map(|files| files + 1);
+
+    let record = kept_staged(&runner, dir.path(), sent).unwrap();
+
+    let kept = fs::read_to_string(record.folders.config.join("settings.json")).unwrap();
+    assert!(!kept.contains("a-signed-in-token"), "{kept}");
+    assert!(kept.contains("dark"), "{kept}");
+}
+
+/// **A keep that fails leaves the settings as they were** (#4081): files that cannot both be
+/// written (`skills/a` as a file and as a folder) stop at the stage, with nothing of the settings
+/// the runner kept touched and no stage left, and the next keep goes through.
+#[test]
+fn a_keep_that_fails_leaves_the_settings_it_kept() {
+    use purlis_session_protocol::session::SettingsFile;
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let record = kept_with_its_settings(dir.path(), &desktop);
+    let settings = record.folders.config.clone();
+
+    let mut profile = to_send(&Kept::of(&desktop).unwrap()).unwrap();
+    profile.settings = Some(vec![
+        SettingsFile {
+            path: "agents/new.md".to_owned(),
+            bytes: b"new".to_vec(),
+        },
+        SettingsFile {
+            path: "skills/a".to_owned(),
+            bytes: b"a file".to_vec(),
+        },
+        SettingsFile {
+            path: "skills/a/b.md".to_owned(),
+            bytes: b"under a file".to_vec(),
+        },
+    ]);
+    kept_for_the_desktop(
+        &runner,
+        &runner_home(dir.path()),
+        DESKTOP,
+        &profile,
+        &Answers(Some(0)),
+        7,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        fs::read(settings.join("agents/review.md")).unwrap(),
+        b"Review."
+    );
+    assert!(!settings.join("agents/new.md").exists());
+    assert_eq!(staged_left_in(&settings), 0);
+    let stages = runner.folder_of(".settings-staged");
+    assert_eq!(fs::read_dir(stages).unwrap().count(), 0);
+
+    assert_eq!(
+        kept_with_its_settings(dir.path(), &desktop).folders.config,
+        settings
+    );
+    assert_eq!(fs::read(settings.join("CLAUDE.md")).unwrap(), b"Be brief.");
+}
+
+/// **The stage is where no chat writes** (#4081): nothing of a keep appears in a settings folder
+/// a chat can write in, a stage a killed keep left is swept, and one that cannot be swept stands
+/// in no keep's way.
+#[cfg(unix)]
+#[test]
+fn a_stage_is_kept_apart_from_the_settings_folder_and_what_a_killed_keep_left_goes() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let record = kept_with_its_settings(dir.path(), &desktop);
+    let settings = record.folders.config.clone();
+    fs::write(settings.join("history.jsonl"), "the runner's own").unwrap();
+    let stages = homes(dir.path(), "runner").folder_of(".settings-staged");
+    let stuck = stages.join("1.killed/new/stuck");
+    fs::create_dir_all(&stuck).unwrap();
+    fs::write(stuck.join("a"), "a").unwrap();
+    fs::set_permissions(&stuck, fs::Permissions::from_mode(0o500)).unwrap();
+
+    kept_with_its_settings(dir.path(), &desktop);
+
+    fs::set_permissions(&stuck, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(
+        fs::read(settings.join("history.jsonl")).unwrap(),
+        b"the runner's own"
+    );
+    assert_eq!(staged_left_in(&settings), 0);
+    assert_eq!(fs::read(settings.join("CLAUDE.md")).unwrap(), b"Be brief.");
+}
+
+/// **Over the overall limit a profile still goes, by whole skills** (#4081): a skill with a file
+/// past the limit stays behind whole, what was read of it with it, and the rest goes; the note
+/// says what, its size and how to bring it.
+#[test]
+fn over_the_overall_limit_whole_skills_stay_behind_and_the_rest_goes() {
+    use purlis_session_protocol::session::MOST_PROFILE_SETTINGS_BYTES;
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let config = &desktop.folders.config;
+    let skill = config.join("skills/large");
+    fs::create_dir_all(&skill).unwrap();
+    fs::write(skill.join("SKILL.md"), "Use me.").unwrap();
+    // Sparse: its size is what an over-limit file says, and nothing of it is read.
+    let over = fs::File::create(skill.join("weights.bin")).unwrap();
+    over.set_len(MOST_PROFILE_SETTINGS_BYTES as u64 + 1)
+        .unwrap();
+    fs::create_dir_all(config.join("skills/small")).unwrap();
+    fs::write(config.join("skills/small/SKILL.md"), "Small.").unwrap();
+
+    let sent = in_batches(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap();
+
+    assert_eq!(sent.left_behind.len(), 1, "{:?}", sent.left_behind);
+    assert_eq!(sent.left_behind[0].path, "skills/large");
+    let paths: Vec<_> = sent
+        .batches
+        .iter()
+        .flat_map(|b| &b.pieces)
+        .map(|p| &p.path)
+        .collect();
+    assert!(paths.iter().any(|p| p.as_str() == "skills/small/SKILL.md"));
+    assert!(paths.iter().any(|p| p.as_str() == "CLAUDE.md"));
+    assert!(!paths.iter().any(|p| p.starts_with("skills/large")));
+
+    let note = left_behind_note("builds", &desktop.name, &sent.left_behind).unwrap();
+    assert!(note.contains("skills/large (129 MiB)"), "{note}");
+    assert!(note.contains("smaller"), "{note}");
+    assert_eq!(left_behind_note("builds", "work", &[]), None);
+}
+
+/// A note of many names names the largest, and counts the rest.
+#[test]
+fn a_note_of_many_names_the_largest_and_counts_the_rest() {
+    let behind: Vec<_> = (1..=9u64)
+        .map(|one| LeftBehind {
+            path: format!("skills/{one}"),
+            bytes: one * 1024 * 1024,
+        })
+        .collect();
+
+    let note = left_behind_note("builds", "work", &behind).unwrap();
+
+    assert!(note.contains("skills/9 (9 MiB), skills/8"), "{note}");
+    assert!(note.contains("3 more"), "{note}");
+    assert!(!note.contains("skills/1 "), "{note}");
+}
+
+/// **A harness's own settings file that cannot go refuses the chat** (#4081): it says what a chat
+/// may do, so no chat starts as if it had said nothing. A larger `CLAUDE.md` is only left behind.
+#[test]
+fn a_harness_settings_file_too_large_to_go_refuses_the_chat() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let config = &desktop.folders.config;
+    let kept = Kept::of(&desktop).unwrap().with_settings_of(&desktop);
+    fs::write(
+        config.join("settings.json"),
+        format!(r#"{{"a":"{}"}}"#, "a".repeat(MOST_SETTINGS_BYTES)),
+    )
+    .unwrap();
+
+    let refused = in_batches(&kept).unwrap_err();
+
+    assert!(refused.contains("larger than"), "{refused}");
+    let over = fs::File::create(config.join("settings.json")).unwrap();
+    over.set_len(1 + purlis_session_protocol::session::MOST_PROFILE_SETTINGS_BYTES as u64)
+        .unwrap();
+    assert!(in_batches(&kept).unwrap_err().contains("larger than"));
+}
+
+/// **What a runner has no use for does not go** (#4081): a skill's `node_modules`, `__pycache__`
+/// and `.git` stay behind unsaid, and what a made profile imports on this machine is not changed.
+#[test]
+fn a_skills_build_folders_do_not_go_to_a_runner() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let skill = desktop.folders.config.join("skills/built");
+    for folder in [
+        "node_modules/left",
+        "__pycache__",
+        ".git",
+        "venv/bin",
+        "scripts",
+    ] {
+        fs::create_dir_all(skill.join(folder)).unwrap();
+        fs::write(skill.join(folder).join("a.txt"), "a").unwrap();
+    }
+
+    let sent = in_batches(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap();
+
+    let paths: Vec<_> = sent
+        .batches
+        .iter()
+        .flat_map(|b| &b.pieces)
+        .map(|p| p.path.as_str())
+        .filter(|p| p.starts_with("skills/built"))
+        .collect();
+    assert_eq!(paths, ["skills/built/scripts/a.txt"]);
+    assert!(sent.left_behind.is_empty());
+}
+
+/// More files than a runner holds stay behind too, unread, rather than refusing the chat.
+#[test]
+fn files_past_the_limit_stay_behind_too() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let config = &desktop.folders.config;
+
+    let read =
+        crate::profilestore::made::settings_read("claude", config, 1024, 1, &|_| true).unwrap();
+
+    assert_eq!(read.files.len(), 1);
+    assert!(!read.left_behind.is_empty());
+}
+
+/// **A large skill keeps out as little as it can** (#4081): what stays behind is chosen by size
+/// before anything is read, so one of 20,000 files spends nothing of the limit on itself, and the
+/// harness's own files go first, whatever their size.
+#[test]
+fn a_large_skill_costs_the_ones_after_it_nothing() {
+    let wholes = Measured::from([
+        ("CLAUDE.md".to_owned(), (60, 1)),
+        ("agents/a.md".to_owned(), (10, 1)),
+        ("skills/a-vendored".to_owned(), (40, 20_000)),
+        ("skills/b".to_owned(), (20, 2)),
+        ("skills/c".to_owned(), (20, 2)),
+        ("skills/d-large".to_owned(), (70, 3)),
+    ]);
+
+    let (going, behind) = wholes_that_fit(wholes, 110, 8192);
+
+    let going: Vec<_> = going.iter().map(String::as_str).collect();
+    assert_eq!(going, ["CLAUDE.md", "agents/a.md", "skills/b", "skills/c"]);
+    assert_eq!(
+        behind,
+        BTreeMap::from([
+            ("skills/a-vendored".to_owned(), 40),
+            ("skills/d-large".to_owned(), 70),
+        ])
+    );
+}
+
+/// A skill goes or stays whole; an agent is a whole of its own.
+#[test]
+fn a_skill_goes_or_stays_whole() {
+    assert_eq!(whole_of("skills/a/deep/SKILL.md"), "skills/a");
+    assert_eq!(whole_of("agents/review.md"), "agents/review.md");
+    assert_eq!(whole_of("CLAUDE.md"), "CLAUDE.md");
+}
+
 /// **A runner keeps no settings file it would not import**: one named like a credential, a
 /// hidden one, one the list does not name, and one outside the settings folder are each refused,
 /// and nothing of what was sent is written.
@@ -970,4 +1454,776 @@ fn settings_a_runner_refuses_leave_its_record_as_it_was() {
         .find(|p| p.name == "work")
         .unwrap();
     assert_eq!(record.pinned, None, "the refused keep changed nothing");
+}
+
+/// A runner that answers every status with 0 and has installed `pinned` for each profile it
+/// keeps with a pin: the program each status was asked of.
+struct Installed {
+    pinned: PathBuf,
+    programs: std::cell::RefCell<Vec<String>>,
+}
+
+impl Look for Installed {
+    fn status(&self, program: &str, _: &[&str], _: &[(String, String)]) -> Option<i32> {
+        self.programs.borrow_mut().push(program.to_owned());
+        Some(0)
+    }
+    fn is_there(&self, _: &Path) -> bool {
+        false
+    }
+    fn pinned_program(&self, record: &MachineProfile) -> Option<PathBuf> {
+        (record.kept_for.is_some() && record.pinned.is_some()).then(|| self.pinned.clone())
+    }
+}
+
+/// **What a runner answers its desktop's keep is asked of the pinned version it installs**
+/// (#4007): a runner image carries no harness on `PATH`, so a profile's row says whether it is
+/// signed in there once its version is installed, not that its harness cannot say.
+#[test]
+fn a_kept_pinned_profiles_standing_is_asked_of_the_version_the_runner_installs() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut desktop = a_signed_in_desktop_profile(dir.path());
+    desktop.pinned = Some(crate::profilestore::pin::Pinned {
+        version: "2.1.300".to_owned(),
+        at: 3,
+    });
+    let runner = homes(dir.path(), "runner");
+    let installed = dir
+        .path()
+        .join("runner-data/harnesses/claude/2.1.300/claude");
+    let look = Installed {
+        pinned: installed.clone(),
+        programs: std::cell::RefCell::new(Vec::new()),
+    };
+
+    let said = kept_for_the_desktop(
+        &runner,
+        &runner_home(dir.path()),
+        DESKTOP,
+        &Kept::of(&desktop).unwrap().into(),
+        &look,
+        7,
+    )
+    .expect("kept");
+
+    assert_eq!(
+        said,
+        purlis_session_protocol::session::ProfileStanding::SignedIn
+    );
+    assert_eq!(*look.programs.borrow(), [installed.display().to_string()]);
+}
+
+/// **A profile the desktop takes off a pool leaves its runner, sign-in included** (#4047): the
+/// runner's record goes, and the folder it made for it, the harness's sign-in in it, is deleted.
+#[test]
+fn a_made_profile_forgotten_leaves_the_runner_with_its_sign_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let home = runner_home(dir.path());
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    let kept = keep(&runner, &home, &Kept::of(&desktop).unwrap(), DESKTOP, 7).unwrap();
+    fs::write(
+        kept.folders.config.join(".credentials.json"),
+        "{\"claudeAiOauth\":\"the runner's own sign-in\"}",
+    )
+    .unwrap();
+
+    forget(&runner, &home, "work", DESKTOP).expect("forgotten");
+
+    assert!(list(runner.config_root()).unwrap().is_empty());
+    assert!(!runner.folder_of("work").exists(), "its folder is gone");
+}
+
+/// **The desktop's adopted folder, kept as the runner's default folder, leaves it too**
+/// (#4047): the harness's own folder in the runner's home, where it keeps its sign-in there, is
+/// deleted with the record, and nothing else of the runner's home is.
+#[test]
+fn the_adopted_folder_forgotten_takes_the_harness_folder_on_the_runner_with_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let home = runner_home(dir.path());
+    let adopted = the_desktops_adopted_folder(dir.path());
+    keep(&runner, &home, &Kept::of(&adopted).unwrap(), DESKTOP, 7).unwrap();
+    fs::create_dir_all(home.join(".claude")).unwrap();
+    fs::write(home.join(".claude/.credentials.json"), "{}").unwrap();
+    fs::create_dir_all(home.join(".codex")).unwrap();
+
+    forget(&runner, &home, "claude", DESKTOP).expect("forgotten");
+
+    assert!(list(runner.config_root()).unwrap().is_empty());
+    assert!(!home.join(".claude").exists(), "its sign-in went with it");
+    assert!(
+        home.join(".codex").is_dir(),
+        "another harness's folder stays"
+    );
+}
+
+/// opencode keeps its files in a folder of its own name under the XDG folders: only those go,
+/// never the XDG folders themselves.
+#[test]
+fn an_adopted_opencode_folder_forgotten_takes_only_its_own_folders() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let home = runner_home(dir.path());
+    let adopted = MachineProfile {
+        name: "opencode".to_owned(),
+        harness: "opencode".to_owned(),
+        folders: Folders {
+            config: dir.path().join("desktop-home/.config"),
+            data: Some(dir.path().join("desktop-home/.local/share")),
+        },
+        pinned: None,
+        ..the_desktops_adopted_folder(dir.path())
+    };
+    keep(&runner, &home, &Kept::of(&adopted).unwrap(), DESKTOP, 7).unwrap();
+    for folder in [".config/opencode", ".local/share/opencode", ".config/git"] {
+        fs::create_dir_all(home.join(folder)).unwrap();
+    }
+
+    forget(&runner, &home, "opencode", DESKTOP).expect("forgotten");
+
+    assert!(!home.join(".config/opencode").exists());
+    assert!(!home.join(".local/share/opencode").exists());
+    assert!(
+        home.join(".config/git").is_dir(),
+        "the XDG folder itself stays"
+    );
+}
+
+/// A runner's own profile, or one kept for another desktop, is never forgotten for this one: it
+/// stays as it is, and since nothing of this desktop's has that name, the desktop is told it is
+/// forgotten, so its pool's record can still leave it out (#4060).
+#[test]
+fn a_profile_not_kept_for_this_desktop_stays_and_nothing_of_the_desktops_is_left() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let home = runner_home(dir.path());
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    keep(
+        &runner,
+        &home,
+        &Kept::of(&desktop).unwrap(),
+        "01JA0OTHER00000000000000000",
+        7,
+    )
+    .unwrap();
+
+    assert_eq!(forget(&runner, &home, "work", DESKTOP), Ok(()));
+
+    assert_eq!(list(runner.config_root()).unwrap().len(), 1);
+    assert!(runner.folder_of("work").is_dir());
+}
+
+/// **A runner names the profiles it keeps for a desktop, and no others** (#4060): not one it
+/// keeps for another desktop, nor one of its own.
+#[test]
+fn a_runner_names_the_profiles_it_keeps_for_the_desktop_and_no_others() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let home = runner_home(dir.path());
+    let work = a_signed_in_desktop_profile(dir.path());
+    keep(&runner, &home, &Kept::of(&work).unwrap(), DESKTOP, 7).unwrap();
+    let adopted = the_desktops_adopted_folder(dir.path());
+    keep(&runner, &home, &Kept::of(&adopted).unwrap(), DESKTOP, 7).unwrap();
+    let theirs = Kept {
+        name: "theirs".to_owned(),
+        ..Kept::of(&work).unwrap()
+    };
+    keep(&runner, &home, &theirs, "01JA0OTHER00000000000000000", 7).unwrap();
+
+    let mut named = kept_for(&runner, DESKTOP).unwrap();
+    named.sort();
+
+    assert_eq!(named, vec!["claude".to_owned(), "work".to_owned()]);
+    assert!(
+        kept_for(&runner, "01JA0NOBODY0000000000000000")
+            .unwrap()
+            .is_empty()
+    );
+}
+
+/// Forgetting a profile the runner does not keep is nothing: the removal can be asked again.
+#[test]
+fn forgetting_a_profile_the_runner_does_not_keep_is_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+
+    assert_eq!(
+        forget(&runner, &runner_home(dir.path()), "work", DESKTOP),
+        Ok(())
+    );
+}
+
+/// A runner fetching the version each profile it keeps with a pin is pinned to: none is
+/// installed yet, and no harness on `PATH` answers.
+struct StillFetching;
+
+impl Look for StillFetching {
+    fn status(&self, _: &str, _: &[&str], _: &[(String, String)]) -> Option<i32> {
+        None
+    }
+    fn is_there(&self, _: &Path) -> bool {
+        false
+    }
+    fn fetching(&self, record: &MachineProfile) -> bool {
+        record.kept_for.is_some() && record.pinned.is_some()
+    }
+}
+
+/// **A runner fetching a profile's harness says so** (#4008): its desktop's keep answers
+/// `fetching`, not that the harness cannot tell, so the profile's row says the harness is being
+/// fetched and asks again once it is.
+#[test]
+fn a_kept_profile_whose_harness_is_being_fetched_is_said_to_be_fetching() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut desktop = a_signed_in_desktop_profile(dir.path());
+    desktop.pinned = Some(crate::profilestore::pin::Pinned {
+        version: "2.1.300".to_owned(),
+        at: 3,
+    });
+    let runner = homes(dir.path(), "runner");
+
+    let said = kept_for_the_desktop(
+        &runner,
+        &runner_home(dir.path()),
+        DESKTOP,
+        &Kept::of(&desktop).unwrap().into(),
+        &StillFetching,
+        7,
+    )
+    .expect("kept");
+
+    assert_eq!(
+        said,
+        purlis_session_protocol::session::ProfileStanding::Fetching
+    );
+    assert_eq!(standing_on_the_wire(said), Standing::Fetching);
+}
+
+/// **A runner takes in the sign-in carried to it as its pool's old runner drained** (#4011):
+/// keeping the desktop's profile moves the sign-in file that runner carried into the profile's
+/// new folder, and nothing else that was carried; what was carried for it is then gone.
+#[test]
+fn a_runner_keeping_a_profile_takes_in_the_sign_in_carried_to_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let carried = dir
+        .path()
+        .join("runner/data")
+        .join(crate::profilestore::CARRIED)
+        .join("Xb4tch01")
+        .join("work");
+    fs::create_dir_all(carried.join("config")).unwrap();
+    fs::write(
+        carried.join("config/.credentials.json"),
+        "the old runner's sign-in",
+    )
+    .unwrap();
+    fs::write(carried.join("config/settings.json"), "hooks").unwrap();
+
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&desktop).expect("it goes"),
+        DESKTOP,
+        7,
+    )
+    .expect("kept");
+
+    assert_eq!(
+        fs::read_to_string(kept.folders.config.join(".credentials.json")).unwrap(),
+        "the old runner's sign-in"
+    );
+    assert!(!kept.folders.config.join("settings.json").exists());
+    assert!(!carried.exists());
+}
+
+/// **A runner already keeping a profile takes in the sign-in carried to it later** (#4055): its
+/// pool's old runner carries its sign-ins only once its last chat has ended, after the profile
+/// was kept here for a chat, so the next keep takes the carried sign-in in. One the profile
+/// signed in here on its own stays, and the carried one goes.
+#[test]
+fn a_runner_keeping_a_profile_again_takes_in_a_sign_in_carried_since() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let sent = Kept::of(&desktop).expect("it goes");
+    let kept = keep(&runner, &runner_home(dir.path()), &sent, DESKTOP, 7).expect("kept");
+    assert!(!kept.folders.config.join(".credentials.json").exists());
+    let carry = |text: &str| {
+        let carried = dir
+            .path()
+            .join("runner/data")
+            .join(crate::profilestore::CARRIED)
+            .join("Xb4tch01")
+            .join("work");
+        fs::create_dir_all(carried.join("config")).unwrap();
+        fs::write(carried.join("config/.credentials.json"), text).unwrap();
+        carried
+    };
+
+    let carried = carry("the old runner's sign-in");
+    let again = keep(&runner, &runner_home(dir.path()), &sent, DESKTOP, 8).expect("kept");
+    assert_eq!(
+        fs::read_to_string(again.folders.config.join(".credentials.json")).unwrap(),
+        "the old runner's sign-in"
+    );
+    assert!(!carried.exists());
+
+    fs::write(
+        again.folders.config.join(".credentials.json"),
+        "signed in here",
+    )
+    .unwrap();
+    let carried = carry("an older runner's sign-in");
+    keep(&runner, &runner_home(dir.path()), &sent, DESKTOP, 9).expect("kept");
+    assert_eq!(
+        fs::read_to_string(again.folders.config.join(".credentials.json")).unwrap(),
+        "signed in here"
+    );
+    assert!(!carried.exists());
+}
+
+/// **The desktop's adopted folder takes in the sign-in carried to it too** (#4055): kept as
+/// Claude Code's default folder in the runner's home, it takes the default folder's sign-in a
+/// drained runner carried under the harness's name; one of another harness's is left out.
+#[test]
+fn the_desktops_adopted_folder_takes_in_the_sign_in_carried_to_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let adopted = the_desktops_adopted_folder(dir.path());
+    let carried = dir
+        .path()
+        .join("runner/data")
+        .join(crate::profilestore::CARRIED)
+        .join("Xb4tch01")
+        .join("claude");
+    fs::create_dir_all(carried.join("config")).unwrap();
+    fs::write(carried.join("config/.credentials.json"), "the old runner's").unwrap();
+    fs::write(carried.join("config/auth.json"), "another harness's").unwrap();
+
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&adopted).expect("it goes"),
+        DESKTOP,
+        7,
+    )
+    .expect("kept");
+
+    assert_eq!(kept.folders.config, runner_home(dir.path()).join(".claude"));
+    assert_eq!(
+        fs::read_to_string(kept.folders.config.join(".credentials.json")).unwrap(),
+        "the old runner's"
+    );
+    assert!(!kept.folders.config.join("auth.json").exists());
+    assert!(!carried.exists());
+}
+
+/// [`held_for_the_desktop`], every page of it.
+fn held_on(runner: &Homes, name: &str) -> Vec<wire::HeldSetting> {
+    let (held, more) = held_for_the_desktop(runner, DESKTOP, name, None).unwrap();
+    assert!(!more);
+    held
+}
+
+/// A desktop's profile, kept once on a runner as a first chat's start keeps it: the kept record
+/// and what the desktop sends now.
+fn kept_once(dir: &Path) -> (MachineProfile, Kept, Homes, MachineProfile) {
+    let desktop = a_desktop_profile_with_settings(dir);
+    let kept = Kept::of(&desktop).unwrap().with_settings_of(&desktop);
+    let runner = homes(dir, "runner");
+    let record = kept_staged(&runner, dir, in_batches(&kept).unwrap()).expect("it is kept");
+    (desktop, kept, runner, record)
+}
+
+/// How many bytes of settings `sent` carries.
+fn bytes_of(sent: &ToKeep) -> usize {
+    sent.batches
+        .iter()
+        .flat_map(|batch| &batch.pieces)
+        .map(|piece| piece.bytes.len())
+        .sum()
+}
+
+/// **A second chat on an unchanged profile sends no settings bytes** (#4088), and the settings
+/// are still all there, new files with no other name, as any keep leaves them.
+#[test]
+fn a_second_start_on_an_unchanged_profile_sends_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+
+    let sent = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+
+    assert_eq!(bytes_of(&sent), 0);
+    assert!(sent.batches.is_empty());
+    assert_eq!(sent.profile.settings_staged, Some(0));
+    assert!(
+        sent.profile
+            .settings_changed
+            .as_ref()
+            .unwrap()
+            .removed
+            .is_empty()
+    );
+    kept_staged(&runner, dir.path(), sent).expect("it is kept");
+    assert_eq!(
+        fs::read(record.folders.config.join("CLAUDE.md")).unwrap(),
+        b"Be brief."
+    );
+}
+
+/// **A file of the same size is no same file** (#4088): the person's own edit reaches the runner,
+/// and one made on the runner is put right, whatever else there still matches.
+#[test]
+fn an_edit_that_keeps_a_files_size_is_kept_either_way() {
+    let dir = tempfile::tempdir().unwrap();
+    let (desktop, kept, runner, record) = kept_once(dir.path());
+    let there = record.folders.config.join("CLAUDE.md");
+
+    fs::write(desktop.folders.config.join("CLAUDE.md"), b"Be BRIEF.").unwrap();
+    let sent = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+    assert!(sent.profile.settings_changed.is_some());
+    kept_staged(&runner, dir.path(), sent).expect("it is kept");
+    assert_eq!(fs::read(&there).unwrap(), b"Be BRIEF.");
+
+    fs::write(&there, b"Run evil.").unwrap();
+    let sent = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+    assert!(sent.profile.settings_changed.is_some());
+    kept_staged(&runner, dir.path(), sent).expect("it is kept");
+    assert_eq!(fs::read(&there).unwrap(), b"Be BRIEF.");
+}
+
+/// **A setting that the check removes does not stay on the disk** (#4088): a settings file written
+/// on the runner with a block in it comes to the desktop's digest once it is removed, whether the
+/// list was taken before or after, and what is kept is the checked file.
+#[test]
+fn a_block_planted_in_a_settings_file_does_not_stay_on_the_disk() {
+    let dir = tempfile::tempdir().unwrap();
+    let (desktop, kept, runner, record) = kept_once(dir.path());
+    fs::write(
+        desktop.folders.config.join("settings.json"),
+        br#"{"model":"one"}"#,
+    )
+    .unwrap();
+    let again = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+    kept_staged(&runner, dir.path(), again).unwrap();
+    let there = record.folders.config.join("settings.json");
+    let clean = fs::read(&there).unwrap();
+    let before_the_plant = held_on(&runner, &kept.name);
+    let planted = br#"{"env":{"BASE":"https://e.example"},"model":"one"}"#;
+
+    fs::write(&there, planted).unwrap();
+    let sent = in_batches_beside(&kept, &before_the_plant).unwrap();
+    assert_eq!(bytes_of(&sent), 0);
+    kept_staged(&runner, dir.path(), sent).expect("it comes to the desktop's digest");
+    assert_eq!(fs::read(&there).unwrap(), clean);
+
+    fs::write(&there, planted).unwrap();
+    let sent = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+    kept_staged(&runner, dir.path(), sent).expect("it is kept");
+    assert_eq!(fs::read(&there).unwrap(), clean);
+}
+
+/// **A link above the settings refuses a keep of what changed too** (#4088), as it refuses any
+/// other, with nothing kept through it.
+#[test]
+fn a_link_above_the_settings_refuses_a_keep_of_what_changed() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let profile = record.folders.config.parent().unwrap().to_path_buf();
+    let moved = dir.path().join("moved");
+    let held = held_on(&runner, &kept.name);
+    fs::rename(&profile, &moved).unwrap();
+    std::os::unix::fs::symlink(&moved, &profile).unwrap();
+
+    let sent = in_batches_beside(&kept, &held).unwrap();
+    let refused = kept_staged(&runner, dir.path(), sent).unwrap_err();
+    assert!(!refused.is_empty());
+}
+
+/// **A changed file is sent, a new one too, and a removed one goes from the runner** (#4088).
+#[test]
+fn only_what_changed_is_sent_and_a_removed_file_goes() {
+    let dir = tempfile::tempdir().unwrap();
+    let (desktop, kept, runner, record) = kept_once(dir.path());
+    let config = &desktop.folders.config;
+    fs::create_dir_all(config.join("skills/old")).unwrap();
+    fs::write(config.join("skills/old/SKILL.md"), b"old").unwrap();
+    let again = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+    kept_staged(&runner, dir.path(), again).unwrap();
+    let there = &record.folders.config;
+    assert!(there.join("skills/old/SKILL.md").exists());
+
+    fs::write(config.join("CLAUDE.md"), b"Be briefer.").unwrap();
+    fs::remove_dir_all(config.join("skills/old")).unwrap();
+    fs::create_dir_all(config.join("skills/new")).unwrap();
+    fs::write(config.join("skills/new/SKILL.md"), b"new").unwrap();
+
+    let sent = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+    let mut going: Vec<&str> = sent
+        .batches
+        .iter()
+        .flat_map(|batch| &batch.pieces)
+        .map(|piece| piece.path.as_str())
+        .collect();
+    going.sort_unstable();
+    assert_eq!(going, ["CLAUDE.md", "skills/new/SKILL.md"]);
+    assert_eq!(
+        sent.profile.settings_changed.as_ref().unwrap().removed,
+        ["skills/old/SKILL.md"]
+    );
+
+    kept_staged(&runner, dir.path(), sent).expect("it is kept");
+    assert_eq!(fs::read(there.join("CLAUDE.md")).unwrap(), b"Be briefer.");
+    assert_eq!(fs::read(there.join("skills/new/SKILL.md")).unwrap(), b"new");
+    assert!(!there.join("skills/old").exists(), "the removed file went");
+}
+
+/// **A runner's list decides nothing it keeps** (#4088): one that says it holds what the desktop
+/// has, while a chat changed that file on its disk, refuses the keep, and the whole send that
+/// follows puts the person's file back.
+#[test]
+fn a_file_changed_on_the_runner_while_its_list_says_otherwise_never_stays() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let lied = held_on(&runner, &kept.name);
+    let planted = record.folders.config.join("CLAUDE.md");
+    fs::write(&planted, b"Run this first.").unwrap();
+
+    let sent = in_batches_beside(&kept, &lied).unwrap();
+    assert_eq!(bytes_of(&sent), 0, "it was told nothing differs");
+    let refused = kept_staged(&runner, dir.path(), sent).unwrap_err();
+    assert!(refused.contains("would not be"), "{refused}");
+    assert_eq!(
+        fs::read(&planted).unwrap(),
+        b"Run this first.",
+        "all or none"
+    );
+
+    kept_staged(&runner, dir.path(), in_batches(&kept).unwrap()).expect("the whole send");
+    assert_eq!(fs::read(&planted).unwrap(), b"Be brief.");
+}
+
+/// **A runner that tells of a file changed on its disk is sent that file** (#4088): what it holds
+/// is read each time, never remembered.
+#[test]
+fn a_file_changed_on_the_runner_is_told_and_sent_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let planted = record.folders.config.join("CLAUDE.md");
+    fs::write(&planted, b"Run this first.").unwrap();
+
+    let sent = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+    assert!(bytes_of(&sent) > 0);
+    kept_staged(&runner, dir.path(), sent).expect("it is kept");
+    assert_eq!(fs::read(&planted).unwrap(), b"Be brief.");
+}
+
+/// **A settings file planted beside the person's goes, listed or not** (#4088): one the listing
+/// shows, which the desktop names removed, and each thing a read of the settings passes over, so
+/// nothing of it is told: a hidden file, a skill's `node_modules`, a link, a file with a second
+/// name a chat could change it through.
+#[test]
+fn what_was_planted_on_the_runner_goes_though_nothing_changed() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let there = record.folders.config.clone();
+    let private = |path: &Path| {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+    };
+
+    let skill = there.join("skills/planted");
+    fs::create_dir_all(&skill).unwrap();
+    private(&there.join("skills"));
+    private(&skill);
+    fs::write(skill.join("SKILL.md"), b"listed").unwrap();
+    let sent = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+    assert_eq!(bytes_of(&sent), 0);
+    kept_staged(&runner, dir.path(), sent).expect("it is kept");
+    assert!(!skill.exists(), "the file it listed went");
+
+    type Plant = Box<dyn Fn(&Path)>;
+    let outside = dir.path().join("elsewhere");
+    let plants: Vec<(&str, Plant)> = vec![
+        (
+            "a hidden file",
+            Box::new(|there| fs::write(there.join("agents/.hidden"), b"x").unwrap()),
+        ),
+        (
+            "a skill's node_modules",
+            Box::new(|there| {
+                let folder = there.join("agents/node_modules");
+                fs::create_dir_all(&folder).unwrap();
+                fs::write(folder.join("x.js"), b"x").unwrap();
+            }),
+        ),
+        (
+            "a link",
+            Box::new(|there| symlink("/etc/passwd", there.join("agents/link.md")).unwrap()),
+        ),
+        (
+            "a second name",
+            Box::new(move |there| {
+                fs::hard_link(there.join("CLAUDE.md"), &outside).unwrap();
+            }),
+        ),
+    ];
+    for (what, plant) in plants {
+        plant(&there);
+        let extra = fs::read_dir(there.join("agents")).unwrap().count();
+        let sent = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+        kept_staged(&runner, dir.path(), sent).unwrap_or_else(|why| panic!("{what}: {why}"));
+        assert!(
+            fs::read_dir(there.join("agents")).unwrap().count() <= extra,
+            "{what}"
+        );
+        assert!(!there.join("agents/.hidden").exists(), "{what}");
+        assert!(!there.join("agents/node_modules").exists(), "{what}");
+        assert!(!there.join("agents/link.md").exists(), "{what}");
+    }
+    use std::os::unix::fs::MetadataExt;
+    assert_eq!(fs::metadata(there.join("CLAUDE.md")).unwrap().nlink(), 1);
+}
+
+/// **The whole result is checked as any keep's** (#4088): a sign-in in a settings file sent as a
+/// change is taken out, and a path no import would write refuses the keep.
+#[test]
+fn what_a_runner_checks_before_it_keeps_a_change_is_what_it_always_checked() {
+    let dir = tempfile::tempdir().unwrap();
+    let (desktop, kept, runner, record) = kept_once(dir.path());
+    fs::write(
+        desktop.folders.config.join("settings.json"),
+        br#"{"env":{"TOKEN":"sk-kept"},"model":"one"}"#,
+    )
+    .unwrap();
+    let sent = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+    kept_staged(&runner, dir.path(), sent).expect("it is kept");
+    let settings = fs::read_to_string(record.folders.config.join("settings.json")).unwrap();
+    assert!(
+        settings.contains("one") && !settings.contains("sk-kept"),
+        "{settings}"
+    );
+
+    let mut sent = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+    sent.batches.push(wire::SettingsBatch {
+        profile: kept.name.clone(),
+        pieces: vec![wire::SettingsPiece {
+            path: ".credentials.json".to_owned(),
+            continues: false,
+            bytes: b"{}".to_vec(),
+        }],
+    });
+    sent.profile.settings_staged = sent.profile.settings_staged.map(|files| files + 1);
+    let refused = kept_staged(&runner, dir.path(), sent).unwrap_err();
+    assert!(refused.contains("not a settings file"), "{refused}");
+    assert!(!record.folders.config.join(".credentials.json").exists());
+}
+
+/// **What a harness's own settings file comes to is the same read twice** (#4088), so a profile
+/// with one in it, of any harness, is not sent again at every start.
+#[test]
+fn a_settings_file_without_credentials_stays_as_it_is_when_read_again() {
+    use crate::profilestore::sent::without_credentials as without;
+    for (kind, path, text) in [
+        (
+            "claude",
+            "settings.json",
+            r#"{"env":{"A":"1"},"b":[1,{"c":2}]}"#,
+        ),
+        ("opencode", "opencode.jsonc", "{\n// note\n\"a\":1,}"),
+        (
+            "codex",
+            "config.toml",
+            "# note\nz=1\n[t]\nenv={A='1'}\nb=2\n",
+        ),
+    ] {
+        let once = without(kind, path, text.as_bytes()).unwrap();
+        assert_eq!(without(kind, path, &once).unwrap(), once, "{kind}");
+    }
+}
+
+/// **A list that could not be a runner's, or shares nothing, has them all sent** (#4088): nothing
+/// of it comes back in the keep.
+#[test]
+fn a_list_no_runner_could_hold_has_all_the_settings_sent() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, _) = kept_once(dir.path());
+    let whole = bytes_of(&in_batches(&kept).unwrap());
+    let good = held_on(&runner, &kept.name);
+    let with = |path: &str, digest: &str| {
+        let mut held = good.clone();
+        held.push(wire::HeldSetting {
+            path: path.to_owned(),
+            digest: digest.to_owned(),
+        });
+        held
+    };
+    let digest = wire::settings_digest(b"x");
+    for held in [
+        Vec::new(),
+        with("../outside", &digest),
+        with(".credentials.json", &digest),
+        with("skills/a/SKILL.md", "not a digest"),
+        with(&good[0].path, &digest),
+        vec![wire::HeldSetting {
+            path: "skills/a/SKILL.md".to_owned(),
+            digest: digest.clone(),
+        }],
+    ] {
+        let sent = in_batches_beside(&kept, &held).unwrap();
+        assert_eq!(bytes_of(&sent), whole, "{held:?}");
+        assert_eq!(sent.profile.settings_changed, None, "{held:?}");
+    }
+}
+
+/// **A runner tells nothing of a profile it does not keep for this desktop** (#4088): not one kept
+/// for another, and not a keep of what changed either, which sends them all.
+#[test]
+fn another_desktops_settings_are_neither_told_nor_changed() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let (held, more) = held_for_the_desktop(&runner, "another", &kept.name, None).unwrap();
+    assert!(held.is_empty() && !more);
+
+    let sent = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+    let mut staged = wire::StagedSettings::default();
+    for batch in sent.batches {
+        staged.add(batch).unwrap();
+    }
+    let mut profile = sent.profile;
+    let files = profile.settings_staged.take().unwrap();
+    profile.settings = Some(staged.finished(&profile.name, files).unwrap());
+    let refused = kept_for_the_desktop(
+        &runner,
+        &runner_home(dir.path()),
+        "another",
+        &profile,
+        &Answers(Some(0)),
+        7,
+    )
+    .unwrap_err();
+    assert!(refused.contains("not what"), "{refused}");
+    assert!(record.folders.config.join("CLAUDE.md").exists());
+}
+
+/// **A keep of what changed says what was staged for it** (#4088): one that does not keeps nothing.
+#[test]
+fn a_keep_of_what_changed_with_no_staged_settings_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, _) = kept_once(dir.path());
+    let mut sent = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+    sent.profile.settings_staged = None;
+    let refused = kept_for_the_desktop(
+        &runner,
+        &runner_home(dir.path()),
+        DESKTOP,
+        &sent.profile,
+        &Answers(Some(0)),
+        7,
+    )
+    .unwrap_err();
+    assert!(refused.contains("named no settings"), "{refused}");
 }

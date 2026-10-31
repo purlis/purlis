@@ -1,0 +1,22 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+{{/*
+Where the operator's metrics are scraped (#3737): its port `metrics`, at /metrics, in
+Prometheus's text format. Inside the cluster only.
+*/ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: purlis-cluster-operator-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: purlis-cluster-operator
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+      protocol: TCP

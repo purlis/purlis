@@ -28,18 +28,26 @@
 //! it started, signed with the operator's own key into a statement on the Claim's status, which
 //! the desktop checks against its own pairing over `kubectl exec`.
 //!
+//! **It serves its metrics** ([`metrics`], #3737) on its own port: its Claims, its warm runners,
+//! the runners it suspended and the Claims it saw deleted.
+//!
 //! **What it may do** is `deploy/operator.yaml`'s ClusterRole and nothing else: read Pools and
 //! Claims, write a Pool's and a Claim's status and a Claim's finalizer, read the policies'
 //! bindings, read, create, patch and delete the three upstream objects, read a runner's pod by
 //! name, and make each person's runner namespace, its role binding and its quota. It holds no
 //! `exec` or `attach` right to a pod itself and none to read a Secret: its signing keys are mounted
-//! in its pod by the kubelet, and read again as a team admin rolls them (#3305). It binds one role, `purlis-runner-owner`, only to one person, only
+//! in its pod by the kubelet, and read again as a team admin rolls them (#3305). Beside that
+//! ClusterRole, where the chart's values name a GitHub App key, the Role
+//! `purlis-forge-key-reader` lets it `get` those Secrets alone, in its own namespace ([`forge`],
+//! #4204). It binds one role, `purlis-runner-owner`, only to one person, only
 //! in runner namespaces, as the policy on runner namespaces holds at admission
 //! ([`RUNNER_NAMESPACES_POLICY`]). This crate's Kubernetes client is built without the websocket feature `exec`
 //! and `attach` would need.
 
 mod admission;
 pub mod doctor;
+pub mod forge;
+pub mod metrics;
 pub mod person;
 mod reconcile;
 mod resources;
@@ -54,9 +62,11 @@ pub use reconcile::{
     CLUSTER_NAMESPACE, FIELD_MANAGER, LinkKeyIs, OVER_QUOTA_AGAIN, UNCOUNTED_FOR,
     claims_of_upstream, claims_woken_by, cluster_of, pool_objects_go_with, pool_status_patch,
     retry_after_conflict, run, settled, status_of, status_of_a_deleted_pool,
-    status_of_a_missing_pool, status_of_an_object_in_the_way, status_patch, status_withdrawn,
+    status_of_a_missing_pool, status_of_a_stopped_claim,
+    status_of_a_suspended_runner_of_a_deleted_pool, status_of_an_object_in_the_way, status_patch,
+    status_withdrawn, suspending_again, warm_wanted,
 };
 pub use resources::{
-    Claim, ClaimSpec, ClaimStatus, KeptVolume, LinkKey, NextSigningKeyVouch, Pool, PoolSpec,
-    PoolStatus,
+    Claim, ClaimForge, ClaimSpec, ClaimStatus, KeptVolume, LinkKey, NextSigningKeyVouch, Pool,
+    PoolForge, PoolSpec, PoolStatus, SecretRef,
 };

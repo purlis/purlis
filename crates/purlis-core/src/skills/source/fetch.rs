@@ -503,6 +503,29 @@ impl super::SkillSource for Fetched {
             tree::left_in(&self.left, &skill.dir),
         ))
     }
+
+    fn fits_one_read(&self, skill: &Found) -> Result<(), String> {
+        let size: u64 = tree::files_of(&self.entries, &skill.dir)
+            .iter()
+            .map(|(_, entry)| entry.size)
+            .sum();
+        if self.read.get().saturating_add(size) > MOST_READ_BYTES {
+            return Err(self.too_much());
+        }
+        Ok(())
+    }
+}
+
+impl Fetched {
+    /// What a read past [`MOST_READ_BYTES`] says.
+    pub(super) fn too_much(&self) -> String {
+        format!(
+            "{} holds more than {} MiB of skills to read, the most purlis reads of one skill \
+             source at once",
+            self.source,
+            MOST_READ_BYTES >> 20
+        )
+    }
 }
 
 impl Fetched {
@@ -514,12 +537,7 @@ impl Fetched {
         }
         let read = self.read.get().saturating_add(sizes);
         if read > MOST_READ_BYTES {
-            return Err(format!(
-                "{} holds more than {} MiB of skills to read, the most purlis reads of one skill \
-                 source at once",
-                self.source,
-                MOST_READ_BYTES >> 20
-            ));
+            return Err(self.too_much());
         }
         self.read.set(read);
         let input: Vec<u8> = oids

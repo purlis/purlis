@@ -20,7 +20,7 @@ const TRIGGERS: &str = r#"[
 ]"#;
 
 /// A plane whose project skill `deploy` has two trigger tests and one outcome eval, committed.
-fn plane() -> tempfile::TempDir {
+pub(in crate::skills::grades) fn plane() -> tempfile::TempDir {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     std::fs::write(
@@ -269,6 +269,7 @@ fn the_estimate_is_the_last_grades_spend_per_chat_times_the_chats() {
                 chats: 3,
                 tokens: Some(30_000),
                 cost_usd: Some(0.3),
+                asked_for: None,
             },
         ),
         "laptop",
@@ -343,6 +344,38 @@ fn a_query_no_chat_can_be_started_on_is_left_out_with_why() {
     let request = planned.request.unwrap();
     assert_eq!(request.triggers.len(), 1);
     assert_eq!(request.triggers[0].query, "ship it");
+}
+
+/// #3928: what a skill's Grades tab asks, whether there is anything to grade, is answered without
+/// a plan: the tests a grade would run (one no chat can start on is not one), or why the file
+/// was not read.
+#[test]
+fn a_copys_trigger_tests_are_counted_as_a_grade_would_run_them() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("skills/deploy")).unwrap();
+    std::fs::write(root.join("skills/deploy/SKILL.md"), SKILL).unwrap();
+    let count = || trigger_tests(root, &Level::project(), "deploy").unwrap();
+    assert_eq!(
+        count(),
+        TriggerTests {
+            runs: 0,
+            refused: None
+        },
+        "no file: none, and nothing refused"
+    );
+    std::fs::create_dir_all(root.join("skills/deploy/evals")).unwrap();
+    std::fs::write(
+        root.join("skills/deploy/evals/triggers.json"),
+        r#"[{"query": "--help", "should_trigger": false}, {"query": "ship it", "should_trigger": true}]"#,
+    )
+    .unwrap();
+    assert_eq!(count().runs, 1, "the query no chat starts on is left out");
+    std::fs::write(root.join("skills/deploy/evals/triggers.json"), "[").unwrap();
+    let refused = count();
+    assert_eq!(refused.runs, 0);
+    assert!(refused.refused.is_some(), "{refused:?}");
+    assert!(trigger_tests(root, &Level::project(), "nowhere").is_err());
 }
 
 #[test]
@@ -435,7 +468,7 @@ fn a_local_copys_grade_stays_on_this_machine_and_is_read_back() {
     row.level = local.rel();
     let written = record(root, &local, &row, "laptop").unwrap();
     assert!(
-        written.starts_with(crate::plane::state_dir(root)),
+        written.starts_with(crate::appstate::dir(root).unwrap()),
         "{}",
         written.display()
     );
@@ -443,6 +476,21 @@ fn a_local_copys_grade_stays_on_this_machine_and_is_read_back() {
     let read = grades_of(root, "deploy", Some(&local));
     assert_eq!(read.len(), 1);
     assert_eq!(read[0].grade, "mine");
+}
+
+#[test]
+fn a_local_grade_in_the_plane_s_state_folder_is_never_read() {
+    // #3718: this machine's grades are read from its app state alone.
+    let plane = plane();
+    let root = plane.path();
+    let local = Level::project().local(true);
+    std::fs::create_dir_all(root.join("skills.local/deploy")).unwrap();
+    std::fs::write(root.join("skills.local/deploy/SKILL.md"), SKILL).unwrap();
+    let mut row = graded(root, "mine", "2026-10-25T10:00:00+00:00", Spent::default());
+    row.level = local.rel();
+    record(root, &local, &row, "laptop").unwrap();
+    crate::appstate::put_in_the_plane(root, LOCAL_DIR);
+    assert!(grades_of(root, "deploy", Some(&local)).is_empty());
 }
 
 #[test]
@@ -541,6 +589,7 @@ fn uncommitted_row() -> Graded {
             chats: 3,
             tokens: Some(1200),
             cost_usd: Some(0.04),
+            asked_for: None,
         },
         plugins_off: None,
         model: None,
@@ -550,7 +599,7 @@ fn uncommitted_row() -> Graded {
 }
 
 /// #3353 (L1): a row read back is checked whole, its spend and its report too: a teammate's
-/// purlis writes them, and the Grades panel and the terminal say them.
+/// purlis writes them, and the Grades tab and the terminal say them.
 #[test]
 fn a_row_whose_spend_or_report_does_not_hold_together_is_skipped() {
     assert!(
@@ -700,6 +749,7 @@ fn a_row(id: &str, ts: &str, profile: &str, tokens: Option<u64>, ran: bool) -> G
         chats: 3,
         tokens,
         cost_usd: None,
+        asked_for: None,
     };
     row.report.spent_tokens = tokens;
     row.report.spent_usd = None;
@@ -902,7 +952,7 @@ fn a_row_skipped_and_a_file_not_read_are_said() {
 }
 
 /// [`plane`], whose `deploy` has a second version committed over the first: `Step two.`.
-fn plane_of_two_versions() -> (tempfile::TempDir, String) {
+pub(in crate::skills::grades) fn plane_of_two_versions() -> (tempfile::TempDir, String) {
     let plane = plane();
     let root = plane.path();
     let first = run(root, &["rev-parse", "HEAD"]).line().to_owned();
@@ -1048,6 +1098,7 @@ fn an_interrupted_row_says_what_its_chats_spent_and_no_more_than_it_could_3582()
         chats: 4,
         tokens: Some(9_000),
         cost_usd: Some(0.09),
+        asked_for: None,
     };
     assert!(
         interrupted(spent).sound(now),
@@ -1066,6 +1117,114 @@ fn an_interrupted_row_says_what_its_chats_spent_and_no_more_than_it_could_3582()
     let mut unlike = interrupted(spent);
     unlike.spent.tokens = Some(9_001);
     assert!(!unlike.sound(now), "a spend its report does not say");
+}
+
+/// #3602: a grade purlis stopped under says how many chats it asked for, ran or not: at least
+/// those that ran, at most what its runs could ask for; a scored row's arms say it instead.
+#[test]
+fn an_interrupted_rows_chats_asked_for_are_held_to_what_it_could_ask_3602() {
+    let now = chrono::Utc::now();
+    let interrupted = |asked_for: Option<u32>| {
+        let spent = Spent {
+            chats: 4,
+            tokens: Some(9_000),
+            cost_usd: None,
+            asked_for,
+        };
+        Graded {
+            report: GradeReport {
+                spent_tokens: spent.tokens,
+                ..underway::interrupted_report(50_000, None, None)
+            },
+            spent,
+            ..uncommitted_row()
+        }
+    };
+    assert!(interrupted(Some(6)).sound(now), "more asked for than ran");
+    assert!(interrupted(Some(4)).sound(now), "as many as ran");
+    assert!(interrupted(None).sound(now), "a row from before #3602");
+    assert!(!interrupted(Some(3)).sound(now), "fewer than ran");
+    let most = u32::from(uncommitted_row().runs)
+        * u32::try_from(purlis_skills::grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE).unwrap();
+    assert!(interrupted(Some(most)).sound(now));
+    assert!(
+        !interrupted(Some(most + 1)).sound(now),
+        "more than its runs could ask for"
+    );
+    let mut scored = uncommitted_row();
+    scored.spent.asked_for = Some(3);
+    assert!(
+        !scored.sound(now),
+        "a scored row's arms say what it asked for"
+    );
+}
+
+/// #3602: the estimate is worked out from a grade purlis stopped under, its spend shared over
+/// the chats its marker said it asked for, and it says that grade was interrupted. A scored
+/// grade on the same profile goes first; one stopped before a turn of each arm, or before its
+/// marker counted its chats, is passed over.
+#[test]
+fn the_estimate_is_worked_out_from_an_interrupted_grades_spend_3602() {
+    let stopped = |asked_for: Option<u32>, chats: u32| {
+        let mut row = a_row(
+            "stopped",
+            "2026-10-27T10:00:00+00:00",
+            "work",
+            Some(4_000),
+            false,
+        );
+        row.spent = Spent {
+            chats,
+            tokens: Some(4_000),
+            cost_usd: Some(0.04),
+            asked_for,
+        };
+        row.report.spent_tokens = Some(4_000);
+        row.report.spent_usd = Some(0.04);
+        assert!(row.sound(chrono::Utc::now()), "{row:?}");
+        row
+    };
+    let scored_on = |profile: &str| {
+        a_row(
+            "scored",
+            "2026-10-25T10:00:00+00:00",
+            profile,
+            Some(30_000),
+            true,
+        )
+    };
+    // Two chats ran, two more were ended at an ask or never started: four spent 4,000 tokens.
+    let four = stopped(Some(4), 2);
+
+    let estimate = estimate_of(&[four.clone(), scored_on("home")], 12, Some("work")).unwrap();
+    assert_eq!(estimate.ts, "2026-10-27T10:00:00+00:00", "on this profile");
+    assert_eq!(estimate.chats_then, 4, "every chat it asked for");
+    assert_eq!(estimate.tokens, Some(12_000), "a thousand a chat, not two");
+    assert!(
+        (estimate.cost_usd.unwrap() - 0.12).abs() < 1e-9,
+        "{estimate:?}"
+    );
+    assert!(estimate.interrupted, "the plan says it was interrupted");
+
+    let estimate = estimate_of(&[four.clone(), scored_on("work")], 12, Some("work")).unwrap();
+    assert_eq!(
+        estimate.ts, "2026-10-25T10:00:00+00:00",
+        "a scored grade on this profile goes first"
+    );
+    assert!(!estimate.interrupted);
+
+    let one_arm = stopped(Some(1), 1);
+    let estimate = estimate_of(&[one_arm], 12, Some("work")).unwrap();
+    assert_eq!(
+        (estimate.chats_then, estimate.tokens, estimate.interrupted),
+        (0, None, false),
+        "one arm's chat alone says nothing of the others"
+    );
+
+    let uncounted = stopped(None, 2);
+    let estimate = estimate_of(&[uncounted, scored_on("home")], 12, Some("work")).unwrap();
+    assert_eq!(estimate.ts, "2026-10-25T10:00:00+00:00", "passed over");
+    assert!(!estimate.interrupted);
 }
 
 /// #3584: the estimate shares what a grade spent over every chat that spent it: a chat ended at
@@ -1087,6 +1246,7 @@ fn the_estimate_shares_the_spend_over_the_chats_that_asked_too_3584() {
         chats: 1,
         tokens: Some(3_000),
         cost_usd: Some(0.03),
+        asked_for: None,
     };
     assert!(row.sound(chrono::Utc::now()), "{row:?}");
     let estimate = estimate_of(&[row], 12, Some("work")).unwrap();
@@ -1149,3 +1309,5 @@ fn a_plans_consent_covers_the_profile_model_and_limits_it_shows() {
     }
     assert_ne!(consent_on("abd", &terms), shown, "and what it grades");
 }
+
+mod follows;

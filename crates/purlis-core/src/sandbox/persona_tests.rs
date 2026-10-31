@@ -667,6 +667,46 @@ fn a_persona_without_tools_keeps_the_digest_an_allow_was_made_with() {
 }
 
 #[test]
+fn a_runner_arms_a_persona_s_tools_on_its_desktops_digest_and_never_its_hosts() {
+    use super::persona::{
+        digest_allowed_here, digest_of, in_force_here, tools_its_desktop_allowed,
+    };
+    let desktop = tempfile::tempdir().expect("a project");
+    let runner = tempfile::tempdir().expect("the same project there");
+    let personas = policy(DEVOPS_TOOLS).personas;
+    let hosts = [Host::parse("10.0.0.5:6443").unwrap()];
+    let digest = digest_of(&hosts, &personas["devops"].tools, false);
+    let none = Locks::none();
+
+    assert_eq!(
+        digest_allowed_here(desktop.path(), &personas, "devops", &none),
+        None,
+        "nothing allowed there, nothing said"
+    );
+    super::local::allow_persona_hosts(desktop.path(), "devops", &digest).unwrap();
+    assert_eq!(
+        digest_allowed_here(desktop.path(), &personas, "devops", &none).as_deref(),
+        Some(digest.as_str())
+    );
+
+    let armed = |persona: &str, said: &str| {
+        tools_its_desktop_allowed(runner.path(), &personas, persona, &none, said).len()
+    };
+    assert_eq!(armed("devops", "another"), 0, "another list arms nothing");
+    assert_eq!(armed("reviewer", &digest), 0, "no other persona");
+    assert_eq!(armed("devops", &digest), 1);
+    // Nothing of it stays, and the persona's hosts are this machine's Allow alone.
+    assert_eq!(
+        tools_here(runner.path(), DEVOPS_TOOLS, &none),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        in_force_here(runner.path(), &personas, Some("devops"), &none),
+        Vec::new()
+    );
+}
+
+#[test]
 fn a_persona_s_tools_reach_no_chat_until_this_machine_allows_them_with_its_hosts() {
     use super::persona::{Standing, digest_of, shown_in};
     let root = tempfile::tempdir().expect("a project");

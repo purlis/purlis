@@ -29,6 +29,7 @@ import { sandboxCommandReturned } from "./sandboxAsked";
 import { askOpenProposal } from "./proposedChangeOpen";
 import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { askOpenRunnerWrite } from "./runnerWriteOpen";
+import { askOpenRunnerDispatch } from "./runnerDispatchOpen";
 import { askProfileSignIn } from "./settings/links";
 
 /**
@@ -59,6 +60,14 @@ const moved = new Set<(plane: string) => void>();
  */
 export function asksMoved(plane: string): void {
   for (const reader of moved) reader(plane);
+}
+
+/** Calls `reader` each time the window moved a source ([`asksMoved`]); answers its unsubscribe. */
+export function onAsksMoved(reader: (plane: string) => void): () => void {
+  moved.add(reader);
+  return () => {
+    moved.delete(reader);
+  };
 }
 
 /** Each project's asks, by its id: the last whole list the core derived for it. */
@@ -267,6 +276,17 @@ export async function answerTaken(
           return { status: "ok" };
         }
         if (option === "dismiss") return commands.dismissRunnerWrite(plane, path.id);
+        break;
+      case "runner-dispatch":
+        // A chat on a pool's runner asked to start a chat on this machine. A row cuts its brief,
+        // so Open shows it whole in its own tab, where Approve is pressed; Refuse starts
+        // nothing. The chat is told which.
+        if (option === "open") {
+          askOpenRunnerDispatch(plane, path.id);
+          opened = true;
+          return { status: "ok" };
+        }
+        if (option === "refuse") return commands.refuseRunnerDispatch(plane, path.id);
         break;
       case "sign-in":
         // Sign in sends nothing (#2035): the project's window opens a shell tab where the core

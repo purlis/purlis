@@ -190,7 +190,7 @@ fn a_personas_skill_is_drafted_and_accepted_as_one_commit_of_its_files() {
     let (subject, paths) = last_commit(root);
     assert!(subject.ends_with("skill new lint"), "{subject}");
     assert_eq!(paths, ["personas/reviewer/skills/lint/SKILL.md"]);
-    assert!(asking(&Level::persona("reviewer")).contains("personas/reviewer/skills/<name>"));
+    assert!(asking(&Level::persona("reviewer"), "").contains("personas/reviewer/skills/<name>"));
 }
 
 #[cfg(unix)]
@@ -500,7 +500,7 @@ fn a_try_left_behind_is_swept_once_old_and_one_a_chat_stands_in_is_kept() {
     );
     let kept = try_out(root, &id).unwrap();
     let left = try_out(root, &id).unwrap();
-    let state = crate::plane::state_dir(root);
+    let state = crate::appstate::dir(root).unwrap();
     // Just laid out: its chat may not be on the app's record yet.
     sweep_tries(root, &[]);
     assert!(left.piece.is_dir());
@@ -707,6 +707,27 @@ fn use_skill_offers_a_try_its_draft_alone_as_its_arming_hands_it() {
     );
 }
 
+#[test]
+fn drafts_and_tries_in_the_plane_s_state_folder_are_never_read() {
+    // #3718: the drafts and the tries are read from this machine's app state alone.
+    let tmp = plane();
+    let root = tmp.path();
+    let id = drafted(
+        root,
+        "skills/triage/SKILL.md",
+        &whole(&skill_text("triage", "Sorts issues.")),
+    );
+    let laid = try_out(root, &id).unwrap();
+    assert!(tried(root, &laid.piece).is_some());
+    crate::appstate::put_in_the_plane(root, TRIES_DIR);
+    crate::appstate::put_in_the_plane(root, DRAFTS_DIR);
+    assert!(list(root).is_empty());
+    assert!(one(root, &id).is_err());
+    assert_eq!(tried(root, &laid.piece), None);
+    assert!(tries(root).is_empty());
+    assert!(!graded_piece(root, &laid.piece));
+}
+
 /// Spec #3679 S12: a chat's new skill under a built-in skill's name is never accepted, at any
 /// level, even where no bundle is found beside this binary.
 #[test]
@@ -726,6 +747,20 @@ fn a_drafted_new_skill_with_a_built_in_skills_name_is_not_accepted() {
         assert_eq!(refused.unwrap_err(), crate::skills::NAME_RESERVED, "{rel}");
         assert!(!root.join(rel).exists(), "{rel}");
     }
+}
+
+#[test]
+fn a_throwaway_piece_an_open_chat_stands_in_is_kept_though_its_try_is_gone() {
+    // A Try it's chat put back after its try was not carried: its folder is its chat's still.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    let piece = root.join("workspaces/.throwaway/purlis-try-0123456789abcdef");
+    std::fs::create_dir_all(&piece).unwrap();
+    sweep_tries(root, std::slice::from_ref(&piece));
+    assert!(piece.is_dir());
+    sweep_tries(root, &[]);
+    assert!(!piece.exists(), "one no chat stands in goes");
 }
 
 #[test]
@@ -833,4 +868,61 @@ fn the_redo_prompt_names_the_skills_file_and_asks_a_new_chat_for_the_change() {
         "{new}"
     );
     assert!(new.ends_with("The change should "), "{new}");
+}
+
+/// #3925: "Ask a chat to write them" types a prompt naming the skill, its trigger tests file and
+/// skill-creator's format, and the file it names, from where the chat starts, is one whose write
+/// comes back as a draft.
+#[test]
+fn the_trigger_tests_prompt_names_the_file_a_draft_is_kept_for() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("skills/deploy")).unwrap();
+    std::fs::write(
+        root.join("skills/deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Ships it.\n---\n\nbody\n",
+    )
+    .unwrap();
+    let prompt = asking_for_trigger_tests(root, &Level::project(), "deploy").unwrap();
+    assert!(
+        prompt.starts_with(
+            "Write trigger tests for the deploy skill in skills/deploy/evals/triggers.json"
+        ),
+        "{prompt}"
+    );
+    assert!(
+        prompt.contains("skill-creator's triggers.json format"),
+        "{prompt}"
+    );
+    assert!(
+        prompt.contains("\"should_trigger\": true or false"),
+        "{prompt}"
+    );
+    assert!(!prompt.contains('\n'), "one line: {prompt}");
+    let file = draftable(root, &root.join("skills/deploy/evals/triggers.json")).expect("draftable");
+    assert_eq!(file.inner, "evals/triggers.json");
+    assert!(asking_for_trigger_tests(root, &Level::project(), "nowhere").is_err());
+}
+
+/// **New skill…'s Ask a chat to draft it** (#3684): what the person said the skill does ends the
+/// prompt, on one line, so nothing typed into the chat's terminal sends it or reaches it as a key;
+/// left empty, the prompt ends where the person says it.
+#[test]
+fn the_draft_prompt_ends_with_what_the_skill_does_on_one_line() {
+    let level = Level::project();
+    let said = asking(
+        &level,
+        "  Reviews a PR\nagainst REVIEW.md\r\u{1b}[A\tquickly ",
+    );
+    assert!(
+        said.ends_with("What the skill does: Reviews a PR against REVIEW.md [A quickly"),
+        "{said}"
+    );
+    assert!(!said.chars().any(char::is_control), "{said:?}");
+    assert!(asking(&level, " \n ").ends_with("The skill should "));
+    // What only steers how text is shown is dropped, and a long paste is cut.
+    assert!(asking(&level, "a\u{202E}b\u{200B}c").ends_with("What the skill does: abc"));
+    let long = asking(&level, &"x".repeat(2_000));
+    assert!(long.ends_with(&"x".repeat(500)), "{long}");
+    assert!(!long.ends_with(&"x".repeat(501)), "{long}");
 }

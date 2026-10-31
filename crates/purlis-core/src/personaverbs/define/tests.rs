@@ -71,8 +71,8 @@ fn create_writes_a_draft_with_its_routing_line_and_its_memory_and_says_how_to_fi
          and conventions.\n\n## How to work as this persona\n- Credentials: use `charter \
          persona secret …` (this persona's vault: `qa`).\n  Never print secret values.\n- \
          Defer to each repo's own `CLAUDE.md` / `AGENTS.md` and its tooling over general \
-         habits.\n- Record durable facts with `charter persona remember qa \"<fact>\"`. Never \
-         store\n  secrets there — those belong in the vault.\n\n## When to delegate here\ntest \
+         habits.\n- Record durable facts with the `persona_remember` tool, or `charter persona \
+         remember qa \"<fact>\"`.\n  Never store secrets there — those belong in the vault.\n\n## When to delegate here\ntest \
          plans and flaky suites\n"
     );
     assert!(plane.path("personas/qa/memory/MEMORY.md").exists());

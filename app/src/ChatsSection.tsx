@@ -188,8 +188,9 @@ function onMemoryWords(waiting: number): string {
   return waiting === 1 ? "1 dispatch waits on memory" : `${waiting} dispatches wait on memory`;
 }
 
-/** The whole sentence, on the line's hover: what they wait for, and where they are named. */
-const ON_MEMORY_SAID =
+/** The whole sentence, on the line's hover, in the row's card and its description: what they
+ *  wait for, and where they are named. */
+export const ON_MEMORY_SAID =
   "This machine is short on memory: they start by themselves once it frees, and the chat that asked is told when each starts or gives up. The Dispatches tab lists them under Not started.";
 
 /**
@@ -1036,6 +1037,11 @@ export function ChatsSection({
         </>
       }
     >
+      {/* What each restart asked for from a row says, announced as it comes (#1462), beside
+          the tree and not in it (#3759), and there whether or not the list draws a row
+          (#3886): the rows draw it, and say it. Of every chat listed, whatever the scope, the
+          filter and the folds draw: a line comes with its words, never with its row. */}
+      <RestartsSaid rows={every} restarts={restarts} />
       {rows.length === 0 ? (
         <p className="empty ui-text-secondary">
           {every.length === 0
@@ -1064,9 +1070,6 @@ export function ChatsSection({
             clear();
           }}
         >
-          {/* What each restart asked for from a row says, announced as it comes (#1462), beside
-              the tree and not in it (#3759): the rows draw it, and say it. */}
-          <RestartsSaid rows={drawn} restarts={restarts} />
           {drawn.length > 0 && (
             <RovingFocusGroup.Root asChild orientation="vertical" {...stop}>
               <ul className="ui-tree" role="tree" aria-label="Chats of this project">
@@ -1275,10 +1278,15 @@ function sentences(before: string, said: string): string {
 }
 
 /**
- * **What a restart asked for from a row says, to a screen reader** (#1462, #3759): one status
- * for each row drawn with a restart said, named for its chat, so it is announced as it comes.
- * Beside the tree, which may own its rows alone: the row draws the words under it, for the eye,
- * and says them as its description.
+ * **What a restart asked for from a row says, to a screen reader** (#1462, #3759, #3886): one
+ * status, mounted with the section and empty until a restart says something, since a region
+ * that arrives already full is not announced by every screen reader; only its text changes. A
+ * line for each chat listed with a restart said, in the chats' numbers' order, and only a line
+ * that comes is announced (`aria-atomic="false"`), not every line again. **Built from every
+ * chat listed, not the rows drawn** (the review of #3935): a fold, the filter or the scope
+ * drawing a row again would add its line again, and a screen reader would announce old words
+ * as new. Beside the tree, which may own its rows alone: the row draws the words under it, for
+ * the eye, and says them in its description and its card.
  */
 function RestartsSaid({
   rows,
@@ -1287,18 +1295,26 @@ function RestartsSaid({
   rows: readonly ChatRow[];
   restarts: Readonly<Record<number, string>>;
 }) {
-  const said = rows.filter((row) => !row.tab && restarts[row.session] !== undefined);
-  if (said.length === 0) return null;
+  const said = rows
+    .filter((row) => !row.tab && restarts[row.session] !== undefined)
+    .sort((one, other) => one.session - other.session);
   return (
-    <div className="hidden-words">
+    <div className="hidden-words" role="status" aria-label="Restarts" aria-atomic="false">
       {said.map((row) => (
-        <p key={row.session} role="status" aria-label={`Restart of ${row.name}`}>
-          {restarts[row.session]}
-        </p>
+        <p key={row.session}>{restartLine(row.name, restarts[row.session])}</p>
       ))}
     </div>
   );
 }
+
+/** A restart's line in the restarts' status: its words as they are where they name the chat,
+ *  else led by which chat's restart it was. */
+function restartLine(name: string, words: string): string {
+  return words.includes(name) ? words : `Restart of ${name}. ${words}`;
+}
+
+/** What a row says (#3886), each by its kind: what its card keys its lines by. */
+type Said = { kind: "needs" | "limit" | "memory" | "restart"; line: string };
 
 /**
  * One chat's row. Held on plain values, so only a row whose own facts changed is drawn again.
@@ -1454,6 +1470,22 @@ const Row = memo(function Row({
   // row, never polled.
   const used = useTokensOnHover({ chat: session });
   const state: ShownFacts = { session, shell, report, outcome, asking, harness };
+  // **What the row says** (#3658, #3759, #3886): a chat below it needs you, its task limit, its
+  // dispatches waiting on memory and where they are named, and what its restart says. Said in
+  // the row's description, which is where a screen reader is, since what is drawn beside it
+  // and under it is the pointer's; and drawn in its card, which describes the row in its place
+  // while it is up, and is where the keyboard reads the hints the lines carry on their hover.
+  const sayings: (Said | null)[] = [
+    needs !== null && needs !== session
+      ? { kind: "needs", line: `${needsName ?? "A chat"} below it needs you` }
+      : null,
+    atLimit === null ? null : { kind: "limit", line: atLimit.said },
+    waitingOnMemory !== null && waitingOnMemory > 0
+      ? { kind: "memory", line: sentences(onMemoryWords(waitingOnMemory), ON_MEMORY_SAID) }
+      : null,
+    restartSaid === null ? null : { kind: "restart", line: restartSaid },
+  ];
+  const said = sayings.filter((one): one is Said => one !== null);
   // **The card** (#1675). Up after the pointer rests on the row, or the keyboard does, for
   // `CARD_DELAY_MS`: a pointer running down the list, or the arrows going down the tree, bring
   // up none. Down when the pointer leaves, the keyboard moves on, a press lands, or Escape,
@@ -1525,25 +1557,11 @@ const Row = memo(function Row({
             aria-setsize={setsize}
             aria-current={current || undefined}
             aria-expanded={open ?? undefined}
-            // What the card says, while it is up: the row's description.
+            // What the card says, while it is up: the row's description, which says what the
+            // row says too (#3886).
             aria-describedby={carded ? cardId : undefined}
-            // A chat below it needs you, its task limit, its dispatches waiting on memory and
-            // what its restart says: said on the row, which is where a screen reader is,
-            // since what is drawn beside it and under it is the pointer's (#3658, #3759).
-            aria-description={
-              [
-                needs !== null && needs !== session
-                  ? `${needsName ?? "A chat"} below it needs you`
-                  : null,
-                atLimit?.said ?? null,
-                waitingOnMemory !== null && waitingOnMemory > 0
-                  ? onMemoryWords(waitingOnMemory)
-                  : null,
-                restartSaid,
-              ]
-                .filter((said) => said !== null)
-                .reduce(sentences, "") || undefined
-            }
+            // What the row says, while its card is down.
+            aria-description={said.map((one) => one.line).reduce(sentences, "") || undefined}
             data-tab={tab}
             // The chat's number, as a pane carries it: what a reveal finds the row by (#1490).
             data-session={session}
@@ -1643,6 +1661,7 @@ const Row = memo(function Row({
             cameFrom={from === null ? null : cameFromSaid(from, task, askerWaiting)}
             wentTo={handedToName === null ? null : handedOffSaid(handedToName, handedMore)}
             byYou={byYou}
+            said={said}
             clock={clock}
             tokens={task ? used.said : undefined}
           />
@@ -1782,6 +1801,7 @@ function ChatCard({
   cameFrom,
   wentTo,
   byYou,
+  said,
   clock,
   tokens,
 }: {
@@ -1799,6 +1819,8 @@ function ChatCard({
   /** Where its work went, as its row said it. */
   wentTo: string | null;
   byYou: boolean;
+  /** What its row says (#3886): each a line of the card, as the row's description has them. */
+  said: readonly Said[];
   clock: StateClock;
   /** A task's tokens, once read. */
   tokens: string | undefined;
@@ -1814,6 +1836,12 @@ function ChatCard({
       {/* What a working chat is doing (#1493): read as a line of the card, where the row's own
           line was out of the tree and named by the row's description. */}
       <ChatDoingLine session={session} heard />
+      {/* What the row says (#3886): its card describes the row in place of the row's own
+          description while it is up, so the card says it too; and here a sighted keyboard
+          user reads what the lines under the row carry on their hover. */}
+      {said.map((one) => (
+        <p key={one.kind}>{one.line}</p>
+      ))}
       <dl className="chat-card-facts">
         {persona !== null && <Fact term="Persona">{persona}</Fact>}
         {(runsOn ?? harness) !== null && <Fact term="Harness">{runsOn ?? harness}</Fact>}

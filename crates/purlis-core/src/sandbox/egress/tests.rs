@@ -1546,6 +1546,30 @@ fn a_host_the_projects_hosts_files_allow_already_is_let_on_at_once_and_never_ask
     );
 }
 
+/// Keep blocked holds for this chat even for a host the project's hosts list names, through
+/// both the HTTP and the SOCKS proxy: the later answer wins. Writes a manifest, so it first runs
+/// on CI.
+#[test]
+fn keep_blocked_holds_for_the_chat_even_for_a_host_the_projects_hosts_list_names() {
+    let root = tempfile::tempdir().expect("a project");
+    let (proxy, asks, _heard, _told) = armed_in(root.path(), Duration::from_millis(300));
+    std::fs::write(
+        root.path().join(crate::plane::MANIFEST),
+        "[sandbox]\nmode = \"on\"\negress = []\nhosts = [\"team.invalid\"]\n",
+    )
+    .expect("the project's file");
+
+    asks.keep_blocked(&crate::sandbox::hosts::Host::parse("team.invalid").unwrap());
+
+    let said = status(
+        &mut to(&proxy),
+        "CONNECT team.invalid:443 HTTP/1.1\r\nHost: team.invalid:443\r\n\r\n",
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    assert_eq!(socks_connect(&mut to_socks(&proxy), "team.invalid", 443), 2);
+    assert_eq!(asks.allows("team.invalid", 443, &[443]), None);
+}
+
 // ---- qw384b: a service on this Mac by name, for a client that never proxies this machine -----
 
 /// A Claude Code chat's proxy holding `port` for the chat, as its start compiles it.

@@ -34,10 +34,12 @@ use crate::proposed::{self, Change, NotMade};
 #[cfg(unix)]
 use crate::skills::at;
 
-/// The folder of this machine's state the drafts are kept in, one folder each.
+/// The folder of this machine's app state of the project ([`crate::appstate`]) the drafts are kept
+/// in, one folder each.
 pub const DRAFTS_DIR: &str = "skill-drafts";
 
-/// The folder of this machine's state each Try it's skill is laid out in, one folder each.
+/// The folder of this machine's app state of the project each Try it's skill is laid out in, one
+/// folder each.
 pub const TRIES_DIR: &str = "skill-tries";
 
 /// The start of a throwaway piece's folder's name, in the project's [`PIECES`].
@@ -265,13 +267,18 @@ fn write_at(
     })
 }
 
-/// This machine's state folder of the project at `root`, made private, with `dir` in it.
+/// This machine's app state of the project at `root` ([`crate::appstate`]), made private, with
+/// `dir` in it. Refused where this machine has no data home.
 fn state_with(root: &Path, dir: &str) -> Result<PathBuf, String> {
-    let state = crate::plane::state_dir(root);
-    std::fs::create_dir_all(&state).map_err(|why| why.to_string())?;
-    crate::profiletrust::private_dir(&state).map_err(|why| why.to_string())?;
+    let state = crate::appstate::made(root)?;
     super::store::made(&state, &[dir], true).map_err(|why| why.to_string())?;
     Ok(state)
+}
+
+/// This machine's app state of the project at `root` ([`crate::appstate`]), or why there is
+/// none. Nothing is made.
+fn app_state(root: &Path) -> Result<PathBuf, String> {
+    crate::appstate::dir(root).ok_or_else(|| crate::appstate::NO_DATA_HOME.to_owned())
 }
 
 /// The record of the draft `id`, or `None` where there is none.
@@ -354,7 +361,9 @@ pub fn take(root: &Path, chat: u32, file: &SkillFile, change: &Change) -> Result
 /// **Every draft of the project at `root`**, by name. One whose record cannot be read is left
 /// out, and so is one of a level that is no longer the project's.
 pub fn list(root: &Path) -> Vec<Draft> {
-    let state = crate::plane::state_dir(root);
+    let Some(state) = crate::appstate::dir(root) else {
+        return Vec::new();
+    };
     let mut out: Vec<Draft> = ids_in(&state, DRAFTS_DIR)
         .into_iter()
         .filter_map(|id| one_in(root, &state, &id).ok())
@@ -368,7 +377,7 @@ pub fn one(root: &Path, id: &str) -> Result<Draft, String> {
     if !an_id(id) {
         return Err(NO_SUCH.to_owned());
     }
-    one_in(root, &crate::plane::state_dir(root), id)
+    one_in(root, &app_state(root)?, id)
 }
 
 /// What a draft that is no longer there is answered with.
@@ -447,7 +456,7 @@ fn remove_in(state: &Path, dir: &str, id: &str) -> Result<(), String> {
 /// **Rejects the draft `id`**: deletes it. Nothing in the project changes.
 pub fn reject(root: &Path, id: &str) -> Result<(), String> {
     let draft = one(root, id)?;
-    remove_in(&crate::plane::state_dir(root), DRAFTS_DIR, &draft.id)
+    remove_in(&app_state(root)?, DRAFTS_DIR, &draft.id)
 }
 
 /// **Accepts the draft `id`** (decision 52): writes each of its files into the skill's folder,
@@ -510,7 +519,11 @@ pub fn accept(cx: &mut Ctx<'_>, id: &str) -> Result<PathBuf, String> {
         .map_err(|why| super::not_written(&format!("{name}'s {}", file.path), why))?;
         written.push(file_rel);
     }
-    remove_in(&crate::plane::state_dir(plane), DRAFTS_DIR, &draft.id)?;
+    remove_in(&app_state(plane)?, DRAFTS_DIR, &draft.id)?;
+    if draft.new {
+        // A new skill: the grades of one that had its name before are none of its own (#4104).
+        super::earlier_dropped(cx, &level, &name);
+    }
     cx.done(format!("the draft of {name} is accepted, in {folder_rel}"));
     if !level.local {
         let message = if draft.new {
@@ -628,7 +641,7 @@ fn lay_out_graded(
         .map(|skill| (skill.name.as_str(), &skill.files))
         .collect();
     let laid = lay_out(root, &named)?;
-    let state = crate::plane::state_dir(root);
+    let state = app_state(root)?;
     let marks = [(GRADED, Some("")), (ROUTER, router), (PINS, pins)];
     for (file, text) in marks {
         let Some(text) = text else { continue };
@@ -686,7 +699,7 @@ pub fn arm_router(root: &Path, cwd: &Path) -> Option<String> {
     }
     let id = try_of(root, cwd)?;
     read_at(
-        &crate::plane::state_dir(root),
+        &crate::appstate::dir(root)?,
         &format!("{TRIES_DIR}/{id}/{ROUTER}"),
     )
     .ok()
@@ -699,13 +712,12 @@ pub fn arm_router(root: &Path, cwd: &Path) -> Option<String> {
 pub fn graded_piece(root: &Path, cwd: &Path) -> bool {
     a_piece(cwd)
         && try_of(root, cwd).is_some_and(|id| {
-            read_at(
-                &crate::plane::state_dir(root),
-                &format!("{TRIES_DIR}/{id}/{GRADED}"),
-            )
-            .ok()
-            .flatten()
-            .is_some()
+            crate::appstate::dir(root).is_some_and(|state| {
+                read_at(&state, &format!("{TRIES_DIR}/{id}/{GRADED}"))
+                    .ok()
+                    .flatten()
+                    .is_some()
+            })
         })
 }
 
@@ -883,7 +895,7 @@ fn files_below(_: &Path, _: &Path) -> Vec<(String, String)> {
 /// folder.
 fn try_of(root: &Path, cwd: &Path) -> Option<String> {
     let real = std::fs::canonicalize(cwd).ok()?;
-    let state = crate::plane::state_dir(root);
+    let state = crate::appstate::dir(root)?;
     ids_in(&state, TRIES_DIR).into_iter().find(|id| {
         read_at(&state, &format!("{TRIES_DIR}/{id}/{PIECE}"))
             .ok()
@@ -898,7 +910,7 @@ fn try_of(root: &Path, cwd: &Path) -> Option<String> {
 /// no chat writes it.
 pub fn tried(root: &Path, cwd: &Path) -> Option<PathBuf> {
     let id = try_of(root, cwd)?;
-    Some(crate::plane::state_dir(root).join(TRIES_DIR).join(id))
+    Some(crate::appstate::dir(root)?.join(TRIES_DIR).join(id))
 }
 
 /// **Ends the Try it whose throwaway piece `cwd` is**, in the project at `root`: the piece and the
@@ -915,7 +927,9 @@ pub fn end_try_at(root: &Path, cwd: &Path) -> Result<bool, String> {
 /// What a new Try it sweeps: one whose piece no open chat stands in was left by a chat that never
 /// closed (a quit, a crash), and is ended.
 pub fn tries(root: &Path) -> Vec<Try> {
-    let state = crate::plane::state_dir(root);
+    let Some(state) = crate::appstate::dir(root) else {
+        return Vec::new();
+    };
     ids_in(&state, TRIES_DIR)
         .into_iter()
         .map(|id| {
@@ -942,7 +956,7 @@ pub fn sweep_tries(root: &Path, open: &[PathBuf]) {
         .iter()
         .filter_map(|cwd| std::fs::canonicalize(cwd).ok())
         .collect();
-    let state = crate::plane::state_dir(root);
+    let state = crate::appstate::dir(root);
     let young = |path: &Path| {
         std::fs::symlink_metadata(path)
             .and_then(|meta| meta.modified())
@@ -952,7 +966,10 @@ pub fn sweep_tries(root: &Path, open: &[PathBuf]) {
     };
     let mut kept: Vec<String> = Vec::new();
     for one in tries(root) {
-        if open.contains(&one.piece) || young(&state.join(TRIES_DIR).join(&one.id)) {
+        let laid = state
+            .as_ref()
+            .map(|state| state.join(TRIES_DIR).join(&one.id));
+        if open.contains(&one.piece) || laid.is_some_and(|laid| young(&laid)) {
             kept.push(one.id);
             continue;
         }
@@ -967,7 +984,10 @@ pub fn sweep_tries(root: &Path, open: &[PathBuf]) {
             let Some(id) = entry.name.strip_prefix(PIECE_PREFIX) else {
                 continue;
             };
-            if an_id(id) && !kept.iter().any(|one| one == id) {
+            // One an open chat stands in (a Try it's chat put back before its try) is kept.
+            let piece = root.join(PIECES[0]).join(PIECES[1]).join(&entry.name);
+            let stood_in = std::fs::canonicalize(&piece).is_ok_and(|real| open.contains(&real));
+            if an_id(id) && !kept.iter().any(|one| one == id) && !stood_in {
                 let _ = remove_piece(root, id);
             }
         }
@@ -1060,14 +1080,80 @@ fn skills_dir_told(level: &Level) -> String {
 
 /// **The prompt "Ask a chat to draft a skill" types** (decision 13), unsent, into a chat that
 /// starts where `level`'s skills are reached from (the project's root, or its workspace's
-/// folder): one line, which the person ends with what the skill is for.
-pub fn asking(level: &Level) -> String {
+/// folder): one line, which ends with `what` the skill should do as New skill… asked it (S4,
+/// #3684), or where the person says it when that was left empty.
+///
+/// `what` is typed into a terminal and never sent, so it stays one line: a line break or another
+/// control character in it would send the prompt, or reach the terminal as a key, so each run of
+/// them and of spaces is one space.
+pub fn asking(level: &Level, what: &str) -> String {
     let dir = skills_dir_told(level);
-    format!(
+    let what = one_line(what);
+    let lead = format!(
         "Draft a skill as {dir}/<name>/SKILL.md, with name and description frontmatter (where \
          you cannot write it, write it in your own folder and run purlis propose with --from); \
-         purlis keeps it as a draft in the Skill studio for me to try. The skill should "
-    )
+         purlis keeps it as a draft in the Skill studio for me to try."
+    );
+    if what.is_empty() {
+        format!("{lead} The skill should ")
+    } else {
+        format!("{lead} What the skill does: {what}")
+    }
+}
+
+/// The most characters of what a skill should do that a draft prompt types.
+const MOST_WHAT: usize = 500;
+
+/// `text` as one line: each run of whitespace and control characters is one space, none at
+/// either end; the characters that only steer how text is shown (direction overrides and
+/// isolates, zero-width marks) dropped, so the typed prompt reads as it is; at most
+/// [`MOST_WHAT`] characters.
+fn one_line(text: &str) -> String {
+    let steering = |c: char| matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2069}' | '\u{FEFF}');
+    let line = text
+        .chars()
+        .filter(|&c| !steering(c))
+        .collect::<String>()
+        .split(|c: char| c.is_whitespace() || c.is_control())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    line.chars()
+        .take(MOST_WHAT)
+        .collect::<String>()
+        .trim_end()
+        .to_owned()
+}
+
+/// **The prompt "Ask a chat to write them" types** (#3925), unsent, for the trigger tests of the
+/// skill named `name` at `level` in the project at `root`, into a chat that starts where `level`'s
+/// skills are reached from, as [`asking`]'s does: the file to write, skill-creator's
+/// `triggers.json` format, and what makes a good test. The write comes back as a draft, as any
+/// chat's write to a skill's files does. One line, which the person may add to before sending.
+pub fn asking_for_trigger_tests(root: &Path, level: &Level, name: &str) -> Result<String, String> {
+    let found = find(root, level, name)?;
+    // Only a skill whose folder is the level's own: a chat is told its file from there.
+    if level.dir(root).as_deref() != found.parent() {
+        return Err(format!(
+            "{name}'s files are not in its level's folder, so no chat can be asked to write its \
+             trigger tests"
+        ));
+    }
+    let folder = found
+        .file_name()
+        .map(|one| one.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let at = format!("{}/{folder}", skills_dir_told(level));
+    let file = purlis_skills::grade::triggers_path();
+    Ok(format!(
+        "Write trigger tests for the {name} skill in {at}/{file}, in skill-creator's \
+         triggers.json format: a JSON array of {{\"query\": \"<a prompt as a person would type \
+         it>\", \"should_trigger\": true or false}}. Read {at}/SKILL.md first, then write prompts \
+         {name} should start for and near misses it should leave alone, each a real request and \
+         none twice, keeping any tests the file has already (where you cannot write it, write it \
+         in your own folder and run purlis propose with --from); purlis keeps it as a draft in \
+         the Skill studio for me to accept."
+    ))
 }
 
 /// **The prompt "Ask the chat to redo it" types** (S9), unsent, for the draft of the skill in
@@ -1107,7 +1193,7 @@ pub fn trying(name: &str) -> String {
 /// Ends the try `id`: [`end_try_at`] by its id.
 pub fn end_try(root: &Path, id: &str) -> Result<(), String> {
     remove_piece(root, id)?;
-    remove_in(&crate::plane::state_dir(root), TRIES_DIR, id)
+    remove_in(&app_state(root)?, TRIES_DIR, id)
 }
 
 #[cfg(test)]

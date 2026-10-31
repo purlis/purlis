@@ -46,9 +46,11 @@
 //!
 //! A commit holds itself to the plane's save's rule of one file, one name
 //! (`planegit::ondisk`): a named file with a second name (a hard link) is refused before
-//! anything is staged, and once staged, a row that is not the file on disk now, with one name,
-//! refuses the commit, is unstaged, and its blob is taken out of the object store where it is
-//! a loose object nothing else reaches.
+//! anything is staged, and each file is staged from one open descriptor, asked that it is a
+//! regular file with one name, so the bytes stored are the bytes of the file that was checked
+//! and nothing is read again by its name. Once staged, a row that is not the file on disk now,
+//! with one name, refuses the commit, is unstaged, and its blob is taken out of the object
+//! store where it is a loose object nothing else reaches.
 //!
 //! # One at a time, and never left half done
 //!
@@ -67,7 +69,7 @@ use std::path::{Component, Path, PathBuf};
 
 use super::Asker;
 use crate::counts::counted;
-use crate::hookwire::{Answer, CommitAsk, Stage};
+use crate::hookwire::{Answer, CommitAsk, FolderName, Stage};
 use crate::planegit::ondisk;
 use crate::repocmd::Say;
 use crate::worktree::{self, git, link};
@@ -190,18 +192,36 @@ fn commit(
         paths_ok(paths)?;
     }
     let cwd = asker.cwd.as_deref().ok_or(NO_RECORD)?;
-    if let Stage::Paths(paths) = &ask.stage {
-        for path in paths {
-            through_no_link(cwd, path)?;
+    let (folder, stage) = match &ask.folder {
+        Some(named) => named_folder(root, cwd, named, &ask.stage)?,
+        None => {
+            if let Stage::Paths(paths) = &ask.stage {
+                for path in paths {
+                    through_no_link(cwd, path)?;
+                }
+            }
+            standing(root, cwd, &ask.stage)?
         }
-    }
-    let (folder, stage) = standing(root, cwd, &ask.stage)?;
+    };
     let ask = CommitAsk {
         stage,
         ..ask.clone()
     };
     let here = Here::of(root, Some(&folder))?;
     paced(root, asker.chat, now)?;
+    // One live writer per branch folder (#3901): a second chat's commit is refused, naming the
+    // chat that holds it; a chat committing where nobody live holds the folder takes it.
+    // `standing` answers only a folder purlis cut, so one it cannot place is refused, never
+    // committed in unclaimed (fail closed).
+    let at = worktree::locate(root, &folder).ok_or(NOT_PLACED)?;
+    crate::piececlaim::take(
+        root,
+        &at,
+        &super::who(asker),
+        asker.live.as_deref(),
+        crate::piececlaim::Act::Commit,
+        chrono::Utc::now(),
+    )?;
     // One commit at a time in a branch folder: a second ask waits for the first.
     let lock = lock_of(&here.git_dir);
     let _held = lock
@@ -214,6 +234,11 @@ fn commit(
         made(root, asker.chat, &ask, &here, identity)
     })
 }
+
+/// What a commit is answered where purlis cannot say which branch folder it would be made in,
+/// and so which chat holds it (#3901).
+const NOT_PLACED: &str = "purlis cannot tell which of its branch folders this is, so it cannot \
+    tell whether another chat works there, and will not commit in it. Nothing was committed";
 
 /// What a commit asked of a chat the app has no folder for is answered.
 const NO_RECORD: &str =
@@ -248,8 +273,7 @@ fn standing(root: &Path, cwd: &Path, stage: &Stage) -> Result<(PathBuf, Stage), 
         let (its, rest) = branch_folder_of(&workspaces, &real, path).ok_or_else(|| {
             format!(
                 "{NOT_IN_A_BRANCH_FOLDER} The path {} is not inside a branch folder below it: \
-                 from a folder above branch folders, name paths as \
-                 `.worktrees/<repo>/<piece>/<path>`",
+                 {ACCEPTED}",
                 shown(path)
             )
         })?;
@@ -275,6 +299,62 @@ fn standing(root: &Path, cwd: &Path, stage: &Stage) -> Result<(PathBuf, Stage), 
         ));
     }
     Ok((folder, Stage::Paths(inside)))
+}
+
+/// Where the commit is made for a command that ran in branch folder `named` (#3927), for a chat
+/// whose recorded folder is `cwd`: that folder, with `stage`'s paths relative to its top.
+///
+/// The ask names the folder, so it is held to what a path naming it from where the chat stands
+/// would be held to ([`standing`]): one purlis cut, reached through no link, and the chat's own
+/// folder or one below it. A chat in another branch folder, or in another workspace, is refused.
+fn named_folder(
+    root: &Path,
+    cwd: &Path,
+    named: &FolderName,
+    stage: &Stage,
+) -> Result<(PathBuf, Stage), String> {
+    let (repo, piece) = (
+        crate::shown::short(&named.repo),
+        crate::shown::short(&named.piece),
+    );
+    let refused = |why: &str| {
+        format!(
+            "{why}, so the app will not commit in branch folder {repo} · {piece} for it: nothing was committed"
+        )
+    };
+    worktree::path_for(root, &named.workspace, &named.repo, &named.piece)
+        .map_err(|why| refused(&why.to_string()))?;
+    let workspaces = std::fs::canonicalize(root.join("workspaces"))
+        .map_err(|_| refused("the project has no workspaces folder"))?;
+    let folder = workspaces
+        .join(&named.workspace)
+        .join(worktree::DIR_NAME)
+        .join(&named.repo)
+        .join(&named.piece);
+    match std::fs::canonicalize(&folder) {
+        Ok(real) if real == folder => {}
+        Ok(_) => {
+            return Err(refused(
+                "that branch folder is reached through a link, and purlis commits in no folder \
+                 through a link",
+            ));
+        }
+        Err(_) => return Err(refused("that branch folder is not there")),
+    }
+    let here = std::fs::canonicalize(cwd)
+        .map_err(|_| refused("the app could not read where this chat stands"))?;
+    if !here.starts_with(&folder) && !folder.starts_with(&here) {
+        return Err(refused(&format!(
+            "this chat stands in {}, which is neither that folder nor above it",
+            here.strip_prefix(&workspaces).unwrap_or(&here).display()
+        )));
+    }
+    if let Stage::Paths(paths) = stage {
+        for path in paths {
+            through_no_link(&folder, path)?;
+        }
+    }
+    Ok((folder, stage.clone()))
 }
 
 /// The branch folder below `cwd` that `path`, named from `cwd`, is in, and the path inside it
@@ -622,12 +702,7 @@ pub fn paths_ok(paths: &[String]) -> Result<(), String> {
         if path.chars().any(char::is_control) {
             return Err(format!("the path {shown} holds a control character"));
         }
-        let outside = || {
-            format!(
-                "the path {shown} is not inside this chat's folder: name paths relative to \
-                 where the chat stands, with no `..`"
-            )
-        };
+        let outside = || format!("the path {shown} is not inside the branch folder: {ACCEPTED}");
         if Path::new(path).is_absolute() || path.starts_with(['/', '\\']) {
             return Err(outside());
         }
@@ -681,6 +756,11 @@ fn shown(path: &str) -> String {
         format!("{short:?}")
     }
 }
+
+/// How a path to commit is spelled, said wherever one is refused (#3927).
+const ACCEPTED: &str = "name paths relative to the branch folder, running the command inside \
+     it or with `env -C <branch folder>`, or from where the chat stands as \
+     `.worktrees/<repo>/<piece>/<path>`, with no `..`";
 
 /// What a chat that is in no branch folder purlis cut is told.
 const NOT_IN_A_BRANCH_FOLDER: &str = "this chat does not stand in a branch folder purlis cut \
@@ -892,36 +972,130 @@ fn ran_out(what: &str, within: std::time::Duration) -> String {
     )
 }
 
-/// Stages what `stage` names. Paths reach git on its standard input, NUL-separated and
-/// literal, so none is read as an option or as pathspec magic.
+/// **Stages what `stage` names, each regular file from one open descriptor**
+/// (`planegit::ondisk`): what `git add` of it would stage, its bytes read from the descriptor
+/// that was asked it is a regular file with one name, and asked again just before they are
+/// hashed, so a file with a second name never reaches the object store, and nothing is read
+/// again by its name. A link is staged as the bytes it holds, a deletion as its row taken out;
+/// another repository inside the folder is refused before anything is staged. Paths are read
+/// letter for letter, so none is read as an option or as pathspec magic.
 fn stage(here: &Here, stage: &Stage) -> Result<(), String> {
-    let (code, err) = match stage {
-        Stage::Tracked => {
-            let run = git::run(&here.top, &["add", "--update", "--", "."], STAGING)
-                .map_err(|e| e.to_string())?;
-            (run.code, run.err)
-        }
+    let refused = |why: String| format!("git did not stage that: {}", first_line(&why));
+    let paths = match stage {
+        Stage::Tracked => ondisk::to_stage(&here.top, &[], ondisk::Listing::Tracked),
         Stage::Paths(paths) => {
-            let run = git::run_with_input(
-                &here.cwd,
-                &[
-                    "--literal-pathspecs",
-                    "add",
-                    "--pathspec-from-file=-",
-                    "--pathspec-file-nul",
-                ],
-                paths.join("\0").into_bytes(),
-                STAGING,
-            )
-            .map_err(|e| e.to_string())?;
-            (run.code, String::from_utf8_lossy(&run.err).into_owned())
+            let below = said(&here.cwd, &["rev-parse", "--show-prefix"])?.unwrap_or_default();
+            let named: Vec<String> = paths.iter().map(|path| format!("{below}{path}")).collect();
+            each_named(&here.top, &named).map_err(refused)?;
+            let specs: Vec<String> = named.iter().map(|path| literally(path)).collect();
+            let specs: Vec<&str> = specs.iter().map(String::as_str).collect();
+            ondisk::to_stage(&here.top, &specs, ondisk::Listing::All)
         }
-    };
-    match code {
-        Some(0) => Ok(()),
-        None => Err(ran_out("finish staging", STAGING)),
-        Some(_) => Err(format!("git did not stage that: {}", first_line(&err))),
     }
+    .map_err(refused)?;
+    // Looked at whole before anything is staged, so what would refuse the commit refuses it
+    // with nothing staged: another repository (nothing of it is read), a file with a second
+    // name, and what git would not stage. Nothing is held open here.
+    let mut held = Vec::new();
+    for path in &paths {
+        match ondisk::opened(&here.top, path) {
+            ondisk::OnDisk::Folder { nested: true } => return Err(another_repository(path)),
+            ondisk::OnDisk::SecondName => held.push(ondisk::Held {
+                path: path.clone(),
+                why: ondisk::Why::SecondName,
+            }),
+            found => drop(ondisk::Row::of(path.clone(), found).map_err(refused)?),
+        }
+    }
+    if let Some(refusal) = ondisk::refused_unstaged(&held, ondisk::PutBack::AsHead) {
+        return Err(not_the_file(&refusal));
+    }
+    // Then staged a part at a time, each file from the descriptor it is opened as then.
+    let held = ondisk::stage_listed(&here.top, paths, |path, found| {
+        Ok(match found {
+            ondisk::OnDisk::SecondName => ondisk::Take::Held(ondisk::Held {
+                path,
+                why: ondisk::Why::SecondName,
+            }),
+            ondisk::OnDisk::Folder { nested: true } => return Err(another_repository(&path)),
+            found => ondisk::Take::Row(ondisk::Row::of(path, found)?),
+        })
+    })
+    .map_err(refused)?;
+    if let Some(refusal) = ondisk::refused_unstaged(&held, ondisk::PutBack::AsHead) {
+        return Err(not_the_file(&refusal));
+    }
+    ondisk::refresh(&here.top, false).map_err(refused)
+}
+
+/// `path` as a pathspec git reads letter for letter.
+fn literally(path: &str) -> String {
+    format!(":(literal){path}")
+}
+
+/// Why `git add` of `named` (relative to `top`) would have refused, in git's words, or
+/// nothing: a path reached through a link, one that names nothing on disk or in the index, or
+/// an untracked file or folder the repository ignores, named as itself.
+fn each_named(top: &Path, named: &[String]) -> Result<(), String> {
+    for path in named {
+        match ondisk::opened(top, &plainly(path)) {
+            ondisk::OnDisk::Beyond => {
+                return Err(format!(
+                    "pathspec {} is beyond a symbolic link",
+                    shown(path)
+                ));
+            }
+            ondisk::OnDisk::Gone => {
+                let run = git::run(top, &["ls-files", "-z", "--", &literally(path)], git::READ)
+                    .map_err(|e| e.to_string())?;
+                if !run.ok() || run.out.is_empty() {
+                    return Err(format!("pathspec {} did not match any files", shown(path)));
+                }
+            }
+            _ => {}
+        }
+    }
+    let asked: std::collections::HashSet<String> = named.iter().map(|path| plainly(path)).collect();
+    // Listed file by file, and again with an ignored folder as itself: a path named is refused
+    // where it is either.
+    for folders in [false, true] {
+        let mut args = vec![
+            "ls-files",
+            "-z",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+        ];
+        if folders {
+            args.push("--directory");
+        }
+        args.push("--");
+        let specs: Vec<String> = named.iter().map(|path| literally(path)).collect();
+        args.extend(specs.iter().map(String::as_str));
+        let run = git::run(top, &args, git::READ).map_err(|e| e.to_string())?;
+        if !run.ok() {
+            return Err(run.err);
+        }
+        if let Some(ignored) = run
+            .out
+            .split('\0')
+            .find(|path| !path.is_empty() && asked.contains(&plainly(path)))
+        {
+            return Err(format!(
+                "{} is ignored by one of the repository's .gitignore files",
+                shown(ignored)
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// `path` as git names it: no `.` part, and no `/` at either end.
+fn plainly(path: &str) -> String {
+    path.split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// Puts the index back to the branch's last commit: what the ask staged is unstaged, and the
@@ -1001,11 +1175,7 @@ const GITLINK: &str = "160000";
 pub fn records_another_repository(staged: &[Staged]) -> Option<String> {
     for change in staged {
         if change.mode == GITLINK || change.was == GITLINK {
-            return Some(format!(
-                "{} is a repository of its own (it holds a `.git`), and purlis does not \
-                 commit one inside another for a chat. Remove its `.git`, or leave it out",
-                shown(&change.path)
-            ));
+            return Some(another_repository(&change.path));
         }
         let name = change.path.rsplit('/').next().unwrap_or(&change.path);
         if name.eq_ignore_ascii_case(".gitmodules") {
@@ -1017,6 +1187,15 @@ pub fn records_another_repository(staged: &[Staged]) -> Option<String> {
         }
     }
     None
+}
+
+/// What a commit that would record the repository at `path` inside this one is refused with.
+fn another_repository(path: &str) -> String {
+    format!(
+        "{} is a repository of its own (it holds a `.git`), and purlis does not commit one \
+         inside another for a chat. Remove its `.git`, or leave it out",
+        shown(path)
+    )
 }
 
 /// Why a path `staged` adds differs from another tracked path only by case, or nothing. On a

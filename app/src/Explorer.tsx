@@ -42,6 +42,7 @@ import {
 import { PLANE_ROOT, isPlaneRoot, type Place } from "./pieceViews";
 import { catalogueMenu } from "./Menus";
 import { NotClonedHere, type Cloning } from "./NotCloned";
+import { stopRepoClones } from "./repoClones";
 import { WorktreeMark } from "./Worktree";
 import { OUTSIDE_TITLE } from "./actions";
 import type { BranchPath, Catalogued, FileOn, FileRef, Offer } from "./actions";
@@ -1292,7 +1293,9 @@ function FoundFiles({
   onOpen: (hit: FoundFile) => void;
 }) {
   const refused = found.refused.map((why) => (
-    <p key={why} className="trouble ui-text-secondary" role="alert">
+    // No role of its own (#3917): a role's colour wins over App.css's, and none is the danger
+    // colour. It takes the view's size and `.trouble`'s `danger.text` on `danger.surface`.
+    <p key={why} className="trouble" role="alert">
       {why}
     </p>
   ));
@@ -1510,6 +1513,9 @@ function ReposSection({
         cloning={cloning}
         offers={offers}
         onPress={onPress}
+        onStop={
+          project === undefined ? undefined : (repo) => stopRepoClones(project, workspace, [repo])
+        }
       />
 
       {panels?.refused.map(([name, why]) => (

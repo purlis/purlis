@@ -183,6 +183,34 @@ pub fn cut_vetted(
     cut_as(plane, ws, repo, piece, from, Some(vet))
 }
 
+/// [`cut_vetted`] of exactly `piece`, cut from branch `base` moved up to the clone's last
+/// sync of its remote, by the very call `purlis worktree add` makes ([`worktree::add_based`],
+/// #3903): a dispatch's worktree from a workspace's folder is cut as that command cuts one.
+/// Answers what bringing the base up did, for the asking chat to be told.
+pub fn cut_based(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: &str,
+    base: &str,
+    vet: worktree::Vet<'_>,
+) -> Result<(Cut, worktree::fresh::Fresh), Refusal> {
+    let lock = clone_lock(plane, ws, repo);
+    let _one_at_a_time = lock.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut fresh = None;
+    let cut = taken_back_unless_recorded(
+        plane,
+        ws,
+        repo,
+        piece,
+        worktree::add_based(plane, ws, repo, piece, None, base, Some(vet)).map(|(added, up)| {
+            fresh = Some(up);
+            added
+        }),
+    )?;
+    Ok((cut, fresh.unwrap_or_default()))
+}
+
 fn cut_as(
     plane: &Path,
     ws: &str,
@@ -191,7 +219,25 @@ fn cut_as(
     from: Option<&worktree::Start>,
     vet: Option<worktree::Vet<'_>>,
 ) -> Result<Cut, Refusal> {
-    match worktree::add_vetted(plane, ws, repo, piece, None, from, vet) {
+    taken_back_unless_recorded(
+        plane,
+        ws,
+        repo,
+        piece,
+        worktree::add_vetted(plane, ws, repo, piece, None, from, vet),
+    )
+}
+
+/// What git's cut became: the [`Cut`], or the refusal, with a cut whose base could not be
+/// recorded taken back.
+fn taken_back_unless_recorded(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: &str,
+    added: Result<worktree::Added, Refusal>,
+) -> Result<Cut, Refusal> {
+    match added {
         Ok(added) => Ok(Cut {
             workspace: ws.to_string(),
             repo: repo.to_string(),

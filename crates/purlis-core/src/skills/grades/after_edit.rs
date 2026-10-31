@@ -14,8 +14,9 @@
 //! person sees the cost again and turns it on again. Nothing grades on a timer, and an edit
 //! whose copy was graded already is not graded twice.
 //!
-//! **Tier:** Clone state, this machine's own. It lives in this machine's state, `<state>/skill-grade-after-edit.json`
-//! ([`FILE`]), which no chat writes and no commit carries: the person who pays turns it on, and a
+//! **Tier:** Machine, device-bound. It lives in this machine's app state of the project,
+//! `<data>/app-state/<clone key>/skill-grade-after-edit.json` ([`FILE`], `crate::appstate`),
+//! which no chat writes and no commit carries: the person who pays turns it on, and a
 //! teammate's push never does. Read through no link, at most [`MOST_FILE_BYTES`], and a record
 //! that does not hold together is read as off.
 
@@ -25,7 +26,7 @@ use std::path::{Path, PathBuf};
 
 use super::{Level, cap, plain};
 
-/// The file in this machine's state that holds each skill's opt-in.
+/// The file in this machine's app state of the project that holds each skill's opt-in.
 pub const FILE: &str = "skill-grade-after-edit.json";
 
 /// The version of the file this purlis writes and reads.
@@ -53,10 +54,13 @@ pub struct Accepted {
     pub chats: u32,
     pub token_cap: u64,
     pub limit_usd: f64,
-    /// **The trigger tests the plan ran, by digest, and the version it compared with** (the
-    /// review of #3238): a grade after an edit runs only these tests against only this version,
-    /// so a test or a commit a chat could add changes nothing the person did not see.
+    /// **The trigger tests the plan ran, by digest** (the review of #3238): a grade after an edit
+    /// runs only these tests, so a test a chat could add changes nothing the person did not see.
     pub tests: String,
+    /// **The version the plan compared with when it was turned on.** A grade after an edit
+    /// compares with the version before that edit (#4016): each saved edit is committed, so that
+    /// version moves with every edit and is not held to this one. A previous version's arm that
+    /// the plan did not show runs more chats, and waits for the person as any growth does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous: Option<String>,
     /// **The model its chats ran on as the plan showed it** (#3622): the one their line names,
@@ -118,6 +122,20 @@ pub fn tests_of(request: &purlis_skills::grade::GradeRequest) -> String {
         .collect()
 }
 
+/// **The chats the plan that turns grading after each edit on shows and keeps** (#4035): the
+/// chats of `plan`, with its previous version's arm counted where it has none yet and its edits
+/// are committed (`committed`: a copy git holds, not one only on this machine). Each saved edit
+/// of such a copy is committed, so a skill with one version gains a previous version at its
+/// first edit, and every grade after an edit then runs that arm too. Its cap and dollar limit
+/// stay the plan's: they hold each grade whole, however many chats it runs.
+pub fn chats_to_accept(plan: &purlis_skills::grade::Plan, committed: bool) -> u32 {
+    if !committed {
+        return plan.chats;
+    }
+    let arms = u32::try_from(super::ARMS_WITH_PREVIOUS.len()).unwrap_or(u32::MAX);
+    plan.chats.max(plan.per_arm.saturating_mul(arms))
+}
+
 /// The file, as it is written.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct Kept {
@@ -126,9 +144,9 @@ struct Kept {
     skills: BTreeMap<String, Accepted>,
 }
 
-/// Where the file of the project at `root` is.
-fn path_of(root: &Path) -> PathBuf {
-    crate::plane::state_dir(root).join(FILE)
+/// Where the file of the project at `root` is: `None` where this machine has no data home.
+fn path_of(root: &Path) -> Option<PathBuf> {
+    Some(crate::appstate::dir(root)?.join(FILE))
 }
 
 /// **The copy a skill's opt-in is kept by**: its level's folder relative to the project, and its
@@ -140,7 +158,9 @@ pub fn key(level: &Level, name: &str) -> Option<String> {
 /// The file as it reads: nothing where it is absent, not a file of its own, too large, or not
 /// what purlis writes.
 fn read(root: &Path) -> Kept {
-    let path = path_of(root);
+    let Some(path) = path_of(root) else {
+        return Kept::default();
+    };
     let Ok(meta) = std::fs::symlink_metadata(&path) else {
         return Kept::default();
     };
@@ -173,29 +193,27 @@ fn read(root: &Path) -> Kept {
     }
 }
 
-/// Writes `kept` as the file, whole or not at all, private, through no link.
-fn write(root: &Path, kept: &Kept) -> Result<(), String> {
-    let path = path_of(root);
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|why| not_kept(&why.to_string()))?;
-    }
+/// Writes `kept` as the file in the project's app state `dir`, whole or not at all, private,
+/// through no link.
+fn write(dir: &Path, kept: &Kept) -> Result<(), String> {
+    let path = dir.join(FILE);
     let text = serde_json::to_string_pretty(kept).map_err(|why| not_kept(&why.to_string()))?;
-    crate::plane::write_private(root, &path, text.as_bytes())
+    crate::plane::write_private(dir, &path, text.as_bytes())
         .map_err(|why| not_kept(&why.to_string()))
 }
 
 /// The lock file beside [`FILE`] whose `flock` each change holds while it reads, changes and
 /// writes the file: two changes at once (a grade after an edit keeping what it graded while the
 /// person turns the opt-in off) take turns, so neither writes back what the other took away.
-pub(crate) const LOCK: &str = "skill-grade-after-edit.lock";
+pub const LOCK: &str = "skill-grade-after-edit.lock";
 
 /// How long a change waits for another to let go of [`LOCK`].
 const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
-/// Takes [`LOCK`] for one change of the file of the project at `root`.
-fn held(root: &Path) -> Result<crate::filelock::Held, String> {
-    let dir = crate::plane::state_dir(root);
-    std::fs::create_dir_all(&dir).map_err(|why| not_kept(&why.to_string()))?;
+/// Takes [`LOCK`] for one change of the file of the project at `root`: the lock, and the project's
+/// app state the file is written in.
+fn held(root: &Path) -> Result<(crate::filelock::Held, PathBuf), String> {
+    let dir = crate::appstate::made(root).map_err(|why| not_kept(&why))?;
     let mut options = std::fs::OpenOptions::new();
     options.read(true).write(true).create(true).truncate(false);
     #[cfg(unix)]
@@ -206,8 +224,9 @@ fn held(root: &Path) -> Result<crate::filelock::Held, String> {
     let file = crate::contain::nofollow(&mut options)
         .open(dir.join(LOCK))
         .map_err(|why| not_kept(&why.to_string()))?;
-    crate::filelock::lock_within(file, LOCK_WAIT, "grading after each edit")
-        .map_err(|why| not_kept(&why.to_string()))
+    let held = crate::filelock::lock_within(file, LOCK_WAIT, "grading after each edit")
+        .map_err(|why| not_kept(&why.to_string()))?;
+    Ok((held, dir))
 }
 
 /// What a write that failed says.
@@ -237,7 +256,7 @@ pub fn turn_on(root: &Path, level: &Level, name: &str, accepted: Accepted) -> Re
              edit was not turned on."
         ));
     }
-    let _held = held(root)?;
+    let (_held, dir) = held(root)?;
     let mut kept = read(root);
     if !kept.skills.contains_key(&key) && kept.skills.len() >= MOST_SKILLS {
         return Err(format!(
@@ -247,7 +266,7 @@ pub fn turn_on(root: &Path, level: &Level, name: &str, accepted: Accepted) -> Re
     }
     kept.v = VERSION;
     kept.skills.insert(key, accepted);
-    write(root, &kept)
+    write(&dir, &kept)
 }
 
 /// **Turns grading after each edit off for the copy of `name` at `level`**: nothing where it was
@@ -256,13 +275,13 @@ pub fn turn_off(root: &Path, level: &Level, name: &str) -> Result<(), String> {
     let Some(key) = key(level, name) else {
         return Ok(());
     };
-    let _held = held(root)?;
+    let (_held, dir) = held(root)?;
     let mut kept = read(root);
     if kept.skills.remove(&key).is_none() {
         return Ok(());
     }
     kept.v = VERSION;
-    write(root, &kept)
+    write(&dir, &kept)
 }
 
 /// **Changes the opt-in of the copy of `name` at `level` by `change`**, where it is on: what a
@@ -276,19 +295,53 @@ pub fn update(
     let Some(key) = key(level, name) else {
         return Ok(());
     };
-    let _held = held(root)?;
+    let (_held, dir) = held(root)?;
     let mut kept = read(root);
     let Some(accepted) = kept.skills.get_mut(&key) else {
         return Ok(());
     };
     change(accepted);
     kept.v = VERSION;
-    write(root, &kept)
+    write(&dir, &kept)
+}
+
+/// **Carries the opt-in of the copy of `old` at `from` to the copy it is now, `new` at `to`**
+/// (#3612): what a rename, a move between levels and a share do, so grading after each edit
+/// follows the skill. What the person accepted goes with it unchanged, and it still grades only
+/// within that ([`next`]): where the plan of the copy's new place runs more chats, may spend more,
+/// runs other tests, compares with another version or runs on another profile or model, the next
+/// edit waits for the person to see the plan again. Nothing where it was off.
+pub fn moved(root: &Path, from: &Level, old: &str, to: &Level, new: &str) -> Result<(), String> {
+    let (Some(was), Some(is)) = (key(from, old), key(to, new)) else {
+        return Ok(());
+    };
+    // Read before the lock is taken, so a change of a skill never graded makes no state.
+    if was == is || of(root, from, old).is_none() {
+        return Ok(());
+    }
+    let (_held, dir) = held(root)?;
+    let mut kept = read(root);
+    let Some(accepted) = kept.skills.remove(&was) else {
+        return Ok(());
+    };
+    kept.v = VERSION;
+    kept.skills.insert(is, accepted);
+    write(&dir, &kept)
+}
+
+/// **Drops the opt-in of the copy of `name` at `level`** (#3612): what its delete does. A skill
+/// brought back is graded after each edit again only once the person turns it on again, from
+/// its plan. Nothing where it was off.
+pub fn dropped(root: &Path, level: &Level, name: &str) -> Result<(), String> {
+    if of(root, level, name).is_none() {
+        return Ok(());
+    }
+    turn_off(root, level, name)
 }
 
 /// **What a grade after an edit would run now**: the chats of the copy's plan, the cap and the
-/// dollar limit it would be held to, its trigger tests and the version it compares with, and its
-/// consent, the digest of what it would grade.
+/// dollar limit it would be held to, its trigger tests, and its consent, the digest of what it
+/// would grade.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Now {
     /// The profile and the model its chats would run on (#3622).
@@ -298,8 +351,10 @@ pub struct Now {
     pub token_cap: u64,
     pub limit_usd: f64,
     pub tests: String,
-    pub previous: Option<String>,
     pub consent: String,
+    /// Whether it compares with a previous version (#4035): what a grade of a skill with one
+    /// version gains at its first saved edit.
+    pub previous: bool,
 }
 
 impl Now {
@@ -316,8 +371,8 @@ impl Now {
             token_cap: planned.cap.tokens,
             limit_usd,
             tests: tests_of(request),
-            previous: planned.previous.as_ref().map(|one| one.commit.clone()),
             consent: planned.consent.clone()?,
+            previous: planned.previous.is_some(),
         })
     }
 }
@@ -360,13 +415,18 @@ pub fn next(accepted: &Accepted, now: &Now) -> Next {
                 .to_owned(),
         );
     }
-    if now.previous != accepted.previous {
-        return Next::Waits(
-            "The version a grade of it compares with changed since you turned grading after each \
-             edit on, so no grade was started after your edit: see the plan again and turn it on \
-             again."
-                .to_owned(),
-        );
+    // The version it compares with is the one before the edit (#4016): each saved edit is
+    // committed and moves it, so it is not held to the one the plan showed. The plan that turns
+    // it on counts that version's arm (#4035, [`chats_to_accept`]); an opt-in that accepted
+    // fewer chats waits below, and says why where that arm is what grew.
+    if now.chats > accepted.chats && now.previous && accepted.previous.is_none() {
+        return Next::Waits(format!(
+            "Your edit made a version of it to compare with, so a grade of it now also runs its \
+             previous version: {}, more than the {} you accepted. No grade was started after \
+             your edit: see the cost again and turn grading after each edit on again.",
+            crate::counts::counted(now.chats, "chat", "chats"),
+            accepted.chats
+        ));
     }
     if now.chats > accepted.chats {
         return Next::Waits(format!(

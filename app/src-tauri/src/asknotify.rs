@@ -282,6 +282,7 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::WorkspaceRemoval => "Asks you to remove a workspace",
         AskSource::ProposedChange => "Proposes a change for you to apply",
         AskSource::RunnerWrite => "Asks, from a pool's runner, to change this project",
+        AskSource::RunnerDispatch => "Asks, from a pool's runner, to start a chat here",
         AskSource::Terminal => "Waiting in its terminal",
         AskSource::Question => "Waiting on your reply",
         AskSource::SignIn => "Asks you to sign a profile in",

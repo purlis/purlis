@@ -45,6 +45,7 @@ mod clipath;
 mod createproject;
 mod curation;
 // The Devices view (#2052).
+mod clusterpools;
 mod devices;
 mod dispatchaway;
 mod dispatched;
@@ -83,6 +84,7 @@ mod inboxupdates;
 mod machineprofiles;
 mod personaskills;
 mod routergrade;
+mod signinwatch;
 mod skillchange;
 mod skilldrafts;
 mod skillgrade;
@@ -148,6 +150,7 @@ mod restoring;
 mod routedsessions;
 #[cfg(unix)]
 mod runnercode;
+mod runnerdispatches;
 mod runnerlinks;
 mod runnerlog;
 mod runnerwrites;
@@ -786,6 +789,11 @@ struct OpenChat {
     /// the other chats of its workspace, which move with it.
     #[specta(optional)]
     workspace: Option<String>,
+    /// Whether Move here brings back a clone its runner's chat made there (#3811): its runner
+    /// names the clones it holds (session protocol 1.51). `null` for a chat here, and for one on
+    /// a runner before 1.51, whose Move here row says such a clone stays there.
+    #[specta(optional)]
+    clones_come_back: Option<bool>,
     /// The persona it adopted.
     persona: Option<String>,
     /// What its harness cannot tell charter, said on the chat — none where it tells all.
@@ -893,10 +901,12 @@ fn drawn_of(held: &planes::Held, open: chats::Open) -> OpenChat {
     let id = held.chats().chat_at(open.session).and_then(|at| at.id);
     let browser_sites = browser_sites_of(held, open.session);
     let pool = held.chats().pool_of(open.session);
+    let clones_come_back = held.chats().clones_come_back(open.session).then_some(true);
     OpenChat {
         id,
         browser_sites,
         pool,
+        clones_come_back,
         ..OpenChat::from(open)
     }
 }
@@ -2348,6 +2358,20 @@ fn put_away_chat_move(
     planes.held(&plane)?.moves().put_away(session)
 }
 
+/// **Chat `session`'s move waited on its profile's sign-in on the runner, which the window's
+/// strip says is done** (#3477): the move is prepared again, which asks the runner itself, so it
+/// goes ahead once the profile is signed in there, or waits again. Refused for a move that waits
+/// on no sign-in.
+#[tauri::command]
+#[specta::specta]
+fn chat_move_signed_in(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+) -> Result<(), String> {
+    planes.held(&plane)?.moves().signed_in(session)
+}
+
 /// **The chats this project has open that run under a sandbox other than the one the
 /// project's settings decide for them now** (#1428), or none. The window asks when the
 /// project's settings change, when its chats do, and after each of its own sandbox commands
@@ -2747,6 +2771,7 @@ impl From<chats::Open> for OpenChat {
                 .map(|card| HarnessGlance::from(&card)),
             profile: open.profile,
             pool: None,
+            clones_come_back: None,
             workspace: open.workspace,
             persona: open.persona,
             in_front: open.in_front,
@@ -3098,10 +3123,12 @@ fn ui_rpc_client() -> String {
     // `Channel` stays imported only while something the client keeps still names it.
     let names = if client.contains("Channel<") {
         "invoke as __TAURI_INVOKE, windowOnly as __WINDOW_ONLY, windowOnlyRefused as \
-         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, Channel"
+         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, \
+         windowOnlyStartRefused as __WINDOW_ONLY_START_REFUSED, Channel"
     } else {
         "invoke as __TAURI_INVOKE, windowOnly as __WINDOW_ONLY, windowOnlyRefused as \
-         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT"
+         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, \
+         windowOnlyStartRefused as __WINDOW_ONLY_START_REFUSED"
     };
     client.replacen(
         TAURI_INVOKE,
@@ -3188,6 +3215,8 @@ fn without_channel_commands(bindings: &str) -> String {
                 "__WINDOW_ONLY_RESULT"
             } else if command.contains(", Refused>(__TAURI_INVOKE(") {
                 "__WINDOW_ONLY_REFUSED"
+            } else if command.contains(", StartRefused>(__TAURI_INVOKE(") {
+                "__WINDOW_ONLY_START_REFUSED"
             } else {
                 panic!(
                     "`{name}` is the window's alone and its error is a shape the link's client has no refusal for"

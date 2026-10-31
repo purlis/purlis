@@ -71,6 +71,7 @@ fn telling<T>(
     let blocks = Mutex::new(blocks);
     let _reading = listening.then(|| {
         listener.hear(Hearing {
+            serve: purlis_core::hookwire::serve::refusing(),
             secret_exec: Box::new(|_, _, writer| {
                 purlis_core::secrets::brokered::not_answered(writer)
             }),

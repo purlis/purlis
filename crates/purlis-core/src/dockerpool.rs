@@ -56,6 +56,69 @@ pub const PREFIX: &str = "purlis-runner-";
 /// Where `purlis` is in a runner image (`docs/runner-image.md`).
 pub const PURLIS: &str = "/usr/local/bin/purlis";
 
+/// **The shell script a drained runner's sign-ins are carried with** (#4011, #4055): `sh -c`
+/// hands it the old home, the new home, the folder under the new home they go to
+/// ([`crate::profilestore::carried_under_a_runner_home`]) and each `<from>=<to>` pair
+/// ([`crate::profilestore::carried_in_a_runner_home`]). A `*` in a pair is a profile's name:
+/// each one found under the old home goes to the same name. The new runner serves chats as it
+/// runs, so nothing is written where they could have put something first: the folder is walked
+/// to one folder at a time, never through a link, and held by its real path, and the files go
+/// into a batch folder of its own that no one knew the name of before it was made, each written
+/// only where nothing is (`set -C`) and put in place whole, by a link. Only a plain file inside
+/// the old home is carried, never a link or what a folder linked out of it holds. What it makes is
+/// the runner's user's alone. A file that cannot be carried is said and passed over: the profile
+/// is then signed in again, as before any was carried, and the drain goes on.
+pub const COPY_PROFILES: &str = r#"set -u
+umask 077
+from=$1 to=$2 stage=$3
+shift 3
+from=$(cd -P "$from" && pwd -P) || exit 1
+cd -P "$to" || exit 1
+here=$(pwd -P)
+set -f
+IFS=/
+for part in $stage; do
+  [ -n "$part" ] || continue
+  [ ! -L "$part" ] || exit 1
+  [ -d "$part" ] || mkdir "$part" || exit 1
+  cd -P "$part" || exit 1
+  here=$here/$part
+  [ "$(pwd -P)" = "$here" ] || exit 1
+done
+unset IFS
+set +f
+batch=$(mktemp -d ./XXXXXXXX) || exit 1
+batch=${batch#./}
+cd -P "$batch" || exit 1
+[ "$(pwd -P)" = "$here/$batch" ] || exit 1
+set -C
+for pair in "$@"; do
+  src=${pair%%=*} dst=${pair#*=}
+  for found in "$from"/$src; do
+    rel=${found#"$from/"}
+    [ -f "$found" ] && [ ! -L "$found" ] && [ -r "$found" ] || continue
+    case $(realpath -- "$found") in "$from"/*) ;; *) continue ;; esac
+    out=$dst
+    case $src in
+      *'*'*)
+        name=${rel#"${src%%\**}"}
+        name=${name%"${src#*\*}"}
+        case $name in ''|*/*|.*) continue ;; esac
+        out=${dst%%\**}$name${dst#*\*}
+        ;;
+    esac
+    { mkdir -p "${out%/*}" && [ ! -e "$out" ] && [ ! -L "$out" ] && cat "$found" > "$out.part" \
+        && ln "$out.part" "$out"; } || echo "not carried: $rel" >&2
+    rm -f "$out.part"
+  done
+done
+cd .. && rmdir "$batch" 2>/dev/null
+exit 0
+"#;
+
+/// How long carrying a runner's sign-ins may take before it is ended (#4011): a few small files.
+pub const CARRIED_WITHIN: std::time::Duration = std::time::Duration::from_secs(120);
+
 /// The longest runner name: a pool's longest, and the dash and eight hex digits a runner made
 /// beside it after an update adds ([`successor_name`], #2749).
 const MOST_NAME: usize = 49;
@@ -68,6 +131,17 @@ pub const PURLIS_RUNNER_IMAGE: &str = "ghcr.io/purlis/purlis-runner";
 /// pool's name, a dash and the first eight hex digits of the image's digest.
 pub fn successor_name(pool: &str, image: &Image) -> String {
     format!("{pool}-{}", &image.digest()[..8])
+}
+
+/// **The name of a runner made again for `pool`** (#4149), after its runner was removed outside
+/// purlis: the pool's name, a dash and eight hex digits drawn at random, as long as a name made
+/// after an update ([`successor_name`]), so it fits wherever that one does.
+pub fn remade_name(pool: &str) -> Result<String, Refused> {
+    let mut drawn = [0u8; 4];
+    getrandom::fill(&mut drawn)
+        .map_err(|why| refused(format!("purlis could not draw a runner's name: {why}")))?;
+    let hex: String = drawn.iter().map(|byte| format!("{byte:02x}")).collect();
+    Ok(format!("{pool}-{hex}"))
 }
 
 /// Why a runner container was not made, checked or linked, in words a person reads.
@@ -511,6 +585,11 @@ impl ContainerId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Its first twelve digits, as Docker shows a container's id.
+    pub fn short(&self) -> &str {
+        &self.0[..12]
+    }
 }
 
 /// A runner's container as it was made: what every check and every link holds it to.
@@ -518,6 +597,73 @@ impl ContainerId {
 pub struct Made {
     pub container: ContainerId,
     pub runner: Runner,
+}
+
+/// How a runner's sign-in is run: in a terminal the person drives, or driven by purlis with no
+/// terminal (#4042).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Typed {
+    InATerminal,
+    Driven,
+    /// Driven by the person, in a terminal the runner's `purlis` makes of this size (#4043).
+    InOwnTerminal(crate::engine::Size),
+    /// In a terminal the person drives, by the harness's device-code flow: what is left where
+    /// the browser's answer cannot reach the runner (#4044).
+    DeviceInATerminal,
+    /// [`Typed::InOwnTerminal`], by the harness's device-code flow: a login that waits for the
+    /// browser's answer on the runner's loopback, which nothing carries from a terminal (#4044).
+    DeviceInOwnTerminal(crate::engine::Size),
+}
+
+impl Typed {
+    /// The flag `docker exec` and `kubectl exec` run it with: `-it` in a terminal the person
+    /// drives, `-i` with pipes purlis drives.
+    pub fn exec_flag(self) -> &'static str {
+        match self {
+            Typed::InATerminal | Typed::DeviceInATerminal => "-it",
+            Typed::Driven | Typed::InOwnTerminal(_) | Typed::DeviceInOwnTerminal(_) => "-i",
+        }
+    }
+}
+
+/// **The runner's own words that sign its profile `name` in**, to `provider`'s plan where one is
+/// named, by `typed`: what `docker exec` runs in a Docker runner's container and `kubectl exec`
+/// in a cluster runner's pod (#3819), so both run the same sign-in, and a login over pipes ends
+/// with its input on either (#4043).
+pub fn sign_in_words(typed: Typed, name: &str, provider: Option<&str>) -> Vec<String> {
+    let mut words: Vec<String> = [PURLIS, "profile", "sign-in", name]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect();
+    if let Some(provider) = provider {
+        words.extend(["--provider".to_owned(), provider.to_owned()]);
+    }
+    // A plan's login asks from a list in a terminal, which nothing answers when driven: a plan
+    // whose login waits for the browser is told so, and only it, as a runner before #4044 knows
+    // no `--way` (Copilot's device code is its login's default). Where the browser's answer
+    // cannot reach the runner, the device-code flow is named (#4044).
+    match typed {
+        Typed::Driven
+            if provider
+                .is_some_and(crate::profilestore::sign_in::driven::plan_waits_for_the_browser) =>
+        {
+            words.extend(["--way".to_owned(), "browser".to_owned()]);
+        }
+        Typed::DeviceInATerminal | Typed::DeviceInOwnTerminal(_) => {
+            words.extend(["--way".to_owned(), "device".to_owned()]);
+        }
+        Typed::InATerminal | Typed::Driven | Typed::InOwnTerminal(_) => {}
+    }
+    // Over pipes the login ends with its input (#4043), on a cluster runner too (#3819).
+    match typed {
+        Typed::InATerminal | Typed::DeviceInATerminal => {}
+        Typed::Driven => words.push("--until-input-ends".to_owned()),
+        Typed::InOwnTerminal(size) | Typed::DeviceInOwnTerminal(size) => words.extend([
+            "--in-own-terminal".to_owned(),
+            format!("{}x{}", size.columns, size.rows),
+        ]),
+    }
+    words
 }
 
 impl Made {
@@ -539,28 +685,97 @@ impl Made {
         self.exec(&["--version"])
     }
 
-    /// `docker`'s arguments that run the runner's own `purlis profile sign-in` of its profile
-    /// `name` (#2049), to `provider`'s plan where one is named, with a terminal the person drives:
-    /// the harness's own sign-in, run on the runner in the runner's folder for that profile.
-    pub fn sign_in_args(&self, name: &str, provider: Option<&str>) -> Vec<String> {
+    /// **The name of the container that carries sign-ins to this runner** (#4011): its own
+    /// container's, with `-copy`, so what a carry that stopped short left is found with this
+    /// runner's ([`Docker::remove_leftovers_of`], [`Docker::copy_profiles`]).
+    pub fn copy_container(&self) -> String {
+        format!("{}-copy", self.runner.container())
+    }
+
+    /// **`docker`'s arguments that carry `from`'s sign-ins into this runner's home** (#4011,
+    /// ruled 2026-10-30): a container of this runner's image, named for it, labelled as made by
+    /// `desktop` and removed once it ends, that mounts `from`'s home volume read-only and this
+    /// runner's home volume, and runs [`COPY_PROFILES`] as this runner's user. It reaches no
+    /// network, holds no capability and writes nothing but the new home, so nothing of the homes
+    /// leaves the Docker host.
+    pub fn copy_profiles_args(&self, from: &Made, desktop: &str) -> Vec<String> {
         let mut args: Vec<String> = [
-            "exec",
-            "-it",
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--name",
+            &self.copy_container(),
+            "--label",
+            &format!("{LABEL}={}", self.runner.name()),
+            "--label",
+            &format!("{DESKTOP_LABEL}={desktop}"),
             "--user",
             &self.runner.user.spelled(),
-            self.container.as_str(),
-            PURLIS,
-            "profile",
-            "sign-in",
-            name,
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--read-only",
+            "--pids-limit",
+            "64",
+            "--memory",
+            "256m",
+            "--cpus",
+            "1",
+            "--mount",
+            &format!(
+                "type=volume,source={},target=/from,readonly",
+                from.runner.volume()
+            ),
+            "--mount",
+            &format!("type=volume,source={},target=/to", self.runner.volume()),
+            "--entrypoint",
+            "/bin/sh",
+            self.runner.image.as_str(),
+            "-c",
+            COPY_PROFILES,
+            "sh",
+            "/from",
+            "/to",
+            &crate::profilestore::carried_under_a_runner_home(),
         ]
         .iter()
         .map(|word| (*word).to_owned())
         .collect();
-        if let Some(provider) = provider {
-            args.extend(["--provider".to_owned(), provider.to_owned()]);
-        }
+        args.extend(crate::profilestore::carried_in_a_runner_home());
         args
+    }
+
+    /// `docker`'s arguments that run the runner's own `purlis profile sign-in` of its profile
+    /// `name` (#2049), to `provider`'s plan where one is named, with a terminal the person drives:
+    /// the harness's own sign-in, run on the runner in the runner's folder for that profile.
+    pub fn sign_in_args(&self, name: &str, provider: Option<&str>) -> Vec<String> {
+        self.sign_in_args_by(Typed::InATerminal, name, provider)
+    }
+
+    /// [`Made::sign_in_args`], by `typed`: in a terminal the person drives (`-it`), or with its
+    /// input and output pipes (`-i`, #4042), for purlis to drive or to carry a terminal the
+    /// runner's `purlis` makes. Over pipes the login ends with its input (#4043), since ending
+    /// `docker exec` ends nothing in the container.
+    pub fn sign_in_args_by(&self, typed: Typed, name: &str, provider: Option<&str>) -> Vec<String> {
+        let mut args: Vec<String> = [
+            "exec",
+            typed.exec_flag(),
+            "--user",
+            &self.runner.user.spelled(),
+            self.container.as_str(),
+        ]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect();
+        args.extend(sign_in_words(typed, name, provider));
+        args
+    }
+
+    /// `docker`'s arguments that run the runner's own sign-out of its profile `name` (#4043).
+    pub fn sign_out_args(&self, name: &str) -> Vec<String> {
+        self.exec(&["profile", "sign-out", name])
     }
 
     fn exec(&self, words: &[&str]) -> Vec<String> {
@@ -619,6 +834,49 @@ pub fn check_on(
     engine: Engine,
 ) -> Result<Seccomp, Refused> {
     checked_on(inspected, made, engine, true)
+}
+
+/// The most kept of what a runner's sign-in check prints, on each of its outputs.
+const STANDING_MOST: u64 = 64 * 1024;
+
+/// How long a runner's sign-in check is waited for.
+const STANDING_WITHIN: std::time::Duration = std::time::Duration::from_secs(180);
+
+/// **What `purlis profile sign-in <name> --check` said of `name`, in `printed`**: signed in, not
+/// signed in, or that its harness cannot tell, each by the words that command writes. `Err`, in
+/// the runner's own words cut short, for anything else, such as a profile it does not keep.
+pub fn standing_said(
+    name: &str,
+    printed: &str,
+) -> Result<crate::profilestore::sign_in::Standing, String> {
+    use crate::profilestore::sign_in::Standing;
+    let (signed_in, signed_out) = (
+        format!("'{name}' is signed in "),
+        format!("'{name}' is not "),
+    );
+    for line in printed.lines() {
+        if line.starts_with(&signed_in) {
+            return Ok(Standing::SignedIn);
+        }
+        if line.starts_with(&signed_out) {
+            return Ok(Standing::SignedOut);
+        }
+        if line.contains(&format!("cannot tell whether '{name}'")) {
+            return Ok(Standing::CannotTell);
+        }
+    }
+    let last = printed.lines().rfind(|line| !line.trim().is_empty());
+    Err(format!(
+        "the runner says: {}",
+        crate::shown::short(last.unwrap_or("nothing"))
+    ))
+}
+
+/// **A runner removed outside purlis** (#4149, [`Docker::gone`]): Docker lists no container
+/// of its id. Whether its home volume is still there, whose sign-ins a runner made again takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Gone {
+    pub home_kept: bool,
 }
 
 /// What [`Docker::resumed`] did: what it read of the container first, and whether it started it.
@@ -2110,6 +2368,117 @@ impl Docker {
         name: &str,
         provider: Option<&str>,
     ) -> Result<String, String> {
+        self.checked_sign_in(made, engine, name, provider, Typed::InATerminal)?
+            .line()
+    }
+
+    /// [`Docker::sign_in_line`], by the harness's device-code flow (#4044): what a person is left
+    /// with where this machine's port for the browser's answer is taken.
+    pub fn device_sign_in_line(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Result<String, String> {
+        self.checked_sign_in(made, engine, name, provider, Typed::DeviceInATerminal)?
+            .line()
+    }
+
+    /// **The runner's own sign-in of the profile `name`, for purlis to drive with no terminal**
+    /// (#4042): [`Docker::sign_in_line`]'s, checked the same way, its input and output pipes.
+    pub fn driven_sign_in(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Result<crate::profilestore::sign_in::Login, String> {
+        self.checked_sign_in(made, engine, name, provider, Typed::Driven)
+    }
+
+    /// **Whether the runner says `name` is signed in**, by its own `purlis profile sign-in
+    /// --check` ([`standing_said`]), through the same `docker` as [`Docker::driven_sign_in`]:
+    /// for a sign-in with no link to the runner to ask over (#4046). `Err` where it says neither,
+    /// as for a profile it does not keep.
+    pub fn standing_on_runner(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+    ) -> Result<crate::profilestore::sign_in::Standing, String> {
+        let login = self.driven_sign_in(made, engine, name, None)?;
+        let mut command = std::process::Command::new(&login.program);
+        command
+            .args(&login.args)
+            .arg("--check")
+            .envs(login.env.iter().map(|(n, v)| (n, v)));
+        for name in &login.cleared {
+            command.env_remove(name);
+        }
+        // Bounded, in time and in what is kept of it: the runner's answer is its own. A runner
+        // that fetches the harness first (#4007) is given the time a fetch takes.
+        let ran = crate::boundedrun::run_within(
+            &mut command,
+            None,
+            STANDING_MOST,
+            STANDING_MOST,
+            Some(STANDING_WITHIN),
+        )
+        .map_err(|why| match why {
+            crate::boundedrun::Unanswered::NotStarted(e) => {
+                format!("{} could not be run: {e}", login.program)
+            }
+            crate::boundedrun::Unanswered::PrintedTooMuch => {
+                "it printed more than a status check does".to_owned()
+            }
+            crate::boundedrun::Unanswered::NotFinished(_) => "it did not answer in time".to_owned(),
+        })?;
+        standing_said(name, &String::from_utf8_lossy(&ran.said))
+    }
+
+    /// **The runner's own sign-in of the profile `name`, in a terminal of `size` carried over
+    /// pipes** (#4043): [`Docker::driven_sign_in`]'s, for the person to drive in the window. With
+    /// `device`, by the harness's device-code flow, for a login that waits for the browser's
+    /// answer on the runner's loopback, which nothing carries from a terminal (#4044).
+    pub fn terminal_sign_in(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+        size: crate::engine::Size,
+        device: bool,
+    ) -> Result<crate::profilestore::sign_in::Login, String> {
+        let typed = if device {
+            Typed::DeviceInOwnTerminal(size)
+        } else {
+            Typed::InOwnTerminal(size)
+        };
+        self.checked_sign_in(made, engine, name, provider, typed)
+    }
+
+    /// **Runs the runner's own sign-out of the profile `name`** (#4043), the container checked
+    /// as it was made first. Its harness may be fetched for it, so it has [`SIGN_OUT_WITHIN`].
+    pub fn sign_out(&self, made: &Made, name: &str) -> Result<(), String> {
+        self.check(made).map_err(|why| why.0)?;
+        self.clone()
+            .within(SIGN_OUT_WITHIN)
+            .run(&made.sign_out_args(name), None, MOST_SAID)
+            .map(drop)
+            .map_err(|why| why.0)
+    }
+
+    /// **The runner's own sign-in of the profile `name`, by `typed`**, the container checked as it
+    /// was made first ([`Docker::sign_in_line`], [`Docker::driven_sign_in`]).
+    pub fn checked_sign_in(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+        typed: Typed,
+    ) -> Result<crate::profilestore::sign_in::Login, String> {
         self.check(made).map_err(|why| why.0)?;
         let settings_in = match &self.settings_in {
             Some(folder) => folder.clone(),
@@ -2118,8 +2487,7 @@ impl Docker {
                 .join(settings::DIR),
         };
         let settings = settings::for_a_sign_in(&settings_in).map_err(|why| why.0)?;
-        self.sign_in_login(made, engine, &settings, name, provider)?
-            .line()
+        self.sign_in_login_by(typed, made, engine, &settings, name, provider)
     }
 
     /// **What the line [`Docker::sign_in_line`] types runs**: this `docker`, named by its path,
@@ -2129,6 +2497,19 @@ impl Docker {
     /// the shell's, or of the person's Docker, decides what runs.
     pub fn sign_in_login(
         &self,
+        made: &Made,
+        engine: &std::path::Path,
+        settings: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Result<crate::profilestore::sign_in::Login, String> {
+        self.sign_in_login_by(Typed::InATerminal, made, engine, settings, name, provider)
+    }
+
+    /// [`Docker::sign_in_login`], by `by` ([`Made::sign_in_args_by`]).
+    pub fn sign_in_login_by(
+        &self,
+        by: Typed,
         made: &Made,
         engine: &std::path::Path,
         settings: &std::path::Path,
@@ -2147,7 +2528,7 @@ impl Docker {
             "--host".to_owned(),
             format!("unix://{}", typed(engine, "the Docker engine's socket")?),
         ];
-        args.extend(made.sign_in_args(name, provider));
+        args.extend(made.sign_in_args_by(by, name, provider));
         Ok(crate::profilestore::sign_in::Login {
             program: typed(&self.program, "this machine's docker")?,
             args,
@@ -2234,6 +2615,59 @@ impl Docker {
         Ok(homes_held(&printed))
     }
 
+    /// **Whether `made`'s container was removed outside purlis** (#4149): Docker lists no
+    /// container of its id, stopped or running, so no link to it can come back. `None` where
+    /// Docker still lists it (a runner only stopped or suspended); refused where Docker did not
+    /// answer, which says nothing of the runner. A gone runner says whether its home volume, and
+    /// with it the sign-ins kept there, is still there.
+    pub fn gone(&self, made: &Made) -> Result<Option<Gone>, Refused> {
+        let id = made.container.as_str();
+        let listed = self.read(
+            &[
+                "container".into(),
+                "ls".into(),
+                "--all".into(),
+                "--quiet".into(),
+                "--no-trunc".into(),
+                "--filter".into(),
+                format!("id={id}"),
+            ],
+            MOST_INSPECTED,
+        )?;
+        if listed.lines().any(|line| line.trim() == id) {
+            return Ok(None);
+        }
+        let volume = made.runner.volume();
+        let volumes = self.read(
+            &[
+                "volume".into(),
+                "ls".into(),
+                "--quiet".into(),
+                "--filter".into(),
+                format!("name={volume}"),
+            ],
+            MOST_INSPECTED,
+        )?;
+        Ok(Some(Gone {
+            home_kept: volumes.lines().any(|line| line.trim() == volume),
+        }))
+    }
+
+    /// **When `made`'s home volume was made**, in seconds since the epoch, as Docker says it
+    /// (#4149): a home made after its runner was paired is not the one purlis made for it, and
+    /// nothing of it is carried. `None` where Docker gives no time it reads.
+    pub fn home_made_at(&self, made: &Made) -> Result<Option<u64>, Refused> {
+        let inspected = self.json(
+            &["volume", "inspect", &made.runner.volume()],
+            "docker volume inspect",
+        )?;
+        Ok(inspected
+            .pointer("/0/CreatedAt")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
+            .and_then(|time| u64::try_from(time.timestamp()).ok()))
+    }
+
     /// **[`MadeSuspending`] of `made`'s container** (#3717): `None` where its command is not a
     /// runner's `serve` as purlis makes one.
     pub fn made_suspending(&self, made: &Made) -> Result<Option<MadeSuspending>, Refused> {
@@ -2297,18 +2731,19 @@ impl Docker {
         crate::runnerlink::from_line(&out).map_err(refused)
     }
 
-    /// **Removes what a make of the runner `name` by `desktop` left behind** (#2869): its
-    /// container, only where one of exactly its name carries the runner label of that name and
-    /// `desktop`'s label ([`DESKTOP_LABEL`]), removed by the id the listing gave; then its home
-    /// volume of exactly its name, only once no container of that name is left, whatever its
-    /// labels. One another desktop made, or one made before the label, is left as it is. What it
-    /// removed, each named. Only for a name no kept runner holds: the caller says so.
-    pub fn remove_leftovers_of(&self, name: &str, desktop: &str) -> Result<Vec<String>, Refused> {
+    /// **Removes each container of exactly a name in `names` that carries the runner label of
+    /// `name` and `desktop`'s label** ([`DESKTOP_LABEL`]), by the id the listing gave: one another
+    /// desktop made, or one made before the label, is left as it is. Each removed, named.
+    fn remove_labelled(
+        &self,
+        name: &str,
+        desktop: &str,
+        names: &[String],
+    ) -> Result<Vec<String>, Refused> {
         let words = |words: &[&str]| -> Vec<String> {
             words.iter().map(|word| (*word).to_owned()).collect()
         };
         let container = format!("{PREFIX}{name}");
-        let volume = format!("{PREFIX}{name}-home");
         let mut removed = Vec::new();
         let listed = self.read(
             &words(&[
@@ -2333,7 +2768,7 @@ impl Docker {
             else {
                 continue;
             };
-            if named != container || made_by != desktop {
+            if !names.iter().any(|one| one == named) || made_by != desktop {
                 continue;
             }
             let id = ContainerId::new(id)?;
@@ -2342,8 +2777,29 @@ impl Docker {
                 None,
                 MOST_INSPECTED,
             )?;
-            removed.push(format!("container {container}"));
+            removed.push(format!("container {named}"));
         }
+        Ok(removed)
+    }
+
+    /// **Removes what a make of the runner `name` by `desktop` left behind** (#2869): its
+    /// container, only where one of exactly its name carries the runner label of that name and
+    /// `desktop`'s label ([`DESKTOP_LABEL`]), removed by the id the listing gave; then its home
+    /// volume of exactly its name, only once no container of that name is left, whatever its
+    /// labels. One another desktop made, or one made before the label, is left as it is. What it
+    /// removed, each named. Only for a name no kept runner holds: the caller says so.
+    pub fn remove_leftovers_of(&self, name: &str, desktop: &str) -> Result<Vec<String>, Refused> {
+        let words = |words: &[&str]| -> Vec<String> {
+            words.iter().map(|word| (*word).to_owned()).collect()
+        };
+        let container = format!("{PREFIX}{name}");
+        let volume = format!("{PREFIX}{name}-home");
+        // The container that carried sign-ins to it (#4011) is its leftover too.
+        let mut removed = self.remove_labelled(
+            name,
+            desktop,
+            &[container.clone(), format!("{container}-copy")],
+        )?;
         // A home volume goes only once no container of its name is left, whoever made it.
         let still = self.read(
             &words(&[
@@ -2393,6 +2849,37 @@ impl Docker {
                 out.trim()
             ))
         })
+    }
+
+    /// **Carries `from`'s sign-ins into `to`'s home** (#4011), on the Docker host
+    /// ([`Made::copy_profiles_args`]), for at most [`CARRIED_WITHIN`]: nothing of either home
+    /// passes through this machine. What did not answer in its time is removed, and one a
+    /// carry before left, of `desktop`'s, goes first so it holds no later carry back (#4055).
+    pub fn copy_profiles(&self, from: &Made, to: &Made, desktop: &str) -> Result<(), Refused> {
+        let prepared = self.prepared()?;
+        let _ = self.remove_labelled(to.runner.name(), desktop, &[to.copy_container()]);
+        let ran = self
+            .ran_prepared(
+                &prepared,
+                &to.copy_profiles_args(from, desktop),
+                None,
+                MOST_INSPECTED,
+                Some(CARRIED_WITHIN),
+            )
+            .map(|_| ());
+        if let Err(Failed::Late(_)) = &ran {
+            let _ = self.run(
+                &[
+                    "container".into(),
+                    "rm".into(),
+                    "--force".into(),
+                    to.copy_container(),
+                ],
+                None,
+                MOST_INSPECTED,
+            );
+        }
+        ran.map_err(Refused::from)
     }
 
     /// Remove `made`'s container and its home's volume, whatever state they are in.
@@ -2545,6 +3032,9 @@ const MOST_INSPECTED: u64 = 4 * 1024 * 1024;
 /// How long an image's `purlis` is given to answer whether it holds what it starts from
 /// namespaces (D-2050-26): its image is already here, and the answer is a start and an exit.
 const PROBE_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How long a runner's own sign-out has: long enough to fetch the version its profile pins.
+pub(crate) const SIGN_OUT_WITHIN: std::time::Duration = std::time::Duration::from_secs(180);
 
 /// The most of what `docker` says on standard error that purlis keeps to show.
 const MOST_SAID: u64 = 64 * 1024;

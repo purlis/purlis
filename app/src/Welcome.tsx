@@ -17,6 +17,7 @@ import { goneCause, keepGoneDismissed, letGoneGo, settleGoneKept } from "./dismi
 import { useNewerTrouble } from "./pickTrouble";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { CardButton } from "./ui/card/CardButton";
 import { Form } from "./ui/field/Field";
 import { List, ListRow } from "./ui/list/List";
 import { RowDescription, RowLabel, RowTrail } from "./ui/list/Row";
@@ -453,31 +454,22 @@ export function Welcome({
         )}
       </header>
 
-      {/* Every button here says `tabIndex={0}`: WebKit leaves a `<button>` out of the tab
-          sequence unless it is written down (`docs/ui-primitives.md`, charter-app#189). Each
-          door is named by its title alone and described by its line, so a screen reader reads
-          the act first and the explanation after it. */}
+      {/* Each door is a card pressed whole (`ui/card/CardButton`), named by its title alone and
+          described by its line, so a screen reader reads the act first and the explanation after
+          it. */}
       <ul className="welcome-doors" aria-label="Ways to start">
         {doorRows.map(({ door: which, title, says, mark: Mark, press }) => (
           <li key={which}>
-            <button
-              type="button"
-              tabIndex={0}
-              className="ui-card-control welcome-door"
-              aria-label={title}
-              aria-describedby={`${ids}-${which}-says`}
+            <CardButton
+              title={title}
+              line={says}
+              mark={<Mark aria-hidden="true" />}
               ref={(element) => {
                 if (which === "open") openDoorButton.current = element;
                 else doors.current[which] = element;
               }}
-              onClick={press}
-            >
-              <Mark className="welcome-door-mark" />
-              <span className="welcome-door-title">{title}</span>
-              <span className="welcome-door-says" id={`${ids}-${which}-says`}>
-                {says}
-              </span>
-            </button>
+              onPress={press}
+            />
           </li>
         ))}
       </ul>

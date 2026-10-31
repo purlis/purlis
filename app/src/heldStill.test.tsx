@@ -133,6 +133,23 @@ describe("a list held still (useHeldStill)", () => {
     expect(holding()).toBe(false);
   });
 
+  it("says on the held element whether it is held, as `data-holding` (#4020)", () => {
+    render(<Held />);
+    const list = button("row").parentElement as HTMLElement;
+    expect(list).not.toHaveAttribute("data-holding");
+
+    fireEvent.pointerOver(button("row"), { relatedTarget: null });
+    expect(holding()).toBe(true);
+    expect(list).toHaveAttribute("data-holding", "");
+
+    pointerFromTo(button("row"), button("elsewhere"));
+    expect(holding()).toBe(false);
+    expect(list).not.toHaveAttribute("data-holding");
+
+    keyboardOnTheRow();
+    expect(list).toHaveAttribute("data-holding", "");
+  });
+
   it("lets the pointer's hold go at once as the pointer leaves, where its list asks no wait", () => {
     render(<Held />);
     fireEvent.pointerOver(button("row"), { relatedTarget: null });

@@ -37,9 +37,12 @@
 //! `.claude/skills`, `tui.json`, `tui.jsonc` and `.agents`, added later (#1057), are held by
 //! the same `**/<name>` rule. The project's manifests are not (#1336): they are denied by path,
 //! at the project root and in each folder from the chat's up to it ([`Settings::denying`]).
-//! What it does not hold: a command moved a directory holding a `config` into a nested
-//! clone's `.git` (measured), and no glob can deny the `.git` itself without denying what git
-//! writes below it (#1065).
+//! No glob can deny a `.git` itself without denying what git writes below it (#1065). The
+//! `config` of each git folder was held by name already; now a repository's git folder that is
+//! there when the chat starts is held as a whole too ([`super::Denied::git_folder_pins`]): its
+//! `config` is denied by path as well, and Claude Code pins each folder above a denied path (as
+//! below), so a `.git` directory, and every folder above it, stays where it is; a `.git` file is
+//! denied itself. Measured on macOS (`tools/seatbelt-case.sh`).
 //!
 //! **The hook socket** (ADR 0067 §2, #1328). A `purlis` command a chat runs is part of the chat
 //! and asks the app over the socket in `$PURLIS_HOOK_SOCKET`; Claude Code's sandbox refuses
@@ -85,12 +88,15 @@
 //!   certificates"*; its profile adds exactly `(allow mach-lookup (global-name
 //!   "com.apple.trustd.agent"))`. It is `true` only where the project's `certificate-checks` is
 //!   (D-1337-7), and `false` otherwise, never left out, so a user's `true` does not merge in.
+//!
+//! **On a runner** this sandbox is switched off, and purlis wraps the whole chat instead
+//! ([`super::claude_wrap`], #4083): its tools keep the deny rules compiled here.
 
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use super::{Access, Compiled, Level, Uncompilable};
+use super::{Access, Compiled, Level, Os, Uncompilable};
 use crate::harness::Harness;
 
 /// `path` as written, and as the kernel names it where that differs.
@@ -120,7 +126,16 @@ pub struct Settings {
     pub sandbox: Value,
     /// `permissions.deny` rules for its own tools.
     pub deny: Vec<String>,
+    /// Files made, empty, where there is none, before the chat starts ([`Self::make_empty`]):
+    /// on Linux at the floor, the home's git config ([`HOME_GIT_CONFIG`]).
+    pub made_empty: Vec<PathBuf>,
 }
+
+/// The home's git config, a later-code name the floor holds ([`super::PLANTED`]). On Linux,
+/// Claude Code's sandbox puts a denied path that does not exist out of reach of a read as well,
+/// and git stops on a config it cannot read, so no git command would run in the chat. Made
+/// empty first, it is held as an existing file is, and git reads it as none.
+pub const HOME_GIT_CONFIG: &str = ".gitconfig";
 
 /// `compiled`, for Claude Code — or the class it cannot hold on this machine.
 ///
@@ -132,6 +147,12 @@ pub struct Settings {
 /// folder a denial covers ([`super::covering`], #1327).
 pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
     compiled.holds_every_service(Harness::ClaudeCode)?;
+    Ok(rules(compiled))
+}
+
+/// [`settings`], whatever services hold here: a chat purlis wraps whole holds those itself
+/// ([`super::claude_wrap`]), and answers to these rules with its Read, Edit and web tools.
+pub(super) fn rules(compiled: &Compiled) -> Settings {
     let mut deny_read = Vec::new();
     let mut deny_write = Vec::new();
     let mut read_rules = Vec::new();
@@ -205,6 +226,19 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
             let glob = format!("{}/**/{name}", folder.display());
             edit_rules.push(format!("Edit(/{glob})"));
             deny_write.extend(plain_and_cased(&format!("{}/**/", folder.display()), name));
+        }
+    }
+    // Each repository's git folder that was there as the chat started, held as a whole: a path
+    // in or at it is denied ([`super::Denied::git_folder_pins`]), and Claude Code pins every
+    // folder above a denied path (see the caches below), so a `.git` directory stays where it is
+    // while git writes the rest of it, and a `.git` file is held itself. Each as a plain path, by
+    // every name a rule on it is written by: a glob gets no folder above it pinned.
+    for pin in &compiled.denied.git_folder_pins {
+        for name in names_for(pin) {
+            let path = name.display().to_string();
+            edit_rules.push(format!("Edit(/{path})"));
+            edit_rules.push(format!("Edit(/{path}/**)"));
+            deny_write.push(path);
         }
     }
     // The project's package caches (D-1337-6), each path as written and as the kernel names it.
@@ -363,7 +397,7 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
         filesystem["allowWrite"] = json!(allow_write);
     }
     if compiled.level == Level::Floor {
-        return Ok(floor(filesystem, read_rules, edit_rules, compiled));
+        return floor(filesystem, read_rules, edit_rules, compiled);
     }
     let deny = WEB_TOOLS
         .iter()
@@ -398,7 +432,11 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
                 .collect::<Vec<_>>()
         );
     }
-    Ok(Settings { sandbox, deny })
+    Settings {
+        sandbox,
+        deny,
+        made_empty: Vec::new(),
+    }
 }
 
 /// **The floor's settings** (#2071): Claude Code's sandbox on, holding `filesystem` (every
@@ -444,10 +482,42 @@ fn floor(
             .chain(read_rules)
             .chain(edit_rules)
             .collect(),
+        made_empty: match &compiled.homes.home {
+            Some(home) if compiled.os == Os::Linux => vec![home.join(HOME_GIT_CONFIG)],
+            _ => Vec::new(),
+        },
     }
 }
 
 impl Settings {
+    /// Whether these switch Claude Code's own sandbox off: a chat purlis wraps whole
+    /// ([`super::claude_wrap`]).
+    pub fn is_off(&self) -> bool {
+        self.sandbox.get("enabled") == Some(&Value::Bool(false))
+    }
+
+    /// Makes each of [`Self::made_empty`], outside the sandbox, as an empty file where nothing
+    /// is there: a file already there keeps what it holds, and a link, even one to nothing, is
+    /// neither followed nor replaced. One not made is left to the chat, whose git then says why.
+    pub fn make_empty(&self) {
+        for path in &self.made_empty {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+            {
+                Ok(_) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(err) => {
+                    tracing::warn!(
+                        "purlis: {} was not made for the chat ({err})",
+                        path.display()
+                    );
+                }
+            }
+        }
+    }
+
     /// These settings with `held` folders never written, at the floor (#2071): each under every
     /// name a rule on it is written by, to the sandbox and to the Edit tool.
     pub fn holding(&self, held: &[PathBuf]) -> Settings {

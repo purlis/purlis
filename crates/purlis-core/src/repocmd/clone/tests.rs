@@ -37,6 +37,7 @@ fn recording_a_clone_racing_another_writer_loses_neither_change() {
                     now: chrono::Utc::now(),
                     author: "tester",
                     hosts: None,
+                    watch: None,
                 },
                 &["widget".to_owned()],
                 &mut |line| said.push(line),
@@ -99,6 +100,7 @@ fn a_clone_for_a_sandboxed_chat_never_runs_git_against_a_host_it_may_not_reach()
             now: chrono::Utc::now(),
             author: "tester",
             hosts: Some(&["gitlab.com".to_owned()]),
+            watch: None,
         },
         &mut |line| said.push(line),
     );
@@ -144,6 +146,7 @@ fn clone_widget(root: &Path, ws: &str, hosts: Option<&[String]>) -> (u8, Vec<Say
             now: chrono::Utc::now(),
             author: "tester",
             hosts,
+            watch: None,
         },
         &mut |line| said.push(line),
     );
@@ -346,3 +349,104 @@ fn a_credential_in_the_url_is_refused_and_never_repeated() {
     assert!(!refused.contains(&token), "{refused}");
     assert!(!refused.contains("x-access-token"), "{refused}");
 }
+
+/// A plane that declares a self-hosted GitLab on a port of its own, and a record of a repo there.
+fn plane_on_a_port() -> (tempfile::TempDir, PathBuf, Value) {
+    let (dir, root) = plane();
+    std::fs::write(
+        root.join("charter.toml"),
+        "[[forge]]\nkind = \"gitlab\"\nhost = \"gitlab.corp.example:8443\"\nowner = \"acme\"\n",
+    )
+    .unwrap();
+    let record = json!({
+        "name": "widget",
+        "web_url": "https://gitlab.corp.example:8443/acme/widget",
+        "forge": "gitlab",
+    });
+    (dir, root, record)
+}
+
+/// A config home with one GitLab account signed in on `host`, through the recorded forge.
+fn account_on(host: &str) -> tempfile::TempDir {
+    use crate::forge::accounts::{self, Pasted};
+    use crate::forge::route::HostScope;
+    use crate::forge::transport::Transport as Wire;
+    use std::sync::Arc;
+
+    let home = tempfile::tempdir().unwrap();
+    let keyring = accounts::keyring_at(home.path());
+    let recording = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/forge_contract/accounts/gitlab/token_check.json");
+    let recorded = Arc::new(
+        crate::forge::recorded::Recorded::parse(&std::fs::read_to_string(recording).unwrap())
+            .unwrap(),
+    );
+    let reach = |_: &Forge,
+                 _: Arc<dyn crate::forge::http::TokenSource>|
+     -> Result<Arc<dyn Wire>, crate::forge::ForgeError> {
+        Ok(recorded.clone() as Arc<dyn Wire>)
+    };
+    accounts::sign_in_with_token(
+        &HostScope::for_a_test(),
+        home.path(),
+        keyring.as_ref(),
+        &reach,
+        crate::forge::Kind::GitLab,
+        host,
+        Pasted::new("kept-for-the-window-git-only".to_string()),
+    )
+    .unwrap();
+    home
+}
+
+#[test]
+fn a_clone_of_a_self_hosted_repo_is_of_the_server_its_url_names_port_and_all() {
+    let (_dir, root, record) = plane_on_a_port();
+    let url = https_url(&record, &root).expect("the plane declares this server");
+    assert_eq!(url, "https://gitlab.corp.example:8443/acme/widget.git");
+    assert_eq!(
+        Forge::for_clone(&record, &url),
+        Forge {
+            kind: crate::forge::Kind::GitLab,
+            host: "gitlab.corp.example:8443".to_owned(),
+        }
+    );
+    // A URL on a forge's default port is the host alone, as an account on it is.
+    assert_eq!(
+        Forge::for_clone(
+            &json!({"forge": "github"}),
+            "https://github.com/acme/widget.git"
+        ),
+        Forge::default_of(crate::forge::Kind::GitHub)
+    );
+}
+
+#[test]
+fn the_account_on_that_server_signs_the_clone_and_one_on_another_port_never_does() {
+    use crate::forge::gitcredential::{HELPER_ARG, as_the_window};
+    use crate::forge::route::HostScope;
+
+    let (_dir, root, record) = plane_on_a_port();
+    let url = https_url(&record, &root).unwrap();
+    let forge = Forge::for_clone(&record, &url);
+    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/charter-app");
+
+    let on_it = account_on("gitlab.corp.example:8443");
+    // Only whether purlis's helper is named leaves the closure: the helper line itself is never
+    // printed, as `forge::gitcredential`'s own tests do.
+    let signs = as_the_window(&HostScope::for_a_test(), exe, on_it.path(), || {
+        forge::helper_for(&forge).contains(HELPER_ARG)
+    });
+    assert!(signs, "the account on that server signs the clone");
+
+    let on_another_port = account_on("gitlab.corp.example");
+    let signs = as_the_window(
+        &HostScope::for_a_test(),
+        exe,
+        on_another_port.path(),
+        || forge::helper_for(&forge).contains(HELPER_ARG),
+    );
+    assert!(!signs, "an account on another port never signs it");
+}
+
+mod landing;

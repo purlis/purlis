@@ -13,13 +13,7 @@ use serde_json::{Value, json};
 const IMAGE: &str = "ghcr.io/purlis/purlis-runner@sha256:1111111111111111111111111111111111111111111111111111111111111111";
 
 fn pool() -> Pool {
-    let mut pool = Pool::new(
-        "team",
-        PoolSpec {
-            image: IMAGE.into(),
-            kept_volume: Default::default(),
-        },
-    );
+    let mut pool = Pool::new("team", PoolSpec::new(IMAGE));
     pool.metadata.uid = Some("pool-uid".into());
     pool
 }
@@ -36,6 +30,8 @@ fn claim() -> Claim {
             pool: "team".into(),
             requester: "ada@example.com".into(),
             kept: false,
+            stopped: false,
+            forge: None,
         },
         status: None,
     }
@@ -148,6 +144,19 @@ fn a_pool_keeps_no_runner_warm() {
     assert_eq!(
         warm["spec"]["sandboxTemplateRef"]["name"],
         "purlis-pool-team"
+    );
+}
+
+/// A warm runner made from an earlier template of the pool (its image or its `keptVolume`
+/// changed since) is replaced by upstream, and never handed to a fresh claim, which the
+/// operator would not vouch for (#2058, from #2057): upstream's `Recreate` strategy.
+#[test]
+fn a_warm_runner_made_from_an_earlier_template_is_replaced_not_handed_out() {
+    let warm = json_of(&upstream::warm_pool_for(&pool(), "ada", Vec::new()));
+    assert_eq!(
+        warm["spec"]["updateStrategy"],
+        json!({ "type": "Recreate" }),
+        "{warm}"
     );
 }
 
@@ -339,14 +348,6 @@ fn a_pool_without_a_kept_volume_gives_each_kept_claim_ten_gibibytes() {
         !claim.spec.kept,
         "a claim is fresh unless it says it is kept"
     );
-}
-
-#[test]
-fn a_warm_pool_keeps_as_many_runners_warm_as_it_holds() {
-    assert_eq!(upstream::replicas_held(None), 0);
-    let mut held = upstream::warm_pool_for(&pool(), "ada", Vec::new());
-    held.spec.replicas = 2;
-    assert_eq!(upstream::replicas_held(Some(&held)), 2);
 }
 
 mod stages {

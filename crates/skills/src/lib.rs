@@ -69,19 +69,22 @@ pub use declared::{Argument, Declared, Given, declared};
 pub use grant::{Grant, grant_file, grant_of, set_grant};
 pub use handed::{Frontmatter, MOST_BYTES, Refusal, read_skill_md, read_skill_md_of};
 pub use lifecycle::{About, Deprecated, Lifecycle, about_of, set_lifecycle, set_owners};
-pub use lint::{BuiltInLints, Finding, Lint, Severity, SkillFiles, SkillLint};
+pub use lint::{
+    BuiltInLints, Finding, Lint, MOST_LINT_BYTES, MOST_LIST_BYTES, ReadBudget, Severity,
+    SkillFiles, SkillLint,
+};
 pub use load::{Entry, Loaded, Narrowing, POINTER, SkillFolder, by_name, find, load};
 pub use moving::{Unmoved, move_between, move_skill};
 pub use read::{
     DIR_IN_BUNDLE, FILE, frontmatter, in_bundle, listing, parsed, read, scan, scan_dir,
 };
 use reference::Seen;
-pub use reference::{BUILT_IN_PREFIXES, OnMachine, Reference};
+pub use reference::{BUILT_IN_PREFIXES, OLD_BUILT_IN_PREFIX, OnMachine, Reference};
 pub use router::{
     Candidate, Candidates, Hidden, HiddenWhy, INDEX, Index, Line, Router, Routing, StillOver,
 };
 pub use share::{Shared, named, named_at, share};
-pub use stamp::{Reload, Stamp};
+pub use stamp::{Reload, SkillsChanged, Stamp};
 
 /// A skill, as a chat is told about it: a folder in the open SKILL.md format.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1231,6 +1234,19 @@ fn persona_levels(
 /// asks (SK-9).
 fn made_since(machine: &Machine<'_>, owner: &Path) -> Option<String> {
     machine.made_since.and_then(|asked| asked(owner))
+}
+
+/// **Whether the project skill `name` in `folder` reaches a chat in `workspace`** that turned
+/// off the names in `turned_off`: its grant reaches the workspace, and the workspace has not
+/// turned it off. The rule [`skill_set`] hands a chat its project skills by, for whatever must
+/// agree with it, such as which skills an install brings along (#4154).
+pub fn reaches_workspace(
+    folder: &Path,
+    workspace: &str,
+    turned_off: &[String],
+    name: &str,
+) -> bool {
+    reach(folder, workspace, turned_off, name).is_none()
 }
 
 /// Why a project skill in `folder`, named `name`, does not reach a chat in `workspace`, which

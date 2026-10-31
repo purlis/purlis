@@ -1033,7 +1033,7 @@ fn a_chats_write_that_would_grow_workspace_md_past_its_budget_is_refused_saying_
     ] {
         let why = perform(&root, &in_alpha_as(None), &write, now()).expect_err("refused");
         assert!(why.contains("64 KiB"), "{why}");
-        assert!(why.contains("purlis workspace remember"), "{why}");
+        assert!(why.contains("the memory_add tool"), "{why}");
         assert!(why.contains("nothing was written"), "{why}");
     }
     assert_eq!(charter_of(&root), before);

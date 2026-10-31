@@ -189,6 +189,7 @@ fn graded(id: &str, ts: &str) -> RouterGraded {
             chats: 12,
             tokens: Some(12_000),
             cost_usd: None,
+            asked_for: None,
         },
         model: None,
     }
@@ -286,7 +287,10 @@ fn a_grade_of_a_library_with_a_copy_of_this_machine_s_own_stays_here() {
     let planned = planned(root, Some("ops"), None, "relevance").unwrap();
     let row = graded("01LOCAL", "2026-10-02T10:00:00Z");
     let path = record(root, &planned.copies, &row, "device").expect("recorded");
-    assert!(path.starts_with(crate::plane::state_dir(root)), "{path:?}");
+    assert!(
+        path.starts_with(crate::appstate::dir(root).unwrap()),
+        "{path:?}"
+    );
     assert!(!root.join("personas/_grades/routers").exists());
     assert_eq!(grades_of(root, "relevance", Some("ops"), None), [row]);
 }
@@ -320,4 +324,96 @@ fn every_chat_of_a_router_s_grade_reads_the_pins_of_the_scope_that_chose_it() {
     .unwrap();
     let tried = crate::skills::verbs::drafts::tried(root, &laid.piece).unwrap();
     assert_eq!(crate::skills::pins_or_none(&tried, None, None), ["deploy"]);
+}
+
+/// #3616: a router's grade purlis stopped under before it scored a test says it was
+/// interrupted, and no count of tests that passed.
+#[test]
+fn an_interrupted_grade_says_it_was_interrupted_and_no_count_3616() {
+    let mut row = graded("01A", "2026-10-02T10:00:00Z");
+    row.report = interrupted_report("relevance", 200_000, None, None);
+    assert!(row.sound(chrono::Utc::now()), "{row:?}");
+    assert_eq!(
+        row.said(),
+        "Interrupted on the library at aaaaaaaaaaaa, 2026-10-02: the grade stopped while it ran, \
+         before any trigger test was scored."
+    );
+}
+
+/// #3618: a router's plan's estimate is its last grade's spend per chat, times the chats this one
+/// runs, from the newest on this profile; it says which grade that was and whether it is known to
+/// have run on this library. An interrupted grade, which scored no skill, is none to go by.
+#[test]
+fn a_router_s_estimate_is_its_last_grade_s_spend_per_chat_3618() {
+    let tmp = plane();
+    let root = tmp.path();
+    let mut planned = planned(root, Some("ops"), None, "relevance").unwrap();
+    let chats = planned.plan.unwrap().chats;
+    assert!(
+        estimate(root, &planned, Some("claude")).is_none(),
+        "never graded"
+    );
+    // Each copy as a commit holds it: a library with changes not committed is never known to be
+    // the one a grade ran on.
+    for (at, one) in planned.copies.iter_mut().enumerate() {
+        one.copy.content = Content::Tree(format!("{at}").repeat(40));
+    }
+
+    // 12 chats asked for in all (two skills, two arms, three runs) spent 12,000 tokens.
+    let mut on_this = graded("01OLDER", "2026-10-01T10:00:00Z");
+    on_this.library = planned.copies.iter().map(RecordedCopy::of).collect();
+    let mut elsewhere = graded("01NEWER", "2026-10-02T10:00:00Z");
+    elsewhere.profile = Some("work".to_owned());
+    elsewhere.spent.tokens = Some(24_000);
+    elsewhere.report.spent_tokens = Some(24_000);
+    let mut stopped = graded("01STOPPED", "2026-10-03T10:00:00Z");
+    stopped.report = interrupted_report("relevance", 200_000, None, None);
+    stopped.spent.chats = 0;
+    written(
+        root,
+        &[
+            serde_json::to_value(&on_this).unwrap(),
+            serde_json::to_value(&elsewhere).unwrap(),
+            serde_json::to_value(&stopped).unwrap(),
+        ],
+    );
+    assert_eq!(grades_of(root, "relevance", Some("ops"), None).len(), 3);
+
+    let said = estimate(root, &planned, Some("claude")).expect("an estimate");
+    assert_eq!(
+        said.estimate.ts, "2026-10-01T10:00:00Z",
+        "the newest on this profile"
+    );
+    assert_eq!(said.estimate.chats_then, 12);
+    assert_eq!(
+        said.estimate.tokens,
+        Some(1_000 * u64::from(chats)),
+        "a thousand a chat"
+    );
+    assert_eq!(said.estimate.same_profile, Some(true));
+    assert!(!said.estimate.interrupted);
+    assert!(said.same_library, "{said:?}");
+
+    let said = estimate(root, &planned, Some("other")).expect("an estimate");
+    assert_eq!(
+        said.estimate.ts, "2026-10-02T10:00:00Z",
+        "the newest that asked for a chat, the interrupted one passed over"
+    );
+    assert_eq!(said.estimate.same_profile, Some(false));
+    assert!(!said.same_library, "graded on another library");
+
+    let mut uncommitted = planned.clone();
+    uncommitted.copies[0].copy.content = Content::Uncommitted;
+    on_this.library = uncommitted.copies.iter().map(RecordedCopy::of).collect();
+    written(root, &[serde_json::to_value(&on_this).unwrap()]);
+    assert!(
+        !estimate(root, &uncommitted, Some("claude"))
+            .unwrap()
+            .same_library,
+        "never known to be the same while a copy holds changes not committed"
+    );
+
+    // Its only grade interrupted: none to go by, never one that ran no chat.
+    written(root, &[serde_json::to_value(&stopped).unwrap()]);
+    assert!(estimate(root, &planned, Some("claude")).is_none());
 }

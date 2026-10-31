@@ -7,12 +7,18 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { PinToggle, SwitcherRow } from "./Switcher";
 import {
+  AllWorkspaces,
   ChipSlot,
+  mostUrgentOf,
+  NOTICE_KINDS,
   NoticeDot,
   PinnedStrip,
+  ProjectCrumb,
   RootChip,
   TitleBarSlash,
+  urgencyOf,
   WorkspaceChip,
 } from "./TitleBarWorkspaces";
 
@@ -47,6 +53,14 @@ describe("a workspace's chip", () => {
     expect(chip.querySelector('[data-part="count"]')).toBeNull();
     expect(chip).toHaveTextContent("docs+");
     expect(chip).toHaveAttribute("data-variant", "unpinned");
+  });
+
+  it("names a dormant pin by its words and says it is gone in its description (#3651)", () => {
+    render(<WorkspaceChip name="delta" variant="dormant" notices={{ count: 1, kind: "info" }} />);
+    const chip = screen.getByRole("button", { name: "delta" });
+    expect(chip).toHaveAttribute("data-variant", "dormant");
+    expect(chip).not.toHaveAttribute("aria-current");
+    expect(chip).toHaveAccessibleDescription("gone, kept dormant, 1 notice");
   });
 
   it("marks the pointer on it", async () => {
@@ -102,6 +116,82 @@ describe("a chip's notice dot (#3648)", () => {
     );
     const chip = screen.getByRole("button", { name: "gamma" });
     expect(chip).toHaveAccessibleDescription("2 waiting, 1 notice");
+  });
+});
+
+describe("a dot's kind (#3649)", () => {
+  it("draws a warning as a triangle, its own part, and says it after the count", () => {
+    render(<NoticeDot workspace="gamma" count={2} kind="warning" onPress={() => undefined} />);
+    const dot = screen.getByRole("button", {
+      name: "Show the 2 notices on gamma, most urgent: warning",
+    });
+    expect(dot).toHaveAttribute("data-kind", "warning");
+    // Its own part, so a theme's news dot never colours it (`titlebar.dot-warning`).
+    expect(dot).toHaveAttribute("data-part", "dot-warning");
+    expect(dot.querySelector("svg.lucide-triangle")).not.toBeNull();
+  });
+
+  it("puts the most urgent kind in the chip's description", () => {
+    render(
+      <ChipSlot>
+        <WorkspaceChip name="gamma" waiting={2} notices={{ count: 3, kind: "warning" }} />
+      </ChipSlot>,
+    );
+    expect(screen.getByRole("button", { name: "gamma" })).toHaveAccessibleDescription(
+      "2 waiting, 3 notices, most urgent: warning",
+    );
+  });
+
+  it("ranks the kinds by urgency, news the least", () => {
+    expect(mostUrgentOf([])).toBe("info");
+    expect(mostUrgentOf(["info", "warning", "info"])).toBe("warning");
+    expect(NOTICE_KINDS.map(urgencyOf)).toEqual([0, 1, 2]);
+    // A chat asking to remove the workspace outranks every notice (#3652).
+    expect(mostUrgentOf(["warning", "needs", "info"])).toBe("needs");
+  });
+});
+
+describe("the needs-you dot (#3652)", () => {
+  it("draws a raised hand in its strokes, its own part, named for the chat it brings forward", () => {
+    render(<NoticeDot workspace="gamma" count={0} kind="needs" onPress={() => undefined} />);
+    const dot = screen.getByRole("button", { name: "Show the chat asking to remove gamma" });
+    expect(dot).toHaveAttribute("data-kind", "needs");
+    expect(dot).toHaveAttribute("data-part", "dot-needs");
+    const hand = dot.querySelector("svg.lucide-hand");
+    expect(hand).not.toBeNull();
+    // Stroked, never filled: a filled hand is a blob.
+    expect(hand).not.toHaveAttribute("fill", "currentColor");
+  });
+
+  it("says the workspace's own notices come with the chat, where it has some", () => {
+    render(<NoticeDot workspace="gamma" count={2} kind="needs" onPress={() => undefined} />);
+    expect(
+      screen.getByRole("button", {
+        name: "Show the chat asking to remove gamma, and its 2 notices",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("describes a chip with a ✋ alone by the question, never as 0 notices", () => {
+    render(
+      <ChipSlot>
+        <WorkspaceChip name="gamma" waiting={2} notices={{ count: 0, kind: "needs" }} />
+      </ChipSlot>,
+    );
+    expect(screen.getByRole("button", { name: "gamma" })).toHaveAccessibleDescription(
+      "2 waiting, a chat asks you to remove it",
+    );
+  });
+
+  it("puts the question after the count where the chip has notices too", () => {
+    render(
+      <ChipSlot>
+        <WorkspaceChip name="gamma" notices={{ count: 1, kind: "needs" }} />
+      </ChipSlot>,
+    );
+    expect(screen.getByRole("button", { name: "gamma" })).toHaveAccessibleDescription(
+      "1 notice, most urgent: a chat asks you to remove it",
+    );
   });
 });
 
@@ -197,5 +287,75 @@ describe("its stylesheet (R101, R103, R153, R167)", () => {
 
   it("draws the slash in the faint tier, as a mark", () => {
     expect(rule('[data-part="slash"][data-scope="titlebar"]')).toContain("var(--text-faint)");
+  });
+});
+
+describe("the crumb, the ⌄, a switcher's row and its pin (#3656)", () => {
+  // The engine writes each apart from every chip (`parts::APART`): its own attributes, and the
+  // state its own element is marked in, e.g. `titlebar.crumb.selected.fill` as
+  // `:where([data-scope="titlebar"][data-part="crumb"][data-selected])`.
+  const reached = (part: string, state = "") => {
+    const selector = `:where([data-scope="titlebar"][data-part="${part}"]${state})`;
+    return [...document.querySelectorAll(selector)];
+  };
+
+  it("reaches each by its own attributes, never inside a chip", () => {
+    render(
+      <>
+        <ProjectCrumb name="purlis" mark={null} open onPress={() => undefined} />
+        <AllWorkspaces keys="⌥⌘P" open={false} stop onPress={() => undefined} />
+        <SwitcherRow id="r" name="alpha" active onPress={() => undefined} />
+        <PinToggle name="alpha" pinned onChange={() => undefined} />
+      </>,
+    );
+    const crumb = screen.getByRole("button", { name: /purlis/ });
+    const all = screen.getByRole("button", { name: "All workspaces" });
+    const row = screen.getByRole("option", { name: "alpha" });
+    const pin = screen.getByRole("button", { name: "Unpin alpha" });
+    expect(reached("crumb")).toEqual([crumb]);
+    expect(reached("all")).toEqual([all]);
+    expect(reached("row")).toEqual([row]);
+    expect(reached("pin")).toEqual([pin]);
+    for (const one of [crumb, all, row, pin]) {
+      expect(one.closest('[data-part="workspace"]')).toBeNull();
+    }
+    // Open, pinned, and the row Enter would go to: each its selected state.
+    expect(reached("crumb", "[data-selected]")).toEqual([crumb]);
+    expect(reached("row", "[data-selected]")).toEqual([row]);
+    expect(reached("pin", "[data-selected]")).toEqual([pin]);
+    expect(reached("all", "[data-selected]")).toEqual([]);
+  });
+
+  it("draws a row's count as a part of its own, not a chip's count (#3947)", () => {
+    render(
+      <>
+        <WorkspaceChip name="alpha" waiting={2} />
+        <SwitcherRow id="r" name="beta" waiting={3} active={false} onPress={() => undefined} />
+      </>,
+    );
+    const row = screen.getByRole("option", { name: "beta" });
+    expect(reached("row-count")).toEqual([row.querySelector('[data-part="row-count"]')]);
+    expect(reached("row-count")[0]).toHaveTextContent("3");
+    // The chip's count is the chip's part, reached inside it.
+    const chip = screen.getByRole("button", { name: "alpha" });
+    expect(row.querySelector('[data-part="count"]')).toBeNull();
+    expect(chip.querySelector('[data-part="count"]')).toHaveTextContent("2");
+  });
+
+  it("marks the pointer on each, as its hover keys reach it", async () => {
+    render(
+      <>
+        <ProjectCrumb name="purlis" mark={null} open={false} onPress={() => undefined} />
+        <SwitcherRow id="r" name="alpha" active={false} onPress={() => undefined} />
+      </>,
+    );
+    const hovered = "[data-hovered]:not([data-disabled])";
+    const crumb = screen.getByRole("button", { name: /purlis/ });
+    await userEvent.hover(crumb);
+    expect(reached("crumb", hovered)).toEqual([crumb]);
+    const row = screen.getByRole("option", { name: "alpha" });
+    await userEvent.hover(row);
+    expect(reached("row", hovered)).toEqual([row]);
+    expect(reached("row", "[data-selected]")).toEqual([]);
   });
 });

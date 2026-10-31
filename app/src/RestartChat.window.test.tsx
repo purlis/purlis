@@ -22,6 +22,7 @@ import { ChatsHere, fixedChats, nothingKnown, type State } from "./chatState";
 import { forgetDismissals } from "./dismissals";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { SandboxChangedNotice } from "./SandboxChanged";
+import { theCard } from "./chatCard.testkit";
 import { stripNamed } from "./test-strips";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 
@@ -238,6 +239,31 @@ describe("Restart chat on a chat's tab", () => {
     expect(await screen.findByText("session 9")).toBeInTheDocument();
   });
 
+  // #3887: a chat waiting on its own work says `waiting`, and a restart then would cut its
+  // monitors and background shells off.
+  it("waits for a chat's own work as for its turn, and restarts it once that turn ends with nothing in flight", async () => {
+    const { asked } = await aChat();
+    await act(() =>
+      emit("chat-moved", {
+        ...WAITING,
+        own_work: { helpers: 0, workflows: 0, monitors: 1, shells: 1 },
+      }),
+    );
+    await userEvent.click(
+      within(await tabMenu()).getByRole("menuitem", {
+        name: "Restart when this turn ends",
+      }),
+    );
+    await waitFor(() => expect(asked("ask_chat_restart")).toEqual(ASKED));
+
+    expect(await screen.findByText(RESTART_WAITS_FOR_THE_TURN)).toBeInTheDocument();
+    expect(asked("restart_chat")).toEqual([]);
+
+    await act(() => emit("chat-moved", { ...WAITING, moved_at: 3, sequence: 3 }));
+
+    await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED));
+  });
+
   // qw351: an Allow pressed while the chat was mid-turn showed nothing until the turn ended.
   it("says on the pane that an owed restart waits for the turn, and Restart now ends the turn", async () => {
     const { asked } = await aChat();
@@ -427,6 +453,11 @@ describe("Restart chat on a task's row in the Chats list, for a task with no tab
   it("says a refusal on the row, without opening the task", async () => {
     const refused = "purlis did not restart chat 6: it has no conversation to resume.";
     const { asked } = await aChat({ tasks: [TASK], refused });
+    // The restarts' status is there before any restart says a word (#3886): a region that
+    // arrives already full is not announced by every screen reader.
+    const region = await screen.findByRole("status", { name: "Restarts" });
+    expect(region).toHaveTextContent(/^$/);
+    expect(region.closest('[role="tree"]')).toBeNull();
 
     fireEvent.contextMenu(await row("talk"));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Restart" }));
@@ -437,9 +468,22 @@ describe("Restart chat on a task's row in the Chats list, for a task with no tab
     );
 
     await waitFor(() => expect(asked("restart_chat")).toHaveLength(1));
-    expect(await screen.findByRole("status", { name: "Restart of talk" })).toHaveTextContent(
-      refused,
-    );
+    // Its text changes, and the region is the one that was there.
+    // Led by its chat, since the window's words for it name the chat by number only.
+    await waitFor(() => expect(region).toHaveTextContent(/^Restart of talk\. /));
+    expect(region).toHaveTextContent(refused);
+    expect(screen.getByRole("status", { name: "Restarts" })).toBe(region);
+    expect(region.isConnected).toBe(true);
+
+    // The row says it with its card down, and its card says it while it is up (#3886).
+    const talk = await row("talk");
+    expect(talk.getAttribute("aria-description")).toContain(refused);
+    await userEvent.keyboard("{Shift}");
+    act(() => talk.focus());
+    const shown = await theCard();
+    expect(shown).toHaveTextContent(refused);
+    expect(talk.getAttribute("aria-describedby")).toBe(shown.id);
+    expect(talk).toHaveAccessibleDescription(expect.stringContaining(refused));
     // Not opened: the tab in front still shows chat 4, and no pane draws the task.
     expect(screen.getAllByTestId("pane").map((pane) => pane.textContent)).toEqual(["session 4"]);
   });

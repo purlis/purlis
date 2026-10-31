@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use super::{Reference, names_of};
+use super::{Reason, Reference, Route, names_of};
 
 /// The key a persona's definition names its skills by.
 pub(crate) const KEY: &str = "skills";
@@ -33,6 +33,53 @@ pub fn brings(plane: &Path, persona: &str) -> usize {
         }
     }
     names.len()
+}
+
+/// **Each entry of `persona`'s `skills:` list its chats start without, and why** (#2934), in the
+/// plane at `plane`, once each in the order the list names them: a built-in skill purlis has
+/// none of in `built_in` ([`Reason::NoSuchBuiltIn`]), and a harness skill, or a bare name no
+/// plane level the persona's chats can reach holds, that no harness the project's profiles run
+/// has on this machine under `env` ([`Reason::NotOnThisMachine`]). A bare name a workspace's
+/// skill has is one a chat in that workspace gets, so it is none of these. With `env` `None`
+/// nothing is looked for on the machine, and no entry is said to be missing from it. What
+/// `persona lint` and the `project-skills` fix say of a persona's list, so they agree.
+pub(crate) fn unresolved(
+    built_in: Option<&Path>,
+    plane: &Path,
+    persona: &str,
+    env: Option<&crate::harness_plugin::Env<'_>>,
+) -> Vec<(Reference, Reason)> {
+    let names = names_of(plane, persona);
+    if names.is_empty() {
+        return Vec::new();
+    }
+    let set = super::studio_set(built_in, plane, None, Some(persona), Route::Plugin, env);
+    let mut out: Vec<(Reference, Reason)> = Vec::new();
+    for reference in names {
+        if out.iter().any(|(said, _)| *said == reference) {
+            continue;
+        }
+        // A reference the set leaves out is listed as its `skills:` list writes it.
+        let written = reference.to_string();
+        let Some(left) = set.left_out.iter().find(|left| {
+            left.name == written
+                && matches!(
+                    left.reason,
+                    Reason::NotOnThisMachine | Reason::NoSuchBuiltIn
+                )
+        }) else {
+            continue;
+        };
+        if let Reference::Named(name) = &reference
+            && super::verbs::Level::copies_of(plane, name)
+                .any(|(level, _)| matches!(level.at, purlis_skills::Whose::Workspace(_)))
+        {
+            continue;
+        }
+        let reason = left.reason.clone();
+        out.push((reference, reason));
+    }
+    out
 }
 
 /// What a change to a persona's `skills:` list does.
@@ -86,6 +133,17 @@ pub fn change(plane: &Path, persona: &str, written: &str, change: Change) -> Res
 /// **Writes `persona`'s `pinned-skills:` line** as `pins`, or takes it out for none (SK-15).
 pub(crate) fn write_pins(plane: &Path, persona: &str, pins: &[String]) -> Result<(), String> {
     write(plane, persona, PINS_KEY, pins)
+}
+
+/// **Writes `persona`'s own `skill-router:` line** as `router`, or takes it out for none
+/// (SK-15b, #3692).
+pub(crate) fn write_router(
+    plane: &Path,
+    persona: &str,
+    router: Option<&str>,
+) -> Result<(), String> {
+    let entries: Vec<String> = router.map(str::to_owned).into_iter().collect();
+    write(plane, persona, super::router::PERSONA_KEY, &entries)
 }
 
 /// `persona`'s own definition with its `key:` line saying `entries`, or without the line for

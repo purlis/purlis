@@ -38,8 +38,8 @@ pub const DIR_NAME: &str = "pieces";
 /// is *what happened*, this is *the latest observation*.
 pub const SEEN_DIR: &str = "seen";
 
-/// The whole vocabulary, in `charter/pieces.py`'s order.
-pub const EVENTS: [&str; 3] = ["claimed", "done", "abandoned"];
+/// The whole vocabulary, in `charter/pieces.py`'s order, and `removed` after it (#3879).
+pub const EVENTS: [&str; 4] = ["claimed", "done", "abandoned", "removed"];
 
 /// The subset a worker declares about itself, as opposed to what charter observed.
 pub const DECLARATIONS: [&str; 2] = ["done", "abandoned"];
@@ -49,8 +49,8 @@ pub fn dir_for(plane: &Path, ws: &str) -> PathBuf {
     plane.join("workspaces").join(ws).join(DIR_NAME)
 }
 
-/// One of the three things the log can say — the closed vocabulary [`EVENTS`] spells, as a
-/// type, so a caller cannot invent a fourth. There is no `failed`: see the module's heading.
+/// One of the four things the log can say — the closed vocabulary [`EVENTS`] spells, as a
+/// type, so a caller cannot invent a fifth. There is no `failed`: see the module's heading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Event {
     /// charter cut the worktree. An observation, not a declaration.
@@ -59,6 +59,9 @@ pub enum Event {
     Done,
     /// The worker says it gave the piece up. Always carries a reason.
     Abandoned,
+    /// The piece's folder was removed (#3879): an observation, as a claim is. It ends any claim
+    /// on the folder, whoever held it: the folder is gone.
+    Removed,
 }
 
 impl Event {
@@ -68,6 +71,7 @@ impl Event {
             Event::Claimed => "claimed",
             Event::Done => "done",
             Event::Abandoned => "abandoned",
+            Event::Removed => "removed",
         }
     }
 }
@@ -82,6 +86,10 @@ impl Event {
 pub struct Who {
     pub session: Option<String>,
     pub persona: Option<String>,
+    /// The chat's stable id (ADR 0066), where a chat speaks: what a branch folder's claim names
+    /// its one live writer by (#3901), since a chat's number is dealt again across launches.
+    /// None for the person, the window, and a line from before it was kept.
+    pub chat: Option<String>,
     /// The filename-safe host ([`crate::dispatch::host`]): the label a line carries as `host`.
     pub host: String,
     /// The name this device's log is filed under ([`crate::machine::log_name`]): its device
@@ -98,8 +106,17 @@ impl Who {
         Who {
             session,
             persona,
+            chat: None,
             log: crate::machine::log_name(config, &host),
             host,
+        }
+    }
+
+    /// This, speaking for the chat with the stable id `chat` (#3901).
+    pub fn for_chat(self, chat: Option<String>) -> Who {
+        Who {
+            chat: chat.filter(|id| !id.is_empty()),
+            ..self
         }
     }
 
@@ -143,6 +160,10 @@ pub fn record(
     line.insert("persona".into(), text(&who.persona));
     if let Some(reason) = reason.filter(|r| !r.is_empty()) {
         line.insert("reason".into(), Value::String(reason.into()));
+    }
+    // Only where a chat speaks (#3901): a line of the person's or the window's is as it was.
+    if let Some(chat) = &who.chat {
+        line.insert("chat".into(), Value::String(chat.clone()));
     }
     let path = log_path(plane, ws, who.file());
     #[cfg(unix)]

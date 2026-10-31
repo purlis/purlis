@@ -73,7 +73,19 @@ fn table() -> String {
                 .iter()
                 .map(|one| format!("`{}`", one.as_str().unwrap_or_default()))
                 .collect();
-            format!(" ({})", properties.join(", "))
+            // A part drawn apart from the root, in its own states only (#3656).
+            let apart = part["apart"].as_array().map_or_else(String::new, |states| {
+                let states: Vec<String> = states
+                    .iter()
+                    .map(|one| format!("`{}`", one.as_str().unwrap_or_default()))
+                    .collect();
+                if states.is_empty() {
+                    ", drawn apart, in no variant and no state".to_owned()
+                } else {
+                    format!(", drawn apart, in no variant: {}", states.join(", "))
+                }
+            });
+            format!(" ({}{apart})", properties.join(", "))
         });
         let variants = listed(array("variants"), own, |_| String::new());
         let states: Vec<String> = array("states")

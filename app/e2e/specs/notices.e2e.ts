@@ -194,7 +194,19 @@ describe("a pin to a workspace that is gone", function () {
     const held = await pins();
     expect(held.order).toEqual(before);
     expect(held.missing).toEqual([gone]);
-    expect(await stripNames()).not.toContain(gone);
+    // Drawn once, as a dormant chip after the live pins: never as a workspace the project has
+    // (#3651).
+    const drawn = await browser.execute((name: string) => {
+      const chips = [
+        ...document.querySelectorAll<HTMLElement>(
+          '[data-testid="title-bar"] [data-scope="titlebar"][data-part="workspace"]',
+        ),
+      ];
+      return chips
+        .filter((chip) => chip.querySelector('[data-part="name"]')?.textContent?.trim() === name)
+        .map((chip) => chip.dataset.variant ?? "");
+    }, gone);
+    expect(drawn).toEqual(["dormant"]);
 
     renameSync(away, join(mine, "workspaces", gone));
 

@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 
 use purlis_core::executor::Executor;
 use purlis_core::extension::{self, project::Choices};
-use purlis_core::skills::studio::{PanelKey, Studio, Templates};
+use purlis_core::skills::studio::{Kept, ListLints, ListTime, PanelKey, Studio, Templates};
 use purlis_core::skills::{Template, TemplateId};
 use purlis_skills::change::SkillTemplate as _;
 use purlis_skills::{Lint, SkillLint as _};
@@ -204,6 +204,7 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
         others: &others,
         origin: purlis_skills::Origin::Project,
         plugin: None,
+        listed: None,
     });
     assert_eq!(findings.len(), 1, "{findings:?}");
     assert_eq!(findings[0].severity, purlis_skills::Severity::Warns);
@@ -215,13 +216,72 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
         }
     );
 
-    // A panel on a skill's tab, after purlis's own Grades and Runs panels.
-    let panels = studio.panels(&probe.plane(), "deploy", None);
+    // The same lint as a studio list asks it (#3940), by a deadline, and kept for the next list.
+    // It declares that it answers many skills at once, so a list asks it one question for all
+    // of them (#4195). A test's machine may take long to start the program the first time.
+    let kept: &'static std::sync::Mutex<Kept> =
+        Box::leak(Box::new(std::sync::Mutex::new(Kept::new())));
+    let time = ListTime {
+        time: std::time::Duration::from_secs(30),
+        deadline: std::time::Duration::from_secs(30),
+        now: std::time::Instant::now,
+    };
+    let skill = |name: &'static str| purlis_skills::SkillFiles {
+        name,
+        text: "---\nname: deploy\ndescription: Deploys the service when asked to.\n---\n",
+        others: &others,
+        origin: purlis_skills::Origin::Project,
+        plugin: None,
+        listed: None,
+    };
+    let in_one = |name: &str| {
+        vec![Lint::Said {
+            by: "Probe lint".to_owned(),
+            says: format!("the probe was handed 2 files of {name} in one question of 3"),
+        }]
+    };
+    let skills = [skill("deploy"), skill("review"), skill("deploy")];
+    for _ in 0..2 {
+        let listed: Vec<Vec<Lint>> = ListLints::new(studio.lints(), kept, time)
+            .findings_of_each(&skills)
+            .into_iter()
+            .map(|found| found.into_iter().map(|it| it.lint).collect())
+            .collect();
+        assert_eq!(
+            listed,
+            [in_one("deploy"), in_one("review"), in_one("deploy")],
+            "one question for the three, and the second list asks nothing"
+        );
+    }
+    // Nothing more to ask in a list that has no time left: what was kept is still said.
+    let none_left = ListTime {
+        time: std::time::Duration::ZERO,
+        ..time
+    };
+    assert_eq!(
+        ListLints::new(studio.lints(), kept, none_left)
+            .findings(&skill("review"))
+            .into_iter()
+            .map(|it| it.lint)
+            .collect::<Vec<_>>(),
+        in_one("review")
+    );
+    // Warm, as a list's question is timed: one start of the confined program for the list.
+    let fresh: &'static std::sync::Mutex<Kept> =
+        Box::leak(Box::new(std::sync::Mutex::new(Kept::new())));
+    let began = std::time::Instant::now();
+    ListLints::new(studio.lints(), fresh, time).findings_of_each(&skills);
+    eprintln!(
+        "a confined lint answered three skills in one question in {} ms, its start included",
+        began.elapsed().as_millis()
+    );
+
+    // A panel on a skill's tab, after purlis's own Runs panel.
+    let panels = studio.panels(&probe.plane(), "deploy");
     let keys: Vec<PanelKey> = panels.iter().map(|it| it.key.clone()).collect();
     assert_eq!(
         keys,
         [
-            PanelKey::Grades,
             PanelKey::Runs,
             PanelKey::Extension {
                 extension: ID.to_owned(),
@@ -229,7 +289,7 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
             }
         ]
     );
-    let blocks = panels[2]
+    let blocks = panels[1]
         .blocks
         .as_ref()
         .expect("the probe's panel answers");
@@ -237,7 +297,7 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
         matches!(&blocks[1], purlis_core::panel::Block::Table(table) if table.columns == ["Handed", "Files"]),
         "{blocks:?}"
     );
-    assert_eq!(panels[2].by.as_deref(), Some("Studio probe"));
+    assert_eq!(panels[1].by.as_deref(), Some("Studio probe"));
 
     // A skill source: what it offers, and the install review purlis shows of it.
     let browse = purlis_core::skills::source::extension::browse(studio, ID).expect("it lists");
@@ -246,6 +306,7 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
     assert_eq!(names, [studio_probe::OFFERED]);
     let review = purlis_core::skills::source::extension::review(
         studio,
+        None,
         ID,
         &[studio_probe::OFFERED.to_owned()],
     )

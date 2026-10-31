@@ -130,7 +130,7 @@ impl RoutedSessions {
         let to_a_pool: ToAPool = {
             let (connection, plane) = (Arc::clone(connection), plane.clone());
             Arc::new(move |pool| {
-                purlis_core::runners::runner_for(&config, pool).map_err(|why| format!("{why}."))?;
+                purlis_core::runners::runner_of(&config, pool).map_err(|why| format!("{why}."))?;
                 Ok(
                     Box::new(crate::hostedsessions::HostedSessions::on_a_pools_runner(
                         connection.to_a_pool(pool),
@@ -586,12 +586,25 @@ impl SessionHost for RoutedSessions {
         self.pool(pool)?.move_in(pool, chats)
     }
 
-    fn move_out(&self, pool: &str, chats: &[crate::host::Moving]) -> Result<Vec<String>, String> {
+    fn move_out(
+        &self,
+        pool: &str,
+        chats: &[crate::host::Moving],
+    ) -> Result<crate::host::CameBack, String> {
         self.pool(pool)?.move_out(pool, chats)
     }
 
     fn pool_of(&self, id: u32) -> Option<String> {
         lock(&self.shared.chats).get(&id).cloned()
+    }
+
+    /// Asked of the host of the pool it runs on, where there is one already: never made for it.
+    fn clones_come_back(&self, id: u32) -> bool {
+        let Some(pool) = self.pool_of(id) else {
+            return false;
+        };
+        let host = lock(&self.shared.pools).get(&pool).map(Arc::clone);
+        host.is_some_and(|host| host.clones_come_back(id))
     }
 
     /// None for the project as a whole: each pool's is said by [`Self::runner_logs`] (#3393).
@@ -664,6 +677,24 @@ impl SessionHost for RoutedSessions {
         match self.host_of(number) {
             Some(host) => host.ran_with(number),
             None => self.here.ran_with(number),
+        }
+    }
+
+    fn prompt_key_started(
+        &self,
+        number: u32,
+        minted: Option<purlis_core::skillspan::PromptSalt>,
+    ) -> Option<purlis_core::skillspan::PromptSalt> {
+        match self.host_of(number) {
+            Some(host) => host.prompt_key_started(number, minted),
+            None => self.here.prompt_key_started(number, minted),
+        }
+    }
+
+    fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {
+        match self.host_of(number) {
+            Some(host) => host.prompt_key_left(number),
+            None => self.here.prompt_key_left(number),
         }
     }
 

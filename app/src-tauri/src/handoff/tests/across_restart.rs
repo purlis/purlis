@@ -249,6 +249,106 @@ fn a_task_brought_back_by_a_launch_is_as_old_as_its_dispatch_record_says() {
 }
 
 #[test]
+fn a_task_s_last_note_is_read_back_from_its_dispatch_record_after_a_restart() {
+    // #3956: the note a list row shows is in memory, and a relaunch empties it. The task put
+    // back says its last note again, by its record, and not "no note yet".
+    let (plane, host, planes, _id, held, _steward, task) = a_steward_and_a_working_task();
+    let id = record_of(&held, task).id;
+    let sent = chrono::DateTime::parse_from_rfc3339("2026-10-07T12:10:00Z")
+        .expect("a stamp")
+        .with_timezone(&chrono::Utc);
+    dispatchrecord::said(
+        held.root(),
+        &id,
+        purlis_core::dispatchtalk::Kind::Note,
+        "ticket 2 in review",
+        sent,
+    )
+    .expect("the note is kept");
+    let at_quit = quits(&held);
+
+    let (_relaunched, _planes, _again, held, _opened) =
+        launches_again(&plane, (host.clone(), planes, held), &at_quit);
+
+    let later = std::time::SystemTime::from(sent) + std::time::Duration::from_secs(240);
+    let ledger = held.tasks().ledger();
+    let note = ledger.last_note(task).expect("its last note");
+    assert_eq!(note.text.as_deref(), Some("ticket 2 in review"));
+    assert_eq!(note.ago(later), std::time::Duration::from_secs(240));
+}
+
+#[test]
+fn a_turn_s_roster_names_a_task_only_its_dispatch_record_knows_and_drops_it_once_it_ends() {
+    // #3932: a task whose dispatch still runs, with no chat here, coming back or waiting to
+    // start: before, only `dispatch list` named it. Its chat's number is not known to be its
+    // own, so it is named without one.
+    let (_plane, _host, _planes, id, held, steward, _task) = a_steward_and_a_working_task();
+    let asker = crate::dispatches::chat_ref(&held, steward).expect("the steward's ref");
+    let opened = dispatchrecord::open(
+        held.root(),
+        dispatchrecord::Opening {
+            mode: dispatchrecord::Mode::Task,
+            asker: dispatchrecord::Asker {
+                chat: asker,
+                workspace: Some("alpha".to_owned()),
+                by_person: false,
+                session_record: None,
+            },
+            persona: Some("devops".to_owned()),
+            worker: dispatchrecord::Worker {
+                chat: dispatchrecord::ChatRef {
+                    chat: 41,
+                    id: Some("01K6W0RKER00000000000000ZZ".to_owned()),
+                    name: "forms".to_owned(),
+                    persona: Some("devops".to_owned()),
+                },
+                harness: Some("claude".to_owned()),
+                profile: Some("work".to_owned()),
+                session_record: None,
+            },
+            task: Some("forms".to_owned()),
+            place: dispatchrecord::Place::default(),
+            brief: "# Forms".to_owned(),
+            report_owed: true,
+        },
+        chrono::Utc::now(),
+    )
+    .expect("a record");
+
+    let roster = |held: &Held| {
+        working(held, &id, steward, purlis_core::awareness::Tell::Turn)
+            .open_tasks
+            .into_iter()
+            .filter(|task| {
+                task.liveness
+                    .as_ref()
+                    .is_some_and(|live| live.is_orphaned())
+            })
+            .map(|task| (task.chat, task.name))
+            .collect::<Vec<_>>()
+    };
+    let orphan = vec![(purlis_core::dispatched::NO_NUMBER_KNOWN, "forms".to_owned())];
+    assert_eq!(roster(&held), orphan);
+    // Asked again with nothing changed, it is the same.
+    assert_eq!(roster(&held), orphan);
+
+    // Its record ends: the next turn's roster no longer names it.
+    assert!(
+        dispatchrecord::close(
+            held.root(),
+            &opened.id,
+            dispatchrecord::Ending {
+                report: None,
+                usage: None,
+            },
+            chrono::Utc::now(),
+        )
+        .expect("closed")
+    );
+    assert!(roster(&held).is_empty());
+}
+
+#[test]
 fn no_brief_is_sent_twice_across_a_restart() {
     let (plane, host, planes, id, held, steward, task) = a_steward_and_a_working_task();
     // In one run, the same brief twice is two tasks on purpose.

@@ -236,13 +236,7 @@ fn a_quota_the_cluster_writes_in_other_words_says_the_same() {
 }
 
 fn pool() -> Pool {
-    Pool::new(
-        "team",
-        PoolSpec {
-            image: IMAGE.into(),
-            kept_volume: Default::default(),
-        },
-    )
+    Pool::new("team", PoolSpec::new(IMAGE))
 }
 
 /// A quota as the cluster holds it, counting `used` against `hard`.

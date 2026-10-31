@@ -1610,6 +1610,7 @@ fn an_app_answering(
     let listener = Listener::bind(dir.path(), &socket).unwrap();
     let token = listener.tokens().issue_to_this_process(7).unwrap();
     let reading = listener.hear(Hearing {
+        serve: crate::hookwire::serve::refusing(),
         secret_exec: Box::new(move |ask, reader, writer| {
             asked.store(true, Ordering::SeqCst);
             answer(ask, reader, writer);
@@ -1990,6 +1991,7 @@ fn from_outside_the_chat_secret_exec_says_why_and_runs_nothing() {
         .tokens()
         .bind(7, Program::of(program.id()).expect("the program, read"));
     let _reading = listener.hear(Hearing {
+        serve: crate::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, _| panic!("nothing outside the chat is run")),
         blocked: Box::new(|_| {}),
         doing: Box::new(|_| {}),
@@ -5021,4 +5023,80 @@ fn the_values_sent_for_a_run_say_their_keys_alone() {
     );
     assert!(!back.is_for(8, "sh", "a-run"), "nor another chat's");
     assert!(!back.is_for(7, "kubectl", "a-run"), "nor another tool's");
+}
+
+/// A GitHub App's tool (#2053, E2): its run is handed the token minted from the App's key in
+/// `GH_TOKEN`, and the key itself reaches nothing of the run: not its environment, not its
+/// output, not a frame.
+#[test]
+fn a_github_app_tool_is_handed_the_token_minted_for_it_and_never_its_key() {
+    use crate::sandbox::tools::{Handed, Ready, Tool, mint::Mint};
+    let project = project();
+    // The vault's TOKEN stands in for the App's key; the mint is the test's own.
+    crate::forge::apptoken::MINT_HERE.with(|mint| {
+        *mint.borrow_mut() = Some(Box::new(|key: &str| {
+            if key == TOKEN {
+                Ok(zeroize::Zeroizing::new("minted-gh-token-5c3a".to_owned()))
+            } else {
+                Err("the mint was handed something other than the App's key".to_owned())
+            }
+        }));
+    });
+    let mut asker = asker(project.path(), Some("devops"));
+    asker.confines.as_mut().unwrap().tools.push(Ready {
+        tool: Tool {
+            mint: Some(Mint {
+                app: "Iv23liExample".to_owned(),
+            }),
+            ..Tool::one("sh", "team", "GH_TOKEN", Handed::Env, "TOKEN")
+        },
+        program: PathBuf::from("/bin/sh"),
+    });
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(
+            r#"case "$GH_TOKEN" in minted-gh-token-5c3a) echo token-handed;; esac
+              if env | grep -q 's3cret-value'; then echo key-in-env; fi"#,
+        ),
+    );
+    want.env = vec!["GH_TOKEN=TOKEN".into()];
+    let frames = served_as_asked(&asker, want);
+    crate::forge::apptoken::MINT_HERE.with(|mint| *mint.borrow_mut() = None);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "token-handed\n");
+    let wire = serde_json::to_string(&frames).unwrap();
+    assert!(!wire.contains(&b64(TOKEN.as_bytes())), "{wire}");
+    assert!(!wire.contains(TOKEN), "{wire}");
+}
+
+/// A GitHub App's tool whose mint is refused runs nothing, and says why.
+#[test]
+fn a_github_app_tool_whose_mint_is_refused_runs_nothing() {
+    use crate::sandbox::tools::{Handed, Ready, Tool, mint::Mint};
+    let project = project();
+    crate::forge::apptoken::MINT_HERE.with(|mint| {
+        *mint.borrow_mut() = Some(Box::new(|_: &str| {
+            Err("the GitHub App is installed on none of this chat's repos".to_owned())
+        }));
+    });
+    let mut asker = asker(project.path(), Some("devops"));
+    asker.confines.as_mut().unwrap().tools.push(Ready {
+        tool: Tool {
+            mint: Some(Mint {
+                app: "Iv23liExample".to_owned(),
+            }),
+            ..Tool::one("sh", "team", "GH_TOKEN", Handed::Env, "TOKEN")
+        },
+        program: PathBuf::from("/bin/sh"),
+    });
+    let mut want = wanted(project.path(), "team", sh("echo ran"));
+    want.env = vec!["GH_TOKEN=TOKEN".into()];
+    let frames = served_as_asked(&asker, want);
+    crate::forge::apptoken::MINT_HERE.with(|mint| *mint.borrow_mut() = None);
+    assert!(
+        matches!(frames.last(), Some(Frame::Refused { why, .. }) if why.contains("installed on none")),
+        "{frames:?}"
+    );
+    assert_eq!(stdout(&frames), "");
 }

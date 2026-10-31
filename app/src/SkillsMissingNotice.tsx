@@ -5,7 +5,7 @@ import { useContext, useEffect, useState } from "react";
 import { commands, type PlaneId, type SkillsMissing } from "./bindings";
 import { counted } from "./dispatches";
 import { Notice, NoticeOf } from "./Notice";
-import { AT_THE_ROOT, OPEN_SKILL_STUDIO, asPersona, askSkillStudio } from "./skillStudio";
+import { SHOW_IN_SKILLS, askChatSkills, skillsMissingPutAway } from "./chatSkillsAsk";
 
 /**
  * **The skills a chat started without, on its tab** (SK-5, #2768; SK-8, #2771; spec decision
@@ -15,10 +15,9 @@ import { AT_THE_ROOT, OPEN_SKILL_STUDIO, asPersona, askSkillStudio } from "./ski
  * works in leaves out, with why (SK-53). And a skill of that repo named like a built-in one,
  * which the chat's program loads beside purlis's (SK-37). It offers
  *
- * - **Open Skill studio**: the studio's Library on the chat's persona, or on a chat at the
- *   project's root (#3681), where the name is taken out, the skill is fixed in its editor, or it is seen for what
- *   it is;
- * - **Dismiss**: puts it away for this run of the chat.
+ * - **Show in Skills** (S8, #3694): the sidebar Skills view on this chat, where what it started
+ *   without sits in Needs you with its fix;
+ * - **Dismiss**: puts it away for this run of the chat, off the Skills chip on its pane too.
  */
 export function SkillsMissingNotice({ plane, session }: { plane: PlaneId; session: number }) {
   const [said, setSaid] = useState<SkillsMissing | null>(null);
@@ -39,6 +38,7 @@ export function SkillsMissingNotice({ plane, session }: { plane: PlaneId; sessio
   const chat = offScreen ? "That chat" : "This chat";
   const putAway = () => {
     setSaid(null);
+    skillsMissingPutAway(plane, session);
     void commands.putAwayChatSkillsMissing(plane, session).catch(() => {});
   };
   return (
@@ -50,13 +50,8 @@ export function SkillsMissingNotice({ plane, session }: { plane: PlaneId; sessio
       persona={said.persona}
       fixes={[
         {
-          label: OPEN_SKILL_STUDIO,
-          onPress: () =>
-            askSkillStudio(
-              plane,
-              said.persona === null ? AT_THE_ROOT : asPersona(said.persona),
-              "library",
-            ),
+          label: SHOW_IN_SKILLS,
+          onPress: () => askChatSkills(plane, session),
         },
       ]}
       onDismiss={putAway}

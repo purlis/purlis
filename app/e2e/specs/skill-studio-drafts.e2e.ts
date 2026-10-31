@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { projectRoot, stateOf } from "../acting.js";
+import { appStateOf, projectRoot } from "../acting.js";
 import {
   closeTheViewTabsOpenedSince,
   endTheSessionsStartedSince,
@@ -14,13 +14,14 @@ import {
 } from "../reach.js";
 import { studioPage } from "../studio.js";
 import { projectInFront, runningIn } from "../running.js";
+import { theDefaultProfileApproved } from "../started.js";
 
 /**
  * **Draft skills in the Skill studio** (SK-9, #2772), in the built app against the real core, with
  * the `skill-studio` flag on for the run (`wdio.conf.ts`).
  *
- * A chat's write to a skill's files is kept as a draft in this machine's state
- * (`skill-drafts/<id>/`, `docs/plane-format.md`); how a chat's write gets there is the core's seam
+ * A chat's write to a skill's files is kept as a draft in this machine's app state of the project
+ * (`<data>/app-state/<clone key>/skill-drafts/<id>/`, `docs/plane-format.md`); how a chat's write gets there is the core's seam
  * (`toolhooks` and `skills/verbs/drafts` tests), so the spec puts two drafts there as the app
  * keeps them. Then, in the studio:
  *
@@ -29,7 +30,7 @@ import { projectInFront, runningIn } from "../running.js";
  * - **Try it** opens a scratch chat of its own in a throwaway folder, which is gone once that chat
  *   ends;
  * - **Accept** makes the other one a project skill, on disk, and the draft is gone;
- * - **Ask a chat to draft a skill** opens a chat.
+ * - **New skill…**'s **Ask a chat to draft it** opens a chat.
  *
  * That an accept is one commit, and that a try's chat gets the built-in skills and the draft
  * alone, are the core's seam tests. **It leaves the window and the project as it found them.**
@@ -87,8 +88,11 @@ describe("draft skills in the Skill studio", function () {
 
   before(async () => {
     root = await projectRoot();
-    state = stateOf(root);
+    state = appStateOf(root);
     await focusWorkspace("alpha");
+    // The studio's chats start without the picker, on a profile someone approved (#3562): in
+    // the project and workspace they start in.
+    await theDefaultProfileApproved();
     wereOpen = await tabNames();
     plane = await projectInFront();
     wereRunning = await runningIn(plane);
@@ -158,9 +162,15 @@ describe("draft skills in the Skill studio", function () {
     // The chat Try it opened went, so the studio is brought to the front again.
     await focusWorkspace("alpha");
     await runFromThePalette("Open Skill studio", "skills.studio");
-    const ask = await $("button=Ask a chat to draft a skill");
-    await ask.waitForClickable({ timeout: 20_000 });
-    await ask.click();
+    // New skill… asks how first (#3684): a chat's draft says what the skill should do.
+    const make = await $('[data-testid="skill-studio"]').$("button=New skill…");
+    await make.waitForClickable({ timeout: 20_000 });
+    await make.click();
+    await (await $("button=Ask a chat to draft it")).click();
+    const what = await $("aria/What should it do?");
+    await what.waitForDisplayed({ timeout: 10_000 });
+    await what.addValue("Probes drafting a skill.");
+    await (await $("button=Open the chat")).click();
     await untilAChatStarts(plane, wereRunning, "Ask a chat to draft a skill started no chat");
     await endTheSessionsStartedSince(wereRunning);
   });

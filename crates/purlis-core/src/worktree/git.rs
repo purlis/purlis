@@ -115,9 +115,10 @@ pub(crate) use group::{lead, stop};
 /// while no longer calling a slow answer a broken repository.
 pub const READ: Duration = Duration::from_secs(30);
 
-/// The deadline for a call that crosses a network: `clone`, `fetch`, and `publish` when it
-/// lands. Only ever through [`run_network`], which is what holds such a call to the
-/// one-credential rule.
+/// The deadline for a call that crosses a network: a chat's brokered `clone`, `fetch`, and
+/// `publish` when it lands. Only ever through [`run_network`], which is what holds such a call
+/// to the one-credential rule. A clone that is not a chat's has a stall limit instead
+/// ([`spawn_network`], [`crate::cloning::STALL`]).
 pub const NETWORK: Duration = Duration::from_secs(120);
 
 /// Where to look for git when the inherited `PATH` is not to be trusted.
@@ -2035,8 +2036,8 @@ pub fn run_in_hook(dir: &Path, args: &[&str], timeout: Duration) -> Result<RawRu
 /// other one first. `None` gives git no credential at all, which is what a host charter does
 /// not manage gets: a token for one forge is never offered to another.
 ///
-/// The deadline is [`NETWORK`]. A `clone` killed at the deadline leaves a partial directory,
-/// which the caller reports rather than retrying into.
+/// The deadline is [`NETWORK`]. A clone is not run this way: every clone lands whole, with no
+/// total deadline ([`spawn_network`], #4079, #4080).
 pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Run, GitUnavailable> {
     let mut config: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
     if let Some(helper) = helper {
@@ -2094,6 +2095,44 @@ pub(crate) fn run_network_handing(
         crate::netlog::git_call(operation, &remote, run.ok(), started.elapsed());
     }
     Ok(run)
+}
+
+/// [`run_network`] as a child the caller reads as it runs, for its progress, and may stop with
+/// [`stop`] (#4079): the child, or the sentence that refuses the call. Under the one-credential
+/// rule, unlike [`spawn_persons_clone`]: the same [`NETWORK_RULE`], and `helper` the only
+/// helper git consults. `config` adds `-c` settings after them, and `pass` variables by name.
+/// **The caller owns the deadline**, and tells the network log how it went
+/// ([`network_call_ended`]).
+pub(crate) fn spawn_network(
+    dir: &Path,
+    helper: Option<&str>,
+    config: &[String],
+    pass: Vec<(String, std::ffi::OsString)>,
+    args: &[&str],
+) -> Result<Result<Child, String>, GitUnavailable> {
+    let mut all: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
+    if let Some(helper) = helper {
+        all.push(format!("credential.helper={helper}"));
+    }
+    all.extend(config.iter().cloned());
+    let extra = Extra {
+        config: all,
+        credentials: true,
+        network: true,
+        pass,
+        ..Extra::default()
+    };
+    match held(dir, args, extra)? {
+        Ok(extra) => Ok(Ok(spawn_with(dir, args, &extra)?)),
+        Err(refused) => Ok(Err(as_text(refused).err)),
+    }
+}
+
+/// Lists a [`spawn_network`] call once git has run (#959), as [`run_network`] lists its own.
+pub(crate) fn network_call_ended(dir: &Path, args: &[&str], ok: bool, started: Instant) {
+    for (operation, remote) in destinations(dir, args) {
+        crate::netlog::git_call(operation, &remote, ok, started.elapsed());
+    }
 }
 
 /// The verbs that reach a remote the repository names, by its name or as its default.

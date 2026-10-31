@@ -293,6 +293,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A chat moved to or from a pool's runner (#2048): a new run where it moves.
     "move_chat",
     "move_chat_now",
+    // A move that waited on its profile's sign-in is prepared again (#3477): it may then send
+    // the chat's work to the runner, so only the person's own window says it signed in.
+    "chat_move_signed_in",
     "start_chat_fresh",
     "ask_chat_restart",
     // Reads what a chat was sent or said to another.
@@ -350,6 +353,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Dismiss on a chat's Notice that its program ended with its session host (#2007): the
     // person's answer.
     "put_away_lost_chat",
+    // Put away on the Inbox's Notice of a chat's undelivered messages (#3958): the person's
+    // answer that they have read it.
+    "put_away_left_messages",
     // Try again on the Notice that the session host is failing (#2007): it starts the host
     // every chat runs in, on the person's word.
     "start_the_session_host_again",
@@ -523,6 +529,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // with the person's own git sign-in, so it is started and stopped from the window alone.
     "project_url_folder",
     "cancel_get_project",
+    // And of a repo cloned into a workspace (#4079), for the same reason.
+    "cancel_clone_repo",
     // Where the person is in the guided steps (#1817), read and kept for the next launch:
     // setting up this machine is the window's, never a link's.
     "onboarding_progress",
@@ -631,6 +639,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A skill pinned or unpinned for a workspace's or a persona's chats (SK-15d, #3232): one
     // commit to the project, the person's own press in their window, as a turn-off is.
     "skill_pin",
+    // A router chosen for a workspace's or a persona's chats (#3692): one commit to the project,
+    // the person's own press in their window, as a pin is.
+    "skill_router_choose",
     // A skill's tab (#2782): reverting it to a version, deprecating, archiving or restoring it,
     // and naming its owners. Each is one commit to the project, the person's own press in their
     // window.
@@ -650,6 +661,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // chat that drafted it as the person, or a chat started with it typed, as a draft chat is.
     "skill_draft_redo",
     "skill_draft_redo_in",
+    // A skill's trigger tests started from a template, or a chat opened to write them (#3925):
+    // the start is one commit to the project, and the chat starts a program as the person, as
+    // a draft chat does. The person's own press in their window.
+    "skill_trigger_tests_start",
+    "skill_trigger_tests_chat",
     // A grade of a skill started or stopped (SK-16, #2779): it runs chats on the person's
     // profile, each started on a trigger test's query, and records the grade in the project.
     // The person's own press in their window, after the plan showed what it costs.
@@ -659,7 +675,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's profile and records the grade in the project. Stopped by `skill_grade_stop`.
     "router_grade_start",
     // A grade's token cap (#2779): what this machine's grades may spend, in its own settings
-    // file. The person's own press in their window.
+    // file, set from a skill's plan or a router's (#3618). The person's own press in their
+    // window.
+    "router_grade_set_cap",
     "skill_grade_set_cap",
     // Grading after each edit turned on or off (SK-58, #3238): on, it spends the person's
     // account at each edit they save, within what the plan showed. The person's own press in
@@ -669,16 +687,20 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Accepting a workspace or persona folder a chat could have made (SK-9): its skills then
     // reach chats, so only the person's own press in their window does it.
     "skill_level_accept",
+    "skill_levels_confirm",
     // Skill sources (#2773): each reaches a git repository the person named, a private one with
     // a credential read from a vault, and an install or an update is one commit to the project.
     // The person's own press in their window, never a link's.
     "skill_sources",
     "skill_sources_offered",
+    "skill_sources_checked",
     "skill_source_add",
     "skill_source_remove",
     "skill_source_confirm",
     "skill_source_browse",
     "skill_install_review",
+    "skill_install_set_review",
+    "skill_install_widenings",
     "skill_install",
     "skill_updates",
     "skill_update_review",
@@ -710,9 +732,37 @@ pub const WINDOW_ONLY: &[&str] = &[
     "remove_docker_pool",
     "docker_pool_link",
     "docker_pool_version",
+    // Which pools' runners were removed outside purlis, and making one again (#4149): it makes
+    // and pairs a container as adding a pool does, so only their own press in their window.
+    "docker_pools_removed",
+    "docker_pool_make_again",
+    // The runner image this version's release names (2026-10-30): the Add a pool dialog's
+    // default image, read through the updater, for the person's own window.
+    "runner_image_of_this_version",
+    // This machine's cluster pools (#3292): reading a kubeconfig's contexts and a cluster's
+    // operator key runs this machine's kubectl with the person's credentials, and adding one
+    // claims a runner as them and pins that key, so only their own press in their window does.
+    "cluster_contexts",
+    "cluster_pool_key",
+    "add_cluster_pool",
+    // The person's mark that a cluster pool is their own (#4071): half of what lets its runner
+    // receive vault values and tokens, so only their own press in their window sets it.
+    "set_cluster_pool_owned",
     // This machine's profiles on a pool's runner (#2049): keeping one there sends its name to a
     // runner, so only the person's own look in their window does.
     "pool_profiles",
+    // A profile added to or taken off a pool (#4047): it changes what the runner keeps, and a
+    // removal deletes its sign-in there, so only the person's own window does.
+    "pool_profile_add",
+    "pool_profile_remove",
+    // Signing a profile in on a pool's runner with no terminal (#4042): it runs the runner's
+    // own sign-in and passes the person's code to it, so only their own window drives it.
+    "pool_sign_in_start",
+    "pool_sign_in_next",
+    "pool_sign_in_paste",
+    "pool_sign_in_cancel",
+    "pool_sign_in_type",
+    "pool_sign_out",
     // The Devices view (#2052): it reads this machine's runners and links to each, so only the
     // person's own window asks it.
     "devices",
@@ -732,6 +782,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "apply_runner_write",
     "dismiss_runner_write",
     "runner_write",
+    // A runner chat's held open or dispatch: only the person's press starts or refuses it, and
+    // the ask whole, for its own tab, is the person's to read.
+    "runner_dispatch",
+    "approve_runner_dispatch",
+    "refuse_runner_dispatch",
     // Taking a browser over, driving it and handing it back (#2014): what the person types into
     // a page is theirs, and only the window, where they see it, sends it.
     "take_over_browser",
@@ -1102,20 +1157,27 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_deleted_text",
     "skill_details",
     "skill_diff",
-    // What a router's grade runs (SK-15e, #3233): read only.
+    // What a router's grade runs (SK-15e, #3233), and a grade's scorecard and kept chat
+    // (#3617): read only.
+    "router_grade_chat",
     "router_grade_plan",
+    "router_grade_scorecard",
     // A grade's kept chat and its scorecard (SK-59, #3239), and a skill's grading after each
     // edit (SK-58, #3238): read only.
     "skill_grade_after_edit",
     "skill_grade_chat",
     "skill_grade_plan",
     "skill_grade_scorecard",
+    // A skill's grades, for its Grades tab (S6, #3688): read only.
+    "skill_grades",
     "skill_lint",
     "skill_move_needs_grant",
     "skill_panels",
     // Every persona's own skills, for the Skills view (#3266): read only.
     "skill_persona_skills",
     "skill_revert_widens",
+    // The router extensions Change… offers (#3692): read only.
+    "skill_routers",
     "skill_runs",
     "skill_stats",
     "skill_studio",
@@ -1516,138 +1578,4 @@ mod credential_tests {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_window_only_field_is_of_a_method_a_link_is_served_and_is_replaced_at_any_depth() {
-        // A method of the window's alone is never served, so a field of it listed here would
-        // say nothing.
-        for kept in WINDOW_ONLY_FIELDS {
-            assert!(!window_only(kept.method), "{}", kept.method);
-        }
-        let reply = serde_json::json!({
-            "asks": [{"ask": "a", "writes": {"after": "x"}}, {"ask": "b"}],
-            "nested": {"deeper": [{"writes": "y", "kept": 1}]},
-            "none": {"writes": null}
-        });
-        let not_shown = an_edit_drawn_in_the_window_only();
-        assert_eq!(
-            as_a_link_is_served("pending_asks", reply.clone()),
-            serde_json::json!({
-                "asks": [{"ask": "a", "writes": not_shown}, {"ask": "b"}],
-                "nested": {"deeper": [{"writes": not_shown, "kept": 1}]},
-                "none": {"writes": null}
-            })
-        );
-        assert_eq!(as_a_link_is_served("rename_chat", reply.clone()), reply);
-    }
-
-    /// Issue 1916: the folder watch is served on a link for a branch's folders, and refused
-    /// there for a folder of the plane root, which is named by no workspace and no repo.
-    #[test]
-    fn a_folder_watch_that_names_the_plane_root_is_not_a_links_to_ask() {
-        let folder = |workspace: &str, repo: &str| {
-            serde_json::json!({
-                "plane": "/p", "workspace": workspace, "repo": repo, "piece": null, "folder": "docs"
-            })
-        };
-        let watch = |folders: Vec<Value>| serde_json::json!({ "folders": folders });
-        assert!(!window_only("files_watch"));
-        assert!(!names_the_plane_root("files_watch", &watch(vec![])));
-        assert!(!names_the_plane_root(
-            "files_watch",
-            &watch(vec![folder("alpha", "svc")])
-        ));
-        assert!(names_the_plane_root(
-            "files_watch",
-            &watch(vec![folder("", "")])
-        ));
-        // One such folder among a branch's refuses the whole call.
-        assert!(names_the_plane_root(
-            "files_watch",
-            &watch(vec![folder("alpha", "svc"), folder("", "")])
-        ));
-        // A folder that leaves the names out names none.
-        assert!(names_the_plane_root(
-            "files_watch",
-            &watch(vec![serde_json::json!({ "plane": "/p", "folder": "" })])
-        ));
-        assert!(!names_the_plane_root(
-            "branch_tree",
-            &watch(vec![folder("", "")])
-        ));
-        // A call that does not say its folders as a list names no branch.
-        for args in [
-            serde_json::json!({}),
-            serde_json::json!([[folder("alpha", "svc")]]),
-            serde_json::json!({ "folders": folder("alpha", "svc") }),
-            Value::Null,
-        ] {
-            assert!(names_the_plane_root("files_watch", &args), "{args}");
-        }
-    }
-
-    #[test]
-    fn a_host_serves_only_what_the_served_list_names_whatever_it_is_built_with() {
-        // #1927: a command on neither list (one added to the app and not yet listed) is
-        // refused to a link at the host, not only by a test of the lists.
-        struct Nothing;
-        impl Handler for Nothing {
-            fn call(&self, _: String, _: Value) -> BoxFuture<'_, Result<Value, Value>> {
-                Box::pin(async { Ok(Value::Null) })
-            }
-        }
-        let server = Server::new(
-            "0.0.0+test",
-            [
-                "rename_chat",
-                "a_command_added_later",
-                "send_input",
-                "answer_ask",
-            ],
-            Nothing,
-        );
-        assert_eq!(
-            server
-                .methods
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-            ["rename_chat"]
-        );
-    }
-
-    #[test]
-    fn no_command_is_both_served_on_a_link_and_the_windows_alone() {
-        // #1927: the two lists part the app's commands. The app's own test holds that every
-        // command is on one; this holds that none is on both, and each list names one once.
-        for command in SERVED_ON_A_LINK {
-            assert!(!window_only(command), "{command} is on both lists");
-            assert!(served_on_a_link(command), "{command}");
-        }
-        for command in window_only_commands() {
-            assert!(!served_on_a_link(command), "{command}");
-        }
-        let mut once = SERVED_ON_A_LINK.to_vec();
-        once.sort_unstable();
-        once.dedup();
-        assert_eq!(
-            once.len(),
-            SERVED_ON_A_LINK.len(),
-            "a command is listed twice"
-        );
-    }
-
-    #[test]
-    fn every_command_of_who_may_dispatch_to_whom_is_on_the_window_only_list() {
-        for command in STANDING_DISPATCH {
-            assert!(WINDOW_ONLY.contains(command), "{command}");
-        }
-        // Named once each.
-        let mut sorted = STANDING_DISPATCH.to_vec();
-        sorted.sort_unstable();
-        sorted.dedup();
-        assert_eq!(sorted.len(), STANDING_DISPATCH.len());
-    }
-}
+mod tests;

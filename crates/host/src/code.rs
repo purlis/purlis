@@ -17,6 +17,7 @@
 //! **A bundle is held to [`code::MOST_BUNDLE_BYTES`]**, and a transfer to [`TRANSFER_WITHIN`]: one
 //! past either is refused in a sentence, and what it brought is removed.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -105,6 +106,26 @@ pub trait Code: Send + Sync + 'static {
     ) -> Result<String, Refusal> {
         let _ = (project, carried, into);
         Err(moves_no_chat())
+    }
+
+    /// **The clones the project at `project` holds in `workspace`** (1.51, #3811), by their
+    /// folder names in it. A binary that moves no chat refuses it.
+    fn clones_of(&self, project: &Path, workspace: &str) -> Result<Vec<String>, Refusal> {
+        let _ = (project, workspace);
+        Err(moves_no_chat())
+    }
+
+    /// **Where each of `repos`, clones in `workspace`, came from** (1.54, #3985): the `origin`
+    /// URL of each one's own configuration, by its folder name, only where it is a forge's
+    /// address with no sign-in in it. None from a binary that moves no chat.
+    fn origins_of(
+        &self,
+        project: &Path,
+        workspace: &str,
+        repos: &[String],
+    ) -> BTreeMap<String, String> {
+        let _ = (project, workspace, repos);
+        BTreeMap::new()
     }
 }
 
@@ -275,6 +296,31 @@ impl Hosting {
             ))
         })??;
         Ok(moved)
+    }
+
+    /// **The clones a project the host keeps holds in `workspace`** (1.51, #3811): no stream,
+    /// only the folder names the binary reads, and where each came from to a link of 1.54 or
+    /// later (#3985).
+    pub(crate) async fn clones_of(
+        &self,
+        project: &str,
+        workspace: String,
+        peer: &Peer,
+    ) -> Result<Answer, Refusal> {
+        let at = self.kept_project_held(project, peer)?;
+        let code = self.code();
+        let with_origins = peer.version() >= session::KNOWS_CLONE_ORIGINS;
+        let (repos, origins) = blocking(move || {
+            let repos = code.clones_of(&at, &workspace)?;
+            let origins = if with_origins {
+                code.origins_of(&at, &workspace, &repos)
+            } else {
+                BTreeMap::new()
+            };
+            Ok((repos, origins))
+        })
+        .await?;
+        Ok(Answer::Clones { repos, origins })
     }
 
     /// Where a transfer's bundle is kept while it moves: beside the projects the host keeps, so

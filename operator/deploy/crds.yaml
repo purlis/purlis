@@ -35,6 +35,70 @@ spec:
               it is the cluster's own access control: a Claim is admitted only for someone allowed to `use`
               the Pool (deploy/policy.yaml).
             properties:
+              deleteSuspendedAfter:
+                default: 720h
+                description: |-
+                  How long a kept Claim stays suspended before it is deleted, with its volume (#3737). A
+                  whole number of `s`, `m` or `h`. 720h (30 days) unless the pool says otherwise. Not
+                  acted on yet (#3981).
+                maxLength: 12
+                pattern: ^[1-9][0-9]*[smh]$
+                type: string
+              forge:
+                description: |-
+                  A team's GitHub App, for runners' forge tools (#4204). Left out, the operator reads no
+                  Secret for this pool.
+                nullable: true
+                properties:
+                  appKeySecretRef:
+                    description: |-
+                      The Secret in the operator's own namespace holding the App's client id (`app`) and its
+                      private key (`key`). The chart's `forge.keySecretNames` must name it too.
+                    properties:
+                      name:
+                        description: The Secret's name, never the operator's own signing key's.
+                        maxLength: 253
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                        type: string
+                        x-kubernetes-validations:
+                        - message: A pool cannot name the operator's own signing key.
+                          rule: self != 'purlis-cluster-operator-signing-key'
+                    required:
+                    - name
+                    type: object
+                  mintInCluster:
+                    default: false
+                    description: |-
+                      Whether the pool opts in to the operator minting tokens for its runners. Nothing is minted
+                      yet (#4206). Once it is, anyone who may use the Pool can use these repos through it. False
+                      unless set.
+                    type: boolean
+                  repos:
+                    description: |-
+                      The most a token may cover: `owner/name` or `owner/*`. A token covers only these and the
+                      repos of the Claim.
+                    items:
+                      maxLength: 140
+                      pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,38}/(\*|[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)$
+                      type: string
+                    maxItems: 256
+                    minItems: 1
+                    type: array
+                required:
+                - appKeySecretRef
+                - repos
+                type: object
+              idleAfter:
+                default: 30m
+                description: |-
+                  How long a runner of the pool is idle before it is suspended (#3737): no running chat, no
+                  open stream, no forwarded request and no build (ADR 0089 §9); a runner a live chat owns,
+                  or whose browser holds an Ask, is never idle. A whole number of `s`, `m` or `h`, a minute
+                  at least. 30m unless the pool says otherwise. Not acted on yet (#3980).
+                maxLength: 12
+                pattern: ^[1-9][0-9]*[smh]$
+                type: string
               image:
                 description: |-
                   The runner image, by digest (`<repository>@sha256:<digest>`), since a tag can move. Any
@@ -59,9 +123,53 @@ spec:
                     nullable: true
                     type: string
                 type: object
+              maxAge:
+                default: 336h
+                description: |-
+                  A Claim's maximum age (#3737): past it, a kept Claim's runner starts again on the pool's
+                  current image, and a fresh Claim's is made again. A whole number of `s`, `m` or `h`. 336h
+                  (14 days) unless the pool says otherwise. Not acted on yet (#3982).
+                maxLength: 12
+                pattern: ^[1-9][0-9]*[smh]$
+                type: string
+              noticeBeforeDelete:
+                default: 168h
+                description: |-
+                  How long before that deletion its requester is sent an Update (#3737). A whole number of
+                  `s`, `m` or `h`, shorter than `deleteSuspendedAfter`. 168h (7 days) unless the pool says
+                  otherwise. Not acted on yet (#3981).
+                maxLength: 12
+                pattern: ^[1-9][0-9]*[smh]$
+                type: string
+              stopped:
+                default: false
+                description: |-
+                  Whether the pool is stopped (#2058): every runner of its Claims is suspended, never
+                  destroyed (its pod ends; a kept Claim's volume, its home, stays), no runner is kept warm
+                  for it, and a Claim made meanwhile gets no runner, until it is false again. False unless
+                  set.
+                type: boolean
+              warmReplicas:
+                default: 0
+                description: |-
+                  How many runners are kept warm for fresh Claims (#3737), in each runner namespace the
+                  pool has a Claim in; none while the pool is stopped. The operator keeps the warm pool at
+                  this count, 20 at most. They count toward each person's quota. Kept only for a person
+                  with a fresh Claim on the pool that is not stopped. 0 unless the pool says otherwise.
+                format: int32
+                maximum: 20.0
+                minimum: 0.0
+                type: integer
             required:
             - image
             type: object
+            x-kubernetes-validations:
+            - message: 'noticeBeforeDelete must be shorter than deleteSuspendedAfter: the Update comes before the deletion.'
+              rule: duration(self.noticeBeforeDelete) < duration(self.deleteSuspendedAfter)
+            - message: idleAfter is a minute at least.
+              rule: duration(self.idleAfter) >= duration('1m')
+            - message: maxAge is too long to read as a duration.
+              rule: duration(self.maxAge) > duration('0s')
           status:
             description: What the operator says about a Pool.
             nullable: true
@@ -147,6 +255,23 @@ spec:
           spec:
             description: One person's request for a runner from a pool, and the runner it is given.
             properties:
+              forge:
+                description: |-
+                  The repos the runner works on (#4204). Changed only by who asked for the claim, while they
+                  may use its pool (deploy/policy.yaml). A token covers only these and the Pool's allow-list.
+                nullable: true
+                properties:
+                  repos:
+                    description: 'Each repo, `owner/name`: never a wildcard, which only a Pool''s allow-list may hold.'
+                    items:
+                      maxLength: 140
+                      pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,38}/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*$
+                      type: string
+                    maxItems: 256
+                    type: array
+                required:
+                - repos
+                type: object
               kept:
                 default: false
                 description: |-
@@ -177,6 +302,13 @@ spec:
                 x-kubernetes-validations:
                 - message: A claim's requester cannot change.
                   rule: self == oldSelf
+              stopped:
+                default: false
+                description: |-
+                  Whether the claim is stopped (#2058): its runner is suspended, never destroyed (its pod
+                  ends; a kept claim's volume, its home, stays), or not made yet, until it is false again.
+                  Its pool's `stopped` stops it too. False unless set.
+                type: boolean
             required:
             - pool
             - requester

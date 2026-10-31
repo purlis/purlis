@@ -6,8 +6,9 @@
 //! Signing in runs the harness's own sign-in command (`claude auth login`, `codex login`,
 //! `opencode auth login`) with the profile's folder variables set, in a terminal the person
 //! drives: a shell tab in the window, or their own terminal with `purlis profile sign-in`. The
-//! harness keeps what it signs in with in the profile's folder. purlis reads none of what the
-//! command prints, and never opens a file it writes ([`Login`]).
+//! harness keeps what it signs in with in the profile's folder. purlis never opens a file it
+//! writes ([`Login`]), and reads what it prints only where it drives it with no terminal: for its
+//! page, its prompt and its words of refusal ([`driven`], #4042).
 //!
 //! **Whether a profile is signed in is the harness's own answer** ([`standing`]): its status
 //! command's exit status where it has one (Claude Code's `auth status`, Codex's
@@ -54,6 +55,9 @@ pub enum Standing {
     SignedOut,
     /// The harness did not say, or has no way to: a chat on it starts.
     CannotTell,
+    /// The runner is fetching the harness version the profile pins (#4008), which a look
+    /// started, so its harness cannot say yet: a chat on it starts, as where it cannot tell.
+    Fetching,
 }
 
 impl Standing {
@@ -63,6 +67,7 @@ impl Standing {
             Self::SignedIn => "signed-in",
             Self::SignedOut => "signed-out",
             Self::CannotTell => "cannot-tell",
+            Self::Fetching => "fetching",
         }
     }
 }
@@ -77,6 +82,20 @@ pub trait Look {
     fn status(&self, program: &str, args: &[&str], env: &[(String, String)]) -> Option<i32>;
     /// Whether something is at `path`, by its name, without opening it.
     fn is_there(&self, path: &Path) -> bool;
+    /// **The program of the version `record` is pinned to, where this machine installs it**
+    /// (#3446, #4007): on a runner keeping it for its desktop with a pin, that version once it
+    /// is installed, which a status is asked of in place of a harness on `PATH`. `None` for
+    /// every other profile and machine, and while the version is still being fetched.
+    fn pinned_program(&self, record: &MachineProfile) -> Option<PathBuf> {
+        let _ = record;
+        None
+    }
+    /// **Whether the version `record` is pinned to is being fetched** (#4008) by a fetch a look
+    /// started ([`Look::pinned_program`]): what tells a runner's "fetching" from "cannot tell".
+    fn fetching(&self, record: &MachineProfile) -> bool {
+        let _ = record;
+        false
+    }
 }
 
 /// This machine: programs run for real, and names looked for on its disk.
@@ -113,6 +132,14 @@ impl Look for ThisMachine {
     fn is_there(&self, path: &Path) -> bool {
         std::fs::symlink_metadata(path).is_ok()
     }
+
+    fn pinned_program(&self, record: &MachineProfile) -> Option<PathBuf> {
+        super::installs::for_a_look(record)
+    }
+
+    fn fetching(&self, record: &MachineProfile) -> bool {
+        super::installs::fetching_for_a_look(record)
+    }
 }
 
 /// How a harness's status is told.
@@ -132,10 +159,41 @@ struct Flow {
     kind: &'static str,
     /// The words after its program that sign it in, in its own terminal flow.
     login: &'static [&'static str],
+    /// The words after its program that sign it out, its own; none where it asks which in a
+    /// terminal, as opencode's does.
+    logout: Option<&'static [&'static str]>,
     /// The flag that names the provider, followed by one of [`providers`]' ids, for a harness
     /// whose declaration lists plans. Empty for one that serves its own vendor's plan alone.
     provider_flag: &'static str,
+    /// The words that ask for its browser and its device-code flow by name ([`Way`]), and the
+    /// plan they are its words for, for a harness that serves several.
+    browser: &'static [&'static str],
+    device: &'static [&'static str],
+    ways_of: Option<&'static str>,
     status: Status,
+}
+
+/// **Which of a harness's sign-in flows is asked for** (#4044).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Way {
+    /// Its own default, or the list it asks from in a terminal.
+    #[default]
+    Asked,
+    /// Its browser flow, with no list to answer: how purlis drives it.
+    Browser,
+    /// Its device-code flow: what is left where the browser's answer cannot reach the login.
+    Device,
+}
+
+impl Way {
+    /// The way `word` names, as `--way` is given it.
+    pub fn named(word: &str) -> Option<Self> {
+        match word {
+            "browser" => Some(Self::Browser),
+            "device" => Some(Self::Device),
+            _ => None,
+        }
+    }
 }
 
 /// The harnesses purlis ships, each by its own documentation and help: Claude Code 2.1's
@@ -146,20 +204,34 @@ const FLOWS: [Flow; 3] = [
     Flow {
         kind: "claude",
         login: &["auth", "login"],
+        logout: Some(&["auth", "logout"]),
         provider_flag: "",
+        browser: &[],
+        device: &[],
+        ways_of: None,
         status: Status::Command(&["auth", "status"]),
     },
     Flow {
         kind: "codex",
         login: &["login"],
+        logout: Some(&["logout"]),
         provider_flag: "",
+        browser: &[],
+        // Codex's own answer for a remote machine; beta, and its account may have it off.
+        device: &["--device-auth"],
+        ways_of: None,
         status: Status::Command(&["login", "status"]),
     },
     Flow {
         kind: "opencode",
         login: &["auth", "login"],
+        logout: None,
         // opencode 1.18.33's `auth login --provider`: provider selection skipped.
         provider_flag: "--provider",
+        // Its `--method` names one of the list's labels; these are its ChatGPT plan's.
+        browser: &["--method", "ChatGPT Pro/Plus (browser)"],
+        device: &["--method", "ChatGPT Pro/Plus (headless)"],
+        ways_of: Some("openai"),
         status: Status::Named {
             own: "opencode",
             file: "auth.json",
@@ -315,6 +387,8 @@ pub struct Wait {
     pub harness: String,
     /// When the first start was refused, in seconds since 1970.
     pub since: u64,
+    /// When a start was last refused, to the instant: what a watcher compares (#4203).
+    pub raised: Instant,
 }
 
 static WAITS: Mutex<Vec<Wait>> = Mutex::new(Vec::new());
@@ -325,10 +399,11 @@ pub fn waits_on(root: &Path, profile: &Profile) {
     let harness = crate::harness_declaration::builtin(&profile.kind)
         .map_or_else(|| profile.kind.clone(), |d| d.title.clone());
     let mut all = WAITS.lock().unwrap_or_else(PoisonError::into_inner);
-    if all
-        .iter()
-        .any(|w| w.root == root && w.profile.name == profile.name)
+    if let Some(wait) = all
+        .iter_mut()
+        .find(|w| w.root == root && w.profile.name == profile.name)
     {
+        wait.raised = Instant::now();
         return;
     }
     all.push(Wait {
@@ -338,6 +413,7 @@ pub fn waits_on(root: &Path, profile: &Profile) {
         since: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs()),
+        raised: Instant::now(),
     });
 }
 
@@ -353,44 +429,43 @@ fn remembered_at(profile: &Profile, now: Instant) -> Option<Standing> {
 
 /// **The profiles the project at `root` waits on to be signed in**, oldest first, as their
 /// harnesses last said, with no program run: what the window lists, on its own thread. A wait
-/// whose harness has since said anything but signed out is let go; one it has not been asked
-/// about lately still waits.
+/// whose harness has since said signed in is let go. One it has not been asked about lately still
+/// waits, and so does one that cannot tell, whose person may still be signing in (#4223).
 pub fn waiting(root: &Path) -> Vec<Wait> {
     let now = Instant::now();
     let mut all = WAITS.lock().unwrap_or_else(PoisonError::into_inner);
-    all.retain(|w| {
-        w.root != root
-            || remembered_at(&w.profile, now).is_none_or(|said| said == Standing::SignedOut)
-    });
+    all.retain(|w| w.root != root || remembered_at(&w.profile, now) != Some(Standing::SignedIn));
     all.iter().filter(|w| w.root == root).cloned().collect()
 }
 
-/// **Asks `profile`'s harness again every `every`, for at most `until`, until it says anything
-/// but signed out**, then lets its waits go and calls `told`: what Sign in starts, so its Ask
-/// leaves the Inbox once the person has signed in, in the shell tab or anywhere else. Runs on a
-/// thread of its own.
-pub fn watch(
-    profile: Profile,
-    look: impl Look + Send + 'static,
-    every: Duration,
-    until: Duration,
-    told: impl FnOnce() + Send + 'static,
-) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || {
-        let ends = Instant::now() + until;
-        while Instant::now() < ends {
-            std::thread::sleep(every);
-            forget(&profile);
-            if standing_remembered(&profile, &look) != Standing::SignedOut {
-                WAITS
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .retain(|w| w.profile.name != profile.name || w.profile.env != profile.env);
-                told();
-                return;
+/// **What `profile`'s harness says now**, asked whatever it said a moment ago: what a watcher
+/// does after Sign in.
+pub fn look_again(profile: &Profile, look: &dyn Look) -> Standing {
+    forget(profile);
+    standing_remembered(profile, look)
+}
+
+/// **Whether `profile`'s harness says now that it is signed in**: what a watcher asks. Cannot tell
+/// is not signed in, as the person may still be signing in (#4223).
+pub fn signed_in_now(profile: &Profile, look: &dyn Look) -> bool {
+    look_again(profile, look) == Standing::SignedIn
+}
+
+/// `profile` is signed in on this device: its waits go, in every project. The projects whose
+/// wait went, whose windows have an Ask to stop drawing (#4205).
+pub fn let_go_everywhere(profile: &Profile) -> Vec<PathBuf> {
+    let mut went = Vec::new();
+    WAITS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .retain(|w| {
+            let goes = w.profile.name == profile.name && w.profile.env == profile.env;
+            if goes {
+                went.push(w.root.clone());
             }
-        }
-    })
+            !goes
+        });
+    went
 }
 
 /// The person put the wait for `name` in the project at `root` away.
@@ -399,6 +474,16 @@ pub fn dismiss(root: &Path, name: &str) {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .retain(|w| !(w.root == root && w.profile.name == name));
+}
+
+/// The person left the sign-in of `name` in the project at `root`: its wait goes, if it was
+/// raised before `seen`, when the shell was last seen open. One raised since is a start refused
+/// after they left, which says the profile waits in the Inbox (#4203).
+pub fn let_go_older(root: &Path, name: &str, seen: Instant) {
+    WAITS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .retain(|w| !(w.root == root && w.profile.name == name && w.raised < seen));
 }
 
 /// A harness's own sign-in, ready to run in a terminal the person drives.
@@ -465,8 +550,14 @@ impl Login {
 }
 
 /// The sign-in of `profile`, with `program` as its program, to `provider` where its harness
-/// serves several: one of [`providers`], and none for a harness that serves one.
-fn login_for(profile: &Profile, program: &str, provider: Option<&str>) -> Result<Login, String> {
+/// serves several: one of [`providers`], and none for a harness that serves one; by `way` where
+/// one is asked for.
+fn login_for(
+    profile: &Profile,
+    program: &str,
+    provider: Option<&str>,
+    way: Way,
+) -> Result<Login, String> {
     let Some(flow) = flow(&profile.kind) else {
         return Err(format!(
             "purlis cannot sign the profile '{}' in: it runs no harness purlis ships.",
@@ -498,6 +589,24 @@ fn login_for(profile: &Profile, program: &str, provider: Option<&str>) -> Result
             ));
         }
     }
+    // The words are the plan's they name; another plan of the same harness has none.
+    let of_this_plan = flow.ways_of.is_none_or(|plan| provider == Some(plan));
+    match way {
+        Way::Asked => {}
+        Way::Device if !of_this_plan || flow.device.is_empty() => {
+            return Err(format!(
+                "{} has no such sign-in for this plan, so nothing was signed in.",
+                profile.kind
+            ));
+        }
+        Way::Device => args.extend(flow.device.iter().map(|w| (*w).to_owned())),
+        // A plan with no browser flow of its own runs its default, which purlis drives as it is
+        // (opencode's Copilot, #4045).
+        Way::Browser if of_this_plan => {
+            args.extend(flow.browser.iter().map(|w| (*w).to_owned()));
+        }
+        Way::Browser => {}
+    }
     Ok(Login {
         program: program.to_owned(),
         args,
@@ -507,9 +616,31 @@ fn login_for(profile: &Profile, program: &str, provider: Option<&str>) -> Result
 }
 
 /// **The sign-in of `record`**, one of this machine's profiles: its harness's own, in its
-/// folder. Refused for a folder adopted in place, which is signed in by the person's own
-/// sign-in, and for a profile whose harness purlis cannot find.
-pub fn login_of(record: &MachineProfile, provider: Option<&str>) -> Result<Login, String> {
+/// folder, run by `pinned` where this machine installed the version it is pinned to (a runner's,
+/// [`super::installs::on_this_runner`], #4007), else by the harness found on `PATH`. Refused for
+/// a folder adopted in place, which is signed in by the person's own sign-in, and for a profile
+/// whose harness purlis cannot find.
+pub fn login_of(
+    record: &MachineProfile,
+    provider: Option<&str>,
+    pinned: Option<&Path>,
+) -> Result<Login, String> {
+    login_by(record, provider, pinned, Way::Asked)
+}
+
+/// [`login_of`], by `way` (#4044).
+pub fn login_by(
+    record: &MachineProfile,
+    provider: Option<&str>,
+    pinned: Option<&Path>,
+    way: Way,
+) -> Result<Login, String> {
+    let (profile, program) = harness_of(record, pinned)?;
+    login_for(&profile, &program, provider, way)
+}
+
+/// The profile of `record` and the program its harness runs by, as [`login_of`] finds them.
+fn harness_of(record: &MachineProfile, pinned: Option<&Path>) -> Result<(Profile, String), String> {
     let name = crate::shown::short(&record.name);
     if record.adopted.is_some() && record.kept_for.is_none() {
         return Err(format!(
@@ -524,14 +655,41 @@ pub fn login_of(record: &MachineProfile, provider: Option<&str>) -> Result<Login
         .ok_or_else(|| {
             format!("purlis cannot sign the profile '{name}' in: it runs no harness purlis ships.")
         })?;
-    let home = crate::profiles::home().unwrap_or_default();
-    let argv = crate::profiles::expanded_command(&profile, &home);
-    let program = crate::programs::resolve_argv(&argv)
-        .map_err(|gone| format!("{} Nothing was signed in.", gone.said()))?
-        .into_iter()
-        .next()
-        .ok_or_else(|| format!("the profile '{name}' names no program."))?;
-    login_for(&profile, &program, provider)
+    let program = match pinned {
+        Some(program) => program.display().to_string(),
+        None => {
+            let home = crate::profiles::home().unwrap_or_default();
+            let argv = crate::profiles::expanded_command(&profile, &home);
+            crate::programs::resolve_argv(&argv)
+                .map_err(|gone| format!("{} Nothing was signed in.", gone.said()))?
+                .into_iter()
+                .next()
+                .ok_or_else(|| format!("the profile '{name}' names no program."))?
+        }
+    };
+    Ok((profile, program))
+}
+
+/// **The sign-out of `record`**, one of this machine's profiles (#4043): its harness's own, as
+/// [`login_of`]'s, in its folder. Refused for a folder adopted in place and for a harness whose
+/// sign-out is only its own terminal's.
+pub fn logout_of(record: &MachineProfile, pinned: Option<&Path>) -> Result<Login, String> {
+    let name = crate::shown::short(&record.name);
+    let (profile, program) = harness_of(record, pinned)?;
+    let words = flow(&profile.kind)
+        .and_then(|flow| flow.logout)
+        .ok_or_else(|| {
+            format!(
+                "{} signs '{name}' out only in its own terminal, so purlis signed nothing out.",
+                record.title
+            )
+        })?;
+    Ok(Login {
+        program,
+        args: words.iter().map(|w| (*w).to_owned()).collect(),
+        env: profile.env.clone(),
+        cleared: Vec::new(),
+    })
 }
 
 /// Forgets what the harness of `record`, one of this machine's profiles, said of it, so it is
@@ -559,8 +717,29 @@ pub fn profile_of(record: &MachineProfile) -> Option<Profile> {
 /// the window and `purlis profile sign-in --check` say. `None` for a folder adopted in place,
 /// which is signed in by the person's own sign-in and never asked.
 pub fn standing_of(record: &MachineProfile, look: &dyn Look) -> Option<Standing> {
-    profile_of(record).map(|profile| standing_remembered(&profile, look))
+    asked_of(record, look).map(|profile| standing_remembered(&profile, look))
 }
+
+/// **The profile whether `record` is signed in is asked of, through `look`**: [`profile_of`],
+/// its program the pinned version `look` installed for it where it has one (#4007).
+pub(super) fn asked_of(record: &MachineProfile, look: &dyn Look) -> Option<Profile> {
+    let mut profile = profile_of(record)?;
+    if let Some(program) = look.pinned_program(record) {
+        let program = program.display().to_string();
+        match profile.command.first_mut() {
+            Some(first) => *first = program,
+            None => profile.command.push(program),
+        }
+    }
+    Some(profile)
+}
+
+pub mod callback;
+pub mod driven;
+#[cfg(unix)]
+pub mod held;
+pub mod terminal;
+pub mod waiting;
 
 #[cfg(test)]
 mod tests;

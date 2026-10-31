@@ -44,6 +44,7 @@ impl Host for Board {
                 process: None,
                 confined: None,
                 sandbox: None,
+                prompt_key: None,
             }),
             Command::Stop { chat } if chat == "nobody" => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),

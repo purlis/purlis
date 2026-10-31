@@ -40,7 +40,6 @@ import {
   Send,
   Sparkles,
   Settings2,
-  SquareTerminal,
   UserRound,
 } from "lucide-react";
 import { PersonaMark } from "./PersonaMark";
@@ -113,20 +112,12 @@ import { TASK_CHANGES_VIEW, taskChangesOf, taskChangesTitle, taskChangesView } f
 import { PROPOSED_CHANGE_VIEW } from "./proposedChangeOpen";
 import { ProposedChangeTab } from "./ProposedChangeTab";
 import { RUNNER_WRITE_VIEW } from "./runnerWriteOpen";
+import { RUNNER_DISPATCH_VIEW } from "./runnerDispatchOpen";
+import { RunnerDispatchTab } from "./RunnerDispatchTab";
 import { RunnerWriteTab } from "./RunnerWriteTab";
 import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
 import { SKILL_STUDIO_VIEW, isSkillStudio } from "./skillStudio";
 import { SkillStudioTab } from "./SkillStudioTab";
-import { SKILL_VIEW, isSkillTab, skillOfView } from "./skillRuns";
-import {
-  GRADE_CHAT_VIEW,
-  GRADE_VIEW,
-  GradeChatTab,
-  GradeScorecardTab,
-  gradeChatOfView,
-  gradeOfView,
-} from "./GradeScorecard";
-import { SkillTab } from "./SkillTab";
 import {
   SAVING_VIEW,
   LICENCES_VIEW,
@@ -315,11 +306,6 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   /** Every skill a chat in the project gets, and why (#2765), behind its flag. */
   [SKILL_STUDIO_VIEW.view]: Sparkles,
   /** One skill's tab, with its runs (SK-3). */
-  [SKILL_VIEW]: Sparkles,
-  /** A grade's scorecard (SK-59). */
-  [GRADE_VIEW]: ListChecks,
-  /** One of a grade's chats, read-only (SK-59). */
-  [GRADE_CHAT_VIEW]: SquareTerminal,
   /** One chat's Activity (#1495). */
   [ACTIVITY_VIEW]: Activity,
   /** One chat's Network (#1662). */
@@ -347,6 +333,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [PROPOSED_CHANGE_VIEW]: GitCompare,
   /** A runner chat's change to the project, whole (#2046, `runnerWriteOpen.ts`). */
   [RUNNER_WRITE_VIEW]: GitCompare,
+  /** A runner chat's held open or dispatch, whole (`runnerDispatchOpen.ts`). */
+  [RUNNER_DISPATCH_VIEW]: GitCompare,
   /** A browser, drawn live (#2012, `browsers.ts`). */
   [BROWSER_VIEW]: Globe,
   /** Every browser in scope, live (#2027, `browsersGrid.ts`). */
@@ -529,8 +517,6 @@ export function ViewPane({
   const piece = pieceOf(view);
   const pieceDiff = pieceDiffOf(view);
   const taskChanges = taskChangesOf(view);
-  const gradeShown = gradeOfView(view);
-  const gradeChatShown = gradeChatOfView(view);
   /** Whether the view draws its own first row, with nothing above it (#3147). */
   const ownFirstRow =
     !holding &&
@@ -597,6 +583,14 @@ export function ViewPane({
           /* A runner chat's change to the project, whole, with Apply where it may be applied
              (#2046). Keyed by the held change, which is the project's. */
           <RunnerWriteTab key={`${plane}\u0000${view.key}`} plane={plane} id={Number(view.key)} />
+        ) : view.from === null && view.view === RUNNER_DISPATCH_VIEW ? (
+          /* A runner chat's held open or dispatch, whole, with Approve. Keyed by the held ask,
+             which is the project's. */
+          <RunnerDispatchTab
+            key={`${plane}\u0000${view.key}`}
+            plane={plane}
+            id={Number(view.key)}
+          />
         ) : isBrowsersGrid(view) ? (
           /* Every browser in scope, live (#2027): its This workspace is the strip's it is on. */
           <BrowsersGridTab key={plane} plane={plane} workspace={workspace} />
@@ -698,31 +692,10 @@ export function ViewPane({
             plane={plane}
             tab={view.key}
             changed={changed + onDisk}
-            onOpenView={onOpenView}
-          />
-        ) : isSkillTab(view) ? (
-          /* One skill's tab (SK-3): its runs, read again when the project changes on disk, and
-             the run its key names marked. */
-          <SkillTab
-            key={`${plane}\u0000${view.key}`}
-            plane={plane}
-            {...skillOfView(view)}
-            changed={changed + onDisk}
             offerFor={offerFor}
             onPress={onPress}
             onOpenView={onOpenView}
           />
-        ) : gradeShown !== undefined ? (
-          /* A grade's scorecard (SK-59): each trigger test in each arm, each chat a tab away. */
-          <GradeScorecardTab
-            key={`${plane}\u0000${view.key}`}
-            plane={plane}
-            {...gradeShown}
-            onOpenView={onOpenView}
-          />
-        ) : gradeChatShown !== undefined ? (
-          /* One of a grade's chats, read-only, as it showed when the grade ended it (SK-59). */
-          <GradeChatTab key={`${plane}\u0000${view.key}`} plane={plane} {...gradeChatShown} />
         ) : isDispatches(view) ? (
           /* The project's dispatches (#1452), read from the app's own records. A row opens its
              chat through the catalogue's verb, or its session record as any record opens. It

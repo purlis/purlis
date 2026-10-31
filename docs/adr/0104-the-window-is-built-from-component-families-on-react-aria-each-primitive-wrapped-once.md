@@ -125,6 +125,9 @@ amendment, named `<yyyy-mm-dd>-<slug>.md`:
 - [2026-10-24, the choice families](0104/2026-10-24-the-choice-families.md)
 - [2026-10-25, a table of data is a grid, and a table of controls is a table](0104/2026-10-25-a-table-of-data-is-a-grid-and-a-table-of-controls-is-a-table.md)
 - [2026-10-25, the tree family is React Aria's tree, walked as the WAI-ARIA tree](0104/2026-10-25-the-tree-family.md)
+- [2026-10-28, the meter family, a table's column choices, facts and totals](0104/2026-10-28-the-meter-family-and-a-table-s-column-choices.md)
+- [2026-10-29, the disclosure family, the review page and the terminal's read-only mode](0104/2026-10-29-the-disclosure-family-the-review-page-and-the-read-only-terminal.md)
+- [2026-10-30, one signal per refusal](0104/2026-10-30-one-signal-per-refusal.md)
 
 ## What was rejected
 

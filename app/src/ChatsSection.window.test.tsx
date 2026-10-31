@@ -1125,6 +1125,47 @@ describe("how the tree reads to a screen reader (#1448)", () => {
     expect(fold.closest('[role="treeitem"]')).toBe(row(tree, "steward 1"));
     expect(within(tree).queryByRole("button", { name: /Fold the chats/ })).toBeNull();
   });
+
+  // #3886: the card's `aria-describedby` overrides the row's `aria-description`, so what the
+  // row says has to be in the card too; and the memory hint was on the line's hover alone.
+  it("says what a row says with its card up as well as down, and draws it in the card (#3886)", async () => {
+    const { move } = core(
+      threeDeep().map((one) => (one.session === 1 ? { ...one, waiting_on_memory: 2 } : one)),
+    );
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+    move(3, "waiting", 10, [3]);
+    const steward = row(tree, "steward 1");
+    const HINT = "The Dispatches tab lists them under Not started.";
+
+    // The card down: the row's own description says the chat below, the count and the hint.
+    expect(card()).toBeNull();
+    expect(steward.getAttribute("aria-describedby")).toBeNull();
+    expect(steward.getAttribute("aria-description")).toMatch(
+      /^devops 3 below it needs you\. 2 dispatches wait on memory\. This machine is short on memory: .* The Dispatches tab lists them under Not started\.$/,
+    );
+
+    // The keyboard rests on the row: the card comes up, describes the row, and says it all,
+    // where a sighted keyboard user reads it with no hover.
+    await userEvent.keyboard("{Shift}");
+    act(() => steward.focus());
+    const shown = await theCard();
+    expect(steward.getAttribute("aria-describedby")).toBe(shown.id);
+    expect(shown).toHaveTextContent("devops 3 below it needs you");
+    expect(shown).toHaveTextContent("2 dispatches wait on memory");
+    expect(shown).toHaveTextContent(HINT);
+    expect(steward).toHaveAccessibleDescription(
+      expect.stringContaining("devops 3 below it needs you"),
+    );
+    expect(steward).toHaveAccessibleDescription(expect.stringContaining(HINT));
+
+    // A row that says nothing has nothing more in its card.
+    act(() => row(tree, "steward 4").focus());
+    await waitFor(() => expect(card()).toHaveTextContent("steward 4"));
+    expect(card()).not.toHaveTextContent("needs you");
+    expect(card()).not.toHaveTextContent("memory");
+  });
 });
 
 describe("what the chat that asked is shown of a stop (#1448)", () => {

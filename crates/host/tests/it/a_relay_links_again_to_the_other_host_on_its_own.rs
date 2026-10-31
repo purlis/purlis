@@ -582,6 +582,7 @@ fn running_in(id: &str) -> StartProgram {
             git_hooks: None,
             reporting: None,
             confinement: Some(id.into()),
+            prompt_key: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }
@@ -1009,6 +1010,7 @@ impl session::Host for SaysItsLink {
             Pushed::LinkDown {
                 why: "host B's own link".into(),
                 key_changed: false,
+                gone: false,
             },
             Pushed::LinkBack {},
             Pushed::Event(event(1)),

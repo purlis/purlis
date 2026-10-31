@@ -17,6 +17,10 @@ import { RECONNECTING } from "./reconnecting";
  * it anew; the core says so as `key_changed` (`chats-reconnecting`). Each chat's pane stays
  * dimmed, and this says why, once for the project, with **Open Pools settings**, where its pool is
  * removed, and **Dismiss**. It goes once the core says the chats are reconnected.
+ *
+ * **A cluster runner's is the same Notice** (#3292): its host refuses a link before it is made
+ * when the cluster's Pool names another cluster operator key than the one pinned, or the operator
+ * no longer vouches for the pod and key the runner was paired with, and says so as `key_changed`.
  */
 export function RunnerKeyChangedNotice({
   plane,
@@ -37,7 +41,8 @@ export function RunnerKeyChangedNotice({
       onDismiss={dismiss}
     >
       The runner this project&apos;s chats run on answered with another key than the one it was
-      paired with, so purlis sends it nothing. Remove its pool and add it again to run them there.
+      paired with, or its cluster no longer vouches for that key, so purlis sends it nothing. Remove
+      its pool and add it again to run them there.
     </Notice>
   );
 }

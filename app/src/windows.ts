@@ -49,7 +49,7 @@ export type RunElsewhere = { plane: string; offer: Offer };
 const SAID = "window-said";
 const HELLO = "window-hello";
 /** The core's: the labels of every window there is (`windows.rs`). */
-const WINDOWS_CHANGED = "windows-changed";
+export const WINDOWS_CHANGED = "windows-changed";
 /** Sent to one window: carry this row out. */
 export const RUN_HERE = "run-offer";
 

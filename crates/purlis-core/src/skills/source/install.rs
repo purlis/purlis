@@ -11,8 +11,8 @@ use purlis_skills::tree;
 
 use super::fetch::fetch;
 use super::lock::{self, Kept, Locked};
-use super::review::{Accepted, digest_of, wrote};
-use super::{Source, listed, write};
+use super::review::{self, Accepted, AcceptedSkill, Reviewed, Unread, digest_of, wrote};
+use super::{Source, listed, widen, write};
 use crate::skills::Grant;
 use crate::skills::verbs::{self, Ctx, Level};
 
@@ -45,17 +45,60 @@ pub(super) fn paths_fit(
     }
 }
 
-/// What one install wrote so far, to take back where a later step fails.
-struct Written<'a> {
-    plane: &'a std::path::Path,
-    level: Vec<String>,
-    skills: Vec<(String, write::Made)>,
-    grants: Vec<String>,
+/// What one install or update wrote so far, to take back where a later step fails.
+pub(super) struct Written<'a> {
+    pub(super) plane: &'a std::path::Path,
+    pub(super) level: Vec<String>,
+    pub(super) skills: Vec<(String, write::Made)>,
+    /// Each skill this change granted, by name: its `<name>.toml` is new.
+    pub(super) grants: Vec<String>,
+    /// Each project skill whose grant this change widened, and the grant it had (#4172).
+    pub(super) widened: Vec<(PathBuf, Grant)>,
 }
 
-impl Written<'_> {
-    /// Takes back every skill and grant file this install made.
-    fn take_back(&self) {
+impl<'a> Written<'a> {
+    /// Nothing written yet into the level folder `level` of `plane`.
+    pub(super) fn none(plane: &'a std::path::Path, level: Vec<String>) -> Self {
+        Written {
+            plane,
+            level,
+            skills: Vec::new(),
+            grants: Vec::new(),
+            widened: Vec::new(),
+        }
+    }
+
+    /// Widens the grant of each of `widenings` that asks it (#4172, #4186), each file written
+    /// added to `paths`; where one cannot be, why, and the rest are left to [`Self::take_back`].
+    /// Written straight, past `skills::grant`'s checks: the grant widened to is the change's own,
+    /// whose workspaces were checked when it was granted, and the plane's being writable before
+    /// anything.
+    pub(super) fn widen(
+        &mut self,
+        widenings: &[widen::Widening],
+        paths: &mut Vec<String>,
+    ) -> Result<(), String> {
+        for one in widenings {
+            let Some(to) = &one.widened else {
+                continue;
+            };
+            crate::skills::set_grant(&one.folder, to).map_err(|why| {
+                format!(
+                    "the grant of {} could not be widened to {to} ({why})",
+                    one.name
+                )
+            })?;
+            self.widened.push((one.folder.clone(), one.granted.clone()));
+            paths.push(verbs::rel(self.plane, &crate::skills::beside(&one.folder)));
+        }
+        Ok(())
+    }
+
+    /// Takes back every skill and grant file this change made, and every grant it widened.
+    pub(super) fn take_back(&self) {
+        for (folder, had) in &self.widened {
+            let _ = crate::skills::set_grant(folder, had);
+        }
         for name in &self.grants {
             write::take_back_file(self.plane, &self.level, &format!("{name}.toml"));
         }
@@ -87,19 +130,36 @@ pub fn install(
         return Err("no skill was named to install".to_owned());
     }
     let fetched = fetch(plane, source, Some(&accepted.commit))?;
-    let review = fetched.review(&names)?;
-    if !accepted.is(&review.accepted()) {
-        return Err(
-            "what the source holds is not what was reviewed, so nothing was installed: review it \
-             again"
-                .to_owned(),
-        );
+    // The files each review read are the ones copied: read once, so a set that fit one read for
+    // its review fits it for its install too (#4024).
+    // A skill they refer to that is met at `level` already is left as it is, as the review left
+    // it (#4032, #4155).
+    let reviewed = review::reviewed(&fetched, &names, &review::met_at(plane, cx.built_in, level))
+        .map_err(Unread::said)?;
+    let now = Accepted {
+        commit: fetched.commit.clone(),
+        skills: reviewed
+            .iter()
+            .map(|one| AcceptedSkill {
+                name: one.review.name.clone(),
+                digest: one.review.digest.clone(),
+            })
+            .collect(),
+    };
+    if !accepted.is(&now) {
+        return Err(format!(
+            "what the source holds, or the {level} skills, changed since the review, so nothing was \
+             installed: review it again"
+        ));
     }
     let held = lock::read(plane, kept)?;
     let parts = level_parts(level)?;
-    let (found, _) = fetched.skills()?;
     let mut copies = Vec::new();
-    for skill in &review.skills {
+    for Reviewed {
+        review: skill,
+        files,
+    } in &reviewed
+    {
         if cx.reserved(&skill.name) {
             return Err(format!(
                 "{} cannot be installed: its name belongs to a built-in skill",
@@ -118,23 +178,13 @@ pub fn install(
                 skill.name
             ));
         }
-        let one = found
-            .iter()
-            .find(|f| f.name == skill.name)
-            .ok_or_else(|| format!("{} is no longer in the source", skill.name))?;
-        let files = fetched.files_of(&one.dir)?;
-        paths_fit(&parts, &skill.name, &files)?;
-        copies.push((skill, one, files));
+        paths_fit(&parts, &skill.name, files)?;
+        copies.push((skill, files));
     }
-    let mut written = Written {
-        plane,
-        level: parts.clone(),
-        skills: Vec::new(),
-        grants: Vec::new(),
-    };
+    let mut written = Written::none(plane, parts.clone());
     let mut lock = held.lock.clone();
     let mut made: Vec<PathBuf> = Vec::new();
-    for (skill, one, files) in &copies {
+    for (skill, files) in &copies {
         let writes: Vec<write::File<'_>> = files
             .iter()
             .map(|file| write::File {
@@ -158,8 +208,8 @@ pub fn install(
             name: skill.name.clone(),
             level: lock::AtLevel(level.clone()),
             source: source.remote.clone(),
-            folder: one.folder.clone(),
-            commit: review.commit.clone(),
+            folder: skill.folder.clone(),
+            commit: fetched.commit.clone(),
             digest: digest_of(&files_wrote),
             files: files_wrote,
             brought_by: skill.brought_by.clone(),
@@ -170,11 +220,8 @@ pub fn install(
         .iter()
         .map(|folder| verbs::rel(plane, folder))
         .collect();
-    if level.at == verbs::Whose::Project
-        && !level.local
-        && let Some(grant) = grant.filter(|g| **g != Grant::Root)
-    {
-        for skill in &review.skills {
+    if let Some(grant) = widen::granted_beyond_the_root(level, grant) {
+        for Reviewed { review: skill, .. } in &reviewed {
             match crate::skills::grant(plane, &skill.name, grant) {
                 Ok(folder) => {
                     written.grants.push(skill.name.clone());
@@ -187,6 +234,19 @@ pub fn install(
             }
         }
     }
+    // A project skill they rely on reaches the workspaces they are granted to as well (#4172).
+    let widenings = widen::widenings(
+        plane,
+        level,
+        grant,
+        reviewed
+            .iter()
+            .flat_map(|one| one.review.already.iter().map(String::as_str)),
+    );
+    if let Err(why) = written.widen(&widenings, &mut paths) {
+        written.take_back();
+        return Err(format!("{why}, so nothing was installed"));
+    }
     if let Err(why) = lock::write(plane, kept, held.was.as_deref(), &lock) {
         written.take_back();
         return Err(why);
@@ -198,12 +258,18 @@ pub fn install(
             "The source was not confirmed on this machine: {why}"
         ));
     }
-    let shown: Vec<&str> = review.skills.iter().map(|s| s.name.as_str()).collect();
+    // Each is a new skill: the grades of one that had its name before are none of its own
+    // (#4104).
+    for Reviewed { review: skill, .. } in &reviewed {
+        verbs::earlier_dropped(cx, level, &skill.name);
+    }
+    let shown: Vec<&str> = reviewed.iter().map(|s| s.review.name.as_str()).collect();
     cx.done(format!(
         "{} installed at {level}, pinned to {}",
         shown.join(", "),
-        review.commit.short()
+        fetched.commit.short()
     ));
+    widen::said_done(cx, &widenings, "what was installed");
     if kept == Kept::Shared {
         paths.push(lock::FILE.to_owned());
         cx.commit(&paths, &format!("skill install {}", shown.join(" ")));

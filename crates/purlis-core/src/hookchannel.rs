@@ -540,6 +540,11 @@ impl purlis_host::Hear for HookChannels {
         // A `secret exec` of a chat composed here runs here on the values its desktop sends
         // (#2047).
         relaying.of_project_at(path);
+        // A Claude Code chat's server dials in on macOS alone (#3316): each slot is handed on to
+        // the window beside this socket, which holds the doors.
+        if cfg!(target_os = "macos") {
+            relaying.handing_slots_to(&crate::hookwire::serve::beside(&socket));
+        }
         let reading = listener.hear(relaying.hearing(Arc::clone(&tokens)));
         Ok(Some(Arc::new(HookChannel {
             socket,

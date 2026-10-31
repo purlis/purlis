@@ -10,7 +10,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useEffect, useState } from "react";
 import { expect, userEvent, waitFor, within } from "storybook/test";
-import { ChatsSection } from "./ChatsSection";
+import { aCardIsUp } from "./chatCard";
+import { CARD_LEAVE_MS, ChatsSection, ON_MEMORY_SAID } from "./ChatsSection";
 import { ChatsHere, fixedChats, moved, nothingKnown } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
@@ -214,12 +215,71 @@ async function pointAt(user: Pointer, x: number, y: number) {
 }
 
 /**
+ * **The hold's wait, in the story's hands** (#3951): every timer set for the card's wait
+ * (`CARD_LEAVE_MS`) while it is in place is parked, not run, until {@link release}. So the hold
+ * waits as long as the story takes, however slow the runner, and lets go only when the story
+ * says the wait is over. Any other timer runs as it would.
+ */
+function parkTheCardsWait() {
+  const set = window.setTimeout;
+  const clear = window.clearTimeout;
+  const parked = new Map<number, () => void>();
+  window.setTimeout = ((run: TimerHandler, ms?: number, ...args: unknown[]) => {
+    if (ms !== CARD_LEAVE_MS || typeof run !== "function") return set(run, ms, ...args);
+    // An id of the window's own, never run, so a clear of it is a clear.
+    const id = set(() => {}, 2 ** 31 - 1);
+    parked.set(id, () => (run as (...given: unknown[]) => void)(...args));
+    return id;
+  }) as typeof window.setTimeout;
+  window.clearTimeout = ((id?: number) => {
+    if (id !== undefined) parked.delete(id);
+    clear(id);
+  }) as typeof window.clearTimeout;
+  return {
+    /** How many of the card's waits are running. */
+    waiting: () => parked.size,
+    /** Each wait running is over: what it was waiting to do is done. */
+    release: () => {
+      const due = [...parked.entries()];
+      parked.clear();
+      for (const [id, run] of due) {
+        clear(id);
+        run();
+      }
+    },
+    restore: () => {
+      window.setTimeout = set;
+      window.clearTimeout = clear;
+    },
+  };
+}
+
+/**
+ * **The window stays the one in use** (#3951): the story's frame shares the runner's page with
+ * other stories' frames, and one of them taking the focus blurs this window, which lets every
+ * hold go at once, as it should for the person. That is not what this story holds to, so the
+ * window's blur is kept from the hold while the story walks; its own effect is held by
+ * `heldStill.test.tsx`.
+ */
+function keepTheWindowInUse() {
+  const keep = (event: Event) => event.stopImmediatePropagation();
+  // A listener on the window's capture runs before the hold's own, at the window itself.
+  window.addEventListener("blur", keep, true);
+  return () => window.removeEventListener("blur", keep, true);
+}
+
+/** Two frames: whatever a change asked to draw has been drawn. */
+const drawn = () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+
+/**
  * **The pointer crosses from a row to its card, and the list holds still** (#3773, V100-47):
  * the card stands a step to the side of its row, over the view's own inset, which is not the
  * list. A pointer that crosses there on its way to the card keeps the rows where they were, so
  * a chat arriving meanwhile is drawn only once the pointer has left for anywhere else. Laid out
  * by the browser: where the gap is, and what is under it, is the page's layout, which a window
- * test cannot see.
+ * test cannot see. It waits on what it checks, never on the clock (#3951): the card is up
+ * before the chat arrives, the list says it is held (`data-holding`, #4020) before the chat
+ * arrives, and the hold's wait is over only when the story says so.
  */
 export const HeldAcrossTheGapToTheCard: Story = {
   render: () => <ArrivingInItsPanel />,
@@ -229,41 +289,70 @@ export const HeldAcrossTheGapToTheCard: Story = {
     const user = userEvent.setup();
     const row = canvasElement.querySelector<HTMLElement>('[role="treeitem"][data-session="1"]');
     await expect(row).not.toBeNull();
-    await user.hover(row as HTMLElement);
-    const card = await waitFor(
-      () => {
-        const up = document.querySelector<HTMLElement>('[data-testid="chat-card-1"]');
-        expect(up).not.toBeNull();
-        return up as HTMLElement;
-      },
-      { timeout: 3000 },
-    );
-    // A chat arrives while the pointer is on the list: held.
-    arrive();
-    await new Promise((done) => setTimeout(done, 50));
-    await expect(rowsIn(canvasElement)).toBe(2);
+    const inUse = keepTheWindowInUse();
+    const clock = parkTheCardsWait();
+    try {
+      await user.hover(row as HTMLElement);
+      // The card is up, as the list's hold reads it, before anything arrives.
+      const card = await waitFor(
+        () => {
+          const up = document.querySelector<HTMLElement>('[data-testid="chat-card-1"]');
+          expect(up).not.toBeNull();
+          expect(aCardIsUp()).toBe(true);
+          return up as HTMLElement;
+        },
+        { timeout: 3000 },
+      );
+      // The list is held before anything arrives, as it says on itself (`data-holding`, #4020).
+      const list = canvasElement.querySelector<HTMLElement>(".chats-list");
+      await expect(list).not.toBeNull();
+      await waitFor(
+        () =>
+          expect(list, "the list is held while the pointer rests on its row").toHaveAttribute(
+            "data-holding",
+          ),
+        { timeout: 3000 },
+      );
+      // A chat arrives while the pointer is on the list: held. A red run says which side broke.
+      arrive();
+      await drawn();
+      await expect(
+        list,
+        "the hold let go between the card coming up and the chat's arrival",
+      ).toHaveAttribute("data-holding");
+      await expect(rowsIn(canvasElement), "the rows changed while the list was held").toBe(2);
 
-    // The gap between the row and its card, and what the page draws there: not the list.
-    const from = (row as HTMLElement).getBoundingClientRect();
-    const to = card.getBoundingClientRect();
-    await expect(to.left - from.right).toBeGreaterThan(1);
-    const y = from.top + from.height / 2;
-    const gap = (from.right + to.left) / 2;
-    await expect(
-      canvasElement.querySelector(".chats-list")?.contains(document.elementFromPoint(gap, y)),
-    ).toBe(false);
+      // The gap between the row and its card, and what the page draws there: not the list.
+      const from = (row as HTMLElement).getBoundingClientRect();
+      const to = card.getBoundingClientRect();
+      await expect(to.left - from.right).toBeGreaterThan(1);
+      const y = from.top + from.height / 2;
+      const gap = (from.right + to.left) / 2;
+      await expect(
+        canvasElement.querySelector(".chats-list")?.contains(document.elementFromPoint(gap, y)),
+      ).toBe(false);
 
-    // Slowly: onto the gap, a moment there, then onto the card.
-    await pointAt(user, gap, y);
-    await new Promise((done) => setTimeout(done, 30));
-    await pointAt(user, to.left + 8, to.top + 8);
-    await expect(card).toBeVisible();
-    await new Promise((done) => setTimeout(done, 50));
-    await expect(rowsIn(canvasElement)).toBe(2);
+      // Onto the gap: the pointer has left the list, and the hold waits for it.
+      await pointAt(user, gap, y);
+      await drawn();
+      await expect(clock.waiting()).toBeGreaterThan(0);
+      await expect(rowsIn(canvasElement)).toBe(2);
+      // Then onto the card, which is the list's: still held, however long that took.
+      await pointAt(user, to.left + 8, to.top + 8);
+      await expect(card).toBeVisible();
+      await drawn();
+      await expect(rowsIn(canvasElement)).toBe(2);
 
-    // Off the card for anywhere else: the list lets go, and the chat that arrived is drawn.
-    await pointAt(user, to.left + 8, to.bottom + 40);
-    await waitFor(() => expect(rowsIn(canvasElement)).toBe(3), { timeout: 2000 });
+      // Off the card for anywhere else: once the wait is over, the list lets go, and the chat
+      // that arrived is drawn.
+      await pointAt(user, to.left + 8, to.bottom + 40);
+      await drawn();
+      clock.release();
+      await waitFor(() => expect(rowsIn(canvasElement)).toBe(3), { timeout: 2000 });
+    } finally {
+      clock.restore();
+      inUse();
+    }
   },
 };
 
@@ -320,7 +409,7 @@ export const AtItsTaskLimit: Story = {
     await expect(row).not.toBeNull();
     await expect(row).toHaveAttribute(
       "aria-description",
-      `${UNDER[0].atLimit?.said} 1 dispatch waits on memory.`,
+      `${UNDER[0].atLimit?.said} 1 dispatch waits on memory. ${ON_MEMORY_SAID}`,
     );
     const link = canvasElement.querySelector<HTMLElement>(".at-limit-settings");
     await expect(link).not.toBeNull();
@@ -353,12 +442,53 @@ export const AtItsTaskLimit: Story = {
 export const RestartSaid: Story = {
   render: () => <SaidUnderInItsPanel />,
   play: async ({ canvasElement }) => {
-    const said = within(canvasElement).getByRole("status", { name: "Restart of steward 2" });
+    const said = within(canvasElement).getByRole("status", { name: "Restarts" });
     await expect(said).toHaveTextContent(RESTART);
     await expect(said.closest('[role="tree"]')).toBeNull();
     await expect(rowOf(canvasElement, 2)).toHaveAttribute("aria-description", RESTART);
     const line = canvasElement.querySelector<HTMLElement>(".restart-said");
     await expect(line).toHaveTextContent(RESTART);
     await expect(line).toHaveAttribute("aria-hidden", "true");
+  },
+};
+
+/**
+ * **What a row says, in its card** (#3886): the keyboard rests on the row at its task limit,
+ * and its card comes up with the limit's whole sentence and what waits on memory, with where
+ * they are named. The card describes the row while it is up, so a screen reader is told them
+ * there, and a sighted keyboard user reads them with no hover. Held to axe with the card up.
+ */
+export const SaidInItsCard: Story = {
+  // The card stands over the canvas's edge, where a picture would be of the popover's place.
+  parameters: { screenshot: false },
+  render: () => <SaidUnderInItsPanel />,
+  play: async ({ canvasElement }) => {
+    const row = rowOf(canvasElement, 1);
+    await expect(row).not.toBeNull();
+    for (let step = 0; step < 12 && document.activeElement !== row; step += 1) {
+      await userEvent.tab();
+    }
+    await untilFocused(() => rowOf(canvasElement, 1), "the first row");
+    const card = await waitFor(
+      () => {
+        const up = document.querySelector<HTMLElement>('.chat-card [role="tooltip"]');
+        if (up === null) throw new Error("no card is up");
+        return up;
+      },
+      { timeout: 3000 },
+    );
+    // Once it has arrived: the popover family fades it in from nothing (`data-entering`), and
+    // axe, after the play, reads its words' contrast as they are drawn.
+    await waitFor(
+      () => {
+        expect(card.closest("[data-entering]")).toBeNull();
+        expect(card).toBeVisible();
+      },
+      { timeout: 3000 },
+    );
+    await expect(card).toHaveTextContent(UNDER[0].atLimit?.said ?? "");
+    await expect(card).toHaveTextContent("1 dispatch waits on memory");
+    await expect(card).toHaveTextContent(ON_MEMORY_SAID);
+    await expect(row).toHaveAttribute("aria-describedby", card.id);
   },
 };

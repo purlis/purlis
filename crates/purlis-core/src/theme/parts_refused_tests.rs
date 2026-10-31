@@ -267,44 +267,61 @@ fn a_refused_box_keeps_its_edge_s_width() {
 #[test]
 fn an_edge_at_rest_that_reaches_the_refused_box_falls_back() {
     for (family, _) in REFUSED {
-        // The rest edge reaches every state, so refused would look as valid.
-        let fell = refused_fell(
-            one(
-                format!("{family}.root.border-colour"),
-                json!("border.strong"),
-            ),
-            family,
+        // The rest edge reaches every state, so refused would look as valid. A strong edge on
+        // the box's own fill breaks its rest first, and the rest's fallback draws the refused
+        // state's danger edge back after it (#4040): the refused state no longer falls on its
+        // own, and the refusal shows.
+        let parts = one(
+            format!("{family}.root.border-colour"),
+            json!("border.strong"),
         );
+        let loaded = load(&with_parts(parts.clone()));
+        let theme = loaded.theme.first();
+        let all: Vec<String> = parts::fallen(theme)
+            .into_iter()
+            .map(|one| one.part)
+            .collect();
+        let refused = refused_fell(parts, family);
+        let rest_fell = all.contains(&format!("{family}.root"));
+        assert!(rest_fell && refused.is_empty(), "{family}: {all:?}");
         assert!(
-            fell.contains(&format!("{family}.root.invalid")),
-            "{family}: {fell:?}"
+            parts::refusal_shown(theme, family, &[State::Invalid]),
+            "{family}: {all:?}"
         );
-        // And so does a hover's or a focus's, with the state it holds at once.
-        let fell = refused_fell(
-            one(
-                format!("{family}.root.hover.border-colour"),
+        // And so does a hover's or a focus's, with the state it holds at once. A strong edge
+        // breaks that state first; its fallback draws back what it changes where it holds, and
+        // the refused set that holds it draws its danger edge after it (#4174): the refused
+        // state no longer falls on its own, and the refusal shows.
+        for (state, name) in [(State::Hover, "hover"), (State::Focused, "focused")] {
+            let parts = one(
+                format!("{family}.root.{name}.border-colour"),
                 json!("border.strong"),
-            ),
-            family,
-        );
-        assert!(
-            fell.iter()
-                .any(|one| one.contains("hover") && one.contains("invalid")),
-            "{family}: {fell:?}"
-        );
-        // A focus edge too (#3382's review, N3).
-        let fell = refused_fell(
-            one(
-                format!("{family}.root.focused.border-colour"),
-                json!("border.strong"),
-            ),
-            family,
-        );
-        assert!(
-            fell.iter()
-                .any(|one| one.contains("focused") && one.contains("invalid")),
-            "{family}: {fell:?}"
-        );
+            );
+            let loaded = load(&with_parts(parts.clone()));
+            let theme = loaded.theme.first();
+            let all: Vec<String> = parts::fallen(theme)
+                .into_iter()
+                .map(|one| one.part)
+                .collect();
+            assert!(
+                all.contains(&format!("{family}.root.{name}"))
+                    && refused_fell(parts, family).is_empty(),
+                "{family} {name}: {all:?}"
+            );
+            assert!(
+                parts::refusal_shown(theme, family, &[state, State::Invalid]),
+                "{family} {name}: {all:?}"
+            );
+            // And while it is under the pointer and has the keyboard at once (#4196's review).
+            assert!(
+                parts::refusal_shown(
+                    theme,
+                    family,
+                    &[State::Hover, State::Focused, State::Invalid]
+                ),
+                "{family} {name}: {all:?}"
+            );
+        }
     }
     // What falls back draws the danger edge in the refused state, after the theme's rules.
     let loaded = load(&with_parts(
@@ -374,3 +391,4 @@ fn an_edge_at_rest_in_the_danger_colour_still_leaves_the_refusal_told_apart() {
         }
     }
 }
+

@@ -221,15 +221,16 @@ export function needsOf(states: ChatStates, session: number): readonly string[] 
 }
 
 /**
- * **What a needs-you item says of a chat refused an update of the project's root** (qw348). The
- * guard refuses a sandboxed chat every git command that rewrites the root from another commit,
- * and tells the chat to ask the person: this is that ask, in the app's words, and it names
- * what the person presses. The Inbox tells it from the other needs by this sentence.
+ * **What a needs-you item says of a chat refused an update of the project's root** (qw348,
+ * #3877). A chat updates the root itself with `purlis worktree update`, which the app runs for
+ * it; this item is raised only where that update was left for a reason no chat can settle (a
+ * file its sandbox denies, a conflict, a project not put back). It names what the person
+ * presses. The Inbox tells it from the other needs by this sentence.
  */
 export const ROOT_UPDATE_REFUSED_SAID =
-  "it asks you to update the project: purlis refused it a git command that would rewrite the " +
-  "project's files from another commit, which its sandbox would stop partway. Update, in " +
-  "Saving, brings the remote's commits in";
+  "it asks you to update the project: purlis could not update it for the chat, for a reason " +
+  "only you can settle, such as a file its sandbox denies or a conflict. Update, in Saving, " +
+  "brings the remote's commits in and says what stands in the way";
 
 /**
  * **What a needs-you item says of a need the app found** (#1448), after the chat's name and a
@@ -410,6 +411,32 @@ export function moved(states: ChatStates, move: Moved): ChatStates {
 /** What `session` waits on of its own (#3878), or nothing for a chat that waits on none. */
 export function ownWorkOf(states: ChatStates, session: number): OwnWork | undefined {
   return states.ownWork[session];
+}
+
+/**
+ * **Whether `session` is in its turn, as a restart or a move owed it counts it** (#3887): running,
+ * or waiting on work of its own (#3878), whose monitors and background shells a restart or a move
+ * would cut off. Either waits for the turn to end with nothing in flight.
+ */
+export function inItsTurn(states: ChatStates, session: number): boolean {
+  const state = stateOf(states, session);
+  return state === "running" || (state === "waiting" && ownWorkOf(states, session) !== undefined);
+}
+
+/**
+ * **Whether `session` is at a pause between turns** (#1986, #3887): its turn ended with nothing
+ * of its own in flight, so a restart or a move owed it is made now.
+ */
+export function atAPause(states: ChatStates, session: number): boolean {
+  return stateOf(states, session) === "waiting" && !inItsTurn(states, session);
+}
+
+/**
+ * `session`'s state as what waits for its turn reads it: `running` while it is in its turn
+ * ({@link inItsTurn}), so a chat waiting on its own work reads as mid-turn (#3887).
+ */
+export function turnStateOf(states: ChatStates, session: number): State {
+  return inItsTurn(states, session) ? "running" : stateOf(states, session);
 }
 
 /** `work` as `session`'s entry, or none, and the same map where that is so already. */

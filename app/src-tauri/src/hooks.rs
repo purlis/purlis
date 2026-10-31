@@ -177,8 +177,8 @@ impl From<purlis_core::ownwork::OwnWork> for OwnWork {
 pub enum Need {
     /// Its report has nowhere to go: the chat that asked for it, `asker`, has gone.
     ReportUndelivered { asker: String },
-    /// purlis refused it a git command that would rewrite the project's root from another
-    /// commit, so bringing the remote's commits in is the person's, with Update (qw348).
+    /// purlis could not update the project's root for it, for a reason no chat can settle,
+    /// so bringing the remote's commits in is the person's, with Update (qw348, #3877).
     RootUpdateRefused,
     /// A task it asked for, `task`, came to nothing (#1491), and `why` says why in a few
     /// words, where anything does. `id` names this failure and no other: its dispatch
@@ -376,6 +376,13 @@ pub struct Hooks {
     /// the fact, for `answering`'s reason: it needs the chat's record. Empty, the asker is told
     /// nothing answers and runs the command itself.
     secret_exec: Arc<Mutex<Option<SecretExecs>>>,
+    /// Parks each slot a chat's server dials in (#3316) — a slot filled after the fact, for
+    /// `answering`'s reason: it needs the chat's doors. Empty, every slot is refused.
+    parking: Arc<Mutex<Option<ParkSlots>>>,
+    /// Where the session host owns the hook channel, the window's own socket it hands slots on
+    /// over (#3316, macOS alone): held while this is.
+    #[cfg(unix)]
+    _slots: Option<purlis_core::hookwire::serve::Receiving>,
     /// Where the session host owns this project's hook channel (#2000): what the window hears
     /// the lines it hands on with. None where the window listens itself, or not at all.
     relayed: Option<Arc<Relayed>>,
@@ -742,6 +749,18 @@ impl Relayed {
     }
 }
 
+/// The audit's kind for a connection a chat's server dialled in, parked or refused (#3316).
+pub const SERVE_AUDITED: &str = "trust.sandbox.serve";
+
+/// **What parks a slot a chat's server dialled in** (#3316): told the ask and the connection
+/// once the chat's token has checked, it parks it at the chat's door or refuses it.
+pub type ParkSlots = Arc<
+    dyn Fn(purlis_core::hookwire::serve::ServeAsk, purlis_core::hookwire::serve::Slot)
+        + Send
+        + Sync
+        + 'static,
+>;
+
 /// What runs a brokered `secret exec` (#1407): the ask, the connection it is held on, and what
 /// is told each host the run's sandbox refused, as the asking chat's block (the same road a
 /// block its own hook found takes: [`heard_block`]).
@@ -784,6 +803,19 @@ impl From<purlis_core::secrets::brokered::RunBlocked> for HeardBlock {
             vault: Some(run.vault),
         }
     }
+}
+
+/// **Whether `block` is its chat's own to retry** (#3861,
+/// [`purlis_core::sandboxblock::its_own_to_retry`]): a write in the git record of the branch
+/// folder the chat works in, `chat_dir` by the app's own record, which no Allow opens. Its hook
+/// already told the chat the command to retry with, so the app keeps it in the network record
+/// and raises no Notice for it.
+pub fn its_own_to_retry(block: &HeardBlock, chat_dir: Option<&Path>) -> bool {
+    purlis_core::sandboxblock::its_own_to_retry(
+        &block.line.sandbox_blocked,
+        block.line.target.as_deref(),
+        chat_dir,
+    )
 }
 
 /// What is told each sandbox block the app let through, as it heard it.
@@ -1081,8 +1113,9 @@ pub(crate) fn blocked_on(
     has_check: bool,
 ) -> ChatBlocked {
     let locks = purlis_core::sandbox::policy::Locks::of(plane.root());
-    let (first, named, why) =
-        for_its_harness(harness, offered_to(plane.root(), block, target, has_check));
+    let offered = kept_in_place(harness, plane.root(), block, target)
+        .unwrap_or_else(|| offered_to(plane.root(), block, target, has_check));
+    let (first, named, why) = for_its_harness(harness, offered);
     // Chosen by the person where nothing was named (#1884): said in place of "nothing to
     // allow". A socket named and refused keeps its own sentence, and may be chosen again.
     let choose = choosable(&locks, block, first);
@@ -1146,6 +1179,19 @@ const RUNNER_SERVICE_UNNAMED: &str = "The runner this chat runs on refused a ser
 /// (#2510): its Notice names that runner, `runner`, where the window knows its name. Any other
 /// block is as it was told.
 pub(crate) fn on_its_runner(mut told: ChatBlocked, runner: Option<&str>) -> ChatBlocked {
+    // A Claude Code chat's server dials in to a door in this window on macOS alone (#3316): one
+    // on a runner reaches none, so its refused listen is offered as it was before.
+    if runner.is_some()
+        && told.offer == BlockOffer::Listen
+        && told.route.is_some()
+        && told.route == told.target.as_deref().map(claude_code_listen_said)
+    {
+        let (offer, _, why) = without_the_sandbox(CLAUDE_CODE_LISTEN_SAID);
+        told.offer = offer;
+        told.levels = Vec::new();
+        told.route = why;
+        return told;
+    }
     if told.kind == purlis_core::sandboxblock::Kind::RunnerService.word()
         && told.offer == BlockOffer::Port
         && let Some(port) = told
@@ -1163,9 +1209,15 @@ pub(crate) fn on_its_runner(mut told: ChatBlocked, runner: Option<&str>) -> Chat
 /// **What the window says of a refused server on a port chat `told.session` serves on
 /// already** (#2019): its server asked for the port itself, not through its socket, so allowing
 /// it again would change nothing and restart the chat for nothing. Its Notice says how to start
-/// it, with no Allow; `serving` are the ports the chat serves on. Any other block is as it was
-/// told.
-pub(crate) fn on_its_serving(mut told: ChatBlocked, serving: &[u16]) -> ChatBlocked {
+/// it, with no Allow; `serving` are the ports the chat serves on. Where its server dials in
+/// (`dials_in`, a Claude Code chat, #3316), a server that bound the port itself is not a Node
+/// server `purlis listen` started, so the Notice says how one is and offers Start without the
+/// sandbox. Any other block is as it was told.
+pub(crate) fn on_its_serving(
+    mut told: ChatBlocked,
+    serving: &[u16],
+    dials_in: bool,
+) -> ChatBlocked {
     // The door on a port it serves on listens there, so the refusal is offered as a service in
     // use (`offered_to`): a refused listen either way.
     if told.operation == purlis_core::sandboxblock::Operation::Listen.word()
@@ -1176,12 +1228,20 @@ pub(crate) fn on_its_serving(mut told: ChatBlocked, serving: &[u16]) -> ChatBloc
             .and_then(|port| port.parse::<u16>().ok())
         && serving.contains(&port)
     {
-        told.offer = BlockOffer::Brokered;
         told.levels = Vec::new();
-        told.route = Some(format!(
-            "Port {port} is allowed for this chat's server: {}.",
-            purlis_core::sandbox::localport::listen_said(port)
-        ));
+        if dials_in {
+            told.offer = BlockOffer::Unsandboxed;
+            told.route = Some(format!(
+                "Port {port} is allowed for this chat's server. {}",
+                claude_code_listen_said(&port.to_string())
+            ));
+        } else {
+            told.offer = BlockOffer::Brokered;
+            told.route = Some(format!(
+                "Port {port} is allowed for this chat's server: {}.",
+                purlis_core::sandbox::localport::listen_said(port)
+            ));
+        }
     }
     told
 }
@@ -1561,6 +1621,39 @@ fn offered(
     offered_to(root, block, target, false)
 }
 
+/// **A refused write that keeps a repository's git folder where it is**, in a Claude Code chat
+/// ([`purlis_core::sandbox::grant::keeps_git_folder`]): its sandbox denies a path in each git
+/// folder there as it started, which holds that git folder and every folder above it, and no
+/// grant lifts that. The way that works, and no Allow. `None` for any other block, or harness.
+fn kept_in_place(
+    harness: Option<purlis_core::harness::Harness>,
+    root: &Path,
+    block: &purlis_core::sandboxblock::Block,
+    target: Option<&str>,
+) -> Option<(BlockOffer, Option<String>, Option<String>)> {
+    use purlis_core::sandbox::{Os, grant};
+    use purlis_core::sandboxblock::{Kind, Operation};
+    if block.ours || harness != Some(purlis_core::harness::Harness::ClaudeCode) {
+        return None;
+    }
+    let (
+        Operation::Write | Operation::File,
+        Kind::ProjectFiles | Kind::ProtectedFile | Kind::Home | Kind::ToolchainCache | Kind::System,
+    ) = (block.operation, block.kind)
+    else {
+        return None;
+    };
+    let path = Path::new(target?);
+    let folded = purlis_core::sandbox::Machine::this().os == Os::MacOs;
+    (path.is_absolute() && grant::keeps_git_folder(path, root, folded)).then(|| {
+        (
+            BlockOffer::Brokered,
+            None,
+            Some(grant::GIT_FOLDER_KEPT.to_owned()),
+        )
+    })
+}
+
 /// [`offered`] to a chat whose sandbox was compiled with the system's certificate check
 /// (`has_check`) or without it: all that differs is what a refused check is told
 /// ([`certificate_check_refused`]).
@@ -1720,9 +1813,11 @@ fn offered_to(
             }
         }
         // A server that did not start, refused on no port a person could allow (#3396, #3440):
-        // one the system picks, as a test suite's are, or one the sandbox named no port for. No
-        // Allow names either; the Notice says so, and what to do.
+        // one the system picks, as a test suite's are, one whose socket the wrap could not take,
+        // or one the sandbox named no port for. No Allow names any; the Notice says why, and
+        // what to do.
         (Operation::Listen, Kind::System) => without_the_sandbox(match target {
+            Some(purlis_core::sandbox::localport::SOCKET_NOT_TAKEN) => NOT_TAKEN_SAID,
             Some(_) => PICKED_PORT_SAID,
             None => NO_PORT_SAID,
         }),
@@ -1899,8 +1994,14 @@ fn for_its_harness(
         return (offer, target, why);
     }
     // A port to listen on (#2019): Claude Code's sandbox lets a command bind every loopback
-    // port or none, never one, so nothing purlis allows reaches it there.
+    // port or none, never one. On macOS its server dials in to its door instead (#3316), so the
+    // port is offered as in any chat, saying how to start the server; elsewhere nothing purlis
+    // allows reaches it there.
     if offer == BlockOffer::Listen && claude {
+        if cfg!(target_os = "macos") {
+            let said = claude_code_listen_said(target.as_deref().unwrap_or("<port>"));
+            return (offer, target, Some(said));
+        }
         let (offer, _, why) = without_the_sandbox(CLAUDE_CODE_LISTEN_SAID);
         return (offer, target, why);
     }
@@ -1908,9 +2009,17 @@ fn for_its_harness(
     // port of its own would end in the same Notice, so it is told the ways that work there.
     if offer == BlockOffer::Unsandboxed
         && claude
-        && matches!(route.as_deref(), Some(PICKED_PORT_SAID | NO_PORT_SAID))
+        && matches!(
+            route.as_deref(),
+            Some(PICKED_PORT_SAID | NO_PORT_SAID | NOT_TAKEN_SAID)
+        )
     {
-        return (offer, target, Some(CLAUDE_CODE_NO_PORT_SAID.to_owned()));
+        let said = if cfg!(target_os = "macos") {
+            CLAUDE_CODE_NO_PORT_DIAL_SAID
+        } else {
+            CLAUDE_CODE_NO_PORT_SAID
+        };
+        return (offer, target, Some(said.to_owned()));
     }
     // A service on this Mac (qw384b): Claude Code's sandbox takes no one port, so its chat is
     // carried the port by name through purlis's proxy, and the Notice says how it is reached.
@@ -1934,33 +2043,61 @@ pub const CLAUDE_CODE_PORT_SAID: &str = "In a Claude Code chat a command reaches
      its own copy of a context on this Mac. A program that uses no proxy, such as psql or \
      redis-cli, cannot reach it.";
 
-/// Why a Claude Code chat cannot be allowed to listen on one port (#2019): its sandbox's
-/// `allowLocalBinding` lets a command bind every port of this machine or none, never one, and
-/// turning it on also lets the chat connect to every service on this machine; purlis never
-/// allows every port.
+/// **How a Claude Code chat's server is reached on `port` once it is allowed** (#3316, the
+/// person's wording of 2026-10-30): through `purlis listen`, whose shim has a Node server dial in
+/// to the chat's door. Said on the Notice beside its Allow, and on the Notice of a server
+/// refused on a port the chat serves on already.
+pub fn claude_code_listen_said(port: &str) -> String {
+    format!(
+        "In a Claude Code chat, start the server with `purlis listen {port} -- npm run dev`. This \
+         works for Node servers such as Vite, Next.js and Express. Another kind of server cannot \
+         be given this one port here: start it without the sandbox, or in a Codex or opencode \
+         chat."
+    )
+}
+
+/// Why a Claude Code chat cannot be allowed to listen on one port off macOS (#2019, #3316): its
+/// sandbox's `allowLocalBinding` lets a command bind every port of this machine or none, never
+/// one, and turning it on also lets the chat connect to every service on this machine; purlis
+/// never allows every port. On macOS its server dials in instead ([`claude_code_listen_said`]).
 pub const CLAUDE_CODE_LISTEN_SAID: &str = "Claude Code's sandbox can let a command listen on \
      every port of this Mac or on none, never on one alone, and letting it listen on every port \
      also lets this chat reach every service on this Mac. So purlis cannot allow this one port \
      for this chat. Start it without the sandbox, or start the server in a Codex or opencode \
      chat, which can be allowed its one port.";
 
-/// Why a server on a port the system picks cannot be allowed (#3396): a test suite's servers
-/// (`listen(0)`) take whatever port is free, so there is no one port to allow, and purlis
-/// allows a chat's server only on one port of its own, behind its door. What to do instead.
+/// Why a server on a port the system picks was refused (#3396): on macOS, and on Linux on any
+/// address but 127.0.0.1 (ruled 2026-10-30). A test suite's servers (`listen(0)`) take whatever
+/// port is free, so there is no one port to allow, and purlis allows a chat's server only on one
+/// port of its own, behind its door. Says what to do: on Linux, start it on 127.0.0.1;
+/// elsewhere, start it on a port of its own or start the chat without the sandbox.
 pub const PICKED_PORT_SAID: &str = "It asked for a port the system picks, as a test suite's \
-     servers often do, so there is no one port to allow: purlis lets a chat's server listen only \
-     on a port of its own, from 1024. Start the server on such a port (PORT=3000, or purlis \
-     listen 3000 -- <command>) to be asked about it, or start this chat without the sandbox to \
-     run tests that pick their own ports.";
+     servers often do, so there is no one port to allow. On Linux, purlis's sandbox gives such a \
+     server a port on 127.0.0.1: start it there rather than on every interface. Otherwise, start \
+     the server on a port of its own, from 1024 (PORT=3000, or purlis listen 3000 -- <command>), \
+     to be asked about it, or start this chat without the sandbox to run tests that pick their \
+     own ports.";
 
 /// Why a server refused on no port purlis could allow cannot be allowed (#3440): what reached the
-/// Notice named none, which is so of another machine's address, and of a runner that could not
-/// hand purlis the server's socket. True of each; what to do for each.
+/// Notice named none, which is so of another machine's address, and of a runner whose wrap is
+/// older than [`NOT_TAKEN_SAID`] and so could not say it was not handed the server's socket.
+/// True of each; what to do for each.
 pub const NO_PORT_SAID: &str = "The sandbox named no port purlis could allow for it: a server is \
      allowed only on one port of this Mac's loopback, from 1024. Start it on such a port \
      (PORT=3000, or purlis listen 3000 -- <command>) to be asked about it. If it already asked \
      for one and this chat runs on a runner, purlis could not take its socket there: remove the \
      runner and add it again. Or start this chat without the sandbox.";
+
+/// Why a server whose socket purlis's Linux wrap could not take did not start (#3440): the wrap
+/// listens on the chat's own socket, taken with `pidfd_getfd` (#3410), and the machine the chat
+/// runs on refused that call. A runner made before #3410 is made again with it allowed; a
+/// Kubernetes runner's pod cannot be given it yet (#3413). A Claude Code chat, whose own sandbox
+/// purlis does not wrap, is told [`CLAUDE_CODE_NO_PORT_SAID`] in its place.
+pub const NOT_TAKEN_SAID: &str = "It tried to listen, but purlis could not take the server's \
+     socket to let it listen there: the machine this chat runs on refuses the call that takes it. \
+     If this chat runs on a runner, remove the runner and add it again, so its container is made \
+     with that call allowed; a runner on Kubernetes cannot be given it yet. Or start this chat \
+     without the sandbox.";
 
 /// [`PICKED_PORT_SAID`] and [`NO_PORT_SAID`] in a Claude Code chat (#3396): its sandbox cannot be
 /// allowed one port either ([`CLAUDE_CODE_LISTEN_SAID`]), so a port of the server's own would end
@@ -1969,6 +2106,36 @@ pub const CLAUDE_CODE_NO_PORT_SAID: &str = "A Claude Code chat's sandbox cannot 
      to listen on, so purlis cannot allow this server here. Start this chat without the sandbox, \
      or run the server, or the tests that start it, in a Codex or opencode chat, where it can be \
      allowed one port of its own.";
+
+/// What hears a `serve` line (#3316): whatever `parking` holds then, or a refusal where it holds
+/// nothing yet.
+fn parked_by(parking: &Arc<Mutex<Option<ParkSlots>>>) -> purlis_core::hookwire::Serves {
+    let parking = Arc::clone(parking);
+    Box::new(move |ask, slot| {
+        let park = parking
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        match park {
+            Some(park) => park(ask, slot),
+            #[cfg(unix)]
+            None => purlis_core::hookwire::serve::refused(
+                slot,
+                purlis_core::hookwire::serve::NOTHING_SERVES,
+            ),
+            #[cfg(not(unix))]
+            None => match slot {},
+        }
+    })
+}
+
+/// [`CLAUDE_CODE_NO_PORT_SAID`] on macOS (#3316), where a Claude Code chat's Node server can be
+/// allowed one port of its own through `purlis listen`.
+pub const CLAUDE_CODE_NO_PORT_DIAL_SAID: &str = "It asked for no one port purlis could allow. In a \
+     Claude Code chat, start the server on a port of its own, from 1024, with purlis listen 3000 \
+     -- <command>, to be asked about it: this works for Node servers such as Vite, Next.js and \
+     Express. Otherwise start this chat without the sandbox, or run the server, or the tests that \
+     start it, in a Codex or opencode chat.";
 
 /// Start without the sandbox, saying `why` nothing is allowed: the way out of a block no grant
 /// names (#1637), which an administrator's policy may still forbid ([`held`]).
@@ -2142,6 +2309,9 @@ impl Hooks {
             throttle: Arc::default(),
             hear_block: None,
             secret_exec: Arc::new(Mutex::new(None)),
+            parking: Arc::new(Mutex::new(None)),
+            #[cfg(unix)]
+            _slots: None,
             relayed: None,
         }
     }
@@ -2175,6 +2345,21 @@ impl Hooks {
             Arc::clone(&moved),
             told_by_hand,
         );
+        // The host hands each slot a chat's server dials in on to this window, which holds the
+        // doors (#3316): on macOS alone, where a Claude Code chat's server dials in.
+        #[cfg(target_os = "macos")]
+        {
+            hooks._slots = purlis_core::hookwire::serve::Receiving::bind(
+                &at.socket,
+                parked_by(&hooks.parking),
+            )
+            .map_err(|why| {
+                tracing::warn!(
+                    "purlis: no socket for a chat's server to be handed on over ({why})"
+                );
+            })
+            .ok();
+        }
         hooks.relayed = Some(Arc::new(Relayed {
             heeding: Arc::new(purlis_core::hookwire::relay::Heeding::new(hearing)),
             in_order: Mutex::new(None),
@@ -2217,6 +2402,7 @@ impl Hooks {
         let blocked: Arc<Mutex<Option<HeardBlocks>>> = Arc::new(Mutex::new(None));
         let repeated: Arc<Mutex<Option<Repeats>>> = Arc::new(Mutex::new(None));
         let secret_exec: Arc<Mutex<Option<SecretExecs>>> = Arc::new(Mutex::new(None));
+        let parking: Arc<Mutex<Option<ParkSlots>>> = Arc::new(Mutex::new(None));
         // A sandbox block (#1338), a chat's hook's or a brokered run's: handed on for the
         // network record and the chat's Notice (#1662). Taken out of the lock before it runs,
         // as an answer is. One throttle for both roads.
@@ -2257,6 +2443,9 @@ impl Hooks {
             })
         };
         let hearing = Hearing {
+            // A slot a chat's server dialled in (#3316), parked at the chat's door. Taken out of
+            // the lock before it runs, as an answer is.
+            serve: parked_by(&parking),
             // A brokered `secret exec` (#1407), held on its connection while the command runs.
             // Taken out of the lock before it runs, as an answer is. A host its sandbox refused
             // is the asking chat's block, told on the same road as one its hook found.
@@ -2546,18 +2735,11 @@ impl Hooks {
                             call: call.clone(),
                         },
                     );
-                    // **A chat refused an update of the project's root asks the person for
-                    // it** (qw348): the guard's own verdict (arm A3c) raises a needs-you item
-                    // on that chat, in the app's words, which names the window's Update. No
-                    // word of the chat's is in it, and it presses nothing.
-                    if call.refused_a_root_update() {
-                        let what = moving(&mut held_board(&board), &plane, call.chat, |board| {
-                            board.needs(call.chat, purlis_core::state::Need::RootUpdateRefused)
-                        });
-                        if let Some(what) = what {
-                            moved(what);
-                        }
-                    }
+                    // The guard's refusal of a git command that would update the project's
+                    // root (arm A3c) raises nothing for the person (#3877): it names `purlis
+                    // worktree update`, which the chat runs itself. Only that update, refused
+                    // for a reason the chat cannot settle, asks the person
+                    // (`gitbroker::answer`).
                     // A child agent's tool call shows it under its chat: a Codex child's
                     // first hook is one (FD-18). Built under the same hold as the change.
                     if let Some(agent) = &call.agent {
@@ -2601,6 +2783,9 @@ impl Hooks {
             throttle,
             hear_block: Some(hear_block),
             secret_exec,
+            parking,
+            #[cfg(unix)]
+            _slots: None,
             relayed: None,
         };
         (hooks, hearing)
@@ -2685,6 +2870,34 @@ impl Hooks {
                 body,
             })
             .map_err(|why| format!("the event log refused it ({why}), so nothing was {done}"))
+    }
+
+    /// **Audits a connection chat `chat`'s server dialled in to be reached on `port`** (#3316):
+    /// parked, or `refused` and why, as [`SERVE_AUDITED`] with `what = "listen"`. Refused where
+    /// this machine has no event log open, or the log refused it.
+    pub fn audit_serving(
+        &self,
+        root: &Path,
+        chat: u32,
+        port: u16,
+        refused: Option<&str>,
+    ) -> Result<(), String> {
+        let mut body = serde_json::json!({
+            "actor_kind": "chat",
+            "what": "listen",
+            "target": port.to_string(),
+            "parked": refused.is_none(),
+        });
+        if let (Some(why), Some(fields)) = (refused, body.as_object_mut()) {
+            fields.insert("refused".to_owned(), why.into());
+        }
+        self.audit(
+            root,
+            Some(chat),
+            SERVE_AUDITED,
+            body,
+            ("audited", "server's connection"),
+        )
     }
 
     /// **Writes what the window says of a browser** (#2293): who drives it, that someone typed
@@ -3025,6 +3238,11 @@ impl Hooks {
         self.hear_block.clone()
     }
 
+    /// What parks, from now on, each slot a chat's server dials in (#3316).
+    pub fn park_slots_with(&self, park: ParkSlots) {
+        *self.parking.lock().unwrap_or_else(PoisonError::into_inner) = Some(park);
+    }
+
     /// Who runs, from now on, each brokered `secret exec` a chat asks for (#1407).
     pub fn exec_secrets_with(&self, runs: SecretExecs) {
         *self
@@ -3055,8 +3273,8 @@ impl Hooks {
             .unwrap_or_else(PoisonError::into_inner) = Some(following);
     }
 
-    /// Where this listens. Only a test asks: a chat is told through [`Hooks::reporting`].
-    #[cfg(test)]
+    /// Where this listens: what a test asks, and where the message queue beside it is found
+    /// (#3902, `purlis_core::dispatchqueue`). A chat is told through [`Hooks::reporting`].
     pub fn socket(&self) -> Option<&Path> {
         self.socket.as_deref()
     }

@@ -22,6 +22,12 @@ function Window() {
       <div className="region-centre">
         <button type="button">The work</button>
       </div>
+      {/* The status bar's card (#3653): portaled over the window, and down with the bar. */}
+      {!focus.on && (
+        <div role="region" aria-label="Notices for one" data-chip="status/bar/notices">
+          <button type="button">In the status card</button>
+        </div>
+      )}
       <button type="button" onClick={focus.toggle}>
         Toggle
       </button>
@@ -65,6 +71,15 @@ describe("focus mode (N32)", () => {
     const side = screen.getByRole("button", { name: "In the side" });
     side.focus();
     // The toggle as a key would press it, with the keyboard still in the side.
+    act(() => screen.getByRole("button", { name: "Toggle" }).click());
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "The work" }));
+  });
+
+  it("takes the keyboard from the status bar's card, which goes with the bar, to the work", () => {
+    // #3653's review: the card is no part of the footer, but goes as it goes; its Notices item,
+    // hidden, takes no keyboard, so the keyboard would be left on nothing.
+    render(<Window />);
+    screen.getByRole("button", { name: "In the status card" }).focus();
     act(() => screen.getByRole("button", { name: "Toggle" }).click());
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "The work" }));
   });

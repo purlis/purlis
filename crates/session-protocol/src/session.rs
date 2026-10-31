@@ -330,9 +330,96 @@ use crate::view::{Limits, Views};
 /// the runner then keeps in that profile's folder in place of the ones it kept before. Left out,
 /// the runner leaves the settings it keeps as they are. A host before 1.50 ignores the field, so
 /// the desktop sends it only to a runner of 1.50 or later.
+///
+/// 1.51 added the clones a host holds in a workspace (#3811, spec #2041): `clones_of` answers
+/// `clones`, the folder name of each repository a project it keeps has in the workspace's
+/// folder, so a chat moving off a runner brings back a clone the runner chat made there. The
+/// window's alone ([`crate::grants::Power::Code`]), relayed for it. A host before 1.51 refuses
+/// it `unknown_command`, so the window asks only one of 1.51 or later, and a clone a runner
+/// before it made stays there.
+///
+/// 1.52 added a desktop's profile taken off its runner (#4047, spec #4023): `forget_profile`,
+/// sent by the desktop on its own link to the runner as it takes a profile off the pool, has the
+/// runner forget a profile it keeps for that desktop, with its folder and so its sign-in there,
+/// answered `done`. A profile the runner keeps of its own, or for another desktop, stays as it
+/// is: from 1.57 that is answered `done` too, since nothing of this desktop's has the name
+/// (#4060), where a host from 1.52 to 1.56 refuses it. A host before 1.52 refuses it
+/// `unknown_command`, and the profile stays kept there.
+///
+/// 1.53 added a profile whose harness its runner is still fetching (#4008, spec #4023):
+/// `profile_kept` may answer [`ProfileStanding::Fetching`] while the runner fetches the harness
+/// version the profile pins, which a look started, so the window says so and asks again once the
+/// fetch has ended. A desktop before 1.53 reads it as `cannot_tell`, as it reads any word a later
+/// minor adds.
+///
+/// 1.54 added where each such clone came from (#3985, spec #2041): `clones` may carry `origins`,
+/// the `origin` URL of each clone's own configuration there, by its folder name, as the
+/// runner's git keeps it and only where it is a forge's HTTPS or SSH address with no sign-in in
+/// it. A runner sends it only to a link of 1.54 or later; one before 1.54 sends none, and a
+/// window before it ignores the field. The window holds every URL to its own rules again and
+/// gives a clone it makes fresh that remote.
+///
+/// 1.55 added the person's Allow of a persona's tools to a chat's start on a runner (#4071, spec
+/// #2041): `start_program` may carry `tools_allowed`, the digest of what the person allowed on the
+/// desktop, which a runner holds to its own reading of the persona, and which never reaches the
+/// persona's hosts. Named only by the window or its host's relay. A host before 1.55 ignores the
+/// field, so its chats arm no tool, as before.
+///
+/// 1.56 added a profile's settings in batches (#4081, spec #2041): `stage_profile_settings`
+/// carries part of them ([`SettingsBatch`], each within a control frame, a large file in several
+/// pieces), held on that link alone, and a `keep_profile` naming how many files were staged
+/// (`settings_staged`) keeps them all at once, or none. The paired desktop's alone, on its own
+/// link, as `keep_profile` is ([`crate::grants::Power::KeepProfile`]). A host before 1.56 refuses
+/// it `unknown_command`, so the desktop sends such a runner what one `keep_profile` carries, as
+/// it did.
+///
+/// 1.57 added the profiles a runner keeps for its desktop (#4060, spec #4023): `kept_profiles`,
+/// sent by the desktop on its own link to the runner, answers `profiles`, the name of each
+/// profile the runner keeps for that desktop and for no other, never one of its own. The desktop
+/// asks it before it forgets the ones no longer chosen for the pool, or no longer on the
+/// desktop. Carried out and refused as `keep_profile` is. A host before 1.57 refuses it
+/// `unknown_command`, and the desktop forgets nothing it was not asked to there.
+///
+/// 1.58 added a runner removed outside purlis (#4149): `link_down` may say `gone`, the runner a
+/// relaying host links to no longer there (a Docker runner whose container Docker no longer
+/// lists), which the host does not link to again on its own, so the window offers to make it
+/// again. A window before 1.58 ignores the field and reads it as any link that is down.
+///
+/// 1.59 added a sign-in's redirect (#4044, spec #4023): `sign_in_redirect` has a runner's host hand
+/// the browser's answer to a login waiting on the runner's loopback, and answers only whether the
+/// login took it. Its target is that login's own path alone, so nothing else on the runner's
+/// loopback is reached. The paired desktop's, on its own link. A host before 1.59 refuses it
+/// `unknown_command`, and the sign-in says so.
+///
+/// 1.60 added each chat's prompt key (#3369): a random secret its hooks key the digests of its
+/// prompts by ([`PromptKey`]). A window's `launch` may carry it (`prompt_key`); a start the host
+/// composes itself is given one by the host. The host keeps it with the program in memory alone,
+/// and answers it in `program_started` and `programs` (`prompt_key`), so the window that started
+/// or takes back the chat digests what it types under the same key. A host before 1.60 ignores
+/// the field and answers none, and its chats' prompts are marked under no key.
+///
+/// 1.61 added sending only what changed of a profile's settings (#4088, spec #2041):
+/// `settings_held` answers the path and digest of each settings file a runner holds for the
+/// desktop on this link, read off its disk at that moment, and `keep_profile` may carry
+/// `settings_changed`, which has the runner keep what it holds with what was staged in place and
+/// what it names removed, only where the whole result is the digest it names. Carried out and
+/// refused as `keep_profile` is. The desktop sends such a runner all of them on any refusal, and a
+/// host before 1.61 is sent all of them, as before.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 50,
+    minor: 61,
+};
+
+/// The version that first says which settings files it holds and keeps only what changed (#4088).
+pub const KNOWS_SETTINGS_HELD: Version = Version {
+    major: 1,
+    minor: 61,
+};
+
+/// The version that first hands a sign-in's redirect to a login on a runner (#4044).
+pub const KNOWS_SIGN_IN_REDIRECT: Version = Version {
+    major: 1,
+    minor: 59,
 };
 
 /// The version that first answers `relay_to` with the runner the link reached (#3417).
@@ -367,6 +454,41 @@ pub const KNOWS_KEEP_PROFILE: Version = Version {
 pub const KNOWS_PROFILE_SETTINGS: Version = Version {
     major: 1,
     minor: 50,
+};
+
+/// The version that first takes a profile's settings in batches (#4081): a runner before it is
+/// sent what one `keep_profile` carries, or refused in words.
+pub const KNOWS_SETTINGS_IN_BATCHES: Version = Version {
+    major: 1,
+    minor: 56,
+};
+
+/// The version that first answers the clones it holds in a workspace (#3811): the window asks
+/// no host before it, and a clone such a runner made stays there at a move.
+pub const KNOWS_CLONES_OF: Version = Version {
+    major: 1,
+    minor: 51,
+};
+
+/// The version that first says where each clone it holds came from (#3985): a host sends
+/// [`Answer::Clones`]'s `origins` only to a link of this version or later.
+pub const KNOWS_CLONE_ORIGINS: Version = Version {
+    major: 1,
+    minor: 54,
+};
+
+/// The version that first forgets a desktop's profile on a runner (#4047): the desktop asks no
+/// runner before it, where the profile stays kept.
+pub const KNOWS_FORGET_PROFILE: Version = Version {
+    major: 1,
+    minor: 52,
+};
+
+/// The version that first answers the profiles a runner keeps for its desktop (#4060): the
+/// desktop asks no runner before it.
+pub const KNOWS_KEPT_PROFILES: Version = Version {
+    major: 1,
+    minor: 57,
 };
 
 /// The version that first knows browsers relayed for a window (#2050): a runner before it refuses
@@ -709,6 +831,40 @@ pub enum Command {
     /// host, on the link between hosts from the desktop it is paired with, carries it out;
     /// every other host refuses it [`NOT_ALLOWED`] ([`crate::grants::Power::KeepProfile`]).
     KeepProfile(ProfileToKeep),
+    /// The desktop on this link has the runner forget its profile `name` (1.52, #4047): the
+    /// runner's host forgets the profile it keeps for that desktop, with its folder and so its
+    /// sign-in there, and answers [`Answer::Done`]; one it does not keep for that desktop,
+    /// one of its own or another desktop's included, is nothing and stays as it is (from 1.57,
+    /// #4060; refused before). Carried out and refused as
+    /// [`Command::KeepProfile`] is ([`crate::grants::Power::KeepProfile`]).
+    ForgetProfile { name: String },
+    /// Part of a profile's settings, held on this link for the [`Command::KeepProfile`] that
+    /// keeps them all (1.56, #4081). Answers [`Answer::Done`]. As `keep_profile`, the paired
+    /// desktop's alone, on its own link.
+    StageProfileSettings(SettingsBatch),
+    /// The desktop on this link asks which settings files the runner holds of its profile
+    /// `profile`, with a digest of each (1.61, #4088): those whose paths sort after `after`,
+    /// answered [`Answer::SettingsHeld`]. A profile the runner does not keep for that desktop
+    /// holds none. Carried out and refused as [`Command::KeepProfile`] is
+    /// ([`crate::grants::Power::KeepProfile`]).
+    SettingsHeld {
+        profile: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        after: Option<String>,
+    },
+    /// The desktop on this link asks which of its profiles the runner keeps (1.57, #4060): the
+    /// runner's host answers [`Answer::Profiles`] with the name of each profile it keeps for
+    /// that desktop, never one of its own or another desktop's. Carried out and refused as
+    /// [`Command::KeepProfile`] is ([`crate::grants::Power::KeepProfile`]).
+    KeptProfiles,
+    /// The desktop on this link hands the runner a sign-in's redirect (1.59, #4044): `target` is
+    /// the request the person's browser made of the desktop's loopback, which the runner's host
+    /// makes of a login waiting on its own, at that login's own port and path alone. Answered
+    /// [`Answer::Done`] where the login took it; nothing of the login's answer crosses the link.
+    /// Only a runner's host, on the link between hosts from the desktop it is paired with, carries
+    /// it out; every other host refuses it [`NOT_ALLOWED`]
+    /// ([`crate::grants::Power::SignInRedirect`]).
+    SignInRedirect { target: RedirectTarget },
     /// The person takes browser `program` over (1.14, #2014): an act in flight answers that it
     /// was interrupted, and every act is refused in words until [`Command::HandBack`]. The lease
     /// is the host's: it stays with the person whatever becomes of the link that took it, until
@@ -868,6 +1024,11 @@ pub enum Command {
         profile: String,
         conversation: String,
     },
+    /// **The clones the host holds in `workspace`** of `project` (1.51, #3811): answered
+    /// [`Answer::Clones`] with the folder name of each repository in the workspace's folder of
+    /// the project it keeps there, none reached through a link. The window's alone
+    /// ([`crate::grants::Power::Code`]), relayed for it.
+    ClonesOf { project: String, workspace: String },
     /// The person cancels the engine's download for browser `program`'s start (1.37, #2207):
     /// the download stops, nothing of it is kept, and the start is refused in words that say
     /// so. Answered [`Answer::Done`], also where nothing is downloading for it. The window's
@@ -909,6 +1070,18 @@ pub struct Confine {
     /// Whether its proxy holds a connection to a host nothing lists while the person is asked.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub asks: bool,
+}
+
+/// **The request a browser made of a sign-in's redirect** (1.59, #4044): it holds a one-time code,
+/// so it prints as nothing in a log.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RedirectTarget(pub String);
+
+impl std::fmt::Debug for RedirectTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RedirectTarget(..)")
+    }
 }
 
 /// A chat's confinement as the window planned it (1.4): its proxy's reach and ports, and what
@@ -1074,6 +1247,87 @@ pub struct ProfileToKeep {
     /// it kept before: none left out is kept there. Left out, it leaves them as they are.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings: Option<Vec<SettingsFile>>,
+    /// How many settings files this link staged for it (1.56, #4081,
+    /// [`Command::StageProfileSettings`]), which the runner keeps as [`Self::settings`] says of
+    /// files sent here. It refuses a count that is not what it holds, and both fields at once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_staged: Option<u32>,
+    /// That what was staged is only what changed (1.61, #4088): the runner keeps what it holds,
+    /// with those files in place and these removed, or refuses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_changed: Option<ChangedSettings>,
+}
+
+/// **What a [`ProfileToKeep`] says of the settings it did not send** (1.61, #4088).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChangedSettings {
+    /// The paths the desktop no longer has.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed: Vec<String>,
+    /// [`whole_settings_digest`] of all the settings as the desktop has them. A runner keeps
+    /// nothing whose result is not this, so what it listed cannot decide what it keeps.
+    pub whole: String,
+}
+
+/// **A settings file a runner holds** (1.61, #4088): its path, and [`settings_digest`] of its
+/// bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeldSetting {
+    pub path: String,
+    pub digest: String,
+}
+
+/// **The digest of a settings file's bytes** (1.61, #4088): SHA-256, in lower-case hex.
+pub fn settings_digest(bytes: &[u8]) -> String {
+    use sha2::Digest as _;
+    crate::auth::hex(&sha2::Sha256::digest(bytes))
+}
+
+/// Whether `digest` is one [`settings_digest`] could have written.
+pub fn is_settings_digest(digest: &str) -> bool {
+    digest.len() == 64
+        && digest
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// **The digest of a profile's settings together** (1.61, #4088): each path, its length first so
+/// that no two sets read alike, and its file's digest, in the order of the paths.
+pub fn whole_settings_digest<'a>(files: impl IntoIterator<Item = (&'a str, &'a str)>) -> String {
+    use sha2::Digest as _;
+    let sorted: BTreeMap<&str, &str> = files.into_iter().collect();
+    let mut whole = sha2::Sha256::new();
+    whole.update(b"purlis profile settings 1\0");
+    for (path, digest) in sorted {
+        whole.update((path.len() as u64).to_le_bytes());
+        whole.update(path.as_bytes());
+        whole.update(digest.as_bytes());
+    }
+    crate::auth::hex(&whole.finalize())
+}
+
+/// **The page of `held` an [`Answer::SettingsHeld`] carries**, within a control frame: those
+/// after `after` in the order of their paths, and whether more follow.
+pub fn settings_held_page(
+    mut held: Vec<HeldSetting>,
+    after: Option<&str>,
+) -> (Vec<HeldSetting>, bool) {
+    held.sort_by(|a, b| a.path.cmp(&b.path));
+    let mut size = 0;
+    let mut page = Vec::new();
+    for one in held {
+        if after.is_some_and(|after| one.path.as_str() <= after) {
+            continue;
+        }
+        size += PIECE_FRAMING
+            + one.digest.len()
+            + serde_json::to_string(&one.path).map_or(0, |p| p.len());
+        if size > MOST_BATCH_BYTES && !page.is_empty() {
+            return (page, true);
+        }
+        page.push(one);
+    }
+    (page, false)
 }
 
 /// **One settings file of a profile** (1.50, #3448): its path under the harness's settings
@@ -1096,6 +1350,166 @@ impl std::fmt::Debug for SettingsFile {
     }
 }
 
+/// **The most bytes of settings files a runner holds for one profile** (#4081, D-4081-1): more
+/// than twice the largest real profile measured (58 MiB of skills), and what a link holds in
+/// memory until they are kept.
+pub const MOST_PROFILE_SETTINGS_BYTES: usize = 128 * 1024 * 1024;
+
+/// **The most settings files a runner holds for one profile** (#4081, D-4081-2).
+pub const MOST_PROFILE_SETTINGS_FILES: usize = 8192;
+
+/// The longest path of a settings file a runner holds, the most a path names on Linux.
+const MOST_SETTINGS_PATH_BYTES: usize = 4096;
+
+/// The most a [`SettingsBatch`]'s pieces take on the wire, leaving a control frame room for the
+/// rest of the call and the profile's name.
+const MOST_BATCH_BYTES: usize = crate::link::MOST_CONTROL_FRAME_BYTES / 4 * 3;
+
+/// What frames one [`SettingsPiece`] on the wire beside its path and bytes.
+const PIECE_FRAMING: usize = 48;
+
+/// **Part of a profile's settings, staged on a link** (1.56, #4081): what
+/// [`Command::StageProfileSettings`] sends, each within a control frame.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsBatch {
+    /// The profile they are of, by the name [`ProfileToKeep`] then names.
+    pub profile: String,
+    pub pieces: Vec<SettingsPiece>,
+}
+
+/// **A settings file, or a piece of a large one** (1.56, #4081): its pieces follow one another,
+/// the first with no `continues`.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsPiece {
+    pub path: String,
+    /// More of the file the piece before this one began.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub continues: bool,
+    #[serde(with = "base64_bytes")]
+    pub bytes: Vec<u8>,
+}
+
+/// As [`SettingsFile`]'s: its bytes are never written to a log through `Debug`.
+impl std::fmt::Debug for SettingsPiece {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SettingsPiece")
+            .field("path", &self.path)
+            .field("continues", &self.continues)
+            .field("bytes", &self.bytes.len())
+            .finish()
+    }
+}
+
+/// **`files`, the settings of `profile`, as the batches that carry them** (1.56, #4081), in
+/// order, each one's pieces within a control frame, however large one file is.
+pub fn settings_in_batches(profile: &str, files: Vec<SettingsFile>) -> Vec<SettingsBatch> {
+    let mut batches = Vec::new();
+    let mut pieces = Vec::new();
+    let mut size = 0;
+    for file in files {
+        let framing = PIECE_FRAMING + serde_json::to_string(&file.path).map_or(0, |p| p.len());
+        let mut rest = file.bytes.as_slice();
+        let mut continues = false;
+        loop {
+            // Room for at least one byte, or the batch goes as it is.
+            if !pieces.is_empty() && size + framing + 4 > MOST_BATCH_BYTES {
+                batches.push(SettingsBatch {
+                    profile: profile.to_owned(),
+                    pieces: std::mem::take(&mut pieces),
+                });
+                size = 0;
+            }
+            // Their bytes cross as base64: 3 bytes in each 4.
+            let room = (MOST_BATCH_BYTES.saturating_sub(size + framing) / 4 * 3).max(3);
+            let (now, later) = rest.split_at(rest.len().min(room));
+            size += framing + now.len().div_ceil(3) * 4;
+            pieces.push(SettingsPiece {
+                path: file.path.clone(),
+                continues,
+                bytes: now.to_vec(),
+            });
+            rest = later;
+            continues = true;
+            if rest.is_empty() {
+                break;
+            }
+        }
+    }
+    if !pieces.is_empty() {
+        batches.push(SettingsBatch {
+            profile: profile.to_owned(),
+            pieces,
+        });
+    }
+    batches
+}
+
+/// **The settings a link has staged for one profile** (1.56, #4081): whole files, held in memory
+/// and only here, so a link that ends, or a batch refused, leaves nothing of them. Held to
+/// [`MOST_PROFILE_SETTINGS_BYTES`] and [`MOST_PROFILE_SETTINGS_FILES`] as they arrive. It judges
+/// the shape of what arrives and nothing of what it says: a runner checks the whole files as it
+/// checks files one `keep_profile` carries, once they are all here.
+#[derive(Debug, Default)]
+pub struct StagedSettings {
+    profile: Option<String>,
+    files: Vec<SettingsFile>,
+    paths: std::collections::HashSet<String>,
+    bytes: usize,
+}
+
+impl StagedSettings {
+    /// Takes `batch` in, or says why it is refused: for another profile than the batches before
+    /// it, a file twice, a piece of no file begun, or over a limit.
+    pub fn add(&mut self, batch: SettingsBatch) -> Result<(), String> {
+        let SettingsBatch { profile, pieces } = batch;
+        if self.profile.get_or_insert_with(|| profile.clone()) != &profile {
+            return Err("these settings are of another profile than the ones before".to_owned());
+        }
+        for piece in pieces {
+            self.bytes += piece.bytes.len();
+            if self.bytes > MOST_PROFILE_SETTINGS_BYTES {
+                return Err(format!(
+                    "these settings are over the {} MiB a runner holds for a profile",
+                    MOST_PROFILE_SETTINGS_BYTES / (1024 * 1024)
+                ));
+            }
+            if piece.path.len() > MOST_SETTINGS_PATH_BYTES {
+                return Err("a settings file's path is longer than a path can be".to_owned());
+            }
+            if piece.continues {
+                match self.files.last_mut() {
+                    Some(file) if file.path == piece.path => file.bytes.extend(piece.bytes),
+                    _ => return Err("a piece of a settings file came with no start".to_owned()),
+                }
+                continue;
+            }
+            if self.files.len() >= MOST_PROFILE_SETTINGS_FILES {
+                return Err(format!(
+                    "these settings are over the {MOST_PROFILE_SETTINGS_FILES} files a runner \
+                     holds for a profile"
+                ));
+            }
+            if !self.paths.insert(piece.path.clone()) {
+                return Err("a settings file came twice".to_owned());
+            }
+            self.files.push(SettingsFile {
+                path: piece.path,
+                bytes: piece.bytes,
+            });
+        }
+        Ok(())
+    }
+
+    /// The files staged, as `profile`'s, where they are the `files` its `keep_profile` counts.
+    pub fn finished(self, profile: &str, files: u32) -> Result<Vec<SettingsFile>, String> {
+        let same = self.profile.as_deref().is_none_or(|p| p == profile);
+        if !same || self.files.len() != files as usize {
+            return Err("the settings staged are not the ones this keep names".to_owned());
+        }
+        Ok(self.files)
+    }
+}
+
 /// **Whether a profile a runner keeps is signed in there**, as its harness says (1.43, #2049).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1104,6 +1518,9 @@ pub enum ProfileStanding {
     SignedIn,
     /// The harness says it is not: a chat on it does not start there until it is.
     SignedOut,
+    /// The runner is fetching the harness version the profile pins, so its harness cannot say
+    /// yet (1.53, #4008): asked again once the fetch has ended, it answers.
+    Fetching,
     /// The harness did not say, or has no way to; and a word a later minor adds.
     #[serde(other)]
     CannotTell,
@@ -1137,6 +1554,11 @@ pub struct StartProgram {
     /// The persona it runs as, or the project's default (1.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub persona: Option<String>,
+    /// The digest of what the person allowed of that persona on the desktop that starts it on a
+    /// runner (1.55, #4071): the runner arms the persona's tools only where this is the digest
+    /// of the persona as it reads it. None where nothing is allowed there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools_allowed: Option<String>,
     /// The profile it runs on, or none (1.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
@@ -1224,6 +1646,7 @@ impl StartProgram {
             resume: None,
             first_message: None,
             without_sandbox: false,
+            tools_allowed: None,
             launch: None,
             reach: None,
             confinement: None,
@@ -1274,6 +1697,54 @@ pub struct Launch {
     /// program does, whether or not the link that made it does (1.4).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confinement: Option<String>,
+    /// The chat's prompt key, which the window minted for it (1.60, #3369): set in its
+    /// environment for its hooks, and kept by the host with the program for a window that takes
+    /// it back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_key: Option<PromptKey>,
+}
+
+/// **A chat's prompt key** (1.60, #3369): 32 random bytes, written as hex, that its hooks key
+/// the digests of its prompts by, and the window the digests of what it types into the chat.
+/// One per chat, minted where the chat is composed: by the window for a launch of its own, by
+/// the host for a start it composes. It is set in the chat's environment, never on its command
+/// line; the host keeps it in memory alone, beside the program, and writes it to no record or
+/// log. **Its `Debug` never shows the value.**
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PromptKey(String);
+
+impl PromptKey {
+    /// How many random bytes a key is.
+    const BYTES: usize = 32;
+
+    /// A fresh key from the operating system's generator, or why there is none.
+    pub fn mint() -> std::io::Result<Self> {
+        let mut bytes = [0u8; Self::BYTES];
+        getrandom::fill(&mut bytes).map_err(std::io::Error::other)?;
+        Ok(Self(
+            bytes.iter().map(|byte| format!("{byte:02x}")).collect(),
+        ))
+    }
+
+    /// The key `value` names, as a chat's environment or a peer carries it; none for an empty
+    /// one.
+    pub fn of(value: &str) -> Option<Self> {
+        (!value.is_empty()).then(|| Self(value.to_owned()))
+    }
+
+    /// The value, for what must write it down: the chat's environment, and the digests keyed
+    /// by it.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Never prints the key.
+impl std::fmt::Debug for PromptKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PromptKey(..)")
+    }
 }
 
 /// Where a chat's hooks report, and the token they carry (1.2).
@@ -1362,6 +1833,10 @@ pub enum Answer {
         /// answers. Absent from a host before 1.29, whose window takes the run as sandboxed.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sandbox: Option<RunSandbox>,
+        /// Its prompt key (1.60, #3369): the launch's, or the one the host minted for a start
+        /// it composed. Absent for a program that has none, and from a host before 1.58.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        prompt_key: Option<PromptKey>,
     },
     /// Whether a program is ready to be typed at: [`Command::Readiness`] (1.2).
     Readiness(Readiness),
@@ -1393,9 +1868,28 @@ pub enum Answer {
     /// Where a conversation is kept, as its harness's declaration says it (1.44):
     /// [`Command::GiveConversation`].
     Conversation { file: String },
+    /// The folder name of each clone a host holds in a workspace (1.51):
+    /// [`Command::ClonesOf`]. And the `origin` URL of each that has one a forge reaches, by its
+    /// folder name (1.54, [`KNOWS_CLONE_ORIGINS`]): the host's own word, which the window holds
+    /// to its own rules before it uses any.
+    Clones {
+        repos: Vec<String>,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        origins: BTreeMap<String, String>,
+    },
     /// Whether the profile a runner keeps is signed in there, as its harness says:
     /// [`Command::KeepProfile`] (1.43).
     ProfileKept { standing: ProfileStanding },
+    /// The profiles a runner keeps for the desktop on this link, by name:
+    /// [`Command::KeptProfiles`] (1.57).
+    Profiles { names: Vec<String> },
+    /// The settings files a runner holds of a profile, a page at a time:
+    /// [`Command::SettingsHeld`] (1.61).
+    SettingsHeld {
+        files: Vec<HeldSetting>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        more: bool,
+    },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Where the host's own event log ends: [`Command::LogEnd`] (1.41).
@@ -1453,6 +1947,10 @@ pub struct HeldProgram {
     /// named is an empty one, which no note names.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub logins: Vec<String>,
+    /// Its prompt key, as its start was given it (1.60, #3369): what a window that takes the
+    /// chat back digests what it types into it under.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_key: Option<PromptKey>,
 }
 
 /// The kill switch as the host holds it (1.5, ADR 0071).
@@ -1487,6 +1985,8 @@ pub struct ProgramStarted {
     pub confined: Option<Confined>,
     /// How its run is sandboxed, as the host applied it, where the host says (1.29).
     pub sandbox: Option<RunSandbox>,
+    /// Its prompt key, where it has one (1.60).
+    pub prompt_key: Option<PromptKey>,
 }
 
 /// One chat, as [`Command::List`] lists it.
@@ -1674,6 +2174,12 @@ pub enum Pushed {
         /// #2679): it is not linked again until the person removes it and adds it anew.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         key_changed: bool,
+        /// The other host is gone for good (1.58, #4149): a Docker runner whose container Docker
+        /// no longer lists, removed outside purlis. The relaying host does not link to it again
+        /// on its own; until it is made again, each command that needs it tries once and is
+        /// refused.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        gone: bool,
     },
     /// The link a relaying host reaches the other host over is back (1.17, #2496), with what the
     /// client's link stands on carried over to it: its views draw again, each from a snapshot.
@@ -1748,11 +2254,17 @@ wire_words!(Command {
     NameWindow => "name_window",
     Unpair => "unpair",
     KeepProfile => "keep_profile",
+    ForgetProfile => "forget_profile",
+    StageProfileSettings => "stage_profile_settings",
+    SettingsHeld => "settings_held",
+    KeptProfiles => "kept_profiles",
+    SignInRedirect => "sign_in_redirect",
     RelayTo => "relay_to",
     TakeCode => "take_code",
     GiveCode => "give_code",
     TakeConversation => "take_conversation",
     GiveConversation => "give_conversation",
+    ClonesOf => "clones_of",
     CancelEngineDownload => "cancel_engine_download",
     NoteProgram => "note_program",
     LogEnd => "log_end",
@@ -1804,12 +2316,18 @@ impl Command {
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,
             Command::Unpair => Power::Unpair,
-            Command::KeepProfile(_) => Power::KeepProfile,
+            Command::KeepProfile(_)
+            | Command::ForgetProfile { .. }
+            | Command::StageProfileSettings(_)
+            | Command::SettingsHeld { .. }
+            | Command::KeptProfiles => Power::KeepProfile,
+            Command::SignInRedirect { .. } => Power::SignInRedirect,
             Command::RelayTo { .. } => Power::RelayTo,
             Command::TakeCode { .. }
             | Command::GiveCode { .. }
             | Command::TakeConversation { .. }
-            | Command::GiveConversation { .. } => Power::Code,
+            | Command::GiveConversation { .. }
+            | Command::ClonesOf { .. } => Power::Code,
             Command::LogEnd => Power::EventLog,
         }
     }
@@ -1877,7 +2395,10 @@ wire_words!(Answer {
     TakenBack => "taken_back",
     Code => "code",
     Conversation => "conversation",
+    Clones => "clones",
     ProfileKept => "profile_kept",
+    Profiles => "profiles",
+    SettingsHeld => "settings_held",
     Subscribed => "subscribed",
     LogEnd => "log_end",
     RelayedTo => "relayed_to",
@@ -2310,11 +2831,17 @@ impl Lane {
             | Command::NameWindow { .. }
             | Command::Unpair
             | Command::KeepProfile(_)
+            | Command::ForgetProfile { .. }
+            | Command::StageProfileSettings(_)
+            | Command::SettingsHeld { .. }
+            | Command::KeptProfiles
+            | Command::SignInRedirect { .. }
             | Command::RelayTo { .. }
             | Command::TakeCode { .. }
             | Command::GiveCode { .. }
             | Command::TakeConversation { .. }
             | Command::GiveConversation { .. }
+            | Command::ClonesOf { .. }
             // Never behind the start it cancels, which waits on the download.
             | Command::CancelEngineDownload { .. } => None,
             Command::Attach { chat: program }
@@ -2547,6 +3074,18 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
         });
     }
     if let Command::StartProgram(start) = command
+        && start.tools_allowed.is_some()
+        && !scope.may(Power::Confine)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "what the person allowed of a persona's tools is named by purlis's window, or \
+                 its host's relay, only, and this link is `{scope}`"
+            ),
+        });
+    }
+    if let Command::StartProgram(start) = command
         && start.without_sandbox
         && !scope.may(Power::OptOut)
     {
@@ -2651,6 +3190,8 @@ impl CallError {
 pub(crate) enum Ask {
     Session(Command, oneshot::Sender<Result<Answer, CallError>>),
     Ui(ui::Ask),
+    /// End the link, whoever still holds the client ([`Client::end_link`]).
+    End,
 }
 
 /// The client's end of the session protocol: calls from any task, answered in any order.
@@ -2723,6 +3264,12 @@ impl Client {
     /// The scope the link was admitted as.
     pub fn scope(&self) -> Scope {
         self.scope
+    }
+
+    /// **Ends the link now, whoever still holds this client**: the host sees it close, what its
+    /// [`Events`] brought ends, and every call waiting or made after is answered that it closed.
+    pub fn end_link(&self) {
+        let _ = self.asks.send(Ask::End);
     }
 
     /// Send one command and wait for its answer.
@@ -2817,12 +3364,14 @@ impl Client {
                 process,
                 confined,
                 sandbox,
+                prompt_key,
             } => Ok(ProgramStarted {
                 program,
                 number,
                 process,
                 confined,
                 sandbox,
+                prompt_key,
             }),
             other => Err(unexpected(&other)),
         }
@@ -2961,6 +3510,65 @@ impl Client {
         }
     }
 
+    /// Have the runner forget this link's desktop's profile `name` (1.52, #4047), with its
+    /// folder and sign-in there. Refused by every host but a runner's, on its link from that
+    /// desktop.
+    pub async fn forget_profile(&self, name: &str) -> Result<(), CallError> {
+        self.done(Command::ForgetProfile {
+            name: name.to_owned(),
+        })
+        .await
+    }
+
+    /// Stage `batch` of a profile's settings on this link (1.56, #4081), for a
+    /// [`Client::keep_profile`] to keep. Refused by every host but a runner's of 1.56 or later,
+    /// on its link from that desktop.
+    pub async fn stage_profile_settings(&self, batch: SettingsBatch) -> Result<(), CallError> {
+        self.done(Command::StageProfileSettings(batch)).await
+    }
+
+    /// A page of the settings files the runner holds of this link's desktop's profile `profile`
+    /// (1.61, #4088), and whether more follow. Refused by every host but a runner's of 1.61 or
+    /// later, on its link from that desktop.
+    pub async fn settings_held(
+        &self,
+        profile: &str,
+        after: Option<String>,
+    ) -> Result<(Vec<HeldSetting>, bool), CallError> {
+        let asked = Command::SettingsHeld {
+            profile: profile.to_owned(),
+            after,
+        };
+        match self.call(asked).await? {
+            Answer::SettingsHeld { files, more } => Ok((files, more)),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// The name of each profile the runner keeps for this link's desktop (1.57, #4060). Refused
+    /// by every host but a runner's, on its link from that desktop.
+    pub async fn kept_profiles(&self) -> Result<Vec<String>, CallError> {
+        match self.call(Command::KeptProfiles).await? {
+            Answer::Profiles { names } => Ok(names),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Have the runner hand a login on its loopback the redirect `target` (1.59, #4044): `Ok`
+    /// once the login took it. Refused by every host but a runner's, on its link from the
+    /// desktop it is paired with.
+    pub async fn sign_in_redirect(&self, target: &str) -> Result<(), CallError> {
+        match self
+            .call(Command::SignInRedirect {
+                target: RedirectTarget(target.to_owned()),
+            })
+            .await?
+        {
+            Answer::Done => Ok(()),
+            other => Err(unexpected(&other)),
+        }
+    }
+
     /// Ask the desktop's host to relay this link to the runner it keeps as `runner` (1.33,
     /// #2679): the link's first command, before [`Client::subscribe`]. Answers the runner it
     /// reached, as `<pool>/<runner>` (1.48, #3417), or `None` from a host before 1.48.
@@ -3085,6 +3693,25 @@ impl Client {
             .await?
         {
             Answer::Conversation { file } => Ok(file),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// **The clones the host holds in `workspace`** of `project` (1.51, #3811), by their folder
+    /// names, and the `origin` URL the host names for each it can (1.54, #3985).
+    pub async fn clones_of(
+        &self,
+        project: &str,
+        workspace: &str,
+    ) -> Result<(Vec<String>, BTreeMap<String, String>), CallError> {
+        match self
+            .call(Command::ClonesOf {
+                project: project.to_owned(),
+                workspace: workspace.to_owned(),
+            })
+            .await?
+        {
+            Answer::Clones { repos, origins } => Ok((repos, origins)),
             other => Err(unexpected(&other)),
         }
     }
@@ -3485,8 +4112,8 @@ async fn drive(mut link: Link, mut asked: mpsc::UnboundedReceiver<Ask>, mut push
             frame = link.control().next() => Driven::Frame(frame),
         };
         match next {
-            // Every handle is gone: nobody is left to answer.
-            Driven::Ask(None) => return,
+            // Every handle is gone, so nobody is left to answer; or a holder ended the link.
+            Driven::Ask(None) | Driven::Ask(Some(Ask::End)) => return,
             Driven::Ask(Some(ask)) => {
                 let id = next_id;
                 next_id += 1;
@@ -3499,6 +4126,7 @@ async fn drive(mut link: Link, mut asked: mpsc::UnboundedReceiver<Ask>, mut push
                         Frame::Call(Call { id, command })
                     }
                     Ask::Ui(ask) => Frame::Ui(ui.ask(id, ask)),
+                    Ask::End => unreachable!("matched above"),
                 };
                 if let Err(e) = link.control().send(frame.to_bytes()).await {
                     break e.to_string();

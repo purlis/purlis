@@ -189,7 +189,12 @@ describe("the Drafts page", () => {
     stop();
     expect(asks).toEqual([
       { plane: "p", kind: "try", id: "triage-id", profile: null },
-      { plane: "p", kind: "draft", level: { at: "workspace", name: "ops", local: false } },
+      {
+        plane: "p",
+        kind: "draft",
+        level: { at: "workspace", name: "ops", local: false },
+        what: "",
+      },
     ]);
   });
 
@@ -241,7 +246,7 @@ describe("the chat's tab", () => {
     core([draft("triage"), draft("other", { chat: 9 })]);
     render(<DraftReadyNotice plane="p" session={4} />);
     expect(await screen.findByText(draftReadySays(["triage"], false))).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open Skill studio" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open the draft" })).toBeInTheDocument();
   });
 
   it("opens the studio at its draft's own page", async () => {
@@ -252,7 +257,7 @@ describe("the chat's tab", () => {
     try {
       const user = userEvent.setup();
       render(<DraftReadyNotice plane="p" session={4} />);
-      await user.click(await screen.findByRole("button", { name: "Open Skill studio" }));
+      await user.click(await screen.findByRole("button", { name: "Open the draft" }));
     } finally {
       window.removeEventListener(SKILL_STUDIO_ASKED, hear);
     }

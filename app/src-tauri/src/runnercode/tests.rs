@@ -351,3 +351,66 @@ fn a_leave_out_list_that_cannot_be_read_refuses_the_send_in_words() {
         "nothing reached the runner"
     );
 }
+
+/// **A clone the runner chat made comes back with Move here** (#3811): the runner names it, and
+/// this machine, which has none of it, makes it fresh from the runner's work, its branch, its
+/// commits and its uncommitted work; what a tool here runs that came in it is named. The clone
+/// this machine has and the runner never had stays as it is.
+#[test]
+fn a_clone_the_runner_chat_made_comes_back_with_move_here_and_names_what_a_tool_here_runs() {
+    let world = World::new();
+    world.sessions.hold().expect("held on the runner");
+    let (link, project) = world.sessions.moving_link_in_a_test().unwrap();
+    assert!(
+        link.names_its_clones(),
+        "this build's runner names its clones"
+    );
+    let web = world.root.join("workspaces/app/web");
+    let web_head = git(&web, &["rev-parse", "HEAD"]);
+
+    // The runner's chat clones `api` into the workspace there, commits, and leaves work.
+    let there = world.kept().join("workspaces/app/api");
+    std::fs::create_dir_all(&there).unwrap();
+    git(&there, &["init", "-q", "-b", "main"]);
+    let made = committed(&there, "Makefile", "all:\n");
+    std::fs::write(there.join("lib.rs"), "pub fn api() {}\n").unwrap();
+    git(
+        &there,
+        &[
+            "config",
+            "remote.origin.url",
+            "https://github.com/owner/api.git",
+        ],
+    );
+
+    let came =
+        super::move_workspace_back(&link, &project, &world.root, "app", "builds").expect("moved");
+    assert_eq!(came.watch, ["workspaces/app/api/Makefile"]);
+    assert_eq!(
+        came.made,
+        [crate::host::MadeHere {
+            clone: "workspaces/app/api".into(),
+            remote: Ok("https://github.com/owner/api.git".into()),
+        }],
+        "the clone is said to be whole from the runner, with the remote it may be given (#3985)"
+    );
+    let api = world.root.join("workspaces/app/api");
+    assert_eq!(git(&api, &["rev-parse", "main"]), made);
+    assert_eq!(git(&api, &["symbolic-ref", "--short", "HEAD"]), "main");
+    assert_eq!(
+        std::fs::read_to_string(api.join("lib.rs")).unwrap(),
+        "pub fn api() {}\n",
+        "its uncommitted work came too"
+    );
+    assert_eq!(git(&api, &["rev-parse", "refs/remotes/builds/main"]), made);
+    assert_eq!(
+        git(&api, &["remote"]),
+        "",
+        "the runner's remote is offered, never written: no save pushes to it on its own (#3985)"
+    );
+    assert_eq!(
+        git(&web, &["rev-parse", "HEAD"]),
+        web_head,
+        "the clone the runner never had is as it was"
+    );
+}

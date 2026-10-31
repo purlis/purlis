@@ -81,6 +81,7 @@ async fn the_windows_start_its_host_relays_crosses_the_link() {
                 git_hooks: None,
                 reporting: None,
                 confinement: None,
+                prompt_key: None,
             }),
             ..StartProgram::of("01J9PRJCT00000000000000000", ProgramKind::Shell)
         })))

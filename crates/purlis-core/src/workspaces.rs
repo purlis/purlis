@@ -15,11 +15,12 @@ use crate::{manifest, mdsection, memstore};
 
 /// `workspace.md`'s template, with `{name}`, `{vision}` and `{sessions}` to fill. Taken from
 /// `charter/workspace.py:_CHARTER_TEMPLATE` verbatim — the file is committed and
-/// hand-edited, so a byte that differs is a diff in the operator's repository — with one
-/// declared difference: the `## Sessions` section before `## Log` (SI-8, ADR 0064), whose one
+/// hand-edited, so a byte that differs is a diff in the operator's repository — with two
+/// declared differences: the `## Sessions` section before `## Log` (SI-8, ADR 0064), whose one
 /// line charter keeps pointing at the workspace's session records
-/// ([`crate::sessionrecord::point`]).
-const CHARTER_TEMPLATE: &str = "# {name}\n\n> **Living charter** for this workspace — its north star and shared context.\n> Keep it current as the work evolves (edit this file, or `{program} workspace vision \"…\"`).\n> It's committed + shared for LIVE workspaces, and a fork inherits it — so anyone\n> can pick up the task with full context. Never put secrets here (vault only).\n\n## Vision\n\n{vision}\n\n## Context & decisions\n\n<!-- Key facts, constraints, and design/architecture decisions found while working —\n     the durable \"why\", not a chronological log. Grow this as you learn. -->\n\n_Nothing yet._\n\n## Glossary\n\n<!-- Task/domain vocabulary so a teammate or a fork isn't lost: `term` — definition. -->\n\n_Nothing yet._\n\n## Sessions\n\n{sessions}\n\n## Log\n\nChronological \"what was done\" lives in the task memo — `memory/notes.md`\n(append with `{program} workspace note \"…\"`).\n";
+/// ([`crate::sessionrecord::point`]); and the `workspace note` it teaches names the workspace
+/// with `-w`, the spelling a chat runs without a prompt (#3880, ADR 0064 as amended for #3829).
+const CHARTER_TEMPLATE: &str = "# {name}\n\n> **Living charter** for this workspace — its north star and shared context.\n> Keep it current as the work evolves (edit this file, or `{program} workspace vision \"…\"`).\n> It's committed + shared for LIVE workspaces, and a fork inherits it — so anyone\n> can pick up the task with full context. Never put secrets here (vault only).\n\n## Vision\n\n{vision}\n\n## Context & decisions\n\n<!-- Key facts, constraints, and design/architecture decisions found while working —\n     the durable \"why\", not a chronological log. Grow this as you learn. -->\n\n_Nothing yet._\n\n## Glossary\n\n<!-- Task/domain vocabulary so a teammate or a fork isn't lost: `term` — definition. -->\n\n_Nothing yet._\n\n## Sessions\n\n{sessions}\n\n## Log\n\nChronological \"what was done\" lives in the task memo — `memory/notes.md`\n(append with `{program} workspace note -w {name} \"…\"`).\n";
 
 /// What the template writes under a section nobody has written in yet: an entry added there
 /// takes its place ([`Workspace::add_to_section`]).
@@ -29,7 +30,7 @@ const NOTHING_YET: &str = "_Nothing yet._";
 pub const VISION_PLACEHOLDER: &str = "_Not set yet — describe the goal: what are we building or fixing, and why? Set it with `{program} workspace vision \"…\"` (or edit this file)._";
 
 /// The header `memory/MEMORY.md` is created with, `{name}` to fill.
-pub(crate) const WS_MEMORY_HEADER: &str = "# {name} — task memory\n\nOne file per memory — a small, programmatically-explorable DB, not a single log to\nmerge-conflict on. Files are timestamp-prefixed, so this index (and the directory) list chronologically. **Committed + shared** for LIVE workspaces. Write with `{program} workspace remember \"…\"`, search with `{program} workspace recall [--query …]`, drop one with `{program} workspace forget <slug>`. Never put secrets here (vault only).\n";
+pub(crate) const WS_MEMORY_HEADER: &str = "# {name} — task memory\n\nOne file per memory — a small, programmatically-explorable DB, not a single log to\nmerge-conflict on. Files are timestamp-prefixed, so this index (and the directory) list chronologically. **Committed + shared** for LIVE workspaces. Write with the `memory_add` tool or `{program} workspace remember -w {name} \"…\"`, search with `{program} workspace recall [--query …]`, drop one with `{program} workspace forget <slug>`. Never put secrets here (vault only).\n";
 
 /// A committed template with the program named as `plane` spells it: `charter` until the
 /// project is migrated, `purlis` after (D-RN11a-1, as the markers are, D-RN2b-9).
@@ -45,6 +46,90 @@ pub fn vision_placeholder(plane: &Path) -> String {
 /// [`WS_MEMORY_HEADER`] for workspace `name`, as the plane at `plane` writes it.
 pub(crate) fn ws_memory_header(plane: &Path, name: &str) -> String {
     in_plane(WS_MEMORY_HEADER, plane).replace("{name}", name)
+}
+
+/// A line purlis wrote that names a workspace, renamed: every spelling it may still have under
+/// the old name, and the one it gets under the new (#3965).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Renamed {
+    /// What purlis wrote under the old name. A line that names the program is here once per
+    /// spelling the plane reads, so one written before the plane was migrated matches too.
+    pub was: Vec<String>,
+    /// What purlis writes under the new name, in the program spelling the plane writes now.
+    pub now: String,
+}
+
+impl Renamed {
+    /// Whether `line` is, word for word, a line purlis wrote under the old name.
+    pub fn matches(&self, line: &str) -> bool {
+        self.was.iter().any(|was| was == line)
+    }
+}
+
+/// A file purlis scaffolds with the workspace's name in it, renamed: its first line, and the
+/// line below it where purlis wrote the name for a command to run (`-w <name>`, #3880), when
+/// the file has one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NamedFile {
+    /// The file, relative to the workspace's directory.
+    pub file: &'static str,
+    /// The `# ` heading purlis wrote.
+    pub heading: Renamed,
+    /// The `-w <name>` line purlis wrote below the heading.
+    pub command: Option<Renamed>,
+}
+
+/// Every file purlis scaffolds with the workspace's name in it: the file, its heading with
+/// `{name}` to fill, and the template that holds its `-w {name}` line. One table, so the files
+/// a rename rewrites a heading in and those it rewrites a command line in cannot drift apart.
+const NAMED_FILES: [(&str, &str, Option<&str>); 4] = [
+    ("workspace.md", "# {name}", Some(CHARTER_TEMPLATE)),
+    (
+        "memory/MEMORY.md",
+        "# {name} — task memory",
+        Some(WS_MEMORY_HEADER),
+    ),
+    ("todos/MEMORY.md", "# Todos — workspace `{name}`", None),
+    ("refs/README.md", "# {name} — task references", None),
+];
+
+/// What `workspace rename` rewrites in the files purlis scaffolded for workspace `old`, now
+/// called `new`, in the plane at `plane`: each line as purlis wrote it, never a line a person
+/// wrote (#3965). The command lines come from the templates themselves, so a rename always
+/// matches what a template writes; the old line is matched in every program spelling the plane
+/// reads (`charter` before the plane was migrated, `purlis` after) and rewritten in the one it
+/// writes now.
+pub(crate) fn named_files(plane: &Path, old: &str, new: &str) -> Vec<NamedFile> {
+    let now_program = crate::names::BINARY.writes_for(plane);
+    let programs = std::iter::once(crate::names::BINARY.write)
+        .chain(crate::names::BINARY.reads.iter().copied())
+        .collect::<Vec<_>>();
+    NAMED_FILES
+        .iter()
+        .map(|&(file, heading, template)| NamedFile {
+            file,
+            heading: Renamed {
+                was: vec![heading.replace("{name}", old)],
+                now: heading.replace("{name}", new),
+            },
+            command: template.map(|template| {
+                let line = template
+                    .lines()
+                    .find(|line| line.contains("-w {name}"))
+                    .expect("the template names the workspace with -w");
+                let spelled = |program: &str, name: &str| {
+                    line.replace("{program}", program).replace("{name}", name)
+                };
+                Renamed {
+                    was: programs
+                        .iter()
+                        .map(|program| spelled(program, old))
+                        .collect(),
+                    now: spelled(now_program, new),
+                }
+            }),
+        })
+        .collect()
 }
 
 /// The header `todos/MEMORY.md` is created with, `{name}` to fill.

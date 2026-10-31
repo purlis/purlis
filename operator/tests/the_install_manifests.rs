@@ -168,7 +168,7 @@ fn the_operator_may_do_exactly_what_it_needs() {
                 "purlis-claims-use-their-pool,purlis-runner-namespaces",
                 "get,list,watch",
             ),
-            ("agents.x-k8s.io", "sandboxes", "", "get"),
+            ("agents.x-k8s.io", "sandboxes", "", "get,patch"),
             (
                 "extensions.agents.x-k8s.io",
                 "sandboxclaims",
@@ -342,9 +342,10 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     assert_eq!(rules.len(), 2, "{spec}");
     assert_eq!(strings(&rules[0]["apiGroups"]), ["runners.purlis.dev"]);
     assert_eq!(strings(&rules[0]["resources"]), ["claims"]);
-    assert_eq!(strings(&rules[0]["operations"]), ["CREATE"]);
+    // CREATE for who may make one, UPDATE for who may change the repos it names (#4204).
+    assert_eq!(strings(&rules[0]["operations"]), ["CREATE", "UPDATE"]);
     let validations = spec["validations"].as_array().expect("validations");
-    assert_eq!(validations.len(), 4, "{spec}");
+    assert_eq!(validations.len(), 5, "{spec}");
     let expression = |at: usize| {
         validations[at]["expression"]
             .as_str()
@@ -354,19 +355,127 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     };
     assert_eq!(
         expression(0),
-        "request.resource.group!='runners.purlis.dev'||authorizer.group('runners.purlis.dev').resource('pools').name(object.spec.pool).check('use').allowed()"
+        "request.resource.group!='runners.purlis.dev'||request.operation!='CREATE'||authorizer.group('runners.purlis.dev').resource('pools').name(object.spec.pool).check('use').allowed()"
     );
     // Who asked is stamped as the cluster signed them in (#2056).
     assert_eq!(
         expression(1),
-        "request.resource.group!='runners.purlis.dev'||object.spec.requester==request.userInfo.username"
+        "request.resource.group!='runners.purlis.dev'||request.operation!='CREATE'||object.spec.requester==request.userInfo.username"
+    );
+    // Only who asked changes the repos a claim names (#4204).
+    assert_eq!(
+        expression(4),
+        "request.resource.group!='runners.purlis.dev'||request.operation!='UPDATE'||(has(object.spec.forge)?has(oldObject.spec.forge)&&object.spec.forge==oldObject.spec.forge:!has(oldObject.spec.forge))||(request.userInfo.username==object.spec.requester&&authorizer.group('runners.purlis.dev').resource('pools').name(object.spec.pool).check('use').allowed())"
     );
 
     let binding = documents
         .iter()
-        .find(|d| d["kind"] == "ValidatingAdmissionPolicyBinding")
+        .find(|d| {
+            d["kind"] == "ValidatingAdmissionPolicyBinding"
+                && d["spec"]["policyName"] == "purlis-claims-use-their-pool"
+        })
         .expect("its binding");
     assert_eq!(binding["spec"]["policyName"], policy["metadata"]["name"]);
+    assert_eq!(strings(&binding["spec"]["validationActions"]), ["Deny"]);
+}
+
+/// The spec fields the pinned upstream's Sandbox declares.
+fn sandbox_spec_fields() -> Vec<String> {
+    let vendored = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("vendor/agent-sandbox")
+        .join(purlis_cluster_operator::upstream::VERSION)
+        .join("sandbox-with-extensions.yaml");
+    let definition = common::yaml_documents(&vendored)
+        .into_iter()
+        .find(|d| {
+            d["kind"] == "CustomResourceDefinition"
+                && d["metadata"]["name"] == "sandboxes.agents.x-k8s.io"
+        })
+        .expect("upstream's Sandbox");
+    let mut fields: Vec<String> = definition["spec"]["versions"][0]["schema"]["openAPIV3Schema"]
+        ["properties"]["spec"]["properties"]
+        .as_object()
+        .expect("its spec")
+        .keys()
+        .cloned()
+        .collect();
+    fields.sort();
+    fields
+}
+
+/// **The operator's `patch` on sandboxes is narrowed by the cluster** (#2058): RBAC cannot name
+/// a field or an owner, so a policy refuses the operator's service account any change to a
+/// Sandbox but its operating mode, and any change to one no SandboxClaim controls.
+#[test]
+fn the_operators_right_on_sandboxes_is_narrowed_to_the_mode_of_a_claims_sandbox() {
+    let documents = documents("policy.yaml");
+    let name = "purlis-operator-changes-only-a-sandboxs-mode";
+    let policy = documents
+        .iter()
+        .find(|d| d["kind"] == "ValidatingAdmissionPolicy" && d["metadata"]["name"] == name)
+        .expect("the policy on sandboxes");
+    let spec = &policy["spec"];
+    assert_eq!(spec["failurePolicy"], "Fail");
+    let rules = spec["matchConstraints"]["resourceRules"]
+        .as_array()
+        .expect("rules");
+    assert_eq!(rules.len(), 1, "{spec}");
+    assert_eq!(strings(&rules[0]["apiGroups"]), ["agents.x-k8s.io"]);
+    assert_eq!(strings(&rules[0]["resources"]), ["sandboxes"]);
+    assert_eq!(strings(&rules[0]["operations"]), ["UPDATE"]);
+    let squeezed = |value: &Value| {
+        value
+            .as_str()
+            .expect("an expression")
+            .split_whitespace()
+            .collect::<String>()
+    };
+    let conditions = spec["matchConditions"].as_array().expect("conditions");
+    assert_eq!(conditions.len(), 1);
+    assert_eq!(
+        squeezed(&conditions[0]["expression"]),
+        "request.userInfo.username=='system:serviceaccount:purlis-system:purlis-cluster-operator'"
+    );
+    let validations: Vec<String> = spec["validations"]
+        .as_array()
+        .expect("validations")
+        .iter()
+        .map(|v| squeezed(&v["expression"]))
+        .collect();
+    assert_eq!(validations.len(), 3, "{validations:?}");
+    assert!(
+        validations[0].contains("r.controller&&r.kind=='SandboxClaim'"),
+        "{}",
+        validations[0]
+    );
+    // Every spec field upstream declares is held as it was, but operatingMode.
+    let held: Vec<String> = sandbox_spec_fields()
+        .into_iter()
+        .filter(|field| field != "operatingMode")
+        .collect();
+    assert!(!held.is_empty());
+    for field in &held {
+        assert!(
+            validations[1].contains(&format!("object.spec.{field}==oldObject.spec.{field}")),
+            "spec.{field} is not held: {}",
+            validations[1]
+        );
+    }
+    assert!(!validations[1].contains("operatingMode"));
+    for field in ["labels", "annotations", "ownerReferences", "finalizers"] {
+        assert!(
+            validations[2].contains(&format!(
+                "object.metadata.{field}==oldObject.metadata.{field}"
+            )),
+            "metadata.{field} is not held"
+        );
+    }
+    let binding = documents
+        .iter()
+        .find(|d| {
+            d["kind"] == "ValidatingAdmissionPolicyBinding" && d["spec"]["policyName"] == name
+        })
+        .expect("its binding");
     assert_eq!(strings(&binding["spec"]["validationActions"]), ["Deny"]);
 }
 
@@ -559,4 +668,12 @@ fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_
             purlis_cluster_operator::person::QUOTA
         )
     );
+}
+
+/// A plain install, made without the chart's values, names no Secret: no Role reads one (#4204).
+#[test]
+fn the_plain_install_holds_no_role_on_a_secret() {
+    for document in documents("operator.yaml") {
+        assert_ne!(document["kind"], "Role", "{document}");
+    }
 }

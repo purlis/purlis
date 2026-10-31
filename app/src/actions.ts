@@ -39,7 +39,6 @@ import type {
   MemoryScope,
   PanelBlock,
   RowAction,
-  SkillBudget,
   SubjectCurations,
 } from "./bindings";
 import { activityTitle, activityView } from "./activity";
@@ -60,7 +59,6 @@ import {
   inWorkspace,
   skillStudioView,
 } from "./skillStudio";
-import { budgetSaid, budgetShort } from "./UseSkill";
 import { backSaid } from "./chatState";
 import { listed as namesListed } from "./chatMoves";
 import { handedOff, tasksOf, type ListedChat } from "./chatsTree";
@@ -134,7 +132,6 @@ import {
 } from "./tabs";
 import { isBrowser } from "./browsers";
 import { anyPoolKept, startAddingAPool } from "./pools";
-import { POOLS } from "./settings/pools";
 import { isDriven } from "./browserDriving";
 
 /**
@@ -155,7 +152,14 @@ export const READ_AGAIN = "workspace.readagain";
 /** What running an action answered: one line to say, or a refusal in the words it came in —
  *  with the Settings group that puts it right, where a setting does. */
 export type Ran =
-  { ok: true; said?: string } | { ok: false; refused: string; settings?: SettingsWay };
+  | { ok: true; said?: string }
+  | {
+      ok: false;
+      refused: string;
+      settings?: SettingsWay;
+      /** Where to go on from the refusal, as its notice offers it: Approve and start… (#3968). */
+      ways?: readonly SaidWay[];
+    };
 
 /** A way on from what an action answered (#3344): "Open git-ci-cd", the filled primary where
  *  `primary`, or "Add a vision". */
@@ -179,9 +183,19 @@ export type Said = {
   title?: string;
   details?: string;
   ways?: readonly SaidWay[];
-  /** A line about work still under way ("Cloning 2 repo(s)…"), which the next line replaces:
-   *  said, but not kept under Results. */
+  /** A line about work still under way ("Cloning 2 repos…"), which the next line replaces:
+   *  said, but not kept under Results, unless it is on a `track`. Its mark says it is running. */
   progress?: boolean;
+  /** How far that work has got, drawn as a bar under it: the stage, and its percent (#4079). */
+  meter?: { label: string; percent: number };
+  /** **The run of lines it is one of** (#3649): a line on a track takes the place of the one
+   *  kept before it on that track, in place, so a clone's progress turns into its result in one
+   *  notice. A progress line on a track is kept until then. */
+  track?: string;
+  /** **A line said just before it, in the same breath** (#3649): a workspace's ready notice,
+   *  said a moment before its clone's first line. The window draws only the newest line of a
+   *  render, so it keeps this one first, where it has not kept it already. */
+  after?: Said;
   /** **The one workspace it is about**, where it is about a whole workspace (a workspace made):
    *  its notice hangs from that workspace's chip in the title bar (`noticePlace.ts`, #3648). */
   workspace?: string;
@@ -190,9 +204,13 @@ export type Said = {
 /** What the window says of a row's answer: nothing for a quiet success. */
 export function saidOf(from: string, answer: Ran): Said | undefined {
   if (answer.ok) return answer.said ? { from, refused: false, words: answer.said } : undefined;
-  return answer.settings === undefined
-    ? { from, refused: true, words: answer.refused }
-    : { from, refused: true, words: answer.refused, settings: answer.settings };
+  return {
+    from,
+    refused: true,
+    words: answer.refused,
+    ...(answer.settings === undefined ? {} : { settings: answer.settings }),
+    ...(answer.ways === undefined ? {} : { ways: answer.ways }),
+  };
 }
 
 /**
@@ -596,8 +614,9 @@ export type Does =
   | { verb: "taskBranch"; id: string; act: "merge" | "discard" }
   /** Opens a new chat for one curation action on one subject, with the action's prompt typed
    *  into it and never sent (ADR 0061). It carries the action's id and nothing of its text: the
-   *  core resolves the subject again (`curate`), so what is typed is the core's prompt now. */
-  | { verb: "curate"; subject: string; action: string }
+   *  core resolves the subject again (`curate`), so what is typed is the core's prompt now.
+   *  `label` is only what a refusal's Approve and start… names it by (#3968). */
+  | { verb: "curate"; subject: string; action: string; label: string }
   | { verb: "quit" }
   /** Puts a branch file's or folder's path on the clipboard (FM-10): relative to the branch's
    *  folder, or `absolute`. The core places the path and copies it, so the absolute path is
@@ -764,9 +783,6 @@ export type Now = {
   vaults?: readonly string[];
   /** Whether the Skill studio's flag is on (#2765): its row is offered only then. */
   skillStudio?: boolean;
-  /** Each open chat's skill budget, by session, where it is known (#2775): what its Use skill…
-   *  row says, so a chat's budget is on its tab's menu wherever its pane leaves the chip out. */
-  skillBudgets?: Readonly<Record<number, SkillBudget>>;
   /**
    * The focused workspace's open todos, by slug and title (`Panels.todos`), one close and one
    * forget row each. Only the focused workspace's: the Todos panel is the one surface that
@@ -879,6 +895,9 @@ export type Now = {
   /** The other chats of a chat's workspace running where it runs (#3453), by name: they share
    *  its clones, so they move with it, and its Move rows name them. */
   movesWith?: (session: number) => readonly string[];
+  /** Whether Move here brings back the repositories a chat cloned on its runner (#3811): the
+   *  runner names the clones it holds. */
+  clonesComeBack?: (session: number) => boolean;
   /** Why each chat's Smart close stopped without its record (SI-8f), for its needs-you rows. */
   stopped?: Readonly<Record<number, string>>;
   /**
@@ -1132,7 +1151,7 @@ export type Doing = {
   taskBranch: (id: string, act: "merge" | "discard") => void;
   /** Opens a curation chat. The core can refuse — the action gone, a harness that cannot be
    *  typed into — so it answers a `Ran`. */
-  curate: (subject: string, action: string) => Promise<Ran>;
+  curate: (subject: string, action: string, label: string) => Promise<Ran>;
   quit: () => void;
   /** Each answers a `Ran`: the core places the path and can refuse it — a path that left the
    *  branch, a link, a file gone meanwhile — and says so in its own sentence. */
@@ -1436,9 +1455,16 @@ function can(id: string, title: string, does: Does, name?: string): Offer {
 export const MOVE_TO_RUNNER_NOTE =
   "Its branch, uncommitted work and conversation go with it at its next pause. Its browsers start fresh there.";
 
-/** What Move here says it does (#2048), and of a clone the runner made (#3454). */
+/**
+ * What Move here says it does (#2048), and of a clone the runner made (#3454): a runner before
+ * session protocol 1.51 cannot name its clones, so such a clone stays there.
+ */
 export const MOVE_HERE_NOTE =
   "Its branch, uncommitted work and conversation come back to this machine at its next pause. A repository cloned only on the runner stays there.";
+
+/** What Move here says it does from a runner that names its clones (1.51, #3811). */
+export const MOVE_HERE_WITH_CLONES_NOTE =
+  "Its branch, uncommitted work and conversation come back to this machine at its next pause, with each repository it cloned on the runner.";
 
 /** What a Move row says of the other chats of the workspace that move with it (#3453). */
 export const MOVE_TOGETHER_NOTE =
@@ -1593,7 +1619,12 @@ function curationRows(subject: SubjectCurations, cannotOpen: string | null): Off
     if (cannotOpen !== null) return { ...cannot(id, title, cannotOpen, name), group };
     const who = action.runner === null ? "with no persona" : `as ${action.runner}`;
     return {
-      ...can(id, title, { verb: "curate", subject: subject.subject, action: action.id }, name),
+      ...can(
+        id,
+        title,
+        { verb: "curate", subject: subject.subject, action: action.id, label: action.label },
+        name,
+      ),
       note: `Opens a chat ${who} in ${action.cwd}, with its prompt typed and not sent.`,
       group,
     };
@@ -2027,24 +2058,19 @@ export function catalogue(now: Now): Offer[] {
 
   // **Use skill… on a chat's tab** (#2775): one row per chat, behind the Skill studio's flag.
   // The palette lists the chat in front's alone (`menuOnly`, as Ask's); each tab's menu has its
-  // own. It opens a picker and types nothing until a skill is picked, so it sits above the line.
+  // own, and the key registry's `chat.useSkill` presses the one in front. It opens a picker and
+  // types nothing until a skill is picked, so it sits above the line. It says no budget: the
+  // chat's budget is the Skills view's to say (spec #3679 S8, #3954), which the pane's Skills
+  // chip opens.
   if (now.skillStudio) {
     for (const tab of now.tabs.order) {
       const chat = chatOf(now.tabs, tab);
       // A shell runs no tool with skills, as it has no profile to ask a persona on.
       if (chat === undefined || !(now.askable?.(chat) ?? false)) continue;
       const name = now.tabs.byId[tab].name;
-      const budget = now.skillBudgets?.[chat];
       offers.push({
-        ...can(
-          usingSkillId(tab),
-          budget === undefined ? "Use skill…" : `Use skill… (${budgetShort(budget)})`,
-          { verb: "useSkill", tab },
-        ),
-        note:
-          budget === undefined
-            ? `Chat ${name}: one of its skills, typed into it for you to send.`
-            : `Chat ${name}: one of its skills, typed into it for you to send. ${budgetSaid(budget)}.`,
+        ...can(usingSkillId(tab), "Use skill…", { verb: "useSkill", tab }),
+        note: `Chat ${name}: one of its skills, typed into it for you to send.`,
         ...(tab === now.tabs.inFront ? {} : { menuOnly: true as const }),
       });
     }
@@ -2155,7 +2181,9 @@ export function catalogue(now: Now): Offer[] {
     const others = now.movesWith?.(chat) ?? [];
     const together = others.length === 0 ? "" : ` with ${namesListed(others)}`;
     for (const to of now.movesTo?.(chat) ?? []) {
-      const note = to === null ? MOVE_HERE_NOTE : MOVE_TO_RUNNER_NOTE;
+      const here =
+        (now.clonesComeBack?.(chat) ?? false) ? MOVE_HERE_WITH_CLONES_NOTE : MOVE_HERE_NOTE;
+      const note = to === null ? here : MOVE_TO_RUNNER_NOTE;
       offers.push({
         ...can(
           `tab.move:${tab}:${to ?? ""}`,
@@ -2403,11 +2431,11 @@ export function catalogue(now: Now): Offer[] {
     ...can("settings.you", "Your settings…", { verb: "openYourSettings" }),
     note: "Your text sizes and your editor, on this machine.",
   });
-  // **Add a Docker pool…** (#2679): the way to this machine's first pool, there with or without
-  // a project, as Your settings… is. Nothing else about pools is listed until one is kept.
+  // **Add a pool…** (#2679): the way to this machine's first pool, there with or without a
+  // project, as Your settings… is. Its dialog adds a Docker or a cluster pool (#3292).
   offers.push({
-    ...can("pool.add", "Add a Docker pool…", { verb: "addDockerPool" }),
-    note: "A runner on your Docker, held to the limits you set.",
+    ...can("pool.add", "Add a pool…", { verb: "addDockerPool" }),
+    note: "A runner on your Docker, or one claimed in your team's cluster.",
   });
   // **Devices** (#2052): this machine and every runner it keeps, offered once it keeps a pool,
   // so nothing about runners shows before the first is added (spec #2041 story 6).
@@ -3626,7 +3654,7 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
         });
       return DID;
     case "curate":
-      return doing.curate(does.subject, does.action);
+      return doing.curate(does.subject, does.action, does.label);
     case "quit":
       doing.quit();
       return DID;
@@ -3677,9 +3705,9 @@ function settingsGroupRows(
     group,
     ...extra,
   });
-  // The Pools group only once this machine keeps a pool (#2679).
-  const you = SETTINGS_GROUPS.you.filter((one) => one.id !== POOLS || anyPoolKept());
-  const rows: Offer[] = you.map((one) => ({
+  // The Pools group with or without a pool, as Settings lists it (the person's ruling of
+  // 2026-10-30).
+  const rows: Offer[] = SETTINGS_GROUPS.you.map((one) => ({
     ...can(
       `settings.group:${one.id}`,
       `Your settings: ${one.label}`,

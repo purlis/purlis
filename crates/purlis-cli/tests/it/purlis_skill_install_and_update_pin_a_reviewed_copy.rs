@@ -239,6 +239,41 @@ fn update_lists_a_newer_commit_and_applies_it_only_when_asked() {
     assert!(now.contains("hooks.example.org"));
 }
 
+/// #4155: an update that newly refers to a built-in skill's name brings nothing along, as the
+/// built-in meets the reference, and goes ahead; the source's folder of that name is never copied.
+#[test]
+fn an_update_referring_to_a_built_in_skills_name_brings_nothing_along() {
+    let project = Project::new();
+    let root = project.root();
+    let url = project.url();
+    let installed = project.run(
+        &[
+            "skill", "install", &url, "notify", "--folder", "skills", "--yes",
+        ],
+        "",
+    );
+    assert!(installed.status.success(), "{}", text(&installed));
+    project.publish(&[
+        (
+            "skills/notify/SKILL.md",
+            "---\nname: notify\ndescription: Tells the team.\n---\n\nThen skills:secrets.\n",
+        ),
+        (
+            "skills/secrets/SKILL.md",
+            "---\nname: secrets\ndescription: Stands in.\n---\n",
+        ),
+    ]);
+
+    let updated = project.run(&["skill", "update", "notify", "--yes"], "");
+
+    let said = text(&updated);
+    assert!(updated.status.success(), "{said}");
+    assert!(!said.contains("Comes along: secrets"), "{said}");
+    assert!(!root.join("skills/secrets").exists());
+    let notify = std::fs::read_to_string(root.join("skills/notify/SKILL.md")).unwrap();
+    assert!(notify.contains("skills:secrets"), "{notify}");
+}
+
 #[test]
 fn a_chat_cannot_install_a_skill() {
     let project = Project::new();
@@ -286,4 +321,199 @@ fn what_a_source_says_reaches_the_terminal_escaped() {
     assert!(!said.contains('\u{1b}'), "{said:?}");
     assert!(!said.contains('\r'), "{said:?}");
     assert!(said.contains("⟦U+001B⟧[2J"), "{said}");
+}
+
+/// #4153: `--all` leaves out a skill the level has already, made there by hand, says so, and
+/// installs the rest.
+#[test]
+fn install_all_says_which_skills_are_there_already_and_installs_the_rest() {
+    let project = Project::new();
+    let root = project.root();
+    let url = project.url();
+    std::fs::create_dir_all(root.join("skills/notify")).unwrap();
+    std::fs::write(
+        root.join("skills/notify/SKILL.md"),
+        "---\nname: notify\ndescription: Made here.\n---\n",
+    )
+    .unwrap();
+
+    let out = project.run(
+        &[
+            "skill", "install", &url, "--all", "--folder", "skills", "--yes",
+        ],
+        "",
+    );
+
+    let said = text(&out);
+    assert!(out.status.success(), "{said}");
+    assert!(
+        said.contains("notify is there already at project, so it is left as it is."),
+        "{said}"
+    );
+    assert!(said.contains("Review of 1 skill"), "{said}");
+    assert!(root.join("skills/deploy/SKILL.md").exists());
+    assert!(
+        std::fs::read_to_string(root.join("skills/notify/SKILL.md"))
+            .unwrap()
+            .contains("Made here."),
+    );
+}
+
+/// #4024: `--all` reviews every skill the source offers that is not installed from it yet, asks
+/// once, and installs them as one change; `--yes` skips the question.
+#[test]
+fn install_all_reviews_every_skill_not_installed_yet_and_asks_once() {
+    let project = Project::new();
+    let root = project.root();
+    let url = project.url();
+
+    let declined = project.run(
+        &["skill", "install", &url, "--all", "--folder", "skills"],
+        "n\n",
+    );
+    let said = text(&declined);
+    assert_eq!(declined.status.code(), Some(1), "{said}");
+    assert!(said.contains("Review of 2 skills"), "{said}");
+    assert!(said.contains("Install 2 skills at project"), "{said}");
+    assert!(!root.join("skills").exists());
+
+    let accepted = project.run(
+        &[
+            "skill", "install", &url, "--all", "--folder", "skills", "--yes",
+        ],
+        "",
+    );
+    assert!(accepted.status.success(), "{}", text(&accepted));
+    let lock: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(root.join("skills.lock")).unwrap()).unwrap();
+    let mut names: Vec<&str> = lock["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|one| one["name"].as_str().unwrap())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, ["deploy", "notify"]);
+
+    let again = project.run(
+        &["skill", "install", &url, "--all", "--folder", "skills"],
+        "",
+    );
+    assert!(again.status.success(), "{}", text(&again));
+    assert!(
+        text(&again).contains("is installed already"),
+        "{}",
+        text(&again)
+    );
+
+    // A name and --all together are one ask too many.
+    let both = project.run(&["skill", "install", &url, "deploy", "--all"], "");
+    assert!(!both.status.success(), "{}", text(&both));
+    assert!(
+        text(&both).contains("cannot be used with '--all'"),
+        "{}",
+        text(&both)
+    );
+}
+
+/// #4172: an install at the project level granted to a workspace leaves the project's own
+/// notify as it is, says its grant does not reach that workspace yet, and widens it.
+#[test]
+fn install_with_a_grant_widens_the_grant_of_a_project_skill_it_refers_to() {
+    let project = Project::new();
+    let root = project.root();
+    let url = project.url();
+    std::fs::create_dir_all(root.join("skills/notify")).unwrap();
+    std::fs::write(
+        root.join("skills/notify/SKILL.md"),
+        "---\nname: notify\ndescription: Made here.\n---\n",
+    )
+    .unwrap();
+
+    let out = project.run(
+        &[
+            "skill", "install", &url, "deploy", "--folder", "skills", "--grant", "alpha", "--yes",
+        ],
+        "",
+    );
+
+    let said = text(&out);
+    assert!(out.status.success(), "{said}");
+    assert!(
+        said.contains(
+            "refers to notify, which is granted to root: it is left as it is, and the install \
+             grants it to alpha too"
+        ),
+        "{said}"
+    );
+    assert!(said.contains("notify is granted to alpha too"), "{said}");
+    for name in ["deploy", "notify"] {
+        let beside = std::fs::read_to_string(root.join(format!("skills/{name}.toml"))).unwrap();
+        assert!(beside.contains("alpha"), "{name}: {beside}");
+    }
+    assert!(
+        std::fs::read_to_string(root.join("skills/notify/SKILL.md"))
+            .unwrap()
+            .contains("Made here."),
+    );
+}
+
+/// #4186: an update of a project skill granted to a workspace relies on the project skills it
+/// refers to as an install with that grant does. The review says which grant it widens, and a
+/// skill it brings along lands with the updated skill's grant.
+#[test]
+fn an_update_with_a_grant_widens_what_it_relies_on_and_grants_what_it_brings() {
+    let project = Project::new();
+    let root = project.root();
+    let url = project.url();
+    let installed = project.run(
+        &[
+            "skill", "install", &url, "notify", "--folder", "skills", "--grant", "alpha", "--yes",
+        ],
+        "",
+    );
+    assert!(installed.status.success(), "{}", text(&installed));
+    std::fs::create_dir_all(root.join("skills/lint")).unwrap();
+    std::fs::write(
+        root.join("skills/lint/SKILL.md"),
+        "---\nname: lint\ndescription: Made here.\n---\n",
+    )
+    .unwrap();
+    project.publish(&[
+        (
+            "skills/notify/SKILL.md",
+            "---\nname: notify\ndescription: Tells the team.\n---\n\nThen skills:format and skills:lint.\n",
+        ),
+        (
+            "skills/format/SKILL.md",
+            "---\nname: format\ndescription: Formats.\n---\n",
+        ),
+        (
+            "skills/lint/SKILL.md",
+            "---\nname: lint\ndescription: Checks it.\n---\n",
+        ),
+    ]);
+
+    let updated = project.run(&["skill", "update", "notify", "--yes"], "");
+
+    let said = text(&updated);
+    assert!(updated.status.success(), "{said}");
+    assert!(
+        said.contains(
+            "refers to lint, which is granted to root: it is left as it is, and the update grants \
+             it to alpha too"
+        ),
+        "{said}"
+    );
+    assert!(said.contains("granted to alpha, as notify is"), "{said}");
+    assert!(said.contains("lint is granted to alpha too"), "{said}");
+    for name in ["format", "lint"] {
+        let beside = std::fs::read_to_string(root.join(format!("skills/{name}.toml"))).unwrap();
+        assert!(beside.contains("alpha"), "{name}: {beside}");
+    }
+    assert!(
+        std::fs::read_to_string(root.join("skills/lint/SKILL.md"))
+            .unwrap()
+            .contains("Made here."),
+    );
 }

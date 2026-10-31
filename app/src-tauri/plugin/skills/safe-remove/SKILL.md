@@ -39,11 +39,12 @@ Done when every memory, every open todo and every repo with unpushed work has a 
 
 A **durable learning** is one that is still true and still useful after the subject is gone: a
 decision and its reason, a gotcha, a verified fact about a system. Write each where it will be
-found:
+found. In a chat purlis started, the `persona_remember` tool writes to this chat's own persona,
+or with `shared` to every persona; the command names a persona:
 
 ```bash
-purlis persona remember --shared "<fact>"       # every persona needs it
-purlis persona remember <persona> "<fact>"      # one persona owns the domain
+purlis persona remember <persona> --shared "<fact>"   # every persona needs it
+purlis persona remember <persona> "<fact>"            # one persona owns the domain
 ```
 
 or the plane's docs, when it describes the plane itself. A todo that still matters moves to the

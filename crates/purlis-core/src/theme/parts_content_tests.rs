@@ -87,7 +87,7 @@ fn the_content_families_are_in_the_manifest_since_next() {
     assert_eq!(
         of("notice"),
         (
-            named(&["root", "message", "whose"]),
+            named(&["root", "message", "whose", "mark", "title"]),
             vec![("news".into(), true), ("trouble".into(), true), ("attention".into(), true)]
         )
     );
@@ -682,4 +682,102 @@ fn a_chat_pane_s_band_draws_its_notices_ground_and_words_itself() {
             "{part}: {notice:?}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// A card's mark and title (#3478)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_card_s_mark_and_title_are_reached_by_their_own_attributes() {
+    let sheet = sheet_of(json!({
+        "notice.mark.text": "accent.base",
+        "notice.title.text": "text.secondary",
+        "notice.title.font-weight": 600,
+    }));
+    for part in ["mark", "title"] {
+        assert!(
+            sheet.contains(&format!("[data-scope=\"notice\"][data-part=\"{part}\"]")),
+            "{part}: {sheet}"
+        );
+    }
+    assert!(sheet.contains("var(--accent-base)"), "{sheet}");
+    assert!(sheet.contains("var(--text-secondary)"), "{sheet}");
+}
+
+#[test]
+fn a_card_s_title_is_read_on_the_card_s_ground() {
+    // Words the colour of the card's own ground cannot be read: the check names the title, and
+    // it is drawn in its default.
+    let loaded = load(&with_parts(json!({ "notice.title.text": "surface.raised" })));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    let fell: Vec<String> = loaded
+        .theme
+        .appearances
+        .iter()
+        .flat_map(|theme| parts::fallen(theme).into_iter().map(|one| one.floor))
+        .collect();
+    assert!(fell.iter().any(|one| one.contains("title")), "{fell:?}");
+}
+
+// ---------------------------------------------------------------------------------------
+// A card's title and mark, read on each card's own ground (#4210)
+// ---------------------------------------------------------------------------------------
+
+/// What fell in each appearance of a theme over Purlis Classic with `tokens` in its dark
+/// appearance and `parts`, as `part: floor`.
+fn fell_over_classic(tokens: Value, parts: Value) -> Vec<String> {
+    let loaded = load(&json!({
+        "name": "Probe",
+        "extends": "purlis-classic",
+        "appearances": [{ "id": "dark", "tokens": tokens }],
+        "parts": parts,
+    }));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    loaded
+        .theme
+        .appearances
+        .iter()
+        .flat_map(|theme| {
+            parts::fallen(theme)
+                .into_iter()
+                .map(|one| format!("{}: {}", one.part, one.floor))
+        })
+        .collect()
+}
+
+#[test]
+fn a_news_card_s_title_is_read_on_the_overlay_it_stands_on() {
+    // The muted words read on the raised ground a Notice's box stands on, in Classic dark; a
+    // grey overlay is where a news card is drawn, and there they do not, though its mark does.
+    let fell = fell_over_classic(
+        json!({ "surface.overlay": "#4d4d4a" }),
+        json!({ "notice.title.text": "text.muted" }),
+    );
+    assert!(
+        fell.iter()
+            .any(|one| one.starts_with("notice.root.news") && one.contains("title's words")),
+        "{fell:?}"
+    );
+    // Trouble's and attention's cards stand on their own grounds, which the overlay does not
+    // reach.
+    assert!(
+        !fell.iter().any(|one| one.starts_with("notice.root.trouble")),
+        "{fell:?}"
+    );
+}
+
+#[test]
+fn a_news_card_s_mark_is_its_success_colour_held_as_a_mark() {
+    // Only the Notice's fill and words change, to a ground the success colour's own: its words
+    // read on it, and the news mark, drawn in that colour, cannot be seen there.
+    let fell = fell_over_classic(
+        json!({ "surface.hover": "#3fb950" }),
+        json!({ "notice.root.fill": "surface.hover", "notice.root.text": "surface.base" }),
+    );
+    assert!(
+        fell.iter()
+            .any(|one| one.starts_with("notice.root.news") && one.contains("mark's marks")),
+        "{fell:?}"
+    );
 }
