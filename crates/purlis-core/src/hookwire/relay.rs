@@ -1751,9 +1751,6 @@ mod hosted;
 
 pub use hosted::exec_waits_said;
 
-#[cfg(test)]
-mod tests;
-
 /// A host's hearing whose asks are answered by `answer` in a window, on a thread of the window's
 /// own, what crosses going as JSON: for a test of an ask that runs there (#4161).
 #[cfg(test)]
@@ -1796,3 +1793,6 @@ pub(crate) fn to_a_window_answering(tokens: Arc<ChatTokens>, answer: super::Answ
     *host.lock().expect("the host") = Some(Arc::clone(&relaying));
     relaying.hearing(tokens)
 }
+
+#[cfg(test)]
+mod tests;

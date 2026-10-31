@@ -811,8 +811,7 @@ fn a_chats_clone_through_the_host_that_keeps_making_progress_outlasts_the_askers
 fn a_chats_clone_through_the_host_that_shows_no_life_is_given_up_on_at_the_askers_wait() {
     let within = Duration::from_millis(800);
     let started = std::time::Instant::now();
-    let (answered, _world) =
-        asked_through_the_host("sleep 30", Duration::from_secs(60), within);
+    let (answered, _world) = asked_through_the_host("sleep 30", Duration::from_secs(60), within);
     let gave_up = answered.expect_err("given up on");
     assert!(
         matches!(

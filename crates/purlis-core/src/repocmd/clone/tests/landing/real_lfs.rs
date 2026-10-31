@@ -363,23 +363,31 @@ fn real_git_lfs_downloading_slowly_past_the_stall_limit_is_not_stopped() {
     if !real_git_lfs() {
         return;
     }
-    // 12 s in all, three stall limits, a chunk every half second.
-    let object = Object::of(24, 3);
+    // 12 s in all, three stall limits, a chunk every half second. The small file ends first, and
+    // git-lfs counts files, so its meter's own line moves the percent part way.
+    let (small, large) = (Object::of(4, 7), Object::of(24, 3));
     let server = LfsServer::serving(
-        vec![object.clone()],
+        vec![small.clone(), large.clone()],
         Sending::Slowly {
             gap: Duration::from_millis(500),
         },
     );
-    let world = World::holding_real_large_files("widget", &[&object], &server);
+    let world = World::holding_real_large_files("widget", &[&small, &large], &server);
 
     let (code, said, seen, took) = world.real_clone("widget", STALL, true);
 
     assert_eq!(code, 0, "{said:?}");
     assert!(took > STALL * 2, "it never outlasted the limit: {took:?}");
-    assert!(std::fs::read(world.dest("widget").join("file0.bin")).unwrap() == object.bytes);
+    assert!(std::fs::read(world.dest("widget").join("file1.bin")).unwrap() == large.bytes);
     let percents: Vec<u8> = seen.iter().map(|(_, percent)| *percent).collect();
     assert!(percents.is_sorted(), "{seen:?}");
+    // Only git-lfs's meter, read in its own words, can say this: the stage's start says 95, and
+    // the landing 100.
+    assert!(
+        seen.iter()
+            .any(|(stage, percent)| *stage == Stage::LargeFiles && (96..100).contains(percent)),
+        "{seen:?}"
+    );
 }
 
 /// A clone of a server that sends as `sending` is stopped at the limit, in LFS's words.
@@ -439,6 +447,7 @@ fn real_git_lfs_with_no_credentials_for_its_server_fails_and_leaves_nothing() {
         took < Duration::from_secs(30),
         "it waited on a prompt: {took:?}"
     );
+    assert!(server.batches() >= 1, "git-lfs never asked its server");
     assert_eq!(server.asked.downloads.load(Ordering::SeqCst), 0);
     assert!(!world.dest("widget").exists(), "{said:?}");
     assert!(!world.hidden("widget").exists(), "{said:?}");
@@ -450,13 +459,11 @@ fn a_repo_with_no_large_files_never_meets_real_git_lfs() {
     if !real_git_lfs() {
         return;
     }
-    let server = LfsServer::serving(Vec::new(), Sending::AtOnce);
     let world = World::holding(&["widget"]);
 
     let (code, said, seen, _) = world.real_clone("widget", Duration::from_secs(60), true);
 
     assert_eq!(code, 0, "{said:?}");
-    assert_eq!(server.batches(), 0);
     assert!(world.dest("widget").join("README.md").is_file());
     assert!(
         !seen.iter().any(|(stage, _)| *stage == Stage::LargeFiles),
