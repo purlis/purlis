@@ -68,6 +68,7 @@ async fn a_runner(
         keeping: Arc::new(|_, _| Ok(ProfileStanding::SignedOut)),
         forgetting: Arc::new(|_, _| Ok(())),
         listing: Arc::new(|_| Ok(Vec::new())),
+        holding: Arc::new(|_, _, _| Ok((Vec::new(), false))),
         delivering: Arc::new(move |target| callback::deliver_waiting_in(&waiting_in, target)),
     };
     let place = place.clone();

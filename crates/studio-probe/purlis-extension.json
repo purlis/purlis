@@ -14,7 +14,7 @@
     "runs": "bin/studio-probe",
     "skill-source": { "title": "Probe skills" },
     "grader": { "title": "Probe grader" },
-    "skill-lint": { "title": "Probe lint" },
+    "skill-lint": { "title": "Probe lint", "many-at-once": true },
     "skill-template": [
       { "id": "probe", "title": "Probe", "about": "A skill the probe writes, with its name and description." }
     ],

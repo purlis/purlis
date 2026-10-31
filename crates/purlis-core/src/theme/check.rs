@@ -836,8 +836,9 @@ pub struct Fit {
     pub height: &'static str,
 }
 
-/// **Every line that has to fit in its box.** The control's box is a field (`.ui-input`): it is
-/// `size.control` tall and its text is the window's words (`font-size.base`) on the body line
+/// **Every line that has to fit in its box.** The control's box is a field (the field family's
+/// text input, `ui/field/field.css`): it is `size.control` tall and its text is the window's
+/// words (`font-size.base`) on the body line
 /// (`line-height.body`, the `:root`'s). A button is as tall, and its label sits on a line of 1
 /// (`ui/button/button.css`), so it fits wherever a field's text does; a strip's largest words are a tab's
 /// title (`font-size.md`, `.tabs [role="tab"]`) on the body line.

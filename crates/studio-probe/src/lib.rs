@@ -256,6 +256,7 @@ fn studio(ask: &serde_json::Value) -> serde_json::Value {
         "findings" => serde_json::json!({
             "findings": [{ "says": format!("the probe was handed {files} files of {}", word("skill")) }],
         }),
+        "findings-of-each" => findings_of_each(ask),
         "template" => serde_json::json!({
             "text": format!(
                 "---\nname: {}\ndescription: {}\n---\n\n# {}\n\nWritten by the studio probe.\n",
@@ -278,6 +279,35 @@ fn studio(ask: &serde_json::Value) -> serde_json::Value {
         "route" => routed(ask),
         other => serde_json::json!({ "error": format!("the probe has no answer to {other:?}") }),
     }
+}
+
+/// **A lint's answer about many skills at once** (#4195): for each skill asked, in order, how
+/// many files it was handed and how many skills the one question held.
+fn findings_of_each(ask: &serde_json::Value) -> serde_json::Value {
+    let skills = ask
+        .get("skills")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let many = skills.len();
+    let answered: Vec<serde_json::Value> = skills
+        .iter()
+        .map(|one| {
+            let name = one
+                .get("skill")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
+            let files = one
+                .get("files")
+                .and_then(serde_json::Value::as_array)
+                .map_or(0, Vec::len);
+            serde_json::json!({
+                "skill": name,
+                "findings": [{ "says": format!("the probe was handed {files} files of {name} in one question of {many}") }],
+            })
+        })
+        .collect();
+    serde_json::json!({ "skills": answered })
 }
 
 /// The skill whose name makes the probe's router take longer than any router has.

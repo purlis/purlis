@@ -397,9 +397,23 @@ use crate::view::{Limits, Views};
 /// and answers it in `program_started` and `programs` (`prompt_key`), so the window that started
 /// or takes back the chat digests what it types under the same key. A host before 1.60 ignores
 /// the field and answers none, and its chats' prompts are marked under no key.
+///
+/// 1.61 added sending only what changed of a profile's settings (#4088, spec #2041):
+/// `settings_held` answers the path and digest of each settings file a runner holds for the
+/// desktop on this link, read off its disk at that moment, and `keep_profile` may carry
+/// `settings_changed`, which has the runner keep what it holds with what was staged in place and
+/// what it names removed, only where the whole result is the digest it names. Carried out and
+/// refused as `keep_profile` is. The desktop sends such a runner all of them on any refusal, and a
+/// host before 1.61 is sent all of them, as before.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 60,
+    minor: 61,
+};
+
+/// The version that first says which settings files it holds and keeps only what changed (#4088).
+pub const KNOWS_SETTINGS_HELD: Version = Version {
+    major: 1,
+    minor: 61,
 };
 
 /// The version that first hands a sign-in's redirect to a login on a runner (#4044).
@@ -828,6 +842,16 @@ pub enum Command {
     /// keeps them all (1.56, #4081). Answers [`Answer::Done`]. As `keep_profile`, the paired
     /// desktop's alone, on its own link.
     StageProfileSettings(SettingsBatch),
+    /// The desktop on this link asks which settings files the runner holds of its profile
+    /// `profile`, with a digest of each (1.61, #4088): those whose paths sort after `after`,
+    /// answered [`Answer::SettingsHeld`]. A profile the runner does not keep for that desktop
+    /// holds none. Carried out and refused as [`Command::KeepProfile`] is
+    /// ([`crate::grants::Power::KeepProfile`]).
+    SettingsHeld {
+        profile: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        after: Option<String>,
+    },
     /// The desktop on this link asks which of its profiles the runner keeps (1.57, #4060): the
     /// runner's host answers [`Answer::Profiles`] with the name of each profile it keeps for
     /// that desktop, never one of its own or another desktop's. Carried out and refused as
@@ -1228,6 +1252,82 @@ pub struct ProfileToKeep {
     /// files sent here. It refuses a count that is not what it holds, and both fields at once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings_staged: Option<u32>,
+    /// That what was staged is only what changed (1.61, #4088): the runner keeps what it holds,
+    /// with those files in place and these removed, or refuses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_changed: Option<ChangedSettings>,
+}
+
+/// **What a [`ProfileToKeep`] says of the settings it did not send** (1.61, #4088).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChangedSettings {
+    /// The paths the desktop no longer has.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed: Vec<String>,
+    /// [`whole_settings_digest`] of all the settings as the desktop has them. A runner keeps
+    /// nothing whose result is not this, so what it listed cannot decide what it keeps.
+    pub whole: String,
+}
+
+/// **A settings file a runner holds** (1.61, #4088): its path, and [`settings_digest`] of its
+/// bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeldSetting {
+    pub path: String,
+    pub digest: String,
+}
+
+/// **The digest of a settings file's bytes** (1.61, #4088): SHA-256, in lower-case hex.
+pub fn settings_digest(bytes: &[u8]) -> String {
+    use sha2::Digest as _;
+    crate::auth::hex(&sha2::Sha256::digest(bytes))
+}
+
+/// Whether `digest` is one [`settings_digest`] could have written.
+pub fn is_settings_digest(digest: &str) -> bool {
+    digest.len() == 64
+        && digest
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// **The digest of a profile's settings together** (1.61, #4088): each path, its length first so
+/// that no two sets read alike, and its file's digest, in the order of the paths.
+pub fn whole_settings_digest<'a>(files: impl IntoIterator<Item = (&'a str, &'a str)>) -> String {
+    use sha2::Digest as _;
+    let sorted: BTreeMap<&str, &str> = files.into_iter().collect();
+    let mut whole = sha2::Sha256::new();
+    whole.update(b"purlis profile settings 1\0");
+    for (path, digest) in sorted {
+        whole.update((path.len() as u64).to_le_bytes());
+        whole.update(path.as_bytes());
+        whole.update(digest.as_bytes());
+    }
+    crate::auth::hex(&whole.finalize())
+}
+
+/// **The page of `held` an [`Answer::SettingsHeld`] carries**, within a control frame: those
+/// after `after` in the order of their paths, and whether more follow.
+pub fn settings_held_page(
+    mut held: Vec<HeldSetting>,
+    after: Option<&str>,
+) -> (Vec<HeldSetting>, bool) {
+    held.sort_by(|a, b| a.path.cmp(&b.path));
+    let mut size = 0;
+    let mut page = Vec::new();
+    for one in held {
+        if after.is_some_and(|after| one.path.as_str() <= after) {
+            continue;
+        }
+        size += PIECE_FRAMING
+            + one.digest.len()
+            + serde_json::to_string(&one.path).map_or(0, |p| p.len());
+        if size > MOST_BATCH_BYTES && !page.is_empty() {
+            return (page, true);
+        }
+        page.push(one);
+    }
+    (page, false)
 }
 
 /// **One settings file of a profile** (1.50, #3448): its path under the harness's settings
@@ -1783,6 +1883,13 @@ pub enum Answer {
     /// The profiles a runner keeps for the desktop on this link, by name:
     /// [`Command::KeptProfiles`] (1.57).
     Profiles { names: Vec<String> },
+    /// The settings files a runner holds of a profile, a page at a time:
+    /// [`Command::SettingsHeld`] (1.61).
+    SettingsHeld {
+        files: Vec<HeldSetting>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        more: bool,
+    },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Where the host's own event log ends: [`Command::LogEnd`] (1.41).
@@ -2149,6 +2256,7 @@ wire_words!(Command {
     KeepProfile => "keep_profile",
     ForgetProfile => "forget_profile",
     StageProfileSettings => "stage_profile_settings",
+    SettingsHeld => "settings_held",
     KeptProfiles => "kept_profiles",
     SignInRedirect => "sign_in_redirect",
     RelayTo => "relay_to",
@@ -2211,6 +2319,7 @@ impl Command {
             Command::KeepProfile(_)
             | Command::ForgetProfile { .. }
             | Command::StageProfileSettings(_)
+            | Command::SettingsHeld { .. }
             | Command::KeptProfiles => Power::KeepProfile,
             Command::SignInRedirect { .. } => Power::SignInRedirect,
             Command::RelayTo { .. } => Power::RelayTo,
@@ -2289,6 +2398,7 @@ wire_words!(Answer {
     Clones => "clones",
     ProfileKept => "profile_kept",
     Profiles => "profiles",
+    SettingsHeld => "settings_held",
     Subscribed => "subscribed",
     LogEnd => "log_end",
     RelayedTo => "relayed_to",
@@ -2723,6 +2833,7 @@ impl Lane {
             | Command::KeepProfile(_)
             | Command::ForgetProfile { .. }
             | Command::StageProfileSettings(_)
+            | Command::SettingsHeld { .. }
             | Command::KeptProfiles
             | Command::SignInRedirect { .. }
             | Command::RelayTo { .. }
@@ -3414,6 +3525,24 @@ impl Client {
     /// on its link from that desktop.
     pub async fn stage_profile_settings(&self, batch: SettingsBatch) -> Result<(), CallError> {
         self.done(Command::StageProfileSettings(batch)).await
+    }
+
+    /// A page of the settings files the runner holds of this link's desktop's profile `profile`
+    /// (1.61, #4088), and whether more follow. Refused by every host but a runner's of 1.61 or
+    /// later, on its link from that desktop.
+    pub async fn settings_held(
+        &self,
+        profile: &str,
+        after: Option<String>,
+    ) -> Result<(Vec<HeldSetting>, bool), CallError> {
+        let asked = Command::SettingsHeld {
+            profile: profile.to_owned(),
+            after,
+        };
+        match self.call(asked).await? {
+            Answer::SettingsHeld { files, more } => Ok((files, more)),
+            other => Err(unexpected(&other)),
+        }
     }
 
     /// The name of each profile the runner keeps for this link's desktop (1.57, #4060). Refused

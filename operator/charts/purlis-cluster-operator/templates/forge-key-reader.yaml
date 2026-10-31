@@ -1,0 +1,43 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+{{- /*
+The one Secret right the operator can hold (#4204, ruling Q4 on #3807): `get`, of the Secrets the
+values name, in its own namespace. Rendered only where they name one: an empty resourceNames would
+mean every Secret. Its signing key is never one of them, since the kubelet mounts that.
+*/}}
+{{- with (.Values.forge).keySecretNames }}
+{{- range . }}
+{{- if or (not .) (eq . "purlis-cluster-operator-signing-key") }}
+{{- fail "forge.keySecretNames names a Secret the operator may not read: an empty name, or its own signing key" }}
+{{- end }}
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: purlis-forge-key-reader
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "purlis-cluster-operator.labels" $ | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames:
+      {{- toYaml . | nindent 6 }}
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: purlis-forge-key-reader
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "purlis-cluster-operator.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: purlis-forge-key-reader
+subjects:
+  - kind: ServiceAccount
+    name: purlis-cluster-operator
+    namespace: {{ $.Release.Namespace }}
+{{- end }}

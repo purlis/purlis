@@ -1470,9 +1470,10 @@ their rows are tabs and sentences with no part that gives way, so `.more-menu` h
 **What the window draws over itself is one surface** (#1845). A dialog, a popover, a menu and a
 tooltip share one ground (`surface.overlay`), one border, one corner (`--radius-lg`) and one lift
 (`--elevation-overlay`), so they read as related; a dialog and a popover share one padding
-(`--space-6`). The classes are in `app/src/primitives/overlays.css`, after the control families in
-the same `components` layer, and the popover and menu families' surface is this one, a select's
-list's included.
+(`--space-6`). Each family draws it in its own sheet, in the `components` layer (`ui/dialog`,
+`ui/popover`, `ui/tooltip`), and the popover and menu families' surface is this one, a select's
+list's included. The Radix-era classes (`.ui-menu`, `.ui-menu-item`, `.ui-popover`,
+`.ui-overlay-arrow`) and `primitives/overlays.css`, which drew them, are retired (#3365).
 
 | Overlay | Class                                         | On                                                         |
 | ------- | --------------------------------------------- | ---------------------------------------------------------- |
@@ -1481,14 +1482,14 @@ list's included.
 | Popover | the popover family's surface ([above](#the-menu-and-popover-families)) | `AnchoredPopover`, `HeldPopover`, `PopoverDialog` |
 
 (`--elevation-overlay`), so they read as related. A dialog is [the dialog
-family's](#the-dialog-family), drawn on that surface by `app/src/ui/dialog/dialog.css`; the other
-classes are in `app/src/primitives/overlays.css`, after the control families in the same
-`components` layer, and the menu's surface is this one.
+family's](#the-dialog-family), drawn on that surface by `app/src/ui/dialog/dialog.css`; a popover
+and a menu are the popover family's (`app/src/ui/popover/popover.css`), and a tooltip the tooltip
+family's, each in the same `components` layer.
 
 | Overlay | Class                                         | On                                                         |
 | ------- | --------------------------------------------- | ---------------------------------------------------------- |
 | Dialog  | the dialog family's parts (`data-scope="dialog"`) | `Dialog`, `AlertDialog`, `DialogSurface`               |
-| Popover | `.ui-popover`; its arrow `.ui-overlay-arrow`  | Radix Popover's `Content` and `Arrow`                      |
+| Popover | the popover family's surface ([above](#the-menu-and-popover-families)) | `AnchoredPopover`, `HeldPopover`, `PopoverDialog` |
 | Tooltip | the tooltip family's `root` part ([the tooltip family](#the-tooltip-family)) | React Aria's `Tooltip`, wrapped in `app/src/ui/tooltip` |
 | Menu    | the popover family's surface, its `menu` variant | `Menu`, a context menu's too                      |
 
