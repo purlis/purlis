@@ -359,7 +359,7 @@ pub async fn machine_profile_remove(
 }
 
 /// What a watcher needs of the open project `held`, holding it only weakly: a closing project
-/// goes as it would.
+/// goes as it would. A shell that ran `exit` counts as closed, its tab open or not (#4202).
 fn watched_project(held: &std::sync::Arc<crate::planes::Held>) -> crate::signinwatch::Project {
     let (shell, open) = (
         std::sync::Arc::downgrade(held),
@@ -373,7 +373,7 @@ fn watched_project(held: &std::sync::Arc<crate::planes::Held>) -> crate::signinw
         shell_open: Box::new(move |tab| {
             shell
                 .upgrade()
-                .is_some_and(|held| held.chats().is_shell_at(tab, &shell_root))
+                .is_some_and(|held| held.chats().runs_a_shell_at(tab, &shell_root))
         }),
         project_open: Box::new(move || open.upgrade().is_some_and(|held| !held.chats().ending())),
         told: Box::new(held.hooks().asks_teller()),
