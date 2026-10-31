@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
@@ -16,6 +16,7 @@ import type {
   PlaneId,
 } from "./bindings";
 import { forgetProjectThemes } from "./projectTheme";
+import type { Place } from "./pieceViews";
 import type { WorkspaceState } from "./workspaceState";
 import type { Offer } from "./actions";
 import { drawnWith } from "./cascade.testkit";
@@ -671,13 +672,24 @@ describe("a file or folder row's menu (FM-10)", () => {
 
 describe("Show in Explorer in a workspace (#3308)", () => {
   /** The explorer on `spot`, then asked to show a repo skill's folder of the `svc` clone. */
-  function revealing(spot: Spot | undefined, onPick = vi.fn(), piece?: string) {
+  function revealing(
+    spot: Spot | undefined,
+    onPick = vi.fn(),
+    piece?: string,
+    more: {
+      state?: WorkspaceState;
+      focus?: Place;
+      onFocus?: (focus: Place | undefined) => void;
+    } = {},
+  ) {
     const drawn = (reveal?: { repo: string; piece?: string; folder: string; asked: number }) => (
       <ChatsHere.Provider value={fixedChats(nothingKnown)}>
         <Explorer
           plane={PLANE}
           workspace="alpha"
-          state={STATE}
+          state={more.state ?? STATE}
+          focus={more.focus}
+          onFocus={more.onFocus}
           chats={[]}
           spot={spot}
           onPick={onPick}
@@ -721,6 +733,33 @@ describe("Show in Explorer in a workspace (#3308)", () => {
     await vi.waitFor(() => expect(onPick).toHaveBeenCalledWith(PICKED));
   });
 
+  it("waits for the clone's branch folders before it picks one (#4326)", async () => {
+    core({ ":": [] });
+    const onPick = revealing(undefined, vi.fn(), "one", { state: { ...STATE, pieces: {} } });
+    await new Promise((settle) => setTimeout(settle, 50));
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("lapses an ask of a branch folder that is gone (#4326)", async () => {
+    core({ ":": [] });
+    const onPick = revealing(undefined, vi.fn(), "gone");
+    await new Promise((settle) => setTimeout(settle, 50));
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("moves a cockpit on another branch to the branch folder asked for (#4326)", async () => {
+    core({ ":": [], "one:": [] });
+    const onFocus = vi.fn();
+    revealing(undefined, vi.fn(), "two", {
+      state: { ...STATE, pieces: { svc: [ONE, { ...ONE, piece: "two" }] } },
+      focus: { workspace: "alpha", repo: "svc", piece: "one" },
+      onFocus,
+    });
+    await waitFor(() =>
+      expect(onFocus).toHaveBeenCalledWith({ workspace: "alpha", repo: "svc", piece: "two" }),
+    );
+  });
+
   it("opens a branch folder's folders down to a repo skill's once picked (#4326)", async () => {
     const asked = core({
       "one:": [entry(".claude", { kind: "folder" })],
@@ -729,7 +768,7 @@ describe("Show in Explorer in a workspace (#3308)", () => {
     });
     revealing(PICKED, vi.fn(), "one");
 
-    await vi.waitFor(() => expect(row("file:svc/one:.claude/skills/lint-rs")).toHaveFocus());
+    await waitFor(() => expect(row("file:svc/one:.claude/skills/lint-rs")).toHaveFocus());
     expect(asked).toEqual(expect.arrayContaining(["one:.claude", "one:.claude/skills"]));
   });
 });

@@ -291,7 +291,8 @@ export function Explorer({
    * the project's own files (`repo` `""`), at the plane root, or one inside a clone (`repo`) of
    * the workspace shown, by its path in the clone. Each time `asked` moves, the folders above it
    * are opened and the keyboard lands on its row once it is drawn; in a workspace whose *Files*
-   * are of another branch, the workspace itself is picked first, which lists every clone's own.
+   * are of another branch, the workspace itself is picked first, which lists every clone's own,
+   * or, for a folder in a branch folder (#4326), that branch folder.
    * A folder of the other kind waits until Explorer is where it is.
    */
   reveal?: { repo: string; piece?: string; folder: string; asked: number };
@@ -647,16 +648,30 @@ export function Explorer({
         revealed.current = revealSeen;
         return;
       }
-      movedFor.current = revealSeen;
       if (wanted.piece === null) {
+        movedFor.current = revealSeen;
         if (cockpit !== undefined) onFocus?.(undefined);
         else onPick(undefined);
-      } else if (cockpit !== undefined) {
-        onFocus?.({ workspace: wanted.workspace, repo: wanted.repo, piece: wanted.piece });
-      } else {
-        const path = state.pieces?.[wanted.repo]?.find((one) => one.piece === wanted.piece)?.path;
-        onPick({ repo: wanted.repo, piece: wanted.piece, path: path ?? "" });
+        return;
       }
+      if (cockpit !== undefined) {
+        movedFor.current = revealSeen;
+        onFocus?.({ workspace: wanted.workspace, repo: wanted.repo, piece: wanted.piece });
+        return;
+      }
+      // A pick holds the branch folder's path, where the next chat starts: it waits for the
+      // clone's branch folders to be read, and a branch folder that is gone lapses the ask.
+      const pieces = state.pieces[wanted.repo];
+      if (pieces === undefined) return;
+      const path = pieces.find((one) => one.piece === wanted.piece)?.path;
+      if (path === undefined) {
+        revealed.current = revealSeen;
+        return;
+      }
+      movedFor.current = revealSeen;
+      // A picked branch's filter narrows its tree, which would hide the row asked for.
+      setFilter("");
+      onPick({ repo: wanted.repo, piece: wanted.piece, path });
       return;
     }
     const nav = navRef.current;

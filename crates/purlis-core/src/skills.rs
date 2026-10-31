@@ -2272,13 +2272,10 @@ pub fn branch_folder_rows(
     if !clones_of_chat(plane, workspace, cwd).is_empty() {
         return Vec::new();
     }
-    let checkouts = checkouts_of_chat(plane, workspace, cwd);
-    if checkouts.is_empty() {
+    let outside = repo_skills_of_chat(harness, plane, workspace, cwd);
+    if outside.is_empty() {
         return Vec::new();
     }
-    let adapter = harness.adapter().plugins();
-    let choices = crate::harness_plugin::Choices::read_in(plane, Some(workspace));
-    let outside = crate::harness_plugin::repo_skills(adapter, &choices, &checkouts);
     let route = harness.skills();
     let set = studio_set(built_in, plane, Some(workspace), persona, route, Some(env))
         .with_outside(route, outside.iter().cloned());
