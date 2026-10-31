@@ -481,6 +481,9 @@ pub(crate) struct Running {
     /// Its latest step told to the window, where it is a skill's grade: what a page that opens
     /// while it runs starts from (#3928). `None` for a router's grade.
     pub(crate) step: Option<SkillGradeStep>,
+    /// Its latest step told to the window, where it is a router's grade (#4222): what its page
+    /// starts from when it opens while the grade runs. `None` for a skill's grade.
+    pub(crate) router_step: Option<crate::routergrade::RouterGradeStep>,
 }
 
 /// **The grades running in this app**, by id: one per project at a time.
@@ -709,6 +712,7 @@ pub(crate) fn begin(
                     .then(|| grades::after_edit::key(&level, &skill))
                     .flatten(),
                 step: Some(step_of(Spent::default(), 0, None, None)),
+                router_step: None,
             },
         );
     }

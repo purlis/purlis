@@ -359,6 +359,7 @@ macro_rules! app_commands {
                 routergrade::router_grade_set_cap,
                 routergrade::router_grade_scorecard,
                 routergrade::router_grade_chat,
+                routergrade::router_grade_running,
                 skillgrade::after_edit::skill_grade_after_edit,
                 skillgrade::after_edit::skill_grade_after_edit_on,
                 skillgrade::after_edit::skill_grade_after_edit_off,

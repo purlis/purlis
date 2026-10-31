@@ -770,6 +770,26 @@ fn apart_sets(carried: &[State]) -> Vec<Vec<State>> {
     sets
 }
 
+/// **The parts held to their reading floor in every tint** (#4250), by family and part: the title
+/// bar's waiting count is a wash the bar's own ground shows through, and a tint keeps a ground's
+/// luminance but not what it shows through a wash. A recipe of a theme's own may turn that ground.
+const HELD_IN_TINTS: &[(&str, &str)] = &[("titlebar", "count")];
+
+fn held_in_tints(family: &Family, part: &str) -> bool {
+    HELD_IN_TINTS.contains(&(family.name, part))
+}
+
+/// Whether a rule colours a part of [`HELD_IN_TINTS`], so the tints are worth building for it.
+fn colours_a_part_held_in_tints(rules: &[Rule]) -> bool {
+    rules.iter().any(|rule| {
+        rule.family
+            .parts
+            .get(rule.part)
+            .is_some_and(|part| held_in_tints(rule.family, part.name))
+            && (rule.values.contains_key(&Prop::Fill) || rule.values.contains_key(&Prop::Text))
+    })
+}
+
 /// **The grounds a part's words are read on, where they are fewer than its family's** (#3254), by
 /// family and part: what the window draws the part on, not every ground the family stands on.
 #[cfg(test)]
@@ -2866,7 +2886,7 @@ fn held_from(
             // needs none.
             && (colours(theme, &rules, family) || every_tint())
     });
-    if consents && !theme.tint.tabs().is_empty() {
+    if (consents || colours_a_part_held_in_tints(&rules)) && !theme.tint.tabs().is_empty() {
         drawn_in.extend(
             theme
                 .tint
@@ -2904,6 +2924,7 @@ fn held_from(
                 });
             }
         }
+        let tints: &[ResolvedTheme] = &drawn_in;
         // **A family whose rules set no colour is measured as written alone** (#2912): its
         // consent variants are drawn in the family's own colours in every tint, which the
         // token-level floors hold in each tint (`floors.rs`, #2526), and what the theme sets (an
@@ -2931,6 +2952,7 @@ fn held_from(
             let written = held.rules.len();
             for states in &singles {
                 held.readable(theme, states);
+                held.readable_in_tints(tints, states);
             }
             held.apart(theme);
             for states in &singles {
@@ -2960,6 +2982,7 @@ fn held_from(
                 }
                 for states in &next {
                     held.readable(theme, states);
+                    held.readable_in_tints(tints, states);
                     held.consented(drawn_in, states);
                 }
             }
@@ -3443,6 +3466,36 @@ impl Held<'_> {
             };
             if let Some((floor, ratio)) = broken {
                 self.fall(variant, states, floor, ratio);
+            }
+        }
+    }
+
+    /// **Each part of [`HELD_IN_TINTS`] the theme colours, held to its reading floor in every
+    /// drawn theme** (#4250).
+    fn readable_in_tints(&mut self, drawn_in: &[ResolvedTheme], states: &[State]) {
+        let family = self.family;
+        for (at, part) in family.parts.iter().enumerate() {
+            if !held_in_tints(family, part.name) {
+                continue;
+            }
+            for variant in family.looks() {
+                let look = drawn(self.rules, family, variant, states);
+                let own = drawn(&[], family, variant, states);
+                if look.grounds[at] == own.grounds[at] && look.words[at] == own.words[at] {
+                    continue;
+                }
+                for one in drawn_in {
+                    let floor = one.least.floor(floor_of(family, part));
+                    let on = grounds(one, family);
+                    if let Some(ratio) = lowest(one, &on, look.grounds[at], look.words[at])
+                        && ratio < floor
+                    {
+                        let said =
+                            format!("the {}'s words contrast {floor}:1 with its fill", part.name);
+                        self.fall(variant, states, said, Some(ratio));
+                        break;
+                    }
+                }
             }
         }
     }

@@ -207,9 +207,10 @@ pub fn built_in_names(dir: Option<&Path>) -> Vec<String> {
 /// **The skills purlis ships**, by name: the bundle's `plugin/skills/<name>/SKILL.md`, each
 /// folder named as its skill (held to that folder by a test). Compiled in, so a name stays
 /// reserved ([`name_reserved`]) where this binary finds no bundle beside it.
-pub const SHIPPED: [&str; 11] = [
+pub const SHIPPED: [&str; 12] = [
     "add-curation-action",
     "browser",
+    "building-purlis-ui",
     "compact",
     "handoff",
     "persona",

@@ -38,8 +38,8 @@ import { PanelSectionTitle } from "./ui/panel/Panel";
 import { ReviewPage } from "./ui/review-page/ReviewPage";
 import { Select } from "./ui/select/Select";
 
-/** The project's default profile, in the picker. */
-const DEFAULT = "";
+/** The project's default profile, or the profile's own model, in a picker. */
+export const DEFAULT = "";
 
 /** A number of tokens as the window says it: `200,000 tokens`. */
 export function tokensSaid(tokens: number): string {
@@ -57,8 +57,11 @@ export function endedSaid(step: SkillGradeStep): string {
   return `${said} ${counted(step.asked, "chat", "chats")} asked you something, and purlis ended ${them} there without counting ${them}: the grade's scorecard opens each.`;
 }
 
-/** How a grade that ended is said, before what its chats asked. */
-function endSaid(step: SkillGradeStep): string {
+/** **How a grade that ended is said**, before what its chats asked: a skill's grade's, and a
+ *  router's (#4222), whose step says the same of its end. */
+export function endSaid(
+  step: Pick<SkillGradeStep, "ran" | "tokens" | "cap" | "ended" | "said">,
+): string {
   const chats = counted(step.ran, "chat", "chats");
   const spent = step.tokens === null ? "" : `, having spent ${tokensSaid(step.tokens)}`;
   switch (step.ended) {
@@ -163,7 +166,9 @@ function armsOf(plan: SkillGradePlan): number {
 }
 
 /** **What changed in a plan**, in a clause: what the new one runs and may spend. */
-export function planChangedSaid(now: SkillGradePlan): string {
+export function planChangedSaid(
+  now: Pick<SkillGradePlan, "chats" | "profile" | "model" | "cost_cap_usd">,
+): string {
   const on = [now.profile, now.model].filter((one) => one !== null).join(", ");
   return `it now runs ${counted(now.chats, "chat", "chats")}${on === "" ? "" : ` on ${on}`}, and may spend at most ${dollarsSaid(now.cost_cap_usd ?? 0)}`;
 }
@@ -361,25 +366,16 @@ export function GradePlanPage({
         description={`A grade runs ${name}'s trigger tests in chats with it and without it, and shows what it may spend before anything runs.`}
       />
       {newer !== undefined && (
-        <Notice
+        <PlanChanged
           cause={`skill-grade-plan-changed:${name}`}
-          tone="attention"
-          label="The plan changed"
-          fixes={[
-            {
-              label: "Show the new plan",
-              onPress: () => {
-                setPlan(newer);
-                setNewer(undefined);
-                setSaid(undefined);
-              },
-            },
-          ]}
-        >
-          <span data-testid="skill-grade-plan-changed">
-            {`The plan changed since you opened it: ${planChangedSaid(newer)}. Read it again before you start.`}
-          </span>
-        </Notice>
+          newer={newer}
+          testid="skill-grade-plan-changed"
+          onShow={() => {
+            setPlan(newer);
+            setNewer(undefined);
+            setSaid(undefined);
+          }}
+        />
       )}
       {said !== undefined && newer === undefined && (
         <Notice
@@ -409,28 +405,8 @@ export function GradePlanPage({
             line={`${counted(plan.tests.length, "test", "tests")} × ${plan.runs} × ${arms} arms`}
           />
           <Tile label="At most" value={limit} line={`or ${tokensSaid(plan.token_cap ?? 0)}`} />
-          <Tile
-            label="Estimate"
-            value={
-              plan.estimate?.cost_usd != null
-                ? dollarsSaid(plan.estimate.cost_usd * scale)
-                : plan.estimate?.tokens != null
-                  ? tokensSaid(Math.round(plan.estimate.tokens * scale))
-                  : "Not known"
-            }
-            line={
-              plan.estimate === null
-                ? "not graded here before"
-                : plan.estimate.interrupted
-                  ? "from its interrupted grade"
-                  : "from its last grade"
-            }
-          />
-          <Tile
-            label="Runs on"
-            value={plan.model ?? "Its own model"}
-            line={plan.profile ?? "The project's default"}
-          />
+          <EstimateTile estimate={plan.estimate} scale={scale} />
+          <RunsOnTile plan={plan} />
         </Totals>
       )}
       {plan.tests_refused !== null && (
@@ -511,38 +487,24 @@ export function GradePlanPage({
         <>
           <section aria-labelledby="skill-grade-where">
             <PanelSectionTitle id="skill-grade-where">Where it runs</PanelSectionTitle>
-            <ButtonRow>
-              <Select
-                size="sm"
-                aria-label={`Grade ${name} on`}
-                value={profile}
-                options={[
-                  { value: DEFAULT, label: "The project's default" },
-                  ...profiles.map((one) => ({ value: one.name, label: one.name })),
-                ]}
-                onValueChange={(to) => {
-                  // Another profile may be another program, whose models are its own.
-                  setProfile(to);
-                  setModel(DEFAULT);
-                  read(to === DEFAULT ? null : to, null);
-                }}
-              />
-              {plan.models.length > 0 && (
-                <Select
-                  size="sm"
-                  aria-label={`Model ${name}'s grade runs on`}
-                  value={model}
-                  options={[
-                    { value: DEFAULT, label: "The profile's own model" },
-                    ...plan.models.map((one) => ({ value: one, label: one })),
-                  ]}
-                  onValueChange={(to) => {
-                    setModel(to);
-                    read(picked, to === DEFAULT ? null : to);
-                  }}
-                />
-              )}
-            </ButtonRow>
+            <GradeOn
+              profileLabel={`Grade ${name} on`}
+              modelLabel={`Model ${name}'s grade runs on`}
+              profiles={profiles}
+              models={plan.models}
+              profile={profile}
+              model={model}
+              onProfile={(to) => {
+                // Another profile may be another program, whose models are its own.
+                setProfile(to);
+                setModel(DEFAULT);
+                read(to === DEFAULT ? null : to, null);
+              }}
+              onModel={(to) => {
+                setModel(to);
+                read(picked, to === DEFAULT ? null : to);
+              }}
+            />
           </section>
           <section aria-labelledby="skill-grade-spend">
             <PanelSectionTitle id="skill-grade-spend">What it may spend</PanelSectionTitle>
@@ -574,6 +536,175 @@ export function GradePlanPage({
         </>
       )}
     </ReviewPage>
+  );
+}
+
+/** **What a grade should spend, as a plan's totals say it**: the last grade's spend, `scale`d to
+ *  the chats this one runs, or that it is not known. A skill's plan's and a router's (#4222). */
+export function EstimateTile({
+  estimate,
+  scale = 1,
+}: {
+  estimate: SkillGradePlan["estimate"];
+  scale?: number;
+}) {
+  return (
+    <Tile
+      label="Estimate"
+      value={
+        estimate?.cost_usd != null
+          ? dollarsSaid(estimate.cost_usd * scale)
+          : estimate?.tokens != null
+            ? tokensSaid(Math.round(estimate.tokens * scale))
+            : "Not known"
+      }
+      line={
+        estimate === null
+          ? "not graded here before"
+          : estimate.interrupted
+            ? "from its interrupted grade"
+            : "from its last grade"
+      }
+    />
+  );
+}
+
+/** **What a grade's chats run on, as a plan's totals say it**: the model and the profile. */
+export function RunsOnTile({ plan }: { plan: Pick<SkillGradePlan, "model" | "profile"> }) {
+  return (
+    <Tile
+      label="Runs on"
+      value={plan.model ?? "Its own model"}
+      line={plan.profile ?? "The project's default"}
+    />
+  );
+}
+
+/** **A plan that changed under the person**, in the attention tone, with the press that shows it
+ *  (S6): Start waits on it. A skill's plan's and a router's (#4222). */
+export function PlanChanged({
+  cause,
+  newer,
+  testid,
+  onShow,
+}: {
+  cause: string;
+  newer: Pick<SkillGradePlan, "chats" | "profile" | "model" | "cost_cap_usd">;
+  testid: string;
+  onShow: () => void;
+}) {
+  return (
+    <Notice
+      cause={cause}
+      tone="attention"
+      label="The plan changed"
+      fixes={[{ label: "Show the new plan", onPress: onShow }]}
+    >
+      <span data-testid={testid}>
+        {`The plan changed since you opened it: ${planChangedSaid(newer)}. Read it again before you start.`}
+      </span>
+    </Notice>
+  );
+}
+
+/** **Where a grade's chats run, picked** (SK-60): the profile, and the model where its harness
+ *  offers more than one. `DEFAULT` (`""`) picks the project's default, or the profile's own. */
+export function GradeOn({
+  profileLabel,
+  modelLabel,
+  profiles,
+  models,
+  profile,
+  model,
+  onProfile,
+  onModel,
+}: {
+  profileLabel: string;
+  modelLabel: string;
+  profiles: readonly ProfileRow[];
+  models: readonly string[];
+  profile: string;
+  model: string;
+  onProfile: (to: string) => void;
+  onModel: (to: string) => void;
+}) {
+  return (
+    <ButtonRow>
+      <Select
+        size="sm"
+        aria-label={profileLabel}
+        value={profile}
+        options={[
+          { value: DEFAULT, label: "The project's default" },
+          ...profiles.map((one) => ({ value: one.name, label: one.name })),
+        ]}
+        onValueChange={onProfile}
+      />
+      {models.length > 0 && (
+        <Select
+          size="sm"
+          aria-label={modelLabel}
+          value={model}
+          options={[
+            { value: DEFAULT, label: "The profile's own model" },
+            ...models.map((one) => ({ value: one, label: one })),
+          ]}
+          onValueChange={onModel}
+        />
+      )}
+    </ButtonRow>
+  );
+}
+
+/** **How far a grade running is** (S6): its chats done, what it has spent against its dollar
+ *  limit and its tokens against its cap, live. A skill's grade's and a router's (#4222). */
+export function GradeProgress({
+  label,
+  ran,
+  of,
+  tokens,
+  cap,
+  costUsd,
+  limitUsd,
+}: {
+  label: string;
+  ran: number;
+  of: number;
+  tokens: number | null;
+  cap: number;
+  costUsd: number | null;
+  limitUsd: number | null;
+}) {
+  return (
+    <>
+      <Totals live aria-label={label}>
+        <Tile
+          label="Chats"
+          value={`${ran} of ${of}`}
+          said={`${ran} of ${counted(of, "chat", "chats")} done`}
+        />
+        <Tile
+          label="Spent"
+          value={costUsd !== null ? dollarsSaid(costUsd) : "Not said yet"}
+          line={limitUsd === null ? undefined : `of at most ${dollarsSaid(limitUsd)}`}
+        />
+        <Tile
+          label="Tokens"
+          value={tokens !== null ? Math.round(tokens).toLocaleString("en-US") : "0"}
+          line={`of ${tokensSaid(cap)}`}
+        />
+      </Totals>
+      <ProgressBar
+        label="Chats done"
+        value={ran}
+        maxValue={Math.max(of, 1)}
+        valueLabel={`${ran} of ${of}`}
+      />
+      <p className="honest">
+        You can leave this page: the grade keeps going, and its chats never show as needing you.
+        Closing the app ends them.
+      </p>
+    </>
   );
 }
 
@@ -758,33 +889,15 @@ export function GradeRunningPage({
           {endedSaid(step)}
         </Notice>
       )}
-      <Totals live aria-label={`How far the grade of ${name} is`}>
-        <Tile
-          label="Chats"
-          value={`${ran} of ${of}`}
-          said={`${ran} of ${counted(of, "chat", "chats")} done`}
-        />
-        <Tile
-          label="Spent"
-          value={step?.cost_usd != null ? dollarsSaid(step.cost_usd) : "Not said yet"}
-          line={limit === null ? undefined : `of at most ${dollarsSaid(limit)}`}
-        />
-        <Tile
-          label="Tokens"
-          value={step?.tokens != null ? Math.round(step.tokens).toLocaleString("en-US") : "0"}
-          line={`of ${tokensSaid(cap)}`}
-        />
-      </Totals>
-      <ProgressBar
-        label="Chats done"
-        value={ran}
-        maxValue={Math.max(of, 1)}
-        valueLabel={`${ran} of ${of}`}
+      <GradeProgress
+        label={`How far the grade of ${name} is`}
+        ran={ran}
+        of={of}
+        tokens={step?.tokens ?? null}
+        cap={cap}
+        costUsd={step?.cost_usd ?? null}
+        limitUsd={limit}
       />
-      <p className="honest">
-        You can leave this page: the grade keeps going, and its chats never show as needing you.
-        Closing the app ends them.
-      </p>
     </ReviewPage>
   );
 }
