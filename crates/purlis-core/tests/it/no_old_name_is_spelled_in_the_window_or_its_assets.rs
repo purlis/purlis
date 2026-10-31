@@ -307,9 +307,48 @@ impl<'s> Lexer<'s> {
         }
     }
 
+    /// Past the type arguments at `<`, none of them read: `<A, B<C>>`, `<{ id: string }>`,
+    /// `<(x: A) => B>`. Every bracket counts, because the `>` of an arrow, or one in a string
+    /// or a comment, closes nothing.
+    fn type_arguments(&mut self) {
+        let start = self.i;
+        let mut depth = 0usize;
+        while self.i < self.b.len() {
+            if self.comment() {
+                continue;
+            }
+            let c = self.b[self.i];
+            if c == b'"' || c == b'\'' || c == b'`' {
+                // A string type is a type, and no literal of the program's words.
+                let read = self.out.len();
+                if c == b'`' {
+                    self.template();
+                } else {
+                    self.string(c);
+                }
+                self.out.truncate(read);
+                continue;
+            }
+            if self.rest().starts_with("=>") {
+                self.i += 2;
+                continue;
+            }
+            match c {
+                b'<' | b'(' | b'[' | b'{' => depth += 1,
+                b'>' | b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+            self.i = self.past_char();
+            if depth == 0 {
+                return;
+            }
+        }
+        self.lost.push(self.line_at(start));
+    }
+
     /// A JSX element (or fragment) at `<`, its attributes' strings and its text read.
     /// Returns false, having read nothing, where the `<` opens a type parameter instead
-    /// (`<T,>(…)`, `<T extends U>(…)`).
+    /// (`<T,>(…)`, `<T extends U>(…)`, `<T = U,>(…)`, `<const T,>(…)`).
     fn element(&mut self) -> bool {
         let mut j = self.i + 1;
         let name_start = j;
@@ -325,11 +364,17 @@ impl<'s> Lexer<'s> {
             && (name.is_empty()
                 || !name.as_bytes()[0].is_ascii_alphabetic()
                 || after.starts_with(',')
-                || after.starts_with("extends "))
+                || after.starts_with('=')
+                || after.starts_with("extends ")
+                || name == "const")
         {
             return false;
         }
-        self.i = j;
+        self.i = j + (self.src[j..].len() - after.len());
+        // A generic component's type arguments, before its attributes (`<Comp<T> on />`).
+        if after.starts_with('<') {
+            self.type_arguments();
+        }
         // Attributes.
         loop {
             while self.i < self.b.len() && self.b[self.i].is_ascii_whitespace() {
@@ -668,6 +713,103 @@ export function P({ on }: { on: boolean }) {
             "frag",
         ]
     );
+}
+
+/// Lexes `src` as a `.tsx` file: its literals' texts, and where it lost its place.
+fn tsx(src: &str) -> (Vec<String>, Vec<usize>) {
+    let mut lexer = Lexer::new(src, true);
+    lexer.code(false);
+    (lexer.out.into_iter().map(|l| l.text).collect(), lexer.lost)
+}
+
+#[test]
+fn a_jsx_element_with_type_arguments_keeps_the_lexers_place() {
+    purlis_core::unsteered!();
+    for (src, read) in [
+        // One argument, on a tag that closes itself: what follows it is code, not its children.
+        (
+            r#"const a = <Comp<T> prop="in" />; const b = "after"; if (x) { y(); }"#,
+            vec!["in", "after"],
+        ),
+        // Nested, with children.
+        (
+            r#"const a = <Comp<A, B<C>> on="in">words</Comp>; const b = "after";"#,
+            vec!["in", "words", "after"],
+        ),
+        // Across lines.
+        (
+            "const a = (\n  <Comp<T>\n    on=\"in\"\n  />\n);\nconst b = \"after\";",
+            vec!["in", "after"],
+        ),
+        // An object type, whose braces and semicolons are the type's.
+        (
+            r#"const a = <Comp<{ id: string; name: string }> on="in" />; const b = "after";"#,
+            vec!["in", "after"],
+        ),
+        // A function type: the `>` of its arrow closes nothing.
+        (
+            r#"const a = <Comp<(x: A) => B> on="in" />; const b = "after";"#,
+            vec!["in", "after"],
+        ),
+        // A string type, in which a `>` is a letter, and is no literal of the program's words.
+        (
+            r#"const a = <Comp<"a>b" | 'c'> on="in" />; const b = "after";"#,
+            vec!["in", "after"],
+        ),
+        // A comment in the arguments.
+        (
+            r#"const a = <Comp</* the > */ T> on="in" />; const b = "after";"#,
+            vec!["in", "after"],
+        ),
+        // A dotted name, and a child that has arguments of its own.
+        (
+            r#"const a = <A.B<T>><C<D> on="in" />words</A.B>; const b = "after";"#,
+            vec!["in", "words", "after"],
+        ),
+    ] {
+        let (texts, lost) = tsx(src);
+        assert_eq!(texts, read, "{src}");
+        assert!(lost.is_empty(), "{src}: lost at {lost:?}");
+    }
+}
+
+#[test]
+fn an_arrow_functions_type_parameters_in_a_tsx_file_are_no_element() {
+    purlis_core::unsteered!();
+    for src in [
+        r#"const f = <T,>(x: T) => "after";"#,
+        r#"const f = <T, U>(x: T, y: U) => "after";"#,
+        r#"const f = <T extends object>(x: T) => "after";"#,
+        r#"const f = <T extends Record<string, U>>(x: T) => "after";"#,
+        r#"const f = <T = string,>(x: T) => "after";"#,
+        r#"const f = <const T,>(x: T) => "after";"#,
+    ] {
+        let (texts, lost) = tsx(src);
+        assert_eq!(texts, ["after"], "{src}");
+        assert!(lost.is_empty(), "{src}: lost at {lost:?}");
+    }
+}
+
+#[test]
+fn the_files_with_generic_components_are_read_as_their_attributes_say() {
+    purlis_core::unsteered!();
+    // These lost nothing, so the guard above passed them, and read code as text: an attribute's
+    // name and a comment were read, and its value was not.
+    let root = repo();
+    for (rel, values) in [
+        ("app/src/ui/list/List.tsx", ["list", "section"]),
+        ("app/src/ui/select/ComboBox.tsx", ["popover", "list"]),
+        ("app/src/ui/tree/Tree.tsx", ["tree", "section"]),
+    ] {
+        let src = std::fs::read_to_string(root.join(rel)).expect("a source file");
+        let (read, lost) = tsx(&src);
+        assert!(lost.is_empty(), "{rel}: lost at {lost:?}");
+        let code: Vec<&String> = read.iter().filter(|t| t.contains("data-scope=")).collect();
+        assert!(code.is_empty(), "{rel}: read code as text: {code:?}");
+        for value in values {
+            assert!(read.iter().any(|t| t == value), "{rel}: {value} not read");
+        }
+    }
 }
 
 #[test]
