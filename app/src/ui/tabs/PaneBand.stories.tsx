@@ -603,6 +603,56 @@ export const ConsentClamped: Story = {
 };
 
 /**
+ * **A narrow pane's band says it has more** (#3168): two warnings are taller than the band's
+ * room, so it scrolls. At rest a fade at its bottom says more is below; scrolled to its end, the
+ * fade is at its top alone; partway, at both. The fade is the theme's shadow (`overlay.shadow`)
+ * going to nothing, over the warnings and never in the way of a press. The picture is the band
+ * partway, with both.
+ */
+export const NarrowScrolled: Story = {
+  args: { warnings: ["vault-refused", "sandbox-long"], width: 400 },
+  play: async ({ canvas }) => {
+    const vault = await canvas.findByRole("status", { name: "Vault" });
+    const stack = vault.closest('[data-scope="notice-row"][data-part="stack"]') as HTMLElement;
+    await waitFor(() => expect(stack.scrollHeight).toBeGreaterThan(stack.clientHeight + 24));
+    const fade = (edge: "::before" | "::after") => getComputedStyle(stack, edge);
+    const shows = async (above: boolean, below: boolean) => {
+      await waitFor(() => {
+        expect(stack.hasAttribute("data-more-above")).toBe(above);
+        expect(stack.hasAttribute("data-more-below")).toBe(below);
+      });
+      expect(fade("::before").opacity).toBe(above ? "1" : "0");
+      expect(fade("::after").opacity).toBe(below ? "1" : "0");
+    };
+    const scrollTo = (top: number) => {
+      // The person's wheel first (#3217), so the scroll is theirs and no move.
+      stack.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: top - stack.scrollTop }));
+      stack.scrollTop = top;
+    };
+
+    // Drawn from the theme's shadow, and never what a press lands on.
+    for (const edge of ["::before", "::after"] as const) {
+      expect(fade(edge).backgroundImage).toMatch(/gradient/);
+      expect(fade(edge).pointerEvents).toBe("none");
+    }
+    scrollTo(0);
+    await shows(false, true);
+    // The fade lies over the band and takes none of its room: the first warning is at its top.
+    expect(boxOf(vault).top - boxOf(stack).top).toBeLessThanOrEqual(1);
+
+    scrollTo(stack.scrollHeight);
+    await shows(true, false);
+    // The last warning ends at the band's end, under the fade and not pushed past it.
+    const last = canvas.getByRole("status", { name: "Sandbox block" }).parentElement;
+    expect(boxOf(stack).bottom - boxOf(last).bottom).toBeLessThanOrEqual(1);
+
+    scrollTo(Math.round((stack.scrollHeight - stack.clientHeight) / 2));
+    await shows(true, true);
+    atRest();
+  },
+};
+
+/**
  * **The pane's actions** (`PaneActions`, shared with a view's pane, #3147): split side by side,
  * split stacked and close, one cluster at the pane's top right, drawn by the catalogue's own
  * rows. Hidden at rest in the pane with the keyboard, drawn once the keyboard is on them.
