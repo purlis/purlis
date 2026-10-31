@@ -488,7 +488,7 @@ fn commit_of(scratch: &Scratch, review: &PublishReview) -> Result<(String, Strin
             gone.push(0);
         }
         let removed = scratch.git_raw(&["update-index", "-z", "--index-info"], gone)?;
-        if !removed.ok() {
+        if removed.code != Some(0) {
             return Err(format!(
                 "a file of the source could not be replaced: {}",
                 String::from_utf8_lossy(&removed.err).trim()
