@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793457787979,
+  "lastUpdate": 1793459247154,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33516,6 +33516,48 @@ window.BENCHMARK_DATA = {
             "value": 102.3321115,
             "unit": "ms",
             "extra": "median of 5 runs: 101.900, 101.905, 102.332, 102.344, 102.452 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9e1ee9f75c56bcbdb6365806480c972c5d3d59b5",
+          "message": "Bump the rust group with 11 updates (#3911)\n\n* Bump the rust group with 13 updates\n\nBumps the rust group with 13 updates:\n\n| Package | From | To |\n| --- | --- | --- |\n| [agent-client-protocol](https://github.com/agentclientprotocol/rust-sdk) | `3.4.0` | `3.5.0` |\n| [plist](https://github.com/ebarnard/rust-plist) | `1.10.2` | `1.10.3` |\n| [zip](https://github.com/zip-rs/zip2) | `9.0.5` | `9.1.2` |\n| [ureq](https://github.com/algesten/ureq) | `3.4.2` | `3.5.0` |\n| [uuid](https://github.com/uuid-rs/uuid) | `1.28.0` | `1.29.0` |\n| [tokio](https://github.com/tokio-rs/tokio) | `1.53.3` | `1.54.1` |\n| [rmcp](https://github.com/modelcontextprotocol/rust-sdk) | `3.5.1` | `3.7.0` |\n| [sigstore-verify](https://github.com/sigstore/sigstore-rust) | `0.15.0` | `0.15.1` |\n| [psl](https://github.com/addr-rs/psl) | `2.1.243` | `2.1.245` |\n| [rfd](https://github.com/PolyMeilex/rfd) | `0.16.0` | `0.16.1` |\n| [notify](https://github.com/notify-rs/notify) | `8.2.0` | `8.2.1` |\n| [zbus](https://github.com/z-galaxy/zbus) | `5.19.0` | `6.1.0` |\n| [cairo-rs](https://github.com/gtk-rs/gtk-rs-core) | `0.18.5` | `0.22.9` |\n\n\nUpdates `agent-client-protocol` from 3.4.0 to 3.5.0\n- [Release notes](https://github.com/agentclientprotocol/rust-sdk/releases)\n- [Commits](https://github.com/agentclientprotocol/rust-sdk/compare/agent-client-protocol-http-v3.4.0...agent-client-protocol-http-v3.5.0)\n\nUpdates `plist` from 1.10.2 to 1.10.3\n- [Release notes](https://github.com/ebarnard/rust-plist/releases)\n- [Changelog](https://github.com/ebarnard/rust-plist/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/ebarnard/rust-plist/compare/v1.10.2...v1.10.3)\n\nUpdates `zip` from 9.0.5 to 9.1.2\n- [Release notes](https://github.com/zip-rs/zip2/releases)\n- [Changelog](https://github.com/zip-rs/zip2/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/zip-rs/zip2/compare/v9.0.5...v9.1.2)\n\nUpdates `ureq` from 3.4.2 to 3.5.0\n- [Changelog](https://github.com/algesten/ureq/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/algesten/ureq/compare/3.4.2...3.5.0)\n\nUpdates `uuid` from 1.28.0 to 1.29.0\n- [Release notes](https://github.com/uuid-rs/uuid/releases)\n- [Commits](https://github.com/uuid-rs/uuid/compare/v1.28.0...v1.29.0)\n\nUpdates `tokio` from 1.53.3 to 1.54.1\n- [Release notes](https://github.com/tokio-rs/tokio/releases)\n- [Commits](https://github.com/tokio-rs/tokio/compare/tokio-1.53.3...tokio-1.54.1)\n\nUpdates `rmcp` from 3.5.1 to 3.7.0\n- [Release notes](https://github.com/modelcontextprotocol/rust-sdk/releases)\n- [Changelog](https://github.com/modelcontextprotocol/rust-sdk/blob/main/release-plz.toml)\n- [Commits](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-v3.5.1...rmcp-v3.7.0)\n\nUpdates `sigstore-verify` from 0.15.0 to 0.15.1\n- [Release notes](https://github.com/sigstore/sigstore-rust/releases)\n- [Changelog](https://github.com/sigstore/sigstore-rust/blob/main/release-plz.toml)\n- [Commits](https://github.com/sigstore/sigstore-rust/compare/sigstore-verify-v0.15.0...sigstore-verify-v0.15.1)\n\nUpdates `psl` from 2.1.243 to 2.1.245\n- [Release notes](https://github.com/addr-rs/psl/releases)\n- [Commits](https://github.com/addr-rs/psl/compare/v2.1.243...v2.1.245)\n\nUpdates `rfd` from 0.16.0 to 0.16.1\n- [Release notes](https://github.com/PolyMeilex/rfd/releases)\n- [Changelog](https://github.com/PolyMeilex/rfd/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/PolyMeilex/rfd/commits)\n\nUpdates `notify` from 8.2.0 to 8.2.1\n- [Release notes](https://github.com/notify-rs/notify/releases)\n- [Changelog](https://github.com/notify-rs/notify/blob/notify-8.2.1/CHANGELOG.md)\n- [Commits](https://github.com/notify-rs/notify/compare/notify-8.2.0...notify-8.2.1)\n\nUpdates `zbus` from 5.19.0 to 6.1.0\n- [Release notes](https://github.com/z-galaxy/zbus/releases)\n- [Changelog](https://github.com/z-galaxy/zbus/blob/main/release-plz.toml)\n- [Commits](https://github.com/z-galaxy/zbus/compare/zbus-5.19.0...zbus-6.1.0)\n\nUpdates `cairo-rs` from 0.18.5 to 0.22.9\n- [Release notes](https://github.com/gtk-rs/gtk-rs-core/releases)\n- [Changelog](https://github.com/gtk-rs/gtk-rs-core/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/gtk-rs/gtk-rs-core/compare/0.18.5...0.22.9)\n\n---\nupdated-dependencies:\n- dependency-name: agent-client-protocol\n  dependency-version: 3.5.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: rust\n- dependency-name: plist\n  dependency-version: 1.10.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: rust\n- dependency-name: zip\n  dependency-version: 9.1.2\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: rust\n- dependency-name: ureq\n  dependency-version: 3.5.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: rust\n- dependency-name: uuid\n  dependency-version: 1.29.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: rust\n- dependency-name: tokio\n  dependency-version: 1.54.1\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: rust\n- dependency-name: rmcp\n  dependency-version: 3.7.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: rust\n- dependency-name: sigstore-verify\n  dependency-version: 0.15.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: rust\n- dependency-name: psl\n  dependency-version: 2.1.245\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: rust\n- dependency-name: rfd\n  dependency-version: 0.16.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: rust\n- dependency-name: notify\n  dependency-version: 8.2.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: rust\n- dependency-name: zbus\n  dependency-version: 6.1.0\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n  dependency-group: rust\n- dependency-name: cairo-rs\n  dependency-version: 0.22.9\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: rust\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\n\n* Hold zbus and cairo-rs at the versions Tauri brings in\n\nzbus 6 and cairo-rs 0.22 each add a second copy beside the one the plugins and GTK use,\nand neither compiles against the code here. Both are pinned on purpose, as rfd is, so\ndependabot now leaves those bumps for when the plugins move.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T14:36:20Z",
+          "tree_id": "7029a9c4263eb67227648f2a557a2a7b8d3ceb2c",
+          "url": "https://github.com/purlis/purlis/commit/9e1ee9f75c56bcbdb6365806480c972c5d3d59b5"
+        },
+        "date": 1793459243932,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.669002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.658, 0.664, 0.669, 0.671, 0.705 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.477792,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.291, 16.448, 16.478, 16.556, 16.617 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.24304899999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.416, 101.861, 102.243, 102.584, 103.757 ms"
           }
         ]
       }
