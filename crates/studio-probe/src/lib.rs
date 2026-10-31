@@ -195,6 +195,10 @@ fn routed(ask: &serde_json::Value) -> serde_json::Value {
 /// - `environ <pid>`: what `ps -wwE` shows of another process's command and environment.
 /// - `proxy <host>`: ask its proxy (`HTTPS_PROXY`) for a tunnel to `<host>:443`, and say the
 ///   proxy's status line.
+/// - `start <program> <args>…`: start a program, and say how it ended and what it printed.
+/// - `start-linked <program> <at>`: the same through a symbolic link made at `<at>`, which it
+///   takes away again.
+/// - `start-held <program>` on Linux: the same through a path-only descriptor of it.
 pub fn tried(words: &[String]) -> String {
     let said = match words {
         [verb, path] if verb == "read" => std::fs::read(path)
@@ -227,12 +231,57 @@ pub fn tried(words: &[String]) -> String {
         [verb, host] if verb == "proxy" => through_the_proxy(host),
         [verb, host, named] if verb == "hello" => hello_through_the_proxy(host, named),
         [verb, pid] if verb == "environ" => environ(pid),
+        [verb, program, args @ ..] if verb == "start" => started(program, args),
+        #[cfg(unix)]
+        [verb, program, at] if verb == "start-linked" => {
+            match std::os::unix::fs::symlink(program, at) {
+                Ok(()) => {
+                    let said = started(at, &[]);
+                    let _ = std::fs::remove_file(at);
+                    said
+                }
+                // Never a refusal of the start: nothing was started.
+                Err(why) => Ok(format!("no link was made: {}", why.kind())),
+            }
+        }
+        #[cfg(target_os = "linux")]
+        [verb, program] if verb == "start-held" => {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            use std::os::unix::io::AsRawFd as _;
+            /// `O_PATH`, the same number on every architecture purlis runs on.
+            const PATH_ONLY: i32 = 0o10000000;
+            match std::fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(PATH_ONLY)
+                .open(program)
+            {
+                Ok(held) => started(&format!("/proc/self/fd/{}", held.as_raw_fd()), &[]),
+                // Never a refusal of the start: nothing was started.
+                Err(why) => Ok(format!("no descriptor was held: {}", why.kind())),
+            }
+        }
         _ => Err(format!("nothing to try in {words:?}")),
     };
     match said {
         Ok(it) => it,
         Err(why) => format!("refused: {why}"),
     }
+}
+
+/// How `program` started with `args` ended and what it printed, or why it did not start.
+fn started(program: &str, args: &[String]) -> Result<String, String> {
+    std::process::Command::new(program)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map(|out| {
+            format!(
+                "ok, it ended {} and said {}",
+                out.status,
+                String::from_utf8_lossy(&out.stdout).trim()
+            )
+        })
+        .map_err(|why| why.kind().to_string())
 }
 
 /// The proxy's status line for a tunnel to `host`, or why there was none.
