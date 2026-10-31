@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793430265701,
+  "lastUpdate": 1793431654639,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32760,6 +32760,48 @@ window.BENCHMARK_DATA = {
             "value": 102.54636550000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.108, 102.325, 102.546, 102.640, 102.715 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "360e82949da5e49dab00a4d6bcaa11fd1c5e7169",
+          "message": "Runner sign-in and sign-out: tighter checks, and only confirmed results (#4208)\n\n* Pools: signing a profile out says done only once its harness confirms it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M685HPJ55MKG6VMA69R253DS\nPurlis-Persona: steward\n\n* Sign-in: a comparison's comment says what it takes the same time over\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M685HPJ55MKG6VMA69R253DS\nPurlis-Persona: steward\n\n* Sign-in: a login's page is followed only where it asks for PKCE's S256\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M685HPJ55MKG6VMA69R253DS\nPurlis-Persona: steward\n\n* Pools: a sign-in's redirect goes to the Docker runner it started on\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M685HPJ55MKG6VMA69R253DS\nPurlis-Persona: steward\n\n* Sign-in: a runner hands a browser's answer only to the login waiting for it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M685HPJ55MKG6VMA69R253DS\nPurlis-Persona: steward\n\n* Sign-in: one cancelled while a runner fetches its harness starts no login\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M685HPJ55MKG6VMA69R253DS\nPurlis-Persona: steward\n\n* Sign-in: no chat reads what a runner's logins wait for; docs and tests from review\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M685HPJ55MKG6VMA69R253DS\nPurlis-Persona: steward\n\n* Sign-in: what a runner's logins wait for sits beside the other folders no chat reads\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M685HPJ55MKG6VMA69R253DS\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T06:54:36Z",
+          "tree_id": "e2e54e8f8358c0c9caae1e0b325ba49a8945e83a",
+          "url": "https://github.com/purlis/purlis/commit/360e82949da5e49dab00a4d6bcaa11fd1c5e7169"
+        },
+        "date": 1793431651587,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.658033,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.642, 0.656, 0.658, 0.660, 0.662 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5667725,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.370, 16.523, 16.567, 16.612, 16.839 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.3682095,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.664, 102.291, 102.368, 102.863, 103.436 ms"
           }
         ]
       }
