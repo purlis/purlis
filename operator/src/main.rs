@@ -105,3 +105,4 @@ async fn doctor() -> ExitCode {
         ExitCode::SUCCESS
     }
 }
+// demo for #3596
