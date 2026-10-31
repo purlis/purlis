@@ -55,6 +55,10 @@ spec:
             - name: metrics
               containerPort: 8080
               protocol: TCP
+            # Where a vouched runner asks for a GitHub App token (#4206).
+            - name: mint
+              containerPort: 8443
+              protocol: TCP
           env:
             # What each person's runners may hold at once (#2055), as JSON.
             - name: PURLIS_PER_PERSON_QUOTA

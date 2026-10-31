@@ -10,8 +10,12 @@
 # against, pinned by the digest of its multi-architecture index, moved by Dependabot.
 FROM ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944
 
-# The operator talks only to the cluster's API server, over TLS with the cluster's own
-# certificate authority, so it needs no package from the archive.
+# The operator talks to the cluster's API server, over TLS with the cluster's own certificate
+# authority, and to GitHub for a Pool opted in to minting (#4206), which needs the public ones.
+RUN apt-get update \
+ && apt-get install --yes --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY --chmod=0755 purlis-cluster-operator /usr/local/bin/purlis-cluster-operator
 
 # A numbered user who is not root, so the cluster can check `runAsNonRoot`.
