@@ -6,7 +6,15 @@ import { Terminal } from "@xterm/xterm";
 import type { PoolSignInTerminal } from "../bindings";
 import { onAMac } from "../mac";
 import { textSizes } from "../textSize";
-import { inForce, terminalFont, xtermLook, xtermTheme } from "../theme/theme";
+import {
+  inForce,
+  onDrawn,
+  onTerminalFont,
+  terminalFont,
+  xtermLook,
+  xtermTheme,
+} from "../theme/theme";
+import { drawTerminalFont } from "../theme/terminalFont";
 
 /** How a strip prints in its terminal: told the way to print, and `undefined` once it is gone. */
 export type Printer = (print: ((text: string) => void) | undefined) => void;
@@ -27,6 +35,8 @@ export type Printer = (print: ((text: string) => void) | undefined) => void;
  *   link's words can name another page than it opens: a page is opened only from the strip's own
  *   steps, where purlis checked it is the harness's own. A page printed here is copied by hand.
  * - **The keyboard comes to it only from the strip**, never from another field the person is in.
+ * - **A theme drawn while it is up is its theme too** (#4122), its look and its font as well, as a
+ *   chat's terminal follows one. Its size stays: the runner's terminal keeps the screen.
  */
 export function SignInTerminal({
   label,
@@ -102,7 +112,16 @@ export function SignInTerminal({
       pane.focus();
     }
     printer((text) => pane.write(text));
+    const unfollow = onDrawn((theme) => {
+      pane.options.theme = xtermTheme(theme);
+      Object.assign(pane.options, xtermLook(theme));
+    });
+    const unfont = onTerminalFont((family, arrived) => {
+      drawTerminalFont(pane, family, arrived);
+    });
     return () => {
+      unfollow();
+      unfont();
       printer(undefined);
       typing.dispose();
       swallowed.forEach((one) => one.dispose());
