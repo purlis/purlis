@@ -317,6 +317,37 @@ fn a_link_left_on_a_draining_runner_ends_once_the_runner_is_kept_no_more() {
     assert_eq!(to_it.links_of(&root).len(), 1, "only the pool's runner's");
 }
 
+/// **A runner kept no more leaves no link behind, without a start to notice** (#4168): the chats
+/// on it are told they ended, rather than staying dimmed.
+#[test]
+fn links_to_a_runner_kept_no_more_end_as_it_goes() {
+    let runtime = a_runtime();
+    let pool = Pool::on(&runtime);
+    let (_dir, root) = a_project();
+    let to_it = pool.connection.to_a_pool("builds");
+    let sessions = routed(&pool, &root);
+    started(&sessions).expect("it starts");
+    pool.follows();
+    started(&sessions).expect("it starts");
+    assert_eq!(to_it.links_of(&root).len(), 2);
+
+    pool.connection
+        .links_to_gone_runners_end(pool.config.path());
+    assert_eq!(to_it.links_of(&root).len(), 2, "both are still kept");
+
+    let path =
+        purlis_core::machine::dir(pool.config.path()).join(purlis_core::machine::RUNNERS_FILE);
+    let mut kept: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    kept["runners"].as_array_mut().unwrap().remove(0);
+    write_private(&path, &kept.to_string());
+
+    pool.connection
+        .links_to_gone_runners_end(pool.config.path());
+
+    assert_eq!(to_it.links_of(&root).len(), 1, "only the pool's runner's");
+}
+
 /// A host that answers a program's start only after `after`, and counts what it closes.
 #[derive(Clone)]
 struct SlowToStart<H> {

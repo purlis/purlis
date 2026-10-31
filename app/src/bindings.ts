@@ -3076,7 +3076,8 @@ export const commands = {
 	 *  **Make the runner again** (#4149): the pool `name`'s runner, removed outside purlis, made
 	 *  again from the pool's own image and limits, with the sign-ins of its home where that is still
 	 *  there, and paired. The window then has it keep the pool's profiles, as after Add a pool. Refused for
-	 *  a runner Docker still has, which resumes as it is.
+	 *  a runner Docker still has, which resumes as it is. The chats of the runner it replaces do not
+	 *  exist on the new one, so the window's links to it end and each says it ended (#4168).
 	 */
 	dockerPoolMakeAgain: (name: string) => typedError<MadeAgain, string>(__TAURI_INVOKE("docker_pool_make_again", { name })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */

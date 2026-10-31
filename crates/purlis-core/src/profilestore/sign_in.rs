@@ -382,6 +382,13 @@ pub fn refusal(profile: &Profile, passed: &[String], look: &dyn Look) -> Option<
     })
 }
 
+/// **Whether `said` is [`refusal`]'s**, as a runner's host answered a start with it (#4233): the
+/// runner found the profile signed out only once the chat reached it, and it words that as a
+/// machine of its own, which is not what the person on the desktop is to do.
+pub fn is_refusal(said: &str) -> bool {
+    said.contains("is not signed in on ") && said.contains("Nothing was started.")
+}
+
 /// **A profile a start was refused on**, waiting to be signed in: one per project and profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Wait {
