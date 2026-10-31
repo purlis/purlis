@@ -208,6 +208,14 @@ jobs:
         if: ${{ !cancelled() }}
         continue-on-error: true
         run: node tools/slowest-tests.mjs target/nextest/ci/junit.xml
+      # **What a chat on a runner reaches of its link key, tried under the real wrap** (#4207): the
+      # step above skips the live half where it finds no wrap, and naming it here makes that a failure.
+      - name: A runner's chat and its link key
+        if: matrix.part == 1
+        run: |
+          cargo build --locked -p purlis-linux-sandbox --bin sandbox-probe
+          PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
+            -E 'package(purlis-core) & binary(it) & test(/a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it::/)'
       # **Claude Code's own sandbox on Linux, on the settings purlis writes** (#2211): the macOS
       # step in `scenario`'s, here on bubblewrap. The version purlis supports, this runner's build
       # of it from npm with no install scripts run, against a stand-in model on a loopback port;
