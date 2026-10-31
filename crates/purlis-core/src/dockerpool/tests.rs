@@ -2776,14 +2776,50 @@ fn carried(from: &std::path::Path, to: &std::path::Path) -> std::process::Output
         .arg(from)
         .arg(to)
         .arg(crate::profilestore::carried_under_a_runner_home())
+        .arg(crate::profilestore::carried_under_an_old_runner_home())
         .args(crate::profilestore::carried_in_a_runner_home());
     crate::forklock::output(&mut command).unwrap()
+}
+
+/// Where a runner with the home `to` reads what was carried: under its data home, as it spells it
+/// (`crate::datahome`).
+#[cfg(unix)]
+fn the_stage(to: &std::path::Path) -> std::path::PathBuf {
+    crate::names::DATA_HOME
+        .folder_at(&to.join(".local/share"))
+        .join(crate::profilestore::CARRIED)
+}
+
+/// **A carry never moves a running runner's data home** (only a migration makes the purlis
+/// spelling, `crate::names`): a runner's data home under the old spelling stays there, its
+/// profiles and projects with it, and what was carried is where it reads it.
+#[cfg(unix)]
+#[test]
+fn a_carry_goes_under_the_data_home_the_runner_has() {
+    for (spelling, makes) in [("charter", true), ("purlis", true), ("charter", false)] {
+        let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let signed_in = from.path().join(".claude/.credentials.json");
+        std::fs::create_dir_all(signed_in.parent().unwrap()).unwrap();
+        std::fs::write(&signed_in, "{}").unwrap();
+        let data = to.path().join(".local/share").join(spelling);
+        if makes {
+            std::fs::create_dir_all(&data).unwrap();
+        }
+        let out = carried(from.path(), to.path());
+        assert!(out.status.success(), "{out:?}");
+        assert!(the_batch(to.path()).join("claude").is_dir());
+        assert_eq!(
+            to.path().join(".local/share/purlis").exists(),
+            makes && spelling == "purlis",
+            "the purlis spelling is made by a migration alone"
+        );
+    }
 }
 
 /// The one batch a carry made under the home `to`.
 #[cfg(unix)]
 fn the_batch(to: &std::path::Path) -> std::path::PathBuf {
-    let stage = to.join(crate::profilestore::carried_under_a_runner_home());
+    let stage = the_stage(to);
     let batches: Vec<_> = std::fs::read_dir(&stage)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -2952,9 +2988,7 @@ fn a_home_with_no_sign_in_or_one_unread_carries_nothing_and_ends_well() {
         "{}",
         String::from_utf8_lossy(&ran.stderr)
     );
-    let stage = to
-        .path()
-        .join(crate::profilestore::carried_under_a_runner_home());
+    let stage = the_stage(to.path());
     assert_eq!(std::fs::read_dir(&stage).unwrap().count(), 0);
 
     let locked = from.path().join(".codex/auth.json");
@@ -2990,8 +3024,6 @@ fn a_carry_takes_nothing_through_a_link_out_of_the_old_home() {
         String::from_utf8_lossy(&ran.stderr)
     );
 
-    let stage = to
-        .path()
-        .join(crate::profilestore::carried_under_a_runner_home());
+    let stage = the_stage(to.path());
     assert_eq!(std::fs::read_dir(&stage).unwrap().count(), 0);
 }
