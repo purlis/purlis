@@ -109,6 +109,76 @@ mod prs {
     }
 
     #[test]
+    fn publish_opens_a_draft_on_github_and_a_draft_titled_request_on_gitlab() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let scene = Scene::new("pr-draft.test");
+        let github = scene.answers(
+            "gh",
+            &[
+                "api",
+                "--hostname",
+                &scene.host,
+                "-X",
+                "POST",
+                "repos/acme/widget/pulls",
+                "-f",
+                "head=purlis/publish/d-1",
+                "-f",
+                "base=main",
+                "-f",
+                "title=Add",
+                "-f",
+                "body=b",
+                "-F",
+                "draft=true",
+            ],
+            0,
+            r#"{"number": 3, "html_url": "https://pr-draft.test/acme/widget/pull/3"}"#,
+            "",
+        );
+        let gitlab = scene.answers(
+            "glab",
+            &[
+                "api",
+                "--hostname",
+                &scene.host,
+                "-X",
+                "POST",
+                "projects/acme%2Fwidget/merge_requests",
+                "-f",
+                "source_branch=purlis/publish/d-1",
+                "-f",
+                "target_branch=main",
+                "-f",
+                "title=Draft: Add",
+                "-f",
+                "description=b",
+            ],
+            0,
+            r#"{"iid": 4, "web_url": "https://pr-draft.test/acme/widget/-/merge_requests/4"}"#,
+            "",
+        );
+        for (kind, number, asked) in [("github", 3, &github), ("gitlab", 4, &gitlab)] {
+            let opened = repo(&scene, kind, "acme/widget")
+                .backend()
+                .open_draft(
+                    &Caller::command(),
+                    "acme/widget",
+                    "purlis/publish/d-1",
+                    "main",
+                    "Add",
+                    "b",
+                )
+                .unwrap();
+            assert_eq!(opened.number, number);
+            assert!(was_asked(asked), "{kind}");
+        }
+    }
+
+    #[test]
     fn with_no_open_pr_github_opens_one_into_the_base_branch_named() {
         purlis_core::unsteered!();
         if !in_child() {

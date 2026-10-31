@@ -64,7 +64,7 @@ what the skill does beyond its instructions:
 - the network hosts its files name;
 - its `` !`cmd` `` lines, which some harnesses run before the model sees the skill;
 - writes it would make outside the workspace;
-- its grade, if the source carries one (#2779), and the lint's findings (#2771).
+- its grade, if the source carries one (#2781), and the lint's findings (#2771).
 
 The risky items are marked, and every file is one click away. **The skills that come along as
 references (§2) are in the same review**, each with its own summary, so nothing is installed that

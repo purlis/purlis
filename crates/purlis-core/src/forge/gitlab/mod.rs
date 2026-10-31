@@ -527,6 +527,34 @@ impl Requests for GitLab {
         Ok(Opened { pr, ours: true })
     }
 
+    fn open_draft(
+        &self,
+        caller: &Caller,
+        path: &str,
+        head: &str,
+        base: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<Pr, ForgeError> {
+        let call = Call::write(
+            Method::Post,
+            format!("projects/{}/merge_requests", quote(path)),
+            vec![
+                Field::text("source_branch", head),
+                Field::text("target_branch", base),
+                Field::text("title", &format!("Draft: {title}")),
+                Field::text("description", body),
+            ],
+        );
+        let doing = format!("opening a draft merge request from {head} into {base}");
+        pr_of(
+            &self.0.ask(caller, &call, &doing)?,
+            "iid",
+            "web_url",
+            &doing,
+        )
+    }
+
     fn state(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<State, ForgeError> {
         let api = format!("projects/{}/merge_requests/{}", quote(path), pr.number);
         let doing = format!("reading merge request !{} of {path}", pr.number);

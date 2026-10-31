@@ -501,6 +501,36 @@ impl Requests for GitHub {
         Ok(Opened { pr, ours: true })
     }
 
+    fn open_draft(
+        &self,
+        caller: &Caller,
+        path: &str,
+        head: &str,
+        base: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<Pr, ForgeError> {
+        let (owner, name) = owner_name(path);
+        let call = Call::write(
+            Method::Post,
+            format!("repos/{}/{}/pulls", quote(owner), quote(name)),
+            vec![
+                Field::text("head", head),
+                Field::text("base", base),
+                Field::text("title", title),
+                Field::text("body", body),
+                Field::typed("draft", "true"),
+            ],
+        );
+        let doing = format!("opening a draft pull request from {head} into {base}");
+        pr_of(
+            &self.0.ask(caller, &call, &doing)?,
+            "number",
+            "html_url",
+            &doing,
+        )
+    }
+
     fn state(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<State, ForgeError> {
         let (owner, name) = owner_name(path);
         let api = format!("repos/{}/{}/pulls/{}", quote(owner), quote(name), pr.number);

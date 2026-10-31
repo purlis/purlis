@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `purlis skill list | show | new | edit | mv | rm | restore | grant | share | install | update |
+//! export | publish |
 //! runs | history | revert | deprecate | archive | owners | uses | pin` (SK-2, #2765; SK-4, #2767;
 //! SK-3, #2766; SK-7, #2770; SK-19, #2782; SK-15, #2778): the skills a chat in this project gets,
 //! and why each other one is left out or hidden, as the Skill studio shows them; making, editing,
@@ -231,6 +232,47 @@ pub enum SkillCommand {
         /// Install without asking: for a script that printed and read the review itself.
         #[arg(long)]
         yes: bool,
+        #[command(flatten)]
+        at: LevelArgs,
+    },
+    /// Write a skill, and the project's skills it refers to, to a new folder or zip that works
+    /// outside purlis, each in a folder of its own. Links, credential files and what git ignores
+    /// stay behind and are said; anything credential-shaped writes nothing.
+    Export {
+        /// The skill's name, as `purlis skill list` prints it.
+        name: String,
+        /// Where: a path that is not there yet.
+        #[arg(long)]
+        to: std::path::PathBuf,
+        /// Write a zip there instead of a folder.
+        #[arg(long)]
+        zip: bool,
+        #[command(flatten)]
+        at: LevelArgs,
+    },
+    /// Open a draft pull or merge request on a skill source with a skill, the project's skills it
+    /// refers to, and a summary of their grades: prints the review of everything that would go,
+    /// and asks. Takes a yes from a person at a terminal, and has no flag to skip it: refused with
+    /// no terminal and inside a chat. Anything secret or personal, or a skill kept on this
+    /// machine, sends nothing.
+    Publish {
+        /// The skill's name, as `purlis skill list` prints it.
+        name: String,
+        /// The source: an https:// URL on GitHub or GitLab, which you can push to.
+        #[arg(long)]
+        to: String,
+        /// The source's branch the request goes into (default: its own default branch).
+        #[arg(long)]
+        branch: Option<String>,
+        /// The folder inside the source its skills are in (default: its top).
+        #[arg(long)]
+        folder: Option<String>,
+        /// The vault a private source is read with, through `purlis secret exec`.
+        #[arg(long, requires = "key")]
+        vault: Option<String>,
+        /// The entry in that vault that holds the token.
+        #[arg(long, requires = "vault")]
+        key: Option<String>,
         #[command(flatten)]
         at: LevelArgs,
     },
@@ -471,6 +513,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 | SkillCommand::Grade { .. }
                 | SkillCommand::History { .. }
                 | SkillCommand::Uses { .. }
+                | SkillCommand::Export { .. }
         );
     if writes
         && purlis_core::envvar::var(purlis_core::active::SESSION_ID_ENV)
@@ -945,6 +988,29 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 );
             }
             Ok(0)
+        }
+        SkillCommand::Export { name, to, zip, at } => {
+            export(root, built_in.as_deref(), &name, &to, zip, &at.level())
+        }
+        SkillCommand::Publish {
+            name,
+            to,
+            branch,
+            folder,
+            vault,
+            key,
+            at,
+        } => {
+            let source = Source {
+                remote: Remote { url: to, branch },
+                folder,
+                sign_in: vault.zip(key).map(|(vault, key)| VaultEntry {
+                    vault,
+                    key,
+                    user: None,
+                }),
+            };
+            publish(root, built_in.as_deref(), &name, &source, &at.level())
         }
         SkillCommand::Update {
             name: Some(name),
@@ -1789,6 +1855,135 @@ fn install(
         &review.accepted(),
         grant.as_ref(),
     ))
+}
+
+/// What stays behind, each with why, as a review prints it.
+fn behind_text(out: &source::Outgoing) -> String {
+    let mut text = String::new();
+    for skill in &out.skills {
+        for left in &skill.left {
+            text.push_str(&format!(
+                "  stays behind: {}/{} ({})\n",
+                esc(&skill.name),
+                esc(&left.path),
+                left.why
+            ));
+        }
+    }
+    for name in &out.broken {
+        text.push_str(&format!("  refers to {}, which is not there\n", esc(name)));
+    }
+    text
+}
+
+/// `purlis skill export`.
+fn export(
+    root: &Path,
+    built_in: Option<&Path>,
+    name: &str,
+    to: &Path,
+    zip: bool,
+    level: &Level,
+) -> Result<Code, String> {
+    let out = source::gather(root, built_in, level, name, source::Purpose::Export)?;
+    print!("{}", behind_text(&out));
+    if zip {
+        source::export_zip(&out, to)?;
+    } else {
+        source::export_folder(&out, to)?;
+    }
+    voice::info(
+        esc(&format!(
+            "Exported {} to {}.",
+            counted(out.skills.len(), "skill", "skills"),
+            to.display()
+        ))
+        .to_string(),
+    );
+    Ok(0)
+}
+
+/// What a person reads before a publish.
+fn publish_text(review: &source::publish::PublishReview, source: &Source) -> String {
+    let mut text = format!(
+        "Publish to {}\n  a draft request into {}, from the new branch {}\n  title: {}\n\nFiles          that go:\n",
+        esc(&source.to_string()),
+        esc(&review.base),
+        esc(&review.branch),
+        esc(&review.title)
+    );
+    for (skill, (folder, replaces)) in review.outgoing.skills.iter().zip(&review.lands) {
+        if *replaces {
+            text.push_str(&format!("  {} replaces what is there\n", esc(folder)));
+        }
+        for file in &skill.files {
+            let mark = if file.executable { " (runs)" } else { "" };
+            text.push_str(&format!(
+                "  {}/{}{mark}, {} bytes\n",
+                esc(folder),
+                esc(&file.path()),
+                file.bytes.len()
+            ));
+        }
+    }
+    text.push_str(&behind_text(&review.outgoing));
+    text.push_str("\nThe request's description, whole:\n");
+    for line in review.body.lines() {
+        text.push_str(&format!("  {}\n", esc(line)));
+    }
+    text
+}
+
+/// `purlis skill publish`: refused outright from a chat or with no person at a terminal, before
+/// the source is asked anything. No flag skips the question.
+fn publish(
+    root: &Path,
+    built_in: Option<&Path>,
+    name: &str,
+    source: &Source,
+    level: &Level,
+) -> Result<Code, String> {
+    use std::io::IsTerminal as _;
+    if !may_publish(
+        gradelink::in_a_chat(&purlis_core::envvar::var),
+        std::io::stdin().is_terminal() && std::io::stderr().is_terminal(),
+    ) {
+        voice::err(PUBLISH_NEEDS_A_PERSON);
+        return Ok(1);
+    }
+    let forge = source::publish::OnTheForge::of(root, source)?;
+    let review = source::publish::review(root, built_in, level, name, source)?;
+    print!("{}", publish_text(&review, source));
+    if review.stopped() {
+        voice::err("Nothing can be sent until these are fixed:");
+        for stop in &review.outgoing.stops {
+            voice::err(esc(&stop.to_string()).to_string());
+        }
+        return Ok(1);
+    }
+    if !asked("Open this draft request, under your own account?") {
+        voice::info("Nothing was sent.");
+        return Ok(1);
+    }
+    match source::publish::publish(root, built_in, level, name, source, &review, &forge)? {
+        source::publish::Published::Opened { url, .. } => {
+            voice::info(esc(&format!("Opened {url}")).to_string());
+        }
+        source::publish::Published::Already { url } => {
+            voice::info(esc(&format!("These files already have a request: {url}")).to_string());
+        }
+    }
+    Ok(0)
+}
+
+/// What a publish says with no person to ask.
+const PUBLISH_NEEDS_A_PERSON: &str = "Publishing takes a yes from a person at a terminal, so \
+                                      nothing was sent. Run `purlis skill publish` in your own \
+                                      terminal, outside any chat.";
+
+/// Whether a publish may ask at all.
+fn may_publish(in_a_chat: bool, at_a_terminal: bool) -> bool {
+    !in_a_chat && at_a_terminal
 }
 
 /// What `--all` says where its review is more than one read of the source may take: why, and the

@@ -85,12 +85,16 @@ pub fn unattended(permission_mode: Option<&str>) -> bool {
 /// be a documented way around a floor charter itself wrote. A cross-repo landing is N merges,
 /// each individually revertible, so it is not treated as a release; the split is attended versus
 /// unattended, exactly as it already is for `gh pr merge`.
-pub const PUBLISH_FORGE: [(&str, &str, &str); 5] = [
+///
+/// **`charter skill publish` is here** (#2781): it sends a person's skill to a forge, and the
+/// command itself refuses without a terminal or inside a chat. This row denies it earlier.
+pub const PUBLISH_FORGE: [(&str, &str, &str); 6] = [
     ("gh", "release", "create"),
     ("gh", "pr", "merge"),
     ("glab", "release", "create"),
     ("glab", "mr", "merge"),
     ("charter", "change", "land"),
+    ("charter", "skill", "publish"),
 ];
 
 /// A forge CLI's `(noun, verb)`.
@@ -445,6 +449,17 @@ mod tests {
 
     fn deny(cmd: &str) -> Option<String> {
         release_floor_reason(cmd, true)
+    }
+
+    #[test]
+    fn an_unattended_run_may_not_publish_a_skill() {
+        for cmd in [
+            "purlis skill publish deploy --to https://x.invalid/a/b",
+            "charter skill publish d",
+        ] {
+            assert!(release_floor_reason(cmd, true).is_some(), "{cmd}");
+        }
+        assert_eq!(release_floor_reason("purlis skill list", true), None);
     }
 
     /// Attended is untouched, whatever the command is.
