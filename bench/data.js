@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793449484274,
+  "lastUpdate": 1793450849340,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33306,6 +33306,48 @@ window.BENCHMARK_DATA = {
             "value": 102.25885149999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.517, 102.146, 102.259, 102.774, 103.156 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bf52ea38fce5b299374fb146b375fc9da2465ce7",
+          "message": "Runners: one test of a person's whole way through a Docker pool (#4198)\n\n* Runners: the whole way a person goes through a Docker pool, in one test\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* The journey test: drop a constant nothing reads\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* The journey test: its docker names purlis's image in what it answers too\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* The journey test: the project's profile names its command\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* The journey test: a start that fails says what the runner holds\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* The journey test: a failed start also says what the project holds here\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* TEMPORARY: probe which project shape reaches a runner\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* TEMPORARY: probe what before a start keeps the code off a runner\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* TEMPORARY: probe a signed-in start on a runner\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* The journey test: drop the probes, mark each step, and give it fifteen minutes\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* Runners: a runner made again is sent the project's code\n\nThe relay holds the project on the new runner under the same link, and that\nrunner answers yes with none of the code, so the first start after Make the\nrunner again was refused for want of its persona.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* The journey test: a followed runner's row is read once its fetch has ended\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* Runners: carrying sign-ins never moves a running runner's data home\n\nA carry wrote under the purlis spelling of the data home, which only a\nmigration may make, so a runner on the old spelling found its own profiles\noutside its profiles folder and refused every chat after an update.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* The journey test: a failed start says what the runner holds, and no more\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* Runners: a project is held again only once a runner it was held on is gone\n\nThe relay stays on a draining runner, so comparing the pool's runner now\nre-held on the old one and left the new one without the code after the drain.\nA carry refuses a link or a file for the data home. The journey test now\nchecks each harness took its message, a resume, every skill file, and a start\nwhile the old runner drains.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* The journey test: write its steps as the suite writes to stderr\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* The journey test: a followed runner's settings are read once it keeps the profile\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* Runners: read a pool's runners before the hold, and test a file for the data home\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n* Runners: a hold read elsewhere takes the new field\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M684ZYSFSP66MXD89FG1ZXK2\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T12:18:24Z",
+          "tree_id": "c34e489dbc383b0d6727bb3d527bac79f2518cf5",
+          "url": "https://github.com/purlis/purlis/commit/bf52ea38fce5b299374fb146b375fc9da2465ce7"
+        },
+        "date": 1793450843919,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4804275,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.458, 0.470, 0.480, 0.488, 0.490 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.840501000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.328, 16.761, 16.841, 16.872, 16.892 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.14740699999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.290, 102.389, 103.147, 103.379, 103.830 ms"
           }
         ]
       }
