@@ -3079,6 +3079,8 @@ impl CallError {
 pub(crate) enum Ask {
     Session(Command, oneshot::Sender<Result<Answer, CallError>>),
     Ui(ui::Ask),
+    /// End the link, whoever still holds the client ([`Client::end_link`]).
+    End,
 }
 
 /// The client's end of the session protocol: calls from any task, answered in any order.
@@ -3151,6 +3153,12 @@ impl Client {
     /// The scope the link was admitted as.
     pub fn scope(&self) -> Scope {
         self.scope
+    }
+
+    /// **Ends the link now, whoever still holds this client**: the host sees it close, what its
+    /// [`Events`] brought ends, and every call waiting or made after is answered that it closed.
+    pub fn end_link(&self) {
+        let _ = self.asks.send(Ask::End);
     }
 
     /// Send one command and wait for its answer.
@@ -3975,8 +3983,8 @@ async fn drive(mut link: Link, mut asked: mpsc::UnboundedReceiver<Ask>, mut push
             frame = link.control().next() => Driven::Frame(frame),
         };
         match next {
-            // Every handle is gone: nobody is left to answer.
-            Driven::Ask(None) => return,
+            // Every handle is gone, so nobody is left to answer; or a holder ended the link.
+            Driven::Ask(None) | Driven::Ask(Some(Ask::End)) => return,
             Driven::Ask(Some(ask)) => {
                 let id = next_id;
                 next_id += 1;
@@ -3989,6 +3997,7 @@ async fn drive(mut link: Link, mut asked: mpsc::UnboundedReceiver<Ask>, mut push
                         Frame::Call(Call { id, command })
                     }
                     Ask::Ui(ask) => Frame::Ui(ui.ask(id, ask)),
+                    Ask::End => unreachable!("matched above"),
                 };
                 if let Err(e) = link.control().send(frame.to_bytes()).await {
                     break e.to_string();

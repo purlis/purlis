@@ -231,3 +231,43 @@ fn how_a_runner_was_made_to_suspend_is_said_as_a_pools_time_is() {
         Some(serde_json::json!({"made": "after", "after": "24h"}))
     );
 }
+
+/// **A pool's links end once it is gone from this machine**: not while a removal left it kept, and
+/// also where what this machine keeps cannot be read.
+#[cfg(unix)]
+#[test]
+fn a_pools_links_end_once_it_is_gone_and_not_while_it_is_kept() {
+    use std::os::unix::fs::PermissionsExt;
+    let config = tempfile::tempdir().unwrap();
+    let path = purlis_core::machine::dir(config.path()).join(purlis_core::machine::RUNNERS_FILE);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let write = |text: String| {
+        std::fs::write(&path, text).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    };
+    let image = format!("ghcr.io/purlis/purlis-runner@sha256:{}", "a".repeat(64));
+    write(
+        serde_json::json!({
+            "version": 1,
+            "pools": [{ "name": "builds", "kind": "docker", "image": image }],
+            "runners": [],
+        })
+        .to_string(),
+    );
+    let window = std::sync::Arc::new(crate::hostedsessions::Connection::default());
+    let _pool = window.to_a_pool("builds");
+    links_end_once_gone(&window, config.path(), "builds");
+    assert_eq!(window.removals_of("builds"), 0, "still kept");
+    write(serde_json::json!({"version": 1, "pools": [], "runners": []}).to_string());
+    links_end_once_gone(&window, config.path(), "builds");
+    assert_eq!(window.removals_of("builds"), 1, "gone");
+    write("not json".to_owned());
+    links_end_once_gone(&window, config.path(), "builds");
+    assert_eq!(window.removals_of("builds"), 2, "cannot be read");
+    let _ = window.to_a_pool("builds").ran_unsandboxed();
+    links_end_once_gone(&window, config.path(), "builds");
+    assert!(
+        window.untrusts("builds"),
+        "only a pool seen to be gone lets go of what is held against its name"
+    );
+}

@@ -1065,8 +1065,8 @@ mod cluster {
     use crate::clusterpool::Refused as NotVouched;
     use crate::poollogins::Bound;
 
-    fn vouches(_: &Path, _: &str) -> Result<(), NotVouched> {
-        Ok(())
+    fn vouches(_: &Path, _: &str) -> Result<String, NotVouched> {
+        Ok("pod-uid-1".to_owned())
     }
 
     /// What a link to the runner kept for `team` under `config` reports.
@@ -1264,7 +1264,7 @@ mod cluster {
         let link = reached(config.path());
         let refused = Bound::of_a_cluster_pool(config.path(), "team", Some(&link), &|_, _| {
             asked.set(true);
-            Ok(())
+            Ok("pod-uid-1".to_owned())
         })
         .unwrap_err();
         assert!(refused.contains("Only you can mark it"), "{refused}");
@@ -1302,7 +1302,7 @@ mod cluster {
         let (pool, kept) = runners::cluster_runner_for(config.path(), "team")
             .unwrap()
             .unwrap();
-        let was = Bound::of_cluster(&pool, &kept);
+        let was = Bound::of_cluster(&pool, &kept, "pod-uid-1");
         let mut claim = kept.clone();
         claim.claimed.uid = "another".into();
         let mut pod = kept.clone();
@@ -1312,7 +1312,11 @@ mod cluster {
         let mut key = kept.clone();
         key.pinned.key = LinkKey::generate().unwrap().public();
         for changed in [claim, pod, device, key] {
-            assert_ne!(Bound::of_cluster(&pool, &changed), was, "{changed:?}");
+            assert_ne!(
+                Bound::of_cluster(&pool, &changed, "pod-uid-1"),
+                was,
+                "{changed:?}"
+            );
         }
         let other = |context: &str, pin: crate::clusterpool::PoolPin| {
             ClusterPool::new(
@@ -1327,19 +1331,25 @@ mod cluster {
         };
         let pin = pool.pin().unwrap();
         assert_ne!(
-            Bound::of_cluster(&other("elsewhere", pin.clone()), &kept),
+            Bound::of_cluster(&other("elsewhere", pin.clone()), &kept, "pod-uid-1"),
             was
         );
         let moved = crate::clusterpool::PoolPin {
             cluster: "4e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b".into(),
             ..pin.clone()
         };
-        assert_ne!(Bound::of_cluster(&other("team", moved), &kept), was);
+        assert_ne!(
+            Bound::of_cluster(&other("team", moved), &kept, "pod-uid-1"),
+            was
+        );
         let rolled = crate::clusterpool::PoolPin {
             key: crate::clusterpool::tests::Operator::new().key(),
             ..pin
         };
-        assert_ne!(Bound::of_cluster(&other("team", rolled), &kept), was);
+        assert_ne!(
+            Bound::of_cluster(&other("team", rolled), &kept, "pod-uid-1"),
+            was
+        );
     }
 
     #[test]
@@ -1356,6 +1366,94 @@ mod cluster {
         assert!(!refused.contains("secret-host"), "{refused}");
     }
 
+    /// What the cluster says beside the statement only ever refuses a value, as it is unsigned.
+    #[test]
+    fn a_stopped_or_no_longer_vouched_runner_is_sent_no_value() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let kubectl = cluster.kubectl();
+        let asked = || vouched_now_with(config.path(), &kubectl, "team", runners::now());
+        assert_eq!(asked().unwrap(), "pod-uid-1", "vouched and serving");
+        let claim_was = std::fs::read_to_string(cluster.dir.path().join("claim.json")).unwrap();
+        let change = |change: &dyn Fn(&mut serde_json::Value)| {
+            let mut claim: serde_json::Value = serde_json::from_str(&claim_was).unwrap();
+            change(&mut claim);
+            cluster.write("claim.json", &claim.to_string());
+        };
+        for said in [
+            serde_json::json!({"type": "KeyPublished", "status": "False", "reason": "NotVouched"}),
+            serde_json::json!({"type": "KeyPublished", "status": "False", "reason": "Vouched"}),
+            serde_json::json!({"type": "KeyPublished", "status": "True", "reason": "Starting"}),
+            serde_json::json!({"type": "Ready", "status": "True", "reason": "Vouched"}),
+        ] {
+            change(&|claim| {
+                claim["status"]["conditions"] = serde_json::json!([said]);
+            });
+            assert!(matches!(asked(), Err(NotVouched::NotVouched(_))), "{said}");
+        }
+        change(&|claim| {
+            claim["spec"]["stopped"] = true.into();
+        });
+        assert!(matches!(asked(), Err(NotVouched::NotVouched(_))), "claim");
+        cluster.write("claim.json", &claim_was);
+        assert!(asked().is_ok());
+        let pool_was = std::fs::read_to_string(cluster.dir.path().join("pool.json")).unwrap();
+        let mut stopped: serde_json::Value = serde_json::from_str(&pool_was).unwrap();
+        stopped["spec"] = serde_json::json!({"stopped": true});
+        cluster.write("pool.json", &stopped.to_string());
+        assert!(matches!(asked(), Err(NotVouched::NotVouched(_))), "pool");
+        cluster.write("pool.json", &pool_was);
+        // A pod on its way out, or naming no uid, is no runner to send a value to.
+        for pod in [
+            r#"{"metadata": {}}"#,
+            r#"{"metadata": {"uid": "pod-uid-1", "deletionTimestamp": "2026-10-31T00:00:00Z"}}"#,
+        ] {
+            cluster.write("pod.json", pod);
+            assert!(matches!(asked(), Err(NotVouched::NotVouched(_))), "{pod}");
+        }
+    }
+
+    /// A kept claim's pod made again under its name, with its key, is not what the person allowed.
+    #[test]
+    fn a_pod_made_again_under_its_name_asks_again() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        let link = reached(config.path());
+        let of_pod = |uid: &'static str| {
+            Bound::of_a_cluster_pool(config.path(), "team", Some(&link), &move |_, _| {
+                Ok(uid.to_owned())
+            })
+            .unwrap()
+            .unwrap()
+        };
+        let opt_ins = crate::poollogins::OptIns::default();
+        opt_ins.allow("devops", "site", of_pod("pod-uid-1"));
+        assert_eq!(
+            opt_ins.standing("devops", "site", &of_pod("pod-uid-1")),
+            crate::poollogins::Standing::Allowed
+        );
+        assert_eq!(
+            opt_ins.standing("devops", "site", &of_pod("pod-uid-2")),
+            crate::poollogins::Standing::Changed
+        );
+    }
+
+    /// A link is checked against the runner it was made for, under whatever name.
+    #[test]
+    fn a_link_made_for_a_runner_no_longer_kept_is_refused_before_it_connects() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let kubectl = cluster.kubectl();
+        let now = runners::now();
+        let link = reached(config.path());
+        before_cluster_link_to(config.path(), &kubectl, "team", &link, now).unwrap();
+        let earlier = format!("team/team@{}", "ab".repeat(32));
+        let refused =
+            before_cluster_link_to(config.path(), &kubectl, "team", &earlier, now).unwrap_err();
+        assert!(refused.to_string().contains("no longer keeps"), "{refused}");
+    }
+
     #[test]
     fn a_mark_taken_back_or_a_runner_changed_while_the_cluster_was_asked_sends_nothing() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
@@ -1365,7 +1463,7 @@ mod cluster {
         let refused =
             Bound::of_a_cluster_pool(config.path(), "team", Some(&link), &|config, name| {
                 runners::set_cluster_owned(config, name, false).unwrap();
-                Ok(())
+                Ok("pod-uid-1".to_owned())
             })
             .unwrap_err();
         assert!(refused.contains("not marked"), "{refused}");
@@ -1373,7 +1471,7 @@ mod cluster {
         runners::set_cluster_owned(config.path(), "team", true).unwrap();
         Bound::of_a_cluster_pool(config.path(), "team", Some(&link), &|config, name| {
             remove_cluster(config, None, name, None, None).unwrap();
-            Ok(())
+            Ok("pod-uid-1".to_owned())
         })
         .unwrap_err();
     }

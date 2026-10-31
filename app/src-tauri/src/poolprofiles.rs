@@ -520,7 +520,7 @@ fn yours_on_a_cluster(
     pool: &str,
     cluster: &purlis_core::runners::ClusterPool,
     kept: &purlis_core::runners::ClusterKept,
-    vouch: &dyn Fn(&Path, &str) -> Result<(), purlis_core::clusterpool::Refused>,
+    vouch: &dyn Fn(&Path, &str) -> Result<String, purlis_core::clusterpool::Refused>,
 ) -> Result<Yours, String> {
     if !cluster.owned() {
         return Err(format!(

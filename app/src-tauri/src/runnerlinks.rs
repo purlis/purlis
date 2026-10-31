@@ -188,6 +188,7 @@ impl ToARunner {
             config.to_path_buf(),
             kubectl.clone(),
             pool.name().to_owned(),
+            kept.reached(),
         );
         let kubectl = pool.kubectl(kubectl);
         let preparing = kubectl.clone();
@@ -200,11 +201,11 @@ impl ToARunner {
                 &kept.pod,
             ),
             // Before every connection: the pin as it is kept now, followed through a roll and
-            // kept again, and the runner vouched for (#3305).
+            // kept again, and the runner vouched for (#3305), still the one this link is for.
             Arc::new(move || {
-                let (config, kubectl, name) = &checking;
+                let (config, kubectl, name, reached) = &checking;
                 let now = crate::sandboxing::now_secs();
-                purlis_core::pools::before_cluster_link(config, kubectl, name, now)
+                purlis_core::pools::before_cluster_link_to(config, kubectl, name, reached, now)
                     .map_err(not_checked)
             }),
         )
