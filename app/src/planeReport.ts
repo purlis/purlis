@@ -8,6 +8,7 @@ import { type Asking } from "./NeedsYou";
 import { type QuietChat } from "./chatState";
 import { type Ending } from "./QuitWarning";
 import { type SandboxSaid } from "./SandboxMark";
+import { type StandingNotice } from "./ChipNotices";
 
 /**
  * **What a project and the window tell each other** (#1035, split out of `PlaneView.tsx`): what
@@ -100,6 +101,9 @@ export type ReportedWorkspaces = {
   /** Forgets a dormant pin for good, with an Undo for this run in the Notices centre ("Forgot
    *  the pin to X"): the dormant notice's Forget, wherever it is drawn. */
   forget?: (workspace: string) => void;
+  /** **What stands about its workspaces**, one line each (#3650): its stale repos, read by the
+   *  project and listed in its Inbox, hung from each one's chip too, with the same ways. */
+  standing?: readonly StandingNotice[];
   focused?: string;
   waiting: Readonly<Record<string, number>>;
 };
