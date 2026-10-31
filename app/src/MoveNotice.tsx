@@ -117,6 +117,7 @@ function WaitsOnASignIn({
           label: "Sign in",
           onPress: DRIVEN.has(asked.kind) ? () => setOpen({}) : () => inTerminal(),
         };
+  const anotherPlan = { label: "Choose another plan", onPress: () => setOpen(undefined) };
   const tryIt = { label: "Try the move", onPress: () => signedInForMove(plane, session) };
   const cancel = { label: "Cancel move", onPress: () => putAwayMove(plane, session) };
   return (
@@ -125,7 +126,13 @@ function WaitsOnASignIn({
       at="pane"
       tone="attention"
       label="Move"
-      fixes={open ? [tryIt, cancel] : [signIn, ...otherPlans.map(toPlan), tryIt, cancel]}
+      fixes={
+        open === undefined
+          ? [signIn, ...otherPlans.map(toPlan), tryIt, cancel]
+          : open.plan === undefined
+            ? [tryIt, cancel]
+            : [anotherPlan, tryIt, cancel]
+      }
       under={
         open ? (
           <PoolSignIn
@@ -139,7 +146,11 @@ function WaitsOnASignIn({
             onEnd={(signedIn) => {
               if (!signedIn) putAwayMove(plane, session);
             }}
-            onTerminal={() => inTerminal(open.plan)}
+            // The strip's login ends as it closes, so only one runs.
+            onTerminal={() => {
+              setOpen(undefined);
+              inTerminal(open.plan);
+            }}
           />
         ) : undefined
       }

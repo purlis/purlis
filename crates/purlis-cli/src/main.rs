@@ -4368,11 +4368,18 @@ fn pool_sign_in(
     }
     // A login approved in the browser waits for an answer only the window carries (#4044).
     if sign_in::driven::waits_for_the_browser(&record.harness, provider) {
+        let said = "purlis follows only Claude Code's and opencode's Copilot sign-in on a pool \
+                    from a terminal: nothing here can carry your browser's answer to the runner.";
+        // Only a name that could be made is printed as a command to copy.
+        if !purlis_core::profiles::name_ok(&record.name) {
+            return Err(format!(
+                "{said} Sign '{}' in from its line in Settings › Pools.",
+                shown::short(&record.name)
+            ));
+        }
         let plan = provider.map_or(String::new(), |plan| format!(" --provider {plan}"));
         return Err(format!(
-            "purlis follows only Claude Code's and opencode's Copilot sign-in on a pool from a \
-             terminal: nothing here can carry your browser's answer to the runner. On the runner, \
-             run: purlis profile sign-in {}{plan} --way device",
+            "{said} On the runner, run: purlis profile sign-in {}{plan} --way device",
             record.name
         ));
     }

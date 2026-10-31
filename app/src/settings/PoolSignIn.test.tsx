@@ -337,6 +337,58 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     await waitFor(() => expect(calls("pool_sign_in_type")).toHaveLength(2));
   });
 
+  it("clears what it said of a refused key once the next goes through (#4123)", async () => {
+    const opened = await strip();
+    says({ at: "could-not-follow", said: "Choose your sign-in method: [1] [2]" });
+    const terminal = await within(opened).findByRole("group", {
+      name: "The runner's terminal on builds",
+    });
+    await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
+    const refused = Promise.reject(new Error("that is too much to type"));
+    refused.catch(() => undefined);
+    typing = [refused];
+    const type = within(terminal).getByRole("button", { name: "Type 1" });
+    await userEvent.click(type);
+    await within(opened).findByRole("alert");
+
+    await userEvent.click(type);
+
+    await waitFor(() => expect(within(opened).queryByRole("alert")).toBeNull());
+  });
+
+  it("a device code that failed may go back to the browser, on a screen afresh (#4106)", async () => {
+    render(<PoolProfiles pool="builds" plane={undefined} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Sign fast in on pool builds" }),
+    );
+    const opened = await screen.findByRole("group", { name: "Signing fast in on builds" });
+    says({ at: "port-taken", port: 1455 });
+    await userEvent.click(await within(opened).findByRole("button", { name: "Use a device code" }));
+    expect(
+      await within(opened).findByText(/Enter the code only on a page of openai.com/),
+    ).toBeVisible();
+    const terminal = await within(opened).findByRole("group", {
+      name: "The runner's terminal on builds",
+    });
+    await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
+    says({ at: "printed", text: "Enter OLD-CODE" });
+    await within(terminal).findByText("Enter OLD-CODE");
+    says({ at: "failed", why: "the runner said: device auth is off" });
+
+    await userEvent.click(await within(opened).findByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(3));
+    expect(within(opened).queryByText("Enter OLD-CODE")).toBeNull();
+
+    says({ at: "failed", why: "the runner said: device auth is off" });
+    await userEvent.click(await within(opened).findByRole("button", { name: "Try the browser" }));
+
+    await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(4));
+    expect(calls("pool_sign_in_start")[3]).toEqual(expect.objectContaining({ terminal: null }));
+    expect(
+      within(opened).queryByRole("group", { name: "The runner's terminal on builds" }),
+    ).toBeNull();
+  });
+
   it("starts a Copilot sign-in purlis could not follow again in the terminal, with its plan (#4160)", async () => {
     render(<PoolProfiles pool="builds" plane={undefined} />);
     await userEvent.click(

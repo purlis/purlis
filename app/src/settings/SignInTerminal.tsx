@@ -21,14 +21,15 @@ export type Printer = (print: ((text: string) => void) | undefined) => void;
 
 /**
  * **The runner's live terminal, inline in a sign-in's strip** (#4043, spec #4023 story 9): where
- * purlis cannot follow a login, the person answers it here. A terminal of a fixed size, drawn from
+ * purlis cannot follow a login, or the person asked for a device code (#4106), they answer it here. A terminal of a fixed size, drawn from
  * the theme's terminal tokens: the runner's `purlis` made it, and keeps its screen.
  *
  * - **Never a keyboard trap** (WCAG 2.1.2): Tab and Shift+Tab leave it, as no login asks for them,
  *   so Cancel is always reachable.
  * - **It answers none of the questions a program asks its terminal** (its kind, its cursor, its
  *   modes, its settings, its colours): the terminal on the runner already did, and a second
- *   answer would be typed into the login.
+ *   answer would be typed into the login. Nor does it tell where the keyboard went, were it asked
+ *   to. A click is told to a login that asks for clicks, as a terminal tells it.
  * - **Copy from it, paste into it**: ⌘C (Ctrl+C off a Mac) with something selected copies it, and
  *   Ctrl+C with nothing selected interrupts the login. A paste goes in as typed text.
  * - **No link in it opens anything.** What a runner prints is less trusted than the window, and a
@@ -102,6 +103,8 @@ export function SignInTerminal({
       return true;
     });
     const typing = pane.onData((text) => {
+      // Told only of the keyboard coming and going, which no one typed.
+      if (text === "\x1b[I" || text === "\x1b[O") return;
       if (running.current) typed.current(text);
     });
     pane.open(where);

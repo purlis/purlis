@@ -51,7 +51,7 @@ function Strip({
         onTerminal={() => undefined}
         terminal={
           step.at === "could-not-follow" || step.at === "device-in-terminal"
-            ? { printer: (print) => print?.(TERMINAL_SHOWS), onType: () => undefined }
+            ? { printer: (print) => print?.(TERMINAL_SHOWS), onType: () => undefined, attempt: 0 }
             : undefined
         }
         onDeviceCode={() => undefined}

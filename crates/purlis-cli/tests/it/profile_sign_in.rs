@@ -352,6 +352,21 @@ fn a_missing_profile_or_plan_says_what_to_do() {
         "{said}"
     );
     assert!(!said.contains("Open in terminal"), "{said}");
+    let chatgpt = machine.purlis(&[
+        "profile",
+        "sign-in",
+        "oc",
+        "--pool",
+        "builds",
+        "--provider",
+        "openai",
+    ]);
+    assert!(!chatgpt.status.success());
+    let said = String::from_utf8_lossy(&chatgpt.stderr);
+    assert!(
+        said.contains("purlis profile sign-in oc --provider openai --way device"),
+        "{said}"
+    );
     assert_eq!(machine.ran(), None);
 }
 

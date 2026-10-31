@@ -175,9 +175,25 @@ describe("a move waiting on its profile's sign-in", () => {
       expect(heard).toEqual([
         { plane: PLANE, profile: "work", provider: "openai", pool: "builds", device: true },
       ]);
+      // The strip's login ended: only the shell tab's runs.
+      await waitFor(() => expect(calls("pool_sign_in_cancel")).toEqual([{ flow: 7 }]));
+      expect(calls("put_away_chat_move")).toEqual([]);
     } finally {
       window.removeEventListener(PROFILE_SIGN_IN, hear);
     }
+  });
+
+  it("a plan pressed by mistake can be left, and the move stays (#4181)", async () => {
+    await notice(opencode());
+    await userEvent.click(screen.getByRole("button", { name: "Sign in to ChatGPT" }));
+    await screen.findByRole("group", { name: "Signing work in on builds" });
+    await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(1));
+
+    await userEvent.click(screen.getByRole("button", { name: "Choose another plan" }));
+
+    expect(await screen.findByRole("button", { name: "Sign in to GitHub Copilot" })).toBeVisible();
+    await waitFor(() => expect(calls("pool_sign_in_cancel")).toEqual([{ flow: 7 }]));
+    expect(calls("put_away_chat_move")).toEqual([]);
   });
 
   it("a refused Try the move reads the core's moves back, never inventing a failure", async () => {

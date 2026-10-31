@@ -73,6 +73,25 @@ describe("the sign-in strip's terminal and the theme in force", () => {
     expect([made[0].cols, made[0].rows]).toEqual([80, 16]);
   });
 
+  it("passes on what is typed, and not the keyboard coming and going", async () => {
+    const typed: string[] = [];
+    render(
+      <SignInTerminal
+        label="The runner's terminal on builds"
+        size={{ columns: 80, rows: 16 }}
+        printer={() => undefined}
+        onType={(text) => typed.push(text)}
+        live
+      />,
+    );
+
+    made[0].input("\x1b[I");
+    made[0].input("\x1b[O");
+    made[0].input("1");
+
+    expect(typed).toEqual(["1"]);
+  });
+
   it("stops following once it is gone", () => {
     const { unmount } = terminal();
     const was = made[0];

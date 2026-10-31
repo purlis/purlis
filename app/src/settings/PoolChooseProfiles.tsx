@@ -98,14 +98,17 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
           onTerminal={
             plane === undefined
               ? undefined
-              : () =>
+              : () => {
+                  // The strip's login ends as it closes, so only one runs.
+                  next();
                   askProfileSignIn(
                     plane,
                     one.name,
                     undefined,
                     pool,
                     approvesIn(one.kind) || undefined,
-                  )
+                  );
+                }
           }
         />
       </>

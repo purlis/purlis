@@ -11,7 +11,10 @@ import { TextField } from "../ui/field/Field";
 import { SettingActions } from "./components";
 import { SignInTerminal, type Printer } from "./SignInTerminal";
 
-/** Where a sign-in is, as the strip draws it: starting, one of the core's steps, or refused. */
+/**
+ * Where a sign-in is, as the strip draws it: starting, one of the core's steps, the device code
+ * the person asked for running in its terminal, or refused.
+ */
 export type StripStep =
   | { at: "starting" }
   | Exclude<PoolSignInStep, { at: "printed" }>
@@ -37,6 +40,13 @@ export const drivenPlan = (kind: string, plan: string) =>
 
 /** The size of the strip's terminal: as wide as a login expects, and a few lines shorter. */
 const TERMINAL: PoolSignInTerminal = { columns: 80, rows: 16 };
+
+/**
+ * What a login approved in the browser says beside the runner's terminal: its device flow prints
+ * its own page, which purlis reads nothing of, and both of these logins are OpenAI's.
+ */
+const CHECK_THE_PAGE =
+  "purlis does not check what the runner prints. Enter the code only on a page of openai.com; if it names another app, or asks for more than signing in, cancel there and here.";
 
 /**
  * **The step the strip is on, in words** (spec #4023 story 12): "Step 2 of 3: …". A device code's
@@ -245,6 +255,16 @@ export function PoolSignIn({
   };
 
   // The port-taken login is over: the core starts the harness's device flow in a terminal.
+  // A device flow that failed, its account may have it off: the browser's way is still there.
+  const browserAgain = () => {
+    setStep({ at: "starting" });
+    setPage(undefined);
+    setCode("");
+    setPasteRefused(undefined);
+    printing.current.held = [];
+    setTerminalFor(undefined);
+  };
+
   const useDeviceCode = () => {
     setStep({ at: "device-in-terminal" });
     setPage(undefined);
@@ -262,7 +282,8 @@ export function PoolSignIn({
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
         .then((typed) => {
           // Refused once that sign-in is over, it is nothing to say.
-          if (typed.status === "error" && flow.current === which) setPasteRefused(typed.error);
+          if (flow.current === which)
+            setPasteRefused(typed.status === "error" ? typed.error : undefined);
         }),
     );
   };
@@ -284,7 +305,8 @@ export function PoolSignIn({
       onTryAgain={tryAgain}
       onEnd={onEnd}
       onTerminal={onTerminal}
-      terminal={inTerminal ? { printer, onType: type } : undefined}
+      terminal={inTerminal ? { printer, onType: type, attempt } : undefined}
+      onBrowserAgain={terminalFor === "device" ? browserAgain : undefined}
       onDeviceCode={useDeviceCode}
     />
   );
@@ -332,7 +354,9 @@ export type SignInStripProps = {
   onEnd: (signedIn: boolean) => void;
   onTerminal?: () => void;
   /** The strip's terminal, while a login runs in it or just ended there. */
-  terminal?: { printer: Printer; onType: (text: string) => void };
+  terminal?: { printer: Printer; onType: (text: string) => void; attempt: number };
+  /** "Try the browser", after a device code that did not sign in (#4106). */
+  onBrowserAgain?: () => void;
   /** "Use a device code": the harness's device flow, in the strip's terminal (#4106). */
   onDeviceCode: () => void;
 };
@@ -384,6 +408,11 @@ export function SignInStrip(props: SignInStripProps) {
                 ? "Open the page again"
                 : "Try again"}
             </Button>
+            {props.onBrowserAgain !== undefined && (
+              <Button size="sm" onPress={props.onBrowserAgain}>
+                Try the browser
+              </Button>
+            )}
             <Button size="sm" variant="ghost" onPress={() => onEnd(false)}>
               Close
             </Button>
@@ -453,6 +482,8 @@ function Body(props: SignInStripProps & { who: string }) {
       <StepBody {...props} />
       {props.terminal !== undefined && props.step.at !== "not-started" && (
         <SignInTerminal
+          // Each try is a screen of its own: nothing of the login before it stays to be copied.
+          key={props.terminal.attempt}
           label={`The runner's terminal on ${props.pool}`}
           size={TERMINAL}
           printer={props.terminal.printer}
@@ -474,6 +505,7 @@ function StepBody({
   page,
   kind,
   provider,
+  approves,
   onTerminal,
   onDeviceCode,
 }: SignInStripProps & { who: string }) {
@@ -535,10 +567,13 @@ function StepBody({
       );
     case "device-in-terminal":
       return (
-        <p>
-          The runner&apos;s terminal below runs the device-code sign-in. Copy the page it prints to
-          your browser and enter its code there; purlis checks when it ends.
-        </p>
+        <>
+          <p>
+            The runner&apos;s terminal below runs the device-code sign-in. Copy the page it prints
+            to your browser and enter its code there; purlis checks when it ends.
+          </p>
+          <p className="ui-setting-help">{CHECK_THE_PAGE}</p>
+        </>
       );
     case "code":
     case "refused":
@@ -582,11 +617,14 @@ function StepBody({
       );
     case "could-not-follow":
       return (
-        <p>
-          purlis could not follow this sign-in, so it started it again in the runner&apos;s own
-          terminal below, and a page it opened before is over. Finish it there; purlis checks when
-          it ends.
-        </p>
+        <>
+          <p>
+            purlis could not follow this sign-in, so it started it again in the runner&apos;s own
+            terminal below, and a page it opened before is over. Finish it there; purlis checks when
+            it ends.
+          </p>
+          {approves && <p className="ui-setting-help">{CHECK_THE_PAGE}</p>}
+        </>
       );
     case "cancelled":
       return <p className="ui-setting-help">The sign-in was cancelled; nothing changed there.</p>;

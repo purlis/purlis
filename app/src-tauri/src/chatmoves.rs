@@ -110,6 +110,17 @@ pub(crate) struct MoveSignIn {
     pub(crate) plans: Vec<crate::machineprofiles::PlanRow>,
 }
 
+impl MoveSignIn {
+    fn of(asked: &SignInAsked) -> Self {
+        Self {
+            profile: asked.profile.clone(),
+            kind: asked.kind.clone(),
+            harness: asked.harness.clone(),
+            plans: crate::machineprofiles::PlanRow::of_harness(&asked.kind),
+        }
+    }
+}
+
 impl ChatMove {
     fn of(session: u32, one: &Move) -> ChatMove {
         let (stage, why) = match &one.stage {
@@ -120,18 +131,7 @@ impl ChatMove {
             Stage::Failed(why) => ("failed", Some(why.clone())),
         };
         let sign_in = match &one.stage {
-            Stage::SigningIn(asked) => Some(MoveSignIn {
-                profile: asked.profile.clone(),
-                kind: asked.kind.clone(),
-                harness: asked.harness.clone(),
-                plans: purlis_core::profilestore::sign_in::providers(&asked.kind)
-                    .iter()
-                    .map(|plan| crate::machineprofiles::PlanRow {
-                        id: plan.provider.clone(),
-                        title: plan.title.clone(),
-                    })
-                    .collect(),
-            }),
+            Stage::SigningIn(asked) => Some(MoveSignIn::of(asked)),
             _ => None,
         };
         ChatMove {
