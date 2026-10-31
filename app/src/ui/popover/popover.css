@@ -8,7 +8,7 @@
    exactly what this file draws.
 
    **The overlay surface** (ADR 0094 §4, #1845): one ground, one edge, one corner and one lift,
-   the same as a dialog's and a tooltip's (`primitives/overlays.css`).
+   the same as a dialog's and a tooltip's (`ui/dialog/dialog.css`, `ui/tooltip/tooltip.css`).
 
    **In the `components` layer** (`styles.css`), above `App.css`: a view places a popover (a
    width) and nothing it writes redraws one. **Only tokens**, one `var()` per colour. */
