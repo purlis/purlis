@@ -389,6 +389,7 @@ fn a_set_of_three_states_a_part_drawn_apart_falls_in_is_keyed_on_all_three() {
         family,
         rules: &mut rules,
         fell: &mut fell,
+        margin: 0.0,
     }
     .fall_apart(
         pin,
@@ -713,6 +714,7 @@ fn after_fall(
         family,
         rules: &mut rules,
         fell: &mut fell,
+        margin: 0.0,
     }
     .fall(variant, states, "a floor".to_owned(), None);
     drawn_now(&rules, family, at, variant, seen, property)

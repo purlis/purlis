@@ -372,3 +372,36 @@ fn what_a_tint_makes_fall_is_read_again_and_every_look_left_reads() {
         }
     }
 }
+
+#[test]
+fn a_look_that_falls_only_between_the_coarse_tints_is_read_at_every_degree() {
+    let parts = json!({ "titlebar.count.fill": "chart.4", "titlebar.count.text": "chart.3" });
+    let family = "titlebar";
+    let mut found = None;
+    'search: for base in CASES {
+        for alpha in (0x20..=0xe0_u8).step_by(4) {
+            let wash = format!("{}{alpha:02x}", &base[..7]);
+            let Some(grey) = just_reading(family, &wash, &parts) else {
+                continue;
+            };
+            let theme = themed(&wash, grey, &parts).unwrap();
+            let breaks = |degree: i32| {
+                falls(
+                    &untinted(&tint::tinted_at(&theme, f64::from(degree))),
+                    family,
+                )
+            };
+            let named = theme
+                .tint
+                .hues
+                .iter()
+                .any(|one| falls(&untinted(&tint::tinted(&theme, one.name)), family));
+            if !named && !(0..360).step_by(COARSE_DEGREES).any(breaks) && (0..360).any(breaks) {
+                found = Some(theme);
+                break 'search;
+            }
+        }
+    }
+    let theme = found.expect("a look that breaks only between the coarse tints");
+    assert!(falls(&theme, family), "{:?}", fallen(&theme));
+}
