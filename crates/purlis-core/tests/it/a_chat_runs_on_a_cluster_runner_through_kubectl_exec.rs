@@ -703,7 +703,8 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
 /// whether it succeeded. Its input is closed, and it is held to [`PATIENCE`] twice over.
 fn the_command(purlis: &str, machine: &std::path::Path, args: &[&str]) -> (bool, String) {
     use std::process::Stdio;
-    let mut running = std::process::Command::new(purlis)
+    let mut command = std::process::Command::new(purlis);
+    command
         .args(args)
         .current_dir(machine.join("project"))
         .env("CHARTER_ROOT", machine.join("project"))
@@ -713,9 +714,8 @@ fn the_command(purlis: &str, machine: &std::path::Path, args: &[&str]) -> (bool,
         .env_remove("CHARTER_CHAT")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("the binary runs");
+        .stderr(Stdio::piped());
+    let mut running = purlis_core::forklock::spawn(&mut command).expect("the binary runs");
     let until = Instant::now() + PATIENCE * 2;
     while running.try_wait().expect("it is waited on").is_none() {
         if Instant::now() > until {
