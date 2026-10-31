@@ -324,3 +324,17 @@ fn every_chat_of_a_router_s_grade_reads_the_pins_of_the_scope_that_chose_it() {
     let tried = crate::skills::verbs::drafts::tried(root, &laid.piece).unwrap();
     assert_eq!(crate::skills::pins_or_none(&tried, None, None), ["deploy"]);
 }
+
+/// #3616: a router's grade purlis stopped under before it scored a test says it was
+/// interrupted, and no count of tests that passed.
+#[test]
+fn an_interrupted_grade_says_it_was_interrupted_and_no_count_3616() {
+    let mut row = graded("01A", "2026-10-02T10:00:00Z");
+    row.report = interrupted_report("relevance", 200_000, None, None);
+    assert!(row.sound(chrono::Utc::now()), "{row:?}");
+    assert_eq!(
+        row.said(),
+        "Interrupted on the library at aaaaaaaaaaaa, 2026-10-02: purlis stopped while it ran, \
+         before any trigger test was scored."
+    );
+}

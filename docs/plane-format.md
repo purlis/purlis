@@ -3882,7 +3882,9 @@ An end row, never a pass or a fail:
   §8, as amended 2026-10-28): the trigger tests of a library, run with the router in place and
   with the built-in router.
 - **Status:** **experimental**, behind the `skill-studio` flag; written by the app when a
-  router's grade ends, whole or stopped (`grades::routers::record`), and read by the Skill
+  router's grade ends, whole or stopped (`grades::routers::record`), or at the project's next
+  start for one purlis stopped under, as interrupted with no skill scored (#3616,
+  [grades under way](#dataapp-stateclone-keygrades-under-waygradejson)), and read by the Skill
   studio's router line, which says the newest grade of the router chosen there, in that scope
   (`grades::routers::grades_of`).
 - **Tier:** Plane — committed, beside the skills' eval record, so a teammate sees how the router
@@ -8030,8 +8032,15 @@ refuses a `<data>` under a project or inside any git work tree.
   it would be recorded were it interrupted now (`report.ended` `interrupted`, no chat scored,
   and what its chats spent so far: nothing as it starts, then, as each chat ends, its chats that
   ran, its tokens and its cost as the chats said them, in `spent` and in the report's
-  `spent_tokens` and `spent_usd`, #3582). Written `0600` through no link when a grade starts
-  (`grades::underway::began`), written again as each chat ends (`grades::underway::Marker::spent`),
+  `spent_tokens` and `spent_usd`, #3582). **A router's grade** (#3616) is held the same way, its
+  row under `router` in place of `graded`: its routers' record row
+  ([`personas/_grades/routers/`](#personas_gradesroutersyyyy-mmdevicejsonl)) as it would be
+  recorded were it interrupted now (`report.ended` `interrupted`, `report.skills` empty, and what
+  its chats spent so far, as a skill's), `local` whether any copy of its library is this
+  machine's alone; it is recorded at the next start in the routers' record (a purlis from before
+  #3616 reads such a file as no sound row, and removes it unrecorded once no grade holds its
+  lock). Written `0600` through no link when a grade starts
+  (`grades::underway::began`, `grades::underway::began_router`), written again as each chat ends (`grades::underway::Marker::spent`),
   and removed when it ends (`grades::underway::ended`). Each write goes to
   `.<grade>.json.partial` beside it, locked, and is renamed over it, so a reader finds the whole
   file or none; a spend no sound row could hold is never written. A leftover `.partial` whose lock

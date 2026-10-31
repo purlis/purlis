@@ -15,6 +15,9 @@
 //!   `skillgrade`'s record of the grades running, and its Stop.
 //! - **The grade goes to its record** with the library's commit, and the studio's router line says
 //!   it ([`crate::skillstudio::StudioRouter::grade`]).
+//! - **It is held as under way while it runs** (#3616), as a skill's is (`grades::underway`): a
+//!   crash, a fault or a quit before it ends leaves it to the project's next start to record as
+//!   interrupted.
 //!
 //! Behind the `skill-studio` flag until its finish line (#2786).
 
@@ -33,7 +36,8 @@ use purlis_core::skills::grades::{self, Spent};
 use crate::planes::{PlaneId, Planes};
 use crate::skillchange::flag_on;
 use crate::skillgrade::{
-    GradeEnded, GradeLeftOut, GradePrice, InChats, Running, chats_on, held_to_its_end, running,
+    GradeEnded, GradeLeftOut, GradePrice, InChats, Running, chats_on, held_to_its_end,
+    record_interrupted, running,
 };
 
 /// The event the window is told each step of a router's grade by.
@@ -293,9 +297,45 @@ pub(crate) async fn router_grade_start(
             unpriced_usd_per_million: Some(grades::price::DEAREST_USD_PER_MILLION),
         };
         let grade = id.clone();
+        // Held as under way while it runs (#3616): what it would be recorded as were purlis to
+        // stop under it now. Its lock is held while the grade runs (#3466).
+        let under_way = RouterGraded {
+            v: routers::VERSION,
+            grade: grade.clone(),
+            router: router.clone(),
+            workspace: planned.workspace.clone(),
+            persona: planned.persona.clone(),
+            commit: planned.commit.clone(),
+            library: planned.copies.iter().map(RecordedCopy::of).collect(),
+            harness: None,
+            profile: Some(profile.clone()),
+            ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
+            runs: grading::RUNS,
+            report: routers::interrupted_report(
+                &router,
+                cap,
+                limits.cost_usd,
+                limits.priced.clone(),
+            ),
+            spent: Spent::default(),
+            model: None,
+        };
+        let local = routers::library_is_local(&root, &planned.copies);
+        let marker = match grades::underway::began_router(&root, local, &under_way) {
+            Ok(marker) => Some(marker),
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: router grade {grade} is not held as under way ({why}): a crash \
+                     before it ends loses it"
+                );
+                None
+            }
+        };
+        let held_at = root.clone();
         std::thread::Builder::new()
             .name("purlis-router-grade".to_owned())
             .spawn(move || {
+                let marker = std::cell::RefCell::new(marker);
                 let tell = |ran: u32,
                             tokens: Option<u64>,
                             ended: Option<GradeEnded>,
@@ -348,8 +388,17 @@ pub(crate) async fn router_grade_start(
                         stop: &stop,
                         spent: Spent::default(),
                         tell: &|spent, _asked| tell(spent.chats, spent.tokens, None, None),
-                        // No grade under way is held for a router's (#3616).
-                        on_spent: &|_| {},
+                        // Said in its marker as each chat ends (#3582, #3616).
+                        on_spent: &|spent| {
+                            if let Some(marker) = marker.borrow_mut().as_mut()
+                                && let Err(why) = marker.spent(spent)
+                            {
+                                tracing::warn!(
+                                    "purlis: router grade {grade} under way does not say what \
+                                     it spent ({why})"
+                                );
+                            }
+                        },
                         grade: &grade,
                         asked: 0,
                         harness: None,
@@ -359,20 +408,12 @@ pub(crate) async fn router_grade_start(
                     };
                     let report = engine::grade(&request, &mut chats, Some(limits.clone()));
                     let graded = RouterGraded {
-                        v: routers::VERSION,
-                        grade: grade.clone(),
-                        router: router.clone(),
-                        workspace: planned.workspace.clone(),
-                        persona: planned.persona.clone(),
-                        commit: planned.commit.clone(),
-                        library: planned.copies.iter().map(RecordedCopy::of).collect(),
                         harness: chats.harness.take(),
-                        profile: Some(profile.clone()),
                         ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
-                        runs: grading::RUNS,
                         spent: chats.spent,
                         model: grades::reported_model(chats.reported.iter().map(String::as_str)),
                         report,
+                        ..under_way.clone()
                     };
                     let recorded = routers::record(
                         &root,
@@ -380,6 +421,8 @@ pub(crate) async fn router_grade_start(
                         &graded,
                         &purlis_core::machine::this_log_name(),
                     );
+                    grades::underway::ended(&root, &grade);
+                    drop(marker.borrow_mut().take());
                     running().remove(&grade);
                     let said = match (&graded.report.not_started, recorded) {
                         (Some(why), _) => Some(why.clone()),
@@ -398,16 +441,21 @@ pub(crate) async fn router_grade_start(
                     );
                 };
                 held_to_its_end(&grade, run, || {
-                    tell(
-                        0,
-                        None,
-                        Some(GradeEnded::Failed),
-                        Some("A fault in purlis ended the router's grade before it was scored: grade it again.".to_owned()),
-                    );
+                    // Recorded as interrupted, unless the fault came once it was recorded whole.
+                    // Its lock let go of first: a start reads a held lock as a grade that runs.
+                    drop(marker.borrow_mut().take());
+                    let said = if record_interrupted(&root).contains(&grade) {
+                        "A fault in purlis ended the router's grade before it was scored, so it \
+                         is recorded as interrupted: grade it again."
+                    } else {
+                        "A fault in purlis ended the router's grade once it was recorded."
+                    };
+                    tell(0, None, Some(GradeEnded::Failed), Some(said.to_owned()));
                 });
             })
             .map_err(|why| {
                 running().remove(&id);
+                grades::underway::ended(&held_at, &id);
                 format!("The grade could not start ({why}).")
             })?;
         Ok(id)

@@ -323,3 +323,94 @@ fn a_grade_under_way_in_the_plane_s_state_folder_is_never_read() {
     crate::appstate::put_in_the_plane(root, DIR);
     assert!(interrupted(root, laptop, |_| false).is_empty());
 }
+
+/// A router's grade starting in `root`'s workspace `ops`, held as this machine's alone.
+fn router_starting(id: &str) -> RouterGraded {
+    RouterGraded {
+        v: super::super::routers::VERSION,
+        grade: id.to_owned(),
+        router: "relevance".into(),
+        workspace: Some("ops".into()),
+        persona: None,
+        commit: None,
+        library: Vec::new(),
+        harness: None,
+        profile: Some("work".into()),
+        ts: "2026-10-27T01:00:00+00:00".into(),
+        runs: 3,
+        report: super::super::routers::interrupted_report("relevance", 50_000, Some(1.5), None),
+        spent: Spent::default(),
+        model: None,
+    }
+}
+
+/// #3616: a router's grade purlis stopped under is recorded as interrupted at the project's next
+/// start, with what its chats spent, beside its other grades, and is never left running.
+#[test]
+fn a_router_s_grade_purlis_stopped_under_is_recorded_interrupted_3616() {
+    let (tmp, _) = project();
+    let root = tmp.path();
+    let mut marker = began_router(root, true, &router_starting("g-router")).expect("held");
+    let spent = Spent {
+        chats: 2,
+        tokens: Some(4_000),
+        cost_usd: Some(0.04),
+    };
+    marker.spent(spent).expect("rewritten");
+    assert!(
+        interrupted(root, laptop, |_| false).is_empty(),
+        "a held lock reads as a grade that runs, whatever it grades"
+    );
+    drop(marker);
+    assert_eq!(interrupted(root, laptop, |_| false), ["g-router"]);
+    let read = super::super::routers::grades_of(root, "relevance", Some("ops"), None);
+    assert_eq!(read.len(), 1, "{read:?}");
+    assert_eq!(read[0].report.ended, GradeEnd::Interrupted);
+    assert_eq!(read[0].report.cap, Some(50_000));
+    assert_eq!(read[0].report.cost_cap_usd, Some(1.5));
+    assert_eq!(read[0].spent, spent);
+    assert_eq!(read[0].report.spent_tokens, Some(4_000));
+    assert_eq!(read[0].report.spent_usd, Some(0.04));
+    assert!(read[0].report.skills.is_empty(), "no chat is scored");
+    assert!(
+        interrupted(root, laptop, |_| false).is_empty(),
+        "recorded once"
+    );
+    // No skill's grade is read from it.
+    assert!(super::super::grades_of(root, "deploy", None).is_empty());
+}
+
+/// #3616: a router's grade and a skill's are held side by side, each recorded where it belongs,
+/// and a router's never counts as a skill's under way.
+#[test]
+fn a_router_s_grade_and_a_skill_s_are_held_side_by_side_3616() {
+    let (tmp, level) = project();
+    let root = tmp.path();
+    drop(began_router(root, true, &router_starting("g-r")).expect("held"));
+    drop(began(root, &level, &starting("g-s", &level)).expect("held"));
+    assert_eq!(of(root, &level, "deploy"), ["g-s"], "the skill's alone");
+    let mut recorded = interrupted(root, laptop, |_| false);
+    recorded.sort();
+    assert_eq!(recorded, ["g-r", "g-s"]);
+    assert_eq!(
+        super::super::grades_of(root, "deploy", Some(&level)).len(),
+        1
+    );
+    assert_eq!(
+        super::super::routers::grades_of(root, "relevance", Some("ops"), None).len(),
+        1
+    );
+}
+
+/// #3616: a router's grade that ended is no longer held, and one whose id is not a plain name is
+/// refused.
+#[test]
+fn a_router_s_grade_that_ended_is_not_recorded_again_3616() {
+    let (tmp, _) = project();
+    let root = tmp.path();
+    let marker = began_router(root, true, &router_starting("g-ended")).expect("held");
+    ended(root, "g-ended");
+    drop(marker);
+    assert!(interrupted(root, laptop, |_| false).is_empty());
+    assert!(began_router(root, true, &router_starting("../escape")).is_err());
+}
