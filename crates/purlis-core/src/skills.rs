@@ -1374,8 +1374,8 @@ fn ask(
 /// built-in one. At a start `outside` is the repo skills of the clone it works in; the studio's
 /// preview of a harness ([`harnesses_in_the_studio`]) holds the harness's own skills too, which
 /// count against nothing ([`SkillSet::routed`], ADR 0102 as amended 2026-10-31), so they hide
-/// none of what a chat's start lists. The one routing [`ask`] and the studio go through. The
-/// studio still routes with every clone's repo skills and the built-in router (#4215).
+/// none of what a chat's start lists. The one routing [`ask`] and the studio go through: the
+/// studio routes as a chat at the workspace's root, in no clone, by the built-in router (#4215).
 fn as_a_start_routes(
     set: SkillSet,
     route: Route,
@@ -1976,7 +1976,9 @@ pub struct HarnessInTheStudio {
     pub harness: Harness,
     /// What a chat on it gets: the plane's skills ([`in_the_studio`]) with the ones from outside
     /// the plane ([`SkillSet::with_outside`]), each clash settled as this harness's route lets
-    /// purlis settle it.
+    /// purlis settle it. Its routing is a chat's at the workspace's root, by the built-in router
+    /// (#4215): that chat is in no clone, so no repo skill counts against its budget, while
+    /// every clone's repo skills are in the set for their clashes and what they leave out.
     pub set: SkillSet,
     /// The skills from outside the plane, with whose each is and how it switches.
     pub outside: Vec<OutsideSkill>,
@@ -2130,6 +2132,9 @@ fn harnesses_in_the_studio(
             // Every adapter is a harness's ([`crate::harness_plugin::adapters`]).
             let harness = Harness::of_kind(adapter.harness())?;
             let mut outside = crate::harness_plugin::harness_skills(adapter, env, &choices);
+            // Where a chat at the workspace's root starts: beside what the harness finds itself,
+            // and in no clone (#4215).
+            let at_the_root = outside.len();
             outside.extend(crate::harness_plugin::repo_skills(
                 adapter, &choices, &clones,
             ));
@@ -2141,16 +2146,23 @@ fn harnesses_in_the_studio(
             } else {
                 set.clone()
             };
-            // Routed as a chat's start routes it, by this harness's own budget (SK-15): what it
-            // finds itself is beside the set for its clashes and rows, and counted in nothing.
-            let set = as_a_start_routes(
-                set,
+            // Routed as the start of a chat at the workspace's root routes it, by this harness's
+            // own budget (SK-15; #4215): what it finds itself is counted in nothing, and that
+            // chat is in no clone, so no repo skill counts either. Every clone's repo skills are
+            // still beside the set for its clashes, its rows and what a repo leaves out.
+            let routing = as_a_start_routes(
+                set.clone(),
                 route,
-                &outside,
+                &outside[..at_the_root],
                 Some(harness.skill_budget()),
                 || pins.to_vec(),
                 None,
-            );
+            )
+            .routing;
+            let set = SkillSet {
+                routing,
+                ..set.with_outside(route, outside.iter().cloned())
+            };
             let by_a_repo = SkillSet {
                 left_out: set.left_out_by_a_repo().cloned().collect(),
                 ..SkillSet::default()

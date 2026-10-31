@@ -694,6 +694,10 @@ pub struct StudioRouter {
     /// **A chat's skill budget** (SK-12, ADR 0102 §1): past it the router decides what a chat's
     /// list shows. The same on every harness.
     pub budget: StudioBudget,
+    /// **What the rows' "hidden by the router" marks preview** (#4215), in a sentence: a chat at
+    /// the workspace's root (or the project's), in no clone, routed by the built-in router. Where
+    /// an extension's router is chosen, it says that the marks are the built-in router's choice.
+    pub preview: String,
 }
 
 /// **A chat's skill budget**, as the Routing page says it: the most skills its list holds, and
@@ -773,6 +777,7 @@ fn router_of(
         .map(|p| purlis_core::skills::PinnedBy::Persona(p.to_owned()))
         .or_else(|| workspace.map(|ws| purlis_core::skills::PinnedBy::Workspace(ws.to_owned())));
     StudioRouter {
+        preview: preview_of(workspace, extension.as_deref()),
         said,
         problem,
         extension,
@@ -781,6 +786,31 @@ fn router_of(
         written: pinner.and_then(|by| purlis_core::skills::router::written(root, &by)),
         budget: StudioBudget::default(),
     }
+}
+
+/// **What the studio's hidden marks preview** (#4215; ADR 0102 as amended 2026-10-31): the
+/// start of a chat at the root of `workspace` (or of the project), which is in no clone, so no
+/// repo skill counts against its budget, routed by the built-in router, which asks nothing. An
+/// extension's router (`extension`) is asked only at a chat's real start, never by a read of the
+/// studio, so where one is chosen the marks are the built-in router's choice and say so.
+fn preview_of(workspace: Option<&str>, extension: Option<&str>) -> String {
+    let at = match workspace {
+        Some(_) => "a chat at the workspace's root",
+        None => "a chat at the project's root",
+    };
+    let since = extension.map_or_else(String::new, |id| {
+        format!(
+            ", since {} is asked only at each chat's start",
+            purlis_core::skills::Router::Extension(id.to_owned()).shown()
+        )
+    });
+    let clones = if workspace.is_some() {
+        " A chat in a clone counts that clone's repo skills too, and its own Skills view says \
+         what it hides."
+    } else {
+        ""
+    };
+    format!("The rows' hidden marks are what the built-in router hides for {at}{since}.{clones}")
 }
 
 /// **What the studio offers when it opens** (SK-22, #2785; decision 42), as the core works it

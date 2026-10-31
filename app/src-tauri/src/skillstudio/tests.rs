@@ -614,6 +614,18 @@ fn the_studio_says_which_router_its_chats_are_routed_by() {
     );
     assert_eq!(built_in.extension, None);
     assert!(!built_in.problem);
+    assert_eq!(
+        built_in.preview,
+        "The rows' hidden marks are what the built-in router hides for a chat at the \
+         workspace's root. A chat in a clone counts that clone's repo skills too, and its own \
+         Skills view says what it hides.",
+        "#4215: the place and the router the marks preview"
+    );
+    assert_eq!(
+        router(None).preview,
+        "The rows' hidden marks are what the built-in router hides for a chat at the project's \
+         root."
+    );
 
     std::fs::write(
         root.join("workspaces/alpha/workspace.json"),
@@ -626,6 +638,13 @@ fn the_studio_says_which_router_its_chats_are_routed_by() {
         chosen.said.contains("the router relevance"),
         "{}",
         chosen.said
+    );
+    assert_eq!(
+        chosen.preview,
+        "The rows' hidden marks are what the built-in router hides for a chat at the workspace's \
+         root, since the router relevance is asked only at each chat's start. A chat in a clone \
+         counts that clone's repo skills too, and its own Skills view says what it hides.",
+        "#4215: never the extension's, which a read of the studio does not ask"
     );
 
     std::fs::write(

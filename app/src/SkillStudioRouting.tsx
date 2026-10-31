@@ -132,6 +132,9 @@ export function RoutingFacts({
             </span>
           )}
         </Fact>
+        <Fact label="Preview">
+          <span data-testid="skill-routing-preview">{router.preview}</span>
+        </Fact>
         <Fact label="Budget">
           {`${counted(budget.skills, "skill", "skills")}, ${budget.chars.toLocaleString("en-US")} characters of descriptions, on every program.`}
           <span className="honest" data-testid="skill-routing-budget-counts">
