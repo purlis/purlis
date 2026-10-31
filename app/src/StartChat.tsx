@@ -320,10 +320,12 @@ export function StartChat({
   // A start that takes a moment says what it waits for, for as long as it waits (#4264).
   const [hostSlow, setHostSlow] = useState(false);
   useEffect(() => {
-    setHostSlow(false);
     if (!starting) return;
     const after = window.setTimeout(() => setHostSlow(true), SAYS_THE_HOST_AFTER_MS);
-    return () => window.clearTimeout(after);
+    return () => {
+      window.clearTimeout(after);
+      setHostSlow(false);
+    };
   }, [starting]);
   const cancelled = useRef(false);
   const leave = () => {
