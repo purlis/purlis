@@ -11557,6 +11557,14 @@ export type StudioHarness = {
 	 *  with why (SK-53): the core's `HarnessInTheStudio::repo_left_out`.
 	 */
 	repo_left_out: StudioSkill[],
+	/**
+	 *  **What its own catalogue holds** (#3324), in the core's words (`OwnCatalogue::said`),
+	 *  which `purlis skill list` says too: the skills it finds itself in the person's own
+	 *  folders and its plugins, listed against its own limit and never counted in purlis's
+	 *  budget. Null for a harness that finds none of its own, and where the studio was read only
+	 *  for a count of its needs.
+	 */
+	own: string | null,
 };
 
 /**  A level a skill can be moved to or made at, and its words. */

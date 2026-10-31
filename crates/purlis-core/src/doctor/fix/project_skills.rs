@@ -831,34 +831,20 @@ fn lost(set: &SkillSet, folder: &Path, name: &str) -> Option<String> {
 fn references(root: &Path, built_in: Option<&Path>, project: &Project) -> Vec<String> {
     let mut said = Vec::new();
     let mut resolved = 0;
+    let env = crate::harness_plugin::Env::of(&[]);
     for persona in &project.personas {
-        let names = crate::skills::names_of(root, persona);
-        if names.is_empty() {
+        let missing = crate::skills::persona::unresolved(built_in, root, persona, Some(&env));
+        if missing.is_empty() {
+            if !crate::skills::names_of(root, persona).is_empty() {
+                resolved += 1;
+            }
             continue;
         }
-        let set = crate::skills::in_the_studio(built_in, root, None, Some(persona));
-        let mut all = true;
-        for reference in &names {
-            // A reference the set leaves out is listed as its `skills:` list writes it.
-            let written = reference.to_string();
-            let missing = set.left_out.iter().find(|left| {
-                left.name == written
-                    && matches!(
-                        left.reason,
-                        Reason::NotOnThisMachine | Reason::NoSuchBuiltIn
-                    )
-            });
-            if let Some(left) = missing {
-                all = false;
-                said.push(format!(
-                    "• the persona {persona} names {reference}: {}. Its chats start without it \
-                     until it is installed or the name is fixed",
-                    left.reason
-                ));
-            }
-        }
-        if all {
-            resolved += 1;
+        for (reference, reason) in missing {
+            said.push(format!(
+                "• the persona {persona} names {reference}: {reason}. Its chats start without it \
+                 until it is installed or the name is fixed"
+            ));
         }
     }
     if resolved > 0 {

@@ -460,6 +460,29 @@ fn plane_skills_at_start(
     }
 }
 
+/// **What a chat starting now is told of a harness no skill reaches** (SK-30, #3585): the one
+/// line [`purlis_core::skills::not_supported_on`] says of its `declared` harness, which has no
+/// adapter (`harness` is `None`), so no SessionStart briefing, and takes no MCP servers, so no
+/// MCP instructions either. Its tab is the one place left to say it. Said at the chat's first
+/// start alone (`why` is [`Why::New`]): a relaunch or a start again is the same chat, told
+/// already, and Use skill… and the studio keep saying it. And only where the plane's skills
+/// would reach a chat here (`plane_skills`): with the Skill studio off no chat gets them, and
+/// there is nothing to miss. Read from the declaration the start already holds: nothing new is
+/// read on a chat's open.
+fn not_supported_at_start(
+    why: Why,
+    plane_skills: bool,
+    harness: Option<Harness>,
+    declared: Option<&purlis_core::harness_declaration::Declaration>,
+) -> Option<String> {
+    if why != Why::New || !plane_skills || harness.is_some() {
+        return None;
+    }
+    declared
+        .and_then(purlis_core::skills::not_supported_on)
+        .map(|one| one.said)
+}
+
 /// **The routing a chat starting now keeps from its first start** (SK-15f, #3578): a chat
 /// `reattaching` from the session host routes its set as its record says its start did, where
 /// the record says, and its router is not asked again. Only beside the Skill studio flag that
@@ -3719,6 +3742,8 @@ impl Chats {
         let plane_skills = plane_skills_at_start(reattaching, chat.plane_skills, || {
             purlis_core::skills::reach_chats_here(&self.project)
         });
+        // A declared harness no skill reaches says so on the chat's tab, once (#3585).
+        late.extend(not_supported_at_start(why, plane_skills, harness, declared));
         // Where its plane skills come from, and its clone's repo skills, read once (#3234): what
         // arms it below and what its tab's Notice says are both worked out from this. Read once
         // its arming has checked the start is not refused (#3461).

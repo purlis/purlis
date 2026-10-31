@@ -444,6 +444,12 @@ pub struct StudioHarness {
     /// The project's skills a repo of the workspace leaves out of its chats in that clone, each
     /// with why (SK-53): the core's `HarnessInTheStudio::repo_left_out`.
     pub repo_left_out: Vec<StudioSkill>,
+    /// **What its own catalogue holds** (#3324), in the core's words (`OwnCatalogue::said`),
+    /// which `purlis skill list` says too: the skills it finds itself in the person's own
+    /// folders and its plugins, listed against its own limit and never counted in purlis's
+    /// budget. Null for a harness that finds none of its own, and where the studio was read only
+    /// for a count of its needs.
+    pub own: Option<String>,
 }
 
 /// A harness or repo skill with the name of a skill purlis hands a chat (ADR 0099 §3): both
@@ -1021,6 +1027,7 @@ fn harnesses(
                     .cloned()
                     .map(outside_shown)
                     .collect(),
+                own: one.own.and_then(|own| own.said(adapter.title())),
             }
         })
         .collect();
