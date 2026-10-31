@@ -902,6 +902,18 @@ pub fn ready_on(
     ))
 }
 
+/// **What a start says where the runner itself found the profile signed out** (#4233), in the
+/// pool's words: [`ready_on`] let it through while the runner fetched its harness and could not
+/// say yet. For a runner whose row has not settled even now, so no wait was raised.
+pub fn signed_out_on_the_runner(pool: &str, name: &str) -> String {
+    let shown = crate::shown::short(name);
+    format!(
+        "the profile '{shown}' is not signed in on pool {pool}. Nothing was started. Once the \
+         runner has fetched its harness, Sign in on pool {pool} runs its harness's own sign-in \
+         on the runner; then start the chat again."
+    )
+}
+
 /// [`ready_on`], for a chat that moves to pool `pool`'s runner (#2048): the same keep, said of the
 /// move. **A profile signed out there makes the move wait** ([`NotYet::SignIn`], #3477): the
 /// move's own notice asks the sign-in, so no Inbox wait is added, and the move goes ahead once it
