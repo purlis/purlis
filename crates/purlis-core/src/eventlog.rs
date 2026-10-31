@@ -2471,7 +2471,10 @@ impl Recorder {
             }
             self.begun.insert(run.to_owned());
         }
-        if let Some(open) = parent.or(run).and_then(|key| self.skills.inside(key))
+        // A run's own end says its own run, never the one still open around it (#3084): its end
+        // is written after it closed, while an outer run, or one its prompt opened, is open.
+        if kind != "skill.ended"
+            && let Some(open) = parent.or(run).and_then(|key| self.skills.inside(key))
             && let Some(fields) = body.as_object_mut()
         {
             fields.insert("skill".to_owned(), open.skill.as_str().into());

@@ -8679,11 +8679,12 @@ fn a_runner_chats_skill_run_is_logged_here_with_where_this_window_says_it_ran_30
     std::fs::write(plane.path().join(purlis_core::plane::MANIFEST), "").expect("charter.toml");
     let host = Pretend::default();
     host.on_a_runner();
-    let chats = Chats::on_host(
+    let mut chats = Chats::on_host(
         Box::new(|_| {}),
         Box::new(host.clone()),
         plane.path().to_path_buf(),
     );
+    chats.on_device(Some(DEVICE.to_owned()));
     let session = chats
         .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
         .expect("it starts on the runner");
@@ -8696,7 +8697,6 @@ fn a_runner_chats_skill_run_is_logged_here_with_where_this_window_says_it_ran_30
         .expect("its id");
     let of = |chat: &str, run: &str, line: Line| Relayed {
         chat: chat.to_owned(),
-        device: "01JB0RUNNER0000000000000000".to_owned(),
         run: run.to_owned(),
         at_ms: 1_793_440_800_000,
         line,
@@ -8745,6 +8745,7 @@ fn a_runner_chats_skill_run_is_logged_here_with_where_this_window_says_it_ran_30
     assert_eq!(run.harness.as_deref(), Some(Harness::ClaudeCode.name()));
     assert_eq!(run.workspace, Some(None));
     assert!(run.end.is_some(), "its end");
+    assert_eq!(run.device, DEVICE, "this machine's own file");
     let _ = chats.close(session);
 }
 

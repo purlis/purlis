@@ -2923,6 +2923,18 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
         });
     }
     if let Command::StartProgram(start) = command
+        && start.plane_skills.is_some()
+        && !scope.may(Power::Confine)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "whether the plane's skills reach a chat is named by purlis's window, or its \
+                 host's relay, only, and this link is `{scope}`"
+            ),
+        });
+    }
+    if let Command::StartProgram(start) = command
         && start.without_sandbox
         && !scope.may(Power::OptOut)
     {

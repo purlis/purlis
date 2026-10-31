@@ -219,6 +219,35 @@ fn only_a_links_start_says_whether_its_desktop_reaches_the_chat_with_the_planes_
     }
 }
 
+/// #3084: what the chat runs on the runner (purlis's MCP server among them) reads the flag its
+/// arming took, its desktop's, from the variable that decides it there.
+#[test]
+fn a_chat_its_desktop_said_the_flag_for_is_started_with_that_word() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = plane_in(&tmp);
+    let env = |by: &str, said: Option<bool>| {
+        let start = purlis_session_protocol::session::StartProgram {
+            plane_skills: said,
+            ..purlis_session_protocol::session::StartProgram::of(
+                "01J9PRJCT00000000000000000",
+                purlis_session_protocol::session::ProgramKind::Harness,
+            )
+        };
+        studio_env_of(&Starting {
+            root: &root,
+            number: 1,
+            start: &start,
+            reporting: None,
+            started_by: by,
+        })
+    };
+    let word = |on: &str| Some((crate::skills::STUDIO_ENV.to_owned(), on.to_owned()));
+    assert_eq!(env("remote-link", Some(true)), word("1"));
+    assert_eq!(env("remote-link", Some(false)), word("0"));
+    assert_eq!(env("remote-link", None), None);
+    assert_eq!(env("local-ui", Some(true)), None);
+}
+
 #[test]
 fn only_a_links_start_says_what_its_desktop_allowed() {
     let tmp = tempfile::tempdir().unwrap();

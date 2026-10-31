@@ -5559,6 +5559,12 @@ impl Chats {
         if self.sessions.pool_of(number).as_deref() != Some(pool) {
             return;
         }
+        // Under this machine's own device, as a run of its own is: the runner keeps its own file
+        // under its device in its checkout, which this machine sends it.
+        let device = self
+            .device
+            .clone()
+            .unwrap_or_else(purlis_core::dispatch::host);
         purlis_core::skilluse::relayed::logged(
             &self.project,
             run,
@@ -5567,6 +5573,7 @@ impl Chats {
                 harness,
                 workspace: workspace.as_deref(),
             },
+            &device,
         );
     }
 

@@ -3421,9 +3421,6 @@ fn a_runners_skill_runs_are_told_once_each_from_its_log_over_the_relayed_link() 
             .any(|one| matches!(one.line, Line::Ended { .. })),
         "{told:?}"
     );
-    assert!(
-        told.iter()
-            .all(|one| one.run == run && one.device == RUNNERS_DEVICE)
-    );
+    assert!(told.iter().all(|one| one.run == run));
     drop(link);
 }

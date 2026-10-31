@@ -3761,8 +3761,10 @@ handoff row (`charter/dispatch.py:170` docstring).
 - **A chat on a pool's runner** (SK-20b, #3084): the runner's own writer logs its runs in the
   runner's checkout, which nothing brings back. The desktop's window reads the runner's event
   log over the link (#3393), and logs each `skill.started` and `skill.ended` of a chat it routed
-  to that pool here, as the rows above, under the runner's device and at the time its line was
-  written (`skilluse::relayed`): its persona, harness and workspace as the window started the
+  to that pool here, as the rows above, under this machine's device (the runner keeps its own
+  file under its device in its checkout, which this machine sends it, so no file has two writers)
+  and at the time its line was written (`skilluse::relayed`): its persona, harness and workspace
+  as the window started the
   chat, never the runner's word, and its `tree` as this machine's plane holds the copy. Of the
   runner's line only the run's id, skill, `started_by`, level, end and counts are taken. A run
   written while no window read the runner's log is not logged here.

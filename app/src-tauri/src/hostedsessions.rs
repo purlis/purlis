@@ -3337,7 +3337,18 @@ impl SessionHost for HostedSessions {
     /// Told to each link the project is held on in a runner's own checkout from its next hold
     /// ([`held_on`]): a pool's runner is told this as it is made, before its first chat.
     fn when_skill_runs_heard(&self, tell: crate::host::SkillRunsHeard) {
-        *lock(&self.skill_runs) = Some(tell);
+        *lock(&self.skill_runs) = Some(Arc::clone(&tell));
+        // And to the link it is held on now, where it is held already: no hold comes for it.
+        if !self.kept_on_the_runner {
+            return;
+        }
+        let held = lock(&self.held).clone();
+        if let Some(Held { project, on }) = held
+            && let Ok(link) = self.connection.of_project(&self.root, Duration::ZERO)
+            && link.id == on
+        {
+            link.hear_skill_runs(&project, tell);
+        }
     }
 
     fn hold_here(&self) {

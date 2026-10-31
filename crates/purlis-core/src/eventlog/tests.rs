@@ -4034,3 +4034,49 @@ fn a_runners_desktop_stop_and_re_arm_are_journalled_by_the_link_and_name_its_dev
             .all(|line| line.by == crate::halt::Actor::Link)
     );
 }
+
+/// #3084: a run's `skill.ended` names its own run, never the one a prompt opened as it ended it:
+/// a desktop logs a runner chat's runs from these lines by that id. Seen red: the interrupted
+/// run's end named the Use skill… run its prompt opened.
+#[test]
+fn a_runs_end_names_its_own_run_though_the_prompt_that_ended_it_opened_another() {
+    use crate::state::Event::UserPromptSubmit;
+    use std::time::Instant;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane();
+    let mut host = recorder(dir.path());
+    host.report(plane.path(), &report(3, UserPromptSubmit), Followed::No)
+        .unwrap();
+    let load = loading(3, "deploy");
+    let interrupted = load.skill.clone().unwrap().run;
+    host.tool(plane.path(), &load, Instant::now()).unwrap();
+    let typed = typed_skill(
+        "review",
+        "$review the plan",
+        crate::skillspan::Confirmed::ByPrompt,
+    );
+    let opened = typed.run.to_string();
+    host.apply(super::Entry::SkillTyped {
+        plane: plane.path().to_path_buf(),
+        number: 3,
+        typed,
+    })
+    .unwrap();
+    host.report(plane.path(), &sent("$review the plan"), Followed::No)
+        .unwrap();
+
+    let events = read(dir.path()).unwrap();
+    let ended = events
+        .iter()
+        .find(|e| e.kind == "skill.ended")
+        .expect("the interrupted run's end");
+    assert_eq!(ended.body["skill_run"], interrupted.as_str(), "{events:#?}");
+    assert_eq!(ended.body["skill"], "deploy");
+    assert_eq!(ended.body["ended"], "interrupted");
+    let started: Vec<_> = events
+        .iter()
+        .filter(|e| e.kind == "skill.started")
+        .map(|e| e.body["skill_run"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(started, [interrupted.clone(), opened]);
+}

@@ -4,6 +4,7 @@
 use super::*;
 
 const RUNNER: &str = "01JB0RUNNER0000000000000000";
+const DESKTOP: &str = "01JA0DESKT0P00000000000000";
 const CHAT: &str = "01K6W0RKER000000000000000B";
 const RUN: &str = "01K6SKILLRUN00000000000000";
 const PARENT: &str = "01K6PARENTRUN0000000000000";
@@ -72,7 +73,7 @@ fn a_runners_skill_run_is_logged_in_the_desktops_plane_as_a_local_run_is_with_th
     };
     for event in [started(), ended()] {
         let relayed = Relayed::of(&event).expect("a skill run's line");
-        assert!(logged(plane.path(), &relayed, &ran_as).is_some());
+        assert!(logged(plane.path(), &relayed, &ran_as, DESKTOP).is_some());
     }
 
     let runs = crate::skilluse::runs(plane.path());
@@ -83,7 +84,10 @@ fn a_runners_skill_run_is_logged_in_the_desktops_plane_as_a_local_run_is_with_th
     assert_eq!(run.persona.as_deref(), Some("steward"));
     assert_eq!(run.harness.as_deref(), Some("claude"));
     assert_eq!(run.workspace, Some(None), "at the plane root");
-    assert_eq!(run.device, RUNNER, "where it ran");
+    assert_eq!(
+        run.device, DESKTOP,
+        "the desktop's file, which it alone writes"
+    );
     assert_eq!(run.started_by, Some(StartedBy::SkillTool));
     assert_eq!(run.started, "2026-10-31T10:00:00+00:00");
     let end = run.end.as_ref().expect("its end");
@@ -99,9 +103,9 @@ fn a_runners_skill_run_is_logged_in_the_desktops_plane_as_a_local_run_is_with_th
 #[test]
 fn only_a_skill_runs_line_with_ids_a_run_has_is_read() {
     assert_eq!(Relayed::of(&line("run.ended", serde_json::json!({}))), None);
-    // An id that names a path, a device among them, is no run's.
+    // An id that names a path is no run's.
     let mut elsewhere = started();
-    elsewhere.device_id = "../../escaped".into();
+    elsewhere.body["skill_run"] = "../../escaped".into();
     assert_eq!(Relayed::of(&elsewhere), None);
     let mut long = started();
     long.body["skill_run"] = "x".repeat(MOST_ID + 1).into();
@@ -135,7 +139,7 @@ fn a_runners_skill_run_is_logged_in_no_project_this_purlis_may_not_write() {
     let not_a_plane = tempfile::tempdir().expect("a folder");
     let relayed = Relayed::of(&started()).expect("a start");
     assert_eq!(
-        logged(not_a_plane.path(), &relayed, &RanAs::default()),
+        logged(not_a_plane.path(), &relayed, &RanAs::default(), DESKTOP),
         None
     );
     assert!(crate::skilluse::runs(not_a_plane.path()).is_empty());

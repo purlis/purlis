@@ -7,8 +7,10 @@
 //! skill runs in the runner's checkout of the project: nothing brings that back. The window reads
 //! the runner's event log over the link (#3393), so each `skill.started` and `skill.ended` line of
 //! it is read here into a [`Relayed`] and logged in the desktop's own skill log, as the runner's
-//! writer logs a local run's ([`super::started`], [`super::ended`]): under the runner's device,
-//! so a run says where it ran, at the time its line was written.
+//! writer logs a local run's ([`super::started`], [`super::ended`]), at the time its line was
+//! written. Under this machine's device: the desktop writes those rows, and the runner's own writer
+//! keeps its file under its own device in its checkout, which the desktop sends it, so the two
+//! never write one file.
 //!
 //! **Only what the studio reads is taken of a line**, each field held to a few bytes: the run's
 //! id, its skill, what started it, its copy's level, how it ended and what it counted. A line is
@@ -32,8 +34,6 @@ const MOST_SKILL: usize = 200;
 pub struct Relayed {
     /// The chat's id (ADR 0066): which of the window's chats it is of.
     pub chat: String,
-    /// The runner's device, whose skill log file the row goes in.
-    pub device: String,
     /// The skill run's id.
     pub run: String,
     /// When the line was written, in milliseconds since 1970.
@@ -115,7 +115,6 @@ impl Relayed {
         };
         Some(Relayed {
             chat: an_id(event.chat.as_deref()?)?,
-            device: an_id(&event.device_id)?,
             run: an_id(text("skill_run")?)?,
             at_ms: ulid::Ulid::from_string(&event.ulid).ok()?.timestamp_ms(),
             line,
@@ -133,10 +132,10 @@ pub struct RanAs<'a> {
 }
 
 /// **Logs `relayed` in the skill log of the plane at `root`**, as a run of a chat that ran as
-/// `ran_as`: its start row as [`super::started`] writes a local run's, its end row as
-/// [`super::ended`] does. Nothing is logged where the plane may not be written, or the line's
-/// time is not one.
-pub fn logged(root: &Path, relayed: &Relayed, ran_as: &RanAs<'_>) -> Option<PathBuf> {
+/// `ran_as`, under `device`, this machine's: its start row as [`super::started`] writes a local
+/// run's, its end row as [`super::ended`] does. Nothing is logged where the plane may not be
+/// written, or the line's time is not one.
+pub fn logged(root: &Path, relayed: &Relayed, ran_as: &RanAs<'_>, device: &str) -> Option<PathBuf> {
     let when = chrono::DateTime::from_timestamp_millis(i64::try_from(relayed.at_ms).ok()?)?;
     match &relayed.line {
         Line::Started {
@@ -155,7 +154,7 @@ pub fn logged(root: &Path, relayed: &Relayed, ran_as: &RanAs<'_>) -> Option<Path
             },
             ran_as.persona,
             when,
-            &relayed.device,
+            device,
         ),
         Line::Ended {
             ended,
@@ -174,7 +173,7 @@ pub fn logged(root: &Path, relayed: &Relayed, ran_as: &RanAs<'_>) -> Option<Path
                 parent: parent.as_deref(),
             },
             when,
-            &relayed.device,
+            device,
         ),
     }
 }

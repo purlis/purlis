@@ -1442,7 +1442,9 @@ impl Denied {
         });
         // …and the project's skills, wherever they reach chats (SK-9,
         // #2772): a chat's write of one is a draft the person accepts, never the file itself.
-        if crate::skills::reach_chats_here(root) {
+        // Always on a runner (#3084): its chats reach them by their desktop's word, which this
+        // machine's own flag does not say.
+        if crate::skills::reach_chats_here(root) || machine.is_a_runner() {
             paths.extend(skills_held(root));
         }
         // …and where Docker Desktop, OrbStack and Rancher Desktop link `docker` and its
