@@ -169,7 +169,12 @@ fn a_line_has_one_deadline_however_often_its_peer_writes() {
         }
     });
 
+    let began = Instant::now();
     assert_eq!(line_of(&far, Duration::from_millis(100)), None);
+    assert!(
+        began.elapsed() < Duration::from_secs(30),
+        "well before a line's most"
+    );
     drop(far);
     writing.join().unwrap();
 }

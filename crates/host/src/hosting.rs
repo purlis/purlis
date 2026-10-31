@@ -570,10 +570,10 @@ struct State {
     /// Each held place's highest number dealt: it only rises, so a number names one chat of
     /// that clone, as the clone's own record keeps them.
     dealt: HashMap<HeldAt, u32>,
-    /// The harness each start on no profile under way named (#4142).
-    starting_with_no_profile: Vec<Option<String>>,
-    /// The harnesses whose own folders a runner is deleting now (#4142).
-    forgetting_own_folders: Vec<String>,
+    /// The profile and harness of each start under way (#4142).
+    starting: Vec<(Option<String>, Option<String>)>,
+    /// Each profile being forgotten now, and the harness whose own folders that deletes (#4142).
+    forgetting: Vec<(String, Option<String>)>,
     /// Who is told what the host pushes ([`Subscriber`]).
     subscribers: Vec<Subscriber>,
     /// The chats' confinements (#1999), by the id the window gave each.
@@ -919,115 +919,121 @@ fn stopping_by(stopping: &Mutex<Option<Stopped>>, by: Stopped) {
     *stopping = (*stopping).max(Some(by));
 }
 
-/// Whether a program's start named no profile.
-fn no_profile(profile: Option<&str>) -> bool {
-    profile.is_none_or(str::is_empty)
+/// Whether a program on `profile` and `harness` uses the profile `name`, or, on no profile, the
+/// harness `own_folders`'s own folders. One that named no harness may be on any.
+fn uses_it(
+    profile: Option<&str>,
+    harness: Option<&str>,
+    name: &str,
+    own_folders: Option<&str>,
+) -> bool {
+    match profile.filter(|profile| !profile.is_empty()) {
+        Some(profile) => profile == name,
+        None => own_folders.is_some_and(|own| harness.is_none_or(|one| one == own)),
+    }
 }
 
-/// A harness's own folders held for forgetting ([`Hosting::hold_own_folders`]), until it drops.
-pub struct OwnFoldersHeld {
+/// A profile held for forgetting ([`Hosting::hold_to_forget`]), until it drops.
+pub struct HeldToForget {
     hosting: Hosting,
-    harness: String,
+    held: (String, Option<String>),
 }
 
-impl Drop for OwnFoldersHeld {
+impl Drop for HeldToForget {
     fn drop(&mut self) {
         let mut state = self.hosting.state();
-        if let Some(at) = state
-            .forgetting_own_folders
-            .iter()
-            .position(|one| *one == self.harness)
-        {
-            state.forgetting_own_folders.remove(at);
+        if let Some(at) = state.forgetting.iter().position(|one| *one == self.held) {
+            state.forgetting.remove(at);
         }
     }
 }
 
-/// A start on no profile under way ([`Hosting::hold_own_folders`] counts it), until it drops.
-struct StartingWithNoProfile {
+/// A start under way ([`Hosting::hold_to_forget`] counts it), until it drops.
+struct Starting {
     hosting: Hosting,
-    harness: Option<String>,
+    start: (Option<String>, Option<String>),
 }
 
-impl Drop for StartingWithNoProfile {
+impl Drop for Starting {
     fn drop(&mut self) {
         let mut state = self.hosting.state();
-        if let Some(at) = state
-            .starting_with_no_profile
-            .iter()
-            .position(|one| *one == self.harness)
-        {
-            state.starting_with_no_profile.remove(at);
+        if let Some(at) = state.starting.iter().position(|one| *one == self.start) {
+            state.starting.remove(at);
         }
     }
 }
 
 impl Hosting {
-    /// **Whether a chat this host runs now is on profile `name`** (#4047): a profile is not
-    /// forgotten under a running chat, whose folder and sign-in it is.
-    pub fn runs_on_profile(&self, name: &str) -> bool {
-        self.state().programs.values().any(|hosted| {
-            !hosted.ended
-                && hosted.kind != ProgramKind::Browser
-                && hosted.profile.as_deref() == Some(name)
-        })
-    }
-
-    /// **Holds the harness `harness`'s own folders for forgetting** (#4142), or `None` where a
-    /// program on no profile here uses them or is starting. A start on no profile is refused
-    /// until the hold drops, so none begins while they are deleted. One that named no harness
-    /// runs on the project's default, which this host does not hold here, so it counts for each;
-    /// so does a shell, in which the person may run any of them.
-    pub fn hold_own_folders(&self, harness: &str) -> Option<OwnFoldersHeld> {
-        let mut state = self.state();
-        let uses = |named: Option<&str>| named.is_none_or(|one| one == harness);
-        let in_use = state
-            .starting_with_no_profile
-            .iter()
-            .any(|one| uses(one.as_deref()))
-            || state.programs.values().any(|hosted| {
-                !hosted.ended
-                    && hosted.kind != ProgramKind::Browser
-                    && no_profile(hosted.profile.as_deref())
-                    && uses(hosted.harness.as_deref())
-            });
-        if in_use {
-            return None;
-        }
-        state.forgetting_own_folders.push(harness.to_owned());
-        Some(OwnFoldersHeld {
-            hosting: self.clone(),
-            harness: harness.to_owned(),
-        })
-    }
-
-    /// A start on no profile, counted from here until its guard drops, by when it is listed; or
-    /// its refusal, while its harness's own folders are being forgotten (#4142).
-    fn starting_with_no_profile(
+    /// **Holds the profile `name` for forgetting** (#4047, #4142), or says in words what runs on
+    /// it. `own_folders` is the harness whose own folders forgetting it deletes, where it does:
+    /// a program on no profile uses those too, a shell because the person may run any harness
+    /// in it, and one that named no harness because it runs on the project's default. Starts
+    /// under way count, and a start on what is held is refused until the hold drops, so nothing
+    /// begins on what is being deleted.
+    pub fn hold_to_forget(
         &self,
-        start: &StartProgram,
-    ) -> Result<Option<StartingWithNoProfile>, Refusal> {
-        if start.kind != ProgramKind::Browser && no_profile(start.profile.as_deref()) {
-            let mut state = self.state();
-            let named = start.harness.as_deref();
-            if state
-                .forgetting_own_folders
-                .iter()
-                .any(|one| named.is_none_or(|named| named == one))
-            {
-                return Err(not_started(
-                    "its harness's own folders are being deleted on this runner; start it again \
-                     in a moment"
-                        .to_owned(),
-                ));
-            }
-            state.starting_with_no_profile.push(start.harness.clone());
-            return Ok(Some(StartingWithNoProfile {
-                hosting: self.clone(),
-                harness: start.harness.clone(),
-            }));
+        name: &str,
+        own_folders: Option<&str>,
+    ) -> Result<HeldToForget, &'static str> {
+        let mut state = self.state();
+        let listed = state
+            .programs
+            .values()
+            .filter(|hosted| !hosted.ended && hosted.kind != ProgramKind::Browser)
+            .map(|hosted| (hosted.profile.as_deref(), hosted.harness.as_deref()));
+        let starting = state
+            .starting
+            .iter()
+            .map(|(profile, harness)| (profile.as_deref(), harness.as_deref()));
+        let running: Vec<_> = listed.chain(starting).collect();
+        if running.iter().any(|(profile, _)| *profile == Some(name)) {
+            return Err(
+                "a chat on that profile runs on this runner, so it was not forgotten; end \
+                        the chat first",
+            );
         }
-        Ok(None)
+        if running
+            .iter()
+            .any(|(profile, harness)| uses_it(*profile, *harness, "", own_folders))
+        {
+            return Err(
+                "a chat with no profile runs on this runner and uses the folders \
+                        forgetting this profile deletes, so it was not forgotten; end the chat \
+                        first",
+            );
+        }
+        let held = (name.to_owned(), own_folders.map(str::to_owned));
+        state.forgetting.push(held.clone());
+        Ok(HeldToForget {
+            hosting: self.clone(),
+            held,
+        })
+    }
+
+    /// A start, counted from here until its guard drops, by when it is listed; or its refusal,
+    /// while what it runs on is being forgotten (#4142).
+    fn starting(&self, start: &StartProgram) -> Result<Option<Starting>, Refusal> {
+        if start.kind == ProgramKind::Browser {
+            return Ok(None);
+        }
+        let (profile, harness) = (start.profile.as_deref(), start.harness.as_deref());
+        let mut state = self.state();
+        if state
+            .forgetting
+            .iter()
+            .any(|(name, own)| uses_it(profile, harness, name, own.as_deref()))
+        {
+            return Err(not_started(
+                "what it runs on is being deleted on this runner; start it again in a moment"
+                    .to_owned(),
+            ));
+        }
+        let start = (start.profile.clone(), start.harness.clone());
+        state.starting.push(start.clone());
+        Ok(Some(Starting {
+            hosting: self.clone(),
+            start,
+        }))
     }
 
     /// A host whose starts `compose` composes, each run in a terminal of its own, its kill
@@ -2038,7 +2044,7 @@ impl Hosting {
         self.heed_a_stop_written_elsewhere().await;
         self.let_through(&start, peer)?;
         a_note_that_fits(start.note.as_ref())?;
-        let _starting = self.starting_with_no_profile(&start)?;
+        let _starting = self.starting(&start)?;
         let start = ids_of(start, peer.scope());
         let size = Size {
             columns: start.cols.unwrap_or(80),

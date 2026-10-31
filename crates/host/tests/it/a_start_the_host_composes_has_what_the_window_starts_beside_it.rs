@@ -283,28 +283,32 @@ async fn a_start_with_no_launch_runs_with_its_token_in_a_confinement_of_its_own(
     .await;
 }
 
-/// **A harness's own folders are held only with nothing on them** (#4142): a chat on no profile
-/// keeps them from being held, one that named no harness keeps each harness's, and one on a
-/// profile or another harness keeps none. While they are held, no start on no profile begins
-/// on them.
+/// **A profile is held to forget only with nothing on it** (#4142): a chat on it keeps it, and
+/// where forgetting it deletes a harness's own folders, so does a chat on no profile there, or
+/// one that named no harness. While it is held, no start on what goes begins.
 #[tokio::test]
-async fn a_harnesss_own_folders_are_held_only_with_no_chat_on_them() {
+async fn a_profile_is_held_to_forget_only_with_no_chat_on_it() {
     let linked = linked().await;
     let named = |profile: Option<&str>, harness: Option<&str>| StartProgram {
         profile: profile.map(str::to_owned),
         harness: harness.map(str::to_owned),
         ..composed(None)
     };
+    let adopted = |name: &str, harness: &str| linked.hosting.hold_to_forget(name, Some(harness));
 
-    let held = linked.hosting.hold_own_folders("claude").expect("held");
-    for refused in [named(None, Some("claude")), named(None, None)] {
+    let held = adopted("claude", "claude").expect("held");
+    for refused in [
+        named(None, Some("claude")),
+        named(None, None),
+        named(Some("claude"), None),
+    ] {
         linked.client.start_program(refused).await.unwrap_err();
     }
     linked
         .client
         .start_program(named(Some("work"), Some("claude")))
         .await
-        .expect("on a profile, it does not use them");
+        .expect("on another profile, it does not use them");
     linked
         .client
         .start_program(named(None, Some("codex")))
@@ -312,8 +316,12 @@ async fn a_harnesss_own_folders_are_held_only_with_no_chat_on_them() {
         .expect("another harness");
     drop(held);
 
-    assert!(linked.hosting.hold_own_folders("codex").is_none());
-    assert!(linked.hosting.hold_own_folders("claude").is_some());
+    assert!(
+        linked.hosting.hold_to_forget("work", None).is_err(),
+        "a chat on it"
+    );
+    assert!(adopted("codex", "codex").is_err(), "a chat on no profile");
+    assert!(adopted("claude", "claude").is_ok());
 
     linked
         .client
@@ -321,8 +329,12 @@ async fn a_harnesss_own_folders_are_held_only_with_no_chat_on_them() {
         .await
         .expect("started");
     assert!(
-        linked.hosting.hold_own_folders("claude").is_none(),
+        adopted("claude", "claude").is_err(),
         "the project's default may be it"
+    );
+    assert!(
+        linked.hosting.hold_to_forget("other", None).is_ok(),
+        "a made profile's folder is its own"
     );
 }
 

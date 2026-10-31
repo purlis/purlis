@@ -96,9 +96,9 @@ pub use connector::{
 pub use hearing::{Channel, HandOn, Hear, HearsNothing};
 #[cfg(unix)]
 pub use hosting::{
-    ASK_WITHIN, AskTheWindow, Beside, Compose, ComposesNothing, ENDS_WITHIN, Hosting, Looked,
-    OwnFoldersHeld, Poke, ReachOf, Run, Running, Save, SavesNothing, Saving, Terminals, ToCompose,
-    ToSave, Working,
+    ASK_WITHIN, AskTheWindow, Beside, Compose, ComposesNothing, ENDS_WITHIN, HeldToForget, Hosting,
+    Looked, Poke, ReachOf, Run, Running, Save, SavesNothing, Saving, Terminals, ToCompose, ToSave,
+    Working,
 };
 #[cfg(unix)]
 pub use hostrecord::{HOST_RECORD, Started, this_boot};

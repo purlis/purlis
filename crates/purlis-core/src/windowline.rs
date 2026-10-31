@@ -223,8 +223,7 @@ pub fn ask_on(socket: &Path, asked: &Asked, within: Duration) -> Answered {
 }
 
 /// **Serves `answer` on `socket`**, one peer at a time on a thread for the app's life: a removal
-/// is rare, a peer has [`A_PEER_HAS`] for its whole line, and an `answer` that panics ends only
-/// that peer. A socket another window answers on is left alone, and said as the error; one
+/// is rare, and a peer has [`A_PEER_HAS`] for its whole line. A socket another window answers on is left alone, and said as the error; one
 /// nothing answers on is what a last window left.
 pub fn serve_on(
     socket: &Path,
@@ -263,10 +262,7 @@ pub fn serve_on(
                     continue;
                 };
                 if this_user(&peer) {
-                    let answered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        serve_one(&peer, &answer)
-                    }));
-                    drop(answered);
+                    let _ = serve_one(&peer, &answer);
                 }
             }
         })?;
