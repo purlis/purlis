@@ -40,11 +40,9 @@ slow-timeout = { period = "60s", terminate-after = 5 }
 [[profile.ci.overrides]]
 filter = "package(purlis-core) & binary(it) & test(/^every_guard_reads_a_hostile_command_in_linear_time::/)"
 slow-timeout = { period = "60s", terminate-after = 15 }
-# Run first. nextest starts tests by binary and name, which started this one 7.5 minutes into its
-# part, and it then ran alone on one of four CPUs for two minutes after the part's other tests had
-# ended: 10.7 minutes for the part against 8.9 to 9.4 for the others, on the same summed test time
-# (#4255, 2026-10-31). Started first, the part's other tests fill the other three CPUs beside it.
-priority = 100
+# Not given `priority = 100`, though it starts 7.5 minutes into its part and ends the part alone,
+# about 1.5 minutes that starting first would save (#4255). Tried on 2026-10-31: under load from the
+# start it passed twice, then took 346 s and failed its 20 s bound at 24 s, on one attempt of three.
 # Not retried: its bounds are a verdict on speed, and a retry of a hang would hold the job for
 # thirty minutes of its forty-five.
 retries = 0
