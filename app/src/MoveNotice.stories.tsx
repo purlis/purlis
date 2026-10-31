@@ -23,7 +23,7 @@ const WAITING: ChatMove = {
   stage: "signing-in",
   why: null,
   with: [],
-  sign_in: { profile: "work", kind: "claude", harness: "Claude Code" },
+  sign_in: { profile: "work", kind: "claude", harness: "Claude Code", plans: [] },
 };
 
 function Pane() {
@@ -60,6 +60,28 @@ export const WaitsOnASignIn: Story = {
     await canvas.findByText(/Moves to pool builds once work is signed in there/);
     await expect(canvas.getByRole("button", { name: "Sign in" })).toBeVisible();
     await expect(canvas.getByRole("button", { name: "Cancel move" })).toBeVisible();
+  },
+};
+
+/** **A harness that serves several plans** (#4181): which one is asked first, as on a pool's line. */
+export const WaitsOnAPlan: Story = {
+  beforeEach: () => {
+    heardMove(PLANE, {
+      ...WAITING,
+      sign_in: {
+        profile: "work",
+        kind: "opencode",
+        harness: "opencode",
+        plans: [
+          { id: "openai", title: "ChatGPT" },
+          { id: "github-copilot", title: "GitHub Copilot" },
+        ],
+      },
+    });
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByRole("button", { name: "Sign in to ChatGPT" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Sign in to GitHub Copilot" })).toBeVisible();
   },
 };
 

@@ -8807,6 +8807,11 @@ export type MoveSignIn = {
 	kind: string,
 	/**  Its harness as people call it: `Claude Code`. */
 	harness: string,
+	/**
+	 * The plans to choose from, where its harness serves several (#4181): a profile keeps none
+	 * of its own, and a login approved in the browser is told by its plan.
+	 */
+	plans: PlanRow[],
 };
 
 /**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */
