@@ -1225,7 +1225,7 @@ jobs:
       # The tests check what they started themselves: every process of each engine is gone.
       - name: The engine's tests, the runner's Chrome
         if: steps.scope.outputs.run == 'true'
-        run: cargo test --locked -p purlis-browser-engine -- --test-threads=2
+        run: cargo test --locked --no-fail-fast -p purlis-browser-engine -- --test-threads=2
 
   # An extension that declares a studio capability, confined on macOS by Seatbelt (ADR 0101,
   # #2777): the studio probe tries from inside its sandbox to read the project, write outside its
