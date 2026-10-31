@@ -753,6 +753,20 @@ fn with_nowhere_to_look_no_skills_entry_is_said_to_be_missing_from_the_machine()
     );
 }
 
+/// #4344: a moved project's chats read the list with the flag off, so lint checks it.
+#[test]
+fn with_the_skill_studio_off_a_moved_projects_skills_line_is_still_checked() {
+    let p = naming("purlis:nope");
+    std::fs::write(
+        p.root().join(crate::plane::MANIFEST),
+        "requires = [{ feature = \"project-skills\" }]\n",
+    )
+    .unwrap();
+    let issues = linter(&p).definition("s");
+    let said = messages(&issues);
+    assert!(!said.contains(&(Level::Warn, SKILLS_UNREAD)), "{said:#?}");
+}
+
 #[test]
 fn with_the_skill_studio_off_a_skills_line_is_said_to_be_unread_and_not_checked() {
     let p = naming("ghost, :x");

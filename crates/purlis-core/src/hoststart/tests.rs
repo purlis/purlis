@@ -179,6 +179,35 @@ fn a_start_with_no_data_folder_for_its_long_settings_is_refused() {
     );
 }
 
+/// #4344: a project that has not moved keeps its desktop's word, since its chats read
+/// `.claude/skills` themselves, and a start that says nothing takes this machine's own reading,
+/// which is what the flag's removal (#2786) turns on.
+#[test]
+fn an_unmoved_project_keeps_its_desktops_word_and_a_silent_start_reads_this_machine() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = plane_in(&tmp);
+    let reach = |said: Option<bool>| {
+        let start = purlis_session_protocol::session::StartProgram {
+            plane_skills: said,
+            ..purlis_session_protocol::session::StartProgram::of(
+                "01J9PRJCT00000000000000000",
+                purlis_session_protocol::session::ProgramKind::Harness,
+            )
+        };
+        plane_skills_of(&Starting {
+            root: &root,
+            number: 1,
+            start: &start,
+            reporting: None,
+            prompt_key: None,
+            started_by: "remote-link",
+        })
+    };
+    assert!(!reach(Some(false)));
+    assert!(reach(Some(true)));
+    assert_eq!(reach(None), crate::skills::reach_chats_here(&root));
+}
+
 /// SK-20b (#3084): a runner arms a chat with the plane's skills by its desktop's reading of the
 /// Skill studio's flag, where the start says it, never by its own machine's, which has nobody to
 /// turn it on. Only a link's start says so. Seen red: the runner read its own machine's alone.
@@ -209,7 +238,11 @@ fn only_a_links_start_says_whether_its_desktop_reaches_the_chat_with_the_planes_
             started_by: by,
         })
     };
-    assert!(!reach("remote-link", Some(false)), "its desktop's word");
+    assert!(
+        reach("remote-link", Some(false)),
+        "the project requires them and its clones hold no copy: its desktop's word cannot take \
+         them away (#4344)"
+    );
     assert!(reach("remote-link", Some(true)));
     assert!(
         reach("remote-link", None),

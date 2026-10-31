@@ -63,7 +63,8 @@ impl Issue {
     }
 }
 
-/// What is said of a `skills:` line while the Skill studio's flag is off, when no chat reads it.
+/// What is said of a `skills:` line while the project's skills reach no chat
+/// ([`crate::skills::reach_chats`]): the flag is off and the project has not moved.
 const SKILLS_UNREAD: &str = "`skills:` is read only with the Skill studio preview on (Settings \
      › You › Previews): then a chat as this persona loads each skill it names. Until then a \
      chat loads a skill when it uses it";
@@ -468,7 +469,8 @@ impl<'a> Linter<'a> {
             return Vec::new();
         }
         let studio = self.studio.unwrap_or_else(crate::skills::studio_on_here);
-        if !studio {
+        // A moved project's chats read the list whatever the flag says (#4344).
+        if !crate::skills::reach_chats(self.root, studio) {
             return vec![Issue::warn(SKILLS_UNREAD)];
         }
         let mut issues = Vec::new();

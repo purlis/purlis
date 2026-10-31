@@ -8599,6 +8599,8 @@ fn a_reattached_chat_keeps_the_studio_flag_its_start_read_3466() {
     assert!(plane_skills_at_start(true, None, || true));
     // A start that is not a reattach reads the flag now, whatever the record said.
     assert!(!plane_skills_at_start(false, Some(true), || false));
+    // A chat whose record says off, restarted once its project reaches it, gets them (#4344).
+    assert!(plane_skills_at_start(false, Some(false), || true));
 }
 
 #[test]

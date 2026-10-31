@@ -46,7 +46,7 @@
 //! # Refused, with nothing written
 //!
 //! From inside a chat; anywhere but a project's root (a folder inside a project, a workspace's
-//! clone); while the Skill studio's preview is off on this machine; on a project this purlis may
+//! clone); on a project this purlis may
 //! not write; outside a git repository whose top is the project; with tracked changes not
 //! committed; on a detached HEAD or in the middle of a merge, a rebase or a cherry-pick
 //! ([`super::commit::committable`]); and where `.claude/skills` holds what a move cannot carry
@@ -98,39 +98,26 @@ pub const FROM_A_CHAT: &str = "project-skills moves this project's committed ski
      who works in it, so it is not run from inside a chat; nothing was written. Run `purlis \
      doctor --fix project-skills` from a terminal";
 
-/// What a machine without the Skill studio's preview is told.
-pub const STUDIO_OFF: &str = "moving the project's skills into the Skill studio is part of its \
-     preview, which is off on this machine; nothing was written. Turn it on in Settings › You › \
-     Previews, then run the fix again";
-
-/// Apply `project-skills` to the project at `root`, as this process's environment and this
-/// machine's Skill studio switch say, with the built-in skills shipped beside this binary.
+/// Apply `project-skills` to the project at `root`, as this process's environment says, with the
+/// built-in skills shipped beside this binary. The Skill studio's flag has no say (#4344): the
+/// move's own checks are what keep every chat's skills, and it runs only when asked by name.
 pub fn apply(root: &Path) -> Fixed {
     let built_in = crate::skills::built_in_here();
-    apply_in(
-        root,
-        built_in.as_deref(),
-        &|name| crate::envvar::var(name),
-        crate::skills::studio_on_here(),
-    )
+    apply_in(root, built_in.as_deref(), &|name| crate::envvar::var(name))
 }
 
-/// [`apply`], with the built-in skills in `built_in`, the environment read through `env` (a
-/// chat's session refuses it) and the Skill studio's switch as `studio`.
+/// [`apply`], with the built-in skills in `built_in` and the environment read through `env` (a
+/// chat's session refuses it).
 pub fn apply_in(
     root: &Path,
     built_in: Option<&Path>,
     env: &dyn Fn(&str) -> Option<String>,
-    studio: bool,
 ) -> Fixed {
     if env(crate::active::SESSION_ID_ENV).is_some_and(|id| !id.is_empty()) {
         return Fixed::Refused(FROM_A_CHAT.to_owned());
     }
     if let Err(why) = the_projects_root(root) {
         return Fixed::Refused(why);
-    }
-    if !studio {
-        return Fixed::Refused(STUDIO_OFF.to_owned());
     }
     let Some(claim) = crate::planegit::Claim::within(root, CLAIM_WAIT) else {
         return Fixed::Refused(

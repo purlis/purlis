@@ -577,9 +577,15 @@ fn what_its_desktop_allowed(starting: &Starting<'_>) -> Option<String> {
 /// **Whether the plane's skills reach a chat this host composes** (SK-20b, #3084): the Skill
 /// studio's flag as the desktop that starts it on this runner read it, where its start says
 /// (1.62); a runner has no person to turn the preview on. A start that does not say, and one of
-/// this machine's, takes this machine's own reading ([`crate::skills::reach_chats_here`]).
+/// this machine's, takes this machine's own reading ([`crate::skills::reach_chats_here`]). A
+/// project that requires them is reached whatever its desktop said (#4344): its clones hold no
+/// copy, so a desktop that has not pulled the move, or is older, would leave the chat without
+/// them.
 fn plane_skills_of(starting: &Starting<'_>) -> bool {
-    its_desktop_said(starting).unwrap_or_else(|| crate::skills::reach_chats_here(starting.root))
+    its_desktop_said(starting).map_or_else(
+        || crate::skills::reach_chats_here(starting.root),
+        |said| crate::skills::reach_chats(starting.root, said),
+    )
 }
 
 /// The desktop's word on the Skill studio's flag, where a link's start says it (1.62, #3084).

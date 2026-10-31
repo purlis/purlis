@@ -72,7 +72,7 @@ fn project() -> support::Fixture {
 }
 
 fn apply(plane: &Path) -> Fixed {
-    project_skills::apply_in(plane, Some(&built_in()), &|_| None, true)
+    project_skills::apply_in(plane, Some(&built_in()), &|_| None)
 }
 
 fn said(fixed: &Fixed) -> String {
@@ -281,7 +281,7 @@ fn a_plane_with_changes_not_committed_is_refused_and_nothing_is_written() {
 }
 
 #[test]
-fn a_chat_and_a_machine_without_the_preview_are_refused() {
+fn a_chat_is_refused() {
     purlis_core::unsteered!();
     let f = project();
     let in_a_chat =
@@ -291,16 +291,8 @@ fn a_chat_and_a_machine_without_the_preview_are_refused() {
         &f.plane,
         Some(&built_in()),
         &in_a_chat,
-        true,
     ));
     assert_eq!(why, project_skills::FROM_A_CHAT);
-    let why = refused(project_skills::apply_in(
-        &f.plane,
-        Some(&built_in()),
-        &|_| None,
-        false,
-    ));
-    assert_eq!(why, project_skills::STUDIO_OFF);
     assert!(!f.plane.join("skills").exists());
 }
 
@@ -634,4 +626,144 @@ fn an_edited_copy_in_a_clone_is_kept_and_named() {
         report.contains("A teammate's clones lose their copies the next time a chat starts"),
         "{report}"
     );
+}
+
+// ---- An unmigrated project at the flag's flip (#4344, parent #2786) ---------------------------
+
+/// What a chat on `harness` leaves out of the skill `name`, at the root or in the clone, once the
+/// project's reading is on.
+fn left_out_of(
+    f: &support::Fixture,
+    harness: Harness,
+    clone: Option<&Path>,
+    name: &str,
+) -> Vec<String> {
+    let outside = clone
+        .map(|clone| skills::repo_skills_of_chat(harness, &f.plane, &f.ws, clone))
+        .unwrap_or_default();
+    skills::of_a_chat(
+        Some(&built_in()),
+        &f.plane,
+        clone.map(|_| f.ws.as_str()),
+        None,
+        harness.skills(),
+    )
+    .with_outside(harness.skills(), outside)
+    .left_out
+    .into_iter()
+    .filter(|left| left.name == name)
+    .map(|left| left.reason.to_string())
+    .collect()
+}
+
+/// After the flip `reach_chats` is true on every machine, while nothing moves a project until
+/// somebody asks. Each program keeps reading the skills where it read them before: Claude Code
+/// and opencode from `.claude/skills` at the root and through the copy in a clone; Codex never
+/// read them, so it neither had them nor lost them. Nothing is written or committed.
+#[test]
+fn an_unmigrated_projects_chats_keep_every_skill_once_the_reading_is_on() {
+    purlis_core::unsteered!();
+    let f = project();
+    let at = head(&f.plane);
+
+    assert!(skills::reach_chats(&f.plane, true));
+    guest::wire(&f.plane, &f.clone);
+
+    for (harness, place, set) in every_chat(&f) {
+        let reads = harness != Harness::Codex;
+        for skill in ["deploy", "review"] {
+            assert_eq!(set.contains(skill), reads, "{harness:?} {place}: {set:?}");
+        }
+    }
+    for harness in Harness::ALL {
+        for clone in [None, Some(f.clone.as_path())] {
+            for skill in ["deploy", "review"] {
+                let left = left_out_of(&f, harness, clone, skill);
+                assert!(left.is_empty(), "{harness:?} {clone:?}: {left:?}");
+            }
+        }
+    }
+    assert_eq!(head(&f.plane), at, "nothing is committed for anybody");
+    assert_eq!(f.status(&f.plane), "");
+    assert!(f.clone.join(".claude/skills/deploy/SKILL.md").is_file());
+    assert!(f.plane.join(".claude/skills/deploy/SKILL.md").is_file());
+    assert!(!skills::reach_chats(&f.plane, false), "it has not moved");
+}
+
+/// The whole upgrade on a machine with the flag off, the one no default machine has run: the
+/// project's chats before, the move asked for by name, and every chat after, with no flag.
+#[test]
+fn an_unmigrated_plane_moves_with_the_flag_off_and_every_chat_keeps_its_skills() {
+    purlis_core::unsteered!();
+    let f = project();
+    let before = every_chat(&f);
+    let was = commits(&f.plane);
+
+    assert!(!skills::studio_on_here(), "this test's machine has it off");
+    let report = said(&apply(&f.plane));
+
+    assert_eq!(commits(&f.plane), was + 1, "{report}");
+    assert!(skills::reach_chats(&f.plane, false), "{report}");
+    assert!(!f.clone.join(".claude/skills/deploy").exists(), "{report}");
+    let after = every_chat(&f);
+    for ((harness, place, had), (_, _, has)) in before.iter().zip(&after) {
+        assert!(has.is_superset(had), "{harness:?} {place}: {had:?} {has:?}");
+    }
+    for (harness, place, has) in &after {
+        for skill in ["deploy", "review"] {
+            assert!(has.contains(skill), "{harness:?} {place}: {has:?}");
+        }
+    }
+}
+
+/// Skills in both places, as a project gets by starting one in the studio before moving the old
+/// ones: every chat still has the skill, and the move refuses rather than choosing a copy.
+#[test]
+fn a_skill_in_both_places_stays_with_every_chat_and_the_move_is_refused() {
+    purlis_core::unsteered!();
+    let f = project();
+    let held = f.plane.join("skills/deploy");
+    std::fs::create_dir_all(&held).unwrap();
+    std::fs::write(held.join("SKILL.md"), DEPLOY).unwrap();
+    support::git(&f.plane, &["add", "-A"]);
+    support::git(&f.plane, &["commit", "-q", "-m", "a copy in skills"]);
+    guest::wire(&f.plane, &f.clone);
+    let at = head(&f.plane);
+
+    for (harness, place, set) in every_chat(&f) {
+        // Granted the root by default, and Codex never read the copy in a clone.
+        let has = !(harness == Harness::Codex && place == "clone");
+        assert_eq!(set.contains("deploy"), has, "{harness:?} {place}: {set:?}");
+    }
+
+    let why = refused(apply(&f.plane));
+
+    assert!(why.contains("already hold"), "{why}");
+    assert_eq!(head(&f.plane), at);
+    assert!(f.plane.join(".claude/skills/deploy/SKILL.md").is_file());
+}
+
+/// A persona that names a skill still in `.claude/skills`, read with the flag gone. Its entry is
+/// not a loss, since the program reads the folder itself, so no chat is told it is missing.
+#[test]
+fn a_persona_naming_an_unmoved_skill_is_not_told_it_is_missing() {
+    purlis_core::unsteered!();
+    let f = project();
+
+    for harness in Harness::ALL {
+        let set = skills::of_a_chat(
+            Some(&built_in()),
+            &f.plane,
+            None,
+            Some("ops"),
+            harness.skills(),
+        );
+        let left: Vec<String> = set
+            .left_out
+            .iter()
+            .filter(|left| left.name == "deploy")
+            .map(|left| left.reason.to_string())
+            .collect();
+        assert!(left.is_empty(), "{harness:?}: {left:?}");
+    }
 }
