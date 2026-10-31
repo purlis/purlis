@@ -63,6 +63,10 @@ pub struct Declared {
     pub grader: Option<String>,
     /// `skill-lint`: its name, as the lint says whose finding a line is.
     pub lint: Option<String>,
+    /// `skill-lint`: whether it answers many skills' findings in one question
+    /// ([`Ask::FindingsOfEach`], #4195), as `"many-at-once": true` says. False where absent: a
+    /// lint is then asked one skill at a time, as every lint was before.
+    pub lint_many_at_once: bool,
     /// `skill-template`: the templates it offers.
     pub templates: Vec<Template>,
     /// `studio-panel`: the panels it adds to a skill's tab.
@@ -148,10 +152,18 @@ pub(super) fn declared_of(
             .map(|value| named_of(value, capability.as_str()))
             .transpose()
     };
+    let (lint, lint_many_at_once) = match shape(Capability::SkillLint) {
+        None => (None, false),
+        Some(value) => {
+            let (title, many) = lint_of(value)?;
+            (Some(title), many)
+        }
+    };
     Ok(Some(Declared {
         source: named(Capability::SkillSource)?,
         grader: named(Capability::Grader)?,
-        lint: named(Capability::SkillLint)?,
+        lint,
+        lint_many_at_once,
         templates: match shape(Capability::SkillTemplate) {
             None => Vec::new(),
             Some(value) => templates_of(value)?,
@@ -176,6 +188,35 @@ fn named_of(value: &serde_json::Value, word: &str) -> Result<String, String> {
     only_keys(object, &["title"], &format!("'contributes.{word}'"))?;
     super::title_of(object.get("title"), "the studio capability", word)
 }
+
+/// `contributes.skill-lint`: `{title, many-at-once}`, `many-at-once` false where absent (#4195).
+fn lint_of(value: &serde_json::Value) -> Result<(String, bool), String> {
+    let word = Capability::SkillLint.as_str();
+    let object = value
+        .as_object()
+        .ok_or_else(|| format!("has a 'contributes.{word}' that is not an object"))?;
+    only_keys(
+        object,
+        &["title", MANY_AT_ONCE],
+        &format!("'contributes.{word}'"),
+    )?;
+    let many = match object.get(MANY_AT_ONCE) {
+        None => false,
+        Some(serde_json::Value::Bool(many)) => *many,
+        Some(_) => {
+            return Err(format!(
+                "has a 'contributes.{word}.{MANY_AT_ONCE}' that is not true or false"
+            ));
+        }
+    };
+    Ok((
+        super::title_of(object.get("title"), "the studio capability", word)?,
+        many,
+    ))
+}
+
+/// The key of `contributes.skill-lint` that says the lint answers many skills in one question.
+pub const MANY_AT_ONCE: &str = "many-at-once";
 
 /// `contributes.skill-router`: `{title, reads-prompts}`.
 fn router_of(value: &serde_json::Value) -> Result<DeclaredRouter, String> {
@@ -762,6 +803,15 @@ pub const MOST_OFFERED: usize = purlis_skills::tree::MOST_SKILLS;
 pub const MOST_FINDINGS: usize = 50;
 pub const MOST_FINDING_BYTES: usize = 400;
 
+/// **The most skills one question hands a lint at once** ([`Ask::FindingsOfEach`]), and the most
+/// bytes of their files in all: a studio list's skills, whose files the list reads at most
+/// [`purlis_skills::MOST_LIST_BYTES`] of. Each skill is still handed within
+/// [`MOST_HANDED_FILES`] and [`MOST_HANDED_BYTES`], its `SKILL.md` besides. Its answer is held to
+/// [`crate::executor::MOST_ANSWER_BYTES`] as every answer is, and to [`MOST_FINDINGS`] for each
+/// skill.
+pub const MOST_AT_ONCE: usize = purlis_skills::tree::MOST_SKILLS;
+pub const MOST_AT_ONCE_BYTES: usize = 4 << 20;
+
 /// The most bytes of a template's text.
 pub const MOST_TEMPLATE_BYTES: usize = 64 << 10;
 
@@ -799,6 +849,12 @@ pub enum Ask<'a> {
         skill: &'a str,
         files: &'a [HandedFile],
     },
+    /// **A lint's findings on each of `skills`**, in one question (#4195): asked only of a lint
+    /// that declares `"many-at-once": true`, by a studio list, so its program starts once for the
+    /// whole list. At most [`MOST_AT_ONCE`] skills and [`MOST_AT_ONCE_BYTES`] of their files;
+    /// each skill's files are handed as [`Self::Findings`] hands them. Answered by
+    /// [`findings_of_each`].
+    FindingsOfEach { skills: &'a [LintedSkill] },
     /// The text of a new skill `name`, described by `description`, from `template`.
     Template {
         template: &'a str,
@@ -820,6 +876,13 @@ pub enum Ask<'a> {
         budget: RouteBudget,
         besides: RouteBudget,
     },
+}
+
+/// One skill a lint is asked about with others ([`Ask::FindingsOfEach`]): its name and its files.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LintedSkill {
+    pub skill: String,
+    pub files: Vec<HandedFile>,
 }
 
 /// One skill a router is asked about ([`Ask::Route`]).
@@ -847,7 +910,7 @@ impl Ask<'_> {
     pub fn capability(&self) -> Capability {
         match self {
             Self::Skills | Self::Files { .. } => Capability::SkillSource,
-            Self::Findings { .. } => Capability::SkillLint,
+            Self::Findings { .. } | Self::FindingsOfEach { .. } => Capability::SkillLint,
             Self::Template { .. } => Capability::SkillTemplate,
             Self::Panel { .. } => Capability::StudioPanel,
             Self::Route { .. } => Capability::SkillRouter,
@@ -865,6 +928,10 @@ impl Ask<'_> {
             Self::Panel { panel, .. } if !declared.panels.iter().any(|it| it.id == *panel) => Some(
                 format!("'{extension}' adds no panel {panel:?} to a skill's tab"),
             ),
+            Self::FindingsOfEach { .. } if !declared.lint_many_at_once => Some(format!(
+                "'{extension}' does not say its lint answers many skills at once \
+                 (\"{MANY_AT_ONCE}\"), so purlis asks it one skill at a time"
+            )),
             _ => None,
         }
     }
@@ -1122,6 +1189,61 @@ pub fn findings_of(
                 ));
             }
             Ok(says.to_owned())
+        })
+        .collect()
+}
+
+/// One skill's findings, as a lint answers many at once.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AnsweredSkill {
+    skill: String,
+    findings: Vec<serde_json::Value>,
+}
+
+/// A lint's answer about many skills at once.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FindingsOfEach {
+    skills: Vec<AnsweredSkill>,
+}
+
+/// **A lint's findings on each of the skills `asked`**, read from its answer `doc` to
+/// [`Ask::FindingsOfEach`] (#4195): one entry for each skill asked, in the order asked, each
+/// naming its skill and holding what [`findings_of`] reads of one. So a skill asked twice under
+/// one name is answered twice, and an answer that leaves a skill out or names another is refused
+/// whole, as any answer purlis cannot read is.
+pub fn findings_of_each(
+    extension: &str,
+    asked: &[&str],
+    doc: &serde_json::Map<String, serde_json::Value>,
+) -> Result<Vec<Vec<String>>, String> {
+    if doc
+        .get("skills")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|list| list.len() != asked.len())
+    {
+        return Err(format!(
+            "'{extension}' answered findings for another number of skills than the {} purlis \
+             asked about",
+            asked.len()
+        ));
+    }
+    let answered: FindingsOfEach = answer_of(extension, doc, "findings")?;
+    answered
+        .skills
+        .into_iter()
+        .zip(asked)
+        .map(|(one, asked)| {
+            if one.skill != *asked {
+                return Err(format!(
+                    "'{extension}' answered findings for {:?} where purlis asked about {asked}",
+                    crate::shown::readable(&one.skill, 64)
+                ));
+            }
+            let mut doc = serde_json::Map::new();
+            doc.insert("findings".to_owned(), one.findings.into());
+            findings_of(extension, &doc)
         })
         .collect()
 }

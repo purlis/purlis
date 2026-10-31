@@ -534,3 +534,208 @@ fn a_lint_that_did_not_answer_shows_nothing_and_is_asked_again_only_after_a_whil
     );
     assert_eq!(lint.asked(), ["deploy", "deploy"]);
 }
+
+// ---- a lint that answers many skills at once (#4195) ----------------------------------------
+
+/// A lint that answers many skills in one question, as a confined program that takes `starts`
+/// to start would: its answer comes at the question plus `starts`, and none past its deadline.
+struct AtOnce {
+    starts: std::time::Duration,
+    fails: std::cell::Cell<bool>,
+    asked: std::cell::RefCell<Vec<(Vec<String>, std::time::Instant)>>,
+}
+
+impl AtOnce {
+    fn new(starts: std::time::Duration) -> Self {
+        Self {
+            starts,
+            fails: std::cell::Cell::new(false),
+            asked: std::cell::RefCell::default(),
+        }
+    }
+
+    fn questions(&self) -> Vec<Vec<String>> {
+        self.asked
+            .borrow()
+            .iter()
+            .map(|(names, _)| names.clone())
+            .collect()
+    }
+}
+
+impl InTheList for &AtOnce {
+    fn by(&self) -> &str {
+        "House style"
+    }
+
+    fn version(&self) -> [u8; 32] {
+        [8; 32]
+    }
+
+    fn ask(
+        &self,
+        _skill: &SkillFiles<'_>,
+        _until: std::time::Instant,
+    ) -> Result<Vec<String>, String> {
+        panic!("a lint that answers many at once is never asked one skill alone")
+    }
+
+    fn many_at_once(&self) -> bool {
+        true
+    }
+
+    fn ask_each(
+        &self,
+        skills: &[&SkillFiles<'_>],
+        until: std::time::Instant,
+    ) -> Result<Vec<Vec<String>>, String> {
+        self.asked
+            .borrow_mut()
+            .push((skills.iter().map(|it| it.name.to_owned()).collect(), until));
+        pass(self.starts);
+        if self.fails.get() || test_now() > until {
+            return Err("it did not answer by its deadline".to_owned());
+        }
+        Ok(skills
+            .iter()
+            .map(|skill| vec![format!("{} is long", skill.name)])
+            .collect())
+    }
+}
+
+/// A list of `lints` as the studio times one, on the tests' clock.
+fn a_timed_list<L: InTheList>(
+    lints: Vec<L>,
+    kept: &'static std::sync::Mutex<Kept>,
+) -> ListLints<L> {
+    ListLints::new(
+        lints,
+        kept,
+        ListTime {
+            now: test_now,
+            ..ListTime::default()
+        },
+    )
+}
+
+fn said_of_each(list: &impl SkillLint, names: &[&str], text: &str) -> Vec<Vec<String>> {
+    let skills: Vec<SkillFiles<'_>> = names.iter().map(|name| files(name, text)).collect();
+    list.findings_of_each(&skills)
+        .iter()
+        .map(|found| found.iter().filter_map(Finding::shown).collect())
+        .collect()
+}
+
+#[test]
+fn a_lint_that_answers_many_at_once_is_asked_one_question_for_the_list() {
+    let lint = AtOnce::new(std::time::Duration::from_millis(1));
+    let kept = kept();
+    let names = ["a", "b", "c", "d"];
+
+    let shown = said_of_each(&a_timed_list(vec![&lint], kept), &names, "v1");
+    assert_eq!(
+        shown,
+        names.map(|name| vec![format!("House style: {name} is long")])
+    );
+    assert_eq!(lint.questions(), [names.map(str::to_owned).to_vec()]);
+
+    // The next list asks nothing about the same files, and only about what changed.
+    let next = a_timed_list(vec![&lint], kept);
+    said_of_each(&next, &names, "v1");
+    assert_eq!(lint.questions().len(), 1, "the next list asks nothing");
+    said_of_each(&next, &["a", "e"], "v1");
+    assert_eq!(lint.questions()[1], ["e"]);
+}
+
+#[test]
+fn a_lint_that_takes_150_ms_to_start_shows_its_findings_in_the_list_4195() {
+    // The ticket's bar: asked one skill at a time, each question has the router's 100 ms with
+    // the start inside it, so a lint that takes 150 ms to start never answers in a list.
+    let one_at_a_time = Counting::new(std::time::Duration::from_millis(150));
+    one_at_a_time.fails.set(true);
+    let alone = a_timed_list(vec![&one_at_a_time], kept());
+    let began = test_now();
+    assert_eq!(said(&alone, "a", "text"), Vec::<String>::new());
+    let (_, until) = one_at_a_time.asked.borrow()[0];
+    assert_eq!(until, began + LIST_LINT_DEADLINE, "the start is inside it");
+
+    // Asked once for the whole list, by the most the list ever spends, it answers every skill.
+    let lint = AtOnce::new(std::time::Duration::from_millis(150));
+    let list = a_timed_list(vec![&lint], kept());
+    let began = test_now();
+    let shown = said_of_each(&list, &["a", "b", "c"], "text");
+    assert!(shown.iter().all(|one| one.len() == 1), "{shown:?}");
+    let (_, until) = lint.asked.borrow()[0];
+    assert_eq!(until, began + LIST_LINT_TIME + LIST_LINT_DEADLINE);
+    assert!(
+        test_now().saturating_duration_since(began) <= LIST_LINT_TIME + LIST_LINT_DEADLINE,
+        "the list spends no more than one asking each skill"
+    );
+}
+
+#[test]
+fn questions_of_many_are_bounded_and_each_is_asked_only_within_the_lists_time() {
+    let lint = AtOnce::new(std::time::Duration::from_millis(120));
+    let names: Vec<String> = (0..=wire::MOST_AT_ONCE).map(|n| format!("s{n}")).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    let kept = kept();
+
+    let shown = said_of_each(&a_timed_list(vec![&lint], kept), &names, "text");
+    // The first question holds the most one may; past the list's time, the last is not asked.
+    let questions = lint.questions();
+    assert_eq!(questions.len(), 1);
+    assert_eq!(questions[0].len(), wire::MOST_AT_ONCE);
+    assert_eq!(shown.iter().filter(|one| one.is_empty()).count(), 1);
+
+    // The next list asks on, about the one left.
+    said_of_each(&a_timed_list(vec![&lint], kept), &names, "text");
+    assert_eq!(lint.questions()[1], [names[wire::MOST_AT_ONCE]]);
+}
+
+#[test]
+fn questions_of_many_hold_at_most_their_bytes() {
+    let big = "x".repeat(wire::MOST_AT_ONCE_BYTES / 2);
+    let skills: Vec<SkillFiles<'_>> = ["a", "b", "c"]
+        .iter()
+        .map(|name| files(name, &big))
+        .collect();
+    assert_eq!(in_questions(&[0, 1, 2], &skills), [vec![0, 1], vec![2]]);
+    // Each skill's other files count only as far as one question hands them.
+    let others = vec![("huge.md".to_owned(), "y".repeat(wire::MOST_AT_ONCE_BYTES))];
+    let one = SkillFiles {
+        others: &others,
+        ..files("a", "t")
+    };
+    assert_eq!(handed_bytes(&one), 1 + wire::MOST_HANDED_BYTES);
+}
+
+#[test]
+fn a_question_of_many_that_did_not_answer_shows_nothing_for_each_and_is_asked_again_later() {
+    let lint = AtOnce::new(std::time::Duration::from_millis(1));
+    lint.fails.set(true);
+    let kept = kept();
+
+    let shown = said_of_each(&a_timed_list(vec![&lint], kept), &["a", "b"], "v1");
+    assert_eq!(shown, [Vec::<String>::new(), Vec::new()]);
+    said_of_each(&a_timed_list(vec![&lint], kept), &["a", "b"], "v1");
+    assert_eq!(lint.questions().len(), 1, "not asked again at once");
+
+    lint.fails.set(false);
+    pass(ASK_AGAIN_AFTER);
+    let shown = said_of_each(&a_timed_list(vec![&lint], kept), &["a", "b"], "v1");
+    assert_eq!(
+        shown,
+        [
+            vec!["House style: a is long".to_owned()],
+            vec!["House style: b is long".to_owned()]
+        ]
+    );
+}
+
+#[test]
+fn a_list_of_one_skill_asks_a_many_at_once_lint_about_it_alone() {
+    let lint = AtOnce::new(std::time::Duration::from_millis(1));
+    let list = a_timed_list(vec![&lint], kept());
+    assert_eq!(said(&list, "deploy", "v1"), ["House style: deploy is long"]);
+    assert_eq!(lint.questions(), [vec!["deploy".to_owned()]]);
+}

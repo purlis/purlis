@@ -233,6 +233,14 @@ pub struct SkillFiles<'a> {
 pub trait SkillLint {
     /// Everything it finds in `skill`, in the order a person reads it.
     fn findings(&self, skill: &SkillFiles<'_>) -> Vec<Finding>;
+
+    /// **Everything it finds in each of `skills`**, one answer per skill in their order: each
+    /// one's [`Self::findings`]. A lint that answers many skills at once overrides it, as an
+    /// extension's lint asked in a studio list does (#4195): one question, so one start of its
+    /// program, for a whole list.
+    fn findings_of_each(&self, skills: &[SkillFiles<'_>]) -> Vec<Vec<Finding>> {
+        skills.iter().map(|skill| self.findings(skill)).collect()
+    }
 }
 
 /// The shortest description that can tell a chat when to use a skill.
