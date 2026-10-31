@@ -15,14 +15,17 @@
 //! runner's own folder for it, and nowhere else on the runner.
 //!
 //! **A bundle is held to [`code::MOST_BUNDLE_BYTES`]**, and a transfer to [`TRANSFER_WITHIN`]: one
-//! past either is refused in a sentence, and what it brought is removed.
+//! past either is refused in a sentence, and what it brought is removed. **A send may be given
+//! other bounds by its client** (`held`, 1.65, spec #4275): the pool's limits on the desktop, up
+//! to [`code::HIGHEST_BUNDLE_BYTES`] and [`code::LONGEST_TRANSFER_SECS`]. What this host writes
+//! back never is: raising a limit on sends widens nothing a runner can make its desktop take.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use purlis_session_protocol::code::{self, Header};
-use purlis_session_protocol::session::{self, Answer, CodeRef, Peer, Refusal};
+use purlis_session_protocol::session::{self, Answer, CodeHeld, CodeRef, Peer, Refusal};
 use tokio::io::AsyncWriteExt;
 
 use crate::hosting::Hosting;
@@ -197,6 +200,7 @@ pub(crate) enum Way {
         refs: Vec<CodeRef>,
         checkout: Option<String>,
         moving: bool,
+        held: Option<CodeHeld>,
     },
     /// The host writes it: `give_code`, with the work tree's work where `with_work`.
     Out { have: Vec<String>, with_work: bool },
@@ -204,6 +208,22 @@ pub(crate) enum Way {
     ConversationIn(Carried),
     /// The host writes one: `give_conversation` (1.44).
     ConversationOut(Carried),
+}
+
+impl Way {
+    /// **What this transfer is held to**, given this host's own most bytes: what the client gave
+    /// a send, up to what any send may be given, else the host's own.
+    fn held_to(&self, most: u64) -> (u64, Duration) {
+        match self {
+            Way::In {
+                held: Some(held), ..
+            } => (
+                held.most_bytes.min(code::HIGHEST_BUNDLE_BYTES),
+                Duration::from_secs(held.within_secs.min(code::LONGEST_TRANSFER_SECS)),
+            ),
+            _ => (most, TRANSFER_WITHIN),
+        }
+    }
 }
 
 impl Hosting {
@@ -224,8 +244,8 @@ impl Hosting {
             .tempdir_in(self.code_scratch(&at))
             .map_err(|why| not_started(format!("there is no room for the bundle: {why}")))?;
         let file = scratch.path().join("transfer.bundle");
-        let most = self.most_bundle();
-        let moved = tokio::time::timeout(TRANSFER_WITHIN, async {
+        let (most, within) = way.held_to(self.most_bundle());
+        let moved = tokio::time::timeout(within, async {
             let mut stream = peer
                 .opener()
                 .open()
@@ -241,6 +261,7 @@ impl Hosting {
                     refs,
                     checkout,
                     moving,
+                    held: _,
                 } => {
                     let read = take_in(&mut stream, &file, most).await?;
                     blocking(move || {
@@ -291,8 +312,8 @@ impl Hosting {
         .await
         .map_err(|_| {
             not_started(format!(
-                "the transfer took longer than {} minutes, so it was given up",
-                TRANSFER_WITHIN.as_secs() / 60
+                "the transfer took longer than {} seconds, so it was given up",
+                within.as_secs()
             ))
         })??;
         Ok(moved)

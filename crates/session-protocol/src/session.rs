@@ -424,9 +424,22 @@ use crate::view::{Limits, Views};
 /// [`MOST_PROFILE_SETTINGS_STAGED_FILES`], so a pool's limit above what a runner before held can
 /// be used. No frame changes. A runner before 1.64 is held to what it staged before, and the
 /// desktop says so before it sends.
+///
+/// 1.65 lets a pool's limits reach what a runner holds a send of code to (spec #4275, #4282):
+/// `take_code` may carry `held`, the most bytes and longest time the desktop gives this send,
+/// which the host takes up to [`crate::code::HIGHEST_BUNDLE_BYTES`] and
+/// [`crate::code::LONGEST_TRANSFER_SECS`]. Only ever a send to the host: what a host writes back
+/// stays held to [`crate::code::MOST_BUNDLE_BYTES`]. A host before 1.65 ignores the field and
+/// holds a send to what it always did, so the desktop holds it there too and says so.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 64,
+    minor: 65,
+};
+
+/// The version that first holds a send of code to what its desktop gives it (spec #4275).
+pub const KNOWS_CODE_HELD: Version = Version {
+    major: 1,
+    minor: 65,
 };
 
 /// The version that first stages a profile's settings up to a pool's limit (spec #4275).
@@ -1010,6 +1023,9 @@ pub enum Command {
         checkout: Option<String>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         moving: bool,
+        /// What the client gives this send (1.65, spec #4275): none is a host's own bound.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        held: Option<CodeHeld>,
     },
     /// The host writes a git bundle of `repo`'s branches back to the client (1.34, #2046): on a
     /// code stream named `transfer`, leaving out every commit `have` reaches, and shuts it once
@@ -1098,6 +1114,14 @@ pub enum Command {
     /// more, and the window stops the grade on that: the floor under [`Pushed::StopGrade`], which
     /// a full queue can lose.
     GradeStep { question: u64, step: GradeStepTold },
+}
+
+/// **What a client gives one send of code** (1.65, spec #4275): a pool's limits as they stand,
+/// so the runner's end follows them with nothing restarted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodeHeld {
+    pub most_bytes: u64,
+    pub within_secs: u64,
 }
 
 /// One ref of a repository and the commit it is at (1.34): what `take_code` names and `code`
@@ -3847,6 +3871,29 @@ impl Client {
             refs,
             checkout,
             moving: false,
+            held: None,
+        })
+        .await
+    }
+
+    /// [`Client::take_code`], the send held to what `held` gives it (1.65, spec #4275).
+    pub async fn take_code_held(
+        &self,
+        project: &str,
+        repo: &str,
+        transfer: u64,
+        refs: Vec<CodeRef>,
+        checkout: Option<String>,
+        held: Option<CodeHeld>,
+    ) -> Result<Vec<CodeRef>, CallError> {
+        self.code(Command::TakeCode {
+            project: project.to_owned(),
+            repo: repo.to_owned(),
+            transfer,
+            refs,
+            checkout,
+            moving: false,
+            held,
         })
         .await
     }
@@ -3868,6 +3915,29 @@ impl Client {
             refs,
             checkout: Some(checkout),
             moving: true,
+            held: None,
+        })
+        .await
+    }
+
+    /// [`Client::take_work`], the send held to what `held` gives it (1.65, spec #4275).
+    pub async fn take_work_held(
+        &self,
+        project: &str,
+        repo: &str,
+        transfer: u64,
+        refs: Vec<CodeRef>,
+        checkout: String,
+        held: Option<CodeHeld>,
+    ) -> Result<Vec<CodeRef>, CallError> {
+        self.code(Command::TakeCode {
+            project: project.to_owned(),
+            repo: repo.to_owned(),
+            transfer,
+            refs,
+            checkout: Some(checkout),
+            moving: true,
+            held,
         })
         .await
     }
