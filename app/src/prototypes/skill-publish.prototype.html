@@ -1,0 +1,154 @@
+<title>Publish a skill</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the Skill studio frame (A) on a skill's page; the subject is the publish review and the export dialog.
+   PROTOTYPE for #2781 (SK-18): throwaway, fake data, never merged. */
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --panel2:#eef0f3; --line:#dde1e7; --fg:#1d2330; --muted:#5d6676;
+  --accent:#5b4fd6; --accent-soft:#e9e6fb; --warn:#a15c00; --warn-soft:#fbefdc; --bad:#b4232c; --bad-soft:#fbe5e6;
+  --ok:#21724a; --ok-soft:#e2f3ea; --tag:#e7eaf0; --add:#e3f4e8; --del:#fbe8e8; --shadow:0 10px 30px rgba(20,24,40,.16);
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --bad:#ff8a90; --bad-soft:#3d1f23;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --add:#16301f; --del:#3a1c1f; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --bad:#ff8a90; --bad-soft:#3d1f23;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --add:#16301f; --del:#3a1c1f; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;line-height:1.45;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 72px;box-sizing:border-box}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,[tabindex]:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:4px}
+input,select{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%}
+.note{max-width:1400px;margin:0 auto 10px;color:var(--muted);font-size:12px}.note b{color:var(--fg)}
+.win{max-width:1400px;margin:0 auto;height:calc(100% - 30px);min-height:600px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+.tabs{display:flex;gap:2px;padding:6px 8px 0;background:var(--panel2);border-bottom:1px solid var(--line)}
+.tabs span{padding:6px 12px;border-radius:7px 7px 0 0;color:var(--muted)}.tabs span.on{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-bottom-color:var(--panel);margin-bottom:-1px}
+.bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.nav2{display:flex;gap:2px}.nav2 button{width:26px;height:24px;border-radius:5px;border:1px solid var(--line)}.nav2 button:disabled{opacity:.35}
+.crumb{color:var(--muted)}.crumb button{color:var(--muted);text-decoration:underline}.crumb b{color:var(--fg);font-weight:500}
+.studio{flex:1;display:grid;grid-template-columns:160px minmax(0,1fr);min-height:0}
+.snav{border-right:1px solid var(--line);padding:8px 6px;display:flex;flex-direction:column;gap:1px}
+.snav span{padding:5px 9px;border-radius:6px;color:var(--muted);display:flex;justify-content:space-between}.snav span.on{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.snav .cnt{font-size:11px}
+.content{overflow:auto;min-width:0}
+.pg{padding:18px 22px;display:grid;gap:18px;max-width:960px}
+.pg h1{margin:0;font-size:18px;font-weight:600}
+.pg h2{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.lead{color:var(--muted);margin:0;max-width:72ch}
+.btn{border:1px solid var(--line);border-radius:6px;padding:5px 10px;background:var(--panel);white-space:nowrap}
+.btn:hover{background:var(--panel2)}.btn:disabled{opacity:.45;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}.btn.danger{color:var(--bad);border-color:var(--bad)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.card{border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;gap:6px;align-content:start}
+.card b{font-weight:600}.card small{color:var(--muted)}
+.rows{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.r{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:10px 14px;border-bottom:1px solid var(--line);align-items:center}
+.r:last-child{border-bottom:0}.r.click{cursor:pointer}.r.click:hover{background:var(--panel2)}
+.r .t{font-weight:500;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.r .t code{font-family:var(--mono);font-size:12.5px}
+.r .s{grid-column:1;color:var(--muted);font-size:12px}
+.r .a{grid-row:1/span 2;grid-column:2;display:flex;gap:6px}
+.tag{font-size:10.5px;padding:0 6px;border-radius:9px;background:var(--tag);color:var(--muted);white-space:nowrap}
+.mark{font-size:10.5px;padding:0 6px;border-radius:9px;white-space:nowrap}.mark.acc{background:var(--accent-soft);color:var(--accent)}.mark.warn{background:var(--warn-soft);color:var(--warn)}.mark.ok{background:var(--ok-soft);color:var(--ok)}.mark.bad{background:var(--bad-soft);color:var(--bad)}
+.banner{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:8px}
+.banner.warn{background:var(--warn-soft)}.banner.acc{background:var(--accent-soft)}.banner span{flex:1 1 300px}
+.risk{display:grid;gap:4px}.risk div{display:flex;gap:8px;align-items:baseline}.risk code{font-family:var(--mono);font-size:12px}
+.file{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.file summary{padding:7px 10px;cursor:pointer;display:flex;gap:8px;align-items:center;background:var(--panel2)}
+.file pre{margin:0;padding:10px;font-family:var(--mono);font-size:12px;white-space:pre-wrap;max-height:220px;overflow:auto}
+.diff div{font-family:var(--mono);font-size:12px;padding:1px 10px;white-space:pre-wrap}.diff .a{background:var(--add)}.diff .d{background:var(--del)}
+.lvls{display:grid;gap:6px}
+.lvl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 10px;border:1px solid var(--line);border-radius:8px;padding:8px 11px;cursor:pointer}
+.lvl input{width:auto;margin-top:3px}.lvl small{grid-column:2;color:var(--muted)}.lvl.on{border-color:var(--accent);background:var(--accent-soft)}
+.sticky{position:sticky;bottom:0;background:var(--panel);border-top:1px solid var(--line);padding:12px 22px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;align-items:center}
+.sticky span{color:var(--muted);margin-right:auto}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:0;min-height:100%}
+.two>div{min-width:0}.two>div:first-child{border-right:1px solid var(--line)}
+.facets{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);border-radius:12px;padding:2px 9px;font-size:12px;color:var(--muted)}.chip.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.dialogwrap{position:fixed;inset:0;background:rgba(10,12,20,.38);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.dialog{background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);width:min(520px,100%);padding:20px;display:grid;gap:12px;max-height:calc(100% - 32px);overflow:auto}
+.dialog h2{margin:0;font-size:16px}.dialog p{margin:0;color:var(--muted)}
+.field{display:grid;gap:4px}.field label{font-weight:500}.field small{color:var(--muted)}
+details.more summary{cursor:pointer;color:var(--accent)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(64px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--panel);padding:8px 14px;border-radius:8px;z-index:25}
+.switcher{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));background:#11131a;color:#f2f3f7;border-radius:24px;padding:6px 8px;display:flex;align-items:center;gap:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:30;font-size:12.5px;max-width:calc(100% - 32px);flex-wrap:wrap;justify-content:center}
+.switcher button{color:#f2f3f7;border-radius:16px;padding:4px 10px}.switcher button:hover{background:#2a2e3a}
+.switcher .lbl{padding:0 6px;font-weight:600}.switcher .st{color:#aab0c0;padding:0 6px;font-size:11.5px}
+@media (max-width:900px){.studio{grid-template-columns:minmax(0,1fr)}.snav{display:none}.two{grid-template-columns:minmax(0,1fr)}.two>div:first-child{border-right:0;border-bottom:1px solid var(--line)}}
+
+.menu{position:relative}.pop{position:absolute;right:0;top:calc(100% + 4px);background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);padding:4px;display:grid;min-width:210px;z-index:5}
+.pop button{text-align:left;padding:6px 9px;border-radius:5px}.pop button:hover{background:var(--panel2)}.pop hr{border:0;border-top:1px solid var(--line);margin:4px 0;width:100%}
+.scrim{position:fixed;inset:0;background:rgba(10,12,20,.45);display:grid;place-items:center;padding:16px;z-index:9}
+.dlg{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);width:min(440px,100%);padding:18px;display:grid;gap:12px}
+.dlg h2{margin:0;font-size:15px;font-weight:600}.dlg p{margin:0;color:var(--muted)}
+.facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px}.facts dt{color:var(--muted)}.facts dd{margin:0;overflow-wrap:anywhere}
+code{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:8px}.tbl table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}.tbl th,.tbl td{padding:6px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}.tbl th{color:var(--muted);font-weight:500}.tbl tr:last-child td{border-bottom:0}
+.states{display:flex;gap:6px;flex-wrap:wrap;align-items:center;max-width:1400px;margin:0 auto 10px}
+.states .btn.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+@media (max-width:640px){.studio{grid-template-columns:minmax(0,1fr)}.snav{display:none}.pg{padding:14px}}
+</style>
+<p class="note"><b>Prototype, fake data.</b> Open the "…" menu on the skill. Publish to a source is a full page and Export is a dialog. Nothing here sends anything.</p>
+<div class="states" id="states"></div>
+<div class="win">
+  <div class="tabs"><span>steward 5</span><span class="on">Skill studio</span></div>
+  <div class="bar"><div class="nav2"><button id="back" aria-label="Back">‹</button><button disabled aria-label="Forward">›</button></div><div class="crumb" id="crumb"></div></div>
+  <div class="studio">
+    <nav class="snav" aria-label="Pages"><span class="on">Library <i class="cnt">14</i></span><span>Needs you</span><span>Drafts</span><span>Sources <i class="cnt">2</i></span><span>Deleted</span></nav>
+    <div class="content" id="view" style="display:flex;flex-direction:column"></div>
+  </div>
+</div>
+<div id="over"></div>
+<script>
+const FILES=[["deploy/SKILL.md","1.4 KB",""],["deploy/scripts/release.sh","820 B","runs"],["deploy/refs/checklist.md","610 B",""],["notify/SKILL.md","540 B","comes along"]];
+const BEHIND=[["deploy/.env","its name is a credential file's"],["deploy/notes.local.md","the project's git ignores it"],["deploy/hosts","it is a link"]];
+const STOPS=[["deploy/refs/checklist.md:14","a token by its forge's prefix","ghp_*****************"],["deploy/SKILL.md:31","a home folder's path","/Use*******"]];
+const S={page:"skill",state:"clear",menu:false,dlg:null,source:"https://github.com/acme/skills",fmt:"zip",done:false};
+const $=(h)=>h;
+function draw(){
+  const v=document.getElementById("view");
+  document.getElementById("crumb").innerHTML=S.page==="skill"?'Library › <b>deploy</b>':'Library › deploy › <b>Publish to a source</b>';
+  document.getElementById("back").disabled=S.page==="skill";
+  document.getElementById("states").innerHTML=S.page==="publish"?'<span class="tag">Show the page when</span>'+[["clear","Clean"],["stopped","Something stops it"],["local","Kept on this machine"],["opened","Opened"],["nopush","Cannot push"]].map(([k,l])=>`<button class="btn ${S.state===k?"on":""}" data-state="${k}">${l}</button>`).join(""):"";
+  v.innerHTML=S.page==="skill"?skill():publish();
+  document.getElementById("over").innerHTML=S.dlg==="export"?exportDlg():"";
+}
+function skill(){return `<div class="pg" style="flex:1"><div class="row"><h1 style="flex:1">deploy</h1><span class="tag">project</span><button class="btn">Use in this chat</button><button class="btn">Edit</button><button class="btn">Grade</button>
+  <div class="menu"><button class="btn" data-act="menu" aria-haspopup="menu" aria-expanded="${S.menu}" aria-label="More actions">…</button>${S.menu?`<div class="pop" role="menu"><button role="menuitem">Rename…</button><button role="menuitem">Move…</button><button role="menuitem">Deprecate…</button><button role="menuitem">Archive…</button><hr><button role="menuitem" data-act="publish">Publish to a source…</button><button role="menuitem" data-act="export">Export…</button><hr><button role="menuitem">Open the file</button><button role="menuitem" style="color:var(--bad)">Delete…</button></div>`:""}</div></div>
+  <p class="lead">Deploys the service and checks that it came up. Use when asked to ship a release.</p>
+  <dl class="facts"><dt>Grade</dt><dd>90% with the skill, 50% without, on this version</dd><dt>Refers to</dt><dd>notify</dd><dt>Files</dt><dd>3</dd></dl></div>`}
+function sourcePick(){return `<label for="src" style="display:grid;gap:4px"><span>Source</span><select id="src" data-act="src"><option>https://github.com/acme/skills</option><option>https://gitlab.acme.dev/platform/skills</option></select></label>`}
+function publish(){
+  const st=S.state, stopped=st==="stopped"||st==="local";
+  if(st==="opened")return `<div class="pg"><div class="banner acc"><span><b>Draft pull request opened.</b> acme/skills #128. Mark it ready on GitHub when you want it reviewed.</span><button class="btn">Open on GitHub</button></div></div>`;
+  const kind=S.source.includes("gitlab")?"merge request":"pull request";
+  return `<div class="pg" style="flex:1"><div><h1>Publish deploy to a source</h1><p class="lead">This opens a draft ${kind} under your own account. Nothing is sent until you press the button below.</p></div>
+  ${st==="nopush"?`<div class="banner warn" role="status"><span><b>You can't push to acme/skills.</b> Nothing was sent. Ask for write access, or export the skill and send it to them.</span><button class="btn" data-act="export">Export…</button></div>`:""}
+  ${st==="local"?`<div class="banner warn" role="status"><span><b>deploy is kept on this machine, so it can't be published.</b> Move it to a shared level first.</span><button class="btn">Move…</button></div>`:""}
+  ${st==="stopped"?`<div class="banner warn" role="status"><span><b>2 things stop this publish.</b> Fix them in the skill, then review again. There is no way to send it past them.</span></div><section><h2>What stops it</h2><div class="rows">${STOPS.map(([a,b,c])=>`<div class="r"><div class="t"><code>${a}</code></div><div class="s">Holds ${b}: <code>${c}</code></div><div class="a"><button class="btn">Open the file</button></div></div>`).join("")}</div></section>`:""}
+  ${sourcePick()}
+  <dl class="facts"><dt>Goes into</dt><dd><code>main</code>, reviewed at <code>54fe345</code></dd><dt>New branch</dt><dd><code>purlis/publish/deploy-3fa91c07d2be</code></dd><dt>Title</dt><dd>Add the skill deploy and 1 it refers to</dd><dt>Commit names</dt><dd>Ada Example, ada@acme.example</dd></dl>
+  <section><h2>Files that go (4)</h2><div class="rows">${FILES.map(([a,b,c])=>`<div class="r"><div class="t"><code>${a}</code>${c==="runs"?'<span class="mark warn">runs a script</span>':c?`<span class="tag">${c}</span>`:""}</div><div class="s">${b}</div></div>`).join("")}</div></section>
+  <section><h2>Stays behind (3)</h2><div class="rows">${BEHIND.map(([a,b])=>`<div class="r"><div class="t"><code>${a}</code></div><div class="s">${b}</div></div>`).join("")}</div></section>
+  <section><h2>Grades in the description</h2><div class="tbl"><table><thead><tr><th>When</th><th>Version</th><th>Harness</th><th>With the skill</th><th>Without</th><th>Runs</th><th>Ended</th></tr></thead><tbody><tr><td>2026-10-30</td><td>this one</td><td>claude-code</td><td>90%</td><td>50%</td><td>3</td><td>whole</td></tr><tr><td>2026-10-12</td><td>earlier</td><td>codex</td><td>72%</td><td>48%</td><td>3</td><td>whole</td></tr></tbody></table></div><p class="lead" style="margin-top:6px">No chat text, paths, costs or device names go with them.</p></section></div>
+  <div class="sticky"><span>${stopped?"Fix what stops it first":"Opens a draft. You mark it ready."}</span><button class="btn" data-act="cancel">Cancel</button><button class="btn primary" data-act="open" ${stopped||st==="nopush"?"disabled":""}>Open draft ${kind}</button></div>`}
+function exportDlg(){return `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dt"><h2 id="dt">Export deploy</h2><p>Writes a copy that works outside purlis: deploy and notify, the skill it refers to. Links, credential files and files git ignores stay behind.</p>
+  <div class="lvls">${[["zip","A zip","One file to send to someone"],["folder","A folder","Skill folders to drop into a project"]].map(([k,l,h])=>`<label class="lvl ${S.fmt===k?"on":""}"><input type="radio" name="fmt" data-fmt="${k}" ${S.fmt===k?"checked":""}><span>${l}</span><small>${h}</small></label>`).join("")}</div>
+  <div class="row" style="justify-content:flex-end"><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="close">Choose where to save…</button></div></div></div>`}
+document.addEventListener("click",e=>{const t=e.target.closest("[data-act],[data-state],[data-fmt]");if(!t){if(S.menu){S.menu=false;draw()}return}
+  if(t.dataset.state){S.state=t.dataset.state}
+  else if(t.dataset.fmt){S.fmt=t.dataset.fmt}
+  else{const a=t.dataset.act;if(a==="menu")S.menu=!S.menu;if(a==="publish"){S.page="publish";S.menu=false;S.state="clear"}if(a==="export"){S.dlg="export";S.menu=false}if(a==="close")S.dlg=null;if(a==="cancel")S.page="skill";if(a==="open")S.state="opened"}
+  draw()});
+document.addEventListener("change",e=>{if(e.target.id==="src"){S.source=e.target.value;draw();document.getElementById("src").value=S.source}});
+document.getElementById("back").addEventListener("click",()=>{S.page="skill";draw()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){S.dlg=null;S.menu=false;draw()}});
+draw();
+</script>
