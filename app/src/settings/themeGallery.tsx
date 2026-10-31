@@ -37,6 +37,7 @@ import { Tooltip } from "../ui/tooltip/Tooltip";
 import { ListBox, ListOption } from "../ui/list/List";
 import { RowDescription, RowLabel } from "../ui/list/Row";
 import { Badge as LevelBadge } from "../ui/badge/Badge";
+import { useWindowLeft } from "../ui/windowLeft";
 
 /**
  * **Settings › Theme is a gallery** (spec #2313, #2331): a card per theme a choice at this level
@@ -474,6 +475,22 @@ function Cards({
     focus: GalleryCard | null;
     aimed: string | null;
   }>({ pointer: null, focus: null, aimed: null });
+  // One preview for the pointer and the keyboard: the card the pointer is on, else the one
+  // the focus is on; the person's theme goes back only when neither is on a card.
+  const aim = () => {
+    if (gallery === undefined) return;
+    const on = owner.current.pointer ?? owner.current.focus;
+    if (on?.key === owner.current.aimed) return;
+    owner.current.aimed = on?.key ?? null;
+    if (on === null) putBackSoon();
+    else enter(at, on, gallery.yours, list.current);
+  };
+  // Gone from the window, which an engine may not say on the card: the keyboard's card stays (#3095).
+  useWindowLeft((why) => {
+    if (why !== "pointer") return;
+    owner.current.pointer = null;
+    aim();
+  });
   if (gallery === undefined)
     return (
       <p id={ids.id} className="ui-setting-help" role="status">
@@ -482,15 +499,6 @@ function Cards({
           : "Reading the themes…"}
       </p>
     );
-  // One preview for the pointer and the keyboard: the card the pointer is on, else the one
-  // the focus is on; the person's theme goes back only when neither is on a card.
-  const aim = () => {
-    const on = owner.current.pointer ?? owner.current.focus;
-    if (on?.key === owner.current.aimed) return;
-    owner.current.aimed = on?.key ?? null;
-    if (on === null) putBackSoon();
-    else enter(at, on, gallery.yours, list.current);
-  };
   const point = (card: GalleryCard | null) => {
     owner.current.pointer = card;
     aim();

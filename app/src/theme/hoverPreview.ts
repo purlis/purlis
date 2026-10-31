@@ -113,7 +113,7 @@ function restore(): void {
 }
 
 /** While a card is shown: the window's own draws become what goes back, and the window
- *  hidden, unfocused, the pointer gone from it (#3095), Escape or the cards gone put the person's theme back. */
+ *  hidden, unfocused, Escape or the cards gone put the person's theme back. */
 function watch(): void {
   const stopDrawn = onDrawn((drawn) => {
     if (shown === null || drawn === shown) return;
@@ -137,7 +137,11 @@ function watch(): void {
     if (within !== null && !within.isConnected) putBack();
   }, LOOK_MS);
   document.addEventListener("visibilitychange", hidden);
-  const unwatchLeft = watchWindowLeft(putBack);
+  // The window from the front: the pointer gone from it is the gallery's to weigh, as the keyboard
+  // may still be on the card (#3095).
+  const unwatchLeft = watchWindowLeft((why) => {
+    if (why === "focus") putBack();
+  });
   document.addEventListener("keydown", escape, true);
   unwatch = () => {
     stopDrawn();
