@@ -241,7 +241,17 @@ fn a_report_after_the_cap_is_the_grader_s_and_ends_at_the_cap() {
     let _ = grading.heard(PROTOCOL, &run_chat("with"));
     let report = line(serde_json::json!({
         "charter": PROTOCOL,
-        "report": { "triggers": [], "arms": [], "delta": null },
+        "report": {
+            "triggers": [{
+                "query": "make me a pdf", "should_trigger": true, "arm": "with", "runs": 1,
+                "triggered": 1, "rate": 1.0, "pass": true, "chats": ["chat-0"],
+            }],
+            "arms": [{
+                "arm": "with", "pass_rate": null, "tokens": null, "seconds": null,
+                "chats": 1, "not_run": 0,
+            }],
+            "delta": null,
+        },
     }));
     assert_eq!(grading.heard(PROTOCOL, &report), None);
     let report = grading.finished(Ok(()));
@@ -335,4 +345,23 @@ fn a_long_or_many_lined_reason_is_kept_as_one_line_the_record_reads() {
     assert!(kept.len() <= crate::skills::grades::MOST_REASON_BYTES);
     assert!(!kept.chars().any(char::is_control));
     assert!(kept.ends_with('…'));
+}
+
+#[test]
+fn a_report_that_miscounts_what_ran_ends_the_grade() {
+    // Nothing of the one chat that ran: the record would add its spend up to none, and skip it.
+    let empty = line(serde_json::json!({
+        "charter": PROTOCOL,
+        "report": { "triggers": [], "arms": [], "delta": null },
+    }));
+    let (report, _) = ended_by(&[run_chat("with"), empty], Ok(()));
+    assert_eq!(report.ended, GradeEnd::GraderFailed);
+    assert!(
+        report
+            .failed
+            .as_deref()
+            .is_some_and(|why| why.contains("purlis counted 1 and 0")),
+        "{:?}",
+        report.failed
+    );
 }

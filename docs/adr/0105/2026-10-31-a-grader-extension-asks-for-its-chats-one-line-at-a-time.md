@@ -41,7 +41,8 @@ Grader is between lines.
 run-chat request holds `arm` and `prompt` alone. A Grader's report holds its scores alone, each
 part of it closed too: what a grade spent, how it ended and who graded it are purlis's to say, so
 a report that carries them is refused. The report's tests are the grade's own, in its arms; each
-chat it names is one this grade ran, once; each arm is scored once; and it holds together as a
+chat it names is one this grade ran, once; each arm is scored once, with the chats purlis counted
+in it; and it holds together as a
 row of the eval record is read back (§5), or it is refused, since a report the record would skip
 is none.
 

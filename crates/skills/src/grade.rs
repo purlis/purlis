@@ -848,6 +848,26 @@ impl<'a> Held<'a> {
         if triggers.len() > request.triggers.len() * request.arms.len() {
             return Err("its report scores more tests than this grade runs".to_owned());
         }
+        // Each arm's chats are facts purlis counted, and what the record adds its spend up from: a
+        // report that says otherwise would be recorded and then skipped as it is read back.
+        for (a, arm) in request.arms.iter().enumerate() {
+            let all: Vec<&ChatRan> = self.ran.iter().flat_map(|test| test[a].iter()).collect();
+            let chats = all.iter().filter(|one| one.ran()).count() as u64;
+            let not_run = all.len() as u64 - chats;
+            let said = arms
+                .iter()
+                .find(|one| one.arm == *arm)
+                .map_or((0, 0), |one| (u64::from(one.chats), u64::from(one.not_run)));
+            if said != (chats, not_run) {
+                return Err(format!(
+                    "its report says the {} arm ran {} chats and did not run {}, and purlis \
+                     counted {chats} and {not_run}",
+                    arm.word(),
+                    said.0,
+                    said.1
+                ));
+            }
+        }
         Ok(self.closed(grader, triggers, arms, reported.delta, None))
     }
 }
