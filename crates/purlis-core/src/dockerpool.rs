@@ -105,7 +105,7 @@ for pair in "$@"; do
   for found in "$from"/$src; do
     rel=${found#"$from/"}
     [ -f "$found" ] && [ ! -L "$found" ] && [ -r "$found" ] || continue
-    case $(realpath -- "$found") in "$from"/*) ;; *) continue ;; esac
+    [ "$(realpath -- "$found")" = "$from/$rel" ] || continue
     out=$dst
     case $src in
       *'*'*)

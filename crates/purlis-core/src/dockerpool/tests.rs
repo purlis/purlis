@@ -3134,6 +3134,25 @@ fn a_carry_writes_nothing_through_a_link_on_its_way() {
     assert_eq!(std::fs::read_dir(&project).unwrap().count(), 0);
 }
 
+/// **A carry takes nothing through a link inside the old home either**: a profile's folder that
+/// is a link to a harness's default folder there is passed over.
+#[cfg(unix)]
+#[test]
+fn a_carry_takes_nothing_through_a_link_inside_the_old_home() {
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let own = from.path().join(".claude");
+    std::fs::create_dir_all(&own).unwrap();
+    std::fs::write(own.join(".credentials.json"), "the default folder's").unwrap();
+    let profile = from.path().join(".local/share/purlis/profiles/work");
+    std::fs::create_dir_all(&profile).unwrap();
+    std::os::unix::fs::symlink(&own, profile.join("config")).unwrap();
+
+    let ran = carried(from.path(), to.path());
+
+    assert!(ran.status.success(), "{ran:?}");
+    assert_eq!(std::fs::read_dir(the_stage(to.path())).unwrap().count(), 0);
+}
+
 /// A home with no sign-in carries nothing, and a sign-in that cannot be read is passed over: the
 /// copy ends well either way, so it never holds a pool back.
 #[cfg(unix)]

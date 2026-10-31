@@ -1847,11 +1847,10 @@ fn a_runner_keeping_a_profile_again_takes_in_a_sign_in_carried_since() {
     assert!(!carried.exists());
 }
 
-/// **The desktop's adopted folder takes in the sign-in carried to it too** (#4055): kept as
-/// Claude Code's default folder in the runner's home, it takes the default folder's sign-in a
-/// drained runner carried under the harness's name; one of another harness's is left out.
+/// **The desktop's adopted folder takes in nothing carried for now**: what is there under the
+/// harness's name is removed, and its default folder gains no sign-in.
 #[test]
-fn the_desktops_adopted_folder_takes_in_the_sign_in_carried_to_it() {
+fn the_desktops_adopted_folder_takes_in_nothing_carried() {
     let dir = tempfile::tempdir().unwrap();
     let runner = homes(dir.path(), "runner");
     let adopted = the_desktops_adopted_folder(dir.path());
@@ -1872,10 +1871,7 @@ fn the_desktops_adopted_folder_takes_in_the_sign_in_carried_to_it() {
     .expect("kept");
 
     assert_eq!(kept.folders.config, runner_home(dir.path()).join(".claude"));
-    assert_eq!(
-        fs::read_to_string(kept.folders.config.join(".credentials.json")).unwrap(),
-        "the old runner's"
-    );
+    assert!(!kept.folders.config.join(".credentials.json").exists());
     assert!(!kept.folders.config.join("auth.json").exists());
     assert!(!carried.exists());
 }

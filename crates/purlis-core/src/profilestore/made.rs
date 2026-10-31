@@ -386,9 +386,8 @@ pub(super) fn make_in(
     Ok(Made { record, copied })
 }
 
-/// **Takes in the sign-in carried to this runner for `record`** (#4011, #4055), a profile it
-/// keeps for its desktop: purlis's own, or the desktop's adopted folder kept as its harness's
-/// default folder under `home`. Each batch a drained runner carried
+/// **Takes in the sign-in carried to this runner for `record`** (#4011, #4055), a profile purlis
+/// made that it keeps for its desktop. Each batch a drained runner carried
 /// ([`super::carried_in`]) is looked in, and only the sign-in file of `record`'s harness
 /// ([`super::sign_in_file_of`]), a plain file reached from the data home through no link, is moved
 /// in, by a link that never replaces a file: one the profile has here, signed in on this runner,
@@ -409,14 +408,18 @@ pub(super) fn take_carried(homes: &Homes, home: &Path, record: &MachineProfile) 
     };
     let mut batches: Vec<PathBuf> = batches.flatten().map(|entry| entry.path()).collect();
     batches.sort();
-    let into = super::sign_in_file_of(&record.harness).and_then(|file| {
-        let (under, rest) = file.split_once('/')?;
-        let folder = match under {
-            "config" => Some(&record.folders.config),
-            _ => record.folders.data.as_ref(),
-        }?;
-        Some((file, folder.join(rest)))
-    });
+    // A harness's own default folder takes nothing in for now: only what was carried is removed.
+    let takes = record.adopted.is_none();
+    let into = super::sign_in_file_of(&record.harness)
+        .filter(|_| takes)
+        .and_then(|file| {
+            let (under, rest) = file.split_once('/')?;
+            let folder = match under {
+                "config" => Some(&record.folders.config),
+                _ => record.folders.data.as_ref(),
+            }?;
+            Some((file, folder.join(rest)))
+        });
     // Where the folders on its way may be made: a profile purlis made has its own folder, and an
     // adopted one the runner's home.
     let made_folder = homes.folder_of(&record.name);
