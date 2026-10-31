@@ -140,9 +140,12 @@ fn accepted_of(
 ) -> Result<after_edit::Accepted, String> {
     // The plan the person read, whole: what it grades and the profile, model and limits it
     // shows (#3622).
+    // Always purlis's own runner (#3236): an opt-in runs with nobody watching, so a Grader
+    // extension is picked for one grade at a time, on the plan that names it.
     super::plan_holds(
         planned,
         &on,
+        None,
         consent,
         skill,
         "grading after each edit was not turned on",
@@ -466,6 +469,7 @@ fn grade_after(
                     profile: Some(accepted.profile.clone()),
                     model: accepted.model.clone(),
                     after_edit: true,
+                    grader: None,
                 },
                 planned,
             );

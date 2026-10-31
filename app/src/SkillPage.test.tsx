@@ -335,6 +335,9 @@ describe("a skill's page", () => {
         consent: "c0ffee",
         previous: null,
         previous_refused: null,
+        graders: [],
+        grader: null,
+        grader_refused: null,
       }),
       skill_grades: () => ({
         grades: [row],

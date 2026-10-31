@@ -119,6 +119,7 @@ fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
                 from: grades::cap::From::Yours,
             }
             .cost_usd(&dearest),
+            grader: None,
         },
     );
     assert_eq!(
@@ -675,4 +676,127 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
         "the local copy's grade is not the shared copy's"
     );
     assert_eq!(local_now, Some(step(&plane, "ship-3928", "g-3928-local")));
+}
+
+fn acme() -> GradeGrader {
+    GradeGrader {
+        id: "acme.grader".into(),
+        title: "Acme".into(),
+    }
+}
+
+fn runs_on() -> On {
+    on(Ok("full sandbox".into()), grades::price::of_model(None))
+}
+
+#[test]
+fn the_plan_lists_each_grader_and_names_the_one_picked() {
+    let planned = planned("ship it");
+    let own = plan_by(&planned, None, runs_on(), vec![acme()], None);
+    assert_eq!(own.graders, vec![acme()], "listed beside purlis's own");
+    assert_eq!(own.grader, None);
+    assert_eq!(
+        own.consent,
+        consent_shown(&planned, &runs_on()),
+        "purlis's own runner consents as a plan with no Grader did"
+    );
+
+    let picked = plan_by(&planned, None, runs_on(), vec![acme()], Some("acme.grader"));
+    assert_eq!(picked.grader, Some(acme()));
+    assert_ne!(picked.consent, own.consent, "the pick is in the consent");
+}
+
+#[test]
+fn a_press_on_a_plan_of_another_grader_starts_nothing() {
+    let planned = planned("ship it");
+    let by_acme = consent_by(&planned, &runs_on(), Some(&acme())).unwrap();
+    assert_eq!(
+        plan_holds(
+            &planned,
+            &runs_on(),
+            Some(&acme()),
+            &by_acme,
+            "deploy",
+            "nothing was started"
+        ),
+        Ok(())
+    );
+    let other = GradeGrader {
+        id: "other.grader".into(),
+        title: "Acme".into(),
+    };
+    for grader in [None, Some(&other)] {
+        let refused = plan_holds(
+            &planned,
+            &runs_on(),
+            grader,
+            &by_acme,
+            "deploy",
+            "nothing was started",
+        )
+        .unwrap_err();
+        assert!(refused.contains("nothing was started"), "{refused}");
+    }
+}
+
+#[test]
+fn a_pick_no_longer_on_offer_is_said_and_consents_to_nothing() {
+    let plan = plan_by(
+        &planned("ship it"),
+        None,
+        runs_on(),
+        Vec::new(),
+        Some("acme.grader"),
+    );
+    assert_eq!(plan.consent, None);
+    assert_eq!(plan.grader, None);
+    assert!(
+        plan.grader_refused
+            .as_deref()
+            .is_some_and(|why| why.contains("'acme.grader'")),
+        "{:?}",
+        plan.grader_refused
+    );
+    assert!(grader_picked(&[], Some("acme.grader")).is_err());
+    assert_eq!(grader_picked(&[], None), Ok(None));
+}
+
+#[test]
+fn a_graders_failure_is_in_its_scorecard() {
+    let report = grading::GradeReport {
+        grader: "acme.grader".into(),
+        ended: GradeEnd::GraderFailed,
+        failed: Some("The Grader 'acme.grader' asked past its plan.".into()),
+        ..grades::underway::interrupted_report(1, None, None)
+    };
+    let graded = Graded {
+        v: grades::VERSION,
+        grade: "01G".into(),
+        skill: "deploy".into(),
+        level: None,
+        tree: "t".into(),
+        commit: None,
+        harness: None,
+        profile: None,
+        ts: "2026-10-31T00:00:00Z".into(),
+        runs: 3,
+        spent: Spent::default(),
+        report,
+        plugins_off: None,
+        model: None,
+        previous: None,
+        after_edit: false,
+    };
+    let card = GradeScorecard::of(&graded, |_| false);
+    assert!(
+        card.ended
+            .ends_with("The Grader 'acme.grader' asked past its plan."),
+        "{}",
+        card.ended
+    );
+    assert!(
+        card.ran_on.ends_with("graded by acme.grader"),
+        "{}",
+        card.ran_on
+    );
 }

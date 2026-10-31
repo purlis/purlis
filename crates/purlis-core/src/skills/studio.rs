@@ -816,9 +816,15 @@ pub fn ran_on_said(graded: &super::grades::Graded) -> String {
         .as_deref()
         .map(crate::skilluse::harness_title)
         .unwrap_or_else(|| "Not recorded".to_owned());
-    match &graded.model {
+    let ran_on = match &graded.model {
         Some(model) => format!("{harness} · {model}"),
         None => harness,
+    };
+    // A Grader extension's scores are its own (#3236): the record says whose they are.
+    if graded.report.grader == purlis_skills::grade::BUILT_IN {
+        ran_on
+    } else {
+        format!("{ran_on} · graded by {}", graded.report.grader)
     }
 }
 

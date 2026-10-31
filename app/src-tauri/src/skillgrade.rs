@@ -30,6 +30,7 @@ use serde::Serialize;
 use specta::Type;
 use tauri::Emitter as _;
 
+use purlis_core::executor::Executor;
 use purlis_core::skills::grade::{
     self as grading, Arm, ChatEnd, ChatRan, Chats, GradeEnd, RunChat,
 };
@@ -164,6 +165,11 @@ pub struct SkillGradePlan {
     /// shortened and its subject; and why one is not compared, where it did not read.
     pub previous: Option<GradePrevious>,
     pub previous_refused: Option<String>,
+    /// **The Grader extensions it can be graded by besides purlis's own** (#3236), the one picked
+    /// (`None` is purlis's own), and why the one picked is not on offer now, where it is not.
+    pub graders: Vec<GradeGrader>,
+    pub grader: Option<GradeGrader>,
+    pub grader_refused: Option<String>,
 }
 
 /// **The version a grade compares with, as its plan says it** (SK-57).
@@ -261,10 +267,22 @@ pub(crate) fn chats_on(
 /// profile, model, token cap and dollar limit the plan shows (`grades::consent_on`). `None`
 /// where there is nothing to grade.
 fn consent_shown(planned: &Planned, on: &On) -> Option<String> {
-    planned
-        .consent
-        .as_deref()
-        .map(|consent| grades::consent_on(consent, &terms_of(planned, on)))
+    consent_by(planned, on, None)
+}
+
+/// **What pressing Grade consents to, the plan naming `grader`** (#3236): `consent_shown` with
+/// the pick in it, so a grade on another Grader than the plan named is refused. `None` is
+/// purlis's own runner.
+fn consent_by(planned: &Planned, on: &On, grader: Option<&GradeGrader>) -> Option<String> {
+    planned.consent.as_deref().map(|consent| {
+        grades::consent_on(
+            consent,
+            &grades::Terms {
+                grader: grader.map(|one| (one.id.as_str(), one.title.as_str())),
+                ..terms_of(planned, on)
+            },
+        )
+    })
 }
 
 /// **The terms a grade of `planned` would start on, on `on`**: the profile, the model its chats
@@ -282,7 +300,76 @@ pub(crate) fn terms<'a>(cap: &grades::cap::Cap, on: &'a On) -> grades::Terms<'a>
         model: on.priced.model.as_deref().or(on.model.as_deref()),
         token_cap: cap.tokens,
         limit_usd: cap.cost_usd(&on.priced),
+        grader: None,
     }
+}
+
+/// **A Grader extension a plan can name** (#3236): its id, which is what says whose program it
+/// is, and the title it gives itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct GradeGrader {
+    pub id: String,
+    pub title: String,
+}
+
+/// **The Grader extensions the project at `root` can grade with now**: each this machine approved
+/// and the project has on.
+fn graders_here(executor: &Executor, root: &std::path::Path) -> Vec<GradeGrader> {
+    purlis_core::skills::studio::with_studio(executor, root, |studio| {
+        studio.map_or_else(Vec::new, |studio| {
+            studio
+                .graders()
+                .into_iter()
+                .map(|(id, title)| GradeGrader { id, title })
+                .collect()
+        })
+    })
+}
+
+/// **The Grader `picked` names among `offered`**, or the sentence that says it is not on offer
+/// now. `None` picked is purlis's own runner.
+fn grader_picked(
+    offered: &[GradeGrader],
+    picked: Option<&str>,
+) -> Result<Option<GradeGrader>, String> {
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    offered
+        .iter()
+        .find(|one| one.id == picked)
+        .cloned()
+        .map(Some)
+        .ok_or_else(|| {
+            format!(
+                "The Grader '{picked}' cannot grade here now: it was removed, turned off in this \
+                 project, or is no longer approved on this machine."
+            )
+        })
+}
+
+/// **The plan of `planned` on `on`, with the Graders it lists and the one picked** (#3236): where
+/// the pick is not on offer the plan says why and consents to nothing.
+fn plan_by(
+    planned: &Planned,
+    running: Option<String>,
+    on: On,
+    offered: Vec<GradeGrader>,
+    picked: Option<&str>,
+) -> SkillGradePlan {
+    let pick = grader_picked(&offered, picked);
+    let consent = match &pick {
+        Ok(grader) => consent_by(planned, &on, grader.as_ref()),
+        Err(_) => None,
+    };
+    let mut plan = SkillGradePlan::of(planned, running, on);
+    plan.consent = consent;
+    plan.graders = offered;
+    match pick {
+        Ok(grader) => plan.grader = grader,
+        Err(why) => plan.grader_refused = Some(why),
+    }
+    plan
 }
 
 impl From<&grades::Estimate> for GradeEstimate {
@@ -312,16 +399,17 @@ impl From<&grades::Estimate> for GradeEstimate {
 fn plan_holds(
     planned: &Planned,
     on: &On,
+    grader: Option<&GradeGrader>,
     consent: &str,
     skill: &str,
     so: &str,
 ) -> Result<(), String> {
-    if consent_shown(planned, on).as_deref() == Some(consent) {
+    if consent_by(planned, on, grader).as_deref() == Some(consent) {
         return Ok(());
     }
     Err(format!(
         "The plan of {skill} changed since it was shown (what it grades, the profile or model \
-         its chats run on, or its limits), so {so}: read the new plan and press again."
+         its chats run on, its limits, or the Grader that scores it), so {so}: read the new plan and press again."
     ))
 }
 
@@ -399,6 +487,9 @@ impl SkillGradePlan {
                 subject: previous.subject.clone(),
             }),
             previous_refused: planned.previous_refused.clone(),
+            graders: Vec::new(),
+            grader: None,
+            grader_refused: None,
         }
     }
 }
@@ -549,21 +640,32 @@ fn running_of(plane: &PlaneId, skill: &str) -> Option<String> {
 /// **What grading the copy of `skill` at `level` would run**, before anything runs.
 #[tauri::command]
 #[specta::specta]
+// A command's arguments are the window's call, named one by one, as the other commands' are.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn skill_grade_plan(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     level: SkillLevel,
     skill: String,
     profile: Option<String>,
     model: Option<String>,
+    grader: Option<String>,
 ) -> Result<SkillGradePlan, String> {
     let held = planes.held(&plane)?;
+    let executor = views.executor();
     crate::off_the_window("reading what a grade runs", move || {
         flag_on()?;
         let on = chats_on(held.root(), profile, model);
         let planned =
             grades::planned(held.root(), &(&level).into(), &skill, on.profile.as_deref())?;
-        Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill), on))
+        Ok(plan_by(
+            &planned,
+            running_of(&plane, &skill),
+            on,
+            graders_here(&executor, held.root()),
+            grader.as_deref(),
+        ))
     })
     .await
 }
@@ -578,15 +680,18 @@ pub(crate) async fn skill_grade_plan(
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn skill_grade_start(
     app: tauri::AppHandle,
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     level: SkillLevel,
     skill: String,
     profile: Option<String>,
     model: Option<String>,
+    grader: Option<String>,
     consent: String,
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
+    let executor = views.executor();
     crate::off_the_window("starting a grade", move || {
         flag_on()?;
         let level: Level = (&level).into();
@@ -596,7 +701,16 @@ pub(crate) async fn skill_grade_start(
         // What runs is what the plan showed (the review of #3229): the tests, the skill's files
         // and what its folder holds, read once here and laid out from this one copy, on the
         // profile, model and limits it showed.
-        plan_holds(&planned, &on, &consent, &skill, "nothing was started")?;
+        // And on the Grader it named: one no longer on offer starts nothing.
+        let picked = grader_picked(&graders_here(&executor, held.root()), grader.as_deref())?;
+        plan_holds(
+            &planned,
+            &on,
+            picked.as_ref(),
+            &consent,
+            &skill,
+            "nothing was started",
+        )?;
         begin(
             app,
             held,
@@ -607,6 +721,10 @@ pub(crate) async fn skill_grade_start(
                 profile,
                 model,
                 after_edit: false,
+                grader: picked.map(|one| ByGrader {
+                    id: one.id,
+                    executor,
+                }),
             },
             planned,
         )
@@ -623,6 +741,39 @@ pub(crate) struct Begin {
     pub profile: Option<String>,
     pub model: Option<String>,
     pub after_edit: bool,
+    /// The Grader extension the plan named (#3236); `None` is purlis's own runner.
+    pub grader: Option<ByGrader>,
+}
+
+/// **The Grader extension a grade runs through**, and what asks it.
+pub(crate) struct ByGrader {
+    pub id: String,
+    pub executor: Arc<Executor>,
+}
+
+/// **The report of `request`, graded by `by`** (purlis's own runner where none), its chats run by
+/// `chats` and held to `limits`: the same host and the same limits either way.
+fn graded_by(
+    by: Option<&ByGrader>,
+    root: &std::path::Path,
+    request: &grading::GradeRequest,
+    chats: &mut dyn Chats,
+    limits: grading::Limits,
+) -> grading::GradeReport {
+    let Some(by) = by else {
+        return grading::grade(request, chats, Some(limits));
+    };
+    purlis_core::skills::studio::with_studio(&by.executor, root, |studio| match studio {
+        Some(studio) => studio.grade(&by.id, request, chats, Some(limits)),
+        // Its plan listed it, so this machine's config home went since: still a report.
+        None => purlis_core::extension::studio::grading::Grading::new(
+            &by.id,
+            request,
+            chats,
+            Some(limits),
+        )
+        .finished(Err("this machine has no config home now".to_owned())),
+    })
 }
 
 /// **Starts a grade of `planned`**, the plan whose consent was checked or whose bounds the
@@ -641,6 +792,7 @@ pub(crate) fn begin(
         profile,
         model,
         after_edit,
+        grader,
     } = begin;
     let root = held.root().to_path_buf();
     // The one read of the copy the consent was taken from: laid out and recorded as is.
@@ -732,7 +884,13 @@ pub(crate) fn begin(
         ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
         runs: request.runs,
         spent: Spent::default(),
-        report: grades::underway::interrupted_report(cap, limits.cost_usd, limits.priced.clone()),
+        // A grade a crash ends is still the one the plan named.
+        report: grading::GradeReport {
+            grader: grader
+                .as_ref()
+                .map_or_else(|| grading::BUILT_IN.to_owned(), |by| by.id.clone()),
+            ..grades::underway::interrupted_report(cap, limits.cost_usd, limits.priced.clone())
+        },
         plugins_off: None,
         model: None,
         previous: copy
@@ -815,7 +973,8 @@ pub(crate) fn begin(
                     model: model.as_deref(),
                     reported: Vec::new(),
                 };
-                let report = grading::grade(&request, &mut chats, Some(limits.clone()));
+                let report =
+                    graded_by(grader.as_ref(), &root, &request, &mut chats, limits.clone());
                 let harness = chats.harness.take();
                 let plugins_off = chats.plugins_off.take();
                 let reported = grades::reported_model(chats.reported.iter().map(String::as_str));
@@ -841,6 +1000,8 @@ pub(crate) fn begin(
                 drop(marker.borrow_mut().take());
                 running().remove(&grade);
                 let said = match (&graded.report.not_started, recorded) {
+                    // A Grader that ended its grade: the window says why, in its sentence.
+                    _ if graded.report.failed.is_some() => graded.report.failed.clone(),
                     (Some(why), _) => Some(why.clone()),
                     (None, Some(_)) if graded.report.ended == GradeEnd::SpendNotReported => Some(
                         "This profile's chats do not say what they spend, so a grade on it cannot \
@@ -894,23 +1055,34 @@ pub(crate) fn begin(
 /// it before Grade is pressed. The answer is the plan of `skill` at `level` again, with it.
 #[tauri::command]
 #[specta::specta]
+// A command's arguments are the window's call, named one by one, as the other commands' are.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn skill_grade_set_cap(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     level: SkillLevel,
     skill: String,
     profile: Option<String>,
     model: Option<String>,
+    grader: Option<String>,
     tokens: f64,
 ) -> Result<SkillGradePlan, String> {
     let held = planes.held(&plane)?;
+    let executor = views.executor();
     crate::off_the_window("setting a grade's cap", move || {
         flag_on()?;
         set_cap(held.root(), tokens)?;
         let on = chats_on(held.root(), profile, model);
         let planned =
             grades::planned(held.root(), &(&level).into(), &skill, on.profile.as_deref())?;
-        Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill), on))
+        Ok(plan_by(
+            &planned,
+            running_of(&plane, &skill),
+            on,
+            graders_here(&executor, held.root()),
+            grader.as_deref(),
+        ))
     })
     .await
 }
@@ -1274,7 +1446,11 @@ impl GradeScorecard {
             graded: studio::said_at(&graded.ts),
             version: studio::version_said(graded),
             ran_on: studio::ran_on_said(graded),
-            ended: grades::ended_said(graded.report.ended).to_owned(),
+            // With a Grader's own sentence, where it ended its grade (#3236).
+            ended: match &graded.report.failed {
+                Some(why) => format!("{} {why}", grades::ended_said(graded.report.ended)),
+                None => grades::ended_said(graded.report.ended).to_owned(),
+            },
             delta: graded.report.delta.map(|delta| (delta * 100.0).round()),
             against: graded
                 .compared_with()

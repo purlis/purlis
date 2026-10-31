@@ -1300,12 +1300,15 @@ pub struct Terms<'a> {
     pub model: Option<&'a str>,
     pub token_cap: u64,
     pub limit_usd: f64,
+    /// The Grader extension the plan names, by its id and its title (#3236); `None` is purlis's
+    /// own runner.
+    pub grader: Option<(&'a str, &'a str)>,
 }
 
 /// **The consent of a plan that shows `terms`**: `consent` (what it grades, [`consent_of`]) and
 /// the profile, model and limits it shows, in one digest. A press made on a plan whose profile,
-/// model, cap or limit is not the one a grade would start on now is refused, so a grade runs on
-/// the terms the person read.
+/// model, cap, limit or Grader is not the one a grade would start on now is refused, so a grade
+/// runs on the terms the person read.
 pub fn consent_on(consent: &str, terms: &Terms<'_>) -> String {
     use sha2::Digest as _;
     let mut digest = sha2::Sha256::new();
@@ -1324,6 +1327,14 @@ pub fn consent_on(consent: &str, terms: &Terms<'_>) -> String {
     digest.update(terms.token_cap.to_be_bytes());
     digest.update(b"\0");
     digest.update(terms.limit_usd.to_bits().to_be_bytes());
+    // Only a plan that names a Grader says more, so a plan of purlis's own runner consents to
+    // what it did before this was added, and a kept opt-in still holds.
+    if let Some((id, title)) = terms.grader {
+        digest.update(b"\0by=");
+        digest.update(id.as_bytes());
+        digest.update(b"\0");
+        digest.update(title.as_bytes());
+    }
     hex_of(digest)
 }
 
