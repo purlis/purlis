@@ -4238,6 +4238,8 @@ fn profile_sign_in(
         ));
     }
     let here = profilestore::this_device();
+    // Watched through a fetch too, so a sign-in cancelled meanwhile starts no login.
+    let input = (!matches!(held, Held::No)).then(held_input);
     let pinned = match installs::on_this_runner(&record, &|line| eprintln!("{line}")) {
         Ok(pinned) => pinned,
         Err(why) if check => {
@@ -4288,8 +4290,8 @@ fn profile_sign_in(
         record.name,
         record.folders.config.display()
     );
-    if !matches!(held, Held::No) {
-        return held_login(&login, held, &record.harness, provider);
+    if let Some(input) = input {
+        return held_login(&login, held, input, &record.harness, provider);
     }
     let ran = std::process::Command::new(&login.program)
         .args(&login.args)
@@ -4480,11 +4482,23 @@ fn terminal_size(said: &str) -> Result<purlis_core::engine::Size, String> {
         .ok_or_else(|| format!("{} is not a terminal's size", shown::short(said)))
 }
 
-/// Runs `login` held to this command's input, as `held` says.
+/// This command's input, watched for what a held login does with it.
+#[cfg(unix)]
+fn held_input() -> purlis_core::profilestore::sign_in::held::Input {
+    purlis_core::profilestore::sign_in::held::Input::of(std::io::stdin())
+}
+
+/// A runner is never Windows.
+#[cfg(not(unix))]
+fn held_input() {}
+
+/// Runs `login` held to `input`, this command's own, as `held` says: nothing where it closed
+/// already.
 #[cfg(unix)]
 fn held_login(
     login: &purlis_core::profilestore::sign_in::Login,
     held: Held,
+    input: purlis_core::profilestore::sign_in::held::Input,
     kind: &str,
     plan: Option<&str>,
 ) -> ExitCode {
@@ -4492,10 +4506,11 @@ fn held_login(
         in_own_terminal, until_answered_or_input_ends, until_input_ends,
     };
     use purlis_core::profilestore::sign_in::{driven, waiting};
+    if input.closed_by_now() {
+        return ExitCode::FAILURE;
+    }
     let ended = match held {
-        Held::InOwnTerminal(size) => {
-            in_own_terminal(login, size, std::io::stdin(), std::io::stdout())
-        }
+        Held::InOwnTerminal(size) => in_own_terminal(login, size, input, std::io::stdout()),
         // Only a login waiting for the browser's answer is handed one here (#4044).
         _ if driven::waits_for_the_browser(kind, plan) => {
             let followed = driven::Driven::of_plan(kind, plan, std::time::Instant::now());
@@ -4504,14 +4519,14 @@ fn held_login(
                     login,
                     followed,
                     &kept_in,
-                    std::io::stdin(),
+                    input,
                     std::io::stdout(),
                     std::io::stderr(),
                 ),
                 _ => Err("this runner has no data home to note this sign-in in".to_owned()),
             }
         }
-        _ => until_input_ends(login, std::io::stdin()),
+        _ => until_input_ends(login, input),
     };
     match ended {
         Ok(Some(0)) => ExitCode::SUCCESS,
@@ -4525,6 +4540,7 @@ fn held_login(
 fn held_login(
     _: &purlis_core::profilestore::sign_in::Login,
     _: Held,
+    _: (),
     _: &str,
     _: Option<&str>,
 ) -> ExitCode {

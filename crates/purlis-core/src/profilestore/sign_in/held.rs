@@ -319,6 +319,62 @@ fn passing(
     says
 }
 
+/// How long [`Input::closed_by_now`] gives what reads it to see its end.
+const SEEN_WITHIN: Duration = Duration::from_millis(50);
+
+/// **What drives a held login, watched from before it starts** (#4043): a runner may fetch its
+/// harness first, and whoever drives it may cancel meanwhile. What comes in waits for the login.
+pub struct Input {
+    pieces: Receiver<Vec<u8>>,
+    left: Vec<u8>,
+    ended: Receiver<()>,
+}
+
+impl Input {
+    /// `input`, read from now on.
+    pub fn of(mut input: impl Read + Send + 'static) -> Self {
+        let (piece, pieces) = mpsc::channel();
+        let (end, ended) = mpsc::channel::<()>();
+        std::thread::spawn(move || {
+            let _end = end;
+            let mut buffer = [0u8; 4096];
+            while let Ok(read) = input.read(&mut buffer) {
+                if read == 0 || piece.send(buffer[..read].to_vec()).is_err() {
+                    break;
+                }
+            }
+        });
+        Self {
+            pieces,
+            left: Vec::new(),
+            ended,
+        }
+    }
+
+    /// **Whether it closed by now**, so nothing should start.
+    pub fn closed_by_now(&self) -> bool {
+        matches!(
+            self.ended.recv_timeout(SEEN_WITHIN),
+            Err(RecvTimeoutError::Disconnected)
+        )
+    }
+}
+
+impl Read for Input {
+    fn read(&mut self, into: &mut [u8]) -> std::io::Result<usize> {
+        if self.left.is_empty() {
+            match self.pieces.recv() {
+                Ok(piece) => self.left = piece,
+                Err(_) => return Ok(0),
+            }
+        }
+        let read = into.len().min(self.left.len());
+        into[..read].copy_from_slice(&self.left[..read]);
+        self.left.drain(..read);
+        Ok(read)
+    }
+}
+
 /// Ends what is left of the group the login led, once it has ended and been reaped.
 fn end_group_of(leader: u32) {
     if let Some(leader) = i32::try_from(leader).ok().and_then(Pid::from_raw) {

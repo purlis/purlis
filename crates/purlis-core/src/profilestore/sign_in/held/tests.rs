@@ -273,3 +273,31 @@ fn a_login_that_cannot_be_recorded_shows_no_page_and_is_ended() {
     assert!(said.expect_err("refused").contains("could not note"));
     assert!(!passed.lock().unwrap().contains(STATE));
 }
+
+/// **A login cancelled before it starts is seen to be**: while its harness is fetched, what drives
+/// it may go away, and then nothing starts.
+#[test]
+fn an_input_closed_before_the_login_starts_is_seen() {
+    let (reader, writer) = std::io::pipe().expect("a pipe");
+    let input = Input::of(reader);
+    assert!(!input.closed_by_now());
+
+    drop(writer);
+
+    assert!(input.closed_by_now());
+}
+
+/// **What came in before the login started reaches it**, and then its end does.
+#[test]
+fn what_comes_in_while_a_login_is_not_started_yet_reaches_it() {
+    let (reader, mut writer) = std::io::pipe().expect("a pipe");
+    let mut input = Input::of(reader);
+    writer.write_all(b"typed").unwrap();
+    drop(writer);
+    assert!(input.closed_by_now());
+
+    let mut read = String::new();
+    input.read_to_string(&mut read).unwrap();
+
+    assert_eq!(read, "typed");
+}
