@@ -13,14 +13,14 @@ import { Button } from "../ui/button/Button";
 import { Card } from "../ui/card/Card";
 import { Checkbox } from "../ui/choice/Checkbox";
 import { askProfileSignIn } from "./links";
-import { DRIVEN, PoolProfiles, approvesIn } from "./PoolProfiles";
-import { PoolSignIn } from "./PoolSignIn";
+import { DRIVEN, PoolProfiles } from "./PoolProfiles";
+import { PoolSignIn, approvesIn } from "./PoolSignIn";
 
 /** Where choosing a new pool's profiles is: choosing, signing the chosen in, or done. */
 type At =
   | { at: "choose" }
   | { at: "recording" }
-  | { at: "walk"; names: { name: string; harness: string; approves: boolean }[]; now: number }
+  | { at: "walk"; names: { name: string; kind: string; harness: string }[]; now: number }
   | { at: "lines" };
 
 /** "1 profile", "2 profiles". */
@@ -34,7 +34,8 @@ const profiles = (n: number) => `${n} profile${n === 1 ? "" : "s"}`;
  * core's Add a profile… and Remove, so its runner keeps exactly them) and then signs each in, one
  * after another, in the same strip ({@link PoolSignIn}); each one's end, signed in or not, goes on
  * to the next. A profile whose harness's sign-in the window does not drive is recorded and left
- * to its line's own Sign in. **Not now** records nothing. Either ends on the pool's lines
+ * to its line's own Sign in: that is opencode's too, whose line asks which plan first, so a walked
+ * profile has no plan to know. **Not now** records nothing. Either ends on the pool's lines
  * ({@link PoolProfiles}), each not signed in offering Sign in.
  */
 export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | undefined }) {
@@ -91,18 +92,20 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
           key={one.name}
           pool={pool}
           profile={one.name}
+          kind={one.kind}
           harness={one.harness}
-          approves={one.approves}
           onEnd={next}
           onTerminal={
             plane === undefined
               ? undefined
-              : () => askProfileSignIn(plane, one.name, undefined, pool, one.approves || undefined)
-          }
-          onDeviceCode={
-            plane === undefined
-              ? undefined
-              : () => askProfileSignIn(plane, one.name, undefined, pool, true)
+              : () =>
+                  askProfileSignIn(
+                    plane,
+                    one.name,
+                    undefined,
+                    pool,
+                    approvesIn(one.kind) || undefined,
+                  )
           }
         />
       </>
@@ -153,8 +156,8 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
             )
             .map((row) => ({
               name: row.name,
+              kind: row.kind,
               harness: row.harness,
-              approves: approvesIn(row.kind),
             }))
         : [];
     setAt(walked.length === 0 ? { at: "lines" } : { at: "walk", names: walked, now: 0 });

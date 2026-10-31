@@ -65,6 +65,8 @@ let signedIn = false;
 /** The steps the core has said and the window has not yet asked for. */
 let said: PoolSignInStep[];
 let waiting: ((step: PoolSignInStep) => void) | undefined;
+/** What each typed call waits on, in turn, where a test holds them; an error refuses it. */
+let typing: Promise<void>[];
 
 /** The core says `step`. */
 function says(step: PoolSignInStep) {
@@ -80,6 +82,7 @@ beforeEach(() => {
   profilesAsked = 0;
   said = [];
   waiting = undefined;
+  typing = [];
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
     asked.push({ cmd, args: a });
@@ -103,6 +106,7 @@ beforeEach(() => {
       };
     }
     if (cmd === "pool_sign_in_start") return 7;
+    if (cmd === "pool_sign_in_type") return typing.shift() ?? null;
     if (cmd === "pool_sign_in_next") {
       const next = said.shift();
       if (next) return next;
@@ -291,6 +295,71 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     expect(calls("pool_sign_in_cancel")).toEqual([{ flow: 7 }]);
   });
 
+  it("passes what is typed on one call at a time, in order (#4123)", async () => {
+    const opened = await strip();
+    says({ at: "could-not-follow", said: "Choose your sign-in method: [1] [2]" });
+    const terminal = await within(opened).findByRole("group", {
+      name: "The runner's terminal on builds",
+    });
+    await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
+    let letFirstGo = () => {};
+    typing = [new Promise((go) => (letFirstGo = go))];
+    const type = within(terminal).getByRole("button", { name: "Type 1" });
+
+    await userEvent.click(type);
+    await userEvent.click(type);
+    await waitFor(() => expect(calls("pool_sign_in_type")).toHaveLength(1));
+    // The second waits for the first to have been passed on.
+    await act(() => new Promise((done) => setTimeout(done, 20)));
+    expect(calls("pool_sign_in_type")).toHaveLength(1);
+
+    letFirstGo();
+
+    await waitFor(() => expect(calls("pool_sign_in_type")).toHaveLength(2));
+  });
+
+  it("carries on typing after a key refused, and says why (#4123)", async () => {
+    const opened = await strip();
+    says({ at: "could-not-follow", said: "Choose your sign-in method: [1] [2]" });
+    const terminal = await within(opened).findByRole("group", {
+      name: "The runner's terminal on builds",
+    });
+    await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
+    const refused = Promise.reject(new Error("that is too much to type"));
+    refused.catch(() => undefined);
+    typing = [refused];
+    const type = within(terminal).getByRole("button", { name: "Type 1" });
+
+    await userEvent.click(type);
+    expect(await within(opened).findByRole("alert")).toHaveTextContent("too much to type");
+
+    await userEvent.click(type);
+    await waitFor(() => expect(calls("pool_sign_in_type")).toHaveLength(2));
+  });
+
+  it("starts a Copilot sign-in purlis could not follow again in the terminal, with its plan (#4160)", async () => {
+    render(<PoolProfiles pool="builds" plane={undefined} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Sign open in to GitHub Copilot on pool builds" }),
+    );
+    const opened = await screen.findByRole("group", { name: "Signing open in on builds" });
+
+    says({ at: "could-not-follow", said: "Select GitHub deployment type" });
+
+    await within(opened).findByRole("group", { name: "The runner's terminal on builds" });
+    await waitFor(() =>
+      expect(calls("pool_sign_in_start")).toEqual([
+        { pool: "builds", name: "open", provider: "github-copilot", terminal: null },
+        {
+          pool: "builds",
+          name: "open",
+          provider: "github-copilot",
+          terminal: { columns: 80, rows: 16 },
+        },
+      ]),
+    );
+  });
+
   it("offers no Cancel while it is checked, as the login has ended (#4043)", async () => {
     const opened = await strip();
     says({ at: "checking" });
@@ -454,12 +523,12 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     ]);
   });
 
-  it("says a taken port, and offers a device code (#4044)", async () => {
+  it("says a taken port, and runs the device code in the strip, with no project (#4044, #4106)", async () => {
     const heard: ProfileSignInAsk[] = [];
     const hear = (event: Event) => heard.push((event as CustomEvent<ProfileSignInAsk>).detail);
     window.addEventListener(PROFILE_SIGN_IN, hear);
     try {
-      render(<PoolProfiles pool="builds" plane="/home/op/project" />);
+      render(<PoolProfiles pool="builds" plane={undefined} />);
       await userEvent.click(
         await screen.findByRole("button", { name: "Sign fast in on pool builds" }),
       );
@@ -476,18 +545,61 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
       expect(await screen.findByText("Sign-in failed")).toBeVisible();
       await userEvent.click(within(opened).getByRole("button", { name: "Use a device code" }));
 
-      expect(heard).toEqual([
-        {
-          plane: "/home/op/project",
-          profile: "fast",
-          provider: undefined,
-          pool: "builds",
-          device: true,
-        },
-      ]);
+      // The same strip: the core starts the device flow in the runner's terminal, no shell tab.
+      const terminal = await within(opened).findByRole("group", {
+        name: "The runner's terminal on builds",
+      });
+      expect(heard).toEqual([]);
+      expect(within(opened).getByRole("status")).toHaveTextContent(
+        "Step 1 of 2: Enter the device code the terminal below shows",
+      );
+      expect(await screen.findByText("Needs you in the terminal")).toBeVisible();
+      await waitFor(() =>
+        expect(calls("pool_sign_in_start")).toEqual([
+          { pool: "builds", name: "fast", provider: null, terminal: null },
+          { pool: "builds", name: "fast", provider: null, terminal: { columns: 80, rows: 16 } },
+        ]),
+      );
+      await userEvent.click(within(terminal).getByRole("button", { name: "Type 1" }));
+      await waitFor(() => expect(calls("pool_sign_in_type")).toHaveLength(1));
+
+      // Its status check ends the strip as any other sign-in does.
+      says({ at: "checking" });
+      says({ at: "signed-in" });
+      expect(await within(opened).findByText("Signed in")).toBeInTheDocument();
     } finally {
       window.removeEventListener(PROFILE_SIGN_IN, hear);
     }
+  });
+
+  it("names opencode's ChatGPT device code by its plan, and tries again in the terminal (#4106)", async () => {
+    render(<PoolProfiles pool="builds" plane={undefined} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Sign open in to ChatGPT on pool builds" }),
+    );
+    const opened = await screen.findByRole("group", { name: "Signing open in on builds" });
+    says({ at: "port-taken", port: 1455 });
+
+    await userEvent.click(await within(opened).findByRole("button", { name: "Use a device code" }));
+
+    await waitFor(() =>
+      expect(calls("pool_sign_in_start")[1]).toEqual({
+        pool: "builds",
+        name: "open",
+        provider: "openai",
+        terminal: { columns: 80, rows: 16 },
+      }),
+    );
+    expect(within(opened).queryByText(/codex login/)).toBeNull();
+
+    says({ at: "failed", why: "the runner said: no" });
+    await userEvent.click(await within(opened).findByRole("button", { name: "Try again" }));
+
+    await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(3));
+    expect(calls("pool_sign_in_start")[2]).toEqual(
+      expect.objectContaining({ provider: "openai", terminal: { columns: 80, rows: 16 } }),
+    );
+    expect(within(opened).getByRole("status")).toHaveTextContent(/device code/);
   });
 
   it("keeps another harness's sign-in in a shell tab", async () => {

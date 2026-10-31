@@ -402,6 +402,7 @@ fn a_move_waits_for_its_profiles_sign_in_and_goes_ahead_once_signed_in() {
             profile: "work".into(),
             kind: "claude".into(),
             harness: "Claude Code".into(),
+            plans: Vec::new(),
         })
     );
     assert!(matches!(moves.due(3, |_| true), Due::NotYet(_)), "it waits");
