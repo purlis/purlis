@@ -30,8 +30,11 @@
 //! profiles it keeps for this machine; it forgets each one no longer chosen there or no longer
 //! on this machine, and a pool made before #4047 names what it kept ([`tidy`]). A profile
 //! removed on this machine is forgotten on each pool's runner there and then
-//! ([`forget_off_the_pools`]), and one that is away is asked again later. A marked cluster pool's
-//! runner is held to this too, each time behind [`yours`] (#4183).
+//! ([`forget_off_the_pools`]), by Remove in the window or `purlis profile remove` in the
+//! person's own terminal ([`listen_for_the_command_line`]), and one that is away is asked again
+//! later. A marked cluster pool's runner is held to this too, each time behind [`yours`] (#4183).
+//! A runner draining after an update is not tidied (#4142): its chats finish on what it has, and
+//! its home goes with it.
 //!
 //! Adding a pool ends with its profiles (Settings › Pools, `pool_profiles`); a start on a pool
 //! keeps its profile there first ([`Linked`]): signed in, it starts with nobody asked, a moved
@@ -279,7 +282,7 @@ fn tidy(
     for (name, said) in listed.forgot {
         match said {
             Ok(()) => {
-                onrunner::let_go(None, pool, &name);
+                let_go_everywhere(pool, &name);
                 forgotten.push(name);
             }
             Err(why) => {
@@ -303,6 +306,30 @@ fn tidy(
         forgotten,
         refused: !refused.is_empty(),
     })
+}
+
+/// The app, once its setup has run: what [`let_go_everywhere`] tells the windows through.
+static APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+/// **Every project's wait for profile `name` on pool `pool` goes, and each is told** (#4228), so
+/// no other open project keeps drawing its Ask.
+fn let_go_everywhere(pool: &str, name: &str) {
+    let_go_telling(pool, name, |went| {
+        if let Some(app) = APP.get().cloned() {
+            // On a thread of its own: a tidy runs inside a chat's start, and telling takes the
+            // locks of every open project.
+            std::thread::spawn(move || crate::machineprofiles::tell_asks_at(&app, &went));
+        }
+    });
+}
+
+/// [`onrunner::let_go`] for every project, `tell` handed the projects whose wait went, and not
+/// called where none did.
+fn let_go_telling(pool: &str, name: &str, tell: impl FnOnce(Vec<PathBuf>)) {
+    let went = onrunner::let_go(None, pool, name);
+    if !went.is_empty() {
+        tell(went);
+    }
 }
 
 /// **A profile a chat's start readies on a pool now** (#4060): no tidy forgets it under the
@@ -459,7 +486,7 @@ fn forget_off(
                 continue;
             }
             Ok(Some(())) => {
-                onrunner::let_go(None, pool_name, name);
+                let_go_everywhere(pool_name, name);
             }
             Err(why) => {
                 // Still named, so its row offers Remove until a tidy finds it gone there.
@@ -479,6 +506,24 @@ fn forget_off(
         }
     }
     older_note(&older, &purlis_core::shown::short(name))
+}
+
+/// **Listens for `purlis profile remove` in the person's own terminal** (#4141), and has the
+/// runners told as Remove in the window has them told. Said and left at that where it cannot
+/// listen: the command says the runners forget it at their next tidy.
+#[cfg(unix)]
+pub fn listen_for_the_command_line(app: tauri::AppHandle) {
+    let _ = APP.set(app);
+    let Some(config) = purlis_core::machine::config_root() else {
+        return;
+    };
+    let socket = purlis_core::windowline::socket();
+    let listening = purlis_core::windowline::serve_on(&socket, move |asked| {
+        purlis_core::windowline::answer(&config, asked, forget_off_the_pools)
+    });
+    if let Err(why) = listening {
+        tracing::warn!("purlis: `purlis profile remove` will not reach this window: {why}");
+    }
 }
 
 /// What the person is told of the pools in `older`, whose runner keeps the removed profile
@@ -927,7 +972,7 @@ pub async fn pool_profile_remove(
         let default = default_in(root.as_deref(), &profilestore::list(&config)?);
         purlis_core::runners::remove_pool_profile(&config, &pool, &name, default.as_deref())
             .map_err(|why| why.to_string())?;
-        onrunner::let_go(None, &pool, &name);
+        let_go_everywhere(&pool, &name);
         Ok(forgotten.is_none().then(|| {
             format!(
                 "The profile '{shown}' is off pool {pool}, but its runner runs a purlis before \

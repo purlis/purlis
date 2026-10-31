@@ -3645,6 +3645,10 @@ pub fn run() {
             // The local project out of the config home a chat's sandbox denies (#1670), after
             // rename-local named the folders and before any project opens.
             firstrun::move_the_local_project();
+            // `purlis profile remove` in the person's own terminal reaches the pools' runners
+            // through this window (#4141), which also tells the windows of waits let go (#4228).
+            #[cfg(unix)]
+            poolprofiles::listen_for_the_command_line(app.handle().clone());
             // The copies of Docker's settings that runs which ended outright left behind
             // (#2893): off the launch's path, and only those older than a day.
             #[cfg(unix)]

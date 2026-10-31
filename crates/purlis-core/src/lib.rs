@@ -278,6 +278,7 @@ pub mod tui;
 pub mod updates;
 pub mod usage;
 pub mod version;
+pub mod windowline;
 #[cfg(unix)]
 pub mod windownames;
 pub mod windowprefs;
