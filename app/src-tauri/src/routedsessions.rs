@@ -72,6 +72,9 @@ pub struct RoutedSessions {
     every_start_on: Option<String>,
 }
 
+/// A host, with the number that names it.
+type NumberedHost = (u64, Arc<dyn SessionHost>);
+
 /// A host left with chats that stayed on a draining runner.
 struct Left {
     pool: String,
@@ -90,7 +93,7 @@ struct Shared {
     left: Mutex<Vec<Left>>,
     /// Each draining runner a window's restart asked for its chats (#4271), by `<pool>/<runner>`:
     /// in `left` too only once it gave one back.
-    asked: Mutex<BTreeMap<String, (u64, Arc<dyn SessionHost>)>>,
+    asked: Mutex<BTreeMap<String, NumberedHost>>,
     /// The chats that stayed on a draining runner, and how they are found in `left`.
     stayed: Mutex<HashMap<u32, u64>>,
     /// Held while a pool's host is replaced for a start: two starts make one host between them.
@@ -284,7 +287,7 @@ impl RoutedSessions {
     /// **The host a window's restart asks the draining `runner` of `pool` through** (#4271), made
     /// the first time. `None` where this window moved the project off a draining runner itself: a
     /// link of its own to that runner holds what it started, and a second would be refused its name.
-    fn asking(&self, pool: &str, runner: &str) -> Option<(u64, Arc<dyn SessionHost>)> {
+    fn asking(&self, pool: &str, runner: &str) -> Option<NumberedHost> {
         let _one_at_a_time = lock(&self.shared.replacing);
         if let Some((made, host)) = lock(&self.shared.asked).get(runner) {
             return Some((*made, Arc::clone(host)));
@@ -394,7 +397,7 @@ fn made_for(
     to_a_pool: &ToAPool,
     named: &str,
     pool: &str,
-) -> Result<(u64, Arc<dyn SessionHost>), String> {
+) -> Result<NumberedHost, String> {
     let mut made = to_a_pool(named)?;
     let number = shared.made.fetch_add(1, Ordering::Relaxed);
     if let Some(switch) = lock(&shared.switch).clone() {
