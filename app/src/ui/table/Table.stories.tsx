@@ -220,6 +220,17 @@ export const OfHosts: Story = {
     const target = (check as HTMLElement).getBoundingClientRect();
     await expect(target.width).toBeGreaterThanOrEqual(24);
     await expect(target.height).toBeGreaterThanOrEqual(24);
+    // The choice family's box (#3362) takes a press across that whole 24 px square (#4197).
+    const box = within(rows()[0]).getByRole("checkbox").closest("label") as HTMLElement;
+    await expect(box).toHaveAttribute("data-scope", "checkbox");
+    const [x, y] = [target.left + target.width / 2, target.top + target.height / 2];
+    for (const [dx, dy] of [
+      [-11.5, -11.5],
+      [11.5, -11.5],
+      [-11.5, 11.5],
+      [11.5, 11.5],
+    ])
+      await expect(document.elementFromPoint(x + dx, y + dy)?.closest("label")).toBe(box);
     await userEvent.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}");
     await untilFocused(
       () => within(rows()[0]).getByRole("button", { name: "More for api.github.com" }),

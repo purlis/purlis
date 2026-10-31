@@ -189,6 +189,27 @@ describe("a table of data", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Removed 3");
   });
 
+  // #3362: the check is the choice family's Checkbox, so its look, its states and its theme keys
+  // are that family's, and select-all's third state is still drawn and announced.
+  it("chooses by the choice family's checkbox, select-all saying when only some are chosen", async () => {
+    render(<Hosts />);
+    const all = within(grid()).getByRole("checkbox", { name: "Select All" });
+    const rootOf = (box: HTMLElement) => box.closest("label") as HTMLElement;
+    const row = within(rowOf("api.github.com")).getByRole("checkbox");
+    for (const box of [all, row]) {
+      expect(rootOf(box)).toHaveAttribute("data-scope", "checkbox");
+      expect(rootOf(box)).toHaveAttribute("data-part", "root");
+      expect(rootOf(box).querySelector('[data-scope="checkbox"][data-part="box"]')).not.toBeNull();
+    }
+    await userEvent.click(row);
+    expect(row).toBeChecked();
+    expect(all).toBePartiallyChecked();
+    expect(rootOf(all)).toHaveAttribute("data-indeterminate", "true");
+    await userEvent.click(all);
+    await waitFor(() => expect(all).toBeChecked());
+    expect(rootOf(all)).not.toHaveAttribute("data-indeterminate");
+  });
+
   it("sorts by a column whose name is pressed, and says which way", async () => {
     render(<Hosts />);
     const added = within(grid()).getByRole("columnheader", { name: "Added" });
