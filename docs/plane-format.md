@@ -3856,6 +3856,13 @@ An end row, never a pass or a fail:
   2026-10-28), absent in a row written before and for a skill with no other version; and
   `after_edit`, `true` for a grade a saved edit started under the person's opt-in (SK-58, #3238,
   [`<state>/skill-grade-after-edit.json`](#dataapp-stateclone-keyskill-grade-after-editjson)), absent otherwise.
+  `report.grader` is `purlis` for purlis's own runner, or the id of the Grader extension that
+  graded it (#3236, ADR 0105 as amended 2026-10-31), whose own scores the report holds beside
+  purlis's own count of the spend and the limits; `report.ended` `grader-failed`, with
+  `report.failed` the sentence of why, where that Grader's question ended the grade (an answer
+  out of its shape, a chat past the plan or past the grade's end, a report not held to what ran,
+  an answer too late, or none), its tests then scored by purlis from the chats that ran;
+  `failed` absent in every other row and in a row written before.
 - **Read:** the folder only where it is a folder of its own (no link) holding at most 600 names,
   newest month first, stopping once 200 grades are held; each file following no link and at most
   16 MiB, each line at most 1 MiB; a line that
@@ -3866,7 +3873,8 @@ An end row, never a pass or a fail:
   rate that is not the two's share or a pass where nothing ran, more chats asked and run than the
   grade's `runs` (#3239), or a chat that is no plain id; an
   arm twice, a pass rate that is no share, a spread out of order; a difference past a whole; a
-  reason that holds a control character or passes 2 KiB, #3353; a price below nothing or past
+  reason that holds a control character or passes 2 KiB, #3353, a `failed` with no
+  `grader-failed` end or a `grader-failed` end with no `failed`, #3236; a price below nothing or past
   1,000 dollars a million, a model that is no plain id, or an `over-limit` end with no limit, #3469;
   a `plugins_off` that is no list of at most 256 ids a plugin could have, #3468; a `model` that is
   no plain id, #3240; a `previous` that is no whole hex id, or a `previous` arm in a row that
