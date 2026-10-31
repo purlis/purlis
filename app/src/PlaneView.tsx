@@ -44,6 +44,7 @@ import {
   type FinishedTask,
   type OpenChat,
   type PlaneId,
+  type PoolLimitOffer,
   type Refused,
   type Sidebar as SidebarModel,
   type StartOptions,
