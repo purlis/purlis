@@ -121,7 +121,9 @@ pub enum WorktreeCommand {
     },
     /// Remove a piece with `git worktree remove`. Refused, naming what would be lost, while
     /// it holds uncommitted changes or commits no other ref reaches, unless its branch landed
-    /// by a squash merge (the branch is then kept). A branch folder purlis
+    /// by a squash merge, even if the base changed those files again since (the branch is then
+    /// kept). In a chat, files git ignores refuse it too, except folders only the harness or a
+    /// build writes. A branch folder purlis
     /// cut for a task is discarded from that task's Changes tab instead. In a chat the app
     /// removes it, from a folder above it; `--force` there is the person's, from the window.
     Remove {
