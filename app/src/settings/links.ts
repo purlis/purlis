@@ -124,6 +124,22 @@ export function askSettingsAction(plane: string, action: string): void {
  */
 export const PROFILE_SIGN_IN = "charter-profile-sign-in";
 
+/**
+ * **Sign a profile out on a pool's runner in a terminal** (#4124): for a harness whose sign-out
+ * asks which sign-in goes. The project's window opens a shell tab and the core types it.
+ */
+export const PROFILE_SIGN_OUT = "charter-profile-sign-out";
+
+/** What it asked of a project's window. */
+export type ProfileSignOutAsk = { plane: string; profile: string; pool: string };
+
+/** Asks the window of the project `plane` to sign `profile` out on pool `pool`'s runner. */
+export function askProfileSignOut(plane: string, profile: string, pool: string): void {
+  window.dispatchEvent(
+    new CustomEvent<ProfileSignOutAsk>(PROFILE_SIGN_OUT, { detail: { plane, profile, pool } }),
+  );
+}
+
 /** What Sign in asked of a project's window: which project, the profile's name, the plan's
  *  provider where purlis names one (opencode's), the pool whose runner it is signed in on,
  *  where it is not this machine (#2049), and whether by the harness's device-code flow (#4044). */

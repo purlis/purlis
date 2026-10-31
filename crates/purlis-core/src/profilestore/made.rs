@@ -443,6 +443,25 @@ pub(super) fn take_carried(homes: &Homes, home: &Path, record: &MachineProfile) 
     }
 }
 
+/// **Removes what a drained runner carried here for the profile `name`** (#4145), from every batch
+/// (`<data>/carried/<batch>/<name>/`), so a sign-out or a removal is not undone by the next keep.
+/// A name that is not a profile's touches nothing.
+pub fn forget_carried(homes: &Homes, name: &str) {
+    if !crate::profiles::name_ok(name) {
+        return;
+    }
+    let Ok(batches) = std::fs::read_dir(homes.data.join(super::CARRIED)) else {
+        return;
+    };
+    for batch in batches.flatten().map(|entry| entry.path()) {
+        if !std::fs::symlink_metadata(&batch).is_ok_and(|meta| meta.is_dir()) {
+            continue;
+        }
+        let _ = std::fs::remove_dir_all(batch.join(name));
+        let _ = std::fs::remove_dir(&batch);
+    }
+}
+
 /// Imports `name`'s settings again from `machine`'s, at `now`: each listed settings file and
 /// folder replaced by the machine's, and the record's time moved. Only for a profile purlis
 /// made; an adopted one's settings are the harness's own.

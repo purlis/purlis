@@ -2227,3 +2227,28 @@ fn a_keep_of_what_changed_with_no_staged_settings_is_refused() {
     .unwrap_err();
     assert!(refused.contains("named no settings"), "{refused}");
 }
+
+/// **What a drain carried for a profile goes with a sign-out or a removal** (#4145), and another
+/// profile's stays.
+#[test]
+fn forgetting_what_was_carried_leaves_other_profiles_batches() {
+    let root = tempfile::tempdir().unwrap();
+    let homes = homes(root.path(), "01JA0DESKT0P00000000000000");
+    // The batches beside the profiles' folder, under the data home.
+    let batch = homes
+        .folder_of("any")
+        .parent()
+        .and_then(Path::parent)
+        .unwrap()
+        .join(crate::profilestore::CARRIED)
+        .join("b1");
+    for name in ["gone", "kept"] {
+        std::fs::create_dir_all(batch.join(name).join("config")).unwrap();
+    }
+
+    crate::profilestore::forget_carried(&homes, "gone");
+    crate::profilestore::forget_carried(&homes, "../b1");
+
+    assert!(!batch.join("gone").exists());
+    assert!(batch.join("kept").exists());
+}
