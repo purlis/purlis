@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793431654639,
+  "lastUpdate": 1793432883697,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32802,6 +32802,48 @@ window.BENCHMARK_DATA = {
             "value": 102.3682095,
             "unit": "ms",
             "extra": "median of 5 runs: 101.664, 102.291, 102.368, 102.863, 103.436 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6e4a5f6f58afd0a9f3c60cd583e12dfc78b946f3",
+          "message": "Skill lint: byte budgets and per-root hard links; extension lints in the studio list (#4194)\n\n* Skill lint: a byte budget per lint and per list, and hard links per root (#3459)\n\nOne lint reads at most 1 MiB of a skill's other files, and one studio\nlist at most 16 MiB across every skill it lints; a file that is not text\nspends what was read of it. Past either budget the lint says how many of\nthe skill's files it did not read. A harness skill's other files, and the\nfile a harness reads beside it, are read with a hard link as its SKILL.md\nis (HardLinks::of).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill studio list: ask the extension lints within a budget (#3940)\n\nThe plane's own skills are linted in the studio list by each extension\nthat declares skill-lint, through ListLints: an answer is kept per\nextension, approval, project choices and skill files while the app runs,\nnew questions are asked for at most 100 ms per list, each by the\nrouter's deadline (Executor::studio_until), and a lint that did not\nanswer shows nothing and is asked again after five minutes. The studio\nand a persona's Skills line ask them the same way, so Needs you counts\nalike. Nothing is asked on a chat's open.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill lint budgets: review fixes (#3459, #3940)\n\nThe plane's own skills get a list's byte budget of their own, so what a\nclone holds never leaves them unread. A list hashes each skill's files\nonce, keeps another list's answer over a question it could not ask,\nevicts one kept answer at a time, and asks an unanswered lint again\nafter 30 s.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T07:15:43Z",
+          "tree_id": "eb64a4b036c51689d757b1cc29618b38ebf4992b",
+          "url": "https://github.com/purlis/purlis/commit/6e4a5f6f58afd0a9f3c60cd583e12dfc78b946f3"
+        },
+        "date": 1793432877910,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6499174999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.613, 0.631, 0.650, 0.662, 0.676 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.443740499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.364, 16.406, 16.444, 16.451, 16.834 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.888249,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.135, 101.236, 101.888, 102.724, 103.681 ms"
           }
         ]
       }
