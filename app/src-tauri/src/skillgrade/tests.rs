@@ -190,6 +190,7 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
                 step: None,
+                router_step: None,
             },
         );
         let failed = std::cell::Cell::new(false);
@@ -649,6 +650,7 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
                 step: Some(step(at, skill, grade)),
+                router_step: None,
             },
         );
     }

@@ -695,6 +695,21 @@ export function routerGradeItem(at: RouterGradeAt): string {
   return at.chat === undefined ? `grade:${at.grade}` : `grade:${at.grade}:chat:${at.chat}`;
 }
 
+/** **The router's grade plan, as a place on Routing names it** (#4222): a review page beside
+ *  Routing's list, as a skill's plan is under its Grades tab (S6). */
+export const ROUTER_GRADE_PLAN = "grade-plan";
+
+/** **A router's grade running, as a place on Routing names it** (#4222): by the grade's id. */
+export function routerGradingItem(grade: string): string {
+  return `grading:${grade}`;
+}
+
+/** The router's grade running an item on Routing names, by its id, or `undefined`. */
+export function routerGradingOfItem(item: string | undefined): string | undefined {
+  const named = item === undefined ? null : /^grading:(.+)$/.exec(item);
+  return named === null ? undefined : named[1];
+}
+
 /** The router's grade an item on Routing names, or `undefined` for one that names none. */
 export function routerGradeOfItem(item: string | undefined): RouterGradeAt | undefined {
   const named = item === undefined ? null : /^grade:([^:]+)(?::chat:(.+))?$/.exec(item);
