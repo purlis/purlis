@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793473419487,
+  "lastUpdate": 1793474605359,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33894,6 +33894,48 @@ window.BENCHMARK_DATA = {
             "value": 102.039181,
             "unit": "ms",
             "extra": "median of 5 runs: 101.500, 101.804, 102.039, 102.539, 103.483 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a36d200c5978b6086e255b6f8c8a88e66f4f694a",
+          "message": "Runners: cluster pools sign in from the command and forget what is no longer chosen (#4164, #4183) (#4322)\n\n* Runners: purlis profile sign-in --pool on a cluster pool (#4164)\n\nMoves the gate into core, so the command and the window pass one. The standing check no longer sends --until-input-ends, which the runner refuses beside --check; this also frees the Docker path. The kind run drives the real command, and names and forgets a profile over the link.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69DASK0XG424XP81RWVAM35\nPurlis-Persona: steward\n\n* Runners: a cluster runner forgets the profiles no longer chosen or removed (#4183)\n\nTidy and forget now cover a marked, vouched cluster pool behind the shared gate. An unmarked pool is asked nothing, and a cluster runner's list never adds to what the pool names.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69DASK0XG424XP81RWVAM35\nPurlis-Persona: steward\n\n* Runners: review fixes for cluster sign-in and tidy (#4164, #4183)\n\nThe command checks the runner as it follows a sign-in and passes the whole gate again after the standing. What a runner prints is shown as plain text. A cluster pool that names none names the project's default, and the kind run's path filters cover what it now drives.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69DASK0XG424XP81RWVAM35\nPurlis-Persona: steward\n\n* Runners: the kind test spawns under the fork lock (#4164)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69DASK0XG424XP81RWVAM35\nPurlis-Persona: steward\n\n* Runners: standing tests read the runner's answer where it says it (#4164)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69DASK0XG424XP81RWVAM35\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T18:28:49Z",
+          "tree_id": "c26b84bc6bdbe197f70931fcb56001ea3f9b2f08",
+          "url": "https://github.com/purlis/purlis/commit/a36d200c5978b6086e255b6f8c8a88e66f4f694a"
+        },
+        "date": 1793474601025,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6724840000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.661, 0.671, 0.672, 0.673, 0.675 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.701127999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.413, 16.435, 16.701, 16.762, 16.978 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.3060945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.889, 102.210, 102.306, 102.654, 102.669 ms"
           }
         ]
       }
