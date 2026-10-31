@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { PROFILE_SIGN_OUT } from "./links";
 import { useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
@@ -409,8 +410,17 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
       expect(calls("pool_sign_out")).toEqual([{ pool: "builds", name: "work" }]);
       expect(await screen.findByText("work is signed out on pool builds.")).toBeVisible();
       await waitFor(() => expect(profilesAsked).toBe(before + 1));
-      // Codex's own sign-out runs too; opencode's is its terminal's alone.
+      // Codex's own sign-out runs too; opencode's asks in a terminal (#4124).
       expect(screen.getByRole("button", { name: "Sign out fast on pool builds" })).toBeVisible();
+      const typed: unknown[] = [];
+      const heard = (event: Event) => typed.push((event as CustomEvent).detail);
+      window.addEventListener(PROFILE_SIGN_OUT, heard);
+      await userEvent.click(
+        screen.getByRole("button", { name: "Sign out open on pool builds in a terminal" }),
+      );
+      window.removeEventListener(PROFILE_SIGN_OUT, heard);
+      expect(typed).toEqual([{ plane: "/home/op/project", profile: "open", pool: "builds" }]);
+      expect(screen.getByText("Gemini signs out only in its own terminal.")).toBeVisible();
     } finally {
       signedIn = false;
       await act(() => askProfiles("builds"));

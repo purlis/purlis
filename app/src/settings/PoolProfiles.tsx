@@ -13,7 +13,7 @@ import {
 } from "../pools";
 import { Button } from "../ui/button/Button";
 import { Menu, MenuItem, MenuTrigger } from "../ui/menu/Menu";
-import { askProfileSignIn } from "./links";
+import { askProfileSignIn, askProfileSignOut } from "./links";
 import { PoolSignIn, type SignInStanding } from "./PoolSignIn";
 
 /** The harnesses whose sign-in purlis drives in place, with no terminal (#4042, #4044). */
@@ -33,7 +33,8 @@ const drivenPlan = (row: PoolProfileRow, plan: string) =>
 export const approvesIn = (kind: string, plan?: string) =>
   kind === "codex" || (kind === "opencode" && plan === "openai");
 
-/** The harnesses with a sign-out of their own that purlis runs: opencode's asks in a terminal. */
+/** The harnesses with a sign-out of their own that purlis runs: opencode's asks in a terminal,
+ *  which its line opens (#4124). */
 const SIGNS_OUT = new Set(["claude", "codex"]);
 
 /** What a profile's line says of it while its sign-in strip is open (spec #4023 story 29). */
@@ -167,12 +168,17 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   const signOut = async (name: string) => {
     setOut({ name, running: true });
     setOutSaid(undefined);
-    const why = await signProfileOutOfPool(pool, name, plane);
+    const said = await signProfileOutOfPool(pool, name, plane);
     setOut(undefined);
     setOutSaid(
-      why === undefined
-        ? { text: `${name} is signed out on pool ${pool}.`, trouble: false }
-        : { text: why, trouble: true },
+      "failed" in said
+        ? { text: said.failed, trouble: true }
+        : {
+            text: [`${name} is signed out on pool ${pool}.`, said.draining]
+              .filter(Boolean)
+              .join(" "),
+            trouble: false,
+          },
     );
   };
   const adding =
@@ -316,9 +322,24 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
               row.standing === "signed-in" &&
               removing !== row.name &&
               (!SIGNS_OUT.has(row.kind) ? (
-                <span className="ui-setting-help">
-                  {`${row.harness} signs out only in its own terminal.`}
-                </span>
+                row.kind !== "opencode" ? (
+                  <span className="ui-setting-help">
+                    {`${row.harness} signs out only in its own terminal.`}
+                  </span>
+                ) : plane === undefined ? (
+                  <span className="ui-setting-help">
+                    {`${row.harness} signs out in a terminal: open a project to sign ${row.name} out here.`}
+                  </span>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    aria-label={`Sign out ${row.name} on pool ${pool} in a terminal`}
+                    onPress={() => askProfileSignOut(plane, row.name, pool)}
+                    className="ui-setting-reset"
+                  >
+                    Sign out in a terminal
+                  </Button>
+                )
               ) : out?.name === row.name && !out.running ? (
                 <>
                   <span className="ui-setting-help">
