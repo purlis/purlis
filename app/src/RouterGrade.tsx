@@ -217,7 +217,7 @@ export function RouterGradePlanPage({
 
   // A skill's grade that ends frees the project: read again, so Start is not held on it. A
   // router's end reaches `changed`, as the studio is told it.
-  const readNow = useRef(() => undefined as void);
+  const readNow = useRef<() => void>(() => undefined);
   useEffect(() => {
     readNow.current = () => read(picked, pickedModel, true);
   });
