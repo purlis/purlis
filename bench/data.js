@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793453607142,
+  "lastUpdate": 1793454956802,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33390,6 +33390,48 @@ window.BENCHMARK_DATA = {
             "value": 102.4720525,
             "unit": "ms",
             "extra": "median of 5 runs: 101.625, 101.727, 102.472, 102.480, 102.988 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "05036323d2e505fa083e3f79cf9a2658e35c2927",
+          "message": "Confined programs start only what they may read (#4247)\n\n* Confined programs start only what they may read\n\nA studio extension's program, and every program it starts, starts from the\nsystem's program folders and its own folders. Seatbelt holds it on macOS and\nthe wrap's Landlock layer on Linux, which reads the folders from the profile's\nprocess-exec rules. The studio probe tries it from inside its sandbox on both.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* The studio probe keeps its scripts where purlis fingerprints them\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A test of where programs start names no folder a link resolves away\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A start is judged only where the probe reached it, and the change is noted\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T13:25:17Z",
+          "tree_id": "7e7604815f83f5784f4b79dba80a580f75e6f211",
+          "url": "https://github.com/purlis/purlis/commit/05036323d2e505fa083e3f79cf9a2658e35c2927"
+        },
+        "date": 1793454952074,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.538748,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.527, 0.535, 0.539, 0.544, 0.550 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.300043,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.938, 16.251, 16.300, 16.379, 16.482 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.467042,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.845, 101.054, 101.467, 101.951, 102.264 ms"
           }
         ]
       }
