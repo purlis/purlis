@@ -52,42 +52,49 @@ const FRONT_DOOR: AlertRow = {
   severity: "warn",
   subject: "front door",
   detail: "ghost — no such persona",
+  workspaces: [],
   way: { kind: "settings", group: "project.general", setting: "project.general.persona.default" },
 };
 const PIN: AlertRow = {
   severity: "warn",
   subject: "charter",
   detail: "this charter is 2.0.0, and the plane pins 1.0.0",
+  workspaces: [],
   way: { kind: "settings", group: "project.general", setting: "project.general.charter.version" },
 };
 const REINIT: AlertRow = {
   severity: "warn",
   subject: "reinit",
   detail: "1 workspace is behind the current layout: ide",
+  workspaces: ["ide"],
   way: { kind: "fix", id: "workspace-reinit" },
 };
 const IDENTITY: AlertRow = {
   severity: "warn",
   subject: "git identity",
   detail: "not set: user.email",
+  workspaces: [],
   way: { kind: "fix", id: "git-identity" },
 };
 const NESTED: AlertRow = {
   severity: "bad",
   subject: "nested plane",
   detail: "memory and vault go to ~/outer/workspaces/plane, not ~/outer",
+  workspaces: [],
   way: { kind: "open-project", path: OUTER },
 };
 const ROOT: AlertRow = {
   severity: "warn",
   subject: "plane root",
   detail: "plane · detached HEAD",
+  workspaces: [],
   way: { kind: "saving" },
 };
 const SAVE: AlertRow = {
   severity: "bad",
   subject: "save",
   detail: "the plane's save is blocked: a conflict",
+  workspaces: [],
   way: { kind: "saving" },
 };
 
@@ -207,7 +214,7 @@ const row = (open: HTMLElement, cause: string) => {
 };
 /** Whether a row of `cause` is listed. */
 const listed = (cause: string) =>
-  document.querySelector(`.notice-list [data-cause="${cause}"]`) !== null;
+  document.querySelector(`[data-scope=notice-list] [data-cause="${cause}"]`) !== null;
 
 describe("each alert in the Inbox", () => {
   it("carries its way out, and no command to type", async () => {
@@ -741,7 +748,7 @@ describe("another project's alerts", () => {
     const line = document.querySelector(`[data-cause="alerts-elsewhere:${OUTER}"]`) as HTMLElement;
     expect(line).toHaveTextContent("2 alerts in outer");
     // A failure among them is trouble.
-    expect(line).toHaveClass("notice-trouble");
+    expect(line.closest('[data-scope="notice"]')).toHaveAttribute("data-variant", "trouble");
     await userEvent.click(within(line).getByRole("button", { name: "See them in outer" }));
     expect(openInboxOf).toHaveBeenCalledWith(OUTER);
   });
@@ -753,6 +760,7 @@ describe("a save's red request (`save-request-red`)", () => {
     subject: "save-request-red",
     detail:
       "the pull request #12 of this project is red, so purlis did not merge it: 1 check failed: lint",
+    workspaces: [],
     way: {
       kind: "save-request",
       workspace: null,
@@ -805,7 +813,7 @@ describe("a save's red request (`save-request-red`)", () => {
 
     const line = screen.getByRole("status");
     expect(line).toHaveAttribute("data-cause", "save-request-red:this project");
-    expect(line).toHaveClass("notice-trouble");
+    expect(line.closest('[data-scope="notice"]')).toHaveAttribute("data-variant", "trouble");
     expect(line.textContent).toContain(
       "The pull request #12 of this project is red, so purlis did not merge it: 1 check failed: lint.",
     );
@@ -835,5 +843,56 @@ describe("a save's red request (`save-request-red`)", () => {
         { plane: PLANE, workspace: "alpha", repo: "widget", columns: 80, rows: 24 },
       ]),
     );
+  });
+});
+
+describe("a chat's undelivered messages (#3958)", () => {
+  const LEFT: AlertRow = {
+    severity: "warn",
+    subject: "undelivered messages",
+    detail:
+      'chat 3 did not come back after purlis restarted, and 1 message it queued while purlis did not answer was never delivered, with no running dispatch left to keep them on: a follow-up to chat 9: "carry on"',
+    workspaces: [],
+    way: { kind: "left-messages", report: "3.abc.unplaced.json" },
+  };
+
+  it("is a Notice in the Inbox that says what was not delivered, and Put away takes it back", async () => {
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args });
+      return null;
+    });
+    const reread = vi.fn();
+    render(
+      <NoticeList>
+        <InboxAlerts
+          plane={PLANE}
+          reading={{ at: "read", planes: [{ plane: PLANE, alerts: [LEFT], stopped: null }] }}
+          machine={[]}
+          elsewhere={[]}
+          does={{
+            openSettings: vi.fn(),
+            openProject: vi.fn(),
+            openSaving: vi.fn(),
+            reread,
+            openInboxOf: vi.fn(),
+          }}
+        />
+      </NoticeList>,
+    );
+
+    const line = screen.getByRole("status");
+    expect(line.textContent).toMatch(/chat 3 did not come back after purlis restarted/i);
+    expect(line.textContent).toContain('a follow-up to chat 9: "carry on"');
+    await userEvent.click(within(line).getByRole("button", { name: "Put away" }));
+
+    await waitFor(() =>
+      expect(calls("put_away_left_messages")).toEqual([
+        {
+          cmd: "put_away_left_messages",
+          args: { plane: PLANE, report: "3.abc.unplaced.json" },
+        },
+      ]),
+    );
+    await waitFor(() => expect(reread).toHaveBeenCalled());
   });
 });

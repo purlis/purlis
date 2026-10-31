@@ -36,12 +36,20 @@ pub(super) const PANEL: Family = Family {
     name: "panel",
     description: "A region of the window: a side panel, the content, a half of the bottom panel.",
     since: 4,
-    parts: &[Part {
-        name: "root",
-        since: 4,
-        description: "The panel's surface: its fill, edge, corners and shadow.",
-        properties: PANEL_ROOT,
-    }],
+    parts: &[
+        Part {
+            name: "root",
+            since: 4,
+            description: "The panel's surface: its fill, edge, corners and shadow.",
+            properties: PANEL_ROOT,
+        },
+        Part {
+            name: "title",
+            since: super::NEXT,
+            description: "The title of the view it shows, on its head: the view's one heading.",
+            properties: WORDS,
+        },
+    ],
     variants: &[
         Variant {
             name: "side",
@@ -77,6 +85,7 @@ pub(super) const PANEL: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **The panel's colours as `app/src/ui/panel/panel.css` draws them**: the base surface, the
@@ -115,6 +124,14 @@ pub(super) const PANEL_SECTION: Family = Family {
             description: "Its title.",
             properties: WORDS,
         },
+        Part {
+            name: "top",
+            since: super::NEXT,
+            description: "A view's top, held in place while its rows scroll: its heading line \
+                          where it draws one, then its field, then its tabs and chips, on the \
+                          panel's fill. A section with a top is a view.",
+            properties: ROOM,
+        },
     ],
     variants: &[Variant {
         name: "default",
@@ -137,6 +154,7 @@ pub(super) const PANEL_SECTION: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **A section's colours as `panel.css` draws them**: no ground of its own, its title in the
@@ -214,6 +232,7 @@ pub(super) const EMPTY_STATE: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **An empty state's colours as `empty-state.css` draws them**: no ground, its sentence and its
@@ -256,6 +275,22 @@ pub(super) const STATUS_ITEM: Family = Family {
             since: 4,
             description: "Its count.",
             properties: &[Prop::Text],
+        },
+        Part {
+            name: "dot",
+            since: super::NEXT,
+            description: "The dot a project's or the app's result leaves on the Notices item's \
+                          corner while its card is hidden, where the most urgent is news: its \
+                          disc and its fill, ringed in the bar's ground.",
+            properties: &[Prop::Fill, Prop::Text],
+        },
+        Part {
+            name: "dot-warning",
+            since: super::NEXT,
+            description: "The dot on the Notices item's corner where the most urgent of its \
+                          hidden results is a warning: its triangle and its fill, ringed in the \
+                          bar's ground.",
+            properties: &[Prop::Fill, Prop::Text],
         },
     ],
     variants: &[
@@ -300,10 +335,14 @@ pub(super) const STATUS_ITEM: Family = Family {
         State::Disabled,
     ],
     focused: "[data-focus-visible]",
-    words: &[],
+    // The Notices item's dot (#3653): its shape, a mark, in the window's ground on the accent,
+    // or on the waiting amber for a warning, as a chip's dot is (#3649).
+    words: &[("dot", "surface.base"), ("dot-warning", "surface.base")],
     corner_most: None,
-    around: &[],
-    fills: &[],
+    // The dot is the item's sibling over its corner (#3653), drawn around the item.
+    around: &["dot", "dot-warning"],
+    fills: &[("dot", "accent.base"), ("dot-warning", "state.waiting")],
+    under: &[],
 };
 
 /// **A status item's colours as `app/src/ui/status/status.css` draws them**, at rest and under
@@ -410,6 +449,7 @@ pub(super) const RAIL: Family = Family {
     around: &[],
     // The badge's pill, the overlay's surface (`rail.css`): its digits are read on it (#3041).
     fills: &[("badge", "surface.overlay")],
+    under: &[],
 };
 
 /// **A rail button's colours as `app/src/ui/rail/rail.css` draws them.** A project's are its own
@@ -438,11 +478,15 @@ fn rail_look(variant: &str, states: &[State]) -> Look {
 /// **The title bar's pinned workspaces** (#2916, R101–R105, R140, N17): a chip per pinned
 /// workspace of the project in front, after its name, and the dashed chip that pins the current
 /// workspace while it is not pinned. A chip is 28px with corners of 8 and quiet words (R101); the
-/// current one takes the card's fill and the primary words, and its waiting count is the amber
-/// one (R101).
+/// current one takes the accent's wash and the primary words, the stronger wash under the
+/// pointer, while any other under the pointer takes the card's fill (R101 as amended by #3345);
+/// its waiting count is the amber one (R101). The plane root's chip is its `root` variant
+/// (#3654): a house drawn as a pin is, outside the strip.
 ///
 /// The family's root is the chip (`titlebar.workspace.*`, as the prototype's part keys name it):
-/// the strip around the chips lays them out and scrolls, and is no part a theme keys.
+/// the strip around the chips lays them out and scrolls, and is no part a theme keys. The crumb,
+/// the ⌄, and a switcher's rows and pin toggles are drawn apart from every chip, each a control
+/// in its own states (`parts::APART`, #3656), and a notice's dot beside one (`around`).
 pub(super) const TITLEBAR: Family = Family {
     name: "titlebar",
     description: "The title bar's pinned workspaces: a chip per pin, and the chip that pins the current one.",
@@ -484,18 +528,62 @@ pub(super) const TITLEBAR: Family = Family {
             description: "A switcher's row: a workspace or a project to go to.",
             properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
         },
+        Part {
+            name: "dot",
+            since: super::NEXT,
+            description: "The dot a notice about the workspace leaves on its chip's corner while \
+                          its card is hidden, where the most urgent is news: its disc and its \
+                          fill, ringed in the bar's ground.",
+            properties: &[Prop::Fill, Prop::Text],
+        },
+        Part {
+            name: "dot-warning",
+            since: super::NEXT,
+            description: "The dot on a chip's corner where the most urgent of its hidden notices \
+                          is a warning: its triangle and its fill, ringed in the bar's ground.",
+            properties: &[Prop::Fill, Prop::Text],
+        },
+        Part {
+            name: "dot-needs",
+            since: super::NEXT,
+            description: "The dot on a chip's corner while a chat asks the person to remove the \
+                          workspace, the most urgent kind: its raised hand and its fill, ringed \
+                          in the bar's ground.",
+            properties: &[Prop::Fill, Prop::Text],
+        },
+        Part {
+            name: "row-count",
+            since: super::NEXT,
+            description: "How many things wait on the person in a switcher's row, after its \
+                          name: its wash and its digits (#3947).",
+            properties: &[Prop::Fill, Prop::Text],
+        },
     ],
     variants: &[
         Variant {
             name: "pinned",
             since: 12,
-            description: "A pinned workspace: quiet words, the card's fill while it is current.",
+            description: "A pinned workspace: quiet words, the accent's wash while it is current.",
             consent: None,
         },
         Variant {
             name: "unpinned",
             since: 12,
             description: "The current workspace while it is not pinned: a dashed edge, and a press pins it.",
+            consent: None,
+        },
+        Variant {
+            name: "root",
+            since: super::NEXT,
+            description: "The plane root's house after the project's name, outside the strip: \
+                          always there, never unpinned, the accent's wash while the root is in front.",
+            consent: None,
+        },
+        Variant {
+            name: "dormant",
+            since: super::NEXT,
+            description: "A pin whose workspace is gone, kept dormant, after the live pins: muted \
+                          slanted words and a dotted edge; a press shows its notice.",
             consent: None,
         },
     ],
@@ -511,34 +599,136 @@ pub(super) const TITLEBAR: Family = Family {
     // What its wrapper marks: under the pointer, the current workspace, the keyboard's focus.
     states: &[State::Hover, State::Selected, State::Focused],
     focused: "[data-focus-visible]",
-    words: &[("count", "state.waiting")],
+    // Each part's words as `titlebar.css` draws them: the count in amber, the crumb secondary,
+    // the ⌄ quiet and a row's pin faint, marks both, and a switcher's row secondary.
+    words: &[
+        ("count", "state.waiting"),
+        ("crumb", "text.secondary"),
+        ("all", "text.quiet"),
+        ("pin", "text.faint"),
+        ("row", "text.secondary"),
+        // A notice's dot (#3648): its shape, a mark, in the window's ground on the accent.
+        ("dot", "surface.base"),
+        // A warning's dot (#3649): its triangle, a mark, in the window's ground on the amber.
+        ("dot-warning", "surface.base"),
+        // A needs-you dot (#3652): its hand, a mark, in the window's ground on the failed red.
+        ("dot-needs", "surface.base"),
+        // A switcher row's count (#3947), in amber, as a chip's is.
+        ("row-count", "state.waiting"),
+    ],
     corner_most: None,
-    around: &[],
+    // A chip's notice dot is the chip's sibling in its slot (#3648), drawn around the chip.
+    // Each kind's dot is a part of its own (#3649), so a theme colours one kind at a time.
+    around: &["dot", "dot-warning", "dot-needs"],
     // The count's pill, the amber wash (`titlebar.css`): its digits are read on it (#3041).
-    fills: &[("count", "wash.warning")],
+    fills: &[
+        ("count", "wash.warning"),
+        ("dot", "accent.base"),
+        ("dot-warning", "state.waiting"),
+        ("dot-needs", "state.failed"),
+        ("row-count", "wash.warning"),
+    ],
+    // A switcher's row and its pin paint no ground at rest: they stand on the popover's surface
+    // the switcher is drawn on, which their words are read on (#3099).
+    under: &[("row", "surface.overlay"), ("pin", "surface.overlay")],
 };
 
 /// **A chip's colours as `app/src/ui/titlebar/titlebar.css` draws them.** Quiet words with no box
-/// at rest; the card's fill and the primary words under the pointer and while current. The
-/// unpinned chip's words are muted, its edge the window's subtle line, dashed, and it is lit only
-/// under the pointer.
+/// at rest; the card's fill and the primary words under the pointer; the accent's wash and the
+/// primary words while current, and the stronger wash while current under the pointer, so the
+/// chosen chip never looks hovered (#3345). The unpinned chip's words are muted, its edge the
+/// window's subtle line, dashed, and it is lit only under the pointer. A dormant chip (#3651) is
+/// drawn as the unpinned one is, its line dotted and its words slanted.
 fn titlebar_look(variant: &str, states: &[State]) -> Look {
+    let hovered = states.contains(&State::Hover);
     // The unpinned chip is always current, and draws no fill for it: only the pointer lights it.
-    let lit = states.contains(&State::Hover)
-        || (variant != "unpinned" && states.contains(&State::Selected));
+    // A dormant one is never current (#3651).
+    let edged = variant == "unpinned" || variant == "dormant";
+    let chosen = !edged && states.contains(&State::Selected);
+    let lit = hovered || chosen;
     Look {
-        fill: if lit { "surface.overlay" } else { TRANSPARENT },
+        fill: match (chosen, hovered) {
+            (true, true) => "accent.wash-hover",
+            (true, false) => "accent.wash",
+            (false, true) => "surface.overlay",
+            (false, false) => TRANSPARENT,
+        },
         text: if lit {
             "text.primary"
-        } else if variant == "unpinned" {
+        } else if edged {
             "text.muted"
         } else {
             "text.quiet"
         },
-        border: if variant == "unpinned" {
+        border: if edged {
             "border.subtle"
         } else {
             TRANSPARENT
+        },
+    }
+}
+
+/// **What a part of the title bar drawn apart from every chip is drawn in** (#3949), at rest and
+/// in each state its own element is marked in, as `titlebar.css` draws it: its own fill (or
+/// none), its words, and the grounds it stands on. The crumb and the ⌄ stand on the bar and take
+/// the card's fill under the pointer and while open; a switcher's row and its pin stand on the
+/// popover, the row Enter would go to on the selected fill; a row's count is its amber wash, laid
+/// on the popover or on that selected row.
+pub(super) fn titlebar_apart_look(part: &str, states: &[State]) -> super::ApartLook {
+    use super::ApartLook;
+    const BAR: &[&str] = &["surface.deep"];
+    const POPOVER: &[&str] = &["surface.overlay"];
+    let hovered = states.contains(&State::Hover);
+    let selected = states.contains(&State::Selected);
+    let lit = hovered || selected;
+    match part {
+        "crumb" => ApartLook {
+            fill: if lit { "surface.overlay" } else { TRANSPARENT },
+            words: "text.secondary",
+            under: BAR,
+        },
+        "all" => ApartLook {
+            fill: if lit { "surface.overlay" } else { TRANSPARENT },
+            words: if lit { "text.primary" } else { "text.quiet" },
+            under: BAR,
+        },
+        // Pinned, the accent wins over the pointer's primary, on the pointer's fill (#4000).
+        "pin" => ApartLook {
+            fill: if hovered { "surface.overlay" } else { TRANSPARENT },
+            words: if selected {
+                "accent.base"
+            } else if hovered {
+                "text.primary"
+            } else {
+                "text.faint"
+            },
+            under: POPOVER,
+        },
+        // The row Enter would go to is drawn after the pointer's, so it wins over it.
+        "row" => ApartLook {
+            fill: if selected {
+                "list.selected"
+            } else if hovered {
+                "surface.overlay"
+            } else {
+                TRANSPARENT
+            },
+            words: if selected {
+                "text.primary"
+            } else {
+                "text.secondary"
+            },
+            under: POPOVER,
+        },
+        "row-count" => ApartLook {
+            fill: "wash.warning",
+            words: "state.waiting",
+            under: &["surface.overlay", "list.selected"],
+        },
+        _ => ApartLook {
+            fill: TRANSPARENT,
+            words: "text.secondary",
+            under: POPOVER,
         },
     }
 }

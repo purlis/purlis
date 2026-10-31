@@ -42,7 +42,7 @@ fn asks(held: &Held, chat: u32, what: What) -> Answer {
 fn its_list(held: &Held, asker: u32) -> Vec<purlis_core::dispatched::Row> {
     match asks(held, asker, What::List) {
         Answer::Task(answered) => match *answered {
-            Answered::Listed { rows } => rows,
+            Answered::Listed { rows, .. } => rows,
             other => panic!("a list, not {other:?}"),
         },
         other => panic!("a list, not {other:?}"),

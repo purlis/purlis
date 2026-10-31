@@ -1915,10 +1915,12 @@ fn a_refused_commit_puts_the_chat_in_the_queue_saying_why() {
     assert_eq!(moved.refusals, vec![said.to_owned()]);
 }
 
-/// A chat refused an update of the project's root asks the person for it (qw348): the
-/// guard's own verdict raises the item, in the app's words. Another refusal raises none.
+/// A chat the guard refused an update of the project's root is not the person's to answer
+/// (#3877): the refusal names `purlis worktree update`, which the chat runs itself, so nothing
+/// is raised on its tab. Only that update, refused for a reason no chat can settle, asks the
+/// person (`gitbroker::answer`).
 #[test]
-fn a_chat_refused_an_update_of_the_root_asks_the_person_for_one() {
+fn a_chat_refused_an_update_of_the_root_raises_nothing_for_the_person() {
     let dir = tempfile::tempdir().expect("a directory");
     let at = Where {
         within: dir.path().to_path_buf(),
@@ -1948,28 +1950,20 @@ fn a_chat_refused_an_update_of_the_root_asks_the_person_for_one() {
         at_ms: 0,
         skill: None,
     };
-    let deliver = |call: &purlis_core::hookwire::ToolCall| {
+    for rule in ["project-root-branch", purlis_core::rootupdate::REASON] {
         purlis_core::hookwire::deliver_tool(
             hooks.socket().expect("a socket"),
             Some(&hooks.token_for(3)),
-            call,
+            &refused_by(rule),
         )
         .expect("told");
-    };
+    }
 
-    // Another guard's refusal first: heard, and no item of this kind.
-    deliver(&refused_by("project-root-branch"));
-    deliver(&refused_by(purlis_core::rootupdate::REASON));
-
-    let moved = rx
-        .recv_timeout(std::time::Duration::from_secs(5))
-        .expect("the window is told");
-    assert_eq!(moved.session, 3);
-    assert!(moved.needs_you);
-    assert_eq!(moved.needs, Some(vec![Need::RootUpdateRefused]));
-    assert_eq!(
-        hooks.board().needs_of(3),
-        vec![purlis_core::state::Need::RootUpdateRefused]
+    assert!(hooks.board().needs_of(3).is_empty());
+    assert!(
+        rx.recv_timeout(std::time::Duration::from_millis(200))
+            .is_err(),
+        "nothing moved on the chat's tab"
     );
 }
 
@@ -2518,6 +2512,291 @@ fn a_port_on_this_mac_is_offered_as_that_port_and_claude_code_is_carried_it_by_n
     assert!(CLAUDE_CODE_PORT_SAID.contains("kubectl"));
 }
 
+/// #2019: a server refused its port is offered Allow listening on that one port, for this chat
+/// or this project on this machine, saying what it means and that only the loopback is
+/// allowed; never purlis's own port; and a Claude Code chat, whose sandbox cannot take one
+/// port, is offered Start without the sandbox, saying why.
+#[test]
+fn a_port_to_listen_on_is_offered_as_that_port_and_claude_code_is_told_why_not() {
+    use purlis_core::harness::Harness;
+    use purlis_core::sandbox::localport::listen_risk;
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let refused = Block {
+        operation: Operation::Listen,
+        kind: Kind::LocalService,
+        ours: false,
+    };
+    let named = offered(&root, &refused, Some("5173"));
+    assert_eq!(named.0, BlockOffer::Listen);
+    assert_eq!(named.1.as_deref(), Some("5173"));
+    // Compared, never printed: it is drawn on the Notice, not logged.
+    let said = named.2.clone().expect("what allowing it means");
+    assert!(said.contains(&listen_risk(5173)));
+    let locks = purlis_core::sandbox::policy::Locks::of(&root);
+    let (offer, target, _, levels) = held(&locks, named.clone());
+    assert_eq!(offer, BlockOffer::Listen);
+    assert_eq!(target.as_deref(), Some("5173"));
+    assert_eq!(
+        levels,
+        vec![
+            crate::sandboxing::GrantLevel::Chat,
+            crate::sandboxing::GrantLevel::You
+        ]
+    );
+    // Named by nothing: the person types it.
+    assert_eq!(offered(&root, &refused, None).0, BlockOffer::Listen);
+    assert_eq!(offered(&root, &refused, None).1, None);
+    // purlis's own wrap takes one port; Claude Code's sandbox cannot.
+    assert_eq!(
+        for_its_harness(Some(Harness::Codex), named.clone()).0,
+        BlockOffer::Listen
+    );
+    let (offer, target, why) = for_its_harness(Some(Harness::ClaudeCode), named);
+    assert_eq!(target.as_deref(), Some("5173"));
+    if cfg!(target_os = "macos") {
+        // #3316: its server dials in to its door, so the port is offered as in any chat, with
+        // how to start it.
+        assert_eq!(offer, BlockOffer::Listen);
+        assert_eq!(why, Some(claude_code_listen_said("5173")));
+        assert!(claude_code_listen_said("5173").starts_with(
+            "In a Claude Code chat, start the server with `purlis listen 5173 -- npm run dev`."
+        ));
+    } else {
+        assert_eq!(offer, BlockOffer::Unsandboxed);
+        assert!(why.as_deref() == Some(CLAUDE_CODE_LISTEN_SAID));
+    }
+    // What turning Claude Code's own setting on would open, said rather than offered.
+    assert!(CLAUDE_CODE_LISTEN_SAID.contains("every port of this Mac"));
+    assert!(CLAUDE_CODE_LISTEN_SAID.contains("every service on this Mac"));
+    // A port purlis itself listens on is never one to listen on.
+    let own = purlis_core::sandbox::localport::bind_loopback().expect("a port of purlis's");
+    let own_port = own.local_addr().expect("bound").port();
+    let refused_own = offered(&root, &refused, Some(&own_port.to_string()));
+    assert_eq!(refused_own.0, BlockOffer::Brokered);
+    purlis_core::sandbox::localport::release(own_port);
+}
+
+/// #3396, #3440: a server refused on no port a person could allow, one the system picks or one
+/// the sandbox named none for, is a server that did not start: no Allow, and the Notice says
+/// why and what to do, in a Claude Code chat as in any other.
+#[test]
+fn a_server_that_did_not_start_on_no_port_to_allow_is_told_what_to_do() {
+    use purlis_core::harness::Harness;
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let refused = Block {
+        operation: Operation::Listen,
+        kind: Kind::System,
+        ours: false,
+    };
+    let picked = offered(
+        &root,
+        &refused,
+        Some(purlis_core::sandbox::localport::PICKED),
+    );
+    assert_eq!(picked.0, BlockOffer::Unsandboxed);
+    assert_eq!(picked.1, None);
+    assert_eq!(picked.2.as_deref(), Some(PICKED_PORT_SAID));
+    let unnamed = offered(&root, &refused, None);
+    assert_eq!(unnamed.0, BlockOffer::Unsandboxed);
+    assert_eq!(unnamed.2.as_deref(), Some(NO_PORT_SAID));
+    for said in [PICKED_PORT_SAID, NO_PORT_SAID] {
+        assert!(said.contains("purlis listen 3000 -- <command>"), "{said}");
+        assert!(said.contains("without the sandbox"), "{said}");
+    }
+    assert!(PICKED_PORT_SAID.contains("a port the system picks"));
+    // Where purlis's own sandbox runs on Linux, the one address a port it picks is taken on.
+    assert!(
+        PICKED_PORT_SAID
+            .contains("On Linux, purlis's sandbox gives such a server a port on 127.0.0.1")
+    );
+    // True of each refusal that names no port: another machine's address, a runner's socket.
+    assert!(NO_PORT_SAID.contains("named no port purlis could allow"));
+    assert!(NO_PORT_SAID.contains("remove the runner and add it again"));
+    // purlis's own wrap keeps the words; a Claude Code chat, which no port of its own would
+    // help, is told the ways that work there.
+    assert_eq!(
+        for_its_harness(Some(Harness::Codex), picked.clone()),
+        picked
+    );
+    for refused in [picked, unnamed] {
+        let (offer, target, why) = for_its_harness(Some(Harness::ClaudeCode), refused);
+        assert_eq!(offer, BlockOffer::Unsandboxed);
+        assert_eq!(target, None);
+        assert_eq!(why.as_deref(), Some(claude_code_no_port()));
+    }
+    assert!(CLAUDE_CODE_NO_PORT_SAID.contains("without the sandbox"));
+    assert!(CLAUDE_CODE_NO_PORT_SAID.contains("Codex or opencode chat"));
+    // #3316: on macOS a Node server can be given a port of its own there.
+    assert!(CLAUDE_CODE_NO_PORT_DIAL_SAID.contains("purlis listen 3000 -- <command>"));
+    assert!(CLAUDE_CODE_NO_PORT_DIAL_SAID.contains("without the sandbox"));
+}
+
+/// What a Claude Code chat is told of a server on no port purlis could allow, here.
+fn claude_code_no_port() -> &'static str {
+    if cfg!(target_os = "macos") {
+        CLAUDE_CODE_NO_PORT_DIAL_SAID
+    } else {
+        CLAUDE_CODE_NO_PORT_SAID
+    }
+}
+
+/// #3440: a server whose socket purlis's Linux wrap could not take is told why it did not
+/// start, and what to do: on a runner, remove it and add it again; on Kubernetes, not yet.
+#[test]
+fn a_server_whose_socket_could_not_be_taken_is_told_why_and_what_to_do() {
+    use purlis_core::harness::Harness;
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let refused = Block {
+        operation: Operation::Listen,
+        kind: Kind::System,
+        ours: false,
+    };
+    let untaken = offered(
+        &root,
+        &refused,
+        Some(purlis_core::sandbox::localport::SOCKET_NOT_TAKEN),
+    );
+    assert_eq!(untaken.0, BlockOffer::Unsandboxed);
+    assert_eq!(untaken.1, None);
+    assert_eq!(untaken.2.as_deref(), Some(NOT_TAKEN_SAID));
+    assert!(NOT_TAKEN_SAID.contains("could not take the server's socket"));
+    assert!(NOT_TAKEN_SAID.contains("remove the runner and add it again"));
+    assert!(NOT_TAKEN_SAID.contains("Kubernetes"));
+    assert!(NOT_TAKEN_SAID.contains("without the sandbox"));
+    // Not the words for a port to pick, which would send it round to the same Notice.
+    assert!(!NOT_TAKEN_SAID.contains("purlis listen 3000"));
+    // purlis's own wrap, the only one that tells it, keeps the words; a Claude Code chat,
+    // whose sandbox purlis does not wrap, is never told of a runner's socket.
+    assert_eq!(
+        for_its_harness(Some(Harness::Codex), untaken.clone()),
+        untaken
+    );
+    let (offer, target, why) = for_its_harness(Some(Harness::ClaudeCode), untaken);
+    assert_eq!(offer, BlockOffer::Unsandboxed);
+    assert_eq!(target, None);
+    assert_eq!(why.as_deref(), Some(claude_code_no_port()));
+}
+
+/// #2019: a port below 1024 is never one to serve on, and a port something on this Mac listens
+/// on is asked about as a service to connect to, in its own words; a server asking for a port
+/// its chat serves on already is told how to start it, with no Allow.
+#[test]
+fn a_port_to_serve_on_is_never_a_system_ones_or_one_in_use() {
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let refused = Block {
+        operation: Operation::Listen,
+        kind: Kind::LocalService,
+        ours: false,
+    };
+    assert_eq!(offered(&root, &refused, Some("80")).0, BlockOffer::Brokered);
+    let taken = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a port in use");
+    let port = taken.local_addr().expect("bound").port().to_string();
+    let (offer, target, said) = offered(&root, &refused, Some(&port));
+    assert_eq!(offer, BlockOffer::Port);
+    assert_eq!(target.as_deref(), Some(port.as_str()));
+    assert!(said.is_some_and(|said| said.contains("already listens")));
+    // Told how to start it where the chat serves on that port already.
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+    let told = blocked_on(&plane, 7, &refused, None, Some("5173"), false);
+    assert_eq!(told.offer, BlockOffer::Listen);
+    let served = on_its_serving(told.clone(), &[5173], false);
+    assert_eq!(served.offer, BlockOffer::Brokered);
+    assert!(served.levels.is_empty());
+    assert!(
+        served
+            .route
+            .as_deref()
+            .is_some_and(|route| route.contains("purlis listen 5173 --"))
+    );
+    assert_eq!(
+        on_its_serving(told.clone(), &[3000], false).offer,
+        BlockOffer::Listen
+    );
+    // #3316: where the chat's server dials in, one that bound the port itself is no Node server
+    // `purlis listen` started: told how one is, and offered Start without the sandbox.
+    // A Claude Code chat on a runner reaches no door of this window, so its listen is offered
+    // as it was before dial-in.
+    let mut claude = told.clone();
+    claude.route = Some(claude_code_listen_said("5173"));
+    let on_a_runner = on_its_runner(claude.clone(), Some("build-box"));
+    assert_eq!(on_a_runner.offer, BlockOffer::Unsandboxed);
+    assert_eq!(on_a_runner.route.as_deref(), Some(CLAUDE_CODE_LISTEN_SAID));
+    assert_eq!(on_its_runner(claude, None).offer, BlockOffer::Listen);
+    let dialled = on_its_serving(told, &[5173], true);
+    assert_eq!(dialled.offer, BlockOffer::Unsandboxed);
+    assert!(dialled.levels.is_empty());
+    assert!(
+        dialled
+            .route
+            .as_deref()
+            .is_some_and(|route| route.contains("purlis listen 5173 -- npm run dev"))
+    );
+    // A port the chat serves on has its door open, so it is in use as it is asked about: still
+    // told how to start the server there, never offered as a service to connect to.
+    let told = blocked_on(&plane, 7, &refused, None, Some(&port), false);
+    assert_eq!(told.offer, BlockOffer::Port);
+    let served_port: u16 = port.parse().expect("a port");
+    let served = on_its_serving(told, &[served_port], false);
+    assert_eq!(served.offer, BlockOffer::Brokered);
+    assert!(
+        served
+            .route
+            .as_deref()
+            .is_some_and(|route| route.contains(&format!("purlis listen {port} --")))
+    );
+    drop(taken);
+}
+
+/// #2019: a port allowed to listen on for this project is said to be allowed already, and a
+/// policy that holds ports holds it too.
+#[test]
+fn a_port_to_listen_on_allowed_already_or_held_by_policy_is_said_so() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    assert_eq!(
+        allowed_already(&root, BlockOffer::Listen, Some("5173")),
+        None
+    );
+    purlis_core::sandbox::local::grant_listen(&root, 5173).expect("kept");
+    assert!(
+        allowed_already(&root, BlockOffer::Listen, Some("5173"))
+            .is_some_and(|said| said.contains("allowed already"))
+    );
+    // Allowed to listen on is not allowed to connect to as a service of its own.
+    assert_eq!(allowed_already(&root, BlockOffer::Port, Some("5173")), None);
+    let locked = purlis_core::sandbox::policy::Locks::parse(
+        r#"{"sandbox": {"socket-grants": false}}"#,
+        std::path::Path::new("/etc/purlis/policy.json"),
+    );
+    let (offer, _, route, levels) =
+        held(&locked, (BlockOffer::Listen, Some("5173".to_owned()), None));
+    assert_ne!(offer, BlockOffer::Listen);
+    assert!(levels.is_empty());
+    // In a server's words, not a service's.
+    assert!(
+        route
+            .as_deref()
+            .is_some_and(|route| route.contains("to run a server on this Mac")),
+        "{route:?}"
+    );
+    let (_, _, route, _) = held(&locked, (BlockOffer::Listen, None, None));
+    assert!(
+        route
+            .as_deref()
+            .is_some_and(|route| route.contains("to run a server on this Mac")),
+        "{route:?}"
+    );
+}
+
 /// qw384 review: a port only printed words name is pre-filled for the person to check, on a
 /// Notice that asks for one; never where the refusal named the port, never on another Notice,
 /// and never a port no grant could name.
@@ -2970,4 +3249,84 @@ fn a_line_is_heard_only_from_the_host_its_chat_runs_on() {
     assert_eq!(exec_through(&builds, 2, 10, 3), vec![Replied::Ended]);
     assert_eq!(exec_through(&builds, 2, 20, 99), vec![Replied::Ended]);
     assert_eq!(exec_through(&here, 1, 10, 7), vec![Replied::Ended]);
+}
+
+/// An ask heard on a link its host said reached a runner is heard knowing which (#3417), and
+/// the next one on that thread knows nothing of it.
+#[test]
+fn an_ask_heard_over_a_link_knows_the_runner_its_host_said_it_reached() {
+    let heard = heard_reaching(
+        Some("builds".to_owned()),
+        Some("builds/old".to_owned()),
+        || (heard_from_a_pool(), reached_over_the_link()),
+    );
+    assert_eq!(
+        heard,
+        (Some("builds".to_owned()), Some("builds/old".to_owned()))
+    );
+    assert_eq!(
+        heard_from(Some("builds".to_owned()), reached_over_the_link),
+        None
+    );
+    assert_eq!(reached_over_the_link(), None);
+}
+
+/// A refused write of a repository's git folder that was there as a Claude Code chat started, or
+/// of a folder above one, is held so the git folder stays where it is: no grant lifts that, so
+/// its Notice offers no Allow, and says the way that works. Anything beside it or inside it, and
+/// any other harness's block, is offered as before.
+#[test]
+fn a_refused_write_that_keeps_a_git_folder_in_place_offers_no_allow() {
+    use purlis_core::harness::Harness;
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let repo = root.join("ws/app/repo");
+    std::fs::create_dir_all(repo.join(".git")).expect("a clone");
+    std::fs::write(repo.join(".git/HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+    std::fs::create_dir_all(root.join("ws/app/other")).expect("a folder beside it");
+    let write = |kind| Block {
+        operation: Operation::Write,
+        kind,
+        ours: false,
+    };
+    let claude = Some(Harness::ClaudeCode);
+    for (kind, path) in [
+        (Kind::ProtectedFile, repo.join(".git")),
+        (Kind::ProjectFiles, repo.clone()),
+        (Kind::ProjectFiles, root.join("ws/app")),
+        (Kind::ProjectFiles, root.join("ws")),
+    ] {
+        let named = path.display().to_string();
+        let (offer, target, why) = kept_in_place(claude, &root, &write(kind), Some(&named))
+            .unwrap_or_else(|| panic!("{named} is not kept in place"));
+        assert_eq!((offer, target), (BlockOffer::Brokered, None), "{named}");
+        assert!(
+            why.as_deref()
+                .is_some_and(|why| why.contains("`purlis worktree remove`")),
+            "{named}: {why:?}"
+        );
+    }
+    for path in [
+        root.join("ws/app/other"),
+        repo.join("src/main.rs"),
+        repo.join(".git/index"),
+    ] {
+        let named = path.display().to_string();
+        assert_eq!(
+            kept_in_place(claude, &root, &write(Kind::ProjectFiles), Some(&named)),
+            None,
+            "{named}"
+        );
+    }
+    let named = repo.display().to_string();
+    assert_eq!(
+        kept_in_place(
+            Some(Harness::Codex),
+            &root,
+            &write(Kind::ProjectFiles),
+            Some(&named)
+        ),
+        None
+    );
 }

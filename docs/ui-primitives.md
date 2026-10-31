@@ -306,7 +306,7 @@ for this pane"; a card never shrinks in it, so past its room the cards scroll in
 on a warning with a Dismiss puts it away, and the keyboard goes on to the next warning or to the
 terminal, never onto an Allow: a consent is landed on by its line. A consent has no Dismiss and
 Esc leaves it. The press-settle guard (#1695) reads where each line is drawn against the band
-itself, scrolling aside, never its `offsetTop`, which a card positioned for its mark would pin. In the row they are stacked in `.pane-notices`, in the
+itself, scrolling aside, never its `offsetTop`, which a card positioned for its mark would pin. In the row they are stacked (the notice family's `stack`), in the
 order the pane writes them: the shown chat's own, the one that waits for an answer before
 anything starts first, then each hidden chat's. **At most two stand, and the rest are behind
 "+N more"**, on a row of its own under them, as wide as the longer of "+N more" and the Show
@@ -330,7 +330,8 @@ Before #1835 the window drew **4 tables and 8 kinds of list row**, each with its
 alignment and selection. The Chats list alone put a name about 53px past its own filter, partly
 because every leaf drew an empty twist so that names would line up. ADR 0094 §4 gives each of
 these one class, built only from the core geometry and a theme's colours, and
-`app/src/primitives/collections.css` holds all three. That file is in the `components` layer,
+`app/src/primitives/collections.css` held all three (the list's row and the table are their
+families' since #2911). That file is in the `components` layer,
 above `App.css`. A view that takes a class gets its look, and migrating a view means adding the
 class and deleting the view's old rules (DS-9 settings, DS-11 chats). There is no React
 component: each view keeps its own markup and keys, as ADR 0037 asks, and the class draws it.
@@ -339,63 +340,20 @@ specificity and `:hover` are taken into account.
 
 **The sizes are component tokens**, each an alias of a core token and declared in the class it
 sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4`, `--ui-row-gap` is
-`--space-3`, `--ui-tree-step` is `--space-5`, and `--ui-cell-pad-inline` and `-block` are
-`--space-4` and `--space-2`. To change a part, change its alias. A theme never sees these.
+`--space-3` and `--ui-tree-step` is `--space-5`. To change a part, change its alias. A theme
+never sees these.
 
 ### Table
 
-```html
-<table class="ui-table ui-table-fixed">
-  <thead><tr>
-    <th scope="col">Level</th>
-    <th scope="col" title="How many tasks may run at once" aria-label="How many tasks may run at once">Tasks</th>
-    <th scope="col" class="ui-cell-actions" aria-label="Actions"></th>
-  </tr></thead>
-  <tbody>
-    <tr><th scope="row">Project</th><td class="ui-num">3</td><td class="ui-cell-actions">…</td></tr>
-  </tbody>
-</table>
-```
-
-- **`.ui-table`** lays out automatically: a column is as wide as its content needs.
-  **`.ui-table-fixed`** is for a view that sizes its own columns. It gives the columns their
-  widths (in `App.css`, on `<col>`s or the headings) and the table keeps them whatever the cells
-  hold. Pick fixed when the cells are controls whose width should not depend on the values in
-  them, as in the grants table.
-- **A heading is one line.** `thead th` never wraps. In a fixed table a heading that does not fit
-  is cut with an ellipsis. In an auto table its column grows to fit, so a long heading should be
-  shortened. **A heading that is shortened, or that can be cut, carries its full words in a
-  tooltip.** In Settings that is `ColumnHeading` (`settings/ColumnHeading.tsx`, DS-9 #1841): the
-  short words sit in a `.ui-table-tip` behind the shared tooltip (#2908), which makes them a Tab
-  stop and shows the whole words and what the column holds; the whole words are the heading's
-  `aria-label`, so a screen reader announces them with each cell. `.ui-table-tip` gets a dotted
-  underline, so the tooltip can be found. Headings are `--font-size-sm` in `text.secondary` above a
-  `border.strong` hairline. A `caption` sits above the table, at the start, in `text.secondary`.
-- **Cells are aligned.** Every cell and heading starts at `--ui-cell-pad-inline` and sits on the
-  middle of its row, so text lines up with the 28px control in the next cell, not with that
-  control's baseline. A row's own heading (`<th scope="row">`) is drawn as a cell.
-  **`.ui-num`** puts a number at the cell's end, in tabular figures. **`.ui-cell-actions`** makes
-  a column of buttons as narrow as they are, at the row's end.
-- Rows are separated by a `border.subtle` hairline. A row that is `aria-selected` or
-  `aria-current` is filled like a selected list row.
-- **A table of controls stacks into a form where its room is narrow** (#1859).
-  **`.ui-table-stacks`** on the table, drawn in a **`.ui-table-room`** (the holder whose width it
-  answers to, a size container): under 29rem the column headings are put away, each row's own
-  heading takes a line, and each cell sits under its column's whole words, which the cell
-  carries as `data-heading`, as many cells side by side as fit. The row's actions take a line of
-  their own, a cell across the columns (a question about the row above) takes the whole width,
-  and a cell with nothing in it is not drawn. Nothing is cut and nothing scrolls sideways. Each
-  control still names its column and row in full, so a screen reader hears the same either way.
-  The Dispatch limits table and the dispatch grants table (#1865) wear it. 29rem lies between
-  Settings' body at a 1280×800 window (the default one until 2026-10-24, when it grew to
-  1440×900), where the table stays a table, and at the narrowest
-  window with both sidebars open, where it stacks; CI's runs of `settings-tables.e2e.ts` and
-  `settings-limits.e2e.ts` hold both ends in the real WebView (#1865). It is the one length the
-  stylesheet writes, because a container query's condition cannot read a token.
-- **Short headings live in the window** (#1859, after D-1841-1). A column's short words are the
-  table's own (`SHORT` in `settings/dispatch.tsx`), and the core keeps one name per limit, its
-  `label`. The command line draws no table of limits, so a short form in the core would have one
-  reader. Stacked, a cell shows the whole label, never the short words.
+**A table is the table family's** since #2911: [The table family](#the-table-family) below
+draws it from the same geometry, keyed on its parts' attributes where `.ui-table`,
+`.ui-table-fixed`, `.ui-table-stacks`, `.ui-table-room`, `.ui-num`, `.ui-cell-actions` and
+`.ui-table-tip` were (`collections.css` keeps the list and tree rows only). A column's short
+words with their whole words in a tooltip, once `settings/ColumnHeading.tsx`, are the family's
+`ControlColumn` (`whole`, `about`). **Short headings live in the window** (#1859, after
+D-1841-1): a column's short words are the table's own (`SHORT` in `settings/dispatch.tsx`), and
+the core keeps one name per limit, its `label`. Stacked, a cell shows the whole label, never the
+short words.
 
 ### List row
 
@@ -405,6 +363,11 @@ draws it, from the same geometry, with its slots (`RowLead`, `RowLabel`, `RowDes
 under a tree's row (`.ui-row.ui-tree-row`), which the tree family takes next.
 
 ### Tree row
+
+**A tree is the tree family's** since #2911: [The tree family](#the-tree-family) below draws the
+Changes view, every file tree (a file tab's, the Explorer's *Files* and a branch's cockpit) and
+the Explorer's *Repos and branches*. The Chats list, still drawn by hand, keeps the shared tree
+row below until it moves (#3198); `purlis/tree-family` is off for its files alone.
 
 ```html
 <ul class="ui-tree" role="tree">
@@ -459,8 +422,9 @@ empty line under its filter.
 **Every tree and list in the main views is on these classes** (DS-12, #1844): the explorer,
 a file tab's tree and the Changes view are `.ui-tree` with `.ui-tree-row`s (the `.tree` class is
 deleted); a finished task's name and its "Finished (n)" line are tree rows at their chat's level;
-the panel lists, the memory archive, a vault's secret names, Search's hits and the opener's
-recent projects are `.ui-row`s; the vault's, Dispatches' and Saving's tables are `.ui-table`.
+the panel lists, the memory archive, Search's hits and the opener's recent projects were
+`.ui-row`s and are the list family's now; the vault's, Dispatches' and Saving's tables are the
+table family's.
 A tree whose levels are nested groups gives each row its `aria-level`, and puts the children's
 level (`data-level`) on the element that holds what a row says under it (a folder's "Nothing
 here", a clone's "Asking git…"), so a sentence stands where the children's names start. A row
@@ -478,8 +442,9 @@ own `min-width: max-content` beside the class.
 
 | Prop | Says |
 | --- | --- |
-| `variant` | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence), `quiet` (a ghost whose words are in the quiet tier until the pointer reaches it: a strip's end mark, a pane's split and close, a line's own marks, #3214) |
+| `variant` | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence), `quiet` (a ghost whose words are in the quiet tier until the pointer reaches it: a strip's end mark, a pane's split and close, a line's own marks, a breadcrumb's crumbs and a tab's task chip, #3214, #3264) |
 | `size` | `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only beside a list's main filter field |
+| `inline` | words in a line of words, a breadcrumb's crumb (#3264): as tall as the line, no box padding or edge, cut to an ellipsis where the line squeezes it, underlined (no fill) under the pointer and the keyboard; words only |
 | `icon` | the icon before the words, drawn as the `icon` part; `IconButton` takes only an icon and an `aria-label`, and is square |
 | `onPress`, `isDisabled`, `isSelected` | React Aria's own words; `onClick` still reaches a Radix trigger the button is the `asChild` of |
 | `tooltip` | its hint, the shared tooltip ([the tooltip family](#the-tooltip-family)), never a `title`; on an `IconButton`, a second line under its name |
@@ -497,7 +462,10 @@ own `min-width: max-content` beside the class.
   suggested as a grant).
 - **Drawn by its parts** (ADR 0103): the root carries `data-scope="button"`, `data-part="root"`,
   `data-variant` and `data-size`; its words are `data-part="label"`, its icon
-  `data-part="icon"`. `app/src/ui/button/button.css` draws the family default from those and
+  `data-part="icon"`, and the key that presses it, where it says one (`shortcut`, R33),
+  `data-part="shortcut"`: a `kbd` after the words, small and mono, drawn from its `data-key` and
+  hidden from a screen reader (`aria-keyshortcuts` says the key), its room kept and nothing drawn
+  while the key does not press it (`shortcutOff`). `app/src/ui/button/button.css` draws the family default from those and
   React Aria's state attributes (`data-hovered`, `data-pressed`, `data-selected`,
   `data-focus-visible`, `data-disabled`), and a theme's parts reach the same attributes. A state
   changes a colour, a ground or a ring, never a size.
@@ -536,9 +504,14 @@ the select family's (`purlis/select-family`, an error: [The select and combobox 
 | `className` | the field's place in its view (margin, width, flex, order), never a look |
 
 - **A field is its label, its control, its help and its error, as one.** React Aria ties the
-  label to the box and the help and the error to its description. The error is an alert, as every
-  refusal in the window is, and the box's edge takes the danger colour beside it: the words are
-  the cue that is not colour. **A field that can be refused keeps its error's line** whether it
+  label to the box and the help and the error to its description. The error line is a polite
+  live region, never an alert (#3291), and the box's edge takes the danger colour beside it: the
+  words are the cue that is not colour. **A refused send is heard once**, as its `Form`'s one alert
+  summary ("Name: A name is letters…", or "2 fields to fix: Name, Port."), for a screen reader
+  alone; the lines are quiet while it shows, and each stays its field's description. A send the
+  core refuses is handed to the `Form`: `refused` by its owner, with `answer` counting the core's
+  answers, or `useFormRefusal()` from inside it; a select's pick ends the summary as a change
+  does (ADR 0104, amendment 2026-10-30). **A field that can be refused keeps its error's line** whether it
   says anything or not, one line tall, empty and unheard until it does, so a refusal coming or
   going moves nothing; a long one is cut short on screen and read whole as the description.
 - **⌘⏎ sends a form's primary action** (Ctrl+Enter off macOS; N26), its first submit button, from
@@ -581,7 +554,7 @@ refuses all four (`purlis/select-family`, an error).
 
 | Member | Is |
 | --- | --- |
-| `Select` | a button that shows what is picked and opens the list to pick from; `value`, `options` (`value`, `label`, `isDisabled`, `tooltip`), `onValueChange`, `placeholder`, `isDisabled`, `isInvalid`, `tooltip`, `size` |
+| `Select` | a button that shows what is picked and opens the list to pick from; `value`, `options` (`value`, `label`, `isDisabled`, `tooltip`), `onValueChange`, `placeholder`, `isDisabled`, `error`, `isInvalid`, `tooltip`, `size` |
 | `ComboBox` | a box to type in with the suggestions that match in a list under it; what is typed is the value, and a suggestion picked writes its words (Add a skill) |
 | `ListComboBox` | the box over a list drawn in place under it, always shown, whose rows and aim are its owner's (the command palette): the field family's box with the combobox's ARIA, which only this family writes |
 
@@ -610,11 +583,16 @@ refuses all four (`purlis/select-family`, an error).
   by its row's label (`aria-labelledby`), one with no row by its `aria-label`. An unavailable
   select with a reason (`tooltip`) stays in reach of the keyboard so its reason is heard, and
   opens nothing.
-- **Refused** (`isInvalid`, #3110): a select whose value the form will not take, or a combobox
-  whose typed value is not allowed, draws the danger colour on its edge, inside the box as the
-  text input's, and is marked `aria-invalid` and `data-invalid`; the words that say why are drawn
-  by its row or its form and named by `aria-describedby`, so they are heard with it. A colour
-  only, so nothing moves; a theme reaches it as the `invalid` state of either family's `root`.
+- **Refused** (`error`, #3110, #3334): a select whose value the form will not take, or a
+  combobox whose typed value is not allowed, draws the danger colour on its edge, inside the box
+  as the text input's, and is marked `aria-invalid` and `data-invalid`. `error` says why in the
+  field's error line under the box (the `field.error` part), a polite live region kept from the
+  start, so a refusal that lands while the person types is heard and nothing moves; a select
+  given `error` stands in a field of its own, placed by its `className`: a column as wide as its
+  place, its button as wide as the field (in a toolbar row, give it a width). `error=""` is no
+  refusal. `isInvalid` marks one
+  refused whose words are drawn elsewhere (a settings row's), named by `aria-describedby`. A
+  colour only; a theme reaches it as the `invalid` state of either family's `root`.
 - **The button carries what it holds as `data-value`**, which the e2e specs read
   (`e2e/acting.ts`, `choose`), and a test picks through `ui/select/select.testkit.ts`
   (`selectNamed`, `pickIn`, `offeredIn`).
@@ -635,7 +613,7 @@ imports Radix's checkbox, radio group, switch, slider or toggles, or wears the o
 
 | Member | Is |
 | --- | --- |
-| `Checkbox` | a native box in its own label: a press of its words ticks it as a press of its box does, Space from the keyboard; `isIndeterminate` draws a bar. `variant="chip"` is one of a few small chips over the list they narrow, its tick in a slot it always keeps |
+| `Checkbox` | a native box in its own label: a press of its words ticks it as a press of its box does, Space from the keyboard; `isIndeterminate` draws a bar. `variant="chip"` is one of a few small chips over the list they narrow, its tick in a slot it always keeps; a chip's `count` is after its words and describes it, never part of its name (#3484) |
 | `CheckboxGroup` | a named group of boxes, each holding its own value (two may stand for one); `roving` makes the row one Tab stop with the arrows between its `RovingCheckbox`es (the Chats list's state chips, #1687) |
 | `RadioGroup`, `Radio` | one of a few, a column of options, each its mark, its words (and a `lead` before them: a persona's mark) and a `description` under them |
 | `SegmentedControl`, `Segment` | a few views of one thing side by side (a level of Settings, a side view's scope), `sm` (the chrome's height, never under 24) or `md` (the control's, as a button's); a segment's `count` is beside its words and in its name. The chosen segment stands on the window's ground with a 1 px edge under it, held to 3:1; its weight never changes |
@@ -682,9 +660,12 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 
 | Family | Wrapper | Parts | Variants |
 | --- | --- | --- | --- |
-| Panel | `Panel`, or `panelRoot(variant)` on a library's resizable panel (`ui/panel/Panel.tsx`) | `root` | `side`, `content`, `bottom` |
-| Panel section | `PanelSection`, `PanelSectionHead`, `PanelSectionTitle` (`ui/panel/Panel.tsx`) | `root`, `head`, `title` | `default` |
+| Panel | `Panel`, or `panelRoot(variant)` on a library's resizable panel; `PanelTitle`, the title of the view it shows (`ui/panel/Panel.tsx`) | `root`, `title` | `side`, `content`, `bottom` |
+| Panel section | `PanelSection` (with `view` and `top`), `PanelSectionHead`, `PanelSectionTitle`, `InPanelTop` (`ui/panel/Panel.tsx`) | `root`, `head`, `title`, `top` | `default` |
 | Panel separator | `Separator` (`ui/panel/Separator.tsx`), every resize handle between two panels | `root`, `grip` | none |
+| View frame | `ViewFrame`, `ViewNav`, `ViewListHead`, `ViewPageHeader` (`ui/panel/ViewFrame.tsx`), a view tab laid out as pages; `ViewBar`, `ViewHistoryButtons`, `ViewCrumbs` (`ui/panel/ViewBar.tsx`), its top bar | `root`, `nav`, `list`, `item`, `head`, `header`, `name`, `lead`, `bar`, `history`, `path`, `crumb`, `crumb-separator` | none |
+| View nav | a page in the view frame's navigation, drawn by `ViewNav` | `item`, `label`, `indicator` | none |
+| Review page     | `ReviewPage` (`ui/review-page/ReviewPage.tsx`), a review too long for a dialog: its body over a fixed action bar                                                                                       | `root`, `body`, `bar`, `summary`, `answers`                                                                           | none                               |
 | Empty state | `EmptyState` (`ui/empty-state/EmptyState.tsx`) | `root`, `icon`, `headline`, `body`, `action` | `page`, `panel` |
 | Status item | `StatusItem` (pressed, runs a command), `StatusCell` (says, runs nothing), `StatusVerdict` (`ui/status/StatusItem.tsx`) | `root`, `icon`, `label`, `count` | `bar`, `pill`, `waiting`, `accent` |
 
@@ -705,6 +686,58 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   under the pointer, the muted tier while dragged and `focus.ring` with the keyboard on it, in
   place of the window's ring; Purlis Classic keeps its accent line through its theme's parts.
   Forced colours draw the grip in `CanvasText` and `Highlight`, and the ring comes back.
+- **A sidebar view is a section with a top** (`view`, #3340, the sidebar-views prototype's
+  Q1 A): ONE scroll, its region's. Its `top` (the heading line with its actions, then the field,
+  then tabs and chips) is held at the top on the panel's own fill, `--panel-fill`, which a
+  theme's `panel.root.fill` writes beside the ground; each group's name is held under the top
+  while its group is in sight, in 11px capitals in the quiet tier with its count at its end; its
+  rows are 30px. Its title, whether the region's head or its own heading line, is the panel's
+  `title` part (`PanelTitle`): 13px and strong in the primary tier, in its own case. A list puts its search field in the top with
+  `InPanelTop`, and draws it where it stands outside a view. Memory, Todos and Sessions are
+  drawn on it, in a half of the Panel or in either sidebar, and so are Personas, Vaults and every
+  extension's panel (#3341), and the Chats view (#3342), whose rows lead with the
+  persona's mark and the chat's state as a dot on its corner.
+- **A view tab laid out as pages is a view frame** (#3666, the Skill studio frame's variant A,
+  `purlis/view-frame-family`): the page navigation, the page's list (its heading and lead line,
+  `ViewListHead`, then a list or table) and the item chosen in it beside it (its page header,
+  `ViewPageHeader`: the name, a tag and one mark, the one-line description, up to three actions
+  and a "…" menu; then its banner, a Notice `alone`, and its body). The navigation is one Tab
+  stop, the current page `aria-current="page"` and marked at its start edge as well as by its
+  colour; ↑ ↓ Home End walk it and Enter, Space or a press chooses. A page's count is the count
+  family's, `waiting` for what waits for the person, and a page with nothing in it is left out.
+  Each pane scrolls on its own and the page header stays in view; the panes' sizes are the
+  frame's, so a new item or a changed count moves nothing, and the list and the item are resized
+  through the panel separator. Under 720px wide (a narrow tab, a split pane) it is page-and-back:
+  the navigation is a `Select`, the list comes first, an opened item is drawn alone with a way
+  back, and the keyboard follows: onto the way back as the item opens, onto the list as the
+  person comes back.
+- **A view tab has its own back and forward** (#3667, `ui/panel/viewHistory.ts`): the tab's
+  history is kept by its id in memory (`useViewHistory`), so another tab never shares it and a
+  relaunch starts afresh, and a place reached from outside the tab (`openViewAt`: the run chip's
+  Runs) is a step on a tab that has a history and its start on one that has none. `ViewBar` draws
+  back and forward at the bar's start, each unavailable with its reason at its end, and the path
+  (`ViewCrumbs`, a list named "Path": each name before the last on the quiet ghost inline, the
+  last `aria-current="page"` and no button, long names cut first, the whole path its tooltip),
+  then the view's own controls. ⌘[ and ⌘] on a Mac, Alt+← and Alt+→ elsewhere (`view.back`,
+  `view.forward` in the key registry, in its new `view` place; Ctrl+[ is a terminal's Escape and
+  an editor's indent, so Ctrl does not take ⌘'s place), and the mouse's own back and forward
+  buttons walk it anywhere in a `ViewFrame` handed the `history`; an editor, a menu or a dialog
+  keeps the keys.
+- **A review too long for a dialog is a review page** (#3672, the skill sources and skill
+  grading prototypes, `purlis/review-page-family`): the install review and the update review,
+  file by file, and the grade plan, test by test. Its body is the only part that scrolls, and it
+  ends where the bar starts, so the page scrolls under the bar's edge and a focused control is
+  never under it (WCAG 2.4.11); a body that scrolls with nothing in it the keyboard can reach is
+  a Tab stop of its own. The bar, on the panel's fill under the window's hairline, says at its
+  start what pressing the main action does and what it spends (`summary`, which describes the
+  main action), then holds at most three answers in a dialog's places, drawn by the dialog's own
+  answer row: Cancel leads, the main action trails, one other may stand between. The main action
+  may be unavailable with its reason and stays a Tab stop; Return in a field is the main action
+  unless it grants or cannot be taken back. Its words keep their room (`reserve` on the answer,
+  `summaryReserve` on the summary), so "Start grading · 12 chats" turning to "· 9 chats" moves
+  nothing. Under 30rem the summary takes its own line over the answers. In a view frame's item
+  pane it takes the room under the page header. The bar's edge is never a theme's: it is a
+  consent surface where it holds a grant.
 - **The status bar follows its contribution model** (N28, `ui/status/StatusBar.tsx`): every item,
   purlis's own and an extension's, says its `id`, `side` (left or right) and `priority` (highest
   first from the side's left), and the person may hide any item from the bar's menu (a right
@@ -725,6 +758,145 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 - **Stories hold them** (`Panel.stories.tsx`, `EmptyState.stories.tsx`, `StatusItem.stories.tsx`):
   panels flush and floating, a section with its action, each empty state, the pills and the bar
   with its menu, each walked by the keyboard and checked by axe in Chromium and WebKit.
+
+## The card, notice, badge and count, and separator families
+
+**Every card, Notice, badge, count and separator is drawn by its family** (#2912, spec #2897,
+ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
+(`purlis/card-family`, `purlis/notice-family`, `purlis/badge-family`,
+`purlis/separator-family`): a screen wears none of their old classes (`ui-inline-surface`,
+`notice-*`, `pane-notices`, `ui-setting-badge`, `count-pill`), writes none of their
+`data-scope`, and draws no `<hr>` of its own.
+
+| Family | Wrapper | Parts | Variants |
+| --- | --- | --- | --- |
+| Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`); `CardButton`, a card pressed whole (`CardButton.tsx`, #3655), its own family `card-button` (#3885) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value`; a pressed card's `root`, `mark`, `press`, `title`, `more`, `line` | `raised`, `ask`; a pressed card's `door`, `pick` |
+| Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, and `under` (what a way out opened) | `news`, `trouble`, `attention` |
+| Badge | `Badge`, `HostStatus` (`ui/badge/Badge.tsx`) | `root` | `neutral`, `accent`, `waiting`, `ok` |
+| Count | `Count`, `CountGroup` (`ui/badge/Badge.tsx`) | `root`, `group` | `neutral`, `accent`, `waiting`, `hot` |
+| Separator | `Separator` (`ui/separator/Separator.tsx`, on React Aria's) | `root` | none |
+
+- **A card is a box one step off its surface**: an ask in the Inbox, a task's question in a chat,
+  a block's report under its Notice, a code to copy. Purlis draws it the Figma way, on the window's
+  fill with corners 10 and no hairline (R25, its theme's `card.root.fill` and
+  `card.root.border-width: 0`); Classic on its raised ground with the subtle hairline. **An ask
+  keeps its waiting edge in every theme** (ADR 0097 §6): no theme can take it away, as no theme
+  can take Allow's.
+- **Facts, as label and value** (`Facts`, #3673): what a screen knows about one thing, read only,
+  a fact a line (a skill's Overview, a source's header, what a grade may spend). A `dl`, each fact
+  its label and value, so a reader hears them together; one label column in the secondary tier
+  (`card.facts-label`) and the value in the primary (`card.facts-value`), which may hold a badge,
+  a link or one button (a fix). Where its own room is under 24rem, each label stands over its
+  value. No screen writes its own `dl` grid.
+- **A row of totals tiles** (`Totals`, `Tile`, #3673): a tile's label in the label role, in
+  capitals; its value a size larger in figures of one width (`card.tile-value`); an optional
+  line under it in the quiet tier. The tiles share the row (each at least about 170px) and wrap
+  to more rows, never sideways; a tile is edged as a card is, with no ground of its own
+  (`card.tile`). A value that changes keeps its tile's size, and `live` totals say their
+  changes politely (`role="status"`), at most once a second (`ui/said.ts`). Facts and tiles stand
+  on a page as often as in a card, so a theme reaches them by their own attributes.
+- **A Notice is drawn by the notice family and is a Notice by `Notice.tsx`.** Its box is the
+  family's `root`, its tone the variant and where it stands its `data-placement`: `pane` (its
+  pane's row; in a chat's pane the band draws it as a washed card with its mark and no edge,
+  `paneFrame.css`, #3142), `inbox` (a row of the Inbox's list, no box of its
+  own, the danger ground across a trouble row) or `alone` (on a page, edged in the hairline, which takes the card's edge width: none in Purlis).
+  Each way out is a button of the button family that says which it is (`data-way`: `go`, `fix`,
+  `link`, `copy`, `dismiss`, and the row's `more`). **A Notice holds Allow, so it is a consent
+  surface**: its fill is one of the grounds an answer that grants is measured on, and its edge's
+  width is no theme's. The Inbox's list (`data-scope="notice-list"`) and a pane's row
+  (`data-scope="notice-row"`) are the family's layout.
+- **Three tones** (#3678): `news` (nothing is wrong, the person is being told), `attention`
+  (nothing is wrong, but the person must decide: a change a chat made to review, a grade plan
+  that changed under them, a draft out of date) and `trouble` (something failed, and only then).
+  Attention stands on its own ground in every theme and appearance (`attention.surface`, its words
+  and mark `attention.text`), leads with a question in a circle (a card's mark, a line's first word, the band's
+  mark in a chat's pane) and says "Needs a decision:" to a reader, so it is never told by colour
+  alone; in forced colours it keeps a dotted outline, apart from trouble's dashes. Like every
+  Notice it is a polite `status`, never an `alert`. The Inbox lists trouble, then attention, then
+  news.
+- **A badge is a word or two; a count is a number.** Both are pills in 11px words, a badge on the
+  count's ground or a wash in the colour of what it says, a count at the strong weight. Your hosts
+  say each host's status in a badge (R66): "Waiting for you" on the amber wash until it is
+  confirmed, then "Confirmed" in the ok words. A count is heard as what it counts (`said`), and a
+  tab's counts are one pill (`CountGroup`): its chats, and those that need the person in the
+  needs-you colours (`hot`). A badge with a hint is the tooltip's target and a Tab stop. A number
+  inside a sentence or a segmented option ("Chats 3") is words, not a count.
+- **A separator is its own part, never a control's border** (#2804, #2877). Its colour is
+  `separator.root.fill`; its width is the theme's `separator.width`, 0 for none. Both reach the
+  menu's rule, the dialog's footer rule, the status bar's line, the rows of the Inbox's list and
+  the hairlines between rows inside a surface (`--separator-fill`).
+  One that only parts two marks on a strip is `decorative`, hidden from a screen reader.
+- **Controls take no border in Purlis**: its theme draws the edge of the plain and the primary
+  button, the text input and the textarea in no colour, at every size; Allow and danger, the
+  consent variants, keep theirs, and a refused field keeps its danger edge, drawn as an outline over the box's own edge that no part reaches (the focus ring takes its place while the field holds the caret).
+- **Stories hold them** (`Card.stories.tsx`, `Notice.stories.tsx`, `Badge.stories.tsx`,
+  `Separator.stories.tsx`): an ask with Allow and Keep blocked, a pane's row with +N more, the
+  Inbox's list, a Notice alone, what needs a decision in all three places, every badge and count, the hosts' statuses, a badge's hint, and a
+  line across a card and down a strip, each walked by the keyboard and checked by axe.
+## The meter family
+
+**A value drawn as a bar is the meter family** (`app/src/ui/meter/`, #3674, on React Aria's
+`Meter` and `ProgressBar`, added to spec #2897's closed list by the operator on 2026-10-28). No
+screen writes a `<meter>` or a `<progress>`, or either role by hand: `purlis/meter-family` is an
+error (Get project's clone progress is still off, until it moves).
+
+| Wrapper | What it is |
+| --- | --- |
+| `Meter` (`Meter.tsx`) | **A labelled value on a known range**: a grade's score from 0 to 100. Its label at the start, its track, its value in figures of one width at the end (`valueLabel`, "86%"). Its `variant` says what it is in a comparison: `subject` (the accent), `baseline` (without it, the waiting colour) and `previous` (its previous version, the muted tier) |
+| `MeterGroup` | **Meters that compare**: one scale (0 to 100 unless said) and one label column, so their tracks are one length and a longer bar is a larger value; named for a reader ("Latest grade") |
+| `ProgressBar` | **How far something is**: done of N (`value`, `maxValue`, `valueLabel`), or going with no end known (`isIndeterminate`), its stripes moving, and standing still under reduced motion |
+
+- **A reader hears a meter by its label, with its value** (`aria-valuetext`). A progress bar's
+  value is said politely as it changes, at most once a second, in a status line beside it: its
+  own children are presentational to a reader.
+- **Told apart by more than colour** (WCAG 1.4.1): each bar's label and its value beside it.
+  Each fill is held at 3:1 on its track on every ground (`meter.fill.*.fill` on
+  `meter.track.fill`), by the theme engine: a theme that would lose a bar draws its default.
+- **Forced colours** draw the fill in the system's highlight on a track edged in the words'
+  colour and the previous version in the words' colour (`forced-colors.css`); the system's
+  palette has no pattern, so there the baseline is told by its label and its value. The value is
+  words, in the system's words' colour.
+- **Drawn by its parts** (ADR 0103): the `root` (its `data-variant`), `label`, `track`, `fill`
+  and `value`, in `meter.css`; a theme's parts reach the same attributes (`meter.*`, the next
+  release's manifest version).
+- **Stories hold it** (`Meter.stories.tsx`): the latest grade's three bars, a running grade's
+  progress that moves, and one going with no end known.
+
+## The disclosure family
+
+**A button that shows and hides the region under it is the disclosure family**
+(`app/src/ui/disclosure/`, #3675, on React Aria's `Disclosure`, `DisclosureGroup` and
+`DisclosurePanel`, added to spec #2897's closed list by the operator on 2026-10-28): Add
+source's More, a file to read under its risk mark, a deleted skill's last text.
+
+| Wrapper                         | What it is                                                                                                                                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Disclosure` (`Disclosure.tsx`) | **One fold**: its trigger (`label`, a quiet ghost of the button family, leading with the twist) and any mark after it (`trail`), then its panel. A heading of a `level` where it heads a section |
+| `DisclosureGroup`               | **Folds that open one at a time** (an accordion), or together (`allowsMultipleExpanded`); the owner may hold which are open by each fold's `id`                                                  |
+| `Twist`                         | **The chevron alone**, for a fold that is not a disclosure: a tree's group of rows, a table's row, a menu's item. `open` turns it                                                                |
+
+- **The trigger says `aria-expanded`** and controls its panel; the panel follows it in the
+  reading order, named by it (`role="group"`, or `region` for a large panel a reader jumps to).
+  Return and Space on the trigger open and fold it, and the keyboard stays there.
+- **Opening moves only what is under it**: the trigger's row keeps its size, and the twist turns,
+  which is a transform, and never swaps for another chevron. Folded, the panel takes no room.
+- **It starts folded unless told** (`defaultExpanded`), and the owner may hold its state
+  (`isExpanded`, `onExpandedChange`).
+- **A refused field inside a fold opens it** (`ui/reveal.ts`): the field family's form sends
+  `purlis:reveal` at the first field it refused before the keyboard goes there, and every fold
+  around it opens at once, in a dialog's body and on a page alike. The refusal is heard once, by
+  the field's own error line (#3291); the fold says nothing of itself.
+- **Drawn by its parts** (ADR 0103): the `root`, the `trigger` row, the `twist` and the `panel`,
+  in `disclosure.css`; a theme's parts reach the same attributes (`disclosure.*`, the next
+  release's manifest), and the trigger's look is the button family's.
+- `purlis/disclosure-family` (an error) refuses a fold's chevron swapped by hand
+  (`open ? <ChevronDown /> : <ChevronRight />`) and `data-scope="disclosure"` by hand. The folds
+  #1916 named take the twist: the finished tasks under a chat, a dispatch's brief and report,
+  and the tasks menu's Finished.
+- **Stories hold it** (`Disclosure.stories.tsx`): Add source's More in its dialog, folded and
+  open, a refused folder in it opening it, and a review's files under their risk marks, each
+  walked by the keyboard and checked by axe in Chromium and WebKit.
+
 ## The tooltip family
 
 **Every hint in the window is the shared tooltip** (`app/src/ui/tooltip/Tooltip.tsx`, #2908,
@@ -812,6 +984,7 @@ families](#the-select-and-combobox-families)).
 | `PopoverTrigger` with `PopoverDialog` | A popover that asks, opened by a press on its trigger: the keyboard in it, handed back as it closes |
 | `HeldPopover` | The same, held open by its owner beside a roving row |
 | `AnchoredPopover` | A popover that says something beside an element (a card beside a row, a refusal under a field): it takes no keyboard, and its owner says when it is up |
+| `HungPopover` | A card of notices hung from what they are about (a title-bar chip's, #3648): the `notice` surface centred under it with its `point` (a part of its own, never a held popover's `arrow`), shifted only at the window's edge, and following what it hangs from as that scrolls; it takes no keyboard as it comes (F6, a press on it or its dot reaches it), a press anywhere else hides it, and its owner's Esc dismisses what it says. No timer |
 | `PopoverFilter`, `PopoverRule`, `PopoverList`, `PopoverFooter` | A popover laid out as a list (R165, `layout="list"`): the filter row with its rule under it, the list that scrolls while they stay in view, and the footer that says its keys, "↑↓ move · ⏎ go · esc close", each key in a mono cap |
 
 - **Placed under its trigger, lined up with its start or its end** (`align`), and never nearer
@@ -851,6 +1024,8 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
 | `ListBox`, `ListOption`, `ListSection` | **A list to choose from** (the WAI-ARIA listbox): a persona to start a chat with, a theme, a search hit, a skill. A choice of one follows the arrows; `onAction` runs the one picked; `layout="grid"` lays its options out as cards the arrows walk in two directions; an option `unavailable` says so (`aria-disabled`) and keeps the keyboard, so why is read |
 | `List`, `ListRow`, `ListRowSection` | **A list of rows that act** (a grid of one column): a panel's todos, a vault's rows. A row runs something (`onAction`), may be chosen, and may hold its own buttons, which ← and → reach |
 | `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, `RowBelow` (`Row.tsx`) | A row's slots, the same in a list, a tree and a table: its marks, its words (one line, cut with an ellipsis), the one line about it in the quiet tier, its end (a count, its own actions), and a line under its words inside it (what a search matched in its body, why the core refused it). **In an option, its words are its name and its one line its description** (React Aria's `label` and `description` slots), so a reader hears the name alone and then what it is, never the row's content run together |
+| `ListCardRow`, `RowMenuButton` (`CardRow.tsx`); `RowSummary`, `RowActions` (`Row.tsx`) | **A card row** (#3669, the sidebar Skills view's variant C): a row of a `List` drawn as a small card (`variant="card"`), as tall as its lines. Its first line is its name, its tag, its own actions (Use) and its **⋯**, which opens the row's own menu (`menu`), the one a right-click and Shift+F10 open; then **two lines about it** (`RowSummary`), its description cut cleanly after the second line, or a reason in its place in the waiting colour (it needs the person) or the quiet tier (it is left out); then its **action line** (`RowActions`), its one fix. The whole of its summary is its tooltip. ← and → reach Use, the ⋯ and the fix; a press on it runs it. A state changes a fill or a ring, never its height; it fits a 260 px side view |
+| `ListFoldSection`, `ListRun` (`Fold.tsx`) | **What folds** (#3670, in a `List`): a group whose name folds its rows, and a run of rows folded to one quiet line. A group's name is a row the keyboard reaches, with the tree's twist (`TwistMark`), its count at its end and an optional `waiting` tone (Needs you); Enter, Space, → and ← fold and unfold it, `aria-expanded` on its cell says which (a grid's row takes none), and it may start folded, its owner holding what is folded (`folded`, `onFoldedChange`). A run (`ListRun`, folded by default) is one row in the quiet tier, a mark and "N …"; pressing it unfolds its rows in place, then its closing line ("They ship with purlis…", with what may be done). A row of the run that must show (`standsOut`: it needs the person, it clashes, it matches the filter) is drawn on its own, outside the fold. Folding moves only what is under it, and a fold's row runs nothing of the list's `onAction` |
 | `AimedList`, `AimedOption` (`AimedList.tsx`) | **A list a field aims at**: a combobox's list drawn in place, the palette's actions, projects and files. The field keeps the keyboard and moves the aim (`aria-activedescendant`); the aimed row wears the keyboard's ring inside it and the aim's fill (`control.aimed`); a press runs a row |
 | `ListFilter`, `useListFilter`, `noMatchSaid` (`ListFilter.tsx`) | **A list over about seven items gets a filter** (R164): from eight, a field at the large size over the list, the total in its placeholder ("Filter 28 personas"), a case-insensitive part of each name, and "No persona is called “x”." where nothing matches. What is typed is the caller's, so drawing the list again keeps the field, its focus and its caret (R168) |
 | `useRowDrag` (`drag.ts`) | What a dragged row carries, by type, to a drop target outside the window's collections (a file's reference onto a chat) |
@@ -883,9 +1058,159 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   family's root (`data-part="root"`, its `data-size`) with React Aria's state attributes, its
   slots and a group's `header` (`data-named` for a name from data: a day, a file). `ui/list/list.css`
   draws the family default; a theme's parts reach the same attributes.
-- **Stories hold it** (`List.stories.tsx`): a list to choose from under its filter, a list a field aims at, rows that act
-  with a row's own button and its menu, a grid of cards, and an empty one, in
-  Chromium and WebKit, with axe.
+- **A card row is the row's `card` variant** (#3669): on the raised ground at rest (Purlis puts it
+  on the window's, `list.root.card.fill`), the pill under the pointer, the wash ringed all round
+  when chosen, and its own room whatever the list's size. A row of one line is the `row` variant;
+  a theme's `list.root.*` without a variant reaches both. Its parts are `summary` and `actions`.
+- **A fold is a row of its own** (#3670): a group's name that folds is the `header` part, a row
+  with the pointer's pill and the keyboard's ring, its count the `count` part; a run's quiet line
+  and its closing line are the `run` part. → and ← reach them through an element around the list
+  that draws nothing (`data-part="keys"`, as a tree's), heard before React Aria's row.
+- **Stories hold it** (`List.stories.tsx`, `CardRow.stories.tsx`, `Fold.stories.tsx`): a list to choose from under its
+  filter, a list a field aims at, rows that act with a row's own button and its menu, a grid of
+  cards, the Skills view's card rows and its groups folded and unfolded, a filter finding a folded
+  built-in, and an empty one, in Chromium and WebKit, with axe.
+
+## The table family
+
+**Every table is the table family** (`app/src/ui/table/`, #2911, ADR 0104). No screen draws a
+table's element (`<table>`, `<tr>`, `<td>`, …), says a table's or a grid's role, or wears the old
+`.ui-table` classes: `eslint.config.js` refuses all three (`purlis/table-family`, an error).
+Two members, by what a cell holds:
+
+| Member                                                                                                                                                      | What it is                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Table`, `TableHeader`, `TableColumn`, `TableBody`, `TableRow`, `TableCell` (`Table.tsx`)                                                                   | **A table of data** (React Aria's `Table`, the WAI-ARIA grid): rows of words, a cell holding at most a button, a link or a switch. The Dispatches tab, a workspace's repos in Saving, a skill's runs, totals and history, the Skill studio's harness plugins and skills, a vault's secrets                                                                                                                                  |
+| `TableBar` (`TableBar.tsx`)                                                                                                                                 | **The bar over a table that chooses** (the settings prototype's hosts table, R65): its filter (`ListFilter`, from eight rows, R164) at its start, and at its end what the table offers, or how many rows are chosen and what can be done to them all. The filter never moves when a row is chosen, and the count is said to a reader as it changes                                                                          |
+| `ControlTable`, `ControlHead`, `ControlColumn`, `ControlBody`, `ControlRow`, `ControlRowHeading`, `ControlGroupHeading`, `ControlCell` (`ControlTable.tsx`) | **A table of controls**: a plain table whose cells hold fields, selects and numbers, or whose rows are dragged: the Dispatch limits, the dispatch grants, the Skill studio's skills. The grid would take ← and → from a field's caret and ↑ ↓ from a select, so each control keeps its own keys and is its own Tab stop. `stacks` makes it a form where its frame is narrow (below); `fixed` keeps the columns a view sizes |
+| `cellsOf`, `tipInTable` (`table.testkit.ts`)                                                                                                                | A test's reading of a data table: a row's cells (its `rowheader` and `gridcell`s), and a cell's tooltip read as the keyboard reaches it along its row                                                                                                                                                                                                                                                                       |
+
+- **The keyboard of a table of data is the APG grid's**: one Tab stop, the row last focused; ↑
+  and ↓ move a row and stop at the ends, ← and → a cell and into the button a cell holds, Home and
+  End to the first and last row from a row and to a row's ends from a cell, Ctrl+Home and Ctrl+End to the table's, Page Up and Page Down a page; typing
+  finds a row by its `textValue`. A table that chooses (`selectionMode="multiple"`) draws a check
+  at each row's start and one over them for every row (React Aria's `selection` slot, "Select"
+  and "Select All" to a reader); Space chooses the row the keyboard is on. A column with
+  `allowsSorting` sorts by a press on its name (`sortDescriptor`, `onSortChange`, `aria-sort`),
+  its arrow keeping its room while another column sorts, so sorting moves no name. `onRowAction`
+  (or a row's `onAction`) runs a row on Enter or a press.
+- **A view chooses for a column** (#3671, `CellWords.tsx`), on `TableColumn` and `ControlColumn`
+  alike, so a column of short facts (a date, a level, "Works on", "3 of 3") keeps one line where a
+  long column beside it takes the room, and no row grows tall word by word:
+  - `cut`: its cells keep one line, cut with an ellipsis where the column is narrower, and the
+    whole words are the cell's tooltip, only while they are cut;
+  - `clamp={2}`: its cells wrap to two lines at most and are cut after them, whole in the tooltip
+    (a description column, "What it does");
+  - `size`: `fit`, as narrow as its widest cell on one line, or `fill`, the room the others leave;
+  - `width`, `minWidth`, `maxWidth`: a length in px or CSS, the column's width and its words' least
+    and most (a `cut` column with a `maxWidth` is cut there).
+
+  A cut cell's tooltip opens under the pointer after the window's delay, and at once as the keyboard
+  reaches it: the grid's arrows on a table of data's cell, and in a table of controls the cut words
+  themselves, which are a Tab stop while they are cut, as a column's shortened name is. Esc takes it
+  down. The words stay the cell's, whole, so a screen reader hears them all. React Aria's own
+  `width` is read only by a column-resizing table, so the family's widths are its own. A column that
+  chooses nothing draws exactly as before. A table of data where its frame is narrow keeps its
+  one-line columns and scrolls sideways; it stacks only where the view asks (`stacks` on `Table`,
+  with `heading` on each `TableCell`), as a table of controls does.
+- **A row's menu** (`menu` on `TableRow`, `rowMenus` on the table): the row's actions under one ⋯
+  in a column of its own at the row's end, named "More for" the row, aligned on every row (a row
+  with none keeps its cell); a right-click on the row, Shift+F10 or the menu key open the same
+  menu, and a row with a menu and no action of its own opens it when it is run (Enter, or a
+  press), on its first row, as from the keys; Escape hands the keyboard back to the row. A row's
+  `menu` needs `rowMenus` on its table: without the column the row takes no menu, and says so in
+  a development build. In a table that chooses, a press on a row runs it while no row is chosen
+  and chooses it once one is (React Aria's toggle with an action). This is the settings rows'
+  one action column (R65 and the aligned form's ⋯ row menu, #2919).
+- **Screen-reader names and headers**: a table is named by `aria-label`; the column with
+  `isRowHeader` names each row, which a reader hears with every cell; a column of buttons is
+  named for a reader alone (`hideName`, "Actions", "Reveal"). In a table of controls the row's
+  heading is `ControlRowHeading` (`scope="row"`), a group's name `ControlGroupHeading`
+  (`scope="rowgroup"`), and each control names its column and its row in full.
+- **Empty**: `empty` on `TableBody` is what a table with no rows says, across it in the quiet
+  tier; a view that has no rows at all draws its `EmptyState` instead of the table, and a filter
+  that leaves none says so in a line (`noMatchSaid`).
+- **Nothing moves when a state changes** (#2800). Under the pointer a row that opens or is chosen
+  takes `surface.hover`; chosen, or the row the view is about (`current`, `aria-current`), the
+  wash (`list.selected`), told by its check or its place as well as its colour; the keyboard's
+  ring is drawn inside the row or the cell (`--focus-ring-inset`, [ADR 0104's
+  amendment](adr/0104/2026-10-22-a-row-draws-its-focus-ring-inset.md)), so the frame that scrolls
+  never clips it. A table's words are data, in the primary tier; a column's name is the label
+  role (11/600, capitals, the muted tier, R74); a row that cannot be used is in the faint tier.
+  The bands are square: a table's row is drawn across its cells, so its ground stays the row's
+  part (`table.root.*.fill`) for a theme to reach.
+- **Purlis draws first** (the settings prototype's hosts table): the table stands in a rounded
+  card (`frame`, `surface.base`, `radius.lg`) that scrolls it sideways, a table of data no
+  narrower than 560px; cells 8 by 12 apart (`space.4`, `space.5`); **no rule between rows**
+  (#2804): the rows' room, the pointer's ground and the chosen wash carry the bands, and the
+  head is set apart by its capitals and a little more room under it, never by a line or a zebra.
+  The rule is its own part (`table.rule`, a line at each cell's top and under each column's
+  name), which the family draws as none and Purlis Classic fills with `border.subtle`. A
+  number's column is at the end in figures of one width (`align="end"`); a column of checks or
+  of menus is as narrow as what it holds; the check's target is 24 px with its 16 px box in it.
+- **A table of controls stacks into a form where its frame is narrow** (`stacks`, #1859): under
+  32rem the columns' names are put away, each row's heading takes a line, and each cell sits under
+  its column's whole words (`heading` on `ControlCell`, drawn from `data-heading`), as many side
+  by side as fit; the row's actions and a cell across the columns (a question about the row
+  above) take a line of their own, and a cell with nothing in it is not drawn. Nothing is cut and
+  nothing scrolls sideways. 32rem sits between Settings' body at a 1280px window, where the table
+  stays a table, and at the narrowest window with both sidebars open, where it stacks; CI's runs
+  of `settings-tables.e2e.ts` and `settings-limits.e2e.ts` hold both ends in the real WebView
+  (#1865). It is the one length the stylesheet writes, because a container query's condition
+  cannot read a token.
+- **Drawn by its parts** (ADR 0103): the `frame`, the table (`body`, `data-controls` on a table of
+  controls), a column's name (`head`), a row (the family's root, with React Aria's state
+  attributes), a `cell`, the check (`select`) and the `bar`; inside a cell the list's slots
+  (`RowLabel`, `RowDescription`, …) draw in the table's scope. `ui/table/table.css` draws the
+  family default and a theme's parts reach the same attributes (`table.*`, the next release's manifest version).
+- **Stories hold it** (`Table.stories.tsx`): a table of hosts that chooses, sorts and opens a
+  row's menu under its bar; a table of data with buttons in its cells; an empty one; and a table
+  of controls, wide and stacked; in Chromium and WebKit, in Purlis and Classic, with axe.
+
+## The tree family
+
+**A tree is the tree family** (`app/src/ui/tree/Tree.tsx`, #2911, ADR 0104 and [its
+amendment](adr/0104/2026-10-25-the-tree-family.md)), on React Aria's `Tree`. No screen says a
+tree's role (`tree`, `treeitem`, `treegrid`), wears the shared tree's old classes (`.ui-tree`,
+`.ui-tree-row`, `.ui-tree-twist`) or its `data-scope`: `eslint.config.js` refuses them
+(`purlis/tree-family`, an error), off by file only for the trees still drawn by hand.
+
+| Member | What it is |
+| --- | --- |
+| `Tree` | **A tree**: rows that may hold rows under them. `expandedKeys` and `onExpandedChange` say which are open (a folder is read when it opens); `selectionMode` lets rows be chosen where a press chooses (a file tab's file, `toggle`, so the arrows never open a file); `onAction` runs one; `twist` puts the twist before a row's words (`"lead"`, the default, R129) or at its end (`"trail"`, #2799 rule 1); `fixed` is a tree that never folds (the Changes view): every row open, no twist, nothing to press; `draggable` drags a row out with what it `carries`, by the pointer and by its drag button; `choosesMany` says its owner chooses several rows at once (#1151's picks); `onRowKey` takes a key before the tree does (Shift and the arrows picking); `stopAt` is the row the tree's one Tab stop is on until the keyboard has been in (the place the next chat starts, the file a tab shows) |
+| `TreeRow` | **One row**, with the rows under it as its children: `content` is its slots (the list's `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, in the tree's scope), `textValue` what typing finds it by **and its name to a reader**, so the whole of what it says (a file's name, then its marks' words); `hasChildItems` for a folder not read yet (it holds a row that is never drawn until the owner's arrive); `menu` and `tip` as a list's row; `unavailable` for a row that keeps the keyboard to say why it cannot run (a file purlis will not open); `chosen` for a row its owner chooses while a press still runs it; `carries` what a drag of it carries; `onPressStart` to hear a press's modifier keys before its action runs; `current` for the current one of its kind (`aria-current`, drawn as chosen: where the next chat starts); `alwaysOpen` for a row whose rows never fold (a workspace's own) |
+| `TreeLine` | **A line that is not a row to act on**, in its place among the rows: "Reading…", why a folder could not be read, "12 more not shown", a path the branch names and does not read. In the quiet tier; the arrows read it, and it holds nothing to press, drag or pick |
+| `TreeSection` | A group of rows under its name (`header`) |
+
+- **The keys are the WAI-ARIA tree's**: one Tab stop, the row last focused (the tree itself until
+  a row has had the keyboard, which hands it to its first row or its chosen one); ↑ ↓, Home and
+  End; → opens a closed row and moves into an open one's first child; ← closes an open row and
+  moves from a closed one to its parent; typing finds a row; Enter runs it; Shift+F10 or the menu
+  key opens its menu. In a tree that never folds, ← on an open row moves to its parent.
+- **A row is the list's row** (`ui/list/list.css` draws its slots in every collection's scope):
+  the pill under the pointer, the wash and edge when chosen, the ring inside it, the secondary
+  tier at rest. **Each level is a step in** (R129, `space.5` + `space.1`, 14 px at the default
+  text size), drawn at most four deep; each level above draws a guide (`tree.guide`) that reaches
+  into the hairline between rows, so it is one line. Where twists lead, every row stands one step
+  further in, the step a parent's twist hangs in, so a parent and a leaf start their words at one
+  place.
+- **The twist** is a chevron in the quiet tier (R129, the Explorer's twisties, over R156's faint
+  chevrons, which are a select's and a nav's), turned down while open (R43; a transform,
+  no motion, so opening moves nothing). It is React Aria's toggle, "Expand ‹row›" or "Collapse
+  ‹row›", never a Tab stop, and the arrows never land on it.
+- **Sizes**: `sm` (24 px, a side view's), `md` (28, the default), `lg` (32). A tree takes one.
+- **Drawn by its parts** (ADR 0103, [the tree family joins the
+  manifest](adr/0103/2026-10-25-the-tree-family-joins-the-manifest.md)): the tree is
+  `data-scope="tree" data-part="body"` (its `data-twist`), a row the family's root with
+  `data-size`, React Aria's state attributes, `data-level`, `data-expanded` and its depth
+  (`--tree-depth`); its `twist`, its slots and a group's `header`. `ui/tree/tree.css` draws the
+  family default; a theme's `tree.*` parts reach the same attributes, all but a row's padding,
+  which is its indentation.
+- **No virtualizer** until a tree is measured to need one: a folder's entries are capped by the
+  core.
+- **Stories hold it** (`Tree.stories.tsx`): a branch's files with a folder being read, the Changes
+  view's tree that never folds, twists that trail, and an empty tree, in Chromium and WebKit,
+  with axe.
 
 ## The dialog family
 
@@ -901,8 +1226,8 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
 | --- | --- |
 | **Header, body, footer** | Three rows: the title and the line under it, the body, which is the only part that scrolls, and the footer with the answers, always in view. A control the keyboard is on is never under the footer (WCAG 2.4.11): the two never overlap. |
 | **Width by size, never by content** | `size="standard"`, 600 px, or `size="wide"`, 800 px, only for a list beside its details; each at most the window's width less 16 px a side. |
-| **Height** | At most the window less 48 px; `height` gives a dialog one of its own, and it takes the lesser of the two whatever it holds. |
-| **A fixed top** | 24 px under the window's top edge, so a change in its content moves only its bottom edge. |
+| **Height** | At most the window less its top less 24 px; `height` gives a dialog one of its own, and it takes the lesser of the two whatever it holds. |
+| **A fixed top** | `max(24px, 6vh)` under the window's top edge (R2, as the prototype places it), so a change in its content moves only its bottom edge. |
 | **Text that changes with a choice keeps its room** | `Reserved` (`ui/dialog/Reserved.tsx`) lays every text a place can show in one cell, and an answer's `reserve` lists every word it can say (`Create`, `Creating…`), so nothing moves or resizes when a choice or a state changes. |
 | **A list over about seven items gets a filter** | `useListFilter` and `ListFilter` (the list family's, `ui/list/ListFilter.tsx`): from eight items, a filter field at the large size over the list, its total in its placeholder ("Filter 28 personas"), a case-insensitive substring of each item's name, and "No persona is called “x”." where nothing matches. |
 | **At most three answers, each in its place** | `cancel` leads, `main` trails, and one `alternative` may stand between them. They are props, not children, so a fourth, or a main action anywhere but last, cannot be written. The main action is in the same place in every dialog. |
@@ -966,8 +1291,20 @@ WAI-ARIA "Tabs" pattern:
   tables and trees) and the collapse into show-more (`fits.ts`, which counts the theme's gap
   between tabs).
 
+**A page's tabs are `PageTabs`** (#3668, `app/src/ui/tabs/PageTabs.tsx`, the skill page
+prototype's variant A): React Aria's `Tabs`, `TabList`, `Tab` and `TabPanel`, with automatic
+activation (one Tab stop on the row, ← and → choose the tab beside, Home and End the first and
+the last), each panel named by its tab. A count after a tab's words is its description, never
+part of its name, in room kept for three figures (past 99 it says 99+), so 9 to 10 widens
+nothing. The chosen tab is told by the indicator under it as well as by its words' colour, and no
+state changes a size. Narrow, the row scrolls along and never wraps. The chosen tab is the
+owner's (`selected`, `onSelect`), so a view's history brings it back. Its parts are the
+`page-tabs` family's: `tab`, `label`, `count`, `indicator`, `list` and `panel`. The segmented
+control is a radio group, never a page's tabs.
+
 `purlis/tabs-family` (an error) refuses a `tab`, `tablist` or `tabpanel` role written by hand,
-the old hand-made tablist (`StripTablist`) and `data-scope="tabs"` outside `src/ui`. The tablists
+a page's or a strip's alike, the old hand-made tablist (`StripTablist`) and `data-scope="tabs"`
+or `"page-tabs"` outside `src/ui`. The tablists
 still drawn by hand (the workspace strip, the activity bars, the project rail's) are turned off by
 file in `eslint.config.js` until their own tickets move them.
 
@@ -1042,8 +1379,8 @@ What every control holds to:
 `controls.guard.test.ts` holds this: a native button, field, select, table or menu that is not
 its family's and does not wear its class fails, unless its line is in
 `controls.guard.allowance.ts`, the list of the controls the window had before the classes. A
-native `<button>` may wear a list's row or a tree's row and a `<table>` `ui-table`; no class makes
-a native field, select, checkbox, radio or menu right. Moving a control onto its family deletes
+native `<button>` may wear a list's row or a tree's row; no class makes a native field, select,
+checkbox, radio, table or menu right. Moving a control onto its family deletes
 its line there; nothing adds one (`docs/design-system.md`, "The guards, and the lists that only
 shrink").
 
@@ -1133,9 +1470,10 @@ their rows are tabs and sentences with no part that gives way, so `.more-menu` h
 **What the window draws over itself is one surface** (#1845). A dialog, a popover, a menu and a
 tooltip share one ground (`surface.overlay`), one border, one corner (`--radius-lg`) and one lift
 (`--elevation-overlay`), so they read as related; a dialog and a popover share one padding
-(`--space-6`). The classes are in `app/src/primitives/overlays.css`, after the control families in
-the same `components` layer, and the popover and menu families' surface is this one, a select's
-list's included.
+(`--space-6`). Each family draws it in its own sheet, in the `components` layer (`ui/dialog`,
+`ui/popover`, `ui/tooltip`), and the popover and menu families' surface is this one, a select's
+list's included. The Radix-era classes (`.ui-menu`, `.ui-menu-item`, `.ui-popover`,
+`.ui-overlay-arrow`) and `primitives/overlays.css`, which drew them, are retired (#3365).
 
 | Overlay | Class                                         | On                                                         |
 | ------- | --------------------------------------------- | ---------------------------------------------------------- |
@@ -1144,14 +1482,14 @@ list's included.
 | Popover | the popover family's surface ([above](#the-menu-and-popover-families)) | `AnchoredPopover`, `HeldPopover`, `PopoverDialog` |
 
 (`--elevation-overlay`), so they read as related. A dialog is [the dialog
-family's](#the-dialog-family), drawn on that surface by `app/src/ui/dialog/dialog.css`; the other
-classes are in `app/src/primitives/overlays.css`, after the control families in the same
-`components` layer, and the menu's surface is this one.
+family's](#the-dialog-family), drawn on that surface by `app/src/ui/dialog/dialog.css`; a popover
+and a menu are the popover family's (`app/src/ui/popover/popover.css`), and a tooltip the tooltip
+family's, each in the same `components` layer.
 
 | Overlay | Class                                         | On                                                         |
 | ------- | --------------------------------------------- | ---------------------------------------------------------- |
 | Dialog  | the dialog family's parts (`data-scope="dialog"`) | `Dialog`, `AlertDialog`, `DialogSurface`               |
-| Popover | `.ui-popover`; its arrow `.ui-overlay-arrow`  | Radix Popover's `Content` and `Arrow`                      |
+| Popover | the popover family's surface ([above](#the-menu-and-popover-families)) | `AnchoredPopover`, `HeldPopover`, `PopoverDialog` |
 | Tooltip | the tooltip family's `root` part ([the tooltip family](#the-tooltip-family)) | React Aria's `Tooltip`, wrapped in `app/src/ui/tooltip` |
 | Menu    | the popover family's surface, its `menu` variant | `Menu`, a context menu's too                      |
 
@@ -1166,13 +1504,11 @@ classes are in `app/src/primitives/overlays.css`, after the control families in 
   the field family's `Form`, so its fields are checked before it is sent and ⌘⏎ sends its main
   action.
 - **A Notice is not an overlay.** It stands in its pane's row or in the Inbox, never over
-  anything (#1647), so it has no lift and no overlay ground. It is the **inline surface** instead
-  (#1855): `.ui-inline-surface` draws the overlay's border and the control's corner on the page's
-  raised ground (`surface.raised`), with no shadow. `.ui-inline-surface-waiting` edges it in the
-  waiting colour (a Notice's box in a pane); `.ui-inline-surface-trouble` is the danger ground (a
-  Notice standing alone that reports something wrong). A Notice in the Inbox's list is the list's
-  row, not a box of its own. What a way out opened under a Notice (a block's report, a
-  dispatch's brief) is the inline surface too.
+  anything (#1647), so it has no lift and no overlay ground. It is [the notice
+  family's](#the-card-notice-badge-and-count-and-separator-families) box instead, on the page's
+  raised ground (`surface.raised`) with no shadow: a washed card with its mark in a chat pane's band (#3142), the
+  danger ground for trouble, and in the Inbox's list the list's row, not a box of its own. What a
+  way out opened under a Notice (a block's report, a dispatch's brief) is a card.
 
 `app/src/primitives/overlays.test.tsx` holds the surface through the window's cascade (the same
 ground, border, corner and lift on each kind, the same padding on a dialog and a popover), that a
@@ -1205,7 +1541,9 @@ line is `ui-text-body ui-text-strong`**, not a second body class. `ui-text-code`
 monospace family alone, so a path under a name is `ui-text-secondary ui-text-code`.
 
 - **Colour follows the role.** Do not pick a colour to make a word quieter; give it the role it
-  has. **Muted is the meta's only**: a help line or a where line is secondary.
+  has. **Muted is the meta's only**: a help line or a where line is secondary. The one exception,
+  until the view tabs wear the roles, is a view's sentence with no role (`.view-body .none`,
+  `.pending`; `design-system.md`, #3938).
 - **Nothing is under 11px.**
 - **A word that says something is wrong is `danger.text`**, and that is the one colour a view
   still writes for words; `state.failed` is for a state's mark.
@@ -1284,7 +1622,14 @@ are no longer in the window (#2906). What follows records why each was drawn as 
 rules it states hold, kept by the families._
 
 `StartChat`, `QuitWarning`, `ApprovePlane` and `Palette` — every modal surface the window has.
-The terminal panes are xterm.js and are not a candidate.
+The terminal panes are xterm.js and are not a candidate. **A screen that is over is the terminal's read-only mode**
+(`ReadOnlyTerminal.tsx`, #3676): xterm drawn from the theme's terminal tokens and font with no
+cursor and no input, its grid hidden from a screen reader and its text beside it as a list of
+its lines (a wrapped row joined to the row it continues), so a reader walks it line by line. It
+is one Tab stop, a region named for what it is and described by the words that say it is
+read-only, drawn outside the grid; ⌘F (Ctrl+F elsewhere) opens the find bar on it, ⌘A selects
+the whole screen and ⌘C copies the selection. A saved grade chat and the theme specimen's
+terminals are drawn by it, and no `role="img"` stands for a terminal's text.
 
 And the chat strip's **show-more menu** (`@radix-ui/react-dropdown-menu`, ADR 0039),
 which is the first surface built under this rule rather than converted to it. Two decisions it
@@ -1446,9 +1791,10 @@ role exists for. Two consequences worth knowing before the next one:
   sentence beside it (`aria-describedby`); Radix's focus scope skips a disabled button, so
   Shift+Tab from Cancel reaches Close. Escape still answers Cancel.
 
-And the **persona card** (`@radix-ui/react-popover`, `app/src/Panels.tsx`): what a row in the
-right-hand region's persona list opens. It is the first popover in the window, and it was picked
-over the other two surfaces Radix has for the same content:
+And the **persona card** (first drawn on Radix's popover, now the popover family's, `ui/popover`;
+`app/src/Panels.tsx`): what a row in the right-hand region's persona list opens. It is the first
+popover in the window, and it was picked over the other two surfaces Radix has for the same
+content:
 
 - **Not a dialog**, because a dialog is modal and modal is wrong here twice. Radix marks
   everything outside an open dialog `aria-hidden`, which then
@@ -1489,7 +1835,8 @@ opens nothing else, such as an extension's declared row.
 An extension's view — persona statistics — opens in a tab of its own the same way, from a button
 on the personas panel's heading, a button on a persona's tab, or its palette row.
 
-And a **Chats row's card** (`@radix-ui/react-popover`, `app/src/ChatsSection.tsx`, #1675):
+And a **Chats row's card** (the popover family's `AnchoredPopover`, `app/src/ChatsSection.tsx`,
+#1675):
 what a chat's one-line row says when it is rested on, its state in words, what it is doing, its
 persona, harness, workspace, time in its state, tasks, own branch, handoffs and a task's tokens.
 It is the popover the window already has, used as a tooltip, and not a package of its own:
@@ -1873,6 +2220,12 @@ from the chat: xterm.js 6.0.0 ignores Ctrl on key code 9, so it would have sent 
 Ctrl+Tab, so the window walks the engine's sequence itself (`app/src/tabSequence.ts`, the rule
 above written down once and shared with the tests). The palette (`F2`, `⌘K`) remains the other
 way to act from inside a chat without leaving it.
+
+**A browser the person drives, and a browser's DevTools, keep every key too** (#2014, #2028):
+each key goes to the page or to DevTools. The same chord leaves them
+(`leaveKeys.leavesTheSurface`), on the capture phase of the surface, so Ctrl+Tab and
+Ctrl+Shift+Tab never reach the page or DevTools; neither has a use for it that the window
+needs to pass on.
 
 **What only a person can confirm**, because a scenario cannot press Tab (above): that WebKit
 walks this sequence in the real window with full keyboard access off; that `Ctrl+Tab` reaches
@@ -2375,6 +2728,15 @@ that is not contributed now). Its list is the list family's: one Tab stop, ↑ a
 groups' names, typing finds a skill, Enter opens its tab, and Shift+F10 or the menu key opens a
 row's menu.
 
+**Use skill…'s key is `⌘⇧S`** (#3954), and `Ctrl+Shift+S` off a Mac, `S` for skill: it opens Use
+skill… on the chat in front (in a split tab, the pane with the keyboard), as its palette row does,
+and is said on that row and on each chat
+tab's menu row (`chat.useSkill`, `tab.useskill:<tab>`). `Ctrl` with `Shift` and a letter is no
+byte, so it is the window's while a chat has the keyboard, as `Ctrl+Shift+T` is; an editor keeps
+it, and it is never taken under a modal dialog. With no chat in front, a shell in front or the
+Skill studio off there is no Use skill… to open, and the key goes on to whatever has the keyboard. The row says no budget: a chat's budget is the
+Skills view's to say (S8).
+
 **The Panel's key is `⌘J`** (#1737, P-6), VS Code's, and `Ctrl+J` off a Mac: it hides the whole
 Panel, every half of it, and shows it again on the views its halves had. It hides only a Panel
 that is drawn: a half holding only extensions' panels that no extension contributes now is not
@@ -2436,6 +2798,18 @@ file (`inboxScope.ts`, `projects[path].inbox.scope`). A scope with nothing in it
 wait in the nearest wider scope and widens in one press, and a notification about a chat the
 scope leaves out widens it to the project's before it lands. Notices and updates are the
 project's and are listed whatever the scope.
+
+**The Browsers grid** (#2027, `BrowsersGridTab.tsx`, `browsersGrid.ts`) is a view tab, one per
+project, opened by *Open browsers* in the palette and on the Chats view's heading while the
+project has a browser. It wears the Inbox's switch over the same three scopes, kept as
+`projects[path].browsers.scope`; This workspace is the strip the tab is on, and All projects is
+every project this window holds. Its tiles are one `ListBox` with `layout="grid"`: one Tab stop,
+the arrows walk the grid, and a press or Enter opens the browser's view in its own project,
+which comes to the front. A tile is the browser's thumbnail view (about a frame a second, drawn
+only while the tab can be seen) over its name and, in the quiet tier, where it is: its project
+among every project's, its workspace, its page and device as the chip says them, and who drives
+it. An empty scope is the empty state family, saying how many run in the nearest wider scope and
+widening in one press.
 
 **An Inbox row reads in three ranks** (`InboxRow.tsx`), from the existing tokens only:
 

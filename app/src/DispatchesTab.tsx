@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Fragment, useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, LoaderCircle, Send } from "lucide-react";
+import { LoaderCircle, Send } from "lucide-react";
 import { ChatAsk } from "./ChatAsk";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Notice } from "./Notice";
@@ -44,7 +44,9 @@ import {
 } from "./dispatches";
 import { useWhileShown } from "./whileShown";
 import { Button } from "./ui/button/Button";
+import { Twist } from "./ui/disclosure/Disclosure";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 
 /** How often the list is read again while a dispatch in it is still running, and the window is
  *  shown. */
@@ -294,25 +296,28 @@ export function DispatchesTab({
         // Not the empty state: the project has dispatches, and the filters keep none of them.
         <p className="none">No dispatch matches these filters.</p>
       ) : (
-        <table className="ui-table vault-secrets dispatches" aria-label="Dispatches">
-          <thead>
-            <tr>
-              <th scope="col">Task</th>
-              <th scope="col">Persona</th>
-              <th scope="col">Asked by</th>
-              <th scope="col">Where</th>
-              <th scope="col">Outcome</th>
-              <th scope="col">Duration</th>
-              <th scope="col">Needed you</th>
-              {/* What the chat's harness reported, not a figure purlis measured. */}
-              <th scope="col">Cost (reported)</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table aria-label="Dispatches" className="dispatches">
+          <TableHeader>
+            <TableColumn isRowHeader>Task</TableColumn>
+            <TableColumn>Persona</TableColumn>
+            <TableColumn>Asked by</TableColumn>
+            <TableColumn>Where</TableColumn>
+            <TableColumn>Outcome</TableColumn>
+            <TableColumn>Duration</TableColumn>
+            <TableColumn>Needed you</TableColumn>
+            {/* What the chat's harness reported, not a figure purlis measured. */}
+            <TableColumn>Cost (reported)</TableColumn>
+          </TableHeader>
+          <TableBody>
             {shown.map((row) => (
               <Fragment key={row.id}>
-                <tr data-testid={`dispatch-${row.id}`} data-outcome={row.outcome}>
-                  <td>
+                <TableRow
+                  id={row.id}
+                  textValue={row.task}
+                  data-testid={`dispatch-${row.id}`}
+                  data-outcome={row.outcome}
+                >
+                  <TableCell>
                     <span className="dispatch-task">
                       <Button
                         size="sm"
@@ -326,16 +331,12 @@ export function DispatchesTab({
                         onPress={() => setRead(read === row.id ? undefined : row.id)}
                         className="dispatch-more"
                       >
-                        {read === row.id ? (
-                          <ChevronDown className="node-icon" aria-hidden="true" />
-                        ) : (
-                          <ChevronRight className="node-icon" aria-hidden="true" />
-                        )}
+                        <Twist open={read === row.id} />
                       </Button>
                       <Task row={row} onShowChat={onShowChat} onOpenRecord={onOpenRecord} />
                     </span>
-                  </td>
-                  <td>
+                  </TableCell>
+                  <TableCell>
                     {row.persona === null ? (
                       NO_PERSONA_SAID
                     ) : (
@@ -344,9 +345,9 @@ export function DispatchesTab({
                         {row.persona}
                       </span>
                     )}
-                  </td>
-                  <td>{row.by_person ? `you, from ${row.asker}` : row.asker}</td>
-                  <td>
+                  </TableCell>
+                  <TableCell>{row.by_person ? `you, from ${row.asker}` : row.asker}</TableCell>
+                  <TableCell>
                     {/* The place's words carry its whole folder; the cell's controls are their
                         own Tab stops. */}
                     <Tooltip tip={row.folder ?? undefined}>
@@ -394,19 +395,23 @@ export function DispatchesTab({
                         )}
                       </span>
                     )}
-                  </td>
-                  <td>{row.outcome}</td>
-                  <td>{row.duration}</td>
-                  <td>{row.needed_you}</td>
-                  <td>
+                  </TableCell>
+                  <TableCell>{row.outcome}</TableCell>
+                  <TableCell>{row.duration}</TableCell>
+                  <TableCell>{row.needed_you}</TableCell>
+                  <TableCell>
                     <Tooltip tip={row.tokens ?? undefined}>
                       <span>{row.cost ?? "not reported"}</span>
                     </Tooltip>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
                 {read === row.id && (
-                  <tr className="dispatch-read">
-                    <td colSpan={8}>
+                  <TableRow
+                    id={`${row.id}:read`}
+                    textValue={`The brief and report of ${row.task}`}
+                    className="dispatch-read"
+                  >
+                    <TableCell colSpan={8}>
                       <p className="dispatch-facts">
                         {[
                           row.mode === "task" ? "Task" : "Handoff",
@@ -442,13 +447,13 @@ export function DispatchesTab({
                           <pre>{row.changed}</pre>
                         </>
                       )}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
               </Fragment>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
       {refused}
       {kept !== undefined && (
@@ -590,30 +595,21 @@ function Task({
   const { open_session: session, session_record: record } = row;
   if (session !== null) {
     return (
-      <Tooltip tip="Show its chat">
-        <button
-          type="button"
-          className="ui-row vault-secret"
-          tabIndex={0}
-          onClick={() => onShowChat(session)}
-        >
-          {row.task}
-        </button>
-      </Tooltip>
+      <Button size="sm" variant="link" tooltip="Show its chat" onPress={() => onShowChat(session)}>
+        {row.task}
+      </Button>
     );
   }
   if (record !== null) {
     return (
-      <Tooltip tip="Open its session record">
-        <button
-          type="button"
-          className="ui-row vault-secret"
-          tabIndex={0}
-          onClick={() => onOpenRecord(record, row.task)}
-        >
-          {row.task}
-        </button>
-      </Tooltip>
+      <Button
+        size="sm"
+        variant="link"
+        tooltip="Open its session record"
+        onPress={() => onOpenRecord(record, row.task)}
+      >
+        {row.task}
+      </Button>
     );
   }
   return (

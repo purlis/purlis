@@ -28,7 +28,7 @@ use purlis_skills::{Finding, Lint, Severity, SkillFiles, SkillLint};
 use crate::executor::Executor;
 use crate::extension::capability::Capability;
 use crate::extension::project::Choices;
-use crate::extension::studio::{self as wire, Ask, HandedFile, SkillFile};
+use crate::extension::studio::{self as wire, Ask, HandedFile, LintedSkill, SkillFile};
 use crate::panel::{Block, Empty, Table, TableRow, Tone};
 
 /// What the studio asks extensions with: the app's executor, this machine's record of
@@ -54,6 +54,9 @@ pub struct Asked {
     pub id: String,
     pub name: String,
     pub declared: wire::Declared,
+    /// The fingerprint this machine approved it by, or `None` for one of the app's own: what
+    /// tells one version of it from the next (#3940).
+    pub approved: Option<String>,
 }
 
 /// **What the studio asks extensions with in the project at `root`, handed to `with`**: the
@@ -96,6 +99,7 @@ impl<'a> Studio<'a> {
                     id: id.clone(),
                     name: manifest.name.clone(),
                     declared,
+                    approved: entry.approved.clone(),
                 })
             })
             .collect()
@@ -118,13 +122,23 @@ impl<'a> Studio<'a> {
             .map(|asked| ExtensionLint {
                 studio: *self,
                 by: asked.declared.lint.clone().unwrap_or(asked.name),
+                many_at_once: asked.declared.lint_many_at_once,
                 id: asked.id,
+                approved: asked.approved,
             })
             .collect()
     }
 
-    /// **The panels on `skill`'s tab**, in the project at `plane`: purlis's Grades and Runs panels
-    /// first, then each extension's, each answered or refused with a sentence.
+    /// **The lints of each extension that declares `skill-lint`, as a studio list asks them**
+    /// (#3940): answered from what each said of the same files before, and asked only within
+    /// the list's time ([`ListLints`]).
+    pub fn list_lints(&self) -> ListLints<ExtensionLint<'a>> {
+        ListLints::new(self.lints(), &KEPT, ListTime::default())
+    }
+
+    /// **The panels on `skill`'s tab**, in the project at `plane`: purlis's Runs panel first,
+    /// then each extension's, each answered or refused with a sentence. A skill's grades are not
+    /// a panel: its Grades tab reads them whole (`skill_grades`, S6).
     pub fn panels(&self, plane: &Path, skill: &str) -> Vec<Answered> {
         let mut out = own_panels(plane, skill);
         let asked = self.declaring(Capability::StudioPanel);
@@ -150,13 +164,10 @@ impl<'a> Studio<'a> {
     }
 }
 
-/// **purlis's own panels on `skill`'s tab**, in the project at `plane`: its Grades panel, then
-/// its Runs panel. What every skill's tab draws first, with a studio or without one.
+/// **purlis's own panels on `skill`'s tab**, in the project at `plane`: its Runs panel. What
+/// every skill's tab draws first, with a studio or without one.
 pub fn own_panels(plane: &Path, skill: &str) -> Vec<Answered> {
-    vec![
-        Answered::of(&GradesPanel { plane }, skill),
-        Answered::of(&RunsPanel { plane }, skill),
-    ]
+    vec![Answered::of(&RunsPanel { plane }, skill)]
 }
 
 // ---------------------------------------------------------------------------------------
@@ -227,48 +238,484 @@ pub struct ExtensionLint<'a> {
     id: String,
     /// What a finding is said under: its declared title, or the extension's name.
     by: String,
+    /// The fingerprint this machine approved it by ([`Asked::approved`]).
+    approved: Option<String>,
+    /// Whether it answers many skills in one question ([`wire::Declared::lint_many_at_once`]).
+    many_at_once: bool,
 }
 
 impl SkillLint for ExtensionLint<'_> {
     fn findings(&self, skill: &SkillFiles<'_>) -> Vec<Finding> {
-        let mut files = vec![HandedFile {
-            path: purlis_skills::FILE.to_owned(),
-            text: skill.text.to_owned(),
-            executable: false,
-        }];
-        let others: Vec<SkillFile> = skill
-            .others
-            .iter()
-            .map(|(path, text)| SkillFile {
-                path: path.clone(),
-                bytes: text.clone().into_bytes(),
-                executable: false,
-            })
-            .collect();
-        files.extend(wire::handed(&others));
-        let said = self
-            .studio
-            .ask(
-                &self.id,
-                &Ask::Findings {
-                    skill: skill.name,
-                    files: &files,
-                },
-            )
-            .and_then(|doc| wire::findings_of(&self.id, &doc));
-        let says = match said {
+        let says = match self.asked(skill, None) {
             Ok(says) => says,
             Err(why) => vec![format!("could not lint this skill: {why}")],
         };
-        says.into_iter()
-            .map(|says| Finding {
-                severity: Severity::Warns,
-                lint: Lint::Said {
-                    by: self.by.clone(),
-                    says,
-                },
+        said_by(&self.by, says)
+    }
+}
+
+/// Each of `says` as a finding of the lint said under `by`: a warning.
+fn said_by(by: &str, says: Vec<String>) -> Vec<Finding> {
+    says.into_iter()
+        .map(|says| Finding {
+            severity: Severity::Warns,
+            lint: Lint::Said {
+                by: by.to_owned(),
+                says,
+            },
+        })
+        .collect()
+}
+
+impl ExtensionLint<'_> {
+    /// What it answers of `skill`, by `until` where given, or why it did not.
+    fn asked(
+        &self,
+        skill: &SkillFiles<'_>,
+        until: Option<std::time::Instant>,
+    ) -> Result<Vec<String>, String> {
+        let files = handed_of(skill);
+        let ask = Ask::Findings {
+            skill: skill.name,
+            files: &files,
+        };
+        let studio = &self.studio;
+        match until {
+            None => studio.ask(&self.id, &ask),
+            Some(until) => studio.executor.studio_until(
+                studio.config_root,
+                studio.project,
+                &self.id,
+                &ask,
+                until,
+            ),
+        }
+        .and_then(|doc| wire::findings_of(&self.id, &doc))
+    }
+}
+
+/// **`skill`'s files as a lint question hands them**: its `SKILL.md`, then its other text files
+/// within one question's bounds ([`wire::handed`]).
+fn handed_of(skill: &SkillFiles<'_>) -> Vec<HandedFile> {
+    let mut files = vec![HandedFile {
+        path: purlis_skills::FILE.to_owned(),
+        text: skill.text.to_owned(),
+        executable: false,
+    }];
+    let others: Vec<SkillFile> = skill
+        .others
+        .iter()
+        .map(|(path, text)| SkillFile {
+            path: path.clone(),
+            bytes: text.clone().into_bytes(),
+            executable: false,
+        })
+        .collect();
+    files.extend(wire::handed(&others));
+    files
+}
+
+impl InTheList for ExtensionLint<'_> {
+    fn by(&self) -> &str {
+        &self.by
+    }
+
+    fn version(&self) -> [u8; 32] {
+        use sha2::Digest as _;
+        let mut hash = sha2::Sha256::new();
+        for part in [
+            self.id.as_bytes(),
+            self.approved.as_deref().unwrap_or_default().as_bytes(),
+            // The project's choices, its settings for the extension among them, and its plane.
+            format!("{:?}", self.studio.project).as_bytes(),
+        ] {
+            hash.update((part.len() as u64).to_le_bytes());
+            hash.update(part);
+        }
+        hash.finalize().into()
+    }
+
+    fn ask(
+        &self,
+        skill: &SkillFiles<'_>,
+        until: std::time::Instant,
+    ) -> Result<Vec<String>, String> {
+        self.asked(skill, Some(until))
+    }
+
+    fn many_at_once(&self) -> bool {
+        self.many_at_once
+    }
+
+    fn ask_each(
+        &self,
+        skills: &[&SkillFiles<'_>],
+        until: std::time::Instant,
+    ) -> Vec<Result<Vec<String>, String>> {
+        let linted: Vec<LintedSkill> = skills
+            .iter()
+            .map(|skill| LintedSkill {
+                skill: skill.name.to_owned(),
+                files: handed_of(skill),
             })
-            .collect()
+            .collect();
+        // Each skill counted as its request line carries it: paths, escapes and all.
+        let sizes: Vec<usize> = linted
+            .iter()
+            .map(|one| serde_json::to_vec(one).map_or(usize::MAX, |line| line.len()))
+            .collect();
+        let studio = &self.studio;
+        let mut out = Vec::with_capacity(skills.len());
+        for question in in_questions(&sizes) {
+            if std::time::Instant::now() >= until {
+                let why = format!("{} was not asked within the list's time", self.by);
+                out.extend(question.map(|_| Err(why.clone())));
+                continue;
+            }
+            let these = &linted[question.clone()];
+            let names: Vec<&str> = these.iter().map(|one| one.skill.as_str()).collect();
+            match studio
+                .executor
+                .studio_until(
+                    studio.config_root,
+                    studio.project,
+                    &self.id,
+                    &Ask::FindingsOfEach { skills: these },
+                    until,
+                )
+                .and_then(|doc| wire::findings_of_each(&self.id, &names, &doc))
+            {
+                Ok(each) => out.extend(each),
+                Err(why) => out.extend(question.map(|_| Err(why.clone()))),
+            }
+        }
+        out
+    }
+}
+
+/// **Skills of `sizes` bytes each, in questions of many at once**, in order: each question at
+/// most [`wire::MOST_AT_ONCE`] skills and [`wire::MOST_AT_ONCE_BYTES`], and a skill larger than
+/// that alone in a question of its own (its files are held to one question's bounds anyway).
+fn in_questions(sizes: &[usize]) -> Vec<std::ops::Range<usize>> {
+    let mut out: Vec<std::ops::Range<usize>> = Vec::new();
+    let mut bytes = 0usize;
+    for (at, size) in sizes.iter().enumerate() {
+        match out.last_mut() {
+            Some(last)
+                if last.len() < wire::MOST_AT_ONCE
+                    && bytes.saturating_add(*size) <= wire::MOST_AT_ONCE_BYTES =>
+            {
+                last.end = at + 1;
+                bytes += size;
+            }
+            _ => {
+                out.push(at..at + 1);
+                bytes = *size;
+            }
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------------------
+// Lints in a list (#3940)
+// ---------------------------------------------------------------------------------------
+
+/// **How long one studio list asks the extensions' lints for**, from its first question: past
+/// it, a list asks no more, and shows what each said of the same files before.
+pub const LIST_LINT_TIME: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// **How long one lint asked in a list has to answer**, its confined program's start inside it,
+/// as a router has (ADR 0102 §6). A list that started its last question just before
+/// [`LIST_LINT_TIME`] ran out spends both, at most.
+///
+/// **A lint that answers many skills at once** (#4195) is asked one question for the list's
+/// skills, by the most a list ever spends: [`LIST_LINT_TIME`] and this, from the list's first
+/// question. So its program starts once for the list, and one that takes longer than this to
+/// start still answers in it, while the list spends no more time than one asking each skill.
+pub const LIST_LINT_DEADLINE: std::time::Duration = wire::ROUTER_DEADLINE;
+
+/// **How long a lint that did not answer in a list waits before a list asks it again** about the
+/// same files: a slow or failing extension costs a list one question at most this often, and the
+/// editor's live lint, which waits for it, says why. Short, as a question also goes unanswered
+/// while the extension's one slot is busy with another (the editor's live lint).
+pub const ASK_AGAIN_AFTER: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// The most answers kept: past it, one is dropped for each one kept.
+const MOST_KEPT: usize = 4096;
+
+/// **What tells one skill's files from another's**: its name, its `SKILL.md` and every other
+/// file handed a lint, each part with its length so no two lists of parts hash alike. Hashed once
+/// per skill a list lints, however many lints ask about it.
+fn files_digest(skill: &SkillFiles<'_>) -> [u8; 32] {
+    use sha2::Digest as _;
+    let mut hash = sha2::Sha256::new();
+    let mut part = |bytes: &[u8]| {
+        hash.update((bytes.len() as u64).to_le_bytes());
+        hash.update(bytes);
+    };
+    part(skill.name.as_bytes());
+    part(skill.text.as_bytes());
+    for (path, text) in skill.others {
+        part(path.as_bytes());
+        part(text.as_bytes());
+    }
+    hash.finalize().into()
+}
+
+/// What `lint`'s answer about the files `files` hashed to is kept by.
+fn key_of(version: [u8; 32], files: [u8; 32]) -> [u8; 32] {
+    use sha2::Digest as _;
+    let mut hash = sha2::Sha256::new();
+    hash.update(version);
+    hash.update(files);
+    hash.finalize().into()
+}
+
+/// What each extension's lint said of a skill's files, in this process, by [`InTheList::key`].
+static KEPT: std::sync::Mutex<Kept> = std::sync::Mutex::new(Kept::new());
+
+/// **What lints asked in a list said, by the files they were asked about**: kept while the app
+/// runs, never written, so nothing to remove ([`ListLints`]).
+#[derive(Debug, Default)]
+pub struct Kept(std::collections::BTreeMap<[u8; 32], Was>);
+
+#[derive(Debug, Clone)]
+enum Was {
+    Said(Vec<String>),
+    /// It did not answer, at this time.
+    Unanswered(std::time::Instant),
+}
+
+impl Kept {
+    pub const fn new() -> Self {
+        Self(std::collections::BTreeMap::new())
+    }
+}
+
+/// **A lint a studio list asks**, and what tells one question of it from another.
+pub trait InTheList {
+    /// What its findings are said under.
+    fn by(&self) -> &str;
+    /// What tells it from every other lint, and this version of it and the project's choices
+    /// from another: with the skill's files ([`files_digest`]), what its answer is kept by.
+    fn version(&self) -> [u8; 32];
+    /// Its answer about `skill`, by `until`, or why there is none.
+    fn ask(&self, skill: &SkillFiles<'_>, until: std::time::Instant)
+    -> Result<Vec<String>, String>;
+    /// Whether it answers many skills in one question ([`Self::ask_each`], #4195).
+    fn many_at_once(&self) -> bool {
+        false
+    }
+    /// Its answer about each of `skills`, in their order, or why there is none: in as few
+    /// questions as their bounds allow, all by `until`. Asked only where [`Self::many_at_once`].
+    fn ask_each(
+        &self,
+        skills: &[&SkillFiles<'_>],
+        until: std::time::Instant,
+    ) -> Vec<Result<Vec<String>, String>> {
+        let _ = until;
+        let why = format!("{} answers one skill at a time", self.by());
+        skills.iter().map(|_| Err(why.clone())).collect()
+    }
+}
+
+/// The time a list gives its lints, and the clock it reads.
+#[derive(Clone, Copy)]
+pub struct ListTime {
+    pub time: std::time::Duration,
+    pub deadline: std::time::Duration,
+    pub now: fn() -> std::time::Instant,
+}
+
+impl Default for ListTime {
+    fn default() -> Self {
+        Self {
+            time: LIST_LINT_TIME,
+            deadline: LIST_LINT_DEADLINE,
+            now: std::time::Instant::now,
+        }
+    }
+}
+
+/// **The extensions' lints, as one studio list asks them** (#3940): one [`SkillLint`] for them
+/// all. Each answers a skill's files from what it said of the same files before, kept while
+/// the app runs. Only a question with no such answer is asked, and only within the list's time
+/// ([`LIST_LINT_TIME`]), each by its deadline ([`LIST_LINT_DEADLINE`]): past it, the list shows
+/// what it has, and the next list asks on. A lint that did not answer shows nothing in the list,
+/// and is asked again after [`ASK_AGAIN_AFTER`]. So a list whose skills were all asked about
+/// costs no question at all, and the window and Needs you's count read the same answers.
+pub struct ListLints<L> {
+    lints: Vec<L>,
+    kept: &'static std::sync::Mutex<Kept>,
+    time: ListTime,
+    /// When the list asked its first question.
+    began: std::cell::Cell<Option<std::time::Instant>>,
+}
+
+impl<L: InTheList> ListLints<L> {
+    pub fn new(lints: Vec<L>, kept: &'static std::sync::Mutex<Kept>, time: ListTime) -> Self {
+        Self {
+            lints,
+            kept,
+            time,
+            began: std::cell::Cell::new(None),
+        }
+    }
+
+    /// Whether it has any lint to ask.
+    pub fn is_empty(&self) -> bool {
+        self.lints.is_empty()
+    }
+
+    /// What `lint` says of `skill`: what it said of the same files, or its answer now, within
+    /// the list's time.
+    fn said(&self, lint: &L, skill: &SkillFiles<'_>, files: [u8; 32]) -> Vec<String> {
+        let key = key_of(lint.version(), files);
+        let now = (self.time.now)();
+        if let Some(said) = self.before(&key, now) {
+            return said;
+        }
+        if self.began_within(now).is_none() {
+            return Vec::new();
+        }
+        let answer = lint.ask(skill, now + self.time.deadline);
+        self.keep(key, answer)
+    }
+
+    /// **What `lint`, which answers many skills at once, says of each of `skills`** (#4195): what
+    /// it said of the same files, and the rest asked at once, by the most the list spends
+    /// ([`LIST_LINT_DEADLINE`]), counted from its first question. One skill's answer that purlis
+    /// could not read leaves only that skill unanswered.
+    fn said_at_once(
+        &self,
+        lint: &L,
+        skills: &[SkillFiles<'_>],
+        files: &[[u8; 32]],
+    ) -> Vec<Vec<String>> {
+        let version = lint.version();
+        let keys: Vec<[u8; 32]> = files.iter().map(|files| key_of(version, *files)).collect();
+        let now = (self.time.now)();
+        let mut out: Vec<Vec<String>> = vec![Vec::new(); skills.len()];
+        let mut asking: Vec<usize> = Vec::new();
+        for (at, key) in keys.iter().enumerate() {
+            match self.before(key, now) {
+                Some(said) => out[at] = said,
+                None => asking.push(at),
+            }
+        }
+        if asking.is_empty() {
+            return out;
+        }
+        let Some(began) = self.began_within(now) else {
+            return out;
+        };
+        let these: Vec<&SkillFiles<'_>> = asking.iter().map(|at| &skills[*at]).collect();
+        let mut answers = lint
+            .ask_each(&these, began + self.time.time + self.time.deadline)
+            .into_iter();
+        for at in asking {
+            let answer = answers
+                .next()
+                .unwrap_or_else(|| Err("it answered fewer skills than it was asked".to_owned()));
+            out[at] = self.keep(keys[at], answer);
+        }
+        out
+    }
+
+    /// What was kept by `key` at `now`: its answer, or nothing for one that did not answer
+    /// [`ASK_AGAIN_AFTER`] ago; `None` where it is to be asked.
+    fn before(&self, key: &[u8; 32], now: std::time::Instant) -> Option<Vec<String>> {
+        let before = self
+            .kept
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .0
+            .get(key)
+            .cloned();
+        match before {
+            Some(Was::Said(says)) => Some(says),
+            Some(Was::Unanswered(at)) if now.saturating_duration_since(at) < ASK_AGAIN_AFTER => {
+                Some(Vec::new())
+            }
+            _ => None,
+        }
+    }
+
+    /// When the list asked its first question, where `now` is within its time to ask another:
+    /// the first question is asked now.
+    fn began_within(&self, now: std::time::Instant) -> Option<std::time::Instant> {
+        let began = self.began.get().unwrap_or(now);
+        self.began.set(Some(began));
+        (now.saturating_duration_since(began) < self.time.time).then_some(began)
+    }
+
+    /// Keep `answer` by `key`, and say what the list shows of it.
+    fn keep(&self, key: [u8; 32], answer: Result<Vec<String>, String>) -> Vec<String> {
+        let was = match &answer {
+            Ok(says) => Was::Said(says.clone()),
+            Err(_) => Was::Unanswered((self.time.now)()),
+        };
+        let mut kept = self
+            .kept
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // An answer another list kept meanwhile stands over a question this one could not ask:
+        // the extension's one slot may have been that list's.
+        if matches!(was, Was::Unanswered(_)) && matches!(kept.0.get(&key), Some(Was::Said(_))) {
+            return answer.unwrap_or_default();
+        }
+        if kept.0.len() >= MOST_KEPT
+            && let Some(any) = kept.0.keys().next().copied()
+        {
+            // The keys are hashes, so the first is any one: no list's answers are all dropped.
+            kept.0.remove(&any);
+        }
+        kept.0.insert(key, was);
+        answer.unwrap_or_default()
+    }
+}
+
+impl<L: InTheList> SkillLint for ListLints<L> {
+    fn findings(&self, skill: &SkillFiles<'_>) -> Vec<Finding> {
+        self.findings_of_each(std::slice::from_ref(skill))
+            .pop()
+            .unwrap_or_default()
+    }
+
+    /// Each lint asked about every skill of the list: one that answers many at once in one
+    /// question ([`InTheList::many_at_once`], #4195), any other one skill at a time. Those that
+    /// answer many at once are asked first, so a slow one to start has the list's whole time;
+    /// each lint's findings still follow the lints' order.
+    fn findings_of_each(&self, skills: &[SkillFiles<'_>]) -> Vec<Vec<Finding>> {
+        let mut out: Vec<Vec<Finding>> = vec![Vec::new(); skills.len()];
+        if self.lints.is_empty() || skills.is_empty() {
+            return out;
+        }
+        let files: Vec<[u8; 32]> = skills.iter().map(files_digest).collect();
+        let mut said: Vec<Option<Vec<Vec<String>>>> = vec![None; self.lints.len()];
+        let at_once = |lint: &&L| lint.many_at_once();
+        for (at, lint) in self
+            .lints
+            .iter()
+            .enumerate()
+            .filter(|(_, lint)| at_once(lint))
+        {
+            said[at] = Some(self.said_at_once(lint, skills, &files));
+        }
+        for (at, lint) in self.lints.iter().enumerate() {
+            let said = said[at].take().unwrap_or_else(|| {
+                skills
+                    .iter()
+                    .zip(&files)
+                    .map(|(skill, files)| self.said(lint, skill, *files))
+                    .collect()
+            });
+            for (each, says) in out.iter_mut().zip(said) {
+                each.extend(said_by(lint.by(), says));
+            }
+        }
+        out
     }
 }
 
@@ -293,7 +740,6 @@ pub trait StudioPanel {
 /// extension's id and the panel's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PanelKey {
-    Grades,
     Runs,
     Extension { extension: String, panel: String },
 }
@@ -320,136 +766,28 @@ impl Answered {
     }
 }
 
-/// **purlis's Grades panel** (SK-16, #2779), the built-in runner's scorecard: every grade of the
-/// skill the eval record holds, newest first, with the version it graded, what its chats ran on,
-/// each arm's pass rate and the difference the skill made. A pass or a fail comes from here
-/// alone, never from a run (decision 24).
-#[derive(Debug, Clone, Copy)]
-pub struct GradesPanel<'a> {
-    pub plane: &'a Path,
-}
-
-impl StudioPanel for GradesPanel<'_> {
-    fn key(&self) -> PanelKey {
-        PanelKey::Grades
-    }
-
-    fn title(&self) -> String {
-        "Grades".to_owned()
-    }
-
-    fn by(&self) -> Option<String> {
-        None
-    }
-
-    fn blocks(&self, skill: &str) -> Result<Vec<Block>, String> {
-        Ok(grades_blocks(
-            &super::grades::grades_of(self.plane, skill, None),
-            skill,
-        ))
+/// **The version a grade graded, as its row and its scorecard say it**: the commit, shortened,
+/// or that it held changes not saved.
+pub fn version_said(graded: &super::grades::Graded) -> String {
+    match (&graded.commit, graded.content()) {
+        (Some(commit), _) => super::history::short(commit).to_owned(),
+        (None, Some(crate::skilluse::Content::Uncommitted)) => "Changes not saved".to_owned(),
+        (None, _) => "Not known".to_owned(),
     }
 }
 
-/// A share as a person reads it: `67%`.
-fn share_said(share: f64) -> String {
-    format!("{:.0}%", share * 100.0)
-}
-
-/// An arm's pass rate as its cell says it: the mean, and the spread over the runs where there is
-/// one (`67% ± 12`).
-fn arm_said(graded: &super::grades::Graded, arm: purlis_skills::grade::Arm) -> String {
-    match graded.report.arm(arm).and_then(|score| score.pass_rate) {
-        None => "Not run".to_owned(),
-        Some(stat) if stat.stddev > 0.0 => {
-            format!("{} ± {:.0}", share_said(stat.mean), stat.stddev * 100.0)
-        }
-        Some(stat) => share_said(stat.mean),
+/// **What a grade's chats ran on, as its row says it** (SK-60, #3240): the harness, then the
+/// model they reported, where the record says one (`Claude Code · claude-sonnet-4-5`).
+pub fn ran_on_said(graded: &super::grades::Graded) -> String {
+    let harness = graded
+        .harness
+        .as_deref()
+        .map(crate::skilluse::harness_title)
+        .unwrap_or_else(|| "Not recorded".to_owned());
+    match &graded.model {
+        Some(model) => format!("{harness} · {model}"),
+        None => harness,
     }
-}
-
-/// The Grades panel's blocks for `grades` of `skill`: a sentence on what a grade is, then the
-/// table, or the empty table's claim and its way on.
-fn grades_blocks(grades: &[super::grades::Graded], skill: &str) -> Vec<Block> {
-    use purlis_skills::grade::{Arm, GradeEnd};
-    let mut out = Vec::new();
-    if !grades.is_empty() {
-        out.push(Block::Note {
-            text: format!(
-                "Each grade ran the skill's trigger tests in chats with the skill and without \
-                 it, {} each, and counts the tests each chat got right.",
-                crate::counts::counted(purlis_skills::grade::RUNS, "time", "times")
-            ),
-            tone: Tone::Plain,
-        });
-    }
-    let rows = grades
-        .iter()
-        .map(|graded| {
-            let (passed, of) = graded.report.passed_with();
-            TableRow {
-                key: graded.grade.clone(),
-                cells: vec![
-                    said_at(&graded.ts),
-                    match (&graded.commit, graded.content()) {
-                        (Some(commit), _) => super::history::short(commit).to_owned(),
-                        (None, Some(crate::skilluse::Content::Uncommitted)) => {
-                            "Changes not saved".to_owned()
-                        }
-                        (None, _) => "Not known".to_owned(),
-                    },
-                    graded
-                        .harness
-                        .as_deref()
-                        .map(crate::skilluse::harness_title)
-                        .unwrap_or_else(|| "Not recorded".to_owned()),
-                    format!("{passed} of {of}"),
-                    arm_said(graded, Arm::With),
-                    arm_said(graded, Arm::Without),
-                    graded
-                        .report
-                        .delta
-                        .map(|delta| format!("{:+.0} points", delta * 100.0))
-                        .unwrap_or_default(),
-                    crate::counts::counted(u64::from(graded.spent.chats), "chat", "chats"),
-                    match graded.report.ended {
-                        GradeEnd::Whole => "Finished",
-                        GradeEnd::Cancelled => "Stopped",
-                        GradeEnd::ChatsDidNotStart => "Chats did not start",
-                        GradeEnd::OverCap => "Stopped at its token cap",
-                        GradeEnd::SpendNotReported => "Stopped: spend not reported",
-                    }
-                    .to_owned(),
-                ],
-            }
-        })
-        .collect();
-    out.push(Block::Table(Table {
-        caption: format!("Grades of {skill}"),
-        columns: [
-            "Graded",
-            "Version",
-            "Ran on",
-            "Tests passed",
-            "With the skill",
-            "Without it",
-            "Difference",
-            "Chats",
-            "Ended",
-        ]
-        .map(str::to_owned)
-        .to_vec(),
-        rows,
-        empty: Empty {
-            headline: format!("No grades of {skill} yet"),
-            body: Some(
-                "Grade runs the skill's trigger tests in chats with the skill and without it, \
-                 once you have seen what it costs."
-                    .into(),
-            ),
-            offer: None,
-        },
-    }));
-    out
 }
 
 /// How many runs the Runs panel lists at most.
@@ -577,7 +915,7 @@ const NEW_CHAT: &str = "chat.new";
 
 /// A stamp as a row says it: `2026-10-20 10:00 UTC` for a stamp written in UTC, as every run's
 /// is; the stamp itself for one this cannot read.
-fn said_at(stamp: &str) -> String {
+pub fn said_at(stamp: &str) -> String {
     let bytes = stamp.as_bytes();
     let digits = |range: std::ops::Range<usize>| {
         bytes

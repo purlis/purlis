@@ -136,17 +136,17 @@ code, the `[plane] worktrees` setting and `purlis worktree` (ADR 0072).
 _Avoid_: task, slot, branch (for the directory), worktree (on screen)
 
 **Branch** (of a chat):
-What the window shows for a piece: one row per repo a chat works in, reading *`<branch>` in
-`<repo>`*. A chat working in a repo's shared clone shows the branch the clone has checked out,
-marked *shared*. **New branch** cuts a piece; **Remove folder** removes the worktree and keeps
+What the window shows for a piece: one row per repo a chat works in, reading _`<branch>` in
+`<repo>`_. A chat working in a repo's shared clone shows the branch the clone has checked out,
+marked _shared_. **New branch** cuts a piece; **Remove folder** removes the worktree and keeps
 the branch (ADR 0072).
 _Avoid_: the chat's branch (singular: a chat may work in several repos), piece, worktree (in UI text)
 
 **Writing chat**:
-A chat that starts in a repo's shared clone (`workspaces/<ws>/<repo>`), which is what *New tab
-in <repo>* and *Start new chats in <repo>* point at. By default it starts on a new branch of its
+A chat that starts in a repo's shared clone (`workspaces/<ws>/<repo>`), which is what _New tab
+in <repo>_ and _Start new chats in <repo>_ point at. By default it starts on a new branch of its
 own instead: a piece named after the chat, or `chat-<n>`, cut before it starts and taken back if
-the start is refused. The picker's *start on a new branch* box, ticked by default, is the
+the start is refused. The picker's _start on a new branch_ box, ticked by default, is the
 opt-out. A chat started in the workspace's own directory, at the project root or in an existing
 piece is not a writing chat and is cut nothing (GL-1).
 _Avoid_: guessing from what a chat does (purlis never reads a harness's output to decide)
@@ -309,6 +309,16 @@ hostname is a label, never a key. The operator on a device is its **local princi
 (`local:<device>/<os-user>`), and purlis never sends it anywhere without an account (ADR 0066).
 _Avoid_: host (that is `purlisd`, the process), machine (in UI text), node
 
+**Devices**:
+The window's view tab of every device this machine knows: itself and each runner it keeps, each
+with its chats and browsers, its version, how it is and when it last answered, and each pool's
+use per person (runners running and suspended, the CPUs and memory they request, the hours they
+ran this week). Money shows only where a pool declares a price per hour (`pricePerHour`): its
+hours this week times that price, in its own currency. It replaces the **Runners** view tab
+ADR 0089 §12 named, and is offered only once this machine keeps a pool. It belongs to
+**Project**, with the devices it lists (spec #2041, #2052).
+_Avoid_: Runners view, fleet, machines (for the view)
+
 **Harness declaration**:
 Data that says how to start one harness, how to name and resume its sessions, which levels it
 offers, what it can do, and what its profiles are: the **sign-in kinds** they support, the
@@ -436,7 +446,7 @@ lane: list, start a hosted program, attach and detach a view of a kind, write, r
 stop, and subscribe from a cursor.
 It carries the compatibility promise, so a client and a host one version apart always talk.
 It names a project by its stable id (`[project] id` in `charter.toml`), never by a path, and
-every word it says is snake_case (ADR 0068 §4 and *Amended by FD-26*).
+every word it says is snake_case (ADR 0068 §4 and _Amended by FD-26_).
 _Avoid_: API (unqualified), IPC (that is the window's Tauri calls)
 
 **UI RPC**:
@@ -448,7 +458,10 @@ _Avoid_: session protocol (for any of it), public API
 **Runner**:
 A device, other than the one the window is on, whose own session host runs a workspace's chats,
 serves a version of one of its repos, or runs browsers, as its **label** says; one marked owned
-may run chats and browsers in one session host. A long-lived runner
+may run chats and browsers in one session host; a cluster pool's runner is marked by the person
+alone, per pool, in the window (*This is my own*, `owned` in `runners.json`), and that mark gates
+vault values and tokens, each also needing the operator to vouch for its claim at that moment
+(ADR 0089, amended 2026-10-26, item 3). A long-lived runner
 is a machine the operator adds; a short-lived one is made by a **runner provider** for a human or
 a chat, for minutes or hours. Either way the desktop's session host reaches it through a
 **connector** and talks to it over a **link**, and its shell, logs, ports and browser views come
@@ -456,7 +469,7 @@ only that way. It keeps its own device id, event log, audit chain and kill switc
 no server purlis runs. A short-lived runner is owned by the chat that started it, or by its
 workspace when a human started it or **pinned** it there. A runner is a device, so it belongs to
 **Project**; which runner a workspace's chats run on is a **Workspace** setting, and the
-**Runners** view tab shows a workspace's runners (ADR 0072 §2, ADR 0078, ADR 0089).
+**Devices** view tab shows every runner this machine keeps (ADR 0072 §2, ADR 0078, ADR 0089).
 _Avoid_: remote (unqualified), agent host, worker, server (in UI text), sandbox, environment, box,
 belongs to (for the lifecycle sense: say "is owned by")
 
@@ -517,17 +530,40 @@ setting of it), runner provider (that is the code)
 
 **Claim**:
 One person's request for a runner from a pool, and the runner it is given. A **kept** claim has
-storage of its own and survives its runner; a **fresh** one is given a ready runner and keeps
-nothing.
+storage of its own, its runner's home, and survives the loss of its runner's pod, its pairing
+with it: the pairing is the claim's (ADR 0078, amended 2026-10-28). A **fresh** one is given a
+ready runner and keeps nothing. purlis chooses which, and "Keep this runner's work" overrides it.
+A claim stays in the namespace it is made in; its runner runs in its requester's **runner
+namespace** (ADR 0089, amended 2026-10-29).
 _Avoid_: claimed (of a piece: that is the piece log's word), lease, reservation, sandbox
+
+**Runner namespace**:
+The namespace a cluster operator makes for one person, `purlis-runners-<hash>`, where every
+runner of their claims runs, within their quota, and where they alone may reach their runners
+(ADR 0089, amended 2026-10-29).
+_Avoid_: personal namespace, tenant, sandbox namespace
 
 **Cluster operator**:
 purlis's controller inside a cluster: it turns claims into runners, counts them per person,
 starts and stops pools, and says which runner a claim was given, vouching with its own signing
-key for the link key each runner made as it started (ADR 0078, amended 2026-10-26). In a
-sentence the app shows,
+key for the link key each runner made as it started (ADR 0078, amended 2026-10-26). A desktop
+pins that key and the cluster, the uid of its `kube-system` namespace, when it adds the pool; a
+team admin **rolls** the key, and a desktop that sees the current key vouch for the next one
+moves its pin (ADR 0089, amended 2026-10-29). In a sentence the app shows,
 "purlis in your cluster".
 _Avoid_: operator (unqualified, where the person could be meant), controller, manager, master
+
+**Sign in** (a profile, on a pool):
+To have a profile's harness sign in on a pool's runner by its own login, run there, with nothing of
+this machine's sign-in carried to it (ADR 0095). The window drives the login in place, in a strip
+on the profile's line: it opens the login's page in the browser here, takes the code the page shows
+and passes it back, shows the device code a vendor's login gives, or, for a login that waits for
+the browser, carries that one redirect to the runner, and says the profile is **signed in on
+<pool>** once the harness's own status check on the runner says so (spec #4023).
+`purlis profile sign-in <profile> --pool <pool>` takes the same steps in a terminal. As a verb, two
+words; the noun is "sign-in".
+_Avoid_: log in, login (for the verb), authenticate, authorize, connect (an account), copy a
+sign-in (nothing is copied)
 
 **Grant** (to a runner):
 A human's approval, once per workspace on this machine, of one vault entry an app runner's spec
@@ -541,8 +577,9 @@ _Avoid_: permission, secret (for the approval), capability (that is an extension
 The person's answer, in an Ask, that one persona's browser login may be filled in its chats'
 browsers on one pool's runner: bound to that login as declared and allowed, to the pool as it is
 defined, its image, the runner that receives the values and the engine it runs on, and kept only
-while purlis runs. It is asked only where purlis can show the runner is the person's own: until a
-pool can be marked owned, a Docker pool on this machine's own engine. A runner not shown to be
+while purlis runs. It is asked only where purlis can show the runner is the person's own: a Docker
+pool on this machine's own engine, or a cluster pool the person marked *This is my own* whose
+claim the operator vouches for at that moment. A runner not shown to be
 owned is never asked about and never receives a value. A login that waited while the desktop
 was away is asked about afresh. It adds to ownership, never stands in for it (ADR 0089, amended
 2026-10-26).
@@ -676,6 +713,13 @@ The person's act of becoming a browser's driver: a click or a key in its view. *
 it: Done, or one fixed chord, and nothing else.
 _Avoid_: control, grab, interrupt
 
+**Inspect**:
+The person's act of opening the real DevTools of the page a browser they drive shows, in a view
+tab beside it. They are the engine's own, drawn as frames as the page is, speaking to that page
+alone through the session host; no chat reaches them, and they close as the person hands the
+browser back (#2028).
+_Avoid_: debugger, dev console, inspector (for the act)
+
 **The browser needs you**:
 An **Ask** whose source is a chat's browser: the agent, through `ask_operator` pointed at that
 browser, asks the person to do what a page needs of a human (a CAPTCHA, a second factor, a
@@ -748,8 +792,8 @@ allowed.
 _Avoid_: allowlist (in UI text), network access, browser allowlist
 
 **Browser site**:
-A person's yes to one site, a host and port, for a chat's browser alone, at *this chat*, *this
-project on this machine*, or *everyone in the project*, which is committed and reaches a
+A person's yes to one site, a host and port, for a chat's browser alone, at _this chat_, _this
+project on this machine_, or _everyone in the project_, which is committed and reaches a
 teammate's browsers once they were shown it: the browser may open it, send to it and type on it. The chat's own
 commands never reach a browser site; they still need an **Allowed host** for it. Asked by the
 browser's **judge**, and listed apart from allowed hosts in the Granted list and in the chat's
@@ -762,6 +806,19 @@ field the agent is about to type into, and says whether it goes or the person is
 goes, an address the agent wrote or anything sent to a site new to the project asks. The reach
 proxy carries a site new to the project only where the judge let a request to it go.
 _Avoid_: filter, firewall, interceptor
+
+**Holding folder** (of a browser):
+Where a browser's downloads land: a folder of the browser's own data, which no chat reads or
+writes, each file under the engine's own name for it. The agent is told a download's name, size
+and origin. A chat has a download only once it **saves** it into its folder, which needs the
+person's yes for its origin, for that chat. It goes with the browser.
+_Avoid_: downloads folder (that is the person's own), cache
+
+**Upload** (from a browser):
+Files of the chat's own folder put into a page's file input: named by the agent relative to that
+folder, read by purlis under the chat's read rules following no link, and handed to the browser
+as purlis's copy, never as the chat's file.
+_Avoid_: attach, file pick (the person's own file dialog is not one)
 
 ### Chats working together
 
@@ -1070,7 +1127,10 @@ answered. It counts only what happened while the person was away. It hides nothi
 keeps its row and its **Activity** lines, and every question stays where it was asked. Going to
 a failed task from it marks the failure looked at, as its needs-you item's Go does; dismissing
 it dismisses nothing else. A setting turns it off. Away here is the person away from the window;
-a chat nobody is at is another thing, whatever the window is doing.
+a chat nobody is at is another thing, whatever the window is doing. **What a runner's chats did
+is said runner by runner** after this machine's (#2051, #3393): "On qa's runner: 2 finished, 1
+waiting on you, 1 branch ready to push", with the runs that ended there as the runner recorded
+them, at their time in the person's time zone, and a runner whose link is down said to be.
 _Avoid_: digest, recap, notification
 
 **Ask**:
@@ -1327,7 +1387,7 @@ _Avoid_: sync (that word is `purlis sync`'s), commit (a save may be more than on
 
 **Sync**:
 Fetching every clone in a workspace and fast-forwarding the ones that hold no work:
-`purlis sync`, and *Sync repos* in the window. Nothing else is called Sync: not a save, not
+`purlis sync`, and _Sync repos_ in the window. Nothing else is called Sync: not a save, not
 moving a project to its pinned version, not writing persona sub-agents, and not any state kept
 between devices (ADR 0072).
 _Avoid_: pull, refresh, update (for this)
@@ -1363,8 +1423,8 @@ Prose says "request mode" on every forge; `pr` and `pr-merge` stay the words `ch
 _Avoid_: PR mode, MR mode
 
 **Stage**:
-Where unsaved work sits. It is *changed* (not committed), *committed* (not pushed), *pushed*
-(PR open), or *saved* (on the target branch).
+Where unsaved work sits. It is _changed_ (not committed), _committed_ (not pushed), _pushed_
+(PR open), or _saved_ (on the target branch).
 _Avoid_: status, sync state
 
 **Blocked**:
@@ -1452,20 +1512,30 @@ this machine. The project commits the list with the persona; each machine allows
 _Avoid_: persona grants (in UI text), persona allowlist
 
 **Allowed host**:
-A person's yes to one host and port at one scope: *this chat*, *this project on this machine*,
-or *everyone in the project*, which is committed so teammates follow it. It is shown in full,
+A person's yes to one host and port at one scope: _this chat_, _this project on this machine_,
+or _everyone in the project_, which is committed so teammates follow it. It is shown in full,
 never as a wildcard, and every one can be removed from Settings' Network page.
 _Avoid_: grant (in UI text; that is a runner's **Grant**), exception, allowlist entry
 
 **A service on this Mac**:
 Whatever listens on one port of this machine's loopback interface: a local Kubernetes cluster, a
 database in a container, a dev server. A sandboxed chat reaches none of them until a person
-allows that one port, for *this chat* or for *this project on this machine*; never a range,
+allows that one port, for _this chat_ or for _this project on this machine_; never a range,
 never every port, never one of purlis's own. Allowed from the Notice its refusal raises, or
 added by its port in Settings' Network page, which refuses exactly what the Notice refuses. Kept
 on this machine only, listed in Settings' Network page with Remove. A Claude Code chat reaches it through its proxy by the name
 `this-mac.internal:<port>`, and its kubectl through a copy of one context purlis makes for it.
 _Avoid_: localhost (in UI text), local port grant, loopback
+
+**A chat's server**:
+A server a sandboxed chat runs on one port, allowed from the Notice its first refused bind raises,
+for _this chat_ or for _this project on this machine_; from port 1024, never a port something on
+this Mac listens on, a range or one of purlis's own. The server listens on a socket of the chat's
+own, never on a TCP port, and purlis's **front door** on the port carries each request to it,
+checking its address and keeping the browser's cookies from the server. A page it serves still runs
+in the person's browser as a site of this Mac. The chat's browser opens it with no second Ask. Kept on this machine only, listed in Settings' Network page with Remove. A Claude Code
+chat cannot be given one.
+_Avoid_: listen grant (in UI text), open port, loopback
 
 **A proposed change**:
 An edit a chat makes to purlis's own configuration (the project's manifest, a persona's
@@ -1517,6 +1587,15 @@ the extension itself can do only for a **studio capability**, whose extension is
 (ADR 0101).
 _Avoid_: permission, grant (that is a runner's **Grant**), power
 
+**Suspend** (a runner):
+A runner that stops itself, or is stopped, keeping its home: a **Docker pool**'s runner left a
+day without a link from its desktop ends every chat it runs and stops its container, and the
+desktop starts it again, checked as it was made, as it next links to it for a chat (#2051). It
+is not the kill switch, which stops chats and keeps the runner running, and not idle, which a
+runner a live chat owns never is (ADR 0089 as amended 2026-10-27). A cluster's claims suspend by
+the cluster operator (#2058).
+_Avoid_: sleep, hibernate, pause
+
 **Studio capability**:
 One of the six capabilities the Skill studio is built from: SkillSource, Grader, SkillLint,
 SkillTemplate, StudioPanel and SkillRouter. Each has a built-in first user. An extension that
@@ -1567,7 +1646,7 @@ _Avoid_: prompt, context injection
 
 **Action** (of an extension):
 A verb an extension declares and offers on the rows of its views: pressing one asks its program
-to *run action `<id>` on `<subject>`*. Never one of purlis's own verbs. purlis asks first when
+to _run action `<id>` on `<subject>`_. Never one of purlis's own verbs. purlis asks first when
 the manifest says so, and always before one that deletes.
 _Avoid_: command (for this), verb (unqualified), button
 
@@ -1618,21 +1697,29 @@ _Avoid_: ACP adapter (on its own), harness adapter (for this), bridge
 **Wrap**:
 To run a chat's unmodified harness inside a sandbox profile or backend purlis generates (ADR
 0067). Never to **stand in** for the harness: putting purlis's own program where the harness's
-is expected and changing what it or its model sees, which purlis never does. X34's *"wraps a
-harness binary"* means standing in (ADR 0073).
+is expected and changing what it or its model sees, which purlis never does. X34's _"wraps a
+harness binary"_ means standing in (ADR 0073).
 _Avoid_: wrap (for a stand-in, a shim or an adapter)
 
 **Harness plugin**:
-A Claude Code, Codex or opencode plugin, chosen per project. "Plugin" on its own always means
-this, never a purlis extension. purlis's own is one too: the Claude Code plugin the app
-bundles, named `purlis` (`purlis@inline`, skills `purlis:<skill>`, MCP tools
-`mcp__purlis__<tool>`), always on in the chats the app starts. Its ids from before the rename
-(`charter@inline`, `charter-app@inline`, `charter@charter-app`) are always off there, and so
-is the Python charter's `charter@charter`. `purlis plugin install` puts a copy of it,
-`purlis@purlis-app`, in front of the chats the operator starts outside the app (ADR 0057). For opencode, purlis's own is the **opencode
-shim**, a script the app loads into each opencode chat it starts, and whose guard-only variant
-`purlis plugin install` writes into opencode's plugin directory (ADR 0058).
-_Avoid_: extension (for this); "purlis plugin" for anything but purlis's own
+A harness's own bundle: a Claude Code, Codex or opencode plugin, which can carry skills, hooks,
+MCP servers, subagents, LSP servers and code that runs in the harness. The harness decides which
+of its plugins load; purlis does not turn one on or off for a project (#3467, ADR 0050 as amended
+2026-10-27). The Skill studio shows the skills one brings, read-only, naming the plugin as their
+source. "Plugin" on its own always means a harness's, never a purlis extension.
+_Avoid_: extension (for this); "plugin skill" (it is a **harness skill** from a plugin)
+
+**purlis's plugin**:
+The bundle purlis installs into each harness so a chat carries its hooks, the Bash guard, its
+built-in skills and its MCP tools: for Claude Code the plugin the app bundles, named `purlis`
+(`purlis@inline` by `--plugin-dir`, skills `purlis:<skill>`, MCP tools `mcp__purlis__<tool>`);
+for Codex the `-c hooks.*` flags from the same registry; for opencode the **opencode shim**, a
+script the app loads into each opencode chat it starts (ADR 0058). In a Claude Code chat it is
+pinned on, and the ids it had before the rename (`charter@inline`, `charter-app@inline`,
+`charter@charter-app`) and the Python charter's `charter@charter` are pinned off: the only
+plugin ids purlis ever writes. `purlis plugin install` puts a copy, `purlis@purlis-app` and the
+shim's guard-only variant, in front of the chats the operator starts outside the app (ADR 0057).
+_Avoid_: "purlis plugin" for any other harness plugin
 
 **Skill**:
 A folder in the open SKILL.md format: instructions with a name and a description, and optionally
@@ -1644,7 +1731,10 @@ A skill that ships inside purlis itself, in its plugin (`skills/` in the bundle)
 every harness. It cannot be turned off or edited. Each harness is handed the built-in skills by
 its own route, for the chat alone: Claude Code loads the plugin, opencode is told the directory
 through the shim, and a Codex chat is **briefed** on them, a list of names, descriptions and
-`SKILL.md` paths at `SessionStart` (ADR 0063).
+`SKILL.md` paths at `SessionStart` (ADR 0063). Its name is reserved: no skill of the project may
+take it, so nothing stands in for one. A person who wants to change one uses **Make my own copy**:
+a skill of their own, under a new name at a skill level they pick, which chats get beside the
+built-in skill, never instead of it. The window folds the built-in skills into one quiet line.
 _Avoid_: purlis's skills (every skill a person makes is a skill in purlis too), system skill,
 "Claude Code skills" for these; a copy of them anywhere
 
@@ -1656,10 +1746,24 @@ _Avoid_: loaded skills, available skills
 
 **Skill studio**:
 The one place where every skill a chat can get is listed, made, edited, installed, removed,
-observed and graded: a view tab, with each skill opening as its own. The **Skills** sidebar view
-lists the same skills and opens it. It is built behind the `skill-studio` flag until its
-**finish line** (spec #2762).
+observed and graded: one view tab per project, with a scope picker for whose chats it covers,
+its pages in a left navigation (**Library**, Needs you, Drafts, Sources, Deleted, Harness skills,
+Routing), and its own back, forward and path. Every way into it says "Open Skill studio" and
+lands on its page and scope (#3681). The **Skills** sidebar view lists the same skills and opens
+it. It is built behind the `skill-studio` flag until its **finish line** (spec #2762).
 _Avoid_: skill manager, skills page
+
+**Library** (of the Skill studio):
+Every skill the project holds, at every **skill level**, as the studio's first page lists them
+for the chats its scope covers: a row each, with its name, its skill level, one mark and one line
+of what it does, found by a search box and narrowed by filter chips.
+_Avoid_: skill list, catalogue (that is a source's offer)
+
+**Skill level**:
+Where a skill lives, which decides who gets it: project, workspace, persona, repo, local or
+built-in. It is drawn as a tag on each of the studio's rows. It is not the **Level** of
+settings.
+_Avoid_: level (alone, where settings are near), scope (that is whose chats the studio covers)
 
 **Finish line** (of the Skill studio):
 The set of things that must all work before the Skill studio is shown to anyone. Until then it
@@ -1667,7 +1771,8 @@ stays behind its flag.
 
 **Harness skill**:
 A skill a harness brings on its own, from the person's harness folders or from a harness plugin.
-purlis lists it and can turn it on or off for a project, but never edits it.
+purlis lists it and never edits it. One from the person's folders can be turned off for a
+project; one a plugin brings is shown read-only, since it comes and goes with its plugin (#3467).
 _Avoid_: external skill, plugin skill
 
 **Repo skill**:
@@ -1714,7 +1819,7 @@ _Avoid_: test run, preview chat
 
 **Throwaway piece**:
 A folder made for one chat, ignored by git and never saved, and removed when that chat closes. Try it
-starts its scratch chat in one, and grading's chats will too. On screen it is a **throwaway
+starts its scratch chat in one, and a grade starts each of its chats in one. On screen it is a **throwaway
 folder**.
 _Avoid_: scratch workspace, sandbox (for this), worktree (it is no branch)
 
@@ -1775,11 +1880,12 @@ A pluggable way of grading a skill. purlis ships one; others arrive as extension
 _Avoid_: eval engine, judge
 
 **Trigger test**:
-A grade of whether a harness picks the skill when it should and leaves it alone when it should
-not.
+A fixture of a skill's that tests whether a harness picks the skill when it should and leaves it
+alone when it should not. A **grade** runs each one as real chats.
 
 **Outcome eval**:
-A grade of how well a skill does its job on fixture tasks.
+A fixture of a skill's that tests how well the skill does its job on a task. A **grade** counts
+them now, and grades them later (#3235).
 
 **Grade** (of a skill):
 One run of a grading framework on a copy of a skill: its trigger tests (and, later, its outcome

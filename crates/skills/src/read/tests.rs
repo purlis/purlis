@@ -281,3 +281,49 @@ fn a_skill_md_larger_than_purlis_reads_is_left_out_saying_the_limit() {
     assert!(said.contains("(256 KiB)"), "{said}");
     assert!(!said.contains("not a skill"), "{said}");
 }
+
+#[test]
+fn a_level_of_more_names_than_purlis_reads_is_refused_with_a_sentence() {
+    // SK-52 (#3205): the scan side of SK-44's limit. A plane level is the chat's to fill; past
+    // the most names purlis reads of one folder it reads none of them and says so once.
+    let tmp = tempfile::tempdir().unwrap();
+    let level = tmp.path().join("skills");
+    skill(
+        &level,
+        "whole",
+        "---\nname: whole\ndescription: Does it.\n---\n",
+    );
+    for n in 0..crate::held::MOST_NAMES {
+        std::fs::write(level.join(format!("f{n}")), "").unwrap();
+    }
+
+    let scanned = scan(tmp.path(), Path::new("skills"));
+
+    assert_eq!(scanned, [Err((level, Missing::Crowded))]);
+    assert_eq!(
+        crate::Reason::NotASkill(Missing::Crowded).to_string(),
+        "a folder of more than 2000 names, the most purlis reads of one, so none of its skills \
+         is read"
+    );
+}
+
+#[test]
+fn a_level_of_exactly_the_most_names_purlis_reads_is_scanned() {
+    let tmp = tempfile::tempdir().unwrap();
+    let level = tmp.path().join("skills");
+    skill(
+        &level,
+        "whole",
+        "---\nname: whole\ndescription: Does it.\n---\n",
+    );
+    for n in 1..crate::held::MOST_NAMES {
+        std::fs::write(level.join(format!("f{n}")), "").unwrap();
+    }
+
+    let names: Vec<String> = scan(tmp.path(), Path::new("skills"))
+        .into_iter()
+        .map(|one| one.map(|skill| skill.name).map_err(|(_, why)| why).unwrap())
+        .collect();
+
+    assert_eq!(names, ["whole"]);
+}

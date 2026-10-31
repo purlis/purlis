@@ -10,7 +10,7 @@
 //!
 //! **What purlis ships**: its documentation pages ([`crate::docsrc::topics`], compiled into
 //! this binary and read with `purlis docs show <topic>`), and the skills its Claude Code plugin
-//! carries ([`SHIPPED_SKILLS`]). A shadow is a project's `docs/<topic>.md` for one of those
+//! carries ([`crate::skills::SHIPPED`]). A shadow is a project's `docs/<topic>.md` for one of those
 //! topics, or a `.claude/skills/<name>/SKILL.md` for one of those skills.
 //!
 //! **It reports and never resolves.** A copy is not wrong by being a copy; it is unwatched, and
@@ -23,23 +23,6 @@ use super::{Doctor, Row};
 use crate::counts::plural;
 
 const NAME: &str = "shadowed docs";
-
-/// The skills purlis's Claude Code plugin ships, by directory name: the bundle's
-/// `plugin/skills/<name>/SKILL.md` (held to that directory by a test).
-pub(crate) const SHIPPED_SKILLS: [&str; 12] = [
-    "add-curation-action",
-    "browser",
-    "building-purlis-ui",
-    "compact",
-    "handoff",
-    "persona",
-    "safe-remove",
-    "secrets",
-    "smart-close",
-    "theme",
-    "update",
-    "working-in-a-clone",
-];
 
 /// What a project at `root` keeps of purlis's own: the shipped skills it has a copy of, and
 /// the documentation topics, each sorted.
@@ -61,7 +44,7 @@ pub(crate) fn shadowed(root: &Path) -> std::io::Result<Shadowed> {
             for entry in entries {
                 let entry = entry?;
                 let name = entry.file_name().to_string_lossy().into_owned();
-                if SHIPPED_SKILLS.contains(&name.as_str())
+                if crate::skills::SHIPPED.contains(&name.as_str())
                     && entry.path().join("SKILL.md").is_file()
                 {
                     skills.push(name);

@@ -537,3 +537,13 @@ fn a_change_too_long_for_a_row_is_applied_only_from_its_tab() {
         Err(Refusal::Not(NOT_SHOWN_SAID.to_owned()))
     );
 }
+
+/// #3467: no chat proposes as purlis itself, whose changes are judged by a wider rule.
+#[test]
+fn no_chat_proposes_as_purlis() {
+    let (_dir, root) = project();
+    let held = Proposals::default();
+    let refused = asked_in(&root, &held, &ask(BY_PURLIS, None, mode_pr()), 1);
+    assert!(refused.is_err(), "{refused:?}");
+    assert!(held.every().is_empty());
+}

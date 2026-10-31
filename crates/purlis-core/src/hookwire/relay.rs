@@ -154,6 +154,10 @@ pub enum Replied {
     /// A report, a tool call or a refused commit is taken, and this is what the host records of
     /// it in the event log (#2003): what the window's hearing would have written itself.
     Record(Entry),
+    /// A report, a tool call or a refused commit is taken, and this is what the host records of
+    /// it, naming no project (1.40, #3400): what the window sends a host that said it records a
+    /// line under the project as it holds it ([`Replied::without_path`]).
+    Line(LineRecord),
     /// It is not, for `why`: its hook spools it where it may.
     NotTaken { why: String },
     /// An ask's answer.
@@ -175,6 +179,71 @@ pub enum Replied {
     Handed(brokered::Handed),
 }
 
+/// **What the window sends back to record of a hook line, naming no project** (1.40, #3400): an
+/// [`Entry::Report`], [`Entry::Tool`] or [`Entry::Refused`] without its `plane`. The host that
+/// heard the line records it under the project as it holds it, so where the window keeps the
+/// project never crosses to it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "entry", rename_all = "snake_case")]
+pub enum LineRecord {
+    /// [`Entry::Report`]'s.
+    Report {
+        report: super::Report,
+        followed: crate::eventlog::Followed,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        begun: Option<String>,
+    },
+    /// [`Entry::Tool`]'s.
+    Tool { call: super::ToolCall },
+    /// [`Entry::Refused`]'s.
+    Refused { chat: u32 },
+}
+
+impl LineRecord {
+    /// The entry it is, of the project at `plane`.
+    pub fn at(self, plane: std::path::PathBuf) -> Entry {
+        match self {
+            LineRecord::Report {
+                report,
+                followed,
+                begun,
+            } => Entry::Report {
+                plane,
+                report,
+                followed,
+                begun,
+            },
+            LineRecord::Tool { call } => Entry::Tool { plane, call },
+            LineRecord::Refused { chat } => Entry::Refused { plane, chat },
+        }
+    }
+}
+
+impl Replied {
+    /// **The reply as a host that records a line under the project as it holds it is sent it**
+    /// (1.40, #3400): a hook line's record names no project ([`Replied::Line`]). Any other reply
+    /// is sent as it is.
+    pub fn without_path(self) -> Replied {
+        match self {
+            Replied::Record(Entry::Report {
+                report,
+                followed,
+                begun,
+                ..
+            }) => Replied::Line(LineRecord::Report {
+                report,
+                followed,
+                begun,
+            }),
+            Replied::Record(Entry::Tool { call, .. }) => Replied::Line(LineRecord::Tool { call }),
+            Replied::Record(Entry::Refused { chat, .. }) => {
+                Replied::Line(LineRecord::Refused { chat })
+            }
+            other => other,
+        }
+    }
+}
+
 /// How long the host waits for the window to take a report, a tool call or a refused commit,
 /// and to say whether it holds a permission ask: inside a hook's own wait for its answer, so a
 /// window that does not answer in time leaves the hook time to spool its line.
@@ -188,6 +257,12 @@ pub const NOBODY_HEARS: &str = "purlis's window is not there to take this";
 
 /// The most lines that wait for the window at once, browser logins (#2050) and `secret exec`s
 /// (#2047) together.
+///
+/// This bound, [`MOST_WAITING_FOR_A_CHAT`] and `MOST_TOLD` are purlis's own, the same on
+/// every runner, and never a pool's settings (D-2050-14): they hold the memory a runner's host
+/// keeps for what waits (names alone, never a value) and keep one chat from crowding out
+/// another's, the same for a browser login as for a `secret exec`. A team tunes how its runners
+/// behave, not how much the host remembers for an absent desktop.
 pub const MOST_WAITING: usize = 16;
 
 /// The most of them one chat's: no chat crowds out another's.
@@ -292,6 +367,9 @@ pub struct Relaying {
     /// What runs a `secret exec` here on the values the window sent: the brokered run, or a
     /// test's stand-in for it.
     runs_handed: hosted::RunsHanded,
+    /// The window's socket each slot a chat's server dials in is handed on over (#3316), where
+    /// it was told one; none, and every slot is refused.
+    slots_to: Mutex<Option<std::path::PathBuf>>,
 }
 
 /// **How the host keeps what its hook channel hears** (#2003): it writes the event log, and
@@ -341,7 +419,39 @@ impl Relaying {
             root: Mutex::default(),
             waiting_lines: Mutex::default(),
             runs_handed: Arc::new(brokered::serve_handed),
+            slots_to: Mutex::default(),
         })
+    }
+
+    /// **Hands each slot a chat's server dials in on to the window at `path`** (#3316,
+    /// [`super::serve::hand_on`]): the window holds the doors. A slot it cannot hand on is
+    /// refused.
+    pub fn handing_slots_to(&self, path: &std::path::Path) {
+        *lock(&self.slots_to) = Some(path.to_path_buf());
+    }
+
+    /// What hears a `serve` line here: each slot handed on to the window ([`Self::serve`]).
+    #[cfg(unix)]
+    fn serving(self: &Arc<Self>) -> super::Serves {
+        let relaying = Arc::clone(self);
+        Box::new(move |ask, slot| relaying.serve(&ask, slot))
+    }
+
+    #[cfg(not(unix))]
+    fn serving(self: &Arc<Self>) -> super::Serves {
+        super::serve::refusing()
+    }
+
+    /// A slot's ask and connection, handed on to the window, or refused where it cannot be.
+    #[cfg(unix)]
+    fn serve(&self, ask: &super::serve::ServeAsk, slot: super::serve::Slot) {
+        let to = lock(&self.slots_to).clone();
+        let handed = to.map(|path| super::serve::hand_on(&path, ask, &slot));
+        match handed {
+            Some(Ok(())) => {}
+            Some(Err(_)) => super::serve::refused(slot, super::serve::NO_WINDOW),
+            None => super::serve::refused(slot, super::serve::NOTHING_SERVES),
+        }
     }
 
     /// **Its project is at `root` on this machine** (#2047): a `secret exec` of a chat this host
@@ -349,6 +459,13 @@ impl Relaying {
     /// the window while nobody is there ([`crate::hostedchats`]).
     pub fn of_project_at(&self, root: &std::path::Path) {
         *lock(&self.root) = Some(root.to_path_buf());
+    }
+
+    /// Where its project is on this machine, where it was told ([`Self::of_project_at`]): what
+    /// a line's record that names no project is of. `None` where it was not told, and such a
+    /// record is then not taken.
+    fn at(&self) -> Option<std::path::PathBuf> {
+        lock(&self.root).clone()
     }
 
     /// The number the next line is handed on as.
@@ -434,6 +551,19 @@ impl Relaying {
         {
             (keeping.unheard)(heard);
         }
+        // A record naming no project is of the one this channel is of, which the keeping
+        // records it under (#3400).
+        let reply = reply.map(|replied| match replied {
+            Replied::Line(line) => match self.at() {
+                Some(root) => Replied::Record(line.at(root)),
+                None => Replied::NotTaken {
+                    why: "a record naming no project came back for a line of a channel that \
+                          knows of none, so it was not recorded"
+                        .to_owned(),
+                },
+            },
+            other => other,
+        });
         match reply {
             Ok(Replied::Taken) => Ok(()),
             Ok(Replied::Record(entry)) if of_the_line(&entry, heard) => self.record(entry),
@@ -752,9 +882,10 @@ impl Relaying {
         ask.runs_as = None;
         ask.waited = false;
         ask.run = None;
-        let composed = lock(&self.root)
-            .as_deref()
-            .and_then(|root| crate::hostedchats::asker(root, ask.chat));
+        // Out of the hold first: reading the chat's record reads its confinement's board too.
+        let composed = self
+            .at()
+            .and_then(|root| crate::hostedchats::asker(&root, ask.chat));
         if let Some(asker) = composed {
             return self.secret_exec_composed_here(asker, ask, reader, writer);
         }
@@ -852,6 +983,7 @@ impl Relaying {
                 let relaying = to(self);
                 Box::new(move |ask, reader, writer| relaying.secret_exec(ask, reader, writer))
             },
+            serve: self.serving(),
         }
     }
 }
@@ -1176,6 +1308,23 @@ impl Heeding {
         if *on == Some(link) {
             *on = None;
             *lock(&self.inputs) = Inputs::default();
+        }
+    }
+
+    /// **The host these lines come from is lost to the host that relays them** (#3408): the
+    /// relay's link to it went down, and that host let go of every line it had handed on, so
+    /// none of its `secret exec`s waits for this window any more. Each one's input ends here, one
+    /// taken but not yet begun too, so whatever waits on its asker hears that it went: a run on a
+    /// pool's runner lets go of the person's Ask and reads no vault. The link the lines come over
+    /// stays, and what comes over it next is taken as before. Lost over a link the lines no
+    /// longer come over, it changes nothing, as [`Self::unlinked`] does.
+    pub fn lost_its_host(&self, link: u64) {
+        let Some((_on, mut inputs)) = self.inputs_on(link) else {
+            return;
+        };
+        let execs: Vec<u64> = inputs.by_exec.keys().copied().collect();
+        for exec in execs {
+            inputs.input_ended(exec);
         }
     }
 

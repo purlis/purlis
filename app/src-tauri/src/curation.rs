@@ -120,6 +120,54 @@ pub struct Curating {
     pub workspace: Option<String>,
 }
 
+/// **Why a start the window asked for did not start** (#3942, #3968): the core's sentence, and
+/// the approval the profile it started on needs, where its start was refused while that profile
+/// waits for one. The window then offers Approve and start…, which shows that line and approves
+/// it only on the person's answer (`approve_profile`), from this and never from the words. The
+/// Skill studio's starts, a curation action, a theme chat and Start a chat here refuse with it:
+/// the starts the core makes on a profile without the new-chat picker, which asks first itself.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct StartRefused {
+    pub words: String,
+    /// Read as the start was refused, of the profile it was refused on. Null for a refusal
+    /// before any start was tried, or on a profile with nothing to approve.
+    pub approval: Option<Box<crate::chats::NeedsApproval>>,
+}
+
+impl From<String> for StartRefused {
+    fn from(words: String) -> StartRefused {
+        StartRefused {
+            words,
+            approval: None,
+        }
+    }
+}
+
+impl StartRefused {
+    /// A start on `profile` at `root` refused in `words`, with the approval that profile needs
+    /// as it was refused, where it needs one: what a refused [`start_typed`] maps its sentence
+    /// through.
+    pub(crate) fn on<'a>(
+        profile: &'a str,
+        root: &'a Path,
+    ) -> impl FnOnce(String) -> StartRefused + 'a {
+        move |words| StartRefused {
+            approval: crate::chats::NeedsApproval::of_profile(profile, root).map(Box::new),
+            words,
+        }
+    }
+}
+
+/// `work` off the window's thread, its refusal kept whole.
+pub(crate) async fn off_the_window_refused<T: Send + 'static>(
+    what: &'static str,
+    work: impl FnOnce() -> Result<T, StartRefused> + Send + 'static,
+) -> Result<T, StartRefused> {
+    crate::off_the_window(what, move || Ok(work()))
+        .await
+        .map_err(StartRefused::from)?
+}
+
 /// What each subject the window names is offered (`subjects` in the core's spelling:
 /// `workspace:<name>`, `persona:<name>`, `plane`), in the order asked.
 // Its plane is a `PlaneId` the registry vouches for, like every other command's. Not a doc
@@ -143,7 +191,8 @@ pub async fn curation_offers(
 /// once its harness has started, and never sent.
 ///
 /// The harness is the project's default profile, as a new chat's is; the persona and the
-/// directory are the core's answer. A refusal comes back before anything starts.
+/// directory are the core's answer. A refusal comes back before anything starts, with the
+/// approval the profile needs where that is why (#3968).
 #[tauri::command]
 #[specta::specta]
 pub async fn curate(
@@ -153,9 +202,9 @@ pub async fn curate(
     action: String,
     columns: u16,
     rows: u16,
-) -> Result<Curating, String> {
+) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
-    crate::off_the_window("starting the curation chat", move || {
+    off_the_window_refused("starting the curation chat", move || {
         open(&held, &subject, &action, Size { columns, rows })
     })
     .await
@@ -322,7 +371,7 @@ fn tab_label(label: &str, subject: &str) -> String {
 
 /// Opens the chat. The prompt is held for it BEFORE it starts, because its harness can report
 /// its start before `start_ready` returns, and let go again when nothing started.
-fn open(held: &Arc<Held>, spec: &str, action: &str, size: Size) -> Result<Curating, String> {
+fn open(held: &Arc<Held>, spec: &str, action: &str, size: Size) -> Result<Curating, StartRefused> {
     let root = held.root().to_path_buf();
     let subject = Subject::parse(spec)?;
     let resolution = curation::resolve(&root, &subject)?;
@@ -346,21 +395,22 @@ fn open(held: &Arc<Held>, spec: &str, action: &str, size: Size) -> Result<Curati
 /// as `shown`: a curation action's, or Settings › Theme's New theme and Edit with a chat
 /// ([`crate::themegallery::theme_chat`], #2333). `starts_runs` is what starts the skill runs
 /// its prompt's turn opens: a curation action, and none for a theme chat, which is no curation
-/// action (decision 60), so its runs are the harness's own pick.
+/// action (decision 60), so its runs are the harness's own pick. A refused start says the
+/// approval its profile needs, where it needs one (#3968).
 pub(crate) fn open_chosen(
     held: &Arc<Held>,
     chosen: Resolved,
     shown: &str,
     size: Size,
     starts_runs: Option<purlis_core::skills::runs::StartedBy>,
-) -> Result<Curating, String> {
+) -> Result<Curating, StartRefused> {
     let root = held.root().to_path_buf();
     let profile = launch_profile(&root)?;
     let label = tab_label(&chosen.label, shown);
     let typed = start_typed(
         held,
         ChatTyped {
-            profile,
+            profile: profile.clone(),
             persona: chosen.runner.clone(),
             cwd: chosen.cwd.clone(),
             label: label.clone(),
@@ -377,7 +427,8 @@ pub(crate) fn open_chosen(
                  hold the steps."
             )
         },
-    )?;
+    )
+    .map_err(StartRefused::on(&profile, &root))?;
     let (session, name, ready) = (typed.session, typed.name, typed.ready);
     Ok(Curating {
         session,
@@ -541,7 +592,7 @@ pub fn start_typed_where_it_can_be(
         .start_ready(&record, &ready, size)
         .inspect_err(|_| held.typed().forget(number))?;
     // The skill runs the turn it is sent in opens are the action's (SK-20): held as the chat
-    // starts, under the salt of the id its start gave it (SK-38), before the person can have sent
+    // starts, under the prompt key its start gave it (SK-38, #3369), before the person can have sent
     // the paste that is its first prompt.
     if let (Some(by), true) = (chat.starts_runs, when.is_some()) {
         match held.chats().skills_of(session).and_then(|chat| chat.salt) {
@@ -598,28 +649,32 @@ pub fn start_sent(
     size: Size,
     why: SentFor,
 ) -> Result<StartedTyped, String> {
-    sent(held, chat, size, why, |_| {})
+    sent(held, chat, size, why, None, |_| {})
 }
 
 /// **Opens a grade's chat started on its trigger test's query** ([`SentFor::Grade`]): as
 /// [`start_sent`] does, with `before` told the chat's number before it starts, so the grade
 /// watches it from its first hook and the window is kept from drawing it (`crate::skillgrade`).
-/// Its skill runs are the grade's ([`purlis_core::skills::runs::StartedBy::Grade`]).
+/// Its skill runs are the grade's ([`purlis_core::skills::runs::StartedBy::Grade`]). It runs on
+/// `model` where the person picked one (SK-60, #3240), else on the profile's own.
 pub fn start_graded(
     held: &Arc<Held>,
     chat: ChatTyped,
     size: Size,
+    model: Option<&str>,
     before: impl FnOnce(u32),
 ) -> Result<StartedTyped, String> {
-    sent(held, chat, size, SentFor::Grade, before)
+    sent(held, chat, size, SentFor::Grade, model, before)
 }
 
-/// [`start_sent`] and [`start_graded`]: `before` is told the number before the chat starts.
+/// [`start_sent`] and [`start_graded`]: `before` is told the number before the chat starts, and
+/// a grade's chat runs on `model` where one was picked.
 fn sent(
     held: &Arc<Held>,
     chat: ChatTyped,
     size: Size,
     why: SentFor,
+    model: Option<&str>,
     before: impl FnOnce(u32),
 ) -> Result<StartedTyped, String> {
     if let Some(bad) = purlis_core::handoff::bad_message(&chat.prompt) {
@@ -644,7 +699,7 @@ fn sent(
         made: purlis_core::sandbox::Made::Window,
     };
     let ready = match why {
-        SentFor::Grade => purlis_core::skills::grades::ready_to_grade(&start, &root),
+        SentFor::Grade => purlis_core::skills::grades::ready_to_grade_on(&start, &root, model),
         SentFor::FixASave => purlis_core::start::ready(&start, &root),
     }
     .and_then(|ready| crate::handoff::told_first(ready, &chat.profile, &chat.prompt))?;
@@ -672,8 +727,8 @@ fn sent(
     before(number);
     let session = held.chats().start_ready(&record, &ready, size)?;
     // The skill runs its turn opens are the grade's, where it is one (SK-16): held under the
-    // salt of the id its start gave it (SK-38), as a curation action's are. The id is minted by
-    // the start, so this is the first moment it can be; the harness is still booting, well before
+    // prompt key its start gave it (SK-38, #3369), as a curation action's are. The key is minted
+    // by the start, so this is the first moment it can be; the harness is still booting, well before
     // its first prompt's hook.
     if let Some(by) = chat.starts_runs {
         match held.chats().skills_of(session).and_then(|chat| chat.salt) {
@@ -1904,7 +1959,7 @@ mod tests {
         let curating = open(&held, "workspace:alpha", "ops/tidy", SIZE).expect("it opens");
         let socket = held.hooks().socket().expect("listening").to_path_buf();
         let token = held.hooks().token_for(curating.session);
-        // Its hook's salt: the id its start gave it. Claude Code marks the prompt's lead alone.
+        // Its hook's key: the one its start gave it. Claude Code marks the prompt's lead alone.
         let salt = held
             .chats()
             .skills_of(curating.session)
@@ -2018,10 +2073,41 @@ mod tests {
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
 
-        let refused = open(&held, "workspace:alpha", "ops/gone", SIZE).unwrap_err();
+        let refused = open(&held, "workspace:alpha", "ops/gone", SIZE)
+            .unwrap_err()
+            .words;
 
         assert!(refused.contains("ops/gone"), "{refused}");
         assert!(held.chats().open_now().is_empty());
+    }
+
+    #[test]
+    fn an_action_on_a_profile_nobody_approved_says_the_line_to_approve_3968() {
+        // The default profile's command changed since it was approved: the start is refused, and
+        // the refusal carries what the window shows to approve, read of the profile it was
+        // refused on.
+        let plane = Plane::new("claude");
+        let local = plane.root.join(purlis_core::profiles::LOCAL_FILE);
+        let was = std::fs::read_to_string(&local).unwrap();
+        // The command's line alone ends in `"]`; the tables' headers end in `]` with no quote.
+        let changed = was.replace("\"]\n", "\", \"--changed\"]\n");
+        assert_ne!(changed, was, "the command's line is changed");
+        std::fs::write(&local, changed).unwrap();
+        let planes = planes();
+        let id = planes.open(&plane.root);
+        let held = planes.held(&id).expect("held");
+
+        let refused = open(&held, "workspace:alpha", "charter/safe-remove", SIZE).unwrap_err();
+
+        let approval = refused
+            .approval
+            .expect("the approval it waits for comes with it");
+        assert_eq!(approval.profile, "work");
+        assert!(approval.shown.contains("--changed"), "{}", approval.shown);
+        assert!(held.chats().open_now().is_empty());
+        // A refusal before any start was tried has nothing to approve.
+        let gone = open(&held, "workspace:alpha", "ops/gone", SIZE).unwrap_err();
+        assert_eq!(gone.approval, None);
     }
 
     /// Waits for `path` to hold at least `len` bytes, then a moment for anything after them.
@@ -2085,7 +2171,9 @@ mod tests {
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
 
-        let refused = open(&held, "workspace:alpha", "ops/tidy", SIZE).unwrap_err();
+        let refused = open(&held, "workspace:alpha", "ops/tidy", SIZE)
+            .unwrap_err()
+            .words;
         assert!(
             refused.contains("typed into only a prompt on one line"),
             "{refused}"
@@ -2109,7 +2197,9 @@ mod tests {
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
 
-        let refused = open(&held, "workspace:alpha", "charter/compact", SIZE).unwrap_err();
+        let refused = open(&held, "workspace:alpha", "charter/compact", SIZE)
+            .unwrap_err()
+            .words;
 
         // What opencode lacks, in its capability card's line (HP-19).
         assert!(refused.contains("finished starting"), "{refused}");
@@ -2160,7 +2250,9 @@ mod tests {
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
 
-        let refused = open(&held, "workspace:alpha", "ops/long", SIZE).unwrap_err();
+        let refused = open(&held, "workspace:alpha", "ops/long", SIZE)
+            .unwrap_err()
+            .words;
 
         assert!(
             refused.contains("1001") && refused.contains("1000"),
@@ -2177,7 +2269,9 @@ mod tests {
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
 
-        let refused = open(&held, "workspace:alpha", "ops/long", SIZE).unwrap_err();
+        let refused = open(&held, "workspace:alpha", "ops/long", SIZE)
+            .unwrap_err()
+            .words;
 
         assert!(
             refused.contains("Claude Code") && refused.contains("800") && refused.contains("1001"),

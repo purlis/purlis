@@ -39,9 +39,73 @@
         "requests": { "$ref": "#/definitions/quantities" },
         "limits": { "$ref": "#/definitions/quantities" }
       }
+    },
+    "metrics": {
+      "description": "The operator's metrics.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowFrom": {
+          "description": "Who may scrape them, as a NetworkPolicy's from peers. Empty: nothing may.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "namespaceSelector": { "type": "object" },
+              "podSelector": { "type": "object" },
+              "ipBlock": { "type": "object" }
+            }
+          }
+        }
+      }
+    },
+    "forge": {
+      "description": "A team's GitHub App, for minting tokens in the cluster.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "keySecretNames": {
+          "description": "The Secrets the operator may read, in the release's namespace. Empty: it may read none.",
+          "type": ["array", "null"],
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 253,
+            "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+            "not": { "const": "purlis-cluster-operator-signing-key" }
+          }
+        }
+      }
+    },
+    "perPerson": {
+      "description": "What each person's runners may hold at once, in their runner namespace.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "quota": {
+          "description": "The quota purlis-person in each runner namespace. A key left out is not limited.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "claims": { "type": "integer", "minimum": 0 },
+            "cpu": { "$ref": "#/definitions/quantity" },
+            "memory": { "$ref": "#/definitions/quantity" },
+            "storage": { "$ref": "#/definitions/quantity" }
+          }
+        }
+      }
     }
   },
   "definitions": {
+    "quantity": {
+      "description": "A Kubernetes quantity, such as 500m, 4, 8Gi or 1.5.",
+      "type": ["string", "number"],
+      "minimum": 0,
+      "pattern": "^[0-9]+(\\.[0-9]+)?(m|k|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$"
+    },
     "quantities": {
       "type": "object",
       "additionalProperties": false,

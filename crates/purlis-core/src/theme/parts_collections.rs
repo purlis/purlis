@@ -10,7 +10,7 @@
 //! its other parts. A row is a control a control tall at the default size; a dense list's rows
 //! and a dialog's are drawn at the family's other sizes, which a theme's size never reaches.
 
-use super::{ALL, Family, Length, Look, Part, Prop, State, TRANSPARENT};
+use super::{ALL, Family, Length, Look, Part, Prop, State, TRANSPARENT, Variant};
 
 /// What a theme may set on a row's words: their colour, size and weight.
 const WORDS: &[Prop] = &[Prop::Text, Prop::FontSize, Prop::FontWeight];
@@ -72,8 +72,48 @@ pub(super) const LIST: Family = Family {
             description: "The key that does the same, at its end: a palette row's, a cheat sheet's.",
             properties: &[Prop::Text, Prop::FontSize],
         },
+        Part {
+            name: "summary",
+            since: super::NEXT,
+            description: "A card row's two lines about it, under its first line: its description, \
+                          or a reason in its place (#3669).",
+            properties: &[Prop::Text, Prop::FontSize],
+        },
+        Part {
+            name: "count",
+            since: super::NEXT,
+            description: "How many rows a group holds, at the end of its name (#3670).",
+            properties: &[Prop::Text, Prop::FontSize],
+        },
+        Part {
+            name: "run",
+            since: super::NEXT,
+            description: "A run of rows folded to one quiet line, and its closing line once it is \
+                          unfolded: \"6 built-in skills\" (#3670).",
+            properties: &[Prop::Text, Prop::FontSize],
+        },
+        Part {
+            name: "actions",
+            since: super::NEXT,
+            description: "A card row's action line, under its summary: its one fix (#3669).",
+            properties: &[Prop::Gap],
+        },
     ],
-    variants: &[],
+    variants: &[
+        Variant {
+            name: "row",
+            since: super::NEXT,
+            description: "A row of one line: its words cut with an ellipsis.",
+            consent: None,
+        },
+        Variant {
+            name: "card",
+            since: super::NEXT,
+            description: "A card row of a side view's list, as tall as its lines: its name, its \
+                          two lines about it and its fix (#3669).",
+            consent: None,
+        },
+    ],
     // Drawn in a side view, a tab's page, Settings and a dialog.
     grounds: &[
         "surface.base",
@@ -81,7 +121,12 @@ pub(super) const LIST: Family = Family {
         "surface.overlay",
         "surface.sunken",
     ],
-    keeps_size: &["[data-size=\"sm\"]", "[data-size=\"lg\"]"],
+    // A card row keeps its own room whatever the list's size: its height follows its lines.
+    keeps_size: &[
+        "[data-size=\"sm\"]",
+        "[data-size=\"lg\"]",
+        "[data-variant=\"card\"]",
+    ],
     sized_apart: &[
         (
             "[data-scope=\"list\"][data-part=\"root\"][data-size=\"sm\"]",
@@ -111,21 +156,30 @@ pub(super) const LIST: Family = Family {
         ("description", "text.quiet"),
         ("header", "text.quiet"),
         ("shortcut", "text.quiet"),
+        ("summary", "text.muted"),
+        ("count", "text.quiet"),
+        ("run", "text.quiet"),
     ],
     corner_most: None,
     // The list that holds the rows, and a group's name over them, stand around a row.
-    around: &["body", "header"],
+    // A group's count, and a run's quiet line, a row of its own (#3670).
+    around: &["body", "header", "count", "run"],
     fills: &[],
+    under: &[],
 };
 
 /// **A row's colours as `app/src/ui/list/list.css` draws them**, which a test holds to that file:
 /// at rest in the secondary tier on no ground of its own (R19); under the pointer, the pill;
 /// chosen, the wash with its words in the primary tier (R21), under the pointer too; and a row
-/// that cannot be used in the faint tier.
-pub(super) fn list_look(_variant: &str, states: &[State]) -> Look {
+/// that cannot be used in the faint tier. A card row stands on the raised ground at rest (#3669).
+pub(super) fn list_look(variant: &str, states: &[State]) -> Look {
     if states.contains(&State::Disabled) {
         return Look {
-            fill: TRANSPARENT,
+            fill: if variant == "card" {
+                "surface.raised"
+            } else {
+                TRANSPARENT
+            },
             text: "text.faint",
             border: TRANSPARENT,
         };
@@ -140,6 +194,9 @@ pub(super) fn list_look(_variant: &str, states: &[State]) -> Look {
     Look {
         fill: if states.contains(&State::Hover) {
             "surface.hover"
+        } else if variant == "card" {
+            // A card row stands on the raised ground at rest (#3669).
+            "surface.raised"
         } else {
             TRANSPARENT
         },

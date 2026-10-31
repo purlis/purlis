@@ -179,6 +179,7 @@ over the appearance as its colours are.
 | `window.gutter` | px | 0–16 | 0 | 0 | the gap between the window's regions, and around them inside the frame |
 | `panel.corner-radius` | px | 0–24 | 0 | 0 | a region panel's corners: the sides, the content and the bottom panel's halves |
 | `panel.border-width` | px | 0–2 | 1 | 1 | the hairline between two regions, drawn only while they sit flush (no gutter) |
+| `separator.width` | px | 0–2 | 1 | 1 | the separator part: the line between two groups inside a surface (a menu's sections, a dialog's footer, the rows of the Inbox's Notices), 0 for none; its colour is `separator.root.fill` |
 | `focus-ring.width` | px | 1–4 | 2 | 2 | every focus ring, and the selected row's edge |
 | `focus-ring.offset` | px | 0–4 | 2 | 2 | a ring outside its element: a control's, a card's |
 | `focus-ring.inset` | px | −4–0 | −2 | −2 | a ring inside its element: a list row's, a tab's, a segment's |
@@ -199,11 +200,13 @@ not a token: words with no size of their own (a list row's, a paragraph's) follo
 
 No token reaches the title bar's height yet. **Corners are a family's parts.** The rail's
 project buttons, the title bar's workspace chips, the session tabs and their `×` are rounded
-through their parts ([Session tabs](#session-tabs)), and a list's rows by `radius.control` (the
-list family, since manifest version 11; `radius.md` before #3177). A tree's rows join when the
-tree family brings its parts (#2911); until then no key reaches their corners. **The focus ring
-tokens reach every focus ring**, a tab's `×` closer's among them; a ring that sits half as far
-out or in draws half the offset. Under
+through their parts ([Session tabs](#session-tabs)), a list's rows by `radius.control` (the list
+family, since manifest version 11; `radius.md` before #3177), and the tree family's rows by
+`radius.control` too (the Changes view's, since the next release's manifest version). The tree
+rows still drawn by hand (the Explorer's and the Chats list's) join when they move to the tree
+family (#2911); until then no key reaches their corners. **The focus ring tokens reach every
+focus ring**, a tab's `×` closer's among them; a ring that sits half as far out or in draws half
+the offset. Under
 forced colours the ring is drawn in the system's `Highlight` at the theme's width and offset:
 forced colours replace colour, not geometry.
 
@@ -288,7 +291,10 @@ key with no state is the part at rest, and in every state that does not set the 
 with no variant reaches the part in every variant; one with a variant only that variant. The more
 a key names, the more it wins: a state over rest, then a variant over every variant. A key that
 names a family, part, variant, state or property purlis does not have is said and left out, as
-an unknown token is.
+an unknown token is. A part drawn apart from its family's root is the exception: it is in no
+variant of the root, and only in the states its own element is marked in (the table says
+"drawn apart" and names them), so a key that gives it a variant, or a state it is never in, reaches
+nothing, is not in the schema, and is said and left out.
 
 One row a family, in the families' names' order, written from the manifest (`purlis theme parts`
 says what each family, part and variant is):
@@ -296,33 +302,71 @@ says what each family, part and variant is):
 | Family | Parts | Variants | States |
 |---|---|---|---|
 | `activity` (since version 10) | `item` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`), `icon` (`text`), `count` (`fill`, `text`), `indicator` (`fill`) | `tab`, `bar` | `hover`, `pressed`, `selected`, `focused` |
-| `button` | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants`, `soft-accent` (since version 2), `warning-soft` (since version 2), `link` (since version 2), `quiet` (since the next release) | `hover`, `pressed`, `selected`, `focused`, `disabled`, `open` |
-| `checkbox` (since the next release) | `root` (`fill`, `text`, `corner-radius`, `gap`), `box` (`fill`, `border-colour`, `border-width`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`) | `box`, `chip` | `hover`, `selected`, `focused`, `disabled` |
+| `badge` (since the next release) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `padding`, `font-size`, `font-weight`) | `neutral`, `accent`, `waiting`, `ok` | none |
+| `button` | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`), `shortcut` (`text`, `font-size`) (since the next release) | `secondary`, `primary`, `ghost`, `danger`, `grants`, `soft-accent` (since version 2), `warning-soft` (since version 2), `link` (since version 2), `quiet` (since the next release) | `hover`, `pressed`, `selected`, `focused`, `disabled`, `open` |
+| `card` (since the next release) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`, `padding`, `gap`), `title` (`text`, `font-size`, `font-weight`), `facts-label` (`text`, `font-size`, `font-weight`), `facts-value` (`text`, `font-size`, `font-weight`), `tile` (`border-colour`, `border-width`, `corner-radius`, `padding`, `gap`), `tile-value` (`text`, `font-size`, `font-weight`) | `raised`, `ask` | none |
+| `card-button` (since the next release) | `root` (`fill`, `text`, `border-colour`, `corner-radius`, `padding`, `gap`), `mark` (`text`), `title` (`text`, `font-size`, `font-weight`), `line` (`text`, `font-size`) | `door`, `pick` | `hover`, `pressed`, `focused`, `disabled` |
+| `checkbox` (since the next release) | `root` (`fill`, `text`, `corner-radius`, `gap`), `box` (`fill`, `border-colour`, `border-width`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`), `count` (`text`), `description` (`text`, `font-size`) | `box`, `chip` | `hover`, `selected`, `focused`, `disabled` |
 | `combobox` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `chevron` (`text`) | none | `hover`, `focused`, `disabled`, `open`, `invalid` |
+| `count` (since the next release) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `padding`, `font-size`, `font-weight`), `group` (`corner-radius`) | `neutral`, `accent`, `waiting`, `hot` | none |
 | `dialog` (since version 7) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`), `subtitle` (`text`), `description` (`text`), `separator` (`fill`), `summary` (`text`) | `dialog`, `alert` | `hover`, `pressed`, `selected`, `focused`, `disabled`, `open` |
+| `disclosure` (since the next release) | `root` (`gap`), `trigger` (`padding`, `gap`), `twist` (`text`), `panel` (`fill`, `border-colour`, `corner-radius`, `padding`, `gap`) | none | none |
 | `editor` (since version 8) | `toolbar` (`fill`, `text`, `padding`, `gap`, `font-size`) | `default` | none |
 | `empty-state` (since version 4) | `root` (`padding`, `gap`), `icon` (`text`), `headline` (`text`, `font-size`, `font-weight`), `body` (`text`, `font-size`), `action` (`gap`) | `page`, `panel` | none |
 | `field` (since version 3) | `root` (`gap`), `label` (`text`, `font-size`, `font-weight`), `help` (`text`, `font-size`), `error` (`text`, `font-size`) | none | `disabled` |
-| `list` (since version 11) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `body` (`padding`, `gap`), `lead` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `trail` (`text`, `gap`), `header` (`text`, `font-size`, `font-weight`), `shortcut` (`text`, `font-size`) (since the next release) | none | `hover`, `focused`, `selected`, `disabled` |
+| `list` (since version 11) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `body` (`padding`, `gap`), `lead` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `trail` (`text`, `gap`), `header` (`text`, `font-size`, `font-weight`), `shortcut` (`text`, `font-size`) (since the next release), `summary` (`text`, `font-size`) (since the next release), `count` (`text`, `font-size`) (since the next release), `run` (`text`, `font-size`) (since the next release), `actions` (`gap`) (since the next release) | `row` (since the next release), `card` (since the next release) | `hover`, `focused`, `selected`, `disabled` |
 | `menu` (since version 6) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`) | `default`, `danger` | `hover`, `focused`, `selected`, `disabled`, `open` |
+| `meter` (since the next release) | `root` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `track` (`fill`, `corner-radius`), `fill` (`fill`), `value` (`text`, `font-size`, `font-weight`) | `subject`, `baseline`, `previous` | none |
+| `notice` (since the next release) | `root` (`fill`, `text`, `border-colour`, `corner-radius`, `padding`, `gap`), `message` (`text`, `font-size`), `whose` (`text`, `font-weight`), `mark` (`text`), `title` (`text`, `font-size`, `font-weight`) | `news`, `trouble`, `attention` | none |
 | `option-card` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `corner-radius`, `padding`, `gap`), `icon` (`text`), `title` (`text`, `font-size`, `font-weight`), `detail` (`text`, `font-size`), `check` (`text`) | `card`, `tile` | `hover`, `selected`, `focused`, `disabled` |
-| `panel` (since version 4) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`) | `side`, `content`, `bottom` | none |
-| `panel-section` (since version 4) | `root` (`padding`, `gap`), `head` (`padding`, `gap`), `title` (`text`, `font-size`, `font-weight`) | `default` | none |
+| `page-tabs` (since the next release) | `tab` (`fill`, `text`, `corner-radius`), `label` (`font-size`, `font-weight`), `count` (`text`, `font-size`), `indicator` (`fill`, `corner-radius`), `list` (`border-colour`, `border-width`, `gap`, `padding`), `panel` (`padding`) | none | `hover`, `selected`, `focused` |
+| `panel` (since version 4) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`) (since the next release) | `side`, `content`, `bottom` | none |
+| `panel-section` (since version 4) | `root` (`padding`, `gap`), `head` (`padding`, `gap`), `title` (`text`, `font-size`, `font-weight`), `top` (`padding`, `gap`) (since the next release) | `default` | none |
 | `panel-separator` (since the next release) | `root` (`fill`), `grip` (`fill`) | none | `hover`, `pressed`, `focused` |
-| `popover` (since version 6) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `filter` (`fill`, `padding`), `rule` (`fill`), `list` (`padding`, `gap`), `header` (`text`, `font-size`, `font-weight`), `footer` (`fill`, `text`, `padding`, `font-size`), `key` (`fill`, `text`, `corner-radius`) | `popover`, `menu` | none |
+| `popover` (since version 6) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `filter` (`fill`, `padding`), `rule` (`fill`), `list` (`padding`, `gap`), `header` (`text`, `font-size`, `font-weight`), `footer` (`fill`, `text`, `padding`, `font-size`), `key` (`fill`, `text`, `corner-radius`), `point` (`fill`, `border-colour`) (since the next release) | `popover`, `menu`, `notice` (since the next release) | none |
 | `radio` (since the next release) | `root` (`text`, `gap`), `mark` (`fill`, `border-colour`, `border-width`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`) | none | `hover`, `selected`, `focused`, `disabled` |
 | `rail` (since version 9) | `button` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `monogram` (`font-size`, `font-weight`), `badge` (`fill`, `text`), `unsaved` (`fill`) | `project`, `action` | `hover`, `selected`, `focused` |
+| `review-page` (since the next release) | `root` (`fill`), `body` (`padding`, `gap`), `bar` (`fill`, `padding`, `gap`), `summary` (`text`, `font-size`), `answers` (`gap`) | none | none |
 | `segment` (since the next release) | `root` (`fill`, `text`, `shadow`, `corner-radius`), `label` (`text`), `count` (`text`) | none | `hover`, `selected`, `focused`, `disabled` |
 | `segmented-control` (since the next release) | `root` (`fill`, `corner-radius`, `shadow`, `padding`, `gap`) | none | none |
 | `select` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `placeholder` (`text`), `chevron` (`text`) | none | `hover`, `focused`, `disabled`, `open`, `invalid` |
+| `separator` (since the next release) | `root` (`fill`) | none | none |
 | `slider` (since the next release) | `root` (`text`, `gap`), `track` (`fill`, `corner-radius`), `fill` (`fill`, `corner-radius`), `thumb` (`fill`, `border-colour`, `corner-radius`), `output` (`text`) | none | `disabled` |
-| `status-item` (since version 4) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `icon` (`text`), `label` (`text`, `font-size`, `font-weight`), `count` (`text`) | `bar`, `pill`, `waiting`, `accent` | `hover`, `pressed`, `focused`, `disabled` |
+| `status-item` (since version 4) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `icon` (`text`), `label` (`text`, `font-size`, `font-weight`), `count` (`text`), `dot` (`fill`, `text`) (since the next release), `dot-warning` (`fill`, `text`) (since the next release) | `bar`, `pill`, `waiting`, `accent` | `hover`, `pressed`, `focused`, `disabled` |
 | `switch` (since the next release) | `root` (`text`, `gap`), `track` (`fill`, `corner-radius`), `thumb` (`fill`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`) | none | `hover`, `selected`, `focused`, `disabled` |
+| `table` (since the next release) | `root` (`fill`, `text`), `frame` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `head` (`text`, `font-size`, `font-weight`), `cell` (`padding`), `rule` (`fill`), `bar` (`gap`) | none | `hover`, `focused`, `selected`, `disabled` |
 | `tabs` (since version 8) | `tab` (`fill`, `text`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`, `max-width`, `flare`, `inset`), `label` (`text`, `font-size`, `font-weight`), `closer` (`fill`, `text`, `corner-radius`), `count` (`fill`, `text`, `corner-radius`), `indicator` (`fill`, `height`, `corner-radius`, `position`), `strip` (`fill`, `border-colour`, `border-width`), `layout` (`attach`, `sizing`, `dividers`, `gap`) | `chat`, `view`, `file`, `background` | `hover`, `selected` |
-| `text-input` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `icon` (`text`) | none | `hover`, `focused`, `disabled` |
-| `textarea` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `font-size`) | none | `hover`, `focused`, `disabled` |
-| `titlebar` (since version 12) | `workspace` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `count` (`fill`, `text`), `crumb` (`fill`, `text`, `corner-radius`), `all` (`fill`, `text`, `corner-radius`), `pin` (`fill`, `text`, `corner-radius`), `row` (`fill`, `text`, `corner-radius`) | `pinned`, `unpinned` | `hover`, `selected`, `focused` |
+| `text-input` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `icon` (`text`) | none | `hover`, `focused`, `disabled`, `invalid` |
+| `textarea` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `font-size`) | none | `hover`, `focused`, `disabled`, `invalid` |
+| `titlebar` (since version 12) | `workspace` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `count` (`fill`, `text`), `crumb` (`fill`, `text`, `corner-radius`, drawn apart, in no variant: `hover`, `selected`, `focused`), `all` (`fill`, `text`, `corner-radius`, drawn apart, in no variant: `hover`, `selected`, `focused`), `pin` (`fill`, `text`, `corner-radius`, drawn apart, in no variant: `hover`, `selected`, `focused`), `row` (`fill`, `text`, `corner-radius`, drawn apart, in no variant: `hover`, `selected`), `dot` (`fill`, `text`) (since the next release), `dot-warning` (`fill`, `text`) (since the next release), `dot-needs` (`fill`, `text`) (since the next release), `row-count` (`fill`, `text`, drawn apart, in no variant and no state) (since the next release) | `pinned`, `unpinned`, `root` (since the next release), `dormant` (since the next release) | `hover`, `selected`, `focused` |
 | `tooltip` (since version 5) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`), `detail` (`text`), `shortcut` (`text`, `font-size`) (since the next release) | none | none |
+| `tree` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `gap`, `font-size`, `font-weight`, `height`), `body` (`padding`, `gap`), `twist` (`text`), `lead` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `trail` (`text`, `gap`), `header` (`text`, `font-size`, `font-weight`) | none | `hover`, `focused`, `selected`, `disabled` |
+| `view-frame` (since the next release) | `root` (`fill`), `nav` (`fill`, `border-colour`, `border-width`, `padding`), `list` (`fill`, `border-colour`, `border-width`), `item` (`fill`), `head` (`padding`, `gap`), `header` (`fill`, `border-colour`, `border-width`, `padding`, `gap`), `name` (`text`, `font-size`, `font-weight`), `lead` (`text`, `font-size`), `bar` (`fill`, `border-colour`, `border-width`, `padding`, `gap`), `history` (`gap`), `path` (`text`, `font-size`), `crumb` (`text`, `font-weight`), `crumb-separator` (`text`) | none | none |
+| `view-nav` (since the next release) | `item` (`fill`, `text`, `corner-radius`), `label` (`font-size`, `font-weight`), `indicator` (`fill`, `corner-radius`) | none | `hover`, `pressed`, `selected`, `focused` |
+
+The title bar's crumb, its ⌄, and a switcher's rows and pin toggles (`titlebar.crumb`,
+`titlebar.all`, `titlebar.row`, `titlebar.pin`) are drawn apart from every workspace chip, the
+family's root. Each is reached by its own attributes, at rest and in the states it is marked in:
+`titlebar.crumb.selected.fill` is the crumb while its switcher is open, `titlebar.pin.selected`
+a pinned workspace's toggle, `titlebar.row.selected` the row Enter would go to. A row is never
+focused itself (the keyboard stays in the filter). None of them takes a chip's variant
+(`titlebar.crumb.pinned.fill` reaches nothing), and a chip that breaks a floor never takes their
+colours back. Each is held to its floor on the ground it is drawn on, in each of its states (the
+crumb and the ⌄ on the bar, and on the card's fill under the pointer and while open; a row and
+its pin on the switcher's popover, the row Enter would go to on the selected fill), and one that
+breaks it draws its own default back there and leaves the chip alone. A pinned pin and the row
+Enter would go to are measured under the pointer too, in what both states draw at once; a row's
+count is held on a fill the theme gives its row, and the row draws its own fill back where even
+the count's default cannot be read on it; a popover fill the theme sets that the switcher's rows
+and pins cannot be read on draws the popover's own back; and an unavailable row is reached by no
+row key, so it stays in the faint tier. A chip that breaks a floor at rest draws its states'
+own fills back after it, keeping what the theme sets in a state itself. A switcher row's count is
+`titlebar.row-count`, in no state, held on its amber wash over the popover and the selected row;
+`titlebar.count` is a chip's.
+
+A card pressed whole (the welcome's doors, the Get page's repo picks) is the `card-button`
+family, not a part of the card's: a theme's `card.title` reaches a card's own title and never a
+pressed card's, even one drawn inside a card, which `card-button.title` reaches.
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
 one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line
@@ -339,10 +383,31 @@ their own: a select's list and a combobox's suggestions stand on the popover's `
 each option is a menu's row, so `menu.root.hover.fill` reaches an option too. A chevron is a mark,
 held at 3:1 as an icon is; the placeholder and the chevron fall back to the quiet tier.
 
+A box a person gives a value to (`text-input`, `textarea`, `select`, `combobox`) is refused in
+`invalid` (since NEXT): `text-input.root.invalid.border-colour` reaches every refused one-line box.
+Its edge is what says a value is refused, so such a box keeps its edge's width (`border-width` 0
+on its root refuses the theme; a transparent `border-colour` draws no edge at rest, with
+`invalid.border-colour` the refused one), and in any
+state it is refused in, an edge that is transparent, under 3:1 on its fill, or drawn as the same
+box's edge when it is not refused falls back to the danger colour.
+
 A choice is chosen in `selected`: a box ticked (`checkbox.box.selected.fill`), a radio, a segment or
 a card picked, a switch on (`switch.track.selected.fill`). A choice's size is its family's: no
 choice takes a height, and a mark's corner is clamped to half its own box, so a tick never moves
 anything.
+
+**A card and a Notice hold answers**, an ask's Allow and a Notice's fix, so they are consent
+surfaces (ADR 0097 §6): their `root.fill` names one of the grounds the button family is measured
+on (or `transparent`), and a theme that names another is refused, so an Allow on them is always
+held apart from the primary (with `transparent`, the surface under it is the ground, #3083). A
+Notice's edge width is no theme's, and a Notice (wherever the window draws its edge: a chat
+pane's band draws its Notices as washed cards with no edge, #3142, and its own washes and words: a theme's `notice.*.fill` and `notice.*.text` reach every Notice but one in a pane) and a card's `ask` keep their waiting edge: an
+edge that would not show or that takes the accent's hue draws the family default,
+`card.root.ask.border-width: 0` is refused, and a theme that turns every card's border off still
+draws the ask's. `separator.root.fill` colours every line between groups, the menu's, the
+dialog's and the status bar's included. A separator has no words, so none is measured on it; a badge's
+and a count's words are measured on their own fill. None of the five is a target: each is as
+tall as what it holds.
 
 The states are `hover`, `pressed`, `selected` (chosen, or a toggle that is on), `focused` (the
 keyboard is on it; a field whenever it holds the caret), `disabled` and `open`. A family names
@@ -479,8 +544,47 @@ on it, in place of a ring the handle's length. Purlis Classic's own `parts` draw
 (`panel-separator.root.hover.fill: accent.base`, `panel-separator.grip.hover.fill: transparent`,
 and the same for `pressed` and `focused`).
 
-The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
-families with parts today: they are drawn as the note under [Geometry](#geometry) says.
+**The view frame** (the next release's manifest version, #3666, #3667): `view-frame` lays a view
+tab out as pages: its `nav` (the page navigation's column), the page's `list` pane with its
+`head` and `lead` line, the `item` pane with its sticky page `header` and the item's `name`, and
+the top `bar` with back and forward (`history`), the `path` of the view's pages, the `crumb`
+where the person is and the `crumb-separator`. It draws no state. A page in its navigation is
+`view-nav`: its `item` (the root: colours and corners, never a size), its `label` and the
+`indicator` at the current page's start edge, which tells it apart by more than colour. Both
+built-ins draw the family default.
+
+**Page tabs** (the next release's manifest version, #3668): `page-tabs`, the tabs inside a page.
+Its root is a `tab` (React Aria's state attributes), with its `label`, its `count` (quiet words,
+in room kept for three figures) and its `indicator` under the chosen tab; the `list` row and the
+chosen tab's `panel` are drawn around it. No state changes a size. Both built-ins draw the family
+default.
+
+**The disclosure** (the next release's manifest version, #3675): `disclosure`, a button that
+shows and hides the region under it. Its `root` holds the `trigger` row (the room around the
+trigger and any mark after it; the trigger itself is a quiet ghost of the button family, which
+`button.*` reaches), the `twist` that turns in it (its colour, held at its floor), and the
+`panel` it shows (its ground, edge, corners and room). It draws no state: opening it turns the
+twist, which is a transform. Both built-ins draw the family default.
+
+**The review page** (the next release's manifest version, #3672): `review-page`, a page whose
+`body` scrolls over a fixed action `bar`, with the bar's `summary` (what the main action does and
+spends, held at its floor) and its `answers` (the dialog's answer row, whose buttons are the button
+family's). The bar's edge is not a theme's: the bar is a consent surface where it holds a grant,
+so no part sets the line over it. It draws no state. Both built-ins draw the family default.
+
+**The table** (the next release's manifest version, #2911): `table`. Its `root` is a table's row,
+at rest and in each state (`fill`, `text`); `frame` is the card that holds the table; `head` a
+column's name; `cell` a cell's room; `rule` the rule between rows and under the columns' names,
+none by default (Purlis Classic fills it, `table.rule.fill: border.subtle`); and `bar` the bar
+over a table that chooses.
+
+**The tree** (the next release's manifest version, #2911): `tree`, a tree's row. Its `root` takes
+every property but `padding`, which is its indentation (each level one step in) and stays the
+family's; `body` is the tree that holds the rows; `twist` the chevron that opens and closes a
+row's rows, a mark; `lead` and `trail` its marks and its end; and `header` a group's name.
+
+The tree rows still drawn by hand are not a family with parts today: they are drawn as the note
+under [Geometry](#geometry) says.
 
 ### Session tabs
 
@@ -643,20 +747,29 @@ for a theme with none), in the theme's order of its options. Its `kind` is `cont
 its `ratio`, and `under` when the back is a wash laid over another token, and `beneath` when
 that token is a wash laid over another in turn), `ansi` (a terminal colour too close to the
 terminal's background: `token`, `ratio`, `floor`) or `selected-not-apart` (the selected row
-drawn exactly as `other`), `selection-text-alone` (a colour for selected text on a selection
-left to the platform), `line-does-not-fit` (a line of words taller than the box it is drawn in:
+drawn exactly as `other`), `card-not-apart` (a side view's card row whose fill, `card`, steps
+only `ratio` from the side panel's, `ground`, under the `floor` of 1.05, with no edge that
+clears a hairline's 1.2 there, in a theme whose parts, its own or inherited, choose a card
+row's look or a side panel's fill; the check only reports it and redraws nothing),
+`notice-way-not-apart` (a notice card's secondary way whose fill, at rest or `pointed` at, is
+only `distance` from the `variant` card's `ground` in OKLab, under the `floor` of 0.02: the
+fill a theme's button parts give it, or else the card's own mix of `control.base` toward
+`text.primary`, 14% at rest and 22% under the pointer; the check only reports it),
+`selection-text-alone` (a colour for selected text on a selection left to the platform),
+`line-does-not-fit` (a line of words taller than the box it is drawn in:
 its `density`, the `fit` it breaks, a `size`, a `line_height` and a `height` token, and the
 `line` and the `room` it has, in px at the default text size), or `style-without-a-face` (a
 style the theme draws in a font it brings with no face for it, so the browser makes it from
 another face: the font's `slot`, `ui`, `mono` or `terminal`, the `weight` and the `style`,
-`normal` or `italic`). A field (`.ui-input`, `size.control` tall) holds the window's words
+`normal` or `italic`). A field (the field family's text input, `[data-scope="text-input"]`, `size.control` tall) holds the window's words
 (`font-size.base`) and a strip a tab's title (`font-size.md`), each on the body line
 (`line-height.body`), in both densities. A button's label sits on a line of 1, so it fits
 wherever a field's text does. `tint` is the workspace colour it was found in, or `null` for the
 theme as it is, for a line and for a style; a line and a style are found once for each
 combination, never for a tint. `held` has one entry for each combination in which the window
 holds a consent floor: its `appearance` and `options` as a warning's, the `floors` (`ask`,
-`allow-apart`, `danger`, `danger-apart`, `state-marks`) and the `tokens` drawn as purlis's own.
+`allow-apart`, `danger`, `danger-apart`, `state-marks`, `allow-not-primary`, `waiting-apart`)
+and the `tokens` drawn as purlis's own.
 `hard_floors` has one entry for each hard floor a combination breaks: its `appearance` and
 `options` as a warning's, the `floor` (`primary-text`, `focus-ring`, `terminal-text`), the
 `front` and `back` tokens (`under` for a wash, and `beneath` when that is a wash laid over
@@ -810,6 +923,11 @@ follows the value the theme gives the old one (`vocabulary::KIN`):
 | `accent.fill-hover` | `tab.active` |
 | `accent.fill-edge` | `accent.base` |
 | `accent.fill-text` | `text.primary` |
+| `accent.wash-hover` | `tab.active` |
+
+Later, `accent.wash-hover` came in (#3345): the chosen title-bar chip's ground under the pointer,
+a step stronger than `accent.wash`, which is the chosen chip's ground at rest; both hold the
+primary words at 4.5:1 over the title bar.
 
 Over Purlis, whose primary is filled and whose controls draw no edge, a theme keeps Purlis's
 values unless it names them. `radius.control` is Classic's `radius.md`, 4, where a theme names

@@ -34,6 +34,7 @@ pub const TOKENS: &[&str] = &[
     "accent.base",
     "accent.surface",
     "accent.wash",
+    "accent.wash-hover",
     "accent.text",
     "accent.fill",
     "accent.fill-hover",
@@ -55,6 +56,8 @@ pub const TOKENS: &[&str] = &[
     "danger.surface",
     "danger.text",
     "danger.wash",
+    "attention.surface",
+    "attention.text",
     "wash.warning",
     "diff.deleted",
     "diff.inserted",
@@ -201,7 +204,7 @@ pub const TINTED: &[&str] = &[
 /// keeps each colour's luminance, so a pair these draw keeps its contrast at every hue.
 ///
 /// The rest are never a tint's: the consent and state colours (`needs-you.*`, `danger.*`,
-/// `state.*`) are purlis's to hold (ADR 0097 §6); the diff washes, the icon colours, the syntax
+/// `attention.*`, `state.*`) are purlis's to hold (ADR 0097 §6); the diff washes, the icon colours, the syntax
 /// roles and the other markdown and chart colours carry their meaning in their hue; the terminal
 /// is handed its colours once, as an object, and a workspace switch does not redraw it; the
 /// selection, caret, placeholder and scrollbar may be left to the platform; the window's
@@ -230,6 +233,7 @@ pub const TINTABLE: &[&str] = &[
     "accent.base",
     "accent.surface",
     "accent.wash",
+    "accent.wash-hover",
     "accent.text",
     "accent.fill",
     "accent.fill-hover",
@@ -295,6 +299,7 @@ pub const GEOMETRY: &[&str] = &[
     "--window-gutter",
     "--panel-corner-radius",
     "--panel-border-width",
+    "--separator-width",
     "--focus-ring-width",
     "--focus-ring-offset",
     "--focus-ring-inset",
@@ -371,10 +376,12 @@ pub fn follow_muted(
 /// token that drew it before (#3177): a plain control's edge was the strong rule's, the accent's
 /// wash and the primary's fill were its surface, the accent's words were the accent, the
 /// primary's fill under the pointer was the active tab's, its edge was the accent, and its words
-/// were the primary words.
-pub const KIN: [(&str, &str); 7] = [
+/// were the primary words. A chosen title-bar chip's wash under the pointer (#3345) was the
+/// active tab's, as the primary's fill under the pointer was, which Purlis Classic draws alike.
+pub const KIN: [(&str, &str); 8] = [
     ("border.control", "border.strong"),
     ("accent.wash", "accent.surface"),
+    ("accent.wash-hover", "tab.active"),
     ("accent.text", "accent.base"),
     ("accent.fill", "accent.surface"),
     ("accent.fill-hover", "tab.active"),

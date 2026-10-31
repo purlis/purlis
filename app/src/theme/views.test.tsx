@@ -48,7 +48,6 @@ import { DRAFT, forgetDrafts, wantEdit } from "../memories";
 import type {
   Activity,
   DispatchRow,
-  HarnessPlugins,
   InstructionFile,
   MemoryView,
   PanelRow,
@@ -65,9 +64,20 @@ import type {
   WorkspaceSettings,
 } from "../bindings";
 import type { ViewRef } from "../tabs";
+import {
+  AT_THE_ROOT,
+  SKILL_STUDIO_VIEW,
+  skillRowNamed,
+  studioHistoryOf,
+  type SkillPageTab,
+  type StudioPlace,
+} from "../skillStudio";
+import { forgetViewHistory, openViewAt } from "../ui/panel/viewHistory";
 import { complaints } from "./complaints.testkit";
+import { forgetProjectsBrowsers, tellProjectBrowsers } from "../browsersGrid";
 import { BUILT_IN, DEFAULT_THEME, drawIn } from "./theme";
 import { forgetGroups } from "../settings/links";
+import { forgetDevicesForTests } from "../devices";
 import { findSelectNamed, pickIn } from "../ui/select/select.testkit";
 
 afterEach(() => {
@@ -200,6 +210,17 @@ describe("the token test", () => {
 // ---------------------------------------------------------------------------------------------
 
 const PLANE = "/home/dev/plane";
+
+/** The history of the project's studio tab, which a state opens at a skill's page (#3682). */
+const STUDIO_HISTORY = studioHistoryOf(PLANE, SKILL_STUDIO_VIEW);
+
+/** The studio at deploy's page, on `tab`. */
+const skillPageAt = (tab: SkillPageTab): StudioPlace => ({
+  page: "library",
+  scope: AT_THE_ROOT,
+  skill: skillRowNamed("deploy"),
+  tab,
+});
 const WORKSPACE = "web";
 
 /** A row of a list, with `over` said on top of a plain one. */
@@ -414,19 +435,6 @@ const SAVING_IN_FORCE: SavingInForce = {
   plane_left_out: null,
   repos_left_out: null,
 };
-
-const HARNESSES: HarnessPlugins[] = [
-  {
-    harness: "claude",
-    title: "Claude Code",
-    unsupported: null,
-    only_off: null,
-    record: "~/.claude/plugins/installed_plugins.json",
-    trouble: null,
-    plugins: [],
-    local_left_out: null,
-  },
-];
 
 const VAULT: VaultContents = {
   name: "ops",
@@ -687,7 +695,6 @@ const ORDINARY: Answers = {
   vault_secret_reveal: "postgres://db.internal/app",
   project_settings: SETTINGS,
   project_extensions: { extensions: [], local_left_out: null },
-  project_harness_plugins: HARNESSES,
   project_saving_in_force: SAVING_IN_FORCE,
   project_theme: THEME,
   project_theme_drawn: null,
@@ -724,6 +731,7 @@ const ORDINARY: Answers = {
               ms: 900,
             },
             grade: null,
+            before: null,
           },
           {
             commit: "b".repeat(40),
@@ -742,6 +750,7 @@ const ORDINARY: Answers = {
               ms: 0,
             },
             grade: null,
+            before: null,
           },
         ],
         uncommitted: {
@@ -1004,26 +1013,15 @@ const ORDINARY: Answers = {
         outside: "repo",
         owner: { kind: "repo", name: "api" },
         outcome: "both-load",
+        said: "the repo api has a skill of this name too, and a chat there gets both",
       },
     ],
     harnesses: [
       {
         harness: "claude",
         title: "Claude Code",
-        unsupported: null,
-        only_off: null,
         repo_left_out: [],
-        trouble: null,
-        plugins: [
-          {
-            id: "figma@official",
-            name: "figma",
-            origin: "official, user",
-            installed: true,
-            state: "off",
-            pinned: null,
-          },
-        ],
+        own: null,
         skills: [
           {
             name: "deploy",
@@ -1168,6 +1166,87 @@ const ARCHIVE_REF: ViewRef = { from: null, view: "memory-archive", key: "shared"
 const VAULT_REF: ViewRef = { from: null, view: "vault", key: "ops" };
 const TODO_REF: ViewRef = { from: null, view: "todo", key: "alpha/20260302-091400-review" };
 
+/** This machine and two runners, for the Devices view (#2052). */
+const DEVICES_SHOWN = {
+  version: "0.9.0",
+  placement: {
+    here: {
+      chats: [{ plane: "/plane", session: 1, name: "lint" }],
+      browsers: [{ plane: "/plane", session: 1, program: "p-lint-b1", name: "b1", chat: "lint" }],
+    },
+    runners: [
+      {
+        pool: "builds",
+        runner: "builds",
+        draining: false,
+        on: { chats: [{ plane: "/plane", session: 2, name: "verify" }], browsers: [] },
+      },
+      { pool: "qa", runner: "qa", draining: true, on: { chats: [], browsers: [] } },
+    ],
+    unkept: [{ plane: "/plane", session: 7, name: "orphan", pool: "removed" }],
+    unkept_browsers: [{ plane: "/plane", session: 7, name: "b2", chat: "orphan", pool: "removed" }],
+  },
+  owned: false,
+  projects: 1,
+  pools: [
+    {
+      pool: "builds",
+      limits: { cpus: "2", memory_mib: 4096, processes: 1024, tmp_mib: 1024 },
+      millicpus: 2000,
+      removed_ran_this_week: 0,
+      price: null,
+    },
+  ],
+};
+
+/** What each runner answers: that it runs, on another version than this machine's. */
+/** The disk each pool's runners hold (#3493): one of qa's homes not listed. */
+const DEVICES_DISK = {
+  state: "read",
+  pools: [
+    { pool: "builds", kilobytes: 1_750_000, not_listed: 0 },
+    { pool: "qa", kilobytes: 2_000, not_listed: 1 },
+  ],
+};
+
+const DEVICE_ANSWERS = {
+  standing: { state: "running" },
+  link: { state: "linked" },
+  version: "0.8.1",
+  contacted: 1_800_000_000,
+  holds: { open: [], browsers_open: [], chats: 2, browsers: 1 },
+  ran_this_week: 7200,
+};
+
+/** A runner's answer in each other state a Devices row draws. */
+const DEVICE_SAYS = {
+  suspended: {
+    ...DEVICE_ANSWERS,
+    standing: { state: "suspended" },
+    link: null,
+    version: null,
+    contacted: null,
+  },
+  silent: {
+    ...DEVICE_ANSWERS,
+    link: {
+      state: "down",
+      why: "the runner did not answer in time, after the link was made and the container checked as it was made",
+    },
+    version: null,
+  },
+  rekeyed: { ...DEVICE_ANSWERS, link: { state: "key_changed" }, version: null },
+  unread: {
+    ...DEVICE_ANSWERS,
+    standing: {
+      state: "unknown",
+      why: "Cannot connect to the Docker daemon. Is the docker daemon running?",
+    },
+    link: null,
+    version: null,
+  },
+};
+
 const STATES: State[] = [
   { name: "a persona", view: PERSONA, drawn: /Charter defects go upstream/ },
   {
@@ -1224,10 +1303,102 @@ const STATES: State[] = [
   },
   { name: "Saving", view: { from: null, view: "saving", key: "" }, drawn: /site/ },
   {
+    name: "Devices, runners that answer on another version, and the use per pool",
+    view: { from: null, view: "devices", key: "" },
+    answers: { devices: DEVICES_SHOWN, device_runner: DEVICE_ANSWERS, devices_disk: DEVICES_DISK },
+    drawn: /CPUs requested/,
+  },
+  ...(
+    [
+      ["suspended", DEVICE_SAYS.suspended, /Its container is stopped/],
+      ["that do not answer", DEVICE_SAYS.silent, /It does not answer/],
+      ["whose key changed", DEVICE_SAYS.rekeyed, /another key than the one/],
+      ["whose container could not be read", DEVICE_SAYS.unread, /Check that Docker runs/],
+    ] as const
+  ).map(([which, answer, drawn]) => ({
+    name: `Devices, runners ${which}, with chats on a pool no longer kept`,
+    view: { from: null, view: "devices", key: "" } as ViewRef,
+    answers: { devices: DEVICES_SHOWN, device_runner: answer },
+    drawn,
+  })),
+  {
+    name: "Devices, while they are read",
+    view: { from: null, view: "devices", key: "" },
+    // Never answered: the view stays on its reading line.
+    answers: { devices: new Promise(() => {}) },
+    drawn: /Reading this machine/,
+  },
+  {
+    name: "Devices, while each runner is asked",
+    view: { from: null, view: "devices", key: "" },
+    // Never answered: each runner's row stays on asking, Refresh beside them.
+    answers: { devices: DEVICES_SHOWN, device_runner: new Promise(() => {}) },
+    drawn: /Asking the runner how it is/,
+  },
+  {
+    name: "Devices, a runner purlis could not ask",
+    view: { from: null, view: "devices", key: "" },
+    answers: {
+      devices: DEVICES_SHOWN,
+      device_runner: new Error("No runner qa of pool qa is on this machine."),
+    },
+    drawn: /purlis could not ask this runner/,
+  },
+  {
+    name: "Devices that could not be read",
+    view: { from: null, view: "devices", key: "" },
+    answers: { devices: new Error("runners.json could not be read: permission denied") },
+    drawn: /permission denied/,
+  },
+  {
     name: "a browser whose view the host refused",
     view: { from: null, view: "browser", key: "01J9ZQ8000000000000000000D" },
     answers: { watch_browser: new Error("this session host holds no program 01J9ZQ8") },
     drawn: /holds no program/,
+  },
+  {
+    name: "a browser's DevTools, open",
+    view: { from: null, view: "devtools", key: "01J9ZQ8000000000000000000D" },
+    answers: {
+      watch_inspector: { view: 5, width: 1000, height: 700, person_drives: true, pool: null },
+    },
+    drawn: /DevTools of this browser's page/,
+  },
+  {
+    name: "a browser's DevTools, closed",
+    view: { from: null, view: "devtools", key: "01J9ZQ8000000000000000000D" },
+    answers: { watch_inspector: new Error("no DevTools are open for this browser") },
+    drawn: /DevTools are closed/,
+  },
+  {
+    name: "the Browsers grid, with a browser",
+    view: { from: null, view: "browsers", key: "" },
+    answers: { watch_browser: { view: 1, width: 1280, height: 800, person_drives: false } },
+    before: () =>
+      tellProjectBrowsers({
+        plane: PLANE,
+        project: "plane",
+        tiles: [
+          {
+            plane: PLANE,
+            program: "01J9ZQ8000000000000000000E",
+            own: false,
+            name: "b1",
+            chat: "steward 1",
+            workspace: WORKSPACE,
+            driver: "person",
+            pool: null,
+          },
+        ],
+        open: () => undefined,
+      }),
+    drawn: /Browser b1 of steward 1/,
+  },
+  {
+    name: "the Browsers grid, empty",
+    view: { from: null, view: "browsers", key: "" },
+    before: () => forgetProjectsBrowsers(),
+    drawn: /No browser runs in this project/,
   },
   {
     name: "a workspace's changes, a landing refused",
@@ -1412,13 +1583,89 @@ const STATES: State[] = [
     drawn: /Deploys the site\./,
   },
   {
-    name: "a skill's tab, with its runs",
-    view: { from: null, view: "skill", key: "deploy" },
+    name: "a skill's page in the studio, on its runs (#3682)",
+    view: SKILL_STUDIO_VIEW,
+    before: () => openViewAt(STUDIO_HISTORY, skillPageAt("runs")),
     drawn: /From before runs were recorded/,
   },
   {
-    name: "a skill's tab, with no runs yet",
-    view: { from: null, view: "skill", key: "deploy" },
+    name: "a skill's page in the studio, on its Overview (#3682)",
+    view: SKILL_STUDIO_VIEW,
+    before: () => openViewAt(STUDIO_HISTORY, skillPageAt("overview")),
+    drawn: /Who gets it/,
+  },
+  {
+    name: "a grade's scorecard page in the studio, each chat one click away (SK-59, S6)",
+    view: SKILL_STUDIO_VIEW,
+    before: () =>
+      openViewAt(STUDIO_HISTORY, {
+        ...skillPageAt("grades"),
+        grading: { at: "scorecard", grade: "01GRADE" },
+      }),
+    answers: {
+      skill_grade_scorecard: {
+        grade: "01GRADE",
+        skill: "deploy",
+        graded: "2026-10-28 10:00 UTC",
+        version: "0123456789ab",
+        ran_on: "Claude Code · claude-sonnet-4-5",
+        ended: "Finished",
+        delta: 33,
+        against: null,
+        delta_without: null,
+        after_edit: false,
+        outcome: "graded",
+        arms: { with: 100, without: 0, previous: null },
+        spent: { chats: 5, tokens: 40000, cost_usd: 0.4, limit_usd: 3 },
+        asked: 1,
+        tests: [
+          {
+            query: "ship it to production",
+            should_trigger: true,
+            arms: [
+              {
+                arm: "with",
+                runs: 3,
+                triggered: 3,
+                pass: true,
+                asked: 0,
+                chats: [
+                  { id: "01A", run: 1, kept: true },
+                  { id: "01B", run: 2, kept: false },
+                ],
+              },
+              {
+                arm: "without",
+                runs: 2,
+                triggered: 0,
+                pass: false,
+                asked: 1,
+                chats: [{ id: "01C", run: 1, kept: true }],
+              },
+            ],
+          },
+        ],
+      },
+    },
+    drawn: /1 chat asked you something/,
+  },
+  {
+    name: "a grade's chat this machine did not keep, on its page in the studio (SK-59, S6)",
+    view: SKILL_STUDIO_VIEW,
+    before: () =>
+      openViewAt(STUDIO_HISTORY, {
+        ...skillPageAt("grades"),
+        grading: { at: "chat", grade: "01GRADE", chat: "01B" },
+      }),
+    answers: {
+      skill_grade_chat: new Error("purlis keeps a grade's chats on the machine that ran it."),
+    },
+    drawn: /not kept here/,
+  },
+  {
+    name: "a skill's page in the studio, with no runs yet (#3682)",
+    view: SKILL_STUDIO_VIEW,
+    before: () => openViewAt(STUDIO_HISTORY, skillPageAt("runs")),
     answers: {
       skill_runs: [],
       skill_panels: [
@@ -1457,7 +1704,7 @@ const STATES: State[] = [
         clashes: [],
       },
     },
-    drawn: /This project has no skills of its own yet/,
+    drawn: /No skill reaches these chats yet/,
   },
   {
     name: "the project's dispatches, none yet",
@@ -1663,6 +1910,25 @@ const STATES: State[] = [
     drawn: /asks to change this project/,
   },
   {
+    name: "a runner chat's open or dispatch, whole",
+    view: { from: null, view: "runner-dispatch", key: "2" },
+    answers: {
+      runner_dispatch: {
+        session: 6,
+        chat: "devops 2",
+        pool: "builds",
+        persona: "devops",
+        handoff: false,
+        name: "check prod",
+        works: "the asking chat's folder",
+        profile: "work",
+        long: false,
+        brief: "look at the cluster",
+      },
+    },
+    drawn: /start a task as/,
+  },
+  {
     name: "an extension's view, its action refused",
     view: EXTENSION,
     answers: {
@@ -1726,6 +1992,10 @@ describe.each(Object.keys(BUILT_IN))("every view in %s", (theme) => {
     forgetDrafts();
     // Which group each Settings level shows is the window's, for as long as it runs (SE-22).
     forgetGroups();
+    // An ask of a runner a state left unanswered is not joined by the next state's.
+    forgetDevicesForTests();
+    // The studio's tab starts afresh: a state that opened it at a skill's page keeps no place.
+    forgetViewHistory(STUDIO_HISTORY);
   });
 
   it.each(STATES)("draws $name with tokens only", async (state) => {

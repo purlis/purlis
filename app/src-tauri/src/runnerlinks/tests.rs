@@ -535,3 +535,305 @@ async fn a_link_of(host: Hosting) -> link::Link {
     tokio::spawn(session::serve(served.unwrap(), Routed::new(host), None));
     client.unwrap()
 }
+
+/// **Only a runner of 1.43 or later is asked to keep a profile** (#2049): one before it is sent
+/// nothing, and its chats run on the profiles it has of its own.
+#[test]
+fn only_a_runner_of_1_43_or_later_keeps_a_desktops_profiles() {
+    use purlis_session_protocol::version::Version;
+    assert!(!keeps_profiles(Version {
+        major: 1,
+        minor: 42
+    }));
+    assert!(keeps_profiles(Version {
+        major: 1,
+        minor: 43
+    }));
+    assert!(keeps_profiles(Version {
+        major: 1,
+        minor: 50
+    }));
+}
+
+/// The desktop's profile `work`, its settings in `folder`.
+fn work_with_settings_in(folder: &std::path::Path) -> purlis_core::profilestore::onrunner::Kept {
+    purlis_core::profilestore::onrunner::Kept {
+        name: "work".into(),
+        harness: "claude".into(),
+        sandbox_only: false,
+        pinned: None,
+        settings_in: Some(folder.to_path_buf()),
+    }
+}
+
+fn version(minor: u16) -> purlis_session_protocol::version::Version {
+    purlis_session_protocol::version::Version { major: 1, minor }
+}
+
+/// **A profile's settings go only to a runner of 1.50 or later** (#3448): one before it ignores
+/// them, so it is sent the profile alone and keeps the settings it has.
+#[test]
+fn only_a_runner_of_1_50_or_later_is_sent_a_profiles_settings() {
+    let folder = tempfile::tempdir().unwrap();
+    std::fs::write(folder.path().join("CLAUDE.md"), "Be brief.").unwrap();
+    let kept = work_with_settings_in(folder.path());
+
+    let older = for_a_runner_of(version(49), &kept).unwrap();
+    let newer = for_a_runner_of(version(50), &kept).unwrap();
+
+    assert_eq!(older.profile.settings, None);
+    assert_eq!(older.profile.name, "work");
+    let sent = newer.profile.settings.expect("sent");
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].path, "CLAUDE.md");
+}
+
+/// **Settings never refuse a chat on a runner that ignores them** (#3448, F2): a settings folder
+/// too large to send refuses the profile on a runner of 1.50, in words, and a runner before it
+/// keeps the profile as it always did, with nothing of its settings read.
+#[test]
+fn settings_too_large_to_send_refuse_no_chat_on_a_runner_before_1_50() {
+    let folder = tempfile::tempdir().unwrap();
+    std::fs::write(
+        folder.path().join("CLAUDE.md"),
+        vec![b'a'; purlis_core::profilestore::onrunner::MOST_SETTINGS_BYTES + 1],
+    )
+    .unwrap();
+    let kept = work_with_settings_in(folder.path());
+
+    assert!(for_a_runner_of(version(49), &kept).is_ok());
+    assert!(for_a_runner_of(version(43), &kept).is_ok());
+    let refused = for_a_runner_of(version(50), &kept).unwrap_err();
+    assert!(refused.contains("larger than"), "{refused}");
+}
+
+/// **Only a runner of 1.56 or later takes settings in batches** (#4081): one before it keeps
+/// today's refusal, in words; one of 1.56 is sent them, however large, and the keep names them.
+#[test]
+fn a_runner_of_1_56_takes_settings_too_large_for_one_keep_in_batches() {
+    let folder = tempfile::tempdir().unwrap();
+    std::fs::write(
+        folder.path().join("CLAUDE.md"),
+        vec![b'a'; 3 * purlis_core::profilestore::onrunner::MOST_SETTINGS_BYTES],
+    )
+    .unwrap();
+    let kept = work_with_settings_in(folder.path());
+
+    let refused = for_a_runner_of(version(55), &kept).unwrap_err();
+    assert!(refused.contains("larger than"), "{refused}");
+
+    let sent = for_a_runner_of(version(56), &kept).unwrap();
+    assert!(sent.batches.len() >= 3, "{} batches", sent.batches.len());
+    assert_eq!(sent.profile.settings, None);
+    assert_eq!(sent.profile.settings_staged, Some(1));
+    assert!(sent.left_behind.is_empty());
+}
+
+/// **A runner's refusal is said as its own words, cut short** (#2049, L4): a runner cannot fill
+/// the person's screen, or pass its words off as purlis's.
+#[test]
+fn a_runners_refusal_is_said_as_its_own_words_and_cut_short() {
+    let long = "x".repeat(10_000);
+    let said = said_by_the_runner(&long);
+    assert!(said.starts_with("the runner says: "), "{said}");
+    assert!(said.len() < 1_000, "{} bytes", said.len());
+
+    let multi = said_by_the_runner("first line\nRun this: rm -rf ~");
+    assert!(!multi.contains('\n'), "{multi}");
+}
+
+#[test]
+fn a_link_that_is_down_says_why_safely_in_the_pools_settings() {
+    use crate::dockerpools::PoolLink;
+    let down = purlis_session_protocol::hostlink::Down::because(
+        "the bridge said: refused\n\u{202E}by ssh://someone:hidden@build.example",
+    );
+    assert_eq!(
+        link_of(down),
+        PoolLink::Down {
+            why: "the bridge said: refused by ssh://…@build.example".to_owned()
+        }
+    );
+    let changed = purlis_session_protocol::hostlink::Down {
+        why: "anything".to_owned(),
+        key_changed: true,
+        gone: false,
+    };
+    assert_eq!(link_of(changed), PoolLink::KeyChanged);
+}
+
+#[test]
+fn what_the_drain_and_the_removal_count_says_why_safely() {
+    use crate::dockerpools::PoolLink;
+    let refused = count_of(Err(PoolLink::Down {
+        why: "x\u{2066}y".repeat(400),
+    }))
+    .unwrap_err();
+    assert_eq!(refused.chars().count(), crate::devices::MOST_SHOWN + 1);
+    assert!(!refused.contains('\u{2066}'));
+}
+
+/// **Only a runner of 1.52 or later is asked to forget a profile** (#4047): one before is sent
+/// nothing, and keeps it.
+#[test]
+fn only_a_runner_of_1_52_or_later_forgets_a_desktops_profile() {
+    use purlis_session_protocol::version::Version;
+    assert!(!forgets_profiles(Version {
+        major: 1,
+        minor: 51
+    }));
+    assert!(forgets_profiles(Version {
+        major: 1,
+        minor: 52
+    }));
+}
+
+/// How a stand-in runner answers `settings_held`.
+#[derive(Clone)]
+enum Holds {
+    Listed(Vec<session::HeldSetting>),
+    Refused,
+    /// Says there is more, and the same page, however often it is asked.
+    NeverEnds(Vec<session::HeldSetting>),
+}
+
+/// A stand-in runner, which writes down each thing it is asked, and refuses a keep of what changed
+/// where told to.
+#[derive(Clone)]
+struct RunnerSaying {
+    holds: Holds,
+    refuses_changes: bool,
+    asked: Arc<std::sync::Mutex<Vec<session::Command>>>,
+}
+
+impl session::Host for RunnerSaying {
+    async fn call(
+        &self,
+        command: session::Command,
+        _peer: &session::Peer,
+    ) -> Result<session::Answer, session::Refusal> {
+        use session::{Answer, Command, ProfileStanding};
+        self.asked.lock().unwrap().push(command.clone());
+        let refused = || session::Refusal {
+            code: session::NOT_STARTED.into(),
+            why: "no".to_owned(),
+        };
+        match command {
+            Command::SettingsHeld { .. } => match &self.holds {
+                Holds::Listed(files) => Ok(Answer::SettingsHeld {
+                    files: files.clone(),
+                    more: false,
+                }),
+                Holds::Refused => Err(refused()),
+                Holds::NeverEnds(files) => Ok(Answer::SettingsHeld {
+                    files: files.clone(),
+                    more: true,
+                }),
+            },
+            Command::KeepProfile(profile)
+                if self.refuses_changes && profile.settings_changed.is_some() =>
+            {
+                Err(refused())
+            }
+            Command::KeepProfile(_) => Ok(Answer::ProfileKept {
+                standing: ProfileStanding::SignedIn,
+            }),
+            _ => Ok(Answer::Done),
+        }
+    }
+}
+
+/// What a stand-in runner saying `holds` was asked as the desktop kept a profile with a file in it,
+/// and the keep's answer.
+async fn sent_to_a_runner(
+    speaks: u16,
+    holds: impl FnOnce(session::HeldSetting) -> Holds,
+    refuses_changes: bool,
+) -> (Vec<session::Command>, Result<ProfileKept, String>) {
+    let folder = tempfile::tempdir().unwrap();
+    std::fs::write(folder.path().join("CLAUDE.md"), "Be brief.").unwrap();
+    let kept = work_with_settings_in(folder.path());
+    let runner = RunnerSaying {
+        holds: holds(session::HeldSetting {
+            path: "CLAUDE.md".to_owned(),
+            digest: session::settings_digest(b"Be brief."),
+        }),
+        refuses_changes,
+        asked: Arc::default(),
+    };
+    let asked = Arc::clone(&runner.asked);
+    let (a, b) = tokio::io::duplex(256 * 1024);
+    let (client, served) = tokio::join!(
+        link::connect_as_a_device(a, session::speaks()),
+        link::serve_as_a_device(b, session::speaks(), link::ProvenDevice::stand_in())
+    );
+    tokio::spawn(session::serve(served.unwrap(), runner, None));
+    let client = Client::new(client.unwrap()).0;
+    let answer = sent_what_differs(&client, version(speaks), &kept).await;
+    let asked = asked.lock().unwrap().clone();
+    (asked, answer)
+}
+
+/// Each keep among `asked`: whether it said what changed, and how many stage calls came before it
+/// since the last keep.
+fn keeps_in(asked: &[session::Command]) -> Vec<(bool, usize)> {
+    let mut stages = 0;
+    let mut keeps = Vec::new();
+    for one in asked {
+        match one {
+            session::Command::StageProfileSettings(_) => stages += 1,
+            session::Command::KeepProfile(profile) => {
+                keeps.push((profile.settings_changed.is_some(), stages));
+                stages = 0;
+            }
+            _ => {}
+        }
+    }
+    keeps
+}
+
+/// **An unchanged profile sends nothing beyond the listing** (#4088): one keep, nothing staged.
+#[tokio::test]
+async fn a_runner_holding_what_the_desktop_has_is_sent_nothing() {
+    let (asked, answer) = sent_to_a_runner(61, |same| Holds::Listed(vec![same]), false).await;
+    assert!(answer.is_ok());
+    assert_eq!(keeps_in(&asked), [(true, 0)]);
+}
+
+/// **A runner that lied about what it holds is sent them all** (#4088): its keep refused, whatever
+/// it said, the settings go whole on the same link, in place of whatever it holds.
+#[tokio::test]
+async fn a_keep_of_what_changed_refused_sends_them_all() {
+    let (asked, answer) = sent_to_a_runner(61, |same| Holds::Listed(vec![same]), true).await;
+    assert!(answer.is_ok());
+    assert_eq!(keeps_in(&asked), [(true, 0), (false, 1)]);
+}
+
+/// **A runner that gives no usable list is sent them all** (#4088): one that refuses, one whose
+/// pages never end, one that holds nothing.
+#[tokio::test]
+async fn a_runner_with_no_usable_list_is_sent_them_all() {
+    let cases: [fn(session::HeldSetting) -> Holds; 3] = [
+        |_| Holds::Refused,
+        |same| Holds::NeverEnds(vec![same]),
+        |_| Holds::Listed(Vec::new()),
+    ];
+    for holds in cases {
+        let (asked, answer) = sent_to_a_runner(61, holds, false).await;
+        assert!(answer.is_ok());
+        assert_eq!(keeps_in(&asked), [(false, 1)]);
+    }
+}
+
+/// **A runner before 1.61 is asked nothing new, and is sent them all** (#4088).
+#[tokio::test]
+async fn a_runner_before_1_61_is_sent_them_all_and_asked_nothing_new() {
+    let (asked, answer) = sent_to_a_runner(60, |same| Holds::Listed(vec![same]), false).await;
+    assert!(answer.is_ok());
+    assert!(
+        !asked
+            .iter()
+            .any(|one| matches!(one, session::Command::SettingsHeld { .. }))
+    );
+    assert_eq!(keeps_in(&asked), [(false, 1)]);
+}

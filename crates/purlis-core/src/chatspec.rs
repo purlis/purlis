@@ -29,6 +29,9 @@ pub struct Terminal<'a> {
     pub number: u32,
     /// Where its hooks report, when the starter listens on a hook socket.
     pub reporting: Option<Reporting<'a>>,
+    /// The chat's prompt key, which its hooks key the digests of its prompts by (#3369): set in
+    /// its environment alone, never on its line.
+    pub prompt_key: Option<&'a str>,
 }
 
 /// Where a chat's hooks report, and the token each of its lines carries.
@@ -61,6 +64,10 @@ pub fn spec(app: impl IntoIterator<Item = (OsString, OsString)>, chat: &Terminal
         ));
         spec.env
             .push((crate::hookwire::TOKEN_ENV.into(), reporting.token.into()));
+    }
+    if let Some(key) = chat.prompt_key {
+        spec.env
+            .push((crate::hookwire::PROMPT_KEY_ENV.into(), key.into()));
     }
     // What the starter added, under both names too (V93k), as `compose` gave the rest.
     spec.env = crate::envvar::twinned(std::mem::take(&mut spec.env));
@@ -129,6 +136,8 @@ pub struct Launched<'a> {
     /// The folder of purlis's git hooks.
     pub git_hooks: Option<&'a str>,
     pub reporting: Option<Reporting<'a>>,
+    /// The chat's prompt key (#3369).
+    pub prompt_key: Option<&'a str>,
 }
 
 /// The spec for a chat the window composed, numbered `number` and started at `size`, with `app`
@@ -168,6 +177,7 @@ pub fn launched(
                 socket: reporting.socket,
                 token: reporting.token,
             }),
+            prompt_key: launch.prompt_key,
         },
     ))
 }
@@ -198,6 +208,10 @@ pub fn from_launch(
                 socket: Path::new(&reporting.socket),
                 token: &reporting.token,
             }),
+            prompt_key: launch
+                .prompt_key
+                .as_ref()
+                .map(purlis_session_protocol::session::PromptKey::expose),
         },
         number,
         size,

@@ -1212,7 +1212,7 @@ pub fn ages(
 /// `vault list` never makes the Keychain ask the operator anything.
 pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
     match load_index(ctx, vault) {
-        Err(e) => (false, e.message),
+        Err(e) => (false, e.message.to_string()),
         Ok(Index { service: None, .. }) => (true, format!("no secrets yet in {STORE_NAME}")),
         Ok(Index {
             service: Some(service),

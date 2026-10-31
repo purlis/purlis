@@ -18,6 +18,7 @@ use serde_json::{Map, Value};
 
 use super::{Ctx, VaultError};
 use crate::rewrite::Mode;
+use crate::tui::Markup;
 
 /// Provider ids this charter implements — `registry.PROVIDERS`.
 pub const PROVIDERS: [&str; 4] = ["1password", "keyring", "plain-file", "reference"];
@@ -396,13 +397,18 @@ pub fn add_vault(
             .filter(|f| !f.is_null() && f.as_str() != Some(""))
             .map(super::py_str);
         let detail = where_.map(|w| format!(" ({w})")).unwrap_or_default();
-        return Err(VaultError::new(format!(
-            "vault '{name}' is already registered with provider '{old}'{detail}. purlis will \
-             not replace it: the registration is the only pointer to that vault's secrets, so \
-             replacing it strands them with nothing referring to them.\n  keep both:     \
-             purlis vault add <other-name> --provider {provider} …\n  inspect it:    purlis \
-             vault list\n  replace anyway: re-run with --force (this does NOT migrate secrets)"
-        )));
+        return Err(VaultError::new(Markup::lines([
+            Markup::from(format!(
+                "vault '{name}' is already registered with provider '{old}'{detail}. purlis will \
+                 not replace it: the registration is the only pointer to that vault's secrets, \
+                 so replacing it strands them with nothing referring to them."
+            )),
+            Markup::from(format!(
+                "  keep both:     purlis vault add <other-name> --provider {provider} …"
+            )),
+            Markup::from("  inspect it:    purlis vault list"),
+            Markup::from("  replace anyway: re-run with --force (this does NOT migrate secrets)"),
+        ])));
     }
     let mut cfg = cfg;
     let mut local_cfg = Map::new();

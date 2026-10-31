@@ -34,6 +34,7 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use serde_json::Value;
+use zeroize::{Zeroize as _, Zeroizing};
 
 use super::cmd::{self, Io, Say};
 use super::registry;
@@ -109,11 +110,44 @@ pub(crate) fn child_env_of(
         .collect())
 }
 
+/// Sets `name` to `value` in `env`; the value it replaces is wiped (#3420), as it may be one a
+/// vault gave.
 pub(crate) fn set_var(env: &mut Vec<(OsString, OsString)>, name: &str, value: impl Into<OsString>) {
     let value = value.into();
     match env.iter_mut().find(|(k, _)| k == name) {
-        Some(slot) => slot.1 = value,
+        Some(slot) => wipe_os(std::mem::replace(&mut slot.1, value)),
         None => env.push((OsString::from(name), value)),
+    }
+}
+
+/// **Wipes `value` from memory as it goes** (#3420): an environment variable's value, which may
+/// be one a vault gave.
+pub(crate) fn wipe_os(value: OsString) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStringExt as _;
+        let mut bytes = value.into_vec();
+        bytes.zeroize();
+    }
+    #[cfg(not(unix))]
+    if let Ok(mut text) = value.into_string() {
+        text.zeroize();
+    }
+}
+
+/// **An environment wiped as it goes** (#3420): a copy of a run's, made to start it with.
+pub(crate) struct WipedEnv(pub Vec<(OsString, OsString)>);
+
+impl Drop for WipedEnv {
+    fn drop(&mut self) {
+        wipe_env(&mut self.0);
+    }
+}
+
+/// Wipes each value of `env` (#3420), leaving it empty.
+pub(crate) fn wipe_env(env: &mut Vec<(OsString, OsString)>) {
+    for (_, value) in env.drain(..) {
+        wipe_os(value);
     }
 }
 
@@ -160,6 +194,21 @@ pub(crate) struct Prepared {
     _cleanup: Cleanup,
 }
 
+/// **Every value a run was handed is wiped from memory as it goes** (#3420): the environment the
+/// child was given, every value to redact, and what each credential file holds. Its temp files
+/// are removed after.
+impl Drop for Prepared {
+    fn drop(&mut self) {
+        wipe_env(&mut self.env);
+        self.secret_values.zeroize();
+        for handed in &mut self.handed {
+            for (_, value) in &mut handed.entries {
+                value.zeroize();
+            }
+        }
+    }
+}
+
 /// **One credential file a run is handed** (#1708): the variable its path is in, the path, and
 /// what it holds: one value (`--file`), or the dotenv file's entries, each its name and value.
 pub(crate) struct Handed {
@@ -187,34 +236,49 @@ pub(crate) fn prepare(
     within: Option<&std::path::Path>,
     caught: &dyn Fn() -> Option<i32>,
 ) -> Result<Prepared, Stopped> {
-    prepare_from(&|key| cmd::get_value(ctx, v, key), req, env, within, caught)
+    prepare_from(
+        &|key| cmd::get_value(ctx, v, key).map(Zeroizing::new),
+        req,
+        env,
+        within,
+        caught,
+    )
 }
 
 /// [`prepare`], each value read by `read`: a vault's provider, or the values a runner's desktop
 /// sent for one run (#2047).
+///
+/// **Every copy of a value it makes is wiped** (#3420): each is held in what it answers, which
+/// wipes them as it is dropped ([`Prepared`]), on success and on every refusal, so a run that
+/// stops half prepared leaves none behind either.
 pub(crate) fn prepare_from(
-    read: &dyn Fn(&str) -> Result<String, super::VaultError>,
+    read: &dyn Fn(&str) -> Result<Zeroizing<String>, super::VaultError>,
     req: &Request,
-    mut env: Vec<(OsString, OsString)>,
+    env: Vec<(OsString, OsString)>,
     within: Option<&std::path::Path>,
     caught: &dyn Fn() -> Option<i32>,
 ) -> Result<Prepared, Stopped> {
-    let mut secret_values: Vec<String> = Vec::new();
-    let mut key_names: Vec<String> = Vec::new();
-    let mut env_names: Vec<String> = Vec::new();
-    // Declared before the first temp file and dropped after the child is gone, on every path.
-    let mut cleanup = Cleanup::default();
-    let mut handed: Vec<Handed> = Vec::new();
+    // Declared before the first value is read, and wiped as it is dropped on every path; its
+    // temp files are removed with it.
+    let mut out = Prepared {
+        env,
+        secret_values: Vec::new(),
+        key_names: Vec::new(),
+        env_names: Vec::new(),
+        files: Vec::new(),
+        handed: Vec::new(),
+        _cleanup: Cleanup::default(),
+    };
 
     // One value, and then the question every resolution has to be followed by: did a
     // terminating signal arrive meanwhile? If so nothing is started — the credential already
     // read goes no further than this process, and the files made so far are removed.
-    let resolve = |key: &str| -> Result<String, Stopped> {
+    let resolve = |key: &str| -> Result<Zeroizing<String>, Stopped> {
         let got = read(key);
         if let Some(sig) = caught() {
             return Err(Stopped::Signal(128 + sig));
         }
-        got.map_err(|e| Stopped::Said(1, e.message))
+        got.map_err(|e| Stopped::Said(1, e.message.to_string()))
     };
 
     for spec in &req.env {
@@ -228,10 +292,10 @@ pub(crate) fn prepare_from(
             }
         };
         let val = resolve(key)?;
-        set_var(&mut env, name, val.clone());
-        secret_values.push(val);
-        key_names.push(key.to_string());
-        env_names.push(name.to_string());
+        set_var(&mut out.env, name, val.as_str());
+        out.secret_values.push(val.as_str().to_owned());
+        out.key_names.push(key.to_string());
+        out.env_names.push(name.to_string());
     }
     for spec in &req.file {
         let (name, key) = match spec.split_once('=') {
@@ -244,17 +308,17 @@ pub(crate) fn prepare_from(
             }
         };
         let val = resolve(key)?;
-        secret_values.push(val.clone());
-        key_names.push(key.to_string());
-        env_names.push(name.to_string());
-        match temp_file(&mut cleanup, within, val.as_bytes()) {
+        out.secret_values.push(val.as_str().to_owned());
+        out.key_names.push(key.to_string());
+        out.env_names.push(name.to_string());
+        match temp_file(&mut out._cleanup, within, val.as_bytes()) {
             Ok(path) => {
-                handed.push(Handed {
+                out.handed.push(Handed {
                     envvar: name.to_owned(),
                     path: path.clone(),
-                    entries: vec![(None, val)],
+                    entries: vec![(None, val.as_str().to_owned())],
                 });
-                set_var(&mut env, name, path.into_os_string());
+                set_var(&mut out.env, name, path.into_os_string());
             }
             Err(e) => {
                 return Err(Stopped::Said(
@@ -299,32 +363,32 @@ pub(crate) fn prepare_from(
         grouped[slot].1.push((name, key));
     }
     for (envvar, entries) in &grouped {
-        let mut lines: Vec<String> = Vec::new();
-        let mut held: Vec<(Option<String>, String)> = Vec::new();
-        env_names.push(envvar.clone());
+        let mut lines: Zeroizing<Vec<String>> = Zeroizing::new(Vec::new());
+        let mut held: Zeroizing<Vec<(Option<String>, String)>> = Zeroizing::new(Vec::new());
+        out.env_names.push(envvar.clone());
         for (name, key) in entries {
             let val = resolve(key)?;
-            secret_values.push(val.clone());
-            key_names.push(key.clone());
-            let escaped = dotenv::escaped(&val);
-            if escaped != val {
-                secret_values.push(escaped);
+            out.secret_values.push(val.as_str().to_owned());
+            out.key_names.push(key.clone());
+            let escaped = Zeroizing::new(dotenv::escaped(&val));
+            if *escaped != *val {
+                out.secret_values.push(escaped.as_str().to_owned());
             }
             match dotenv::line(name, &val) {
                 Ok(line) => lines.push(line),
                 Err(e) => return Err(Stopped::Said(2, e.0)),
             }
-            held.push((Some(name.clone()), val));
+            held.push((Some(name.clone()), val.as_str().to_owned()));
         }
-        let body = format!("{}\n", lines.join("\n"));
-        match temp_file(&mut cleanup, within, body.as_bytes()) {
+        let body = Zeroizing::new(format!("{}\n", lines.join("\n")));
+        match temp_file(&mut out._cleanup, within, body.as_bytes()) {
             Ok(path) => {
-                handed.push(Handed {
+                out.handed.push(Handed {
                     envvar: envvar.clone(),
                     path: path.clone(),
-                    entries: held,
+                    entries: std::mem::take(&mut *held),
                 });
-                set_var(&mut env, envvar, path.into_os_string());
+                set_var(&mut out.env, envvar, path.into_os_string());
             }
             Err(e) => {
                 return Err(Stopped::Said(
@@ -334,15 +398,8 @@ pub(crate) fn prepare_from(
             }
         }
     }
-    Ok(Prepared {
-        env,
-        secret_values,
-        files: cleanup.paths.clone(),
-        handed,
-        key_names,
-        env_names,
-        _cleanup: cleanup,
-    })
+    out.files = out._cleanup.paths.clone();
+    Ok(out)
 }
 
 /// The one record of a run handed its credentials (`secret-exec`): the vault, the key and

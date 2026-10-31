@@ -267,7 +267,8 @@ describe("the gallery", () => {
     for (const where of ["inbox", "pane"]) {
       const notice = document.querySelector<HTMLElement>(`[data-cause="gallery-${where}"]`);
       expect(notice, `a Notice at ${where}`).not.toBeNull();
-      expect(notice).toHaveClass(`notice-${where}`);
+      // Its box stands where it was put: in a pane's row, or a row of the Inbox's list.
+      expect(notice?.closest('[data-scope="notice"]')).toHaveAttribute("data-placement", where);
       const buttons = within(notice as HTMLElement)
         .getAllByRole("button")
         .map((one) => one.textContent);

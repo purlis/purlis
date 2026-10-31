@@ -1,31 +1,41 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
+import { useState, type ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
 import {
   commands,
-  type SkillChanged,
   type SkillCopy,
   type SkillDetails,
   type SkillDiff,
   type SkillLifecycle,
   type SkillVersion,
+  type SkillVersionBefore,
   type StatsRow,
 } from "./bindings";
 import { counted, saidAt } from "./dispatches";
-import { Notice } from "./Notice";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
-import { TextField } from "./ui/field/Field";
-import { SkillPinnedBy } from "./SkillPins";
-import { SkillGrade } from "./SkillGrade";
+import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 
 /** A version's newest grade, as its row says it (SK-16): the trigger tests that passed with it. */
 export function gradeSaid(version: SkillVersion): string {
   const grade = version.grade;
   if (grade === null) return "Not graded";
   return `${grade.passed} of ${counted(grade.fixtures, "trigger test", "trigger tests")} passed`;
+}
+
+/**
+ * What a revert's confirm asks (#4017): a version from before a rename or a move comes back in the
+ * folder the skill has now, and one from before a rename under the name it has now.
+ */
+export function revertSaid(name: string, before: SkillVersionBefore | null): string {
+  const saved = "The revert is saved as a new version.";
+  if (before === null) return `Put the skill back as this version had it? ${saved}`;
+  if (before.name !== name) {
+    return `This version is from when the skill was named ${before.name}, in ${before.folder}. Put its files back in the folder ${name} has now, with its name: line changed to ${name}? ${saved}`;
+  }
+  return `This version is from before the skill was moved, when it was in ${before.folder}. Put its files back in the folder it has now? ${saved}`;
 }
 
 /** A copy's state, as its tab says it in one line. */
@@ -63,272 +73,25 @@ export function runsSaid(runs: StatsRow): string {
   ].join(", ");
 }
 
-/** What a change answers: what it said beyond being done, or why it was not made. */
-type Changed = { status: "ok"; data: SkillChanged } | { status: "error"; error: string };
-
-/** The words a change that failed is said with, and what it said beyond being done. */
-type Said = { tone: "news" | "trouble"; label: string; text: string };
-
 /**
- * **A skill's history, lifecycle, owners and uses** (SK-19, #2782): what its tab shows beside
- * its runs. Each copy of the name at the project's levels has its own state, owners and
- * history, with a diff and a revert per version and the runs that started on it; the skills it
- * names and that name it are the name's.
+ * **A copy's versions** (SK-19, #2782), newest first, each with its runs, its grade, its changes
+ * and a revert, as a skill's History tab shows them (#3682). `waiting` is drawn first: a change a
+ * chat made that waits for the person's review.
  */
-export function SkillDetailsPanel({
-  plane,
-  name,
-  changed,
-  onGraded,
-}: {
-  plane: string;
-  name: string;
-  changed: number;
-  /** Told when a grade of the skill ended (SK-16), so the tab reads its grades again. */
-  onGraded?: () => void;
-}) {
-  const [page, setPage] = useState<SkillDetails>();
-  const [refused, setRefused] = useState<string>();
-  const [picked, setPicked] = useState(0);
-  const [done, setDone] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const [said, setSaid] = useState<Said>();
-  useEffect(() => {
-    let live = true;
-    void commands.skillDetails(plane, name).then((answer) => {
-      if (!live) return;
-      if (answer.status === "ok") {
-        setPage(answer.data);
-        setRefused(undefined);
-      } else setRefused(answer.error);
-    });
-    return () => {
-      live = false;
-    };
-  }, [plane, name, changed, done]);
-
-  if (refused !== undefined)
-    return (
-      <EmptyState
-        headline={`purlis could not read the history of ${name}`}
-        body={refused}
-        testid="skill-details-refused"
-      />
-    );
-  if (page === undefined)
-    return (
-      <p className="pending" aria-busy="true">
-        <LoaderCircle className="node-icon spinning" />
-        Reading the skill's history…
-      </p>
-    );
-
-  const copy: SkillCopy | undefined = page.copies[Math.min(picked, page.copies.length - 1)];
-  const change = (label: string, act: () => Promise<Changed>) => {
-    setBusy(true);
-    void act().then((answer) => {
-      setBusy(false);
-      if (answer.status === "ok") {
-        const notes = answer.data.notes;
-        setSaid(
-          notes.length > 0
-            ? { tone: "news", label: "Skill changed", text: notes.join(" ") }
-            : undefined,
-        );
-      } else setSaid({ tone: "trouble", label, text: answer.error });
-      setDone((n) => n + 1);
-    });
-  };
-
-  return (
-    <div className="skill-details" data-testid="skill-details">
-      {said !== undefined && (
-        <Notice
-          cause="skill-change"
-          tone={said.tone}
-          label={said.label}
-          onDismiss={() => setSaid(undefined)}
-        >
-          {said.text}
-        </Notice>
-      )}
-      {page.copies.length > 1 && (
-        <div
-          className="skill-copy-pick"
-          role="group"
-          aria-label="Copy"
-          data-testid="skill-copy-pick"
-        >
-          {page.copies.map((one, at) => (
-            <Button
-              key={one.label}
-              size="sm"
-              variant={at === picked ? "soft-accent" : "ghost"}
-              aria-pressed={at === picked}
-              onPress={() => setPicked(at)}
-            >
-              {one.label}
-            </Button>
-          ))}
-        </div>
-      )}
-      {copy !== undefined && (
-        <CopyState
-          key={`${copy.label}\u0000${copy.owners.join(",")}`}
-          name={name}
-          copy={copy}
-          busy={busy}
-          onLifecycle={(lifecycle) =>
-            change("The skill's state was not changed", () =>
-              commands.skillLifecycle(plane, copy.level, name, lifecycle),
-            )
-          }
-          onOwners={(owners) =>
-            change("The skill's owners were not changed", () =>
-              commands.skillOwners(plane, copy.level, name, owners),
-            )
-          }
-        />
-      )}
-      {copy !== undefined && (
-        <SkillGrade
-          plane={plane}
-          name={name}
-          level={copy.level}
-          onGraded={onGraded ?? (() => setDone((n) => n + 1))}
-        />
-      )}
-      {copy !== undefined && (
-        <History
-          plane={plane}
-          name={name}
-          copy={copy}
-          busy={busy}
-          onRevert={(commit) =>
-            change("The skill was not reverted", () =>
-              commands.skillRevert(plane, copy.level, name, commit),
-            )
-          }
-        />
-      )}
-      <Uses name={name} details={page} />
-      <SkillPinnedBy
-        name={name}
-        pinners={page.pinned_by}
-        refused={page.pins_refused}
-        busy={busy}
-        onUnpin={(by) =>
-          change("The skill was not unpinned", () => commands.skillPin(plane, by, name, false))
-        }
-        onRemove={(by, bad) =>
-          change("The pin was not removed", () => commands.skillPin(plane, by, bad, false))
-        }
-      />
-    </div>
-  );
-}
-
-/** A copy's state, its suggestion to deprecate, and its owners. */
-function CopyState({
-  name,
-  copy,
-  busy,
-  onLifecycle,
-  onOwners,
-}: {
-  name: string;
-  copy: SkillCopy;
-  busy: boolean;
-  onLifecycle: (lifecycle: SkillLifecycle) => void;
-  onOwners: (owners: string[]) => void;
-}) {
-  const [replacement, setReplacement] = useState("");
-  const [owners, setOwners] = useState(copy.owners.join(", "));
-  const deprecate = () =>
-    onLifecycle({
-      state: "deprecated",
-      replacement: replacement.trim() === "" ? null : replacement.trim(),
-    });
-  const state = copy.lifecycle.state;
-  return (
-    <section aria-labelledby="skill-state-heading" data-testid="skill-state">
-      <h3 id="skill-state-heading">State</h3>
-      <p data-testid="skill-lifecycle">{lifecycleSaid(name, copy.lifecycle)}</p>
-      {copy.unread && <p className="honest">{UNREAD}</p>}
-      {copy.unused_days !== null && state === "active" && (
-        <p className="honest" data-testid="skill-unused">
-          No chat has run {name} for {counted(copy.unused_days, "day", "days")}. Deprecate it, so
-          chats are pointed to something else?
-        </p>
-      )}
-      {state === "active" ? (
-        <div className="skill-state-acts">
-          <TextField
-            size="sm"
-            label="Use instead (optional)"
-            aria-label="The skill to use instead"
-            placeholder="another skill's name"
-            value={replacement}
-            onChange={setReplacement}
-          />
-          <Button size="sm" isDisabled={busy} onPress={deprecate}>
-            Deprecate
-          </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            isDisabled={busy}
-            onPress={() => onLifecycle({ state: "archived" })}
-          >
-            Archive
-          </Button>
-        </div>
-      ) : (
-        <Button size="sm" isDisabled={busy} onPress={() => onLifecycle({ state: "active" })}>
-          {state === "archived" ? "Restore" : "Undo deprecation"}
-        </Button>
-      )}
-      <h4>Owners</h4>
-      <p className="honest">Who looks after this skill, for people to know.</p>
-      <div className="skill-state-acts">
-        <TextField
-          size="sm"
-          aria-label="Owners"
-          placeholder="logins or emails, separated by commas"
-          value={owners}
-          onChange={setOwners}
-        />
-        <Button
-          size="sm"
-          isDisabled={busy || owners === copy.owners.join(", ")}
-          onPress={() =>
-            onOwners(
-              owners
-                .split(",")
-                .map((one) => one.trim())
-                .filter((one) => one !== ""),
-            )
-          }
-        >
-          Save owners
-        </Button>
-      </div>
-    </section>
-  );
-}
-
-/** A copy's versions, each with its runs, its changes and a revert. */
-function History({
+export function SkillHistory({
   plane,
   name,
   copy,
   busy,
+  waiting,
   onRevert,
 }: {
   plane: string;
   name: string;
   copy: SkillCopy;
   busy: boolean;
+  /** A change waiting for the person's review, with its way to review it. */
+  waiting?: ReactNode;
   onRevert: (commit: string) => void;
 }) {
   const [open, setOpen] = useState<string>();
@@ -354,8 +117,8 @@ function History({
     });
   };
   return (
-    <section aria-labelledby="skill-history-heading" data-testid="skill-history">
-      <h3 id="skill-history-heading">History</h3>
+    <section aria-label={`History of ${name}`} data-testid="skill-history">
+      {waiting}
       {copy.versions.length === 0 ? (
         <EmptyState
           headline={`${name} has no history yet`}
@@ -363,23 +126,20 @@ function History({
           testid="skill-history-empty"
         />
       ) : (
-        <table className="ui-table" aria-label={`History of ${name}`}>
-          <thead>
-            <tr>
-              <th scope="col">Saved</th>
-              <th scope="col">By</th>
-              <th scope="col">Change</th>
-              <th scope="col">Runs on it</th>
-              <th scope="col">Grade</th>
-              <th scope="col">
-                <span className="visually-hidden">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table aria-label={`History of ${name}`}>
+          <TableHeader>
+            <TableColumn isRowHeader>Saved</TableColumn>
+            <TableColumn>By</TableColumn>
+            <TableColumn>Change</TableColumn>
+            <TableColumn>Runs on it</TableColumn>
+            <TableColumn>Grade</TableColumn>
+            <TableColumn hideName>Actions</TableColumn>
+          </TableHeader>
+          <TableBody>
             {copy.versions.map((version, at) => (
               <VersionRow
                 key={version.commit}
+                name={name}
                 version={version}
                 newest={at === 0}
                 open={open === version.commit}
@@ -395,8 +155,8 @@ function History({
                 onCancel={() => setAsked(undefined)}
               />
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
       {copy.uncommitted.runs > 0 && (
         <p className="honest" data-testid="skill-uncommitted-runs">
@@ -408,6 +168,7 @@ function History({
 }
 
 function VersionRow({
+  name,
   version,
   newest,
   open,
@@ -419,6 +180,7 @@ function VersionRow({
   onRevert,
   onCancel,
 }: {
+  name: string;
   version: SkillVersion;
   newest: boolean;
   open: boolean;
@@ -432,13 +194,17 @@ function VersionRow({
 }) {
   return (
     <>
-      <tr data-testid={`skill-version-${version.commit}`}>
-        <td>{saidAt(version.at)}</td>
-        <td>{version.author}</td>
-        <td>{version.subject}</td>
-        <td>{runsSaid(version.runs)}</td>
-        <td>{gradeSaid(version)}</td>
-        <td>
+      <TableRow
+        id={version.commit}
+        textValue={saidAt(version.at)}
+        data-testid={`skill-version-${version.commit}`}
+      >
+        <TableCell>{saidAt(version.at)}</TableCell>
+        <TableCell>{version.author}</TableCell>
+        <TableCell>{version.subject}</TableCell>
+        <TableCell>{runsSaid(version.runs)}</TableCell>
+        <TableCell>{gradeSaid(version)}</TableCell>
+        <TableCell>
           <Button size="sm" variant="ghost" aria-expanded={open} onPress={onShow}>
             {open ? "Hide changes" : "Show changes"}
           </Button>
@@ -447,12 +213,16 @@ function VersionRow({
               Revert to this
             </Button>
           )}
-        </td>
-      </tr>
+        </TableCell>
+      </TableRow>
       {asked !== undefined && (
-        <tr data-testid="skill-revert-confirm">
-          <td colSpan={5}>
-            <p>Put the skill back as this version had it? The revert is saved as a new version.</p>
+        <TableRow
+          id={`${version.commit}:revert`}
+          textValue="Revert to this version"
+          data-testid="skill-revert-confirm"
+        >
+          <TableCell colSpan={6}>
+            <p>{revertSaid(name, version.before)}</p>
             {asked.widens === undefined ? (
               <p className="pending" aria-busy="true">
                 <LoaderCircle className="node-icon spinning" />
@@ -476,12 +246,12 @@ function VersionRow({
             <Button size="sm" variant="ghost" onPress={onCancel}>
               Cancel
             </Button>
-          </td>
-        </tr>
+          </TableCell>
+        </TableRow>
       )}
       {open && (
-        <tr>
-          <td colSpan={5}>
+        <TableRow id={`${version.commit}:changes`} textValue="What it changed">
+          <TableCell colSpan={6}>
             {diff === undefined ? (
               <p className="pending" aria-busy="true">
                 <LoaderCircle className="node-icon spinning" />
@@ -513,15 +283,15 @@ function VersionRow({
                 )}
               </>
             )}
-          </td>
-        </tr>
+          </TableCell>
+        </TableRow>
       )}
     </>
   );
 }
 
-/** The skills this one names, and those that name it. */
-function Uses({ name, details: page }: { name: string; details: SkillDetails }) {
+/** **The skills this one names, and those that name it** (decision 57): on its Overview. */
+export function SkillUses({ name, details: page }: { name: string; details: SkillDetails }) {
   return (
     <section aria-labelledby="skill-uses-heading" data-testid="skill-uses">
       <h3 id="skill-uses-heading">Uses and used by</h3>

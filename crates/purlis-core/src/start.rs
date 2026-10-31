@@ -506,7 +506,13 @@ fn ready_given(
     // sandboxed Codex chat on a profile for every chat leaves one wait for the project, the Ask
     // that makes a sandbox-only one.
     let sandbox_only = profiles::sandbox_only(profile);
-    if let Some(why) = profile_refusal(harness, name, sandbox_only, sandbox.is_some()) {
+    if let Some(why) = profile_refusal(
+        harness,
+        name,
+        sandbox_only,
+        sandbox.is_some(),
+        machine.is_a_runner(),
+    ) {
         if sandbox.is_some() && !sandbox_only {
             crate::profilestore::sandbox_only::waits_on(root);
         }
@@ -521,8 +527,13 @@ fn ready_given(
     // given (charter-app#134). A bare word handed to a pty is resolved against whatever
     // `PATH` the app itself was started with — which for a Finder-launched `.app` is
     // `/usr/bin:/bin:/usr/sbin:/sbin` and holds no harness.
-    let mut argv = crate::programs::resolve_argv(&profiles::expanded_command(profile, &home))
-        .map_err(|gone| format!("{} Nothing was started.", gone.said()))?;
+    let pinned = pinned_program(profile, &home)?;
+    let runs_its_pin = pinned.is_some();
+    let mut argv = match pinned {
+        Some(argv) => argv,
+        None => crate::programs::resolve_argv(&profiles::expanded_command(profile, &home))
+            .map_err(|gone| format!("{} Nothing was started.", gone.said()))?,
+    };
     let mut program = argv.remove(0);
     let standing = Standing::of(&here, root);
     let mut env = environment(
@@ -532,6 +543,11 @@ fn ready_given(
         start.show_footer,
         &standing,
     );
+    // A runner's pinned version is the one it runs (#3446): Claude Code's own updater, which
+    // would fetch another version beside it, is kept off.
+    if runs_its_pin && profile.kind == "claude" {
+        env.push(("DISABLE_AUTOUPDATER".to_owned(), "1".to_owned()));
+    }
     // What the program answered `--version`, where the sandbox's check asked it.
     let mut heard = None;
     // Ruling V87g: a sandbox binds only the harness it was compiled for, and never a program a
@@ -609,10 +625,9 @@ fn ready_given(
         ));
         env.sort();
     }
-    // Listed from the chat's OWN environment: a profile that points its harness at another
-    // account's directory (`CLAUDE_CONFIG_DIR`) is listed against that account. A chat in a
-    // workspace — by its directory, which is how the window files it under one — also takes
-    // that workspace's choices, between Shared and Local (charter-app#282).
+    // purlis's pins, and the harness's own skills the project turned off (#3467: no other
+    // plugin). A chat in a workspace — by its directory, which is how the window files it under
+    // one — also takes that workspace's choices, between Shared and Local (charter-app#282).
     // Asked only for a kind that has an adapter: any other is handed nothing either way.
     let workspace = match &standing {
         Standing::Workspace(name) if crate::harness_plugin::adapter(&profile.kind).is_some() => {
@@ -650,6 +665,36 @@ fn ready_given(
         sign_in,
         first_message: None,
     })
+}
+
+/// **On a runner, a chat on a profile it keeps for its desktop with a pin runs exactly that
+/// version** (#3446, [`crate::profilestore::installs`]): its whole command, its program the
+/// pinned version installed in the runner's data home (installed now where it is not there yet).
+/// `None` for every other profile and machine, whose program is found on `PATH`; `Err`, said by
+/// the chat, where the version could not be installed.
+fn pinned_program(profile: &Profile, home: &Path) -> Result<Option<Vec<String>>, String> {
+    let installed = crate::profilestore::installs::for_a_start(profile)
+        .map_err(|why| format!("{why}. Nothing was started."))?;
+    Ok(installed.map(|program| with_program(profile, home, &program)))
+}
+
+/// `profile`'s whole command, its first word `program` in place of the one it names.
+fn with_program(profile: &Profile, home: &Path, program: &Path) -> Vec<String> {
+    let mut words = profiles::expanded_command(profile, home);
+    let program = program.display().to_string();
+    match words.first_mut() {
+        Some(first) => *first = program,
+        None => words.push(program),
+    }
+    words
+}
+
+/// Whether `profile` is one this machine keeps for its desktop with a pin: a runner's, whose
+/// program is the pinned version it installs ([`pinned_program`]).
+fn kept_pinned(profile: &Profile) -> bool {
+    let records = crate::profilestore::listed_here();
+    crate::profilestore::pin::record_of(profile, &records)
+        .is_some_and(|r| r.kept_for.is_some() && r.pinned.is_some())
 }
 
 /// **A chat runs on its profile's pinned harness version** (#2038,
@@ -708,22 +753,69 @@ fn on_pinned_version(
 pub const SANDBOX_ONLY_LOCK: &str =
     "This profile is for sandboxed chats only, so a chat on it starts only sandboxed.";
 
+/// Why the picker offers no "Start without the sandbox" for a Claude Code chat where the picker
+/// itself runs on a runner, a person's own Linux machine paired as one (#4083): the start refuses
+/// that chat ([`profile_refusal`]). A desktop's picker for a pool's chat asks its own machine,
+/// and the runner's start refuses it there.
+pub const RUNNER_LOCK: &str =
+    "On a runner, a Claude Code chat starts only inside purlis's sandbox.";
+
+/// Why the picker offers no "Start without the sandbox" for a chat on `profile` on `machine`,
+/// where [`profile_refusal`] would refuse it: a profile for sandboxed chats only, or a Claude Code
+/// profile on a runner. `None` where the start lets it start without the sandbox.
+pub fn without_sandbox_lock(
+    profile: &Profile,
+    machine: &crate::sandbox::Machine,
+) -> Option<&'static str> {
+    let sandbox_only = profiles::sandbox_only(profile);
+    let harness = Harness::of_kind(&profile.kind);
+    profile_refusal(
+        harness,
+        &profile.name,
+        sandbox_only,
+        false,
+        machine.is_a_runner(),
+    )
+    .map(|_| {
+        if sandbox_only {
+            SANDBOX_ONLY_LOCK
+        } else {
+            RUNNER_LOCK
+        }
+    })
+}
+
 /// **Why a chat may not start on the profile `name`, sandboxed or not** (#2037, ruled
 /// 2026-10-15), or `None`: a profile for sandboxed chats only (`sandbox_only`) never starts a
 /// chat without the sandbox, and a sandboxed Codex chat starts on no other profile, so no
 /// sandboxed chat writes the Codex home an unsandboxed run uses, and no sign-in is copied for
 /// one (ADR 0067, D-88q, as amended 2026-10-15).
+///
+/// **On a runner (`on_a_runner`), a Claude Code profile is for wrapped chats only** (#4083, ruled
+/// 2026-10-30): a Claude Code chat there starts inside purlis's wrap or not at all, whether the
+/// person opted out, their own level is off, or the floor could not be applied. Its config folder
+/// is written by wrapped chats, and so read only by them: no unsandboxed chat loads a transcript,
+/// a memory or a trusted folder a wrapped one left ([`crate::sandbox::claude_wrap::prepare`]).
+/// A person's own machine is unchanged.
 pub fn profile_refusal(
     harness: Option<Harness>,
     name: &str,
     sandbox_only: bool,
     sandboxed: bool,
+    on_a_runner: bool,
 ) -> Option<String> {
     let name = crate::shown::short(name);
     if sandbox_only && !sandboxed {
         return Some(format!(
             "'{name}' is a profile for sandboxed chats only, and this chat would start without \
              the sandbox, so nothing was started. Start it sandboxed, or pick another profile."
+        ));
+    }
+    if harness == Some(Harness::ClaudeCode) && on_a_runner && !sandboxed {
+        return Some(format!(
+            "this chat would start without the sandbox, and on a runner a Claude Code chat runs \
+             only inside purlis's sandbox, so its profile '{name}' is never shared with a chat \
+             outside it; nothing was started. Start it sandboxed."
         ));
     }
     if harness == Some(Harness::Codex) && sandboxed && !sandbox_only {
@@ -830,11 +922,19 @@ impl<'a> AheadOnce<'a> {
                 return Ok(());
             }
             let home = profiles::home().unwrap_or_else(|| PathBuf::from("~"));
-            // A program that is not there is the start's own refusal, not the sandbox's.
-            let Ok(words) =
-                crate::programs::resolve_argv(&profiles::expanded_command(profile, &home))
-            else {
-                return Ok(());
+            // A program that is not there is the start's own refusal, not the sandbox's; a
+            // runner's pinned version not installed yet is installed by the start (#3446).
+            let words = match crate::profilestore::installs::installed_for(profile) {
+                Some(program) => with_program(profile, &home, &program),
+                None if kept_pinned(profile) => return Ok(()),
+                None => {
+                    let Ok(words) =
+                        crate::programs::resolve_argv(&profiles::expanded_command(profile, &home))
+                    else {
+                        return Ok(());
+                    };
+                    words
+                }
             };
             let env = environment(profile, root, None, false, &Standing::of(root, root));
             let mut writable = applied.writable();

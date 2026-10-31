@@ -268,7 +268,7 @@ every table in it.
 no reader — `LayerText::LeftOut`, carrying the check's sentence (purlis#319, below); `extension::project::Choices::read`, `theme::Said::read` and
 `harness_plugin::Choices::read` each call it, and so does every `read_in` through them. #308 was
 three readers that each read the file themselves and so each forgot the check, so a test
-(`crates/purlis-core/tests/the_local_layer_has_one_reader.rs`) fails on production code that
+(`crates/purlis-core/tests/it/the_local_layer_has_one_reader.rs`) fails on production code that
 reads the file by name anywhere but `settings.rs` and `profiles.rs`. A reader added later — the
 plane's own save settings (ADR 0051) are the next — goes through `layer_text` or turns that test
 red.

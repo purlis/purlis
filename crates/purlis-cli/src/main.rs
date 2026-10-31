@@ -42,6 +42,8 @@ mod githook;
 mod guard;
 mod handoff;
 mod hooks;
+#[cfg(unix)]
+mod listen;
 mod mcp;
 mod memory;
 mod permission;
@@ -94,11 +96,36 @@ struct Cli {
 enum Command {
     /// Print the plane root the current directory sits in.
     Root,
+    /// Run a server for this chat on PORT: the port a sandboxed chat was allowed to serve on,
+    /// which purlis's door on this Mac answers on, while the server listens on the chat's own
+    /// socket behind it. In a Claude Code chat on macOS a Node server dials in to the door
+    /// instead. For example: `purlis listen 5173 -- npm run dev`.
+    Listen {
+        /// The port the chat serves on.
+        port: u16,
+        /// The server's command, after `--`.
+        #[arg(last = true, allow_hyphen_values = true, required = true)]
+        command: Vec<std::ffi::OsString>,
+    },
     /// Run this user's session host on this device (`purlisd`) until it is ended: its socket
     /// under the runtime directory, a fresh credential for each of its clients' scopes, and the
     /// session protocol. The app starts its own; this is the same host for a machine with no
     /// window, such as a runner.
-    Serve,
+    Serve {
+        /// A paired runner's host suspends itself after a day with no link from its desktop, or
+        /// after DURATION where one is given (`--suspends-unlinked=12h`: a whole number of `s`,
+        /// `m` or `h`, a minute to 30 days, a pool's `suspendAfter`, #3471): it stops serving,
+        /// every chat ends, and its container stops with its home kept (#2051). What a Docker
+        /// pool's runner is made with; without it, a host never suspends.
+        #[arg(
+            long,
+            num_args = 0..=1,
+            require_equals = true,
+            value_name = "DURATION",
+            value_parser = unlinked_for
+        )]
+        suspends_unlinked: Option<Option<std::time::Duration>>,
+    },
     /// On a runner: join this standard input and output to the session host's link socket,
     /// for the connector the desktop runs (ADR 0078 §2). It holds no key and decides nothing.
     Bridge {
@@ -123,6 +150,10 @@ enum Command {
         /// With --make-key: where the public half is written, for the cluster to show.
         #[arg(long, requires = "make_key", value_name = "FILE", hide = true)]
         publish: Option<std::path::PathBuf>,
+        /// With --make-key: the runner's home on its pod's volume, made from this HOME the
+        /// first time; a home that keeps the runner's pairing keeps its key (#2057).
+        #[arg(long, requires = "make_key", value_name = "DIR", hide = true)]
+        home: Option<std::path::PathBuf>,
     },
     /// Scaffold a fresh control plane here: charter.toml, baseline dirs, .gitignore.
     ///
@@ -573,9 +604,15 @@ enum Command {
         timeout: Option<u32>,
         /// Where the new chat works: `workspace:<name>` for another workspace, or `worktree`
         /// for a new worktree on its own branch (default: this chat's folder, or a worktree
-        /// where the persona's definition says `dispatch-isolation: worktree`).
+        /// where the persona's definition says `dispatch-isolation: worktree`). From a
+        /// workspace whose folder holds several clones, `worktree:<repo>` names the clone.
         #[arg(long = "in", value_name = "WHERE")]
         place: Option<String>,
+        /// A long-running task, which works through many pieces and sends `purlis dispatch
+        /// note` as it goes: its notes are its heartbeat, purlis never asks it for a report,
+        /// and it ends when it reports done or failed, or is cancelled (#3905).
+        #[arg(long)]
+        long: bool,
         #[command(subcommand)]
         command: Option<dispatch::DispatchCommand>,
     },
@@ -811,10 +848,33 @@ fn emit(report: &purlis_core::news::Report) -> ExitCode {
     ExitCode::from(report.code)
 }
 
+/// `--suspends-unlinked`'s DURATION: a pool's `suspendAfter`, spelled and bounded as
+/// `runners.json` keeps it (#3471).
+fn unlinked_for(text: &str) -> Result<std::time::Duration, String> {
+    let after = purlis_core::spelledtime::read(text, purlis_core::spelledtime::UP_TO_HOURS)
+        .ok_or_else(|| {
+            format!(
+                "\"{text}\" is not a duration: write a whole number followed by s, m or h, \
+                 such as 24h"
+            )
+        })?;
+    purlis_core::dockerpool::suspend_after(after).map_err(|why| why.0)
+}
+
+/// How long `purlis serve` is left without a link before it suspends, as it was asked: never
+/// without `--suspends-unlinked`, a day with it bare, and its DURATION where one is given.
+fn suspends_after(asked: Option<Option<std::time::Duration>>) -> Option<std::time::Duration> {
+    #[cfg(unix)]
+    let a_day = purlis_host::UNLINKED_FOR;
+    #[cfg(not(unix))]
+    let a_day = purlis_core::dockerpool::SUSPEND_AFTER;
+    asked.map(|after| after.unwrap_or(a_day))
+}
+
 /// `purlis serve`: this user's session host, at the place the window's own host would take, so
 /// one finds the other serving and leaves it be.
 #[cfg(not(unix))]
-fn serve() -> ExitCode {
+fn serve(_suspends_after: Option<std::time::Duration>) -> ExitCode {
     voice::err("the session host runs on macOS and Linux only");
     ExitCode::FAILURE
 }
@@ -822,7 +882,7 @@ fn serve() -> ExitCode {
 /// `purlis serve`: this user's session host, at the place the window's own host would take, so
 /// one finds the other serving and leaves it be.
 #[cfg(unix)]
-fn serve() -> ExitCode {
+fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
     // A service: its standard error is its log, the journal or the container's (#2753), so the
     // core's `info` is said there too, redacted as the app's log is.
     purlis_core::applog::widen_for_a_service();
@@ -838,6 +898,9 @@ fn serve() -> ExitCode {
     // The host keeps its credentials in the config home: it stays where it is while the host
     // runs (`renamelocal::busy::LOCK`, D-RN5-11).
     let _holds = purlis_core::renamelocal::busy::hold_shared(&config);
+    // The skills folders a last host laid out and no running program uses, tidied as it
+    // starts, as the window tidies them as it starts (#2879).
+    purlis_core::skills::tidy_here_later(std::time::Duration::ZERO);
     let place = purlis_host::Place::at(
         purlis_core::hostsocket::here(),
         purlis_core::machine::charterd(&config),
@@ -857,6 +920,65 @@ fn serve() -> ExitCode {
             let config = config.clone();
             std::sync::Arc::new(move |desktop| purlis_core::runnerlink::unpair(&config, desktop))
         },
+        // It keeps that desktop's profiles in its own store, each in a folder of its own with
+        // nothing of the desktop's in it, so its chats start on them there (#2049).
+        keeping: std::sync::Arc::new(|desktop, profile| {
+            use purlis_core::profilestore::{Homes, onrunner, sign_in};
+            let homes = Homes::here().ok_or_else(|| {
+                "this runner has no data home to keep a profile in, or it is inside a project"
+                    .to_owned()
+            })?;
+            let home = purlis_core::profiles::home()
+                .ok_or_else(|| "this runner has no home to keep a profile in".to_owned())?;
+            onrunner::kept_for_the_desktop(
+                &homes,
+                &home,
+                &desktop.device,
+                profile,
+                &sign_in::ThisMachine,
+                purlis_core::halt::now(),
+            )
+        }),
+        // And forgets one as the desktop takes it off the pool, its sign-in here with it
+        // (#4047).
+        forgetting: std::sync::Arc::new(|desktop, name| {
+            use purlis_core::profilestore::{Homes, onrunner};
+            let homes = Homes::here().ok_or_else(|| {
+                "this runner has no data home its profiles are in, or it is inside a project"
+                    .to_owned()
+            })?;
+            let home = purlis_core::profiles::home()
+                .ok_or_else(|| "this runner has no home its profiles are in".to_owned())?;
+            onrunner::forget(&homes, &home, name, &desktop.device)
+        }),
+        // And names the ones it keeps for the desktop, which forgets those no longer chosen
+        // (#4060).
+        listing: std::sync::Arc::new(|desktop| {
+            let homes = purlis_core::profilestore::Homes::here().ok_or_else(|| {
+                "this runner has no data home its profiles are in, or it is inside a project"
+                    .to_owned()
+            })?;
+            purlis_core::profilestore::onrunner::kept_for(&homes, &desktop.device)
+        }),
+        // And says what it holds of one, read off its disk now, so the desktop sends only what
+        // differs (#4088).
+        holding: std::sync::Arc::new(|desktop, profile, after| {
+            let homes = purlis_core::profilestore::Homes::here().ok_or_else(|| {
+                "this runner has no data home its profiles are in, or it is inside a project"
+                    .to_owned()
+            })?;
+            purlis_core::profilestore::onrunner::held_for_the_desktop(
+                &homes,
+                &desktop.device,
+                profile,
+                after,
+            )
+        }),
+        // A sign-in's redirect, carried from the desktop's browser to the login listening here
+        // (#4044). The login's answer stays here.
+        delivering: std::sync::Arc::new(|target| {
+            purlis_core::profilestore::sign_in::callback::deliver(target)
+        }),
     };
     ExitCode::from(
         u8::try_from(purlis_host::serve_alone_answering(
@@ -868,14 +990,17 @@ fn serve() -> ExitCode {
                     purlis_host::Hosting::kept(
                         &place.credentials,
                         Composes(purlis_core::hoststart::Kit::installed_beside_this_binary()),
-                        purlis_host::Terminals,
+                        // On a runner only the browser engine may make namespaces (D-2050-25).
+                        serve_terminals(),
                         // Each held project's hooks, heard as the window's own host hears them
                         // (#2447).
                         purlis_core::hookchannel::HookChannels::keeping(log.clone()),
                         Confines,
                     )
-                    // What a chat's end leaves, kept as the window's own host keeps it (#2494).
-                    .recording_with(log)
+                    // What a chat's end leaves, kept as the window's own host keeps it (#2494),
+                    // and the skills folders no running program uses tidied after each end, as
+                    // the window tidies them after a chat closes (#2879).
+                    .recording_with(purlis_core::skills::TidiesAfterEachEnd::here(log))
                     // `purlis stop --all` is heard with no window there (#2190).
                     .heeding(purlis_core::halt::OnDisk(config.clone()))
                     // The projects it holds for its desktop, each in `<data>/projects/<id>`,
@@ -884,6 +1009,7 @@ fn serve() -> ExitCode {
                 ))
             },
             pairing,
+            suspends_after,
         ))
         .unwrap_or(1),
     )
@@ -908,6 +1034,55 @@ fn bridge() -> ExitCode {
     ExitCode::FAILURE
 }
 
+/// **The terminals `purlis serve` starts each program in** (#3298, D-2050-25): on Linux, each
+/// program is started through `purlis _no-namespaces`, so it, and all it starts, can make no
+/// namespace. A Docker pool's runner lets the browser engine's sandbox make user, process and
+/// network namespaces (ADR 0089 as amended 2026-10-28), and the engine, which the host starts
+/// itself and never in a terminal, is the only one that may: a chat, sandboxed or not, a shell
+/// and a harness's own sandbox may not. A harness's own sandbox that needs them does not start,
+/// and its chat is refused, never run without it (Claude Code's is compiled so).
+#[cfg(unix)]
+fn serve_terminals() -> impl purlis_host::Run {
+    #[cfg(target_os = "linux")]
+    return WithoutNamespaces(purlis_host::Terminals);
+    #[cfg(not(target_os = "linux"))]
+    return purlis_host::Terminals;
+}
+
+/// [`purlis_host::Terminals`], each program started through `purlis _no-namespaces`.
+#[cfg(target_os = "linux")]
+struct WithoutNamespaces(purlis_host::Terminals);
+
+#[cfg(target_os = "linux")]
+impl purlis_host::Run for WithoutNamespaces {
+    fn run(
+        &self,
+        spec: purlis_core::session::Spec,
+    ) -> Result<std::sync::Arc<dyn purlis_host::Running>, String> {
+        self.0.run(without_namespaces(spec)?)
+    }
+
+    fn end_what_was_left(&self, left: &purlis_host::Started) {
+        self.0.end_what_was_left(left);
+    }
+}
+
+/// `spec`, its program started by this `purlis` through `_no-namespaces`: the same process, its
+/// arguments and environment as they were.
+#[cfg(target_os = "linux")]
+fn without_namespaces(
+    mut spec: purlis_core::session::Spec,
+) -> Result<purlis_core::session::Spec, String> {
+    let me = std::env::current_exe().map_err(|why| {
+        format!("purlis could not name its own program to start this with: {why}")
+    })?;
+    let program = std::mem::take(&mut spec.program);
+    let args = std::mem::take(&mut spec.args);
+    spec.args = purlis_linux_sandbox::no_namespaces_line(program, args);
+    spec.program = me.into_os_string();
+    Ok(spec)
+}
+
 /// **How `purlis serve` composes each start** (#2174, #2171): a launch by its words, or, for a
 /// start with no launch, the launch the window would compose, from the project's own files
 /// ([`purlis_core::hoststart::spec`]), armed with what is installed beside this `purlis`
@@ -928,6 +1103,7 @@ impl purlis_host::Compose for Composes {
                 number: starting.number,
                 start: starting.start,
                 reporting: starting.reporting,
+                prompt_key: starting.prompt_key,
                 started_by: starting.started_by.word(),
             },
             starting.size,
@@ -935,6 +1111,16 @@ impl purlis_host::Compose for Composes {
             &(
                 |plan: &purlis_host::protocol::session::ConfinePlan| beside.confine(plan),
                 |entry| beside.record(entry),
+                // A chat's router extension, asked at its start with this program's own
+                // executor (SK-15b).
+                std::sync::Arc::new(
+                    purlis_core::skills::router::OnThisMachine::with_this_programs(
+                        starting.project_path,
+                    ),
+                ) as std::sync::Arc<dyn purlis_core::skills::router::AskRouter>,
+                // The chat's confinement as it is now, which its tool's runs here are held to
+                // (#3407).
+                |confinement: &str| beside.reach_of(confinement),
             ),
         )
     }
@@ -1057,7 +1243,8 @@ fn read_only_standing(command: &Command) -> ReadOnly {
             ProfileCommand::Create { .. }
             | ProfileCommand::Import { .. }
             | ProfileCommand::Remove { .. }
-            | ProfileCommand::Authenticate { .. },
+            | ProfileCommand::Authenticate { .. }
+            | ProfileCommand::SignOut { .. },
         )
         | Command::Update { .. }
         | Command::Version { .. }
@@ -1068,7 +1255,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Root => ReadOnly::Runs,
         // Each one is here because a test runs it on a lived-in read-only project, sees it
         // print what it read, and finds every file unchanged
-        // (`tests/a_project_charter_cannot_write_is_read_only.rs`, #833).
+        // (`tests/it/a_project_charter_cannot_write_is_read_only.rs`, #833).
         Command::Status { .. }
         | Command::Recall(_)
         | Command::Statusline { .. }
@@ -1079,7 +1266,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Skill(
             skill::SkillCommand::List { .. }
             | skill::SkillCommand::Show { .. }
-            | skill::SkillCommand::Restore { name: None },
+            | skill::SkillCommand::Restore { name: None, .. },
         )
         | Command::Change(change::ChangeCommand::List { .. })
         | Command::Session(session::SessionCommand::List { .. })
@@ -1088,7 +1275,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
             verb: None | Some(GuardCommand::List),
         }
         // Its read tools answer and every tool that writes is refused at the call (#1051):
-        // `tests/the_mcp_server_on_a_read_only_project_changes_nothing.rs` calls every tool.
+        // `tests/it/the_mcp_server_on_a_read_only_project_changes_nothing.rs` calls every tool.
         | Command::Mcp { .. } => ReadOnly::RunsAndSays,
         _ => ReadOnly::Refused,
     }
@@ -1234,7 +1421,9 @@ enum ProfileCommand {
     },
     /// Sign a profile of this machine's in on this device, through its harness's own sign-in,
     /// run here in this terminal with the profile's folder set. The harness keeps what it
-    /// signs in with in that folder; purlis reads none of it.
+    /// signs in with in that folder; purlis reads none of it. With --pool, on that pool's
+    /// runner instead: purlis follows the sign-in there, as the window does, and says each step
+    /// here.
     #[command(name = "sign-in")]
     Authenticate {
         /// The profile's name.
@@ -1246,6 +1435,34 @@ enum ProfileCommand {
         /// github-copilot. A Claude plan is never signed in through opencode.
         #[arg(long)]
         provider: Option<String>,
+        /// Sign it in on this pool's runner: it opens the sign-in page in your browser, reads
+        /// the code it shows, and exits non-zero if it did not sign in.
+        #[arg(long, value_name = "POOL", conflicts_with = "check")]
+        pool: Option<String>,
+        /// Ends the sign-in when this command's input closes: how a desktop drives it on a
+        /// runner, where ending `docker exec` ends nothing in the container.
+        #[arg(long, hide = true, conflicts_with_all = ["check", "pool"])]
+        until_input_ends: bool,
+        /// As --until-input-ends, in a terminal made here of this size, drawn on this command's
+        /// output.
+        #[arg(
+            long,
+            hide = true,
+            value_name = "COLUMNSxROWS",
+            conflicts_with_all = ["check", "until_input_ends", "pool"]
+        )]
+        in_own_terminal: Option<String>,
+        /// Which of the harness's own flows to run, `browser` or `device`: how a desktop asks
+        /// for one on a runner.
+        #[arg(long, hide = true, conflicts_with_all = ["check", "pool"])]
+        way: Option<String>,
+    },
+    /// Sign a profile of this machine's out on this device, through its harness's own sign-out:
+    /// how a desktop signs one out on a runner.
+    #[command(name = "sign-out", hide = true)]
+    SignOut {
+        /// The profile's name.
+        name: String,
     },
 }
 
@@ -1546,15 +1763,20 @@ enum WorkspaceCommand {
         #[arg(long, hide = true)]
         now: Option<String>,
     },
-    /// Record a todo, list them, close one with `done <slug>`, or promote one to an issue with
-    /// `promote <slug> --repo <repo>`.
+    /// Record a todo, list the open ones (`--done` for the done ones), mark one done with
+    /// `done <slug>`, open a done one again with `reopen <slug>`, delete one with
+    /// `forget <slug>`, or promote one to an issue with `promote <slug> --repo <repo>`.
     ///
-    /// `done`/`forget`/`promote` are read as verbs rather than as todo text, and told apart by
-    /// the shape of the call rather than the word: one positional records, two act on a todo.
-    /// purlis's own parser does exactly this, and a real subcommand cannot.
+    /// `done`/`reopen`/`forget`/`promote` are read as verbs rather than as todo text, and told
+    /// apart by the shape of the call rather than the word: one positional records, two act on
+    /// a todo. purlis's own parser does exactly this, and a real subcommand cannot.
     Todo {
         #[arg(num_args = 0..=2)]
         words: Vec<String>,
+        /// List the done todos instead of the open ones: each stays, struck through in the
+        /// window, until `reopen <slug>` opens it again or `forget <slug>` deletes it.
+        #[arg(long)]
+        done: bool,
         /// With `promote`: the workspace's repo to open the issue in, by its inventory name.
         /// May be left out when the workspace has one repo on a forge.
         #[arg(long)]
@@ -1963,10 +2185,15 @@ fn tell_the_host_about_the_tool_call(
 /// the command or what it printed. Sent once each and never spooled
 /// ([`hookwire::tell_blocked`]); a block the app did not take is said only on stderr. Answers
 /// the blocks the app took, which the chat is then told of ([`hooks::told_after`]).
+///
+/// A block that is the chat's own to retry (#3861,
+/// [`purlis_core::sandboxblock::its_own_to_retry`]) is sent for the record too, and raises no
+/// Notice there; it is answered apart, as the shape the chat retries in, whether or not the app
+/// took it.
 #[cfg(unix)]
-fn tell_the_host_about_blocks(word: &str, payload: &str) -> Vec<purlis_core::sandboxblock::Block> {
+fn tell_the_host_about_blocks(word: &str, payload: &str) -> hooks::Blocked {
     use std::io::Write as _;
-    let mut taken = Vec::new();
+    let mut taken = hooks::Blocked::default();
     // The word first: every other tool hook passes through here, and none of them is read.
     if !hooks::is_a_block_word(word) {
         return taken;
@@ -1984,7 +2211,14 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> Vec<purlis_core::san
     let harness = hookwire::chat_harness(&purlis_core::envvar::var);
     // A tool that ran nothing (a read of a background command's output): a quiet line (#1884).
     let read_back = purlis_core::sandboxblock::read_back(&data);
+    let chat_dir = hooks::chat_dir(&purlis_core::envvar::var);
     for (block, target) in hooks::blocks(&data, &purlis_core::envvar::var) {
+        let own = purlis_core::sandboxblock::its_own_to_retry(
+            &block,
+            target.as_deref(),
+            chat_dir.as_deref(),
+        );
+        taken.retry_with_purlis |= own;
         // A refused service on this Mac whose port only printed words name: offered to the
         // person to check, never as the target (qw384).
         let suggested = (block.kind == purlis_core::sandboxblock::Kind::LocalService
@@ -2001,7 +2235,8 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> Vec<purlis_core::san
             suggested,
         };
         match hookwire::tell_blocked(std::path::Path::new(&socket), token.as_ref(), &blocked) {
-            Ok(()) => taken.push(block),
+            Ok(()) if !own => taken.taken.push(block),
+            Ok(()) => {}
             Err(why) => {
                 let _ = writeln!(std::io::stderr(), "{} {word} ({why})", hookwire::NOT_TAKEN);
             }
@@ -2011,11 +2246,8 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> Vec<purlis_core::san
 }
 
 #[cfg(not(unix))]
-fn tell_the_host_about_blocks(
-    _word: &str,
-    _payload: &str,
-) -> Vec<purlis_core::sandboxblock::Block> {
-    Vec::new()
+fn tell_the_host_about_blocks(_word: &str, _payload: &str) -> hooks::Blocked {
+    hooks::Blocked::default()
 }
 
 /// What a crashed `PreToolUse` guard, or one that did not answer in time, tells the host from its
@@ -2725,7 +2957,7 @@ fn repo_command(command: &Command) -> Option<ExitCode> {
                         purlis_core::hookwire::GitWork::Clone {
                             repos: repos.clone(),
                         },
-                        gitask::a_clone_takes_at_most(repos.len()),
+                        gitask::A_CLONE_IS_SILENT_AT_MOST,
                     ),
                     &mut say,
                 )
@@ -2741,6 +2973,7 @@ fn repo_command(command: &Command) -> Option<ExitCode> {
                     now,
                     author: &author,
                     hosts: None,
+                    watch: None,
                 },
                 &mut say,
             )
@@ -2970,7 +3203,7 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
                                 vision: vision.clone(),
                                 repos: repos.clone(),
                             },
-                            gitask::a_clone_takes_at_most(repos.len()),
+                            gitask::A_CLONE_IS_SILENT_AT_MOST,
                         ),
                         say,
                     )
@@ -3238,7 +3471,8 @@ fn run(command: Command) -> Result<u8, String> {
         // Answered in `main`, before this: it is the one command whose exit code is not a
         // plain success or failure, and clap must never be allowed to exit 2 in front of it.
         Command::Hook { .. }
-        | Command::Serve
+        | Command::Listen { .. }
+        | Command::Serve { .. }
         | Command::Bridge { .. }
         | Command::Init(_)
         | Command::Reinit
@@ -3284,7 +3518,8 @@ fn run(command: Command) -> Result<u8, String> {
             ProfileCommand::Create { .. }
             | ProfileCommand::Import { .. }
             | ProfileCommand::Remove { .. }
-            | ProfileCommand::Authenticate { .. },
+            | ProfileCommand::Authenticate { .. }
+            | ProfileCommand::SignOut { .. },
         )
         | Command::Vault(_) => {
             unreachable!("answered before run")
@@ -3541,6 +3776,7 @@ fn run(command: Command) -> Result<u8, String> {
         }
         Command::Workspace(WorkspaceCommand::Todo {
             words,
+            done,
             repo,
             common,
         }) => {
@@ -3550,8 +3786,8 @@ fn run(command: Command) -> Result<u8, String> {
             // issue as the person, and is not brokered.
             let closes = matches!(words.as_slice(), [verb, _] if todo_close(verb).is_some());
             let adds = matches!(words.as_slice(),
-                [text] if !["done", "forget", "promote"].contains(&text.as_str()));
-            let own = if (closes || adds) && repo.is_none() && common.now.is_none() {
+                [text] if !["done", "reopen", "forget", "promote"].contains(&text.as_str()));
+            let own = if (closes || adds) && !done && repo.is_none() && common.now.is_none() {
                 match brokered::named_here(&here, common.workspace.as_deref()) {
                     brokered::Named::Own => true,
                     brokered::Named::Here => false,
@@ -3589,7 +3825,7 @@ fn run(command: Command) -> Result<u8, String> {
             }
             let ws = here.workspace(common.workspace.as_deref())?;
             let stamp = common.stamp()?;
-            return Ok(todo(&here.plane, &ws, &words, repo.as_deref(), stamp));
+            return Ok(todo(&here.plane, &ws, &words, done, repo.as_deref(), stamp));
         }
     }
     Ok(0)
@@ -3603,6 +3839,7 @@ fn todo(
     plane: &Plane,
     ws: &purlis_core::workspaces::Workspace,
     words: &[String],
+    done: bool,
     repo: Option<&str>,
     stamp: chrono::NaiveDateTime,
 ) -> u8 {
@@ -3615,8 +3852,30 @@ fn todo(
         voice::err("--repo is taken only with `charter ws todo promote <slug>`.");
         return 1;
     }
+    if done && !words.is_empty() {
+        voice::err("--done lists the done todos, and is taken with nothing else.");
+        voice::info(format!("  See them: {see} --done"));
+        return 1;
+    }
     finish_promotes(plane, ws, stamp);
     match words {
+        [] if done => {
+            let (closed, unread) = purlis_core::memstore::read_entries(
+                root,
+                &dir.join(purlis_core::memstore::ARCHIVE),
+            );
+            voice::unread(root, &unread);
+            if closed.is_empty() {
+                voice::info(format!("No done todos in '{name}'."));
+                return 0;
+            }
+            for todo in closed {
+                let stem = todo.path.file_stem().unwrap_or_default().to_string_lossy();
+                println!("  {stem}  {}", purlis_core::personas::one_line(&todo.title));
+            }
+            voice::info("  Reopen one: purlis ws todo reopen <slug>");
+            0
+        }
         [verb, slug] if verb == "promote" => promote_todo(plane, ws, slug, repo, stamp),
         [] => {
             let (open, unread) = purlis_core::memstore::read_entries(root, &dir);
@@ -3641,12 +3900,7 @@ fn todo(
             }
             0
         }
-        [verb, slug] if verb == "done" || verb == "forget" => {
-            let how = if verb == "done" {
-                purlis_core::wscmd::todo::Close::Done
-            } else {
-                purlis_core::wscmd::todo::Close::Forget
-            };
+        [verb, slug] if let Some(how) = todo_close(verb) => {
             purlis_core::wscmd::todo::close(plane, ws, how, slug, stamp, &mut speak)
         }
         // A lone verb is NOT todo text. charter refuses it, and the reason is that
@@ -3661,10 +3915,9 @@ fn todo(
             );
             1
         }
-        [verb] if verb == "done" || verb == "forget" => {
-            voice::err(format!(
-                "`todo {verb}` needs the slug of the todo to close."
-            ));
+        [verb] if todo_close(verb).is_some() => {
+            let to = if verb == "reopen" { "reopen" } else { "close" };
+            voice::err(format!("`todo {verb}` needs the slug of the todo to {to}."));
             voice::info(format!("  The slug is the first column: {see}"));
             let capital: String = verb
                 .chars()
@@ -3699,8 +3952,8 @@ fn todo(
         }
         _ => {
             voice::err(
-                "usage: purlis ws todo [-w WS] [\"<text>\" | done <slug> | forget <slug> | \
-                 promote <slug> [--repo <repo>]]",
+                "usage: purlis ws todo [-w WS] [\"<text>\" | done <slug> | reopen <slug> | \
+                 forget <slug> | promote <slug> [--repo <repo>]] [--done]",
             );
             1
         }
@@ -3733,10 +3986,10 @@ fn finish_promotes(
     purlis_core::wscmd::todo::finish_promotes(plane, ws, stamp, &mut speak);
 }
 
-/// How `ws todo <verb> <slug>` closes a todo, when `verb` is `done` or `forget`.
+/// How `ws todo <verb> <slug>` changes a todo, when `verb` is `done`, `reopen` or `forget`.
 fn todo_close(verb: &str) -> Option<purlis_core::wscmd::todo::Close> {
     use purlis_core::wscmd::todo::Close;
-    [Close::Done, Close::Forget]
+    [Close::Done, Close::Reopen, Close::Forget]
         .into_iter()
         .find(|how| how.verb() == verb)
 }
@@ -3926,9 +4179,34 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
             name,
             check,
             provider,
+            pool,
+            until_input_ends,
+            in_own_terminal,
+            way,
         } => {
-            return profile_sign_in(&store, name, *check, provider.as_deref());
+            if let Some(pool) = pool {
+                return match pool_sign_in(&store, name, pool, provider.as_deref()) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(why) => refused(&why),
+                };
+            }
+            use purlis_core::profilestore::sign_in::Way;
+            let way = match way.as_deref().map(Way::named) {
+                None => Way::Asked,
+                Some(Some(way)) => way,
+                Some(None) => return refused("--way is browser or device"),
+            };
+            let held = match in_own_terminal {
+                Some(size) => match terminal_size(size) {
+                    Ok(size) => Held::InOwnTerminal(size),
+                    Err(why) => return refused(&why),
+                },
+                None if *until_input_ends => Held::UntilInputEnds,
+                None => Held::No,
+            };
+            return profile_sign_in(&store, name, *check, provider.as_deref(), held, way);
         }
+        ProfileCommand::SignOut { name } => return profile_sign_out(&store, name),
         ProfileCommand::List => unreachable!("listed in run"),
     };
     match said {
@@ -3943,14 +4221,19 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
 /// `purlis profile sign-in <name>` (#2035, ADR 0095 §3): the harness's own sign-in, run in this
 /// terminal with the profile's folder variables set, to `provider` for opencode, its input and
 /// output the person's own and none of it read; or, with `check`, whether its harness says it
-/// is signed in here.
+/// is signed in here. On a runner, a profile it keeps for its desktop with a pin is signed in
+/// and asked by that version, fetched first where it is not installed yet, as a chat's start
+/// fetches it, with a line in this terminal saying so (#4007); a fetch that is refused says why
+/// and signs nothing in. Held to its input ([`Held`]), the login ends with it (#4043).
 fn profile_sign_in(
     store: &purlis_core::profilestore::Homes,
     name: &str,
     check: bool,
     provider: Option<&str>,
+    held: Held,
+    way: purlis_core::profilestore::sign_in::Way,
 ) -> ExitCode {
-    use purlis_core::profilestore::{self, sign_in};
+    use purlis_core::profilestore::{self, installs, sign_in};
     let record = match profilestore::list(store.config_root()) {
         Ok(records) => records.into_iter().find(|p| p.name == name),
         Err(why) => return refused(&why),
@@ -3961,7 +4244,27 @@ fn profile_sign_in(
             shown::short(name)
         ));
     };
+    // Only a desktop drives a sign-in held to its input, on a runner that keeps the profile.
+    if !matches!(held, Held::No) && record.kept_for.is_none() {
+        return refused(&format!(
+            "'{}' is not kept on this device for a desktop, so purlis holds no sign-in of it \
+             here: run purlis profile sign-in {} without those options",
+            record.name, record.name
+        ));
+    }
     let here = profilestore::this_device();
+    // Watched through a fetch too, so a sign-in cancelled meanwhile starts no login.
+    let input = (!matches!(held, Held::No)).then(held_input);
+    let pinned = match installs::on_this_runner(&record, &|line| eprintln!("{line}")) {
+        Ok(pinned) => pinned,
+        Err(why) if check => {
+            return refused(&format!(
+                "{why}. purlis cannot tell whether '{}' is signed in on {here}.",
+                record.name
+            ));
+        }
+        Err(why) => return refused(&format!("{why}. Nothing was signed in.")),
+    };
     if check {
         let said = match sign_in::standing_of(&record, &sign_in::ThisMachine) {
             None => format!(
@@ -3978,6 +4281,11 @@ fn profile_sign_in(
                 );
                 return ExitCode::FAILURE;
             }
+            Some(sign_in::Standing::Fetching) => format!(
+                "its harness is still being fetched on {here}, so it cannot yet say whether '{}' \
+                 is signed in; purlis profile sign-in {} signs it in",
+                record.name, record.name
+            ),
             Some(sign_in::Standing::CannotTell) => format!(
                 "its harness cannot tell whether '{}' is signed in on {here}; a chat on it \
                  starts, and purlis profile sign-in {} signs it in",
@@ -3987,7 +4295,7 @@ fn profile_sign_in(
         eprintln!("{said}");
         return ExitCode::SUCCESS;
     }
-    let login = match sign_in::login_of(&record, provider) {
+    let login = match sign_in::login_by(&record, provider, pinned.as_deref(), way) {
         Ok(login) => login,
         Err(why) => return refused(&why),
     };
@@ -3997,6 +4305,9 @@ fn profile_sign_in(
         record.name,
         record.folders.config.display()
     );
+    if let Some(input) = input {
+        return held_login(&login, held, input, &record.harness, provider);
+    }
     let ran = std::process::Command::new(&login.program)
         .args(&login.args)
         .envs(login.env.iter().map(|(n, v)| (n, v)))
@@ -4011,6 +4322,293 @@ fn profile_sign_in(
             ExitCode::FAILURE
         }
         Err(e) => refused(&format!("{} could not be run: {e}", login.program)),
+    }
+}
+
+/// `purlis profile sign-in <name> --pool <pool>` (#4046, spec #4023): the sign-in the window's
+/// strip drives ([`sign_in::driven`]), run on pool `pool`'s runner through this machine's `docker`
+/// and followed here ([`sign_in::terminal`]), for a profile the runner already keeps. Only a pool
+/// shown to be the person's own is signed in on, as the window's is. Nothing of this machine's
+/// sign-in goes to the runner (ADR 0095).
+///
+/// [`sign_in::driven`]: purlis_core::profilestore::sign_in::driven
+/// [`sign_in::terminal`]: purlis_core::profilestore::sign_in::terminal
+fn pool_sign_in(
+    store: &purlis_core::profilestore::Homes,
+    name: &str,
+    pool: &str,
+    provider: Option<&str>,
+) -> Result<(), String> {
+    use purlis_core::dockerpool::Docker;
+    use purlis_core::profilestore::{self, sign_in};
+    use purlis_core::runners;
+    let config = store.config_root();
+    let record = profilestore::list(config)?
+        .into_iter()
+        .find(|p| p.name == name)
+        .ok_or_else(|| {
+            format!(
+                "this machine has no profile named '{}'. purlis profile list names the ones it \
+                 has.",
+                shown::short(name)
+            )
+        })?;
+    sign_in::plan_named(&record.harness, provider)?;
+    let plans = sign_in::providers(&record.harness);
+    if provider.is_none() && !plans.is_empty() {
+        let named: Vec<String> = plans
+            .iter()
+            .map(|p| format!("--provider {} ({})", p.provider, p.title))
+            .collect();
+        return Err(format!(
+            "'{}' signs in to the plan you name: add {}.",
+            record.name,
+            named.join(" or ")
+        ));
+    }
+    // A login approved in the browser waits for an answer only the window carries (#4044).
+    if sign_in::driven::Driven::of_plan(&record.harness, provider, std::time::Instant::now())
+        .is_none()
+        || sign_in::driven::waits_for_the_browser(&record.harness, provider)
+    {
+        return Err(format!(
+            "purlis follows only Claude Code's and opencode's Copilot sign-in on a pool so far. \
+             Sign '{}' in from its line in Settings › Pools, with a project open: its Sign in \
+             opens a shell tab on the runner.",
+            record.name
+        ));
+    }
+    // Nothing reaches a runner, nor is read of one, before its engine is shown to be yours.
+    let engine = Docker::engine_on_this_machine();
+    purlis_core::poollogins::owned(engine.clone())?;
+    let engine = engine?;
+    if runners::cluster_runner_for(config, pool)
+        .map_err(|why| why.to_string())?
+        .is_some()
+    {
+        return Err(format!(
+            "pool {pool} is a cluster pool, and purlis signs a profile in only on a Docker \
+             pool's runner so far."
+        ));
+    }
+    let runner = runners::runner_for(config, pool)
+        .map_err(|why| format!("{why}. Settings › Pools lists this machine's pools."))?;
+    let path = purlis_core::envvar::var("PATH");
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let docker = Docker::on_this_machine(path.as_deref(), home.as_deref()).map_err(|why| why.0)?;
+    // A runner on another version has no sign-in held to what drives it (#4043): refused in
+    // words, as the window refuses it.
+    let ours = purlis_core::adopt::release_version();
+    match docker.version_of(&runner.made) {
+        Ok(theirs) if theirs == ours => {}
+        Ok(theirs) => {
+            return Err(format!(
+                "pool {pool}'s runner runs purlis {theirs}, and this runs {ours}, so purlis signs \
+                 nothing in there itself. Sign '{name}' in from its line in Settings › Pools with \
+                 Open in terminal, or once the runner runs this version."
+            ));
+        }
+        Err(why) => {
+            return Err(format!(
+                "pool {pool}'s runner's version could not be read, so it may not run this \
+                 purlis {ours}: {}. Nothing was started.",
+                why.0
+            ));
+        }
+    }
+    eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
+    docker
+        .standing_on_runner(&runner.made, &engine, name)
+        .map_err(|why| {
+            format!(
+                "pool {pool}'s runner could not say whether '{name}' is signed in there, so \
+                 nothing was started: {why}. A profile goes on a pool from its row in Settings \
+                 › Pools."
+            )
+        })?;
+    let login = docker.driven_sign_in(&runner.made, &engine, name, provider)?;
+    let check = {
+        let (docker, made, engine, name) = (
+            docker.clone(),
+            runner.made.clone(),
+            engine.clone(),
+            name.to_owned(),
+        );
+        move || {
+            docker
+                .standing_on_runner(&made, &engine, &name)
+                .unwrap_or(sign_in::Standing::CannotTell)
+        }
+    };
+    let driving = sign_in::driven::drive_with(&login, &record.harness, provider, None, check)?;
+    let (typed, lines) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lines().map_while(Result::ok) {
+            if typed.send(line).is_err() {
+                return;
+            }
+        }
+    });
+    sign_in::terminal::follow(&driving, &lines, &mut ThisTerminal, name, pool)
+}
+
+/// This command's terminal, as a sign-in on a pool's runner says its steps there.
+struct ThisTerminal;
+
+impl purlis_core::profilestore::sign_in::terminal::Terminal for ThisTerminal {
+    fn say(&mut self, line: &str) {
+        eprintln!("{line}");
+    }
+
+    /// The browser, where this system opens one. Where it does not, the page was said.
+    fn open(&mut self, url: &str) {
+        let program = if cfg!(target_os = "macos") {
+            "/usr/bin/open"
+        } else {
+            "xdg-open"
+        };
+        let _ = std::process::Command::new(program)
+            .arg(url)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+    }
+}
+
+/// How a sign-in a desktop drives is held to this command's input, which ends it (#4043).
+enum Held {
+    No,
+    UntilInputEnds,
+    InOwnTerminal(purlis_core::engine::Size),
+}
+
+/// The largest terminal a sign-in is drawn in.
+const MOST_TERMINAL: (u16, u16) = (500, 200);
+
+/// `COLUMNSxROWS`, as `--in-own-terminal` is given it, no larger than [`MOST_TERMINAL`].
+fn terminal_size(said: &str) -> Result<purlis_core::engine::Size, String> {
+    said.split_once('x')
+        .and_then(|(columns, rows)| {
+            let (columns, rows) = (columns.parse().ok()?, rows.parse().ok()?);
+            ((1..=MOST_TERMINAL.0).contains(&columns) && (1..=MOST_TERMINAL.1).contains(&rows))
+                .then_some(purlis_core::engine::Size { columns, rows })
+        })
+        .ok_or_else(|| format!("{} is not a terminal's size", shown::short(said)))
+}
+
+/// This command's input, watched for what a held login does with it.
+#[cfg(unix)]
+fn held_input() -> purlis_core::profilestore::sign_in::held::Input {
+    purlis_core::profilestore::sign_in::held::Input::of(std::io::stdin())
+}
+
+/// A runner is never Windows.
+#[cfg(not(unix))]
+fn held_input() {}
+
+/// Runs `login` held to `input`, this command's own, as `held` says: nothing where it closed
+/// already.
+#[cfg(unix)]
+fn held_login(
+    login: &purlis_core::profilestore::sign_in::Login,
+    held: Held,
+    input: purlis_core::profilestore::sign_in::held::Input,
+    kind: &str,
+    plan: Option<&str>,
+) -> ExitCode {
+    use purlis_core::profilestore::sign_in::held::{
+        in_own_terminal, until_answered_or_input_ends, until_input_ends,
+    };
+    use purlis_core::profilestore::sign_in::{driven, waiting};
+    if input.closed_by_now() {
+        return ExitCode::FAILURE;
+    }
+    let ended = match held {
+        Held::InOwnTerminal(size) => in_own_terminal(login, size, input, std::io::stdout()),
+        // Only a login waiting for the browser's answer is handed one here (#4044).
+        _ if driven::waits_for_the_browser(kind, plan) => {
+            let followed = driven::Driven::of_plan(kind, plan, std::time::Instant::now());
+            match (followed, waiting::kept_here()) {
+                (Some(followed), Some(kept_in)) => until_answered_or_input_ends(
+                    login,
+                    followed,
+                    &kept_in,
+                    input,
+                    std::io::stdout(),
+                    std::io::stderr(),
+                ),
+                _ => Err("this runner has no data home to note this sign-in in".to_owned()),
+            }
+        }
+        _ => until_input_ends(login, input),
+    };
+    match ended {
+        Ok(Some(0)) => ExitCode::SUCCESS,
+        Ok(_) => ExitCode::FAILURE,
+        Err(why) => refused(&why),
+    }
+}
+
+/// A runner is never Windows.
+#[cfg(not(unix))]
+fn held_login(
+    _: &purlis_core::profilestore::sign_in::Login,
+    _: Held,
+    _: (),
+    _: &str,
+    _: Option<&str>,
+) -> ExitCode {
+    refused("a sign-in is held to its input only on a runner")
+}
+
+/// `purlis profile sign-out <name>` (#4043): the harness's own sign-out, on this device, with the
+/// profile's folder variables set: what a desktop runs on a runner, so the runner holds no
+/// sign-in the person does not want. A pinned version is the one that runs it, as for a sign-in.
+fn profile_sign_out(store: &purlis_core::profilestore::Homes, name: &str) -> ExitCode {
+    use purlis_core::profilestore::{self, installs, sign_in};
+    let record = match profilestore::list(store.config_root()) {
+        Ok(records) => records.into_iter().find(|p| p.name == name),
+        Err(why) => return refused(&why),
+    };
+    let Some(record) = record else {
+        return refused(&format!(
+            "this machine has no profile named '{}'. purlis profile list names the ones it has.",
+            shown::short(name)
+        ));
+    };
+    // A desktop signs out what a runner keeps for it; on any other device the person runs their
+    // harness's own sign-out.
+    if record.kept_for.is_none() {
+        return refused(&format!(
+            "'{}' is not kept on this device for a desktop, so purlis signs nothing out: run its \
+             harness's own sign-out",
+            record.name
+        ));
+    }
+    let pinned = match installs::on_this_runner(&record, &|line| eprintln!("{line}")) {
+        Ok(pinned) => pinned,
+        Err(why) => return refused(&format!("{why}. Nothing was signed out.")),
+    };
+    let logout = match sign_in::logout_of(&record, pinned.as_deref()) {
+        Ok(logout) => logout,
+        Err(why) => return refused(&why),
+    };
+    let ran = std::process::Command::new(&logout.program)
+        .args(&logout.args)
+        .envs(logout.env.iter().map(|(n, v)| (n, v)))
+        .stdin(std::process::Stdio::null())
+        .status();
+    match ran {
+        Ok(status) if status.success() => ExitCode::SUCCESS,
+        Ok(status) => {
+            eprintln!(
+                "purlis: the harness's sign-out of '{}' did not end well ({status})",
+                record.name
+            );
+            ExitCode::FAILURE
+        }
+        Err(e) => refused(&format!("{} could not be run: {e}", logout.program)),
     }
 }
 
@@ -4261,9 +4859,14 @@ fn main() -> ExitCode {
     if let Command::Scan { explain } = &cli.command {
         return scan::run(*explain);
     }
+    // Needs no project: it runs a chat's server, wherever the chat is (#2019).
+    #[cfg(unix)]
+    if let Command::Listen { port, command } = &cli.command {
+        return listen::run(*port, command);
+    }
     // Needs no project: one host serves every project of this user on this device (ADR 0068).
-    if let Command::Serve = &cli.command {
-        return serve();
+    if let Command::Serve { suspends_unlinked } = &cli.command {
+        return serve(suspends_after(*suspends_unlinked));
     }
     // Needs no project: a runner's bridge to its own host, or its pairing (ADR 0078 §2, §3).
     if let Command::Bridge {
@@ -4271,11 +4874,12 @@ fn main() -> ExitCode {
         key_made_at_start,
         make_key,
         publish,
+        home,
     } = &cli.command
     {
         #[cfg(not(unix))]
         {
-            let _ = (pair, key_made_at_start, make_key, publish);
+            let _ = (pair, key_made_at_start, make_key, publish, home);
             return bridge();
         }
         #[cfg(unix)]
@@ -4283,6 +4887,7 @@ fn main() -> ExitCode {
             (Some(handoff), Some(published)) => bridge::Asked::MakeKey {
                 handoff: handoff.clone(),
                 published: published.clone(),
+                home: home.clone(),
             },
             _ if *pair => bridge::Asked::Pair {
                 key_made_at_start: key_made_at_start.clone(),
@@ -4437,7 +5042,8 @@ fn main() -> ExitCode {
             verb @ (ProfileCommand::Create { .. }
             | ProfileCommand::Import { .. }
             | ProfileCommand::Remove { .. }
-            | ProfileCommand::Authenticate { .. }),
+            | ProfileCommand::Authenticate { .. }
+            | ProfileCommand::SignOut { .. }),
         ) => return machine_profile(verb),
         // A background refresh and a footer: neither is a plane write, and both choose their
         // own exit status as their Python counterparts do.
@@ -4573,6 +5179,7 @@ fn main() -> ExitCode {
         wait,
         timeout,
         place,
+        long,
         command,
     } = &cli.command
     {
@@ -4594,6 +5201,7 @@ fn main() -> ExitCode {
             &dispatch::Options {
                 profile: profile.as_deref(),
                 place: place.as_deref(),
+                long: *long,
             },
             waits,
         );
@@ -4986,77 +5594,9 @@ fn home_spelled(folder: &std::path::Path) -> String {
 }
 
 #[cfg(test)]
-mod core_word_tests {
-    use super::*;
-    use clap::CommandFactory;
-    use std::collections::BTreeSet;
+#[path = "main/tests/core_words.rs"]
+mod core_word_tests;
 
-    /// Every word this binary's parser answers as its first argument: each command's name,
-    /// every other name clap takes for it, and clap's own `help` — read off the parser, so a
-    /// command added to it is in this set the day it is added.
-    fn words_the_parser_answers() -> BTreeSet<String> {
-        let mut root = Cli::command();
-        root.build();
-        root.get_subcommands()
-            .flat_map(|sub| {
-                std::iter::once(sub.get_name().to_owned())
-                    .chain(sub.get_all_aliases().map(str::to_owned))
-            })
-            .collect()
-    }
-
-    #[test]
-    fn every_word_charter_answers_is_one_no_extension_may_take() {
-        // **charter-app#342: an extension can never take over a core word.** The refusal lives
-        // in the core, which the app calls to approve an extension and which cannot read this
-        // parser — so this is where the list it refuses by is held to the parser, both ways.
-        // A new core command that is not in `CORE_WORDS` fails here, in the change adding it.
-        let parser = words_the_parser_answers();
-        let refused: BTreeSet<String> = purlis_core::extension::cli::CORE_WORDS
-            .iter()
-            .map(|&word| word.to_owned())
-            .collect();
-        let unprotected: Vec<&String> = parser.difference(&refused).collect();
-        assert!(
-            unprotected.is_empty(),
-            "`charter {unprotected:?}` is a core command an extension could still take as its \
-             id — add it to purlis_core::extension::cli::CORE_WORDS"
-        );
-        let stale: Vec<&String> = refused.difference(&parser).collect();
-        assert!(
-            stale.is_empty(),
-            "CORE_WORDS refuses {stale:?}, which is no longer a word charter answers"
-        );
-    }
-
-    #[test]
-    fn every_word_purlis_answers_is_a_name_no_profile_may_take() {
-        // #2422: a profile named like a command would shadow it, so the core refuses the name.
-        // The core cannot read this parser either, so here every word it answers is declared
-        // as a profile and each one must come back refused for its name.
-        let parser = words_the_parser_answers();
-        let local: String = parser
-            .iter()
-            .map(|word| format!("[harness.{word}]\nkind = \"claude\"\ncommand = [\"claude\"]\n"))
-            .collect();
-        let set = purlis_core::profiles::current_of(purlis_core::profiles::derive_from(
-            None,
-            Ok(Some(local)),
-        ));
-        let refused_for_the_name: BTreeSet<&str> = set
-            .refused
-            .iter()
-            .filter(|r| r.reason.contains("is named like the command"))
-            .map(|r| r.name.as_str())
-            .collect();
-        let unprotected: Vec<&String> = parser
-            .iter()
-            .filter(|word| !refused_for_the_name.contains(word.as_str()))
-            .collect();
-        assert!(
-            unprotected.is_empty(),
-            "`purlis {unprotected:?}` is a command a profile may still be named after — a word \
-             the parser answers must be in purlis_core::extension::cli::CORE_WORDS"
-        );
-    }
-}
+#[cfg(test)]
+#[path = "main/tests/serve.rs"]
+mod serve_tests;

@@ -1,0 +1,3 @@
+### Changed
+
+- **A deleted skill whose name a built-in skill took comes back under a new name** (Skill studio preview, #3729). When a newer purlis ships a built-in skill with the name of a skill you deleted, Restore used to refuse it until it expired. Now its page on Deleted says "Its name belongs to a built-in skill now, so it comes back under a new name." and asks for one, starting as `my-<name>`. `purlis skill restore <name> --as <new-name>` does the same, and the list marks such a skill. The new name is checked as a rename's is: a built-in skill's name is refused with "That name belongs to a built-in skill; pick another, or make a copy." The skill's `SKILL.md` `name:` and its folder are renamed to match, in the restore's one commit.

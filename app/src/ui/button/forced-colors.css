@@ -1,0 +1,16 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The button family in forced colours** (#2328, #3387): what `theme/forced-colors.css` says of the
+   window, said of this family's own parts, in the system's palette alone. The window imports it
+   into the `forced` layer before that sheet (`ui/stylesheets.ts`), so the window's focus ring is
+   still drawn over it. */
+
+@media (forced-colors: active) {
+  /* A button that ends or destroys: a dashed outline inside its edge, which takes no room. The
+     window's focus ring is drawn over it. */
+  [data-scope="button"][data-part="root"][data-variant="danger"] {
+    outline: 2px dashed CanvasText;
+    outline-offset: -2px;
+  }
+}

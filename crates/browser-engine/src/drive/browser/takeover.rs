@@ -29,14 +29,20 @@
 //!   types nor deletes put into the field (a paste), and what the field holds after it, are
 //!   kept as they were, like a run.
 //!
+//! **No button stays held in the engine** (#2989). A press that reached the page is let go
+//! however its release ends: where the release is dropped (the page moved on in between), the
+//! engine is sent a release of that button at the press's point, and the hand-back lets go of
+//! every button still held. That release is a real one to the page: it fires `mouseup` and
+//! `pointerup` where the press was, as a release there would, and no click.
+//!
 //! **The hand-back is explicit** ([`Browser::hand_back`]): nothing returns the lease to the
 //! agent by itself. It voids every reference dealt before it, so the agent's next act starts
 //! from a new snapshot.
 
 use std::cell::Cell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -44,8 +50,9 @@ use serde_json::{Value, json};
 use super::super::kept::Kept;
 use super::super::keys::{command_of, is_modifier};
 use super::super::tree::{FrameAx, NodeKey, Snapshot};
+use super::reading::{Next, Slot};
 use super::{ACTIVE_ELEMENT, FOCUSED_HERE, READ_VALUE};
-use super::{Browser, Session, read_trees, refusal};
+use super::{Browser, Session, refusal};
 use crate::cdp::CallError;
 use crate::drive::{
     ALT, Aim, CONTROL, Call, Driver, META, Modifiers, MouseButton, MouseKind, PersonInput, Refusal,
@@ -56,6 +63,9 @@ use crate::drive::{
 pub(crate) struct Lease {
     pub(super) epoch: u64,
     pub(super) driver: Driver,
+    /// Whether a hand-back is under way (#2028): from its first step until the lease changes
+    /// hands, no Inspect opens.
+    pub(super) handing_back: bool,
 }
 
 impl Default for Lease {
@@ -63,6 +73,7 @@ impl Default for Lease {
         Self {
             epoch: 0,
             driver: Driver::Agent,
+            handing_back: false,
         }
     }
 }
@@ -71,48 +82,31 @@ impl Default for Lease {
 #[derive(Default)]
 pub(crate) struct Typing {
     /// The pages (by target) the person typed into since each was last read.
-    dirty: HashSet<String>,
+    pub(super) dirty: HashSet<String>,
     /// The runs of characters the person typed on each page (by target), the last one still
     /// growing: a key that types no character, or a press of the mouse, ends a run.
     runs: HashMap<String, Vec<String>>,
     /// Every field the person typed into (its page's target and its element), read again at a
     /// press of the mouse and at the hand-back.
-    touched: HashSet<(String, NodeKey)>,
+    pub(super) touched: HashSet<(String, NodeKey)>,
     /// What each field the person typed into held when last read from the field itself.
     latest: HashMap<NodeKey, String>,
     /// The fields the person typed into, in the order they first typed into each.
     order: Vec<NodeKey>,
-    /// The mouse buttons the person holds down, as the engine's bits.
-    held: i64,
+    /// The mouse buttons the person holds down on a page, by the engine's bit: each press that
+    /// reached the page, until its release does (#2989).
+    held: BTreeMap<i64, Pressed>,
     /// The field the person's last key was blanked and read for, while the page showed the
     /// document number it was blanked under (#2295): a key into it while it keeps the focus
     /// needs no new read of the page.
     focus: Option<Focused>,
     /// The read of a page's trees under way for the person's keys, or come and not yet used:
     /// every key that waits for the page waits on this one read (#3043).
-    reading: Option<Arc<Reading>>,
-}
-
-/// A read of every frame's tree of a page for the person's keys (#3043): its page's target, the
-/// lease's epoch and the page's document number when it began, and its answer once it came.
-struct Reading {
-    target: String,
-    epoch: u64,
-    shows: u64,
-    /// The answer, and when it came.
-    answer: Mutex<Option<(Instant, ReadAnswer)>>,
-    came: Condvar,
-}
-
-/// What a read of a page's trees for the person's keys came to (#3043).
-type ReadAnswer = Result<Arc<Vec<FrameAx>>, Refusal>;
-
-impl Reading {
-    /// The read's answer is `answer`: every key waiting on it is told.
-    fn answered(&self, answer: ReadAnswer) {
-        *lock(&self.answer) = Some((Instant::now(), answer));
-        self.came.notify_all();
-    }
+    reading: Slot,
+    /// The read of each page (by target) the last field the person typed into on it was
+    /// blanked from, until the hand-back: where a read of the page as their input is kept out
+    /// does not come in time, the groups of boxes on it are found in this one (#3277).
+    last_read: HashMap<String, Arc<Snapshot>>,
 }
 
 /// Whether input lands on what the person saw (#2638), with what judging it read: the page's
@@ -133,6 +127,16 @@ impl Landing {
             focused: None,
         }
     }
+}
+
+/// A press of the person's that reached a page: its button, the session it went to and its
+/// point, where the button is let go when its release is dropped (#2989).
+#[derive(Debug, Clone)]
+struct Pressed {
+    button: MouseButton,
+    session: String,
+    x: f64,
+    y: f64,
 }
 
 /// A field already blanked: its page's target and element, the page's read it was blanked in,
@@ -173,6 +177,14 @@ pub(super) fn metrics(width: u16, height: u16) -> Value {
 
 /// The smallest and largest page a size may give, in CSS pixels.
 const SIZES: std::ops::RangeInclusive<u16> = 200..=4096;
+
+/// `width` by `height`, each held to [`SIZES`].
+pub(super) fn sized(width: u16, height: u16) -> (u16, u16) {
+    (
+        width.clamp(*SIZES.start(), *SIZES.end()),
+        height.clamp(*SIZES.start(), *SIZES.end()),
+    )
+}
 
 impl Browser {
     /// The epoch of the lease now held.
@@ -215,6 +227,8 @@ impl Browser {
         // A field blanked in an earlier turn is asked about again from the page itself, and
         // the page read again.
         lock(&self.typing).forget_reads();
+        // No read the agent's calls left is kept past a change of hands (#3277).
+        lock(&self.reading).forget();
         // Whatever waits for the page wakes now, and finds itself cut.
         self.inner.changed.notify_all();
         epoch
@@ -228,18 +242,43 @@ impl Browser {
         if self.driver() != Driver::Person {
             return self.epoch();
         }
+        // An Inspect under way never finishes opening from here on, nor does one begun before
+        // the lease changes hands (#2028).
+        {
+            let mut lease = lock(&self.lease);
+            lease.handing_back = true;
+            self.inspect_cut.fetch_add(1, Ordering::SeqCst);
+        }
+        // DevTools are the person's while they drive (#2028): nothing set in them outlives the
+        // lease, and what they wrote, and every field, is kept out as typing is.
+        self.after_devtools();
+        lock(&self.typing).end_run(super::inspect::INSPECTOR_PAGE);
         self.keep_typing_out();
-        lock(&self.typing).forget_reads();
+        {
+            let mut typing = lock(&self.typing);
+            typing.forget_reads();
+            typing.last_read.clear();
+        }
+        lock(&self.reading).forget();
+        // A button the person still holds is let go before the agent has the page (#2989).
+        self.let_go_of_held(None);
         // What a login the person cut had filled is emptied before the agent has the page.
         self.clear_cut_logins();
         let mut lease = lock(&self.lease);
+        self.inspect_cut.fetch_add(1, Ordering::SeqCst);
+        lease.handing_back = false;
         if lease.driver == Driver::Person {
             lease.epoch += 1;
             lease.driver = Driver::Agent;
             self.inner.person_drives.store(false, Ordering::SeqCst);
             lock(&self.inner.state).refs.void();
         }
-        lease.epoch
+        let epoch = lease.epoch;
+        drop(lease);
+        // One that opened all the same is closed before the agent has the page.
+        self.inner
+            .stop_inspecting(super::inspect::InspectEnded::Closed);
+        epoch
     }
 
     /// Whether the agent holds the lease of `epoch` now.
@@ -258,6 +297,8 @@ impl Browser {
     pub(super) fn run_at(&self, epoch: u64, call: Call) -> Result<super::Answer, Refusal> {
         self.acting_epoch.store(epoch, Ordering::SeqCst);
         let _carrying = Carrying::under(Driver::Agent, epoch);
+        // What DevTools wrote into a page not read at the hand-back is kept out first (#2028).
+        self.devtools_read_again(&call)?;
         let answer = self.run(call);
         if self.cut() {
             return Err(Refusal::Interrupted);
@@ -312,8 +353,7 @@ impl Browser {
         if self.driver() != Driver::Person {
             return Err(Refusal::NotDriving);
         }
-        let width = width.clamp(*SIZES.start(), *SIZES.end());
-        let height = height.clamp(*SIZES.start(), *SIZES.end());
+        let (width, height) = sized(width, height);
         let sessions: Vec<String> = {
             let mut state = lock(&self.inner.state);
             state.size = Some((width, height));
@@ -341,6 +381,55 @@ impl Browser {
     /// key that edits, the focused element is blanked: a page that cannot say which element
     /// has the focus is refused [`Refusal::FocusUnclear`], and the key is not sent.
     pub fn person_input(&self, input: &PersonInput) -> Result<(), Refusal> {
+        let sent = self.person_input_once(input);
+        // A release dropped lets go of its button at its press's point, where that press
+        // reached the page (#2989): the engine holds no button the person has let go of.
+        if sent == Err(Refusal::Missed)
+            && let PersonInput::Mouse {
+                kind: MouseKind::Released,
+                button,
+                ..
+            } = input
+        {
+            self.let_go_of_held(Some(button_bit(*button)));
+        }
+        sent
+    }
+
+    /// Sends the engine a release of the button of `bit` (every button, for `None`) the person
+    /// holds on a page, at its press's point, on the session the press went to (#2989). The
+    /// engine may have gone or refused: the button counts as let go here whatever it answers.
+    fn let_go_of_held(&self, bit: Option<i64>) {
+        let (released, mut buttons) = {
+            let mut typing = lock(&self.typing);
+            let released: Vec<(i64, Pressed)> = match bit {
+                Some(bit) => typing
+                    .held
+                    .remove(&bit)
+                    .map(|p| (bit, p))
+                    .into_iter()
+                    .collect(),
+                None => std::mem::take(&mut typing.held).into_iter().collect(),
+            };
+            let still: i64 = typing.held.keys().sum();
+            let buttons = still + released.iter().map(|(bit, _)| bit).sum::<i64>();
+            (released, buttons)
+        };
+        for (bit, pressed) in released {
+            buttons &= !bit;
+            let event = mouse_event(
+                MouseKind::Released,
+                pressed.x,
+                pressed.y,
+                pressed.button,
+                buttons,
+                0,
+            );
+            let _ = self.person_sends("Input.dispatchMouseEvent", event, &pressed.session);
+        }
+    }
+
+    fn person_input_once(&self, input: &PersonInput) -> Result<(), Refusal> {
         if self.driver() != Driver::Person {
             return Err(Refusal::NotDriving);
         }
@@ -387,7 +476,7 @@ impl Browser {
                 // A key that may move the focus (Tab, an arrow) leaves a read made before it
                 // for no later key (#3043).
                 if *down && !edits && !is_modifier(key) {
-                    lock(&self.typing).reading = None;
+                    lock(&self.typing).reading.forget();
                 }
                 let field = if edits {
                     // The field the last key went to, still focused, is blanked already: only
@@ -409,11 +498,14 @@ impl Browser {
                                 let shows = lock(&self.inner.state)
                                     .page(&target)
                                     .map_or(0, |page| page.shows);
-                                lock(&self.typing).focus = Some(Focused {
+                                let mut typing = lock(&self.typing);
+                                typing.last_read.insert(target.clone(), Arc::clone(&read));
+                                typing.focus = Some(Focused {
                                     field: field.clone(),
                                     read: std::sync::Arc::clone(&read),
                                     shows,
                                 });
+                                drop(typing);
                                 Some((field, read))
                             }
                             (Err(Refusal::NothingFocused), _) => {
@@ -501,32 +593,14 @@ impl Browser {
                 }
                 let bit = button_bit(*button);
                 let buttons = {
-                    let mut typing = lock(&self.typing);
+                    let held: i64 = lock(&self.typing).held.keys().sum();
                     match kind {
-                        MouseKind::Pressed => typing.held |= bit,
-                        MouseKind::Released => typing.held &= !bit,
-                        MouseKind::Moved | MouseKind::Wheel => {}
+                        MouseKind::Pressed => held | bit,
+                        MouseKind::Released => held & !bit,
+                        MouseKind::Moved | MouseKind::Wheel => held,
                     }
-                    typing.held
                 };
-                let mut event = json!({
-                    "type": match kind {
-                        MouseKind::Moved => "mouseMoved",
-                        MouseKind::Pressed => "mousePressed",
-                        MouseKind::Released => "mouseReleased",
-                        MouseKind::Wheel => "mouseWheel",
-                    },
-                    "x": x,
-                    "y": y,
-                    "modifiers": modifiers,
-                    "buttons": buttons,
-                    "button": match button {
-                        MouseButton::None => "none",
-                        MouseButton::Left => "left",
-                        MouseButton::Middle => "middle",
-                        MouseButton::Right => "right",
-                    },
-                });
+                let mut event = mouse_event(*kind, *x, *y, *button, buttons, *modifiers);
                 if *clicks > 0 {
                     event["clickCount"] = (*clicks).into();
                 }
@@ -534,7 +608,30 @@ impl Browser {
                     event["deltaX"] = (*delta_x).into();
                     event["deltaY"] = (*delta_y).into();
                 }
-                self.person_sends("Input.dispatchMouseEvent", event, &session)
+                // A release the engine refused (an engine error) leaves its button counted as
+                // held, as the engine may hold it still: the hand-back lets go of it.
+                self.person_sends("Input.dispatchMouseEvent", event, &session)?;
+                // The button is held in the engine from the press that reached the page, until
+                // a release does.
+                let mut typing = lock(&self.typing);
+                match kind {
+                    MouseKind::Pressed if bit != 0 => {
+                        typing.held.insert(
+                            bit,
+                            Pressed {
+                                button: *button,
+                                session,
+                                x: *x,
+                                y: *y,
+                            },
+                        );
+                    }
+                    MouseKind::Released => {
+                        typing.held.remove(&bit);
+                    }
+                    _ => {}
+                }
+                Ok(())
             }
         }
     }
@@ -555,7 +652,13 @@ impl Browser {
 
     /// Reads every page and every field the person typed into again, and keeps what they hold
     /// and each run of characters the person typed out of every later answer about every page.
-    fn keep_typing_out(&self) {
+    /// The fields, then the pages, are read within
+    /// [`Limits::key_reads_within`](crate::drive::Limits) in all, each call of theirs by then
+    /// (#3277): where a field's read does not come it keeps what it was last read to hold, and
+    /// where a page's does not, the groups of boxes on it are found in the read the last field
+    /// the person typed into on it was blanked from, and the log says so.
+    pub(super) fn keep_typing_out(&self) {
+        let by = Instant::now() + self.inner.limits.key_reads_within;
         let (dirty, runs, touched) = {
             let mut typing = lock(&self.typing);
             // Each run is kept out once: a run still growing is a run a press of the mouse or
@@ -570,26 +673,47 @@ impl Browser {
         };
         let mut held = Kept::default();
         held.run(&runs);
-        let mut reads = Vec::new();
-        for target in dirty {
-            if let Ok(read) = self.snapshot_of(&target) {
-                reads.push(read);
-            }
-            if let Some(page) = lock(&self.inner.state).page(&target) {
-                held.take_in(&page.scrubbed);
-            }
-        }
-        // Each field is read last, from the field itself: what it holds now is the latest of
-        // its values, whatever its page's tree read before. So are the groups of boxes.
+        // Each field is read from the field itself, first: what it holds now is the latest of its
+        // values, whatever its page's tree reads. So are the groups of boxes. The pages' trees
+        // have what is left of the time.
         let mut latest = HashMap::new();
         let mut order = Vec::new();
         for field in &touched {
             // A field that cannot be read now keeps what it was last read to hold.
-            let Ok(now) = self.field_holds(field) else {
+            let Ok(now) = self.field_holds_by(field, Some(by)) else {
                 continue;
             };
             held.field(&field.1, &[&now]);
             (latest, order) = lock(&self.typing).read(&field.1, &now);
+        }
+        let mut reads = Vec::new();
+        for target in dirty {
+            match self.trees_by(&target, by) {
+                Ok(trees) => reads.push(Arc::new(self.snapshot_from(&target, &trees))),
+                Err(why) => {
+                    let page = lock(&self.inner.state)
+                        .page(&target)
+                        .map_or_else(String::new, |page| format!(" {}", page.id));
+                    match lock(&self.typing).last_read.get(&target) {
+                        Some(read) => {
+                            tracing::warn!(
+                                "purlis: page{page} could not be read as the person's input \
+                                 was kept out ({why}), so the groups of boxes on it were \
+                                 rebuilt from the page as the person's last key read it"
+                            );
+                            reads.push(Arc::clone(read));
+                        }
+                        None => tracing::warn!(
+                            "purlis: page{page} could not be read as the person's input was \
+                             kept out ({why}), so no group of boxes on it was rebuilt: what \
+                             each field holds, and each run typed, is kept out"
+                        ),
+                    }
+                }
+            }
+            if let Some(page) = lock(&self.inner.state).page(&target) {
+                held.take_in(&page.scrubbed);
+            }
         }
         for read in &reads {
             for (first, joined) in read.groups_holding(&latest, &order) {
@@ -601,7 +725,24 @@ impl Browser {
 
     /// What `field` holds now, read from the field itself; empty where it is gone (it, or its
     /// frame). Refused [`Refusal::FieldUnread`] where it is there and cannot be read.
-    fn field_holds(&self, (target, key): &(String, NodeKey)) -> Result<String, Refusal> {
+    fn field_holds(&self, field: &(String, NodeKey)) -> Result<String, Refusal> {
+        self.field_holds_by(field, None)
+    }
+
+    /// [`Browser::field_holds`], every call of it made by `by` where it is given (#3277).
+    fn field_holds_by(
+        &self,
+        (target, key): &(String, NodeKey),
+        by: Option<Instant>,
+    ) -> Result<String, Refusal> {
+        let within = || {
+            by.map_or(crate::cdp::CALL_TIMEOUT, |by| {
+                crate::cdp::CALL_TIMEOUT.min(by.saturating_duration_since(Instant::now()))
+            })
+        };
+        if within().is_zero() {
+            return Err(Refusal::FieldUnread);
+        }
         let session = {
             let state = lock(&self.inner.state);
             match state
@@ -615,16 +756,17 @@ impl Browser {
         let on = Some(session.as_str());
         // Read in the world the field was resolved into, by its unique id: an element of any
         // other world is refused by the engine.
-        let read = self.in_world(&session, &key.frame, |world| {
-            let resolved = self.devtools().call(
+        let run = |world: &super::world::World| {
+            let resolved = self.devtools().call_within(
                 "DOM.resolveNode",
                 json!({ "backendNodeId": key.backend, "executionContextId": world.id }),
                 on,
+                within(),
             )?;
             let Some(object) = resolved.pointer("/object/objectId").and_then(Value::as_str) else {
                 return Ok(Value::Null);
             };
-            let read = self.devtools().call(
+            let read = self.devtools().call_within(
                 "Runtime.callFunctionOn",
                 json!({
                     "uniqueContextId": world.unique,
@@ -633,12 +775,20 @@ impl Browser {
                     "returnByValue": true,
                 }),
                 on,
+                within(),
             );
-            let _ =
-                self.devtools()
-                    .call("Runtime.releaseObject", json!({ "objectId": object }), on);
+            let _ = self.devtools().call_within(
+                "Runtime.releaseObject",
+                json!({ "objectId": object }),
+                on,
+                within(),
+            );
             read
-        });
+        };
+        let read = match by {
+            Some(by) => self.in_world_by(&session, &key.frame, by, run),
+            None => self.in_world(&session, &key.frame, run),
+        };
         match read {
             Ok(read) => read
                 .pointer("/result/value")
@@ -977,95 +1127,43 @@ impl Browser {
         let shows = lock(&self.inner.state)
             .page(target)
             .map_or(0, |page| page.shows);
-        let (reading, begun) = {
-            let mut typing = lock(&self.typing);
-            match &typing.reading {
-                // Under way, or come and not used yet: every key waits on the one read.
-                Some(reading)
-                    if reading.target == target
-                        && reading.epoch == epoch
-                        && reading.shows == shows =>
-                {
-                    (Arc::clone(reading), false)
+        let (reading, begun) = loop {
+            // Under way, or come and not used yet: every key waits on the one read.
+            let next = lock(&self.typing)
+                .reading
+                .next(target, epoch, shows, |_| true);
+            match next {
+                Next::Join(reading) => break (reading, false),
+                Next::Begin(reading) => {
+                    reading.begin(
+                        Arc::clone(&self.inner.devtools),
+                        self.frames_to_read(target),
+                        self.inner.limits.tree_reads_within,
+                        self.inner.limits.most_tree_read_bytes,
+                        Refusal::PageUnreadInTime,
+                    );
+                    break (reading, true);
                 }
-                _ => {
-                    let reading = Arc::new(Reading {
-                        target: target.to_owned(),
-                        epoch,
-                        shows,
-                        answer: Mutex::new(None),
-                        came: Condvar::new(),
-                    });
-                    typing.reading = Some(Arc::clone(&reading));
-                    (reading, true)
+                // The engine still reads the page for a read no key will use: another is asked
+                // for once it has ended, never beside it (#3277).
+                Next::After(running) => {
+                    if running.wait(by, || false).is_none() {
+                        return Err(Refusal::PageUnreadInTime);
+                    }
                 }
             }
         };
-        if begun {
-            self.begin_reading(target, &reading);
-        }
-        let (came, answer) = {
-            let mut answer = lock(&reading.answer);
-            loop {
-                if let Some((came, answer)) = answer.as_ref() {
-                    break (*came, answer.clone());
-                }
-                let left = by.saturating_duration_since(Instant::now());
-                if left.is_zero() {
-                    return Err(Refusal::PageUnreadInTime);
-                }
-                answer = reading
-                    .came
-                    .wait_timeout(answer, left)
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .0;
-            }
+        let Some((came, answer)) = reading.wait(by, || false) else {
+            return Err(Refusal::PageUnreadInTime);
         };
         // Used, or failed: the next key that needs the page reads it anew.
-        {
-            let mut typing = lock(&self.typing);
-            if typing
-                .reading
-                .as_ref()
-                .is_some_and(|kept| Arc::ptr_eq(kept, &reading))
-            {
-                typing.reading = None;
-            }
-        }
+        lock(&self.typing).reading.used(&reading);
         let trees = answer?;
         // A read that came long before the key that would use it is not the page now.
         if came.elapsed() > self.inner.limits.tree_read_kept_for {
             return Err(Refusal::PageUnreadInTime);
         }
         Ok((trees.as_ref().clone(), !begun))
-    }
-
-    /// Begins `reading` of every frame's tree of `target`'s page, on a thread of its own, each
-    /// frame's within [`Limits::tree_reads_within`](crate::drive::Limits) (#3043). A read past
-    /// that limit, or one that cannot begin, holds the keys waiting on it back.
-    fn begin_reading(&self, target: &str, reading: &Arc<Reading>) {
-        let frames = match self.frames_to_read(target) {
-            Ok(frames) => frames,
-            Err(why) => return reading.answered(Err(why)),
-        };
-        let devtools = Arc::clone(&self.inner.devtools);
-        let within = self.inner.limits.tree_reads_within;
-        let told = Arc::clone(reading);
-        let begun = std::thread::Builder::new()
-            .name("purlis-tree-read".into())
-            .spawn(move || {
-                told.answered(
-                    read_trees(&*devtools, frames, within)
-                        .map(Arc::new)
-                        .map_err(|why| match why {
-                            CallError::TimedOut => Refusal::PageUnreadInTime,
-                            other => refusal(other),
-                        }),
-                );
-            });
-        if begun.is_err() {
-            reading.answered(Err(Refusal::PageUnreadInTime));
-        }
     }
 
     /// Whether the document of `frame` on `session` has an element focused (or one inside a
@@ -1099,7 +1197,7 @@ impl Typing {
     /// asked anew at the next key.
     fn forget_reads(&mut self) {
         self.focus = None;
-        self.reading = None;
+        self.reading.forget();
     }
 
     /// The field `key` holds `now`, as read from the field itself: answers what every field
@@ -1113,7 +1211,7 @@ impl Typing {
     }
 
     /// The person pressed `key` on `target`'s page, typing `text`, if it types any.
-    fn typed(&mut self, target: &str, key: &str, text: Option<&str>) {
+    pub(super) fn typed(&mut self, target: &str, key: &str, text: Option<&str>) {
         let runs = self.runs.entry(target.to_owned()).or_default();
         match text {
             Some(text) if text != "\r" => match runs.last_mut() {
@@ -1130,7 +1228,7 @@ impl Typing {
     }
 
     /// The run of characters being typed on `target`'s page ends here.
-    fn end_run(&mut self, target: &str) {
+    pub(super) fn end_run(&mut self, target: &str) {
         let runs = self.runs.entry(target.to_owned()).or_default();
         if runs.last().is_some_and(|run| !run.is_empty()) {
             runs.push(String::new());
@@ -1171,7 +1269,7 @@ fn commands(modifiers: Modifiers) -> bool {
 
 /// The text a key types, if it types any: a key named by one character, or Enter, held with no
 /// chord ([`commands`]): with Alt or AltGr, the character the key named (`@`, `€`).
-fn typed(key: &str, modifiers: Modifiers) -> Option<String> {
+pub(super) fn typed(key: &str, modifiers: Modifiers) -> Option<String> {
     if commands(modifiers) {
         return None;
     }
@@ -1196,7 +1294,7 @@ fn edits(key: &str, modifiers: Modifiers) -> bool {
 }
 
 /// The engine's key event for one key of the person's.
-fn key_event(
+pub(super) fn key_event(
     down: bool,
     key: &str,
     code: &str,
@@ -1229,8 +1327,37 @@ fn key_event(
     event
 }
 
+/// The engine's mouse event of `kind` at (`x`, `y`) for `button`, with `buttons` held.
+pub(super) fn mouse_event(
+    kind: MouseKind,
+    x: f64,
+    y: f64,
+    button: MouseButton,
+    buttons: i64,
+    modifiers: Modifiers,
+) -> Value {
+    json!({
+        "type": match kind {
+            MouseKind::Moved => "mouseMoved",
+            MouseKind::Pressed => "mousePressed",
+            MouseKind::Released => "mouseReleased",
+            MouseKind::Wheel => "mouseWheel",
+        },
+        "x": x,
+        "y": y,
+        "modifiers": modifiers,
+        "buttons": buttons,
+        "button": match button {
+            MouseButton::None => "none",
+            MouseButton::Left => "left",
+            MouseButton::Middle => "middle",
+            MouseButton::Right => "right",
+        },
+    })
+}
+
 /// The engine's bit for a held mouse button.
-fn button_bit(button: MouseButton) -> i64 {
+pub(super) fn button_bit(button: MouseButton) -> i64 {
     match button {
         MouseButton::None => 0,
         MouseButton::Left => 1,

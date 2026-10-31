@@ -458,10 +458,11 @@ fn carried(root: &Path) -> Result<(), String> {
 }
 
 /// The skill each of `names`' folders holds, or why moving one would lose it: the folder is not a
-/// whole skill, or its name is not ASCII, or is a built-in skill's, a project skill's, or another
-/// moved folder's, each in any case.
+/// whole skill, or its name is not ASCII, or belongs to a built-in skill
+/// ([`crate::skills::Reserved`]), or is a project skill's or another moved folder's, each in any
+/// case.
 fn whole(root: &Path, built_in: Option<&Path>, names: &[String]) -> Result<Vec<Folder>, String> {
-    let built_in: Vec<String> = crate::skills::built_in_names(built_in);
+    let reserved = crate::skills::Reserved::of(built_in);
     let project: Vec<String> = crate::skills::scan(root, Path::new(TO))
         .into_iter()
         .filter_map(Result::ok)
@@ -494,9 +495,10 @@ fn whole(root: &Path, built_in: Option<&Path>, names: &[String]) -> Result<Vec<F
                  it to letters, digits and hyphens"
                     .to_owned(),
             )
-        } else if built_in.iter().any(|theirs| same_name(theirs, &name)) {
+        } else if reserved.holds(&name.to_ascii_lowercase()) {
             Some(
-                "a built-in skill has this name, and a built-in skill is never replaced".to_owned(),
+                "this name belongs to a built-in skill, and a built-in skill is never replaced"
+                    .to_owned(),
             )
         } else if let Some(theirs) = project.iter().find(|theirs| same_name(theirs, &name)) {
             Some(format!(
@@ -817,6 +819,7 @@ fn lost(set: &SkillSet, folder: &Path, name: &str) -> Option<String> {
     match left.map(|left| &left.reason) {
         Some(Reason::TurnedOff) => None,
         Some(Reason::NameTaken { by, .. }) if *by != Origin::BuiltIn => None,
+        Some(Reason::HiddenByRepo { .. }) => None,
         Some(reason) => Some(reason.to_string()),
         None => Some("it is not in the chat's skills".to_owned()),
     }
@@ -828,34 +831,20 @@ fn lost(set: &SkillSet, folder: &Path, name: &str) -> Option<String> {
 fn references(root: &Path, built_in: Option<&Path>, project: &Project) -> Vec<String> {
     let mut said = Vec::new();
     let mut resolved = 0;
+    let env = crate::harness_plugin::Env::of(&[]);
     for persona in &project.personas {
-        let names = crate::skills::names_of(root, persona);
-        if names.is_empty() {
+        let missing = crate::skills::persona::unresolved(built_in, root, persona, Some(&env));
+        if missing.is_empty() {
+            if !crate::skills::names_of(root, persona).is_empty() {
+                resolved += 1;
+            }
             continue;
         }
-        let set = crate::skills::in_the_studio(built_in, root, None, Some(persona));
-        let mut all = true;
-        for reference in &names {
-            // A reference the set leaves out is listed as its `skills:` list writes it.
-            let written = reference.to_string();
-            let missing = set.left_out.iter().find(|left| {
-                left.name == written
-                    && matches!(
-                        left.reason,
-                        Reason::NotOnThisMachine | Reason::NoSuchBuiltIn
-                    )
-            });
-            if let Some(left) = missing {
-                all = false;
-                said.push(format!(
-                    "• the persona {persona} names {reference}: {}. Its chats start without it \
-                     until it is installed or the name is fixed",
-                    left.reason
-                ));
-            }
-        }
-        if all {
-            resolved += 1;
+        for (reference, reason) in missing {
+            said.push(format!(
+                "• the persona {persona} names {reference}: {reason}. Its chats start without it \
+                 until it is installed or the name is fixed"
+            ));
         }
     }
     if resolved > 0 {

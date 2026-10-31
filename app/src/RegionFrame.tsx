@@ -13,7 +13,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Group, Panel, usePanelRef, type Layout } from "react-resizable-panels";
-import { Separator } from "./ui/panel/Separator";
+import { Separator as ResizeHandle } from "./ui/panel/Separator";
 import { useProjectShown } from "./projectShown";
 import { X } from "lucide-react";
 import { ActivityBar, VIEW_MARKS, type PanelTab, type Tabbed } from "./ActivityBar";
@@ -50,7 +50,7 @@ import { useArrived } from "./lib/arrived";
 import { HeadActions } from "./viewHead";
 import { lastUsed, narrowed, narrowPicked, useNarrow } from "./narrowPanel";
 import { useSidesOfTheFront } from "./railRoom";
-import { cycleOf, stepped, STOPS, type Stop } from "./regionCycle";
+import { CARD_STOP, cycleOf, steppedWithCard, STOPS, type Stop } from "./regionCycle";
 import { pressed } from "./keys/registry";
 import { FOCUS_MODE, HIDDEN_IN_FOCUS } from "./keys/focusMode";
 import { moveAlong, sequenceIn } from "./tabSequence";
@@ -58,7 +58,7 @@ import { inADialog } from "./paneKeyboard";
 import { CHAT_KEYBOARD } from "./actions";
 import { forgetFrameScroll, useViewScroll } from "./viewScroll";
 import { IconButton } from "./ui/button/Button";
-import { PanelSectionTitle, panelRoot } from "./ui/panel/Panel";
+import { PanelTitle, panelRoot } from "./ui/panel/Panel";
 import { ActivityBarFrame } from "./ui/activity/ActivityItem";
 
 /**
@@ -251,9 +251,9 @@ export function RegionFrame({
     );
   };
   /**
-   * **What a side panel draws above its views** (R123, R125): on the left, the open view's
-   * header in the label's capitals (its icons are the left column's, #3144); on the right, the
-   * open view's title and the × that closes it. Nothing while the side is away. Either way the
+   * **What a side panel draws above its views** (R123, R125, as the sidebar-views prototype's
+   * Q1 A draws them, #3340): the open view's title, 13px and strong in the primary tier, in its
+   * own case; on the left its icons are the left column's (#3144), on the right the × closes it. Nothing while the side is away. Either way the
    * head is the view's one title, and its own actions are on it (#3330, {@link HeadActions}).
    */
   const sideTop = (side: Side): ReactNode => {
@@ -271,7 +271,7 @@ export function RegionFrame({
       if (open === undefined || head === null) return null;
       return (
         <div className="side-head" data-side={side}>
-          <PanelSectionTitle>{head ?? named}</PanelSectionTitle>
+          <PanelTitle className="side-title">{head ?? named}</PanelTitle>
           {actionsOf}
         </div>
       );
@@ -279,7 +279,7 @@ export function RegionFrame({
     if (open === undefined || named === undefined) return null;
     return (
       <div className="side-head" data-side={side}>
-        <h2 className="side-title">{named}</h2>
+        <PanelTitle className="side-title">{named}</PanelTitle>
         {actionsOf}
         <IconButton
           size="sm"
@@ -725,7 +725,7 @@ function Halves({
   return (
     <Group className="panel-halves" orientation="horizontal" onLayoutChanged={settled}>
       {half("left", left)}
-      <Separator
+      <ResizeHandle
         className={both ? undefined : "edge-gone"}
         disableDoubleClick
         elementRef={between}
@@ -815,7 +815,9 @@ function Half({
         {placed !== undefined && (
           <>
             <div className="half-head">
-              <PanelSectionTitle>{title}</PanelSectionTitle>
+              {/* The view's one title, as the sidebar-views prototype's Q1 A draws it (#3340):
+                  13px, strong, in the primary tier, in its own case. */}
+              <PanelTitle className="side-title">{title}</PanelTitle>
               {views.map(({ view }) => (
                 <span
                   key={view}
@@ -917,9 +919,21 @@ const REGION_OF: Record<Stop, string> = {
   "panel-right": '.panel-half[data-side="right"]:not([hidden])',
 };
 
-/** The keyboard to the region after the one holding it in `cycle`, or with `back` before. */
+/**
+ * The keyboard to the region after the one holding it in `cycle`, or with `back` before; while a
+ * chip's card is up over the window, to that card first (#3648, `steppedWithCard`).
+ */
 function stepIn(root: HTMLElement, cycle: readonly Stop[], back: boolean) {
-  landIn(root, stepped(drawnCycle(root, cycle), stopHolding(root, document.activeElement), back));
+  const on = document.activeElement;
+  const card = document.querySelector<HTMLElement>(`[${CARD_STOP}]`);
+  const to = steppedWithCard(
+    drawnCycle(root, cycle),
+    stopHolding(root, on),
+    card === null ? "none" : card.contains(on) ? "in" : "out",
+    back,
+  );
+  if (to === "card") card?.focus();
+  else landIn(root, to);
 }
 
 /**
@@ -1193,7 +1207,7 @@ function Slot({
 function Edge({ open, named, onReset }: { open: boolean; named: string; onReset?: () => void }) {
   const element = useHandleReset(onReset);
   return (
-    <Separator
+    <ResizeHandle
       aria-label={named}
       className={open ? undefined : "edge-gone"}
       disableDoubleClick={onReset !== undefined}

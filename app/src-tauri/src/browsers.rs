@@ -82,6 +82,10 @@ pub struct BrowserFrame {
     /// Where the browser's page is (#2300): said on its own, with no image, where it changed
     /// and before the first frame of each snapshot; `null` on every frame.
     pub page: Option<PageAt>,
+    /// Why a browser's DevTools closed (#2028), said on its own with no image, as their view's
+    /// last frame: one of `handed_back`, `page_gone`, `fell_behind`, `too_large`, `moved` and
+    /// `ended`; `null` on every other frame.
+    pub closed: Option<String>,
 }
 
 /// **Where a browser's page is** (#2300): the origin of the document it has loaded
@@ -257,8 +261,8 @@ mod hosted {
     use std::sync::{Arc, Mutex, PoisonError};
     use std::time::Duration;
 
-    use purlis_core::eventlog::browsing::{Driver as Drives, Said, Typist};
-    use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, Driver};
+    use purlis_core::eventlog::browsing::{Closer, Driver as Drives, Said, Typist};
+    use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, Driver, LinkFrames};
     use purlis_session_protocol::session::{
         self, Answer, Command, ProgramKind, StartProgram, ViewKind, ViewRole,
     };
@@ -362,7 +366,15 @@ mod hosted {
             login: purlis_session_protocol::browsing::LogIn,
         ) -> Result<Browsed, crate::chatbrowsers::Refused> {
             use crate::chatbrowsers::Refused;
+            // No login is filled on a runner a chat ran on without the sandbox (D-2050-27).
+            if let Some(why) = self.pool_of(program).and_then(|pool| self.untrusted(&pool)) {
+                return Err(Refused::Said(why));
+            }
             let link = self.link_for(program).map_err(Refused::Said)?;
+            // Again once its link is had, as a browser's start is checked (#3702).
+            if let Some(why) = self.pool_of(program).and_then(|pool| self.untrusted(&pool)) {
+                return Err(Refused::Said(why));
+            }
             let command = Command::LogIn {
                 program: program.to_owned(),
                 login,
@@ -391,8 +403,11 @@ mod hosted {
             // Back with the agent once it answers, unless the person took it over meanwhile;
             // a login that went through typed what it filled.
             if purlis_drives && self.driver_said(program) == Drives::Purlis {
-                if answered.is_ok() {
-                    self.typed(program, Typist::Purlis);
+                if let Ok(browsed) = &answered {
+                    let on = browsed.page.as_ref().and_then(|page| {
+                        purlis_session_protocol::browsing::origin_of(&page.address)
+                    });
+                    self.typed(program, Typist::Purlis, on);
                 }
                 self.drove(program, Drives::Agent);
             }
@@ -404,6 +419,7 @@ mod hosted {
         }
 
         fn stop(&self, program: &str) -> Result<(), String> {
+            self.ending_here(program);
             match self.link_for(program)?.call_refused_within(
                 Command::Stop {
                     chat: program.to_owned(),
@@ -469,6 +485,25 @@ mod hosted {
         /// Where each browser's note goes to be kept in the host, in the order given (#2025):
         /// one thread sends them, started with the first.
         notes: Mutex<Option<std::sync::mpsc::Sender<Noted>>>,
+        /// The browsers this window is ending, by program (#2842): an end it asked for is no
+        /// crash.
+        closing: Arc<Mutex<std::collections::HashSet<String>>>,
+        /// The origin of each browser's page, as its views were last told it, by program
+        /// (#2842): what typing into it is said on.
+        origins: Arc<Mutex<HashMap<String, Option<String>>>>,
+        /// What the window holds each runner browser's frames to, by program (#3297).
+        held_to: Arc<Mutex<HashMap<String, LinkFrames>>>,
+    }
+
+    /// **What the window holds a runner browser's frames to**, where its pool's are `frames`
+    /// (#3297): the more of each of those and the defaults. A runner before 1.49 holds its views
+    /// to the defaults, and one since to the pool's, and the window does not know which it
+    /// links to, so it draws either and nothing past both.
+    fn window_holds(frames: LinkFrames) -> LinkFrames {
+        LinkFrames {
+            frames: frames.frames.max(LinkFrames::DEFAULT.frames),
+            width: frames.width.max(LinkFrames::DEFAULT.width),
+        }
     }
 
     /// **Told what the window says of a browser in the event log** (#2293): the project the
@@ -547,6 +582,9 @@ mod hosted {
                 says: Arc::new(|_, _| {}),
                 logged: Arc::default(),
                 notes: Mutex::new(None),
+                closing: Arc::default(),
+                origins: Arc::default(),
+                held_to: Arc::default(),
             }
         }
 
@@ -611,7 +649,7 @@ mod hosted {
                     return;
                 }
             };
-            self.follow_its_end(&link, program);
+            self.follow_its_end(&link, root, program);
             if let Some(held) = self.projects().get_mut(&at)
                 && !held.browsers.iter().any(|one| one == program)
             {
@@ -622,16 +660,41 @@ mod hosted {
         }
 
         /// Its end, as the host says it, told to whoever is told (#2385).
-        fn follow_its_end(&self, link: &HostLink, program: &str) {
+        /// An end this window did not ask for is said as a crash (#2842), in the project at
+        /// `root`.
+        fn follow_its_end(&self, link: &HostLink, root: &Path, program: &str) {
             let ended = Arc::clone(&self.ended);
             let logged = Arc::clone(&self.logged);
+            let closing = Arc::clone(&self.closing);
+            let origins = Arc::clone(&self.origins);
+            let held_to = Arc::clone(&self.held_to);
+            let says = Arc::clone(&self.says);
+            let started_in = root.to_path_buf();
             let named = program.to_owned();
             link.when_it_ends(
                 program,
                 Box::new(move |ending| {
                     lock(&logged).remove(&named);
+                    lock(&origins).remove(&named);
+                    lock(&held_to).remove(&named);
                     // Who ended it and why is in the session host's own line (#2745).
                     tracing::info!("{}", ended_said(&named, &ending));
+                    // An end this window did not ask for is a crash (#2842): said off the
+                    // link's thread, before its chat lets go of it.
+                    if !lock(&closing).remove(&named) {
+                        let crashed = Said::Crashed {
+                            browser: named.clone(),
+                        };
+                        let said = std::thread::Builder::new()
+                            .name("purlis-browser-crashed".into())
+                            .spawn(move || says(Some(&started_in), crashed));
+                        if let Err(why) = said {
+                            tracing::warn!(
+                                "purlis: a browser's crash was not written to the event log \
+                                 ({why})"
+                            );
+                        }
+                    }
                     ended(named);
                 }),
             );
@@ -656,6 +719,41 @@ mod hosted {
                 .iter()
                 .find(|(_, held)| held.browsers.iter().any(|one| one == program))
                 .map(|(at, _)| at.clone())
+        }
+
+        /// **Why pool `pool`'s runners are trusted with no browser and no login** (D-2050-27): a
+        /// chat ran, or may have run, on one of them without the sandbox, as this machine keeps
+        /// it or this window holds it. None where none did.
+        fn untrusted(&self, pool: &str) -> Option<String> {
+            let kept = self.connection.runners_config().is_some_and(|config| {
+                purlis_core::runnertaint::pool_ran_unsandboxed(&config, pool)
+            });
+            (kept || self.connection.untrusts(pool))
+                .then(|| purlis_core::runnertaint::refused_on(pool))
+        }
+
+        /// **Ends every browser the window started on pool `pool`** (D-2050-28), once a chat ran,
+        /// or may have run, there without the sandbox: the runner's host clears each one's data
+        /// folder as it ends. Answers how many it ended.
+        pub(crate) fn end_on(&self, pool: &str) -> usize {
+            let programs: Vec<String> = self
+                .projects()
+                .iter()
+                .filter(|(at, _)| at.pool.as_deref() == Some(pool))
+                .flat_map(|(_, held)| held.browsers.clone())
+                .collect();
+            programs
+                .iter()
+                .filter(|program| {
+                    self.close(program)
+                        .inspect_err(|why| {
+                            tracing::warn!(
+                                "purlis: a browser on pool {pool}'s runner was not ended: {why}"
+                            );
+                        })
+                        .is_ok()
+                })
+                .count()
         }
 
         /// **The pool whose runner `program` runs on** (#2050), where the window started it on
@@ -747,8 +845,9 @@ mod hosted {
         }
 
         /// **`by` typed into `program`, which it drives** (#2293): said once for each stretch it
-        /// drives, never what.
-        fn typed(&self, program: &str, by: Typist) {
+        /// drives, never what; on the origin of its page (#2842), where it is known: `on`, or
+        /// what its views were last told.
+        fn typed(&self, program: &str, by: Typist, on: Option<String>) {
             {
                 let mut logged = lock(&self.logged);
                 let now = logged.entry(program.to_owned()).or_insert(STARTS);
@@ -757,7 +856,26 @@ mod hosted {
                 }
                 now.typed = true;
             }
+            let origin = on.or_else(|| lock(&self.origins).get(program).cloned().flatten());
             self.say(Said::Typed {
+                browser: program.to_owned(),
+                by,
+                origin,
+            });
+        }
+
+        /// **This window ends `program`** (#2842): its end, when the host tells it, is no crash.
+        /// Whether it was not marked so before. The one place a program is marked.
+        fn ending_here(&self, program: &str) -> bool {
+            lock(&self.closing).insert(program.to_owned())
+        }
+
+        /// **`by` closes `program`** (#2842): said once, and its end is no crash.
+        pub(crate) fn closed_by(&self, program: &str, by: Closer) {
+            if !self.ending_here(program) {
+                return;
+            }
+            self.say(Said::Closed {
                 browser: program.to_owned(),
                 by,
             });
@@ -837,10 +955,16 @@ mod hosted {
             reach: Option<BrowserReach>,
         ) -> Result<String, String> {
             self.open_reaching(root, reach, None)
+                // The person's own browser opened (#2842): a chat's says so as its chat takes it.
+                .inspect(|program| {
+                    self.say(Said::Opened {
+                        browser: program.clone(),
+                    })
+                })
                 .map_err(|not| match not {
                     NotStarted::Full { most } => purlis_core::browserlimits::device_full_told(most),
                     NotStarted::NoSandbox => {
-                        crate::enginesandbox::refused();
+                        crate::enginesandbox::refused_on(None);
                         crate::enginesandbox::NOT_STARTED_FOR_THE_PERSON.to_owned()
                     }
                     NotStarted::Cancelled => {
@@ -880,7 +1004,16 @@ mod hosted {
                 pool: pool.map(str::to_owned),
             };
             let kept = kept.filter(|_| at.pool.is_none());
+            // No browser starts on a runner a chat ran on without the sandbox (D-2050-27).
+            if let Some(why) = at.pool.as_deref().and_then(|pool| self.untrusted(pool)) {
+                return Err(NotStarted::Failed(why));
+            }
             let (link, project) = self.held(&at).map_err(NotStarted::Failed)?;
+            // Again once held: the hold takes back what the runner still runs, which may leave
+            // it untrusted (#3702).
+            if let Some(why) = at.pool.as_deref().and_then(|pool| self.untrusted(pool)) {
+                return Err(NotStarted::Failed(why));
+            }
             let _one_at_a_time = self.starting.lock().unwrap_or_else(PoisonError::into_inner);
             let running = match link.call(Command::List).map_err(NotStarted::Failed)? {
                 Answer::Chats(listed) => listed
@@ -902,10 +1035,14 @@ mod hosted {
             let named = purlis_core::browsers::a_browsers_id();
             // Waited on before it is asked for, so no word of its download comes too early.
             crate::enginedownload::here().started(&named);
+            // On a pool's runner, its views over the link are held to the pool's own frames
+            // (#3297).
+            let link_frames = at.pool.as_deref().map(purlis_core::runners::link_frames_of);
             let start = Command::StartProgram(Box::new(StartProgram {
                 program: Some(named.clone()),
                 reach,
                 kept,
+                link_frames,
                 ..StartProgram::of(project, ProgramKind::Browser)
             }));
             // The host's first start downloads the engine inside it: waited for as long as that
@@ -915,7 +1052,10 @@ mod hosted {
             crate::enginedownload::here().finished(&named);
             match answered.map_err(|refused| not_started(refused, budget))? {
                 Answer::ProgramStarted { program, .. } => {
-                    self.follow_its_end(&link, &program);
+                    if let Some(frames) = link_frames {
+                        lock(&self.held_to).insert(program.clone(), window_holds(frames));
+                    }
+                    self.follow_its_end(&link, root, &program);
                     if let Some(held) = self.projects().get_mut(&at) {
                         held.browsers.push(program.clone());
                     }
@@ -958,8 +1098,23 @@ mod hosted {
             };
             // Followed before it draws, so its first frame finds it.
             self.follow(&link, attached.view, link_said);
-            // A runner's browser is held to the link's frames by the window too (#2050).
-            let held = self.pool_of(program).is_some();
+            // A runner's browser is held to the link's frames by the window too (#2050, #3297).
+            // A browser this window did not start (one taken back, #3380) is held to its pool's
+            // limits as this machine keeps them now.
+            let held = self.pool_of(program).map(|pool| {
+                lock(&self.held_to)
+                    .get(program)
+                    .copied()
+                    .unwrap_or_else(|| window_holds(purlis_core::runners::link_frames_of(&pool)))
+            });
+            // Where its page is, kept for what typing into it is said on (#2842).
+            let kept = Arc::clone(&self.origins);
+            let of = program.to_owned();
+            let mut origins = origins;
+            let origins: crate::hostedsessions::OriginSink = Box::new(move |origin| {
+                lock(&kept).insert(of.clone(), origin.clone());
+                origins(origin);
+            });
             link.draw_frames(attached.view, frames, origins, held);
             // The lease is the host's: a view opened again says whether the person still drives.
             let person_drives = matches!(
@@ -1044,7 +1199,7 @@ mod hosted {
             Ok(match sent {
                 Ok(_) => {
                     if keyed {
-                        self.typed(program, Typist::Person);
+                        self.typed(program, Typist::Person, None);
                     }
                     InputOutcome::Taken
                 }
@@ -1140,6 +1295,93 @@ mod hosted {
             format!("person-{since}-{n}")
         }
 
+        /// **The person opens `program`'s DevTools** (#2028), their front end `width` by
+        /// `height`, or sizes them where they are open: while they drive it, and only for a
+        /// browser on this device. A runner's browser has no DevTools here.
+        pub(crate) fn inspect(&self, program: &str, width: u16, height: u16) -> Result<(), String> {
+            if self.pool_of(program).is_some() {
+                return Err(crate::browsers::NOT_ON_A_RUNNER.to_owned());
+            }
+            self.link_for(program)?
+                .call(Command::Inspect {
+                    program: program.to_owned(),
+                    width,
+                    height,
+                })
+                .map(|_| ())
+        }
+
+        /// Attaches a view of `program`'s open DevTools (#2028), its whole frames handed to
+        /// `frames`: the size they are drawn at, and the view's number.
+        pub(crate) fn watch_inspector(
+            &self,
+            program: &str,
+            frames: FrameSink,
+            closed: crate::hostedsessions::ClosedSink,
+        ) -> Result<BrowserWatching, String> {
+            if self.pool_of(program).is_some() {
+                return Err(crate::browsers::NOT_ON_A_RUNNER.to_owned());
+            }
+            let link = self.link_for(program)?;
+            let attached = match link.call(Command::AttachView {
+                program: program.to_owned(),
+                kind: ViewKind::Inspector,
+                role: Some(ViewRole::Focused),
+                rate: None,
+            })? {
+                Answer::Attached(attached) => attached,
+                other => {
+                    return Err(format!(
+                        "the session host answered a DevTools view with {other:?}"
+                    ));
+                }
+            };
+            link.draw_devtools_frames(attached.view, frames, closed);
+            Ok(BrowserWatching {
+                view: attached.view,
+                width: attached.cols,
+                height: attached.rows,
+                person_drives: true,
+                pool: None,
+            })
+        }
+
+        /// One event of the person's into `program`'s open DevTools (#2028). What they type
+        /// there is the person's typing: said as typing, never what it was.
+        pub(crate) fn inspector_input(
+            &self,
+            program: &str,
+            input: BrowserInput,
+        ) -> Result<InputOutcome, String> {
+            let keyed = matches!(
+                &input,
+                BrowserInput::Key {
+                    action: KeyAct::Down,
+                    ..
+                }
+            );
+            let Some(input) = input.wire() else {
+                return Ok(InputOutcome::Missed);
+            };
+            let sent = self.link_for(program)?.call_refused_within(
+                Command::InspectorInput {
+                    program: program.to_owned(),
+                    input,
+                },
+                LINK_WITHIN,
+            );
+            Ok(match sent {
+                Ok(_) => {
+                    if keyed {
+                        self.typed(program, Typist::Person, None);
+                    }
+                    InputOutcome::Taken
+                }
+                Err(refusal) if refusal.code == session::INPUT_MISSED => InputOutcome::Missed,
+                Err(refusal) => InputOutcome::Refused { why: refusal.why },
+            })
+        }
+
         /// The person sets `program`'s pages to `width` by `height` CSS pixels (#2014).
         pub(crate) fn size(&self, program: &str, width: u16, height: u16) -> Result<(), String> {
             self.link_for(program)?
@@ -1203,6 +1445,8 @@ mod hosted {
 
         /// Ends `program` and forgets it.
         pub(crate) fn close(&self, program: &str) -> Result<(), String> {
+            // Its end, when the host tells it, is no crash (#2842).
+            self.ending_here(program);
             // Forgotten only once the host has ended it: one it could not be told of stays
             // listed, so letting go of its project and Stop all still end it.
             let closed = self.link_for(program)?.call_refused_within(
@@ -1247,6 +1491,8 @@ mod hosted {
                     .browsers
                     .into_iter()
                     .filter(|program| {
+                        // The person let go of the project it was in (#2842).
+                        self.closed_by(program, Closer::Person);
                         link.call(Command::Close {
                             program: program.clone(),
                         })
@@ -1282,6 +1528,11 @@ mod hosted {
                     .into_iter()
                     .filter(|program| program.kind == Some(ProgramKind::Browser))
                     .filter(|browser| {
+                        // Every browser the kill switch stops is said so, a chat's too
+                        // (#2842); one that ended already is not stopped by it.
+                        if browser.state != "ended" {
+                            self.closed_by(&browser.chat, Closer::KillSwitch);
+                        }
                         link.call(Command::Stop {
                             chat: browser.chat.clone(),
                         })
@@ -1303,7 +1554,9 @@ mod hosted {
     /// for each change, outside the hold.
     fn hear(dimming: &Mutex<Dimming>, link: u64, heard: Reconnect) {
         let (dim, now) = match heard {
-            Reconnect::Started | Reconnect::KeyChanged => (true, Reconnection::Reconnecting),
+            Reconnect::Started | Reconnect::KeyChanged | Reconnect::Gone => {
+                (true, Reconnection::Reconnecting)
+            }
             Reconnect::Over | Reconnect::Drawn(_) => (false, Reconnection::Reconnected),
         };
         let told: Vec<LinkSaid> = lock(dimming)
@@ -1473,6 +1726,7 @@ pub async fn watch_browser(
                             jpeg: base64::engine::general_purpose::STANDARD.encode(&image),
                             reconnection: None,
                             page: None,
+                            closed: None,
                         });
                     }),
                     // Where its page is (#2300).
@@ -1482,6 +1736,7 @@ pub async fn watch_browser(
                             jpeg: String::new(),
                             reconnection: None,
                             page: Some(PageAt { origin }),
+                            closed: None,
                         });
                     }),
                     // Where it stands while its runner's link is down and back (#2542).
@@ -1491,6 +1746,7 @@ pub async fn watch_browser(
                             jpeg: String::new(),
                             reconnection: Some(reconnection),
                             page: None,
+                            closed: None,
                         });
                     }),
                 )
@@ -1639,6 +1895,106 @@ pub async fn size_browser(
     }
 }
 
+/// What opening DevTools of a browser on a pool's runner is refused with (#2028).
+pub const NOT_ON_A_RUNNER: &str =
+    "DevTools open only for a browser on this Mac. This one runs on a pool's runner.";
+
+/// **The person opens browser `program`'s DevTools** (#2028), `width` by `height` CSS pixels,
+/// while they drive it; sent again while open, it sizes them. They close as the person hands
+/// the browser back.
+#[tauri::command]
+#[specta::specta]
+pub async fn inspect_browser(
+    app: tauri::AppHandle,
+    program: String,
+    width: u16,
+    height: u16,
+) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let browsers = browsers(&app)?;
+        crate::off_the_window("opening DevTools", move || {
+            browsers.inspect(&program, width, height)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, program, width, height);
+        Err("browsers run on macOS and Linux only".to_owned())
+    }
+}
+
+/// Attaches a view of browser `program`'s open DevTools (#2028): each whole frame is sent on
+/// `frames` as a browser view's are; an empty one says DevTools have closed.
+#[tauri::command]
+#[specta::specta]
+pub async fn watch_inspector(
+    app: tauri::AppHandle,
+    program: String,
+    frames: Channel<BrowserFrame>,
+) -> Result<BrowserWatching, String> {
+    #[cfg(unix)]
+    {
+        use base64::Engine as _;
+        let browsers = browsers(&app)?;
+        let said = frames.clone();
+        crate::off_the_window("opening a DevTools view", move || {
+            browsers.watch_inspector(
+                &program,
+                Box::new(move |aim, image| {
+                    let _ = frames.send(BrowserFrame {
+                        aim: aim.unwrap_or_default(),
+                        jpeg: base64::engine::general_purpose::STANDARD.encode(&image),
+                        reconnection: None,
+                        page: None,
+                        closed: None,
+                    });
+                }),
+                // Why they closed, before the view's end (#2028).
+                Box::new(move |why| {
+                    let _ = said.send(BrowserFrame {
+                        aim: String::new(),
+                        jpeg: String::new(),
+                        reconnection: None,
+                        page: None,
+                        closed: Some(why.to_owned()),
+                    });
+                }),
+            )
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, program, frames);
+        Err("browsers run on macOS and Linux only".to_owned())
+    }
+}
+
+/// One click, move, wheel or key of the person's in browser `program`'s open DevTools (#2028).
+#[tauri::command]
+#[specta::specta]
+pub async fn inspector_input(
+    app: tauri::AppHandle,
+    program: String,
+    input: BrowserInput,
+) -> Result<InputOutcome, String> {
+    #[cfg(unix)]
+    {
+        let browsers = browsers(&app)?;
+        crate::off_the_window("sending input to DevTools", move || {
+            browsers.inspector_input(&program, input)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, program, input);
+        Err("browsers run on macOS and Linux only".to_owned())
+    }
+}
+
 /// Ends browser `program`: its engine and everything it started. Never a browser a chat uses,
 /// which ends with its chat (#2024).
 #[tauri::command]
@@ -1662,6 +2018,7 @@ pub async fn close_browser(
     {
         let browsers = browsers(&app)?;
         crate::off_the_window("ending a browser", move || {
+            browsers.closed_by(&program, purlis_core::eventlog::browsing::Closer::Person);
             browsers.close(&program)?;
             // A pinned one whose chat closed leaves its rows (#2022).
             for one in &held {

@@ -232,7 +232,6 @@ function core({
           return files;
         case "project_extensions":
           return { extensions: [], local_left_out: null };
-        case "project_harness_plugins":
         case "extensions_on":
         case "sandbox_grants":
           return [];

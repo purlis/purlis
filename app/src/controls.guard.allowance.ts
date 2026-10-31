@@ -14,27 +14,8 @@
  */
 // prettier-ignore
 export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
-  "ActivityTab.tsx": [
-    "<button className=\"vault-secret\">",
-  ],
-  "ChatsSection.tsx": [
-    "<button className=\"needs-you-mark rolled-up\">",
-  ],
-  "PaneCrumbs.tsx": [
-    "<button className={at === 0 ? \"crumb own\" : \"crumb between\"}>",
-  ],
   "StripMarks.tsx": [
-    "<button className={clsx(\"closer\", closesOnly(offer.does) && \"keeps\", minimise && \"minimise\")}>",
-  ],
-  "TabChip.tsx": [
-    "<button className=\"tab-tasks-hand needs-you-mark\">",
-    "<button className=\"tab-tasks-counts\">",
-  ],
-  "Welcome.tsx": [
-    "<button className=\"welcome-door\">",
-  ],
-  "YourRepos.tsx": [
-    "<button className=\"welcome-link repo-card\">",
+    "<button className={clsx(\"ui-tabs-control closer\", { keeps: closesOnly(offer.does), minimise })}>",
   ],
   "settings/RawToml.tsx": [
     "<button className=\"ui-settings-raw-file\">",

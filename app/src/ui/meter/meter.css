@@ -1,0 +1,99 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The meter family's default** (#3674, ADR 0103, ADR 0104): a value drawn as a bar
+   (`ui/meter/Meter.tsx`), keyed on the wrapper's attributes alone; `purlis_core::theme::parts`
+   holds a copy of its colours and measures each fill on its track at 3:1 (WCAG 1.4.11).
+
+   A meter is one line: its label at the start (the secondary tier), its track (the subtle
+   hairline's colour, a pill), and its value at the end in figures of one width. Meters in a group
+   share the group's columns, so their labels line up and their tracks are one length on one
+   scale. The fill is the accent for the subject, the waiting colour for the baseline (without
+   it) and the muted tier for the previous version: told apart by the label beside each bar and
+   its value as well as its colour (WCAG 1.4.1).
+
+   **In the `components` layer** (`styles.css`). Only tokens. */
+
+[data-scope="meter"][data-part="group"] {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: var(--space-3) var(--space-5);
+  min-inline-size: 0;
+}
+
+[data-scope="meter"][data-part="root"] {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: var(--space-5);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  color: var(--text-primary);
+}
+
+/* In a group, a meter's label, track and value are the group's three columns. */
+[data-scope="meter"][data-part="root"][data-grouped] {
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+
+[data-scope="meter"][data-part="label"] {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+[data-scope="meter"][data-part="value"] {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+
+[data-scope="meter"][data-part="track"] {
+  position: relative;
+  display: block;
+  block-size: var(--space-4);
+  border-radius: var(--radius-full);
+  background-color: var(--border-subtle);
+  overflow: hidden;
+}
+
+/* The fill grows from the track's start; a new value settles there. */
+[data-scope="meter"][data-part="fill"] {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  border-radius: inherit;
+  background-color: var(--accent-base);
+  transition: inline-size var(--motion-duration-settle) var(--motion-easing-standard);
+}
+
+[data-scope="meter"][data-part="root"][data-variant="baseline"] [data-part="fill"] {
+  background-color: var(--state-waiting);
+}
+
+[data-scope="meter"][data-part="root"][data-variant="previous"] [data-part="fill"] {
+  background-color: var(--text-muted);
+}
+
+/* **Going, with no end known**: the whole track in the accent's stripes, which move along it.
+   Under reduced motion they stand still (`theme/reduced-motion.css`), and still say it is going. */
+[data-scope="meter"][data-part="root"][data-indeterminate] [data-part="fill"] {
+  inline-size: 100%;
+  background-color: transparent;
+  background-image: linear-gradient(90deg, var(--accent-base) 0 50%, transparent 50% 100%);
+  background-size: var(--space-7) 100%;
+  animation: meter-going var(--motion-duration-breathe) var(--motion-easing-steady) infinite;
+}
+
+@keyframes meter-going {
+  from {
+    background-position-x: 0;
+  }
+
+  to {
+    background-position-x: var(--space-7);
+  }
+}

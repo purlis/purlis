@@ -197,7 +197,10 @@
    States.
    --------------------------------------------------------------------------------------------- */
 
-/* A value the field refuses: the danger colour on its edge, beside the words that say why. */
+/* A value the field refuses: the danger colour on its edge, beside the words that say why. The
+   edge is the box's own, the `invalid` state of its root (#3323): a box that can be refused keeps
+   its edge's width, so a theme whose controls draw no edge at rest (Purlis, a transparent
+   `border.control`, #2912) still marks it, in its `invalid.border-colour` or this default. */
 :is([data-scope="text-input"], [data-scope="textarea"])[data-part="root"][data-invalid] {
   border-color: var(--danger-base);
 }
@@ -219,10 +222,14 @@
 /* ---------------------------------------------------------------------------------------------
    Sizes: sm 24, md 28, lg 32 at the default text size and density (#2793, #2877), as the
    button's. lg is only for a list's main filter field.
+
+   **sm's floor is 24 CSS px tall** (#3250, WCAG 2.5.8), the sm button's (#3210): the compact
+   density draws the chrome at 18px and the scale's 24 at 16, and a smaller text size shrinks
+   both, so neither token alone keeps an sm field a 24px target beside another one.
    --------------------------------------------------------------------------------------------- */
 
 [data-scope="text-input"][data-part="root"][data-size="sm"] {
-  block-size: max(var(--size-chrome), var(--space-7));
+  block-size: max(24px, var(--size-chrome), var(--space-7));
   padding-inline: var(--space-3);
   gap: var(--space-1);
   font-size: var(--font-size-sm);

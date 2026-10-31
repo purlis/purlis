@@ -9,6 +9,10 @@
 /// both mean the same skill.
 pub const BUILT_IN_PREFIXES: [&str; 2] = ["purlis", "charter"];
 
+/// The prefix of [`BUILT_IN_PREFIXES`] personas written before the rename say, which the migration
+/// rewrites (#2784).
+pub const OLD_BUILT_IN_PREFIX: &str = BUILT_IN_PREFIXES[1];
+
 /// One entry of a persona's `skills:` list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reference {
@@ -47,8 +51,18 @@ impl Reference {
         })
     }
 
+    /// **Whether the entry `written` names a built-in skill with [`OLD_BUILT_IN_PREFIX`]**
+    /// (#2934): one the migration rewrites (#2784). [`Self::parse`] reads it as the same
+    /// [`Self::BuiltIn`] either way.
+    pub fn written_old(written: &str) -> bool {
+        matches!(Self::parse(written), Some(Self::BuiltIn(_)))
+            && written
+                .split_once(':')
+                .is_some_and(|(prefix, _)| prefix.trim() == OLD_BUILT_IN_PREFIX)
+    }
+
     /// Whether it names the plane skill `name`: only a bare name can.
-    pub(crate) fn names_plane(&self, name: &str) -> bool {
+    pub fn names_plane(&self, name: &str) -> bool {
         matches!(self, Self::Named(named) if named == name)
     }
 

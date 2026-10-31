@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { listen } from "./here";
 import { asksMoved } from "./asks";
+import { marked, markOf } from "./invisible";
 import { commands, type BlockShown, type ChatBlocked, type PlaneId, type Shown } from "./bindings";
 
 /** The most blocks one chat holds at once. */
@@ -50,10 +51,7 @@ export type Blocks = Readonly<Record<number, readonly HeldBlock[]>>;
  * host lowered, without a trailing dot and without the default port (`:443`, `:80`); a folder
  * as the core offered it.
  */
-export function matched(
-  offer: "host" | "write" | "socket" | "service" | "port",
-  target: string,
-): string {
+export function matched(offer: GrantedOffer, target: string): string {
   if (offer !== "host") return target;
   const host = target
     .trim()
@@ -204,38 +202,37 @@ export function heldFor(blocks: Blocks, session: number, shown: BlockShown): Hel
   return hostsOf(block).length > 0 ? listing(block, [shown.target]) : block;
 }
 
-/** One code point as an escape no other can spell: `\\uXXXX`, or `\\UXXXXXXXX` past U+FFFF. */
-const escapeOf = (cp: number) =>
-  cp <= 0xffff
-    ? `\\u${cp.toString(16).padStart(4, "0")}`
-    : `\\U${cp.toString(16).padStart(8, "0")}`;
-
 /**
- * **A block's target, drawn safely** (#1688, I-1): a folder's name as the chat's sandbox met
- * it, with every character that draws as nothing (one that turns the text around, hides what
- * follows, or moves the cursor) written out as its escape, and a backslash doubled so the name
- * cannot spell an escape itself, as the registry writes an ask's line (`asking::said_inertly`).
- * What an Allow names is still the target itself: this is only what is drawn.
+ * **A block's target, drawn safely** (#1688, I-1; SK-51, #3202): a folder's name as the chat's
+ * sandbox met it, with every character purlis's one rule hides on a line (one that turns the
+ * text around, hides what follows, moves the cursor or only looks like a space) written as its
+ * mark, `⟦U+XXXX⟧`, the core's one mark. A target is one line, so a line end or a tab in it is
+ * marked too, where the registry's ask line folds it into a space (`asking::said_inertly`). A `⟦` the
+ * name holds itself is marked too, `⟦U+27E6⟧`, so a name cannot spell a mark
+ * (`dispatchgrant::inert`). What an Allow names is still the target itself: this is only what
+ * is drawn.
  */
 export function inertly(text: string): string {
-  return text.replace(/[\\\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, (c) =>
-    c === "\\" ? "\\\\" : escapeOf(c.codePointAt(0) ?? 0),
-  );
+  return text
+    .split("\u27E6")
+    .map((part) => marked(part, "marked"))
+    .join(markOf("\u27E6"));
 }
 
-/** What a block's Allow can name: a host, a folder, a socket or a service (D-sock-1), or a
- *  service on this Mac by its port (qw384). */
-type GrantedOffer = "host" | "write" | "socket" | "service" | "port";
+/** What a block's Allow can name: a host, a folder, a socket or a service (D-sock-1), a
+ *  service on this Mac by its port (qw384), or a port on this Mac to listen on (#2019). The one
+ *  list of them. */
+export const GRANTED_OFFERS = ["host", "write", "socket", "service", "port", "listen"] as const;
+
+export type GrantedOffer = (typeof GRANTED_OFFERS)[number];
+
+/** Whether a block's Notice offers an Allow of something it names. */
+export const isGrantedOffer = (offer: string): offer is GrantedOffer =>
+  (GRANTED_OFFERS as readonly string[]).includes(offer);
 
 /** Whether `block` is an ask (#1695): one of the chat's own work a grant can name, which the
  *  registry lists while the chat is held on it. */
-export const isAnAsk = (block: ChatBlocked) =>
-  !block.ours &&
-  (block.offer === "host" ||
-    block.offer === "write" ||
-    block.offer === "socket" ||
-    block.offer === "service" ||
-    block.offer === "port");
+export const isAnAsk = (block: ChatBlocked) => !block.ours && isGrantedOffer(block.offer);
 
 /**
  * **The asks the registry lists for `block`** (#1695): a sandbox ask of the same chat, on the

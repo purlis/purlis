@@ -139,6 +139,29 @@ pub enum Act {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         page: Option<String>,
     },
+    /// Every download of the browser's (1.46, #2020), in [`Browsed::downloads`].
+    Downloads,
+    /// Puts `files` into the file input `target` (1.46, #2020): each a path relative to the
+    /// chat's folder, as the agent wrote it. The window names that folder (`from`), its own
+    /// record of where the chat runs, never the chat's word; the host reads each file there
+    /// following no link and copies it into the browser's own folder, and the engine reads only
+    /// that copy. A host refuses one that names no folder, or one outside the browser's project.
+    Upload {
+        target: String,
+        files: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<String>,
+    },
+    /// Brings download `download` (`d1`) into the chat's folder as `to`, a path relative to it
+    /// (1.46, #2020), once the person allowed downloads from its origin into that chat. The
+    /// window names the folder (`into`), as for [`Act::Upload`]; the host writes a new file there
+    /// following no link, and never over one that is there.
+    SaveDownload {
+        download: String,
+        to: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        into: Option<String>,
+    },
 }
 
 fn is_zero(n: &i32) -> bool {
@@ -155,6 +178,7 @@ impl Act {
                 | Act::WaitForText { .. }
                 | Act::Pages
                 | Act::Screenshot { .. }
+                | Act::Downloads
         )
     }
 }
@@ -229,6 +253,39 @@ pub struct Browsed {
     /// #2018): each once, since the act before.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub asked: Vec<String>,
+    /// The downloads that began or moved on since the act before (1.46, #2020), or for
+    /// [`Act::Downloads`] every one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub downloads: Vec<DownloadSaid>,
+}
+
+/// **One download of a browser's, as an answer says it** (1.46, #2020): its name in the browser
+/// (`d1`), the name its page suggested made plain, the origin it came from, its size, how far it
+/// has come, and the engine's own name for its file in the browser's holding folder, which no
+/// chat reads. Never a path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadSaid {
+    pub download: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+    pub bytes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total: Option<u64>,
+    pub state: DownloadState,
+    pub file: String,
+}
+
+/// How far a download has come (1.46, #2020).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadState {
+    Going,
+    Done,
+    /// The page or the engine cancelled it.
+    Cancelled,
+    /// purlis cancelled it and removed its file: larger than a download may be.
+    TooLarge,
 }
 
 /// What a browser may reach, given as it starts (1.11): the hosts its chat's sandbox lists, each
@@ -247,6 +304,59 @@ pub struct BrowserReach {
     pub withdrawn: Vec<u16>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub open_web: bool,
+}
+
+/// **How a browser's views over a link between hosts are held** (1.49, #3297): at most `frames`
+/// a second, and no frame wider than `width` pixels, the engine scaling a wider page down. A
+/// pool's own settings, given with the browser's start on its runner; a start that gives none is
+/// held to purlis's defaults ([`LinkFrames::DEFAULT`]). Bounded both ways ([`LinkFrames::new`]):
+/// a host refuses a start whose `link_frames` are out of bounds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkFrames {
+    pub frames: u32,
+    pub width: u16,
+}
+
+impl LinkFrames {
+    /// Spec #2041's defaults: 15 frames a second, 1280 pixels wide.
+    pub const DEFAULT: LinkFrames = LinkFrames {
+        frames: 15,
+        width: 1280,
+    };
+    /// The fewest and the most frames a second a pool may set.
+    pub const FRAMES: std::ops::RangeInclusive<u32> = 1..=60;
+    /// The narrowest and the widest frame a pool may set, in pixels.
+    pub const WIDTH: std::ops::RangeInclusive<u16> = 320..=3840;
+
+    /// `frames` a second and `width` pixels, each within its bounds, or why not.
+    pub fn new(frames: u32, width: u16) -> Result<LinkFrames, String> {
+        LinkFrames { frames, width }.checked()
+    }
+
+    /// These, where each is within its bounds; or why not, in words a person reads.
+    pub fn checked(self) -> Result<LinkFrames, String> {
+        if !Self::FRAMES.contains(&self.frames) {
+            return Err(format!(
+                "a pool's browser frames are {} to {} a second",
+                Self::FRAMES.start(),
+                Self::FRAMES.end()
+            ));
+        }
+        if !Self::WIDTH.contains(&self.width) {
+            return Err(format!(
+                "a pool's widest browser frame is {} to {} pixels",
+                Self::WIDTH.start(),
+                Self::WIDTH.end()
+            ));
+        }
+        Ok(self)
+    }
+}
+
+impl Default for LinkFrames {
+    fn default() -> LinkFrames {
+        LinkFrames::DEFAULT
+    }
 }
 
 /// **A value from a vault, on its way to the browser that fills it** (1.18, #2016): written on
@@ -329,11 +439,40 @@ pub fn origin_of(address: &str) -> Option<String> {
     let plain = host
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b"-._:[]".contains(&b));
-    if host.is_empty() || !plain || host.starts_with(':') {
+    if host.is_empty() || !plain || host.starts_with(':') || !one_host_and_a_port(host) {
         return None;
     }
     let origin = format!("{scheme}://{}", host.to_ascii_lowercase());
     (origin.len() <= MOST_ORIGIN_BYTES).then_some(origin)
+}
+
+/// Whether `host` is one name, or one bracketed address, and at most a port after it: a port
+/// of digits, at most 65535 (#2842). Nothing else may follow a host in an origin.
+fn one_host_and_a_port(host: &str) -> bool {
+    let (name, port) = match host.strip_prefix('[') {
+        Some(bracketed) => {
+            let Some((address, after)) = bracketed.split_once(']') else {
+                return false;
+            };
+            if address.is_empty() || address.contains(['[', ']']) {
+                return false;
+            }
+            match after {
+                "" => return true,
+                port => (address, port.strip_prefix(':').unwrap_or("x")),
+            }
+        }
+        None => match host.split_once(':') {
+            Some((name, port)) => (name, port),
+            None => (host, "0"),
+        },
+    };
+    !name.contains(['[', ']'])
+        && (host.starts_with('[') || !name.contains(':'))
+        && !port.is_empty()
+        && port.len() <= 5
+        && port.bytes().all(|b| b.is_ascii_digit())
+        && port.parse::<u32>().is_ok_and(|port| port <= 65_535)
 }
 
 /// The longest origin [`origin_of`] answers (1.35): a whole DNS name and a port fit in it, so

@@ -9,6 +9,7 @@ import {
   fireEvent,
   render as renderBare,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -17,6 +18,15 @@ import App from "./App";
 import type { OpenChat } from "./bindings";
 import type { WindowSaid } from "./windows";
 import { stripNamed } from "./test-strips";
+import { findResult } from "./actionResult.testkit";
+import {
+  keepUnsaved,
+  takesHandedWork,
+  unsavedNow,
+  type HandedWork,
+  type UnsavedWork,
+} from "./unsavedWork";
+import { forgetHandOver } from "./unsavedWindows";
 
 /**
  * A project tab split into an OS window of its own, and moved back (charter#126; ADR 0033,
@@ -200,7 +210,7 @@ describe("a project moved into a window of its own", () => {
 
     await fromTheMenu("two", "Move to a new window");
 
-    expect(await screen.findByText("purlis could not make a window: no display")).toBeVisible();
+    expect(await findResult("purlis could not make a window: no display")).toBeVisible();
     expect(projectTabs()).toEqual(["one*", "two"]);
   });
 
@@ -489,5 +499,216 @@ describe("quitting with two windows", () => {
       fire("quit-asked", null);
       expect(sent("quit").length).toBeGreaterThan(0);
     });
+  });
+});
+
+describe("a view's unsaved work across windows (#4028)", () => {
+  afterEach(() => {
+    for (const one of unsavedNow()) keepUnsaved(one.key, undefined);
+    forgetHandOver();
+  });
+
+  const KIND = "test-work";
+  /** A view's unsaved work in `plane`, as a view registers it: of a kind any window takes. */
+  function work(plane: string, data = "text as typed"): UnsavedWork {
+    const one: UnsavedWork = {
+      key: `${plane}\u0000deploy`,
+      plane,
+      view: { from: null, view: "skill-studio", key: "" },
+      name: "deploy",
+      kind: KIND,
+      handOver: () => data,
+      save: vi.fn(() => Promise.resolve(undefined)),
+      discard: vi.fn(() => keepUnsaved(one.key, undefined)),
+    };
+    keepUnsaved(one.key, one);
+    return one;
+  }
+  takesHandedWork(KIND, (key, data) => void work(key.split("\u0000")[0], String(data)));
+  const handed = (plane: string, data = "text as typed"): HandedWork => ({
+    kind: KIND,
+    key: `${plane}\u0000deploy`,
+    plane,
+    name: "deploy",
+    data,
+  });
+  /** What this window sent to the window `label` on `event`. */
+  const sentTo = (sent: (cmd: string) => Record<string, unknown>[], label: string, event: string) =>
+    sent("plugin:event|emit_to")
+      .filter(
+        (one) =>
+          one.event === event && (one.target as { label?: string } | undefined)?.label === label,
+      )
+      .map((one) => one.payload);
+
+  it("goes with a project moved out of the main window, unasked", async () => {
+    const { fire, listening, sent } = core({
+      restore: { windows: [{ planes: [ONE, TWO], active: 0 }], dropped: [] },
+    });
+    render(<App />);
+    await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
+    await waitFor(() => expect(listening("unsaved-claim")).toBe(true));
+    work(TWO);
+
+    await fromTheMenu("two", "Move to a new window");
+
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(sent("move_projects")).toEqual([{ projects: [TWO], front: TWO, to: null }]);
+    // It is no longer this window's,
+    expect(unsavedNow()).toEqual([]);
+    // and is handed to the window the project went to, once that window holds it.
+    fire("unsaved-claim", { label: "window-1", plane: TWO });
+    expect(sentTo(sent, "window-1", "unsaved-handed")).toEqual([[handed(TWO)]]);
+  });
+
+  it("goes with a project moved out of a split window once the main window has it", async () => {
+    mockWindows("window-1");
+    const { fire, sent } = core({ handed: { planes: [TWO], active: 0 } });
+    render(<App />);
+    await waitFor(() => expect(projectTabs()).toEqual(["two*"]));
+    work(TWO);
+
+    await fromTheMenu("two", "Move to the main window");
+
+    await waitFor(() =>
+      expect(sentTo(sent, "main", "unsaved-moving")).toEqual([
+        { from: "window-1", plane: TWO, works: [handed(TWO)] },
+      ]),
+    );
+    // Not moved until the main window says it holds the work.
+    expect(sent("move_projects")).toEqual([]);
+    fire("unsaved-carried", { to: "window-1", plane: TWO });
+
+    await waitFor(() =>
+      expect(sent("move_projects")).toEqual([{ projects: [TWO], front: TWO, to: "main" }]),
+    );
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await waitFor(() => expect(unsavedNow()).toEqual([]));
+  });
+
+  it("is asked about before a move where the main window does not say it has it", async () => {
+    mockWindows("window-1");
+    const { sent } = core({ handed: { planes: [TWO], active: 0 } });
+    render(<App />);
+    await waitFor(() => expect(projectTabs()).toEqual(["two*"]));
+    const deploy = work(TWO);
+
+    await fromTheMenu("two", "Move to the main window");
+
+    const asked = await screen.findByRole(
+      "alertdialog",
+      { name: "Save your changes to deploy?" },
+      { timeout: 5000 },
+    );
+    expect(sent("move_projects")).toEqual([]);
+    await userEvent.click(within(asked).getByRole("button", { name: "Keep editing" }));
+    expect(sent("move_projects")).toEqual([]);
+    expect(deploy.discard).not.toHaveBeenCalled();
+  });
+
+  it("comes back to the main window with the projects of a split window closed", async () => {
+    const { fire, listening } = core({ launch: ONE });
+    render(<App />);
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await waitFor(() => expect(listening("unsaved-mirror")).toBe(true));
+    // What the split window last said it holds: the page goes with the window.
+    fire("unsaved-mirror", { label: "window-1", works: [handed(TWO, "typed there")] });
+
+    fire("projects-arrived", { planes: [TWO], front: null });
+
+    await waitFor(() =>
+      expect(unsavedNow().map((one) => [one.plane, one.handOver()])).toEqual([
+        [TWO, "typed there"],
+      ]),
+    );
+  });
+
+  it("is taken in by a split window, which tells the main window what it holds", async () => {
+    mockWindows("window-1");
+    const { fire, listening, sent } = core({ handed: { planes: [TWO], active: 0 } });
+    render(<App />);
+    await waitFor(() => expect(projectTabs()).toEqual(["two*"]));
+    await waitFor(() =>
+      expect(sentTo(sent, "main", "unsaved-claim")).toContainEqual({
+        label: "window-1",
+        plane: TWO,
+      }),
+    );
+    expect(listening("unsaved-handed")).toBe(true);
+
+    // Only what is of a project it holds.
+    fire("unsaved-handed", [handed(TWO, "typed in main"), handed(THREE, "not here")]);
+
+    expect(unsavedNow().map((one) => one.handOver())).toEqual(["typed in main"]);
+    await waitFor(() =>
+      expect(sentTo(sent, "main", "unsaved-mirror").at(-1)).toEqual({
+        label: "window-1",
+        works: [handed(TWO, "typed in main")],
+      }),
+    );
+  });
+
+  it("is asked about at a quit in the split window that holds it, where Keep editing stays", async () => {
+    const { fire, listening, sent } = core({ launch: ONE, windows: ["main", "window-1"] });
+    render(<App />);
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await waitFor(() => expect(listening("unsaved-mirror")).toBe(true));
+    fire("window-said", said("window-1"));
+    fire("unsaved-mirror", { label: "window-1", works: [handed(TWO)] });
+    /** The split window asks, and answers. */
+    const answers = async (asks: number, go: boolean) => {
+      await waitFor(() =>
+        expect(sentTo(sent, "window-1", "unsaved-ask-at-quit")).toHaveLength(asks),
+      );
+      fire("unsaved-asking-at-quit", { label: "window-1" });
+      fire("unsaved-answered-at-quit", { label: "window-1", go });
+    };
+
+    fire("quit-asked", null);
+    await answers(1, false);
+    // Twice: this mock hands the quit to Strict Mode's let-go listener too, which is a second
+    // quit asked while the first is up, and not taken. Then the answer's.
+    await waitFor(() => expect(sent("quit_cancelled")).toHaveLength(2));
+    expect(sent("quit")).toEqual([]);
+
+    fire("quit-asked", null);
+    await answers(2, true);
+    await waitFor(() => expect(sent("quit")).toHaveLength(1));
+  });
+
+  it("is a quit not taken where the split window does not say it is asking", async () => {
+    const { fire, listening, sent } = core({ launch: ONE, windows: ["main", "window-1"] });
+    render(<App />);
+    await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await waitFor(() => expect(listening("unsaved-mirror")).toBe(true));
+    fire("window-said", said("window-1"));
+    fire("unsaved-mirror", { label: "window-1", works: [handed(TWO)] });
+
+    fire("quit-asked", null);
+
+    await waitFor(() => expect(sent("quit_cancelled")).toHaveLength(2), { timeout: 5000 });
+    expect(sent("quit")).toEqual([]);
+  });
+
+  it("asks in the split window, in front, when the main window has it ask at a quit", async () => {
+    mockWindows("window-1");
+    const { fire, listening, sent } = core({ handed: { planes: [TWO], active: 0 } });
+    render(<App />);
+    await waitFor(() => expect(projectTabs()).toEqual(["two*"]));
+    await waitFor(() => expect(listening("unsaved-ask-at-quit")).toBe(true));
+    work(TWO);
+
+    fire("unsaved-ask-at-quit", null);
+    const asked = await screen.findByRole("alertdialog", { name: "Save your changes to deploy?" });
+    expect(sentTo(sent, "main", "unsaved-asking-at-quit")).toEqual([{ label: "window-1" }]);
+    expect(sent("show_window_holding")).toContainEqual({ plane: TWO });
+    await userEvent.click(within(asked).getByRole("button", { name: "Keep editing" }));
+
+    await waitFor(() =>
+      expect(sentTo(sent, "main", "unsaved-answered-at-quit")).toEqual([
+        { label: "window-1", go: false },
+      ]),
+    );
   });
 });

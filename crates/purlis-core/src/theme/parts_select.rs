@@ -82,7 +82,7 @@ pub(super) const SELECT: Family = Family {
     sized_apart: &[
         (
             "[data-scope=\"select\"][data-part=\"root\"][data-size=\"sm\"]",
-            "max(var(--size-chrome), var(--space-7))",
+            "max(24px, var(--size-chrome), var(--space-7))",
         ),
         (
             "[data-scope=\"select\"][data-part=\"root\"][data-size=\"lg\"]",
@@ -108,6 +108,7 @@ pub(super) const SELECT: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **A combobox** (#2906): a box to type in, with the suggestions that match under it.
@@ -136,7 +137,7 @@ pub(super) const COMBOBOX: Family = Family {
     sized_apart: &[
         (
             "[data-scope=\"combobox\"][data-part=\"root\"][data-size=\"sm\"]",
-            "max(var(--size-chrome), var(--space-7))",
+            "max(24px, var(--size-chrome), var(--space-7))",
         ),
         (
             "[data-scope=\"combobox\"][data-part=\"root\"][data-size=\"lg\"]",
@@ -162,4 +163,5 @@ pub(super) const COMBOBOX: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };

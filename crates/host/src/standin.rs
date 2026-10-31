@@ -645,6 +645,14 @@ pub struct Shown {
     pub kept: Option<purlis_session_protocol::browsing::KeptLogin>,
     /// What it answers its next acts with, in order; once none is left, a settled page.
     answers: std::collections::VecDeque<Result<purlis_session_protocol::browsing::Browsed, String>>,
+    /// The size its DevTools were opened or sized at, while open (#2028).
+    pub inspecting: Option<(u16, u16)>,
+    /// Whether the host asks it for frames of its DevTools now.
+    pub showing_devtools: bool,
+    /// Each event of the person's its DevTools took, in order.
+    pub devtools_inputs: Vec<purlis_session_protocol::browsing::Input>,
+    devtools_sink: Option<crate::browsers::FrameSink>,
+    devtools_closed: Option<Box<dyn FnOnce(&'static str) + Send>>,
     sink: Option<crate::browsers::FrameSink>,
     ends: Option<Box<dyn FnOnce(crate::browsers::ScreenEnded) + Send>>,
 }
@@ -673,6 +681,40 @@ impl StandInScreen {
                 address,
                 Bytes::copy_from_slice(image),
             );
+        }
+    }
+
+    /// Its DevTools make `image` as their next frame, when the host asks for theirs (#2028).
+    pub fn devtools_make(&self, image: &[u8]) {
+        let sink = {
+            let shown = self.shown();
+            if !shown.showing_devtools {
+                return;
+            }
+            shown.devtools_sink.clone()
+        };
+        if let Some(sink) = sink {
+            sink(
+                purlis_session_protocol::browsing::Aim {
+                    page: "devtools".into(),
+                    document: 1,
+                },
+                String::new(),
+                Bytes::copy_from_slice(image),
+            );
+        }
+    }
+
+    /// Its DevTools close by themselves, saying `why`, as when the page they inspect goes
+    /// (#2028).
+    pub fn devtools_close(&self, why: &'static str) {
+        let closed = {
+            let mut shown = self.shown();
+            shown.inspecting = None;
+            shown.devtools_closed.take()
+        };
+        if let Some(closed) = closed {
+            closed(why);
         }
     }
 
@@ -756,6 +798,7 @@ impl crate::browsers::Screen for StandInScreen {
         call_id: &str,
         act: purlis_session_protocol::browsing::Act,
         epoch: u64,
+        _project: &std::path::Path,
     ) -> Result<purlis_session_protocol::browsing::Browsed, crate::browsers::NotActed> {
         let mut shown = self.shown();
         if shown.stopped {
@@ -788,10 +831,57 @@ impl crate::browsers::Screen for StandInScreen {
     }
 
     fn hand_back(&self) -> u64 {
+        let epoch = {
+            let mut shown = self.shown();
+            shown.taken_over = false;
+            shown.epoch += 1;
+            shown.epoch
+        };
+        // As an engine's: the hand-back closes its DevTools.
+        self.devtools_close("handed_back");
+        epoch
+    }
+
+    fn inspect(
+        &self,
+        width: u16,
+        height: u16,
+        ended: Box<dyn FnOnce(&'static str) + Send>,
+    ) -> Result<(), crate::browsers::NotTaken> {
         let mut shown = self.shown();
-        shown.taken_over = false;
-        shown.epoch += 1;
-        shown.epoch
+        if !shown.taken_over {
+            return Err(crate::browsers::NotTaken::NotDriving);
+        }
+        shown.inspecting = Some((width, height));
+        shown.devtools_closed = Some(ended);
+        Ok(())
+    }
+
+    fn show_inspector(&self, frames: crate::browsers::FrameSink) {
+        let mut shown = self.shown();
+        shown.showing_devtools = true;
+        shown.devtools_sink = Some(frames);
+    }
+
+    fn hide_inspector(&self) {
+        let mut shown = self.shown();
+        shown.showing_devtools = false;
+        shown.devtools_sink = None;
+    }
+
+    fn inspector_input(
+        &self,
+        input: &purlis_session_protocol::browsing::Input,
+    ) -> Result<(), crate::browsers::NotTaken> {
+        let mut shown = self.shown();
+        if !shown.taken_over {
+            return Err(crate::browsers::NotTaken::NotDriving);
+        }
+        if shown.inspecting.is_none() {
+            return Err(crate::browsers::NotTaken::Missed);
+        }
+        shown.devtools_inputs.push(input.clone());
+        Ok(())
     }
 
     fn input(

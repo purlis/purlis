@@ -17,6 +17,8 @@
 mod acp;
 #[cfg(unix)]
 mod mcp;
+mod model;
+mod net;
 mod synthetic;
 
 use std::io::{self, BufRead, Write};
@@ -131,6 +133,44 @@ struct Args {
     /// With `--mcp-relay`: the MCP server's program and its words.
     #[arg(long, num_args = 1.., allow_hyphen_values = true, value_name = "PROGRAM", requires = "mcp_relay")]
     mcp_server: Vec<String>,
+
+    /// Serve on a port of this machine's loopback, say the port, and hold what connects, and
+    /// nothing else (`net.rs`).
+    #[arg(long)]
+    serve: bool,
+
+    /// Ask the proxy `--through` names for a tunnel to this `host:port`, say the status line it
+    /// answers, and nothing else.
+    #[arg(long, requires = "through", value_name = "HOST:PORT")]
+    tunnel: Option<String>,
+
+    /// With `--tunnel`: the HTTP proxy, as `host:port` or its URL.
+    #[arg(long, requires = "tunnel", value_name = "PROXY")]
+    through: Option<String>,
+
+    /// Take this socket's path over with a listener, say so, and end once its one caller has
+    /// gone, and nothing else.
+    #[arg(long, value_name = "SOCKET")]
+    listen_at: Option<PathBuf>,
+
+    /// Let every chat of the project `--in` names reach the service on this port of this
+    /// machine, as the person lets one from a block's Notice, and nothing else: what a test
+    /// gives on a runner, where it cannot write that machine's own files (#3288).
+    #[arg(long, requires = "project", value_name = "PORT")]
+    grant_port: Option<u16>,
+
+    /// Be a stand-in for the Messages API on a port of this machine's loopback, saying the
+    /// port, whose one tool call runs this command, and nothing else (`model.rs`).
+    #[arg(long, requires = "model_said", value_name = "COMMAND")]
+    model: Option<String>,
+
+    /// With `--model`: the file what its tool call said is written to.
+    #[arg(long, requires = "model", value_name = "FILE")]
+    model_said: Option<PathBuf>,
+
+    /// With `--grant-port`: the project, as this machine holds it.
+    #[arg(long = "in", requires = "grant_port", value_name = "PROJECT")]
+    project: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
@@ -158,6 +198,23 @@ fn run(args: &Args) -> Result<(), String> {
     }
     if args.leave_terminal {
         return leave_terminal(args.linger);
+    }
+    if let (Some(port), Some(project)) = (args.grant_port, &args.project) {
+        return purlis_core::sandbox::local::grant_port(project, port)
+            .map_err(|err| format!("cannot grant port {port}: {err}"));
+    }
+    if let (Some(command), Some(said)) = (&args.model, &args.model_said) {
+        return model::serve(command, said);
+    }
+    if args.serve {
+        return net::serve();
+    }
+    if let (Some(target), Some(proxy)) = (&args.tunnel, &args.through) {
+        return net::tunnel(target, proxy);
+    }
+    #[cfg(unix)]
+    if let Some(path) = &args.listen_at {
+        return net::listen_at(path);
     }
     #[cfg(unix)]
     if let Some(socket) = &args.mcp_relay {

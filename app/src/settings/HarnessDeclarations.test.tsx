@@ -63,8 +63,6 @@ function core() {
         return { shared: SHARED, local: LOCAL };
       case "project_extensions":
         return { extensions: [], local_left_out: null };
-      case "project_harness_plugins":
-        return [];
       case "project_harness_declarations":
         return DECLARED;
       case "open_harness_declaration":

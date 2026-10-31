@@ -279,3 +279,93 @@ fn log_notes_into_this_sessions_activity_and_shows_it_back() {
         "2026-05-04T11:32:17  note       msg=rotated the kubeconfig\n"
     );
 }
+
+/// #3287: the names a command's answer lines splice — a memory's file name, a link the index
+/// holds, a memory's title, a note's text — are shown with every hidden character marked, so
+/// a name cannot recolour, reorder or hide the answer around it.
+#[test]
+fn optimize_marks_a_hidden_character_in_the_added_and_proposed_paths_it_names_3287() {
+    let plane = Plane::fixture("daily");
+    // On disk and not in the index: the `+ repair index` line names it.
+    plane.write(
+        "personas/devops/memory/evil\u{202e}dm.md",
+        "# Evil\nBody.\n",
+    );
+    // A near-duplicate of a memory the index lists: the `? merge near-duplicates` line names
+    // both. (A link the index holds is read only of word characters, dots and dashes, so the
+    // `? index lists … missing` line can name nothing hidden.)
+    plane.write(
+        "personas/devops/memory/prod-1\u{200b}\u{1b}[8m.md",
+        "# Prod-1 cluster region\n\n_2026-03-03 10:00 · persistent_\n\nCluster prod-1 lives \
+         in eu-west-1 region\n",
+    );
+    let (rc, _, heard) = optimize_on(&plane, Some("devops"), false);
+    assert_eq!(rc, 0, "{}", heard.err);
+    let added = heard
+        .out
+        .lines()
+        .find(|l| l.starts_with("    + repair index"))
+        .unwrap_or_else(|| panic!("{}", heard.out));
+    assert!(added.contains("evil⟦U+202E⟧dm.md"), "{added}");
+    let unknown = heard
+        .out
+        .lines()
+        .find(|l| l.starts_with("    ? merge near-duplicates"))
+        .unwrap_or_else(|| panic!("{}", heard.out));
+    assert!(
+        unknown.contains("prod-1⟦U+200B⟧⟦U+001B⟧[8m.md"),
+        "{unknown}"
+    );
+    for hidden in ['\u{202e}', '\u{200b}', '\u{1b}'] {
+        assert!(!heard.out.contains(hidden), "{hidden:?} in {:?}", heard.out);
+    }
+}
+
+#[test]
+fn dedupe_marks_a_hidden_character_in_a_memory_title_3287() {
+    let plane = Plane::fixture("daily");
+    plane.write(
+        "personas/devops/memory/prod-1-cluster-region.md",
+        "# Prod-1 \u{1b}[8mcluster region\n\n_2026-03-03 10:00 · persistent_\n\nCluster prod-1 \
+         lives in eu-west-1 region\n",
+    );
+    let (rc, heard) = dedupe_on(&plane, 0.5);
+    assert_eq!(rc, 0, "{}", heard.err);
+    assert!(
+        heard.out.contains("Prod-1 ⟦U+001B⟧[8mcluster region"),
+        "{}",
+        heard.out
+    );
+    assert!(!heard.out.contains('\u{1b}'), "{:?}", heard.out);
+    // purlis's own layout — the pair over five lines — is kept.
+    assert!(
+        heard.out.contains(&format!("        {PROD}\n")),
+        "{}",
+        heard.out
+    );
+}
+
+#[test]
+fn log_marks_a_hidden_character_in_a_note_it_shows_back_3287() {
+    let plane = Plane::fixture("daily");
+    assert_eq!(log_on(&plane, Some("rotated\u{202e} the\nkubeconfig")).0, 0);
+    let (rc, heard) = log_on(&plane, None);
+    assert_eq!(rc, 0);
+    assert_eq!(
+        heard.out,
+        "2026-05-04T11:32:17  note       msg=rotated⟦U+202E⟧ the⟦U+000A⟧kubeconfig\n"
+    );
+}
+
+#[test]
+fn optimize_marks_a_hidden_character_in_a_personas_name_on_its_heading_3287() {
+    let plane = Plane::fixture("daily");
+    plane.write(
+        "personas/evil\u{202e}x/persona.md",
+        "---\nname: evil\u{202e}x\nrole: Evil.\n---\n\nEvil.\n",
+    );
+    plane.write("personas/evil\u{202e}x/memory/one.md", "# One\nBody.\n");
+    let (_, _, heard) = optimize_on(&plane, None, false);
+    assert!(heard.out.contains("\n◆ evil⟦U+202E⟧x  ("), "{}", heard.out);
+    assert!(!heard.out.contains('\u{202e}'), "{:?}", heard.out);
+}

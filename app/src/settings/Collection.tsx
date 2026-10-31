@@ -8,8 +8,9 @@ import type { Driven, EntryReferrer, EntryRefused, EntryRefusal } from "./driver
 import { askSettingsLink, referrerElsewhere } from "./links";
 import { OutLink } from "./OutLink";
 import type { Collection, CollectionEntry, EntryField, Setting } from "./groups";
+import { HostStatus } from "../ui/badge/Badge";
 import { Button } from "../ui/button/Button";
-import { Form } from "../ui/field/Field";
+import { Form, type RefusedAnswer } from "../ui/field/Field";
 
 /**
  * **A collection, drawn** (ST-3, V91e–g): each entry a heading with its Remove over its own rows,
@@ -171,6 +172,7 @@ export function CollectionView({
         <div key={entry.id} className="ui-collection-entry" role="group" aria-label={entry.label}>
           <div className="ui-collection-head">
             <h3>{entry.label}</h3>
+            {entry.status !== undefined && <HostStatus waiting={entry.status === "waiting"} />}
             {entry.page !== undefined && reachable(entry.page) && (
               <Button
                 size="sm"
@@ -392,6 +394,28 @@ function initial(fields: readonly EntryField[]): Record<string, string> {
   return Object.fromEntries(fields.map((one) => [one.field, one.initial ?? ""]));
 }
 
+/**
+ * **A send the core refused, as its form says it once** (#3291): the labels of the fields it
+ * refused, what it said of the whole where the form is the only place that says it (`reasons`),
+ * and `answer`, the count of the core's answers that tells a new one. What uses the entry
+ * (`referrers`), and a Rename's reasons, are said under the entry, as its alert, not here.
+ */
+function refusedOf(
+  refusal: EntryRefusal | undefined,
+  fields: readonly { field: string; label: string }[],
+  answer: number,
+  reasons: boolean,
+): RefusedAnswer | undefined {
+  if (refusal === undefined) return undefined;
+  return {
+    fields: fields
+      .filter((one) => (refusal.fields[one.field] ?? []).length > 0)
+      .map((one) => ({ name: one.label, why: (refusal.fields[one.field] ?? []).join(" ") })),
+    reasons: reasons ? refusal.reasons : [],
+    answer,
+  };
+}
+
 /** What is said under a field: the core's refusal of the Add pressed, else its check of the
  *  text as typed (#1405). */
 function fieldSaid(
@@ -433,6 +457,8 @@ function AddForm({
     setValues(initial(fields));
   }
   const [refusal, setRefusal] = useState<EntryRefusal>();
+  /** How many of the core's answers refused a send: a new one is said once (#3291). */
+  const [answers, setAnswers] = useState(0);
   // What a field's own check said of what is in it now (#1405), and the text each was asked
   // for, so an answer to text typed over since is dropped.
   const [checked, setChecked] = useState<Readonly<Record<string, string>>>({});
@@ -499,8 +525,10 @@ function AddForm({
       add: values,
     });
     setSending(false);
-    if (said) setRefusal(said);
-    else {
+    if (said) {
+      setRefusal(said);
+      setAnswers((n) => n + 1);
+    } else {
       close();
       // What New… asked for is picked once it is there.
       if (asked !== undefined) asked.then((values.name ?? "").trim());
@@ -511,6 +539,7 @@ function AddForm({
       id={form}
       className="ui-collection-form"
       aria-label={`New ${noun}`}
+      refused={refusedOf(refusal, fields, answers, true)}
       onSubmit={(event) => {
         event.preventDefault();
         void send();
@@ -549,7 +578,8 @@ function AddForm({
         />
       ))}
       {refusal && refusal.reasons.length > 0 && (
-        <div className="ui-setting-error" role="alert">
+        // Heard in the form's summary (#3291); here for the eye, where it belongs.
+        <div className="ui-setting-error">
           {refusal.reasons.map((why, at) => (
             <p key={at}>{why}</p>
           ))}
@@ -586,6 +616,8 @@ function RenameForm({
 }) {
   const [to, setTo] = useState(entry.name ?? "");
   const [refusal, setRefusal] = useState<EntryRefusal>();
+  /** How many of the core's answers refused a send: a new one is said once (#3291). */
+  const [answers, setAnswers] = useState(0);
   const [sending, setSending] = useState(false);
   /** How many open chats run on the entry, asked as the form opens (#1290). */
   const [running, setRunning] = useState(0);
@@ -619,14 +651,17 @@ function RenameForm({
       ...(everywhere ? { everywhere } : {}),
     });
     setSending(false);
-    if (said) setRefusal(said);
-    else onDone(to.trim());
+    if (said) {
+      setRefusal(said);
+      setAnswers((n) => n + 1);
+    } else onDone(to.trim());
   };
   return (
     <Form
       id={form}
       className="ui-collection-form"
       aria-label={`Rename ${entry.label}`}
+      refused={refusedOf(refusal, [{ field: "name", label: "New name" }], answers, false)}
       onSubmit={(event) => {
         event.preventDefault();
         void send(false);

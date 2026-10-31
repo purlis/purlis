@@ -18,8 +18,11 @@
 import {
   cloneElement,
   isValidElement,
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent,
   type MouseEvent,
@@ -78,6 +81,9 @@ export function useContextMenu({ menu, onAsked, onOpenChange, onClosed }: Contex
   // The element it was opened on, as the event that opened it found it.
   const [on, setOn] = useState<Element | null>(null);
   const trigger = useMemo(() => ({ current: on }), [on]);
+  // Where it stood as it was opened: a scroll that has not moved it closes nothing.
+  const placed = useRef<DOMRect | null>(null);
+  const shown = useClosedOnlyByAMove(state, on, placed);
   useRightClickElsewhere(state.isOpen, state.close);
   useNotTheOpeningRelease(state.isOpen && pressed, () => setPressed(false));
   return {
@@ -89,6 +95,7 @@ export function useContextMenu({ menu, onAsked, onOpenChange, onClosed }: Contex
         if (event.nativeEvent.defaultPrevented) return;
         event.preventDefault();
         setOn(event.currentTarget);
+        placed.current = event.currentTarget.getBoundingClientRect();
         setPressed(!FROM_THE_KEYS.has(event.nativeEvent));
         state.setPoint({ x: event.clientX, y: event.clientY });
         // From the keys, on its first row; from the pointer (or a program's own way in, as a
@@ -98,7 +105,7 @@ export function useContextMenu({ menu, onAsked, onOpenChange, onClosed }: Contex
     },
     menu: (
       <OpenMenu
-        state={state}
+        state={shown}
         triggerRef={trigger}
         // From the pointer, the menu itself takes the keyboard and no row is chosen yet.
         autoFocus={state.focusStrategy ?? true}
@@ -181,6 +188,60 @@ export function ContextMenu({
       {drawn}
     </>
   );
+}
+
+type MenuState = ReturnType<typeof useMenuTriggerState>;
+
+/**
+ * **A scroll that has not moved what the menu was opened on does not close it** (#3797). React
+ * Aria closes a menu that is not modal when a scrolled region around its opener scrolls, so the
+ * menu is never left behind by what it belongs to. But the keyboard's arrival on a row scrolls
+ * its list to it, and that scroll's event comes a frame later: a Shift+F10 within that frame
+ * opened the menu where the row now stands, and the late event closed it again at once, so the
+ * press seemed to do nothing.
+ *
+ * So the scroll is heard first, on the window as it is captured, ahead of React Aria's own
+ * listeners, which its popover adds in an effect. A scroll of a region around the opener that
+ * left the opener where the menu was placed is noted, and the one close it causes, the close
+ * asked while that same event is being heard, is not made. Every other close (Escape, a row's
+ * action, a press outside) is made as before, and so is the close of a scroll that moved it.
+ */
+function useClosedOnlyByAMove(
+  state: MenuState,
+  on: Element | null,
+  placed: { current: DOMRect | null },
+): MenuState {
+  // The scroll event that left the opener in place, while it is being heard.
+  const still = useRef<Event | null>(null);
+  useLayoutEffect(() => {
+    if (!state.isOpen || on === null) return;
+    const scrolled = (event: Event) => {
+      // Only a region around the opener, as React Aria's own close asks: the window and the
+      // document are around everything.
+      const region = event.target;
+      if (region instanceof Node && region !== document && !region.contains(on)) return;
+      const was = placed.current;
+      const now = on.getBoundingClientRect();
+      if (was === null || Math.abs(now.left - was.left) >= 1 || Math.abs(now.top - was.top) >= 1)
+        return;
+      still.current = event;
+    };
+    window.addEventListener("scroll", scrolled, true);
+    return () => {
+      window.removeEventListener("scroll", scrolled, true);
+      still.current = null;
+    };
+  }, [state.isOpen, on, placed]);
+  const { close } = state;
+  // One close for as long as the menu's own is the same, so React Aria's listeners keyed on it
+  // are not added again at every render.
+  const closeUnlessStill = useCallback(() => {
+    // `window.event` is the event being heard: the noted scroll's, while React Aria's listener
+    // for it runs, and never a key's or a press's.
+    if (still.current !== null && window.event === still.current) return;
+    close();
+  }, [close]);
+  return { ...state, close: closeUnlessStill };
 }
 
 /**

@@ -774,6 +774,23 @@ describe("the needs-you mark rolling up the tree (#1448)", () => {
     expect(rolledUp(tree, "drop commons")).toBeNull();
   });
 
+  it("leaves the tree owning only its rows while a row wears the hand (#3658)", async () => {
+    const { move } = core(threeDeep());
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+
+    move(3, "waiting", 10, [3]);
+    expect(rolledUp(tree, "steward 1")).not.toBeNull();
+
+    // axe's `aria-required-children`: a tree owns treeitems and groups. The hand is the
+    // pointer's alone, and the row says which chat below needs you.
+    expect(within(tree).queryAllByRole("button")).toEqual([]);
+    expect(row(tree, "steward 1").getAttribute("aria-description")).toBe(
+      "devops 3 below it needs you",
+    );
+  });
+
   it("still shows on a row folded again over a chat two levels down that needs you", async () => {
     const { move } = core(threeDeep());
     render(<App />);
@@ -1107,6 +1124,47 @@ describe("how the tree reads to a screen reader (#1448)", () => {
     expect(fold.tagName).toBe("SPAN");
     expect(fold.closest('[role="treeitem"]')).toBe(row(tree, "steward 1"));
     expect(within(tree).queryByRole("button", { name: /Fold the chats/ })).toBeNull();
+  });
+
+  // #3886: the card's `aria-describedby` overrides the row's `aria-description`, so what the
+  // row says has to be in the card too; and the memory hint was on the line's hover alone.
+  it("says what a row says with its card up as well as down, and draws it in the card (#3886)", async () => {
+    const { move } = core(
+      threeDeep().map((one) => (one.session === 1 ? { ...one, waiting_on_memory: 2 } : one)),
+    );
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+    move(3, "waiting", 10, [3]);
+    const steward = row(tree, "steward 1");
+    const HINT = "The Dispatches tab lists them under Not started.";
+
+    // The card down: the row's own description says the chat below, the count and the hint.
+    expect(card()).toBeNull();
+    expect(steward.getAttribute("aria-describedby")).toBeNull();
+    expect(steward.getAttribute("aria-description")).toMatch(
+      /^devops 3 below it needs you\. 2 dispatches wait on memory\. This machine is short on memory: .* The Dispatches tab lists them under Not started\.$/,
+    );
+
+    // The keyboard rests on the row: the card comes up, describes the row, and says it all,
+    // where a sighted keyboard user reads it with no hover.
+    await userEvent.keyboard("{Shift}");
+    act(() => steward.focus());
+    const shown = await theCard();
+    expect(steward.getAttribute("aria-describedby")).toBe(shown.id);
+    expect(shown).toHaveTextContent("devops 3 below it needs you");
+    expect(shown).toHaveTextContent("2 dispatches wait on memory");
+    expect(shown).toHaveTextContent(HINT);
+    expect(steward).toHaveAccessibleDescription(
+      expect.stringContaining("devops 3 below it needs you"),
+    );
+    expect(steward).toHaveAccessibleDescription(expect.stringContaining(HINT));
+
+    // A row that says nothing has nothing more in its card.
+    act(() => row(tree, "steward 4").focus());
+    await waitFor(() => expect(card()).toHaveTextContent("steward 4"));
+    expect(card()).not.toHaveTextContent("needs you");
+    expect(card()).not.toHaveTextContent("memory");
   });
 });
 
@@ -1750,10 +1808,14 @@ describe("one tree style, in the Chats tree and the explorer (#1672)", () => {
       expect(shape(tree)).toEqual(["1 steward 1", "2 drop commons", "3 steward 3"]),
     );
     // The Explorer view is mounted beside Chats and hidden while Chats is open (#1673).
-    const explorer = await screen.findByRole("tree", { name: "Repos and branches", hidden: true });
-    // Both are the shared tree (DS-11 the Chats tree, DS-12 the explorer).
+    // The explorer is the tree family's since #2911 (`ui/tree`); the Chats tree is still the
+    // shared tree (DS-11) until it moves too.
+    const explorer = await screen.findByRole("treegrid", {
+      name: "Repos and branches",
+      hidden: true,
+    });
     expect(tree).toHaveClass("ui-tree");
-    expect(explorer).toHaveClass("ui-tree");
+    expect(explorer).toHaveAttribute("data-scope", "tree");
 
     // The Chats tree is flat: each row draws a guide per level above it, in the tree's steps.
     expect(drawnAs(row(tree, "steward 1"), "--ui-tree-depth")).toBe("0");
@@ -1856,7 +1918,7 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     ).toHaveLength(1);
   });
 
-  it("draws the state's mark in one column and the persona's or the shell's at the row's end", async () => {
+  it("leads each row with the persona's mark, or a shell's, the state a dot on it (#3342)", async () => {
     core([chat(1, "alpha"), chat(2, "alpha", { persona: null, from: by(1, "handoff") })]);
     render(<App />);
     const tree = await section();
@@ -1866,23 +1928,76 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     for (const one of rows) {
       const name = one.querySelector(".session")?.textContent ?? "";
       const lead = one.querySelector(".ui-row-lead") as HTMLElement;
-      const trail = one.querySelector(".ui-row-trail") as HTMLElement;
-      // The lead holds the state's mark and nothing else, in a column as wide on every row.
+      // The lead holds the persona's mark with the state on it, in a column as wide on every row.
       expect(
         [...lead.children].map((part) => part.className),
         name,
-      ).toEqual(["shown-state"]);
+      ).toEqual(["chat-persona"]);
       expect(drawnAs(lead, "inline-size"), name).toBe("var(--chats-mark)");
-      // The trail ends with the persona's mark, or a shell's, one size whichever it is.
-      const mark = trail.lastElementChild as Element;
-      expect(drawnAs(mark, "inline-size"), name).toBe("var(--space-6)");
-      expect(drawnAs(mark, "block-size"), name).toBe("var(--space-6)");
+      const persona = lead.firstElementChild as Element;
+      const mark = persona.firstElementChild as Element;
+      expect(drawnAs(mark, "inline-size"), name).toBe("var(--chats-mark)");
+      expect(drawnAs(mark, "block-size"), name).toBe("var(--chats-mark)");
       expect(mark.getAttribute("aria-hidden"), name).toBe("true");
+      expect(persona.querySelector(".shown-state"), name).not.toBeNull();
     }
     // One wears a persona's mark, the other, with no persona, a shell's.
     expect(
-      rows.map((one) => one.querySelector(".ui-row-trail")?.lastElementChild?.tagName),
+      rows.map((one) => one.querySelector(".chat-persona")?.firstElementChild?.tagName),
     ).toEqual(["SPAN", "svg"]);
+  });
+
+  it("says the persona and the state in the mark's tooltip, a terminal's too (#3342)", async () => {
+    const { move } = core([
+      chat(1, "alpha"),
+      chat(2, "alpha", { persona: null, from: by(1, "handoff") }),
+    ]);
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(2));
+    move(1, "running", 10);
+    move(2, "running", 11);
+
+    const steward = row(tree, "steward 1").querySelector(".chat-persona > .persona-mark");
+    await waitFor(() => expect(tipOf(steward)).toBe("steward, working"));
+    const terminal = within(tree)
+      .getAllByRole("treeitem")
+      .map((one) => one.querySelector(".chat-persona > svg"))
+      .find((one) => one !== null);
+    expect(tipOf(terminal)).toBe("terminal, working");
+  });
+
+  it("draws the state's mark on the persona only for a chat that asks or is at work (#3342)", async () => {
+    core([chat(1, "alpha")]);
+    render(<App />);
+    await section();
+
+    // At rest no badge, whatever the state: a grey mark would stand for seven (WCAG 1.4.1).
+    const sheet = cascadeOf("App.css");
+    const at = (kind: string) => {
+      const persona = document.createElement("span");
+      persona.className = "chat-persona";
+      persona.dataset.state = kind;
+      const shown = document.createElement("span");
+      shown.className = "shown-state";
+      persona.append(shown);
+      const holder = screen.getByTestId("chats-section");
+      holder.append(persona);
+      const display = sheet(shown, "display");
+      persona.remove();
+      return display;
+    };
+    for (const kind of ["done", "idle", "reported", "stopped-by-you", "closed-by-you", "unheard"])
+      expect(at(kind), kind).toBe("none");
+    for (const kind of [
+      "needs-you",
+      "working",
+      "asking",
+      "waiting-on-tasks",
+      "failed",
+      "unreported",
+    ])
+      expect(at(kind), kind).toBe("block");
   });
 
   it("draws a twist only on a row with chats under it, and its press folds without opening", async () => {
@@ -1919,8 +2034,11 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     render(<App />);
     await section();
 
-    const head = screen.getByTestId("chats-section").querySelector(".chats-head") as HTMLElement;
-    expect(drawnWith(head, "background")).toBe("var(--panel-fill, var(--surface-base))");
+    // The view's top (#3342), the panel family's, drawn on the panel's fill.
+    const head = screen
+      .getByTestId("chats-section")
+      .querySelector('[data-part="top"]') as HTMLElement;
+    expect(cascadeOf("ui/panel/panel.css")(head, "background-color")).toBe("var(--panel-fill)");
     // The panel it sits in says its fill to what it holds; a theme's `panel.root.fill` writes
     // the same property (`purlis_core::theme::parts`).
     const panel = head.closest('[data-scope="panel"][data-part="root"]') as HTMLElement;
@@ -1935,11 +2053,16 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     await waitFor(() => expect(shape(tree)).toHaveLength(2));
 
     const view = screen.getByTestId("chats-section");
-    const head = view.querySelector(".chats-head") as HTMLElement;
+    const head = view.querySelector('[data-part="top"]') as HTMLElement;
     const filter = within(view).getByRole("search", { name: "Filter the chats" });
-    // Nothing comes between the filter and the rows.
-    expect(filter.nextElementSibling).toBeNull();
-    expect(head.lastElementChild).toBe(filter);
+    // The view's top, as Q1 A stacks it (#3342): the title's line, the filter, the scope, the
+    // chips; nothing else, and nothing between the top and the rows.
+    expect(
+      [...head.children]
+        .filter((one) => !one.hasAttribute("data-top-slot"))
+        .map((one) => one.getAttribute("role") ?? one.className),
+    ).toEqual(["chats-top", "search", "radiogroup", "group"]);
+    expect(head.contains(filter)).toBe(true);
     // The notes are on the title's line, still in the tree, saying nothing.
     const notes = view.querySelector(".chats-top .chats-notes") as HTMLElement;
     expect(notes).not.toBeNull();
@@ -1976,8 +2099,9 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     expect(field).toHaveClass("chats-filter-box");
     expect(drawnWith(field, "--text-input-start")).toBe("var(--space-5)");
     expect(drawnWith(field, "--text-input-icon")).toBe("var(--chats-mark)");
-    expect(drawnWith(field, "--text-input-gap")).toBe(
-      "calc(var(--chats-name-at) - 1px - var(--space-5) - var(--chats-mark))",
+    // Less the step the view's top stands in further than the rows (#3342).
+    expect(drawnWith(field, "--text-input-gap")?.replace(/\s+/g, " ")).toBe(
+      "calc( var(--chats-name-at) - 1px - var(--space-5) - var(--chats-mark) - var(--space-1) )",
     );
     const glass = view.querySelector(".chats-filter-glass") as Element;
     expect(glass.closest('[data-part="icon"]')).toHaveAttribute("aria-hidden", "true");
@@ -1997,7 +2121,7 @@ const threeTasks = () => [
 ];
 
 describe("a chat's row is one line, with a hover card (#1675)", () => {
-  it("draws its state's mark, its persona's badge and its name, and nothing more", async () => {
+  it("draws its persona's badge with its state on it, and its name, and nothing more", async () => {
     const { move } = core(threeTasks());
     render(<App />);
     const tree = await section();
@@ -2016,9 +2140,11 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
         "ui-row-trail",
       ]);
       expect(drawnAs(parts[1], "order")).toBe("-1");
-      expect(parts[1].children[0]).toHaveClass("shown-state");
-      expect(parts[2].lastElementChild).toHaveClass("persona-mark");
-      expect(one).toHaveAccessibleName(`${name} working`);
+      // The persona's mark leads, with the state on it, and both are said (#3342).
+      expect(parts[1].children[0]).toHaveClass("chat-persona");
+      expect(parts[1].querySelector(".chat-persona > .persona-mark")).not.toBeNull();
+      const persona = name.split(" ")[0];
+      expect(one).toHaveAccessibleName(`${name} ${persona}, working`);
       // The state is its mark on the row; its word is out of sight.
       const word = one.querySelector(".shown-state .word") as HTMLElement;
       expect(word.textContent).toBe("working");

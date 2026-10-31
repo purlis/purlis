@@ -71,6 +71,16 @@ pub struct SkillVersion {
     /// What the runs that started on it add up to, as a skill's totals row says them (SK-20).
     pub runs: StatsRow,
     pub grade: Option<SkillGrade>,
+    /// Where it is from before a rename or a move (#4017): null for a version of its place now.
+    pub before: Option<SkillVersionBefore>,
+}
+
+/// The name and the folder a skill had at a version from before a rename or a move (#4017).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillVersionBefore {
+    pub name: String,
+    /// Its folder then, relative to the project.
+    pub folder: String,
 }
 
 /// One copy of a skill's name, at one level of the project.
@@ -135,10 +145,10 @@ pub struct SkillDiff {
 /// [`skill_details`]'s answer for the project at `root`, at `now` (seconds since 1970).
 fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
     let unused = lifecycle::unused(root, now);
-    let copies = Level::every(root)
-        .into_iter()
-        .filter_map(|level| {
-            let folder = level.named(root, name)?;
+    // In the one order a skill's tab shows its copies (`Level::copies_of`): the window shows
+    // the first until another is picked, and its Grades tab reads that copy's grades.
+    let copies = Level::copies_of(root, name)
+        .map(|(level, folder)| {
             let about = purlis_core::skills::about_of(&folder);
             let history = history::history(root, &level, name).unwrap_or_default();
             let versions = history
@@ -156,9 +166,13 @@ fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
                         passed: grade.passed,
                         fixtures: grade.fixtures,
                     }),
+                    before: version.before.map(|before| SkillVersionBefore {
+                        name: before.name,
+                        folder: before.folder,
+                    }),
                 })
                 .collect();
-            Some(SkillCopy {
+            SkillCopy {
                 label: level.to_string(),
                 unused_days: unused
                     .iter()
@@ -177,7 +191,7 @@ fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
                     .unwrap_or_default(),
                 unread: about.is_err(),
                 versions,
-            })
+            }
         })
         .collect();
     let built_in = built_in();

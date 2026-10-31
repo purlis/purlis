@@ -14,7 +14,7 @@
  * from <harness>)`: the program is running, which the app knows itself, and the rest is said
  * to be unknown (V100-71). A report whose outcome no record gives reads `reported`.
  */
-import type { OpenChat } from "./bindings";
+import type { OpenChat, OwnWork } from "./bindings";
 import type { State } from "./chatState";
 import type { Token } from "./theme/theme";
 
@@ -23,6 +23,7 @@ export type ShownKind =
   | "working"
   | "needs-you"
   | "waiting-on-tasks"
+  | "waiting-on-own-work"
   | "asking"
   | "done"
   | "failed"
@@ -95,6 +96,9 @@ export type Facts = {
    *  has ended with any is waiting on them, and says how many. None where a surface does not
    *  say. */
   tasksAtWork?: number;
+  /** What it waits on of its own, where its turn ended while that is in flight (#3878,
+   *  `chatState.ownWorkOf`). None where it waits on none, or a surface does not say. */
+  ownWork?: OwnWork;
 };
 
 const WORKING: Shown = { kind: "working", word: "working", shape: "ring", token: "state.running" };
@@ -194,6 +198,49 @@ export function waitingOnTasks(tasks: number): Shown {
   };
 }
 
+/** `1 monitor`, `2 monitors`: one kind of a chat's own work, counted. */
+function counted(n: number, one: string): string | undefined {
+  if (n === 0) return undefined;
+  return `${n} ${one}${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * **What a chat waiting on its own work says it waits on** (#3878): each kind of work in
+ * flight, counted, and the time of its next wake-up of its own, as `waiting on 2 monitors` or
+ * `waiting on 1 helper and a wake-up at 14:05`. The clock is the person's own.
+ */
+export function ownWorkSaid(work: OwnWork): string {
+  const parts = [
+    counted(work.helpers, "helper"),
+    counted(work.workflows, "workflow"),
+    counted(work.monitors, "monitor"),
+    counted(work.shells, "background shell"),
+    work.wakes_at == null
+      ? undefined
+      : `a wake-up at ${new Date(work.wakes_at * 1000).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}`,
+  ].filter((part): part is string => part !== undefined);
+  const said =
+    parts.length < 2 ? parts.join("") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
+  return `waiting on ${said === "" ? "its own work" : said}`;
+}
+
+/**
+ * **A chat whose turn has ended while work of its own is in flight** (#3878): waiting on it,
+ * and not on the person, so it wears the working colour and the hourglass a chat waiting on its
+ * tasks wears, and says what it waits on. The core keeps such a chat out of the needs-you queue.
+ */
+export function waitingOnOwnWork(work: OwnWork): Shown {
+  return {
+    kind: "waiting-on-own-work",
+    word: ownWorkSaid(work),
+    shape: "hourglass",
+    token: "state.running",
+  };
+}
+
 /**
  * **How a task the person ended reads**, by the core's own fact of who ended it and which way
  * (`dispatchrecord::Finished::key`): never read from a report's words, so nothing a task says
@@ -225,7 +272,7 @@ const BY_THE_PERSON: ReadonlyMap<string, Shown> = new Map([
  *
  * **The order, whole** (#1491): needs you; a sent report (working while a turn runs, else how
  * it ended); a report written in its place; a program that ended; asking its asker; waiting on
- * its tasks; idle; working; not known.
+ * its tasks; waiting on its own work; idle; working; not known.
  */
 export function shownState({
   board,
@@ -233,6 +280,7 @@ export function shownState({
   task,
   harness,
   tasksAtWork = 0,
+  ownWork,
 }: Facts): Shown | undefined {
   if (needsYou) return NEEDS_YOU;
   const byThePerson = task?.outcome == null ? undefined : BY_THE_PERSON.get(task.outcome);
@@ -261,6 +309,8 @@ export function shownState({
   // not, so it is waiting on them. A task that is asking its own asker says that first: the
   // answer is what it is paused on.
   if (board === "waiting" && tasksAtWork > 0) return waitingOnTasks(tasksAtWork);
+  // Its turn has ended on work of its own, which wakes it (#3878): waiting, not idle.
+  if (board === "waiting" && ownWork !== undefined) return waitingOnOwnWork(ownWork);
   // Its turn has ended and it is not asking for the person: the hand is not raised for it.
   if (board === "waiting") return IDLE;
   if (board === "running") return WORKING;

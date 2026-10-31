@@ -6,31 +6,34 @@ import {
   useCallback,
   useEffect,
   useId,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type FocusEvent,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { AnchoredPopover } from "./ui/popover/Popover";
-import { ChevronRight, Hand, MessagesSquare, Search, SquareTerminal } from "lucide-react";
+import { ChevronRight, Ellipsis, Hand, LayoutGrid, Plus, Search } from "lucide-react";
 import {
+  BROWSERS_SHOW,
   besideId,
   ONLY_A_TASK_OPENS_BESIDE,
   taskStopId,
+  DISPATCHES_SHOW,
   type Catalogued,
   type Offer,
   type TaskEndWay,
 } from "./actions";
+import { Menu, MenuItem, MenuTrigger, MenuWords } from "./ui/menu/Menu";
 import { TaskEndConfirm, type TaskEndInline } from "./TaskEnd";
 import type { AtLimit, FinishedTask } from "./bindings";
 import { HelpersSaid } from "./ExplorerChats";
 import { ChatDoingLine } from "./ChatRowActivity";
-import { cardDown, cardUp, skipsTheRest, useCardUp } from "./chatCard";
-import { ChatShownState } from "./ChatRows";
+import { aCardIsUp, cardDown, cardUp, skipsTheRest, useCardUp } from "./chatCard";
+import { ChatPersonaState, ChatShownState } from "./ChatRows";
 import { sameList, useChatsHere, useChatsSelect, type ChatStates } from "./chatState";
 import { useTokensOnHover } from "./tasksUsed";
 import {
@@ -41,6 +44,7 @@ import {
   matches,
   matchesFinished,
   sessionOrder,
+  rowTimeSaid,
   sinceSaid,
   stamped,
   type Filter,
@@ -75,19 +79,22 @@ import type { TaskFacts } from "./shownState";
 import { standingOfRows } from "./sessionTasks";
 import { useTaskCount, useTaskCountSaid } from "./TasksBelow";
 import { BrowserRows, type BrowserShown } from "./ChatBrowsersShown";
+import { HeadingOffer } from "./PanelSection";
 import { tasksIn } from "./taskBuckets";
 import { Menued } from "./Menus";
-import { PersonaMark } from "./PersonaMark";
 import { useRevealedTask, type Reveal } from "./revealTask";
 import { useTabStop } from "./roving";
 import { stateClock, useStateSince, type StateClock } from "./stateClock";
 import { deletes } from "./tabKeys";
 import { askSettingsLink } from "./settings/links";
 import { DISPATCH } from "./settings/dispatch";
-import { Button } from "./ui/button/Button";
+import { Button, IconButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
-import { PanelSectionTitle } from "./ui/panel/Panel";
+import { PanelSection as Section, PanelTitle } from "./ui/panel/Panel";
+import { Count } from "./ui/badge/Badge";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { useHeldStill } from "./heldStill";
+import { property } from "./theme/theme";
 
 /** What a chat's state is drawn from (`ChatShownState`): its row's and its card's alike. */
 type ShownFacts = {
@@ -101,6 +108,13 @@ type ShownFacts = {
 
 /** A row's id in the section's roving focus. */
 const rowId = (session: number) => `chats:${session}`;
+
+/** The hand of a chat below that needs you, in the needs-you colour at the words' size. */
+const HAND: CSSProperties = {
+  width: "1em",
+  height: "1em",
+  color: `var(${property("needs-you.base")})`,
+};
 
 /** No rows of the catalogue: what a section drawn on its own, in a test, offers. */
 const NO_OFFERS: Catalogued = new Map();
@@ -174,22 +188,10 @@ function onMemoryWords(waiting: number): string {
   return waiting === 1 ? "1 dispatch waits on memory" : `${waiting} dispatches wait on memory`;
 }
 
-/** The whole sentence, on the line's hover: what they wait for, and where they are named. */
-const ON_MEMORY_SAID =
+/** The whole sentence, on the line's hover, in the row's card and its description: what they
+ *  wait for, and where they are named. */
+export const ON_MEMORY_SAID =
   "This machine is short on memory: they start by themselves once it frees, and the chat that asked is told when each starts or gives up. The Dispatches tab lists them under Not started.";
-
-/**
- * Whether the element that took the focus took it from the keyboard. A pointer's press focuses
- * a row too, on the WebViews that focus a button on a click, and a list held for that would
- * stay held after the pointer left. Where the engine cannot say, it is taken as the keyboard's.
- */
-function byKeyboard(target: Element): boolean {
-  try {
-    return target.matches(":focus-visible");
-  } catch {
-    return true;
-  }
-}
 
 /**
  * **The running chats of the focused workspace, in one tree** (#1447, #1655), in the left
@@ -288,6 +290,7 @@ export function ChatsSection({
   browsers,
   kept,
   onBrowser,
+  anyBrowser = false,
   heading,
 }: {
   rows: readonly ChatRow[];
@@ -346,6 +349,8 @@ export function ChatsSection({
   browsers?: ReadonlyMap<number, readonly BrowserShown[]>;
   /** The pinned browsers whose chat closed (#2022): rows of their own, after the chats. */
   kept?: readonly BrowserShown[];
+  /** The project has a browser the Browsers grid draws (#2027): its button is on the heading. */
+  anyBrowser?: boolean;
   /** A browser's row was pressed: open its view. No rows are drawn without it. */
   onBrowser?: (shown: BrowserShown) => void;
   /** **What its title says** (R123, #2917): the workspace and, after it, the project. Absent,
@@ -467,29 +472,45 @@ export function ChatsSection({
     sameAsked,
   );
   const listed = useMemo(() => rows.map((row) => row.session), [rows]);
+  /** **How many chats each chip would leave** (#3484, the prototype's `Needs you 2`): the scope's
+   *  chats that the typed words find, in that chip's rank, read as the filter reads them. */
+  const chipCounts = useChatsSelect(
+    chats,
+    (states) => {
+      const stood = standingOfRows(states, rows);
+      return CHIPS.map(
+        (chip) =>
+          rows.filter((row) =>
+            matches(row, stood.get(row.session)?.shown, { text, ranks: [chip.rank] }),
+          ).length,
+      );
+    },
+    sameList,
+  );
+  const chipOptions = useMemo(
+    () =>
+      CHIP_OPTIONS.map((option, at) => ({
+        ...option,
+        // None where there are none, as the prototype draws an empty chip.
+        count: chipCounts[at] === 0 ? undefined : chipCounts[at],
+      })),
+    [chipCounts],
+  );
 
   // **Held still while the pointer is over the list or the keyboard is in it** (V100-47): no
   // row moves under a click. Taken as the pointer or the keyboard comes in, let go when both
-  // have left.
-  const list = useRef<HTMLDivElement>(null);
-  const [over, setOver] = useState(false);
-  const [inside, setInside] = useState(false);
-  // The list is not drawn with no chat to list, so nothing would say the pointer left it.
-  if (rows.length === 0 && (over || inside)) {
-    setOver(false);
-    setInside(false);
-  }
-  // And neither hold outlives the window being the one in use: a pointer parked over the
-  // sidebar while the person works elsewhere sends no leave. The next move of the pointer, or
-  // key in the list, takes it again.
-  useEffect(() => {
-    const away = () => {
-      setOver(false);
-      setInside(false);
-    };
-    window.addEventListener("blur", away);
-    return () => window.removeEventListener("blur", away);
-  }, []);
+  // have left, or the window stops being the one in use: the shared hold (`useHeldStill`,
+  // #3594), which looks for the focus after every redraw. Off while there is no chat to list:
+  // the list is not drawn then, so nothing would say the pointer left it. **While a row's card
+  // is up, a pointer leaving the list is let go only after the card's own wait** (#3773): the
+  // card stands a step beside its row, over the view's inset, which is not the list, so the
+  // pointer crossing to it leaves the list for that moment; what the card is drawn in is the
+  // list's, so arriving there keeps the hold.
+  const { holding: resting, held: holdBy } = useHeldStill<HTMLDivElement>(
+    [rows, finished],
+    rows.length > 0,
+    toTheCard,
+  );
   // **What the person used last, the pointer or the keyboard** (#1675): a row's card comes up
   // on the keyboard resting on it, and not on a focus a press left there.
   const pointed = useRef(false);
@@ -508,7 +529,6 @@ export function ChatsSection({
     };
   }, []);
   const pointedLast = useCallback(() => pointed.current, []);
-  const resting = over || inside;
   const [held, setHeld] = useState<Moving | null>(null);
   const moving: Moving = { order, live, asked, listed };
   // **A workspace focused, a tab brought forward or a scope picked is the person's doing**
@@ -589,12 +609,17 @@ export function ChatsSection({
     [opens],
   );
   const drawn = useMemo(() => unfolded(base, folded), [base, folded]);
-  // **The keyboard's hold never outlives the keyboard being here.** A focused row that is
-  // taken out of the document (its task stopped, or finished, or was filtered away) sends no
-  // blur, so after every draw the hold is let go when the focus is no longer in the list.
-  useLayoutEffect(() => {
-    if (inside && list.current?.contains(document.activeElement) !== true) setInside(false);
-  }, [inside, drawn, rows, finished]);
+  /** **How many rows each workspace's name stands over** (#3484), by the session it is drawn
+   *  above: the rows drawn until the next workspace's, as the frame's group counts its rows. */
+  const groupCounts = useMemo(() => {
+    const of = new Map<number, number>();
+    let head: ChatRow | undefined;
+    for (const row of drawn) {
+      if (row.level === 1 && row.workspace !== head?.workspace) head = row;
+      if (head !== undefined) of.set(head.session, (of.get(head.session) ?? 0) + 1);
+    }
+    return of;
+  }, [drawn]);
   const needsYou = useChatsSelect(chats, (states) => states.needsYou);
   const leads = useMemo(() => needing(rows, needsYou), [rows, needsYou]);
   const byNumber = useMemo(() => new Map(rows.map((row) => [row.session, row])), [rows]);
@@ -798,12 +823,20 @@ export function ChatsSection({
     front === undefined ? undefined : rowId(front),
     drawn.map((row) => rowId(row.session)),
   );
-  const left = (event: FocusEvent<HTMLElement>) => {
+  /** The keyboard left the list: what the last key said is taken down with it. */
+  const left = (event: FocusEvent<HTMLDivElement>) => {
+    holdBy.onBlur(event);
     const to = event.relatedTarget;
     if (to instanceof Node && event.currentTarget.contains(to)) return;
-    setInside(false);
     setSaid(undefined);
   };
+  /** The catalogue's new chat, which the view's title line offers (#3342). */
+  const newChat = offers.get("chat.new");
+  /** The rows the title line's More offers (#3342), those the catalogue offers here. */
+  const more = MORE_ROWS.flatMap((id) => {
+    const offer = offers.get(id);
+    return offer === undefined ? [] : [offer];
+  });
   const hidden = steady.length - base.length;
   /** Where a chat the scope leaves out is, as the line says it (#1679). */
   const outside = scope === "all" ? undefined : OUTSIDE_SCOPE[scope];
@@ -849,86 +882,142 @@ export function ChatsSection({
         .filter((one) => one !== "")
         .join(" ");
   return (
-    <section
+    <Section
+      view
       ref={section}
       className="chats-section ui-text-body"
       data-testid="chats-section"
       aria-label="Chats"
-    >
-      {/* The title and the filter stay at the top of the section while its rows scroll. */}
-      <div className="chats-head">
-        <div className="chats-top">
-          <PanelSectionTitle
-            id="chats-title"
-            mark={heading === undefined ? MessagesSquare : undefined}
-          >
-            {heading ?? "Chats"}
-          </PanelSectionTitle>
-          {/* **What the filter hides, and why a key did nothing, on the title's line** (#1499,
+      // **The Chats view is a view of the panel family** (#3342, the sidebar-views prototype's
+      // Q1 A): its title line, then the filter, then the scope, then the chips, held at the top
+      // on the panel's own fill while the rows scroll under them.
+      top={
+        <>
+          <div className="chats-top">
+            {/* The view's one title, as the sidebar-views prototype's Q1 A draws it (#3342):
+                13px, strong, in the primary tier and its own case. */}
+            <PanelTitle id="chats-title" className="side-title">
+              {heading ?? "Chats"}
+            </PanelTitle>
+            {/* **Every browser, live** (#2027): the Browsers grid, while it has a tile. */}
+            {anyBrowser && (
+              <HeadingOffer offer={offers.get(BROWSERS_SHOW)} onPress={press} mark={LayoutGrid} />
+            )}
+            {/* **What the filter hides, and why a key did nothing, on the title's line** (#1499,
               DS-11): both status lines are always in the accessibility tree, so what they come
               to say is announced, and they stand beside the title, so saying it moves no row
               and they take no line of their own while they have nothing to say. */}
-          {every.length > 0 && (
-            <div className="chats-notes ui-text-secondary">
-              {hiddenFirst !== undefined && goesTo !== undefined && (
-                <Button
+            {every.length > 0 && (
+              <div className="chats-notes ui-text-secondary">
+                {hiddenFirst !== undefined && goesTo !== undefined && (
+                  <Button
+                    size="sm"
+                    data-leads-to={goesTo.session}
+                    aria-label={`Go to ${goesTo.name}, ${hiddenFirst.why}`}
+                    tooltip={`Go to ${goesTo.name}, ${hiddenFirst.why}`}
+                    onPress={() => onOpen(goesTo.session)}
+                    icon={<Hand aria-hidden="true" />}
+                    className="chats-hidden-go"
+                  >
+                    Go
+                  </Button>
+                )}
+                <Tooltip tip={hides || undefined}>
+                  <p
+                    className={said === undefined ? "chats-hidden" : "chats-hidden away"}
+                    role="status"
+                  >
+                    {hides}
+                  </p>
+                </Tooltip>
+                <Tooltip tip={said}>
+                  <p className="chats-said" role="status">
+                    {said ?? ""}
+                  </p>
+                </Tooltip>
+              </div>
+            )}
+            {/* The view's own action on its title's line (Q1 A): the catalogue's new chat, named
+                for what it makes here; the strip's own `+` is the same row, as New tab. */}
+            {newChat !== undefined && (
+              <IconButton
+                size="sm"
+                aria-label="New chat"
+                tooltip={newChat.available ? "New chat" : newChat.reason}
+                isDisabled={!newChat.available}
+                onPress={() => press(newChat)}
+                icon={<Plus className="node-icon" aria-hidden="true" />}
+              />
+            )}
+            {/* **More** (Q1 A, #3342): the catalogue's other ways to start or look at chats
+                here, a new shell and the dispatches, and Settings; each its row, run as a
+                press of it is. */}
+            {more.length > 0 && (
+              <MenuTrigger>
+                <IconButton
                   size="sm"
-                  data-leads-to={goesTo.session}
-                  aria-label={`Go to ${goesTo.name}, ${hiddenFirst.why}`}
-                  tooltip={`Go to ${goesTo.name}, ${hiddenFirst.why}`}
-                  onPress={() => onOpen(goesTo.session)}
-                  icon={<Hand aria-hidden="true" />}
-                  className="chats-hidden-go"
+                  aria-label="More"
+                  tooltip="More"
+                  icon={<Ellipsis className="node-icon" aria-hidden="true" />}
+                />
+                <Menu
+                  aria-label="More for chats"
+                  onAction={(key) => {
+                    const offer = more.find((one) => one.id === key);
+                    if (offer?.available) press(offer);
+                  }}
                 >
-                  Go
-                </Button>
-              )}
-              <Tooltip tip={hides || undefined}>
-                <p
-                  className={said === undefined ? "chats-hidden" : "chats-hidden away"}
-                  role="status"
-                >
-                  {hides}
-                </p>
-              </Tooltip>
-              <Tooltip tip={said}>
-                <p className="chats-said" role="status">
-                  {said ?? ""}
-                </p>
-              </Tooltip>
+                  {more.map((offer) => (
+                    <MenuItem
+                      key={offer.id}
+                      id={offer.id}
+                      textValue={offer.title}
+                      isDisabled={!offer.available}
+                    >
+                      {/* A row it cannot run says why under its words, as New chat's tooltip
+                          does. */}
+                      <MenuWords
+                        said={offer.title}
+                        under={offer.available ? undefined : offer.reason}
+                      />
+                    </MenuItem>
+                  ))}
+                </Menu>
+              </MenuTrigger>
+            )}
+          </div>
+          {every.length > 0 && (
+            <div className="chats-filter" role="search" aria-label="Filter the chats">
+              {/* **The box's text starts where a top-level chat's name does** (DS-11): its
+                glass stands in the column the rows' state marks stand in. */}
+              <TextField
+                className="chats-filter-box"
+                type="search"
+                icon={<Search className="chats-filter-glass" aria-hidden="true" />}
+                keepsFocus="chats-filter"
+                aria-label="Filter chats by name, persona, workspace or state"
+                placeholder="Filter chats"
+                value={text}
+                onChange={(typed) => refilter(() => setText(typed))}
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape" || !filtering) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  clear();
+                }}
+              />
             </div>
           )}
           {here !== undefined && every.length > 0 && (
             <ScopeSwitch label="Show the chats of" scopes={SCOPES} scope={picked} onPick={pick} />
           )}
-        </div>
-        {every.length > 0 && (
-          <div className="chats-filter" role="search" aria-label="Filter the chats">
-            {/* **The box's text starts where a top-level chat's name does** (DS-11): its
-                glass stands in the column the rows' state marks stand in. */}
-            <TextField
-              className="chats-filter-box"
-              type="search"
-              icon={<Search className="chats-filter-glass" aria-hidden="true" />}
-              keepsFocus="chats-filter"
-              aria-label="Filter chats by name, persona, workspace or state"
-              placeholder="Filter chats"
-              value={text}
-              onChange={(typed) => refilter(() => setText(typed))}
-              onKeyDown={(event) => {
-                if (event.key !== "Escape" || !filtering) return;
-                event.preventDefault();
-                event.stopPropagation();
-                clear();
-              }}
-            />
-            {/* The chips: the set's (#626), ONE Tab stop with the arrows between them,
-                named as a group so each box is heard as what it narrows the list to. A box
-                each, since each is on or off, drawn as a chip. */}
+          {every.length > 0 && (
+            /* The chips: the set's (#626), ONE Tab stop with the arrows between them, named as a
+             group so each box is heard as what it narrows the list to. */
             <Choice
               ids={{ id: chipsId, label: "Show only" }}
               kind="chips"
-              options={CHIP_OPTIONS}
+              options={chipOptions}
               checked={new Set(ranks.map(String))}
               onCheckedChange={(value, on) => {
                 const rank = CHIPS.find((chip) => String(chip.rank) === value)?.rank;
@@ -944,9 +1033,15 @@ export function ChatsSection({
                 );
               }}
             />
-          </div>
-        )}
-      </div>
+          )}
+        </>
+      }
+    >
+      {/* What each restart asked for from a row says, announced as it comes (#1462), beside
+          the tree and not in it (#3759), and there whether or not the list draws a row
+          (#3886): the rows draw it, and say it. Of every chat listed, whatever the scope, the
+          filter and the folds draw: a line comes with its words, never with its row. */}
+      <RestartsSaid rows={every} restarts={restarts} />
       {rows.length === 0 ? (
         <p className="empty ui-text-secondary">
           {every.length === 0
@@ -957,24 +1052,14 @@ export function ChatsSection({
         </p>
       ) : (
         <div
-          ref={list}
+          {...holdBy}
           className="chats-list"
-          onPointerEnter={() => setOver(true)}
-          // Taken again by the pointer's next move, after the window was left and come back to.
-          onPointerMove={() => {
-            if (!over) setOver(true);
-          }}
-          onPointerLeave={() => setOver(false)}
-          // Only the keyboard's focus holds the list: see `byKeyboard`.
-          onFocus={(event) => {
-            if (byKeyboard(event.target)) setInside(true);
-          }}
           onBlur={left}
           // Before the row's own keys: what the last key left said is taken down by the next,
-          // unless that is Space again, and a key in the list is the keyboard being here.
+          // unless that is Space again; the hold hears the key as the keyboard being here.
           onKeyDownCapture={(event) => {
             if (event.key !== " ") setSaid(undefined);
-            if (!inside) setInside(true);
+            holdBy.onKeyDownCapture(event);
           }}
           onKeyDown={(event) => {
             // Escape in the list takes the filter off, as it does in the filter's own box, and
@@ -1004,10 +1089,15 @@ export function ChatsSection({
                       <li
                         key={`group:${row.session}`}
                         role="none"
-                        className="chats-group ui-text-label"
+                        className="chats-group"
                         aria-hidden="true"
+                        // The tree family's group name, drawn as a view's group head is (#3484).
+                        data-scope="tree"
+                        data-part="header"
                       >
-                        {row.workspace}
+                        {/* The frame's group head (#3484): its name, and its count at its end. */}
+                        <span className="chats-group-name">{row.workspace}</span>
+                        <span data-count="">{groupCounts.get(row.session)}</span>
                       </li>
                     ),
                     <Row
@@ -1126,7 +1216,7 @@ export function ChatsSection({
           )}
         </div>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -1156,6 +1246,10 @@ function endingAt(drawn: readonly ChatRow[], at: number, folded: ReadonlySet<num
   return ending;
 }
 
+/** What the Chats title line's More holds (#3342), by catalogue id: a new shell, the project's
+ *  dispatches, and Settings. */
+const MORE_ROWS = ["shell.new", DISPATCHES_SHOW, "settings.show"] as const;
+
 /**
  * How long a row is rested on, by the pointer or the keyboard, before its card comes up
  * (#1675): a pointer running down the list, or the arrows going through it, bring up nothing.
@@ -1169,6 +1263,58 @@ export const CARD_DELAY_MS = 500;
 export const CARD_LEAVE_MS = 150;
 
 export { CARD_SKIP_MS } from "./chatCard";
+
+/** How long the list's hold waits for a pointer that left it: the card's own wait while a card is
+ *  up, which the pointer may be crossing to, and none while none is. */
+function toTheCard(): number {
+  return aCardIsUp() ? CARD_LEAVE_MS : 0;
+}
+
+/** `said` after what was `before`, each its own sentence where there are two. */
+function sentences(before: string, said: string): string {
+  if (before === "") return said;
+  const stop = (one: string) => (/[.!?]$/.test(one) ? one : `${one}.`);
+  return `${stop(before)} ${stop(said)}`;
+}
+
+/**
+ * **What a restart asked for from a row says, to a screen reader** (#1462, #3759, #3886): one
+ * status, mounted with the section and empty until a restart says something, since a region
+ * that arrives already full is not announced by every screen reader; only its text changes. A
+ * line for each chat listed with a restart said, in the chats' numbers' order, and only a line
+ * that comes is announced (`aria-atomic="false"`), not every line again. **Built from every
+ * chat listed, not the rows drawn** (the review of #3935): a fold, the filter or the scope
+ * drawing a row again would add its line again, and a screen reader would announce old words
+ * as new. Beside the tree, which may own its rows alone: the row draws the words under it, for
+ * the eye, and says them in its description and its card.
+ */
+function RestartsSaid({
+  rows,
+  restarts,
+}: {
+  rows: readonly ChatRow[];
+  restarts: Readonly<Record<number, string>>;
+}) {
+  const said = rows
+    .filter((row) => !row.tab && restarts[row.session] !== undefined)
+    .sort((one, other) => one.session - other.session);
+  return (
+    <div className="hidden-words" role="status" aria-label="Restarts" aria-atomic="false">
+      {said.map((row) => (
+        <p key={row.session}>{restartLine(row.name, restarts[row.session])}</p>
+      ))}
+    </div>
+  );
+}
+
+/** A restart's line in the restarts' status: its words as they are where they name the chat,
+ *  else led by which chat's restart it was. */
+function restartLine(name: string, words: string): string {
+  return words.includes(name) ? words : `Restart of ${name}. ${words}`;
+}
+
+/** What a row says (#3886), each by its kind: what its card keys its lines by. */
+type Said = { kind: "needs" | "limit" | "memory" | "restart"; line: string };
 
 /**
  * One chat's row. Held on plain values, so only a row whose own facts changed is drawn again.
@@ -1324,6 +1470,22 @@ const Row = memo(function Row({
   // row, never polled.
   const used = useTokensOnHover({ chat: session });
   const state: ShownFacts = { session, shell, report, outcome, asking, harness };
+  // **What the row says** (#3658, #3759, #3886): a chat below it needs you, its task limit, its
+  // dispatches waiting on memory and where they are named, and what its restart says. Said in
+  // the row's description, which is where a screen reader is, since what is drawn beside it
+  // and under it is the pointer's; and drawn in its card, which describes the row in its place
+  // while it is up, and is where the keyboard reads the hints the lines carry on their hover.
+  const sayings: (Said | null)[] = [
+    needs !== null && needs !== session
+      ? { kind: "needs", line: `${needsName ?? "A chat"} below it needs you` }
+      : null,
+    atLimit === null ? null : { kind: "limit", line: atLimit.said },
+    waitingOnMemory !== null && waitingOnMemory > 0
+      ? { kind: "memory", line: sentences(onMemoryWords(waitingOnMemory), ON_MEMORY_SAID) }
+      : null,
+    restartSaid === null ? null : { kind: "restart", line: restartSaid },
+  ];
+  const said = sayings.filter((one): one is Said => one !== null);
   // **The card** (#1675). Up after the pointer rests on the row, or the keyboard does, for
   // `CARD_DELAY_MS`: a pointer running down the list, or the arrows going down the tree, bring
   // up none. Down when the pointer leaves, the keyboard moves on, a press lands, or Escape,
@@ -1395,15 +1557,11 @@ const Row = memo(function Row({
             aria-setsize={setsize}
             aria-current={current || undefined}
             aria-expanded={open ?? undefined}
-            // What the card says, while it is up: the row's description.
+            // What the card says, while it is up: the row's description, which says what the
+            // row says too (#3886).
             aria-describedby={carded ? cardId : undefined}
-            // A chat below it needs you: said on the row, which is where a screen reader
-            // is, since the hand beside it is out of the keyboard's way.
-            aria-description={
-              needs !== null && needs !== session
-                ? `${needsName ?? "A chat"} below it needs you`
-                : undefined
-            }
+            // What the row says, while its card is down.
+            aria-description={said.map((one) => one.line).reduce(sentences, "") || undefined}
             data-tab={tab}
             // The chat's number, as a pane carries it: what a reveal finds the row by (#1490).
             data-session={session}
@@ -1458,7 +1616,7 @@ const Row = memo(function Row({
                     the row draws no second one. Drawn first on the row, and heard after the
                     name, as the word is: out of sight, and still the row's. */}
             <span className="ui-row-lead">
-              <ChatShownState {...state} changed={changed} />
+              <ChatPersonaState persona={persona} {...state} changed={changed} />
             </span>
             <span className="ui-row-trail">
               {open === false && (
@@ -1468,11 +1626,7 @@ const Row = memo(function Row({
                 </>
               )}
               {stopping && <span className="stopping ui-text-meta">Stopping…</span>}
-              {persona === null ? (
-                <SquareTerminal className="node-icon" aria-hidden="true" />
-              ) : (
-                <PersonaMark persona={persona} />
-              )}
+              <RowTime clock={clock} session={session} />
             </span>
           </button>
         </RovingFocusGroup.Item>
@@ -1507,6 +1661,7 @@ const Row = memo(function Row({
             cameFrom={from === null ? null : cameFromSaid(from, task, askerWaiting)}
             wentTo={handedToName === null ? null : handedOffSaid(handedToName, handedMore)}
             byYou={byYou}
+            said={said}
             clock={clock}
             tokens={task ? used.said : undefined}
           />
@@ -1514,14 +1669,30 @@ const Row = memo(function Row({
       </AnchoredPopover>
       {atLimit !== null && (
         /* **At its task limit** (#1498, V100-54): said where the limit binds, on a refusal,
-           until a slot frees; with the number and the way to where it is changed. */
-        <span className="at-limit ui-text-secondary" data-testid={`at-limit-${session}`}>
+           until a slot frees; with the number and the way to where it is changed. **The
+           pointer's and the eye's, as the hand is** (#3759): what the row's `li` holds is the
+           tree's, which may own its rows alone (axe's `aria-required-children`), and a group
+           around them does not help, since the tree owns what is in its groups too. The row
+           says the whole sentence, which names where the limit is changed; the line goes into
+           the row when the list moves onto the tree family (#3198). */
+        <span
+          className="at-limit ui-text-secondary"
+          data-testid={`at-limit-${session}`}
+          aria-hidden="true"
+        >
           {/* Which limit binds, with its number: only its own is "its task limit". Its words
-              carry the whole sentence, and the link beside them is its own Tab stop. */}
+              carry the whole sentence on their hover, and the link beside them goes there. */}
           <Tooltip tip={atLimit.said}>
-            <span>{atLimit.row}</span>
+            <span aria-hidden="true">{atLimit.row}</span>
           </Tooltip>
-          <Button variant="link" onPress={onLimits} className="at-limit-settings">
+          <Button
+            variant="link"
+            onPress={onLimits}
+            className="at-limit-settings"
+            excludeFromTabOrder
+            // Nor focused by its press: the focus never rests on what is hidden from the tree.
+            preventFocusOnPress
+          >
             Dispatch settings
           </Button>
         </span>
@@ -1529,20 +1700,23 @@ const Row = memo(function Row({
       {waitingOnMemory !== null && waitingOnMemory > 0 && (
         /* **Its dispatches waiting on memory** (#1617): said on the asking chat's row, in the
            at-limit line's place and style, as the Dispatches tab's Not started list names them. */
+        /* The pointer's and the eye's, as the at-limit line is (#3759): the row says it. */
         <Tooltip tip={ON_MEMORY_SAID}>
-          <span className="at-limit ui-text-secondary" data-testid={`on-memory-${session}`}>
+          <span
+            className="at-limit ui-text-secondary"
+            data-testid={`on-memory-${session}`}
+            aria-hidden="true"
+          >
             {onMemoryWords(waitingOnMemory)}
           </span>
         </Tooltip>
       )}
       {restartSaid !== null && (
-        /* **A restart asked for from this row, refused or waiting** (#1462): said here, in
-           the core's words, for a chat with no pane to say it on. */
-        <span
-          className="restart-said ui-text-secondary"
-          role="status"
-          aria-label={`Restart of ${name}`}
-        >
+        /* **A restart asked for from this row, refused or waiting** (#1462): drawn here, in
+           the core's words, for a chat with no pane to say it on. The eye's (#3759): the row
+           says it, and it is announced from outside the tree (`RestartsSaid`), which may own
+           no status. */
+        <span className="restart-said ui-text-secondary" aria-hidden="true">
           {restartSaid}
         </span>
       )}
@@ -1564,20 +1738,28 @@ const Row = memo(function Row({
       {needs !== null && needs !== session && (
         /* **A chat below this one needs you**: the hand, and a press goes to that chat. Its
            own button beside the row, since the row goes to this row's chat. Out of the arrows'
-           way; the keyboard's way to that chat is the title bar's list. */
-        <Tooltip tip={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}>
-          <button
-            type="button"
-            className="needs-you-mark rolled-up"
+           way; the keyboard's way to that chat is the title bar's list. **The pointer's alone,
+           as the row's twist is** (#3658): out of the accessibility tree, where the tree may
+           own only its rows (axe's `aria-required-children`), and where the row's own
+           description already says which chat below needs you. Hidden by the element around
+           it, since the family's button does not pass `aria-hidden` on. */
+        <span className="rolled-up-at" aria-hidden="true">
+          {/* The family's quiet ghost (#3523), as the tab chip's hand is: its tooltip is its
+              name. */}
+          <IconButton
+            variant="quiet"
+            size="sm"
+            icon={<Hand aria-hidden="true" style={HAND} />}
+            className="rolled-up"
             data-mark="needs-you"
             data-leads-to={needs}
             tabIndex={-1}
+            // Nor focused by its press: the focus never rests on what is hidden from the tree.
+            preventFocusOnPress
             aria-label={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}
-            onClick={() => onOpen(needs)}
-          >
-            <Hand aria-hidden="true" />
-          </button>
-        </Tooltip>
+            onPress={() => onOpen(needs)}
+          />
+        </span>
       )}
     </li>
   );
@@ -1594,10 +1776,13 @@ const TasksFolded = memo(function TasksFolded({ session }: { session: number }) 
   const total = tasksIn(counts);
   if (total === 0) return null;
   return (
-    <span className="task-count ui-text-meta ui-text-strong" data-testid={`task-count-${session}`}>
-      <span aria-hidden="true">{total}</span>
-      <span className="hidden-words">{total === 1 ? "1 task" : `${total} tasks`}</span>
-    </span>
+    <Count
+      className="task-count"
+      data-testid={`task-count-${session}`}
+      said={total === 1 ? "1 task" : `${total} tasks`}
+    >
+      {total}
+    </Count>
   );
 });
 
@@ -1616,6 +1801,7 @@ function ChatCard({
   cameFrom,
   wentTo,
   byYou,
+  said,
   clock,
   tokens,
 }: {
@@ -1633,6 +1819,8 @@ function ChatCard({
   /** Where its work went, as its row said it. */
   wentTo: string | null;
   byYou: boolean;
+  /** What its row says (#3886): each a line of the card, as the row's description has them. */
+  said: readonly Said[];
   clock: StateClock;
   /** A task's tokens, once read. */
   tokens: string | undefined;
@@ -1648,6 +1836,12 @@ function ChatCard({
       {/* What a working chat is doing (#1493): read as a line of the card, where the row's own
           line was out of the tree and named by the row's description. */}
       <ChatDoingLine session={session} heard />
+      {/* What the row says (#3886): its card describes the row in place of the row's own
+          description while it is up, so the card says it too; and here a sighted keyboard
+          user reads what the lines under the row carry on their hover. */}
+      {said.map((one) => (
+        <p key={one.kind}>{one.line}</p>
+      ))}
       <dl className="chat-card-facts">
         {persona !== null && <Fact term="Persona">{persona}</Fact>}
         {(runsOn ?? harness) !== null && <Fact term="Harness">{runsOn ?? harness}</Fact>}
@@ -1676,6 +1870,22 @@ function Fact({ term, children }: { term: string; children: ReactNode }) {
     </div>
   );
 }
+
+/**
+ * **When a chat came into its state, at its row's end** (#3484, the prototype's `.rm`): `now`,
+ * `2m`, `10:42`, quiet, from the one clock (`useStateSince`), so its tick redraws this and no
+ * row. Seen and not heard: the row's card says how long in words (`StateSince`). None where the
+ * window did not see the chat come into its state.
+ */
+const RowTime = memo(function RowTime({ clock, session }: { clock: StateClock; session: number }) {
+  const seconds = useStateSince(clock, session);
+  if (seconds === null) return null;
+  return (
+    <span className="chat-time ui-text-meta" aria-hidden="true">
+      {rowTimeSaid(seconds, new Date())}
+    </span>
+  );
+});
 
 /**
  * How long a chat has been in its state (V100-19), where this window saw it come into it

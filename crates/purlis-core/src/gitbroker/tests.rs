@@ -11,6 +11,8 @@ fn asker(cwd: Option<&Path>) -> Asker {
         harnessed: true,
         unsandboxed: false,
         config: None,
+        id: None,
+        live: None,
     }
 }
 
@@ -65,6 +67,7 @@ fn a_refused_workspace_is_answered_no_and_nothing_runs() {
         &GitAsk {
             chat: 4,
             workspace: "beta".to_owned(),
+            alive: false,
             work: GitWork::WorktreeAdd {
                 repo: "widget".to_owned(),
                 piece: "p1".to_owned(),
@@ -76,6 +79,164 @@ fn a_refused_workspace_is_answered_no_and_nothing_runs() {
     );
     assert!(matches!(answer, Answer::No { .. }), "{answer:?}");
     assert!(!root.join("workspaces/beta/pieces").exists());
+}
+
+/// #3931: the Bash guard of a chat that runs git itself asks before plain git writes a branch
+/// folder. The first live chat takes the folder, a second is refused in the brokered refusal's
+/// words, and a shell tab (the person's own terminal) is never held to it.
+#[test]
+fn plain_git_s_claim_is_taken_by_the_first_live_chat_and_refused_to_a_second() {
+    use crate::hookwire::ClaimAct;
+    let (_dir, root) = tree();
+    let live = vec![
+        crate::piececlaim::Live {
+            id: "01A".to_owned(),
+            chat: Some(4),
+            back: true,
+        },
+        crate::piececlaim::Live {
+            id: "01B".to_owned(),
+            chat: Some(9),
+            back: true,
+        },
+    ];
+    let chat = |number: u32, id: &str, harnessed: bool| Asker {
+        chat: number,
+        id: Some(id.to_owned()),
+        live: Some(live.clone()),
+        harnessed,
+        unsandboxed: true,
+        // Anywhere: the claim runs no git, so where the chat stands is not asked.
+        cwd: None,
+        ..asker(None)
+    };
+    let ask = |act| GitAsk {
+        chat: 0,
+        workspace: "alpha".to_owned(),
+        // A claim is answered at once: it reads no liveness lines (#4080).
+        alive: false,
+        work: GitWork::WorktreeClaim {
+            repo: "widget".to_owned(),
+            piece: "p1".to_owned(),
+            act,
+        },
+    };
+    let asked = |asker: &Asker, act| {
+        answer(
+            &root,
+            asker,
+            &ask(act),
+            &git::Isolated::default(),
+            chrono::Utc::now(),
+        )
+    };
+    let may = Answer::Said {
+        lines: Vec::new(),
+        code: 0,
+    };
+    assert_eq!(asked(&chat(4, "01A", true), ClaimAct::Commit), may);
+    assert_eq!(asked(&chat(4, "01A", true), ClaimAct::Push), may);
+    // Held by another live chat: the one answer the guard refuses on.
+    let Answer::Said { lines, code } = asked(&chat(9, "01B", true), ClaimAct::Push) else {
+        panic!("a second live chat's push was let through");
+    };
+    assert_eq!(code, crate::hookwire::CLAIM_HELD);
+    let [Say::Fail(why)] = lines.as_slice() else {
+        panic!("{lines:?}");
+    };
+    assert!(
+        why.contains("widget's branch folder 'p1' is claimed by chat 4"),
+        "{why}"
+    );
+    assert!(why.contains("will not push in it"), "{why}");
+    assert!(why.contains("purlis worktree done"), "{why}");
+    // A shell tab is the person's own: never refused, and it takes nothing.
+    assert_eq!(asked(&chat(9, "01B", false), ClaimAct::Commit), may);
+    assert!(matches!(
+        asked(&chat(9, "01B", true), ClaimAct::Commit),
+        Answer::Said {
+            code: crate::hookwire::CLAIM_HELD,
+            ..
+        }
+    ));
+    // The holder still writes.
+    assert_eq!(asked(&chat(4, "01A", true), ClaimAct::Update), may);
+    // A name that cannot be a branch folder is refused before anything is read.
+    let odd = GitAsk {
+        chat: 0,
+        workspace: "../alpha".to_owned(),
+        // A claim is answered at once: it reads no liveness lines (#4080).
+        alive: false,
+        work: GitWork::WorktreeClaim {
+            repo: "widget".to_owned(),
+            piece: "p1".to_owned(),
+            act: ClaimAct::Commit,
+        },
+    };
+    let odd = answer(
+        &root,
+        &chat(4, "01A", true),
+        &odd,
+        &git::Isolated::default(),
+        chrono::Utc::now(),
+    );
+    assert!(matches!(odd, Answer::No { .. }), "{odd:?}");
+}
+
+/// The review of #4129: only a folder another LIVE chat holds is `CLAIM_HELD`. A holder that
+/// has not come back since a restart is a refusal the guard lets through, so it is a `No`.
+#[test]
+fn a_holder_not_back_since_a_restart_is_answered_no_and_not_held() {
+    use crate::hookwire::ClaimAct;
+    let (_dir, root) = tree();
+    let chat = |number: u32, id: &str, holder_back: bool| Asker {
+        chat: number,
+        id: Some(id.to_owned()),
+        live: Some(vec![
+            crate::piececlaim::Live {
+                id: "01A".to_owned(),
+                chat: Some(4),
+                back: holder_back,
+            },
+            crate::piececlaim::Live {
+                id: "01B".to_owned(),
+                chat: Some(9),
+                back: true,
+            },
+        ]),
+        unsandboxed: true,
+        ..asker(None)
+    };
+    let asked = |asker: &Asker| {
+        answer(
+            &root,
+            asker,
+            &GitAsk {
+                chat: 0,
+                workspace: "alpha".to_owned(),
+                // A claim is answered at once: it reads no liveness lines (#4080).
+                alive: false,
+                work: GitWork::WorktreeClaim {
+                    repo: "widget".to_owned(),
+                    piece: "p1".to_owned(),
+                    act: ClaimAct::Push,
+                },
+            },
+            &git::Isolated::default(),
+            chrono::Utc::now(),
+        )
+    };
+    // Chat 4 takes the folder while it runs.
+    assert!(matches!(
+        asked(&chat(4, "01A", true)),
+        Answer::Said { code: 0, .. }
+    ));
+    // Restarted, and not back yet: chat 9 is told no, not that a live chat holds it.
+    let answer = asked(&chat(9, "01B", false));
+    let Answer::No { why } = &answer else {
+        panic!("{answer:?}");
+    };
+    assert!(why.contains("has not come back"), "{why}");
 }
 
 #[test]
@@ -249,6 +410,7 @@ fn a_worktree_of(root: &Path, repo: &str) -> Answer {
         &GitAsk {
             chat: 4,
             workspace: "alpha".to_owned(),
+            alive: false,
             work: GitWork::WorktreeAdd {
                 repo: repo.to_owned(),
                 piece: "p1".to_owned(),
@@ -361,6 +523,7 @@ fn a_commondir_pointed_at_a_config_the_chat_wrote_is_refused_and_its_filter_neve
         &GitAsk {
             chat: 4,
             workspace: "alpha".to_owned(),
+            alive: false,
             work: GitWork::WorktreeAdd {
                 repo: "widget".to_owned(),
                 piece: "p1".to_owned(),
@@ -495,4 +658,151 @@ fn a_branch_folders_own_git_is_run_for_a_chat_in_it_or_above_it_and_no_other() {
     let refused = at_or_above(&root, Some(&pieces.join("p2")), "widget", "p1").unwrap_err();
     assert!(refused.contains("widget · p2"), "{refused}");
     assert!(at_or_above(&root, None, "widget", "p1").is_err());
+}
+
+#[test]
+fn the_root_is_updated_only_for_the_chat_whose_place_it_is() {
+    // #3831: a chat in a workspace has its own folders updated, never the root.
+    let (_dir, root) = tree();
+    assert_eq!(at_the_root(&root, Some(&root)), Ok(()));
+    for elsewhere in [
+        root.join("workspaces/alpha"),
+        root.join("workspaces/alpha/widget"),
+        root.join("docs"),
+        root.join("gone"),
+    ] {
+        assert!(
+            at_the_root(&root, Some(&elsewhere)).is_err(),
+            "{}",
+            elsewhere.display()
+        );
+    }
+    assert!(at_the_root(&root, None).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_clone_whose_git_folder_is_a_link_is_never_the_one_git_runs_in() {
+    // #3831: where git keeps a clone is a real folder, never a link a chat could point.
+    let (_dir, root) = tree();
+    let elsewhere = root.join("elsewhere.git");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let clone = root.join("workspaces/alpha/widget");
+    std::os::unix::fs::symlink(&elsewhere, clone.join(".git")).unwrap();
+    let Err(refused) = checked_repo(&clone) else {
+        panic!("a clone whose `.git` is a link was checked");
+    };
+    assert!(
+        refused.contains("not a clone with its own `.git`"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn a_clones_own_checkout_is_updated_for_a_chat_in_it_or_above_it_and_no_other() {
+    // #3831: `purlis worktree update` standing in a clone names the clone; the chat must stand
+    // in it, in its workspace's folder or at the project root, never in a branch folder or
+    // beside the clone.
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let ws = root.join("workspaces/alpha");
+    for folder in ["widget/src", "gadget", "notes", ".worktrees/widget/p1"] {
+        std::fs::create_dir_all(ws.join(folder)).unwrap();
+    }
+    for here in [&root, &ws, &ws.join("widget"), &ws.join("widget/src")] {
+        assert_eq!(
+            at_or_above_clone(&root, Some(here), "alpha", "widget"),
+            Ok(()),
+            "{}",
+            here.display()
+        );
+    }
+    let beside = at_or_above_clone(&root, Some(&ws.join("gadget")), "alpha", "widget").unwrap_err();
+    assert!(beside.contains("gadget"), "{beside}");
+    assert!(at_or_above_clone(&root, Some(&ws.join("notes")), "alpha", "widget").is_err());
+    let piece = ws.join(".worktrees/widget/p1");
+    let refused = at_or_above_clone(&root, Some(&piece), "alpha", "widget").unwrap_err();
+    assert!(refused.contains("widget · p1"), "{refused}");
+    assert!(at_or_above_clone(&root, None, "alpha", "widget").is_err());
+    // Fails closed on its own: outside the workspace, in another one, or a folder that is
+    // not there.
+    std::fs::create_dir_all(root.join("workspaces/beta/widget")).unwrap();
+    std::fs::create_dir_all(root.join("docs")).unwrap();
+    for elsewhere in [
+        root.join("workspaces/beta/widget"),
+        root.join("docs"),
+        root.join("gone"),
+        std::env::temp_dir(),
+    ] {
+        assert!(
+            at_or_above_clone(&root, Some(&elsewhere), "alpha", "widget").is_err(),
+            "{}",
+            elsewhere.display()
+        );
+    }
+    assert!(at_or_above_clone(&root, Some(&ws), "nowhere", "widget").is_err());
+}
+
+#[test]
+fn a_branch_folder_is_removed_for_a_chat_above_it_and_never_one_in_it() {
+    // #3879: from the workspace or the project's top; never from inside the folder itself,
+    // which would go from under the chat, nor from another branch folder.
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let pieces = root.join("workspaces/alpha/.worktrees/widget");
+    for piece in ["p1", "p2"] {
+        std::fs::create_dir_all(pieces.join(piece).join("src")).unwrap();
+    }
+    let ws = root.join("workspaces/alpha");
+    assert_eq!(above(&root, Some(&ws), "widget", "p1"), Ok(()));
+    assert_eq!(above(&root, Some(&root), "widget", "p1"), Ok(()));
+    for inside in [pieces.join("p1"), pieces.join("p1/src")] {
+        let refused = above(&root, Some(&inside), "widget", "p1").unwrap_err();
+        assert!(
+            refused.contains("would take the folder this chat works in"),
+            "{refused}"
+        );
+    }
+    let refused = above(&root, Some(&pieces.join("p2")), "widget", "p1").unwrap_err();
+    assert!(refused.contains("widget · p2"), "{refused}");
+    assert!(above(&root, None, "widget", "p1").is_err());
+    // A place that cannot be read is refused, not taken for one above the folder.
+    let gone = above(&root, Some(&ws.join("gone")), "widget", "p1").unwrap_err();
+    assert!(gone.contains("could not place"), "{gone}");
+}
+
+#[test]
+fn a_removal_for_a_chat_in_another_workspace_or_in_the_folder_is_answered_no() {
+    let (_dir, root) = tree();
+    std::fs::create_dir_all(root.join("workspaces/alpha/.worktrees/widget/p1")).unwrap();
+    let remove = |cwd: PathBuf, workspace: &str| {
+        answer(
+            &root,
+            &asker(Some(&cwd)),
+            &GitAsk {
+                chat: 4,
+                workspace: workspace.to_owned(),
+                alive: false,
+                work: GitWork::WorktreeRemove {
+                    repo: "widget".to_owned(),
+                    piece: "p1".to_owned(),
+                    delete_branch: false,
+                },
+            },
+            &git::Isolated::default(),
+            chrono::Utc::now(),
+        )
+    };
+    for (cwd, workspace) in [
+        (root.join("workspaces/beta"), "alpha"),
+        (root.join("workspaces/alpha/.worktrees/widget/p1"), "alpha"),
+    ] {
+        let said = remove(cwd.clone(), workspace);
+        assert!(
+            matches!(said, Answer::No { .. }),
+            "{}: {said:?}",
+            cwd.display()
+        );
+    }
+    assert!(root.join("workspaces/alpha/.worktrees/widget/p1").is_dir());
 }

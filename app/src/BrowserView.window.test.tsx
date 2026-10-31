@@ -90,11 +90,11 @@ function core(
   return {
     asked: (cmd: string) => asked.filter((one) => one.cmd === cmd).map(({ args }) => args),
     send: (jpeg: string, aim = "p1:1") =>
-      frames?.onmessage({ aim, jpeg, reconnection: null, page: null }),
+      frames?.onmessage({ aim, jpeg, reconnection: null, page: null, closed: null }),
     reconnection: (reconnection: "reconnecting" | "reconnected") =>
-      frames?.onmessage({ aim: "", jpeg: "", reconnection, page: null }),
+      frames?.onmessage({ aim: "", jpeg: "", reconnection, page: null, closed: null }),
     page: (origin: string | null) =>
-      frames?.onmessage({ aim: "", jpeg: "", reconnection: null, page: { origin } }),
+      frames?.onmessage({ aim: "", jpeg: "", reconnection: null, page: { origin }, closed: null }),
     order: () => asked.map(({ cmd }) => cmd),
   };
 }
@@ -558,10 +558,6 @@ describe("taking a browser over from its view (#2014)", () => {
 });
 
 describe("a browser the person opened goes where they send it (#2176)", () => {
-  // Each opens the whole window and goes through the palette first, which a loaded runner
-  // takes a while over.
-  vi.setConfig({ testTimeout: 15_000 });
-
   async function opened() {
     const host = core();
     render(

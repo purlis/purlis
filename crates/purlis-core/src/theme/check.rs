@@ -44,6 +44,14 @@ mod tests;
 #[path = "tiers_tests.rs"]
 mod tiers_tests;
 
+#[cfg(test)]
+#[path = "card_ground_tests.rs"]
+mod card_ground_tests;
+
+#[cfg(test)]
+#[path = "notice_ways_tests.rs"]
+mod notice_ways_tests;
+
 /// What a token of [`super::vocabulary::PLATFORM_DRAWN`] left to the platform is measured as
 /// when it is drawn on something: selected text the theme leaves alone keeps the words' own
 /// colour. One with no stand-in is the platform's, and a pair with it in is not measured.
@@ -217,6 +225,11 @@ pub const PAIRS: &[Pair] = &[
     p("text.secondary", "surface.raised", 4.5),
     p("needs-you.text", "needs-you.base", 4.5),
     p("danger.text", "danger.surface", 4.5),
+    // What needs a decision (#3678): an attention Notice's words and mark on its own ground, and
+    // a card's title and sentence on it.
+    p("attention.text", "attention.surface", 4.5),
+    p("text.primary", "attention.surface", 4.5),
+    p("text.muted", "attention.surface", 4.5),
     p("terminal.foreground", "terminal.background", 4.5),
     // A find in a pane draws its matches as the cells' background, under the terminal's text.
     p("terminal.foreground", "terminal.find-match", 4.5),
@@ -270,6 +283,8 @@ pub const PAIRS: &[Pair] = &[
     // An alert's mark in the Inbox's Notices (#1695), on the list's `surface.raised`.
     p("state.waiting", "surface.raised", 3.0),
     p("state.failed", "surface.raised", 3.0),
+    // A chat's state badge on the persona's mark (#3342), ringed in a Purlis panel's fill.
+    p("needs-you.base", "surface.raised", 3.0),
     // Words in a state's colour on a view tab (#1457), at the window's text size.
     p("state.running", "surface.raised", TEXT),
     p("state.waiting", "surface.raised", TEXT),
@@ -366,6 +381,16 @@ pub const PAIRS: &[Pair] = &[
     // - The filled primary (#3177): its words on its fill, at rest and under the pointer.
     p("accent.fill-text", "accent.fill", TEXT),
     p("accent.fill-text", "accent.fill-hover", TEXT),
+    // - A title-bar chip's notice dot (#3648): its fill, the accent, told apart from the bar's
+    //   own ground it is ringed in, on a chip at rest, under the pointer and chosen alike; its
+    //   shape on that fill is held below (`surface.base` on `accent.base`).
+    p("accent.base", "surface.deep", 3.0),
+    // - A warning's dot (#3649): the waiting amber, told apart from the same ground; its
+    //   triangle on it is `surface.base` on `state.waiting`, held among the marks above.
+    p("state.waiting", "surface.deep", 3.0),
+    // - A needs-you dot (#3652): the failed red, told apart from the same ground; its hand on it
+    //   is `surface.base` on `state.failed`, held among the marks below.
+    p("state.failed", "surface.deep", 3.0),
     // - The update pill's words in the accent's words on the accent's surface (#3177).
     p("accent.text", "accent.surface", TEXT),
     // - What an extension runs as you, said inside its approval dialog on the danger wash.
@@ -381,9 +406,13 @@ pub const PAIRS: &[Pair] = &[
     // pointer, it is held at the window's text size on the part's fill, not at the 3:1 a mark
     // takes (`parts/state_words_tests.rs` keeps this list whole).
     // - A title-bar chip's waiting count (#2916, R101): its digits in amber on the amber wash,
-    //   over the title bar, and over the card's fill while the chip is lit.
+    //   over the title bar, which backs it on every chip, lit or chosen (D-3345-3).
     p("state.waiting", "wash.warning", TEXT).over("surface.deep"),
+    // - What waits said in a badge or a count (#2912): the same amber on its wash, on a popover's
+    //   surface.
     p("state.waiting", "wash.warning", TEXT).over("surface.overlay"),
+    // - A switcher row's count (#3947): the same, on the row Enter would go to.
+    p("state.waiting", "wash.warning", TEXT).over("list.selected"),
     // - The rail's waiting badge (R79): its digits in amber on the overlay's pill.
     p("state.waiting", "surface.overlay", TEXT),
     // - The warning-soft button: amber words on the control, and under the pointer.
@@ -393,6 +422,18 @@ pub const PAIRS: &[Pair] = &[
     //   the window and the frame (#3177), held as words are, the icon being all it says.
     p("accent.text", "accent.wash", TEXT).over("surface.base"),
     p("accent.text", "accent.wash", TEXT).over("surface.deep"),
+    // - The chosen title-bar chip (#3345, R101 as amended): its name in the primary words on the
+    //   accent's wash laid on the frame, and on the stronger wash under the pointer.
+    p("text.primary", "accent.wash", TEXT).over("surface.deep"),
+    p("text.primary", "accent.wash-hover", TEXT).over("surface.deep"),
+    // - What waits on the person said in a badge or a count, in the waiting colour on the amber
+    //   wash, on a panel (#2912, R66: "Waiting for you").
+    p("state.waiting", "wash.warning", TEXT).over("surface.raised"),
+    p("state.waiting", "wash.warning", TEXT).over("surface.base"),
+    // - What is settled said in a badge ("Confirmed", R66): the success colour as words, on the
+    //   window and on a popover's surface (the raised one is held above).
+    p("state.success", "surface.base", TEXT),
+    p("state.success", "surface.overlay", TEXT),
     // - What a dialog is honest about (`.honest`): its words at the opacity it fades them to.
     p("text.primary", "surface.overlay", TEXT).faded(0.8),
     // - A task that is away draws its words on the terminal's own background.
@@ -406,6 +447,13 @@ pub const PAIRS: &[Pair] = &[
     p("text.primary", "border.subtle", TEXT),
     // - A list's load-more row under the pointer: words in the accent on the hover surface.
     p("accent.base", "surface.hover", TEXT),
+    // - A pressed card's pick (#3885, `card-button.root.pick`): its words in the accent, on each
+    //   ground it stands on, at rest; under the pointer and pressed on the hover surface, above.
+    //   A door's words are the primary and its line the secondary tier on the control's ground,
+    //   and its mark the accent on it, all held among the tiers and the Allow's edge.
+    p("accent.base", "surface.base", TEXT),
+    p("accent.base", "surface.raised", TEXT),
+    p("accent.base", "surface.overlay", TEXT),
     // - A panel's view button under the pointer: secondary words on the control's hover.
     p("text.secondary", "control.hover", TEXT),
     // - A vault's eye under the pointer: a muted mark on the control's hover, held as muted
@@ -749,6 +797,12 @@ pub const PAIRS: &[Pair] = &[
     // A ticked box, a picked radio and a switch that is on (#2907): the tick, the dot and the
     // thumb in the window's colour on the accent's fill, a mark held to 3:1.
     p("surface.base", "accent.base", 3.0),
+    // A warning's notice dot (#3649): its triangle in the window's colour on the waiting amber, a
+    // mark held to 3:1.
+    p("surface.base", "state.waiting", 3.0),
+    // A needs-you dot (#3652): its hand in the window's colour on the failed red, a mark held to
+    // 3:1.
+    p("surface.base", "state.failed", 3.0),
 ];
 
 /// The floor the sixteen ANSI colours clear on the terminal's own background.
@@ -786,8 +840,9 @@ pub struct Fit {
     pub height: &'static str,
 }
 
-/// **Every line that has to fit in its box.** The control's box is a field (`.ui-input`): it is
-/// `size.control` tall and its text is the window's words (`font-size.base`) on the body line
+/// **Every line that has to fit in its box.** The control's box is a field (the field family's
+/// text input, `ui/field/field.css`): it is `size.control` tall and its text is the window's
+/// words (`font-size.base`) on the body line
 /// (`line-height.body`, the `:root`'s). A button is as tall, and its label sits on a line of 1
 /// (`ui/button/button.css`), so it fits wherever a field's text does; a strip's largest words are a tab's
 /// title (`font-size.md`, `.tabs [role="tab"]`) on the body line.
@@ -808,6 +863,17 @@ pub const FITS: &[Fit] = &[
 /// you are on, and the window (#1672).
 const SELECTED_APART_FROM: [&str; 3] = ["surface.hover", "layer.selected", "surface.base"];
 
+/// **How far a side view's card row steps from the side panel it stands on** (#3774): a ground
+/// step, held as the window's hairlines are (`border.subtle` on `surface.base` at 1.2), but over
+/// a whole card's area, which reads at less. Purlis dark draws its cards 1.06 from its panels.
+/// It is reported, never a pair of [`PAIRS`]: no consent floor, tier walk or person's colour acts
+/// on it (#3735), so it never redraws a theme's grounds or refuses a person's colour.
+pub const CARD_STEP: f64 = 1.05;
+
+/// **A card row's edge, where it draws one, on the side panel**: a hairline, held as the
+/// window's are, so a theme can draw its cards on the panel's own ground inside an edge.
+pub const CARD_EDGE: f64 = 1.2;
+
 /// What [`check`] found: nothing, for a theme whose words can be read.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct Report {
@@ -820,6 +886,12 @@ impl Report {
         self.findings.is_empty()
     }
 }
+
+/// **How far a notice card's secondary way steps from the button's own fill toward the words**
+/// (#3478, #4210), at rest and under the pointer, mixed in OKLab: what `notice.css` draws, which
+/// a test holds to the stylesheet.
+pub const NOTICE_WAY_REST: f64 = 0.14;
+pub const NOTICE_WAY_POINTED: f64 = 0.22;
 
 /// One floor a theme does not clear, and where: `tint` is the workspace colour it was tinted by,
 /// `None` for the theme as it is.
@@ -843,6 +915,27 @@ pub enum Finding {
     SelectedNotApart {
         tint: Option<&'static str>,
         other: &'static str,
+    },
+    /// A side view's card row that does not stand apart from the side panel it is drawn on
+    /// (#3774): its fill, `card`, is `ratio` from the panel's, `ground`, under [`CARD_STEP`], and
+    /// it draws no edge that clears [`CARD_EDGE`] there, so its cards read as plain rows.
+    CardNotApart {
+        tint: Option<&'static str>,
+        card: &'static str,
+        ground: &'static str,
+        ratio: f64,
+        floor: f64,
+    },
+    /// A notice card's secondary way that does not stand apart from the card it is on (#4210):
+    /// its fill, at rest or `pointed` at, is `distance` from the `variant` card's `ground` in
+    /// OKLab, under [`super::parts::SEEN`], so the button reads as words with no box.
+    NoticeWayNotApart {
+        tint: Option<&'static str>,
+        variant: &'static str,
+        ground: &'static str,
+        pointed: bool,
+        distance: f64,
+        floor: f64,
     },
     /// A colour for selected text with the selection left to the platform (#2327): the window
     /// draws selected text only on a selection the theme colours too, so this one is never drawn.
@@ -888,7 +981,13 @@ pub enum Finding {
 /// The check, as [`super::check`] describes it.
 pub(super) fn check(theme: &ResolvedTheme) -> Report {
     let mut findings = Vec::new();
+    // The parts are the theme's in every tint: which tokens a card row and its panel draw is
+    // read once, and measured in each.
+    let card = super::parts::card_on_side(theme);
+    let ways = super::parts::notice_ways(theme);
     check_one(theme, None, &mut findings);
+    card_apart(theme, None, card, &mut findings);
+    notice_ways_apart(theme, None, ways, &mut findings);
     let platform = |token: &str| is_platform(token, theme.value(token));
     if platform("selection.background") && !platform("selection.text") {
         findings.push(Finding::SelectionTextAlone);
@@ -933,14 +1032,113 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
     // A theme a workspace's colour does not tint is only ever drawn as it is.
     if !theme.tint.tabs().is_empty() {
         for one in &theme.tint.hues {
-            check_one(
-                &tint::tinted(theme, one.name),
-                Some(one.name),
-                &mut findings,
-            );
+            let tinted = tint::tinted(theme, one.name);
+            check_one(&tinted, Some(one.name), &mut findings);
+            card_apart(&tinted, Some(one.name), card, &mut findings);
+            notice_ways_apart(&tinted, Some(one.name), ways, &mut findings);
         }
     }
     Report { findings }
+}
+
+/// **Whether a notice card's secondary way stands apart from each card ground** (#4210): the
+/// fill a theme's own button rules give it, else `notice.css`'s mix of the button's fill and the
+/// words ([`NOTICE_WAY_REST`], [`NOTICE_WAY_POINTED`]), each at least
+/// [`super::parts::SEEN`] from the ground in OKLab. A see-through fill is laid on the ground; a
+/// ground the window does not draw is skipped.
+fn notice_ways_apart(
+    theme: &ResolvedTheme,
+    tint: Option<&'static str>,
+    ways: super::parts::NoticeWays,
+    findings: &mut Vec<Finding>,
+) {
+    let drawn = |token: &str| {
+        let value = theme.value(token);
+        (token != "transparent" && !value.is_empty() && !is_platform(token, value))
+            .then(|| value.to_owned())
+    };
+    let words = drawn("text.primary").and_then(|one| tint::oklab_of(&solid(&one)));
+    for (variant, ground) in ways.grounds {
+        let Some(under) = drawn(ground) else {
+            continue;
+        };
+        let under = solid(&under);
+        let Some(on) = tint::oklab_of(&under) else {
+            continue;
+        };
+        for (pointed, set, share) in [
+            (false, ways.rest, NOTICE_WAY_REST),
+            (true, ways.pointed, NOTICE_WAY_POINTED),
+        ] {
+            let fill = match set {
+                // A theme's own fill for the button, laid on the ground.
+                Some(token) => {
+                    drawn(token).and_then(|one| tint::oklab_of(&solid(&onto(&one, &under))))
+                }
+                // The card's own mix of the button's fill, laid on the ground, and the words.
+                None => drawn("control.base")
+                    .and_then(|one| tint::oklab_of(&solid(&onto(&one, &under))))
+                    .zip(words)
+                    .map(|(base, words)| {
+                        [0, 1, 2].map(|at| base[at] * (1.0 - share) + words[at] * share)
+                    }),
+            };
+            let Some(fill) = fill else {
+                continue;
+            };
+            let distance = tint::distance(fill, on);
+            if distance < super::parts::SEEN {
+                findings.push(Finding::NoticeWayNotApart {
+                    tint,
+                    variant,
+                    ground,
+                    pointed,
+                    distance: (distance * 1000.0).round() / 1000.0,
+                    floor: super::parts::SEEN,
+                });
+            }
+        }
+    }
+}
+
+/// **Whether a side view's card row stands apart from its panel** (#3774): its fill a step from
+/// the panel's ([`CARD_STEP`]), or an edge a hairline from it ([`CARD_EDGE`]). A see-through
+/// panel is laid on the window's frame, a see-through card on the panel and a see-through edge on
+/// the card. Held where the theme's parts, its own or inherited, choose a card row's or a side
+/// panel's look ([`super::parts::card_on_side`]).
+fn card_apart(
+    theme: &ResolvedTheme,
+    tint: Option<&'static str>,
+    on: Option<super::parts::CardOnSide>,
+    findings: &mut Vec<Finding>,
+) {
+    let Some(on) = on else {
+        return;
+    };
+    let laid = |token: &str, under: &str| {
+        let value = theme.value(token);
+        if token == "transparent" || value.is_empty() || is_platform(token, value) {
+            under.to_owned()
+        } else {
+            solid(&onto(value, under))
+        }
+    };
+    let panel = laid(on.ground, &solid(theme.value("surface.deep")));
+    let card = laid(on.card, &panel);
+    let step = two_places(contrast(&card, &panel));
+    // An edge is drawn over the card's own fill, and told from the panel around it.
+    let edged = on
+        .edge
+        .is_some_and(|edge| two_places(contrast(&laid(edge, &card), &panel)) >= CARD_EDGE);
+    if step < CARD_STEP && !edged {
+        findings.push(Finding::CardNotApart {
+            tint,
+            card: on.card,
+            ground: on.ground,
+            ratio: step,
+            floor: CARD_STEP,
+        });
+    }
 }
 
 fn check_one(theme: &ResolvedTheme, tint: Option<&'static str>, findings: &mut Vec<Finding>) {

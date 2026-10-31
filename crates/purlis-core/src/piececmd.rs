@@ -107,12 +107,7 @@ pub fn add(
     let base = match base {
         Some(HEAD) => None,
         Some(base) => Some(base.to_owned()),
-        // Asked of the remote, never read from the clone; a clone with no default of a
-        // branch it has, or no answer, is cut from its HEAD.
-        None => worktree::clone_dir(plane, ws, repo).ok().and_then(|clone| {
-            worktree::fresh::remote_default(plane, &clone, "origin", hosts)
-                .filter(|branch| git_has(&clone, &worktree::name::as_ref(branch)))
-        }),
+        None => default_base(plane, ws, repo, hosts),
     };
     let cut = match base.as_deref() {
         Some(base) => worktree::add_based(plane, ws, repo, piece, branch, base, vet),
@@ -152,10 +147,16 @@ pub fn add(
     for note in &fresh.notes {
         say(Say::Warn(note.clone().into()));
     }
-    let shown_base = match (&added.base, &fresh.moved_to) {
-        (worktree::Base::Branch(b), Some(up)) => format!("{b} (brought up to {up})"),
-        (worktree::Base::Branch(b), None) => b.clone(),
-        (worktree::Base::Detached(sha), _) => format!("{sha} (detached)"),
+    let instead = fresh
+        .instead
+        .as_deref()
+        .and_then(|at| at.strip_prefix("refs/remotes/"));
+    let shown_base = match (&added.base, &fresh.moved_to, instead) {
+        (worktree::Base::Branch(b), Some(up), _) => format!("{b} (brought up to {up})"),
+        // Cut from the remote-tracking branch in its place (#3836).
+        (worktree::Base::Branch(b), None, Some(up)) => format!("{b} (as {up} has it)"),
+        (worktree::Base::Branch(b), None, None) => b.clone(),
+        (worktree::Base::Detached(sha), _, _) => format!("{sha} (detached)"),
     };
     say(Say::Info(format!("  base:   {shown_base}").into()));
     say(Say::Info(format!("  branch: {}", added.branch).into()));
@@ -172,6 +173,24 @@ pub fn add(
             .into(),
     ));
     0
+}
+
+/// **The base a piece of `repo` is cut from where none is named**: the branch the remote names
+/// its default, where the clone has it. Asked of the remote over `hosts` (the asking chat's
+/// egress, or `None` for no limit), never read from the clone; a clone with no default of a
+/// branch it has, or no answer, gives `None`, and the piece is cut from the clone's HEAD.
+///
+/// The one choice `purlis worktree add` and a dispatch's worktree from a workspace's folder
+/// (#3903, [`crate::dispatchplace::cut`]) both make, so the two cannot drift.
+pub fn default_base(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    hosts: Option<&[String]>,
+) -> Option<String> {
+    let clone = worktree::clone_dir(plane, ws, repo).ok()?;
+    worktree::fresh::remote_default(plane, &clone, "origin", hosts)
+        .filter(|branch| git_has(&clone, &worktree::name::as_ref(branch)))
 }
 
 /// `charter worktree done` / `abandon <reason>`: declare the piece `cwd` stands in.
@@ -411,7 +430,25 @@ pub fn remove(
         say(Say::Fail(refused.into()));
         return 1;
     }
-    match worktree::remove(plane, ws, repo, piece, force, delete_branch) {
+    // A branch landed by its files, not its commits (a squash merge, #3879): nothing the
+    // folder holds is lost with it, so it goes without `--force`, and the branch stays, as the
+    // one place its commits are. Uncommitted work still refuses it.
+    let carried = !force && carried_branch(plane, ws, repo, piece);
+    let removed = if carried {
+        worktree::remove_keeping_branch(plane, ws, repo, piece)
+    } else {
+        worktree::remove(plane, ws, repo, piece, force, delete_branch)
+    };
+    if carried && removed.is_ok() {
+        say(Say::Info(
+            format!(
+                "The branch of {repo} · {piece} landed by its files, as a squash merge leaves \
+                 it, so its folder goes without --force and the branch is kept."
+            )
+            .into(),
+        ));
+    }
+    match removed {
         Ok(removed) => {
             if removed.was_stale {
                 say(Say::Done(
@@ -424,7 +461,11 @@ pub fn remove(
             } else {
                 say(Say::Done(format!("Removed {repo} · {piece}").into()));
             }
-            if delete_branch {
+            if delete_branch && carried {
+                say(Say::Warn(
+                    "Its branch was kept: git does not find a squashed branch merged.".into(),
+                ));
+            } else if delete_branch {
                 match &removed.branch {
                     Some(b) if removed.branch_deleted => {
                         say(Say::Done(format!("Deleted branch {b}").into()));
@@ -452,6 +493,66 @@ pub fn remove(
             1
         }
     }
+}
+
+/// **What a chat's removal of `piece` would delete that git's own guard does not count**
+/// (#3879, on review): the paths git ignores there, a `.env` or a results folder, less
+/// purlis's own layer, as [`crate::dispatchplace::tidy`] refuses them; `None` where nothing
+/// is. A folder whose ignored files git would not list is refused too. For a chat's removal
+/// only: the person's own terminal removes as git does.
+pub fn ignored_would_go(plane: &Path, ws: &str, repo: &str, piece: &str) -> Option<String> {
+    let folder = worktree::path_for(plane, ws, repo, piece).ok()?;
+    let risk = match worktree::standing::at_risk(plane, ws, repo, piece) {
+        // Not there, or not one purlis can read: the removal says why itself.
+        Ok(None) | Err(_) => return None,
+        Ok(Some(risk)) => risk,
+    };
+    let Some(ignored) = risk.ignored else {
+        return Some(format!(
+            "git would not say which files it ignores in {repo} · {piece}, and a removal \
+             deletes them, so nothing was removed. Ask the person to remove it from the window"
+        ));
+    };
+    let hidden = crate::guest::hidden_by_purlis(&folder);
+    let kept: Vec<String> = ignored
+        .into_iter()
+        .filter(|path| !crate::guest::is_purlis_own(&hidden, path))
+        .collect();
+    if kept.is_empty() {
+        return None;
+    }
+    let mut named: Vec<String> = kept
+        .iter()
+        .take(5)
+        .map(|path| format!("`{path}`"))
+        .collect();
+    if kept.len() > 5 {
+        named.push(format!("and {} more", kept.len() - 5));
+    }
+    Some(format!(
+        "{repo} · {piece} holds files git ignores, which removing it would delete with it: {}. \
+         Nothing was removed. Move out what you need and delete the rest, or ask the person to \
+         remove it from the window",
+        named.join(", ")
+    ))
+}
+
+/// Whether the branch `piece` is on landed in the branch it was cut from by its files and not
+/// its commits ([`worktree::standing::Landed::Carried`]): a squash merge, there or on its
+/// remote branch.
+fn carried_branch(plane: &Path, ws: &str, repo: &str, piece: &str) -> bool {
+    let Some(branch) = worktree::list(plane, ws, repo).ok().and_then(|found| {
+        found
+            .into_iter()
+            .find(|p| p.piece == piece && p.prunable.is_none())
+            .and_then(|p| p.branch)
+    }) else {
+        return false;
+    };
+    matches!(
+        worktree::standing::landed(plane, ws, repo, piece, &branch),
+        worktree::standing::Landed::Carried { .. }
+    )
 }
 
 /// Rows of five cells, the first four sized to their widest value in terminal cells, the last

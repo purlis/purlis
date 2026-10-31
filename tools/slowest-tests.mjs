@@ -15,6 +15,10 @@
 // And each failed test as an error, with where it panicked and what it said: a red `rust` job is
 // read through the checks API too, never through its log.
 //
+// And each flaky test as a warning: the `ci` profile retries a failed test once (`.config/
+// nextest.toml`), and one that passed on its retry is green in the job but named here, with what
+// its failed attempt said, so the retry saves a rerun of the whole run and never hides the flake.
+//
 // `node tools/slowest-tests.mjs --cargo-test <log>` writes the same errors from `cargo test`'s own
 // output, kept in `<log>`: the `mutants` workflow's baseline runs `cargo test`, as cargo-mutants
 // does for each mutant, and nextest's report is not there to read (#1892). No notices then:
@@ -71,6 +75,40 @@ export function readFailures(xml) {
     failed.push({ binary: attr("classname"), name: attr("name"), said });
   }
   return failed;
+}
+
+/**
+ * Every test that failed and then passed on a retry: `{ binary, name, retries, said }`, `retries`
+ * being how many attempts failed and `said` the first failed attempt's lines from `panicked at` on.
+ * nextest writes each failed attempt of such a test as a `<flakyFailure>` (or `<flakyError>`).
+ */
+export function readFlaky(xml) {
+  const flaky = [];
+  for (const [, attrs, body = ""] of xml.matchAll(
+    /<testcase\b([^>]*?)(?:\/>|>([\s\S]*?)<\/testcase>)/g,
+  )) {
+    const attempts = [...body.matchAll(/<flaky(?:Failure|Error)\b[^>]*>([\s\S]*?)<\/flaky(?:Failure|Error)>/g)];
+    if (attempts.length === 0 || /<(failure|error)\b/.test(body)) continue;
+    const attr = (key) => {
+      const match = new RegExp(`\\b${key}="([^"]*)"`).exec(attrs);
+      return match ? unescape(match[1]) : "";
+    };
+    // The attempt's own description, before the <system-out> and <system-err> nested after it.
+    const description = attempts[0][1].split("<")[0];
+    const lines = unescape(description).split("\n").map((line) => line.trimEnd());
+    const at = lines.findIndex((line) => line.includes("panicked at"));
+    const said = lines.slice(Math.max(at, 0), Math.max(at, 0) + FAILURE_LINES).filter((line) => line.trim() !== "");
+    flaky.push({ binary: attr("classname"), name: attr("name"), retries: attempts.length, said: said.length > 0 ? said : ["failed"] });
+  }
+  return flaky;
+}
+
+/** One `::warning` line per flaky test. */
+export function flakyAnnotations(flaky) {
+  return flaky.map(
+    (one) =>
+      `::warning title=${escapeProperty(`Flaky (passed on retry ${one.retries}): ${one.binary} ${one.name}`)}::${escapeData(one.said.join("\n"))}`,
+  );
 }
 
 /** One `::error` line per failed test. */
@@ -225,7 +263,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1] && pro
   const file = process.argv[2] ?? "target/nextest/ci/junit.xml";
   const xml = existsSync(file) ? readFileSync(file, "utf8") : "";
   const cases = readCases(xml);
-  for (const line of [...failureAnnotations(readFailures(xml)), ...annotations(cases)]) {
+  for (const line of [
+    ...failureAnnotations(readFailures(xml)),
+    ...flakyAnnotations(readFlaky(xml)),
+    ...annotations(cases),
+  ]) {
     console.log(line);
   }
 }

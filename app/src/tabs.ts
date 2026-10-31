@@ -90,6 +90,16 @@ export const SHORTCUTS_VIEW: ViewRef = { from: null, view: "shortcuts", key: "" 
 export const SHORTCUTS_TITLE = "Keyboard shortcuts";
 
 /**
+ * **Devices** (#2052, spec #2041): this machine and every runner it keeps, with what runs on
+ * each, and each pool's use (`DevicesView.tsx`). One per project, about nothing in it: what it
+ * shows is the machine's.
+ */
+export const DEVICES_VIEW: ViewRef = { from: null, view: "devices", key: "" };
+
+/** What the Devices tab is called. */
+export const DEVICES_TITLE = "Devices";
+
+/**
  * **Settings at a workspace's level** (SE-20, #1170; first a page of its own, charter-app#280):
  * the Settings tab keyed by the level and its target — the workspace — so there is one per
  * workspace, deduplicated by the same `viewKey` and filed on that workspace's strip. It keeps the
@@ -1709,6 +1719,37 @@ export function openViewBeside(
     };
   }
   return tabs;
+}
+
+/**
+ * **Opens `view` beside the pane showing `beside`, in that pane's tab** (#2028): the pane is
+ * split side by side, the view on the right, and the tab comes forward with the keyboard in the
+ * new pane: the person asked for it there. A view some tab shows already is brought forward
+ * instead, and where no tab shows `beside` the view opens in a tab of its own named `name`.
+ */
+export function openViewBesideView(
+  tabs: Tabs,
+  beside: ViewRef,
+  view: ViewRef,
+  name: string,
+  workspace: string,
+): Tabs {
+  if (findView(tabs, view)) return openView(tabs, view, name, workspace);
+  const at = findView(tabs, beside);
+  if (at === undefined) return openView(tabs, view, name, workspace);
+  const tab = tabs.byId[at.tab];
+  const pane = tabs.named.panes + 1;
+  const layout = replace(tab.layout, at.pane, (found) => ({
+    kind: "split",
+    direction: "row",
+    children: [found, { kind: "pane", pane, content: { kind: "view", view, workspace } }],
+  }));
+  return {
+    ...tabs,
+    byId: { ...tabs.byId, [tab.id]: { ...tab, layout, focused: pane } },
+    named: { ...tabs.named, panes: pane },
+    inFront: tab.id,
+  };
 }
 
 /**

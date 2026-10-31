@@ -167,6 +167,17 @@ fn says_nothing(_: &Hook) -> Answer {
 pub const BLOCKED: &str = "posttooluse-blocked";
 pub const BLOCKED_ON_FAILURE: &str = "posttoolusefailure-blocked";
 
+/// What a block word found in a call's result, as the chat is told of it.
+#[derive(Debug, Default)]
+pub struct Blocked {
+    /// The blocks the app took, each a Notice for the person.
+    pub taken: Vec<purlis_core::sandboxblock::Block>,
+    /// Whether a block was the chat's own to retry, which raises no Notice, and the chat is
+    /// told the purlis command that does it ([`purlis_core::sandboxblock::its_own_to_retry`],
+    /// #3861).
+    pub retry_with_purlis: bool,
+}
+
 /// The line block word `word` prints for the blocks the app took, `taken` (#1631): the chat is
 /// told, in the turn it was blocked, that the person has a Notice and it should say what was
 /// blocked and wait ([`purlis_core::sandboxblock::told_the_chat`]). None for another word, and
@@ -176,9 +187,13 @@ pub const BLOCKED_ON_FAILURE: &str = "posttoolusefailure-blocked";
 ///
 /// And, in the same line since a hook prints one answer, what a git command the sandbox
 /// stopped partway left behind and how to finish it or go back ([`stopped_partway`], qw349).
+///
+/// And first, a block that was the chat's own to retry (`blocked.retry_with_purlis`, #3861):
+/// told the purlis command that does it ([`purlis_core::sandboxblock::told_the_chat_to_retry`]).
+/// Never of words only read back, where no command of the call was refused.
 pub fn told_after(
     word: &str,
-    taken: &[purlis_core::sandboxblock::Block],
+    blocked: &Blocked,
     read_back: bool,
     stopped: Option<String>,
 ) -> Option<String> {
@@ -187,12 +202,20 @@ pub fn told_after(
         BLOCKED_ON_FAILURE => "PostToolUseFailure",
         _ => return None,
     };
-    let told = if read_back {
-        purlis_core::sandboxblock::told_the_chat_of_a_read(taken)
+    let (own, told) = if read_back {
+        (
+            None,
+            purlis_core::sandboxblock::told_the_chat_of_a_read(&blocked.taken),
+        )
     } else {
-        purlis_core::sandboxblock::told_the_chat(taken)
+        (
+            blocked
+                .retry_with_purlis
+                .then(purlis_core::sandboxblock::told_the_chat_to_retry),
+            purlis_core::sandboxblock::told_the_chat(&blocked.taken),
+        )
     };
-    let said: Vec<String> = told.into_iter().chain(stopped).collect();
+    let said: Vec<String> = own.into_iter().chain(told).chain(stopped).collect();
     if said.is_empty() {
         return None;
     }
@@ -246,13 +269,12 @@ pub fn blocks(
     payload: &serde_json::Value,
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<(purlis_core::sandboxblock::Block, Option<String>)> {
-    use purlis_core::sandboxblock::{CHAT_DIR_ENV, Place, background, detect_with_record};
+    use purlis_core::sandboxblock::{Place, background, detect_with_record};
     if !purlis_core::sandbox::chat_is_sandboxed_in(env) {
         return Vec::new();
     }
     let absolute = |path: Option<String>| path.map(PathBuf::from).filter(|p| p.is_absolute());
-    let Some(chat) = absolute(env(CHAT_DIR_ENV)).or_else(|| absolute(env("CLAUDE_PROJECT_DIR")))
-    else {
+    let Some(chat) = chat_dir(env) else {
         return Vec::new();
     };
     let here = Where::here();
@@ -281,6 +303,15 @@ pub fn blocks(
         harness.as_deref(),
         purlis_core::sandbox::Os::this(),
     )
+}
+
+/// The folder the app started this chat in ([`purlis_core::sandboxblock::CHAT_DIR_ENV`], else
+/// Claude Code's `CLAUDE_PROJECT_DIR`), never guessed from a working directory: what a block is
+/// sorted against, and whose branch folder is the chat's own (#3861).
+pub fn chat_dir(env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
+    let absolute = |path: Option<String>| path.map(PathBuf::from).filter(|p| p.is_absolute());
+    absolute(env(purlis_core::sandboxblock::CHAT_DIR_ENV))
+        .or_else(|| absolute(env("CLAUDE_PROJECT_DIR")))
 }
 
 /// The decision an answer gave: a denial is one; a line said is whatever permission it names,
@@ -388,7 +419,7 @@ pub fn sessionstart(payload: &str, now: Option<&str>) {
             .and_then(|v| v.as_str())
             .is_none_or(|source| source == "startup");
         let kept = if starting {
-            purlis_core::handback::take(hook.root, purlis_core::handback::For::Place(&place))
+            crate::dispatch::handbacks(hook.root, purlis_core::handback::For::Place(&place))
         } else {
             Vec::new()
         };
@@ -437,11 +468,11 @@ pub fn userpromptsubmit(payload: &str, now: Option<&str>) {
         let working = crate::whereworking::update(hook.now);
         if let Some(chat) = chat {
             let reports =
-                purlis_core::handback::take(hook.root, purlis_core::handback::For::Chat(chat));
+                crate::dispatch::handbacks(hook.root, purlis_core::handback::For::Chat(chat));
             parts.extend(purlis_core::handback::context(&reports, false));
             // And what the chat that dispatched this one, or a task it dispatched, sent it
             // (#1442): quoted as data, as a report is.
-            let messages = purlis_core::dispatchtalk::take(hook.root, chat);
+            let messages = crate::dispatch::messages(hook.root, chat);
             parts.extend(purlis_core::dispatchtalk::context(&messages));
         }
         parts.extend(person.as_ref().map(|person| person.told.clone()));

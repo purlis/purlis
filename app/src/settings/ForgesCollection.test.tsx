@@ -152,8 +152,6 @@ function core({
           return { shared: fileOf(blocks), local: LOCAL };
         case "project_extensions":
           return { extensions: [], local_left_out: null };
-        case "project_harness_plugins":
-          return [];
         case "project_saving_in_force":
           return SAVING;
         case "project_theme":

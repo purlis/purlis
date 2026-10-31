@@ -54,6 +54,7 @@ pub(super) const FIELD: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 pub(super) const TEXT_INPUT: Family = Family {
@@ -93,7 +94,7 @@ pub(super) const TEXT_INPUT: Family = Family {
     sized_apart: &[
         (
             "[data-scope=\"text-input\"][data-part=\"root\"][data-size=\"sm\"]",
-            "max(var(--size-chrome), var(--space-7))",
+            "max(24px, var(--size-chrome), var(--space-7))",
         ),
         (
             "[data-scope=\"text-input\"][data-part=\"root\"][data-size=\"lg\"]",
@@ -105,12 +106,19 @@ pub(super) const TEXT_INPUT: Family = Family {
     line_height: 1.0,
     border_width: 1.0,
     defaults: box_look,
-    states: &[State::Hover, State::Focused, State::Disabled],
+    // Under the pointer, holding the caret, unavailable, and refused (#3323).
+    states: &[
+        State::Hover,
+        State::Focused,
+        State::Disabled,
+        State::Invalid,
+    ],
     focused: "[data-focus-within]",
     words: &[],
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 pub(super) const TEXTAREA: Family = Family {
@@ -143,10 +151,17 @@ pub(super) const TEXTAREA: Family = Family {
     line_height: 1.0,
     border_width: 1.0,
     defaults: box_look,
-    states: &[State::Hover, State::Focused, State::Disabled],
+    // Under the pointer, holding the caret, unavailable, and refused (#3323).
+    states: &[
+        State::Hover,
+        State::Focused,
+        State::Disabled,
+        State::Invalid,
+    ],
     focused: "[data-focus-within]",
     words: &[],
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };

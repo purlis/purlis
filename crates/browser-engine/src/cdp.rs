@@ -30,6 +30,20 @@
 //! call fails at once, as one not answered in time. A call whose limit passed before its turn
 //! is not written at all: what its caller was told failed never reaches the engine.
 //!
+//! **A call on a session that detaches ends as it detaches** (#3081). The engine does not
+//! always answer a call made on a frame's session that goes away while the call waits (a frame
+//! that loads another document every 100 ms detaches its session each time): as the engine
+//! says the session detached, every call still waiting on it fails at once, refused as the
+//! engine refuses a call to a session it does not have, and never waits out its limit.
+//!
+//! **A tapped session is relayed, whole and in order** (#2028): an Inspect's DevTools speak to
+//! the inspected page over this one pipe. [`Connection::tap`] hands every message the engine
+//! writes on a session, and on each session attached under it, to the tap rather than the
+//! driver's events, in the order the engine wrote them, console events included; a call sent on
+//! the tap ([`Connection::send_tapped`]) is answered to it under the tap's own id. A message of a
+//! tap past its bound is dropped for the tap, never closing the connection, and a tap that takes
+//! no more ends.
+//!
 //! **Why it closed is kept** ([`Connection::closed`], [`Closed`]): the end of the pipe, a read
 //! that failed, or the message that ended it, named by its method and never by what it held.
 
@@ -49,6 +63,22 @@ pub const MAX_MESSAGE_BYTES: usize = 64 << 20;
 
 /// How much of a message past its bound is kept, to tell which call it answers.
 const HEAD_BYTES: usize = 64;
+
+/// How much of the end of a message past its bound is kept, to tell which session an event is
+/// on (#2028).
+const TAIL_BYTES: usize = 256;
+
+/// The session a message names at its end (`,"sessionId":"S"}`), as the engine writes an event.
+fn session_at_end(tail: &[u8]) -> Option<&str> {
+    const KEY: &[u8] = br#""sessionId":""#;
+    let at = tail.windows(KEY.len()).rposition(|w| w == KEY)? + KEY.len();
+    let rest = &tail[at..];
+    let end = rest.iter().position(|&b| b == b'"')?;
+    if rest.get(end + 1..) != Some(b"}".as_slice()) {
+        return None;
+    }
+    std::str::from_utf8(&rest[..end]).ok()
+}
 
 /// How many events wait for the broker before more are dropped (and counted).
 pub const MAX_QUEUED_EVENTS: usize = 1024;
@@ -150,13 +180,64 @@ impl std::fmt::Display for Closed {
 
 type Answer = Result<Value, CallError>;
 
-/// A call waiting for its answer, the most bytes the answer may take, and its method, to name an
-/// answer that does not read.
+/// **One message of a tapped session** (#2028), as the engine wrote it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Tapped {
+    /// An event of the tapped session or of one attached under it.
+    Event(Event),
+    /// The answer to a call sent on the tap: its result, or the error object as the engine
+    /// wrote it.
+    Answer {
+        /// The id the tap gave the call ([`Connection::send_tapped`]).
+        id: u64,
+        outcome: Result<Value, Value>,
+    },
+    /// A message of the tapped session went past its bound: it was read past, and the tap
+    /// ends, never the connection.
+    TooLarge,
+}
+
+/// Where a tap's messages go: false when it takes no more, which ends the tap.
+pub type TapSink = Arc<dyn Fn(Tapped) -> bool + Send + Sync>;
+
+/// A tap of one session and those attached under it ([`Connection::tap`]).
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct Tap(u64);
+
+impl Tap {
+    /// A stand-in engine's tap, numbered `id`.
+    #[cfg(test)]
+    pub(crate) fn for_a_test(id: u64) -> Tap {
+        Tap(id)
+    }
+
+    /// Its number.
+    #[cfg(test)]
+    pub(crate) fn number(&self) -> u64 {
+        self.0
+    }
+}
+
+/// One tap, as the reader routes to it.
+struct Tapping {
+    id: u64,
+    sessions: std::collections::HashSet<String>,
+    sink: TapSink,
+    /// The connection's id of each call sent on the tap, and the tap's own id for it.
+    calls: HashMap<u64, u64>,
+}
+
+/// A call waiting for its answer, the most bytes the answer may take, its method, to name an
+/// answer that does not read, and the session it was made on.
 struct Waiting {
     answer: SyncSender<Answer>,
     most: usize,
     method: String,
+    session: Option<String>,
 }
+
+/// The code the engine refuses a call to a session it does not have with.
+const NO_SUCH_SESSION: i64 = -32001;
 
 struct Shared {
     /// `None` once the engine's side has ended: every later call is refused at once.
@@ -165,12 +246,16 @@ struct Shared {
     dropped: AtomicU64,
     /// Why the connection closed, once it has.
     closed: Mutex<Option<Closed>>,
+    /// The taps (#2028).
+    taps: Mutex<Vec<Tapping>>,
 }
 
 /// A call's message on its way to the engine's pipe, by the call's id.
 struct Outgoing {
     id: u64,
     bytes: Vec<u8>,
+    /// Sent on a tap: written whatever waits, its answer the tap's.
+    tapped: bool,
 }
 
 /// One DevTools connection over the engine's pipe.
@@ -194,6 +279,7 @@ impl Connection {
             pending: Mutex::new(Some(HashMap::new())),
             dropped: AtomicU64::new(0),
             closed: Mutex::new(None),
+            taps: Mutex::new(Vec::new()),
         });
         let (events, receiver) = mpsc::sync_channel(MAX_QUEUED_EVENTS);
         let reading = shared.clone();
@@ -257,6 +343,7 @@ impl Connection {
                     answer,
                     most: most.min(MAX_MESSAGE_BYTES),
                     method: method.to_owned(),
+                    session: session.map(str::to_owned),
                 },
             );
         }
@@ -268,7 +355,11 @@ impl Connection {
         bytes.push(0);
         // Written by the writer; this call waits only for its answer, within its limit, however
         // long the writing takes (#2123).
-        match self.to_engine.try_send(Outgoing { id, bytes }) {
+        match self.to_engine.try_send(Outgoing {
+            id,
+            bytes,
+            tapped: false,
+        }) {
             Ok(()) => {}
             Err(mpsc::TrySendError::Full(_)) => {
                 self.forget(id);
@@ -299,6 +390,76 @@ impl Connection {
         self.shared.dropped.load(Ordering::Relaxed)
     }
 
+    /// **Taps `session`** (#2028): every message the engine writes on it, and on each session
+    /// attached under it, goes to `sink` from now, in order, and none to the events receiver,
+    /// until [`Connection::untap`], the engine says the session detached, or `sink` takes no
+    /// more.
+    pub fn tap(&self, session: &str, sink: TapSink) -> Tap {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        lock(&self.shared.taps).push(Tapping {
+            id,
+            sessions: std::iter::once(session.to_owned()).collect(),
+            sink,
+            calls: HashMap::new(),
+        });
+        Tap(id)
+    }
+
+    /// Ends `tap`: its sessions' messages are the events receiver's again.
+    pub fn untap(&self, tap: &Tap) {
+        lock(&self.shared.taps).retain(|one| one.id != tap.0);
+    }
+
+    /// Writes a call of `method` on `session`, one of `tap`'s, without waiting: its answer goes
+    /// to the tap under `id`. Refused where the session is not the tap's, and where the call
+    /// cannot be queued to be written.
+    pub fn send_tapped(
+        &self,
+        tap: &Tap,
+        id: u64,
+        method: &str,
+        params: Value,
+        session: &str,
+    ) -> Result<(), CallError> {
+        let own = self.next_id.fetch_add(1, Ordering::Relaxed);
+        {
+            let mut taps = lock(&self.shared.taps);
+            let Some(tapping) = taps
+                .iter_mut()
+                .find(|one| one.id == tap.0 && one.sessions.contains(session))
+            else {
+                return Err(CallError::Engine {
+                    code: NO_SUCH_SESSION,
+                    message: "the session is not this tap's".to_owned(),
+                });
+            };
+            tapping.calls.insert(own, id);
+        }
+        let message =
+            json!({ "id": own, "method": method, "params": params, "sessionId": session });
+        let mut bytes = serde_json::to_vec(&message).expect("a JSON value serialises");
+        bytes.push(0);
+        match self.to_engine.try_send(Outgoing {
+            id: own,
+            bytes,
+            tapped: true,
+        }) {
+            Ok(()) => Ok(()),
+            Err(why) => {
+                if let Some(tapping) = lock(&self.shared.taps)
+                    .iter_mut()
+                    .find(|one| one.id == tap.0)
+                {
+                    tapping.calls.remove(&own);
+                }
+                Err(match why {
+                    mpsc::TrySendError::Full(_) => CallError::TimedOut,
+                    mpsc::TrySendError::Disconnected(_) => CallError::Ended,
+                })
+            }
+        }
+    }
+
     fn forget(&self, id: u64) {
         if let Some(pending) = lock(&self.shared.pending).as_mut() {
             pending.remove(&id);
@@ -314,9 +475,10 @@ fn write_until_dropped(mut to_engine: impl Write, calls: &Receiver<Outgoing>, sh
     for call in calls {
         // A call that already failed (its limit passed while it waited) is never written: what
         // its caller was told failed never reaches the engine (#2123).
-        let waiting = lock(&shared.pending)
-            .as_ref()
-            .is_some_and(|pending| pending.contains_key(&call.id));
+        let waiting = call.tapped
+            || lock(&shared.pending)
+                .as_ref()
+                .is_some_and(|pending| pending.contains_key(&call.id));
         if !waiting {
             continue;
         }
@@ -404,7 +566,7 @@ fn droppable(method: &str) -> bool {
 
 /// `method` where it is a DevTools method's name (`Domain.name`, letters and digits): nothing a
 /// page wrote is ever repeated in the host's log.
-fn method_name(method: &str) -> Option<String> {
+pub(crate) fn method_name(method: &str) -> Option<String> {
     let plain = method.len() <= 64
         && method.split_once('.').is_some_and(|(domain, name)| {
             !domain.is_empty()
@@ -418,7 +580,28 @@ fn method_name(method: &str) -> Option<String> {
 /// A message past its bound, which began `head`: the call it answers fails, alone, and an
 /// answer to no call waiting, or an event that may be dropped, is dropped. Any other event
 /// ends the connection, and why is said: false.
-fn too_large(shared: &Shared, head: &[u8]) -> bool {
+fn too_large(shared: &Shared, head: &[u8], tail: &[u8]) -> bool {
+    // An event names its session at its end: one of a tap's ends the tap alone (#2028).
+    if id_of(head).is_none()
+        && let Some(session) = session_at_end(tail)
+    {
+        let mut taps = lock(&shared.taps);
+        if let Some(at) = taps.iter().position(|one| one.sessions.contains(session)) {
+            let gone = taps.remove(at);
+            drop(taps);
+            (gone.sink)(Tapped::TooLarge);
+            return true;
+        }
+    }
+    if let Some(id) = id_of(head)
+        && tapped_answer(
+            shared,
+            id,
+            Err(json!({ "code": -32000, "message": "the answer was too large to relay" })),
+        )
+    {
+        return true;
+    }
     if let Some(id) = id_of(head) {
         let waiting = lock(&shared.pending).as_mut().and_then(|p| p.remove(&id));
         if let Some(waiting) = waiting {
@@ -559,11 +742,12 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender
         };
         let message = match frame {
             Frame::Whole(message) => message,
-            Frame::Over { head } if too_large(shared, &head) => continue,
+            Frame::Over { head, tail } if too_large(shared, &head, &tail) => continue,
             Frame::Over { .. } => break,
         };
         if message.len() > most_for(shared, &message) {
-            if too_large(shared, &message[..message.len().min(HEAD_BYTES)]) {
+            let tail = &message[message.len().saturating_sub(TAIL_BYTES)..];
+            if too_large(shared, &message[..message.len().min(HEAD_BYTES)], tail) {
                 continue;
             }
             break;
@@ -579,8 +763,13 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender
         };
         match read.get("id").and_then(Value::as_u64) {
             Some(id) => {
-                let answer = match read.remove("error") {
-                    Some(error) => Err(CallError::Engine {
+                let outcome = match read.remove("error") {
+                    Some(error) => Err(error),
+                    None => Ok(read.remove("result").unwrap_or(Value::Null)),
+                };
+                let waiting = lock(&shared.pending).as_mut().and_then(|p| p.remove(&id));
+                if let Some(waiting) = waiting {
+                    let answer = outcome.map_err(|error| CallError::Engine {
                         code: error
                             .get("code")
                             .and_then(Value::as_i64)
@@ -590,12 +779,10 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender
                             .and_then(Value::as_str)
                             .unwrap_or_default()
                             .to_owned(),
-                    }),
-                    None => Ok(read.remove("result").unwrap_or(Value::Null)),
-                };
-                let waiting = lock(&shared.pending).as_mut().and_then(|p| p.remove(&id));
-                if let Some(waiting) = waiting {
+                    });
                     let _ = waiting.answer.try_send(answer);
+                } else {
+                    tapped_answer(shared, id, outcome);
                 }
             }
             None => {
@@ -603,11 +790,6 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender
                     close(shared, Closed::NotDevTools { method: None });
                     break;
                 };
-                // What a page writes to its console nobody here reads: never queued, so it
-                // never takes the place of an event the driver needs (#2138).
-                if UNREAD_EVENTS.contains(&method.as_str()) {
-                    continue;
-                }
                 let event = Event {
                     method,
                     params: read.remove("params").unwrap_or(Value::Null),
@@ -615,6 +797,20 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender
                         .remove("sessionId")
                         .and_then(|s| s.as_str().map(str::to_owned)),
                 };
+                if event.method == "Target.detachedFromTarget"
+                    && let Some(gone) = event.params["sessionId"].as_str()
+                {
+                    detached(shared, gone);
+                }
+                // A tapped session's messages are the tap's, its console's included (#2028).
+                let Some(event) = tapped_event(shared, event) else {
+                    continue;
+                };
+                // What a page writes to its console nobody here reads: never queued, so it
+                // never takes the place of an event the driver needs (#2138).
+                if UNREAD_EVENTS.contains(&event.method.as_str()) {
+                    continue;
+                }
                 match events.try_send(event) {
                     Ok(()) | Err(mpsc::TrySendError::Disconnected(_)) => {}
                     Err(mpsc::TrySendError::Full(_)) => {
@@ -628,12 +824,87 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender
     lock(&shared.pending).take();
 }
 
+/// Hands the answer to the connection's call `id` to the tap that sent it: false where no tap
+/// did.
+fn tapped_answer(shared: &Shared, id: u64, outcome: Result<Value, Value>) -> bool {
+    let mut taps = lock(&shared.taps);
+    let Some(at) = taps.iter().position(|one| one.calls.contains_key(&id)) else {
+        return false;
+    };
+    let own = taps[at].calls.remove(&id).unwrap_or_default();
+    if !(taps[at].sink)(Tapped::Answer { id: own, outcome }) {
+        taps.remove(at);
+    }
+    true
+}
+
+/// Hands `event` to the tap whose session it is on, or whose session it says detached, keeping
+/// the tap's sessions as the engine attaches and detaches them under it: the event back where no
+/// tap takes it.
+fn tapped_event(shared: &Shared, event: Event) -> Option<Event> {
+    let mut taps = lock(&shared.taps);
+    let gone = (event.method == "Target.detachedFromTarget")
+        .then(|| event.params["sessionId"].as_str().map(str::to_owned))
+        .flatten();
+    let at = taps.iter().position(|one| {
+        event
+            .session_id
+            .as_ref()
+            .is_some_and(|session| one.sessions.contains(session))
+            || gone
+                .as_ref()
+                .is_some_and(|gone| one.sessions.contains(gone))
+    });
+    let Some(at) = at else {
+        return Some(event);
+    };
+    if event.method == "Target.attachedToTarget"
+        && let Some(under) = event.params["sessionId"].as_str()
+    {
+        taps[at].sessions.insert(under.to_owned());
+    }
+    if let Some(gone) = &gone {
+        taps[at].sessions.remove(gone);
+    }
+    if !(taps[at].sink)(Tapped::Event(event)) || taps[at].sessions.is_empty() {
+        taps.remove(at);
+    }
+    None
+}
+
+/// The engine detached session `gone`: every call still waiting on it is refused now, as the
+/// engine refuses one to a session it does not have (#3081).
+fn detached(shared: &Shared, gone: &str) {
+    let waiting: Vec<Waiting> = match lock(&shared.pending).as_mut() {
+        Some(pending) => {
+            let ids: Vec<u64> = pending
+                .iter()
+                .filter(|(_, one)| one.session.as_deref() == Some(gone))
+                .map(|(id, _)| *id)
+                .collect();
+            ids.iter().filter_map(|id| pending.remove(id)).collect()
+        }
+        None => Vec::new(),
+    };
+    for one in waiting {
+        let _ = one.answer.try_send(Err(CallError::Engine {
+            code: NO_SUCH_SESSION,
+            message: format!(
+                "{} was not answered: the session it was made on detached",
+                one.method
+            ),
+        }));
+    }
+}
+
 /// A message read whole, or one read past because it went past its bound.
 enum Frame {
     Whole(Vec<u8>),
     /// Past its bound: only its first [`HEAD_BYTES`] were kept.
     Over {
         head: Vec<u8>,
+        /// Its last [`TAIL_BYTES`], where an event names its session.
+        tail: Vec<u8>,
     },
 }
 
@@ -689,6 +960,13 @@ impl<R: Read> Frames<R> {
                 "a message from the engine past the bound is no DevTools message",
             )));
         }
+        let mut tail = Vec::new();
+        let keep = |tail: &mut Vec<u8>, read: &[u8]| {
+            tail.extend_from_slice(read);
+            let cut = tail.len().saturating_sub(TAIL_BYTES);
+            tail.drain(..cut);
+        };
+        keep(&mut tail, &self.buffer);
         // What was held of the message is let go, not kept as capacity.
         self.buffer = Vec::new();
         self.scanned = 0;
@@ -699,9 +977,11 @@ impl<R: Read> Frames<R> {
                 Err(why) => return Some(Err(why)),
             }
             if let Some(at) = self.buffer.iter().position(|&b| b == 0) {
+                keep(&mut tail, &self.buffer[..at]);
                 self.buffer.drain(..=at);
-                return Some(Ok(Frame::Over { head }));
+                return Some(Ok(Frame::Over { head, tail }));
             }
+            keep(&mut tail, &self.buffer);
             self.buffer.clear();
         }
     }

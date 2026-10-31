@@ -86,6 +86,72 @@ fn below_the_budget_every_skill_is_listed_and_there_is_no_index() {
     assert_eq!(set.index(), None);
 }
 
+/// A skill from outside the plane named `name`, of `origin`, whose `owner`'s it is.
+fn from_outside(name: &str, origin: crate::Origin, owner: crate::Owner) -> crate::OutsideSkill {
+    crate::OutsideSkill {
+        skill: crate::Skill {
+            name: name.to_owned(),
+            description: format!("Does {name}."),
+            path: std::path::PathBuf::from(format!("/elsewhere/{name}/SKILL.md")),
+        },
+        root: std::path::PathBuf::from(format!("/elsewhere/{name}")),
+        origin,
+        id: name.to_owned(),
+        owner,
+        switch: crate::Switch::Alone,
+        off: false,
+        unread: None,
+    }
+}
+
+#[test]
+fn a_harness_s_own_skills_count_against_no_budget_and_a_repo_s_do_4192() {
+    // ADR 0102 as amended 2026-10-31: the harness's own catalogue counts against nothing, so a
+    // set routed with it beside routes as a chat's start, which never holds it (#4192). A clone's
+    // repo skills are what purlis hands with the set, and count.
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+    let own = (0..5).map(|at| {
+        from_outside(
+            &format!("mine-{at}"),
+            crate::Origin::Harness,
+            crate::Owner::You,
+        )
+    });
+
+    let set = set_at_the_root(&plane, &built_in)
+        .with_outside(Route::Plugin, own.clone())
+        .routed(skills(4), &[]);
+
+    assert!(set.routing.as_ref().expect("routed").hidden.is_empty());
+    assert_eq!(set.index(), None);
+
+    let repo = (0..2).map(|at| {
+        from_outside(
+            &format!("theirs-{at}"),
+            crate::Origin::Repo,
+            crate::Owner::Repo("api".to_owned()),
+        )
+    });
+    let set = set_at_the_root(&plane, &built_in)
+        .with_outside(Route::Plugin, own.chain(repo))
+        .routed(skills(4), &[]);
+
+    let hidden: Vec<&str> = set
+        .routing
+        .as_ref()
+        .expect("routed")
+        .hidden
+        .iter()
+        .map(|one| one.name.as_str())
+        .collect();
+    assert_eq!(
+        hidden,
+        ["deploy", "lint", "release"],
+        "the repo's two put the plane's past the budget"
+    );
+}
+
 #[test]
 fn above_the_budget_the_plane_skills_are_hidden_behind_the_index_and_stay_in_the_set() {
     let tmp = tempfile::tempdir().unwrap();
@@ -490,4 +556,219 @@ fn on_the_config_route_the_index_goes_by_a_name_of_its_own() {
             .iter()
             .any(|e| e.skill.name == "purlis-skill-index")
     );
+}
+
+// ---------------------------------------------------------------------------------------
+// An extension router's answer (SK-15b, #3230; ADR 0102 §1, §5, §7)
+// ---------------------------------------------------------------------------------------
+
+fn line(said: &str) -> Line {
+    Line::new(said).expect("a line")
+}
+
+fn by_the_router() -> Router {
+    Router::Extension("relevance".to_owned())
+}
+
+#[test]
+fn a_router_s_candidates_are_the_skills_it_may_hide_with_the_pins_marked() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+
+    let asked = set_at_the_root(&plane, &built_in).candidates(skills(3), &["lint".to_owned()]);
+
+    // The built-in skill is never one: no router hides it.
+    let names: Vec<(&str, bool)> = asked
+        .skills
+        .iter()
+        .map(|one| (one.name.as_str(), one.pinned))
+        .collect();
+    assert_eq!(
+        names,
+        [("deploy", false), ("lint", true), ("release", false)]
+    );
+    assert_eq!(asked.skills[0].description, "Does deploy.");
+    // What it cannot hide is spent first: the built-in skill.
+    assert_eq!(asked.besides.skills, 1);
+    assert_eq!(asked.budget.skills, 3);
+}
+
+#[test]
+fn a_router_s_answer_hides_what_it_names_each_with_its_own_line() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+
+    let set = set_at_the_root(&plane, &built_in)
+        .routed_by(
+            by_the_router(),
+            skills(10),
+            &[],
+            &[("release".to_owned(), line("not relevant to this workspace"))],
+        )
+        .expect("an answer it takes");
+
+    assert_eq!(names(set.listed()), ["deploy", "handoff", "lint"]);
+    let hidden = set.hidden_by_router("release").expect("hidden");
+    assert_eq!(hidden.router, by_the_router());
+    assert_eq!(
+        hidden.why,
+        HiddenWhy::ByRouter(line("not relevant to this workspace"))
+    );
+    assert_eq!(
+        hidden.to_string(),
+        "hidden by the router relevance: not relevant to this workspace"
+    );
+    // Hidden, never left out, and named in the index, which says why they are not listed.
+    assert_eq!(set.effective.len(), 4);
+    let index = set.index().expect("an index").text;
+    assert!(index.contains("- `release`"), "{index}");
+    assert!(
+        index.contains("This chat's router left these skills out of its list."),
+        "{index}"
+    );
+    assert!(
+        !index.contains("more skills than its list holds"),
+        "{index}"
+    );
+}
+
+#[test]
+fn a_router_that_hides_nothing_shows_every_skill_and_no_index() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+
+    let set = set_at_the_root(&plane, &built_in)
+        .routed_by(by_the_router(), skills(10), &[], &[])
+        .expect("an answer it takes");
+
+    assert_eq!(set.listed().count(), 4);
+    assert_eq!(set.index(), None);
+    assert_eq!(set.routing.expect("routed").router, by_the_router());
+}
+
+#[test]
+fn a_router_never_hides_a_pin() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+
+    let refused = set_at_the_root(&plane, &built_in)
+        .routed_by(
+            by_the_router(),
+            skills(10),
+            &["lint".to_owned()],
+            &[("lint".to_owned(), line("rarely used"))],
+        )
+        .expect_err("a pin is never hidden");
+
+    assert!(
+        refused.contains("lint") && refused.contains("pin"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn a_router_never_names_a_skill_the_set_leaves_out_or_one_no_router_hides() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+    let set = set_at_the_root(&plane, &built_in);
+
+    // Not in the set at all: a router only ever hides what the chat already has.
+    let outside = set
+        .clone()
+        .routed_by(
+            by_the_router(),
+            skills(10),
+            &[],
+            &[("secret-skill".to_owned(), line("hidden"))],
+        )
+        .expect_err("outside the set");
+    assert!(outside.contains("secret-skill"), "{outside}");
+    // A built-in skill comes whole with purlis's plugin: no router hides it.
+    let built = set
+        .routed_by(
+            by_the_router(),
+            skills(10),
+            &[],
+            &[("handoff".to_owned(), line("hidden"))],
+        )
+        .expect_err("a built-in skill");
+    assert!(built.contains("handoff"), "{built}");
+}
+
+#[test]
+fn a_router_that_names_one_skill_twice_is_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+
+    let refused = set_at_the_root(&plane, &built_in)
+        .routed_by(
+            by_the_router(),
+            skills(10),
+            &[],
+            &[
+                ("deploy".to_owned(), line("one")),
+                ("deploy".to_owned(), line("two")),
+            ],
+        )
+        .expect_err("twice");
+
+    assert!(refused.contains("twice"), "{refused}");
+}
+
+#[test]
+fn a_router_that_leaves_the_chat_over_its_budget_is_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+
+    // Three skills fit; handoff and three plane skills do not, even with one of them hidden
+    // behind the index.
+    let refused = set_at_the_root(&plane, &built_in)
+        .routed_by(
+            by_the_router(),
+            skills(3),
+            &[],
+            &[("deploy".to_owned(), line("rarely used"))],
+        )
+        .expect_err("still over");
+
+    assert!(refused.contains("budget"), "{refused}");
+}
+
+#[test]
+fn a_router_that_hides_all_it_may_and_is_still_over_by_the_pins_is_taken_and_says_so() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+    let pins = ["deploy".to_owned(), "lint".to_owned()];
+
+    let set = set_at_the_root(&plane, &built_in)
+        .routed_by(
+            by_the_router(),
+            skills(3),
+            &pins,
+            &[("release".to_owned(), line("rarely used"))],
+        )
+        .expect("it hid all it may");
+
+    assert_eq!(
+        set.routing.expect("routed").still_over,
+        Some(StillOver::Pins)
+    );
+}
+
+#[test]
+fn a_router_s_line_is_one_short_line_a_reader_sees_whole() {
+    assert_eq!(line("  not relevant  ").as_str(), "not relevant");
+    assert!(Line::new("").is_err());
+    assert!(Line::new("   ").is_err());
+    assert!(Line::new("two\nlines").is_err());
+    assert!(Line::new("hidden\u{202e}gnihton").is_err());
+    assert!(Line::new("zero\u{200b}width").is_err());
+    assert!(Line::new(&"x".repeat(Line::MOST_CHARS + 1)).is_err());
+    assert!(Line::new(&"é".repeat(Line::MOST_CHARS)).is_ok());
+}
+
+#[test]
+fn routers_are_said_by_name() {
+    assert_eq!(Router::BuiltIn.shown(), "the built-in router");
+    assert_eq!(by_the_router().shown(), "the router relevance");
 }

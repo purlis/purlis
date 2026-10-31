@@ -106,6 +106,23 @@ pub struct Shown {
     /// not shown and no Allow is offered. Absent for any other ask.
     #[specta(optional)]
     pub writes: Option<crate::askwrites::WritesShown>,
+    /// **The lines a permission's action runs over** (#3502), where its line puts several on
+    /// one: their count, and each as [`Shown::says`] shows it. Absent for an action on one line.
+    #[specta(optional)]
+    pub lines: Option<LinesShown>,
+}
+
+/// The lines an action runs over, as a row draws them under its line (#3502). An action whose
+/// line holds several is never offered Allow (`hooked::shown_in_full`): its line is not what
+/// would run.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct LinesShown {
+    /// How many lines it runs over.
+    pub count: u32,
+    /// **Each line, as [`Shown::says`] has it**: joined by a space, they are that line,
+    /// character for character, masked and cut as it is. Empty where they could not be shown
+    /// that way; the row then says only the count.
+    pub shown: Vec<String>,
 }
 
 /// Which source an ask waits on.
@@ -132,6 +149,9 @@ pub enum AskSource {
     /// A change to the project a chat on a pool's runner asked for, which only the person
     /// applies (#2046).
     RunnerWrite,
+    /// An open or a dispatch a chat on a pool's runner asked for, which starts only on the
+    /// person's Approve.
+    RunnerDispatch,
     /// A prompt shown in the harness's own terminal that purlis holds nothing for.
     Terminal,
     /// A chat whose turn ended with the next move the person's.
@@ -142,6 +162,9 @@ pub enum AskSource {
     /// A sandboxed Codex chat refused for want of a sandbox-only profile (#2037): answered by
     /// making one and running Codex's own sign-in in it.
     SandboxOnly,
+    /// A project that still holds the old `[harness_plugins]` keys purlis no longer reads
+    /// (#3467): said once, answered by Remove, which proposes the edit, or Dismiss.
+    OldHarnessPlugins,
     /// A chat's first browser call, asking what its browser may reach (#2013).
     Browser,
     /// A chat's browser whose page needs the person (#2015): the chat asked them to take it
@@ -190,14 +213,25 @@ pub enum AnswerPath {
     /// `apply_runner_write` for Apply and `dismiss_runner_write` for Dismiss, on held runner
     /// write `id` (#2046); Open opens its own tab, which shows it whole, and sends nothing.
     RunnerWrite { id: u32 },
+    /// `refuse_runner_dispatch` for Refuse, on held runner dispatch `id`; Open opens its own
+    /// tab, which shows it whole with Approve (`approve_runner_dispatch`), and sends nothing.
+    RunnerDispatch { id: u32 },
     /// Sign in sends nothing: it opens a shell tab where the core types the harness's own
     /// sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
     /// the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
-    SignIn { profile: String },
+    /// With `pool`, it is signed in on that pool's runner (#2049): the line typed is the
+    /// runner's own sign-in, and both commands name the pool.
+    SignIn {
+        profile: String,
+        pool: Option<String>,
+    },
     /// Make one sends `make_sandbox_only_profile`, then opens a shell tab where the core types
     /// Codex's own sign-in for the profile it made (`type_profile_sign_in`). Dismiss sends
     /// `dismiss_sandbox_only`.
     SandboxOnly,
+    /// `remove_old_harness_plugins` for Remove, which holds purlis's proposed change for each
+    /// file and opens the first; `dismiss_old_harness_plugins` for Dismiss (#3467).
+    OldHarnessPlugins,
     /// `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
     /// Keep off, with the person's reason (#2013).
     Browser,
@@ -270,10 +304,12 @@ pub fn permission(raised: Raised) -> Option<Shown> {
     } else {
         said.to_owned()
     };
+    let says = said_inertly(&says);
+    let lines = lines_of(&ask, &says);
     Some(Shown {
         session,
         ask: raised.id.to_string(),
-        says: said_inertly(&says),
+        says,
         options: ask
             .options
             .into_iter()
@@ -290,6 +326,34 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         since: None,
         held_until: None,
         writes,
+        lines,
+    })
+}
+
+/// **The lines `ask`'s command runs over, as the row shows `says`**, its line (#3502): `None`
+/// for any other action, a command on one line, or one whose summary is not made from it. Each
+/// line is kept only where, joined by a space, they are `says`.
+fn lines_of(ask: &purlis_core::harness::model::Ask, says: &str) -> Option<LinesShown> {
+    let Action::Command { line } = &ask.action else {
+        return None;
+    };
+    // Most commands are on one line: no summary is made again for them.
+    if !line.contains('\n') {
+        return None;
+    }
+    let said = ask.action.said();
+    if ask.summary != purlis_core::harness::model::Summary::of(&said) {
+        return None;
+    }
+    let lines =
+        purlis_core::harness::model::Summary::lines_of(&purlis_core::dispatchgrant::inert(&said))?;
+    Some(LinesShown {
+        count: u32::try_from(lines.count).unwrap_or(u32::MAX),
+        shown: if lines.shown.join(" ") == says {
+            lines.shown
+        } else {
+            Vec::new()
+        },
     })
 }
 
@@ -457,6 +521,7 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -497,6 +562,7 @@ pub fn sandbox_host(
             since: None,
             held_until: None,
             writes: None,
+            lines: None,
         });
     };
     // In its Notice's order (#1666, N-3): this project on this machine is the main button.
@@ -529,6 +595,7 @@ pub fn sandbox_host(
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     })
 }
 
@@ -591,6 +658,7 @@ pub fn sandbox_write(
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     })
 }
 
@@ -653,11 +721,12 @@ pub fn sandbox_runner(
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     })
 }
 
 /// **The service-on-this-Mac adapter** (qw384): a port of this machine chat `session`'s
-/// sandbox refused, held now, is an ask as a host is. Allow is offered for this chat and for
+/// sandbox refused, to connect to or to listen on (#2019), held now, is an ask as a host is. Allow is offered for this chat and for
 /// the person (never once, never everyone's: it is this machine's and lasts past a run), at
 /// each level `locks` leaves open; then Keep blocked. A port the block did not name is typed in
 /// its Notice, so it is answered there ([`AnswerPath::InItsPane`]).
@@ -667,30 +736,41 @@ pub fn sandbox_port(
     locks: &purlis_core::sandbox::policy::Locks,
 ) -> Option<Shown> {
     use crate::sandboxing::{GrantLevel, GrantWhat};
-    use purlis_core::sandbox::grant::What;
-    if block.what != GrantWhat::Port {
-        return None;
-    }
+    // A port to listen on (#2019) is asked about as a port to connect to is, at the same two
+    // scopes, in its own words.
+    let listen = match block.what {
+        GrantWhat::Port => false,
+        GrantWhat::Listen => true,
+        _ => return None,
+    };
     let order = [GrantLevel::Chat, GrantLevel::You];
     let named: Option<u16> = block.target.parse().ok();
     let levels: Vec<GrantLevel> = order
         .into_iter()
         .filter(|level| match named {
-            Some(port) => locks
-                .refuses_grant(&What::Port(port), (*level).into())
-                .is_none(),
+            Some(port) => block
+                .what
+                .of_port(port)
+                .is_some_and(|what| locks.refuses_grant(&what, (*level).into()).is_none()),
             None => {
                 locks.port_grants_refused().is_none()
                     && locks.scope_removed((*level).into()).is_none()
             }
         })
         .collect();
-    let says = match named {
-        Some(port) => format!(
+    let says = match (named, listen) {
+        (Some(port), false) => format!(
             "The sandbox refused the service on this Mac at port {port}. Allowing it {}.",
             purlis_core::sandbox::localport::RISK
         ),
-        None => "The sandbox refused a service on this Mac at a port it did not name".to_owned(),
+        (None, false) => {
+            "The sandbox refused a service on this Mac at a port it did not name".to_owned()
+        }
+        (Some(port), true) => format!(
+            "This chat wants to run a server on port {port}. Allowing it {}.",
+            purlis_core::sandbox::localport::listen_risk(port)
+        ),
+        (None, true) => "This chat wants to run a server on a port it did not name".to_owned(),
     };
     Some(Shown {
         session,
@@ -706,7 +786,7 @@ pub fn sandbox_port(
                 shown: crate::taskblocks::BlockShown {
                     operation: block.operation.clone(),
                     kind: block.kind.clone(),
-                    what: GrantWhat::Port,
+                    what: block.what,
                     target: block.target.clone(),
                 },
             },
@@ -715,6 +795,7 @@ pub fn sandbox_port(
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     })
 }
 
@@ -785,6 +866,7 @@ pub fn sandbox_local(
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     })
 }
 
@@ -804,6 +886,7 @@ pub fn terminal(session: u32, prompt: purlis_core::harness::model::Prompt) -> Sh
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -821,6 +904,7 @@ pub fn question(session: u32) -> Shown {
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -875,6 +959,7 @@ pub fn workspace_removal(
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -986,6 +1071,7 @@ pub fn browser_posture(
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -1049,6 +1135,7 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -1069,7 +1156,19 @@ pub const POOL_LOGIN_ALLOW: &str = "allow";
 pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
     let pool = &waits.bound.pool;
     let (login, persona, engine) = (&waits.login, &waits.persona, &waits.bound.engine);
-    let says = if waits.changed {
+    // A cluster's words come last, so a long context cuts nothing of what Allow does.
+    let says = if waits.bound.on_a_cluster() {
+        format!(
+            "{}Wants its browser logged in with {login} on pool {pool}. Allow on pool {pool} \
+             fills {persona}'s {login} there from your vault; the runner is told to keep none. \
+             It runs on {engine}",
+            if waits.changed {
+                "Pool {pool} changed since you answered. ".replace("{pool}", pool)
+            } else {
+                String::new()
+            }
+        )
+    } else if waits.changed {
         format!(
             "Pool {pool} changed since you answered. Wants its browser logged in with {login} \
              there, on {engine}. Allow on pool {pool} fills it from your vault; the runner keeps \
@@ -1101,6 +1200,7 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -1128,11 +1228,20 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
     } else {
         ""
     };
-    let says = format!(
-        "{away}Wants to run {tool} on pool {pool}, which runs on {engine}, with {persona}'s \
-         values from vault {vault}. Allow this run sends them from your vault for this run \
-         alone; the runner keeps none"
-    );
+    // A cluster's words come last, so a long context cuts nothing of what Allow does.
+    let says = if waits.bound.on_a_cluster() {
+        format!(
+            "{away}Wants to run {tool} on pool {pool} with {persona}'s values from vault {vault}. \
+             Allow this run sends them from your vault for this run alone; the runner is told \
+             to keep none. It runs on {engine}"
+        )
+    } else {
+        format!(
+            "{away}Wants to run {tool} on pool {pool}, which runs on {engine}, with {persona}'s \
+             values from vault {vault}. Allow this run sends them from your vault for this run \
+             alone; the runner keeps none"
+        )
+    };
     Shown {
         session: waits.session,
         ask: pool_tool_key(waits.session, waits.run),
@@ -1152,6 +1261,7 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -1193,6 +1303,7 @@ pub fn browser_sites(
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -1294,6 +1405,8 @@ pub const DISMISS: &str = "dismiss";
 /// The id of Open on a proposed change too long for a row (PC-7): it opens the change's own
 /// tab, and answers nothing.
 pub const OPEN: &str = "open";
+/// The id of Refuse on a runner chat's held open or dispatch.
+pub const REFUSE: &str = "refuse";
 
 /// The key of chat `session`'s proposal `id`.
 fn proposal_key(id: u32) -> String {
@@ -1359,6 +1472,32 @@ pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals:
         since: None,
         held_until: None,
         writes,
+        lines: None,
+    }
+}
+
+/// The key of held runner dispatch `id`.
+fn runner_dispatch_key(id: u32) -> String {
+    format!("runner-dispatch:{id}")
+}
+
+/// **The runner dispatch adapter**: an open or a dispatch a chat on a pool's runner asked for,
+/// said in words, held until the person answers. Its row cuts the brief, so **Open** shows it
+/// whole in its own tab, where Approve is pressed; **Refuse** starts nothing. Never "always
+/// approve".
+pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
+    Shown {
+        session: one.session,
+        ask: runner_dispatch_key(one.id),
+        says: said_inertly(&one.said()),
+        options: vec![refuses(OPEN, "Open"), refuses(REFUSE, "Refuse")],
+        source: AskSource::RunnerDispatch,
+        chain: Vec::new(),
+        answer: AnswerPath::RunnerDispatch { id: one.id },
+        since: None,
+        held_until: None,
+        writes: None,
+        lines: None,
     }
 }
 
@@ -1411,6 +1550,7 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -1459,10 +1599,66 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         chain: vec![said_inertly(&format!("Profile {name}"))],
         answer: AnswerPath::SignIn {
             profile: name.clone(),
+            pool: None,
         },
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
+    }
+}
+
+/// The key a profile's Ask to sign it in on pool `pool` is kept under (#2049).
+fn pool_sign_in_key(profile: &str, pool: &str) -> String {
+    format!("sign-in:{profile}:on:{pool}")
+}
+
+/// **A profile a start on a pool was refused on, as its Ask** (#2049): *Profile <profile> on
+/// pool <pool>*, about no chat. Its Sign in on pool <pool> opens a shell tab where the core types the runner's own
+/// sign-in for it, which the person drives there; the Ask waits until the runner says it is
+/// signed in there. Nothing of this machine's sign-in goes to the runner.
+pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Shown {
+    use purlis_core::profilestore::sign_in;
+    let (name, pool) = (&wait.profile, &wait.pool);
+    let plans = sign_in::providers(&wait.kind);
+    let mut options: Vec<Offered> = if plans.is_empty() {
+        vec![Offered {
+            id: SIGN_IN.to_owned(),
+            label: format!("Sign in on pool {pool}"),
+            allows: true,
+            preselected: None,
+        }]
+    } else {
+        plans
+            .iter()
+            .map(|plan| Offered {
+                id: format!("{SIGN_IN}:{}", plan.provider),
+                label: format!("Sign in to {} on pool {pool}", plan.title),
+                allows: true,
+                preselected: None,
+            })
+            .collect()
+    };
+    options.push(refuses(DISMISS, "Dismiss"));
+    Shown {
+        session: 0,
+        ask: pool_sign_in_key(name, pool),
+        says: said_inertly(&format!(
+            "{name} is not signed in on pool {pool}. Sign in runs {}'s own sign-in on its \
+             runner; nothing of this machine's sign-in goes there",
+            wait.harness
+        )),
+        options,
+        source: AskSource::SignIn,
+        chain: vec![said_inertly(&format!("Profile {name} on pool {pool}"))],
+        answer: AnswerPath::SignIn {
+            profile: name.clone(),
+            pool: Some(pool.clone()),
+        },
+        since: None,
+        held_until: None,
+        writes: None,
+        lines: None,
     }
 }
 
@@ -1517,6 +1713,35 @@ pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sh
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
+    }
+}
+
+/// The option id of Remove on the Ask about the old `[harness_plugins]` keys (#3467).
+pub const REMOVE_OLD_PLUGINS: &str = "remove";
+
+/// **The old harness plugin keys' adapter** (#3467): a project that still holds
+/// `[harness_plugins]`, which nothing reads now, as one Ask about no chat, said once. It offers
+/// Remove where a file holding the keys can be made without them (the project's own two, or a
+/// workspace's manifest, #3486), which proposes the edit for the person to apply, and Dismiss.
+pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown {
+    let mut options = Vec::new();
+    if old.removable {
+        options.push(refuses(REMOVE_OLD_PLUGINS, "Remove"));
+    }
+    options.push(refuses(DISMISS, "Dismiss"));
+    Shown {
+        session: 0,
+        ask: "old-harness-plugins".to_owned(),
+        says: said_inertly(&old.said),
+        options,
+        source: AskSource::OldHarnessPlugins,
+        chain: vec![said_inertly("purlis")],
+        answer: AnswerPath::OldHarnessPlugins,
+        since: None,
+        held_until: None,
+        writes: None,
+        lines: None,
     }
 }
 
@@ -1577,8 +1802,13 @@ pub struct Waiting<'a> {
     pub proposals: Vec<(crate::proposals::Proposal, crate::proposals::Now)>,
     /// The changes to the project chats on a pool's runner asked for (#2046).
     pub runner_writes: Vec<crate::runnerwrites::HeldWrite>,
+    /// The opens and dispatches chats on a pool's runner asked for.
+    pub runner_dispatches: Vec<crate::runnerdispatches::HeldDispatch>,
     /// The profiles a start was refused on because they are not signed in here (#2035).
     pub sign_ins: Vec<purlis_core::profilestore::sign_in::Wait>,
+    /// The profiles a start on a pool was refused on because they are not signed in on its
+    /// runner (#2049).
+    pub pool_sign_ins: Vec<purlis_core::profilestore::onrunner::PoolWait>,
     /// Whether a sandboxed Codex chat here waits for a sandbox-only profile (#2037).
     pub sandbox_only: Option<purlis_core::profilestore::sandbox_only::Wait>,
     /// The chats whose first browser call asks what their browser may reach (#2013).
@@ -1648,6 +1878,8 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     );
     // And one on a runner that asked to change the project waits on the person too (#2046).
     asks.extend(waiting.runner_writes.iter().map(runner_write));
+    // And one there that asked to start a chat here.
+    asks.extend(waiting.runner_dispatches.iter().map(runner_dispatch));
     // A chat whose first browser call asks the person waits on that answer too (#2013).
     asks.extend(
         waiting
@@ -1672,6 +1904,7 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     // About no chat: a profile that waits to be signed in (#2035).
     let signing = asks.len();
     asks.extend(waiting.sign_ins.iter().map(sign_in));
+    asks.extend(waiting.pool_sign_ins.iter().map(pool_sign_in));
     asks.extend(waiting.sandbox_only.iter().map(sandbox_only));
     asks.extend(
         waiting
@@ -1704,8 +1937,11 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     }));
     for (at, ask) in asks.iter_mut().enumerate() {
         // A profile's Ask is about no chat: its chain is the profile, as its adapter said.
-        let profiles =
-            signing..signing + waiting.sign_ins.len() + usize::from(waiting.sandbox_only.is_some());
+        let profiles = signing
+            ..signing
+                + waiting.sign_ins.len()
+                + waiting.pool_sign_ins.len()
+                + usize::from(waiting.sandbox_only.is_some());
         if !profiles.contains(&at) {
             ask.chain = chain(ask.session, waiting.name_of, waiting.asker_of);
         }
@@ -1827,9 +2063,17 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &runner_writes {
         since.insert(runner_write_key(one.id), one.since);
     }
+    let runner_dispatches = held.runner_dispatches().every();
+    for one in &runner_dispatches {
+        since.insert(runner_dispatch_key(one.id), one.since);
+    }
     let sign_ins = purlis_core::profilestore::sign_in::waiting(root);
     for one in &sign_ins {
         since.insert(format!("sign-in:{}", one.profile.name), one.since);
+    }
+    let pool_sign_ins = purlis_core::profilestore::onrunner::waiting_on_pools(root);
+    for one in &pool_sign_ins {
+        since.insert(pool_sign_in_key(&one.profile, &one.pool), one.since);
     }
     let sandbox_only = purlis_core::profilestore::sandbox_only::waiting(
         root,
@@ -1869,9 +2113,11 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         pool_tools,
         sandbox_only,
         sign_ins,
+        pool_sign_ins,
         removals,
         proposals,
         runner_writes,
+        runner_dispatches,
         permissions: permissions.into_iter().map(|(raised, _)| raised).collect(),
         queue,
         at_its_prompt: &|session| board.glance(session).prompt,
@@ -1920,6 +2166,19 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         asks: derive(&waiting)
             .into_iter()
             .filter(|ask| !chats.kept_from_the_window(ask.session))
+            // The old `[harness_plugins]` keys: Needs you holds their Ask while the Skill studio
+            // is on (#3689), so it is in the Inbox only while the studio is off.
+            .chain(
+                (!purlis_core::skills::studio_on_here())
+                    .then(|| {
+                        crate::oldplugins::notice_of(
+                            root,
+                            &held.proposals().paths_of(crate::proposals::BY_PURLIS),
+                        )
+                    })
+                    .flatten()
+                    .map(|old| old_harness_plugins(&old)),
+            )
             .collect(),
     }
 }

@@ -193,7 +193,7 @@ fn keyring_items(ctx: &Ctx, vault: &Vault, ask_keyring: bool) -> Said {
 fn file_there(ctx: &Ctx, vault: &Vault) -> Said {
     let path = match plain_file::file_path(ctx, vault) {
         Ok(path) => path,
-        Err(e) => return Said::act(e.message),
+        Err(e) => return Said::act(e.message.to_string()),
     };
     if let Some(refused) = plain_file::linked_on_the_way(ctx, &path) {
         return Said::act(super::one_line(&refused.message, super::PATH_DISPLAY_LIMIT));

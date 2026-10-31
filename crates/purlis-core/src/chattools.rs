@@ -90,6 +90,85 @@ pub const DISPATCH_LIST: &str = "dispatch_list";
 /// [`DISPATCH`] is.
 pub const DISPATCH_READ: &str = "dispatch_read";
 
+/// The tool that waits for the report of a task this chat dispatched (#3786): the one
+/// operation `purlis dispatch wait` performs.
+pub const DISPATCH_WAIT: &str = "dispatch_wait";
+
+/// The tool that sends a follow-up to a task this chat dispatched (#3786): `purlis dispatch
+/// tell`.
+pub const DISPATCH_TELL: &str = "dispatch_tell";
+
+/// The tool that answers the question a task this chat dispatched asked it (#3786): `purlis
+/// dispatch answer`.
+pub const DISPATCH_ANSWER: &str = "dispatch_answer";
+
+/// The tool that cancels a task this chat dispatched (#3786): `purlis dispatch cancel`.
+pub const DISPATCH_CANCEL: &str = "dispatch_cancel";
+
+/// The tool that closes a finished task this chat dispatched (#3786): `purlis dispatch close`.
+pub const DISPATCH_CLOSE: &str = "dispatch_close";
+
+/// The tool a task sends its asking chat a progress note with (#3786): `purlis dispatch note`.
+pub const DISPATCH_NOTE: &str = "dispatch_note";
+
+/// The tool a task asks its asking chat a question with, and waits for the answer (#3786):
+/// `purlis dispatch ask`.
+pub const DISPATCH_ASK: &str = "dispatch_ask";
+
+/// The tool that brings the clone or branch folder this chat stands in up to its remote
+/// (#3831): the one operation `purlis worktree update` run there performs, which [`call`] does
+/// not answer either. The server hands it to the app that started the chat, which runs it
+/// outside the chat's sandbox after judging it; with no app, it runs nothing.
+pub const WORKTREE_UPDATE: &str = "worktree_update";
+
+/// The tool that removes a finished branch folder of the chat's own workspace (#3879): the one
+/// operation `purlis worktree remove <repo> <piece>` without `--force` performs. The server
+/// hands it to the app, which removes the folder only where nothing would be lost; with no app,
+/// it removes nothing.
+pub const WORKTREE_REMOVE: &str = "worktree_remove";
+
+/// What [`WORKTREE_REMOVE`] is asked to remove: the `repo` and `piece` of a branch folder of
+/// the chat's own workspace, and whether to delete its branch too, as `git branch -d` does.
+pub fn worktree_remove_args(args: &Map<String, Value>) -> Result<(String, String, bool), String> {
+    let name = |key: &str| match args.get(key) {
+        Some(Value::String(name)) if !name.trim().is_empty() => Ok(name.trim().to_owned()),
+        _ => Err(format!("{key} is the name of the branch folder's {key}")),
+    };
+    let delete_branch = match args.get("delete_branch") {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(delete)) => *delete,
+        Some(_) => return Err("delete_branch is true or false".to_owned()),
+    };
+    Ok((name("repo")?, name("piece")?, delete_branch))
+}
+
+/// What [`WORKTREE_UPDATE`] is asked to do: `start` (the default), `continue` or `abort`, and
+/// for a branch folder's start, the `base` branch.
+pub fn worktree_update_args(
+    args: &Map<String, Value>,
+) -> Result<crate::hookwire::UpdateStep, String> {
+    use crate::hookwire::UpdateStep;
+    let base = match args.get("base") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(base)) if !base.trim().is_empty() => Some(base.trim().to_owned()),
+        Some(_) => return Err("base is the name of a branch".to_owned()),
+    };
+    let step = match args.get("step") {
+        None | Some(Value::Null) => "start",
+        Some(Value::String(step)) => step.as_str(),
+        Some(_) => return Err("step is start, continue or abort".to_owned()),
+    };
+    match (step, base) {
+        ("start", base) => Ok(UpdateStep::Start { base }),
+        ("continue" | "abort", Some(_)) => {
+            Err("base is taken only when an update starts".to_owned())
+        }
+        ("continue", None) => Ok(UpdateStep::Continue),
+        ("abort", None) => Ok(UpdateStep::Abort),
+        _ => Err("step is start, continue or abort".to_owned()),
+    }
+}
+
 /// The tools a Claude Code chat runs without asking (V79, #1050, amending SI-8e in ADR 0064):
 /// the five that only read, [`PERSONA_WHERE`] (V98a, #1450), which reads the app's own
 /// record and answers names and states a chat is told at its start anyway, and
@@ -102,11 +181,12 @@ pub const DISPATCH_READ: &str = "dispatch_read";
 /// sample content (ADR 0064, amended 2026-10-17); and the four skill tools
 /// ([`crate::skilltools`], SK-13), which read the chat's own skill set and its runs, or load one
 /// of its skills (ADR 0063 as amended 2026-10-20): `skill_load` writes nothing but the start of
-/// the run it opens, in the plane's skill log.
+/// the run it opens, in the plane's skill log; and [`DISPATCH_WAIT`] (#3786), which waits on
+/// one of the chat's own tasks and returns its report, as `purlis dispatch wait` does.
 /// Named one by one, never derived from [`Tool::read_only`]: `ask_operator` is marked
 /// read-only too and still asks, and a tool added later is asked about until someone rules it
 /// in here. Writes are never in this list.
-pub const PRE_ALLOWED: [&str; 13] = [
+pub const PRE_ALLOWED: [&str; 14] = [
     "todo_list",
     "memory_search",
     "session_record_list",
@@ -115,11 +195,36 @@ pub const PRE_ALLOWED: [&str; 13] = [
     PERSONA_WHERE,
     DISPATCH_LIST,
     DISPATCH_READ,
+    DISPATCH_WAIT,
     crate::themepreview::TOOL,
     crate::skilltools::SKILL_LIST,
     crate::skilltools::SKILL_RUNS,
     crate::skilltools::SKILL_FIND,
     crate::skilltools::SKILL_LOAD,
+];
+
+/// The tools a Claude Code chat runs without asking that **write only the chat's own scope**
+/// (#3829, the operator's ruling of 2026-10-29, amending ADR 0064): its workspace's todos and
+/// memory, its persona's memory (`--shared` included, as ruled), and its workspace's
+/// `workspace.md`; and [`ASK_OPERATOR`], whose consent is the person's own answer, so the
+/// harness's prompt in front of it asked the person twice. **The person is asked only when
+/// something new reaches someone new**, and none of these reaches anyone new.
+///
+/// Apart from [`PRE_ALLOWED`] on purpose: a grade's chat is served the reads alone (SK-16), and
+/// is handed none of these. Named one by one, so a tool added later is asked about until it is
+/// ruled in here; an operator's or a project's `ask` or `deny` for any of them still wins.
+pub const OWN_SCOPE_TOOLS: [&str; 9] = [
+    "todo_add",
+    "todo_done",
+    "memory_add",
+    PERSONA_REMEMBER,
+    WORKSPACE_SECTION,
+    WORKSPACE_VISION,
+    ASK_OPERATOR,
+    // The update the app makes for the chat in its own clone, branch folder or root (#3831).
+    WORKTREE_UPDATE,
+    // The removal the app makes for the chat of its own finished branch folder (#3879).
+    WORKTREE_REMOVE,
 ];
 
 /// The variables the server reads to find the chat's place, as a `charter` command in the chat
@@ -198,8 +303,11 @@ pub fn claude_code_config_as(binary: &Path, graded: bool) -> String {
 /// stdio server only a few variables of its own, so the ones that say where the chat works
 /// and how it reaches the app are named in `env_vars` ([`SCOPE_ENV`], [`CONNECTION_ENV`]), by
 /// name only: Codex reads each value from its own environment.
-pub fn codex_flag(binary: &Path) -> String {
-    let table: toml::Table = [
+///
+/// The `-c` replaces the operator's own table for this server whole, so the approvals they set
+/// on it are carried into it ([`CodexApprovals`], #3794).
+pub fn codex_flag(binary: &Path, operator: &CodexApprovals) -> String {
+    let mut table: toml::Table = [
         (
             "command".to_owned(),
             toml::Value::from(binary.display().to_string()),
@@ -219,7 +327,141 @@ pub fn codex_flag(binary: &Path) -> String {
     ]
     .into_iter()
     .collect();
+    let tools = operator.tools();
+    if !tools.is_empty() {
+        table.insert("tools".to_owned(), toml::Value::Table(tools));
+    }
+    if let Some(default) = &operator.default {
+        table.insert(
+            CODEX_DEFAULT_APPROVAL.to_owned(),
+            toml::Value::from(default.clone()),
+        );
+    }
     format!("mcp_servers.{SERVER}={}", toml::Value::Table(table))
+}
+
+/// Codex's key for the approval of every tool of one MCP server.
+const CODEX_DEFAULT_APPROVAL: &str = "default_tools_approval_mode";
+
+/// **The approvals the operator's own Codex config sets on purlis's server** (#3794), which the
+/// session's `-c` carries over, since it replaces their table for the server whole: each tool's
+/// `approval_mode`, and the server's `default_tools_approval_mode`. **The operator's own always
+/// win**, as their `ask` or `deny` does in Claude Code.
+///
+/// **Codex's rule for [`run_on_the_dispatch_grant`]** ([`Self::tools`]): `approval_mode =
+/// "approve"` for each dispatch tool the operator sets nothing for, which codex-cli 0.163.0
+/// reads under one MCP server (measured: `codex -c 'mcp_servers.<server>={…,tools={<tool>=
+/// {approval_mode=…}}}' mcp get` takes `auto`, `prompt`, `writes` and `approve`, and refuses
+/// any other word at that key). Accepted by its config; not measured live against a model, which
+/// this machine's sandbox cannot serve. Each by name, never the server's
+/// `default_tools_approval_mode`, so a tool added later still asks; and none where the operator
+/// set that default, which is their word for every tool of the server.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CodexApprovals {
+    /// Each tool's `approval_mode`, by tool.
+    pub by_tool: std::collections::BTreeMap<String, String>,
+    /// The server's `default_tools_approval_mode`.
+    pub default: Option<String>,
+    /// A config there could not be read: nothing is approved over it.
+    pub unreadable: bool,
+}
+
+impl CodexApprovals {
+    /// This machine's, for a chat working in `cwd`: `config.toml` in `$CODEX_HOME` (else
+    /// `~/.codex`), then `.codex/config.toml` in each folder from the root down to `cwd`, a
+    /// later file's word over an earlier one's, as Codex layers a project's over the user's.
+    /// Read wide: a project file Codex would not load is read anyway, since it can only keep
+    /// an approval of purlis's out.
+    pub fn here(cwd: Option<&Path>) -> Self {
+        let var = |name: &str| {
+            std::env::var_os(name)
+                .filter(|value| !value.is_empty())
+                .map(std::path::PathBuf::from)
+        };
+        let home = var("CODEX_HOME")
+            .filter(|dir| dir.is_absolute())
+            .or_else(|| var("HOME").map(|home| home.join(".codex")));
+        let mut files: Vec<std::path::PathBuf> = home
+            .map(|home| home.join("config.toml"))
+            .into_iter()
+            .collect();
+        if let Some(cwd) = cwd {
+            let mut up: Vec<&Path> = cwd.ancestors().collect();
+            up.reverse();
+            files.extend(
+                up.into_iter()
+                    .map(|folder| folder.join(".codex/config.toml")),
+            );
+        }
+        Self::read(&files)
+    }
+
+    /// What `files` set, in order. A file that is not there sets nothing; one that cannot be
+    /// read or parsed is taken to refuse every approval.
+    pub fn read(files: &[std::path::PathBuf]) -> Self {
+        let mut approvals = Self::default();
+        for file in files {
+            let text = match std::fs::read_to_string(file) {
+                Ok(text) => text,
+                Err(why) if why.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(_) => {
+                    approvals.unreadable = true;
+                    continue;
+                }
+            };
+            let Ok(config) = text.parse::<toml::Table>() else {
+                approvals.unreadable = true;
+                continue;
+            };
+            let Some(server) = config
+                .get("mcp_servers")
+                .and_then(|servers| servers.get(SERVER))
+            else {
+                continue;
+            };
+            if let Some(default) = server
+                .get(CODEX_DEFAULT_APPROVAL)
+                .and_then(toml::Value::as_str)
+            {
+                approvals.default = Some(default.to_owned());
+            }
+            for (tool, rule) in server
+                .get("tools")
+                .and_then(toml::Value::as_table)
+                .into_iter()
+                .flatten()
+            {
+                if let Some(mode) = rule.get("approval_mode").and_then(toml::Value::as_str) {
+                    approvals.by_tool.insert(tool.clone(), mode.to_owned());
+                }
+            }
+        }
+        approvals
+    }
+
+    /// The server's `tools` table: the operator's own approvals, and `approve` for each dispatch
+    /// tool they leave to purlis.
+    fn tools(&self) -> toml::Table {
+        let rule = |mode: &str| {
+            let rule: toml::Table = [("approval_mode".to_owned(), toml::Value::from(mode))]
+                .into_iter()
+                .collect();
+            toml::Value::Table(rule)
+        };
+        let mut tools: toml::Table = self
+            .by_tool
+            .iter()
+            .map(|(tool, mode)| (tool.clone(), rule(mode)))
+            .collect();
+        if !self.unreadable && self.default.is_none() {
+            for tool in run_on_the_dispatch_grant() {
+                tools
+                    .entry(tool.to_owned())
+                    .or_insert_with(|| rule("approve"));
+            }
+        }
+        tools
+    }
 }
 
 /// The server as ACP's `session/new` takes it in `mcpServers` (ADR 0080 §1): a stdio server, run
@@ -288,18 +530,61 @@ pub(crate) fn one_string(key: &str, description: &str) -> Value {
     })
 }
 
-/// The two dispatch tools, which a Claude Code chat runs without its harness asking (V98b,
-/// amending ADR 0064): consent to a dispatch is purlis's own dispatch grant, asked of the
-/// person by the app, never the harness's prompt. Named apart from [`PRE_ALLOWED`], which is
-/// the tools that only read: these start a chat and send a report.
-pub const DISPATCH_TOOLS: [&str; 2] = [DISPATCH, DISPATCH_REPORT];
+/// The dispatch tools that write, which a Claude Code chat runs without its harness asking
+/// (V98b, amending ADR 0064): consent to a dispatch is purlis's own dispatch grant, asked of
+/// the person by the app, never the harness's prompt. **And what a chat does with its own
+/// tasks is its own** (#3786, ruled 2026-10-29): a follow-up, an answer, a cancel and a close
+/// of a task it dispatched, and a task's note, question and report to the chat that asked,
+/// each reaching only what the app's record lets its caller reach. Named apart from
+/// [`PRE_ALLOWED`], which is the tools that only read.
+pub const DISPATCH_TOOLS: [&str; 8] = [
+    DISPATCH,
+    DISPATCH_REPORT,
+    DISPATCH_TELL,
+    DISPATCH_ANSWER,
+    DISPATCH_CANCEL,
+    DISPATCH_CLOSE,
+    DISPATCH_NOTE,
+    DISPATCH_ASK,
+];
+
+/// **Every dispatch tool, which a harness runs without its own prompt** (#3794, as V98b and
+/// #3786 ruled for Claude Code): [`DISPATCH_TOOLS`], which write, and the three that only read
+/// a chat's own tasks ([`DISPATCH_LIST`], [`DISPATCH_READ`], [`DISPATCH_WAIT`]). Consent to a
+/// dispatch is purlis's own dispatch grant, asked of the person by the app the same on every
+/// harness, and what a chat does with its own tasks is its own. Each harness's adapter turns
+/// these names into its own rule where it has one, as for
+/// [`crate::browsertools::run_on_the_browser_ask`].
+pub fn run_on_the_dispatch_grant() -> impl Iterator<Item = &'static str> {
+    DISPATCH_TOOLS
+        .into_iter()
+        .chain([DISPATCH_LIST, DISPATCH_READ, DISPATCH_WAIT])
+}
+
+/// A task's chat, by its number in `dispatch_list`: the one argument a tool about one task
+/// takes.
+fn a_task() -> Value {
+    json!({
+        "type": "integer",
+        "description": "The task's chat, by its number in dispatch_list.",
+    })
+}
+
+/// How long a tool that waits waits: 100 seconds when left out, 540 at most.
+fn wait_seconds() -> Value {
+    json!({
+        "type": "integer",
+        "description": "How long to wait, in seconds: 100 when left out, 540 at most.",
+    })
+}
 
 /// Every tool, in the order a harness lists them.
-pub static TOOLS: [Tool; 18] = [
+pub static TOOLS: [Tool; 27] = [
     Tool {
         name: "todo_list",
         description: "List the open todos of the workspace this chat works in, oldest first, \
-                      each with the slug todo_done closes it by.",
+                      each with the slug todo_done closes it by. A done todo is not listed: \
+                      `purlis ws todo --done` lists those.",
         schema: no_arguments,
         read_only: true,
     },
@@ -312,8 +597,9 @@ pub static TOOLS: [Tool; 18] = [
     },
     Tool {
         name: "todo_done",
-        description: "Close one of this workspace's todos by its slug (todo_list shows it). \
-                      Its closing is written to the workspace's memory.",
+        description: "Mark one of this workspace's todos done by its slug (todo_list shows \
+                      it). Its closing is written to the workspace's memory, and the todo stays \
+                      as done, so it can be reopened (`purlis ws todo reopen <slug>`).",
         schema: || one_string("slug", "The todo's slug, as todo_list shows it."),
         read_only: false,
     },
@@ -431,6 +717,68 @@ pub static TOOLS: [Tool; 18] = [
         read_only: false,
     },
     Tool {
+        name: WORKTREE_UPDATE,
+        description: "Bring the clone, branch folder or project root this chat stands in up \
+                      to date, as `purlis worktree update` there does: the app fetches, then \
+                      fast-forwards or rebases the folder's branch onto its remote (a clone), \
+                      its base (a branch folder), or runs the window's Update (the root). \
+                      Refused with uncommitted changes, or where it would overwrite a file that \
+                      is not committed. A conflict stops it and names the files: resolve them, \
+                      then call it with step continue, or abort.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "step": {
+                        "type": "string",
+                        "enum": ["start", "continue", "abort"],
+                        "description": "start (the default), or continue or abort a rebase \
+                                        it stopped.",
+                    },
+                    "base": {
+                        "type": "string",
+                        "description": "A branch folder only, at start: the branch to rebase \
+                                        onto (default: the one it was cut from).",
+                    },
+                },
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
+        name: WORKTREE_REMOVE,
+        description: "Remove a finished branch folder of the workspace this chat works in, as \
+                      `purlis worktree remove <repo> <piece>` does: the app removes it only \
+                      when it holds no uncommitted change and no commit that no other branch \
+                      reaches, and otherwise names what would be lost and removes nothing. \
+                      Never forced: discarding work is the person's, from the window. Call it \
+                      from the workspace, not from inside the folder.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "repo": {
+                        "type": "string",
+                        "description": "The clone the branch folder was cut from.",
+                    },
+                    "piece": {
+                        "type": "string",
+                        "description": "The branch folder's name (.worktrees/<repo>/<piece>).",
+                    },
+                    "delete_branch": {
+                        "type": "boolean",
+                        "description": "Also delete its branch, only where it is merged \
+                                        (default false).",
+                    },
+                },
+                "required": ["repo", "piece"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
         name: WORKSPACE_VISION,
         description: "Set the vision of the workspace this chat works in: one or a few lines \
                       saying what the work is for, which every later chat here reads first. \
@@ -519,16 +867,26 @@ pub static TOOLS: [Tool; 18] = [
                         "description": "Where it works: `workspace:<name>` for another \
                                         workspace of the project, or `worktree` for a new \
                                         worktree of the repo this chat works in, on a new \
-                                        branch purlis names, which only the person merges. A \
-                                        sandboxed chat commits there with `purlis worktree \
-                                        commit`. Leave it out for \
-                                        this chat's folder.",
+                                        branch purlis names, which only the person merges. \
+                                        From a workspace's own folder, `worktree` is cut from \
+                                        its one clone, and `worktree:<repo>` names which \
+                                        clone where it holds several. A sandboxed chat \
+                                        commits there with `purlis worktree commit`. Leave it \
+                                        out for this chat's folder.",
                     },
                     "wait": {
                         "type": "boolean",
                         "description": "Wait for the task's report and answer with it, \
                                         instead of carrying on. A wait that runs out says the \
                                         task is still running.",
+                    },
+                    "long": {
+                        "type": "boolean",
+                        "description": "A long-running task, which works through many \
+                                        pieces and sends dispatch_note as it goes: its notes \
+                                        are its heartbeat, purlis never asks it for a report, \
+                                        and it ends when it reports done or failed, or is \
+                                        cancelled. Leave it out for one job with one answer.",
                     },
                     "wait_seconds": {
                         "type": "integer",
@@ -573,6 +931,108 @@ pub static TOOLS: [Tool; 18] = [
         read_only: true,
     },
     Tool {
+        name: DISPATCH_WAIT,
+        description: "Wait for the report of a task this chat dispatched, and answer with it. \
+                      A wait that runs out says the task is still running; its report reaches \
+                      this chat when it lands all the same. A task that asked this chat a \
+                      question answers the wait with the question.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": { "chat": a_task(), "wait_seconds": wait_seconds() },
+                "required": ["chat"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: true,
+    },
+    Tool {
+        name: DISPATCH_TELL,
+        description: "Send a follow-up to a task this chat dispatched that is still working, \
+                      quoted as data from this chat, or with `all` to every task of this chat \
+                      still working. A task at rest is started on it at once; one mid-turn \
+                      reads it when that turn ends. A task that reported while its program \
+                      still runs is told too. Refused, with the task's state, once its program \
+                      has ended. Each follow-up is an instruction with a number, which a task \
+                      acknowledges with dispatch_note's `ack`; dispatch_list shows which tasks \
+                      have. Where the app does not answer, it is queued and delivered when it \
+                      does, unless the chat's sandbox holds purlis's tools too: then nothing \
+                      is queued, and the tool says so.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "chat": a_task(),
+                    "all": {
+                        "type": "boolean",
+                        "description": "Send it to every task of this chat still working, \
+                                        instead of the one `chat` names.",
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "What to add or correct, in a few lines.",
+                    },
+                },
+                "required": ["text"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
+        name: DISPATCH_ANSWER,
+        description: "Answer the question a task this chat dispatched asked it. Only a question \
+                      that task asked this chat can be answered: one it put to the person is \
+                      the person's.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "chat": a_task(),
+                    "text": {
+                        "type": "string",
+                        "description": "The answer, in a few lines.",
+                    },
+                },
+                "required": ["chat", "text"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
+        name: DISPATCH_CANCEL,
+        description: "Cancel a task this chat dispatched: its turn is ended and it is asked for \
+                      one short report of what it did, which arrives with the outcome \
+                      `cancelled`. A task that reported while its program still runs can be \
+                      cancelled too. Refused for a task the person has typed in: that one is \
+                      theirs.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": { "chat": a_task() },
+                "required": ["chat"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
+        name: DISPATCH_CLOSE,
+        description: "Close a finished task this chat dispatched: its finished row goes, and a \
+                      task kept open after its report has its program ended. Refused for a \
+                      task that has not reported, one in a turn, and one the person typed in.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": { "chat": a_task() },
+                "required": ["chat"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
         name: DISPATCH_REPORT,
         description: "Send this task's one report back to the chat that dispatched it: how it \
                       ended, what you did and found, and what changed. Write your session \
@@ -599,6 +1059,53 @@ pub static TOOLS: [Tool; 18] = [
                     },
                 },
                 "required": ["outcome", "text"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
+        name: DISPATCH_NOTE,
+        description: "From a dispatched task: send the chat that asked a progress note. It \
+                      reads it on its next turn, and nothing waits on it. With `ack`, it \
+                      acknowledges that instruction (a follow-up's number) of the asking \
+                      chat's, and `text` may be left out.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "Where the task has got to, in a few lines.",
+                    },
+                    "ack": {
+                        "type": "integer",
+                        "description": "The number of an instruction of the asking chat's \
+                                        this task has taken in.",
+                    },
+                },
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
+        name: DISPATCH_ASK,
+        description: "From a dispatched task: ask the chat that asked a question, and wait for \
+                      its answer. A question only the person can answer is not asked this \
+                      way: ask them in this chat. If the wait runs out, end the turn: the \
+                      answer is handed to the next one.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "The question, in a few lines.",
+                    },
+                    "wait_seconds": wait_seconds(),
+                },
+                "required": ["question"],
                 "additionalProperties": false,
             })
         },
@@ -666,7 +1173,16 @@ pub fn call(
         DISPATCH,
         DISPATCH_LIST,
         DISPATCH_READ,
+        DISPATCH_WAIT,
+        DISPATCH_TELL,
+        DISPATCH_ANSWER,
+        DISPATCH_CANCEL,
+        DISPATCH_CLOSE,
         DISPATCH_REPORT,
+        DISPATCH_NOTE,
+        DISPATCH_ASK,
+        WORKTREE_UPDATE,
+        WORKTREE_REMOVE,
     ]
     .contains(&tool)
     {
@@ -757,9 +1273,11 @@ fn run(
             let memory = must_open(root, place, "memory")?;
             let header = crate::workspaces::ws_memory_header(root, ws);
             write_entry(&memory, &header, &format!("Closed todo: {title}"), now)?;
-            forget(&todos, &file)?;
+            file_as_done(&todos, &file)?;
             Ok(format!(
-                "Closed todo {} in '{ws}'; its memory has the trace.",
+                "Closed todo {} in '{ws}'; its memory has the trace. It stays as done: \
+                 purlis ws todo reopen {} opens it again.",
+                stem(&file),
                 stem(&file)
             ))
         }
@@ -954,24 +1472,83 @@ pub fn dispatch_profile(args: &Map<String, Value>) -> Result<Option<String>, Str
 }
 
 /// The `dispatch` tool's `in`: where the new chat works, where that is asked for (#1453). One
-/// of two words and nothing more: the app reads it ([`crate::dispatchplace::asked`]).
+/// of three words and nothing more: the app reads it ([`crate::dispatchplace::asked`]).
 pub fn dispatch_place(args: &Map<String, Value>) -> Result<Option<String>, String> {
     match args.get("in") {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(place)) if !place.trim().is_empty() => Ok(Some(place.trim().to_owned())),
         Some(Value::String(_)) => Ok(None),
-        Some(_) => Err("`in` is `worktree` or `workspace:<name>`".to_owned()),
+        Some(_) => Err("`in` is `worktree`, `worktree:<repo>` or `workspace:<name>`".to_owned()),
+    }
+}
+
+/// The `dispatch` tool's `long` (#3905): whether the task is a long-running one, `false` where
+/// it is left out.
+pub fn dispatch_long(args: &Map<String, Value>) -> Result<bool, String> {
+    match args.get("long") {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(long)) => Ok(*long),
+        Some(_) => Err("`long` is true or false".to_owned()),
     }
 }
 
 /// The `dispatch_read` tool's argument (#2084): the task's chat, by its number.
 pub fn dispatch_read_args(args: &Map<String, Value>) -> Result<u32, String> {
+    dispatch_task(args, DISPATCH_READ)
+}
+
+/// The task a dispatch tool about one task names (#3786): its chat, by its number.
+pub fn dispatch_task(args: &Map<String, Value>, tool: &str) -> Result<u32, String> {
     args.get("chat")
         .and_then(Value::as_u64)
         .and_then(|chat| u32::try_from(chat).ok())
         .ok_or_else(|| {
-            "dispatch_read needs `chat`: the task's chat, by its number in dispatch_list".to_owned()
+            format!("{tool} needs `chat`: the task's chat, by its number in dispatch_list")
         })
+}
+
+/// The text a dispatch tool sends, under `key`, as it was written (#3786): the app and the
+/// command hold it to their own bounds.
+pub fn dispatch_text(args: &Map<String, Value>, key: &str, tool: &str) -> Result<String, String> {
+    match args.get(key) {
+        Some(Value::String(text)) => Ok(text.clone()),
+        _ => Err(format!("{tool} needs `{key}`, as text")),
+    }
+}
+
+/// A yes-or-no field of a dispatch tool's, `false` where it is left out (#3904).
+pub fn dispatch_flag(args: &Map<String, Value>, key: &str, tool: &str) -> Result<bool, String> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(flag)) => Ok(*flag),
+        Some(_) => Err(format!("{tool}'s `{key}` is true or false")),
+    }
+}
+
+/// The instruction `dispatch_note` acknowledges, where it names one (#3904).
+pub fn dispatch_ack(args: &Map<String, Value>) -> Result<Option<u32>, String> {
+    match args.get("ack") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Number(n)) => n
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .map(Some)
+            .ok_or_else(|| "`ack` is an instruction's number".to_owned()),
+        Some(_) => Err("`ack` is an instruction's number".to_owned()),
+    }
+}
+
+/// How long a dispatch tool that waits is asked to wait, in seconds, where it says (#3786).
+pub fn dispatch_wait_seconds(args: &Map<String, Value>) -> Result<Option<u32>, String> {
+    match args.get("wait_seconds") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Number(n)) => n
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .map(Some)
+            .ok_or_else(|| "`wait_seconds` is a whole number of seconds".to_owned()),
+        Some(_) => Err("`wait_seconds` is a whole number of seconds".to_owned()),
+    }
 }
 
 /// The `dispatch_report` tool's arguments: the outcome, the text, and what changed.
@@ -1141,12 +1718,29 @@ fn resolve(store: &held::Store, ident: &str) -> Result<String, String> {
     }
 }
 
-/// Delete `file` and its index line, through the held store.
+/// Move `file` into the store's `archive/` and drop its index line, through the held store: a
+/// done todo stays there until it is reopened or deleted (ADR 0106), as
+/// `Workspace::close_todo` keeps it. A name already taken there is numbered `-2`, then `-2-3`,
+/// as `memstore::archive_one` numbers it.
 #[cfg(unix)]
-fn forget(store: &held::Store, file: &str) -> Result<(), String> {
-    store.remove(file)?;
-    // As `memstore::forget`: the file is gone, so a failure to drop its line is drift the next
-    // `optimize` names, never a failure of the close.
+fn file_as_done(store: &held::Store, file: &str) -> Result<(), String> {
+    let archive = store.sub(crate::memstore::ARCHIVE, true)?.ok_or_else(|| {
+        format!(
+            "the chat's todos/{} could not be made",
+            crate::memstore::ARCHIVE
+        )
+    })?;
+    // Under the store's lock, as `memstore::archive_one` moves one, and never onto a file: a
+    // name taken, or taken between the look and the move, is numbered.
+    let _held = store.lock()?;
+    let mut dest = file.to_owned();
+    let mut n = 2;
+    while archive.entry(&dest)?.is_some() || !store.rename_into_new(file, &archive, &dest)? {
+        dest = format!("{}-{n}.md", stem(&dest));
+        n += 1;
+    }
+    // As `memstore::archive_one`: the file has moved, so a failure to drop its line is drift
+    // the next `optimize` names, never a failure of the close.
     crate::memstore::rewrite_index(store, file, None);
     Ok(())
 }

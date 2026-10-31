@@ -150,6 +150,9 @@ pub struct OfferedSkill {
     pub folder: String,
     /// The levels it is installed at from this source, as a person reads them.
     pub installed: Vec<String>,
+    /// What its files do beyond its instructions, a few words each, as the core marks them;
+    /// `None` where they were not read to browse, and its review reads them.
+    pub marks: Option<Vec<String>>,
 }
 
 /// A folder of a source that is not a skill purlis offers.
@@ -160,11 +163,13 @@ pub struct NotASkill {
 }
 
 /// What a source offers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct SourceBrowse {
     pub commit: SourceCommit,
     pub skills: Vec<OfferedSkill>,
     pub not_skills: Vec<NotASkill>,
+    /// When it was read, in seconds since the epoch (#3840): what its page's lead says.
+    pub checked: f64,
 }
 
 /// Why an item of the summary is marked.
@@ -403,6 +408,9 @@ pub struct ReviewSkill {
     pub description: String,
     pub folder: String,
     pub brought_by: Option<String>,
+    /// The skills it refers to that the level it lands in holds already (#4032): left as they
+    /// are, not brought along.
+    pub already: Vec<String>,
     pub summary: ReviewSummary,
     pub files: Vec<ReviewFile>,
     pub left_out: Vec<ReviewLeftOut>,
@@ -416,6 +424,7 @@ impl From<&source::SkillReview> for ReviewSkill {
             description: esc(&skill.description),
             folder: esc(&skill.folder),
             brought_by: skill.brought_by.as_deref().map(esc),
+            already: skill.already.iter().map(|one| esc(one)).collect(),
             summary: (&skill.summary).into(),
             files: skill
                 .files
@@ -496,6 +505,39 @@ pub struct InstallReview {
     pub commit: SourceCommit,
     pub skills: Vec<ReviewSkill>,
     pub accepted: Reviewed,
+}
+
+impl From<&source::Review> for InstallReview {
+    fn from(review: &source::Review) -> Self {
+        InstallReview {
+            commit: (&review.commit).into(),
+            skills: review.skills.iter().map(Into::into).collect(),
+            accepted: (&review.accepted()).into(),
+        }
+    }
+}
+
+/// **The review of installing a set of a source's skills together** (#4024): one review, or,
+/// where reading all of them is more than one read of the source may take, which of those named
+/// fit, so the window asks to install them in parts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum InstallSetReview {
+    Review {
+        review: InstallReview,
+        /// Those named that the level holds already (#4153): left out, and left as they are.
+        there: Vec<String>,
+    },
+    TooMuch {
+        /// Those named first that fit one read, the first part; empty where the first alone
+        /// does not.
+        fits: Vec<String>,
+        /// The rest of those named.
+        rest: Vec<String>,
+        why: String,
+        /// Those named that the level holds already (#4153), left out of every part.
+        there: Vec<String>,
+    },
 }
 
 /// One newer commit offered for an installed skill.
@@ -587,7 +629,42 @@ pub struct UpdateReview {
     pub local_edits: Vec<UpdateFile>,
     pub skill: ReviewSkill,
     pub brought: Vec<ReviewSkill>,
+    /// The updated skill's own grant, where it reaches past the root (#4186): each skill it
+    /// brings along lands with it.
+    pub grant: Option<SkillGrant>,
+    /// Each project skill it and those it brings along rely on whose grant the update widens, or
+    /// which a workspace it reaches turned off (#4186).
+    pub widenings: Vec<SkillWidening>,
     pub accepted: Reviewed,
+}
+
+/// **A project skill an install or an update relies on** whose grant it widens, or which a
+/// workspace it reaches turned off (#4172, #4185, #4186): what its review says before the change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillWidening {
+    pub name: String,
+    /// Its grant now, as a person reads it: `root`, `all`, or the workspaces' names.
+    pub granted: String,
+    /// What the change grants it to besides, as a person reads it; `None` where its grant
+    /// reaches every workspace the change does already.
+    pub added: Option<String>,
+    /// The workspaces the change reaches that turned it off, whose chats get the skill that
+    /// refers to it without it: no grant turns it back on.
+    pub turned_off: Vec<String>,
+}
+
+impl From<&source::Widening> for SkillWidening {
+    fn from(one: &source::Widening) -> Self {
+        SkillWidening {
+            name: esc(&one.name),
+            granted: esc(&one.granted.to_string()),
+            added: one
+                .widened
+                .as_ref()
+                .map(|to| esc(&source::added(&one.granted, to))),
+            turned_off: one.turned_off.iter().map(|ws| esc(ws)).collect(),
+        }
+    }
 }
 
 /// The project's skill sources.
@@ -606,6 +683,63 @@ pub(crate) async fn skill_sources(
             .collect())
     })
     .await
+}
+
+/// **What the last check of a source found** (#3840): when it was, and how many skills it
+/// offered then, as the core recorded it (`source::checked`), with how many are installed from it
+/// now. Read with the source list, and never by asking a source.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct SourceChecked {
+    pub remote: SourceRemote,
+    /// When it was last checked, in seconds since the epoch; `None` where nothing has yet.
+    pub at: Option<f64>,
+    /// How many skills it offered at its last browse; `None` where it was never browsed here.
+    pub skills: Option<u32>,
+    /// How many skills are installed from it, at any level, each once.
+    pub installed: u32,
+}
+
+/// **When each of the project's sources was last checked, and its counts** (#3840): one for each
+/// source [`skill_sources`] lists, read from what the last browse or updates check recorded and
+/// from the lockfiles, so Sources opens without asking any source.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_sources_checked(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+) -> Result<Vec<SourceChecked>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading when the skill sources were checked", move || {
+        flag_on()?;
+        checked_shown(held.root())
+    })
+    .await
+}
+
+/// Seconds since the epoch as the window reads a number: exact for every second before the year
+/// 285 million.
+#[allow(clippy::cast_precision_loss)]
+fn seconds(at: u64) -> f64 {
+    at as f64
+}
+
+/// [`skill_sources_checked`] for the project at `root`.
+fn checked_shown(root: &std::path::Path) -> Result<Vec<SourceChecked>, String> {
+    let recorded = source::checked::read(root);
+    let (locked, _) = source::lock::every(root);
+    Ok(source::sources(root)?
+        .into_iter()
+        .map(|one| {
+            let remote = one.source.remote;
+            let last = recorded.iter().find(|at| at.remote == remote);
+            SourceChecked {
+                remote: (&remote).into(),
+                at: last.map(|at| seconds(at.at)),
+                skills: last.and_then(|at| at.skills),
+                installed: source::checked::installed_from(&locked, &remote),
+            }
+        })
+        .collect())
 }
 
 /// Whose list an offered source is on.
@@ -744,6 +878,7 @@ pub(crate) async fn skill_source_browse(
                     description: esc(&one.skill.description),
                     folder: esc(&one.skill.folder),
                     installed: one.installed.iter().map(ToString::to_string).collect(),
+                    marks: one.marks,
                 })
                 .collect(),
             not_skills: browse
@@ -754,12 +889,14 @@ pub(crate) async fn skill_source_browse(
                     why: esc(&one.why),
                 })
                 .collect(),
+            checked: seconds(browse.checked),
         })
     })
     .await
 }
 
-/// **The install review** of `names` from a source, and the skills they refer to.
+/// **The install review** of `names` from a source into `level`, and the skills they refer to
+/// that `level` does not hold already.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_install_review(
@@ -767,18 +904,102 @@ pub(crate) async fn skill_install_review(
     plane: crate::planes::PlaneId,
     source: SkillSource,
     names: Vec<String>,
+    level: SkillLevel,
 ) -> Result<InstallReview, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reviewing the install", move || {
         flag_on()?;
-        let review = source::review(held.root(), &source.core(), &names)?;
-        Ok(InstallReview {
-            commit: (&review.commit).into(),
-            skills: review.skills.iter().map(Into::into).collect(),
-            accepted: (&review.accepted()).into(),
-        })
+        let built_in = crate::skillchange::built_in();
+        let review = source::review(
+            held.root(),
+            built_in.as_deref(),
+            &source.core(),
+            &names,
+            &(&level).into(),
+        )?;
+        Ok(InstallReview::from(&review))
     })
     .await
+}
+
+/// **The review of installing `names` from a source together** (#4024, Install all…): one review
+/// of the set into `level` and the skills they refer to that it does not hold already, those named
+/// that it holds already left out (#4153), or which of them fit one read.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_install_set_review(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    source: SkillSource,
+    names: Vec<String>,
+    level: SkillLevel,
+) -> Result<InstallSetReview, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reviewing the install", move || {
+        flag_on()?;
+        let built_in = crate::skillchange::built_in();
+        Ok(
+            match source::review_set(
+                held.root(),
+                built_in.as_deref(),
+                &source.core(),
+                &names,
+                &(&level).into(),
+            )? {
+                source::SetReview::Review { review, there } => InstallSetReview::Review {
+                    review: (&review).into(),
+                    there: there.iter().map(|one| esc(one)).collect(),
+                },
+                source::SetReview::TooMuch(too_much) => InstallSetReview::TooMuch {
+                    fits: too_much.fits.iter().map(|one| esc(one)).collect(),
+                    rest: too_much.rest.iter().map(|one| esc(one)).collect(),
+                    why: esc(&too_much.why),
+                    there: too_much.there.iter().map(|one| esc(one)).collect(),
+                },
+            },
+        )
+    })
+    .await
+}
+
+/// **What installing at `level` with `grant` asks of the project skills the reviewed skills
+/// refer to** (#4185, #4172): `already`, the references the review left as they are, each
+/// project skill whose grant the install widens, or which a workspace it reaches turned off.
+/// Asked again each time the grant picked changes, with no second read of the source.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_install_widenings(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    level: SkillLevel,
+    grant: Option<SkillGrant>,
+    already: Vec<String>,
+) -> Result<Vec<SkillWidening>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading where the install reaches", move || {
+        flag_on()?;
+        Ok(widenings_shown(held.root(), &level, grant, &already))
+    })
+    .await
+}
+
+/// [`skill_install_widenings`] for the project at `root`.
+fn widenings_shown(
+    root: &std::path::Path,
+    level: &SkillLevel,
+    grant: Option<SkillGrant>,
+    already: &[String],
+) -> Vec<SkillWidening> {
+    let grant: Option<purlis_core::skills::Grant> = grant.map(Into::into);
+    source::widenings(
+        root,
+        &level.into(),
+        grant.as_ref(),
+        already.iter().map(String::as_str),
+    )
+    .iter()
+    .map(Into::into)
+    .collect()
 }
 
 /// **Installs what was reviewed** at `level`, with `grant` where it is a project skill.
@@ -871,7 +1092,9 @@ pub(crate) async fn skill_update_review(
     let held = planes.held(&plane)?;
     crate::off_the_window("reviewing the update", move || {
         flag_on()?;
-        let update = source::update_review(held.root(), &(&level).into(), &name)?;
+        let built_in = crate::skillchange::built_in();
+        let update =
+            source::update_review(held.root(), built_in.as_deref(), &(&level).into(), &name)?;
         Ok(UpdateReview {
             name: esc(&update.name),
             pinned: (&update.pinned).into(),
@@ -884,13 +1107,16 @@ pub(crate) async fn skill_update_review(
             local_edits: files_shown(&update.local_edits),
             skill: (&update.review).into(),
             brought: update.brought.iter().map(Into::into).collect(),
+            grant: update.grant.clone().map(Into::into),
+            widenings: update.widenings.iter().map(Into::into).collect(),
             accepted: (&update.accepted()).into(),
         })
     })
     .await
 }
 
-/// **Accepts an update** that was reviewed: the pin moves, as one commit.
+/// **Accepts an update** that was reviewed: the pin moves, as one commit. `grant` is the grant
+/// the review showed (#4186): where the skill's grant changed since, nothing is written.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_update(
@@ -899,13 +1125,15 @@ pub(crate) async fn skill_update(
     level: SkillLevel,
     name: String,
     reviewed: Reviewed,
+    grant: Option<SkillGrant>,
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("updating the skill", move || {
         flag_on()?;
         let accepted = Accepted::try_from(&reviewed)?;
+        let grant: Option<purlis_core::skills::Grant> = grant.map(Into::into);
         heard(held.root(), |cx| {
-            source::update(cx, &(&level).into(), &name, &accepted)
+            source::update(cx, &(&level).into(), &name, &accepted, grant.as_ref())
         })
     })
     .await

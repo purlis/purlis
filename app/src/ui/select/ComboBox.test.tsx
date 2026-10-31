@@ -123,6 +123,16 @@ describe("the combobox", () => {
     await waitFor(() => expect(sent).toHaveBeenCalledWith("my-own"));
   });
 
+  // WCAG 2.5.8 (#3250): sm's floor is 24 CSS px, as the sm button's is (#3210).
+  it("never draws an sm combobox under the 24px target, in any density or text size", () => {
+    render(<ComboBox label="Skill" size="sm" suggestions={SKILLS} value="" onChange={() => {}} />);
+    const root = screen
+      .getByRole("combobox", { name: "Skill" })
+      .closest('[data-scope="combobox"][data-part="root"]') as Element;
+    expect(root).toHaveAttribute("data-size", "sm");
+    expect(drawnWith(root, "block-size")).toBe("max(24px, var(--size-chrome), var(--space-7))");
+  });
+
   it("is held off when it is unavailable", () => {
     render(<Box isDisabled />);
     expect(box()).toBeDisabled();
@@ -142,6 +152,56 @@ describe("the combobox", () => {
     await user.click(box());
     await user.keyboard("{ArrowDown}");
     expect(await screen.findByRole("listbox")).toBeInTheDocument();
+  });
+
+  it("says why in the field's error line, kept from the start and heard as it lands (#3334)", async () => {
+    function Refusing() {
+      const [value, setValue] = useState("");
+      const refused = value !== "" && !SKILLS.some((one) => one.startsWith(value));
+      return (
+        <ComboBox
+          label="Add a skill"
+          suggestions={SKILLS}
+          value={value}
+          onChange={setValue}
+          error={refused ? "ops has no skill by that name." : undefined}
+        />
+      );
+    }
+    render(<Refusing />);
+    const field = box().closest('[data-scope="field"][data-part="root"]') as Element;
+    const line = field.querySelector('[data-scope="field"][data-part="error"]') as Element;
+    // The room is there before it says anything, a live region, so the words are heard as they
+    // land and nothing moves.
+    expect(line).toHaveAttribute("aria-live", "polite");
+    expect(line).not.toHaveAttribute("role");
+    expect(line).toBeEmptyDOMElement();
+    expect(box()).not.toHaveAttribute("aria-invalid");
+    expect(box()).not.toHaveAccessibleDescription();
+    // Refused while the person types, not when they leave.
+    await userEvent.type(box(), "zz");
+    expect(box()).toHaveFocus();
+    expect(field.querySelector('[data-part="error"]')).toBe(line);
+    expect(line).not.toHaveAttribute("role");
+    expect(line).toHaveTextContent("ops has no skill by that name.");
+    expect(box()).toHaveAttribute("aria-invalid", "true");
+    expect(box()).toHaveAccessibleDescription("ops has no skill by that name.");
+    const root = box().closest('[data-scope="combobox"][data-part="root"]') as Element;
+    expect(root).toHaveAttribute("data-invalid");
+    // Allowed again: the line empties and stays.
+    await userEvent.clear(box());
+    expect(line).toBeEmptyDOMElement();
+    expect(line).not.toHaveAttribute("role");
+    expect(box()).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("takes a reason with no words as no refusal", () => {
+    render(
+      <ComboBox label="Add a skill" suggestions={SKILLS} value="" onChange={() => {}} error="" />,
+    );
+    expect(box()).not.toHaveAttribute("aria-invalid");
+    expect(box()).not.toHaveAccessibleDescription();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("is not refused unless it is told so", () => {

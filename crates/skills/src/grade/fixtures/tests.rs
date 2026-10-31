@@ -211,3 +211,88 @@ fn the_window_is_told_what_is_wrong_and_never_a_file_or_a_key() {
         "The skill's outcome evals could not be read: outcome eval 1 lists its checks twice, under two names."
     );
 }
+
+/// #3275: a key named twice in one object is refused, never read last-wins, as another reader of
+/// the same file may take the first.
+#[test]
+fn a_fixture_that_names_a_key_twice_is_refused_whole() {
+    let twice = triggers_of(r#"[{"query": "ship it", "query": "rm -rf", "should_trigger": true}]"#)
+        .unwrap_err();
+    assert!(
+        matches!(twice.wrong, Wrong::KeyTwice { line: 1, .. }),
+        "{twice:?}"
+    );
+    assert!(
+        twice.terminal().contains("a key twice"),
+        "{}",
+        twice.terminal()
+    );
+    assert!(twice.in_window().contains("twice"), "{}", twice.in_window());
+    let evals = outcomes_of(
+        r#"{"skill_name": "pdf", "skill_name": "other", "evals": []}"#,
+        "pdf",
+    )
+    .unwrap_err();
+    assert!(matches!(evals.wrong, Wrong::KeyTwice { .. }), "{evals:?}");
+    assert!(
+        matches!(
+            triggers_of("[{\"query\": ").unwrap_err().wrong,
+            Wrong::NotJson { .. }
+        ),
+        "a file cut short is not JSON"
+    );
+    assert_eq!(
+        triggers_of(r#"[{"query": "same", "should_trigger": true}, {"query": "other", "should_trigger": false}]"#)
+            .map(|tests| tests.len()),
+        Ok(2),
+        "a key in two objects is two keys"
+    );
+}
+
+/// #3275: a file path part holding a control character, or a path past its named limit, is no
+/// path inside the skill; ids are checked once each.
+#[test]
+fn an_evals_file_path_with_a_control_character_or_too_long_is_refused() {
+    let long = "a/".repeat(MOST_FILE_PATH_BYTES / 2) + "b";
+    for path in [
+        "notes\u{7}.md",
+        "dir/\u{1b}[2Jx",
+        "tab\there",
+        long.as_str(),
+    ] {
+        let text = serde_json::json!({
+            "evals": [{"id": 1, "prompt": "x", "files": [path]}]
+        })
+        .to_string();
+        let why = outcomes_of(&text, "pdf").unwrap_err();
+        assert!(
+            matches!(why.wrong, Wrong::FileNotInTheSkill { .. }),
+            "{path:?}: {why:?}"
+        );
+    }
+    let ok = serde_json::json!({
+        "evals": [{"id": 1, "prompt": "x", "files": ["docs/notes.md"]}]
+    })
+    .to_string();
+    assert!(outcomes_of(&ok, "pdf").is_ok());
+    let twice = r#"{"evals": [{"id": 1, "prompt": "x"}, {"id": 2, "prompt": "y"}, {"id": 1, "prompt": "z"}]}"#;
+    assert!(matches!(
+        outcomes_of(twice, "pdf").unwrap_err().wrong,
+        Wrong::IdTwice { id: 1 }
+    ));
+}
+
+/// #3925: a skill with no trigger tests starts from a template its file reads back as: one query
+/// it should start on, one near miss it should leave alone, each naming the skill.
+#[test]
+fn the_trigger_tests_template_reads_back_as_one_start_and_one_near_miss() {
+    let tests = triggers_of(&triggers_template("deploy")).unwrap();
+    assert_eq!(tests.len(), 2);
+    assert!(tests[0].should_trigger);
+    assert!(!tests[1].should_trigger);
+    assert!(
+        tests.iter().all(|test| test.query.contains("deploy")),
+        "{tests:?}"
+    );
+    assert_eq!(triggers_path(), "evals/triggers.json");
+}

@@ -136,7 +136,7 @@ export const LANES = {
  * **Every place in the core that writes a file one of the lanes reads, and the window commands
  * that reach it** (#1949): `writeSites.json`, one table for both sides.
  *
- * - The core's test (`lane_writes_guard_tests.rs`) reads the app crate's own code, its test
+ * - The core's test (`off_the_main_thread/tests/lane_writes.rs`) reads the app crate's own code, its test
  *   modules left out, and fails where the table does not hold what it finds:
  *   - a call that writes one of these files, by the writers it names (and, for the sandbox's
  *     local file, any function of it that is not a known read) and the function it is in;
@@ -176,6 +176,7 @@ export const OUTSIDE_THE_LANES: Partial<Record<keyof typeof commands, string>> =
     "It tells the chat, in fixed words typed into its pane, not to try again: that lands in the " +
     "order of the person's own typing, which a lane behind a slow read would break. Its line in " +
     "the network record is a look back, read again at the next look.",
+  keepSandboxBlockForTasks: "As keepSandboxBlock, for each task held on the block.",
   addProjectForge:
     "It writes the manifest's forges, which no read of the sandbox's lane draws; Settings reads " +
     "the file again after it. The read it answers with drops the confirmed hosts the file no " +

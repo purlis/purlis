@@ -22,9 +22,13 @@
  * - **An empty value is an option like any other** ("Every workspace", "not set"): React Aria
  *   keeps no key for nothing, so an option's `""` travels as a word of its own and comes back as
  *   `""`. A value none of the options has shows `placeholder`, as nothing picked.
- * - **Refused** (`isInvalid`, #3110): a value the form will not take draws the danger colour on
- *   the box's edge, as a text field's, and the button is marked invalid (`aria-invalid`); the
- *   words that say why are its description (`aria-describedby`), so they are heard with it.
+ * - **Refused** (`error`, #3110, #3334): a value the form will not take draws the danger colour on
+ *   the box's edge, as a text field's, and the button is marked invalid (`aria-invalid`). The
+ *   words that say why are the field's error line under it: a select that takes `error` stands in
+ *   a field of its own (the field family's root, its place `className`'s): a column as wide as
+ *   its place, the button as wide as the field, so in a row it is given a width; its line's room kept
+ *   whether or not it says anything, so a refusal is heard when it lands and moves nothing.
+ *   `isInvalid` is for words drawn elsewhere (a settings row's), named by `aria-describedby`.
  * - **The button carries what it holds as `data-value`**, for the window's e2e specs to read the
  *   way they read a field's value.
  * - **Drawn only while its project is in front**: its list is the popover family's surface.
@@ -53,7 +57,7 @@ import {
   type Key,
 } from "react-aria-components";
 import { Check, ChevronDown, Search } from "lucide-react";
-import { TextField, type FieldSize } from "../field/Field";
+import { ErrorLine, TextField, describedBy, useFormSummary, type FieldSize } from "../field/Field";
 import { PopoverFilter, Surface } from "../popover/Popover";
 import { Tooltip } from "../tooltip/Tooltip";
 
@@ -85,8 +89,12 @@ export type SelectProps = {
   /** What it shows while it holds a value none of the options has. */
   placeholder?: string;
   isDisabled?: boolean;
-  /** Refused: the form will not take what it holds. The words that say why are drawn by its row
-   *  or its form and named by `aria-describedby`. */
+  /** Why the form will not take what it holds, said under it in the field's error line and heard
+   *  as it lands; `undefined` while it is taken. Given at all, set or not, the select stands in a
+   *  field and the line's room is kept. */
+  error?: string;
+  /** Refused, where the words that say why are drawn elsewhere (its row) and named by
+   *  `aria-describedby`. */
   isInvalid?: boolean;
   /** Its hint, the shared tooltip (#2908). */
   tooltip?: string;
@@ -124,12 +132,23 @@ export function Select({
 }: SelectProps) {
   const held = options.some((one) => one.value === value);
   const long = filtered ?? options.length >= FILTERED_FROM;
+  const errorId = `${useId()}-error`;
+  // A select that can be refused in words stands in a field, which its line is under.
+  const refusable = "error" in rest;
+  const { error: written, ...given } = rest;
+  // A reason with no words is no refusal: nothing would be heard or drawn.
+  const error = written === "" ? undefined : written;
+  const invalid = error !== undefined || isInvalid === true;
+  // A pick fires no native change: it ends its form's summary itself (#3291).
+  const { end } = useFormSummary();
   const aria: Record<string, unknown> = {};
   const data: Record<string, unknown> = {};
-  for (const [key, one] of Object.entries(rest)) (key.startsWith("data-") ? data : aria)[key] = one;
+  for (const [key, one] of Object.entries(given))
+    (key.startsWith("data-") ? data : aria)[key] = one;
   return (
     <AriaSelect
       {...aria}
+      aria-describedby={describedBy(given["aria-describedby"], errorId, error)}
       value={held ? into(value) : null}
       onChange={(key) => {
         if (key === null) return;
@@ -138,27 +157,30 @@ export function Select({
         // is the lock** (D-2906-11): the row drops the press handlers it knows of, but a press
         // React Aria reaches it by in a later version, typeahead on the closed button and the
         // form's hidden select all end here, and pick nothing.
-        if (!options.some((one) => one.value === to && saysWhy(one))) onValueChange(to);
+        if (options.some((one) => one.value === to && saysWhy(one))) return;
+        end();
+        onValueChange(to);
       }}
       isDisabled={isDisabled}
-      isInvalid={isInvalid}
+      isInvalid={invalid}
       validationBehavior="aria"
       placeholder={placeholder ?? ""}
-      data-scope="select"
-      data-part="field"
+      className={refusable ? className : undefined}
+      data-scope={refusable ? "field" : "select"}
+      data-part={refusable ? "root" : "field"}
     >
       {({ isOpen }) => (
         <>
           <AriaButton
             {...data}
             id={id}
-            className={className}
+            className={refusable ? undefined : className}
             data-scope="select"
             data-part="root"
             data-size={size}
             data-open={isOpen ? "" : undefined}
             data-value={held ? value : ""}
-            data-invalid={isInvalid ? "" : undefined}
+            data-invalid={invalid ? "" : undefined}
             // #190: WebKit leaves a button out of the Tab order without `tabIndex`. Its hint is
             // the shared tooltip's, which keeps an unavailable select's reason heard (#2908).
             render={(dom) => {
@@ -166,7 +188,7 @@ export function Select({
               const button = (
                 <button
                   {...own}
-                  aria-invalid={isInvalid || undefined}
+                  aria-invalid={invalid || undefined}
                   tabIndex={own.tabIndex ?? 0}
                   // Escape on a select whose list is closed is for what it stands in (a form
                   // that closes, a dialog): React Aria would keep it.
@@ -193,6 +215,7 @@ export function Select({
               <ChevronDown />
             </span>
           </AriaButton>
+          {refusable && <ErrorLine id={errorId} said={error} />}
           <Surface kind="menu" data-of="select" data-layout={long ? "list" : undefined}>
             {long ? <FilteredList options={options} /> : <OptionList options={options} />}
           </Surface>

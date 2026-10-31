@@ -18,12 +18,13 @@ import App from "./App";
 import { forgetRepoClones } from "./repoClones";
 import { SETTINGS_LINK, type SettingsLinkAsk } from "./settings/links";
 import { chipName, workspaceChips } from "./test-strips";
+import { findOnCard } from "./actionResult.testkit";
 
 /**
  * **A refusal that names a setting links to it** (#1201, SE-22): the window's line under the
  * strip says the core's words and, beside them, a link into the Settings group that puts it
- * right. Here, a repo that did not clone into a new workspace: "Retry from the workspace's
- * settings." links to that workspace's Repos.
+ * right. Here, a repo that did not clone into a new workspace: its notice on the workspace's
+ * chip offers Retry and links to that workspace's Repos (#3649).
  */
 
 vi.mock("./SessionPane", () => ({
@@ -102,10 +103,11 @@ describe("a refusal's way to its setting (#1201)", () => {
       await userEvent.click(await within(dialog).findByRole("checkbox", { name: "api" }));
       await userEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
 
-      const words = await screen.findByText(/Could not clone api into gamma/);
-      expect(words).toHaveTextContent("Retry from the workspace's settings.");
-      const said = words.closest<HTMLElement>('[role="alert"]');
-      if (said === null) throw new Error("the clone's failure is not said as an alert");
+      // On the new workspace's chip's card (#3649), with Retry beside the way to its Repos.
+      const said = await findOnCard("gamma", /Could not clone api into gamma/);
+      expect(within(said).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+      // A closable notice in the trouble tone, said once as a polite status (#3344).
+      expect(said.querySelector('[role="status"]')).not.toBeNull();
       await userEvent.click(
         within(said).getByRole("button", { name: "Open gamma's repo settings" }),
       );

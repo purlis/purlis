@@ -9,11 +9,11 @@
 
    **The dialog rules** (#2798, #2789, #2910):
 
-   - **Anchored at a fixed top**: the scrim lays the dialog out from its top edge, 24 px down
-     (`--space-7` at the default text size), so a change in its content moves only its bottom
-     edge.
-   - **At most the window less 48 px tall**: the scrim's 24 px above and below. A dialog given a
-     height takes the lesser of its own and that.
+   - **Anchored at a fixed top**: the scrim lays the dialog out from its top edge,
+     `max(24px, 6vh)` down (24 px is `--space-7` at the default text size), as the prototype places it (audit R2, `#mount { padding: 6vh … }`),
+     so a change in its content moves only its bottom edge.
+   - **At most the window less that top less 24 px tall**: the scrim's padding above and below.
+     A dialog given a height takes the lesser of its own and that.
    - **As wide as its size**, never as its content: standard 600 px, wide 800 px (a list beside
      its details; the operator's ruling on #2918), each at most the window less a 16 px gutter on each side (`--space-6`).
    - **Header, body, footer**: three rows, the body the only one that scrolls, so the footer and
@@ -23,8 +23,8 @@
    **In the `components` layer** (`styles.css`), above `App.css`: a view's rule (`.warning`, a
    dialog's own class) cannot redraw the dialog's size, place or rows.
 
-   **The overlay surface** (#1845): the ground, border, corner and lift every overlay shares
-   (`primitives/overlays.css`), so a dialog reads as related to a popover and a menu. The rows
+   **The overlay surface** (#1845, ADR 0094 §4): the ground, border, corner and lift every overlay
+   shares, so a dialog reads as related to a popover and a menu. The rows
    are the dialog rules' own, from the prototype that stands for every dialog (#2798): a title
    at 16/600, the body padded, the footer under its rule.
 
@@ -43,7 +43,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding-block: var(--space-7);
+  /* The fixed top (R2): 6vh, never closer than 24px (`--space-7`); 24px clear of the bottom. */
+  padding-block: max(var(--space-7), 6vh) var(--space-7);
   padding-inline: var(--space-6);
   background-color: var(--overlay-scrim);
 }
@@ -88,7 +89,7 @@
   inline-size: min(800px, 100%);
 }
 
-/* A height of its own, whatever its content: the lesser of it and the window's less 48 px. */
+/* A height of its own, whatever its content: the lesser of it and the room the scrim leaves. */
 [data-scope="dialog"][data-part="root"][data-fixed-height] {
   block-size: min(var(--dialog-height), 100%);
 }
@@ -173,7 +174,7 @@
 /* The footer's rule: its own part, a line the width of the dialog, and never a control's border
    (#2804). */
 [data-scope="dialog"][data-part="separator"] {
-  block-size: 1px;
+  block-size: var(--separator-width);
   background-color: var(--border-subtle);
 }
 

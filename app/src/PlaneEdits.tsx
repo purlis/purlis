@@ -10,6 +10,8 @@ import type { Doing, Ran } from "./actions";
 import { commands, type PersonaProfile as PersonaProfileRead, type PlaneId } from "./bindings";
 import type { ViewRef } from "./tabs";
 import { todoView } from "./todos";
+import { discardRemoved, unsavedIn } from "./unsavedWork";
+import type { UnsavedAsk } from "./UnsavedWorkQuestion";
 
 /** The verbs of `Doing` this hook carries out (SI-3). */
 export type PlaneEditing = Pick<
@@ -21,6 +23,8 @@ export type PlaneEditing = Pick<
   | "removePersona"
   | "closeTodo"
   | "forgetTodo"
+  | "reopenTodo"
+  | "forgetDoneTodo"
 >;
 
 /**
@@ -43,6 +47,7 @@ export function usePlaneEdits({
   closeView,
   reread,
   reloadVaults,
+  askUnsaved,
 }: {
   plane: PlaneId;
   showView: (view: ViewRef, title: string) => void;
@@ -52,6 +57,8 @@ export function usePlaneEdits({
   reread: () => void;
   /** Read the plane's vaults again. */
   reloadVaults: () => void;
+  /** Ask the window's one question about unsaved work a step would lose (#3929). */
+  askUnsaved: (ask: UnsavedAsk) => void;
 }): {
   doing: PlaneEditing;
   addTodo: (workspace: string, text: string) => Promise<string | undefined>;
@@ -178,9 +185,16 @@ export function usePlaneEdits({
     [plane, reread],
   );
 
+  /** **The unsaved work a save writes into the persona is asked about first** (#4029): a
+   *  persona-level skill being edited goes with the persona. Then the removal's own question. */
   const removePersona = useCallback(
-    (persona: string) => setRemovingPersona({ persona, busy: false }),
-    [],
+    (persona: string) => {
+      const askToRemove = () => setRemovingPersona({ persona, busy: false });
+      const work = unsavedIn(plane, { persona });
+      if (work.length === 0) return askToRemove();
+      askUnsaved({ work, then: askToRemove });
+    },
+    [askUnsaved, plane],
   );
 
   const deletePersona = useCallback(
@@ -192,6 +206,8 @@ export function usePlaneEdits({
         return;
       }
       setRemovingPersona(undefined);
+      // The unsaved work a save would have written into it goes with it (#4029).
+      discardRemoved(plane, { persona });
       closeView({ from: null, view: "persona", key: persona });
       reread();
     },
@@ -229,6 +245,15 @@ export function usePlaneEdits({
       todoGone(workspace, slug, commands.todoForget(plane, workspace, slug)),
     [plane, todoGone],
   );
+  /** A done todo reopened or deleted: its tab, if one is open, reads it again on the change. */
+  const reopenTodo = useCallback(
+    (workspace: string, slug: string) => todoWrite(commands.todoReopen(plane, workspace, slug)),
+    [plane, todoWrite],
+  );
+  const forgetDoneTodo = useCallback(
+    (workspace: string, slug: string) => todoWrite(commands.todoForgetDone(plane, workspace, slug)),
+    [plane, todoWrite],
+  );
   const addTodo = useCallback(
     async (workspace: string, text: string) => {
       const ran = await todoWrite(commands.todoAdd(plane, workspace, text));
@@ -246,6 +271,8 @@ export function usePlaneEdits({
       removePersona,
       closeTodo,
       forgetTodo,
+      reopenTodo,
+      forgetDoneTodo,
     }),
     [
       removeVault,
@@ -255,6 +282,8 @@ export function usePlaneEdits({
       removePersona,
       closeTodo,
       forgetTodo,
+      reopenTodo,
+      forgetDoneTodo,
     ],
   );
 

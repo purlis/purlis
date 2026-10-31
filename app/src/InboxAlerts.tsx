@@ -1,18 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { OctagonAlert, TriangleAlert } from "lucide-react";
 import { ApprovePlane } from "./ApprovePlane";
-import {
-  commands,
-  type AlertRow,
-  type AlertWay,
-  type DoctorFixed,
-  type FontReview,
-  type PlaneId,
-} from "./bindings";
+import { commands, type AlertRow, type AlertWay, type FontReview, type PlaneId } from "./bindings";
 import type { AlertsReading } from "./alerts";
+import { useAlertFix } from "./alertFix";
 import { identityNowOf, sendIdentity, useFixForm, type Fixer } from "./Doctor";
 import { useSeenOnThisMachine } from "./dismissals";
 import { drawWhatIsInForce } from "./Extensions";
@@ -177,6 +171,17 @@ function ThisProject({
               needsSave={way.repo !== null && !way.autosave}
             />
           );
+        // A chat's undelivered messages (#3958): read, then put away.
+        if (way.kind === "left-messages")
+          return (
+            <LeftMessagesRow
+              key={way.report}
+              plane={plane}
+              alert={alert}
+              report={way.report}
+              reread={does.reread}
+            />
+          );
         return (
           <ProjectRow
             key={`${alert.subject}\n${alert.detail}`}
@@ -239,6 +244,49 @@ function Words({
   );
 }
 
+/** The words on the layout fix's button (`workspace-reinit`), as the Inbox's row says them. */
+export const LAYOUT_FIX = "workspace-reinit";
+export const LAYOUT_FIX_LABEL = FIX_LABELS[LAYOUT_FIX] ?? ANY_FIX;
+
+/**
+ * **What a chat that did not come back left queued, and no running dispatch could keep**
+ * (#3958): the sender, how many, and what each said, with Put away once it is read. The words
+ * are purlis's around the messages, which the core quotes; nothing else is offered, because
+ * the chat they were for is gone or no longer at work.
+ */
+function LeftMessagesRow({
+  plane,
+  alert,
+  report,
+  reread,
+}: {
+  plane: PlaneId;
+  alert: AlertRow;
+  report: string;
+  reread: () => void;
+}) {
+  const [said, setSaid] = useState<string>();
+  const putAway = () => {
+    setSaid(undefined);
+    void commands
+      .putAwayLeftMessages(plane, report)
+      .then((answer) => {
+        if (answer.status === "error") setSaid(`purlis could not put it away: ${answer.error}`);
+        reread();
+      })
+      .catch((err: unknown) => setSaid(`purlis could not put it away: ${String(err)}`));
+  };
+  return (
+    <Notice
+      cause={`alert:${alert.subject}:${report}`}
+      tone={toneOf(alert.severity)}
+      fixes={[{ label: "Put away", onPress: putAway }]}
+    >
+      <Words severity={alert.severity} subject={alert.subject} detail={alert.detail} said={said} />
+    </Notice>
+  );
+}
+
 /** A row's Notice look: trouble for what loses work if it is left. */
 const toneOf = (severity: string) => (severity === "bad" ? "trouble" : "news");
 
@@ -250,51 +298,26 @@ function ProjectRow({
 }: {
   plane: PlaneId;
   /** Any alert but a save's red request, which draws its own Notice (`RequestMerge`). */
-  alert: Omit<AlertRow, "way"> & { way: Exclude<AlertWay, { kind: "save-request" }> };
+  alert: Omit<AlertRow, "way"> & {
+    way: Exclude<AlertWay, { kind: "save-request" } | { kind: "left-messages" }>;
+  };
   does: InboxAlertsDo;
 }) {
-  /** What the last fix answered, when it did not cure the row: its refusal, or what it said. */
-  const [said, setSaid] = useState<string>();
-  const fixing = useRef(false);
-  const [busy, setBusy] = useState(false);
   const way = alert.way;
   const label = way.kind === "fix" ? (FIX_LABELS[way.id] ?? ANY_FIX) : "";
-  /** The act, as the sentence says it: its verb in lower case, and no ellipsis. */
-  const act = label.charAt(0).toLowerCase() + label.slice(1).replace(/…$/, "");
-  const could = (why: string) => `purlis could not ${act}: ${why}`;
-  /** What a fix came to, said on the row when it did not cure it; then every project is read
-   *  again, because a fix that half-ran changed something too. */
-  const landed = (fixed: DoctorFixed) => {
-    if (fixed.refused !== null) setSaid(could(fixed.refused));
-    else if (!fixed.complete) setSaid(fixed.said.join(" "));
-    does.reread();
-  };
+  // One per project and fix, shared with a workspace chip's card that presses the same fix
+  // (`alertFix.ts`, #3930's review).
+  const { said, setSaid, busy, setBusy, landed, apply } = useAlertFix(
+    plane,
+    way.kind === "fix" ? way.id : "",
+    label,
+    does.reread,
+  );
   // **A fix that takes input opens its form here too** (#1301): the row's fix goes through the
   // doctor's own `useFixForm`, so a fix in `FIXES_WITH_A_FORM` is never applied bare (and
   // refused for the input it lacks). Every row asks for it, as hooks must; only a fix row uses it.
   const fixer: Fixer = {
-    apply: (id) => {
-      if (fixing.current) return;
-      fixing.current = true;
-      setBusy(true);
-      setSaid(undefined);
-      void commands
-        .planeDoctorFix(plane, id)
-        .then((answer) =>
-          landed(
-            answer.status === "ok"
-              ? answer.data
-              : { fix: id, refused: answer.error, said: [], complete: false },
-          ),
-        )
-        .catch((err: unknown) =>
-          landed({ fix: id, refused: String(err), said: [], complete: false }),
-        )
-        .finally(() => {
-          fixing.current = false;
-          setBusy(false);
-        });
-    },
+    apply,
     busy,
     identity: async (name, email) => {
       setSaid(undefined);

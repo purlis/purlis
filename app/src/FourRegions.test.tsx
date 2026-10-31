@@ -405,7 +405,7 @@ describe("the four regions", () => {
     await screen.findByTestId("clone-svc");
     await showTheExplorer();
 
-    await userEvent.click(await screen.findByRole("treeitem", { name: /^two/ }));
+    await userEvent.click(await screen.findByRole("row", { name: /^two/ }));
     await openAChat();
 
     expect(startedIn(asked)).toEqual([`${CUT}/two`]);
@@ -418,7 +418,8 @@ describe("the four regions", () => {
     render(<App />);
     const clone = await screen.findByTestId("clone-svc");
     await showTheExplorer();
-    const heading = within(clone).getByRole("treeitem", { name: /^svc/ });
+    // The clone's own row (the tree family draws a clone's branches as rows after it).
+    const heading = clone;
 
     fireEvent.contextMenu(heading);
     await userEvent.click(await screen.findByRole("menuitem", { name: "Start new chats here" }));
@@ -469,9 +470,7 @@ describe("the four regions", () => {
     const { asked } = core();
     render(<App />);
     await showTheExplorer();
-    const heading = within(await screen.findByTestId("clone-svc")).getByRole("treeitem", {
-      name: /^svc/,
-    });
+    const heading = await screen.findByTestId("clone-svc");
 
     fireEvent.contextMenu(heading);
     await userEvent.click(await screen.findByRole("menuitem", { name: "New branch…" }));
@@ -539,7 +538,7 @@ describe("the four regions", () => {
     render(<App />);
     await screen.findByTestId("clone-svc");
     await showTheExplorer();
-    await userEvent.click(await screen.findByRole("treeitem", { name: /^two/ }));
+    await userEvent.click(await screen.findByRole("row", { name: /^two/ }));
 
     await focus("beta");
     await openAChat();
@@ -554,7 +553,7 @@ describe("the four regions", () => {
     render(<App />);
     await screen.findByTestId("clone-svc");
     await showTheExplorer();
-    await userEvent.click(await screen.findByRole("treeitem", { name: /^two/ }));
+    await userEvent.click(await screen.findByRole("row", { name: /^two/ }));
 
     await focus("beta");
     await focus("alpha");
@@ -572,7 +571,7 @@ describe("the four regions", () => {
     render(<App />);
     await screen.findByTestId("clone-svc");
     await showTheExplorer();
-    await userEvent.click(await screen.findByRole("treeitem", { name: /^two/ }));
+    await userEvent.click(await screen.findByRole("row", { name: /^two/ }));
 
     cut = [piece("one")];
     await focus("beta");
@@ -668,7 +667,7 @@ describe("the four regions", () => {
     await openAChat();
     await showTheExplorer();
 
-    await userEvent.click(await screen.findByRole("treeitem", { name: /^one/ }));
+    await userEvent.click(await screen.findByRole("row", { name: /^one/ }));
     await focus("beta");
     await focus("alpha");
 
@@ -919,7 +918,9 @@ describe("the Search and Changes views", () => {
     expect(screen.getByTestId("region-panel")).toContainElement(view);
     const state = within(view).getByLabelText("Repository state");
     await waitFor(() => expect(within(state).getByTestId("repo-svc")).toHaveTextContent("main"));
-    expect(within(state).getByTestId("repo-svc")).toHaveTextContent("3 changed, 1 untracked");
+    expect(
+      within(state).getByRole("row", { name: "3 changed, 1 untracked, changes" }),
+    ).toBeInTheDocument();
     expect(within(state).getByTestId("ci-svc")).toHaveTextContent("not fetched");
   });
 
@@ -1134,13 +1135,10 @@ describe("the Panel", () => {
     const explorer = await showTheExplorer();
     await within(reposView()).findByTestId("clone-svc");
 
-    expect(
-      within(explorer)
-        .getAllByRole("heading")
-        .map((one) => one.textContent),
-    ).toEqual([expect.stringMatching(/^Files/)]);
-    expect(within(explorer).queryByRole("tree", { name: "Repos and branches" })).toBeNull();
-    expect(within(reposView()).getByRole("tree", { name: "Repos and branches" })).toBeVisible();
+    // No heading of its own: *Files* is no fold, and the view's title is its region's (#3343).
+    expect(within(explorer).queryAllByRole("heading")).toEqual([]);
+    expect(within(explorer).queryByRole("treegrid", { name: "Repos and branches" })).toBeNull();
+    expect(within(reposView()).getByRole("treegrid", { name: "Repos and branches" })).toBeVisible();
   });
 
   it("drives Explorer's Files from a branch picked in Repos, as before", async () => {
@@ -1148,10 +1146,10 @@ describe("the Panel", () => {
     render(<App />);
     await showTheExplorer();
 
-    await userEvent.click(await within(reposView()).findByRole("treeitem", { name: /^one/ }));
+    await userEvent.click(await within(reposView()).findByRole("row", { name: /^one/ }));
 
     expect(
-      await within(screen.getByRole("navigation", { name: "Explorer" })).findByRole("tree", {
+      await within(screen.getByRole("navigation", { name: "Explorer" })).findByRole("treegrid", {
         name: /^Files of one/,
       }),
     ).toBeInTheDocument();
@@ -2074,6 +2072,7 @@ describe("the status line", () => {
             severity: "warn",
             subject: "reinit",
             detail: "1 workspace is behind the current layout: beta",
+            workspaces: ["beta"],
             way: { kind: "fix", id: "workspace-reinit" },
           },
         ],

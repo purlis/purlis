@@ -1,0 +1,342 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! The session protocol's compatibility promise (E5, ADR 0068 §4), held in CI.
+//!
+//! `fixtures/session-protocol.jsonl` is a frame of every kind version 1 says: 1.0's, 1.1's
+//! hosted programs and views of a kind (#1994), 1.2's chats in the host (#1998), 1.3's hooks in
+//! the host (#2000), 1.4's chat confinement in the host (#1999), 1.5's kill switch in the host
+//! (#2001), 1.6's browsers (#2012), 1.7's saving in the host (#2002), 1.8's event log written in
+//! the host (#2003), 1.10's board kept in the host (#2194), 1.11's browsers for chats
+//! (#2013), 1.13's window coming back to a host that outlived it (#2006), 1.14's taking a
+//! browser over (#2014), 1.15's reach Asks (#2018), 1.16's window hearing a chat its host
+//! composed (#2407), 1.17's relaying host telling its client its link is down and back
+//! (#2496), 1.18's logins purlis performs (#2016), 1.21's changes of a browser's page (#2137),
+//! 1.22's window taking back its runner chats' sandboxes after a re-link (#2511), 1.23's
+//! services a host left out of a plan made elsewhere (#2510), 1.25's desktop removing a runner
+//! (#2525), 1.26's services the window allowed a chat its host composes alone (#2590),
+//! 1.27's kept browser logins (#2021), 1.28's record of how a hosted program's run is
+//! sandboxed (#2636), 1.29's same record on a program's start (#2692), 1.30's relaying host
+//! telling its client a project it no longer holds for it (#2645), 1.31's window naming itself
+//! to its own host (#2623), 1.32's browser budget the host holds every client to (#2611), 1.33's
+//! window relayed by its host to a pool's runner (#2679), 1.34's code over the link and project
+//! held where a runner keeps it (#2046), 1.36's refusal of a browser whose engine cannot make
+//! its sandbox (#2899), 1.37's browser engine's first download (#2207), 1.39's window taking
+//! its browsers back with the note it keeps of each (#2025), 1.40's hook line recorded where
+//! its host holds the project, its reply naming no path (#3400), 1.41's host's own event log
+//! read over a link (#3393; its frames are recorded under id 155, which a change landing
+//! before it with frames of its own renumbers at merge), 1.42's program that ends with its
+//! window (#3274, id 157), 1.43's desktop keeping its profile on its runner (#2049, id 158),
+//! 1.44's chat moving between the desktop and a runner with its work tree and conversation
+//! (#2048, ids 159 to 162), 1.45's Inspect (#2028, ids 163 to 165), 1.46's files across a
+//! browser's edge (#2020, ids 166 to 168), 1.48's runner a relayed link reached (#3417, id
+//! 170), 1.49's browser started with its pool's own frame limits over a link (#3297, id 171),
+//! 1.50's profile kept on its runner with its settings (#3448, id 172), 1.51's clones a host
+//! holds in a workspace (#3811, id 173), 1.52's profile forgotten on its runner (#4047, id
+//! 174), 1.53's profile whose harness its runner is still fetching (#4008, the reply to 172),
+//! 1.54's clones with where each came from (#3985, id 176), 1.56's settings staged in batches
+//! and kept (#4081, ids 177 and 178), 1.57's profiles a runner keeps for its desktop (#4060,
+//! id 179), 1.58's runner removed outside purlis (#4149, the last `link_down`), 1.59's sign-in
+//! redirect (#4044, id 180), 1.60's prompt key a chat's launch carries and its host answers
+//! back (#3369, ids 181 and 182), and 1.61's settings a runner holds and a keep of what changed
+//! (#4088, ids 183 and 184).
+//! 1.35 adds no frame of the
+//! control lane: its origin frame is a browser view's bytes, held by
+//! `a_browser_views_bytes_are_whole_frames_however_they_are_cut.rs` (#2300). Each must read back
+//! as it was recorded, by this build and so by every later one, which is what lets a client and a host one version apart
+//! talk. A frame kind added without being recorded fails here, so the promise grows on purpose.
+//! The UI RPC is not in it: it is private to one build of the app, and excluded from this promise
+//! (V7).
+//!
+//! And a host reads a later minor's frames the way the promise says: a field it does not know is
+//! ignored, a command it does not know is refused with `unknown_command` and the link carries on,
+//! and a frame kind it does not know is passed over.
+
+use std::collections::BTreeSet;
+
+use bytes::Bytes;
+use purlis_session_protocol::auth::Scope;
+use purlis_session_protocol::link::{self, Link};
+use purlis_session_protocol::session::{
+    self, Answer, Command, Frame, Host, Outcome, Peer, Pushed, Refusal, Reply,
+};
+use serde_json::{Value, json};
+use tokio::io::duplex;
+
+use crate::common;
+use common::HELD;
+
+const RECORDED: &str = include_str!("../fixtures/session-protocol.jsonl");
+
+fn recorded() -> Vec<Value> {
+    RECORDED
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("each recorded line is JSON"))
+        .collect()
+}
+
+/// What kind of frame a recorded line is, in words.
+fn kind(frame: &Value) -> String {
+    if let Some(call) = frame.get("call") {
+        return format!("call.{}", call["command"].as_str().unwrap());
+    }
+    if let Some(reply) = frame.get("reply") {
+        return match &reply["ok"] {
+            Value::String(word) => format!("reply.ok.{word}"),
+            Value::Object(answer) => format!("reply.ok.{}", answer.keys().next().unwrap()),
+            _ => "reply.refused".into(),
+        };
+    }
+    let (key, inner) = frame.as_object().unwrap().iter().next().unwrap();
+    format!(
+        "{key}.{}",
+        inner.as_object().unwrap().keys().next().unwrap()
+    )
+}
+
+#[test]
+fn every_recorded_frame_reads_back_as_it_was_recorded() {
+    for line in recorded() {
+        let read: Frame = serde_json::from_value(line.clone())
+            .unwrap_or_else(|e| panic!("{line} no longer reads: {e}"));
+        assert_eq!(
+            serde_json::to_value(&read).unwrap(),
+            line,
+            "{line} no longer writes as it was recorded"
+        );
+    }
+}
+
+/// Every kind of frame this build can say, from the words each variant has on the wire. Those
+/// come from an exhaustive `match` (`Command::word`, `Answer::word`, `Pushed::word`), so a new
+/// variant does not compile until it has a word, and then fails here until it is recorded.
+fn promised() -> BTreeSet<String> {
+    let mut kinds: BTreeSet<String> = BTreeSet::new();
+    for frame in Frame::WORDS {
+        match *frame {
+            "call" => kinds.extend(Command::WORDS.iter().map(|w| format!("call.{w}"))),
+            "reply" => {
+                for outcome in Outcome::WORDS {
+                    match *outcome {
+                        "ok" => kinds.extend(Answer::WORDS.iter().map(|w| format!("reply.ok.{w}"))),
+                        "refused" => {
+                            kinds.insert("reply.refused".into());
+                        }
+                        other => panic!("a reply outcome `{other}` this test does not place"),
+                    }
+                }
+            }
+            "pushed" => kinds.extend(Pushed::WORDS.iter().map(|w| format!("pushed.{w}"))),
+            // The UI RPC: private to one build, never in the promise (V7).
+            "ui" => {}
+            other => panic!("a frame kind `{other}` this test does not place: is it promised?"),
+        }
+    }
+    kinds
+}
+
+#[test]
+fn every_kind_of_frame_this_build_says_is_recorded() {
+    let kinds: BTreeSet<String> = recorded().iter().map(kind).collect();
+    assert_eq!(
+        kinds,
+        promised(),
+        "a frame kind this build says is not recorded, or one recorded is no longer said"
+    );
+    // A few by name, so the derivation itself cannot quietly drop them.
+    for named in [
+        "call.list",
+        "call.subscribe",
+        "call.start_program",
+        "call.attach_view",
+        "reply.ok.chats",
+        "reply.ok.program_started",
+        "pushed.missed",
+    ] {
+        assert!(kinds.contains(named), "{named}");
+    }
+    assert_eq!(session::COMMANDS, Command::WORDS);
+}
+
+#[test]
+fn each_variants_word_is_the_word_its_frame_carries() {
+    for line in recorded() {
+        let frame: Frame = serde_json::from_value(line.clone()).unwrap();
+        let said = match &frame {
+            Frame::Call(call) => format!("call.{}", call.command.word()),
+            Frame::Reply(Reply {
+                outcome: Outcome::Ok(answer),
+                ..
+            }) => format!("reply.ok.{}", answer.word()),
+            Frame::Reply(_) => "reply.refused".into(),
+            Frame::Pushed(pushed) => format!("pushed.{}", pushed.word()),
+            Frame::Ui(_) => panic!("{line} is a UI RPC frame"),
+        };
+        assert_eq!(said, kind(&line), "{line}");
+    }
+}
+
+/// Every key, and every word a program reads (a state, a refusal code), is snake_case on the
+/// wire: kebab-case is for UI text only (V76). An event's `kind` is not checked: it keeps
+/// ADR 0066's dotted names (`run.started`), the event log's own word.
+#[test]
+fn every_word_on_the_wire_is_snake_case() {
+    fn snake(word: &str) -> bool {
+        !word.is_empty()
+            && word
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    }
+    fn walk(value: &Value, at: &str) {
+        match value {
+            Value::Object(fields) => {
+                for (key, inner) in fields {
+                    assert!(snake(key), "`{key}` at {at} is not snake_case");
+                    if ["command", "state", "code", "ok"].contains(&key.as_str())
+                        && let Value::String(word) = inner
+                    {
+                        assert!(snake(word), "`{word}` ({key} at {at}) is not snake_case");
+                    }
+                    // A cursor's keys are device ids, not words.
+                    if key != "since" {
+                        walk(inner, &format!("{at}.{key}"));
+                    }
+                }
+            }
+            Value::Array(items) => items.iter().for_each(|item| walk(item, at)),
+            _ => {}
+        }
+    }
+    for line in recorded() {
+        // A pushed event's body is the event's own, not the protocol's.
+        let mut line = line;
+        if let Some(event) = line.pointer_mut("/pushed/event") {
+            event["body"] = Value::Null;
+        }
+        walk(&line, "");
+    }
+    for code in session::REFUSALS {
+        assert!(snake(code), "{code}");
+    }
+}
+
+#[test]
+fn every_refusal_code_this_version_says_is_recorded() {
+    let recorded: BTreeSet<String> = recorded()
+        .iter()
+        .filter_map(|line| line.pointer("/reply/refused/code"))
+        .filter_map(|code| code.as_str().map(str::to_owned))
+        .collect();
+    let said: BTreeSet<String> = session::REFUSALS.iter().map(|c| (*c).to_owned()).collect();
+    assert_eq!(recorded, said);
+}
+
+#[test]
+fn the_ui_rpc_is_not_part_of_the_promise() {
+    for line in recorded() {
+        assert!(
+            line.get("ui").is_none(),
+            "{line} is a UI RPC frame, which is private to one build"
+        );
+    }
+}
+
+#[test]
+fn the_version_negotiated_is_the_session_protocols() {
+    assert_eq!(session::speaks().majors(), vec![session::VERSION.major]);
+    assert_eq!(session::VERSION.major, 1);
+}
+
+/// A host that answers a stop with what it heard, and everything else with done.
+struct Echo;
+
+impl Host for Echo {
+    async fn call(&self, command: Command, _peer: &Peer) -> Result<Answer, Refusal> {
+        match command {
+            Command::Stop { chat } => Err(Refusal {
+                code: "heard".into(),
+                why: chat,
+            }),
+            _ => Ok(Answer::Done),
+        }
+    }
+}
+
+async fn raw_client() -> Link {
+    let (a, b) = duplex(64 * 1024);
+    let (client, served) = tokio::join!(
+        link::connect(
+            a,
+            session::speaks(),
+            Scope::Terminal,
+            HELD.of(Scope::Terminal)
+        ),
+        link::serve_any(b, session::speaks(), &HELD)
+    );
+    tokio::spawn(session::serve(served.unwrap(), Echo, None));
+    client.unwrap()
+}
+
+async fn exchange(link: &mut Link, frame: Value) -> Value {
+    link.control()
+        .send(Bytes::from(frame.to_string()))
+        .await
+        .unwrap();
+    let answer = tokio::time::timeout(std::time::Duration::from_secs(5), link.control().next())
+        .await
+        .expect("the host answers")
+        .unwrap()
+        .unwrap();
+    serde_json::from_slice(&answer).unwrap()
+}
+
+#[tokio::test]
+async fn a_command_from_a_later_minor_is_refused_by_name_and_the_link_carries_on() {
+    let mut link = raw_client().await;
+    let answer = exchange(
+        &mut link,
+        json!({"call": {"id": 41, "command": "fork", "chat": "c"}}),
+    )
+    .await;
+    assert_eq!(answer["reply"]["re"], 41);
+    assert_eq!(answer["reply"]["refused"]["code"], session::UNKNOWN_COMMAND);
+
+    let answer = exchange(&mut link, json!({"call": {"id": 42, "command": "list"}})).await;
+    assert_eq!(answer, json!({"reply": {"re": 42, "ok": "done"}}));
+}
+
+#[tokio::test]
+async fn a_field_from_a_later_minor_is_ignored() {
+    let mut link = raw_client().await;
+    let answer = exchange(
+        &mut link,
+        json!({"call": {"id": 7, "command": "stop", "chat": "c", "signal": "TERM"}}),
+    )
+    .await;
+    assert_eq!(
+        answer,
+        json!({"reply": {"re": 7, "refused": {"code": "heard", "why": "c"}}})
+    );
+}
+
+#[tokio::test]
+async fn a_known_command_that_cannot_be_read_is_refused_as_malformed() {
+    let mut link = raw_client().await;
+    let answer = exchange(
+        &mut link,
+        json!({"call": {"id": 8, "command": "resize", "chat": "c", "cols": "wide"}}),
+    )
+    .await;
+    assert_eq!(answer["reply"]["refused"]["code"], session::MALFORMED);
+}
+
+#[tokio::test]
+async fn a_frame_kind_from_a_later_version_is_passed_over() {
+    let mut link = raw_client().await;
+    link.control()
+        .send(Bytes::from(json!({"notice": {"text": "hi"}}).to_string()))
+        .await
+        .unwrap();
+    let answer = exchange(&mut link, json!({"call": {"id": 9, "command": "list"}})).await;
+    assert_eq!(answer, json!({"reply": {"re": 9, "ok": "done"}}));
+}

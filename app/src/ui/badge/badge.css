@@ -1,0 +1,115 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The badge and count family's default** (#2912, ADR 0103, ADR 0104): a word on a pill and a
+   number on a pill (`ui/badge/Badge.tsx`). Keyed on the wrapper's attributes alone;
+   `purlis_core::theme::parts` holds a copy of their colours.
+
+   Purlis's rule (#2804): pills are full, 11px words, washes for what waits, no hairline. A
+   badge is as tall as its words; a count is a pill a chrome step tall, as wide as its number and
+   never narrower than tall.
+
+   In the `components` layer (`styles.css`), above `App.css`. */
+
+[data-scope="badge"][data-part="root"] {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  align-self: center;
+  box-sizing: border-box;
+  padding-block: var(--space-0);
+  padding-inline: var(--space-3);
+  border: 0 solid transparent;
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  background-color: var(--control-count);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-body);
+  white-space: nowrap;
+  cursor: default;
+}
+
+[data-scope="badge"][data-part="root"][data-variant="accent"] {
+  color: var(--text-primary);
+  background-color: var(--accent-surface);
+}
+
+[data-scope="badge"][data-part="root"][data-variant="waiting"] {
+  color: var(--state-waiting);
+  background-color: var(--wash-warning);
+}
+
+/* What is settled is said in the ok words on the ground it stands on, no pill of its own. */
+[data-scope="badge"][data-part="root"][data-variant="ok"] {
+  color: var(--state-success);
+  background-color: transparent;
+}
+
+/* A badge with a hint is a Tab stop (the tooltip's): the ring, 2px at 2px outside (R162). */
+[data-scope="badge"][data-part="root"]:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+[data-scope="count"][data-part="root"] {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-inline-size: calc(16rem / 14);
+  min-block-size: calc(16rem / 14);
+  padding-block: var(--space-0);
+  padding-inline: var(--space-2);
+  border: 0 solid transparent;
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  background-color: var(--control-count);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  gap: var(--space-1);
+}
+
+/* A mark before the number (a browser's globe): the words' size. */
+[data-scope="count"][data-part="root"] > svg {
+  flex: none;
+  inline-size: 1em;
+  block-size: 1em;
+}
+
+[data-scope="count"][data-part="root"][data-variant="accent"] {
+  color: var(--text-primary);
+  background-color: var(--accent-surface);
+}
+
+[data-scope="count"][data-part="root"][data-variant="waiting"] {
+  color: var(--state-waiting);
+  background-color: var(--wash-warning);
+}
+
+[data-scope="count"][data-part="root"][data-variant="hot"] {
+  color: var(--needs-you-text);
+  background-color: var(--needs-you-base);
+}
+
+/* Counts drawn as one pill: the group's corners, and none between its counts. */
+[data-scope="count"][data-part="group"] {
+  display: inline-flex;
+  flex: none;
+  align-items: stretch;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+}
+
+[data-scope="count"][data-part="group"] > [data-scope="count"][data-part="root"] {
+  border-radius: 0;
+}
+
+/* A count a line has no room for is set aside whole (`wholeWays.ts`, D-1867-1). */
+[data-scope="count"][data-away] {
+  display: none;
+}

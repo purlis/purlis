@@ -17,6 +17,7 @@ import {
   Activity,
   Archive,
   Brain,
+  Bug,
   ChartColumn,
   CircleDashed,
   Cpu,
@@ -29,8 +30,10 @@ import {
   Globe,
   History,
   KeyRound,
+  LayoutGrid,
   ListChecks,
   LoaderCircle,
+  MonitorSmartphone,
   Puzzle,
   RefreshCw,
   Save,
@@ -84,10 +87,15 @@ import { HeadingOffer } from "./PanelSection";
 import { SavingView } from "./SavingView";
 import { LicencesView } from "./LicencesView";
 import { ShortcutsView } from "./keys/ShortcutsView";
+import { DevicesView } from "./DevicesView";
 import { BrowserView } from "./BrowserView";
 import { BrowserTimeline } from "./BrowserTimeline";
 import { isBrowserTimeline } from "./browserTimelines";
 import { BROWSER_VIEW, isBrowser } from "./browsers";
+import { BROWSERS_GRID_VIEW, isBrowsersGrid } from "./browsersGrid";
+import { BrowsersGridTab } from "./BrowsersGridTab";
+import { INSPECTOR_VIEW, isInspector } from "./inspector";
+import { InspectorView } from "./InspectorView";
 import { SessionRecordTab } from "./SessionRecordTab";
 import { useSessionOffers } from "./sessionOffers";
 import { TodoTab } from "./TodoTab";
@@ -104,16 +112,17 @@ import { TASK_CHANGES_VIEW, taskChangesOf, taskChangesTitle, taskChangesView } f
 import { PROPOSED_CHANGE_VIEW } from "./proposedChangeOpen";
 import { ProposedChangeTab } from "./ProposedChangeTab";
 import { RUNNER_WRITE_VIEW } from "./runnerWriteOpen";
+import { RUNNER_DISPATCH_VIEW } from "./runnerDispatchOpen";
+import { RunnerDispatchTab } from "./RunnerDispatchTab";
 import { RunnerWriteTab } from "./RunnerWriteTab";
 import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
-import { SKILL_STUDIO_VIEW, isSkillStudio, scopeOf } from "./skillStudio";
+import { SKILL_STUDIO_VIEW, isSkillStudio } from "./skillStudio";
 import { SkillStudioTab } from "./SkillStudioTab";
-import { SKILL_VIEW, isSkillTab, skillOfView } from "./skillRuns";
-import { SkillTab } from "./SkillTab";
 import {
   SAVING_VIEW,
   LICENCES_VIEW,
   SHORTCUTS_VIEW,
+  DEVICES_VIEW,
   SETTINGS_TAB_TITLE,
   settingsLevelOf,
   settingsView,
@@ -135,6 +144,14 @@ import {
 } from "./planeChanged";
 import { Button } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import {
+  Table as DataTable,
+  TableBody,
+  TableCell,
+  TableColumn,
+  TableHeader,
+  TableRow,
+} from "./ui/table/Table";
 
 /** What `workspaceSettingsView` names Settings at a workspace's level (SE-20). */
 const WORKSPACE_SETTINGS = "workspace-settings";
@@ -289,7 +306,6 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   /** Every skill a chat in the project gets, and why (#2765), behind its flag. */
   [SKILL_STUDIO_VIEW.view]: Sparkles,
   /** One skill's tab, with its runs (SK-3). */
-  [SKILL_VIEW]: Sparkles,
   /** One chat's Activity (#1495). */
   [ACTIVITY_VIEW]: Activity,
   /** One chat's Network (#1662). */
@@ -317,8 +333,16 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [PROPOSED_CHANGE_VIEW]: GitCompare,
   /** A runner chat's change to the project, whole (#2046, `runnerWriteOpen.ts`). */
   [RUNNER_WRITE_VIEW]: GitCompare,
+  /** A runner chat's held open or dispatch, whole (`runnerDispatchOpen.ts`). */
+  [RUNNER_DISPATCH_VIEW]: GitCompare,
   /** A browser, drawn live (#2012, `browsers.ts`). */
   [BROWSER_VIEW]: Globe,
+  /** Every browser in scope, live (#2027, `browsersGrid.ts`). */
+  [BROWSERS_GRID_VIEW.view]: LayoutGrid,
+  /** This machine and its runners (#2052, `DevicesView.tsx`). */
+  [DEVICES_VIEW.view]: MonitorSmartphone,
+  /** A browser's DevTools, drawn live (#2028, `inspector.ts`). */
+  [INSPECTOR_VIEW]: Bug,
 };
 
 /** The glyph a view's tab carries: a person for a persona, a piece of a puzzle for a view an
@@ -470,6 +494,14 @@ export function ViewPane({
       </section>
     );
   }
+  // **Devices** (#2052): this machine and its runners, with no title of its own (#3147).
+  if (view.from === null && view.view === DEVICES_VIEW.view) {
+    return (
+      <section className="view-pane view-alone" data-testid="view-pane-devices" aria-label={title}>
+        <DevicesView />
+      </section>
+    );
+  }
   const about = aboutOf(view, offered);
   const beside = offered.filter(
     (one) =>
@@ -551,10 +583,24 @@ export function ViewPane({
           /* A runner chat's change to the project, whole, with Apply where it may be applied
              (#2046). Keyed by the held change, which is the project's. */
           <RunnerWriteTab key={`${plane}\u0000${view.key}`} plane={plane} id={Number(view.key)} />
+        ) : view.from === null && view.view === RUNNER_DISPATCH_VIEW ? (
+          /* A runner chat's held open or dispatch, whole, with Approve. Keyed by the held ask,
+             which is the project's. */
+          <RunnerDispatchTab
+            key={`${plane}\u0000${view.key}`}
+            plane={plane}
+            id={Number(view.key)}
+          />
+        ) : isBrowsersGrid(view) ? (
+          /* Every browser in scope, live (#2027): its This workspace is the strip's it is on. */
+          <BrowsersGridTab key={plane} plane={plane} workspace={workspace} />
         ) : isBrowser(view) ? (
           /* A browser the session host runs, drawn live from its frames (#2012). Keyed by the
              browser, so a pane that comes to show another one opens its own view. */
           <BrowserView key={`${plane}\u0000${view.key}`} plane={plane} program={view.key} />
+        ) : isInspector(view) ? (
+          /* A browser's DevTools, drawn live from their frames (#2028). Keyed by the browser. */
+          <InspectorView key={`${plane}\u0000${view.key}`} program={view.key} />
         ) : isBrowserTimeline(view) ? (
           /* A chat's browser timeline (#2017), keyed by the chat's id, which it keeps across a
              launch. */
@@ -640,24 +686,15 @@ export function ViewPane({
           />
         ) : isSkillStudio(view) ? (
           /* The Skill studio (#2765): read from the project's skill folders, again when the
-             plane changes on disk; keyed by the workspace whose chats it shows (#2767). */
+             plane changes on disk. One tab per project (#3681), its scope and pages its own. */
           <SkillStudioTab
             key={`${plane}\u0000${view.key}`}
             plane={plane}
-            scope={scopeOf(view)}
-            changed={changed + onDisk}
-            onOpenView={onOpenView}
-          />
-        ) : isSkillTab(view) ? (
-          /* One skill's tab (SK-3): its runs, read again when the project changes on disk, and
-             the run its key names marked. */
-          <SkillTab
-            key={`${plane}\u0000${view.key}`}
-            plane={plane}
-            {...skillOfView(view)}
+            tab={view.key}
             changed={changed + onDisk}
             offerFor={offerFor}
             onPress={onPress}
+            onOpenView={onOpenView}
           />
         ) : isDispatches(view) ? (
           /* The project's dispatches (#1452), read from the app's own records. A row opens its
@@ -1208,9 +1245,12 @@ export function AnsweredBlocks({
   listHead,
   besideRow,
   current,
+  rowAction,
 }: {
   blocks: readonly PanelBlock[];
   label: string;
+  /** What each row of a table opens, where it opens anything: a grade's scorecard (SK-59). */
+  rowAction?: RowOpens;
   /** The row a table marks as the one the tab was opened on, by its key: a skill run's. */
   current?: string;
   /** What a list is headed by, from its rows: a change's Push (#474). */
@@ -1261,6 +1301,7 @@ export function AnsweredBlocks({
             current={current}
             offerFor={onPress === undefined ? undefined : lookUp}
             onPress={onPress}
+            rowAction={rowAction}
           />
         ) : (
           <Fragment key={at}>
@@ -1309,9 +1350,17 @@ export function AnsweredBlocks({
 /** A table block, as the wire carries it. */
 export type TableBlock = Extract<PanelBlock, { kind: "table" }>;
 
+/** **What each row of a table opens** (SK-59): its column's heading, the press's words, and
+ *  what the press opens, by the row's key. */
+export type RowOpens = {
+  column: string;
+  label: string;
+  onOpen: (key: string) => void;
+};
+
 /**
  * **Rows of words under named columns** — `purlis_core::panel::Block::Table`: a skill's Runs
- * panel, and a studio panel's. A `<table>` with headed columns, so a screen reader reads each
+ * panel, and a studio panel's. The table family's data table (`ui/table`), so a screen reader reads each
  * cell with its column; the row the tab was opened on (`current`) is marked and scrolled to.
  * With no rows, the block's own claim and what to do, as a list's empty state says them.
  */
@@ -1320,9 +1369,12 @@ export function Table({
   current,
   offerFor,
   onPress,
+  rowAction,
 }: {
   table: TableBlock;
   current?: string;
+  /** What each row opens, in a column of its own after the table's. */
+  rowAction?: RowOpens;
   /** The catalogue, for purlis's own tables: the empty state's way out is one of its rows. */
   offerFor?: (id: string) => Offer | undefined;
   onPress?: (offer: Offer) => void;
@@ -1357,35 +1409,43 @@ export function Table({
     );
   }
   return (
-    <table className="ui-table" aria-label={table.caption}>
-      <thead>
-        <tr>
-          {table.columns.map((column, at) => (
-            /* By position: two columns may share a heading, and the order is the producer's. */
-            <th key={at} scope="col">
-              {column}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
+    <DataTable aria-label={table.caption}>
+      <TableHeader>
+        {table.columns.map((column, at) => (
+          /* By position: two columns may share a heading, and the order is the producer's. */
+          <TableColumn key={at} id={`column-${at}`} isRowHeader={at === 0}>
+            {column}
+          </TableColumn>
+        ))}
+        {rowAction !== undefined && <TableColumn id="column-opens">{rowAction.column}</TableColumn>}
+      </TableHeader>
+      <TableBody>
         {table.rows.map((row) => {
           const isCurrent = current !== undefined && row.key === current;
           return (
-            <tr
+            <TableRow
               key={row.key}
+              id={row.key}
+              textValue={row.cells[0] ?? row.key}
               ref={isCurrent ? shown : undefined}
               data-testid={`table-row-${row.key}`}
-              aria-current={isCurrent || undefined}
+              current={isCurrent}
             >
               {row.cells.map((cell, at) => (
-                <td key={at}>{cell}</td>
+                <TableCell key={at}>{cell}</TableCell>
               ))}
-            </tr>
+              {rowAction !== undefined && (
+                <TableCell>
+                  <Button size="sm" variant="ghost" onPress={() => rowAction.onOpen(row.key)}>
+                    {rowAction.label}
+                  </Button>
+                </TableCell>
+              )}
+            </TableRow>
           );
         })}
-      </tbody>
-    </table>
+      </TableBody>
+    </DataTable>
   );
 }
 

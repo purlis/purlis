@@ -21,7 +21,7 @@ import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLef
  * `charter statusline`'s, made from `$CHARTER_FOOTER`, and the fake harness never runs that
  * command. So the profile's own wrapper writes the variable it was started with into the
  * plane (`harness.ts`), which is the same thing a real Claude Code's `statusLine` command
- * would have inherited. `crates/purlis-cli/tests/statusline.rs` holds the other half: what
+ * would have inherited. `crates/purlis-cli/tests/it/statusline.rs` holds the other half: what
  * the command does with that word.
  *
  * **Nothing this file opens outlives it.** WebdriverIO's Tauri service keeps one app process
@@ -84,7 +84,8 @@ async function startAChat(plane: string, showTheFooter: boolean): Promise<void> 
   // WebView's driver clicks without a pointer, which React Aria reads as an assistive
   // technology's (virtual) press, and that is the input's to take, not its label's. The start
   // waits until the tick lands.
-  const box = await $('input[type="checkbox"]');
+  // The dialog's own: the Todos view's rows have boxes too (R131, #3063).
+  const box = await dialog().$('input[type="checkbox"]');
   await box.waitForExist({ timeout: 20_000 });
   expect(await box.isSelected()).toBe(false);
   if (showTheFooter) {

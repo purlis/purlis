@@ -34,9 +34,23 @@ pub(super) struct World {
     pub unique: String,
 }
 
-/// The worlds the engine told of, by the session that holds the frame and the frame's id.
+/// The worlds the engine told of, by the session that holds the frame and the frame's id; and
+/// how often every world was forgotten, which names the worlds made after (#2028).
 #[derive(Default)]
-pub(crate) struct Worlds(Mutex<HashMap<(String, String), World>>);
+pub(crate) struct Worlds(
+    Mutex<HashMap<(String, String), World>>,
+    std::sync::atomic::AtomicU64,
+);
+
+/// Whether a world the engine told of, by its name, is one of purlis's own: [`WORLD_NAME`],
+/// or that name and a number after every world was forgotten.
+pub(super) fn is_ours(name: &str) -> bool {
+    name == WORLD_NAME
+        || name
+            .strip_prefix(WORLD_NAME)
+            .and_then(|rest| rest.strip_prefix('-'))
+            .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+}
 
 impl Worlds {
     /// The engine made `context` on `session` (`Runtime.executionContextCreated`): kept when it
@@ -50,7 +64,7 @@ impl Worlds {
         ) else {
             return;
         };
-        if context["name"] != WORLD_NAME || aux["type"] != "isolated" {
+        if !context["name"].as_str().is_some_and(is_ours) || aux["type"] != "isolated" {
             return;
         }
         let mut worlds = lock(&self.0);
@@ -78,6 +92,22 @@ impl Worlds {
     /// Every world on `session` is gone: its contexts were cleared, or the session ended.
     pub(super) fn cleared(&self, session: &str) {
         lock(&self.0).retain(|(on, _), _| on != session);
+    }
+
+    /// Every world is forgotten: the next use of each frame makes a fresh one, under a name the
+    /// engine has not made one by, so it is never handed the world it had (#2028).
+    pub(super) fn forget_all(&self) {
+        let mut worlds = lock(&self.0);
+        worlds.clear();
+        self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// The name the next world is made by.
+    pub(super) fn name(&self) -> String {
+        match self.1.load(std::sync::atomic::Ordering::SeqCst) {
+            0 => WORLD_NAME.to_owned(),
+            n => format!("{WORLD_NAME}-{n}"),
+        }
     }
 
     /// `frame` loaded another document, or went: its worlds, on any session, are gone.
@@ -147,8 +177,11 @@ impl Browser {
         frame: &str,
         deadline: Option<Instant>,
     ) -> Result<World, CallError> {
-        let asked =
-            json!({ "frameId": frame, "worldName": WORLD_NAME, "grantUniveralAccess": false });
+        let asked = json!({
+            "frameId": frame,
+            "worldName": self.inner.worlds.name(),
+            "grantUniveralAccess": false,
+        });
         let made = match deadline {
             None => self
                 .devtools()

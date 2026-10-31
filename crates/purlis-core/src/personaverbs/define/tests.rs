@@ -71,8 +71,8 @@ fn create_writes_a_draft_with_its_routing_line_and_its_memory_and_says_how_to_fi
          and conventions.\n\n## How to work as this persona\n- Credentials: use `charter \
          persona secret …` (this persona's vault: `qa`).\n  Never print secret values.\n- \
          Defer to each repo's own `CLAUDE.md` / `AGENTS.md` and its tooling over general \
-         habits.\n- Record durable facts with `charter persona remember qa \"<fact>\"`. Never \
-         store\n  secrets there — those belong in the vault.\n\n## When to delegate here\ntest \
+         habits.\n- Record durable facts with the `persona_remember` tool, or `charter persona \
+         remember qa \"<fact>\"`.\n  Never store secrets there — those belong in the vault.\n\n## When to delegate here\ntest \
          plans and flaky suites\n"
     );
     assert!(plane.path("personas/qa/memory/MEMORY.md").exists());
@@ -170,7 +170,6 @@ fn create_refuses_a_value_that_would_write_a_second_frontmatter_line() {
     let plane = Plane::fixture("daily");
     for (role, when, vault) in [
         (Some("QA\ntools: Bash"), Some("x"), None),
-        (None, Some("x --- y"), None),
         (None, Some("x"), Some("../elsewhere")),
     ] {
         let (rc, heard) = create_on(
@@ -197,6 +196,25 @@ fn create_refuses_a_value_that_would_write_a_second_frontmatter_line() {
             .read("personas/qa/persona.md")
             .contains("vault: none\n")
     );
+}
+
+#[test]
+fn create_writes_a_value_holding_three_dashes_and_reads_it_back_as_written() {
+    // #3244: only a line that is `---` ends the frontmatter, so `---` inside a value is text.
+    let plane = Plane::fixture("daily");
+    let (rc, heard) = create_on(&plane, &ask("qa", Some("Use when: x --- y")));
+    assert_eq!(rc, 0, "{}", heard.err);
+    let text = plane.read("personas/qa/persona.md");
+    let pairs = crate::personas::frontmatter(&text);
+    let said = |key: &str| {
+        pairs
+            .iter()
+            .rev()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
+    };
+    assert_eq!(said("delegate-when"), Some("Use when: x --- y"));
+    assert_eq!(said("draft"), Some("true"));
 }
 
 #[test]
@@ -617,4 +635,26 @@ fn create_refuses_the_reserved_name_charter_and_writes_nothing() {
         )
     );
     assert!(!plane.path("personas/charter").exists());
+}
+
+/// #3287: the header lines name what a persona's file says — its name, role, chain, vault,
+/// tools and scripts — with every hidden character marked. The charter below them is a
+/// document and is printed byte for byte.
+#[test]
+fn show_marks_a_hidden_character_in_what_it_names_and_keeps_the_charter_whole_3287() {
+    let plane = Plane::fixture("daily");
+    plane.write(
+        "personas/qa/persona.md",
+        "---\nname: qa\nrole: QA \u{1b}[8mEngineer\nvault: q\u{202e}a\n---\n\n# QA\u{200b}\n",
+    );
+    let (rc, heard) = show_on(&plane, "qa");
+    assert_eq!(rc, 0, "{}", heard.err);
+    assert!(
+        heard.out.starts_with(
+            "qa — QA ⟦U+001B⟧[8mEngineer\nvault:   q⟦U+202E⟧a  (not set up (local))\n"
+        ),
+        "{}",
+        heard.out
+    );
+    assert!(heard.out.ends_with("\n\n# QA\u{200b}\n"), "{:?}", heard.out);
 }

@@ -5,30 +5,48 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { forcedFamiliesIn, forcedSheet } from "../ui/stylesheets";
+import { FAMILY_THEME_BY_NAME, FAMILY_THEMES, type ForcedTheme } from "./families.testkit";
 
 /**
  * **Forced colours** (#2328): `forced-colors.css` says again, in the system's palette and with a
  * shape, what the window says with a background or a shadow alone. jsdom evaluates no media
  * query and no cascade, so this reads the sheet the way `surfaces.test.ts` reads `App.css`: each
  * rule as its selector and its declarations. `tailwind.test.ts` holds that the build keeps it in
- * the last layer, and `e2e/specs/forced-colors.e2e.ts` that the WebView parses it.
+ * the last layer, and `e2e/specs/forced-colors.e2e.ts` that the WebView parses it. Each family's
+ * own sheet (`ui/<family>/forced-colors.css`, #3387) is read with it, in the order the window
+ * imports them: every family's, by name, and then the window's. What each family's sheet draws is
+ * said in its own folder (`forced`, in `ui/<family>/theme.testkit.ts`), and held here beside the
+ * window's own.
  */
 
 const read = (file: string) =>
   readFileSync(join(process.cwd(), "src", file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
 
-const sheet = read("theme/forced-colors.css");
+/** The forced-colours sheets, in the order `styles.css` imports them into the `forced` layer. */
+const SHEETS = [
+  ...forcedFamiliesIn(join(process.cwd(), "src", "ui"))
+    .sort()
+    .map((family) => forcedSheet(family).slice(2)),
+  "theme/forced-colors.css",
+];
 
-/** The sheet's one `@media` block's body. */
-function inside(): string {
+/** One sheet's one `@media` block's body. */
+function insideOf(file: string): string {
+  const sheet = read(file);
   const open = /@media\s*\(forced-colors:\s*active\)\s*\{/.exec(sheet);
-  expect(open, "one @media (forced-colors: active) block").not.toBeNull();
+  expect(open, `${file}: one @media (forced-colors: active) block`).not.toBeNull();
   const start = (open?.index ?? 0) + (open?.[0].length ?? 0);
   const end = sheet.lastIndexOf("}");
   // Nothing outside it: forced colours are all the sheet draws.
-  expect(sheet.slice(0, open?.index).trim()).toBe("");
-  expect(sheet.slice(end + 1).trim()).toBe("");
+  expect(sheet.slice(0, open?.index).trim(), file).toBe("");
+  expect(sheet.slice(end + 1).trim(), file).toBe("");
   return sheet.slice(start, end);
+}
+
+/** Every sheet's block, one after another, as the cascade reads them. */
+function inside(): string {
+  return SHEETS.map(insideOf).join("\n");
 }
 
 /** Each rule as its selectors (one per comma, whitespace collapsed) and its declarations. */
@@ -161,38 +179,44 @@ describe("forced colours", () => {
     expect(outlined.filter((at) => at > focus)).toEqual([]);
   });
 
+  /** Every family's `forced` entries of one kind (`ui/<family>/theme.testkit.ts`). */
+  const families = (kind: Exclude<keyof ForcedTheme, "drawn">): string[] =>
+    FAMILY_THEMES.flatMap((family) => family.forced?.[kind] ?? []);
+
+  it("hear from every family with a sheet of its own what it draws", () => {
+    const stated = new Set(
+      Object.entries(FAMILY_THEME_BY_NAME)
+        .filter(([, family]) => family.forced !== undefined)
+        .map(([name]) => name),
+    );
+    for (const family of forcedFamiliesIn(join(process.cwd(), "src", "ui")))
+      expect(stated.has(family), `ui/${family}/theme.testkit.ts says its forced colours`).toBe(
+        true,
+      );
+  });
+
   it("say what is selected in the system's pair, and with a shape as well as a colour", () => {
     for (const selected of [
       '[role="tab"][aria-selected="true"]',
       '[role="option"][aria-selected="true"]',
       '[aria-current]:not([aria-current="false"])',
-      '[data-scope="segment"][data-part="root"][data-selected]',
-      ".ui-menu-item[data-highlighted]",
-      '.ui-menu-item[data-state="open"]',
-      '[data-scope="menu"][data-part="root"][data-focused]:not([data-disabled])',
-      '[data-scope="menu"][data-part="root"][data-hovered]:not([data-disabled])',
-      '[data-scope="menu"][data-part="root"][data-open]',
-      '[data-scope="list"][data-part="root"][data-selected]',
+      ...families("selected"),
     ]) {
       const it = drawn(selected);
       expect(it.get("forced-color-adjust"), selected).toBe("none");
       expect(it.get("background-color"), selected).toBe("SelectedItem");
       expect(it.get("color"), selected).toBe("SelectedItemText");
     }
-    for (const shaped of [
-      '[role="tab"][aria-selected="true"]',
-      '[data-scope="segment"][data-part="root"][data-selected]',
-    ])
+    for (const shaped of ['[role="tab"][aria-selected="true"]', ...families("underlined")])
       expect(drawn(shaped).get("text-decoration-line"), shaped).toBe("underline");
-    expect(
-      drawn(
-        '[data-scope="activity"][data-part="item"][data-selected] > [data-part="indicator"]',
-      ).get("background-color"),
-    ).toBe("SelectedItemText");
-    // A list's chosen row keeps its edge (#2911).
-    expect(drawn('[data-scope="list"][data-part="root"][data-selected]').get("box-shadow")).toBe(
-      "inset 2px 0 0 SelectedItemText",
-    );
+  });
+
+  it("draw what each family says it draws, declaration by declaration", () => {
+    const said = FAMILY_THEMES.flatMap((family) => Object.entries(family.forced?.drawn ?? {}));
+    expect(said.length).toBeGreaterThan(0);
+    for (const [selector, declarations] of said)
+      for (const [property, value] of Object.entries(declarations))
+        expect(drawn(selector).get(property), `${selector} { ${property} }`).toBe(value);
   });
 
   it("keep each state mark's shape, which tells the states apart without colour", () => {
@@ -209,29 +233,12 @@ describe("forced colours", () => {
     expect(drawn(".state-waiting").get("box-shadow")).toMatch(/CanvasText/);
   });
 
-  it("keep a switch's thumb and a radio's dot, and say what cannot be used", () => {
-    expect(drawn('[data-scope="switch"][data-part="thumb"]').get("background-color")).toBe(
-      "CanvasText",
-    );
-    expect(
-      drawn(
-        '[data-scope="switch"][data-part="root"][data-selected] [data-scope="switch"][data-part="thumb"]',
-      ).get("background-color"),
-    ).toBe("HighlightText");
-    expect(drawn('[data-scope="radio"][data-part="mark"]::after').get("background-color")).toBe(
-      "CanvasText",
-    );
+  it("say what cannot be used", () => {
     expect(drawn('[aria-disabled="true"]').get("color")).toBe("GrayText");
   });
 
   it("mark what needs you in the system's pair for what is marked", () => {
-    for (const needs of [
-      ".count-pill-needs",
-      ".show-more-needs",
-      '[data-scope="activity"][data-part="count"][data-tone="needs-you"]',
-      '[data-scope="status-item"][data-variant="waiting"] > [data-part="count"]',
-      ".repo-instruction-text .invisible-char",
-    ]) {
+    for (const needs of [".invisible-char", ...families("marked")]) {
       const it = drawn(needs);
       expect(it.get("forced-color-adjust"), needs).toBe("none");
       expect(it.get("background-color"), needs).toBe("Mark");
@@ -240,18 +247,36 @@ describe("forced colours", () => {
   });
 
   it("tell what ends or destroys, and a ground that says something is wrong, by a shape", () => {
-    for (const danger of [
-      '[data-scope="button"][data-part="root"][data-variant="danger"]',
-      '[data-scope="menu"][data-part="root"][data-variant="danger"]',
-      '[data-scope="status-item"][data-part="root"][data-tone="danger"]',
-      ".trouble",
-      ".ui-inline-surface-trouble",
-      ".notice-list .notice-inbox.notice-trouble",
-      ".ui-setting-error p",
-    ]) {
+    for (const danger of [".trouble", ".ui-setting-error p", ...families("dangerous")]) {
       expect(drawn(danger).get("outline"), danger).toBe("2px dashed CanvasText");
       expect(drawn(danger).get("outline-offset"), danger).toBe("-2px");
     }
+  });
+
+  it("tell a refused box from a taken one by its edge's shape, which takes no room (#3335)", () => {
+    const refused = families("refused");
+    expect(refused.length).toBeGreaterThan(0);
+    for (const box of refused) {
+      const it = drawn(box);
+      expect(it.get("border-style"), box).toBe("dashed");
+      expect(it.get("border-color"), box).toBe("CanvasText");
+      // Its own edge, at the width it has: nothing moves, and the focus ring (an outline) stays.
+      for (const property of it.keys())
+        expect(property, property).not.toMatch(/width|outline|padding|margin|^border$/);
+    }
+    // Every box the parts manifest says can be refused is reached by some family's refused
+    // selector: the manifest's families with the `invalid` state, read from the table the engine
+    // writes from it (`crates/purlis-core/docs/themes.md`, which a core test keeps in step).
+    const table = readFileSync(
+      join(process.cwd(), "..", "crates", "purlis-core", "docs", "themes.md"),
+      "utf8",
+    );
+    const refusable = [...table.matchAll(/^\| `([\w-]+)`[^\n]*\|([^|\n]*)\|\s*$/gm)]
+      .filter(([, , states]) => /`invalid`/.test(states))
+      .map(([, family]) => family);
+    expect(refusable.length).toBeGreaterThan(0);
+    for (const family of refusable)
+      expect(refused.join(" "), family).toContain(`[data-scope="${family}"]`);
   });
 
   it("outline what is opened over the window, taking no room", () => {
@@ -260,7 +285,7 @@ describe("forced colours", () => {
       '[role="menu"]',
       '[role="listbox"]',
       '[role="tooltip"]',
-      '[data-scope="popover"][data-part="root"]',
+      ...families("opened"),
     ])
       expect(drawn(over).get("outline"), over).toBe("1px solid CanvasText");
   });
@@ -272,5 +297,7 @@ describe("forced colours", () => {
     // In two halves: the stylesheet guard reads a quoted path ending in the extension as an
     // import (`literals.test.ts`).
     expect(styles).toContain(['@import "./theme/forced-colors', 'css" layer(forced);'].join("."));
+    // Every family's own sheet just before it, in the place of the `@forced` line.
+    expect(styles.indexOf("/* @forced:")).toBeLessThan(styles.indexOf("./theme/forced-colors"));
   });
 });

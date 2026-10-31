@@ -49,7 +49,7 @@ Zed's, and it is the only one that can colour the terminal at all.
 ## The vocabulary
 
 `TOKENS` in `app/src/theme/theme.ts` is the list, with a comment on each group saying what it
-means. A hundred and twenty-one colour names in twenty-three groups, and the typed tokens below
+means. A hundred and thirty-two colour names in twenty-four groups, and the typed tokens below
 them:
 
 | group                                  | tokens                                                                                          | what it is                                                                                        |
@@ -64,6 +64,7 @@ them:
 | `tree.*`                               | `guide`                                                                                         | a tree's indent guides, one straight hairline per level                                           |
 | `needs-you.*`                          | `base` `text`                                                                                   | the one signal this app exists for                                                                |
 | `danger.*`                             | `base` `surface` `text` `wash`                                                                  | an answer that cannot be taken back                                                               |
+| `attention.*`                          | `surface` `text`                                                                                | what needs a decision where nothing went wrong (#3678): an attention Notice's ground, and its words and mark on it; trouble stays `danger.*`'s, for real failures |
 | `state.*`                              | `running` `waiting` `waiting-glow` `failed` `success` `unreadable`                              | what a chat, or a check on a branch, is doing                                                     |
 | `overlay.*`                            | `scrim` `shadow`                                                                                | what goes over the window when something is modal                                                 |
 | `terminal.*`                           | `background` `foreground` `cursor` `cursor-accent` `selection` `find-match` `find-match-active` | the two `find-*` are a find's matches in a pane, drawn under the text (`theme.searchDecorations`) |
@@ -134,7 +135,8 @@ stay as they are: they are brand, not theme.
 **Forced colours win** (#2328). On a platform that forces its contrast colours (Windows'
 contrast themes), the browser draws every colour in the system's palette, and what the window
 says with a background or a shadow alone would be lost. `app/src/theme/forced-colors.css`, the
-last layer of the window's stylesheet, says it again in system colours and with a shape: a solid
+last layer of the window's stylesheet (each family's own parts in its
+`app/src/ui/<family>/forced-colors.css`, imported just before it), says it again in system colours and with a shape: a solid
 `Highlight` ring wherever Tab lands; what is selected or current in `SelectedItem` and
 `SelectedItemText`, underlined (an icon tab keeps its edge); what cannot be used in `GrayText`;
 each state mark's shape in `CanvasText`; a count of chats that need you in `Mark` and
@@ -444,7 +446,10 @@ asked for), whatever the system's appearance. Where its values come from:
   the button would have its consent floors measured at every hue at every launch); Allow, on the control's ground behind the
   accent's edge, stands farther from it than before. **A chosen activity button** is the
   record's .14 wash (`accent.wash`) with its icon in the lighter lavender (`accent.text`,
-  `#c3baf5`), and the update pill's words take `accent.text` too. Section labels are tracked at
+  `#c3baf5`), and the update pill's words take `accent.text` too. **The chosen title-bar chip**
+  takes the same wash with the primary words, and `accent.wash-hover` (the record's .23
+  lavender) under the pointer, while any other chip under the pointer takes the card's fill, so
+  chosen never reads as hovered (R101 as amended by #3345). Section labels are tracked at
   .05em in every theme. Purlis Classic draws as it did: each new token is the value of the one
   that drew it before, and its parts keep its 9px rail buttons, its 5px title-bar chips and its
   update pill's primary words.
@@ -673,7 +678,7 @@ path in a sentence.
 
 **The consent floors hold whenever a theme is drawn** (ADR 0097 §6). Every answer `resolve`
 gives, the theme the window is handed as it is created, and the theme specimen, is drawn by
-`draw`, which holds five floors for any theme from any source. `draw` takes an appearance with
+`draw`, which holds these floors for any theme from any source. `draw` takes an appearance with
 its theme options' values already layered on it, so the floors hold in every combination of
 appearance and option values, and no option value can bring a consent surface below its floor:
 
@@ -692,6 +697,11 @@ appearance and option values, and no option value can bring a consent surface be
   is a `danger.*` token;
 - **danger is distinguishable from primary**: `danger.base` and `accent.base` at least 0.1 apart
   in OKLab, five times the least difference a person can see, as the theme writes them;
+- **waiting is distinguishable from the accent** (#3130): `state.waiting` and `accent.base` at
+  least 0.1 apart in OKLab, as the theme writes them and in every workspace tint, so the waiting
+  edge of an ask or a Notice never reads as a chosen or primary mark. The tint gives the accent
+  less colour at a hue that would bring it near the waiting amber (a yellow or an orange
+  workspace);
 - **the state marks meet the mark floor**: every pair of `PAIRS` whose front is a `state.*`
   token or `needs-you.base`, the title bar's needs-you hand on its hovered `control.hover`
   included.
@@ -701,7 +711,8 @@ workspace palette colour. When a theme breaks one, purlis draws Purlis Classic's
 appearance for the `danger.*`, `needs-you.*` and `state.*` tokens of each pair that fails, and
 for the pair's other token when Classic's colour still fails on it. A floor between tokens none
 of which is a consent token (Allow apart from Keep blocked, an answer's words on its button) is
-held by drawing Classic's values for each of them. The rest of the theme draws
+held by drawing Classic's values for each of them; waiting too near the accent is held by
+drawing Classic's waiting colour. The rest of the theme draws
 as written, and one Notice in the Inbox names the theme and the floors it breaks.
 
 **The window only applies.** It is handed a resolved theme, every token's final value and the
@@ -1033,6 +1044,7 @@ has it; nothing reads the key after that.
   "notifications": { "quiet": { "on": true, "from": "22:00", "to": "07:00" } },
   "explorer": { "closed": ["repos"] },
   "rail": "auto",
+  "skills": { "onlyThisChat": true },
   "dismissed": { "/home/me/project": ["pin-dormant:ide", "chat-fresh:3"] }
 }
 ```
@@ -1080,6 +1092,9 @@ has it; nothing reads the key after that.
   - **`inbox`**: **`scope`**, whose asks the Inbox lists: `all` (All projects) or `workspace`
     (This workspace). Leave it out for the project's, the default. A value that is neither is
     read as the default.
+  - **`browsers`**: **`scope`**, which browsers the Browsers grid shows (#2027), in the Inbox's
+    words: `all` (All projects) or `workspace` (This workspace). Leave it out for the project's,
+    the default. A value that is neither is read as the default.
 
   purlis writes a project's entry when anything in it changes; the core keeps the entries a
   window did not send, so two windows keep each other's. It keeps at most 32, and at most
@@ -1183,6 +1198,12 @@ has it; nothing reads the key after that.
   (`app/src/railMode.ts`); the first frame draws the rail as it says. Where the rail would
   crowd the work, the window hides it over a `rail` left out (#3077, `app/src/railRoom.ts`), and
   that hide is never written.
+- **`skills`** is what the Skills view keeps for the window (#3281, #3693): `"folded"`, the
+  groups folded (`["built-in"]`, of `needs-you`, `in-chat`, `built-in` and `left-out`, at most
+  16, a name that is no group skipped). It is left out at its default, Left out and the built-in
+  skills folded. The view follows the chat in front, so the `"onlyThisChat"` an older purlis
+  wrote is read past and never written. Any other value is the default, and the Inbox says so.
+  The folds write it (`app/src/skillsViewPrefs.ts`).
 - **`dismissed`** is the Notices you dismissed (NO-2, V91j), per project by its path, each
   by its cause. A Notice stays hidden while its cause is kept here, and the window lets the
   cause go once the project answers without it, so the Notice shows again if the cause comes
@@ -1515,6 +1536,7 @@ are no geometry token: they are the window's own family and its one monospace fa
 | `--window-gutter`       | 0px                                                          |
 | `--panel-corner-radius` | 0px                                                          |
 | `--panel-border-width`  | 1px                                                          |
+| `--separator-width`    | 1px                                                          |
 | `--focus-ring-width`    | 2px                                                          |
 | `--focus-ring-offset`   | 2px                                                          |
 | `--focus-ring-inset`    | -2px                                                         |
@@ -1562,6 +1584,7 @@ engine's (`purlis_core::theme::geometry::STEPS`), which the published schema car
 | `window.gutter` | `--window-gutter` | 0 to 16 px | 0 | 0 |
 | `panel.corner-radius` | `--panel-corner-radius` | 0 to 24 px | 0 | 0 |
 | `panel.border-width` | `--panel-border-width` | 0 to 2 px | 1 | 1 |
+| `separator.width` | `--separator-width` | 0 to 2 px | 1 | 1 |
 | `focus-ring.width` | `--focus-ring-width` | 1 to 4 px | 2 | 2 |
 | `focus-ring.offset` | `--focus-ring-offset` | 0 to 4 px | 2 | 2 |
 | `focus-ring.inset` | `--focus-ring-inset` | -4 to 0 px | -2 | -2 |
@@ -1687,7 +1710,7 @@ the focus rings, #2867):
   button is the button family's `Button`, a segment the choice family's), an `<input>` or
   `<textarea>` (none: a box is the field family's `TextField` or `TextArea`, a checkbox or a
   radio the choice family's), a `<select>` (none: the select family's `Select`), a `<table>`
-  (`ui-table`), and a Radix menu's content and rows (none: the menu family's). **It holds two
+  (none: the table family's `Table` or `ControlTable`, #2911), and a Radix menu's content and rows (none: the menu family's). **It holds two
   heights too** (#2449): a `height`, `min-height`, `block-size` or `min-block-size` set on a
   control is `--size-control`, and one set on a strip or a pane header is `--size-chrome`. A
   control is `--size-chrome` only as the small form: a control whose selector puts it inside a
@@ -1868,7 +1891,9 @@ view wears one.
 1. **Colour follows the role, never the other way.** A word is not made quieter by picking a
    quieter colour; it is given the role it has, and the role brings the colour.
 2. **Muted is for meta only.** A help line or a where line is secondary. (Muted was the
-   window's most used text colour, mostly on secondary-role text.)
+   window's most used text colour, mostly on secondary-role text.) One exception stands until
+   the view tabs move onto the roles (below): a view's sentence that wears no role
+   (`.view-body .none`, `.pending`) is drawn muted by one rule in `App.css` (#3938).
 3. **Nothing is under the words' floor.** 11px (`--font-size-xs`) is it: `0.72rem` and
    `0.65rem` become it, and a snap never lands under it. The one step below, `--font-size-2xs`
    (10px, the operator, 2026-10-17), is for a tight secondary label only: the Chats view's and the
@@ -1958,7 +1983,9 @@ One change each, each checked against a screenshot (#1920):
 4. the tab strips and the status bar;
 5. Settings;
 6. Notices and dialogs;
-7. Welcome.
+7. Welcome;
+8. the view tabs (Todos, Memory, a task's changes, the skills' pages): their `.none` and
+   `.pending` sentences wear `ui-text-secondary`, and `.view-body`'s muted goes (#3938).
 
 Along the way the section label gets one spelling (`ui-text-label`, which is `.sidebar-title`'s
 type today), and the two largest size tokens are each read by a role or removed.

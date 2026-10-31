@@ -41,6 +41,7 @@ use serde_json::{Map, Value};
 
 use super::VaultError;
 use super::keyring::{Held, OWN_PREFIXES, own_service};
+use crate::tui::Markup;
 
 /// The argument that starts the app's binary as the one-item writer.
 pub const HOLD_ARG: &str = "charter-hold-a-keyring-item";
@@ -230,13 +231,16 @@ pub(super) fn spares_of(service: &str) -> [String; 2] {
 /// Why nothing was written: the spare could not be made, so the item was left as it was.
 fn no_spare(service: &str, e: Refused) -> Refused {
     let why = match e {
-        Refused::Owned => "another program's item is where it keeps it".to_owned(),
+        Refused::Owned => Markup::from("another program's item is where it keeps it"),
         Refused::Failed(e) => e.message,
     };
-    Refused::Failed(VaultError::new(format!(
-        "purlis could not keep a spare copy of '{service}' while it writes it again ({why}), so \
-         it left the item as it was"
-    )))
+    Refused::Failed(VaultError::new(
+        Markup::from(format!(
+            "purlis could not keep a spare copy of '{service}' while it writes it again ("
+        ))
+        .then(why)
+        .then(Markup::from("), so it left the item as it was")),
+    ))
 }
 
 /// The operating system's store, as [`remake`] asks it.

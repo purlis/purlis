@@ -25,7 +25,7 @@ fn has_pair(args: &[String], flag: &str, value: &str) -> bool {
 
 #[test]
 fn a_runner_container_starts_with_every_capability_dropped_and_no_new_privileges() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     assert_eq!(args[0], "run");
     assert!(has_pair(&args, "--cap-drop", "ALL"), "{args:?}");
     assert!(
@@ -38,28 +38,152 @@ fn a_runner_container_starts_with_every_capability_dropped_and_no_new_privileges
     assert!(has_pair(&args, "--cgroupns", "private"), "{args:?}");
 }
 
+/// The runner's seccomp profile as `docker inspect` writes it back (#3410).
+fn runners_seccomp() -> String {
+    let profile: serde_json::Value = serde_json::from_str(SECCOMP_PROFILE).expect("JSON");
+    format!("seccomp={profile}")
+}
+
+/// Where a test names the runner's seccomp profile as kept for a run of `docker`.
+const SECCOMP_AT: &str = "/data/docker-settings/run-x/runner-seccomp.json";
+
 #[test]
-fn a_runner_container_keeps_the_default_seccomp_profile_and_is_never_privileged() {
-    let args = runner().create_args();
+fn a_runner_container_has_the_runners_seccomp_profile_and_is_never_privileged() {
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     assert!(!args.iter().any(|a| a.contains("privileged")), "{args:?}");
-    assert!(!args.iter().any(|a| a.contains("seccomp")), "{args:?}");
+    let seccomp: Vec<&String> = args.iter().filter(|a| a.contains("seccomp")).collect();
+    assert_eq!(seccomp, [&format!("seccomp={SECCOMP_AT}")], "{args:?}");
     assert!(!args.iter().any(|a| a.contains("apparmor")), "{args:?}");
     assert!(!args.iter().any(|a| a == "--cap-add"), "{args:?}");
 }
 
+/// #3410: the runner's profile is Docker's default with `pidfd_getfd` allowed besides (and the
+/// browser engine's sandbox's calls, #3298): every rule of Docker's own is there as it was.
+#[test]
+fn the_runners_seccomp_profile_is_dockers_default_and_one_call() {
+    let profile: serde_json::Value = serde_json::from_str(SECCOMP_PROFILE).expect("JSON");
+    assert_eq!(profile["defaultAction"], "SCMP_ACT_ERRNO");
+    let rules = profile["syscalls"].as_array().expect("its rules");
+    let added: Vec<&serde_json::Value> = rules
+        .iter()
+        .filter(|rule| rule["names"] == serde_json::json!(["pidfd_getfd"]))
+        .collect();
+    assert_eq!(
+        added,
+        [&serde_json::json!({"names": ["pidfd_getfd"], "action": "SCMP_ACT_ALLOW"})]
+    );
+    // Docker's own rule for it stays as Docker wrote it, behind the capability no runner has.
+    assert!(rules.iter().any(|rule| {
+        rule["names"]
+            .as_array()
+            .is_some_and(|names| names.contains(&"pidfd_getfd".into()))
+            && rule["includes"]["caps"] == serde_json::json!(["CAP_SYS_PTRACE"])
+    }));
+    assert_eq!(rules.len(), 41);
+}
+
 #[test]
 fn a_runner_container_runs_the_pinned_image_by_digest_as_its_session_host() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     let at = args
         .iter()
         .position(|a| a == &format!("ghcr.io/purlis/purlis-runner@{DIGEST}"))
         .expect("the image is named by its digest");
-    assert_eq!(&args[at + 1..], ["serve"]);
+    assert_eq!(&args[at + 1..], ["serve", "--suspends-unlinked"]);
+}
+
+#[test]
+fn a_runner_of_a_pool_with_its_own_time_suspends_after_it() {
+    let at_the_end = |runner: Runner| {
+        let args = runner.create_args(std::path::Path::new(SECCOMP_AT));
+        args[args.len() - 2..].to_vec()
+    };
+    assert_eq!(
+        at_the_end(runner().suspending_after(std::time::Duration::from_secs(90 * 60))),
+        ["serve", "--suspends-unlinked=90m"]
+    );
+    assert_eq!(
+        at_the_end(runner().suspending_after(std::time::Duration::from_secs(48 * 60 * 60))),
+        ["serve", "--suspends-unlinked=48h"]
+    );
+    // The default is said as it was before a pool could set its own.
+    assert_eq!(
+        at_the_end(runner().suspending_after(std::time::Duration::from_secs(24 * 60 * 60))),
+        ["serve", "--suspends-unlinked"]
+    );
+}
+
+/// How a runner's container was made to suspend itself is read back from its command (#3717):
+/// one made before purlis suspended runners was made with `serve` alone and never suspends.
+#[test]
+fn how_a_runner_was_made_to_suspend_is_read_from_its_containers_command() {
+    let made_with = |runner: Runner| {
+        let args = runner.create_args(std::path::Path::new(SECCOMP_AT));
+        let mut inspected = inspected();
+        inspected[0]["Config"]["Cmd"] = serde_json::json!(args[args.len() - 2..]);
+        made_suspending(&inspected)
+    };
+    let secs = std::time::Duration::from_secs;
+    assert_eq!(
+        made_with(runner()),
+        Some(MadeSuspending::After(SUSPEND_AFTER))
+    );
+    assert_eq!(
+        made_with(runner().suspending_after(secs(90 * 60))),
+        Some(MadeSuspending::After(secs(90 * 60)))
+    );
+    let with_cmd = |cmd: serde_json::Value| {
+        let mut inspected = inspected();
+        inspected[0]["Config"]["Cmd"] = cmd;
+        made_suspending(&inspected)
+    };
+    assert_eq!(
+        with_cmd(serde_json::json!(["serve"])),
+        Some(MadeSuspending::Never)
+    );
+    // What purlis cannot read as a runner's command says nothing.
+    assert_eq!(with_cmd(serde_json::Value::Null), None);
+    assert_eq!(with_cmd(serde_json::json!(["sh"])), None);
+    assert_eq!(
+        with_cmd(serde_json::json!(["serve", "--suspends-unlinked=soon"])),
+        None
+    );
+    // A time `purlis serve` refuses, outside a pool's bounds, is not a time it suspends after.
+    for refused in ["30s", "721h"] {
+        assert_eq!(
+            with_cmd(serde_json::json!([
+                "serve",
+                format!("--suspends-unlinked={refused}")
+            ])),
+            None,
+            "{refused}"
+        );
+    }
+    assert_eq!(
+        with_cmd(serde_json::json!(["serve", "--suspends-unlinked=720h"])),
+        Some(MadeSuspending::After(MOST_SUSPEND_AFTER))
+    );
+}
+
+#[test]
+fn a_pools_time_before_its_runner_suspends_is_a_minute_to_30_days() {
+    let secs = std::time::Duration::from_secs;
+    assert!(suspend_after(secs(59)).is_err());
+    assert!(suspend_after(secs(60)).is_ok());
+    assert!(suspend_after(secs(30 * 24 * 60 * 60)).is_ok());
+    assert!(suspend_after(secs(30 * 24 * 60 * 60 + 1)).is_err());
+}
+
+// The host is linked on macOS and Linux alone.
+#[cfg(unix)]
+#[test]
+fn a_pools_runner_suspends_after_the_hosts_own_day_by_default() {
+    assert_eq!(SUSPEND_AFTER, purlis_host::UNLINKED_FOR);
 }
 
 #[test]
 fn a_runner_container_holds_its_home_on_a_volume_of_its_own_and_no_folder_of_this_machine() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     let mounts: Vec<&String> = args
         .windows(2)
         .filter(|w| w[0] == "--mount")
@@ -72,9 +196,27 @@ fn a_runner_container_holds_its_home_on_a_volume_of_its_own_and_no_folder_of_thi
     assert!(!args.iter().any(|a| a == "-v" || a == "--volume"));
 }
 
+/// The `purlis` whose holding of namespaces the check asks is the one that serves, whatever the
+/// image's entrypoint, under the runtime's init (#3702).
+#[test]
+fn a_runner_container_serves_the_purlis_the_check_asks_under_the_runtimes_init() {
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
+    assert!(has_pair(&args, "--entrypoint", PURLIS), "{args:?}");
+    assert!(args.iter().any(|a| a == "--init"), "{args:?}");
+    let at = args
+        .iter()
+        .position(|a| a == image().as_str())
+        .expect("the image");
+    assert!(
+        args.iter().position(|a| a == "--entrypoint").unwrap() < at,
+        "a flag of the run, not the program's"
+    );
+    assert_eq!(args[at + 1], "serve");
+}
+
 #[test]
 fn a_runner_container_has_a_read_only_root_and_a_tmp_that_runs_no_program() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     assert!(args.iter().any(|a| a == "--read-only"), "{args:?}");
     assert!(
         has_pair(&args, "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=1024m"),
@@ -84,24 +226,27 @@ fn a_runner_container_has_a_read_only_root_and_a_tmp_that_runs_no_program() {
 
 #[test]
 fn a_runner_container_is_held_to_its_pools_limits_or_the_defaults() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     for (flag, value) in [
         ("--cpus", "2"),
         ("--memory", "4096m"),
         ("--memory-swap", "4096m"),
         ("--pids-limit", "1024"),
+        // A quarter of its memory, for the browser engine's shared memory (#3298).
+        ("--shm-size", "1024m"),
     ] {
         assert!(has_pair(&args, flag, value), "{flag} {value}: {args:?}");
     }
     let limits = Limits::new(1500, 8192, 256, 512).unwrap();
     let limited = runner().limited(limits);
-    let args = limited.create_args();
+    let args = limited.create_args(std::path::Path::new(SECCOMP_AT));
     for (flag, value) in [
         ("--cpus", "1.500"),
         ("--memory", "8192m"),
         ("--memory-swap", "8192m"),
         ("--pids-limit", "256"),
         ("--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=512m"),
+        ("--shm-size", "2048m"),
     ] {
         assert!(has_pair(&args, flag, value), "{flag} {value}: {args:?}");
     }
@@ -143,7 +288,7 @@ fn a_pools_limits_leave_a_runner_room_to_start_a_chat() {
 
 #[test]
 fn a_runner_container_is_named_and_labelled_as_the_pools() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     assert!(has_pair(&args, "--name", "purlis-runner-first"), "{args:?}");
     assert!(
         has_pair(&args, "--label", "purlis.runner=first"),
@@ -238,7 +383,7 @@ pub(crate) fn inspected() -> serde_json::Value {
         "MountLabel": "",
         "HostConfig": {
             "Privileged": false,
-            "SecurityOpt": ["no-new-privileges"],
+            "SecurityOpt": ["no-new-privileges", runners_seccomp()],
             "CapAdd": null,
             "CapDrop": ["ALL"],
             "NetworkMode": "bridge",
@@ -318,8 +463,11 @@ fn a_container_that_is_not_confined_as_it_was_made_is_refused() {
         (
             "apparmor off",
             Box::new(|c| {
-                c["HostConfig"]["SecurityOpt"] =
-                    serde_json::json!(["no-new-privileges", "apparmor=unconfined"])
+                c["HostConfig"]["SecurityOpt"] = serde_json::json!([
+                    "no-new-privileges",
+                    "apparmor=unconfined",
+                    runners_seccomp()
+                ])
             }),
         ),
         (
@@ -330,7 +478,7 @@ fn a_container_that_is_not_confined_as_it_was_made_is_refused() {
             "labels off",
             Box::new(|c| {
                 c["HostConfig"]["SecurityOpt"] =
-                    serde_json::json!(["no-new-privileges", "label=disable"])
+                    serde_json::json!(["no-new-privileges", "label=disable", runners_seccomp()])
             }),
         ),
         (
@@ -607,6 +755,210 @@ fn pairing_runs_the_bridge_to_pair_as_the_runners_user_and_group_in_the_containe
     );
 }
 
+/// A profile is signed in on the runner by the runner's own `purlis profile sign-in`, with a
+/// terminal, as the runner's user and group in the container it pinned (#2049).
+#[test]
+fn a_profile_is_signed_in_on_the_runner_by_its_own_sign_in_in_the_container_it_pinned() {
+    assert_eq!(
+        made().sign_in_args("work", None),
+        [
+            "exec",
+            "-it",
+            "--user",
+            "10001:10001",
+            ID,
+            PURLIS,
+            "profile",
+            "sign-in",
+            "work"
+        ]
+    );
+    assert_eq!(
+        made().sign_in_args("chatgpt", Some("openai"))[7..],
+        ["sign-in", "chatgpt", "--provider", "openai"]
+    );
+}
+
+/// **A runner's sign-in check is read by the words `--check` writes** (#4046): signed in, not, or
+/// that its harness cannot tell; anything else is the runner's own words.
+#[test]
+fn a_runners_sign_in_check_is_read_by_its_own_words() {
+    use crate::profilestore::sign_in::Standing;
+    for (printed, standing) in [
+        ("'work' is signed in on runner-1\n", Standing::SignedIn),
+        (
+            "fetching claude 2.1.314\n'work' is signed in by Claude Code's own sign-in on r\n",
+            Standing::SignedIn,
+        ),
+        (
+            "'work' is not signed in on r: purlis profile sign-in work signs it in\n",
+            Standing::SignedOut,
+        ),
+        (
+            "its harness cannot tell whether 'work' is signed in on r; a chat on it starts\n",
+            Standing::CannotTell,
+        ),
+    ] {
+        assert_eq!(standing_said("work", printed), Ok(standing), "{printed}");
+    }
+    let why = standing_said(
+        "work",
+        "purlis: this machine has no profile named 'work'.\n",
+    );
+    assert_eq!(
+        why,
+        Err("the runner says: purlis: this machine has no profile named 'work'.".to_owned())
+    );
+    // Another profile's words are not this one's.
+    assert!(standing_said("work", "'workshop' is signed in on r\n").is_err());
+}
+
+/// **A plan's driven sign-in names its browser flow**, which has no list to answer, and the
+/// fallback where the browser's answer cannot reach the runner names its device-code flow in a
+/// terminal the person drives, as does the terminal a login restarts in (#4044).
+#[test]
+fn a_sign_in_on_a_runner_names_the_flow_it_runs() {
+    let driven = made().sign_in_args_by(Typed::Driven, "chatgpt", Some("openai"));
+    assert_eq!(driven[1], "-i");
+    assert!(driven.windows(2).any(|words| words == ["--way", "browser"]));
+
+    let device = made().sign_in_args_by(Typed::DeviceInATerminal, "fast", None);
+    assert_eq!(device[1], "-it");
+    assert!(device.windows(2).any(|words| words == ["--way", "device"]));
+
+    // The terminal a login restarts in when purlis cannot follow it, by its device-code flow.
+    let size = crate::engine::Size {
+        columns: 100,
+        rows: 30,
+    };
+    let restarted = made().sign_in_args_by(Typed::DeviceInOwnTerminal(size), "fast", None);
+    assert_eq!(restarted[1], "-i");
+    assert!(
+        restarted
+            .windows(2)
+            .any(|words| words == ["--way", "device"])
+    );
+    assert_eq!(
+        restarted[restarted.len() - 2..],
+        ["--in-own-terminal", "100x30"]
+    );
+
+    assert!(
+        !made()
+            .sign_in_args_by(Typed::Driven, "work", None)
+            .contains(&"--way".to_owned())
+    );
+    // Copilot's login shows its device code by default, so a runner before #4044, which knows no
+    // `--way`, still signs it in.
+    assert!(
+        !made()
+            .sign_in_args_by(Typed::Driven, "open", Some("github-copilot"))
+            .contains(&"--way".to_owned())
+    );
+}
+
+/// **A sign-in purlis drives runs with pipes, never a terminal** (#4042): the same runner's own
+/// `purlis profile sign-in`, as the same user in the same container, with `-i` alone.
+#[test]
+fn a_driven_sign_in_runs_the_same_sign_in_with_pipes() {
+    let driven = made().sign_in_args_by(Typed::Driven, "work", None);
+
+    assert_eq!(driven[1], "-i");
+    let (ends, same) = driven.split_last().expect("words");
+    assert_eq!(ends, "--until-input-ends");
+    assert_eq!(same[2..], made().sign_in_args("work", None)[2..]);
+}
+
+/// **A login the person drives in the window's terminal crosses pipes too** (#4043), so it ends
+/// with its input as a driven one does; a terminal `docker exec` makes would not end.
+#[test]
+fn a_terminal_in_the_window_is_the_runners_own_carried_over_pipes() {
+    let size = crate::engine::Size {
+        columns: 100,
+        rows: 30,
+    };
+    let terminal = made().sign_in_args_by(Typed::InOwnTerminal(size), "work", None);
+
+    assert_eq!(terminal[1], "-i");
+    assert_eq!(
+        terminal[terminal.len() - 2..],
+        ["--in-own-terminal", "100x30"]
+    );
+}
+
+/// **Open in terminal stays the harness's own login in a terminal the person drives** (#4043):
+/// nothing stands between, and no input closing ends it.
+#[test]
+fn a_sign_in_typed_into_a_shell_is_left_to_the_person() {
+    let typed = made().sign_in_args("work", None);
+
+    assert_eq!(typed[1], "-it");
+    assert!(!typed.iter().any(|word| word == "--until-input-ends"));
+}
+
+/// **Sign out is the runner's own**, as the same user in the same container.
+#[test]
+fn signing_out_runs_the_runners_own_sign_out() {
+    let args = made().sign_out_args("work");
+
+    assert_eq!(args[args.len() - 3..], ["profile", "sign-out", "work"]);
+    assert_eq!(args[1..4], made().version_args()[1..4]);
+}
+
+/// **The line a sign-in on a pool's runner types reads none of the person's Docker settings**
+/// (#2049): it runs `docker` by its path through `/usr/bin/env`, with Docker's settings a folder
+/// of purlis's own (`--config` and `DOCKER_CONFIG`), plugin hooks off, no context, the engine
+/// on the line, and the container by its id.
+#[test]
+fn a_sign_in_on_a_runner_runs_docker_with_settings_of_purliss_own_and_no_hooks() {
+    let line = Docker::at("/usr/local/bin/docker")
+        .sign_in_login(
+            &made(),
+            std::path::Path::new("/var/run/docker.sock"),
+            std::path::Path::new("/data/purlis/docker-settings/sign-in"),
+            "work",
+            None,
+        )
+        .unwrap()
+        .line()
+        .unwrap();
+
+    assert_eq!(
+        line,
+        format!(
+            "/usr/bin/env -u DOCKER_CONTEXT DOCKER_CONFIG=/data/purlis/docker-settings/sign-in \
+             DOCKER_CLI_HOOKS=false /usr/local/bin/docker --config \
+             /data/purlis/docker-settings/sign-in --host unix:///var/run/docker.sock exec -it \
+             --user 10001:10001 {ID} {PURLIS} profile sign-in work\n"
+        )
+    );
+}
+
+/// The settings that line names hold nothing of the person's: a `config.json` of `{}`, in a
+/// folder of this user's alone, which a sweep of the runs' copies leaves.
+#[test]
+fn the_settings_a_sign_in_names_are_an_empty_config_of_purliss_own() {
+    let dir = tempfile::tempdir().unwrap();
+    let settings_in = dir.path().join(settings::DIR);
+
+    let folder = settings::for_a_sign_in(&settings_in).unwrap();
+
+    assert_eq!(folder, settings_in.join(settings::SIGN_IN));
+    assert_eq!(
+        std::fs::read_to_string(folder.join("config.json")).unwrap(),
+        "{}"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&folder).unwrap().permissions().mode();
+        assert_eq!(mode & 0o077, 0, "{mode:o}");
+    }
+    let later = std::time::SystemTime::now() + std::time::Duration::from_secs(365 * 24 * 3600);
+    assert_eq!(settings::sweep(&settings_in, later), 0);
+    assert!(folder.join("config.json").exists());
+}
+
 /// A stand-in for `docker`: a script that logs each call's words and answers from the files
 /// of its folder: `run` with `id`, `container inspect` with `inspect`, `volume inspect` with
 /// `volume`, `volume ls` with `volumes`, `info` with `info`, `image inspect` with `image`, and
@@ -623,13 +975,19 @@ impl FakeDocker {
         let dir = tempfile::tempdir().unwrap();
         let at = |name: &str| dir.path().join(name).display().to_string();
         let script = format!(
-            "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$1 $2\" in\n  \
+            "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$*\" in *_no-namespaces*) \
+             prev=; for a in \"$@\"; do [ \"$prev\" = --cidfile ] && echo {probe} > \"$a\"; \
+             prev=$a; done; \
+             exit \"$(cat '{holds}' 2>/dev/null || echo 0)\" ;; esac\ncase \"$1 $2\" in\n  \
+             'run --rm') [ -f '{copy_fails}' ] && \
+             {{ echo 'cp: cannot open' >&2; exit 1; }}; true ;;\n  \
              'run '*) [ -f '{run_fails}' ] && \
              {{ echo 'the runtime refused it' >&2; exit 125; }}; cat '{id}' ;;\n  \
              'container inspect') cat '{inspect}' ;;\n  \
              'volume inspect') cat '{volume}' ;;\n  \
              'volume ls') cat '{volumes}' 2>/dev/null || true ;;\n  \
              'info '*) cat '{info}' ;;\n  \
+             'system df') cat '{df}' ;;\n  \
              'image inspect') cat '{image}' ;;\n  \
              'exec '*) cat > '{input}'; cat '{paired}' ;;\n  \
              'container ls') case \"$*\" in *--no-trunc*.ID*) cat '{containers}-full' 2>/dev/null || true ;; \
@@ -643,12 +1001,16 @@ impl FakeDocker {
             volume = at("volume"),
             volumes = at("volumes"),
             info = at("info"),
+            df = at("df"),
             image = at("image"),
             input = at("input"),
             paired = at("paired"),
             rm_fails = at("rm-fails"),
             run_fails = at("run-fails"),
+            copy_fails = at("copy-fails"),
             containers = at("containers"),
+            holds = at("holds"),
+            probe = PROBE_ID,
         );
         stand_in::program(dir.path(), "docker", &script);
         let fake = FakeDocker { dir };
@@ -672,6 +1034,10 @@ impl FakeDocker {
 
     pub(crate) fn file(&self, name: &str) -> String {
         std::fs::read_to_string(self.dir.path().join(name)).unwrap_or_default()
+    }
+
+    pub(crate) fn file_path(&self, name: &str) -> std::path::PathBuf {
+        self.dir.path().join(name)
     }
 
     pub(crate) fn set(&self, name: &str, text: &str) {
@@ -821,6 +1187,22 @@ fn a_runner_made_and_confined_as_it_should_be_is_handed_back_by_its_container_id
     );
     assert!(log.contains(&format!("container inspect {ID}")), "{log}");
     assert!(!log.contains(" rm "), "{log}");
+}
+
+/// The runtime's own default profile is taken only for a runner made before #3410: one made
+/// now that came up without the runner's profile is refused and removed with its volume.
+#[test]
+fn a_runner_made_now_on_the_runtimes_default_profile_is_refused_and_removed() {
+    let fake = FakeDocker::new(&on_the_runtimes_default(inspected()));
+    let refused = fake.docker().make(&runner()).unwrap_err();
+    assert!(refused.0.contains("seccomp"), "{refused}");
+    let log = fake.file("log");
+    assert!(
+        log.contains(&format!("container rm --force --volumes {ID}")),
+        "{log}"
+    );
+    // The same container, made before, is still linked.
+    assert_eq!(fake.docker().check(&made()), Ok(()));
 }
 
 #[test]
@@ -1023,6 +1405,19 @@ fn docker_is_found_where_its_installers_put_it_before_the_path() {
 // loosened each way, on Docker on an AppArmor host, rootful Podman and rootless Podman.
 // ---------------------------------------------------------------------------------------------
 
+/// What rootless Podman wrote for `case`, its runtime's seccomp profile what it compiles from
+/// the runner's profile now: the recording was measured on 2026-10-27, with the runner's
+/// earlier profile (#3298).
+fn rootless_now(case: &str) -> serde_json::Value {
+    let mut oci = recorded("podman-rootless", case);
+    let native = oci["linux"]["seccomp"]["architectures"][0]
+        .as_str()
+        .expect("its architecture")
+        .to_owned();
+    oci["linux"]["seccomp"] = compiled_for(SECCOMP_PROFILE, &native).expect("compiled");
+    oci
+}
+
 /// What `host` wrote for `case`, as it was recorded.
 fn recorded(host: &str, case: &str) -> serde_json::Value {
     let text = match format!("{host}-{case}").as_str() {
@@ -1118,19 +1513,38 @@ fn engine_of(host: &str) -> Engine {
 }
 
 /// What `host` wrote, held to the check on the engine it was measured on.
-fn checked_on_its_engine(host: &str, inspected: &serde_json::Value) -> Result<(), Refused> {
+fn checked_on_its_engine(host: &str, inspected: &serde_json::Value) -> Result<Seccomp, Refused> {
     check_on(inspected, &made_as_recorded(inspected), engine_of(host))
 }
 
 #[test]
 fn a_container_made_the_pools_way_passes_on_docker_with_apparmor_and_on_podman() {
+    // Measured on 2026-10-27, with the runner's earlier profile: Docker keeps the profile it was
+    // given, and Podman the path of its file, each of its own name, so each is known as that one
+    // (#3298).
     for host in ["docker-apparmor", "podman-rootful", "podman-rootless"] {
         assert_eq!(
             checked_on_its_engine(host, &recorded(host, "made")),
-            Ok(()),
+            Ok(Seccomp::RunnersEarlier),
             "{host}"
         );
     }
+    let mut now = recorded("docker-apparmor", "made");
+    now[0]["HostConfig"]["SecurityOpt"] =
+        serde_json::json!(["no-new-privileges", runners_seccomp()]);
+    assert_eq!(
+        checked_on_its_engine("docker-apparmor", &now),
+        Ok(Seccomp::Runners)
+    );
+    let mut now = recorded("podman-rootful", "made");
+    now[0]["HostConfig"]["SecurityOpt"] = serde_json::json!([
+        "no-new-privileges",
+        format!("seccomp=/home/runner/work/_temp/measured/{SECCOMP_FILE}")
+    ]);
+    assert_eq!(
+        checked_on_its_engine("podman-rootful", &now),
+        Ok(Seccomp::Runners)
+    );
 }
 
 /// A Podman container with no AppArmor profile is taken only on rootless Podman, which loads
@@ -1183,9 +1597,10 @@ fn a_loosened_container_is_refused_on_every_host_it_was_measured_on() {
             // Podman's own user namespace is the machine's: `--userns host` is the pool's own
             // container, word for word (measured 2026-10-20).
             if case == "host-users" && host.starts_with("podman") {
+                // Measured with the earlier profile's file (#3298).
                 assert_eq!(
                     checked_on_its_engine(host, &recorded(host, case)),
-                    Ok(()),
+                    Ok(Seccomp::RunnersEarlier),
                     "{host}"
                 );
                 continue;
@@ -1577,26 +1992,29 @@ fn rootless_store(made: &Made) -> (PodmanStore, std::path::PathBuf) {
 /// volumes, by exactly those paths.
 #[test]
 fn rootless_podmans_runtime_config_is_held_to_the_pools_own() {
-    let own = recorded("podman-rootless", "made-oci");
+    let own = rootless_now("made-oci");
     let made = rootless_runner("measured-8364", &own);
     let (store, config) = rootless_store(&made);
-    assert_eq!(check_oci(&own, &made, &config, &store), Ok(()));
+    assert_eq!(
+        check_oci(&own, &made, &config, &store, Seccomp::Runners),
+        Ok(())
+    );
     for (case, name) in [
         ("device-oci", "device-8364"),
         ("host-folder-oci", "host-folder-8364"),
     ] {
-        let oci = recorded("podman-rootless", case);
+        let oci = rootless_now(case);
         let made = rootless_runner(name, &oci);
         let (store, config) = rootless_store(&made);
         assert!(
-            check_oci(&oci, &made, &config, &store).is_err(),
+            check_oci(&oci, &made, &config, &store, Seccomp::Runners).is_err(),
             "{case} passed"
         );
     }
     let changed = |change: &dyn Fn(&mut serde_json::Value)| {
         let mut oci = own.clone();
         change(&mut oci);
-        check_oci(&oci, &made, &config, &store)
+        check_oci(&oci, &made, &config, &store, Seccomp::Runners)
     };
     // A device named for the runtime.
     assert!(
@@ -1629,12 +2047,56 @@ fn rootless_podmans_runtime_config_is_held_to_the_pools_own() {
         ))
         .is_err()
     );
+    // Podman's own init, as `--init` binds it read-only (#3702), and nothing else at its place.
+    let init = |source: &str, options: serde_json::Value| {
+        let (source, options) = (source.to_owned(), options);
+        move |oci: &mut serde_json::Value| {
+            oci["mounts"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "destination": "/run/podman-init",
+                    "type": "bind",
+                    "source": source.clone(),
+                    "options": options.clone(),
+                }));
+        }
+    };
+    let read_only = serde_json::json!(["bind", "ro", "rprivate"]);
+    let here = tempfile::tempdir().unwrap();
+    let catatonit = here.path().join("catatonit");
+    std::fs::write(&catatonit, "").unwrap();
+    let catatonit = catatonit.display().to_string();
+    assert_eq!(changed(&init(&catatonit, read_only.clone())), Ok(()));
+    assert!(changed(&init("/home/runner/catatonit-not", read_only.clone())).is_err());
+    assert!(changed(&init("catatonit", read_only.clone())).is_err());
+    // A folder of that name is no init.
+    let folder = tempfile::tempdir().unwrap();
+    let named = folder.path().join("catatonit");
+    std::fs::create_dir(&named).unwrap();
+    assert!(changed(&init(&named.display().to_string(), read_only)).is_err());
+    assert!(
+        changed(&init(
+            &catatonit,
+            serde_json::json!(["bind", "rw", "rprivate"])
+        ))
+        .is_err()
+    );
     // A config of another container, of another shape, or with no mounts.
     let elsewhere = store
         .graph_root
         .join("overlay-containers/other/userdata/config.json");
-    assert!(check_oci(&own, &made, &elsewhere, &store).is_err());
-    assert!(check_oci(&serde_json::json!({}), &made, &config, &store).is_err());
+    assert!(check_oci(&own, &made, &elsewhere, &store, Seccomp::Runners).is_err());
+    assert!(
+        check_oci(
+            &serde_json::json!({}),
+            &made,
+            &config,
+            &store,
+            Seccomp::Runners
+        )
+        .is_err()
+    );
 }
 
 /// A runtime config that is no file, such as a FIFO a reader would wait on for ever, is refused
@@ -1657,4 +2119,879 @@ fn a_runtime_config_that_is_no_file_or_not_here_is_refused_and_said() {
     ))
     .unwrap_err();
     assert!(gone.0.contains("Podman machine"), "{gone}");
+}
+
+// ---------------------------------------------------------------------------------------------
+// #3410: the runner's seccomp profile, and the runtime's default on a runner made before it.
+// ---------------------------------------------------------------------------------------------
+
+/// `inspected` with its seccomp option taken out, as a runner made before #3410 was.
+fn on_the_runtimes_default(mut inspected: serde_json::Value) -> serde_json::Value {
+    inspected[0]["HostConfig"]["SecurityOpt"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|option| !option.as_str().unwrap().starts_with("seccomp="));
+    inspected
+}
+
+/// A runner made before #3410 runs the runtime's own default profile, which is stricter than the
+/// runner's: it is still linked, and the check says which profile it runs.
+#[test]
+fn a_runner_made_on_the_runtimes_default_profile_is_still_linked() {
+    for host in ["docker-apparmor", "podman-rootful", "podman-rootless"] {
+        assert_eq!(
+            checked_on_its_engine(host, &on_the_runtimes_default(recorded(host, "made"))),
+            Ok(Seccomp::RuntimeDefault),
+            "{host}"
+        );
+    }
+    assert_eq!(
+        check_on(
+            &on_the_runtimes_default(inspected()),
+            &made(),
+            Engine::default()
+        ),
+        Ok(Seccomp::RuntimeDefault)
+    );
+}
+
+/// Rootless Podman's runtime config of a runner on the runtime's default holds a profile, which
+/// `podman info`'s check holds to Podman's own; one with none is refused.
+#[test]
+fn rootless_podmans_runtime_config_on_the_runtimes_default_holds_a_profile() {
+    let own = recorded("podman-rootless", "made-oci");
+    let made = rootless_runner("measured-8364", &own);
+    let (store, config) = rootless_store(&made);
+    let mut default = own.clone();
+    default["linux"]["seccomp"]["syscalls"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|rule| rule["names"] != serde_json::json!(["pidfd_getfd"]));
+    assert_eq!(
+        check_oci(&default, &made, &config, &store, Seccomp::RuntimeDefault),
+        Ok(())
+    );
+    let mut none = own.clone();
+    none["linux"].as_object_mut().unwrap().remove("seccomp");
+    assert!(check_oci(&none, &made, &config, &store, Seccomp::RuntimeDefault).is_err());
+    // A profile that allows every call it does not name is no default of Podman's.
+    let mut open = default.clone();
+    open["linux"]["seccomp"]["defaultAction"] = "SCMP_ACT_ALLOW".into();
+    assert!(check_oci(&open, &made, &config, &store, Seccomp::RuntimeDefault).is_err());
+}
+
+/// Docker's runner is held to the runner's profile rule for rule, however its text is spaced.
+#[test]
+fn dockers_runner_is_held_to_the_runners_rules_however_they_are_spaced() {
+    let with = |profile: String| {
+        let mut one = inspected();
+        one[0]["HostConfig"]["SecurityOpt"] =
+            serde_json::json!(["no-new-privileges", format!("seccomp={profile}")]);
+        check_on(&one, &made(), Engine::default())
+    };
+    assert_eq!(with(SECCOMP_PROFILE.to_owned()), Ok(Seccomp::Runners));
+    // A runner made with the earlier profile (#3410 to #3298) is still known, and linked.
+    assert_eq!(
+        with(EARLIER_SECCOMP_PROFILE.to_owned()),
+        Ok(Seccomp::RunnersEarlier)
+    );
+    let mut more: serde_json::Value = serde_json::from_str(SECCOMP_PROFILE).unwrap();
+    more["syscalls"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({"names": ["unshare"], "action": "SCMP_ACT_ALLOW"}));
+    assert!(with(more.to_string()).is_err(), "one call more");
+    assert!(with("not json".to_owned()).is_err());
+}
+
+/// Podman keeps only the path it read the runner's profile from: held to an absolute path to a
+/// file of the runner's profile's name.
+#[test]
+fn podmans_runner_profile_is_named_by_an_absolute_path_to_its_file() {
+    for (option, taken) in [
+        ("seccomp=/run/purlis/run-x/runner-seccomp.json", true),
+        ("seccomp=/run/purlis/run-x/runner-seccomp-engine.json", true),
+        ("seccomp=run-x/runner-seccomp.json", false),
+        ("seccomp=runner-seccomp.json", false),
+        ("seccomp=/run/purlis/run-x/seccomp.json", false),
+        ("seccomp=/run/purlis/run-x/runner-seccomp.json.old", false),
+    ] {
+        let mut one = recorded("podman-rootful", "made");
+        one[0]["HostConfig"]["SecurityOpt"] = serde_json::json!(["no-new-privileges", option]);
+        assert_eq!(
+            checked_on_its_engine("podman-rootful", &one).is_ok(),
+            taken,
+            "{option}"
+        );
+    }
+}
+
+/// What rootless Podman compiled from the runner's profile is held to exactly what it makes of
+/// it for a runner with no capability: one rule more, less or changed is refused.
+#[test]
+fn rootless_podmans_compiled_profile_is_exactly_the_runners() {
+    let own = rootless_now("made-oci");
+    let made = rootless_runner("measured-8364", &own);
+    let (store, config) = rootless_store(&made);
+    let changed = |change: &dyn Fn(&mut serde_json::Value)| {
+        let mut oci = own.clone();
+        change(&mut oci["linux"]["seccomp"]);
+        check_oci(&oci, &made, &config, &store, Seccomp::Runners)
+    };
+    assert_eq!(changed(&|_| {}), Ok(()));
+    fn rules(seccomp: &serde_json::Value) -> Vec<serde_json::Value> {
+        seccomp["syscalls"].as_array().unwrap().clone()
+    }
+    let cases: Vec<(&str, Change)> = vec![
+        (
+            "one call more",
+            Box::new(|seccomp| {
+                let mut more = rules(seccomp);
+                more.push(serde_json::json!({"names": ["unshare"], "action": "SCMP_ACT_ALLOW"}));
+                seccomp["syscalls"] = more.into();
+            }),
+        ),
+        (
+            "a rule widened",
+            Box::new(|seccomp| {
+                seccomp["syscalls"][0]["names"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push("mount".into());
+            }),
+        ),
+        (
+            "no pidfd_getfd rule",
+            Box::new(|seccomp| {
+                let mut less = rules(seccomp);
+                less.retain(|rule| rule["names"] != serde_json::json!(["pidfd_getfd"]));
+                seccomp["syscalls"] = less.into();
+            }),
+        ),
+        (
+            "pidfd_getfd behind a condition",
+            Box::new(|seccomp| {
+                for rule in seccomp["syscalls"].as_array_mut().unwrap() {
+                    if rule["names"] == serde_json::json!(["pidfd_getfd"]) {
+                        rule["args"] =
+                            serde_json::json!([{"index": 0, "value": 1, "op": "SCMP_CMP_EQ"}]);
+                    }
+                }
+            }),
+        ),
+        (
+            "every call allowed but those named",
+            Box::new(|seccomp| seccomp["defaultAction"] = "SCMP_ACT_ALLOW".into()),
+        ),
+        (
+            "another architecture",
+            Box::new(|seccomp| seccomp["architectures"] = serde_json::json!(["SCMP_ARCH_AARCH64"])),
+        ),
+        (
+            "no profile",
+            Box::new(|seccomp| *seccomp = serde_json::Value::Null),
+        ),
+    ];
+    for (case, change) in cases {
+        assert!(changed(&*change).is_err(), "{case} passed");
+    }
+    let mut none = own.clone();
+    none["linux"].as_object_mut().unwrap().remove("seccomp");
+    assert!(check_oci(&none, &made, &config, &store, Seccomp::Runners).is_err());
+}
+
+/// The runner's profile is the Moby project's default, as pinned beside it byte for byte
+/// (`seccomp-moby-v0.2.4.json`), with four rules added after its first: `pidfd_getfd` (#3410),
+/// and `clone` and `unshare` making no namespace but a user, a process and a network one, and
+/// `chroot`, for the browser engine's sandbox (#3298). The earlier profile is the first alone.
+#[test]
+fn the_runners_profile_is_the_pinned_upstream_default_and_four_rules() {
+    let upstream: serde_json::Value =
+        serde_json::from_str(include_str!("seccomp-moby-v0.2.4.json")).expect("JSON");
+    // CLONE_NEWNS, CLONE_NEWCGROUP, CLONE_NEWUTS and CLONE_NEWIPC: refused.
+    let no_other_namespace =
+        serde_json::json!([{"index": 0, "value": 0x0E02_0000u32, "op": "SCMP_CMP_MASKED_EQ"}]);
+    let added = [
+        serde_json::json!({"names": ["pidfd_getfd"], "action": "SCMP_ACT_ALLOW"}),
+        serde_json::json!({
+            "names": ["clone"],
+            "action": "SCMP_ACT_ALLOW",
+            "args": no_other_namespace,
+            "excludes": {"arches": ["s390", "s390x"]},
+        }),
+        // CLONE_NEWTIME too, which `unshare` alone takes (in `clone` it is part of the signal).
+        serde_json::json!({
+            "names": ["unshare"],
+            "action": "SCMP_ACT_ALLOW",
+            "args": [{"index": 0, "value": 0x0E02_0080u32, "op": "SCMP_CMP_MASKED_EQ"}],
+        }),
+        serde_json::json!({"names": ["chroot"], "action": "SCMP_ACT_ALLOW"}),
+    ];
+    let with = |rules: &[serde_json::Value]| {
+        let mut it = upstream.clone();
+        let syscalls = it["syscalls"].as_array_mut().unwrap();
+        for (at, rule) in rules.iter().enumerate() {
+            syscalls.insert(1 + at, rule.clone());
+        }
+        it
+    };
+    let ours: serde_json::Value = serde_json::from_str(SECCOMP_PROFILE).expect("JSON");
+    assert_eq!(ours, with(&added));
+    let earlier: serde_json::Value = serde_json::from_str(EARLIER_SECCOMP_PROFILE).expect("JSON");
+    assert_eq!(earlier, with(&added[..1]));
+}
+
+/// Rootless Podman's runtime config of a runner made with the earlier profile is held to what
+/// Podman makes of that profile, and is not taken as the runner's own (#3298).
+#[test]
+fn rootless_podmans_runner_of_the_earlier_profile_is_told_apart() {
+    let earlier = recorded("podman-rootless", "made-oci");
+    let made = rootless_runner("measured-8364", &earlier);
+    let (store, config) = rootless_store(&made);
+    assert_eq!(
+        check_oci(&earlier, &made, &config, &store, Seccomp::RunnersEarlier),
+        Ok(())
+    );
+    assert!(check_oci(&earlier, &made, &config, &store, Seccomp::Runners).is_err());
+    let now = rootless_now("made-oci");
+    assert!(check_oci(&now, &made, &config, &store, Seccomp::RunnersEarlier).is_err());
+}
+
+#[test]
+fn a_suspended_runner_is_checked_as_it_was_made_then_started_again() {
+    let mut stopped = inspected();
+    stopped[0]["State"]["Running"] = false.into();
+    let fake = FakeDocker::new(&stopped);
+    // The fake's container stays stopped, so the whole check after the start refuses it: it was
+    // started once it was checked as made, then stopped again, and not linked.
+    // Seen red: with the stop after a refused check taken out, no `stop` is in the log.
+    let resumed = fake.docker().resumed(&made());
+    assert!(
+        resumed.is_err(),
+        "a container refused its check after the start is not linked"
+    );
+    let log = fake.file("log");
+    assert!(log.contains(&format!("start {ID}")), "{log}");
+    assert!(log.contains(&format!("stop {ID}")), "{log}");
+}
+
+#[test]
+fn a_suspended_runner_not_as_it_was_made_is_never_started() {
+    let mut changed = inspected();
+    changed[0]["State"]["Running"] = false.into();
+    changed[0]["HostConfig"]["Privileged"] = true.into();
+    let fake = FakeDocker::new(&changed);
+    // Seen red: with the check before the start taken out, the log holds a `start`.
+    let resumed = fake.docker().resumed(&made());
+    assert!(
+        resumed
+            .as_ref()
+            .is_err_and(|why| why.0.contains("privileged")),
+        "refused as privileged, before any start"
+    );
+    assert!(!fake.file("log").contains("start "), "{}", fake.file("log"));
+}
+
+#[test]
+fn a_running_runner_is_only_checked() {
+    let fake = FakeDocker::new(&inspected());
+    assert_eq!(
+        fake.docker()
+            .resumed(&made())
+            .map(|resumed| resumed.started),
+        Ok(false)
+    );
+    assert!(fake.docker().running(&made()).unwrap());
+    assert!(!fake.file("log").contains("start "), "{}", fake.file("log"));
+}
+
+/// **A runner whose container Docker no longer has was removed outside purlis** (#4149): the
+/// person's cleanup took it, and Docker answers "No such container" to every check. It is told
+/// apart from one only stopped or suspended, which Docker still lists, and says whether its
+/// home volume, and so its sign-ins, went with it.
+#[test]
+fn a_runner_whose_container_docker_no_longer_lists_is_gone_with_or_without_its_home() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("containers", "");
+    fake.set("volumes", "purlis-runner-first-home\n");
+    assert_eq!(
+        fake.docker().gone(&made()),
+        Ok(Some(Gone { home_kept: true }))
+    );
+    fake.set("volumes", "purlis-runner-first-home-old\n");
+    assert_eq!(
+        fake.docker().gone(&made()),
+        Ok(Some(Gone { home_kept: false }))
+    );
+}
+
+/// A runner stopped or suspended is still listed by Docker, so it is not gone: it resumes as
+/// before (#4149).
+#[test]
+fn a_stopped_runner_docker_still_lists_is_not_gone() {
+    let mut stopped = inspected();
+    stopped[0]["State"]["Running"] = false.into();
+    let fake = FakeDocker::new(&stopped);
+    fake.set("containers", &format!("{ID}\n"));
+    assert_eq!(fake.docker().gone(&made()), Ok(None));
+}
+
+/// A Docker that does not answer says nothing of the runner: it is away, never taken as gone.
+#[test]
+fn a_docker_that_does_not_list_says_no_runner_is_gone() {
+    let fake = FakeDocker::new(&inspected());
+    std::fs::write(
+        fake.file_path("docker"),
+        "#!/bin/sh\necho 'Cannot connect to the Docker daemon' >&2\nexit 1\n",
+    )
+    .unwrap();
+    assert!(fake.docker().gone(&made()).is_err());
+}
+
+/// The earlier profile as `docker inspect` writes it back.
+fn earlier_seccomp() -> String {
+    let profile: serde_json::Value = serde_json::from_str(EARLIER_SECCOMP_PROFILE).expect("JSON");
+    format!("seccomp={profile}")
+}
+
+/// D-2050-26: only an image whose `purlis` holds what it starts from namespaces is made with the
+/// profile that lets the browser engine make its sandbox; any other gets the earlier profile, and
+/// is linked on it.
+#[test]
+fn a_runner_whose_purlis_holds_nothing_from_namespaces_is_made_with_the_earlier_profile() {
+    let mut earlier = inspected();
+    earlier[0]["HostConfig"]["SecurityOpt"] =
+        serde_json::json!(["no-new-privileges", earlier_seccomp()]);
+    let fake = FakeDocker::new(&earlier);
+    fake.set("holds", "1");
+    let made = fake
+        .docker()
+        .make(&runner())
+        .expect("made on the earlier profile");
+    assert_eq!(made.container.as_str(), ID);
+    let log = fake.file("log");
+    assert!(log.contains("--entrypoint /usr/local/bin/purlis"), "{log}");
+    assert!(log.contains(EARLIER_SECCOMP_FILE), "{log}");
+    assert!(!log.contains(SECCOMP_FILE), "{log}");
+
+    // An image whose purlis holds them is made with the runner's own; one made so on the earlier
+    // profile anyway is refused and removed.
+    let fake = FakeDocker::new(&earlier);
+    assert!(fake.docker().make(&runner()).is_err());
+    let fake = FakeDocker::new(&inspected());
+    assert!(fake.docker().make(&runner()).is_ok());
+    assert!(fake.file("log").contains(SECCOMP_FILE));
+}
+
+/// The id the fake engine gives a probe's container.
+const PROBE_ID: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+
+/// **The probe of an image's `purlis` names no container, and removes only its own** (#3702): a
+/// runner may be named `<pool>-probe`, and making pool `<pool>`'s runner leaves it be.
+#[test]
+fn a_pool_named_after_another_with_probe_survives_that_pools_runner_being_made() {
+    let mut earlier = inspected();
+    earlier[0]["HostConfig"]["SecurityOpt"] =
+        serde_json::json!(["no-new-privileges", earlier_seccomp()]);
+    let fake = FakeDocker::new(&earlier);
+    fake.set("holds", "1");
+    fake.docker()
+        .make(&runner())
+        .expect("made on the earlier profile");
+
+    let log = fake.file("log");
+    assert!(!log.contains("purlis-runner-first-probe"), "{log}");
+    let probe = log
+        .lines()
+        .find(|line| line.contains("_no-namespaces"))
+        .expect("the probe ran");
+    assert!(!probe.contains("--name"), "{probe}");
+    assert!(probe.contains("--cidfile"), "{probe}");
+    // Its own container, by the id the engine gave it, and nothing else of a probe's.
+    assert!(log.contains(&format!("rm --force {PROBE_ID}\n")), "{log}");
+    assert_eq!(
+        log.lines().filter(|line| line.starts_with("rm ")).count(),
+        1,
+        "{log}"
+    );
+}
+
+/// D-2050-26: a runner on the profile that lets the browser engine make namespaces, whose purlis
+/// does not hold its programs from them, is not linked.
+#[test]
+fn a_runner_on_the_engines_profile_whose_purlis_holds_nothing_is_not_linked() {
+    let fake = FakeDocker::new(&inspected());
+    assert_eq!(fake.docker().check(&made()), Ok(()));
+    fake.set("holds", "1");
+    let refused = fake.docker().check(&made()).unwrap_err();
+    assert!(
+        refused.0.contains("does not hold its programs"),
+        "{refused}"
+    );
+    // A runner on the earlier profile is not asked.
+    let mut earlier = inspected();
+    earlier[0]["HostConfig"]["SecurityOpt"] =
+        serde_json::json!(["no-new-privileges", earlier_seccomp()]);
+    let fake = FakeDocker::new(&earlier);
+    fake.set("holds", "1");
+    assert_eq!(fake.docker().check(&made()), Ok(()));
+}
+
+/// What Docker says of a container's latest run is read in seconds (#3492): a time Docker never
+/// set (`0001-01-01T00:00:00Z`, a container never started) is no time, and so is one it did not
+/// write as RFC 3339.
+#[test]
+fn a_containers_latest_run_is_read_in_seconds_and_an_unset_time_is_none() {
+    let mut running = inspected();
+    running[0]["State"]["StartedAt"] = "2026-10-26T09:00:00.123456789Z".into();
+    running[0]["State"]["FinishedAt"] = "0001-01-01T00:00:00Z".into();
+    assert_eq!(
+        ran(&running),
+        Ran {
+            running: true,
+            started: Some(1_793_005_200),
+            finished: None,
+        }
+    );
+    let mut stopped = inspected();
+    stopped[0]["State"] = serde_json::json!({
+        "Running": false,
+        "StartedAt": "2026-10-26T11:00:00+02:00",
+        "FinishedAt": "yesterday",
+    });
+    assert_eq!(
+        ran(&stopped),
+        Ran {
+            running: false,
+            started: Some(1_793_005_200),
+            finished: None,
+        }
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Every run that only reads is held to a time (#3546)
+
+/// A `docker` that never answers what only reads (an inspect, an `info`, a list, an exec) and
+/// pulls in three seconds, in `dir`, its reads held to `within`. A time of seconds, not
+/// milliseconds, where the stand-in must answer in it: a loaded machine starts a shell slowly.
+fn a_wedged_docker(dir: &std::path::Path, within: std::time::Duration) -> Docker {
+    let pulled = dir.join("pulled").display().to_string();
+    stand_in::program(
+        dir,
+        "docker",
+        &format!(
+            "#!/bin/sh\ncase \"$1 $2\" in\n  \
+             'pull '*) sleep 3; touch '{pulled}' ;;\n  \
+             'image inspect') [ -f '{pulled}' ] || exit 1; \
+             echo '[{{\"Config\":{{\"User\":\"10001:10001\",\"Env\":[\"HOME=/home/purlis\"]}}}}]' ;;\n  \
+             *) exec sleep 30 ;;\nesac\n"
+        ),
+    );
+    Docker::at(dir.join("docker"))
+        .with_settings_in(dir.join("settings"))
+        .within(within)
+}
+
+#[test]
+fn every_run_that_only_reads_is_ended_when_its_time_is_up_and_says_it_did_not_answer() {
+    let dir = tempfile::tempdir().unwrap();
+    let docker = a_wedged_docker(dir.path(), std::time::Duration::from_millis(300));
+    let made = made();
+    type Read<'a> = Box<dyn Fn() -> Option<String> + 'a>;
+    let reads: [(&str, Read<'_>); 5] = [
+        ("ran", Box::new(|| docker.ran(&made).err().map(|why| why.0))),
+        (
+            "running",
+            Box::new(|| docker.running(&made).err().map(|why| why.0)),
+        ),
+        (
+            "check",
+            Box::new(|| docker.check(&made).err().map(|why| why.0)),
+        ),
+        (
+            "version_of",
+            Box::new(|| docker.version_of(&made).err().map(|why| why.0)),
+        ),
+        (
+            "made_suspending",
+            Box::new(|| docker.made_suspending(&made).err().map(|why| why.0)),
+        ),
+    ];
+    for (read, asked) in reads {
+        let started = std::time::Instant::now();
+        let why = asked().unwrap_or_else(|| panic!("{read} answered a docker that never does"));
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "{read} waited past its time"
+        );
+        assert!(why.contains("did not answer within"), "{read}: {why}");
+    }
+}
+
+#[test]
+fn a_pull_is_not_held_to_the_time_of_a_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let docker = a_wedged_docker(dir.path(), std::time::Duration::from_secs(2));
+    assert_eq!(
+        docker.declared(&image()).unwrap(),
+        (User::new(10001, 10001).unwrap(), "/home/purlis".to_owned()),
+        "a pull that takes longer than a read may is waited for"
+    );
+}
+
+/// A `docker` whose every run is logged in `dir/log`, that never answers an inspect or an
+/// `info`, and pulls at once.
+fn a_docker_that_never_answers_a_read(dir: &std::path::Path) -> Docker {
+    let log = dir.join("log").display().to_string();
+    stand_in::program(
+        dir,
+        "docker",
+        &format!(
+            "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$1 $2\" in\n  \
+             'pull '*) ;;\n  \
+             *) exec sleep 30 ;;\nesac\n"
+        ),
+    );
+    Docker::at(dir.join("docker"))
+        .with_settings_in(dir.join("settings"))
+        .within(std::time::Duration::from_secs(2))
+}
+
+#[test]
+fn an_image_inspect_that_does_not_answer_pulls_nothing_and_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let why = a_docker_that_never_answers_a_read(dir.path())
+        .declared(&image())
+        .unwrap_err();
+    assert!(why.0.contains("did not answer within"), "{why}");
+    let log = std::fs::read_to_string(dir.path().join("log")).unwrap_or_default();
+    assert!(!log.contains("pull"), "{log}");
+}
+
+#[test]
+fn an_engine_that_does_not_answer_is_not_asked_again_as_a_podman() {
+    let dir = tempfile::tempdir().unwrap();
+    let why = a_docker_that_never_answers_a_read(dir.path())
+        .check(&made())
+        .unwrap_err();
+    assert!(why.0.contains("did not answer within"), "{why}");
+    let log = std::fs::read_to_string(dir.path().join("log")).unwrap_or_default();
+    assert_eq!(
+        log.lines().filter(|line| line.starts_with("info")).count(),
+        1,
+        "{log}"
+    );
+}
+
+/// What `docker system df -v` prints, cut to its sections (Docker 27).
+const DOCKER_DF: &str = "Images space usage:
+
+REPOSITORY                    TAG       IMAGE ID       CREATED       SIZE      SHARED SIZE   UNIQUE SIZE   CONTAINERS
+ghcr.io/purlis/purlis-runner  <none>    0123456789ab   2 days ago    412MB     0B            412MB         2
+
+Containers space usage:
+
+CONTAINER ID   IMAGE          COMMAND                  LOCAL VOLUMES   SIZE      CREATED       STATUS                   NAMES
+0123456789ab   0123456789ab   \"purlis serve\"           1               4.1kB     2 days ago    Exited (0) 3 hours ago   purlis-runner-first
+
+Local Volumes space usage:
+
+VOLUME NAME                 LINKS     SIZE
+purlis-runner-first-home    1         1.234GB
+purlis-runner-second-home   1         0B
+someone-elses               0         512kB
+
+Build cache usage: 0B
+
+CACHE ID   CACHE TYPE   SIZE      CREATED   LAST USED   USAGE     SHARED
+";
+
+/// What `podman system df -v` prints of its volumes (Podman 5).
+const PODMAN_DF: &str = "Images space usage:
+
+REPOSITORY  TAG  IMAGE ID  CREATED  SIZE  SHARED SIZE  UNIQUE SIZE  CONTAINERS
+
+Containers space usage:
+
+CONTAINER ID  IMAGE  COMMAND  LOCAL VOLUMES  SIZE  CREATED  STATUS  NAMES
+
+Local Volumes space usage:
+
+VOLUME NAME               LINKS       SIZE
+purlis-runner-first-home  1           20.48MB
+";
+
+#[test]
+fn the_disk_each_volume_holds_is_read_from_what_docker_system_df_prints() {
+    let held = homes_held(DOCKER_DF);
+    assert_eq!(held.get("purlis-runner-first-home"), Some(&1_234_000_000));
+    assert_eq!(held.get("purlis-runner-second-home"), Some(&0));
+    assert_eq!(held.get("someone-elses"), Some(&512_000));
+    // Nothing of another section is taken for a volume.
+    assert_eq!(held.len(), 3, "{held:?}");
+}
+
+#[test]
+fn the_disk_each_volume_holds_is_read_from_what_podman_system_df_prints() {
+    let held = homes_held(PODMAN_DF);
+    assert_eq!(held.get("purlis-runner-first-home"), Some(&20_480_000));
+    assert_eq!(held.len(), 1, "{held:?}");
+}
+
+#[test]
+fn a_volume_whose_size_is_not_written_as_docker_writes_one_is_left_out() {
+    let held = homes_held(
+        "Local Volumes space usage:\n\nVOLUME NAME LINKS SIZE\na 1 12.3QB\nb 1 N/A\nc 1 -1B\nd 1 7B\n",
+    );
+    assert_eq!(
+        held.into_iter().collect::<Vec<_>>(),
+        vec![("d".to_owned(), 7)]
+    );
+}
+
+#[test]
+fn nothing_is_held_where_docker_printed_no_volumes_section() {
+    assert!(homes_held("Images space usage:\n\nREPOSITORY TAG\n").is_empty());
+}
+
+#[test]
+fn the_disk_volumes_hold_is_read_by_system_df_alone_starting_nothing() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("df", DOCKER_DF);
+    let held = fake.docker().homes_held().unwrap();
+    assert_eq!(held.get("purlis-runner-first-home"), Some(&1_234_000_000));
+    assert_eq!(fake.file("log").trim(), "system df --verbose");
+}
+
+/// Runs [`COPY_PROFILES`] by the shell, as in the new runner's image, from the home `from` to
+/// the home `to`: whether it ended well.
+#[cfg(unix)]
+fn carried(from: &std::path::Path, to: &std::path::Path) -> std::process::Output {
+    let mut command = std::process::Command::new("/bin/sh");
+    command
+        .arg("-c")
+        .arg(COPY_PROFILES)
+        .arg("sh")
+        .arg(from)
+        .arg(to)
+        .arg(crate::profilestore::carried_under_a_runner_home())
+        .args(crate::profilestore::carried_in_a_runner_home());
+    crate::forklock::output(&mut command).unwrap()
+}
+
+/// The one batch a carry made under the home `to`.
+#[cfg(unix)]
+fn the_batch(to: &std::path::Path) -> std::path::PathBuf {
+    let stage = to.join(crate::profilestore::carried_under_a_runner_home());
+    let batches: Vec<_> = std::fs::read_dir(&stage)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(batches.len(), 1, "{batches:?}");
+    batches[0].clone()
+}
+
+/// **A carry takes a drained runner's sign-ins and nothing else** (#4011, #4055): each made
+/// profile's sign-in file, and each harness's own sign-in file under the harness's name, into a
+/// batch of its own under the new data home, with nothing written in a harness's folder. Not a
+/// setting, hook or instruction of a harness, not the profiles' records, the runner's identity,
+/// its harness installs or its projects, and never a link.
+#[cfg(unix)]
+#[test]
+fn a_carry_takes_the_sign_ins_of_a_home_and_nothing_else() {
+    use std::os::unix::fs::PermissionsExt;
+    let from = tempfile::tempdir().unwrap();
+    let to = tempfile::tempdir().unwrap();
+    let put = |root: &std::path::Path, path: &str, text: &str| {
+        let path = root.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, text).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    };
+    let old = from.path();
+    for (path, text) in [
+        (
+            ".local/share/purlis/profiles/work/config/.credentials.json",
+            "work's sign-in",
+        ),
+        (
+            ".local/share/purlis/profiles/work/config/settings.json",
+            "work's hooks",
+        ),
+        (
+            ".local/share/purlis/profiles/gpt/config/auth.json",
+            "gpt's sign-in",
+        ),
+        (
+            ".local/share/purlis/profiles/oc/data/opencode/auth.json",
+            "oc's sign-in",
+        ),
+        (".local/share/purlis/harnesses/claude/2.1.0/claude", ""),
+        (".config/purlis/profiles.json", "{}"),
+        (".config/purlis/peers.json", "old peers"),
+        (".claude/.credentials.json", "claude's sign-in"),
+        (".claude/settings.json", "claude's hooks"),
+        (".claude.json", "{}"),
+        (".codex/auth.json", "codex's sign-in"),
+        (".config/opencode/opencode.json", "{}"),
+    ] {
+        put(old, path, text);
+    }
+    std::fs::create_dir_all(old.join(".local/share/opencode")).unwrap();
+    std::os::unix::fs::symlink(
+        old.join(".config/purlis/peers.json"),
+        old.join(".local/share/opencode/auth.json"),
+    )
+    .unwrap();
+    put(to.path(), ".codex/auth.json", "the new runner's own");
+
+    let ran = carried(old, to.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+
+    let batch = the_batch(to.path());
+    let read = |path: &str| std::fs::read_to_string(batch.join(path)).ok();
+    assert_eq!(
+        read("work/config/.credentials.json").as_deref(),
+        Some("work's sign-in")
+    );
+    assert_eq!(
+        std::fs::metadata(batch.join("work/config/.credentials.json"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+    assert_eq!(
+        read("gpt/config/auth.json").as_deref(),
+        Some("gpt's sign-in")
+    );
+    assert_eq!(
+        read("oc/data/opencode/auth.json").as_deref(),
+        Some("oc's sign-in")
+    );
+    assert_eq!(
+        read("claude/config/.credentials.json").as_deref(),
+        Some("claude's sign-in")
+    );
+    assert_eq!(
+        read("codex/config/auth.json").as_deref(),
+        Some("codex's sign-in")
+    );
+    // Nothing is written in a harness's folder of the new home: its own stays as it was.
+    assert_eq!(
+        std::fs::read_to_string(to.path().join(".codex/auth.json")).unwrap(),
+        "the new runner's own"
+    );
+    for not in [
+        ".claude",
+        ".local/share/purlis/profiles",
+        ".config",
+        ".claude.json",
+        ".local/share/opencode",
+    ] {
+        assert!(
+            std::fs::symlink_metadata(to.path().join(not)).is_err(),
+            "{not} was written"
+        );
+    }
+    for not in [
+        "work/config/settings.json",
+        "opencode/data/opencode/auth.json",
+    ] {
+        assert!(
+            std::fs::symlink_metadata(batch.join(not)).is_err(),
+            "{not} was carried"
+        );
+    }
+    // A folder the copy makes is the runner's user's alone.
+    let mode = std::fs::metadata(&batch).unwrap().permissions().mode();
+    assert_eq!(mode & 0o077, 0, "{mode:o}");
+}
+
+/// **A carry writes nothing through a link the new home has on its way** (#4055): the new
+/// runner serves chats as it runs, so a link where the carry's folder would be, to a folder a
+/// chat reads, is refused and nothing is carried there or anywhere.
+#[cfg(unix)]
+#[test]
+fn a_carry_writes_nothing_through_a_link_on_its_way() {
+    let from = tempfile::tempdir().unwrap();
+    let to = tempfile::tempdir().unwrap();
+    let signed = from.path().join(".claude/.credentials.json");
+    std::fs::create_dir_all(signed.parent().unwrap()).unwrap();
+    std::fs::write(&signed, "claude's sign-in").unwrap();
+    let project = to.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let stage = to
+        .path()
+        .join(crate::profilestore::carried_under_a_runner_home());
+    std::fs::create_dir_all(stage.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink("../../../project", &stage).unwrap();
+
+    carried(from.path(), to.path());
+
+    assert_eq!(std::fs::read_dir(&project).unwrap().count(), 0);
+}
+
+/// A home with no sign-in carries nothing, and a sign-in that cannot be read is passed over: the
+/// copy ends well either way, so it never holds a pool back.
+#[cfg(unix)]
+#[test]
+fn a_home_with_no_sign_in_or_one_unread_carries_nothing_and_ends_well() {
+    use std::os::unix::fs::PermissionsExt;
+    let from = tempfile::tempdir().unwrap();
+    let to = tempfile::tempdir().unwrap();
+    let ran = carried(from.path(), to.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    let stage = to
+        .path()
+        .join(crate::profilestore::carried_under_a_runner_home());
+    assert_eq!(std::fs::read_dir(&stage).unwrap().count(), 0);
+
+    let locked = from.path().join(".codex/auth.json");
+    std::fs::create_dir_all(locked.parent().unwrap()).unwrap();
+    std::fs::write(&locked, "codex's sign-in").unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let ran = carried(from.path(), to.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+}
+
+/// **A carry takes nothing a folder linked out of the old home holds** (#4055): a profile's
+/// folder in the old home that is a link to the new home's own sign-in is passed over.
+#[cfg(unix)]
+#[test]
+fn a_carry_takes_nothing_through_a_link_out_of_the_old_home() {
+    let from = tempfile::tempdir().unwrap();
+    let to = tempfile::tempdir().unwrap();
+    let own = to.path().join(".claude");
+    std::fs::create_dir_all(&own).unwrap();
+    std::fs::write(own.join(".credentials.json"), "the new runner's own").unwrap();
+    let profile = from.path().join(".local/share/purlis/profiles/work");
+    std::fs::create_dir_all(&profile).unwrap();
+    std::os::unix::fs::symlink(&own, profile.join("config")).unwrap();
+
+    let ran = carried(from.path(), to.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+
+    let stage = to
+        .path()
+        .join(crate::profilestore::carried_under_a_runner_home());
+    assert_eq!(std::fs::read_dir(&stage).unwrap().count(), 0);
 }

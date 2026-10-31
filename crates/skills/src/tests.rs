@@ -1084,6 +1084,23 @@ fn a_reference_is_read_by_its_prefix() {
 }
 
 #[test]
+fn only_a_built_in_skill_written_with_the_old_prefix_is_written_old() {
+    // #2934: what `persona lint` says the migration rewrites (#2784).
+    for old in ["charter:handoff", " charter : handoff "] {
+        assert!(Reference::written_old(old), "{old:?}");
+    }
+    for not in [
+        "purlis:handoff",
+        "charter:",
+        "handoff",
+        "mycharter:x",
+        "sp:charter",
+    ] {
+        assert!(!Reference::written_old(not), "{not:?}");
+    }
+}
+
+#[test]
 fn a_persona_name_that_is_not_one_plain_name_has_no_folder() {
     let plane = Plane::new();
     assert_eq!(persona_dir(&plane.root, "../x", false), None);
@@ -1228,7 +1245,7 @@ fn where_purlis_builds_what_the_harness_is_handed_the_narrower_repo_copy_wins() 
                 "review",
                 Origin::Workspace,
                 false,
-                "hidden by the repo skill of this name".to_owned()
+                "hidden by the skill of this name in the repo api".to_owned()
             )],
             "{route:?}"
         );
@@ -1889,4 +1906,112 @@ fn a_repo_skills_folder_purlis_could_not_list_takes_no_name_and_leaves_out_every
         .with_outside(Route::Plugin, [crowded()]);
     assert_eq!(set.from_the_plane().count(), 2);
     assert!(set.effective.iter().all(|e| e.origin != Origin::Repo));
+}
+
+#[test]
+fn a_reason_a_repo_gives_names_the_repo_and_reads_for_the_chat_in_it_on_its_tab() {
+    // #3234: in the studio and the list, and on the tab of a chat in that repo, which already
+    // says "because of the repo it works in".
+    let hidden = Reason::HiddenByRepo {
+        repo: "api".to_owned(),
+    };
+    let unread = Reason::RepoUnread {
+        repo: "web".to_owned(),
+    };
+
+    assert_eq!(
+        hidden.to_string(),
+        "hidden by the skill of this name in the repo api"
+    );
+    assert_eq!(
+        hidden.to_its_chat(),
+        "the repo api has its own copy, which loads in its place"
+    );
+    assert_eq!(
+        unread.to_its_chat(),
+        "purlis could not read the skills folder of web whole, so it is left out in case the \
+         repo has its own"
+    );
+    assert!(hidden.of_a_repo() && unread.of_a_repo());
+    assert_eq!(
+        Reason::TurnedOff.to_its_chat(),
+        Reason::TurnedOff.to_string()
+    );
+}
+
+// ---- a persona's own levels ---------------------------------------------------------------
+
+#[test]
+fn persona_set_is_a_personas_own_rows_of_its_chats_set_and_asks_only_of_its_own() {
+    // #3462: a persona's levels are read first, so the project's and a workspace's change
+    // nothing of them; `persona_set` reads none of those, and asks of no local skill there.
+    let plane = Plane::new();
+    skill(&plane.project_local(), "scratch", &whole("scratch"));
+    skill(&plane.project(), "deploy", &whole("deploy"));
+    skill(
+        &plane.workspace_local("smart-ide"),
+        "notes",
+        &whole("notes"),
+    );
+    let own = persona_dir(&plane.root, "reviewer", false).unwrap();
+    let own_local = persona_dir(&plane.root, "reviewer", true).unwrap();
+    skill(&own, "deploy", &whole("deploy"));
+    skill(&own, "review", &whole("review"));
+    skill(&own_local, "review", &whole("review"));
+    let asked = std::sync::Mutex::new(Vec::<PathBuf>::new());
+    let kept = |folder: &Path| {
+        asked.lock().unwrap().push(folder.to_path_buf());
+        Ok(())
+    };
+    let machine = Machine {
+        built_in: None,
+        kept_local: Some(&kept),
+        harness: None,
+        made_since: None,
+    };
+    let route = Route::Plugin;
+
+    let alone = persona_set(&plane.root, &machine, "reviewer", route);
+    let asked_alone = std::mem::take(&mut *asked.lock().unwrap());
+    let whole_set = skill_set(
+        Some(&plane.root),
+        &machine,
+        &Chat {
+            workspace: Some("smart-ide"),
+            persona: Some("reviewer"),
+            names: &[],
+            turned_off: &[],
+            harness: HarnessSkills { route },
+        },
+    );
+
+    assert_eq!(
+        asked_alone,
+        [own_local.join("review")],
+        "only the persona's own local skill is asked about"
+    );
+    let persona_of = |set: &SkillSet| {
+        (
+            effective(set)
+                .into_iter()
+                .filter(|(_, origin, _)| *origin == Origin::Persona)
+                .map(|(name, _, local)| (name.to_owned(), local))
+                .collect::<Vec<_>>(),
+            left_out(set)
+                .into_iter()
+                .filter(|(_, origin, _, _)| *origin == Origin::Persona)
+                .map(|(name, _, local, why)| (name.to_owned(), local, why))
+                .collect::<Vec<_>>(),
+        )
+    };
+    assert_eq!(persona_of(&alone), persona_of(&whole_set));
+    assert_eq!(
+        persona_of(&alone).0,
+        [("deploy".to_owned(), false), ("review".to_owned(), true)]
+    );
+    assert!(
+        alone.effective.iter().all(|e| e.origin == Origin::Persona)
+            && alone.left_out.iter().all(|l| l.origin == Origin::Persona),
+        "no wider level of the plane is read: {alone:?}"
+    );
 }

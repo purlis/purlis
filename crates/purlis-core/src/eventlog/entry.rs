@@ -83,8 +83,13 @@ pub enum Entry {
         kind: String,
         body: serde_json::Value,
     },
-    /// A line the window wrote in the kill switch's journal ([`Recorder::kill_switch_wrote`]).
-    KillSwitchWrote { line: crate::halt::Entry },
+    /// A line the window wrote in the kill switch's journal ([`Recorder::kill_switch_wrote`]):
+    /// or, on a runner, its desktop over its link, whose device id it names (#2051).
+    KillSwitchWrote {
+        line: crate::halt::Entry,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        device: Option<String>,
+    },
     /// The kill switch's journal, read again ([`Recorder::kill_switch_read`]).
     KillSwitchRead,
     /// Use skill… typed a skill into chat `number`, unsent (SK-12): the run a prompt that
@@ -101,6 +106,13 @@ pub enum Entry {
         plane: PathBuf,
         number: u32,
         prompted: crate::skillspan::Prompted,
+    },
+    /// Chat `number`'s start asked a router extension which of its skills to hide (SK-15b): its
+    /// routing record, under its run ([`Recorder::skill_routed`]).
+    SkillRouted {
+        plane: PathBuf,
+        number: u32,
+        record: crate::skills::router::Record,
     },
     /// What the window said of a browser (#2293): who drives it, that someone typed into it,
     /// or that it was handed to a chat, under chat `number` where it is a chat's
@@ -198,9 +210,9 @@ impl Recorder {
                 kind,
                 body,
             } => one(trust_kind(&kind).and_then(|()| self.audited(&plane, number, &kind, body))),
-            Entry::KillSwitchWrote { line } => {
+            Entry::KillSwitchWrote { line, device } => {
                 let config = self.config()?;
-                self.kill_switch_wrote(line, &config)
+                self.kill_switch_wrote_by(line, device.as_deref(), &config)
             }
             Entry::KillSwitchRead => {
                 let config = self.config()?;
@@ -227,6 +239,13 @@ impl Recorder {
                 self.skill_prompted(&plane, number, prompted);
                 Ok(Vec::new())
             }
+            Entry::SkillRouted {
+                plane,
+                number,
+                record,
+            } => self
+                .skill_routed(&plane, number, &record)
+                .map(|event| event.into_iter().collect()),
         }
     }
 

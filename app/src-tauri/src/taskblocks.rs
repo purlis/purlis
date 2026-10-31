@@ -71,8 +71,9 @@ pub fn normalised(what: GrantWhat, target: &str) -> Option<String> {
         GrantWhat::Write | GrantWhat::Socket | GrantWhat::Service => {
             (!target.is_empty()).then(|| target.to_owned())
         }
-        // A service on this Mac by its one port, as the core judges one (qw384).
-        GrantWhat::Port => purlis_core::sandbox::localport::port(target)
+        // A service on this Mac by its one port, as the core judges one (qw384), and a port
+        // to listen on likewise (#2019).
+        GrantWhat::Port | GrantWhat::Listen => purlis_core::sandbox::localport::port(target)
             .ok()
             .map(|port| port.to_string()),
         // None is ever a block's: each is granted from its own Notice or Ask (#1430, #1362,
@@ -402,29 +403,20 @@ pub fn heard(chats: &crate::chats::Chats, told: &crate::hooks::ChatBlocked) {
 
 /// The block a chat is held on for what the window is `told`, or none where no answer names it.
 pub fn held_of(told: &crate::hooks::ChatBlocked) -> Option<HeldBlock> {
-    let what = match told.offer {
-        crate::hooks::BlockOffer::Host => GrantWhat::Host,
-        crate::hooks::BlockOffer::Write => GrantWhat::Write,
-        crate::hooks::BlockOffer::Socket => GrantWhat::Socket,
-        crate::hooks::BlockOffer::Service => GrantWhat::Service,
-        crate::hooks::BlockOffer::Port => GrantWhat::Port,
+    let Some(what) = told.offer.granted() else {
         // Nothing to allow yet, and something the person may choose.
-        _ => {
-            return told
-                .choose
-                .map(|what| HeldBlock::unnamed(&told.operation, &told.kind, what));
-        }
+        return told
+            .choose
+            .map(|what| HeldBlock::unnamed(&told.operation, &told.kind, what));
     };
     match told.target.as_deref() {
         None if what == GrantWhat::Host => {
             Some(HeldBlock::unnamed_host(&told.operation, &told.kind))
         }
-        // A port the refusal did not name (qw384): the person types it, as a host.
-        None if what == GrantWhat::Port => Some(HeldBlock::unnamed(
-            &told.operation,
-            &told.kind,
-            GrantWhat::Port,
-        )),
+        // A port the refusal did not name (qw384, #2019): the person types it, as a host.
+        None if matches!(what, GrantWhat::Port | GrantWhat::Listen) => {
+            Some(HeldBlock::unnamed(&told.operation, &told.kind, what))
+        }
         None => None,
         Some(target) => Some(HeldBlock {
             operation: told.operation.clone(),
@@ -466,7 +458,7 @@ pub fn shown_one(blocks: &Blocks, session: u32, shown: &BlockShown) -> Result<He
         target,
     });
     // A host or a port the person typed, where the block named none (qw384 for a port).
-    let typed = matches!(what, GrantWhat::Host | GrantWhat::Port)
+    let typed = matches!(what, GrantWhat::Host | GrantWhat::Port | GrantWhat::Listen)
         .then(|| HeldBlock::unnamed(operation, kind, what));
     named
         .into_iter()
@@ -895,7 +887,8 @@ pub fn keep_sandbox_block_for_tasks(
     reason: Option<String>,
 ) -> Result<Vec<u32>, String> {
     let held = planes.held(&plane)?;
-    keep_blocked(held.chats(), session, &seen, reason.as_deref())
+    let audit = held.audit_then_record(planes.network());
+    keep_blocked(held.chats(), session, &seen, reason.as_deref(), &audit)
 }
 
 /// [`keep_sandbox_block_for_tasks`] on `chats`.
@@ -904,6 +897,7 @@ pub fn keep_blocked(
     session: u32,
     seen: &[SeenBlock],
     reason: Option<&str>,
+    audit: crate::sandboxing::Audit<'_>,
 ) -> Result<Vec<u32>, String> {
     let (tasks, block) = reading(chats, |reading| checked(session, seen, reading))?;
     let_go(chats, seen, &tasks);
@@ -913,7 +907,7 @@ pub fn keep_blocked(
         && let Ok(host) = grant::host(&block.target)
     {
         for task in &tasks {
-            chats.keep_blocked_live(*task, &host);
+            chats.keep_blocked_live(*task, &host, audit);
         }
     }
     for task in &tasks {
@@ -963,5 +957,5 @@ impl Blocks {
 }
 
 #[cfg(test)]
-#[path = "taskblocks_tests.rs"]
+#[path = "taskblocks/tests.rs"]
 mod tests;

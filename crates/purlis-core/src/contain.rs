@@ -23,7 +23,7 @@
 //!
 //! **Measured, so the next reader does not have to guess at the size of it.** These gates,
 //! against a thread planting and removing a symlink at the path, 20,000 rounds each. It is
-//! `the_window_each_gate_leaves` in `tests/nothing_escapes_while_a_writer_races.rs`, so it
+//! `the_window_each_gate_leaves` in `tests/it/nothing_escapes_while_a_writer_races.rs`, so it
 //! can be run again rather than believed:
 //!
 //! | gate, and what the caller does next | escapes per 20,000 |
@@ -1307,4 +1307,31 @@ mod budget_tests {
 /// must be able to move apart without the other following.
 pub fn repo_name_ok(name: &str) -> bool {
     segment_ok(name) && alphabet_ok(name)
+}
+
+/// **What a workspace's folder keeps of its own**, beside its clones (docs/plane-format.md): its
+/// file and settings, memory, todos, session records, pieces, references, skills, themes, change
+/// proposals and work links. The folders starting with a dot (`.worktrees`, `.claude`, purlis's
+/// own) are no repo's name already ([`repo_name_ok`]).
+const WORKSPACE_OWN: [&str; 11] = [
+    "workspace.md",
+    "workspace.json",
+    "memory",
+    "todos",
+    "sessions",
+    "pieces",
+    "refs",
+    "skills",
+    "themes",
+    "changes",
+    "work",
+];
+
+/// **Whether `name` is one a workspace keeps for its own** ([`WORKSPACE_OWN`]), however it is
+/// cased: a repository there of that name is never taken for a clone that moves between devices
+/// (#3811), since what purlis reads from it would be what the other device wrote.
+pub fn workspace_keeps(name: &str) -> bool {
+    WORKSPACE_OWN
+        .iter()
+        .any(|own| own.eq_ignore_ascii_case(name))
 }

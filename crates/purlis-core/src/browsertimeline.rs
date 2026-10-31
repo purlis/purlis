@@ -274,6 +274,7 @@ fn did(act: &Act, signed_in: bool) -> Option<String> {
         | Act::Find { .. }
         | Act::Changes { .. }
         | Act::Pages
+        | Act::Downloads
         | Act::WaitForText { .. } => return None,
         Act::Open { address: to } => format!("Opened {}", address(to)),
         Act::Navigate { address: to, .. } => format!("Went to {}", address(to)),
@@ -290,6 +291,10 @@ fn did(act: &Act, signed_in: bool) -> Option<String> {
         Act::Back { .. } => "Went back".to_owned(),
         Act::SwitchPage { page } => format!("Switched to page {}", target(page)),
         Act::Screenshot { .. } => "Took a screenshot".to_owned(),
+        Act::Upload { files, .. } => {
+            format!("Uploaded {}", plural(files.len(), "file", "files"))
+        }
+        Act::SaveDownload { download, .. } => format!("Saved download {}", target(download)),
     })
 }
 

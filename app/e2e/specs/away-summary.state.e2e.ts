@@ -81,7 +81,7 @@ describe("the away summary in a narrow window (#1551)", () => {
       const page = window as unknown as { realNow?: () => number };
       if (page.realNow) Date.now = page.realNow;
     });
-    const dismiss = await $(`${SUMMARY} button.notice-dismiss`);
+    const dismiss = await $(`${SUMMARY} button[data-way=dismiss]`);
     if (await dismiss.isExisting()) await dismiss.click();
     await endEveryChat();
     await showView("Memory");
@@ -128,7 +128,7 @@ describe("the away summary in a narrow window (#1551)", () => {
       if (!line) throw new Error("the summary went before it was measured");
       const band = line.getBoundingClientRect();
       // The sentence, as the Notice sets it beside its ways out.
-      const body = line.querySelector<HTMLElement>(".notice-says");
+      const body = line.querySelector<HTMLElement>("[data-scope=notice][data-part=message]");
       const text = body?.getBoundingClientRect();
       // Every box each link is drawn in: a link that wraps is drawn in more than one.
       const links = [...line.querySelectorAll<HTMLElement>(".away-part")].map((link) =>

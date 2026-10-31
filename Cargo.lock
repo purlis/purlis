@@ -5652,6 +5652,7 @@ dependencies = [
  "png 0.18.1",
  "psl",
  "purlis-same-user",
+ "purlis-unicode",
  "ring",
  "serde",
  "serde_json",
@@ -5800,6 +5801,7 @@ dependencies = [
  "libc",
  "nix 0.31.3",
  "regex",
+ "rustix",
  "seccompiler",
  "tempfile",
 ]

@@ -244,6 +244,14 @@ impl ProfileSet {
         &self.profiles
     }
 
+    /// **The profile a fresh chat starts on**: the project's default, else the first there is.
+    /// What a pool that names no profiles keeps too (#4047).
+    pub fn for_a_new_chat(&self) -> Option<String> {
+        self.default
+            .clone()
+            .or_else(|| self.profiles.first().map(|p| p.name.clone()))
+    }
+
     pub fn get(&self, name: &str) -> Option<&Profile> {
         self.profiles.iter().find(|p| p.name == name)
     }
@@ -536,8 +544,9 @@ pub fn derive_with(
         // `[theme]` is the same kind of choice (charter-app#273): which theme this machine draws
         // the project in, read by `extension::project::theme`.
         //
-        // `[harness_plugins]` is the same kind of choice among what this machine's harnesses
-        // have installed (charter-app#274, ADR 0050), read by `harness_plugin`.
+        // `[harness_plugins]` was the same kind of choice among what this machine's harnesses
+        // have installed (charter-app#274); read by nothing since #3467, it is let through and
+        // said once by its own Inbox ask (`harness_plugin::old`).
         //
         // `[plane]` and `[repos]` are how far this machine's saves go (charter-app#292, ADR
         // 0051), read by `planesave`; every surface that shows one names this file.
@@ -577,7 +586,8 @@ pub fn derive_with(
         if key != "harness"
             && key != crate::extension::project::TABLE
             && key != crate::extension::project::theme::TABLE
-            && key != crate::harness_plugin::TABLE
+            // Ignored since #3467, and said once by its own Inbox ask, never as unknown here.
+            && key != crate::harness_plugin::old::TABLE
             && key != crate::harness_plugin::SKILLS_TABLE
             && key != "plane"
             && key != "repos"
@@ -591,7 +601,7 @@ pub fn derive_with(
             set.refused.push(Refused {
                 reason: format!(
                     "[{name}] in charter.local.toml is not read — that file carries \
-                     [harness], [extensions], [theme], [harness_plugins], [plane], [repos], \
+                     [harness], [extensions], [theme], [harness_skills], [plane], [repos], \
                      [chat_env], [sandbox] hosts, [dispatch] limits, [[skill_sources]] and [skill_grades], and nothing else, because an ignored file must not change plane policy \
                      with no trace in git. Put [{name}] in charter.toml."
                 ),
@@ -1059,7 +1069,7 @@ pub(crate) fn env_name_ok(name: &str) -> bool {
 
 /// `^[A-Za-z0-9][A-Za-z0-9_-]*$`. No dot: a dot in a name broke tmux targets in charter
 /// #695, and a profile's name reaches the same places.
-pub(crate) fn name_ok(name: &str) -> bool {
+pub fn name_ok(name: &str) -> bool {
     let mut chars = name.chars();
     chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')

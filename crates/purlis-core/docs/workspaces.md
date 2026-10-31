@@ -240,8 +240,9 @@ it with `create --vision "…"`; a `fork` inherits it. It answers "why does this
 exist", so it should be short enough that a newcomer reads all of it.
 
 **Memory is a store, not a log.** One file per fact with an index, because a single
-growing notes file is written once and searched never. `purlis workspace remember "…"`
-adds one; `purlis recall <query>` searches **across every base at once** — workspace
+growing notes file is written once and searched never. A chat adds one with the
+`memory_add` tool, or `purlis workspace remember -w <workspace> "…"` (the spelling that runs
+without a prompt); `purlis recall <query>` searches **across every base at once** — workspace
 memory, persona memory, shared memory and refs — which is the only search you need to
 remember. A base it could not read — a `memory/` at mode 000, a `refs/` subdirectory it
 cannot tell is one — is named in `purlis doctor`'s sentence, never searched as if empty:
@@ -276,7 +277,7 @@ The most consequential per-workspace choice, and it is one flag.
   and `todos/` are un-ignored, and a memory written to a LIVE workspace is committed and
   pushed **immediately** — reactively, not on a later save.
 
-`purlis workspace live <name> --off` puts it back. `purlis workspace remember --no-sync`
+`purlis workspace live <name> --off` puts it back. `purlis workspace remember -w <workspace> --no-sync`
 defers the push for one memory, and `purlis save` pushes the plane's changes later. Writing
 to a LOCAL workspace tells you it stayed put, rather than letting you assume it travelled.
 
@@ -346,15 +347,21 @@ trailers. It names no repository or branch: the app uses the folder it started t
 - A chat that is not sandboxed, and any chat in a clone, uses `git commit` as before.
 
 **Where a piece is cut from.** `add` cuts from the branch the remote names its default
-(`origin/HEAD`, `main` most often), or from `--base <branch>`, a branch of the clone; `--base
-HEAD` cuts from whatever the clone is on, as git's own `worktree add` does. The branch is
-recorded as the piece's base: what a merge lands it into and what its Changes count against.
+(`origin/HEAD`, `main` most often), or from `--base <branch>`, a branch of the clone or a
+remote-tracking branch (`origin/main`), which is cut from as it is and recorded as the clone's
+branch of the same name (#3836); `--base HEAD` cuts from whatever the clone is on, as git's own
+`worktree add` does. The branch is recorded as the piece's base: what a merge lands it into
+and what its Changes count against.
 Before the cut, the base is brought up to its remote-tracking branch where that is a
 fast-forward and no worktree has it checked out, as `git fetch <remote> <branch>:<branch>`
 would. Where the base is checked out (the clone is on it, most often) and behind, it is left
 where it is and the piece is cut from, or rebased onto, the remote-tracking branch instead;
 the command says so, and until the clone is brought up (`purlis sync`) the piece's Changes
-count the remote's newer commits too. From a terminal `add` fetches nothing; `update` does.
+count the remote's newer commits too. Where the base and its remote-tracking branch have each
+moved on (the clone's branch holds a checkout's copies of work the remote landed another way,
+most often), the remote-tracking branch is used too, and the command says so: a piece cut from
+the clone's commits would carry them into its pull request (#3836). From a terminal `add`
+fetches nothing; `update` does.
 For a sandboxed chat the app fetches first, and checks the new folder out only as the chat's
 own checkout of it would be judged: a cut that would write a file the chat's sandbox denies,
 where the clone has that file otherwise or not at all, is refused, naming it.
@@ -364,7 +371,11 @@ directory, so its own `git fetch`, `git rebase` and `git reset` fail there. From
 piece, these run in the app for a chat (and here from a terminal):
 
 - `purlis worktree update` fetches the base's remote, brings the base up as above, and rebases
-  the piece onto it: the base it was cut from, or `--base <branch>`. A piece with uncommitted
+  the piece onto it: the base it was cut from, or `--base <branch>`. Only the piece's own
+  commits move, those after where it left the base it was recorded as cut from, as `git rebase
+  --onto <new> <old>` would: a piece cut from a base that had moved apart from its remote, or
+  moved onto another branch, leaves the old base's commits behind, and a base named in place of
+  the recorded one is recorded (#3836). A piece with uncommitted
   changes is refused: commit first. A rebase that stops on a conflict names the files: resolve
   them in the folder, then `purlis worktree update --continue`, which stages exactly those
   files and goes on, or `--abort`, which puts the branch back. A file still holding a conflict
@@ -373,8 +384,11 @@ piece, these run in the app for a chat (and here from a terminal):
   sandbox denies (an editor's tasks, a hook, an agent's settings) does not start, and names it.
 - `purlis worktree push` pushes the piece's own branch to its remote under its own name, after
   purlis's scan of what it would publish, never the branch the remote names its default.
-  `--force-with-lease` pushes over the remote's copy, only while the branch is where purlis's
-  own last `update` left it, and only if the remote still has what was fetched just before.
+  Where purlis's own `update` rewrote a branch that was already pushed, the push goes over the
+  remote's copy, leased to the exact commit the update saw there, also with commits added on
+  top since. It is refused where the remote moved since (someone else pushed), where the
+  branch was rewritten any other way, or where the remote's copy had commits the folder never
+  had, and it says what to do. `--force-with-lease` asks for nothing more than a plain push.
   Which branch is the remote's default is asked of the remote itself.
 
 Every checkout purlis runs for these reads each commit once, by its id, and runs git on the

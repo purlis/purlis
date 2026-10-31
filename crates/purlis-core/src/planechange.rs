@@ -45,6 +45,10 @@ pub enum Kind {
     /// A persona's own files (`persona.md` and the rest), the persona directory itself; or
     /// `personas/` itself, with no persona named.
     Persona,
+    /// A skill's files at any level (SK-29, #2876): the project's `skills/` or `skills.local/`, a
+    /// workspace's (its workspace named) or a persona's (its persona named), the level's folder
+    /// itself included ([`skill_at`]). Its create, edit, grant, turn-off and delete all land here.
+    Skills,
     /// The plane's git standing, and no file of its tree: auto-save committed, pushed or
     /// fetched and left the tree as it was ([`saved`]). Never a path's kind. A look that moved
     /// the tree — a fast-forward, a save's rebase — is told as not known instead, because the
@@ -80,6 +84,14 @@ pub fn classify(root: &Path, path: &Path) -> Option<Change> {
         }
     }
     let named = |at: usize| parts.get(at).cloned();
+    if let Some(skill) = skill_at(&parts.join("/")) {
+        return Some(Change {
+            kind: Kind::Skills,
+            workspace: skill.whose.workspace().map(str::to_owned),
+            persona: skill.whose.persona().map(str::to_owned),
+            path: parts.join("/"),
+        });
+    }
     let (kind, workspace, persona) = match parts.first().map(String::as_str) {
         None => (Kind::Project, None, None),
         Some(".claude") => (Kind::Harness, None, None),
@@ -213,9 +225,14 @@ fn answers_of(change: &Change) -> Vec<Answer> {
             Answer::Git,
             Answer::Views,
         ],
-        // A workspace's skills are part of what its chats started with (#2770): the window asks
-        // again which chats run on skills that changed since.
-        Kind::Workspace if is_workspace_skill(&change.path) => vec![
+        // A skill is part of what its level's chats started with (#2770): the window asks again
+        // which chats run on skills that changed since. Each level's skills concern what its
+        // other files do, the instructions with them.
+        Kind::Skills if change.persona.is_some() => answers_of(&Change {
+            kind: Kind::Persona,
+            ..change.clone()
+        }),
+        Kind::Skills if change.workspace.is_some() => vec![
             Answer::Sidebar,
             panels(),
             Answer::Instructions,
@@ -224,6 +241,10 @@ fn answers_of(change: &Change) -> Vec<Answer> {
             Answer::Git,
             Answer::Views,
         ],
+        Kind::Skills => answers_of(&Change {
+            kind: Kind::Project,
+            ..change.clone()
+        }),
         Kind::Workspace => vec![
             Answer::Sidebar,
             panels(),
@@ -249,18 +270,121 @@ fn answers_of(change: &Change) -> Vec<Answer> {
     }
 }
 
-/// Whether `path` (plane-relative, `/` between its parts) is in a workspace's skills, shared or
-/// local: `workspaces/<ws>/skills/…` or `workspaces/<ws>/skills.local/…`.
-fn is_workspace_skill(path: &str) -> bool {
-    // Its first three parts, read by the one rule of where a level's skills are.
-    let first: Vec<&str> = path.splitn(4, '/').take(3).collect();
-    purlis_skills::level_of_rel(&first.join("/"))
-        .is_some_and(|(at, _)| matches!(at, purlis_skills::Whose::Workspace(_)))
+/// **Where a skill's path is**, by the one rule of where a level's skills are
+/// ([`purlis_skills::level_of_rel`]): the level's owner, whether it is the local folder, and the
+/// skill's folder name where the path is in one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillAt {
+    pub whose: purlis_skills::Whose,
+    pub local: bool,
+    /// The skill's folder name, or the name of the file beside it without its `.toml`; `None`
+    /// for the level's folder itself.
+    pub folder: Option<String>,
+}
+
+/// [`SkillAt`] of `path` (plane-relative, `/` between its parts), or `None` for a path in no
+/// level's skills: `skills/deploy/SKILL.md`, `workspaces/ops/skills.local/x/run.sh`,
+/// `personas/reviewer/skills/review.toml`.
+pub fn skill_at(path: &str) -> Option<SkillAt> {
+    let parts: Vec<&str> = path.split('/').collect();
+    // The project's level is its first part; a workspace's or a persona's, its first three.
+    let deep = matches!(parts.first(), Some(&"workspaces" | &"personas"));
+    let depth = if deep { 3 } else { 1 };
+    let level = parts.get(..depth)?.join("/");
+    let (whose, local) = purlis_skills::level_of_rel(&level)?;
+    let folder = parts.get(depth).map(|name| {
+        name.strip_suffix(".toml")
+            .filter(|_| parts.len() == depth + 1)
+            .unwrap_or(name)
+            .to_owned()
+    });
+    Some(SkillAt {
+        whose,
+        local,
+        folder,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_skill_at_every_level_is_the_skills_kind_of_its_owner() {
+        assert_eq!(
+            at("skills/deploy/SKILL.md"),
+            change(Kind::Skills, None, None, "skills/deploy/SKILL.md")
+        );
+        assert_eq!(at("skills.local/x").kind, Kind::Skills);
+        assert_eq!(at("skills").kind, Kind::Skills, "the level's folder itself");
+        assert_eq!(
+            at("workspaces/ops/skills/deploy.toml"),
+            change(
+                Kind::Skills,
+                Some("ops"),
+                None,
+                "workspaces/ops/skills/deploy.toml"
+            )
+        );
+        assert_eq!(
+            at("personas/reviewer/skills.local/r/SKILL.md"),
+            change(
+                Kind::Skills,
+                None,
+                Some("reviewer"),
+                "personas/reviewer/skills.local/r/SKILL.md"
+            )
+        );
+        // Beside a level, and not one.
+        assert_eq!(at("skillset.md").kind, Kind::Project);
+        assert_eq!(at("workspaces/ops/skillset.md").kind, Kind::Workspace);
+        assert_eq!(at("personas/reviewer/persona.md").kind, Kind::Persona);
+        assert_eq!(at("workspaces/ops/todos/skills").kind, Kind::Todos);
+        assert_eq!(at(".claude/skills/x/SKILL.md").kind, Kind::Harness);
+    }
+
+    #[test]
+    fn a_skills_path_says_its_level_and_its_folder() {
+        assert_eq!(
+            skill_at("workspaces/ops/skills.local/deploy/scripts/run.sh"),
+            Some(SkillAt {
+                whose: purlis_skills::Whose::Workspace("ops".to_owned()),
+                local: true,
+                folder: Some("deploy".to_owned()),
+            })
+        );
+        assert_eq!(
+            skill_at("skills/deploy.toml").and_then(|one| one.folder),
+            Some("deploy".to_owned()),
+            "the file beside a folder is that skill's"
+        );
+        assert_eq!(skill_at("skills").and_then(|one| one.folder), None);
+        assert_eq!(skill_at("workspaces/ops"), None);
+        assert_eq!(skill_at("workspaces/../skills/x"), None);
+    }
+
+    #[test]
+    fn a_skill_concerns_what_its_levels_other_files_concern_and_the_instructions() {
+        let project = answers_to(at("charter.toml"));
+        assert_eq!(answers_to(at("skills/deploy/SKILL.md")), project);
+        let persona = answers_to(at("personas/steward/persona.md"));
+        assert_eq!(
+            answers_to(at("personas/steward/skills/r/SKILL.md")),
+            persona
+        );
+        assert_eq!(
+            answers_to(at("workspaces/alpha/skills/deploy/SKILL.md")),
+            vec![
+                Answer::Sidebar,
+                panels(Some("alpha")),
+                Answer::Instructions,
+                Answer::Curations,
+                Answer::Settings,
+                Answer::Git,
+                Answer::Views
+            ]
+        );
+    }
 
     #[test]
     fn a_workspaces_skill_concerns_what_its_chats_started_with_and_its_todo_does_not() {

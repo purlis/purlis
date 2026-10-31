@@ -1,0 +1,294 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The card family's default** (#2912, ADR 0103, ADR 0104): a box one step off the surface it
+   stands on (`ui/card/Card.tsx`). Keyed on the wrapper's attributes alone;
+   `purlis_core::theme::parts` holds a copy of its colours.
+
+   Classic's look: the raised ground, the subtle hairline. Purlis sets its card on the window's
+   fill with no hairline through its parts (`built-in/purlis/theme.json`), and its `radius.lg` is
+   the card's 10 (R25, R157). An ask keeps its waiting edge in every theme.
+
+   In the `components` layer (`styles.css`), above `App.css`. */
+
+[data-scope="card"][data-part="root"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  margin: 0;
+  padding-block: var(--space-4);
+  padding-inline: var(--space-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  background-color: var(--surface-raised);
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+[data-scope="card"][data-part="root"][data-variant="ask"] {
+  border-color: var(--state-waiting);
+}
+
+[data-scope="card"][data-part="title"] {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-strong);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   **Facts, as label and value** (`Facts.tsx`, #3673): a `dl`, a fact a line, its label column
+   one width for every fact at the start (`facts-label`, the secondary tier) and its value the
+   rest (`facts-value`, the primary tier). Where the facts' own room is narrow, each label stands
+   over its value. 24rem is the one length the sheet writes: a container query's condition cannot
+   read a token.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="card"][data-part="facts"] {
+  container: card-facts / inline-size;
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  min-inline-size: 0;
+}
+
+[data-scope="card"][data-part="fact"] {
+  display: grid;
+  grid-template-columns: calc(var(--space-8) * 5) minmax(0, 1fr);
+  gap: var(--space-1) var(--space-5);
+  align-items: baseline;
+}
+
+[data-scope="card"][data-part="facts-label"] {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+}
+
+[data-scope="card"][data-part="facts-value"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  margin: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+@container card-facts (max-width: 24rem) {
+  [data-scope="card"][data-part="fact"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------------------------------------------------------------------------------------------
+   **A row of totals tiles** (`Totals.tsx`, #3673): tiles that share the row's width, each at
+   least five and a half of the spacing scale's largest step (about 170px), wrapping to more rows
+   and never sideways. A tile is edged as a card is, with no ground of its own: its words stand on
+   the surface under it. Its value is a size larger, in figures of one width, so a count that
+   changes draws where the last one was; a long value wraps, and is never cut.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="card"][data-part="totals"] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--space-8) * 5.5)), 1fr));
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+
+[data-scope="card"][data-part="tile"] {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  padding-block: var(--space-4);
+  padding-inline: var(--space-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+/* Its label: the label role, in capitals. */
+[data-scope="card"][data-part="tile-label"] {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+[data-scope="card"][data-part="tile-value"] {
+  color: var(--text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-strong);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* The line under it: what the value is of, in the quiet tier. */
+[data-scope="card"][data-part="tile-line"] {
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   **A card pressed whole** (`CardButton.tsx`, #3655): a door on the welcome, a repo to get. It is
+   a family of its own (`card-button`, #3885), so a theme that sets its cards flat on their panel
+   never takes a pressed card's edge away, and a theme's `card.title` never reaches its title.
+   It is a thing that is pressed, so it is drawn in the `control.*` shades. The button in it
+   (`press`) holds its title, and the button's `::after` covers the whole box, so a press anywhere
+   on the card presses it and its ring is drawn around the card. Under the pointer and while
+   pressed, the box's ground and edge change and nothing moves (#2800); its ring is the window's,
+   from the keyboard only, outside it.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="card-button"][data-part="root"] {
+  position: relative;
+  display: flex;
+  box-sizing: border-box;
+  min-inline-size: 0;
+  margin: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  background-color: transparent;
+  text-align: start;
+  overflow-wrap: anywhere;
+  transition:
+    background-color var(--motion-duration-quick) var(--motion-easing-standard),
+    border-color var(--motion-duration-quick) var(--motion-easing-standard);
+}
+
+/* The button: no box of its own, its words the card's; its `::after` is the card's whole face.
+   It is a target 24px tall at least (WCAG 2.5.8), as the button family's smallest is: axe measures
+   the button, never its `::after`. */
+[data-scope="card-button"][data-part="press"] {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: 24px;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: none;
+  border-radius: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  outline: none;
+}
+
+[data-scope="card-button"][data-part="press"]::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+}
+
+/* **A door**: its mark, title and line in a column, on the control's ground. */
+[data-scope="card-button"][data-part="root"][data-variant="door"] {
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-5) var(--space-6);
+  border-radius: var(--radius-xl);
+  background-color: var(--control-base);
+}
+
+[data-scope="card-button"][data-part="root"][data-variant="door"]:is(
+    [data-hovered],
+    [data-pressed]
+  ):not([data-disabled]) {
+  border-color: var(--border-strong);
+  background-color: var(--control-hover);
+}
+
+/* **A pick from a list**: one line on the surface under it, its words in the accent. */
+[data-scope="card-button"][data-part="root"][data-variant="pick"] {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  border-color: transparent;
+  color: var(--accent-base);
+}
+
+[data-scope="card-button"][data-part="root"][data-variant="pick"]:is(
+    [data-hovered],
+    [data-pressed]
+  ):not([data-disabled]) {
+  background-color: var(--surface-hover);
+}
+
+/* Unavailable: its words in the faint tier, on its own ground and edge, so nothing moves, and
+   what follows the title (a badge, which draws its own colours) dimmed with them. Its line steps
+   down to the quiet tier, not faint: it stands beside the button, not in it, so it is words a
+   person reads and keeps the text floor (WCAG 1.4.3), and it no longer reads louder than it did. */
+[data-scope="card-button"][data-part="root"][data-disabled] {
+  color: var(--text-faint);
+}
+
+[data-scope="card-button"][data-part="root"][data-disabled] > [data-part="line"] {
+  color: var(--text-quiet);
+}
+
+[data-scope="card-button"][data-part="root"][data-disabled] [data-part="more"] {
+  opacity: 0.45;
+}
+
+[data-scope="card-button"][data-part="press"][data-disabled] {
+  cursor: default;
+}
+
+/* The ring, around the whole card: outside a door, as a control's is. */
+[data-scope="card-button"][data-part="press"][data-focus-visible]::after {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* A pick's ring sits inside it, as a row's does: picks stand in a list that scrolls, which would
+   clip a ring drawn outside (`theme/geometry.css`, `--focus-ring-inset`). */
+[data-scope="card-button"][data-part="root"][data-variant="pick"]
+  > [data-part="press"][data-focus-visible]::after {
+  outline-offset: var(--focus-ring-inset);
+}
+
+/* Its mark, in the accent: the only colour on a page of doors, so the eye finds them first. */
+[data-scope="card-button"][data-part="mark"] {
+  display: inline-flex;
+  margin-block-end: var(--space-2);
+  font-size: var(--font-size-xl);
+  color: var(--accent-base);
+}
+
+/* Its title, at the size of the words around it, in the strong weight: a card's first line, but
+   pressed whole. */
+[data-scope="card-button"][data-part="title"] {
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: var(--font-weight-strong);
+}
+
+/* What follows its title (a badge): its own items, in a row, beside the title. */
+[data-scope="card-button"][data-part="more"] {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Its line: what it does, in the secondary tier. */
+[data-scope="card-button"][data-part="line"] {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-body);
+  color: var(--text-secondary);
+}

@@ -10,6 +10,7 @@ use super::adapter::{
 use super::{Harness, Kit, StateHooks, words};
 use crate::sandbox::Form;
 
+pub mod ownwork;
 pub mod project;
 
 /// Claude Code's adapter.
@@ -66,9 +67,15 @@ impl HarnessAdapter for ClaudeCode {
         // the chat runs in (its manifests, #1336). A form of another kind is not one, and the
         // chat is armed with nothing rather than started without it.
         let form = sandbox.applied().map(|applied| applied.form_in(cwd));
+        let wrapped;
         let sandbox = match &form {
             None => None,
             Some(crate::sandbox::Form::ClaudeCode(settings)) => Some(settings),
+            // Wrapped whole on a runner (#4083): its own sandbox off, its tools' rules as compiled.
+            Some(crate::sandbox::Form::ClaudeWrapped(wrap)) => {
+                wrapped = wrap.settings();
+                Some(&wrapped)
+            }
             Some(_) => return StateHooks::None,
         };
         // Read for a sandboxed chat alone: one that is not keeps loading what it always did.
@@ -80,6 +87,7 @@ impl HarnessAdapter for ClaudeCode {
             skills_off: crate::skills::skills_off_for(kit, Harness::ClaudeCode, plugins)
                 .into_iter()
                 .collect(),
+            own_index: plugins.own_index,
         };
         let mut args = words(["--plugin-dir", &plugin.display().to_string()]);
         // The plane's skills, as a plugin of their own (ADR 0063 as amended 2026-10-20).
@@ -117,6 +125,7 @@ impl HarnessAdapter for ClaudeCode {
                         &denied_tools(kit),
                         screened.as_ref(),
                         kit.graded,
+                        &own_of(kit, cwd),
                     ),
                 ]),
             ]
@@ -314,11 +323,112 @@ impl HarnessAdapter for ClaudeCode {
         false
     }
 
+    /// Yes (SK-16): a grade's chat is armed with purlis's MCP server alone and its read tools
+    /// (`--strict-mcp-config`), is denied the tools that start a sub-agent, and says what it
+    /// spent, so purlis holds it to the grade's limits. Its plugins are turned off for that chat
+    /// alone in its `--settings` (`enabledPlugins`), purlis's own pinned on (#3468).
+    fn can_grade(&self) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// Claude Code's own `permission_mode` ([`crate::dispatchmode::Reported::of_claude_code`]).
+    ///
+    /// **Believed from its armed hook alone** (#3822): Claude Code runs its hooks outside the
+    /// sandbox it gives its tools ([`Self::sandbox_holds_what_it_starts`]), so its hook reads the
+    /// chat's armed key from the spool a sandboxed chat's tools are denied, by its Bash sandbox
+    /// (`denyRead`) and by a `Read(...)` deny rule for its Read tool alike
+    /// ([`crate::sandbox::claude`]). In a chat with no sandbox the tools reach the key too.
+    fn reported_mode(
+        &self,
+        permission_mode: Option<&str>,
+    ) -> Option<crate::dispatchmode::Reported> {
+        crate::dispatchmode::Reported::of_claude_code(permission_mode)
+    }
+
+    /// `--permission-mode auto` at the classifier's level (#3787): one of 2.1.312's choices for
+    /// the flag. A flag rather than the session's `defaultMode`, which Claude Code does not let
+    /// every settings source grant as `auto`. Nothing where the profile's command names a
+    /// mode of its own: that is the person's declaration, and it stands.
+    fn task_mode_words(
+        &self,
+        level: crate::dispatchmode::Level,
+        command: &[String],
+    ) -> Vec<String> {
+        use crate::sandbox::codex::{is_flag, split};
+        let names_its_own = command
+            .iter()
+            .any(|word| is_flag(word) && split(word).0 == PERMISSION_MODE_FLAG);
+        match level {
+            crate::dispatchmode::Level::Classifier if !names_its_own => {
+                words([PERMISSION_MODE_FLAG, crate::dispatchmode::CLAUDE_CODE_AUTO])
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// The person's own settings that start every chat with its prompts off, or that purlis
+    /// cannot read; a command that turns them off ([`crate::dispatchunattended::bypass_in`]);
+    /// and a command that starts the chat in any mode but the two that ask (#3352), as the
+    /// command's `--permission-mode` outranks the one a grade's session settings pin.
+    fn grade_refused(
+        &self,
+        command: &[String],
+        env: &crate::harness_plugin::Env<'_>,
+    ) -> Option<String> {
+        if let Some(why) = settings_keep_a_grade_from_running(env) {
+            return Some(why);
+        }
+        if let Some(flag) = crate::dispatchunattended::bypass_in(command)
+            .or_else(|| mode_that_does_not_ask(command))
+        {
+            return Some(prompts_off_by(&flag));
+        }
+        // A plugin the command loads itself is not in the install record, so a grade could not
+        // turn it off for its chat (P8, #3468).
+        plugin_dir_in(command).map(|flag| {
+            format!(
+                "This profile's command loads a plugin of its own ({}), which a grade cannot turn \
+                 off for its chat, and a grade runs with only purlis's plugin on: pick another \
+                 profile.",
+                crate::shown::one_line(&flag, 60)
+            )
+        })
+    }
+
+    /// Claude Code's own order: the last `--model` in the command, then `ANTHROPIC_MODEL`; a
+    /// family alias read through the variable that remaps it ([`remapped`]). `None` where
+    /// neither says, and Claude Code picks: a `model` in its settings is not read, as the
+    /// project's outranks the person's and both reach the chat, so the limit is priced at the
+    /// dearest rather than at a model that may not run.
+    fn grade_model(
+        &self,
+        command: &[String],
+        env: &crate::harness_plugin::Env<'_>,
+    ) -> Option<String> {
+        let model = model_flag_in(command)
+            .or_else(|| env.var(MODEL_VARIABLE))
+            .filter(|model| !model.trim().is_empty())?;
+        remapped(&model, env)
+    }
+
+    /// Claude Code's three family aliases, as `claude --help` names them for `--model` (2.1.x):
+    /// each the family's newest model, so the list never goes stale with a release. A full
+    /// model id stays the profile's to name in its command.
+    fn grade_models(&self) -> &'static [&'static str] {
+        &["opus", "sonnet", "haiku"]
+    }
+
+    /// `--model <model>`: Claude Code takes the last one its line names.
+    fn model_words(&self, model: &str) -> Vec<String> {
+        vec![MODEL_FLAG.to_owned(), model.to_owned()]
+    }
+
     /// The line as it is: Claude Code's sandbox rides in the `--settings` charter hands it (in
     /// `armed`), beside the project settings its arming decided to load ([`project`], ADR 0067
     /// as amended 2026-10-15), and there it is allowed the chat's hook socket, which only the
     /// place the chat opens knows (`at`).
-    /// Its own flags are not asked about yet.
+    /// Its own flags are not asked about yet. On a runner the whole line runs in purlis's wrap
+    /// instead ([`wrapped_line`]).
     fn sandboxed_line(
         &self,
         form: &Form,
@@ -326,6 +436,7 @@ impl HarnessAdapter for ClaudeCode {
         at: &crate::sandbox::At<'_>,
     ) -> Result<crate::sandbox::Line, String> {
         match form {
+            Form::ClaudeWrapped(wrap) => wrapped_line(wrap, words, at),
             Form::ClaudeCode(compiled) => Ok(crate::sandbox::Line {
                 program: words.program,
                 args: [
@@ -344,6 +455,61 @@ impl HarnessAdapter for ClaudeCode {
             _ => Err(super::adapter::not_compiled_for(Harness::ClaudeCode)),
         }
     }
+}
+
+/// **A Claude Code chat's line inside purlis's wrap** (#4083): the wrap's program first, with the
+/// profile written for where the chat opens, then the chat's whole line, its traffic pointed at
+/// the chat's proxy, the only place the profile lets it connect, and its temp directory its own.
+///
+/// **Fail closed.** No directory, no proxy, no config folder, or a path a profile cannot state
+/// refuses the chat.
+fn wrapped_line(
+    wrap: &crate::sandbox::claude_wrap::Wrap,
+    words: crate::sandbox::Words,
+    at: &crate::sandbox::At<'_>,
+) -> Result<crate::sandbox::Line, String> {
+    use crate::sandbox::claude_wrap;
+    let lead = "this project runs every chat sandboxed, and";
+    let Some(cwd) = at.cwd else {
+        return Err(format!(
+            "{lead} a Claude Code chat with no directory of its own has nowhere the sandbox lets \
+             it write, so nothing was started."
+        ));
+    };
+    let Some((confinement, tmp)) = at
+        .confinement
+        .and_then(|confinement| Some((confinement, confinement.tmp()?)))
+    else {
+        return Err(format!(
+            "{lead} purlis's egress proxy was not started for this Claude Code chat, so nothing \
+             was started."
+        ));
+    };
+    if wrap.home.is_none() {
+        return Err(format!(
+            "{lead} this Claude Code chat's config folder is not one purlis can hold, so nothing \
+             was started."
+        ));
+    }
+    let profile = claude_wrap::profile(wrap, cwd, tmp, &confinement.proxy_ports(), at.hook_socket)
+        .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
+    let (program, args) = crate::sandbox::wrapper::line(
+        wrap.os,
+        at.purlis,
+        profile,
+        words.program,
+        [words.command, words.armed, words.charters].concat(),
+    )
+    .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
+    // Only now, with the line known to start: a refused chat readies nothing.
+    claude_wrap::prepare(wrap, cwd);
+    let mut env = crate::sandbox::seatbelt::env(&confinement.proxy_url(), tmp);
+    env.extend([
+        (claude_wrap::TMP_ENV.to_owned(), tmp.display().to_string()),
+        (claude_wrap::QUIET_ENV.to_owned(), "1".to_owned()),
+        (crate::hookwire::WRAPPED_ENV.to_owned(), "1".to_owned()),
+    ]);
+    Ok(crate::sandbox::Line { program, args, env })
 }
 
 /// `armed` with the sandbox and deny rules in its `--settings` allowed to reach `socket`
@@ -425,11 +591,12 @@ fn settings(
     denied_tools: &[String],
     screened: Option<&project::Screened>,
     graded: bool,
+    own: &(Option<String>, Option<String>),
 ) -> String {
     let mut settings = serde_json::Map::new();
-    // The project's own choice of Claude Code's plugins first (charter-app#274, ADR 0050): a
-    // session `enabledPlugins` wins over the project's and the user's for the keys it names,
-    // and leaves every other plugin to them.
+    // What purlis hands this chat first: a Try it's scratch chat's every plugin off. A session
+    // `enabledPlugins` wins over the project's and the user's for the keys it names, and leaves
+    // every other plugin to them, which is every plugin purlis does not pin (#3467).
     let mut enabled: serde_json::Map<String, serde_json::Value> = plugins
         .plugins
         .iter()
@@ -455,7 +622,15 @@ fn settings(
     // '{"skillOverrides":{"langfuse":"off"}}'` took `langfuse` out of the init event's skills.
     // It does not reach a plugin's skill (`<plugin>:<skill>`), which goes only with its plugin,
     // so none is written, and nor is a built-in skill's name ([`crate::skills::skills_off_for`]).
-    // Not written at all where none is off, so the operator's own overrides stand.
+    // Not written at all where none is off.
+    //
+    // **The operator's own overrides stand beside it** (#3320): Claude Code merges a session's
+    // `skillOverrides` with theirs name by name, so only purlis's names are written. Measured on
+    // 2.1.311 in a throwaway `CLAUDE_CONFIG_DIR` holding skills `alpha` and `beta` and a
+    // `settings.json` of `{"skillOverrides":{"alpha":"off"}}`: `--settings
+    // '{"skillOverrides":{"beta":"off"}}'` took both out of the init event's skills, and
+    // `{"alpha":"on"}` put `alpha` back. A session's name wins over theirs for that name alone,
+    // and purlis only ever writes `"off"`.
     let overrides: serde_json::Map<String, serde_json::Value> = plugins
         .skills_off
         .iter()
@@ -491,8 +666,8 @@ fn settings(
     // SI-8e): a chat reading its own todos, memory, records or change status does not stop on
     // a prompt. `persona_where` is allowed with them (V98a, #1450): it reads the app's own
     // record of the open chats and answers what the chat is told at its start. Each by its
-    // full name, never the server as a whole, so the other writes and `ask_operator` still
-    // ask, and an operator's `ask` or `deny` for any of them still wins.
+    // full name, never the server as a whole, so a tool added later still asks until it is
+    // ruled in, and an operator's `ask` or `deny` for any of them still wins.
     //
     // **And a dispatch, by its command and by its two tools** (operator's ruling V98b,
     // D-T59-prealllow, amending ADR 0064): the harness's prompt is not what consents to a
@@ -512,20 +687,38 @@ fn settings(
     // And what a chat asks after a task it dispatched, each by its own name (D-T59-j8).
     allow.extend(DISPATCH_TASK_ALLOW.iter().map(|rule| (*rule).to_owned()));
     allow.extend(HANDOFF_ALLOW.iter().map(|rule| (*rule).to_owned()));
-    // And purlis's read-only commands, by name, beside their tools (reported 2026-10-09).
+    // And purlis's read-only commands, by name (reported 2026-10-09, #3829).
     allow.extend(READ_ALLOW.iter().map(|rule| (*rule).to_owned()));
     // And a commit the app makes for a sandboxed chat in its branch folder (#1476).
     allow.extend(WORKTREE_COMMIT_ALLOW.iter().map(|rule| (*rule).to_owned()));
+    // And what only the chat's own work touches, by name, and what it writes in its own
+    // persona's and workspace's name (#3829, ruled 2026-10-29), except in a grade's chat, which
+    // keeps its prompts (SK-16).
+    if !graded {
+        allow.extend(OWN_SCOPE_ALLOW.iter().map(|rule| (*rule).to_owned()));
+        allow.extend(own_scope_rules(own.0.as_deref(), own.1.as_deref()));
+    }
+    // The dispatch tools from the one list every harness's adapter reads (#3794), then the
+    // other reads, each once.
     allow.extend(
-        crate::chattools::DISPATCH_TOOLS
-            .iter()
+        crate::chattools::run_on_the_dispatch_grant()
             .map(|tool| format!("mcp__{}__{tool}", crate::chattools::SERVER)),
     );
     allow.extend(
         crate::chattools::PRE_ALLOWED
             .iter()
+            .filter(|tool| !crate::chattools::run_on_the_dispatch_grant().any(|one| one == **tool))
             .map(|tool| format!("mcp__{}__{tool}", crate::chattools::SERVER)),
     );
+    // And their twins among the tools, and the chat's question to the person, whose answer is
+    // the consent (#3829); a grade's chat's server answers none of them (SK-16).
+    if !graded {
+        allow.extend(
+            crate::chattools::OWN_SCOPE_TOOLS
+                .iter()
+                .map(|tool| format!("mcp__{}__{tool}", crate::chattools::SERVER)),
+        );
+    }
     // **And a chat's browser tools, each by name** (#2245, ruled 2026-10-16, amending ADR
     // 0064): the person's answer to the chat's browser Ask is the consent, which the app asks
     // at the first call and holds in front of every one, as the dispatch grant is for a
@@ -535,6 +728,13 @@ fn settings(
         crate::browsertools::run_on_the_browser_ask()
             .map(|tool| format!("mcp__{}__{tool}", crate::chattools::SERVER)),
     );
+    // **And its commands, where purlis's wrap holds them instead of its own sandbox** (#4083):
+    // with that sandbox on, Claude Code runs a command unasked (`autoAllowBashIfSandboxed`, on by
+    // default), and with it off every command would stop on a prompt in a tab on a runner. The
+    // wrap holds what the sandbox held, and a deny or an ask still outranks this.
+    if sandbox.is_some_and(crate::sandbox::claude::Settings::is_off) {
+        allow.push("Bash".to_owned());
+    }
     let mut permissions = serde_json::json!({ "allow": allow });
     // **The sandbox, where the plane turned it on** (ADR 0067), and the deny rules that keep
     // Claude Code's own Read and Edit tools out of what its sandbox denies a command
@@ -603,6 +803,22 @@ fn settings(
     serde_json::Value::Object(settings).to_string()
 }
 
+/// [`settings`] for a chat holding `sandbox`, with nothing else asked of it.
+#[cfg(test)]
+pub(super) fn armed_settings_for_tests(sandbox: &crate::sandbox::claude::Settings) -> String {
+    settings(
+        std::path::Path::new("/bin/purlis"),
+        None,
+        false,
+        &crate::harness_plugin::Chosen::new(),
+        Some(sandbox),
+        &[],
+        None,
+        false,
+        &(None, None),
+    )
+}
+
 /// The servers a chat is started with, as `--mcp-config` takes them: purlis's own
 /// ([`crate::chattools::claude_code_config`]) and, for a chat that runs as a persona, that
 /// persona's ([`crate::personaverbs::chatstart::servers`], #1451 D-1451-17). A credentialed
@@ -647,13 +863,13 @@ const DEFAULT_MODE: &str = "default";
 const BYPASS_MODE: &str = "bypassPermissions";
 
 /// The most of a person's own Claude Code settings read.
-pub const MOST_SETTINGS_BYTES: usize = 1024 * 1024;
+const MOST_SETTINGS_BYTES: usize = 1024 * 1024;
 
 /// **Whether a person's own Claude Code settings, `text`, start every chat with its permission
 /// prompts off** (`permissions.defaultMode: bypassPermissions`), read with a JSON parser. `None`
 /// for a text that does not read as Claude Code's settings, which a caller refuses on: what it
 /// says cannot be known (the review of #3229).
-pub fn bypass_by_default(text: &str) -> Option<bool> {
+fn bypass_by_default(text: &str) -> Option<bool> {
     if text.len() > MOST_SETTINGS_BYTES {
         return None;
     }
@@ -669,6 +885,145 @@ pub fn bypass_by_default(text: &str) -> Option<bool> {
         None => Some(false),
         Some(serde_json::Value::String(mode)) => Some(mode == BYPASS_MODE),
         Some(_) => None,
+    }
+}
+
+/// **Why a grade's chat may not start on a profile whose command holds `flag`**: one that keeps
+/// the chat from ever asking. The one sentence each such flag is refused with.
+fn prompts_off_by(flag: &str) -> String {
+    format!(
+        "This profile's command turns the program's permission prompts off ({}), and a grade \
+         never runs on one: pick another profile.",
+        crate::shown::one_line(flag, 60)
+    )
+}
+
+/// **The `--plugin-dir` in `command`**, as it is written, or `None` (#3468): in either spelling,
+/// `--plugin-dir <dir>` or `--plugin-dir=<dir>`.
+fn plugin_dir_in(command: &[String]) -> Option<String> {
+    use crate::sandbox::codex::{is_flag, split};
+    command
+        .iter()
+        .find(|word| is_flag(word) && split(word).0 == PLUGIN_DIR_FLAG)
+        .cloned()
+}
+
+/// The flag Claude Code loads a plugin from a folder by, for one session.
+const PLUGIN_DIR_FLAG: &str = "--plugin-dir";
+
+/// **Claude Code's permission modes a grade's chat may start in** (#3352): each asks before a
+/// tool its rules do not allow, so a grade's "end at the first ask" fires. Every other mode
+/// (`acceptEdits`, `auto`, `dontAsk`, `bypassPermissions`, and any a later version adds) is
+/// refused.
+const GRADED_MODES: [&str; 2] = [DEFAULT_MODE, PLAN_MODE];
+
+/// Claude Code's permission mode that plans and asks before it acts.
+const PLAN_MODE: &str = "plan";
+
+/// **The `--permission-mode` in `command` that names a mode a grade's chat may not start in**,
+/// as it is written, or `None`: read in each spelling [`crate::dispatchunattended::bypass_in`]
+/// reads (`--permission-mode <mode>`, `--permission-mode=<mode>`, the mode quoted or spaced),
+/// every one of them, and one with no mode after it, which takes the next word purlis adds.
+fn mode_that_does_not_ask(command: &[String]) -> Option<String> {
+    use crate::sandbox::codex::{is_flag, split};
+    command.iter().enumerate().find_map(|(at, word)| {
+        if !is_flag(word) {
+            return None;
+        }
+        let (flag, attached) = split(word);
+        if flag != PERMISSION_MODE_FLAG {
+            return None;
+        }
+        let value = attached.or_else(|| command.get(at + 1).map(String::as_str));
+        let plain = value.map(|value| value.replace(['"', '\'', ' '], ""));
+        if plain.is_some_and(|mode| GRADED_MODES.contains(&mode.as_str())) {
+            return None;
+        }
+        Some(match (attached, value) {
+            (None, Some(value)) => format!("{flag} {value}"),
+            _ => word.clone(),
+        })
+    })
+}
+
+/// **The model the last `--model` in `command` names**, where one names a model.
+fn model_flag_in(command: &[String]) -> Option<String> {
+    use crate::sandbox::codex::{is_flag, split};
+    command
+        .iter()
+        .enumerate()
+        .filter(|(_, word)| is_flag(word))
+        .filter_map(|(at, word)| {
+            let (flag, attached) = split(word);
+            (flag == MODEL_FLAG).then(|| {
+                attached
+                    .map(str::to_owned)
+                    .or_else(|| command.get(at + 1).filter(|next| !is_flag(next)).cloned())
+            })
+        })
+        .next_back()
+        .flatten()
+}
+
+/// **`model` as Claude Code runs it**: a family alias it remaps through
+/// `ANTHROPIC_DEFAULT_<FAMILY>_MODEL` is the model that variable names, and `opusplan`, which
+/// runs both Opus and Sonnet, is none where either is remapped (the limit then prices at the
+/// dearest). Any other model is itself.
+fn remapped(model: &str, env: &crate::harness_plugin::Env<'_>) -> Option<String> {
+    let family = |name: &str| env.var(&format!("ANTHROPIC_DEFAULT_{name}_MODEL"));
+    let alias = model.trim().to_ascii_lowercase();
+    let alias = alias.split('[').next().unwrap_or_default();
+    match alias {
+        "opus" | "sonnet" | "haiku" => {
+            Some(family(&alias.to_ascii_uppercase()).unwrap_or_else(|| model.to_owned()))
+        }
+        "opusplan" if family("OPUS").is_some() || family("SONNET").is_some() => None,
+        _ => Some(model.to_owned()),
+    }
+}
+
+/// The flag Claude Code starts a chat on a model by, and the variable it reads after it.
+const MODEL_FLAG: &str = "--model";
+const MODEL_VARIABLE: &str = "ANTHROPIC_MODEL";
+
+/// The flag Claude Code starts a chat in a permission mode by.
+const PERMISSION_MODE_FLAG: &str = "--permission-mode";
+
+/// Why a grade cannot know whether a chat keeps its permission prompts: the person's Claude Code
+/// settings are not where purlis can read them.
+const SETTINGS_UNREAD: &str = "purlis could not read this profile's Claude Code settings, so it \
+     cannot tell whether its chats keep their permission prompts, and a grade never runs on one \
+     that does not.";
+
+/// **Why the person's own Claude Code settings, as the chat's environment `env` finds them, keep
+/// a grade from running**, or `None`: settings that start every chat with its permission prompts
+/// off, or settings purlis cannot find or read, as what they say cannot be known (the review of
+/// #3229). No settings file is none of either.
+fn settings_keep_a_grade_from_running(env: &crate::harness_plugin::Env<'_>) -> Option<String> {
+    let unreadable = || Some(SETTINGS_UNREAD.to_owned());
+    let Some(dir) = env.dir("CLAUDE_CONFIG_DIR", ".claude") else {
+        return unreadable();
+    };
+    let file = dir.join("settings.json");
+    let text = match std::fs::metadata(&file) {
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(_) => return unreadable(),
+        Ok(meta) if !meta.is_file() || meta.len() > MOST_SETTINGS_BYTES as u64 => {
+            return unreadable();
+        }
+        Ok(_) => match std::fs::read_to_string(&file) {
+            Ok(text) => text,
+            Err(_) => return unreadable(),
+        },
+    };
+    match bypass_by_default(&text) {
+        Some(false) => None,
+        Some(true) => Some(
+            "Your Claude Code settings start every chat with its permission prompts off, and a \
+             grade never runs on one: turn that off in Claude Code's settings first."
+                .to_owned(),
+        ),
+        None => unreadable(),
     }
 }
 
@@ -727,15 +1082,128 @@ fn permission_hook(binary: &std::path::Path) -> serde_json::Value {
 pub const SMART_CLOSE_ALLOW: &str = "Bash(purlis session record *)";
 
 /// The permission rules a Claude Code chat the app starts carries for **purlis's read-only
-/// commands that only answer from the app's own record of the chat** (reported 2026-10-09,
-/// on the terms of V98a and ADR 0064): a task whose brief ran `purlis persona where` stopped
-/// on the harness's prompt in a tab nobody was at, and waited there on the person.
+/// commands** (reported 2026-10-09, on the terms of V98a and ADR 0064; widened by #3829, the
+/// operator's ruling of 2026-10-29): a task whose brief ran `purlis persona where` stopped on
+/// the harness's prompt in a tab nobody was at, and waited there on the person.
 ///
-/// Each is the command twin of a tool already in [`crate::chattools::PRE_ALLOWED`]: one
-/// operation, two entrances, allowed the same way (as `session_record` and its command are).
-/// **The whole line, with no wildcard**: the command takes no argument a chat would pass, so a
-/// line with anything more after it is asked about, and so is every other `persona` word.
-pub const READ_ALLOW: [&str; 1] = ["Bash(purlis persona where)"];
+/// Each reads and writes nothing: the chat's own memory (`recall`), purlis's own pages and
+/// news, the themes, and the plane's personas and workspaces. **Each by name, and no bare
+/// wildcard**: a word with no argument a chat would pass is the whole line (`persona where`,
+/// `persona list`, `workspace list`, `workspace current`), and anything more after it is asked
+/// about; a word that takes one ends ` *`. Every other `persona`, `workspace`, `docs` or
+/// `theme` word still asks, and an operator's own `ask` or `deny` still wins.
+pub const READ_ALLOW: [&str; 14] = [
+    "Bash(purlis persona where)",
+    "Bash(purlis persona show *)",
+    "Bash(purlis persona list)",
+    "Bash(purlis persona recall *)",
+    "Bash(purlis recall *)",
+    "Bash(purlis workspace recall *)",
+    "Bash(purlis workspace list)",
+    "Bash(purlis workspace current)",
+    "Bash(purlis docs show *)",
+    "Bash(purlis news)",
+    "Bash(purlis news *)",
+    "Bash(purlis theme check *)",
+    "Bash(purlis theme list)",
+    "Bash(purlis theme list *)",
+];
+
+/// The permission rules a Claude Code chat the app starts carries for **what only the chat's own
+/// work touches** and that names no persona or workspace (#3829, the operator's ruling of
+/// 2026-10-29, amending ADR 0064): its own workspace's todos, listed, and the branch folder it
+/// stands in. A looping chat stopped on the harness's prompt for each, in a tab nobody was at.
+/// **The person is asked only when something new reaches someone new**, and none of these does.
+/// What names its persona or its workspace is written per chat ([`own_scope_rules`]).
+///
+/// - `ws todo` and `workspace todo`, bare and `--done`, which list: **the whole line**. A todo
+///   is added and closed by the `todo_add` and `todo_done` tools, never by a rule over the
+///   command's arguments: the harness matches the line as written and the shell strips its
+///   quotes, so `ws todo "forget" <slug>` would run `forget` under a rule meant for text (the
+///   dispatcher's decision on #3841).
+/// - `worktree update` (with `--continue` or `--abort`), `push` (the folder's own branch, never
+///   its base; ruled by name), `done`, `abandon` and `list`: each acts on the folder the chat
+///   stands in. `add` names a workspace and is written per chat.
+/// - `worktree remove` (#3879, ruled 2026-10-29): the app removes a branch folder of the
+///   chat's own workspace only where nothing would be lost, and `--force`, which the rule
+///   matches too, is refused by the command in every chat, naming the window.
+///
+/// **Each by name, and no bare wildcard**, for [`DISPATCH_ALLOW`]'s reason. A grade's chat is
+/// handed none of these (SK-16: it keeps its prompts). An operator's own `ask` or `deny` still
+/// wins, and `forget`, `archive`, `move-memory`, `edit-memory`, `edit`, `reinit`, `save`,
+/// `clone` and `secret exec` are still asked about, as every word with no rule is.
+pub const OWN_SCOPE_ALLOW: [&str; 13] = [
+    "Bash(purlis ws todo)",
+    "Bash(purlis ws todo --done)",
+    "Bash(purlis workspace todo)",
+    "Bash(purlis workspace todo --done)",
+    "Bash(purlis worktree update)",
+    "Bash(purlis worktree update *)",
+    "Bash(purlis worktree push)",
+    "Bash(purlis worktree push *)",
+    "Bash(purlis worktree done)",
+    "Bash(purlis worktree abandon *)",
+    "Bash(purlis worktree list)",
+    "Bash(purlis worktree list *)",
+    "Bash(purlis worktree remove *)",
+];
+
+/// The permission rules for **what a chat writes in its own persona's and its own workspace's
+/// name** (#3829, narrowed on review of #3841 by the dispatcher's decision): each names the
+/// persona or the workspace the app started the chat in, so a line that names another is asked
+/// about, as every line with no rule is.
+///
+/// - `persona remember <persona> *`, `--shared` included (ruled by name): a memory written by
+///   the chat's own persona. `remember` takes two words at most, so no other persona can follow.
+/// - `workspace remember -w <workspace> *`, `workspace note -w <workspace> *` and `worktree add
+///   -w <workspace> *`: the workspace named first, by its flag. A second `-w` on the line is
+///   refused by the command itself, which takes the flag once.
+///
+/// **Only a plain name is written into a rule** ([`plain_name`]): one with any other character,
+/// a glob's `*`, `?` or `[` among them, could widen the rule, and gets none. A chat on no
+/// persona, or at the plane root, gets none of that kind.
+pub fn own_scope_rules(persona: Option<&str>, workspace: Option<&str>) -> Vec<String> {
+    let mut rules = Vec::new();
+    if let Some(persona) = persona.filter(|name| plain_name(name)) {
+        rules.push(format!("Bash(purlis persona remember {persona} *)"));
+    }
+    if let Some(workspace) = workspace.filter(|name| plain_name(name)) {
+        for words in ["workspace remember", "workspace note", "worktree add"] {
+            rules.push(format!("Bash(purlis {words} -w {workspace} *)"));
+        }
+    }
+    rules
+}
+
+/// Whether `name` can stand in a permission rule as itself: ASCII letters, digits, `-`, `_` and
+/// `.`, starting with a letter or a digit. Nothing a glob or a shell reads is in it.
+fn plain_name(name: &str) -> bool {
+    name.chars()
+        .next()
+        .is_some_and(|first| first.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
+/// The persona and the workspace a chat the app starts works as and in: the persona it runs as,
+/// and the workspace its folder is in (or the one its skills were laid out for). `None` where
+/// it has none, or the plane cannot be found.
+fn own_of(kit: Kit<'_>, cwd: Option<&std::path::Path>) -> (Option<String>, Option<String>) {
+    let persona = kit.persona.map(|of| of.persona.to_owned());
+    let workspace = kit
+        .skills
+        .and_then(|skills| skills.workspace.map(str::to_owned))
+        .or_else(|| {
+            let cwd = cwd?;
+            let root = kit
+                .persona
+                .map(|of| of.root.to_path_buf())
+                .or_else(|| crate::plane::find_root(cwd).ok())?;
+            crate::active::workspace_of_tree(&root, cwd)
+        });
+    (persona, workspace)
+}
 
 /// The permission rule a Claude Code chat the app starts carries for **a commit the app makes
 /// for it in the branch folder it stands in** (#1476, ADR 0067 as amended for #1055, on the
@@ -744,9 +1212,9 @@ pub const READ_ALLOW: [&str; 1] = ["Bash(purlis persona where)"];
 /// The commit asks no approval (ADR 0067's decision 6): it is the chat's own work in its own
 /// folder on its own branch, as `git commit` in a clone is, which no rule asks about either. A
 /// chat that is not sandboxed, or in a clone, is told to use git, and nothing is committed.
-/// **Alone only**: a call that runs anything beside it, or writes a file beside it, is asked
-/// about as a whole ([`crate::dispatchguard::rider_ask`]), and an operator's own `ask` or
-/// `deny` still wins. Every other `worktree` word still asks.
+/// **Alone only**: a call that runs anything beside it, or writes a file beside it, is refused
+/// with the shape to retry ([`crate::dispatchguard::rider_refusal`], #3785), and an operator's
+/// own `ask` or `deny` still wins. Every other `worktree` word still asks.
 pub const WORKTREE_COMMIT_ALLOW: [&str; 1] = ["Bash(purlis worktree commit *)"];
 
 /// The permission rules a Claude Code chat the app starts carries for a dispatch (V98b,
@@ -757,13 +1225,19 @@ pub const WORKTREE_COMMIT_ALLOW: [&str; 1] = ["Bash(purlis worktree commit *)"];
 /// **Each spelling by name, and no bare trailing wildcard.** `purlis dispatch *` would also
 /// allow every subcommand `dispatch` grows later, which nobody has ruled on: a new one is added
 /// here by name when it lands. A flag-first line cannot reach a subcommand (the command's
-/// arguments and its subcommands exclude each other), so these four are the task and the
-/// report and nothing else. An operator's own `ask` or `deny` still wins, as for
-/// [`SMART_CLOSE_ALLOW`].
-pub const DISPATCH_ALLOW: [&str; 4] = [
+/// arguments and its subcommands exclude each other), so these are the task and the report
+/// and nothing else. `--long` (#3905) is a task too, one that reports progress with notes. An
+/// operator's own `ask` or `deny` still wins, as for [`SMART_CLOSE_ALLOW`].
+///
+/// **A line may open with where the task works** (#3903): `--in worktree:<repo>` is the
+/// spelling a chat whose workspace holds several clones is told to use, and a line that opens
+/// with it is the same task, so it is pre-allowed by that flag too.
+pub const DISPATCH_ALLOW: [&str; 6] = [
     "Bash(purlis dispatch --name *)",
     "Bash(purlis dispatch --to *)",
     "Bash(purlis dispatch --profile *)",
+    "Bash(purlis dispatch --long *)",
+    "Bash(purlis dispatch --in *)",
     "Bash(purlis dispatch report *)",
 ];
 
@@ -775,19 +1249,24 @@ pub const DISPATCH_ALLOW: [&str; 4] = [
 /// **Each reaches only what the app's own record lets its caller reach**
 /// (`crate::dispatched::owned`, `crate::dispatchtalk::up`): `wait`, `cancel`, `tell` and
 /// `answer` name a task the chat itself dispatched, and are refused for any other chat;
-/// `list` lists those tasks; `read` reads what one of them said and ran (#1981, #2084); `note` and `ask` name nobody, and go to the one chat that
-/// dispatched the caller. None starts a chat. `--wait` is the dispatch itself, waited on: it
-/// is matched only where the flag comes first, and asked about otherwise.
-pub const DISPATCH_TASK_ALLOW: [&str; 9] = [
+/// `list` lists those tasks, with or without its arguments (#3829); `read` reads what one of them said and ran (#1981, #2084);
+/// `close` clears one that has finished, and is refused one the person typed in (#3785, ruled
+/// 2026-10-29: tidying its own tasks is the chat's own); `note` and `ask` name nobody, and go
+/// to the one chat that dispatched the caller. None starts a chat. `--wait` is the dispatch
+/// itself, waited on: it is matched only where the flag comes first, and asked about
+/// otherwise.
+pub const DISPATCH_TASK_ALLOW: [&str; 11] = [
     "Bash(purlis dispatch --wait *)",
     "Bash(purlis dispatch wait *)",
     "Bash(purlis dispatch list)",
+    "Bash(purlis dispatch list *)",
     "Bash(purlis dispatch read *)",
     "Bash(purlis dispatch cancel *)",
     "Bash(purlis dispatch tell *)",
     "Bash(purlis dispatch note *)",
     "Bash(purlis dispatch ask *)",
     "Bash(purlis dispatch answer *)",
+    "Bash(purlis dispatch close *)",
 ];
 
 /// The permission rules a Claude Code chat the app starts carries for a handoff (#1444, on

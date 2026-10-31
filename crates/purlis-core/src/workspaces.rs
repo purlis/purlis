@@ -15,11 +15,12 @@ use crate::{manifest, mdsection, memstore};
 
 /// `workspace.md`'s template, with `{name}`, `{vision}` and `{sessions}` to fill. Taken from
 /// `charter/workspace.py:_CHARTER_TEMPLATE` verbatim — the file is committed and
-/// hand-edited, so a byte that differs is a diff in the operator's repository — with one
-/// declared difference: the `## Sessions` section before `## Log` (SI-8, ADR 0064), whose one
+/// hand-edited, so a byte that differs is a diff in the operator's repository — with two
+/// declared differences: the `## Sessions` section before `## Log` (SI-8, ADR 0064), whose one
 /// line charter keeps pointing at the workspace's session records
-/// ([`crate::sessionrecord::point`]).
-const CHARTER_TEMPLATE: &str = "# {name}\n\n> **Living charter** for this workspace — its north star and shared context.\n> Keep it current as the work evolves (edit this file, or `{program} workspace vision \"…\"`).\n> It's committed + shared for LIVE workspaces, and a fork inherits it — so anyone\n> can pick up the task with full context. Never put secrets here (vault only).\n\n## Vision\n\n{vision}\n\n## Context & decisions\n\n<!-- Key facts, constraints, and design/architecture decisions found while working —\n     the durable \"why\", not a chronological log. Grow this as you learn. -->\n\n_Nothing yet._\n\n## Glossary\n\n<!-- Task/domain vocabulary so a teammate or a fork isn't lost: `term` — definition. -->\n\n_Nothing yet._\n\n## Sessions\n\n{sessions}\n\n## Log\n\nChronological \"what was done\" lives in the task memo — `memory/notes.md`\n(append with `{program} workspace note \"…\"`).\n";
+/// ([`crate::sessionrecord::point`]); and the `workspace note` it teaches names the workspace
+/// with `-w`, the spelling a chat runs without a prompt (#3880, ADR 0064 as amended for #3829).
+const CHARTER_TEMPLATE: &str = "# {name}\n\n> **Living charter** for this workspace — its north star and shared context.\n> Keep it current as the work evolves (edit this file, or `{program} workspace vision \"…\"`).\n> It's committed + shared for LIVE workspaces, and a fork inherits it — so anyone\n> can pick up the task with full context. Never put secrets here (vault only).\n\n## Vision\n\n{vision}\n\n## Context & decisions\n\n<!-- Key facts, constraints, and design/architecture decisions found while working —\n     the durable \"why\", not a chronological log. Grow this as you learn. -->\n\n_Nothing yet._\n\n## Glossary\n\n<!-- Task/domain vocabulary so a teammate or a fork isn't lost: `term` — definition. -->\n\n_Nothing yet._\n\n## Sessions\n\n{sessions}\n\n## Log\n\nChronological \"what was done\" lives in the task memo — `memory/notes.md`\n(append with `{program} workspace note -w {name} \"…\"`).\n";
 
 /// What the template writes under a section nobody has written in yet: an entry added there
 /// takes its place ([`Workspace::add_to_section`]).
@@ -29,7 +30,7 @@ const NOTHING_YET: &str = "_Nothing yet._";
 pub const VISION_PLACEHOLDER: &str = "_Not set yet — describe the goal: what are we building or fixing, and why? Set it with `{program} workspace vision \"…\"` (or edit this file)._";
 
 /// The header `memory/MEMORY.md` is created with, `{name}` to fill.
-pub(crate) const WS_MEMORY_HEADER: &str = "# {name} — task memory\n\nOne file per memory — a small, programmatically-explorable DB, not a single log to\nmerge-conflict on. Files are timestamp-prefixed, so this index (and the directory) list chronologically. **Committed + shared** for LIVE workspaces. Write with `{program} workspace remember \"…\"`, search with `{program} workspace recall [--query …]`, drop one with `{program} workspace forget <slug>`. Never put secrets here (vault only).\n";
+pub(crate) const WS_MEMORY_HEADER: &str = "# {name} — task memory\n\nOne file per memory — a small, programmatically-explorable DB, not a single log to\nmerge-conflict on. Files are timestamp-prefixed, so this index (and the directory) list chronologically. **Committed + shared** for LIVE workspaces. Write with the `memory_add` tool or `{program} workspace remember -w {name} \"…\"`, search with `{program} workspace recall [--query …]`, drop one with `{program} workspace forget <slug>`. Never put secrets here (vault only).\n";
 
 /// A committed template with the program named as `plane` spells it: `charter` until the
 /// project is migrated, `purlis` after (D-RN11a-1, as the markers are, D-RN2b-9).
@@ -45,6 +46,90 @@ pub fn vision_placeholder(plane: &Path) -> String {
 /// [`WS_MEMORY_HEADER`] for workspace `name`, as the plane at `plane` writes it.
 pub(crate) fn ws_memory_header(plane: &Path, name: &str) -> String {
     in_plane(WS_MEMORY_HEADER, plane).replace("{name}", name)
+}
+
+/// A line purlis wrote that names a workspace, renamed: every spelling it may still have under
+/// the old name, and the one it gets under the new (#3965).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Renamed {
+    /// What purlis wrote under the old name. A line that names the program is here once per
+    /// spelling the plane reads, so one written before the plane was migrated matches too.
+    pub was: Vec<String>,
+    /// What purlis writes under the new name, in the program spelling the plane writes now.
+    pub now: String,
+}
+
+impl Renamed {
+    /// Whether `line` is, word for word, a line purlis wrote under the old name.
+    pub fn matches(&self, line: &str) -> bool {
+        self.was.iter().any(|was| was == line)
+    }
+}
+
+/// A file purlis scaffolds with the workspace's name in it, renamed: its first line, and the
+/// line below it where purlis wrote the name for a command to run (`-w <name>`, #3880), when
+/// the file has one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NamedFile {
+    /// The file, relative to the workspace's directory.
+    pub file: &'static str,
+    /// The `# ` heading purlis wrote.
+    pub heading: Renamed,
+    /// The `-w <name>` line purlis wrote below the heading.
+    pub command: Option<Renamed>,
+}
+
+/// Every file purlis scaffolds with the workspace's name in it: the file, its heading with
+/// `{name}` to fill, and the template that holds its `-w {name}` line. One table, so the files
+/// a rename rewrites a heading in and those it rewrites a command line in cannot drift apart.
+const NAMED_FILES: [(&str, &str, Option<&str>); 4] = [
+    ("workspace.md", "# {name}", Some(CHARTER_TEMPLATE)),
+    (
+        "memory/MEMORY.md",
+        "# {name} — task memory",
+        Some(WS_MEMORY_HEADER),
+    ),
+    ("todos/MEMORY.md", "# Todos — workspace `{name}`", None),
+    ("refs/README.md", "# {name} — task references", None),
+];
+
+/// What `workspace rename` rewrites in the files purlis scaffolded for workspace `old`, now
+/// called `new`, in the plane at `plane`: each line as purlis wrote it, never a line a person
+/// wrote (#3965). The command lines come from the templates themselves, so a rename always
+/// matches what a template writes; the old line is matched in every program spelling the plane
+/// reads (`charter` before the plane was migrated, `purlis` after) and rewritten in the one it
+/// writes now.
+pub(crate) fn named_files(plane: &Path, old: &str, new: &str) -> Vec<NamedFile> {
+    let now_program = crate::names::BINARY.writes_for(plane);
+    let programs = std::iter::once(crate::names::BINARY.write)
+        .chain(crate::names::BINARY.reads.iter().copied())
+        .collect::<Vec<_>>();
+    NAMED_FILES
+        .iter()
+        .map(|&(file, heading, template)| NamedFile {
+            file,
+            heading: Renamed {
+                was: vec![heading.replace("{name}", old)],
+                now: heading.replace("{name}", new),
+            },
+            command: template.map(|template| {
+                let line = template
+                    .lines()
+                    .find(|line| line.contains("-w {name}"))
+                    .expect("the template names the workspace with -w");
+                let spelled = |program: &str, name: &str| {
+                    line.replace("{program}", program).replace("{name}", name)
+                };
+                Renamed {
+                    was: programs
+                        .iter()
+                        .map(|program| spelled(program, old))
+                        .collect(),
+                    now: spelled(now_program, new),
+                }
+            }),
+        })
+        .collect()
 }
 
 /// The header `todos/MEMORY.md` is created with, `{name}` to fill.
@@ -559,13 +644,36 @@ impl Workspace {
         self.add_todo(text, stamp).map_err(RecordRefused::Io)
     }
 
-    /// Drop a todo without closing it: the file and its index line go, and **nothing is
-    /// journalled** — it was abandoned, not done. A slug that is not one path segment is
-    /// refused before anything is looked up ([`memstore::forget`]).
+    /// Drop an open todo without closing it: the file and its index line go, and **nothing is
+    /// journalled** — it was abandoned, not done. Only an open one: a done todo is deleted by
+    /// [`Self::forget_done_todo`], a person's act (ADR 0106). A slug that is not one path
+    /// segment is refused before anything is looked up ([`memstore::forget`]).
     pub fn forget_todo(&self, slug: &str) -> io::Result<()> {
         let dir = self.dir.join("todos");
         self.writable(&dir)?;
         memstore::forget(&self.plane_root, &dir, slug)
+    }
+
+    /// Delete a done todo, and only a done one, by its exact slug (SI-9d): its file in
+    /// `todos/archive/` goes and nothing is journalled. `NotFound` when no done todo is called
+    /// `slug`; a slug typed on a command line is made exact first (`wscmd::todo`).
+    pub fn forget_done_todo(&self, slug: &str) -> io::Result<()> {
+        let slug = slug.strip_suffix(".md").unwrap_or(slug);
+        if !crate::contain::segment_ok(slug) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("'{slug}' is not the slug of one todo"),
+            ));
+        }
+        let done = self.dir.join("todos").join(memstore::ARCHIVE);
+        self.writable(&done)?;
+        if !self.done_todos()?.iter().any(|todo| todo.slug == slug) {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("no done todo: {slug}"),
+            ));
+        }
+        memstore::forget(&self.plane_root, &done, slug)
     }
 
     /// The title of an open todo about the same work as `text`, or `None` —
@@ -587,8 +695,10 @@ impl Workspace {
         .map(str::to_owned)
     }
 
-    /// Close a todo: write its closing memory into the journal, then delete the todo file
-    /// and its index line. There is no state field — a closed todo is a deleted file.
+    /// Close a todo as done: write its closing memory into the journal, then move the todo
+    /// file into `todos/archive/` and drop its index line (ADR 0106, amending ADR 0004). A done
+    /// todo stays, listed by [`Self::done_todos`], until [`Self::reopen_todo`] brings it back
+    /// or [`Self::forget_todo`] deletes it.
     pub fn close_todo(&self, slug: &str, stamp: chrono::NaiveDateTime) -> io::Result<()> {
         self.writable(&self.dir.join("todos"))?;
         let dir = self.dir.join("todos");
@@ -611,10 +721,56 @@ impl Workspace {
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::NotFound, format!("no such todo: {slug}"))
             })?;
-        // The journal entry goes in FIRST: charter writes the trace, then deletes the todo,
-        // so a failure leaves the todo open rather than closed with nothing recorded.
+        // The journal entry goes in FIRST: charter writes the trace, then moves the todo, so
+        // a failure leaves the todo open rather than closed with nothing recorded.
         self.remember(&format!("Closed todo: {title}"), stamp)?;
-        memstore::forget(&self.plane_root, &dir, slug)
+        self.file_as_done(&stem).map(|_| ())
+    }
+
+    /// Move the open todo named exactly `stem` into `todos/archive/` and drop its index line,
+    /// journalling nothing: the second half of [`Self::close_todo`], for a caller that wrote
+    /// the journal's entry itself and said so (`ws todo done`). The path it is at now.
+    ///
+    /// The store's one retire, which the journal's Delete moves a memory by too
+    /// ([`memstore::archive_one`]): exact names only, link-gated, and numbered when the name
+    /// is taken among the done ones.
+    pub fn file_as_done(&self, stem: &str) -> io::Result<PathBuf> {
+        let dir = self.dir.join("todos");
+        self.writable(&dir)?;
+        memstore::archive_one(&self.plane_root, &dir, stem)
+    }
+
+    /// Bring a done todo back: its file moves out of `todos/archive/` and its index line is
+    /// appended again, so it is open as it was, under the name it had. The journal keeps the
+    /// close it recorded, and the reopen adds nothing to it (ADR 0106).
+    ///
+    /// `slug` is a done todo's exact stem (SI-9d); a slug typed on a command line is made exact
+    /// first (`wscmd::todo`). `NotFound` when no done todo is called that, `InvalidInput` for a
+    /// slug that is not one path segment, and `AlreadyExists` when an open todo already has the
+    /// file's name.
+    pub fn reopen_todo(&self, slug: &str) -> io::Result<PathBuf> {
+        let slug = slug.strip_suffix(".md").unwrap_or(slug);
+        if !crate::contain::segment_ok(slug) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("'{slug}' is not the slug of one todo"),
+            ));
+        }
+        let dir = self.dir.join("todos");
+        self.writable(&dir)?;
+        if !self.done_todos()?.iter().any(|todo| todo.slug == slug) {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("no done todo: {slug}"),
+            ));
+        }
+        let name = format!("{slug}.md");
+        memstore::ensure_index(
+            &self.plane_root,
+            &dir,
+            &TODOS_HEADER.replace("{name}", &self.name),
+        )?;
+        memstore::unarchive(&self.plane_root, &dir, &name, None)
     }
 
     /// Record one durable fact in the workspace's journal.
@@ -847,9 +1003,19 @@ impl Workspace {
         })
     }
 
-    /// The open todos. There is no state field: a closed todo is a deleted file.
+    /// The open todos, oldest first. There is no state field: an open todo is a file in
+    /// `todos/`, and a done one is a file in `todos/archive/` ([`Self::done_todos`], ADR 0106).
     pub fn todos(&self) -> io::Result<Vec<Entry>> {
         let dir = self.dir.join("todos");
+        self.readable(&dir)?;
+        read_store(&self.plane_root, &dir)
+    }
+
+    /// The done todos, sorted by filename (when each was opened): what `todos/archive/` holds,
+    /// read through the held store as the open ones are. A workspace that never closed one has
+    /// none.
+    pub fn done_todos(&self) -> io::Result<Vec<Entry>> {
+        let dir = self.dir.join("todos").join(memstore::ARCHIVE);
         self.readable(&dir)?;
         read_store(&self.plane_root, &dir)
     }

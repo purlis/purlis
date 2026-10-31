@@ -347,8 +347,13 @@ enum Asked<'a> {
     /// command line.
     Command { name: &'a str, args: &'a [String] },
     /// A studio question (protocol 3, ADR 0101). Waits its turn behind a question in flight, as
-    /// an event does: the studio asks several things of one extension at once.
-    Studio(&'a extension::studio::Ask<'a>),
+    /// an event does: the studio asks several things of one extension at once. `until` is when
+    /// its answer must be in by, its wait and its start inside it, where its asker holds a
+    /// deadline of its own (a studio list's lints, #3940).
+    Studio {
+        ask: &'a extension::studio::Ask<'a>,
+        until: Option<Instant>,
+    },
 }
 
 /// What a program said: one answer line, or — for a command — everything it printed and how it
@@ -364,6 +369,14 @@ struct Printed {
     stdout: Vec<u8>,
     stderr: Vec<u8>,
     status: i32,
+}
+
+/// **How long one question has**: its `deadline`, counted from `until`'s start where it has one
+/// (a router's, ADR 0102 §6), else from its program's start.
+#[derive(Debug, Clone, Copy)]
+struct Bound {
+    deadline: Duration,
+    until: Option<Instant>,
 }
 
 /// What [`Executor::put`] came back with, before it is shaped into an [`Answer`] or an [`Acted`].
@@ -397,6 +410,10 @@ pub struct Executor {
     /// gives an executor another (charter-app#303), so that a test whose subject is not the
     /// deadline is not failed by a busy machine taking five seconds to start its program.
     deadline: Duration,
+    /// How long a router has for one question ([`extension::studio::ROUTER_DEADLINE`], ADR 0102
+    /// §6), counted from before its slot is held and its confined program starts. Only a test
+    /// gives an executor another.
+    router_deadline: Duration,
     /// The running app's built-in extensions ([`extension::BuiltIn`]): none unless the app says
     /// where its bundle has them. Held here because the executor is the app's, made once when
     /// the app knows where it is, and a question never carries where the app is.
@@ -409,6 +426,7 @@ impl Default for Executor {
             table: Mutex::default(),
             freed: Condvar::new(),
             deadline: DEADLINE,
+            router_deadline: extension::studio::ROUTER_DEADLINE,
             built_in: extension::BuiltIn::none(),
         }
     }
@@ -447,6 +465,15 @@ impl Executor {
     /// ([`crate::extension::briefing::Bounds`]), and for a test whose subject is not the deadline.
     pub fn with_deadline(self, deadline: Duration) -> Self {
         Self { deadline, ..self }
+    }
+
+    /// This executor, with `deadline` instead of [`extension::studio::ROUTER_DEADLINE`] for a
+    /// router's question: for a test whose machine assesses a program the first time it runs.
+    pub fn with_router_deadline(self, deadline: Duration) -> Self {
+        Self {
+            router_deadline: deadline,
+            ..self
+        }
     }
 
     /// The built-in extensions this executor starts (charter-app#339), for a caller that asks
@@ -655,6 +682,11 @@ impl Executor {
     ///
     /// The answer comes back read as far as every answer is: one object in its protocol, holding
     /// only `ask`'s keys. What they say is [`extension::studio`]'s to read.
+    ///
+    /// **A router's question** ([`extension::studio::Ask::Route`], SK-15b) has the router's own
+    /// deadline ([`extension::studio::ROUTER_DEADLINE`], ADR 0102 §6) rather than [`DEADLINE`],
+    /// counted from before its slot is held, so its wait and its confined program's start are
+    /// inside it. Past it the program is stopped and the answer is a refusal.
     pub fn studio(
         &self,
         config_root: &Path,
@@ -662,9 +694,38 @@ impl Executor {
         extension: &str,
         ask: &extension::studio::Ask<'_>,
     ) -> Result<serde_json::Map<String, serde_json::Value>, String> {
-        self.put(config_root, project, extension, Asked::Studio(ask), |_| {
-            serde_json::Value::Null
-        })
+        self.asked_in_the_studio(config_root, project, extension, ask, None)
+    }
+
+    /// [`Self::studio`], answered by `until` or refused: its wait for its slot and its confined
+    /// program's start inside it, as a router's question is (#3940). For an asker that holds a
+    /// deadline of its own: a studio list asking each extension's lint.
+    pub fn studio_until(
+        &self,
+        config_root: &Path,
+        project: &extension::project::Choices,
+        extension: &str,
+        ask: &extension::studio::Ask<'_>,
+        until: Instant,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+        self.asked_in_the_studio(config_root, project, extension, ask, Some(until))
+    }
+
+    fn asked_in_the_studio(
+        &self,
+        config_root: &Path,
+        project: &extension::project::Choices,
+        extension: &str,
+        ask: &extension::studio::Ask<'_>,
+        until: Option<Instant>,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+        self.put(
+            config_root,
+            project,
+            extension,
+            Asked::Studio { ask, until },
+            |_| serde_json::Value::Null,
+        )
         .map(|put| put.reply.unwrap_or_default())
     }
 
@@ -735,7 +796,7 @@ impl Executor {
                 }
                 (None, None)
             }
-            Asked::Studio(ask) => {
+            Asked::Studio { ask, .. } => {
                 let capability = ask.capability();
                 let studio = declared
                     .studio
@@ -806,14 +867,39 @@ impl Executor {
         runnable(&at, extension)?;
         let gate = before_hand + began.elapsed().saturating_sub(before_hand + handed_in);
 
+        // A router's question is bounded from here, its wait for its slot and its confined start
+        // inside its deadline (ADR 0102 §6), and so is one asked by a time (#3940); every other
+        // from its program's start.
+        let bound = match asked {
+            Asked::Studio {
+                ask: extension::studio::Ask::Route { .. },
+                ..
+            } => Bound {
+                deadline: self.router_deadline,
+                until: Some(Instant::now() + self.router_deadline),
+            },
+            Asked::Studio {
+                until: Some(until), ..
+            } => Bound {
+                deadline: until.saturating_duration_since(Instant::now()),
+                until: Some(until),
+            },
+            _ => Bound {
+                deadline: self.deadline,
+                until: None,
+            },
+        };
         let _held = match asked {
-            Asked::Event(_) | Asked::Studio(_) => {
-                self.hold_within(extension, Instant::now() + self.deadline)?
-            }
+            Asked::Event(_) | Asked::Studio { .. } => self.hold_within(
+                extension,
+                bound
+                    .until
+                    .unwrap_or_else(|| Instant::now() + self.deadline),
+            )?,
             _ => self.hold(extension)?,
         };
         let started = Instant::now();
-        let said = self.converse(extension, &found, &at, &request, commanded.is_some());
+        let said = self.converse(extension, &found, &at, &request, commanded.is_some(), bound);
         let round_trip = started.elapsed();
 
         // **After every question, however it ended** — a program that wrote outside its paths
@@ -855,7 +941,7 @@ impl Executor {
             }
         };
         let protocol = found.manifest.protocol;
-        if let Asked::Studio(_) = asked {
+        if let Asked::Studio { .. } = asked {
             // Every key but `charter` and `error` is the question's own answer, read against its
             // closed shape by `extension::studio`, which refuses a key it does not know.
             let reply = reply_open(extension, &line, protocol).map_err(with_report)?;
@@ -1052,14 +1138,15 @@ impl Executor {
         program: &Path,
         request: &[u8],
         whole: bool,
+        bound: Bound,
     ) -> Result<Said, String> {
         #[cfg(unix)]
         {
-            self.converse_on_unix(extension, found, program, request, whole)
+            self.converse_on_unix(extension, found, program, request, whole, bound)
         }
         #[cfg(not(unix))]
         {
-            let _ = (extension, found, program, request, whole);
+            let _ = (extension, found, program, request, whole, bound);
             Err(REFUSED_HERE.to_owned())
         }
     }
@@ -1072,6 +1159,7 @@ impl Executor {
         program: &Path,
         request: &[u8],
         whole: bool,
+        bound: Bound,
     ) -> Result<Said, String> {
         use std::os::fd::OwnedFd;
         use std::os::unix::process::CommandExt;
@@ -1159,7 +1247,9 @@ impl Executor {
         // an answer, a refusal, an error on the way, a panic — stops it: its group killed and it
         // reaped, in the order `stop_all` relies on.
         let mut running = Running::new(self, extension, child);
-        let until = Instant::now() + self.deadline;
+        let until = bound
+            .until
+            .unwrap_or_else(|| Instant::now() + bound.deadline);
 
         // Its stderr is drained while it runs — a program that logs more than a socket buffer
         // would otherwise stall on its own diagnostics and read as hung. For a view or an action
@@ -1236,7 +1326,7 @@ impl Executor {
                 Heard::Line(_) if !exited => Err(format!(
                     "'{extension}' closed its output and did not exit within {} seconds, so \
                      purlis stopped it and passes none of what it printed on.",
-                    self.deadline.as_secs_f32()
+                    bound.deadline.as_secs_f32()
                 )),
                 Heard::Line(_) if overflowed => Err(format!(
                     "'{extension}' printed more than {} KiB on stderr, so purlis passes none of \
@@ -1250,7 +1340,7 @@ impl Executor {
                     "'{extension}' exited, and its stderr did not end within {} seconds — \
                      something it started may still hold it open — so purlis passes none of \
                      what it printed on.",
-                    self.deadline.as_secs_f32()
+                    bound.deadline.as_secs_f32()
                 )),
                 Heard::Line(stdout) => match status.and_then(|status| status.code()) {
                     Some(status) => Ok(Said::Whole(Printed {
@@ -1267,7 +1357,7 @@ impl Executor {
                 Heard::TooLate => Err(format!(
                     "'{extension}' did not finish within {} seconds, so purlis stopped it and \
                      passes none of what it printed on.{}",
-                    self.deadline.as_secs_f32(),
+                    bound.deadline.as_secs_f32(),
                     last_words()
                 )),
                 Heard::TooMuch => Err(format!(
@@ -1290,7 +1380,7 @@ impl Executor {
             Heard::TooLate => Err(format!(
                 "'{extension}' did not answer within {} seconds, so purlis stopped it. It was \
                  asked one question{}.{}",
-                self.deadline.as_secs_f32(),
+                bound.deadline.as_secs_f32(),
                 if wrote {
                     ""
                 } else {
@@ -2082,7 +2172,7 @@ fn request_line(
         }
         // A studio question is its capability and its `ask`, which carries what purlis hands it
         // of a skill: nothing of the project is a path it is handed (ADR 0101 §2).
-        Asked::Studio(ask) => {
+        Asked::Studio { ask, .. } => {
             doc.insert("studio".into(), ask.capability().as_str().into());
             doc.insert("ask".into(), ask.line());
         }

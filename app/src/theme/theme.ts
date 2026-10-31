@@ -105,11 +105,13 @@ export const TOKENS = [
   "accent.base",
   "accent.surface",
   // **The accent's kin** (#3177): `wash` is a chosen rail or activity button's ground, a step
-  // stronger than `surface`; `text` is words and icons drawn in the accent on its surface or
+  // stronger than `surface`, and `wash-hover` a chosen title-bar chip's ground under the pointer,
+  // a step stronger again (#3345); `text` is words and icons drawn in the accent on its surface or
   // wash (the update pill, a chosen rail button); `fill` is the filled primary's ground,
   // `fill-hover` it under the pointer, `fill-edge` its edge (the accent in Classic, none in
   // Purlis), and `fill-text` the words on both, held to 4.5:1.
   "accent.wash",
+  "accent.wash-hover",
   "accent.text",
   "accent.fill",
   "accent.fill-hover",
@@ -164,6 +166,11 @@ export const TOKENS = [
   "danger.surface",
   "danger.text",
   "danger.wash",
+
+  // What needs a decision, where nothing went wrong (#3678): an attention Notice's ground, and
+  // its words and mark on it. Trouble stays `danger.*`'s, for real failures.
+  "attention.surface",
+  "attention.text",
 
   // What waits on the person, or asks for care: the amber wash a pill or a soft warning stands on
   // (#2804's wash rule, #2913).
@@ -685,21 +692,28 @@ function tintedAs(
   if (known !== undefined) return known;
   const hue = hueIn(theme, colour);
   if (hue === undefined) return theme;
-  const rules = theme.tint.apart
+  const held = theme.tint.apart
     .map((rule) => ({
-      token: theme.values[rule.token as Token],
-      tokenTinted: tokens.includes(rule.token),
-      from: theme.values[rule.from as Token],
-      fromTinted: tokens.includes(rule.from),
-      distance: rule.distance,
+      alone: rule.alone === true,
+      rule: {
+        token: theme.values[rule.token as Token],
+        tokenTinted: tokens.includes(rule.token),
+        from: theme.values[rule.from as Token],
+        fromTinted: tokens.includes(rule.from),
+        distance: rule.distance,
+      },
     }))
-    .filter((rule) => rule.tokenTinted || rule.fromTinted);
-  const most = apartChroma(rules, hue);
+    .filter(({ rule }) => rule.tokenTinted || rule.fromTinted);
+  // The rules every held token gives way to, then those held alone too (`tint::Most`, #3130).
+  const shared = held.filter((one) => !one.alone).map((one) => one.rule);
+  const most = apartChroma(shared, hue);
+  const all = held.map((one) => one.rule);
+  const alone = shared.length === all.length ? most : apartChroma(all, hue);
   const values = { ...theme.values };
   for (const one of tokens) {
     const value = theme.values[one as Token];
     // Only the sides of a rule are held to `most`; a side no amount holds is drawn untinted.
-    const chroma = chromaFor(one, most, theme.tint.apart);
+    const chroma = chromaFor(one, most, theme.tint.apart, alone);
     // Only a colour turns: a value left to the platform (`platform`) is drawn as it is.
     if (chroma !== undefined && typeof value === "string" && value.startsWith("#"))
       values[one as Token] = tintHex(value, hue, chroma);

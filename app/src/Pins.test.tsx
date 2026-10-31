@@ -12,9 +12,11 @@ import {
   goToWorkspace,
   stripNamed,
   workspaceChips,
+  workspaceInFront,
   workspacesListed,
 } from "./test-strips";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * Pinning, against the whole window (ADR 0039, stored per ADR 0040).
@@ -345,9 +347,10 @@ describe("a pinned workspace", () => {
       (one) => (one.args as Record<string, unknown>).pinned === false,
     );
 
-  it("is kept dormant once its workspace is gone: named, not drawn, never written away", async () => {
+  it("is kept dormant once its workspace is gone: named, drawn dormant, never written away", async () => {
     // V91c as amended: the pin stays in the machine store, in its place. The hazard ADR 0034
-    // names stays answered: a gone workspace is never drawn as one the project has.
+    // names stays answered: a gone workspace is drawn as a dormant chip after the pins (#3651),
+    // never as one the project has.
     const { asked: asks } = core([chat(1, "one", "alpha")], {
       project: false,
       workspaces: ["beta", "gamma"],
@@ -359,7 +362,12 @@ describe("a pinned workspace", () => {
     const notice = await dormant("was-here");
     expect(notice.getAttribute("data-cause")).toBe("pin-dormant:was-here");
     expect(within(notice).getByRole("button", { name: "Forget" })).toBeInTheDocument();
-    await vi.waitFor(() => expect(workspaceNames()).toEqual(["beta", "gamma", "alpha"]));
+    await vi.waitFor(() =>
+      expect(workspaceNames()).toEqual(["beta", "gamma", "was-here", "alpha"]),
+    );
+    const gone = workspaceChips().find((chip) => chipName(chip) === "was-here") as HTMLElement;
+    expect(gone).toHaveAttribute("data-variant", "dormant");
+    expect(gone).not.toHaveAttribute("aria-current");
     await new Promise((settle) => setTimeout(settle, 50));
     expect(unpins(asks)).toEqual([]);
   });
@@ -386,7 +394,7 @@ describe("a pinned workspace", () => {
     render(<App />);
 
     await waitFor(() => expect(workspaceNames()).toEqual(["beta", "delta", "gamma", "alpha"]));
-    expect(screen.queryByText(/kept dormant/)).toBeNull();
+    expect(screen.queryByText(/is gone, kept dormant/)).toBeNull();
   });
 
   it("is forgotten for good by Forget, and Undo puts it back in its place", async () => {
@@ -408,7 +416,7 @@ describe("a pinned workspace", () => {
       ),
     );
     const undo = await forgotten("was-here");
-    await waitFor(() => expect(screen.queryByText(/kept dormant/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/is gone, kept dormant/)).toBeNull());
 
     await userEvent.click(within(undo).getByRole("button", { name: "Undo" }));
 
@@ -479,7 +487,7 @@ describe("a pinned workspace", () => {
       within(await forgotten("was-here")).getByRole("button", { name: "Undo" }),
     );
 
-    expect(await screen.findByText(/pins at most 12 workspaces/)).toBeInTheDocument();
+    expect(await findResult(/pins at most 12 workspaces/)).toBeInTheDocument();
     expect(await forgotten("was-here")).toBeInTheDocument();
   });
 
@@ -495,7 +503,7 @@ describe("a pinned workspace", () => {
       within(await dormant("was-here")).getByRole("button", { name: "Dismiss" }),
     );
 
-    await waitFor(() => expect(screen.queryByText(/kept dormant/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/is gone, kept dormant/)).toBeNull());
     expect(unpins(asks)).toEqual([]);
   });
 });
@@ -523,8 +531,8 @@ describe("the title bar's pins (#2916)", () => {
   });
 
   it("pins a workspace made from the window, so it is a chip", async () => {
-    // You just made it in order to work in it (ADR 0054). The chat in front keeps you in
-    // alpha, so the new workspace is a chip only because it is pinned.
+    // You just made it in order to work in it (ADR 0054), so it is opened (#3648), past the
+    // chat in front in alpha, and pinned: alpha, unpinned and no longer in front, has no chip.
     core([chat(1, "one", "alpha")]);
     render(<App />);
     await waitFor(() => expect(workspaceNames()).toEqual(["alpha"]));
@@ -534,8 +542,9 @@ describe("the title bar's pins (#2916)", () => {
     await userEvent.type(within(dialog).getByLabelText("Name"), "delta");
     await userEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
 
-    await waitFor(() => expect(workspaceNames()).toEqual(["delta", "alpha"]));
+    await waitFor(() => expect(workspaceNames()).toEqual(["delta"]));
     expect(pinChips()).toBe(1);
+    expect(workspaceInFront()).toBe("delta");
   });
 });
 
@@ -598,6 +607,6 @@ describe("a pinned project", () => {
 
     await runFromPalette("Pin project plane");
 
-    expect(await screen.findByText("charter pins at most 32 projects.")).toBeInTheDocument();
+    expect(await findResult("charter pins at most 32 projects.")).toBeInTheDocument();
   });
 });

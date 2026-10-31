@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Explorer } from "./Explorer";
@@ -43,6 +43,7 @@ const PANELS: PanelsModel = {
   refused: [],
   todos: [],
   todos_refused: null,
+  done_todos: [],
   personas: [],
   persona: "steward",
   sessions: [],
@@ -123,15 +124,32 @@ function draw({
   offers = new Map(),
   onPress = () => {},
   onFocus = () => {},
+  plane = PLANE,
 }: {
   offers?: Catalogued;
   onPress?: (offer: Offer) => void;
   onFocus?: (focus: Place | undefined) => void;
+  plane?: PlaneId;
 } = {}) {
-  render(
+  return render(cockpit({ offers, onPress, onFocus, plane }));
+}
+
+/** The cockpit as `draw` draws it, for drawing it again with other props. */
+function cockpit({
+  offers = new Map(),
+  onPress = () => {},
+  onFocus = () => {},
+  plane,
+}: {
+  offers?: Catalogued;
+  onPress?: (offer: Offer) => void;
+  onFocus?: (focus: Place | undefined) => void;
+  plane: PlaneId | undefined;
+}) {
+  return (
     <ChatsHere.Provider value={fixedChats(nothingKnown)}>
       <Explorer
-        plane={PLANE}
+        plane={plane}
         workspace="alpha"
         state={STATE}
         chats={[WORKING, ELSEWHERE]}
@@ -144,7 +162,7 @@ function draw({
         focus={FOCUS}
         onFocus={onFocus}
       />
-    </ChatsHere.Provider>,
+    </ChatsHere.Provider>
   );
 }
 
@@ -155,18 +173,18 @@ describe("the branch cockpit", () => {
     core({ ahead: 2, behind: 1, base: "main" });
     draw();
 
-    expect(screen.queryByRole("tree", { name: "Repos and branches" })).toBeNull();
+    expect(screen.queryByRole("treegrid", { name: "Repos and branches" })).toBeNull();
     expect(within(header()).getByRole("heading", { name: "fix/one" })).toBeTruthy();
     await within(header()).findByText("2 ahead, 1 behind main");
     await within(header()).findByText("2 changes");
 
-    const tree = screen.getByRole("tree", { name: "Files of fix/one" });
-    const rows = within(tree).getAllByRole("treeitem");
+    const tree = screen.getByRole("treegrid", { name: "Files of fix/one" });
+    const rows = within(tree).getAllByRole("row");
     // Its files, open with nothing clicked. The chat working in it is the Chats view's.
     expect(rows.some((row) => row.textContent?.includes("steward"))).toBe(false);
     expect(rows[0].textContent).toContain("Files");
     expect(rows[0].getAttribute("aria-expanded")).toBe("true");
-    await within(tree).findByRole("treeitem", { name: /README\.md/ });
+    await within(tree).findByRole("row", { name: /README\.md/ });
   });
 
   it("draws no workspaces above the cockpit, and its breadcrumb names the workspace (qw358)", async () => {
@@ -175,7 +193,7 @@ describe("the branch cockpit", () => {
     const crumbs = await screen.findByRole("navigation", { name: "Breadcrumb" });
 
     expect(screen.queryByRole("tree", { name: "Workspaces of this project" })).toBeNull();
-    expect(screen.queryByRole("tree", { name: "Repos and branches" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("treegrid", { name: "Repos and branches" })).not.toBeInTheDocument();
     // Which workspace the branch is in is still said, on the way back out.
     expect(crumbs).toHaveTextContent("alpha");
   });
@@ -241,17 +259,58 @@ describe("the branch cockpit", () => {
     expect(onFocus).toHaveBeenLastCalledWith(undefined);
 
     onFocus.mockClear();
-    screen.getByRole("treeitem", { name: /^Files/ }).focus();
+    screen.getByRole("row", { name: /^Files/ }).focus();
     await userEvent.keyboard("{Escape}");
     expect(onFocus).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it("steps back out on one Esc from a file's row the keyboard is on", async () => {
+    core({ ahead: 0, behind: 0, base: "main" });
+    const onFocus = vi.fn();
+    draw({ onFocus });
+    const tree = screen.getByRole("treegrid", { name: "Files of fix/one" });
+    const readme = await within(tree).findByRole("row", { name: /README\.md/ });
+
+    within(tree)
+      .getByRole("row", { name: /^Files/ })
+      .focus();
+    await userEvent.keyboard("{ArrowDown}");
+    await waitFor(() => expect(readme).toHaveFocus());
+    // A file's path is the pointer's tooltip alone: no tooltip is up to spend the Esc on.
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    await userEvent.keyboard("{Escape}");
+    expect(onFocus).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it("keeps the keyboard on its row when the plane's read lands and its rows start dragging (#3532)", async () => {
+    core({ ahead: 0, behind: 0, base: "main" });
+    // Drawn before the window knows its plane: nothing is read, and no row is dragged yet.
+    const { rerender } = render(cockpit({ plane: undefined }));
+    const tree = screen.getByRole("treegrid", { name: "Files of fix/one" });
+    const filesRow = within(tree).getByRole("row", { name: /^Files/ });
+    act(() => filesRow.focus());
+    expect(filesRow).toHaveFocus();
+
+    // The plane arrives: the rows can be dragged onto a chat from now, and the tree is the same
+    // tree, so the row the keyboard is on is still on the page and still has it.
+    rerender(cockpit({ plane: PLANE }));
+    await screen.findByRole("row", { name: /README\.md/ });
+    expect(screen.getByRole("treegrid", { name: "Files of fix/one" })).toBe(tree);
+    expect(filesRow.isConnected).toBe(true);
+    expect(filesRow).toHaveFocus();
+    expect(
+      within(tree)
+        .getByRole("row", { name: /README\.md/ })
+        .getAttribute("draggable"),
+    ).toBe("true");
   });
 
   it("moves between its rows with the arrows", async () => {
     core({ ahead: 0, behind: 0, base: "main" });
     draw();
-    const tree = screen.getByRole("tree", { name: "Files of fix/one" });
-    const filesRow = within(tree).getByRole("treeitem", { name: /^Files/ });
-    const readme = await within(tree).findByRole("treeitem", { name: /README\.md/ });
+    const tree = screen.getByRole("treegrid", { name: "Files of fix/one" });
+    const filesRow = within(tree).getByRole("row", { name: /^Files/ });
+    const readme = await within(tree).findByRole("row", { name: /README\.md/ });
 
     filesRow.focus();
     await userEvent.keyboard("{ArrowDown}");
@@ -281,9 +340,9 @@ describe("the branch cockpit", () => {
       </ChatsHere.Provider>
     );
     const { rerender } = render(cockpit([WORKING, ELSEWHERE]));
-    const tree = screen.getByRole("tree", { name: "Files of fix/one" });
-    const filesRow = () => within(tree).getByRole("treeitem", { name: /^Files/ });
-    await within(tree).findByRole("treeitem", { name: /README\.md/ });
+    const tree = screen.getByRole("treegrid", { name: "Files of fix/one" });
+    const filesRow = () => within(tree).getByRole("row", { name: /^Files/ });
+    await within(tree).findByRole("row", { name: /README\.md/ });
 
     filesRow().focus();
     await userEvent.keyboard("{ArrowLeft}");
@@ -292,7 +351,7 @@ describe("the branch cockpit", () => {
     // Drawn again with what the window now says — a chat ended — and still closed.
     rerender(cockpit([ELSEWHERE]));
     expect(filesRow().getAttribute("aria-expanded")).toBe("false");
-    expect(within(tree).queryByRole("treeitem", { name: /README/ })).toBeNull();
+    expect(within(tree).queryByRole("row", { name: /README/ })).toBeNull();
   });
 
   it("lands the keyboard on the branch's row when Esc steps back out", async () => {
@@ -322,27 +381,30 @@ describe("the branch cockpit", () => {
       </ChatsHere.Provider>,
     );
 
-    screen.getByRole("treeitem", { name: /^Files/ }).focus();
+    screen.getByRole("row", { name: /^Files/ }).focus();
     await userEvent.keyboard("{Escape}");
 
-    await screen.findByRole("tree", { name: "Repos and branches" });
-    expect((document.activeElement as HTMLElement | null)?.dataset.row).toBe("piece:svc/one");
+    await screen.findByRole("treegrid", { name: "Repos and branches" });
+    // The tree family draws its rows a moment after it knows of them.
+    await waitFor(() =>
+      expect((document.activeElement as HTMLElement | null)?.dataset.row).toBe("piece:svc/one"),
+    );
   });
 
   it("stays when an open row menu takes the Esc", async () => {
     core({ ahead: 0, behind: 0, base: "main" });
     const onFocus = vi.fn();
     draw({ onFocus });
-    const tree = screen.getByRole("tree", { name: "Files of fix/one" });
+    const tree = screen.getByRole("treegrid", { name: "Files of fix/one" });
 
-    fireEvent.contextMenu(await within(tree).findByRole("treeitem", { name: /README\.md/ }));
+    fireEvent.contextMenu(await within(tree).findByRole("row", { name: /README\.md/ }));
     const menu = await screen.findByRole("menu");
     within(menu).getAllByRole("menuitem")[0].focus();
     await userEvent.keyboard("{Escape}");
 
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     expect(onFocus).not.toHaveBeenCalled();
-    expect(screen.getByRole("tree", { name: "Files of fix/one" })).toBeTruthy();
+    expect(screen.getByRole("treegrid", { name: "Files of fix/one" })).toBeTruthy();
   });
 
   it("is drawn while its repo is still listed, and not once the repo is gone, refused or lists no such branch", () => {
@@ -452,10 +514,10 @@ describe("a repo's own folder's cockpit (#1152)", () => {
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
     expect(within(crumbs).getByText("svc").getAttribute("aria-current")).toBe("location");
 
-    const tree = screen.getByRole("tree", { name: "Files of svc" });
-    const rows = within(tree).getAllByRole("treeitem");
+    const tree = screen.getByRole("treegrid", { name: "Files of svc" });
+    const rows = within(tree).getAllByRole("row");
     expect(rows.some((row) => row.textContent?.includes("steward"))).toBe(false);
-    await within(tree).findByRole("treeitem", { name: /README\.md/ });
+    await within(tree).findByRole("row", { name: /README\.md/ });
   });
 
   it("stands while the workspace holds the repo, and not once it is gone", () => {
@@ -500,7 +562,7 @@ describe("the cockpit beside the Repos view (#1737)", () => {
     );
     // The cockpit is Explorer's; the Repos view keeps its tree, and the trouble with it.
     expect(screen.getByRole("region", { name: "Branch fix/one" })).toBeTruthy();
-    expect(screen.getByRole("tree", { name: "Repos and branches" })).toBeTruthy();
+    expect(screen.getByRole("treegrid", { name: "Repos and branches" })).toBeTruthy();
     expect(said()).toBe(1);
     expect(
       within(screen.getByTestId("repos-view")).getByText("git status timed out in svc"),

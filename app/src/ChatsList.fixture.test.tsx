@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { readFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import type { FinishedTask } from "./bindings";
 import { ChatsSection } from "./ChatsSection";
@@ -20,6 +20,7 @@ import { tasksBelowOf } from "./sessionTasks";
 import { TasksBelowLent } from "./TasksBelow";
 import { forgetThisLaunch, SLOTS } from "./regions";
 import { MOST_TEXT } from "./textSize";
+import { stateClock } from "./stateClock";
 
 /**
  * **The Chats list as the e2e measures it** (#1499): the real component, drawn here with a
@@ -206,6 +207,16 @@ const DOINGS = fixedDoings({
 });
 
 function markup(): string {
+  // **The chats after the first few arrived while the window was open** (#3484): each row ends
+  // with the time it came into its state, which the e2e holds whole while the name gives way.
+  // The widest times are among them, each on a row with a long name: a day (`10-25`, chat 5) and
+  // a clock time (`10:42`, chat 10), then `now` for the last.
+  const upTo = (session: number) => chatsTree(CHATS.filter((chat) => chat.session <= session));
+  const clock = stateClock();
+  clock.read(states(), upTo(4), NOW - 3 * DAY);
+  clock.read(states(), upTo(5), NOW - 2 * DAY);
+  clock.read(states(), upTo(10), NOW - 80 * MINUTE);
+  clock.read(states(), chatsTree(CHATS), NOW);
   const { container } = render(
     <ChatsHere.Provider value={fixedChats(states())}>
       <DoingsHere.Provider value={DOINGS}>
@@ -216,6 +227,7 @@ function markup(): string {
             onOpen={() => {}}
             stopping={new Set([6])}
             finished={FINISHED}
+            clock={clock}
           />
         </TasksBelowLent>
       </DoingsHere.Provider>
@@ -227,8 +239,20 @@ function markup(): string {
   return `${section.outerHTML.replace(/></g, ">\n<")}\n`;
 }
 
-beforeEach(forgetThisLaunch);
-afterEach(cleanup);
+/** The fixture's moment, so the times its rows say are the same on every run. */
+const NOW = new Date(2026, 9, 27, 12, 2).getTime();
+const MINUTE = 60_000;
+const DAY = 86_400_000;
+
+beforeEach(() => {
+  forgetThisLaunch();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+});
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("the Chats list the e2e measures", () => {
   it("is the component's own markup, a row a line (#1675)", async () => {
@@ -242,7 +266,10 @@ describe("the Chats list the e2e measures", () => {
       "rolled-up",
       "Stopping…",
       "finished-task",
-      'class="task-count ui-text-meta ui-text-strong"',
+      'class="task-count" data-testid="task-count-7" data-scope="count"',
+      'class="chat-time ui-text-meta" aria-hidden="true">now<',
+      'class="chat-time ui-text-meta" aria-hidden="true">10:42<',
+      'class="chat-time ui-text-meta" aria-hidden="true">10-25<',
     ])
       expect(html, drawn).toContain(drawn);
     // And nothing of a second line: what it said is each row's card, drawn only while it is up.

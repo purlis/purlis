@@ -1,0 +1,14 @@
+┌  Add credential
+[?25l│
+◆  Select GitHub deployment type
+│  ● GitHub.com (Public)
+│  ○ GitHub Enterprise
+└
+[999D[5A[1B[J◇  Select GitHub deployment type
+│  GitHub.com
+[?25h│
+●  Go to: https://github.com/login/device
+│
+●  Enter code: WDJB-MJHT
+[?25l│
+◒  Waiting for authorization[999D[J◐  Waiting for authorization[999D[J◓  Waiting for authorization[999D[J◑  Waiting for authorization[999D[J◒  Waiting for authorization[999D[J◐  Waiting for authorization[999D[J◓  Waiting for authorization[999D[J

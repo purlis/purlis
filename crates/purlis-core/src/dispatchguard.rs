@@ -133,11 +133,18 @@ pub fn refusal(cmd: &str, caller: Caller<'_>) -> Option<(&'static str, String)> 
 }
 
 /// purlis's chat tools that dispatch, by the names [`crate::chattools`] gives them.
-const OUR_TOOLS: [&str; 4] = [
+const OUR_TOOLS: [&str; 11] = [
     crate::chattools::DISPATCH,
     crate::chattools::DISPATCH_LIST,
     crate::chattools::DISPATCH_READ,
+    crate::chattools::DISPATCH_WAIT,
+    crate::chattools::DISPATCH_TELL,
+    crate::chattools::DISPATCH_ANSWER,
+    crate::chattools::DISPATCH_CANCEL,
+    crate::chattools::DISPATCH_CLOSE,
     crate::chattools::DISPATCH_REPORT,
+    crate::chattools::DISPATCH_NOTE,
+    crate::chattools::DISPATCH_ASK,
 ];
 
 /// A chat tool of purlis's, as a harness names it.
@@ -338,15 +345,18 @@ fn in_a_body_a_shell_runs(cmd: &str) -> Option<((&'static str, &'static str), &'
 }
 
 // ----------------------------------------------------------------------------------------
-// a rider beside a pre-allowed dispatch or handoff (D-1444-14)
+// a rider beside a pre-allowed dispatch or handoff (#3785, superseding D-1444-14)
 // ----------------------------------------------------------------------------------------
 //
 // A Claude Code chat the app starts is handed an `allow` for `purlis dispatch …` and
 // `purlis handoff …`, by each spelling ([`crate::harness`]), because what consents to one is
 // the dispatch grant. A harness matches such a rule against the command as written, and
 // whether it then asks about a second command in the same call has not been measured. So
-// purlis does not lean on it: where a call runs a dispatch or a handoff **and anything else**,
-// the hook answers `ask` for the whole call, and names the other command.
+// purlis does not lean on it: where a call runs a dispatch or a handoff that writes **and
+// anything else**, the hook refuses the call, names the other command and the shape to retry.
+// It never answers `ask`: that stops the chat on a prompt in every mode, and the person is
+// asked only where something new reaches someone new (the dispatch grant). A dispatch that
+// only looks is left to the harness's own rules.
 
 /// What a rider is called where it is a substitution: the shell runs a command there, and
 /// which one is not this guard's to quote.
@@ -356,7 +366,7 @@ pub const A_SUBSTITUTION: &str = "a command substitution";
 /// so where the dispatch ends cannot be told.
 pub const UNREADABLE: &str = "one purlis could not read";
 
-/// The trace key an `ask` for a rider is tallied under.
+/// The trace key a refused rider is tallied under.
 pub const REASON_RIDER: &str = "dispatch-rider";
 
 /// `$CHARTER_HARNESS` in a Claude Code chat: the one harness handed the allow.
@@ -370,21 +380,31 @@ const HANDOFF: &str = "handoff";
 /// two words of the command.
 const WORKTREE_COMMIT: &str = "worktree commit";
 
-/// The command `own` names, for a sentence: `dispatch`, `handoff` or `commit`.
+/// And an update the app makes for a sandboxed chat in its clone or branch folder (#3831),
+/// pre-allowed by its spelling on the same terms.
+const WORKTREE_UPDATE: &str = "worktree update";
+
+/// And a finished branch folder's removal the app makes for a chat (#3879), pre-allowed by its
+/// spelling on the same terms.
+const WORKTREE_REMOVE: &str = "worktree remove";
+
+/// The command `own` names, for a sentence: `dispatch`, `handoff`, `commit` or `update`.
 fn called(own: &str) -> &str {
-    if own == WORKTREE_COMMIT {
-        "commit"
-    } else {
-        own
+    match own {
+        WORKTREE_COMMIT => "commit",
+        WORKTREE_UPDATE => "update",
+        WORKTREE_REMOVE => "removal",
+        _ => own,
     }
 }
 
 /// What purlis lets run without the harness asking, for `own`'s sentence.
 fn let_run(own: &str) -> &'static str {
-    if own == WORKTREE_COMMIT {
-        "a commit the app makes for a chat"
-    } else {
-        "a dispatch or a handoff"
+    match own {
+        WORKTREE_COMMIT => "a commit the app makes for a chat",
+        WORKTREE_UPDATE => "an update the app makes for a chat",
+        WORKTREE_REMOVE => "a removal the app makes for a chat",
+        _ => "a dispatch or a handoff",
     }
 }
 
@@ -392,11 +412,11 @@ fn let_run(own: &str) -> &'static str {
 /// for recorded tests (D-1471-3).
 const NOW_FLAG: &str = "--now";
 
-/// What the person is asked where a handoff pins its own clock.
+/// What a chat is told where a handoff pins its own clock.
 const PINS_THE_CLOCK: &str = "this call runs `purlis handoff --now`, which pins the time its \
      stamp, todo and dispatch row are written at. That flag is for purlis's own tests, and \
-     purlis lets a handoff run without your harness asking only without it, so the person is \
-     asked about this call. Run the handoff without --now.";
+     purlis lets a handoff run without your harness asking only without it, so this call is \
+     refused, and nobody was asked. Run the handoff in a call of its own, without --now.";
 
 /// Whether a handoff the call runs carries [`NOW_FLAG`] among its words (#1471): read on the
 /// lines a shell would run, so a brief that mentions it is text.
@@ -416,8 +436,8 @@ fn pins_the_clock(cmd: &str) -> bool {
     })
 }
 
-/// Which of the commands handed an allow a segment's words run, if any: `dispatch`, `handoff`
-/// or `worktree commit`.
+/// Which of the commands handed an allow a segment's words run, if any: `dispatch`, `handoff`,
+/// `worktree commit` or `worktree update`.
 fn ours(toks: &[String]) -> Option<&'static str> {
     let (prog, _env, argv) = shellwrap::split_env(toks);
     let words: Vec<String> = match charter_words(&prog, &argv) {
@@ -427,7 +447,12 @@ fn ours(toks: &[String]) -> Option<&'static str> {
     };
     let first = words.first()?;
     if first == "worktree" {
-        return (words.get(1).map(String::as_str) == Some("commit")).then_some(WORKTREE_COMMIT);
+        return match words.get(1).map(String::as_str) {
+            Some("commit") => Some(WORKTREE_COMMIT),
+            Some("update") => Some(WORKTREE_UPDATE),
+            Some("remove") => Some(WORKTREE_REMOVE),
+            _ => None,
+        };
     }
     [WORD, HANDOFF].into_iter().find(|word| word == first)
 }
@@ -462,14 +487,20 @@ fn beside(cmd: &str) -> Option<(&'static str, String)> {
     let text = runs.join("\n");
     if shellseg::lex(&text).is_err() {
         let lower = text.to_lowercase();
-        return [WORD, HANDOFF, WORKTREE_COMMIT]
-            .into_iter()
-            .find(|word| {
-                crate::cliname::INSTALLED
-                    .iter()
-                    .any(|name| lower.contains(&format!("{name} {word}")))
-            })
-            .map(|word| (word, UNREADABLE.to_owned()));
+        return [
+            WORD,
+            HANDOFF,
+            WORKTREE_COMMIT,
+            WORKTREE_UPDATE,
+            WORKTREE_REMOVE,
+        ]
+        .into_iter()
+        .find(|word| {
+            crate::cliname::INSTALLED
+                .iter()
+                .any(|name| lower.contains(&format!("{name} {word}")))
+        })
+        .map(|word| (word, UNREADABLE.to_owned()));
     }
     let segments = shellseg::segment_argv(&text);
     let (at, own) = segments
@@ -486,32 +517,45 @@ fn beside(cmd: &str) -> Option<(&'static str, String)> {
     crate::livesub::live_substitution(cmd).map(|_| (own, A_SUBSTITUTION.to_owned()))
 }
 
+/// A segment of ours: which command it runs, its tokens, whether a pipe feeds it, and where
+/// the command line's own words start after `dispatch` or `handoff`.
+type OurSegment = (&'static str, Vec<Tok>, bool, Option<usize>);
+
 /// The first segment of the lines a shell would run in `cmd` that runs a dispatch or a
 /// handoff, as tokens: which of the two, the segment, whether a pipe feeds it, and where the
 /// command line's own words start after `dispatch` or `handoff` (`None` where the reader's
 /// words are not the segment's own tail, so where they start cannot be told).
-fn own_segment(cmd: &str) -> Option<(&'static str, Vec<Tok>, bool, Option<usize>)> {
+fn own_segment(cmd: &str) -> Option<OurSegment> {
+    our_segments(cmd)?.into_iter().next()
+}
+
+/// Every segment of the lines a shell would run in `cmd` that runs a dispatch, a handoff or a
+/// commit, read as [`own_segment`] reads the first; `None` where the lexer cannot read them.
+fn our_segments(cmd: &str) -> Option<Vec<OurSegment>> {
     let runs: Vec<String> = crate::leakguard::lines_a_command_could_run(cmd)
         .into_iter()
         .map(|(row, _)| row)
         .collect();
     let toks = shellseg::split_punctuation(shellseg::lex(&runs.join("\n")).ok()?);
-    crate::heredoc::segments_of(&toks)
-        .into_iter()
-        .find_map(|(seg, before)| {
-            let texts: Vec<String> = seg.iter().map(|t| t.text.clone()).collect();
-            let own = ours(&texts)?;
-            let (prog, _env, argv) = shellwrap::split_env(&texts);
-            let words = charter_words(&prog, &argv).or_else(|| {
-                names_our_binary(&prog).then(|| argv.get(1..).unwrap_or_default().to_vec())
-            })?;
-            let after = texts
-                .len()
-                .checked_sub(words.len())
-                .filter(|at| texts[*at..] == words[..])
-                .map(|at| at + 1);
-            Some((own, seg, before == "|" || before == "|&", after))
-        })
+    Some(
+        crate::heredoc::segments_of(&toks)
+            .into_iter()
+            .filter_map(|(seg, before)| {
+                let texts: Vec<String> = seg.iter().map(|t| t.text.clone()).collect();
+                let own = ours(&texts)?;
+                let (prog, _env, argv) = shellwrap::split_env(&texts);
+                let words = charter_words(&prog, &argv).or_else(|| {
+                    names_our_binary(&prog).then(|| argv.get(1..).unwrap_or_default().to_vec())
+                })?;
+                let after = texts
+                    .len()
+                    .checked_sub(words.len())
+                    .filter(|at| texts[*at..] == words[..])
+                    .map(|at| at + 1);
+                Some((own, seg, before == "|" || before == "|&", after))
+            })
+            .collect(),
+    )
 }
 
 /// Whether the word at `seg[i]` is a redirection's operator, its operand, or the descriptor
@@ -573,15 +617,7 @@ fn brief_fed_otherwise(cmd: &str) -> Option<&'static str> {
 /// duplicated onto another (`2>&1`), and `/dev/null`.
 fn writes_beside(cmd: &str) -> Option<(&'static str, String)> {
     let (own, seg, _piped, _after) = own_segment(cmd)?;
-    const WRITES: [&str; 5] = [">", ">>", ">|", "<>", ">&"];
-    let at = seg.iter().enumerate().find_map(|(i, t)| {
-        let operand = seg.get(i + 1)?;
-        let writes = t.is_op(&WRITES)
-            && operand.text != "/dev/null"
-            && !(t.text == ">&"
-                && (operand.text == "-" || operand.text.chars().all(|c| c.is_ascii_digit())));
-        writes.then_some(i)
-    })?;
+    let at = writes_a_file(&seg)?;
     let fd = if at > 0 && crate::handoffguard::names_a_descriptor(&seg, at - 1) {
         seg[at - 1].text.as_str()
     } else {
@@ -593,806 +629,178 @@ fn writes_beside(cmd: &str) -> Option<(&'static str, String)> {
     ))
 }
 
+/// Where on `seg` a redirection writes a file, as [`writes_beside`] counts one, or `None`.
+fn writes_a_file(seg: &[Tok]) -> Option<usize> {
+    const WRITES: [&str; 5] = [">", ">>", ">|", "<>", ">&"];
+    seg.iter().enumerate().find_map(|(i, t)| {
+        let operand = seg.get(i + 1)?;
+        let writes = t.is_op(&WRITES)
+            && operand.text != "/dev/null"
+            && !(t.text == ">&"
+                && (operand.text == "-" || operand.text.chars().all(|c| c.is_ascii_digit())));
+        writes.then_some(i)
+    })
+}
+
 /// The other command a tool call runs beside a dispatch or a handoff, as a person would
 /// recognise it, or `None` ([`beside`]).
 pub fn rider(cmd: &str) -> Option<String> {
     beside(cmd).map(|(_, other)| other)
 }
 
-/// **What the person is asked where a dispatch or a handoff shares its call** (D-1444-14), or
-/// `None`: the sentence the hook answers `ask` with, naming the other command.
+/// Whether the call only looks (#3785): **every** dispatch, handoff and commit it runs is a
+/// `purlis dispatch` that only looks ([`looks_at`]) with no redirection on its line that writes
+/// a file, and none of them stands in a text a shell is handed to run, at any level. Such a
+/// call is left to the harness's own rules beside any other command: it starts, sends and ends
+/// nothing. A call whose words cannot be read is not one: that is the safe direction, a
+/// refusal the chat retries rather than a pass.
+fn only_looks(cmd: &str) -> bool {
+    let Some(ours) = our_segments(cmd) else {
+        return false;
+    };
+    !ours.is_empty()
+        && ours.iter().all(|(own, seg, _piped, after)| {
+            *own == WORD
+                && after.is_some_and(|from| looks_at(seg, from))
+                && writes_a_file(seg).is_none()
+        })
+        && !ours_in_a_text_a_shell_runs(cmd)
+}
+
+/// Whether the dispatch whose words start at `seg[from]` only looks: its subcommand is one of
+/// [`LOOKS`], or it asks for help **in a flag position** before any subcommand, as the command
+/// parses its words ([`reads_a_brief`]'s reading). A `-h` after the subcommand is that
+/// subcommand's argument, the text a note or a follow-up sends, and is no help asked for.
+fn looks_at(seg: &[Tok], from: usize) -> bool {
+    let mut i = from;
+    while let Some(t) = seg.get(i) {
+        if let Some(next) = skip_redirection(seg, i) {
+            i = next;
+            continue;
+        }
+        let word = t.text.as_str();
+        if word == "--help" || word == "-h" {
+            return true;
+        }
+        if word == "--" {
+            return false;
+        }
+        if !word.starts_with('-') {
+            return LOOKS.contains(&word);
+        }
+        i += if DISPATCH_VALUE_FLAGS.contains(&word) {
+            2
+        } else {
+            1
+        };
+    }
+    false
+}
+
+/// Whether a dispatch, a handoff or a commit stands in any text a shell is handed to run in
+/// `cmd`, at every level the other backstops read ([`consentspelling`]'s walk). Past the
+/// nesting cap the text is not read, and counts as one.
+fn ours_in_a_text_a_shell_runs(cmd: &str) -> bool {
+    let read = crate::heredoc::Heredocs::of(cmd);
+    consentspelling::in_shell_strings_at_every_level_by(&read, &|inner| {
+        shellseg::segment_argv(&crate::handoffguard::as_the_shell_reads(&inner.text))
+            .iter()
+            .any(|toks| ours(toks).is_some())
+            .then_some(())
+    })
+    .is_some()
+}
+
+/// The subcommands of `purlis dispatch` that only look (#3785).
+const LOOKS: [&str; 3] = ["list", "read", "wait"];
+
+/// **The refusal of a dispatch, a handoff or a commit that shares its call** (#3785,
+/// superseding D-1444-14), as `(trace reason, denial)`, or `None`.
 ///
-/// Asked in this order: a handoff that pins its clock; another command beside it
+/// Nobody is asked: a hook's `ask` shows the person a prompt in every permission mode, auto
+/// mode included, and a chat stopped on it stops its whole loop. So a call that only looks
+/// ([`only_looks`]: every dispatch in it looks, and none writes a file by redirection) gets no
+/// verdict here, whatever stands beside it, and the harness's own rules decide; and one that
+/// writes is refused, naming the shape to retry, so the chat corrects itself with nobody
+/// pressed.
+///
+/// Refused in this order: a handoff that pins its clock; another command beside it
 /// ([`beside`]); a redirection on its own line that writes a file ([`writes_beside`]); and a
 /// dispatch whose brief is fed from anything but one quoted heredoc on its own segment
 /// ([`brief_fed_otherwise`], the arm a handoff refuses for, #1471).
 ///
-/// Only for a Claude Code chat, the one harness handed the allow this stands behind. The
-/// answer is an `ask`, never a refusal: the dispatch is still the app's to decide, and the
-/// other command is the person's.
-pub fn rider_ask(cmd: &str, caller: Caller<'_>) -> Option<String> {
-    if caller.harness != Some(CLAUDE_CODE) {
+/// Only for a Claude Code chat, the one harness handed the allow this stands behind: on
+/// another the harness asks about every such call by its own defaults.
+pub fn rider_refusal(cmd: &str, caller: Caller<'_>) -> Option<(&'static str, String)> {
+    if caller.harness != Some(CLAUDE_CODE) || only_looks(cmd) {
         return None;
     }
+    rider_said(cmd).map(|said| (REASON_RIDER, said))
+}
+
+/// What a chat is told where a removal it runs is forced (#3879).
+const FORCES_A_REMOVAL: &str = "this call runs `purlis worktree remove --force`, which discards \
+     the uncommitted changes and unique commits a plain removal names. That is the person's to \
+     decide, and purlis lets a removal run without your harness asking only without --force, \
+     so this call is refused, and nobody was asked. Run it without --force, and the app \
+     removes the folder where nothing would be lost; otherwise ask the person to remove it \
+     from the window.";
+
+/// Whether a removal the call runs is forced (#3879): read on the lines a shell would run, as
+/// [`pins_the_clock`] reads a handoff's, here in the hook, outside the chat's sandbox, so the
+/// refusal does not rest on the chat's environment.
+fn forces_a_removal(cmd: &str) -> bool {
+    if !cmd.contains("-f") {
+        return false;
+    }
+    let runs: Vec<String> = crate::leakguard::lines_a_command_could_run(cmd)
+        .into_iter()
+        .map(|(row, _)| row)
+        .collect();
+    shellseg::segment_argv(&runs.join("\n")).iter().any(|toks| {
+        ours(toks) == Some(WORKTREE_REMOVE)
+            && toks
+                .iter()
+                .any(|w| w == "--force" || w.starts_with("--force=") || w == "-f")
+    })
+}
+
+/// What [`rider_refusal`] says, or `None`.
+fn rider_said(cmd: &str) -> Option<String> {
     if pins_the_clock(cmd) {
         return Some(PINS_THE_CLOCK.to_owned());
+    }
+    if forces_a_removal(cmd) {
+        return Some(FORCES_A_REMOVAL.to_owned());
     }
     if let Some((own, other)) = beside(cmd) {
         let (word, what) = (called(own), let_run(own));
         return Some(format!(
             "this call runs `purlis {own}` beside another command (`{other}`). purlis lets \
-             {what} run without your harness asking, and that is for the {word} alone, so the \
-             person is asked about this call as a whole. Run the {word} in a call of its own."
+             {what} run without your harness asking only alone in its call, so this call is \
+             refused, and nobody was asked. Run the {word} in a call of its own, and the other \
+             command in another."
         ));
     }
     if let Some((own, redirection)) = writes_beside(cmd) {
         let (word, what) = (called(own), let_run(own));
         return Some(format!(
             "this call runs `purlis {own}` with a redirection that writes a file \
-             (`{redirection}`). purlis lets {what} run without your harness asking, and that \
-             is for the {word} alone, so the person is asked about this call as a whole. Run \
-             the {word} without the redirection."
+             (`{redirection}`). purlis lets {what} run without your harness asking only alone \
+             in its call, so this call is refused, and nobody was asked. Run the {word} in a \
+             call of its own, without the redirection."
         ));
     }
     let what = brief_fed_otherwise(cmd)?;
     Some(format!(
         "this call feeds `purlis dispatch` its brief from {what}. The new chat is sent \
-         exactly the text written in the call only from a quoted heredoc in the same call, \
-         and purlis lets a dispatch run without your harness asking only so, so the person is \
-         asked about this call. Write: purlis dispatch --name \"<task>\" <<'BRIEF' … BRIEF"
+         exactly the text written in the call only from a quoted heredoc in the same call, so \
+         this call is refused, and nobody was asked. Run the dispatch in a call of its own, \
+         with its brief in one: purlis dispatch --name \"<task>\" <<'BRIEF' … BRIEF, or use \
+         the `{}` tool.",
+        crate::chattools::DISPATCH
     ))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn a_sub_agent() -> Caller<'static> {
-        Caller {
-            agent_id: Some("sub-1"),
-            harness: Some("claude-code"),
-            permission_mode: None,
-        }
-    }
-
-    fn the_chat() -> Caller<'static> {
-        Caller {
-            agent_id: None,
-            harness: Some("claude-code"),
-            permission_mode: None,
-        }
-    }
-
-    #[test]
-    fn every_tool_this_refuses_is_one_the_hook_s_matcher_names_and_the_other_way_round() {
-        // Two lists that have to agree: the tools `tool_refusal` knows, and the tools the
-        // harness runs `pretooluse-dispatch` in front of.
-        let matcher = crate::hookreg::find("pretooluse-dispatch")
-            .and_then(|hook| hook.matcher)
-            .expect("a matcher");
-        let named: Vec<&str> = matcher
-            .split('|')
-            .filter(|tool| tool.starts_with("mcp__"))
-            .collect();
-        assert_eq!(named, OUR_TOOLS.map(tool_id));
-        for tool in named {
-            assert!(tool_refusal(tool, a_sub_agent()).is_some(), "{tool}");
-        }
-    }
-
-    const DISPATCH: &str = "purlis dispatch --name \"check the queue\" <<'BRIEF'\nlook\nBRIEF";
-
-    #[test]
-    fn a_sub_agent_that_dispatches_is_refused_and_told_to_return_to_its_chat() {
-        let (reason, said) = refusal(DISPATCH, a_sub_agent()).expect("refused");
-        assert_eq!(reason, REASON_SUBAGENT);
-        assert_eq!(
-            said,
-            "a dispatch is refused from inside a helper. A task belongs to a chat the person \
-             can see, open and stop, and a helper is not one. Return what you \
-             found to your chat, and let that chat dispatch."
-        );
-    }
-
-    #[test]
-    fn the_chat_itself_dispatches_past_this_guard() {
-        assert_eq!(refusal(DISPATCH, the_chat()), None);
-        // An empty `agent_id` is the main conversation on a harness that always sends one.
-        let empty = Caller {
-            agent_id: Some(""),
-            ..the_chat()
-        };
-        assert_eq!(refusal(DISPATCH, empty), None);
-    }
-
-    #[test]
-    fn a_harness_whose_agent_id_was_never_measured_is_not_read_as_a_sub_agent() {
-        let unmeasured = Caller {
-            harness: Some("opencode"),
-            ..a_sub_agent()
-        };
-        assert_eq!(refusal(DISPATCH, unmeasured), None);
-    }
-
-    #[test]
-    fn a_sub_agent_is_refused_in_every_spelling_of_the_command_line_and_a_report_too() {
-        for cmd in [
-            "purlis dispatch --to devops --name x <<'B'\nb\nB",
-            "charter dispatch --name x <<'B'\nb\nB",
-            "cd svc && purlis dispatch --name x <<'B'\nb\nB",
-            "FOO=1 purlis dispatch --name x",
-            "purlis dispatch report --outcome done \"did it\"",
-            "ls\npurlis dispatch --name x",
-        ] {
-            assert!(refusal(cmd, a_sub_agent()).is_some(), "{cmd:?}");
-        }
-    }
-
-    #[test]
-    fn a_dispatch_one_level_inside_a_string_a_shell_runs_is_seen() {
-        // What the readers the other guards share already parse: a `-c` string, an `eval`.
-        for cmd in [
-            "bash -c 'purlis dispatch --name x'",
-            "sh -c \"purlis dispatch --name x\"",
-            "eval 'purlis dispatch --name x'",
-            "eval purlis dispatch --name x",
-            "cd svc && bash -c 'cd x; purlis dispatch report --outcome done ok'",
-        ] {
-            assert!(refusal(cmd, a_sub_agent()).is_some(), "{cmd:?}");
-            assert_eq!(refusal(cmd, the_chat()), None, "{cmd:?}");
-        }
-    }
-
-    /// #1582: a here-string, a pipe into a shell, a `-c` inside a `-c`, and the rest of what a
-    /// shell is handed, at every level, through the walk the other backstops share.
-    #[test]
-    fn a_dispatch_in_any_text_a_shell_is_handed_is_seen_at_every_level() {
-        for cmd in [
-            "bash <<< 'purlis dispatch --name x'",
-            "sh -s <<< \"purlis dispatch note hi\"",
-            "echo 'purlis dispatch --name x' | sh",
-            "printf '%s\\n' 'purlis dispatch --name x' | bash",
-            "bash -c \"sh -c 'purlis dispatch --name x'\"",
-            "eval \"bash -c 'purlis dispatch --name x'\"",
-            "bash -c \"bash <<< 'purlis dispatch --name x'\"",
-            "bash <<'EOF'\nbash -c \"purlis dispatch --name x\"\nEOF",
-            "find . -maxdepth 0 -exec sh -c 'purlis dispatch --name x' \\;",
-            "bash <(echo 'purlis dispatch --name x')",
-        ] {
-            assert!(refusal(cmd, a_sub_agent()).is_some(), "{cmd:?}");
-            assert_eq!(refusal(cmd, the_chat()), None, "{cmd:?}");
-        }
-        // Nested past the cap, a helper is refused unread.
-        let deep = (0..=crate::guardcaps::MAX_NESTING).fold("ls".to_owned(), |inner, _| {
-            format!("bash -c '{}'", inner.replace('\'', "'\\''"))
-        });
-        let deep = deep.replacen("ls", "echo dispatch", 1);
-        assert!(refusal(&deep, a_sub_agent()).is_some(), "{deep:?}");
-        // Text that only names a dispatch, at any level, is not one.
-        for cmd in [
-            "bash <<< 'echo purlis dispatch'",
-            "echo 'purlis dispatch --name x' | cat",
-            "bash -c \"sh -c 'echo purlis dispatch'\"",
-            "cat <<< 'purlis dispatch --name x'",
-        ] {
-            assert_eq!(refusal(cmd, a_sub_agent()), None, "{cmd:?}");
-        }
-    }
-
-    /// A7e reads a text subcommand at every level a shell is handed a text at, with the live
-    /// substitution in the text that level receives (#1582).
-    #[test]
-    fn a_dispatch_text_with_a_live_substitution_is_refused_at_every_level() {
-        for cmd in [
-            "bash <<< 'purlis dispatch note \"$(date)\"'",
-            "echo 'purlis dispatch note \"$(date)\"' | sh",
-            "bash -c \"sh -c 'purlis dispatch note \\\"\\$(date)\\\"'\"",
-            "bash -c \"bash <<< 'purlis dispatch ask \\`whoami\\`'\"",
-        ] {
-            let (reason, _) = text_refusal(cmd).unwrap_or_else(|| panic!("{cmd:?}"));
-            assert_eq!(reason, REASON_TEXT_SOURCE, "{cmd:?}");
-        }
-        for cmd in [
-            "bash <<< 'purlis dispatch note plain'",
-            "bash -c \"sh -c 'purlis dispatch note plain'\"",
-            "echo \"$(date)\"; bash <<< 'echo purlis dispatch note'",
-        ] {
-            assert_eq!(text_refusal(cmd), None, "{cmd:?}");
-        }
-    }
-
-    #[test]
-    fn a_dispatch_run_by_the_variable_that_names_purlis_s_own_binary_is_seen() {
-        // Every chat the app starts has it in its environment, under either name.
-        for cmd in [
-            "$PURLIS_HOOK_BINARY dispatch --name x",
-            "\"$PURLIS_HOOK_BINARY\" dispatch --name x",
-            "${PURLIS_HOOK_BINARY} dispatch --name x",
-            "\"${CHARTER_HOOK_BINARY}\" dispatch report --outcome done ok",
-            "bash -c '$CHARTER_HOOK_BINARY dispatch --name x'",
-        ] {
-            assert!(refusal(cmd, a_sub_agent()).is_some(), "{cmd:?}");
-        }
-        for cmd in [
-            "$PURLIS_HOOK_BINARY hook stop",
-            "$PURLIS_HOOK_BINARY workspace todo dispatch",
-            "$OTHER dispatch --name x",
-            "bash -c 'echo dispatch'",
-            "eval 'git log --grep dispatch'",
-        ] {
-            assert_eq!(refusal(cmd, a_sub_agent()), None, "{cmd:?}");
-        }
-    }
-
-    #[test]
-    fn a_sub_agent_running_anything_else_is_left_alone() {
-        for cmd in [
-            "purlis workspace todo \"dispatch the fix\"",
-            "echo purlis dispatch",
-            "git log --grep dispatch",
-            "purlis persona stats",
-            "dispatch --name x",
-        ] {
-            assert_eq!(refusal(cmd, a_sub_agent()), None, "{cmd:?}");
-        }
-    }
-
-    #[test]
-    fn the_pre_allowed_list_of_tasks_is_still_refused_to_a_helper_and_starts_nothing() {
-        // #1463: `dispatch_list` runs without the harness asking, as `purlis dispatch list`
-        // does. The pre-allow is the harness's prompt and no more: a helper's call is still
-        // refused in front of it, and the tools that start a chat or send a report are not
-        // among the reads.
-        for read in [
-            crate::chattools::DISPATCH_LIST,
-            crate::chattools::DISPATCH_READ,
-        ] {
-            let tool = format!("mcp__purlis__{read}");
-            assert!(crate::chattools::PRE_ALLOWED.contains(&read), "{read}");
-            assert!(tool_refusal(&tool, a_sub_agent()).is_some(), "{read}");
-            assert_eq!(tool_refusal(&tool, the_chat()), None, "{read}");
-        }
-        for writes in [
-            crate::chattools::DISPATCH,
-            crate::chattools::DISPATCH_REPORT,
-        ] {
-            assert!(!crate::chattools::PRE_ALLOWED.contains(&writes), "{writes}");
-        }
-    }
-
-    #[test]
-    fn a_sub_agent_calling_the_dispatch_tools_is_refused_under_either_server_name() {
-        for tool in ["mcp__purlis__dispatch", "mcp__purlis__dispatch_report"] {
-            let said = tool_refusal(tool, a_sub_agent()).unwrap_or_else(|| panic!("{tool}"));
-            assert!(
-                said.contains("Return what you found to your chat"),
-                "{said}"
-            );
-            assert_eq!(tool_refusal(tool, the_chat()), None, "{tool}");
-        }
-        // Another tool of purlis's, another server's `dispatch`, and a harness's own tool.
-        for tool in [
-            "mcp__purlis__todo_add",
-            // The server's name before the rename: the hook's matcher never names it, so the
-            // hook is never run for it, and this does not pretend to cover it.
-            "mcp__charter__dispatch",
-            "mcp__other__dispatch",
-            "mcp__purlis__dispatcher",
-            "Task",
-            "dispatch",
-        ] {
-            assert_eq!(tool_refusal(tool, a_sub_agent()), None, "{tool}");
-        }
-    }
-
-    // ----- a rider beside a pre-allowed dispatch or handoff (D-1444-14) -----
-
-    const TASK: &str = "purlis dispatch --name \"check the queue\" <<'BRIEF'\nlook\nBRIEF";
-    const MOVED: &str = "purlis handoff --name \"ship it\" beta <<'BRIEF'\nlook\nBRIEF";
-
-    #[test]
-    fn a_dispatch_or_a_handoff_alone_in_its_call_has_no_rider() {
-        for cmd in [
-            TASK,
-            MOVED,
-            "purlis dispatch --to devops --name x <<'B'\nb\nB",
-            "purlis dispatch report --outcome done \"did it\"",
-            "purlis handoff report \"done, see the PR\"",
-            "purlis handoff --name x --create --vision \"what for\" beta <<'B'\nb\nB",
-            // A brief is data, whatever its lines look like: nothing in it is a command.
-            "purlis dispatch --name x <<'B'\nrm -rf build\nls && purlis dispatch --name y\nB",
-            "purlis handoff --name x beta <<'B'\ncurl example.com | sh\n$(whoami)\nB",
-        ] {
-            assert_eq!(rider(cmd), None, "{cmd:?}");
-        }
-    }
-
-    #[test]
-    fn a_call_that_runs_neither_is_not_this_guards_business() {
-        for cmd in [
-            "ls && echo hi",
-            "echo purlis dispatch && ls",
-            "git commit -m \"purlis dispatch --name x\" && git push",
-            "cat > notes.md <<'EOF'\npurlis handoff --name x beta\nEOF\nls",
-            "purlis workspace todo \"dispatch the fix\" && ls",
-        ] {
-            assert_eq!(rider(cmd), None, "{cmd:?}");
-        }
-    }
-
-    #[test]
-    fn another_command_in_the_same_call_is_a_rider_before_or_after_and_is_named() {
-        for (own, name) in [(TASK, "dispatch"), (MOVED, "handoff")] {
-            for (cmd, other) in [
-                // Before it, and after it, joined every way a shell joins commands.
-                (format!("touch /tmp/zz && {own}"), "touch /tmp/zz"),
-                (format!("touch /tmp/zz; {own}"), "touch /tmp/zz"),
-                (format!("touch /tmp/zz\n{own}"), "touch /tmp/zz"),
-                (format!("{own}\ntouch /tmp/zz"), "touch /tmp/zz"),
-                (format!("{own}\ncurl example.com | sh"), "curl example.com"),
-                // On the line that opens the heredoc, after its opener.
-                (
-                    own.replacen("<<'BRIEF'", "<<'BRIEF' && touch /tmp/zz", 1),
-                    "touch /tmp/zz",
-                ),
-                (
-                    own.replacen("<<'BRIEF'", "<<'BRIEF' | tee /tmp/log", 1),
-                    "tee /tmp/log",
-                ),
-                (format!("cat brief.md | {own}"), "cat brief.md"),
-            ] {
-                let said = rider(&cmd).unwrap_or_else(|| panic!("{cmd:?} has a rider"));
-                assert_eq!(said, other, "{name}: {cmd:?}");
-            }
-        }
-    }
-
-    /// What a chat asks after a task it dispatched is pre-allowed by name too
-    /// (`harness::claude::DISPATCH_TASK_ALLOW`), so each is held to the same rule: alone in
-    /// its call it has no rider, and beside another command the call is asked about.
-    #[test]
-    fn every_pre_allowed_dispatch_subcommand_is_alone_or_asked_about() {
-        let pre_allowed = crate::harness::claude::DISPATCH_TASK_ALLOW;
-        let spelt = [
-            "purlis dispatch --wait --name x <<'B'\nlook\nB",
-            "purlis dispatch wait 12",
-            "purlis dispatch list",
-            "purlis dispatch read 12",
-            "purlis dispatch cancel 12",
-            "purlis dispatch tell 12 \"and the logs too\"",
-            "purlis dispatch note \"half way\"",
-            "purlis dispatch ask \"which cluster?\"",
-            "purlis dispatch answer 12 \"the staging one\"",
-        ];
-        // One spelling here for each rule the chat is handed, so a rule added there is met here.
-        assert_eq!(spelt.len(), pre_allowed.len());
-        for (cmd, rule) in spelt.iter().zip(pre_allowed) {
-            let glob = rule
-                .strip_prefix("Bash(")
-                .and_then(|rule| rule.strip_suffix(')'))
-                .expect("a Bash rule");
-            assert!(
-                crate::pypath::fnmatch(cmd, glob),
-                "{cmd:?} is not the spelling {rule} allows"
-            );
-            assert_eq!(rider(cmd), None, "{cmd:?}");
-            for with in [
-                format!("{cmd}\ntouch /tmp/zz"),
-                format!("touch /tmp/zz && {cmd}"),
-            ] {
-                assert_eq!(rider(&with).as_deref(), Some("touch /tmp/zz"), "{with:?}");
-                assert!(rider_ask(&with, the_chat()).is_some(), "{with:?}");
-            }
-        }
-    }
-
-    /// A dispatch may say where its chat works (`--in`, #1453). The word is one more argument
-    /// of a line a rule already allows, so the rule for a shared call sees it wherever it
-    /// stands (D-T61-3); and no rule allows a line that opens with it, so that spelling is the
-    /// harness's own to ask about, alone or not.
-    #[test]
-    fn a_dispatch_that_says_where_it_works_is_alone_or_asked_about_too() {
-        use crate::harness::claude::{DISPATCH_ALLOW, DISPATCH_TASK_ALLOW, HANDOFF_ALLOW};
-        let allowed = |cmd: &str| {
-            DISPATCH_ALLOW
-                .iter()
-                .chain(DISPATCH_TASK_ALLOW.iter())
-                .chain(HANDOFF_ALLOW.iter())
-                .any(|rule| {
-                    let glob = rule
-                        .strip_prefix("Bash(")
-                        .and_then(|rule| rule.strip_suffix(')'))
-                        .expect("a Bash rule");
-                    crate::pypath::fnmatch(cmd, glob)
-                })
-        };
-        for (cmd, pre_allowed) in [
-            (
-                "purlis dispatch --name x --in worktree <<'B'\nlook\nB",
-                true,
-            ),
-            (
-                "purlis dispatch --name x --in workspace:beta <<'B'\nlook\nB",
-                true,
-            ),
-            (
-                "purlis dispatch --to devops --in worktree --name x <<'B'\nlook\nB",
-                true,
-            ),
-            (
-                "purlis dispatch --wait --in workspace:beta --name x <<'B'\nlook\nB",
-                true,
-            ),
-            // No rule opens with `--in`: these the harness asks about itself.
-            (
-                "purlis dispatch --in worktree --name x <<'B'\nlook\nB",
-                false,
-            ),
-            (
-                "purlis dispatch --in workspace:beta --name x <<'B'\nlook\nB",
-                false,
-            ),
-            (
-                "purlis dispatch --in=worktree --name x <<'B'\nlook\nB",
-                false,
-            ),
-        ] {
-            assert_eq!(allowed(cmd), pre_allowed, "{cmd:?}");
-            assert_eq!(rider(cmd), None, "{cmd:?}");
-            for with in [
-                format!("{cmd}\ntouch /tmp/zz"),
-                format!("touch /tmp/zz && {cmd}"),
-                cmd.replacen("<<'B'", "<<'B' && touch /tmp/zz", 1),
-            ] {
-                assert_eq!(rider(&with).as_deref(), Some("touch /tmp/zz"), "{with:?}");
-                assert!(rider_ask(&with, the_chat()).is_some(), "{with:?}");
-            }
-        }
-    }
-
-    #[test]
-    fn a_second_dispatch_or_handoff_in_the_call_is_a_rider_too() {
-        // Only the first handoff in a call is judged by the handoff guard, so a second one is
-        // another command like any other.
-        for cmd in [format!("{TASK}\n{MOVED}"), format!("{MOVED}\n{TASK}")] {
-            assert!(rider(&cmd).is_some(), "{cmd:?}");
-        }
-    }
-
-    #[test]
-    fn a_substitution_beside_it_is_a_rider_and_so_is_a_call_purlis_cannot_read() {
-        for cmd in [
-            "purlis dispatch --name \"$(whoami)\" <<'B'\nb\nB",
-            "purlis dispatch report --outcome done \"$(cat notes.md)\"",
-        ] {
-            assert_eq!(rider(cmd).as_deref(), Some(A_SUBSTITUTION), "{cmd:?}");
-        }
-        // One the shell reader unpicks is named as the command it is.
-        assert_eq!(
-            rider("purlis dispatch --name x --to `cat who` <<'B'\nb\nB").as_deref(),
-            Some("cat who")
-        );
-        assert_eq!(
-            rider("purlis dispatch --name x <(cat brief.md)").as_deref(),
-            Some("cat brief.md")
-        );
-        // A quote left open: where the command ends cannot be read, so it is asked about.
-        for cmd in [
-            "purlis dispatch --name 'x",
-            "purlis handoff --name \"x beta",
-        ] {
-            assert_eq!(rider(cmd).as_deref(), Some(UNREADABLE), "{cmd:?}");
-        }
-    }
-
-    #[test]
-    fn a_live_substitution_in_the_text_a_dispatch_subcommand_sends_is_refused() {
-        // #1456, #1463: as the handoff's report is. Whoever asks, on every harness.
-        for (cmd, sub) in [
-            (
-                "purlis dispatch report --outcome done \"$(cat notes.md)\"",
-                "report",
-            ),
-            (
-                "purlis dispatch report --outcome done \"`git log -1`\"",
-                "report",
-            ),
-            ("purlis dispatch tell 9 \"use $(whoami)\"", "tell"),
-            ("purlis dispatch answer 9 \"$(env)\"", "answer"),
-            ("purlis dispatch note \"at $(date)\"", "note"),
-            ("purlis dispatch ask \"which one? $(ls)\"", "ask"),
-            ("charter dispatch note \"$(id)\"", "note"),
-            ("cd svc && purlis dispatch tell 3 \"$(cat x)\"", "tell"),
-            ("$PURLIS_HOOK_BINARY dispatch note \"$(id)\"", "note"),
-            ("bash -c 'purlis dispatch note \"$(id)\"'", "note"),
-            (
-                "purlis dispatch report --outcome done \"$(cat <<'EOF'\nfixed it\nEOF\n)\"",
-                "report",
-            ),
-            // A body a shell runs: its quoted delimiter keeps it from expanding on the way
-            // in, and the shell then runs the line, substitution and all.
-            ("bash <<'EOF'\npurlis dispatch note \"$(id)\"\nEOF", "note"),
-            (
-                "sh <<'EOF'\ncd svc\npurlis dispatch tell 9 \"`id`\"\nEOF",
-                "tell",
-            ),
-        ] {
-            let (reason, said) = text_refusal(cmd).unwrap_or_else(|| panic!("{cmd:?}"));
-            assert_eq!(reason, REASON_TEXT_SOURCE);
-            assert!(
-                said.starts_with(&format!("`purlis dispatch {sub}` sends its text as it is")),
-                "{said}"
-            );
-        }
-        assert_eq!(
-            text_refusal("purlis dispatch note \"$(id)\"").map(|(_, said)| said),
-            Some(
-                "`purlis dispatch note` sends its text as it is written here, and this call \
-                 has a live command substitution in it, which the shell would replace before \
-                 purlis reads it. Write the text out in plain words: purlis dispatch note \
-                 \"<note>\". Keep a backtick literal by backslash-escaping each one \
-                 (`\\`code\\``), which leaves apostrophes working, or single-quote the whole \
-                 text when it holds none."
-                    .to_owned()
-            )
-        );
-        // A report can also go by the tool, which no shell reads.
-        let (_, said) =
-            text_refusal("purlis dispatch report --outcome done \"$(id)\"").expect("refused");
-        assert!(
-            said.ends_with(
-                "Or send it with the `dispatch_report` tool, whose text no shell reads."
-            ),
-            "{said}"
-        );
-        let (_, said) = text_refusal("purlis dispatch tell 9 \"$(cat <(id))\"").expect("refused");
-        assert!(said.contains("live command substitution"), "{said}");
-        let (_, said) = text_refusal("purlis dispatch tell 9 <(id)").expect("refused");
-        assert!(
-            said.contains(
-                "live process substitution in it, which the shell would run and \
-                           replace with a path"
-            ),
-            "{said}"
-        );
-    }
-
-    #[test]
-    fn text_written_out_and_everything_but_a_text_subcommand_pass_this_refusal() {
-        for cmd in [
-            // The text as written: single quotes, an escaped dollar, a parameter.
-            "purlis dispatch report --outcome done 'cost $(nothing)'",
-            "purlis dispatch note \"a \\$(literal) one\"",
-            "purlis dispatch tell 9 \"$NAME is set\"",
-            "purlis dispatch answer 9 \"the blue one\"",
-            // A body a reader takes is data, whatever it mentions.
-            "cat > notes.md <<'EOF'\npurlis dispatch note \"$(id)\"\nEOF",
-            // A dispatch's brief is its heredoc, judged as a brief, not here.
-            "purlis dispatch --name x <<'B'\nrun $(this) later\nB",
-            // Subcommands that send no text.
-            "purlis dispatch wait 9 && echo \"$(date)\"",
-            "purlis dispatch list; echo $(date)",
-            "purlis dispatch cancel 9 \"$(id)\"",
-            // Not purlis's dispatch, or not a dispatch at all.
-            "echo purlis dispatch note \"$(id)\"",
-            "purlis workspace note \"dispatch $(id)\"",
-            "git commit -m \"$(cat msg)\"",
-        ] {
-            assert_eq!(text_refusal(cmd), None, "{cmd:?}");
-        }
-    }
-
-    #[test]
-    fn the_ask_names_the_other_command_and_is_only_claude_code_s() {
-        let cmd = format!("{TASK}\ntouch /tmp/zz");
-        let said = rider_ask(&cmd, the_chat()).expect("asked about");
-        assert_eq!(
-            said,
-            "this call runs `purlis dispatch` beside another command (`touch /tmp/zz`). purlis \
-             lets a dispatch or a handoff run without your harness asking, and that is for the \
-             dispatch alone, so the person is asked about this call as a whole. Run the \
-             dispatch in a call of its own."
-        );
-        let said = rider_ask(&format!("ls -la && {MOVED}"), the_chat()).expect("asked about");
-        assert!(
-            said.starts_with("this call runs `purlis handoff` beside another command (`ls -la`)."),
-            "{said}"
-        );
-        // The allow this stands behind is one only a Claude Code chat is handed.
-        for harness in [Some("codex"), Some("opencode"), None] {
-            let other = Caller {
-                harness,
-                ..the_chat()
-            };
-            assert_eq!(rider_ask(&cmd, other), None, "{harness:?}");
-        }
-        assert_eq!(rider_ask(TASK, the_chat()), None);
-        assert_eq!(rider_ask(MOVED, the_chat()), None);
-    }
-
-    #[test]
-    fn a_brokered_commit_is_asked_about_where_it_shares_its_call() {
-        // #1476: `purlis worktree commit` is pre-allowed by its spelling, on the dispatch's
-        // terms: alone, and with nothing written beside it.
-        let commit = "purlis worktree commit -m 'one change' --all";
-        assert_eq!(rider_ask(commit, the_chat()), None);
-        assert_eq!(
-            rider_ask("purlis worktree commit -m x src/a.rs", the_chat()),
-            None
-        );
-        let said = rider_ask(&format!("{commit} && git push"), the_chat()).expect("asked");
-        assert_eq!(
-            said,
-            "this call runs `purlis worktree commit` beside another command (`git push`). \
-             purlis lets a commit the app makes for a chat run without your harness asking, and \
-             that is for the commit alone, so the person is asked about this call as a whole. \
-             Run the commit in a call of its own."
-        );
-        let said = rider_ask(&format!("{commit} > out.txt"), the_chat()).expect("asked");
-        assert!(said.contains("(`> out.txt`)"), "{said}");
-        assert!(
-            said.ends_with("Run the commit without the redirection."),
-            "{said}"
-        );
-        // A message from a command substitution is a command the shell runs.
-        let said =
-            rider_ask("purlis worktree commit -m \"$(cat msg)\" --all", the_chat()).expect("asked");
-        assert!(said.contains(A_SUBSTITUTION), "{said}");
-        // Other `worktree` words are not handed the allow, so nothing is asked of them here.
-        assert_eq!(
-            rider_ask("purlis worktree add thing piece && ls", the_chat()),
-            None
-        );
-    }
-
-    /// The hidden flag that pins a handoff's clock is for recorded tests, not for a chat: a
-    /// handoff line that carries it is asked about, though the allow covers the rest (#1471).
-    #[test]
-    fn a_handoff_that_pins_its_clock_is_asked_about() {
-        for cmd in [
-            "purlis handoff --now 2026-01-01T00:00:00 --name x beta <<'B'\nb\nB",
-            "purlis handoff --name x --now=2026-01-01T00:00:00 beta <<'B'\nb\nB",
-            "charter handoff beta --now 2026-01-01T00:00:00 <<'B'\nb\nB",
-        ] {
-            let said = rider_ask(cmd, the_chat()).unwrap_or_else(|| panic!("{cmd:?} is asked"));
-            assert!(said.contains("--now"), "{said}");
-            let codex = Caller {
-                harness: Some("codex"),
-                ..the_chat()
-            };
-            assert_eq!(rider_ask(cmd, codex), None, "{cmd:?}");
-        }
-        // In the brief it is text.
-        assert_eq!(
-            rider_ask(
-                "purlis handoff --name x beta <<'B'\nuse --now here\nB",
-                the_chat()
-            ),
-            None
-        );
-    }
-
-    /// A dispatch's brief is held to what a handoff's is (#1471): the new chat is sent the
-    /// text written in the call, so a brief fed any other way is asked about.
-    #[test]
-    fn a_dispatch_brief_fed_from_anything_but_one_quoted_heredoc_is_asked_about() {
-        for (cmd, what) in [
-            ("purlis dispatch --name x < brief.md", "a file (<)"),
-            ("purlis dispatch --name x <<< \"look\"", "a here-string"),
-            (
-                "purlis dispatch --name x <<B\nlook at $HOME\nB",
-                "an unquoted heredoc",
-            ),
-            ("purlis dispatch --name x", "no heredoc at all"),
-            (
-                "purlis dispatch --to devops --wait --name x",
-                "no heredoc at all",
-            ),
-            (
-                "purlis dispatch --name x <<'A' <<'B'\none\nA\ntwo\nB",
-                "more than one heredoc",
-            ),
-            (
-                "purlis dispatch --name x <<'B' <&3\nlook\nB",
-                "a file descriptor",
-            ),
-            (
-                "$PURLIS_HOOK_BINARY dispatch --name x < brief.md",
-                "a file (<)",
-            ),
-        ] {
-            let said = rider_ask(cmd, the_chat()).unwrap_or_else(|| panic!("{cmd:?} is asked"));
-            assert!(
-                said.starts_with(&format!(
-                    "this call feeds `purlis dispatch` its brief from {what}"
-                )),
-                "{cmd:?}: {said}"
-            );
-        }
-        // Run by xargs, the heredoc's lines are words of the dispatch: the call is asked about
-        // already, as a rider, before its brief is read.
-        assert!(rider_ask("xargs purlis dispatch --name x <<'B'\nlook\nB", the_chat()).is_some());
-        // One quoted heredoc is the brief, however the flags around it are written.
-        for cmd in [
-            TASK,
-            "purlis dispatch --to devops --name x --in worktree <<'B'\nb\nB",
-            "purlis dispatch --name=x --wait --timeout 60 <<\"B\"\nb\nB",
-            "purlis dispatch --name x <<'B' 2>&1\nb\nB",
-        ] {
-            assert_eq!(rider_ask(cmd, the_chat()), None, "{cmd:?}");
-        }
-        // A subcommand, or a help ask, reads no brief.
-        for cmd in [
-            "purlis dispatch list",
-            "purlis dispatch read 12",
-            "purlis dispatch wait 12",
-            "purlis dispatch --help",
-            "purlis dispatch -h",
-            "purlis dispatch report --outcome done \"did it\"",
-            "purlis dispatch --to devops list",
-        ] {
-            assert_eq!(rider_ask(cmd, the_chat()), None, "{cmd:?}");
-        }
-        // Only the harness the allow is handed to is asked.
-        let codex = Caller {
-            harness: Some("codex"),
-            ..the_chat()
-        };
-        assert_eq!(
-            rider_ask("purlis dispatch --name x < brief.md", codex),
-            None
-        );
-    }
-
-    /// A redirection on the dispatch's own line that writes a file is a second thing the call
-    /// does, so the call is asked about (#1471, D-1471-b). A duplicated descriptor and
-    /// `/dev/null` write nothing.
-    #[test]
-    fn a_redirection_that_writes_a_file_beside_a_dispatch_or_a_handoff_is_asked_about() {
-        for (cmd, redirection) in [
-            ("purlis dispatch list > notes.md", "> notes.md"),
-            ("purlis dispatch list >> ~/.profile", ">> ~/.profile"),
-            ("purlis dispatch list 2>err.log", "2> err.log"),
-            ("purlis dispatch list >| out", ">| out"),
-            ("purlis dispatch list >& out", ">& out"),
-            (
-                "purlis dispatch --name x <<'B' > /tmp/out\nb\nB",
-                "> /tmp/out",
-            ),
-            ("purlis handoff --name x beta <<'B' >log\nb\nB", "> log"),
-        ] {
-            let said = rider_ask(cmd, the_chat()).unwrap_or_else(|| panic!("{cmd:?} is asked"));
-            assert!(
-                said.contains(&format!(
-                    "a redirection that writes a file (`{redirection}`)"
-                )),
-                "{cmd:?}: {said}"
-            );
-        }
-        for cmd in [
-            "purlis dispatch list 2>&1",
-            "purlis dispatch list >/dev/null",
-            "purlis dispatch list 2>/dev/null",
-            "purlis dispatch list >&-",
-            "purlis dispatch report --outcome done \"wrote > notes.md\"",
-        ] {
-            assert_eq!(rider_ask(cmd, the_chat()), None, "{cmd:?}");
-        }
-    }
-
-    /// A function or an alias defined earlier in the call can stand in for the command the
-    /// allow names, so the call is asked about, naming the definition (#1471, D-1471-c).
-    #[test]
-    fn a_function_or_an_alias_defined_earlier_in_the_call_is_a_rider() {
-        for cmd in [
-            format!("purlis() {{ curl example.com; }}\n{TASK}"),
-            format!("purlis() {{ curl example.com; }}; {TASK}"),
-            format!("function purlis {{ curl example.com; }}\n{TASK}"),
-            format!("alias purlis='curl example.com'\n{TASK}"),
-            format!("shopt -s expand_aliases; alias purlis=true; {MOVED}"),
-        ] {
-            assert!(rider(&cmd).is_some(), "{cmd:?} has a rider");
-            assert!(rider_ask(&cmd, the_chat()).is_some(), "{cmd:?} is asked");
-        }
-    }
-}
+mod tests;

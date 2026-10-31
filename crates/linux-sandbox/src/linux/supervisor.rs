@@ -17,7 +17,8 @@
 //! process that asked, to the wrap's [`Teller`], after the refusal is decided and whatever the
 //! teller does. Nothing told changes an answer. A call refused for anything but the profile (a
 //! process outside the sandbox, an abstract socket, a call no profile has a word for) names
-//! nothing a person could allow, and is not told.
+//! nothing a person could allow, and is not told; but for a refused listen, which is told as
+//! macOS's kernel tells a refused bind, so a server that does not start is never silent.
 
 use std::ffi::OsStr;
 use std::io::IoSliceMut;
@@ -30,11 +31,11 @@ use std::sync::{Arc, Mutex};
 use nix::errno::Errno;
 use nix::fcntl::{AT_FDCWD, AtFlags, OFlag, RenameFlags, openat, renameat2};
 use nix::sys::socket::{
-    AddressFamily, SockFlag, SockType, SockaddrIn, SockaddrIn6, UnixAddr, connect, setsockopt,
-    socket, sockopt,
+    AddressFamily, Backlog, Shutdown, SockFlag, SockType, SockaddrIn, SockaddrIn6, SockaddrLike,
+    SockaddrStorage, UnixAddr, connect, getsockname, listen, setsockopt, shutdown, socket, sockopt,
 };
 use nix::sys::stat::{
-    FchmodatFlags, Mode, SFlag, UtimensatFlags, fchmodat, mkdirat, mknodat, utimensat,
+    FchmodatFlags, Mode, SFlag, UtimensatFlags, fchmodat, fstat, mkdirat, mknodat, stat, utimensat,
 };
 use nix::sys::time::TimeSpec;
 use nix::sys::uio::{RemoteIoVec, process_vm_readv};
@@ -42,8 +43,9 @@ use nix::unistd::{Pid, UnlinkatFlags, linkat, symlinkat, unlinkat};
 
 use super::notify;
 use super::walk::{self, Chat, Found, World, named, named_in};
+use crate::loopback::{self, Picked, PoolPort};
 use crate::profile::{FileOp, Kind, Op, Profile, Remote};
-use crate::refusal::Teller;
+use crate::refusal::{SOCKET_NOT_TAKEN, Teller};
 
 /// What a call is answered with.
 enum Answer {
@@ -60,6 +62,9 @@ enum Answer {
     /// The call is gone: its process ended or the call was interrupted. Answered with
     /// `EINTR` in case it is not.
     Gone,
+    /// The call goes on in the kernel as the chat made it, under the chat's own Landlock
+    /// layer ([`notify::go_on`]).
+    GoOn,
 }
 
 impl From<Errno> for Answer {
@@ -74,6 +79,14 @@ const REFUSED: Errno = Errno::EACCES;
 /// Seatbelt's word for a connection out, which a refused connect is told as.
 const CONNECT: &str = crate::refusal::DIALLED;
 
+/// Seatbelt's word for a bind, which a refused listen is told as: a listen with no bind of its
+/// own is the kernel's bind (#3410).
+const BIND: &str = "network-bind";
+
+/// What a listen on an internet socket the chat never bound is told as refused on: Seatbelt's
+/// name for a port the kernel picks, on every interface.
+const NEVER_BOUND: &str = "*:0";
+
 /// The longest path a call may name, as the kernel's own limit.
 const PATH_MAX: usize = 4096;
 
@@ -84,6 +97,8 @@ pub(super) struct Supervisor {
     world: World,
     changing: Mutex<()>,
     told: Option<Arc<Teller>>,
+    /// The ports picked for the chat's test servers, and the socket made on each (#3396).
+    picked: Picked,
 }
 
 impl Supervisor {
@@ -91,6 +106,7 @@ impl Supervisor {
         listener: OwnedFd,
         profile: Profile,
         told: Option<Arc<Teller>>,
+        picked: Picked,
     ) -> Result<Supervisor, Errno> {
         Ok(Supervisor {
             listener,
@@ -98,6 +114,7 @@ impl Supervisor {
             world: World::new()?,
             changing: Mutex::new(()),
             told,
+            picked,
         })
     }
 
@@ -154,6 +171,7 @@ impl Supervisor {
             // Answered all the same: a call that is gone refuses the answer, and one that is not
             // must never be left waiting.
             Answer::Gone => notify::respond(listener, id, 0, libc::EINTR),
+            Answer::GoOn => notify::go_on(listener, id),
         }
     }
 
@@ -242,6 +260,8 @@ impl Supervisor {
                     self.times(&chat, id, int(0), path.as_deref(), times.as_deref(), int(3))
                 }
                 libc::SYS_connect => self.connect(&chat, id, int(0), a[1], a[2] as usize),
+                libc::SYS_listen => self.listen(&chat, id, int(0), int(1)),
+                libc::SYS_bind => self.bind(&chat, id, int(0), a[1], a[2] as usize),
                 #[cfg(target_arch = "x86_64")]
                 legacy => self.legacy(&chat, id, legacy, &a, tid),
                 #[cfg(not(target_arch = "x86_64"))]
@@ -868,10 +888,26 @@ impl Supervisor {
             }
             libc::AF_INET | libc::AF_INET6 => {
                 let remote = ip_of(&bytes)?;
-                if !self.profile.allows(&Op::Connect(Remote::Ip {
+                let allowed = self.profile.allows(&Op::Connect(Remote::Ip {
                     ip: remote.ip(),
                     port: remote.port(),
-                })) {
+                }));
+                // A port picked for the chat's test servers (#3396): reached while the socket
+                // made for it is the one listening there, read again once connected; otherwise
+                // refused, and never told, so no Notice offers to allow a port the system picked.
+                let pool = if allowed {
+                    PoolPort::NotPicked
+                } else {
+                    self.pool_port(remote)
+                };
+                match pool {
+                    // As the kernel answers a connect where nothing listens.
+                    PoolPort::Free => return Err(Errno::ECONNREFUSED),
+                    PoolPort::Taken => return Err(REFUSED),
+                    PoolPort::Own | PoolPort::NotPicked => {}
+                }
+                let own = pool == PoolPort::Own;
+                if !allowed && !own {
                     // A service on this machine; an internet address dialled past the proxy,
                     // told apart, once a minute (#2423): the proxy tells each host by name.
                     if is_this_machine(remote.ip()) {
@@ -896,6 +932,12 @@ impl Supervisor {
                 let socket = socket(family, SockType::Stream, SockFlag::SOCK_CLOEXEC, None)?;
                 let _ = setsockopt(&socket, sockopt::TcpNoDelay, &true);
                 connect(socket.as_raw_fd(), address.as_ref())?;
+                // Its server let the port go between the judging and the connect, and another
+                // socket took it: the connection is dropped before the chat holds it.
+                if own && self.pool_port(remote) != PoolPort::Own {
+                    drop(socket);
+                    return Err(REFUSED);
+                }
                 socket
             }
             _ => return Err(REFUSED),
@@ -908,6 +950,303 @@ impl Supervisor {
             at,
             cloexec: flags & libc::O_CLOEXEC != 0,
         })
+    }
+
+    /// **A bind, judged and made by the supervisor** (#2019). A chat serves on a socket of its
+    /// own, in the folder purlis made for it, behind purlis's door on the chat's port:
+    ///
+    /// - **A unix socket at a path** is bound only at an absolute path the profile names to serve
+    ///   on (`local unix-socket (path-literal …)`) and lets the chat make and take away a socket
+    ///   at ([`crate::profile::Profile::serves_at`]), by the supervisor, on a socket of its own
+    ///   put in place of the chat's descriptor; what was left at the path is taken away first.
+    ///   Any other path is refused, at every level: the floor's `(allow default)` names no bind.
+    /// - **An internet address on a port the chat serves on** (any address: `127.0.0.1`,
+    ///   `0.0.0.0`, `::`) is bound instead to that port's socket, `<port>.sock`, the same way: a
+    ///   server started for a port, on whatever address, is served through the door. Any other
+    ///   internet bind is refused, as the chat's Landlock layer refuses every TCP bind, and told,
+    ///   so a server that asks for a port raises the Ask to serve on it.
+    /// - **A port the system picks on 127.0.0.1, for a TCP socket of IPv4's** (#3396, ruled
+    ///   2026-10-30), which a test server asks for, is bound on a TCP socket of the supervisor's own, on a port of the
+    ///   pool picked for the chat, put in place of the chat's descriptor ([`Self::bind_picked`]).
+    ///   A port of zero for any other socket or on any other address (every interface, `::1`)
+    ///   is refused and told: no
+    ///   person allows one, and its Notice says what to do instead.
+    /// - **A netlink socket (what `getifaddrs` binds) and an abstract or unnamed unix socket go
+    ///   on in the kernel** ([`Answer::GoOn`]), as before; any other family is refused. Nothing
+    ///   the chat changes after the address was read carries such a call further: the call the kernel
+    ///   makes is judged by the chat's own Landlock layer, which binds no TCP port and makes no
+    ///   socket file.
+    /// - **The socket put in the chat's place is a unix one**, bound here at its path, **or an
+    ///   internet one bound on 127.0.0.1 at a picked port**: no internet socket the supervisor
+    ///   hands the chat is ever bound without a port of its own, so a listen on it is never the
+    ///   kernel's to bind (see [`Self::listen`]).
+    fn bind(
+        &self,
+        chat: &Chat<'_>,
+        id: u64,
+        fd: i32,
+        addr: u64,
+        len: usize,
+    ) -> Result<Answer, Errno> {
+        if len < 2 || len > std::mem::size_of::<libc::sockaddr_storage>() {
+            return Err(Errno::EINVAL);
+        }
+        let bytes = read_bytes(chat.tid, addr, len)?;
+        let family = i32::from(u16::from_ne_bytes([bytes[0], bytes[1]]));
+        let socket = match family {
+            libc::AF_UNIX => {
+                let path = &bytes[2..];
+                // An abstract or unnamed socket names no file: the kernel's, as before.
+                if path.first().is_none_or(|first| *first == 0) {
+                    return Ok(Answer::GoOn);
+                }
+                let end = path.iter().position(|c| *c == 0).unwrap_or(path.len());
+                let named = Path::new(OsStr::from_bytes(&path[..end]));
+                named.to_path_buf()
+            }
+            libc::AF_INET | libc::AF_INET6 => {
+                let local = ip_of(&bytes)?;
+                // A TCP socket of IPv4's alone: any other is refused below, as before.
+                if loopback::picks_on_the_loopback(local) {
+                    let Some((_, socket)) = self.take(chat, id, fd)? else {
+                        return Ok(Answer::Gone);
+                    };
+                    if is_tcp_v4(&socket) {
+                        return self.bind_picked(chat, id, fd);
+                    }
+                }
+                if local.port() == 0 {
+                    self.tell(chat, BIND, local.to_string());
+                    return Err(REFUSED);
+                }
+                let wanted = format!("{}.sock", local.port());
+                let Some(served) = self.profile.reach().serves.into_iter().find(|path| {
+                    path.file_name() == Some(OsStr::new(&wanted)) && self.profile.serves_at(path)
+                }) else {
+                    self.tell(chat, BIND, local.to_string());
+                    return Err(REFUSED);
+                };
+                served
+            }
+            // What `getifaddrs` binds goes on; any other family, `AF_UNSPEC` (which the kernel
+            // reads as an IPv4 bind on an IPv4 socket) included, is refused.
+            libc::AF_NETLINK => return Ok(Answer::GoOn),
+            _ => return Err(REFUSED),
+        };
+        // Only where the profile names a socket to serve on, and lets it be made and taken
+        // away: never another socket of this user's, whatever else the profile allows.
+        if !self.profile.serves_at(&socket) {
+            return Err(REFUSED);
+        }
+        let at = u32::try_from(fd).map_err(|_| Errno::EBADF)?;
+        let flags = descriptor_flags(chat.tid, fd)?;
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        // What a server that ended left there, or anything else but a folder, is taken away.
+        match std::fs::symlink_metadata(&socket) {
+            Ok(meta) if meta.is_dir() => return Err(Errno::EADDRINUSE),
+            Ok(_) => std::fs::remove_file(&socket).map_err(|_| REFUSED)?,
+            Err(_) => {}
+        }
+        let served = nix::sys::socket::socket(
+            AddressFamily::Unix,
+            SockType::Stream,
+            SockFlag::SOCK_CLOEXEC,
+            None,
+        )?;
+        nix::sys::socket::bind(served.as_raw_fd(), &UnixAddr::new(socket.as_path())?)?;
+        if flags & libc::O_NONBLOCK != 0 {
+            nix::fcntl::fcntl(&served, nix::fcntl::FcntlArg::F_SETFL(OFlag::O_NONBLOCK))?;
+        }
+        Ok(Answer::Connected {
+            fd: served,
+            at,
+            cloexec: flags & libc::O_CLOEXEC != 0,
+        })
+    }
+
+    /// **A bind on a port the system picks, on 127.0.0.1** (#3396): a TCP socket of the
+    /// supervisor's own, bound on the first port of the pool picked for the chat that is free,
+    /// recorded as the chat's, and put in place of the chat's descriptor `fd`. Made here rather
+    /// than on the chat's own socket, so no option the chat set before its bind goes with it. One
+    /// it sets after (`SO_REUSEPORT`) may let another socket share the port; a connect there then
+    /// finds two sockets listening and is refused ([`PoolPort::Taken`]). A pool with no port free
+    /// is `EADDRINUSE`, as the kernel says it, and not told: there is nothing to allow.
+    fn bind_picked(&self, chat: &Chat<'_>, id: u64, fd: i32) -> Result<Answer, Errno> {
+        let at = u32::try_from(fd).map_err(|_| Errno::EBADF)?;
+        let flags = descriptor_flags(chat.tid, fd)?;
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        let served = socket(
+            AddressFamily::Inet,
+            SockType::Stream,
+            SockFlag::SOCK_CLOEXEC,
+            None,
+        )?;
+        // No `SO_REUSEADDR`: a port any socket still holds, bound or closing, is never bound
+        // again, and the next port of the pool is tried.
+        let mut bound = None;
+        for port in self.picked.turn() {
+            match nix::sys::socket::bind(served.as_raw_fd(), &SockaddrIn::new(127, 0, 0, 1, port)) {
+                Ok(()) => {
+                    bound = Some(port);
+                    break;
+                }
+                Err(Errno::EADDRINUSE) => {}
+                Err(why) => return Err(why),
+            }
+        }
+        // Every port of the pool in use: the kernel's own answer, and nothing to allow.
+        let Some(port) = bound else {
+            return Err(Errno::EADDRINUSE);
+        };
+        self.picked.own(port, fstat(&served)?.st_ino);
+        if flags & libc::O_NONBLOCK != 0 {
+            nix::fcntl::fcntl(&served, nix::fcntl::FcntlArg::F_SETFL(OFlag::O_NONBLOCK))?;
+        }
+        Ok(Answer::Connected {
+            fd: served,
+            at,
+            cloexec: flags & libc::O_CLOEXEC != 0,
+        })
+    }
+
+    /// What a connect to `remote` comes to for the ports picked for the chat's test servers
+    /// (#3396): none unless it is 127.0.0.1, and then as this machine's tables of TCP sockets,
+    /// IPv4's and IPv6's, say now. A table that cannot be read leaves the port taken.
+    fn pool_port(&self, remote: SocketAddr) -> PoolPort {
+        let SocketAddr::V4(v4) = remote else {
+            return PoolPort::NotPicked;
+        };
+        if *v4.ip() != Ipv4Addr::LOCALHOST || !self.picked.ports().contains(&v4.port()) {
+            return PoolPort::NotPicked;
+        }
+        let Ok(mut table) = std::fs::read_to_string("/proc/self/net/tcp") else {
+            return PoolPort::Taken;
+        };
+        // No such table where this machine has no IPv6.
+        match std::fs::read_to_string("/proc/self/net/tcp6") {
+            Ok(v6) => table.push_str(&v6),
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return PoolPort::Taken,
+        }
+        self.picked.reach(v4.port(), &table)
+    }
+
+    /// The calling thread's own socket at its descriptor `fd`, taken from its own descriptor
+    /// table (`pidfd_open` with `PIDFD_THREAD`, then `pidfd_getfd`) and checked to be the one
+    /// the descriptor names; with the thread's pidfd. None where the call is gone.
+    fn take(&self, chat: &Chat<'_>, id: u64, fd: i32) -> Result<Option<(OwnedFd, OwnedFd)>, Errno> {
+        // The calling thread's own table (Linux 6.9; the sandbox needs 6.12).
+        let thread = rustix::process::Pid::from_raw(chat.tid).ok_or(REFUSED)?;
+        let flags = rustix::process::PidfdFlags::from_bits_retain(libc::PIDFD_THREAD);
+        let caller = match rustix::process::pidfd_open(thread, flags) {
+            Ok(caller) => caller,
+            // The thread ended, and its call with it.
+            Err(rustix::io::Errno::SRCH) if !self.alive(id) => return Ok(None),
+            Err(why) => return Err(self.not_taken(chat, why)),
+        };
+        // The thread the call came from, not another that took its number since.
+        if !self.alive(id) {
+            return Ok(None);
+        }
+        let socket =
+            rustix::process::pidfd_getfd(&caller, fd, rustix::process::PidfdGetfdFlags::empty())
+                .map_err(|why| self.not_taken(chat, why))?;
+        // The same open socket the thread's descriptor names, read a second way.
+        let theirs = stat(format!("/proc/{}/fd/{fd}", chat.tid).as_str()).map_err(|why| {
+            if why == Errno::ENOENT {
+                Errno::EBADF
+            } else {
+                REFUSED
+            }
+        })?;
+        let taken = fstat(&socket).map_err(|_| REFUSED)?;
+        if (taken.st_dev, taken.st_ino) != (theirs.st_dev, theirs.st_ino) {
+            return Err(REFUSED);
+        }
+        Ok(Some((caller, socket)))
+    }
+
+    /// **A listen, made by the supervisor on the socket it judged**: the calling thread's own
+    /// socket, taken from its own descriptor table (`pidfd_open` with `PIDFD_THREAD`, then
+    /// `pidfd_getfd`) and checked to be the one its descriptor names, listens only where it was
+    /// bound. A thread's own table is the one read, whether it holds one apart from its
+    /// process's (`unshare(CLONE_FILES)`) or its process's first thread has ended.
+    ///
+    /// An internet socket the chat never bound is refused: the kernel would otherwise bind it
+    /// first, to a port it picks on every interface, since Landlock judges a bind the chat makes
+    /// and not one the kernel makes for it. An internet socket whose address cannot be read is
+    /// taken as bound to none. Where an internet socket may be bound is the bind's to judge, and
+    /// the chat's Landlock layer binds none today. Any other socket listens as it would have.
+    ///
+    /// The listen is made on the socket judged, never on whatever the descriptor holds by then,
+    /// and the address it listens on is read again after: one other than the address judged undoes
+    /// the listen and refuses it (and where it cannot be undone, ends the chat's process). Where the socket cannot be taken, nothing listens. A refusal is
+    /// told, as macOS's kernel tells a refused bind, with why in what it names.
+    ///
+    /// Two of the chat's calls a listen relies on are refused elsewhere: a `connect` of any
+    /// family but unix and the internet's (`AF_UNSPEC` would unbind a connected socket), and a
+    /// connected socket is only ever handed back once its connect is made.
+    fn listen(&self, chat: &Chat<'_>, id: u64, fd: i32, backlog: i32) -> Result<Answer, Errno> {
+        let Some((caller, socket)) = self.take(chat, id, fd)? else {
+            return Ok(Answer::Gone);
+        };
+        let judged = getsockname::<SockaddrStorage>(socket.as_raw_fd())?;
+        if port_of(&judged) == Some(0) {
+            self.tell(chat, BIND, NEVER_BOUND.to_owned());
+            return Err(REFUSED);
+        }
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        // Below zero, as above the system's own cap, the kernel's largest queue.
+        let backlog = Backlog::new(backlog).unwrap_or(Backlog::MAXALLOWABLE);
+        listen(&socket, backlog)?;
+        if getsockname::<SockaddrStorage>(socket.as_raw_fd()).ok() != Some(judged) {
+            // Unbound between the judging and the listen, and bound by the kernel now, to an
+            // address it picked: a listening socket shut for reading is unconnected again, its
+            // address let go. A socket that cannot be shut would go on listening where nothing
+            // judged it, so its process is ended instead.
+            if shutdown(socket.as_raw_fd(), Shutdown::Read).is_err() {
+                let _ = rustix::process::pidfd_send_signal(&caller, rustix::process::Signal::KILL);
+            }
+            self.tell(chat, BIND, NEVER_BOUND.to_owned());
+            return Err(REFUSED);
+        }
+        Ok(Answer::Value(0))
+    }
+
+    /// The error a listen whose socket could not be taken (`why`) answers: `EBADF` for a
+    /// descriptor that is not there, and otherwise a refusal, told.
+    fn not_taken(&self, chat: &Chat<'_>, why: rustix::io::Errno) -> Errno {
+        if why == rustix::io::Errno::BADF {
+            return Errno::EBADF;
+        }
+        self.tell(chat, BIND, SOCKET_NOT_TAKEN.to_owned());
+        REFUSED
+    }
+}
+
+/// Whether `socket` is a TCP socket of IPv4's: a stream (the filter makes no other internet
+/// stream) whose address, bound or not, is IPv4's.
+fn is_tcp_v4(socket: &OwnedFd) -> bool {
+    nix::sys::socket::getsockopt(socket, sockopt::SockType).ok() == Some(SockType::Stream)
+        && getsockname::<SockaddrStorage>(socket.as_raw_fd())
+            .ok()
+            .and_then(|name| name.family())
+            == Some(AddressFamily::Inet)
+}
+
+/// The port an internet socket's address `name` holds, port 0 where it cannot be read; None for
+/// any other socket.
+fn port_of(name: &SockaddrStorage) -> Option<u16> {
+    match name.family() {
+        Some(AddressFamily::Inet) => Some(name.as_sockaddr_in().map_or(0, SockaddrIn::port)),
+        Some(AddressFamily::Inet6) => Some(name.as_sockaddr_in6().map_or(0, SockaddrIn6::port)),
+        _ => None,
     }
 }
 

@@ -6,7 +6,8 @@ form that needs one: a required choice in Settings, or a combobox whose typed va
 - **`invalid` is a state of the manifest**, keyed on `[data-invalid]`, in **the next release's
   manifest version** (`since: NEXT`). It is the seventh state, written after `open`, so a refused
   box's colours win over its hover's.
-- **Only a box a person gives a value to is in it**: `select` and `combobox` name it. The button,
+- **Only a box a person gives a value to is in it**: `select` and `combobox` name it (and the
+  text input and the textarea, below). The button,
   the dialog and every other family do not, so `button.root.invalid.fill` is no part and is said
   and left out, as any state a wrapper never marks is.
 - **A colour, never a size**, as every state: inside `invalid` a theme sets fill, words, border
@@ -25,8 +26,18 @@ form that needs one: a required choice in Settings, or a combobox whose typed va
   the edge the same states draw without `invalid`, falls back to the refused default, written
   after the theme's rules. So a rest or hover edge that reaches the refused box, or a refused
   edge set to `transparent`, never leaves a refused box looking valid.
+  Where the refused default is itself the edge the box draws when not refused (a theme's edge at
+  rest, under the pointer or with the keyboard in the danger colour, or alike it), that edge
+  draws its own default too, and a refused box's fallback is written after every other, so the
+  two are always told apart (#3382's review).
 - **The words that say why are not a part**: they are the box's description, drawn by its row or
   its form and named by `aria-describedby`, so they are heard with it.
 
-The text input's and the textarea's refused value stay drawn by the field family, outside the
-parts, as before.
+**The text input and the textarea are refused the same way** (#3323, #3333, the same day): both
+name `invalid` (since NEXT), so `text-input.root.invalid.*` and `textarea.root.invalid.*` are keys;
+their default is what `app/src/ui/field/field.css` draws, held by a test; and every floor above
+holds for them. `border-width` 0 on their root was a value a theme could give before (a theme
+that wanted no edge); it is now refused there too, and the sentence that says so names the way
+that keeps the refusal visible: a transparent `border-colour` at rest, the edge's width kept for
+the refused state to draw on. The first release is internal, and no theme the window ships sets
+it.

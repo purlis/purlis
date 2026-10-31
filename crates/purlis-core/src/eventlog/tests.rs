@@ -3525,7 +3525,7 @@ fn a_load_through_mcp_opens_a_run_recorded_as_one_and_ends_with_the_turn() {
 
 /// Chat 3's salt, its hook's and the window's alike.
 fn salt_of_3() -> crate::skillspan::PromptSalt {
-    crate::skillspan::PromptSalt::of_chat("01JB00000000000000000000C3").unwrap()
+    crate::skillspan::PromptSalt::of_key("01JB00000000000000000000C3").unwrap()
 }
 
 /// What Use skill… holds for chat 3 as it types `text` for `skill`.
@@ -3733,4 +3733,304 @@ fn a_curation_prompt_held_before_its_chat_begins_makes_the_skill_its_turn_starts
     );
     assert_eq!(runs[0].harness.as_deref(), Some("codex"));
     assert_eq!(runs[0].persona.as_deref(), Some("steward"));
+}
+
+#[test]
+fn a_chats_routing_record_is_under_its_run_and_every_skill_run_it_opens_names_it() {
+    use crate::state::Event::{Stop, UserPromptSubmit};
+    use std::time::Instant;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane();
+    let mut host = recorder(dir.path());
+    let record = crate::skills::router::Record {
+        routing: "01K6E8ZK6V4Q9T0N3M2B1C5D7R".to_owned(),
+        router: "relevance".to_owned(),
+        ms: 101,
+        fell_back: Some(crate::skills::router::FellBack::Slow),
+        error: Some("'relevance' did not answer within 100 ms".to_owned()),
+        hidden: vec![crate::skills::router::RecordHidden {
+            skill: "deploy".to_owned(),
+            why: "over-budget".to_owned(),
+        }],
+    };
+    host.begin(
+        plane.path(),
+        3,
+        RunOf {
+            chat: CHAT,
+            run: "01K6E8ZK6V4Q9T0N3M2B1C5D70",
+        },
+        Began::Start,
+        &Attributes::default(),
+    )
+    .unwrap();
+    let routed = host
+        .apply(super::Entry::SkillRouted {
+            plane: plane.path().to_path_buf(),
+            number: 3,
+            record: record.clone(),
+        })
+        .unwrap();
+    assert_eq!(routed.len(), 1);
+    host.report(plane.path(), &report(3, UserPromptSubmit), Followed::No)
+        .unwrap();
+    host.tool(
+        plane.path(),
+        &starting(3, "posttooluse-skill", "toolu_a", "deploy"),
+        Instant::now(),
+    )
+    .unwrap();
+    host.report(plane.path(), &report(3, Stop), Followed::No)
+        .unwrap();
+
+    let events = read(dir.path()).unwrap();
+    let said = events
+        .iter()
+        .find(|event| event.kind == "skill.routed")
+        .expect("a routing record");
+    assert_eq!(said.run.as_deref(), Some("01K6E8ZK6V4Q9T0N3M2B1C5D70"));
+    assert_eq!(said.body, serde_json::to_value(&record).unwrap());
+    assert_eq!(said.body["fell_back"], "slow");
+    let started = events
+        .iter()
+        .find(|event| event.kind == "skill.started")
+        .expect("a run started");
+    assert_eq!(started.body["routing"], record.routing.as_str());
+    assert_eq!(started.body["routing_fell_back"], true);
+}
+
+#[test]
+fn a_routing_record_told_while_its_run_is_held_is_written_after_it_and_never_for_one_taken_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane();
+    let mut host = recorder(dir.path());
+    let record = crate::skills::router::Record {
+        routing: "01K6E8ZK6V4Q9T0N3M2B1C5D7R".to_owned(),
+        router: "relevance".to_owned(),
+        ms: 12,
+        fell_back: None,
+        error: None,
+        hidden: Vec::new(),
+    };
+    for (number, run) in [
+        (3, "01K6E8ZK6V4Q9T0N3M2B1C5D70"),
+        (4, "01K6E8ZK6V4Q9T0N3M2B1C5D71"),
+    ] {
+        host.begin_held(
+            plane.path(),
+            number,
+            RunOf { chat: CHAT, run },
+            Began::Start,
+            &Attributes::default(),
+            None,
+        );
+        let now = host.skill_routed(plane.path(), number, &record).unwrap();
+        assert_eq!(now, None, "nothing is written while the run is held");
+    }
+    host.begun(plane.path(), 3).unwrap();
+    host.taken_back(plane.path(), 4);
+
+    let kinds: Vec<(String, Option<String>)> = read(dir.path())
+        .unwrap()
+        .into_iter()
+        .map(|event| (event.kind, event.run))
+        .collect();
+    let run = Some("01K6E8ZK6V4Q9T0N3M2B1C5D70".to_owned());
+    assert_eq!(
+        kinds,
+        [
+            ("run.started".to_owned(), run.clone()),
+            ("skill.routed".to_owned(), run),
+        ]
+    );
+}
+
+#[test]
+fn a_clear_keeps_the_routing_its_chat_started_under_for_its_skill_runs() {
+    use crate::state::Event::{SessionStart, UserPromptSubmit};
+    use std::time::Instant;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane();
+    let mut host = recorder(dir.path());
+    host.begin(
+        plane.path(),
+        3,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &Attributes::default(),
+    )
+    .unwrap();
+    let record = crate::skills::router::Record {
+        routing: "01K6E8ZK6V4Q9T0N3M2B1C5D7R".to_owned(),
+        router: "relevance".to_owned(),
+        ms: 12,
+        fell_back: None,
+        error: None,
+        hidden: Vec::new(),
+    };
+    host.skill_routed(plane.path(), 3, &record).unwrap();
+    let cleared = "01K6E8ZK6V4Q9T0N3M2B1C5D7K";
+    host.report_with(
+        plane.path(),
+        &report(3, SessionStart),
+        Followed::Moved,
+        Some(cleared),
+    )
+    .unwrap();
+    host.report(plane.path(), &report(3, UserPromptSubmit), Followed::No)
+        .unwrap();
+    host.tool(
+        plane.path(),
+        &starting(3, "posttooluse-skill", "toolu_a", "deploy"),
+        Instant::now(),
+    )
+    .unwrap();
+
+    let started = read(dir.path())
+        .unwrap()
+        .into_iter()
+        .find(|event| event.kind == "skill.started")
+        .expect("a run started");
+    assert_eq!(started.run.as_deref(), Some(cleared));
+    assert_eq!(started.body["routing"], record.routing.as_str());
+    assert!(started.body.get("routing_fell_back").is_none());
+}
+
+#[test]
+fn a_routing_told_for_a_start_taken_back_is_never_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane();
+    let mut host = recorder(dir.path());
+    host.begin_held(
+        plane.path(),
+        3,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &Attributes::default(),
+        None,
+    );
+    host.taken_back(plane.path(), 3);
+    let record = crate::skills::router::Record {
+        routing: "01K6E8ZK6V4Q9T0N3M2B1C5D7R".to_owned(),
+        router: "relevance".to_owned(),
+        ms: 12,
+        fell_back: None,
+        error: None,
+        hidden: Vec::new(),
+    };
+
+    assert_eq!(host.skill_routed(plane.path(), 3, &record).unwrap(), None);
+    assert!(read(dir.path()).unwrap().is_empty());
+}
+
+#[test]
+fn a_log_whose_newest_event_has_no_id_takes_no_id_a_window_names_for_a_run() {
+    // Nothing the log held can be told apart by time from such a log (#3394), so every run a
+    // clear begins is under an id the writer mints.
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let mut log = Log::open(dir.path(), DEVICE).unwrap();
+        log.append(None, None, None, "a.kind", serde_json::json!({}))
+            .unwrap();
+    }
+    let file = dir.path().join(FILE);
+    let text = std::fs::read_to_string(&file).unwrap();
+    let mut event: Event = serde_json::from_str(text.lines().last().unwrap()).unwrap();
+    event.ulid = "not-an-id".to_owned();
+    std::fs::write(
+        &file,
+        format!("{}\n", serde_json::to_string(&event).unwrap()),
+    )
+    .unwrap();
+
+    let opened = recorder(dir.path());
+
+    assert!(!opened.never_held(&crate::reopen::mint()));
+}
+
+#[test]
+fn an_empty_log_takes_a_fresh_id_a_window_names_for_a_run() {
+    let dir = tempfile::tempdir().unwrap();
+
+    assert!(recorder(dir.path()).never_held(&crate::reopen::mint()));
+}
+
+#[test]
+fn a_run_let_go_of_from_what_the_writer_remembers_is_still_not_taken_again() {
+    // The writer remembers so many runs it began (#3394); one it let go of is still held by
+    // its time.
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    let first = crate::reopen::mint();
+    let attributes = Attributes::default();
+    for (number, run) in std::iter::once(first.clone())
+        .chain((0..RUNS_HELD).map(|_| crate::reopen::mint()))
+        .enumerate()
+    {
+        host.begin(
+            Path::new("/p"),
+            u32::try_from(number).unwrap(),
+            RunOf {
+                chat: &crate::reopen::mint(),
+                run: &run,
+            },
+            Began::Start,
+            &attributes,
+        )
+        .unwrap();
+    }
+    host.chats.clear();
+
+    assert!(!host.never_held(&first));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_runners_desktop_stop_and_re_arm_are_journalled_by_the_link_and_name_its_device() {
+    // ADR 0071 and ADR 0075 as amended (#2051): a link's stop is unattributed, its re-arm a
+    // person's, each `by: link`, and the event names the desktop's device id.
+    use purlis_host::StopsElsewhere;
+    let (config, data) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let on_disk = crate::halt::OnDisk(config.path().to_path_buf());
+    let mut host = Recorder::open_in(config.path(), data.path()).unwrap();
+    let dir = host.dir().to_path_buf();
+    let desktop = "01JA0DESKT0P00000000000000";
+
+    for rearm in [false, true] {
+        let entry: Entry =
+            serde_json::from_value(on_disk.link_switched(rearm, desktop).unwrap()).unwrap();
+        host.apply(entry).unwrap();
+    }
+
+    let events = kill_switch_events(&dir);
+    assert_eq!(
+        events
+            .iter()
+            .map(|(kind, actor, by, _)| (kind.as_str(), actor.as_str(), by.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("killswitch.stop", "unattributed", "link"),
+            ("killswitch.rearm", "human", "link")
+        ]
+    );
+    assert!(
+        read(&dir)
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind.starts_with("killswitch."))
+            .all(|event| event.body["device"] == desktop)
+    );
+    assert!(!crate::halt::stopped_on_disk(config.path()), "re-armed");
+    let journal = crate::halt::journal(config.path());
+    assert!(
+        journal
+            .iter()
+            .all(|line| line.by == crate::halt::Actor::Link)
+    );
 }

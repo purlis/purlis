@@ -17,10 +17,10 @@ import type { TodoRef } from "./todos";
  * catalogue's `todo.done:<slug>` and `todo.forget:<slug>` rows (`Views.OWN_ROWS`), so the
  * heading, the row's menu and the palette are one verb.
  *
- * **Its state is always Open**, and that is the store's rule, not a shortcut: a todo has no state
- * field, and a closed one is a deleted file whose trace is the journal's (ADR 0004). So there is
- * no Reopen, and a tab whose todo was closed or forgotten since — here, by a chat or in a
- * terminal — says the todo is not open any more, rather than drawing a state nothing records.
+ * **Its state is always Open**: a tab is an open todo's. A todo marked done stays, struck through
+ * in the Todos view, where its box or its menu reopens it (ADR 0106); its tab closes, and a tab
+ * whose todo was marked done or forgotten elsewhere — by a chat or in a terminal — says the todo
+ * is not open any more.
  *
  * **No HTML**, for `SessionRecordTab`'s reason: a todo is a file a chat or a terminal wrote.
  */
@@ -73,7 +73,7 @@ export function TodoTab({
     return (
       <EmptyState
         headline="This todo is not open any more"
-        body={`It was closed or forgotten in ${workspace}. A todo closed as done is in the workspace's journal.`}
+        body={`It was marked done or forgotten in ${workspace}. A todo marked done stays in the Todos view, struck through, where it can be reopened.`}
         testid="view-gone"
       />
     );

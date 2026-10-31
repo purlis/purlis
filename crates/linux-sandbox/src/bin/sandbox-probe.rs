@@ -7,7 +7,7 @@
 
 #[cfg(target_os = "linux")]
 fn main() -> std::process::ExitCode {
-    if let Some(code) = purlis_linux_sandbox::serve_if_asked() {
+    if let Some(code) = purlis_linux_sandbox::serve_if_asked_telling(told_to) {
         std::process::exit(code);
     }
     let words: Vec<String> = std::env::args().skip(1).collect();
@@ -17,6 +17,28 @@ fn main() -> std::process::ExitCode {
     };
     println!("{said}");
     std::process::ExitCode::SUCCESS
+}
+
+/// Where a test reads what the wrap told (#3396): each refusal as `<operation> <target>` on a line
+/// of the file `PROBE_TOLD` names in the chat's environment, opened before the wrap holds itself,
+/// so what the supervisor tells is written to a descriptor it already holds. None without one.
+#[cfg(target_os = "linux")]
+fn told_to(
+    env: &[(std::ffi::OsString, std::ffi::OsString)],
+) -> Option<purlis_linux_sandbox::refusal::Tell> {
+    use std::io::Write;
+    let (_, path) = env.iter().rev().find(|(key, _)| key == "PROBE_TOLD")?;
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .ok()?;
+    let file = std::sync::Mutex::new(file);
+    Some(Box::new(move |refusal| {
+        if let Ok(mut file) = file.lock() {
+            let _ = writeln!(file, "{} {}", refusal.operation, refusal.target);
+        }
+    }))
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -104,6 +126,131 @@ mod probe {
                 let mut back = [0u8; 2];
                 stream.read_exact(&mut back)
             })),
+            // A socket that listens with no bind of its own: the kernel would bind it to a port
+            // it picks, on every interface.
+            "listen-unbound" => {
+                let family = if word(1) == "6" {
+                    nix::sys::socket::AddressFamily::Inet6
+                } else {
+                    nix::sys::socket::AddressFamily::Inet
+                };
+                nix(nix::sys::socket::socket(
+                    family,
+                    nix::sys::socket::SockType::Stream,
+                    nix::sys::socket::SockFlag::empty(),
+                    None,
+                )
+                .and_then(|socket| {
+                    nix::sys::socket::listen(&socket, nix::sys::socket::Backlog::new(1)?)
+                }))
+            }
+            // A thread with a descriptor table of its own listens on its own socket, never
+            // bound, at the number where the process's table holds a bound one.
+            "listen-unshared" => {
+                use nix::sys::socket::{
+                    AddressFamily, Backlog, SockFlag, SockType, UnixAddr, bind, listen, socket,
+                };
+                use std::os::fd::AsRawFd;
+                let bound = socket(
+                    AddressFamily::Unix,
+                    SockType::Stream,
+                    SockFlag::empty(),
+                    None,
+                )
+                .map_err(|why| format!("{why:?}"))?;
+                bind(
+                    bound.as_raw_fd(),
+                    &UnixAddr::new_abstract(word(1).as_bytes())
+                        .map_err(|why| format!("{why:?}"))?,
+                )
+                .map_err(|why| format!("{why:?}"))?;
+                std::thread::spawn(move || {
+                    let mut at = bound;
+                    nix(
+                        nix::sched::unshare(nix::sched::CloneFlags::CLONE_FILES).and_then(|()| {
+                            let own = socket(
+                                AddressFamily::Inet,
+                                SockType::Stream,
+                                SockFlag::empty(),
+                                None,
+                            )?;
+                            nix::unistd::dup2(&own, &mut at)?;
+                            listen(&at, Backlog::new(1)?)
+                        }),
+                    )
+                })
+                .join()
+                .unwrap_or_else(|_| Err("the thread panicked".to_owned()))
+            }
+            // A server started on an address and port, as a dev server is (#2019): bound and
+            // listening, whatever it is bound to in the end.
+            "serve-on" => io(std::net::TcpListener::bind((
+                word(1),
+                word(2).parse::<u16>().unwrap_or(0),
+            ))),
+            // A test server on a port the system picks (#3396), as Go's `httptest` starts one:
+            // bound on the address asked for at port 0, then reached at the port it got, or at
+            // the port given after the address instead, with its server still listening.
+            "serve-and-dial" => {
+                let listener =
+                    std::net::TcpListener::bind((word(1), 0)).map_err(|why| name(&why))?;
+                let port = listener.local_addr().map_err(|why| name(&why))?.port();
+                let dialled = word(2).parse::<u16>().unwrap_or(port);
+                std::thread::spawn(move || {
+                    for mut stream in listener.incoming().flatten() {
+                        let mut got = [0u8; 2];
+                        if stream.read_exact(&mut got).is_ok() {
+                            let _ = stream.write_all(&got);
+                        }
+                    }
+                });
+                io(
+                    std::net::TcpStream::connect(("127.0.0.1", dialled)).and_then(|mut stream| {
+                        stream.write_all(b"hi")?;
+                        let mut back = [0u8; 2];
+                        stream.read_exact(&mut back)
+                    }),
+                )
+            }
+            // A test server that stopped (#3396): bound on 127.0.0.1 at port 0, closed, then
+            // dialled at the port it had. With a file named, its port is written there and the
+            // dial waits for `<file>.go`, so a test can put something else on the port first.
+            "picked-closed-dial" => {
+                let port = std::net::TcpListener::bind(("127.0.0.1", 0))
+                    .and_then(|listener| listener.local_addr())
+                    .map_err(|why| name(&why))?
+                    .port();
+                if !word(1).is_empty() {
+                    io(std::fs::write(word(1), port.to_string()))?;
+                    let go = format!("{}.go", word(1));
+                    let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+                    while std::fs::symlink_metadata(&go).is_err() {
+                        if std::time::Instant::now() > until {
+                            return Err("no go".to_owned());
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                    }
+                }
+                io(
+                    std::net::TcpStream::connect(("127.0.0.1", port)).and_then(|mut stream| {
+                        stream.write_all(b"hi")?;
+                        let mut back = [0u8; 2];
+                        stream.read_exact(&mut back)
+                    }),
+                )
+            }
+            // A datagram socket bound on 127.0.0.1 at a port the system picks (#3396).
+            "udp-bind" => io(std::net::UdpSocket::bind(("127.0.0.1", 0))),
+            // A user namespace of its own, as the browser engine's sandbox makes one (#3298).
+            "user-namespace" => nix(nix::sched::unshare(nix::sched::CloneFlags::CLONE_NEWUSER)),
+            // A server on a unix socket at a path (#2019).
+            "serve-at" => io(std::os::unix::net::UnixListener::bind(word(1))),
+            // A server on an abstract unix socket: bound, then listening.
+            "abstract-listen" => {
+                use std::os::linux::net::SocketAddrExt;
+                io(std::os::unix::net::SocketAddr::from_abstract_name(word(1))
+                    .and_then(|at| std::os::unix::net::UnixListener::bind_addr(&at)))
+            }
             "abstract" => {
                 use std::os::linux::net::SocketAddrExt;
                 let at = std::os::unix::net::SocketAddr::from_abstract_name(word(1))

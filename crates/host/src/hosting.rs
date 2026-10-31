@@ -98,6 +98,9 @@ pub struct ToCompose<'a> {
     /// none where the host hears no channel for the project (#2000). A window's launch carries
     /// the same.
     pub reporting: Option<&'a session::Reporting>,
+    /// The chat's prompt key, which the host minted for a start it composes (1.60, #3369): set
+    /// in its environment for its hooks. A window's launch carries its own.
+    pub prompt_key: Option<&'a session::PromptKey>,
     /// The scope of the link the start came on: what its run says started it (#2171).
     pub started_by: Scope,
     /// What the host does beside a start its binary composes itself (#2171).
@@ -137,7 +140,19 @@ pub trait Beside {
     fn confine(&self, plan: &session::ConfinePlan) -> Result<session::Confined, String>;
     /// Writes `entry` in the event log this host holds, durably, or says why not.
     fn record(&self, entry: serde_json::Value) -> Result<(), String>;
+    /// **What reads confinement `confinement` as it is now** (#3407), where it is one
+    /// [`Self::confine`] started for this program: what its board holds each time it is asked,
+    /// the hosts allowed live for the chat since it started among it, and nothing once it has
+    /// ended. `None` where the host reads none.
+    fn reach_of(&self, confinement: &str) -> Option<ReachOf> {
+        let _ = confinement;
+        None
+    }
 }
+
+/// What a confinement's board holds now, read each time it is asked ([`Beside::reach_of`]).
+/// The same type as the core's `hostedchats::Live`, which keeps it with a chat's record.
+pub type ReachOf = Arc<dyn Fn() -> session::ReachNow + Send + Sync + 'static>;
 
 /// A host whose binary composes no start: every start is refused with a sentence.
 pub struct ComposesNothing;
@@ -262,6 +277,12 @@ pub trait Running: Send + Sync + 'static {
     fn view_size(&self) -> Option<(u16, u16)> {
         None
     }
+    /// The size a view of `kind` is drawn at: DevTools' own for theirs (#2028), and
+    /// [`Running::view_size`] for every other.
+    fn view_size_of(&self, kind: ViewKind) -> Option<(u16, u16)> {
+        let _ = kind;
+        self.view_size()
+    }
     /// Ends it and everything it started, keeping its last screen; returns once it is gone.
     fn stop(&self);
     /// Its process, while it runs.
@@ -275,13 +296,15 @@ pub trait Running: Send + Sync + 'static {
     fn readiness(&self) -> Readiness;
     /// Calls `tell` once, as it ends.
     fn when_it_ends(&self, tell: Box<dyn FnOnce(Exit) + Send>);
-    /// Carries out a browser's act (#2013): refused for every program that is not a browser.
+    /// Carries out a browser's act (#2013), the browser being of the project at `project`
+    /// (#2020): refused for every program that is not a browser.
     fn act(
         &self,
         call_id: &str,
         act: purlis_session_protocol::browsing::Act,
+        project: &Path,
     ) -> Result<purlis_session_protocol::browsing::Browsed, crate::browsers::NotActed> {
-        let _ = (call_id, act);
+        let _ = (call_id, act, project);
         Err(crate::browsers::NotActed::Refused(
             "this program is not a browser, so it takes no browser's act".into(),
         ))
@@ -325,6 +348,16 @@ pub trait Running: Send + Sync + 'static {
     /// Who drives it, where it is a browser (#2014).
     fn driver(&self) -> Option<Driver> {
         None
+    }
+    /// The person opens its DevTools (#2028): refused for every program that is not a browser.
+    fn inspect(&self, width: u16, height: u16) -> Result<(), Refusal> {
+        let _ = (width, height);
+        Err(not_a_browser())
+    }
+    /// One event of the person's into its open DevTools (#2028).
+    fn inspector_input(&self, input: &Input) -> Result<(), Refusal> {
+        let _ = input;
+        Err(not_a_browser())
     }
 }
 
@@ -512,6 +545,10 @@ struct Inner {
     most_bundle: OnceLock<u64>,
     /// Which runner it relays to drains (#2865): the binary's, or nothing.
     drains: OnceLock<crate::routing::DrainsTo>,
+    /// The runners this machine keeps, which the kill switch reaches (#2051).
+    runners: Arc<crate::reach::Runners>,
+    /// The desktop's links to this host, which a runner's suspends itself without (#2051).
+    unattended: crate::unattended::Links,
     /// Set once the window has quit (#2006): whoever serves this host stops.
     quit: tokio::sync::watch::Sender<bool>,
     /// Told whenever a window links or goes, or a project is held or let go of: what the host's
@@ -666,10 +703,12 @@ fn browser_acted_on(command: &Command) -> Option<&str> {
         | Command::HandBack { program }
         | Command::BrowserInput { program, .. }
         | Command::SizeBrowser { program, .. }
+        | Command::Inspect { program, .. }
+        | Command::InspectorInput { program, .. }
         | Command::CancelEngineDownload { program } => Some(program),
         Command::AttachView {
             program,
-            kind: ViewKind::Browser,
+            kind: ViewKind::Browser | ViewKind::Inspector,
             ..
         } => Some(program),
         _ => None,
@@ -829,6 +868,17 @@ struct Hosted {
     /// Who opened it, for a browser (#2050): this host's own window, or a link between hosts
     /// for the window it named, which alone may act on it from such a link.
     opened_by: OpenedBy,
+    /// The profile it runs on, as its start named it: what a profile's forgetting on a runner
+    /// waits for (#4047).
+    profile: Option<String>,
+    /// Whether it ends with its window (1.42, #3274): once no window is linked to this host and
+    /// the last went without a quit, it is ended at once rather than kept for the grace period.
+    /// Taken from this machine's window alone.
+    ends_with_its_window: bool,
+    /// Its prompt key (1.60, #3369): its window's launch's, or the one minted here for a start
+    /// composed here. Kept in memory alone, for the window that takes it back, and written to
+    /// no record.
+    prompt_key: Option<session::PromptKey>,
 }
 
 /// **Who opened a hosted program** (#2050): a link of this host's own (its window), or a link
@@ -848,6 +898,16 @@ fn stopping_by(stopping: &Mutex<Option<Stopped>>, by: Stopped) {
 }
 
 impl Hosting {
+    /// **Whether a chat this host runs now is on profile `name`** (#4047): a profile is not
+    /// forgotten under a running chat, whose folder and sign-in it is.
+    pub fn runs_on_profile(&self, name: &str) -> bool {
+        self.state().programs.values().any(|hosted| {
+            !hosted.ended
+                && hosted.kind != ProgramKind::Browser
+                && hosted.profile.as_deref() == Some(name)
+        })
+    }
+
     /// A host whose starts `compose` composes, each run in a terminal of its own, its kill
     /// switch kept in memory only: a test's.
     pub fn new(compose: impl Compose) -> Hosting {
@@ -923,6 +983,10 @@ impl Hosting {
         switch: Switch,
         host_record: Option<HostRecord>,
     ) -> Hosting {
+        let runners = Arc::new(match switch.folder() {
+            Some(folder) => crate::reach::Runners::kept_in(folder),
+            None => crate::reach::Runners::default(),
+        });
         Hosting {
             inner: Arc::new(Inner {
                 compose: Box::new(compose),
@@ -944,6 +1008,8 @@ impl Hosting {
                 projects: OnceLock::new(),
                 most_bundle: OnceLock::new(),
                 drains: OnceLock::new(),
+                runners,
+                unattended: crate::unattended::Links::default(),
                 seen_elsewhere: Mutex::new(None),
                 quit: tokio::sync::watch::Sender::new(false),
                 changed: tokio::sync::Notify::new(),
@@ -982,6 +1048,12 @@ impl Hosting {
     pub async fn heed_stops_written_elsewhere(self) {
         loop {
             self.heed_a_stop_written_elsewhere().await;
+            // A host that starts stopped sends its stop to every runner once, and a runner the
+            // stop has not reached yet is tried again (#2051).
+            self.inner
+                .runners
+                .look(self.inner.switch.is_stopped())
+                .await;
             tokio::time::sleep(crate::killswitch::LOOK_EVERY).await;
         }
     }
@@ -1028,6 +1100,122 @@ impl Hosting {
     pub fn relaying_with(self, relays: crate::routing::RelaysTo) -> Hosting {
         let _ = self.inner.relays.set(relays);
         self
+    }
+
+    /// **This host's kill switch reaches every runner `every` says this machine keeps**
+    /// (#2051, ADR 0078 §7): a stop is sent to each, a link it relays carries a stop first while
+    /// it is stopped, and its window's re-arm re-arms the runners the stop reached
+    /// ([`crate::reach`]). Set once, as the binary builds its host.
+    pub fn stopping_runners_with(self, every: crate::reach::EveryRunner) -> Hosting {
+        self.inner.runners.given(every);
+        self
+    }
+
+    /// The desktop's links to this host (#2051).
+    pub(crate) fn unattended_links(&self) -> &crate::unattended::Links {
+        &self.inner.unattended
+    }
+
+    /// **This runner's desktop stopped or re-armed it over its link** (#2051): its journal says
+    /// so, `by: link`, and its event log records it with the desktop's `device` (ADR 0071 and ADR
+    /// 0075, as amended by ADR 0078). The stop this writes elsewhere is the one already held, so
+    /// a later look does not take it for another.
+    pub(crate) async fn switched_by_a_link(&self, rearm: bool, device: &str) {
+        let hosting = self.clone();
+        let device = device.to_owned();
+        let _ = tokio::task::spawn_blocking(move || {
+            let stops: &dyn StopsElsewhere = match hosting.inner.elsewhere.get() {
+                Some(stops) => stops.as_ref(),
+                None => &NoStopsElsewhere,
+            };
+            let entry = stops.link_switched(rearm, &device);
+            *hosting
+                .inner
+                .seen_elsewhere
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = stops.last_stop();
+            if let Some(entry) = entry
+                && let Err(why) = hosting.record().record(entry)
+            {
+                crate::say(&format!(
+                    "the link's kill switch line was not recorded: {why}"
+                ));
+            }
+        })
+        .await;
+    }
+
+    /// The runners owed a stop are tried again every `every`, in place of
+    /// [`crate::TRIED_AGAIN_EVERY`]: a test's. Given before the host is shared.
+    #[doc(hidden)]
+    pub fn trying_runners_again_every(mut self, every: std::time::Duration) -> Hosting {
+        let inner = Arc::get_mut(&mut self.inner).expect("given before the host is shared");
+        let runners = std::mem::take(
+            Arc::get_mut(&mut inner.runners).expect("given before the host is shared"),
+        );
+        inner.runners = Arc::new(runners.trying_again_every(every));
+        self
+    }
+
+    /// What a link relayed to `runner` sends first while this host is stopped (#2051).
+    pub(crate) fn stop_first(&self, runner: String) -> crate::reach::StopFirst {
+        let inner = Arc::downgrade(&self.inner);
+        crate::reach::StopFirst {
+            runner,
+            stopped: Arc::new(move || {
+                inner
+                    .upgrade()
+                    .is_some_and(|inner| inner.switch.is_stopped())
+            }),
+            runners: Arc::clone(&self.inner.runners),
+        }
+    }
+
+    /// The kill switch as it stands, with the runners its stop has not reached yet named
+    /// (#2051).
+    fn switch_now(&self) -> session::KillSwitch {
+        let mut switch = self.inner.switch.state();
+        if switch.stopped {
+            switch.runners = self.inner.runners.reached_now();
+        }
+        if switch.stopped
+            && let Some(said) = crate::reach::not_reached_said(&self.inner.runners.owed())
+        {
+            switch.why = Some(match switch.why {
+                Some(why) => format!("{why} {said}"),
+                None => said,
+            });
+        }
+        switch
+    }
+
+    /// This host re-armed as `switch` says: the runners its stop reached are re-armed too, and
+    /// those that were not are named (#2051). Their chats stay stopped until they are.
+    async fn rearmed_runners(&self, mut switch: session::KillSwitch) -> session::KillSwitch {
+        let inner = Arc::downgrade(&self.inner);
+        let missed = self
+            .inner
+            .runners
+            .rearm_the_reached(move || {
+                inner
+                    .upgrade()
+                    .is_some_and(|inner| inner.switch.is_stopped())
+            })
+            .await;
+        if !missed.is_empty() {
+            let named: Vec<String> = missed
+                .iter()
+                .map(|(runner, why)| format!("{runner} ({why})"))
+                .collect();
+            let said = format!(
+                "This machine is re-armed, and the re-arm did not reach {}: chats there stay \
+                 stopped, and the next re-arm tries it again.",
+                named.join(", ")
+            );
+            crate::say(&said);
+            switch.why = Some(said);
+        }
+        switch
     }
 
     /// This host, telling by `drains` which runner it relays to drains (#2865).
@@ -1143,8 +1331,9 @@ impl Hosting {
         Ok(at.path)
     }
 
-    /// What writes this host's event log: the binary's, or nothing.
-    fn record(&self) -> &dyn Record {
+    /// What writes this host's event log, and reads it (`crate::ownlog`): the binary's, or
+    /// nothing.
+    pub(crate) fn record(&self) -> &dyn Record {
         match self.inner.record.get() {
             Some(record) => record.as_ref(),
             None => &RecordsNothing,
@@ -1290,10 +1479,13 @@ impl Hosting {
     /// Push line `id` that the hooks of the project held `at` wrote to every subscriber whose
     /// link holds it there: whether one was told.
     fn hand_on(&self, at: &HeldAt, id: u64, line: serde_json::Value) -> bool {
+        // This host's channel records each line under the project as it holds it, whatever
+        // path the window names, so the window need name none (1.40, #3400).
         let pushed = Pushed::Heard {
             project: at.project.clone(),
             heard: id,
             line,
+            pathless: true,
         };
         Self::tell_holders(&mut self.state(), at, &pushed, false)
     }
@@ -1558,7 +1750,11 @@ impl Hosting {
     /// Throws the kill switch: kept first, so nothing starts from here on, then every program
     /// the host runs is ended, all at once. Each stays, with its last screen, until closed.
     async fn stop_all(&self) -> Answer {
-        let switch = self.inner.switch.stop();
+        // Whether it was stopped already: a runner stopped from its own command line says so,
+        // and its desktop's re-arm leaves it stopped (#2051). What it could not keep is said by
+        // `switch_now`.
+        let already = self.inner.switch.is_stopped();
+        self.inner.switch.stop();
         let programs: Vec<Arc<dyn Running>> = self
             .state()
             .programs
@@ -1570,7 +1766,13 @@ impl Hosting {
             })
             .collect();
         let _ = tokio::task::spawn_blocking(move || stop_together(programs)).await;
-        Answer::KillSwitch(switch)
+        // Then every runner this machine keeps, once this host's own programs are stopped
+        // (#2051).
+        self.inner.runners.stop_every().await;
+        Answer::KillSwitch(session::KillSwitch {
+            already,
+            ..self.switch_now()
+        })
     }
 
     async fn start(&self, start: StartProgram, peer: &Peer) -> Result<Answer, Refusal> {
@@ -1691,6 +1893,25 @@ impl Hosting {
                 channel.forget(number);
             }
         };
+        // Its prompt key (#3369): the window's launch's, or one minted here for a chat's harness
+        // this host composes, as its token is issued here.
+        let prompt_key = match &start.launch {
+            Some(launch) => launch.prompt_key.clone(),
+            None if start.kind == ProgramKind::Harness => match session::PromptKey::mint() {
+                Ok(key) => Some(key),
+                Err(why) => {
+                    forget(&channel);
+                    self.end_confinements_of(&program);
+                    return Err(not_started(format!(
+                        "chat {number} could not be given its prompt key: {why}"
+                    )));
+                }
+            },
+            None => None,
+        };
+        // Answered only to a link that may compose a start or take one back: the window's, or
+        // its host's relaying it (#3369).
+        let answers_prompt_key = peer.scope().may(Power::Launch);
         // Composed off the runtime: a start the host composes itself reads the project's files
         // and starts its confinement (#2171).
         let composed = {
@@ -1700,6 +1921,7 @@ impl Hosting {
             let window = relayed_for(&self.state(), peer);
             let at = at.clone();
             let program = program.clone();
+            let prompt_key = prompt_key.clone();
             tokio::task::spawn_blocking(move || {
                 let beside = ForTheProgram {
                     hosting: hosting.clone(),
@@ -1719,6 +1941,7 @@ impl Hosting {
                     size,
                     start: &start,
                     reporting: reporting.as_ref(),
+                    prompt_key: prompt_key.as_ref(),
                     started_by,
                     beside: &beside,
                 })
@@ -1778,31 +2001,41 @@ impl Hosting {
             channel.bind(number, pid);
         }
         let stopping: Arc<Mutex<Option<Stopped>>> = Arc::default();
-        self.state().programs.insert(
-            program.clone(),
-            Hosted {
-                kind: start.kind,
-                at: at.clone(),
-                number,
-                run: start.run.clone(),
-                running: Arc::clone(&running),
-                size,
-                process,
-                cwd: start
-                    .launch
-                    .as_ref()
-                    .and_then(|launch| launch.cwd.as_ref())
-                    .map(PathBuf::from)
-                    .or(cwd),
-                ended: false,
-                exit: None,
-                stopping: Arc::clone(&stopping),
-                sandbox: sandbox.clone(),
-                note: start.note.clone(),
-                logins: Arc::default(),
-                opened_by: OpenedBy::ThisHost,
-            },
-        );
+        let ends_with_its_window = start.ends_with_its_window && peer.scope() == Scope::LocalUi;
+        let windowless = {
+            let mut state = self.state();
+            // Its window went while it was being started: ended once it is listed, below.
+            let windowless = ends_with_its_window && state.windows.is_empty();
+            state.programs.insert(
+                program.clone(),
+                Hosted {
+                    kind: start.kind,
+                    at: at.clone(),
+                    number,
+                    run: start.run.clone(),
+                    running: Arc::clone(&running),
+                    size,
+                    process,
+                    cwd: start
+                        .launch
+                        .as_ref()
+                        .and_then(|launch| launch.cwd.as_ref())
+                        .map(PathBuf::from)
+                        .or(cwd),
+                    ended: false,
+                    exit: None,
+                    stopping: Arc::clone(&stopping),
+                    sandbox: sandbox.clone(),
+                    note: start.note.clone(),
+                    logins: Arc::default(),
+                    opened_by: OpenedBy::ThisHost,
+                    profile: start.profile.clone(),
+                    ends_with_its_window,
+                    prompt_key: prompt_key.clone(),
+                },
+            );
+            windowless
+        };
         // Written down before the start is answered, so a host killed from here on leaves it
         // for the next to settle (#2007).
         if let Some(host_record) = &self.inner.host_record {
@@ -1869,6 +2102,9 @@ impl Hosting {
                 exit,
             });
         }));
+        if windowless {
+            self.end_what_ends_with_its_window().await;
+        }
         // Where the confinement composed for it is, where the start named one to this link and
         // its composition started one (#2407).
         let confined = start.confinement.as_ref().and_then(|id| {
@@ -1890,6 +2126,7 @@ impl Hosting {
             process,
             confined,
             sandbox: Some(sandbox),
+            prompt_key: prompt_key.filter(|_| answers_prompt_key),
         })
     }
 
@@ -1900,6 +2137,15 @@ impl Hosting {
         self.heed_a_stop_written_elsewhere().await;
         self.let_through(&start, peer)?;
         a_note_that_fits(start.note.as_ref())?;
+        // Its views over a link between hosts: its pool's own limits, each within its bounds, or
+        // the defaults (#3297).
+        let link_frames = match start.link_frames {
+            None => purlis_session_protocol::browsing::LinkFrames::DEFAULT,
+            Some(given) => given.checked().map_err(|why| Refusal {
+                code: session::MALFORMED.into(),
+                why,
+            })?,
+        };
         // Read before the lock: it may read this machine's store.
         let budget = self.inner.browsers.budget();
         let (program, at, place, download) = {
@@ -1973,8 +2219,12 @@ impl Hosting {
         // The host's own act that ends it, for the line its end leaves in the host's log
         // (#2745); a browser's end leaves nothing in the event log.
         let stopping: Arc<Mutex<Option<Stopped>>> = Arc::default();
-        let running: Arc<dyn Running> =
-            Arc::new(Browser::new(screen, program.clone(), Arc::clone(&stopping)));
+        let running: Arc<dyn Running> = Arc::new(Browser::held_over_links_to(
+            screen,
+            program.clone(),
+            Arc::clone(&stopping),
+            link_frames,
+        ));
         let process = running.process();
         let mut state = self.state();
         let opened_by = opened_by(&state, peer);
@@ -2007,6 +2257,11 @@ impl Hosting {
                         .collect(),
                 )),
                 opened_by,
+                profile: None,
+                // A browser lives as its chat's window keeps it (#2025), never by this word.
+                ends_with_its_window: false,
+                // A browser has no prompts of a chat's to digest.
+                prompt_key: None,
             },
         );
         drop(state);
@@ -2032,6 +2287,7 @@ impl Hosting {
             process,
             confined: None,
             sandbox: Some(session::RunSandbox::Off),
+            prompt_key: None,
         })
     }
 
@@ -2045,6 +2301,20 @@ impl Hosting {
         reach: Option<purlis_session_protocol::browsing::BrowserReach>,
     ) -> Result<Answer, Refusal> {
         let running = self.running(program)?;
+        let project = self
+            .state()
+            .programs
+            .get(program)
+            .map(|hosted| hosted.at.path.clone())
+            .ok_or_else(|| no_such_program(program))?;
+        // A folder an act names is one of the browser's own project's (#2020): the window
+        // names a chat's, which is in its project, and nothing outside it is read or written.
+        if let Some(folder) = folder_named(&act) {
+            in_its_project(Path::new(folder), &project).map_err(|why| Refusal {
+                code: session::MALFORMED.into(),
+                why,
+            })?;
+        }
         tokio::task::spawn_blocking(move || {
             // What it reaches is what the window says now, before the act (#2018).
             if let Some(reach) = &reach {
@@ -2052,7 +2322,7 @@ impl Hosting {
                     .reach_now(reach)
                     .map_err(crate::browsers::NotActed::Refused)?;
             }
-            running.act(&call_id, act)
+            running.act(&call_id, act, &project)
         })
         .await
         .map_err(|why| not_started(why.to_string()))?
@@ -2125,7 +2395,7 @@ impl Hosting {
                     code: session::MALFORMED.into(),
                     why: format!("program {program} has no view of that kind"),
                 })?;
-            let size = match hosted.running.view_size() {
+            let size = match hosted.running.view_size_of(kind) {
                 Some((columns, rows)) => Size { columns, rows },
                 None => hosted.size,
             };
@@ -2225,6 +2495,7 @@ impl Hosting {
                 } else {
                     Vec::new()
                 },
+                prompt_key: hosted.prompt_key.clone(),
             })
             .collect();
         programs.sort_by(|a, b| (a.number, &a.program).cmp(&(b.number, &b.program)));
@@ -2425,6 +2696,42 @@ impl Hosting {
         Ok(Answer::Done)
     }
 
+    /// **Ends every program that ends with its window** (1.42, #3274), as a quit would end it:
+    /// forgotten at once, its confinements with it, its end kept as a quit's. Answers once they
+    /// are gone, or [`ENDS_WITHIN`] has passed: what the last window's going does before
+    /// anything of it is kept for the grace period.
+    async fn end_what_ends_with_its_window(&self) {
+        let (hosted, confinements) = {
+            let mut state = self.state();
+            let ids: Vec<String> = state
+                .programs
+                .iter()
+                .filter(|(_, hosted)| hosted.ends_with_its_window)
+                .map(|(id, _)| id.clone())
+                .collect();
+            if ids.is_empty() {
+                return;
+            }
+            take_as_a_quit(&mut state, &ids)
+        };
+        for one in &hosted {
+            if let Some(channel) = self.channel(&one.at) {
+                channel.forget(one.number);
+            }
+        }
+        let _ = tokio::task::spawn_blocking(move || {
+            stop_together(
+                hosted
+                    .iter()
+                    .map(|hosted| Arc::clone(&hosted.running))
+                    .collect(),
+            );
+            drop(confinements);
+            drop(hosted);
+        })
+        .await;
+    }
+
     /// Ends the confinements `program` runs in, off the runtime.
     fn end_confinements_of(&self, program: &str) {
         let ending = take_confinements(&mut self.state(), |owner| {
@@ -2602,6 +2909,24 @@ fn note_a_window(state: &mut State, link: u64) {
     state.windowless_since = None;
 }
 
+/// **Takes the programs `ids` out of `state` as a quit ends them**: each kept as ended by a quit,
+/// its process kept for the admission check, and the confinements it runs in taken with it.
+/// Its caller stops them.
+fn take_as_a_quit(state: &mut State, ids: &[String]) -> (Vec<Hosted>, Vec<Arc<dyn Confining>>) {
+    let hosted: Vec<Hosted> = ids
+        .iter()
+        .filter_map(|id| state.programs.remove(id))
+        .inspect(|hosted| stopping_by(&hosted.stopping, Stopped::Quit))
+        .collect();
+    let processes: Vec<u32> = hosted.iter().filter_map(|hosted| hosted.process).collect();
+    state.closed.extend(processes);
+    let confinements = take_confinements(
+        state,
+        |owner| matches!(owner, Owner::Program(program) if ids.contains(program)),
+    );
+    (hosted, confinements)
+}
+
 /// Takes every confinement whose owner `whose` says, out of `state`.
 fn take_confinements(state: &mut State, whose: impl Fn(&Owner) -> bool) -> Vec<Arc<dyn Confining>> {
     let ids: Vec<String> = state
@@ -2735,6 +3060,28 @@ impl Beside for ForTheProgram {
 
     fn record(&self, entry: serde_json::Value) -> Result<(), String> {
         self.hosting.record().record(entry)
+    }
+
+    /// Read from the host's own hold, by the id and this program, each time: a confinement
+    /// that ended, or one held under its id for another program since, holds nothing for it.
+    fn reach_of(&self, confinement: &str) -> Option<ReachOf> {
+        let weak = Arc::downgrade(&self.hosting.inner);
+        let (id, program) = (confinement.to_owned(), self.program.clone());
+        Some(Arc::new(move || {
+            let Some(inner) = weak.upgrade() else {
+                return session::ReachNow::default();
+            };
+            let confining = Hosting { inner }
+                .state()
+                .confinements
+                .get(&id)
+                .filter(|held| matches!(&held.owner, Owner::Program(own) if *own == program))
+                .map(|held| Arc::clone(&held.confining));
+            // Its board is read outside the host's hold.
+            confining
+                .map(|confining| confining.now())
+                .unwrap_or_default()
+        }))
     }
 }
 
@@ -3026,6 +3373,7 @@ impl Hosting {
 
 impl session::Host for Hosting {
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
+        self.inner.unattended.heard(peer);
         if let Some(program) = browser_acted_on(&command) {
             self.opened_for(program, peer)?;
         }
@@ -3042,8 +3390,13 @@ impl session::Host for Hosting {
                 transfer,
                 refs,
                 checkout,
+                moving,
             } => {
-                let way = crate::code::Way::In { refs, checkout };
+                let way = crate::code::Way::In {
+                    refs,
+                    checkout,
+                    moving,
+                };
                 self.move_code(&project, repo, transfer, way, peer).await
             }
             Command::GiveCode {
@@ -3051,15 +3404,46 @@ impl session::Host for Hosting {
                 repo,
                 transfer,
                 have,
+                with_work,
             } => {
-                self.move_code(
-                    &project,
-                    repo,
-                    transfer,
-                    crate::code::Way::Out { have },
-                    peer,
-                )
-                .await
+                let way = crate::code::Way::Out { have, with_work };
+                self.move_code(&project, repo, transfer, way, peer).await
+            }
+            Command::TakeConversation {
+                project,
+                transfer,
+                workspace,
+                profile,
+                conversation,
+                file,
+            } => {
+                let way = crate::code::Way::ConversationIn(crate::code::Carried {
+                    workspace,
+                    profile,
+                    conversation,
+                    file,
+                });
+                self.move_code(&project, String::new(), transfer, way, peer)
+                    .await
+            }
+            Command::GiveConversation {
+                project,
+                transfer,
+                workspace,
+                profile,
+                conversation,
+            } => {
+                let way = crate::code::Way::ConversationOut(crate::code::Carried {
+                    workspace,
+                    profile,
+                    conversation,
+                    file: String::new(),
+                });
+                self.move_code(&project, String::new(), transfer, way, peer)
+                    .await
+            }
+            Command::ClonesOf { project, workspace } => {
+                self.clones_of(&project, workspace, peer).await
             }
             Command::StartProgram(start) => match start.kind {
                 ProgramKind::Harness | ProgramKind::Shell => self.start(*start, peer).await,
@@ -3169,16 +3553,20 @@ impl session::Host for Hosting {
             }
             Command::StopAll => Ok(self.stop_all().await),
             // Only the window's link reaches this: the grants refuse every other.
-            Command::Rearm => self
-                .inner
-                .switch
-                .rearm()
-                .map(Answer::KillSwitch)
-                .map_err(|why| Refusal {
+            Command::Rearm => {
+                let switch = self.inner.switch.rearm().map_err(|why| Refusal {
                     code: session::STOPPED.into(),
                     why,
-                }),
-            Command::KillSwitch => Ok(Answer::KillSwitch(self.inner.switch.state())),
+                })?;
+                Ok(Answer::KillSwitch(self.rearmed_runners(switch).await))
+            }
+            Command::KillSwitch => Ok(Answer::KillSwitch(self.switch_now())),
+            // Only the window and its host relaying it reach this: the grants refuse every other.
+            Command::LogEnd => self
+                .its_log_end()
+                .await
+                .map(|(device, seq)| Answer::LogEnd { device, seq })
+                .map_err(not_started),
             // Only the window's link reaches this: the grants refuse every other. A write is
             // made durable, so off the runtime.
             Command::Record { entry } => {
@@ -3233,6 +3621,24 @@ impl session::Host for Hosting {
                 })
                 .await
             }
+            // The person's DevTools (#2028): the window's alone, on its own host, as the grants
+            // say; each may wait on the engine, so off the runtime.
+            Command::Inspect {
+                program,
+                width,
+                height,
+            } => {
+                self.driving(&program, move |running| {
+                    running.inspect(width, height).map(|()| Answer::Done)
+                })
+                .await
+            }
+            Command::InspectorInput { program, input } => {
+                self.driving(&program, move |running| {
+                    running.inspector_input(&input).map(|()| Answer::Done)
+                })
+                .await
+            }
             Command::TakeBack { window } => self.take_back(window, peer),
             // The window takes its own chats back with `programs_of`: a host that relays
             // nothing has nothing to do with its name (#2623).
@@ -3249,6 +3655,25 @@ impl session::Host for Hosting {
                 code: session::NOT_ALLOWED.into(),
                 why: "this host is paired with no desktop over this link, so there is nothing to \
                       unpair"
+                    .into(),
+            }),
+            // A runner's host keeps its desktop's profile on its link from that desktop
+            // (`serving`) before this host hears of it (1.43, #2049).
+            Command::KeepProfile(_)
+            | Command::ForgetProfile { .. }
+            | Command::StageProfileSettings(_)
+            | Command::SettingsHeld { .. }
+            | Command::KeptProfiles => Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "this host is paired with no desktop over this link, so it keeps no \
+                      desktop's profile"
+                    .into(),
+            }),
+            // Nor does it wait on a login for one (1.59, #4044).
+            Command::SignInRedirect { .. } => Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "this host is paired with no desktop over this link, so it carries no \
+                      sign-in's redirect"
                     .into(),
             }),
             // The desktop's host relays a window's link to a runner before this host hears of
@@ -3269,13 +3694,23 @@ impl session::Host for Hosting {
     }
 
     async fn link_ended(&self, peer: &Peer) {
-        self.let_go_of_the_links(peer);
-        {
+        self.inner.unattended.ended(peer);
+        // The last window going: what ends with its window ends first, and is gone before its
+        // holds are let go of, so a project it alone kept is let go of as any other.
+        // Under the one hold a start's check takes too: a program started as this goes is
+        // either ended here or by its start (`Self::start`).
+        let last_window = {
             let mut state = self.state();
-            if state.windows.remove(&link_of(peer)) && state.windows.is_empty() {
+            let last = state.windows.remove(&link_of(peer)) && state.windows.is_empty();
+            if last {
                 state.windowless_since = Some(Instant::now());
             }
+            last
+        };
+        if last_window {
+            self.end_what_ends_with_its_window().await;
         }
+        self.let_go_of_the_links(peer);
         self.inner.changed.notify_one();
         // What the link confined that nothing runs in yet goes with it; what a program runs in
         // stays with the program (#1999).
@@ -3299,10 +3734,13 @@ impl session::Host for Hosting {
 
     async fn subscribe(
         &self,
-        _since: Since,
+        since: Since,
         peer: &Peer,
     ) -> Result<mpsc::Receiver<Pushed>, Refusal> {
+        self.inner.unattended.heard(peer);
         let (told, notices) = mpsc::channel(MOST_NOTICES_QUEUED);
+        // This host's own event log, from the cursor `since` holds for its device (#3393).
+        self.push_its_log(&since, peer, told.clone());
         {
             let mut state = self.state();
             state.subscribers.push(Subscriber {
@@ -3494,6 +3932,35 @@ impl Drop for PlaceInTheBudget {
     }
 }
 
+/// The folder of this machine an act of a browser's names (#2020): the chat's folder an upload
+/// reads from, or one a download is brought into.
+fn folder_named(act: &purlis_session_protocol::browsing::Act) -> Option<&str> {
+    use purlis_session_protocol::browsing::Act;
+    match act {
+        Act::Upload { from, .. } => Some(from.as_deref().unwrap_or_default()),
+        Act::SaveDownload { into, .. } => Some(into.as_deref().unwrap_or_default()),
+        _ => None,
+    }
+}
+
+/// **Whether `folder` is inside `project`**, each as the kernel names it (#2020), or why not.
+fn in_its_project(folder: &Path, project: &Path) -> Result<(), String> {
+    let outside = || {
+        "a browser's files are read from and written to its own project's folders alone".to_owned()
+    };
+    if !folder.is_absolute() {
+        return Err(outside());
+    }
+    let (Ok(folder), Ok(project)) = (folder.canonicalize(), project.canonicalize()) else {
+        return Err(outside());
+    };
+    if folder.starts_with(&project) {
+        Ok(())
+    } else {
+        Err(outside())
+    }
+}
+
 /// The refusal of a browser that did not start (#2899): `no_engine_sandbox` where its engine
 /// cannot make its sandbox here, `not_started` for anything else; in the binary's words.
 fn browser_not_started(why: crate::browsers::NotStarted) -> Refusal {
@@ -3583,17 +4050,7 @@ impl Hosting {
                 .filter(|(_, hosted)| due.contains(&hosted.at))
                 .map(|(id, _)| id.clone())
                 .collect();
-            let hosted: Vec<Hosted> = ids
-                .iter()
-                .filter_map(|id| state.programs.remove(id))
-                .inspect(|hosted| stopping_by(&hosted.stopping, Stopped::Quit))
-                .collect();
-            let processes: Vec<u32> = hosted.iter().filter_map(|hosted| hosted.process).collect();
-            state.closed.extend(processes);
-            let confinements = take_confinements(
-                &mut state,
-                |owner| matches!(owner, Owner::Program(program) if ids.contains(program)),
-            );
+            let (hosted, confinements) = take_as_a_quit(&mut state, &ids);
             let held: Vec<Held> = due
                 .iter()
                 .filter_map(|at| state.projects.remove(at))
@@ -3710,5 +4167,64 @@ fn stop_together(programs: Vec<Arc<dyn Running>>) {
         while !thread.is_finished() && std::time::Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+}
+
+#[cfg(test)]
+mod a_browsers_folders {
+    use std::path::Path;
+
+    use super::{folder_named, in_its_project};
+    use purlis_session_protocol::browsing::Act;
+
+    /// A project, with a chat's folder in it, and a folder beside it outside it.
+    fn places() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+        let made = tempfile::tempdir().expect("a directory");
+        let project = made.path().join("project");
+        std::fs::create_dir_all(project.join("workspaces/app")).expect("made");
+        std::fs::create_dir_all(made.path().join("elsewhere")).expect("made");
+        (made, project.clone(), project.join("workspaces/app"))
+    }
+
+    #[test]
+    fn a_folder_an_act_names_is_one_of_the_browsers_own_project_or_the_act_is_refused() {
+        let (made, project, chat) = places();
+        assert!(in_its_project(&chat, &project).is_ok());
+        assert!(in_its_project(&project, &project).is_ok());
+        for outside in [
+            made.path().join("elsewhere"),
+            chat.join("../../../elsewhere"),
+            Path::new("workspaces/app").to_path_buf(),
+            made.path().join("not-there"),
+        ] {
+            assert!(in_its_project(&outside, &project).is_err(), "{outside:?}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_reached_through_a_link_out_of_the_project_is_refused() {
+        let (made, project, _chat) = places();
+        std::os::unix::fs::symlink(made.path().join("elsewhere"), project.join("away"))
+            .expect("linked");
+        assert!(in_its_project(&project.join("away"), &project).is_err());
+    }
+
+    #[test]
+    fn only_an_upload_and_a_save_name_a_folder_and_one_that_names_none_names_the_empty_one() {
+        let upload = Act::Upload {
+            target: "e1".into(),
+            files: vec!["a".into()],
+            from: None,
+        };
+        assert_eq!(folder_named(&upload), Some(""));
+        assert!(in_its_project(Path::new(""), Path::new("/")).is_err());
+        let save = Act::SaveDownload {
+            download: "d1".into(),
+            to: "a".into(),
+            into: Some("/p".into()),
+        };
+        assert_eq!(folder_named(&save), Some("/p"));
+        assert_eq!(folder_named(&Act::Pages), None);
     }
 }

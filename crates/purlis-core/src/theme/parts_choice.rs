@@ -77,10 +77,10 @@ fn row_look(states: &[State]) -> Look {
     }
 }
 
-/// **A checkbox** (#2907): its row, its box, its words and the line under them.
+/// **A checkbox** (#2907): its row, its box, its words, a chip's count and the line under them.
 pub(super) const CHECKBOX: Family = Family {
     name: "checkbox",
-    description: "A checkbox: its row, the box ticked, its words and the line under them.",
+    description: "A checkbox: its row, the box ticked, its words, its count and the line under them.",
     since: super::NEXT,
     parts: &[
         Part {
@@ -100,6 +100,12 @@ pub(super) const CHECKBOX: Family = Family {
             since: super::NEXT,
             description: "Its words.",
             properties: WORDS,
+        },
+        Part {
+            name: "count",
+            since: super::NEXT,
+            description: "How many things it stands for, after its words, on a box or a chip.",
+            properties: &[Prop::Text],
         },
         Part {
             name: "description",
@@ -136,6 +142,7 @@ pub(super) const CHECKBOX: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **A checkbox's colours as `choice.css` draws them**: a box's row has no ground of its own; a
@@ -213,6 +220,7 @@ pub(super) const RADIO: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **A radio's colours as `choice.css` draws them**: its row's.
@@ -266,6 +274,7 @@ pub(super) const SWITCH: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **A switch's colours as `choice.css` draws them**: its row's.
@@ -305,6 +314,7 @@ pub(super) const SEGMENTED_CONTROL: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **A segmented control's colours as `choice.css` draws them**: the control's ground.
@@ -357,6 +367,7 @@ pub(super) const SEGMENT: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **A segment's colours as `choice.css` draws them**: no ground of its own in the quiet words;
@@ -432,6 +443,7 @@ pub(super) const SLIDER: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **A slider's colours as `choice.css` draws them**: no ground, its value in the secondary
@@ -522,6 +534,7 @@ pub(super) const OPTION_CARD: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **An option card's colours as `choice.css` draws them.** A card stands on the window's ground

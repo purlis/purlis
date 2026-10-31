@@ -242,7 +242,7 @@ pub fn create(
     machine: &MachineSettings,
     now: u64,
 ) -> Result<Made, String> {
-    make(homes, name, kind, Some(machine), now)
+    make(homes, name, kind, Making::imported_from(machine), now)
 }
 
 /// **Makes the profile `name` of the harness `kind` for sandboxed chats only** (#2037, ruled
@@ -255,16 +255,39 @@ pub fn create_sandbox_only(
     kind: &str,
     now: u64,
 ) -> Result<Made, String> {
-    make(homes, name, kind, None, now)
+    make(homes, name, kind, Making::SANDBOX_ONLY, now)
+}
+
+/// How a profile is made: where its settings are imported from, whether it is for sandboxed
+/// chats only, and whether it may take a built-in's name.
+pub(super) struct Making<'a> {
+    /// This machine's settings, imported into it; none imports nothing.
+    pub(super) machine: Option<&'a MachineSettings<'a>>,
+    pub(super) sandbox_only: bool,
+}
+
+impl<'a> Making<'a> {
+    const SANDBOX_ONLY: Making<'static> = Making {
+        machine: None,
+        sandbox_only: true,
+    };
+
+    fn imported_from(machine: &'a MachineSettings<'a>) -> Self {
+        Making {
+            machine: Some(machine),
+            sandbox_only: false,
+        }
+    }
 }
 
 /// [`create`], with its settings imported from `machine`'s, or, with none, a profile for
-/// sandboxed chats only ([`create_sandbox_only`]).
-fn make(
+/// sandboxed chats only ([`create_sandbox_only`]); or a runner's keeping of a desktop's
+/// profile ([`super::onrunner`]).
+pub(super) fn make(
     homes: &Homes,
     name: &str,
     kind: &str,
-    machine: Option<&MachineSettings>,
+    making: Making<'_>,
     now: u64,
 ) -> Result<Made, String> {
     if !crate::profiles::name_ok(name) {
@@ -280,59 +303,10 @@ fn make(
              Pick another name."
         ));
     }
-    let (folders, allowed) = harness_of(kind)?;
     let folder = homes.folder_of(name);
     let mut made_folder = false;
     let answer = super::update(&homes.config_root, |store| {
-        if store.profiles.iter().any(|p| p.name == name) {
-            return Err(format!(
-                "this machine already has a profile named '{name}'. Pick another name, or \
-                 remove that one first."
-            ));
-        }
-        if std::fs::symlink_metadata(&folder).is_ok() {
-            return Err(format!(
-                "{} is already there, so purlis made no profile '{name}'. Move it away, or \
-                 pick another name.",
-                folder.display()
-            ));
-        }
-        let made = (|| {
-            private_dirs(&homes.folders)?;
-            private_dir(&folder)?;
-            made_folder = true;
-            let config = folder.join(CONFIG);
-            private_dir(&config)?;
-            let data = match folders.data_env {
-                Some(_) => {
-                    let data = folder.join(DATA);
-                    private_dir(&data)?;
-                    Some(data)
-                }
-                None => None,
-            };
-            let from = machine.and_then(|machine| machine.of(kind));
-            let copied = match &from {
-                Some(from) => import_into(allowed, from, &folder, &config)?,
-                None => Copied::default(),
-            };
-            Ok::<_, io::Error>((config, data, from, copied))
-        })();
-        let (config, data, from, copied) = made.map_err(|e| could_not(homes, &e))?;
-        let record = MachineProfile {
-            name: name.to_owned(),
-            harness: kind.to_owned(),
-            title: name.to_owned(),
-            folders: Folders { config, data },
-            adopted: None,
-            imported: from.map(|from| Imported { at: now, from }),
-            sign_in: None,
-            pinned: None,
-            sandbox_only: machine.is_none(),
-            rest: Map::new(),
-        };
-        store.profiles.push(record.clone());
-        Ok(Made { record, copied })
+        make_in(store, homes, name, kind, &making, now, &mut made_folder)
     });
     match answer {
         Ok(Ok(made)) => Ok(made),
@@ -342,6 +316,130 @@ fn make(
             }
             Err(why)
         }
+    }
+}
+
+/// [`make`]'s change of the store `store`, under its lock: the profile `name` made, its folder
+/// with it, and its record pushed. `made_folder` says whether its folder was made, for the
+/// caller to remove it where the change is not written.
+pub(super) fn make_in(
+    store: &mut super::Store,
+    homes: &Homes,
+    name: &str,
+    kind: &str,
+    making: &Making<'_>,
+    now: u64,
+    made_folder: &mut bool,
+) -> Result<Made, String> {
+    let machine = making.machine;
+    let (folders, allowed) = harness_of(kind)?;
+    let folder = homes.folder_of(name);
+    if store.profiles.iter().any(|p| p.name == name) {
+        return Err(format!(
+            "this machine already has a profile named '{name}'. Pick another name, or \
+             remove that one first."
+        ));
+    }
+    if std::fs::symlink_metadata(&folder).is_ok() {
+        return Err(format!(
+            "{} is already there, so purlis made no profile '{name}'. Move it away, or \
+             pick another name.",
+            folder.display()
+        ));
+    }
+    let made = (|| {
+        private_dirs(&homes.folders)?;
+        private_dir(&folder)?;
+        *made_folder = true;
+        let config = folder.join(CONFIG);
+        private_dir(&config)?;
+        let data = match folders.data_env {
+            Some(_) => {
+                let data = folder.join(DATA);
+                private_dir(&data)?;
+                Some(data)
+            }
+            None => None,
+        };
+        let from = machine.and_then(|machine| machine.of(kind));
+        let copied = match &from {
+            Some(from) => import_into(allowed, from, &folder, &config)?,
+            None => Copied::default(),
+        };
+        Ok::<_, io::Error>((config, data, from, copied))
+    })();
+    let (config, data, from, copied) = made.map_err(|e| could_not(homes, &e))?;
+    let record = MachineProfile {
+        name: name.to_owned(),
+        harness: kind.to_owned(),
+        title: name.to_owned(),
+        folders: Folders { config, data },
+        adopted: None,
+        imported: from.map(|from| Imported { at: now, from }),
+        sign_in: None,
+        pinned: None,
+        sandbox_only: making.sandbox_only,
+        kept_for: None,
+        rest: Map::new(),
+    };
+    store.profiles.push(record.clone());
+    Ok(Made { record, copied })
+}
+
+/// **Takes in the sign-in carried to this runner for `record`** (#4011, #4055), a profile it
+/// keeps for its desktop: purlis's own, or the desktop's adopted folder kept as its harness's
+/// default folder under `home`. Each batch a drained runner carried
+/// (`<data>/carried/<batch>/<name>/`) is looked in, and only the sign-in file of `record`'s
+/// harness ([`super::sign_in_file_of`]), a plain file reached through no link, is moved in, by
+/// a link that never replaces a file: one the profile has here, signed in on this runner, stays
+/// over it. What was carried for the profile is then removed. What cannot be taken in is left
+/// out: the profile is signed in again, as before.
+pub(super) fn take_carried(homes: &Homes, home: &Path, record: &MachineProfile) {
+    let carried = homes.data.join(super::CARRIED);
+    let Ok(batches) = std::fs::read_dir(&carried) else {
+        return;
+    };
+    let mut batches: Vec<PathBuf> = batches.flatten().map(|entry| entry.path()).collect();
+    batches.sort();
+    let into = super::sign_in_file_of(&record.harness).and_then(|file| {
+        let (under, rest) = file.split_once('/')?;
+        let folder = match under {
+            "config" => Some(&record.folders.config),
+            _ => record.folders.data.as_ref(),
+        }?;
+        Some((file, folder.join(rest)))
+    });
+    // Where the folders on its way may be made: a profile purlis made has its own folder, and an
+    // adopted one the runner's home.
+    let made_folder = homes.folder_of(&record.name);
+    let root = if record.adopted.is_none() {
+        made_folder.as_path()
+    } else {
+        home
+    };
+    for batch in batches {
+        if !std::fs::symlink_metadata(&batch).is_ok_and(|meta| meta.is_dir()) {
+            continue;
+        }
+        let mine = batch.join(&record.name);
+        if std::fs::symlink_metadata(&mine).is_err() {
+            continue;
+        }
+        if let Some((file, to)) = &into {
+            let from = mine.join(file);
+            let plain = crate::contain::no_link_on_the_way(&carried, &from).is_ok()
+                && std::fs::symlink_metadata(&from).is_ok_and(|meta| meta.file_type().is_file());
+            if plain
+                && std::fs::symlink_metadata(to).is_err()
+                && let Some(parent) = to.parent()
+                && private_dirs_within(root, parent).is_ok()
+                && std::fs::hard_link(&from, to).is_ok()
+            {
+                let _ = std::fs::remove_file(&from);
+            }
+        }
+        let _ = std::fs::remove_dir_all(&mine);
+        let _ = std::fs::remove_dir(&batch);
     }
 }
 
@@ -640,7 +738,7 @@ fn import_into(allowed: &Allowed, from: &Path, folder: &Path, config: &Path) -> 
     crate::contain::no_link_on_the_way(folder, &dest)?;
     private_dirs_within(folder, &dest)?;
     let mut place = Place {
-        folder,
+        into: Sink::Disk { folder },
         copied: &mut copied,
     };
     for name in allowed.files {
@@ -685,8 +783,45 @@ fn import_into(
 /// Where an import writes, and what it has done so far.
 #[cfg(unix)]
 struct Place<'a> {
-    folder: &'a Path,
+    into: Sink<'a>,
     copied: &'a mut Copied,
+}
+
+/// Where what an import reads goes: into a profile folder, or kept in memory to be sent to a
+/// runner ([`settings_read`]).
+#[cfg(unix)]
+enum Sink<'a> {
+    /// The profile folder written into, which no link on the way leads out of.
+    Disk { folder: &'a Path },
+    /// Each file read, by its path under the settings folder, and the bytes read so far in all.
+    Memory {
+        files: &'a mut Vec<(String, Vec<u8>)>,
+        bytes: usize,
+        most: usize,
+        most_files: usize,
+        /// Each file past `most` or `most_files`, which stays behind, and its size.
+        left_behind: &'a mut Vec<(String, u64)>,
+        /// Whether a file is read at all.
+        wanted: &'a dyn Fn(&str) -> bool,
+    },
+    /// What each whole holds, read from no file ([`settings_measured`]).
+    Measure {
+        wholes: &'a mut Measured,
+        files: usize,
+    },
+}
+
+/// Each whole a settings folder holds ([`whole_of`]), by its path: its bytes and its files.
+pub type Measured = std::collections::BTreeMap<String, (u64, usize)>;
+
+/// The whole a settings file goes or stays with: a listed file, or the first thing in a listed
+/// folder (`skills/review/SKILL.md` goes with `skills/review`), since half a skill is no skill.
+pub fn whole_of(path: &str) -> &str {
+    let mut parts = path.match_indices('/');
+    match (parts.next(), parts.next()) {
+        (Some(_), Some((second, _))) => &path[..second],
+        _ => path,
+    }
 }
 
 /// Copies the entry `name` of the folder `dir` holds: a file, or (where `folder_ok`) a folder's
@@ -704,6 +839,14 @@ fn entry(
 ) -> io::Result<()> {
     use rustix::fs::{FileType, Mode, OFlags};
     use rustix::io::Errno;
+    let enough = match &place.into {
+        Sink::Disk { .. } => false,
+        Sink::Memory { left_behind, .. } => left_behind.len() >= MOST_LEFT_BEHIND,
+        Sink::Measure { files, .. } => *files >= MOST_MEASURED,
+    };
+    if enough {
+        return Ok(());
+    }
     let fd = match rustix::fs::openat(
         dir,
         name,
@@ -738,8 +881,48 @@ fn entry(
             return Ok(());
         }
         let mut bytes = Vec::new();
-        std::io::Read::read_to_end(&mut std::fs::File::from(fd), &mut bytes)?;
-        crate::rewrite::replace(place.folder, to, &bytes, crate::rewrite::Mode::Private)?;
+        match &mut place.into {
+            Sink::Disk { folder } => {
+                std::io::Read::read_to_end(&mut std::fs::File::from(fd), &mut bytes)?;
+                crate::rewrite::replace(folder, to, &bytes, crate::rewrite::Mode::Private)?;
+            }
+            Sink::Memory {
+                files,
+                bytes: so_far,
+                most,
+                most_files,
+                left_behind,
+                wanted,
+            } => {
+                if !wanted(shown) {
+                    return Ok(());
+                }
+                // Read no more than is left, and one byte past it to tell a file that is over.
+                let left = most.saturating_sub(*so_far);
+                let size = u64::try_from(stat.st_size).unwrap_or(0);
+                if size > left as u64 || files.len() >= *most_files {
+                    left_behind.push((shown.to_owned(), size));
+                    return Ok(());
+                }
+                std::io::Read::read_to_end(
+                    &mut std::io::Read::take(std::fs::File::from(fd), left as u64 + 1),
+                    &mut bytes,
+                )?;
+                if bytes.len() > left {
+                    left_behind.push((shown.to_owned(), bytes.len() as u64));
+                    return Ok(());
+                }
+                *so_far += bytes.len();
+                files.push((shown.to_owned(), bytes));
+            }
+            Sink::Measure { wholes, files } => {
+                let whole = wholes.entry(whole_of(shown).to_owned()).or_default();
+                whole.0 += u64::try_from(stat.st_size).unwrap_or(0);
+                whole.1 += 1;
+                *files += 1;
+                return Ok(());
+            }
+        }
         place.copied.copied.push(shown.to_owned());
         return Ok(());
     }
@@ -757,7 +940,12 @@ fn entry(
             .push(format!("{shown}: more than {DEEPEST} folders deep"));
         return Ok(());
     }
-    private_dir_within(place.folder, to)?;
+    if let Sink::Disk { folder } = &place.into {
+        private_dir_within(folder, to)?;
+    }
+    // What a runner has no use for goes no further, as a chat's start pays for all it sends.
+    let to_a_runner = !matches!(place.into, Sink::Disk { .. });
+    let leaves_out = |name: &str| to_a_runner && NOT_SENT.contains(&name);
     let mut names = Vec::new();
     let mut listing = rustix::fs::Dir::read_from(&fd)?;
     while let Some(one) = listing.read() {
@@ -779,6 +967,13 @@ fn entry(
                 .push(format!("{inner}: not imported, by its name"));
             continue;
         }
+        if leaves_out(&text) {
+            place
+                .copied
+                .skipped
+                .push(format!("{inner}: not sent to a runner, by its name"));
+            continue;
+        }
         entry(
             place,
             std::os::fd::AsFd::as_fd(&fd),
@@ -790,6 +985,465 @@ fn entry(
         )?;
     }
     Ok(())
+}
+
+/// Folders of a skill no runner has a use for (#4081), built for this machine and made again
+/// where they are needed. A hidden one (`.git`, `.venv`, `.cache`) is left out by its name
+/// already.
+#[cfg(unix)]
+const NOT_SENT: [&str; 3] = ["node_modules", "__pycache__", "venv"];
+
+/// The most files a read for a runner lists as left behind, and the most it measures, so a tree
+/// of millions costs no more.
+#[cfg(unix)]
+const MOST_LEFT_BEHIND: usize = 16 * 1024;
+#[cfg(unix)]
+const MOST_MEASURED: usize = 1024 * 1024;
+
+/// **What [`settings_read`] found**: the files read, and those past its limits, unread, each
+/// with its size.
+#[derive(Debug, Default)]
+pub struct SettingsRead {
+    pub files: Vec<(String, Vec<u8>)>,
+    pub left_behind: Vec<(String, u64)>,
+}
+
+/// **The settings files `kind`'s settings folder `config` holds, as an import reads them**
+/// (#3448): each listed file and each file of a listed folder, by its path under the folder
+/// (`agents/review.md`), read by descriptor with no link followed, and none hidden or named like
+/// a credential, exactly as [`create`] copies them. Only those `wanted` says, at most `most`
+/// bytes in `most_files` files, in that order: a file past either is left behind, unread (#4081).
+/// Empty where the folder is not there.
+#[cfg(unix)]
+pub fn settings_read(
+    kind: &str,
+    config: &Path,
+    most: usize,
+    most_files: usize,
+    wanted: &dyn Fn(&str) -> bool,
+) -> Result<SettingsRead, String> {
+    let mut files = Vec::new();
+    let mut left_behind = Vec::new();
+    settings_walked(
+        kind,
+        config,
+        Sink::Memory {
+            files: &mut files,
+            bytes: 0,
+            most,
+            most_files,
+            left_behind: &mut left_behind,
+            wanted,
+        },
+    )?;
+    Ok(SettingsRead { files, left_behind })
+}
+
+/// **What [`settings_read`] would find, by whole, with no file read** (#4081), so what stays
+/// behind is chosen before anything is: a large skill costs the ones after it nothing.
+#[cfg(unix)]
+pub fn settings_measured(kind: &str, config: &Path) -> Result<Measured, String> {
+    let mut wholes = Measured::new();
+    settings_walked(
+        kind,
+        config,
+        Sink::Measure {
+            wholes: &mut wholes,
+            files: 0,
+        },
+    )?;
+    Ok(wholes)
+}
+
+/// Walks `kind`'s settings folder `config` as an import does, into `into`.
+#[cfg(unix)]
+fn settings_walked(kind: &str, config: &Path, into: Sink<'_>) -> Result<(), String> {
+    use rustix::fs::{Mode, OFlags};
+    let (_, allowed) = harness_of(kind)?;
+    let from = settings_dest(allowed, config);
+    let mut copied = Copied::default();
+    let telling = matches!(into, Sink::Memory { .. });
+    let read = (|| {
+        let Ok(source) = from.canonicalize() else {
+            return Ok(());
+        };
+        let root = match rustix::fs::open(
+            &source,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty(),
+        ) {
+            Ok(fd) => fd,
+            Err(rustix::io::Errno::NOENT | rustix::io::Errno::NOTDIR) => return Ok(()),
+            Err(e) => return Err(io::Error::from(e)),
+        };
+        let mut place = Place {
+            into,
+            copied: &mut copied,
+        };
+        for (name, folder_ok) in allowed
+            .files
+            .iter()
+            .map(|n| (n, false))
+            .chain(allowed.folders.iter().map(|n| (n, true)))
+        {
+            entry(
+                &mut place,
+                std::os::fd::AsFd::as_fd(&root),
+                name,
+                Path::new(name),
+                name,
+                folder_ok,
+                0,
+            )?;
+        }
+        Ok(())
+    })();
+    // What was left out is said in the log, so a setting missing on a runner can be told apart
+    // from one never written.
+    if telling {
+        for why in &copied.skipped {
+            tracing::info!("purlis: a setting is not sent to a runner: {why}");
+        }
+    }
+    read.map_err(|e| {
+        format!(
+            "its settings in {} were not read ({})",
+            from.display(),
+            crate::rewrite::os_words(&e)
+        )
+    })
+}
+
+/// No settings are read where there is no descriptor-relative open to read them with safely.
+#[cfg(not(unix))]
+pub fn settings_read(
+    _kind: &str,
+    _config: &Path,
+    _most: usize,
+    _most_files: usize,
+    _wanted: &dyn Fn(&str) -> bool,
+) -> Result<SettingsRead, String> {
+    Err("its settings are read only on a Unix system".to_owned())
+}
+
+/// No settings are read where there is no descriptor-relative open to read them with safely.
+#[cfg(not(unix))]
+pub fn settings_measured(_kind: &str, _config: &Path) -> Result<Measured, String> {
+    Err("its settings are read only on a Unix system".to_owned())
+}
+
+/// **Whether `path` is one an import of `allowed` would write**: a listed file, or a file inside
+/// a listed folder at most [`DEEPEST`] folders down, `/`-separated, with no empty, `.` or `..`
+/// part, and none below the listed folder hidden or named like a credential.
+fn a_settings_path(allowed: &Allowed, path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').collect();
+    let Some((first, rest)) = parts.split_first() else {
+        return false;
+    };
+    let each_ok = parts.iter().all(|part| {
+        !part.is_empty() && *part != "." && *part != ".." && !part.contains(['\\', '\0'])
+    });
+    if !each_ok {
+        return false;
+    }
+    if rest.is_empty() {
+        return allowed.files.contains(first);
+    }
+    allowed.folders.contains(first)
+        && rest.len() <= DEEPEST
+        && rest
+            .iter()
+            .all(|part| !part.starts_with('.') && !credential_shaped(part))
+}
+
+/// **`held`, what a runner said it holds of a `kind` profile, by path**, or `None` where it is
+/// not such a list: a path an import would not write, one twice, a digest no digest looks like,
+/// or more than a runner holds (#4088).
+pub fn held_digests<'a>(
+    kind: &str,
+    held: &'a [purlis_session_protocol::session::HeldSetting],
+) -> Option<std::collections::BTreeMap<&'a str, &'a str>> {
+    use purlis_session_protocol::session::{MOST_PROFILE_SETTINGS_FILES, is_settings_digest};
+    let (_, allowed) = harness_of(kind).ok()?;
+    if held.len() > MOST_PROFILE_SETTINGS_FILES {
+        return None;
+    }
+    let mut digests = std::collections::BTreeMap::new();
+    for one in held {
+        let fits = a_settings_path(allowed, &one.path) && is_settings_digest(&one.digest);
+        if !fits
+            || digests
+                .insert(one.path.as_str(), one.digest.as_str())
+                .is_some()
+        {
+            return None;
+        }
+    }
+    Some(digests)
+}
+
+/// **`files`, sent by a desktop for its `kind` profile `name`, as a runner may keep them**:
+/// every path one an import would write ([`a_settings_path`]), none twice, and each file with no
+/// sign-in in it ([`super::sent::without_credentials`], D-3448-8). One that is not refuses all
+/// of them, in words. What a runner checks before it keeps anything of the profile.
+pub fn settings_checked(
+    kind: &str,
+    name: &str,
+    files: &[(String, Vec<u8>)],
+) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let name = crate::shown::short(name);
+    let (_, allowed) = harness_of(kind)?;
+    let mut seen = std::collections::HashSet::new();
+    if let Some((bad, _)) = files
+        .iter()
+        .find(|(path, _)| !a_settings_path(allowed, path) || !seen.insert(path.as_str()))
+    {
+        return Err(format!(
+            "'{}' is not a settings file of the profile '{name}' this runner keeps, so it kept \
+             none of the settings sent",
+            crate::shown::short(bad)
+        ));
+    }
+    // Whatever sent them, no sign-in is kept in them here (D-3448-8).
+    files
+        .iter()
+        .map(|(path, bytes)| {
+            super::sent::without_credentials(kind, path, bytes).map(|b| (path.clone(), b))
+        })
+        .collect()
+}
+
+/// The folder settings are staged in, in the folder of the profiles purlis makes: no chat may
+/// write there, it is on the runner's home volume with the settings it replaces, and no profile
+/// can have the name ([`crate::profiles::name_ok`]).
+#[cfg(unix)]
+const STAGED_IN: &str = ".settings-staged";
+
+/// One keep of settings at a time in this process, so one's stage is never another's debris: two
+/// chats starting at once each keep the same profile (#4081).
+#[cfg(unix)]
+static SWAPPING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// **`files` swapped in for `allowed`'s settings in the settings folder `dest`** (#4081): written
+/// whole into a stage of their own, where no chat may write ([`STAGED_IN`], never `dest`, which
+/// can be a folder a chat writes in), and only then each listed name moved aside into it and its
+/// new one moved in, each move put back if a later one fails. Everything from `dest` down goes
+/// through descriptors, from one of `dest` opened with no link followed. Nothing is flushed: the
+/// next chat's start writes them all again. What a killed keep left is swept first; the settings
+/// it left incomplete are replaced whole by the first keep that goes through.
+#[cfg(unix)]
+fn settings_swapped_in(
+    homes: &Homes,
+    allowed: &Allowed,
+    dest: &Path,
+    files: &[(String, Vec<u8>)],
+) -> io::Result<()> {
+    use rustix::fs::{Mode, OFlags};
+    let _one_at_a_time = SWAPPING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let stages = homes.folders.join(STAGED_IN);
+    // Its name is new each time, so what cannot be swept stands in no keep's way.
+    let _ = std::fs::remove_dir_all(&stages);
+    private_dirs(&stages)?;
+    let stage_at = stages.join(format!(
+        "{}.{}",
+        std::process::id(),
+        crate::workspaces::scratch_tag()
+    ));
+    let opened = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let dir = rustix::fs::open(dest, opened, Mode::empty())?;
+    let parent = rustix::fs::open(&stages, opened, Mode::empty())?;
+    let apart = || {
+        io::Error::other(format!(
+            "{} and {} are on different disks, and a keep moves one into the other",
+            dest.display(),
+            stages.display()
+        ))
+    };
+    if rustix::fs::fstat(&dir)?.st_dev != rustix::fs::fstat(&parent)?.st_dev {
+        return Err(apart());
+    }
+    let name = stage_at.file_name().unwrap_or_default();
+    rustix::fs::mkdirat(&parent, name, Mode::RWXU)?;
+    let mut lost = false;
+    let swapped = (|| {
+        let stage = rustix::fs::openat(&parent, name, opened, Mode::empty())?;
+        rustix::fs::mkdirat(&stage, "new", Mode::RWXU)?;
+        rustix::fs::mkdirat(&stage, "old", Mode::RWXU)?;
+        let new = rustix::fs::openat(&stage, "new", opened, Mode::empty())?;
+        let old = rustix::fs::openat(&stage, "old", opened, Mode::empty())?;
+        for (path, bytes) in files {
+            write_staged(std::os::fd::AsFd::as_fd(&new), path, bytes)?;
+        }
+        swap_each(allowed, &dir, &new, &old, &mut lost)
+    })();
+    // A move not put back leaves what it moved in the stage, and the settings incomplete until a
+    // keep that goes through replaces them all.
+    if lost {
+        return Err(io::Error::other(format!(
+            "some of the settings could not be put back, and what was moved is in {}",
+            stage_at.display()
+        )));
+    }
+    let _ = std::fs::remove_dir_all(&stage_at);
+    swapped.map_err(|e| {
+        if e.raw_os_error() == Some(rustix::io::Errno::XDEV.raw_os_error()) {
+            apart()
+        } else {
+            e
+        }
+    })
+}
+
+/// `path`, `/`-separated, written new under the folder `root`, private, through no link.
+#[cfg(unix)]
+fn write_staged(root: std::os::fd::BorrowedFd<'_>, path: &str, bytes: &[u8]) -> io::Result<()> {
+    use rustix::fs::{Mode, OFlags};
+    use std::os::fd::AsFd;
+    let (name, folders): (&str, Vec<&str>) = match path.rsplit_once('/') {
+        Some((folders, name)) => (name, folders.split('/').collect()),
+        None => (path, Vec::new()),
+    };
+    let mut held = None;
+    for folder in folders {
+        let at = held
+            .as_ref()
+            .map_or(root, |fd: &std::os::fd::OwnedFd| fd.as_fd());
+        match rustix::fs::mkdirat(at, folder, Mode::RWXU) {
+            Ok(()) | Err(rustix::io::Errno::EXIST) => {}
+            Err(e) => return Err(e.into()),
+        }
+        let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+        let next = rustix::fs::openat(at, folder, flags, Mode::empty())?;
+        held = Some(next);
+    }
+    let at = held.as_ref().map_or(root, |fd| fd.as_fd());
+    let flags = OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let fd = rustix::fs::openat(at, name, flags, Mode::RUSR | Mode::WUSR)?;
+    std::io::Write::write_all(&mut std::fs::File::from(fd), bytes)
+}
+
+/// Moves each of `allowed`'s names of `dir` into `old`, and its new one, where there is one, out
+/// of `new`. A move that fails puts back every one done, and says in `lost` where one could not
+/// be.
+#[cfg(unix)]
+fn swap_each(
+    allowed: &Allowed,
+    dir: &std::os::fd::OwnedFd,
+    new: &std::os::fd::OwnedFd,
+    old: &std::os::fd::OwnedFd,
+    lost: &mut bool,
+) -> io::Result<()> {
+    use rustix::fs::{AtFlags, renameat, statat};
+    use rustix::io::Errno;
+    /// Whether `name` is there, a link or not, so that only a name that is not there is passed
+    /// over, and a move that fails for any other reason is a failure.
+    fn there(at: &std::os::fd::OwnedFd, name: &str) -> rustix::io::Result<bool> {
+        match statat(at, name, AtFlags::SYMLINK_NOFOLLOW) {
+            Ok(_) => Ok(true),
+            Err(Errno::NOENT) => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+    let mut done = Vec::new();
+    let swapped = allowed
+        .files
+        .iter()
+        .chain(allowed.folders)
+        .try_for_each(|one| {
+            let had = there(dir, one)?;
+            if had {
+                renameat(dir, *one, old, *one)?;
+            }
+            done.push((*one, had));
+            if there(new, one)? {
+                renameat(new, *one, dir, *one)?;
+            }
+            Ok::<_, Errno>(())
+        });
+    if swapped.is_err() {
+        for (one, had) in done.into_iter().rev() {
+            let back = there(dir, one)
+                .and_then(|placed| {
+                    if placed && !there(new, one)? {
+                        renameat(dir, one, new, one)?;
+                    }
+                    Ok(())
+                })
+                .and_then(|()| {
+                    if had {
+                        renameat(old, one, dir, one)
+                    } else {
+                        Ok(())
+                    }
+                });
+            *lost |= back.is_err();
+        }
+    }
+    swapped.map_err(Into::into)
+}
+
+/// No settings are kept where there is no descriptor-relative open to keep them with safely.
+#[cfg(not(unix))]
+fn settings_swapped_in(
+    _homes: &Homes,
+    _allowed: &Allowed,
+    _dest: &Path,
+    _files: &[(String, Vec<u8>)],
+) -> io::Result<()> {
+    Err(io::Error::other("settings are kept only on a Unix system"))
+}
+
+/// **Keeps `files`, sent by a desktop, as the settings of `record`, a profile this runner keeps
+/// for it** (#3448), in place of the ones it kept: `files` are written, private, through no
+/// link, apart from the settings they replace, and only once they are all written does each listed
+/// file and folder go ([`settings_swapped_in`], #4081), so a keep that fails leaves the settings
+/// as they were, or says that it could not. Only a made profile's own folder ([`own_folder`]) or an adopted record's
+/// settings folder is written. Every path is checked first ([`a_settings_path`]): one an import
+/// would not write refuses all of them, and nothing is written.
+pub fn settings_kept(
+    homes: &Homes,
+    record: &MachineProfile,
+    files: &[(String, Vec<u8>)],
+) -> Result<(), String> {
+    let name = crate::shown::short(&record.name);
+    let (_, allowed) = harness_of(&record.harness)?;
+    if record.sandbox_only {
+        return Err(format!(
+            "the profile '{name}' is for sandboxed chats only, and its settings are purlis's, so \
+             this runner keeps no settings sent for it"
+        ));
+    }
+    let checked = settings_checked(&record.harness, &record.name, files)?;
+    let dest = settings_dest(allowed, &record.folders.config);
+    // A made profile is written within its own folder; an adopted one within its settings
+    // folder, which is made where it is missing and never a link.
+    let folder = match record.adopted {
+        None => own_folder(homes, record)?,
+        Some(_) => dest.clone(),
+    };
+    let written = (|| {
+        if record.adopted.is_some() {
+            if let Some(parent) = dest.parent() {
+                private_dirs(parent)?;
+            }
+            private_dir(&dest)?;
+            if !std::fs::symlink_metadata(&dest)?.is_dir() {
+                return Err(io::Error::other("the settings folder is not a folder"));
+            }
+        }
+        crate::contain::no_link_on_the_way(&folder, &dest)?;
+        private_dirs_within(&folder, &dest)?;
+        settings_swapped_in(homes, allowed, &dest, &checked)
+    })();
+    written.map_err(|e| {
+        format!(
+            "this runner could not keep the profile '{name}''s settings in {} ({})",
+            dest.display(),
+            crate::rewrite::os_words(&e)
+        )
+    })
 }
 
 /// A file name that may hold a sign-in, which an import never copies from a settings folder.

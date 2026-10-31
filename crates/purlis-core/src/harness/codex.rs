@@ -9,6 +9,12 @@ use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
 /// Codex's adapter.
+///
+/// **What its reports can prove** (#3822): only the chat's token. Its hooks run inside
+/// purlis's wrap, which denies them the spool their armed key is in
+/// ([`crate::hookwire::armed`]), so any mode a report named would read as asking. None is
+/// read (the trait's default `reported_mode`): Codex names `bypassPermissions` for every chat
+/// and documents no classifier-backed mode.
 pub struct Codex;
 
 /// The one Codex adapter.
@@ -35,8 +41,9 @@ fn listed(kit: Kit<'_>) -> Vec<(String, String)> {
     env
 }
 
-/// The `-c` flags that hand a Codex chat the plugins and skills the project turned off: one
-/// `plugins."<id>".enabled=false` per plugin, then one `skills.config` holding every skill.
+/// The `-c` flags that hand a Codex chat the plugins and skills purlis turns off for it: one
+/// `plugins."<id>".enabled=false` per plugin (a Try it's scratch chat, which has the draft
+/// alone), then one `skills.config` holding every skill.
 /// Each key and name is quoted as TOML quotes it, so no id can end the value early.
 fn chosen_flags(plugins: &crate::harness_plugin::Chosen, skills_off: &[String]) -> Vec<String> {
     let mut args = Vec::new();
@@ -125,14 +132,16 @@ impl HarnessAdapter for Codex {
     /// Python charter's Codex plugin, and now rides on the same `-c` flags as the state
     /// hooks, from the same registry ([`crate::plugin::CODEX`] out of [`crate::hookreg`]).
     ///
-    /// **A plugin the project turned off, by `-c`** (SK-6, #2769): `-c
+    /// **A plugin purlis turns off for this one chat, by `-c`** (SK-6, #2769): `-c
     /// 'plugins."<id>".enabled=false'` each, which codex-cli 0.163.0 takes for one session
-    /// (measured, [`crate::harness_plugin::CODEX`]); 0.147.0 did not. Only off: Codex takes a
-    /// plugin turned on that way as nothing, so `plugins` holds no `true` for it
-    /// ([`crate::harness_plugin::chosen`]). **And a skill the project turned off**, by one `-c
+    /// (measured, ADR 0050's amendment of 2026-10-21); 0.147.0 did not. Only a Try it's scratch
+    /// chat is handed any (`skills::verbs::drafts::alone_on`): a project chooses no plugin of
+    /// Codex's (#3467). **And a skill the project turned off**, by one `-c
     /// 'skills.config=[{name="<name>",enabled=false},…]'`, which reaches a plugin's skill
     /// (`<plugin>:<skill>`) too, and is added to the entries of the operator's own
-    /// `config.toml` rather than replacing them (both measured on 0.163.0).
+    /// `config.toml` rather than replacing them (both measured on 0.163.0, and the second again
+    /// for #3320: a `config.toml` turning `alpha` off and `-c` turning `beta` off left neither in
+    /// `codex debug prompt-input`).
     ///
     /// Its skills ride on the `SessionStart` hook above: Codex can take no skills
     /// directory for one session ([`Harness::skills`]), so the chat is started with the
@@ -148,7 +157,7 @@ impl HarnessAdapter for Codex {
     fn arm_under(
         &self,
         kit: Kit<'_>,
-        _cwd: Option<&std::path::Path>,
+        cwd: Option<&std::path::Path>,
         plugins: &crate::harness_plugin::Chosen,
         _sandbox: Sandbox<'_>,
     ) -> StateHooks {
@@ -159,7 +168,12 @@ impl HarnessAdapter for Codex {
             &crate::skills::skills_off_for(kit, Harness::Codex, plugins),
         ));
         // charter's MCP server (HP-7), for this session beside the operator's own servers.
-        args.extend(["-c".to_owned(), crate::chattools::codex_flag(kit.binary)]);
+        // The approvals the operator set on it carried over, since the `-c` replaces their
+        // table for it whole, and each dispatch tool approved where they set none (#3794).
+        args.extend([
+            "-c".to_owned(),
+            crate::chattools::codex_flag(kit.binary, &crate::chattools::CodexApprovals::here(cwd)),
+        ]);
         StateHooks::ThisSessionOnly {
             args,
             env: listed(kit),
@@ -290,6 +304,18 @@ impl HarnessAdapter for Codex {
         true
     }
 
+    /// No grade runs here until purlis can hold its chats to the grade's limits and read their
+    /// spend on this harness (#3272). Its plugins could be turned off for one chat (`-c
+    /// plugins."<id>".enabled=false`), so that is not the reason.
+    fn can_grade(&self) -> Result<(), String> {
+        Err("purlis cannot hold a Codex chat to a grade's limits or read what it spent yet".into())
+    }
+
+    /// `--model <model>`, as `codex --help` names it (`-m, --model`).
+    fn model_words(&self, model: &str) -> Vec<String> {
+        vec!["--model".to_owned(), model.to_owned()]
+    }
+
     /// The wrap's program first, with the profile written for where the chat opens, then the
     /// chat's whole line, with the flags that turn Codex's own sandbox off last among its flags
     /// and in front of the subcommand, session id and first message that end the line. Its
@@ -361,12 +387,17 @@ impl HarnessAdapter for Codex {
                     .to_owned(),
             );
         };
-        let profile = crate::sandbox::codex::profile(
+        // The doors its confinement opened (#2019): a socket for each, in its own folder.
+        let served = confinement.served();
+        let profile = crate::sandbox::codex::profile_serving(
             wrap,
             cwd,
             tmp,
             &confinement.proxy_ports(),
             at.hook_socket,
+            served
+                .as_ref()
+                .map(|(folder, ports)| (*folder, ports.as_slice())),
         )
         .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
         let mut charters = charters;

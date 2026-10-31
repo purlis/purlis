@@ -53,6 +53,7 @@ export const SAID = {
   delete: "Delete",
   deleteAsks: "Delete…",
   markDone: "Mark done",
+  reopen: "Reopen",
   forget: "Forget",
   resume: "Resume",
   browseFiles: "Browse files",
@@ -103,4 +104,5 @@ export const WARNS = {
   deletesPersona: "Deletes its definition, memory and refs.",
   deletesVault: "A keychain vault's secrets cannot be recovered.",
   forgets: "Drops it with nothing journalled.",
+  deletesDone: "Deletes it with nothing journalled. There is no undo.",
 } as const;

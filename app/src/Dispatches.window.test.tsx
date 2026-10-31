@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
   cleanup,
-  configure,
   render as renderBare,
   screen,
   waitFor,
@@ -26,7 +25,7 @@ import type {
 import { forgetShown, windowShown } from "./test-shown";
 import { stripNamed, showThePanel } from "./test-strips";
 import { offeredIn, pickIn, selectNamed } from "./ui/select/select.testkit";
-import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { cellsOf, tipInTable } from "./ui/table/table.testkit";
 
 /**
  * **The Dispatches tab** (#1452) against the whole window: it is offered from the Sessions
@@ -45,7 +44,6 @@ vi.mock("./SessionPane", () => ({
 }));
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
-configure({ asyncUtilTimeout: 5_000 });
 
 beforeEach(() => globalThis.localStorage.clear());
 afterEach(() => {
@@ -304,7 +302,7 @@ const selected = () => within(strip()).getByRole("tab", { selected: true }).text
 async function opened(): Promise<HTMLElement> {
   const panel = await showThePanel("Sessions");
   await userEvent.click(await within(panel).findByRole("button", { name: "Open dispatches" }));
-  return screen.findByRole("table", { name: "Dispatches" });
+  return screen.findByRole("grid", { name: "Dispatches" });
 }
 
 /** The tasks the table lists, top to bottom. */
@@ -312,7 +310,7 @@ function tasks(table: HTMLElement): string[] {
   return within(table)
     .getAllByRole("row")
     .slice(1)
-    .map((row) => within(row).getAllByRole("cell")[0].textContent ?? "");
+    .map((row) => cellsOf(row)[0].textContent ?? "");
 }
 
 describe("the Dispatches tab", () => {
@@ -342,9 +340,7 @@ describe("the Dispatches tab", () => {
     ]);
     expect(tasks(table)).toEqual(["check prod", "test the rollout", "rotate the key"]);
     const cells = (id: string) =>
-      within(screen.getByTestId(`dispatch-${id}`))
-        .getAllByRole("cell")
-        .map((cell) => cell.textContent);
+      cellsOf(screen.getByTestId(`dispatch-${id}`)).map((cell) => cell.textContent);
     expect(cells("01K6C")).toEqual([
       "check prod",
       "devops",
@@ -371,7 +367,7 @@ describe("the Dispatches tab", () => {
     await userEvent.type(within(palette).getByRole("combobox"), "dispatches");
     await userEvent.click(await within(palette).findByRole("option", { name: /Open dispatches/ }));
 
-    expect(await screen.findByRole("table", { name: "Dispatches" })).toBeInTheDocument();
+    expect(await screen.findByRole("grid", { name: "Dispatches" })).toBeInTheDocument();
     expect(selected()).toContain("Dispatches");
   });
 
@@ -387,11 +383,11 @@ describe("the Dispatches tab", () => {
     expect(tasks(table)).toEqual(["rotate the key"]);
 
     await pickIn(selectNamed("Filter by persona"), "qa");
-    expect(screen.queryByRole("table", { name: "Dispatches" })).toBeNull();
+    expect(screen.queryByRole("grid", { name: "Dispatches" })).toBeNull();
     expect(screen.getByText("No dispatch matches these filters.")).toBeInTheDocument();
 
     await pickIn(selectNamed("Filter by asking chat"), "Every asking chat");
-    expect(tasks(screen.getByRole("table", { name: "Dispatches" }))).toEqual(["test the rollout"]);
+    expect(tasks(screen.getByRole("grid", { name: "Dispatches" }))).toEqual(["test the rollout"]);
   });
 
   it("reads nothing of the plane again while the person picks a filter in it", async () => {
@@ -443,7 +439,7 @@ describe("the Dispatches tab", () => {
     const gone = within(table).getByText("rotate the key");
 
     expect(gone.closest("button")).toBeNull();
-    expect(tipOf(gone)).toEqual("Its chat is closed and wrote no session record");
+    expect(tipInTable(gone)).toEqual("Its chat is closed and wrote no session record");
   });
 
   it("shows a dispatch's brief and report under its row on a press", async () => {
@@ -550,7 +546,7 @@ describe("the Dispatches tab", () => {
       render(<App />);
       const table = await opened();
 
-      const cells = within(screen.getByTestId("dispatch-01K6N")).getAllByRole("cell");
+      const cells = cellsOf(screen.getByTestId("dispatch-01K6N"));
       expect(cells[4]).toHaveTextContent("not open");
       expect(cells[5]).toHaveTextContent("");
       await userEvent.click(
@@ -575,9 +571,7 @@ describe("the Dispatches tab", () => {
     render(<App />);
     const table = await opened();
 
-    expect(within(screen.getByTestId("dispatch-01K6Z")).getAllByRole("cell")[1]).toHaveTextContent(
-      "No persona",
-    );
+    expect(cellsOf(screen.getByTestId("dispatch-01K6Z"))[1]).toHaveTextContent("No persona");
     expect(await offeredIn(selectNamed("Filter by persona"))).toContain("No persona");
     expect(within(table).queryByText("none")).toBeNull();
   });
@@ -815,7 +809,7 @@ describe("past tasks (#1510)", () => {
 
     expect(screen.getByText("The queue drains in 4s.")).toBeInTheDocument();
     // Its chat is closed: the row opens the session record it wrote.
-    expect(tipOf(within(table).getByRole("button", { name: "audit the queue" }))).toEqual(
+    expect(tipInTable(within(table).getByRole("button", { name: "audit the queue" }))).toEqual(
       "Open its session record",
     );
   });
@@ -898,7 +892,7 @@ describe("a dispatch's own branch", () => {
     render(<App />);
     await opened();
 
-    const where = (id: string) => within(row(id)).getAllByRole("cell")[3];
+    const where = (id: string) => cellsOf(row(id))[3];
     expect(where("01K6W")).toHaveTextContent(`alpha · ${BRANCH}own branch, folder kept`);
     expect(within(row("01K6W")).getByRole("button", { name: DISCARD })).toBeInTheDocument();
     expect(where("01K6M")).toHaveTextContent("own branch, merged and removed");

@@ -15,7 +15,9 @@ import {
   NOTHING_WAITS,
   NOTICES,
   UPDATES,
+  hiddenSaid,
   landOnGroup,
+  MOST_LINES,
   type UpdateRow,
   type Updates,
 } from "./Inbox";
@@ -67,6 +69,8 @@ const permission = (session: number, ask: string, chain: string[], says = "Run c
     chain,
     answer: { via: "hook" },
   }) satisfies Shown;
+
+const deny = () => ({ id: "deny", label: "Deny", allows: false });
 
 const HOST: Shown = {
   session: 5,
@@ -246,7 +250,7 @@ describe("the asks, grouped by chat", () => {
       ],
       source: "sign-in",
       chain: ["Profile work"],
-      answer: { via: "sign-in", profile: "work" },
+      answer: { via: "sign-in", profile: "work", pool: null },
     };
     draw([signIn]);
     expect(chats()).toEqual(["Profile work"]);
@@ -266,6 +270,171 @@ describe("the asks, grouped by chat", () => {
     // What is drawn is not what would run, so nothing that lets it run is offered here
     // (`hooked::shown_in_full`'s rule): Deny, and the chat's own pane, which shows it whole.
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Deny",
+      "Go to chat",
+    ]);
+  });
+
+  it("marks a no-break space in a command, and says why only Deny is offered (SK-51, #3202)", () => {
+    core();
+    // The core offers no Allow on it (`hooked::shown_in_full`), and writes the character as its
+    // mark (`asking::said_inertly`): the window draws the mark apart and says what it costs.
+    const said = "Run a command: git⟦U+00A0⟧commit -m wip";
+    draw([{ ...permission(3, "nb", ["steward 3"], said), options: [deny()] }]);
+    const mark = screen.getByText("⟦U+00A0⟧");
+    expect(mark.tagName).toBe("MARK");
+    expect(mark).toHaveClass("invisible-char");
+    expect(screen.getByText(hiddenSaid("⟦U+00A0⟧"))).toBeTruthy();
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Deny",
+      "Go to chat",
+    ]);
+  });
+
+  it("marks a line break the command holds, and says why only Deny is offered (#3470)", () => {
+    core();
+    // A next line, a vertical tab or a line separator is not how a shell lays a line out: the
+    // core keeps it in the command, marks it, and offers no Allow. The row says what it is.
+    for (const mark of ["⟦U+0085⟧", "⟦U+000B⟧", "⟦U+2028⟧"]) {
+      const { unmount } = draw([
+        {
+          ...permission(3, "lb", ["steward 3"], `Run a command: ls${mark}rm -rf x`),
+          options: [deny()],
+        },
+      ]);
+      expect(screen.getByText(mark).tagName).toBe("MARK");
+      expect(
+        screen.getByText(
+          `Allow is not offered. It holds ${mark}, a character that breaks the line here.`,
+        ),
+      ).toBeTruthy();
+      unmount();
+    }
+    expect(hiddenSaid("⟦U+00A0⟧")).toBe(
+      "Allow is not offered. It holds ⟦U+00A0⟧, a character that looks like another one here.",
+    );
+  });
+
+  it("names the mark that misleads most, and what each kind does (#3470)", () => {
+    core();
+    // A no-break space and a line separator: the separator, which can hide a second command.
+    const said = "Run a command: git⟦U+00A0⟧commit⟦U+2028⟧rm -rf x";
+    draw([{ ...permission(3, "lb", ["steward 3"], said), options: [deny()] }]);
+    expect(
+      screen.getByText(
+        "Allow is not offered. It holds ⟦U+2028⟧, a character that breaks the line here.",
+      ),
+    ).toBeTruthy();
+    expect(hiddenSaid("⟦U+000D⟧")).toBe(
+      "Allow is not offered. It holds ⟦U+000D⟧, a character that breaks the line here.",
+    );
+    for (const mark of ["⟦U+202E⟧", "⟦U+001B⟧", "⟦U+200B⟧"]) {
+      expect(hiddenSaid(mark)).toBe(
+        `Allow is not offered. It holds ${mark}, a character a reader does not see here.`,
+      );
+    }
+  });
+
+  it("draws a command over several lines on them, and says why only Deny is offered (#3502)", () => {
+    core();
+    // The core puts `ls` and `rm -rf x` on one line, offers no Allow (`hooked::shown_in_full`),
+    // and gives the lines as that line has them (`asking::lines_of`).
+    const said = "Run a command: ls rm -rf x";
+    draw([
+      {
+        ...permission(3, "ml", ["steward 3"], said),
+        options: [deny()],
+        lines: { count: 2, shown: ["Run a command: ls", "rm -rf x"] },
+      },
+    ]);
+    const lines = Array.from(document.querySelectorAll(".ask-line"), (one) => one.textContent);
+    expect(lines).toEqual(["Run a command: ls", "rm -rf x"]);
+    expect(document.querySelector(".ask-lines")).not.toHaveClass("inbox-clamped");
+    expect(screen.getByText("Allow is not offered. It runs over 2 lines.")).toBeTruthy();
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Deny",
+      "Go to chat",
+    ]);
+  });
+
+  it("draws the first few lines of a long command, and counts the rest (#3502)", () => {
+    core();
+    const shown = Array.from({ length: 9 }, (_, at) => `echo ${at}`);
+    draw([
+      {
+        ...permission(3, "ml", ["steward 3"], shown.join(" ")),
+        options: [deny()],
+        lines: { count: 40, shown },
+      },
+    ]);
+    const lines = Array.from(document.querySelectorAll(".ask-line"), (one) => one.textContent);
+    expect(lines).toEqual([...shown.slice(0, MOST_LINES), `and ${40 - MOST_LINES} more lines`]);
+    expect(screen.getByText("Allow is not offered. It runs over 40 lines.")).toBeTruthy();
+    cleanup();
+    draw([
+      {
+        ...permission(3, "ml", ["steward 3"], shown.slice(0, 6).join(" ")),
+        options: [deny()],
+        lines: { count: 6, shown: shown.slice(0, 6) },
+      },
+    ]);
+    expect(document.querySelector(".ask-more-lines")?.textContent).toBe("and 1 more line");
+  });
+
+  it("says how many lines a command runs over where it cannot draw them (#3502)", () => {
+    core();
+    // A line masked whole: the core gives the count and no lines.
+    draw([
+      {
+        ...permission(3, "ml", ["steward 3"], "[vault value]"),
+        options: [deny()],
+        lines: { count: 3, shown: [] },
+      },
+    ]);
+    expect(document.querySelector(".ask-line")).toBeNull();
+    expect(screen.getByText("[vault value]")).toBeTruthy();
+    expect(
+      screen.getByText("Allow is not offered. It runs over 3 lines, put on one here."),
+    ).toBeTruthy();
+  });
+
+  it("says the lines and a mark they hold, and never offers Allow it was not given (#3502)", () => {
+    core();
+    const said = "Run a command: git⟦U+00A0⟧commit rm -rf x";
+    draw([
+      {
+        ...permission(3, "ml", ["steward 3"], said),
+        lines: { count: 2, shown: ["Run a command: git⟦U+00A0⟧commit", "rm -rf x"] },
+      },
+    ]);
+    // Where the core offered Allow, the row draws its line as it is and says no reason.
+    expect(screen.queryByText(/Allow is not offered/)).toBeNull();
+    cleanup();
+    draw([
+      {
+        ...permission(3, "ml", ["steward 3"], said),
+        options: [deny()],
+        lines: { count: 2, shown: ["Run a command: git⟦U+00A0⟧commit", "rm -rf x"] },
+      },
+    ]);
+    expect(screen.getByText("⟦U+00A0⟧").tagName).toBe("MARK");
+    expect(
+      screen.getByText(
+        "Allow is not offered. It runs over 2 lines. It also holds ⟦U+00A0⟧, a character that looks like another one here.",
+      ),
+    ).toBeTruthy();
+    // The row's name reads the lines apart.
+    expect(document.querySelector(".ask-lines")?.textContent).toBe(
+      "Run a command: git⟦U+00A0⟧commit rm -rf x",
+    );
+  });
+
+  it("says nothing of a ⟦ the command wrote itself, which keeps its Allow (SK-51, #3202)", () => {
+    core();
+    draw([permission(3, "lb", ["steward 3"], "Run a command: echo ⟦U+27E6⟧U+00A0⟧")]);
+    expect(screen.queryByText(/Allow is not offered/)).toBeNull();
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Allow",
       "Deny",
       "Go to chat",
     ]);

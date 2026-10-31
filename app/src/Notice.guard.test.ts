@@ -87,11 +87,22 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "something true now that has a way out of its own",
   },
   "AddDockerPool.tsx": {
-    count: 1,
+    count: 2,
     why:
       ACTION +
-      ". Add a Docker pool's refusal (#2679), in the core's words, under the form it refused; " +
-      "the form, kept as it was typed, and Add pool are the way on",
+      ". Add a pool's refusal for a Docker pool (#2679), and for a cluster pool (#3292), each in the core's " +
+      "words, under the form it refused; the form, kept as it was typed, and Add pool or Check " +
+      "its key are the way on",
+  },
+  "ui/notice/Notice.tsx": {
+    count: 1,
+    why:
+      "the notice family's message part, the live region of a card Notice (#3344): drawn live " +
+      "only by `Notice.tsx`, which this guard holds as the one way to draw a standing line",
+  },
+  "AddVision.tsx": {
+    count: 1,
+    why: ACTION,
   },
   "AnswerQuestion.tsx": {
     count: 2,
@@ -100,13 +111,16 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "under the box, with what was typed kept: Send is the retry. And, where the form was " +
       "opened for a task that asks nothing now, the sentence that says so, beside Close",
   },
-  "App.tsx": {
-    count: 1,
-    why: "what the last action answered: replaced by the next action, not about something true now",
-  },
   "AskPersona.tsx": {
     count: 1,
     why: ACTION,
+  },
+  "InspectorView.tsx": {
+    count: 1,
+    why:
+      "a DevTools view's bar (#2028): that the person drives the browser while DevTools are " +
+      "open, drawn by purlis outside the frame, with a refusal of their input said in it, " +
+      "replaced by the next; Done on the browser closes them",
   },
   "BrowserView.tsx": {
     count: 1,
@@ -144,6 +158,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       'the role a caller passes (`role="status"`) for an empty state that is a surface\'s ' +
       "answer, not a standing line: each caller is listed here by its own count",
   },
+  "ui/card/Totals.tsx": {
+    count: 1,
+    why: "live totals' counts, said politely as they change, at most once a second (#3673): a live value, not a line",
+  },
+  "ui/meter/Meter.tsx": {
+    count: 1,
+    why: "a progress bar's value, said politely as it changes, at most once a second (#3674): a live value, not a line",
+  },
   "Cockpit.tsx": {
     count: 1,
     why: "a branch's apart count, said as it changes: a live value, not a line",
@@ -175,11 +197,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "(FX-1): inside the dialog, over the rows it changed",
   },
   "Explorer.tsx": {
-    count: 2,
+    count: 3,
     why:
       "a folder of a branch's tree that could not be read, in the tree where its entries go: a " +
-      "row's own refusal, and opening the folder again reads it again (NO-4); and how many file " +
-      "rows are picked, a live count read out as it changes (#1151)",
+      "row's own refusal, and opening the folder again reads it again (NO-4); a branch the " +
+      "filter could not find files in by name, said where the files found go, and typing again " +
+      "asks again (#3343); and how many file rows are picked, a live count read out as it " +
+      "changes (#1151)",
   },
   "ExtensionAction.tsx": {
     count: 1,
@@ -341,6 +365,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 2,
     why: ACTION + "; and its progress while it copies the repo, a live value",
   },
+  "NewSkillDialog.tsx": {
+    count: 2,
+    why:
+      "New skill…'s name check as it is typed and the core's refusal (#3684), beside the fields " +
+      "the person is still filling, in the dialog that stays open",
+  },
   "NewVault.tsx": {
     count: 1,
     why: ACTION,
@@ -419,7 +449,41 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ACTION +
       ". Also a save's own output, line by line: what the last press answered, not a standing line",
   },
+  "ReadOnlyTerminal.tsx": {
+    count: 1,
+    why: "a copy the clipboard refused, said beside the read-only screen it was asked of (#3676)",
+  },
   "SearchTab.tsx": { count: 1, why: "the search's progress, a live value" },
+  "UnsavedWorkQuestion.tsx": { count: 1, why: ACTION },
+  "SkillChangeDialogs.tsx": {
+    count: 2,
+    why:
+      "Rename, Move and Delete's checks and the core's refusals (#3685), beside the fields the " +
+      "person is still filling, in the dialog that stays open",
+  },
+  "SkillCopy.tsx": {
+    count: 3,
+    why:
+      "Make my own copy's refusals (#3686), beside the fields the person is still filling: a " +
+      "built-in skill's name and the built-in's description word for word (#3777), each said " +
+      "as it is typed, and the core's sentence for the copy just asked for. Make the copy is " +
+      "the retry",
+  },
+  "SkillPanels.tsx": {
+    count: 2,
+    why: "every studio page's reads in place (S11, #3978): the line said after a second while rows are held, and a read that failed with Try again",
+  },
+  "SkillSources.tsx": {
+    count: 2,
+    why: "the Sources page's updates still being read (#3687), and Install all's review that is more than one read, with its first part to review in place (#4024)",
+  },
+  "SkillStudioDeleted.tsx": {
+    count: 1,
+    why:
+      "Bring back's refusal of a built-in skill's name for a deleted skill whose own a built-in " +
+      "took (#3729), said as it is typed beside the New name field, in the core's sentence. " +
+      "Bring back is the retry",
+  },
   "SessionPane.tsx": {
     count: 1,
     why:
@@ -460,12 +524,11 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "it moved to: what the last press answered, not a standing line",
   },
   "UseSkill.tsx": {
-    count: 2,
+    count: 1,
     why:
       ACTION +
-      ", drawn once under the picker or the arguments form, one shown at a time (#2775). And the " +
-      "dialog's warning that the chat's set is past its skill budget, read as it opens: about " +
-      "the chat the dialog is for, gone with the dialog",
+      ", drawn once under the picker or the arguments form, one shown at a time (#2775). Its " +
+      "budget, pins and routing lines are the Skills view's now (S8, #3694)",
   },
   "VaultSignIn.tsx": {
     count: 5,
@@ -529,11 +592,36 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "the reference picker saying it found no chat, inside its menu",
   },
   "settings/pools.tsx": {
-    count: 1,
+    count: 2,
     why:
       ACTION +
       ". The Pools group's read refusing (#2679), in the core's words: the group is read again " +
-      "as it comes on screen. A runner whose key changed has a Notice of its own",
+      "as it comes on screen, and This is my own refused on its row (#4071), which the switch " +
+      "pressed again retries. A runner whose key changed has a Notice of its own",
+  },
+  "settings/PoolChooseProfiles.tsx": {
+    count: 1,
+    why:
+      ACTION +
+      ". What choosing a new pool's profiles said (#4048), beside the Sign in and Not now that " +
+      "did it; the pool's own lines follow it",
+  },
+  "settings/PoolProfiles.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ". A pool's profiles refusing (#2049), in the core's words: its Ask again is the way on;" +
+      " what adding or removing one of them said (#4047), beside the buttons that did it; and" +
+      " what a profile's Sign out said (#4043), beside its line",
+  },
+  "settings/PoolSignIn.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ". A profile's sign-in on a pool's runner (#4042), inside its strip: the step it is on, said " +
+      "as it changes, and the one line of what went wrong, in the core's or the runner's words; " +
+      "its Try again, Cancel and Open in terminal are the way out; and whether Copy code put the " +
+      "device code on the clipboard (#4045), beside the button",
   },
   "settings/accounts.tsx": {
     count: 2,
@@ -550,10 +638,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "its Add profile, Import again and Remove… are the way on",
   },
   "settings/Collection.tsx": {
-    count: 3,
+    count: 2,
     why:
-      "a collection's Undo answer, a refused Remove with its users and a refused Add (ST-3): " +
-      "inline, inside Settings, beside the entry or form they are about",
+      "a collection's Undo answer and a refused Remove with its users (ST-3): inline, inside " +
+      "Settings, beside the entry they are about; a refused Add is its form's summary (#3291)",
   },
   "settings/RawToml.tsx": {
     count: 2,
@@ -564,8 +652,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "Settings' read refusal, inside its tab (NO-7, #1232)",
   },
   "settings/components.tsx": {
-    count: 2,
-    why: "the settings set's filter count and a row's refusal: inline, per field",
+    count: 3,
+    why:
+      "the settings set's filter count and a row's refusal, inline, per field: an alert on its " +
+      "own, a polite line quiet under its form's summary in a form (#3291)",
   },
   "settings/themeGallery.tsx": {
     count: 3,
@@ -581,8 +671,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "This machine's read refusal, standing in for its list inside Settings (ST-2; NO-7, #1232)",
   },
   "ui/field/Field.tsx": {
+    count: 2,
+    why:
+      "a field's error line under its box, why its value is refused, in either of the family's " +
+      "boxes (#2905), polite; and a form's one alert summary of a refused send (#3291)",
+  },
+  "ui/table/TableBar.tsx": {
     count: 1,
-    why: "a field's error line under its box, why its value is refused, in either of the family's boxes (#2905)",
+    why: "how many rows of a table are chosen, a live value said as it changes (#2911)",
   },
 };
 
@@ -706,7 +802,11 @@ describe("the window's standing lines", () => {
     const counted: Record<string, number> = {};
     for (const { name, text } of sources()) {
       if (name === "Notice.tsx") continue;
-      const n = tags(text, (tag) => tag !== "Notice").filter(({ attrs }) => live(attrs)).length;
+      // A card's message drawn `live` is a live region too (#3344): only Notice may draw one.
+      const n = tags(text, (tag) => tag !== "Notice").filter(
+        ({ tag, attrs }) =>
+          live(attrs) || (tag === "NoticeMessage" && /\blive\b/.test(ownAttributes(attrs))),
+      ).length;
       if (n > 0) counted[name] = n;
     }
     const listed = Object.fromEntries(

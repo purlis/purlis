@@ -137,6 +137,7 @@ fn the_drivers_answer_is_said_back_whole() {
         note: Some("the page did not load".into()),
         repeated: true,
         asked: vec!["news.example.org:443".into()],
+        downloads: Vec::new(),
     };
 
     let said = PageSaid {
@@ -1149,4 +1150,68 @@ fn a_download_that_failed_says_what_to_do() {
     let said = download_failed_said(&digest);
     assert!(said.contains("was not kept"), "{said}");
     assert!(said.contains("open the browser again"), "{said}");
+}
+
+#[test]
+fn why_devtools_closed_is_said_in_a_word_their_view_reads() {
+    use purlis_browser_engine::drive::InspectEnded;
+    for why in [
+        InspectEnded::Closed,
+        InspectEnded::PageGone,
+        InspectEnded::FellBehind,
+        InspectEnded::TooLarge,
+        InspectEnded::Moved,
+        InspectEnded::Ended,
+    ] {
+        assert!(
+            purlis_session_protocol::view::frames::CLOSED_WHY.contains(&super::closed_word(why)),
+            "{why:?}"
+        );
+    }
+}
+
+/// A project whose state folder holds a vault's file, and a file of its own beside it.
+fn a_project_with_a_vault() -> (tempfile::TempDir, std::path::PathBuf) {
+    let made = tempfile::tempdir().expect("a directory");
+    let project = made.path().join("project");
+    let vaults = project.join(crate::names::STATE_DIR.write).join("vaults");
+    std::fs::create_dir_all(&vaults).expect("made");
+    std::fs::write(vaults.join("forge.json"), "secret").expect("written");
+    std::fs::write(project.join("notes.txt"), "notes").expect("written");
+    let project = project.canonicalize().expect("there");
+    (made, project)
+}
+
+#[test]
+fn an_upload_the_host_makes_refuses_what_purlis_keeps_from_the_projects_chats() {
+    // #2020: the host reads what purlis keeps from the project's chats itself, whatever the
+    // window judged, and refuses it by what it is.
+    let (made, project) = a_project_with_a_vault();
+    let into = made.path().join("browser/uploads/0");
+    let vault = format!("{}/vaults/forge.json", crate::names::STATE_DIR.write);
+    let refused = super::staged_files(&project, &project, &[vault], &into).unwrap_err();
+    assert!(refused.contains("keeps from every chat"), "{refused}");
+    let copies =
+        super::staged_files(&project, &project, &["notes.txt".to_owned()], &into).expect("read");
+    assert_eq!(copies.len(), 1);
+}
+
+#[test]
+fn a_save_the_host_makes_never_lands_in_what_purlis_keeps_from_the_projects_chats() {
+    let (made, project) = a_project_with_a_vault();
+    let download = made.path().join("GUID-1");
+    std::fs::write(&download, "downloaded").expect("written");
+    let to = format!("{}/vaults/planted.json", crate::names::STATE_DIR.write);
+    let refused = super::saved_file(&project, &download, &project, &to).unwrap_err();
+    assert!(refused.contains("keeps from every chat"), "{refused}");
+    assert!(
+        !project
+            .join(crate::names::STATE_DIR.write)
+            .join("vaults/planted.json")
+            .exists()
+    );
+    assert_eq!(
+        super::saved_file(&project, &download, &project, "saved.txt").expect("saved"),
+        10
+    );
 }

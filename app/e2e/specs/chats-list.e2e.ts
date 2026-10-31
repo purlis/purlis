@@ -148,8 +148,12 @@ async function measured(): Promise<Measured | null> {
       words: [...section.querySelectorAll<HTMLElement>(".finished-name .shown-state .shape")].map(
         (mark) => seen(mark, mark.closest(".shown-state")?.getAttribute("data-state") ?? ""),
       ),
-      marks: [...section.querySelectorAll<HTMLElement>(".chat .shown-state .shape")].map((mark) =>
-        seen(mark, mark.closest(".shown-state")?.getAttribute("data-state") ?? ""),
+      // A chat's row leads with its persona's mark, its state on it (#3342): the mark is what
+      // must be whole, and a done chat's wears no dot.
+      // The persona's mark itself, and not the box around it with the dot that stands past its
+      // corner.
+      marks: [...section.querySelectorAll<HTMLElement>(".chat .chat-persona > :first-child")].map(
+        (mark) => seen(mark, mark.parentElement?.getAttribute("data-state") ?? ""),
       ),
       rows: [
         ...section.querySelectorAll<HTMLElement>(
@@ -376,9 +380,10 @@ describe("the Chats list in a narrow sidebar", () => {
         const style = getComputedStyle(box);
         const outer = box.getBoundingClientRect();
         const rows = [...section.querySelectorAll<HTMLElement>('[role="treeitem"]')];
-        // The shared row's height as the theme in force sets it (`--size-chrome`).
+        // A sidebar view's row height as the theme in force sets it (#3342): the control's
+        // height and a step.
         const probe = document.createElement("div");
-        probe.style.height = "var(--size-chrome)";
+        probe.style.height = "calc(var(--size-control) + var(--space-1))";
         document.body.append(probe);
         const chrome = probe.getBoundingClientRect().height;
         probe.remove();
@@ -390,7 +395,9 @@ describe("the Chats list in a narrow sidebar", () => {
             outer.left +
             Number.parseFloat(style.borderInlineStartWidth) +
             Number.parseFloat(style.paddingInlineStart),
-          filterBottom: section.querySelector(".chats-filter")?.getBoundingClientRect().bottom ?? 0,
+          // The view's top: the title's line, the filter, the scope and the chips (#3342).
+          filterBottom:
+            section.querySelector('[data-part="top"]')?.getBoundingClientRect().bottom ?? 0,
           rows: rows.map((row) => ({
             level: Number(row.getAttribute("aria-level")),
             parent: row.hasAttribute("aria-expanded"),
@@ -417,9 +424,8 @@ describe("the Chats list in a narrow sidebar", () => {
           Math.abs(one.nameLeft - at) <= 1.5,
           { at, one },
         );
-      // Every chat's row is the shared row's height (`--size-chrome`, as the theme in force sets
-      // it: 1.5rem in Purlis Classic, 24px at 14px in Purlis), give or take a pixel, and the
-      // first comes right under the filter: no empty line between them.
+      // Every chat's row is a sidebar view's row (30px at 14px, #3342), give or take a pixel,
+      // and the first comes right under the view's top: no empty line between them.
       for (const one of rows)
         check(
           `${one.name}: its row is not the list row's height (${width})`,
@@ -446,10 +452,17 @@ describe("the Chats list in a narrow sidebar", () => {
       const section = document.querySelector('[data-raised="chats-list.e2e"]');
       return [...(section?.querySelectorAll<HTMLElement>(".chat") ?? [])].map((chat) => {
         const line = chat.querySelector(".ui-row-label")?.getBoundingClientRect();
-        const mark = chat.querySelector(".shown-state .shape")?.getBoundingClientRect();
+        const mark = chat.querySelector(".chat-persona")?.getBoundingClientRect();
         const name = chat.querySelector(".session")?.getBoundingClientRect();
+        const time = chat.querySelector(".chat-time")?.getBoundingClientRect();
         return {
           name: chat.querySelector(".session")?.textContent ?? "",
+          timed: time !== undefined,
+          timeWidth: time?.width ?? 0,
+          timeLeft: time?.left ?? 0,
+          timeRight: time?.right ?? 0,
+          nameRight: name?.right ?? 0,
+          rowRight: chat.getBoundingClientRect().right,
           height: Math.round(chat.getBoundingClientRect().height),
           lineHeight: Math.round(line?.height ?? 0),
           markLeft: mark?.left ?? 0,
@@ -469,6 +482,15 @@ describe("the Chats list in a narrow sidebar", () => {
     for (const one of rows) {
       check(`${one.name}: its mark is not before its name`, one.markLeft < one.nameLeft, one);
       check(`${one.name}: its mark is not on its name's line`, one.markTop < one.nameBottom, one);
+    }
+    // **The time at a row's end stays whole, and the name gives way** (#3484): after the name,
+    // inside the row, however long the name is.
+    const timed = rows.filter((one) => one.timed);
+    check("no chat row says its time", timed.length > 0, rows);
+    for (const one of timed) {
+      check(`${one.name}: its time is not drawn`, one.timeWidth > 0, one);
+      check(`${one.name}: its time is cut off`, one.timeRight <= one.rowRight + 0.5, one);
+      check(`${one.name}: its name runs under its time`, one.nameRight <= one.timeLeft + 0.5, one);
     }
   });
 });

@@ -13,6 +13,7 @@ fn bound(pool: &str, definition: &str, image: &str) -> Bound {
         runner: "01JB0RUNNER0000000000000000".into(),
         runner_key: "ab".repeat(32),
         runner_image: image.into(),
+        pod: String::new(),
         engine: "this machine's Docker (/var/run/docker.sock)".into(),
     }
 }
@@ -73,6 +74,22 @@ fn a_changed_image_definition_or_runner_asks_again() {
             "{now:?}"
         );
     }
+}
+
+#[test]
+fn a_pools_answers_are_forgotten_with_its_mark() {
+    let opt_ins = OptIns::default();
+    opt_ins.allow("steward", "id-shop", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", bound("tests", "d1", "i1"));
+    opt_ins.forget_pool("builds");
+    assert_eq!(
+        opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked
+    );
+    assert_eq!(
+        opt_ins.standing("steward", "id-shop", &bound("tests", "d1", "i1")),
+        Standing::Allowed
+    );
 }
 
 #[test]
@@ -169,4 +186,204 @@ fn a_pools_bound_follows_its_image_its_limits_and_its_runner() {
         Bound::of(&limited, &runner, engine).definition
     );
     assert_ne!(a, Bound::of(&one, &again, engine), "a runner paired again");
+}
+
+/// A pool `first` that moved on to a new runner, its runner before kept draining (#2749).
+fn a_pool_with_a_runner_draining() -> tempfile::TempDir {
+    use std::os::unix::fs::PermissionsExt;
+    let config = tempfile::tempdir().unwrap();
+    let path = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let image = format!("ghcr.io/purlis/purlis-runner@sha256:{}", "a".repeat(64));
+    let row = |name: &str, device: &str, extra: serde_json::Value| {
+        let mut row = serde_json::json!({
+            "name": name,
+            "pool": "docker",
+            "container": "e".repeat(64),
+            "image": image,
+            "user": "10001:10001",
+            "home": "/home/purlis",
+            "device": device,
+            "key": "12".repeat(32),
+            "paired": 1,
+        });
+        for (key, value) in extra.as_object().unwrap() {
+            row[key] = value.clone();
+        }
+        row
+    };
+    let text = serde_json::json!({
+        "version": 1,
+        "pools": [{ "name": "first", "kind": "docker", "image": image }],
+        "runners": [
+            row("first", "01JB0DRAINING000000000000000", serde_json::json!({ "draining": true })),
+            row("first-01234567", "01JB0NEW00000000000000000000", serde_json::json!({ "of": "first" })),
+        ],
+    });
+    std::fs::write(&path, text.to_string()).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    config
+}
+
+/// A chat that stays on a draining runner is reached over a link its host says reached
+/// `<pool>/<runner>` (#3417): it is judged by its pool and that runner as they are kept, by the
+/// same check as any runner chat, never by the pool's runner now.
+#[test]
+fn a_chat_on_a_link_relayed_before_its_pool_moved_on_is_judged_by_the_runner_it_reached() {
+    let config = a_pool_with_a_runner_draining();
+    let here = || Ok("/var/run/docker.sock".into());
+
+    let draining =
+        Bound::over_the_link_with(here(), config.path(), "first", Some("first/first")).unwrap();
+    let new =
+        Bound::over_the_link_with(here(), config.path(), "first", Some("first/first-01234567"))
+            .unwrap();
+
+    assert_eq!(draining.pool, "first", "its pool, by its own name");
+    assert_eq!(draining.runner, "01JB0DRAINING000000000000000");
+    assert_eq!(new.runner, "01JB0NEW00000000000000000000");
+    assert_eq!(draining.definition, new.definition, "the one pool");
+}
+
+/// **A chat that ran without the sandbox on a Docker pool's runner bars tools and tokens there**,
+/// as it bars browser logins, whichever runner of the pool the link reached.
+#[test]
+fn a_docker_runner_a_chat_ran_on_without_the_sandbox_is_sent_nothing() {
+    let config = a_pool_with_a_runner_draining();
+    let here = || Ok("/var/run/docker.sock".into());
+    let reached = Some("first/first-01234567");
+    Bound::over_the_link_with(here(), config.path(), "first", reached)
+        .expect("nothing has run there unconfined");
+    crate::runnertaint::mark_pool(config.path(), "first").unwrap();
+    let refused = Bound::over_the_link_with(here(), config.path(), "first", reached).unwrap_err();
+    assert!(refused.contains("without the sandbox"), "{refused}");
+}
+
+#[test]
+fn a_link_whose_host_named_no_runner_is_refused_while_its_pool_has_one_draining() {
+    let config = a_pool_with_a_runner_draining();
+    let refused = Bound::over_the_link_with(
+        Ok("/var/run/docker.sock".into()),
+        config.path(),
+        "first",
+        None,
+    )
+    .unwrap_err();
+    assert!(refused.contains("did not say which"), "{refused}");
+}
+
+#[test]
+fn a_link_whose_host_named_no_runner_is_the_pools_runner_while_none_drains() {
+    let config = a_pool_with_a_runner_draining();
+    let path = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+    let mut text: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    text["runners"].as_array_mut().unwrap().remove(0);
+    std::fs::write(&path, text.to_string()).unwrap();
+
+    let bound = Bound::over_the_link_with(
+        Ok("/var/run/docker.sock".into()),
+        config.path(),
+        "first",
+        None,
+    )
+    .unwrap();
+    assert_eq!(bound.runner, "01JB0NEW00000000000000000000");
+}
+
+#[test]
+fn a_runner_reached_that_is_not_kept_or_not_the_pools_or_not_yours_is_refused() {
+    let config = a_pool_with_a_runner_draining();
+    for reached in ["first/none", "other/first", "first", "other"] {
+        assert!(
+            Bound::over_the_link_with(
+                Ok("/var/run/docker.sock".into()),
+                config.path(),
+                "first",
+                Some(reached)
+            )
+            .is_err(),
+            "{reached}"
+        );
+    }
+    assert!(
+        Bound::over_the_link_with(
+            Ok("/var/run/docker.sock".into()),
+            config.path(),
+            "none",
+            Some("none/first")
+        )
+        .is_err(),
+        "a pool not kept"
+    );
+    let refused = Bound::over_the_link_with(
+        Err("this machine's DOCKER_HOST is tcp://build-box.example:2376".into()),
+        config.path(),
+        "first",
+        Some("first/first"),
+    )
+    .unwrap_err();
+    assert!(refused.contains("sends no vault value there"), "{refused}");
+}
+
+/// Rewrites the runners file of `config` by `change`.
+fn change_runners(config: &Path, change: impl FnOnce(&mut serde_json::Value)) {
+    let path = crate::machine::dir(config).join(crate::machine::RUNNERS_FILE);
+    let mut text: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    change(&mut text);
+    std::fs::write(&path, text.to_string()).unwrap();
+}
+
+/// A move's pool that is not ready says which way it is not (#3646), and one whose runners are
+/// not shown to be yours says that, apart from the rest.
+#[test]
+fn a_pool_not_ready_for_a_new_chat_says_which_way_it_is_not() {
+    let config = a_pool_with_a_runner_draining();
+    let here = || Ok("/var/run/docker.sock".into());
+
+    let bound = Bound::read_with(here(), config.path(), "first").unwrap();
+    assert_eq!(
+        bound.runner, "01JB0NEW00000000000000000000",
+        "never the draining one"
+    );
+
+    assert_eq!(
+        Bound::read_with(here(), config.path(), "none"),
+        Err(Unbound::NotHere)
+    );
+    assert!(matches!(
+        Bound::read_with(
+            Err("this machine's DOCKER_HOST is tcp://build-box.example:2376".into()),
+            config.path(),
+            "first"
+        ),
+        Err(Unbound::NotYours(why)) if why.contains("tcp://build-box.example:2376")
+    ));
+
+    // Its new runner gone: only the draining one is left.
+    change_runners(config.path(), |text| {
+        text["runners"].as_array_mut().unwrap().remove(1);
+    });
+    assert_eq!(
+        Bound::read_with(here(), config.path(), "first"),
+        Err(Unbound::Draining)
+    );
+
+    // No runner at all of its image.
+    change_runners(config.path(), |text| {
+        text["runners"].as_array_mut().unwrap().clear();
+    });
+    assert_eq!(
+        Bound::read_with(here(), config.path(), "first"),
+        Err(Unbound::NoRunnerOfItsImage)
+    );
+
+    // A file that cannot be read says so, never to remove the pool (#3814).
+    let path = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+    std::fs::write(&path, "not json").unwrap();
+    assert!(matches!(
+        Bound::read_with(here(), config.path(), "first"),
+        Err(Unbound::Unread(_))
+    ));
 }

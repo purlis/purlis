@@ -18,7 +18,8 @@ use serde::{Deserialize, Serialize};
 
 use super::fetch::{Fetched, Found, NotASkill, SourceFile, fetch};
 use super::{Commit, Source, lock};
-use crate::skills::verbs::Level;
+use crate::skills::verbs::{Level, Whose};
+use crate::skills::{Reference, Reserved};
 
 /// One file of a skill, as the review shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -43,6 +44,9 @@ pub struct SkillReview {
     pub folder: String,
     /// The skill whose install brings it along, as one it refers to.
     pub brought_by: Option<String>,
+    /// The skills it refers to that the level it lands in holds already (#4032): they are not
+    /// brought along, and the install leaves them as they are.
+    pub already: Vec<String>,
     pub summary: summary::Summary,
     pub files: Vec<ReviewFile>,
     pub left_out: Vec<LeftOut>,
@@ -186,13 +190,15 @@ pub(super) fn referenced(files: &[SourceFile]) -> Vec<String> {
 }
 
 /// The review of the skill `found`, whose files are `files` and whose left-out entries are
-/// `left`, brought along by `brought_by`, in a source that holds the skills `held`.
+/// `left`, brought along by `brought_by`, in a source that holds the skills `held`, landing in a
+/// level that holds those `have` says.
 pub(super) fn review_of(
     found: &Found,
     files: &[SourceFile],
     left: Vec<LeftOut>,
     brought_by: Option<String>,
     held: &[String],
+    have: &dyn Fn(&str) -> bool,
 ) -> SkillReview {
     let summary = summary_of(files);
     let marked = |path: &str| {
@@ -219,8 +225,14 @@ pub(super) fn review_of(
                 .collect()
         })
         .unwrap_or_default();
+    let mut already = Vec::new();
     for name in referenced(files) {
-        if name != found.name && !held.contains(&name) {
+        if name == found.name {
+            continue;
+        }
+        if have(&name) {
+            already.push(name);
+        } else if !held.contains(&name) {
             lint.push(format!(
                 "it refers to the skill {name}, which this source does not hold"
             ));
@@ -231,6 +243,7 @@ pub(super) fn review_of(
         description: found.description.clone(),
         folder: found.folder.clone(),
         brought_by,
+        already,
         files: files
             .iter()
             .map(|file| ReviewFile {
@@ -248,29 +261,137 @@ pub(super) fn review_of(
     }
 }
 
+/// **More than one read of a source may take** (#4024): a review of several skills stops before
+/// the skill whose files would take it past the limit, and says which of those named fit, so the
+/// person installs them in parts. Nothing is ever cut from a review silently.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TooMuch {
+    /// Those named first whose reviews, with every skill each brings along, fit one read: the
+    /// first part to install. Empty where the first named alone does not.
+    pub fits: Vec<String>,
+    /// The rest of those named, for a part after it.
+    pub rest: Vec<String>,
+    /// What the read's limit says.
+    pub why: String,
+    /// Those named that the level holds already, left out of every part (#4153), as
+    /// [`SetReview::Review`]'s `there`.
+    pub there: Vec<String>,
+}
+
+/// **The review of a set of skills** (#4024): the review, or, where reading it is more than one
+/// read may take, which of those named fit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum SetReview {
+    Review {
+        review: Review,
+        /// Those named that the level they land in holds already, from any source or made there
+        /// by hand (#4153): left out of the review and the install, which would refuse them, and
+        /// left as they are.
+        there: Vec<String>,
+    },
+    TooMuch(TooMuch),
+}
+
+/// Why a review was not read.
+pub(super) enum Unread {
+    /// More than one read may take.
+    TooMuch(TooMuch),
+    /// Anything else, in a sentence.
+    Refused(String),
+}
+
+impl From<String> for Unread {
+    fn from(why: String) -> Unread {
+        Unread::Refused(why)
+    }
+}
+
+impl Unread {
+    /// What it says in a sentence.
+    pub(super) fn said(self) -> String {
+        match self {
+            Unread::TooMuch(too_much) => too_much.why,
+            Unread::Refused(why) => why,
+        }
+    }
+}
+
+/// **One skill reviewed**, and the files its review read: an install copies those, and never
+/// reads them a second time, which would count twice against the read's limit.
+pub(super) struct Reviewed {
+    pub review: SkillReview,
+    pub files: Vec<SourceFile>,
+}
+
 /// **The review of `names` from `source`**, and every skill they refer to that the source holds
 /// and `have` does not, each right after the one that brought it, so one that was also named is
 /// still marked as brought along and an install's second review reads the same. One review for
 /// every source, the git one and each extension's (ADR 0101 §1): what is reviewed is what the
 /// source answered, and the review is purlis's.
-pub(super) fn reviews_of(
+///
+/// Before each skill's files are read it asks the source whether they fit what one read may take
+/// ([`super::SkillSource::fits_one_read`]); where they do not, it answers [`TooMuch`] with the
+/// names whose reviews were whole before it.
+pub(super) fn reviewed(
     source: &dyn super::SkillSource,
     names: &[String],
     have: &dyn Fn(&str) -> bool,
-) -> Result<Vec<SkillReview>, String> {
+) -> Result<Vec<Reviewed>, Unread> {
     let (found, _) = source.skills()?;
+    reviewed_from(source, &found, names, have)
+}
+
+/// [`reviewed`], with what the source offers already listed as `found`: listing it again would
+/// read every skill's instructions a second time against the read's limit.
+fn reviewed_from(
+    source: &dyn super::SkillSource,
+    found: &[Found],
+    names: &[String],
+    have: &dyn Fn(&str) -> bool,
+) -> Result<Vec<Reviewed>, Unread> {
     let held: Vec<String> = found.iter().map(|f| f.name.clone()).collect();
     let mut queue: Vec<(String, Option<String>)> =
         names.iter().map(|name| (name.clone(), None)).collect();
-    let mut skills: Vec<SkillReview> = Vec::new();
+    let mut skills: Vec<Reviewed> = Vec::new();
+    // The named whose reviews are whole, the named one being reviewed now, and how many skills
+    // the whole ones reviewed with what they brought along: a skill brought along is reviewed
+    // before the next named one is taken.
+    let mut whole: Vec<String> = Vec::new();
+    let mut now: Option<String> = None;
+    let mut wholly = 0;
     while !queue.is_empty() {
         let (name, by) = queue.remove(0);
-        if skills.iter().any(|s| s.name == name) {
+        if by.is_none() {
+            if let Some(done) = now.replace(name.clone())
+                && !whole.contains(&done)
+            {
+                whole.push(done);
+            }
+            wholly = skills.len();
+        }
+        if skills.iter().any(|s| s.review.name == name) {
             continue;
         }
         let Some(one) = found.iter().find(|f| f.name == name) else {
-            return Err(format!("{} holds no skill named {name:?}", source.shown()));
+            return Err(format!("{} holds no skill named {name:?}", source.shown()).into());
         };
+        if let Err(why) = source.fits_one_read(one) {
+            // A named one the first part brings along is in it, and not left for the rest.
+            let first: Vec<&str> = skills[..wholly]
+                .iter()
+                .map(|one| one.review.name.as_str())
+                .collect();
+            return Err(Unread::TooMuch(TooMuch {
+                rest: names
+                    .iter()
+                    .filter(|named| !whole.contains(named) && !first.contains(&named.as_str()))
+                    .cloned()
+                    .collect(),
+                fits: whole,
+                why,
+                there: Vec::new(),
+            }));
+        }
         let (files, left) = source.files(one)?;
         let mut next: Vec<(String, Option<String>)> = referenced(&files)
             .into_iter()
@@ -279,9 +400,26 @@ pub(super) fn reviews_of(
             .collect();
         next.append(&mut queue);
         queue = next;
-        skills.push(review_of(one, &files, left, by, &held));
+        // One that is named is reviewed itself, so it is never said to be left as it is.
+        let left_as_is = |other: &str| have(other) && !names.iter().any(|named| named == other);
+        skills.push(Reviewed {
+            review: review_of(one, &files, left, by, &held, &left_as_is),
+            files,
+        });
     }
     Ok(skills)
+}
+
+/// **The review of `names` from `source`** ([`reviewed`]), what more than one read may take said
+/// in its sentence.
+pub(super) fn reviews_of(
+    source: &dyn super::SkillSource,
+    names: &[String],
+    have: &dyn Fn(&str) -> bool,
+) -> Result<Vec<SkillReview>, String> {
+    reviewed(source, names, have)
+        .map(|skills| skills.into_iter().map(|one| one.review).collect())
+        .map_err(Unread::said)
 }
 
 impl Fetched {
@@ -298,15 +436,210 @@ impl Fetched {
         })
     }
 
-    /// **The review of installing `names`** from this commit, and every skill they refer to.
-    pub fn review(&self, names: &[String]) -> Result<Review, String> {
-        self.review_with(names, &|_| false)
+    /// **The review of installing `names` together** from this commit, or which of them fit one
+    /// read where all of them do not; `found` is what it offers, listed once, `holds` says which
+    /// names are taken where they land ([`taken`]), and `have` which references are met there
+    /// already. One named that is taken is left out and said to be there (#4153).
+    fn set_review(
+        &self,
+        found: &[Found],
+        names: &[String],
+        holds: &dyn Fn(&str) -> bool,
+        have: &dyn Fn(&str) -> bool,
+    ) -> Result<SetReview, String> {
+        let (there, names): (Vec<String>, Vec<String>) =
+            names.iter().cloned().partition(|name| holds(name));
+        match reviewed_from(self, found, &names, have) {
+            Ok(skills) => Ok(SetReview::Review {
+                review: Review {
+                    source: self.source.clone(),
+                    commit: self.commit.clone(),
+                    skills: skills.into_iter().map(|one| one.review).collect(),
+                },
+                there,
+            }),
+            Err(Unread::TooMuch(too_much)) => Ok(SetReview::TooMuch(TooMuch { there, ..too_much })),
+            Err(Unread::Refused(why)) => Err(why),
+        }
     }
 }
 
-/// **The review of installing `names` from `source`** at its newest commit.
-pub fn review(plane: &Path, source: &Source, names: &[String]) -> Result<Review, String> {
-    fetch(plane, source, None)?.review(names)
+/// Whether `level` holds a skill named `name`, from a source or made there.
+pub(super) fn has(plane: &Path, level: &Level, name: &str) -> bool {
+    level.named(plane, name).is_some()
+}
+
+/// **Whether `name` is taken where a set lands**: `level` holds a skill of that name, or it
+/// belongs to a built-in skill (`reserved`). An install of one so named is refused, so a set
+/// review leaves it out and says it is there already (#4153, #4155).
+fn taken(plane: &Path, reserved: &Reserved, level: &Level, name: &str) -> bool {
+    reserved.holds(name) || has(plane, level, name)
+}
+
+/// **Whether a skill installed at `level` that refers to `name` has it met already**, so the
+/// source's `name` is not brought along, as the review and the install agree (ADR 0100 as amended
+/// 2026-10-31): where every chat that gets the installed skill gets a skill named `name` without
+/// it, by the rules [`purlis_skills::skill_set`] resolves a chat's skills by
+/// ([`purlis_skills::reaches_workspace`], [`Reference::names_plane`]).
+///
+/// - `name` belongs to a built-in skill, which every chat has and no plane skill may take (#4155);
+/// - `level` holds a skill of that name, from any source or made there (#4032);
+/// - at a workspace's level, a project skill of that name is granted to the workspace and not
+///   turned off there (#4154);
+/// - at a persona's level, the persona's `skills:` list names a project skill of that name, which
+///   its chats get in any workspace (#4154).
+///
+/// A shared install is met by shared skills alone, as its copy reaches every clone and another
+/// person's local skills are not there; a local install, which runs on this machine alone, by its
+/// local skills and the shared ones. `reserved` is the built-in skills' names, and `wider` what
+/// the wider levels say ([`Wider`]).
+pub(super) fn met(
+    plane: &Path,
+    reserved: &Reserved,
+    wider: &Wider,
+    level: &Level,
+    name: &str,
+) -> bool {
+    let sides: &[bool] = if level.local {
+        &[true, false]
+    } else {
+        &[false]
+    };
+    let project_skill = |reaches: &dyn Fn(&Path) -> bool| {
+        sides.iter().any(|&local| {
+            crate::skills::named_at(plane, &Whose::Project, local, name)
+                .is_some_and(|folder| reaches(&folder))
+        })
+    };
+    reserved.holds(name)
+        || sides
+            .iter()
+            .any(|&local| has(plane, &level.clone().local(local), name))
+        || match &level.at {
+            Whose::Project => false,
+            Whose::Workspace(ws) => project_skill(&|folder| {
+                purlis_skills::reaches_workspace(folder, ws, &wider.turned_off, name)
+            }),
+            Whose::Persona(_) => {
+                wider.persona_names.iter().any(|one| one.names_plane(name))
+                    && project_skill(&|_| true)
+            }
+        }
+}
+
+/// What the levels wider than one a skill is installed at say of what its chats get, read once
+/// for a review: the project skills a workspace turned off, and what a persona's `skills:` list
+/// names.
+pub(super) struct Wider {
+    turned_off: Vec<String>,
+    persona_names: Vec<Reference>,
+}
+
+impl Wider {
+    /// What they say for `level` in the plane at `plane`.
+    fn of(plane: &Path, level: &Level) -> Wider {
+        Wider {
+            turned_off: match &level.at {
+                Whose::Workspace(ws) => crate::skills::turned_off(plane, ws),
+                _ => Vec::new(),
+            },
+            persona_names: match &level.at {
+                Whose::Persona(persona) => crate::skills::names_of(plane, persona),
+                _ => Vec::new(),
+            },
+        }
+    }
+}
+
+/// [`met`] for one review, with the built-in skills in `built_in`: their names and the wider
+/// levels read once, and each name looked up once, however many skills refer to it.
+pub(super) fn met_at<'a>(
+    plane: &'a Path,
+    built_in: Option<&Path>,
+    level: &'a Level,
+) -> impl Fn(&str) -> bool + 'a {
+    let reserved = Reserved::of(built_in);
+    let wider = Wider::of(plane, level);
+    let seen = std::cell::RefCell::new(std::collections::HashMap::<String, bool>::new());
+    move |name| {
+        if let Some(known) = seen.borrow().get(name) {
+            return *known;
+        }
+        let held = met(plane, &reserved, &wider, level, name);
+        seen.borrow_mut().insert(name.to_owned(), held);
+        held
+    }
+}
+
+/// **The review of installing `names` from `source` at `level`**, at its newest commit, with the
+/// built-in skills in `built_in`: every skill they refer to that the source holds and is not met
+/// at `level` already ([`met`]) comes along.
+pub fn review(
+    plane: &Path,
+    built_in: Option<&Path>,
+    source: &Source,
+    names: &[String],
+    level: &Level,
+) -> Result<Review, String> {
+    fetch(plane, source, None)?.review_with(names, &met_at(plane, built_in, level))
+}
+
+/// **The review of installing `names` from `source` together at `level`** (#4024), at its newest
+/// commit: one review and one install for the set, or, past what one read may take, the names
+/// that fit. One named that `level` holds already is left out, and said to be there (#4153): the
+/// window's list is ticked before the level is chosen.
+pub fn review_set(
+    plane: &Path,
+    built_in: Option<&Path>,
+    source: &Source,
+    names: &[String],
+    level: &Level,
+) -> Result<SetReview, String> {
+    let fetched = fetch(plane, source, None)?;
+    let (found, _) = fetched.skills()?;
+    let reserved = Reserved::of(built_in);
+    fetched.set_review(
+        &found,
+        names,
+        &|name| taken(plane, &reserved, level, name),
+        &met_at(plane, built_in, level),
+    )
+}
+
+/// **The review of installing every skill of `source` not installed from it yet** (#4024,
+/// `purlis skill install <source> --all`), at its newest commit, landing at `level`; one `level`
+/// holds already, from anywhere, is left out too and said to be there, as its install would be
+/// refused (#4032, #4153). A review of no skill where every one is.
+pub fn review_all(
+    plane: &Path,
+    built_in: Option<&Path>,
+    source: &Source,
+    level: &Level,
+) -> Result<SetReview, String> {
+    let fetched = fetch(plane, source, None)?;
+    let (found, _) = fetched.skills()?;
+    let (locked, _) = lock::every(plane);
+    let names: Vec<String> = found
+        .iter()
+        .filter(|skill| installed_at(&locked, source, &skill.name).is_empty())
+        .map(|skill| skill.name.clone())
+        .collect();
+    let reserved = Reserved::of(built_in);
+    fetched.set_review(
+        &found,
+        &names,
+        &|name| taken(plane, &reserved, level, name),
+        &met_at(plane, built_in, level),
+    )
+}
+
+/// The levels `name` is installed at from `source`, by the lockfiles' entries `locked`.
+fn installed_at(locked: &[(lock::Kept, lock::Locked)], source: &Source, name: &str) -> Vec<Level> {
+    locked
+        .iter()
+        .filter(|(_, one)| one.name == name && one.source == source.remote)
+        .map(|(_, one)| one.level.0.clone())
+        .collect()
 }
 
 /// One skill a source offers, as the studio lists it to browse, and where it is installed here.
@@ -316,6 +649,11 @@ pub struct Offered {
     pub skill: Found,
     /// The levels it is installed at from this source.
     pub installed: Vec<Level>,
+    /// **What its files do beyond its instructions**, a few words each
+    /// ([`summary::Summary::marks`]): what a source's page marks it with before any review.
+    /// `None` where its files were not read to browse, as the source holds more than one read
+    /// may take: its review reads them.
+    pub marks: Option<Vec<String>>,
 }
 
 /// **What a source offers**: its newest commit, its skills, and each folder that is not a skill
@@ -325,26 +663,43 @@ pub struct Browse {
     pub commit: Commit,
     pub skills: Vec<Offered>,
     pub not_skills: Vec<NotASkill>,
+    /// When it was read, in seconds since the epoch, as [`super::checked`] recorded it.
+    pub checked: u64,
 }
 
 /// **Browses `source`** at its newest commit.
 pub fn browse(plane: &Path, source: &Source) -> Result<Browse, String> {
     let fetched = fetch(plane, source, None)?;
     let (found, not_skills) = fetched.skills()?;
+    let checked = super::checked::browsed(plane, &source.remote, found.len());
     let (locked, _) = lock::every(plane);
+    // Each skill's files are read for its marks until one read would take the fetch past what it
+    // may read: the rest are left for their reviews, and the browse is not refused for them.
+    let mut reading = true;
     Ok(Browse {
         commit: fetched.commit.clone(),
         skills: found
             .into_iter()
-            .map(|skill| Offered {
-                installed: locked
-                    .iter()
-                    .filter(|(_, one)| one.name == skill.name && one.source == source.remote)
-                    .map(|(_, one)| one.level.0.clone())
-                    .collect(),
-                skill,
+            .map(|skill| {
+                let marks = if reading {
+                    match super::SkillSource::files(&fetched, &skill) {
+                        Ok((files, _)) => Some(summary_of(&files).marks()),
+                        Err(_) => {
+                            reading = false;
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+                Offered {
+                    installed: installed_at(&locked, source, &skill.name),
+                    marks,
+                    skill,
+                }
             })
             .collect(),
         not_skills,
+        checked,
     })
 }

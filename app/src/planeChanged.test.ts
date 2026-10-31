@@ -9,6 +9,8 @@ import {
   memoryIn,
   personaIn,
   sessionsAt,
+  skillsIn,
+  skillSetsOfChats,
   todosIn,
   CURATIONS,
   GIT,
@@ -189,6 +191,43 @@ describe("whether a change concerns one view tab", () => {
     expect(concernsAView(told([change("todos", { workspace: "alpha" })]), steward)).toBe(false);
     expect(concernsAView(told([change("sessions", { workspace: "alpha" })]), steward)).toBe(false);
     expect(concernsAView(told([change("workspace", { workspace: "alpha" })]), steward)).toBe(false);
+  });
+
+  it("reads a persona's view again for a persona's or the project's skill, never a workspace's (SK-29)", () => {
+    const steward = personaIn("steward");
+    expect(concernsAView(told([change("skills", { persona: "steward" })]), steward)).toBe(true);
+    expect(concernsAView(told([change("skills", { persona: "other" })]), steward)).toBe(true);
+    expect(concernsAView(told([change("skills")]), steward)).toBe(true);
+    expect(concernsAView(told([change("skills", { workspace: "alpha" })]), steward)).toBe(false);
+  });
+
+  it("reads the Skills view again for a skill it lists, and not another workspace's (SK-29)", () => {
+    const alpha = skillsIn("alpha");
+    const root = skillsIn(undefined);
+    expect(concernsAView(told([change("skills")]), alpha)).toBe(true);
+    expect(concernsAView(told([change("skills", { persona: "steward" })]), root)).toBe(true);
+    expect(concernsAView(told([change("skills", { workspace: "alpha" })]), alpha)).toBe(true);
+    expect(concernsAView(told([change("skills", { workspace: "beta" })]), alpha)).toBe(false);
+    expect(concernsAView(told([change("skills", { workspace: "alpha" })]), root)).toBe(false);
+  });
+
+  it("reads the open chats' skill sets again for any level's skills or settings, and nothing else (#4094)", () => {
+    for (const moved of [
+      change("project"),
+      change("harness"),
+      change("persona", { persona: "steward" }),
+      change("skills"),
+      change("skills", { workspace: "beta" }),
+      change("workspace", { workspace: "beta" }),
+    ])
+      expect(concernsAView(told([moved]), skillSetsOfChats)).toBe(true);
+    for (const moved of [
+      change("todos", { workspace: "alpha" }),
+      change("memory", { workspace: "alpha" }),
+      change("sessions"),
+      change("chats"),
+    ])
+      expect(concernsAView(told([moved]), skillSetsOfChats)).toBe(false);
   });
 
   it("reads every tab again when the core could not say what changed", () => {

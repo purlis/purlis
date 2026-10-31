@@ -83,6 +83,85 @@ pub trait HarnessAdapter: Sync {
     /// default: each adapter says how its sandbox is applied.
     fn sandbox_holds_what_it_starts(&self) -> bool;
 
+    /// **What this harness's hook payload says of its permission mode** (#3787), in purlis's
+    /// words ([`crate::dispatchmode::Reported`]), from the payload's `permission_mode`. `None`
+    /// where it says nothing purlis reads: the default, for a harness whose word for its mode
+    /// is not read, so a chat on it is never taken to run in anything but its default.
+    fn reported_mode(
+        &self,
+        permission_mode: Option<&str>,
+    ) -> Option<crate::dispatchmode::Reported> {
+        let _ = permission_mode;
+        None
+    }
+
+    /// **The words that start a task on this harness at `level`** (#3787), added after the
+    /// profile's own `command` (the program, then the profile's words). None where the level
+    /// is the harness's default, where `command` names a mode of its own (the person's
+    /// declaration stands), and on a harness with no classifier-backed mode, which the
+    /// default is.
+    fn task_mode_words(
+        &self,
+        level: crate::dispatchmode::Level,
+        command: &[String],
+    ) -> Vec<String> {
+        let _ = (level, command);
+        Vec::new()
+    }
+
+    /// **Whether a grade's chats can run on this harness** (SK-16, ADR 0105, #3310): purlis can
+    /// hold one of its chats to the grade's limits there (to purlis's MCP server alone and its
+    /// read tools), read what it spent, the operator's ruling of 2026-10-26, and turn off every
+    /// plugin but purlis's own for that chat alone, so a grade measures the skill alone (P8,
+    /// #3468). Where it cannot, the reason, as a clause the refusal is worded around
+    /// ([`crate::skills::grades::refused_because`]). No default: each adapter says, and every grade's
+    /// chat on one that cannot is refused ([`crate::skills::grades::chat_refused`]).
+    fn can_grade(&self) -> Result<(), String>;
+
+    /// **Why a grade's chat on this harness may not start** as `command` (the program, then the
+    /// profile's own words) under the chat's environment `env` would start it, or `None` where it
+    /// may: a command, or the person's own settings, that keep the chat from ever asking, so a
+    /// grade's "end at the first ask" would never fire. Asked only where [`Self::can_grade`]
+    /// says it can. The default is a harness with no such switch.
+    fn grade_refused(
+        &self,
+        command: &[String],
+        env: &crate::harness_plugin::Env<'_>,
+    ) -> Option<String> {
+        let _ = (command, env);
+        None
+    }
+
+    /// **The model a grade's chat on this harness runs on**, as `command` (the program, then the
+    /// profile's own words) under the chat's environment `env` would start it, where the
+    /// harness's words say one (#3469): what its dollar limit is priced from
+    /// ([`crate::skills::grades::price`]). `None` where they leave it to the harness's own
+    /// default, which the limit then prices at the dearest. Asked only where
+    /// [`Self::can_grade`] says `true`; the default is a harness whose model purlis does not
+    /// read.
+    fn grade_model(
+        &self,
+        command: &[String],
+        env: &crate::harness_plugin::Env<'_>,
+    ) -> Option<String> {
+        let _ = (command, env);
+        None
+    }
+
+    /// **The models a person can pick for a grade's chats on this harness** (SK-60, #3240): the
+    /// names its own model flag takes, as a grade's plan offers them beside the profile's own
+    /// model. Asked only where [`Self::can_grade`] says it can; the default is a harness none is
+    /// offered for, whose grades run on the profile's own model.
+    fn grade_models(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// **The words that start a chat of this harness on `model`** (SK-60, #3240): its own model
+    /// flag and the model, put after the profile's own words, so the model picked is the last
+    /// one the line names. Pure: nothing is read. No default: each adapter says its harness's
+    /// flag.
+    fn model_words(&self, model: &str) -> Vec<String>;
+
     /// The chat's whole line under `form`, the sandbox [`Self::sandbox_compiler`] compiled,
     /// from `words`: the program, the profile's `command`, then `armed` (what [`Self::arm`]
     /// gave), then `charters`, charter's own words — where the chat opens, `at`; or the one

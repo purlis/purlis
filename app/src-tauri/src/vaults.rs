@@ -55,7 +55,7 @@ impl std::fmt::Debug for SecretValue {
 
 /// A vault failure as the window receives it: the core's sentence, which never holds a value.
 fn message_of(e: VaultError) -> String {
-    e.message
+    e.message.to_string()
 }
 
 /// A count as the wire carries it. A vault never holds four billion secrets, and a number
@@ -157,6 +157,25 @@ pub(crate) fn run_brokered(
     // link the line came over, never by what it says.
     if let Some(pool) = crate::hooks::heard_from_a_pool() {
         return crate::pooltools::run_on_its_runner(held, &pool, ask, reader, writer);
+    }
+    // **This machine's vault and sandbox serve only chats of this machine** (#2047). A line
+    // that came over this machine's link for a chat the router records on a pool is refused
+    // before it reaches here (`hooks::Relayed`), so this is a second guard: nothing runs here
+    // for it.
+    if let Some(pool) = held.chats().pool_of(ask.chat) {
+        tracing::warn!(
+            "purlis: chat {} on pool '{pool}' asked this machine's own link for `secret exec`, \
+             which serves only chats of this machine",
+            ask.chat
+        );
+        return brokered::refused(
+            writer,
+            format!(
+                "a brokered run here serves only chats of this machine, and chat {} runs on \
+                 pool '{pool}'",
+                ask.chat
+            ),
+        );
     }
     // A server's start, as the line says, heard only while the chat is starting.
     let start = ask.secret_exec.mcp.clone().filter(|_| {
@@ -438,7 +457,7 @@ pub(crate) fn list(ctx: &Ctx) -> Result<Vec<VaultSummary>, String> {
                 count: None,
                 health: VaultHealth {
                     ok: false,
-                    detail: unread_entry(&doc, &name, e.message),
+                    detail: unread_entry(&doc, &name, e.message.to_string()),
                 },
                 name,
             },
@@ -649,7 +668,7 @@ fn read(ctx: &Ctx, v: &Vault) -> Result<Vec<VaultSecret>, Unread> {
         } else {
             kind_of(&e)
         },
-        why: e.message,
+        why: e.message.to_string(),
     })
 }
 

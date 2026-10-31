@@ -85,6 +85,11 @@ pub struct MachineProfile {
     /// nothing is imported into it. Written only where true.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub sandbox_only: bool,
+    /// **On a runner, the desktop it is kept for** (#2049), by its device id: a profile the
+    /// desktop paired with this runner had it keep (`keep_profile`, [`onrunner`]). Only such a
+    /// record of a folder adopted in place is signed in by purlis here. Written only where set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kept_for: Option<String>,
     /// Every field of the record this build does not know, written back as it was read.
     #[serde(flatten)]
     pub rest: Map<String, Value>,
@@ -304,7 +309,10 @@ pub fn adopted_as<'a>(profiles: &'a [MachineProfile], name: &str) -> Option<&'a 
 /// them, if any. Facts of each harness, read from its own documentation and code: Claude Code's
 /// `~/.claude`, Codex's `~/.codex`, and opencode's `opencode` folder under the XDG folders
 /// (`~/.config`, `~/.local/share`), as its `xdg-basedir` answers on every platform.
-fn defaults(harness: &str, home: &Path) -> Option<(PathBuf, Option<PathBuf>, &'static str)> {
+pub(crate) fn defaults(
+    harness: &str,
+    home: &Path,
+) -> Option<(PathBuf, Option<PathBuf>, &'static str)> {
     match harness {
         "claude" => Some((home.join(".claude"), None, "")),
         "codex" => Some((home.join(".codex"), None, "")),
@@ -315,6 +323,81 @@ fn defaults(harness: &str, home: &Path) -> Option<(PathBuf, Option<PathBuf>, &'s
         )),
         _ => None,
     }
+}
+
+/// **The sign-in files a made profile's harness keeps under its folder** (#4011): Claude Code's
+/// `.credentials.json` and Codex's `auth.json` in the folder its config variable names, and
+/// opencode's `opencode/auth.json` in its data folder. Facts of each harness, as
+/// [`sign_in`]'s statuses read them. Nothing else of a profile is a sign-in.
+pub const SIGN_IN_FILES: [&str; 3] = [
+    "config/.credentials.json",
+    "config/auth.json",
+    "data/opencode/auth.json",
+];
+
+/// **The sign-in file of `harness`** (#4011), one of [`SIGN_IN_FILES`] under its profile's
+/// folders: the only file of a profile a drained runner's carry takes in. `None` for a harness
+/// purlis does not ship.
+pub fn sign_in_file_of(harness: &str) -> Option<&'static str> {
+    match harness {
+        "claude" => Some(SIGN_IN_FILES[0]),
+        "codex" => Some(SIGN_IN_FILES[1]),
+        "opencode" => Some(SIGN_IN_FILES[2]),
+        _ => None,
+    }
+}
+
+/// **The folder under the data home a runner keeps the sign-ins carried to it in** (#4011,
+/// #4055): `<data>/carried/<batch>/<profile>/`, a batch of each drained runner's, in a folder
+/// the carry made, until it keeps that profile for its desktop and takes them in.
+pub const CARRIED: &str = "carried";
+
+/// **Where under a runner's home the carry puts the sign-ins it carries** (#4055): [`CARRIED`]
+/// under its data home, walked to through no link.
+pub fn carried_under_a_runner_home() -> String {
+    Path::new(".local/share")
+        .join(
+            crate::names::DATA_HOME
+                .spellings()
+                .next()
+                .unwrap_or("purlis"),
+        )
+        .join(CARRIED)
+        .display()
+        .to_string()
+}
+
+/// **What a Docker pool's new runner takes of a runner drained beside it** (#4011, #4055, ruled
+/// 2026-10-30): its profiles' sign-ins, and nothing else, each as `<from>=<to>`, `<from>` under
+/// the old home and `<to>` under the carry's batch ([`CARRIED`]). A made profile's sign-in files
+/// ([`SIGN_IN_FILES`], `*` its name, under either spelling of the data home) go under its name,
+/// and each harness's own sign-in file in its default folder (`~/.claude/.credentials.json`,
+/// `~/.codex/auth.json`, opencode's `auth.json`) under the harness's name, the name the desktop's
+/// adopted folder is kept by. Nothing is put in a harness's folder: the new runner takes each in
+/// as it keeps the profile. No setting, hook, plugin, instruction or transcript of a harness,
+/// and nothing of purlis's own: not the profiles' records, the runner's device id, link key or
+/// peers, its harness installs, its projects or its browsers.
+pub fn carried_in_a_runner_home() -> Vec<String> {
+    let mut pairs = Vec::new();
+    for data in crate::names::DATA_HOME.spellings() {
+        let old_data = Path::new(".local/share").join(data);
+        for file in SIGN_IN_FILES {
+            pairs.push(format!(
+                "{}={}",
+                old_data.join(made::DIR).join("*").join(file).display(),
+                Path::new("*").join(file).display()
+            ));
+        }
+    }
+    for (own, harness) in [
+        (".claude/.credentials.json", "claude"),
+        (".codex/auth.json", "codex"),
+        (".local/share/opencode/auth.json", "opencode"),
+    ] {
+        let file = sign_in_file_of(harness).unwrap_or_default();
+        pairs.push(format!("{own}={harness}/{file}"));
+    }
+    pairs
 }
 
 /// What this device is called in a profile's title.
@@ -487,6 +570,7 @@ pub fn adopt(
                 sign_in: None,
                 pinned: None,
                 sandbox_only: false,
+                kept_for: None,
                 rest: Map::new(),
             };
             store.profiles.push(profile.clone());
@@ -506,11 +590,14 @@ pub fn adopt_at_launch() -> Result<Adoption, String> {
     adopt(&config, &home, &crate::envvar::var)
 }
 
+pub mod installs;
 mod made;
 pub use made::*;
 
+pub mod onrunner;
 pub mod pin;
 pub mod sandbox_only;
+pub mod sent;
 pub mod sign_in;
 
 #[cfg(test)]

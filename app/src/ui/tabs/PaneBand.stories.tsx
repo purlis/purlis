@@ -26,7 +26,7 @@ import { useTabIds, StripTablist } from "../../StripTablist";
 import { Button } from "../button/Button";
 import { panelRoot } from "../panel/Panel";
 import { TabCell, tabPart, tabsPart } from "./Tabs";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 
 /** One warning the band can hold, as `ChatNotices` draws it. */
 type Warning =
@@ -360,10 +360,12 @@ function rowsOf(canvas: HTMLElement, name = "steward 2") {
   const frame = canvas.querySelector(`[data-testid="pane ${name}"]`) as HTMLElement;
   return {
     frame,
-    band: frame.querySelector(".pane-notice-row"),
+    band: frame.querySelector('[data-scope="notice-row"][data-part="root"]'),
     head: frame.querySelector(".pane-head"),
     terminal: frame.querySelector(".pane"),
-    warnings: [...frame.querySelectorAll(".pane-notices > :not([hidden])")],
+    warnings: [
+      ...frame.querySelectorAll('[data-scope="notice-row"][data-part="stack"] > :not([hidden])'),
+    ],
   };
 }
 
@@ -457,9 +459,12 @@ export const PutAway: Story = {
     first.focus();
     await userEvent.keyboard("{Escape}");
     const next = await canvas.findByRole("button", { name: "Update the clone" });
-    await waitFor(() => expect(next).toHaveFocus());
+    await untilFocused(() => next, "Esc moves the keyboard to Update the clone");
     await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(canvas.getByLabelText("Terminal of steward 2")).toHaveFocus());
+    await untilFocused(
+      () => canvas.getByLabelText("Terminal of steward 2"),
+      "Esc gives the keyboard back to the terminal",
+    );
     expect(canvas.queryAllByRole("status")).toHaveLength(0);
     atRest();
   },
@@ -483,7 +488,7 @@ export const ConsentMoved: Story = {
     // The vault's card moved up into the first place, and the sandbox's came out from behind
     // "+1 more": both moved, and neither is a cause the guard lists by name for the vault.
     const vault = await canvas.findByRole("status", { name: "Vault" });
-    await waitFor(() => expect(vault).toHaveFocus());
+    await untilFocused(() => vault, "Esc lands on the vault's card");
 
     await userEvent.click(
       within(vault).getByRole("button", { name: "Allow steward to use this vault" }),
@@ -552,7 +557,7 @@ export const ConsentClamped: Story = {
     allowed.length = 0;
     const vault = await canvas.findByRole("status", { name: "Vault" });
     const allow = within(vault).getByRole("button", { name: "Allow steward to use this vault" });
-    const stack = vault.closest(".pane-notices") as HTMLElement;
+    const stack = vault.closest('[data-scope="notice-row"][data-part="stack"]') as HTMLElement;
     // The clamp alone, and no re-wrap: the band keeps its scrollbar's room whether it overflows
     // or not, so its words are as wide before the dismiss as after it.
     stack.style.scrollbarGutter = "stable";

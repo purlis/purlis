@@ -1,0 +1,506 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The table family's default** (#2911, ADR 0103, ADR 0104): how a table is drawn when a theme
+   names none of its parts. The `frame` is the card that holds the table; the table is its `body`;
+   a column's name is a `head`; a row is the family's root (`data-part="root"`) with React Aria's
+   state attributes on a table of data; each cell is a `cell`; the `bar` stands over a table that
+   chooses. A data table (`Table.tsx`, React Aria's grid) and a table of controls
+   (`ControlTable.tsx`, a plain table) draw the same parts.
+
+   **In the `components` layer** (`styles.css`), above `App.css`: a view places a table (its
+   margin, a column's width) and nothing it writes redraws one. **Only tokens.**
+
+   **Purlis first** (the settings prototype's hosts table, under the no-hairline ruling #2804): a
+   rounded card on the window's ground, column names in the label role (11/600, capitals, the
+   muted tier, R74) with a little more room under them, cells 8 by 12 apart with **no rule
+   between rows** (the rows' room, the pointer's ground and the chosen wash carry the bands; the
+   rule is its own part, `table.rule`, which Purlis Classic draws), the row's buttons at its end,
+   and a table of data no narrower than 560px, which its card scrolls sideways.
+
+   **A state never changes size** (#2800): the pointer's ground, a chosen row's wash and the
+   keyboard's ring change a colour, a ground or an outline, never a padding or a weight. */
+
+/* ---------------------------------------------------------------------------------------------
+   The frame and the table.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="table"][data-part="frame"] {
+  box-sizing: border-box;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-x: auto;
+  border-radius: var(--radius-lg);
+  background-color: var(--surface-base);
+}
+
+[data-scope="table"][data-part="body"] {
+  inline-size: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  table-layout: auto;
+  color: var(--text-primary);
+  outline: none;
+}
+
+/* A table of data keeps its columns readable and scrolls sideways in its frame below that. */
+[data-scope="table"][data-part="body"]:not([data-controls]) {
+  min-inline-size: calc(var(--space-8) * 17.5);
+}
+
+/* A table of controls whose view sizes its columns keeps them whatever the cells hold. */
+[data-scope="table"][data-part="body"][data-fixed] {
+  table-layout: fixed;
+}
+
+/* A table with no rows that takes the keyboard says so with a ring inside its frame. */
+[data-scope="table"][data-part="body"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+/* What the table lists, above it, at the start, in the quiet tier. */
+[data-scope="table"] > [data-part="caption"] {
+  margin: 0;
+  padding-block: var(--space-4) var(--space-2);
+  padding-inline: var(--space-5);
+  color: var(--text-quiet);
+  text-align: start;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A column's name: one line, cut with an ellipsis where its column is narrower, in the label
+   role (R161), set apart from the rows by its capitals and a little more room under it.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="table"][data-part="head"] {
+  box-sizing: border-box;
+  position: relative;
+  padding-block: calc(var(--space-4) + var(--space-1)) calc(var(--space-4) + var(--space-3));
+  padding-inline: var(--space-5);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: start;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  outline: none;
+}
+
+[data-scope="table"][data-part="head"][data-align="end"] {
+  text-align: end;
+}
+
+/* A name that sorts is a button: its arrow keeps its room while another column sorts, so sorting
+   moves no name; it shows on the column that sorts. */
+[data-scope="table"][data-part="head"][data-allows-sorting] {
+  cursor: default;
+}
+
+[data-scope="table"][data-part="head"] [data-part="sort"] {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-inline-start: var(--space-2);
+  visibility: hidden;
+}
+
+[data-scope="table"][data-part="head"] [data-part="sort"][data-sorted] {
+  visibility: visible;
+}
+
+[data-scope="table"][data-part="head"] [data-part="sort"] > svg {
+  inline-size: var(--font-size-sm);
+  block-size: var(--font-size-sm);
+}
+
+/* A name shortened to fit, behind its tooltip: a dotted line says there is more. */
+[data-scope="table"][data-part="head"] [data-part="head-tip"] {
+  text-decoration: underline dotted;
+  text-underline-offset: var(--space-1);
+  cursor: help;
+}
+
+[data-scope="table"][data-part="head"] [data-part="head-tip"]:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* The keyboard on a column's name (a name that sorts): a ring inside it. */
+[data-scope="table"][data-part="head"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+/* A button in a cell or in the bar keeps a small control's target, never under 24 CSS px (WCAG
+   2.5.8): where its column is as narrow as it can be, and in a compact density, whose chrome is
+   smaller. */
+[data-scope="table"]:is([data-part="cell"], [data-part="bar"])
+  [data-scope="button"][data-part="root"] {
+  min-inline-size: max(var(--size-chrome), 24px);
+  min-block-size: max(var(--size-chrome), 24px);
+}
+
+/* **A cell that holds only a control** (a check, the ⋯, a row's own button) is a target of its own
+   too, since the grid's arrows focus it: a room 24 CSS px wide is kept beside its control, where
+   the pointer lands on the cell and not the control (WCAG 2.5.8), so neither stands in the
+   other's way. A box of no height after the control, so no padding changes. */
+[data-scope="table"][data-part="cell"]:has(> :is([data-scope="button"], [data-part="select"])):not(
+    :has(> :not([data-scope="button"], [data-part="select"], [data-part="rule"]))
+  )::after {
+  content: "";
+  display: inline-block;
+  min-inline-size: 24px;
+  vertical-align: middle;
+}
+
+/* The column of checks and the column of menus are as narrow as what they hold. */
+[data-scope="table"]:is([data-part="head"], [data-part="cell"]):is([data-choose], [data-actions]) {
+  inline-size: 1%;
+  white-space: nowrap;
+}
+
+[data-scope="table"]:is([data-part="head"], [data-part="cell"])[data-actions] {
+  text-align: end;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A row and its cells. Every cell starts where its column's name starts, and its words sit on
+   the middle of a control beside them. Rows are a hairline apart; the last one has none under it.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="table"][data-part="root"] {
+  color: var(--text-primary);
+  outline: none;
+}
+
+[data-scope="table"][data-part="cell"] {
+  position: relative;
+  box-sizing: border-box;
+  padding-block: var(--space-4);
+  padding-inline: var(--space-5);
+  text-align: start;
+  vertical-align: middle;
+  outline: none;
+}
+
+[data-scope="table"][data-part="cell"][data-align="end"] {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The cell that names its row is a cell, not a column's name. */
+[data-scope="table"][data-part="cell"]:is([data-names-row], th) {
+  font-weight: inherit;
+}
+
+/* **The rule between rows** (`table.rule`, its own part): a line at each cell's top edge, and
+   under each column's name, which a theme gives a fill. The family draws none (#2804); the first
+   row of a table has none over it, and a group of rows after another starts with one. */
+[data-scope="table"][data-part="rule"] {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 0;
+  block-size: 1px;
+  pointer-events: none;
+}
+
+[data-scope="table"][data-part="head"] > [data-part="rule"] {
+  inset-block: auto 0;
+}
+
+tbody:first-of-type
+  > [data-scope="table"][data-part="root"]:first-child
+  > [data-part="cell"]
+  > [data-part="rule"] {
+  display: none;
+}
+
+/* A group's name, across the table: its words in the row's colour, at the label's weight. */
+[data-scope="table"][data-part="cell"][data-group] {
+  font-weight: var(--font-weight-strong);
+}
+
+/* **Under the pointer** (a row that opens or is chosen): the pointer's ground, across the row. */
+[data-scope="table"][data-part="root"][data-hovered]:not([data-disabled]):not([data-selected]) {
+  background-color: var(--surface-hover);
+}
+
+/* **Chosen**, or the row the view is about: the wash in the accent's hue across the row, told by
+   its check (or its place) too, so not by colour alone, and under the pointer too. Choosing moves
+   nothing. */
+[data-scope="table"][data-part="root"]:is([data-selected], [data-current]) {
+  background-color: var(--list-selected);
+}
+
+/* **The keyboard's place is a ring inside the row or the cell** (ADR 0104, 2026-10-22), so a
+   frame that scrolls never clips it. */
+[data-scope="table"]:is([data-part="root"], [data-part="cell"])[data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+/* **A row that cannot be used**: its words in the faint tier. */
+[data-scope="table"][data-part="root"][data-disabled] {
+  color: var(--text-faint);
+}
+
+/* A row dragged stays where it is, drawn as the one the pointer carries. */
+[data-scope="table"][data-part="root"][data-dragging] {
+  background-color: var(--surface-hover);
+}
+
+/* What the table says where it has no rows: in the quiet tier, across it. */
+[data-scope="table"][data-part="empty"] {
+  padding-block: var(--space-6);
+  padding-inline: var(--space-5);
+  color: var(--text-quiet);
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   **What a view chooses for a column** (#3671, `CellWords.tsx`): a column of short facts keeps
+   one line where a long column beside it takes the room, so no row grows tall word by word. A
+   column that chooses nothing draws as above. The choices are on its name (`head`) and its cells'
+   words (`words`, inside each `cell`), and only a view's lengths are written on the element.
+   --------------------------------------------------------------------------------------------- */
+
+/* **As narrow as its widest cell** (`size="fit"`): its name and its cells keep one line. */
+[data-scope="table"][data-part="head"][data-size="fit"] {
+  inline-size: 1%;
+}
+
+/* A table of controls whose view sizes its columns (`fixed`) takes their widths as written: a
+   share of the table is no "fit" or "fill" there. */
+[data-scope="table"][data-part="body"][data-fixed] [data-part="head"][data-size] {
+  inline-size: auto;
+}
+
+/* **The room the other columns leave** (`size="fill"`): its words take none of the table's least
+   width of their own, so it is the column that gives way where the frame is narrow. */
+[data-scope="table"][data-part="head"][data-size="fill"] {
+  inline-size: 100%;
+}
+
+[data-scope="table"][data-part="words"] {
+  display: block;
+}
+
+[data-scope="table"][data-part="words"]:is([data-size="fit"], [data-cut]) {
+  white-space: nowrap;
+}
+
+[data-scope="table"][data-part="words"][data-size="fill"] {
+  inline-size: 0;
+  min-inline-size: 100%;
+}
+
+/* **One line, cut where the column is narrower** (`cut`): an ellipsis, and the whole words in the
+   cell's tooltip. */
+[data-scope="table"][data-part="words"][data-cut] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* **At most so many lines, cut after them** (`clamp`): the description column's two. */
+[data-scope="table"][data-part="words"][data-clamp] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: break-word;
+}
+
+/* Words cut short in a table of controls are a Tab stop of their own: the window's ring. */
+[data-scope="table"][data-part="words"]:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The check that chooses a row: a box a line tall; chosen, it is drawn as the primary answer is
+   (the accent's edge on its surface), its tick in the primary tier.
+   --------------------------------------------------------------------------------------------- */
+
+/* Its target is a small control's, and never under WCAG 2.5.8's 24 CSS px, which a compact
+   density's chrome (and its rem) would go below; the 16 px box is drawn in its middle. */
+[data-scope="table"][data-part="select"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-inline-size: max(var(--size-chrome), 24px);
+  min-block-size: max(var(--size-chrome), 24px);
+  vertical-align: middle;
+  cursor: default;
+  outline: none;
+}
+
+[data-scope="table"][data-part="select"] > [data-part="box"] {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--font-size-lg);
+  block-size: var(--font-size-lg);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  background-color: var(--surface-base);
+}
+
+[data-scope="table"][data-part="select"]:is([data-selected], [data-indeterminate])
+  > [data-part="box"] {
+  border-color: var(--accent-base);
+  background-color: var(--accent-surface);
+}
+
+[data-scope="table"][data-part="select"] > [data-part="box"] > svg {
+  inline-size: var(--font-size-sm);
+  block-size: var(--font-size-sm);
+}
+
+[data-scope="table"][data-part="select"][data-focus-visible] > [data-part="box"] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The bar over a table that chooses (`TableBar.tsx`): the filter at its start, and what the
+   table offers, or what can be done to the chosen rows, at its end.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="table"][data-part="bar"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-block-end: var(--space-4);
+}
+
+[data-scope="table"][data-part="bar"] > .list-filter {
+  inline-size: min(100%, calc(var(--space-8) * 8.75));
+  margin: 0;
+}
+
+/* Its end keeps one line, so choosing a row never wraps the bar and moves the table. */
+[data-scope="table"][data-part="bar"] > [data-part="bar-end"] {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-inline-start: auto;
+}
+
+[data-scope="table"][data-part="bar"] [data-part="chosen"] {
+  color: var(--text-quiet);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   **A table of controls that stacks into a form where its room is narrow** (#1859): under 32rem
+   of frame the columns' names are put away and each row is a grid: its heading on a line of its
+   own, then each cell under its column's whole words (the cell's `data-heading`), as many side by
+   side as fit, and the row's actions on a line of their own. A cell with nothing in it is not
+   drawn. 32rem sits between Settings' body at a 1280px window, where the table stays a table, and
+   at the narrowest one (1024px with both sidebars open), where it stacks; CI's runs in the real
+   WebView hold both ends (`settings-tables.e2e.ts`, `settings-limits.e2e.ts`, #1865). It is the
+   one length the sheet writes, because a container query's condition cannot read a token.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="table"][data-part="frame"][data-stacks] {
+  container: table-frame / inline-size;
+}
+
+@container table-frame (max-width: 32rem) {
+  [data-scope="table"][data-part="body"][data-stacks],
+  [data-scope="table"][data-part="body"][data-stacks] > [data-part="rows"] {
+    display: block;
+  }
+
+  [data-scope="table"][data-part="body"][data-stacks] > [data-part="header"] {
+    display: none;
+  }
+
+  /* A table of data that stacks (#3671) needs no least width: it scrolls nothing sideways. */
+  [data-scope="table"][data-part="body"][data-stacks]:not([data-controls]) {
+    min-inline-size: 0;
+  }
+
+  /* Its cell that names the row takes the row's first line, as a row's heading does. */
+  [data-scope="table"][data-part="body"][data-stacks]:not([data-controls])
+    [data-part="cell"][role="rowheader"] {
+    grid-column: 1 / -1;
+    font-weight: var(--font-weight-strong);
+  }
+
+  [data-scope="table"][data-part="body"][data-stacks] [data-part="root"] {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(calc(var(--size-control) * 5), 1fr));
+    gap: var(--space-3) var(--space-4);
+    padding-block: var(--space-4);
+  }
+
+  /* A stacked row draws its rule once, across the row, from its first cell. */
+  [data-scope="table"][data-part="body"][data-stacks] [data-part="root"] {
+    position: relative;
+  }
+
+  [data-scope="table"][data-part="body"][data-stacks]
+    [data-part="cell"]:not(:first-child)
+    > [data-part="rule"] {
+    display: none;
+  }
+
+  [data-scope="table"][data-part="body"][data-stacks] [data-part="cell"] {
+    position: static;
+    min-inline-size: 0;
+    padding: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* Stacked, nothing is cut: a column's one line or its few wrap as the form's words do. */
+  [data-scope="table"][data-part="body"][data-stacks] [data-part="words"] {
+    display: block;
+    inline-size: auto;
+    /* Over the view's own lengths, which are written on the words: a form cuts nothing and
+       scrolls nothing sideways. */
+    min-inline-size: 0 !important;
+    max-inline-size: none !important;
+    white-space: normal;
+    overflow: visible;
+  }
+
+  [data-scope="table"][data-part="body"][data-stacks]
+    [data-part="cell"]:is([data-names-row], [data-group]) {
+    grid-column: 1 / -1;
+    font-weight: var(--font-weight-strong);
+  }
+
+  /* A cell across the columns (a question asked about the row above it) takes the whole width. */
+  [data-scope="table"][data-part="body"][data-stacks] td[colspan] {
+    grid-column: 1 / -1;
+  }
+
+  [data-scope="table"][data-part="body"][data-stacks] [data-part="cell"][data-heading]::before {
+    content: attr(data-heading);
+    display: block;
+    margin-block-end: var(--space-1);
+    color: var(--text-quiet);
+    font-size: var(--font-size-sm);
+  }
+
+  [data-scope="table"][data-part="body"][data-stacks] td[data-part="cell"][data-empty] {
+    display: none;
+  }
+
+  [data-scope="table"][data-part="body"][data-stacks] [data-part="cell"][data-actions] {
+    grid-column: 1 / -1;
+    inline-size: auto;
+    text-align: start;
+    white-space: normal;
+  }
+}

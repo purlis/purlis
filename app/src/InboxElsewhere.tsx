@@ -12,6 +12,7 @@ import { Notice } from "./Notice";
 import type { Needing, Quiet } from "./NeedsYou";
 import { PersonaMark } from "./PersonaMark";
 import { Button, ButtonRow } from "./ui/button/Button";
+import { Card } from "./ui/card/Card";
 import { PanelSectionTitle } from "./ui/panel/Panel";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
@@ -112,7 +113,7 @@ export function OtherProjects({
       <ul>
         {others.map((one) => (
           <RovingFocusGroup.Item asChild tabStopId={hereKey(one.plane)} key={one.plane}>
-            <li className="inbox-ask" data-source="here">
+            <Card as="li" variant="ask" className="inbox-ask" data-source="here">
               <p className="inbox-says">
                 <KindMark kind="elsewhere" />
                 {/* A project's name is data: drawn as text. */}
@@ -159,7 +160,7 @@ export function OtherProjects({
                   Go to project
                 </Button>
               </RovingFocusGroup.Item>
-            </li>
+            </Card>
           </RovingFocusGroup.Item>
         ))}
       </ul>
@@ -224,7 +225,9 @@ export function ElsewhereGroup({
       </h3>
       <ul>
         <RovingFocusGroup.Item asChild tabStopId={key}>
-          <li
+          <Card
+            as="li"
+            variant="ask"
             className="inbox-ask"
             data-source="elsewhere"
             aria-labelledby={`${id}-says`}
@@ -276,7 +279,7 @@ export function ElsewhereGroup({
                 </RovingFocusGroup.Item>
               )}
             </ButtonRow>
-          </li>
+          </Card>
         </RovingFocusGroup.Item>
       </ul>
     </section>

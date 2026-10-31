@@ -183,11 +183,22 @@ impl EventLog {
     /// `Ok` once it is kept, which is when a hook is told its line is taken (FD-30). The `fsync`
     /// is outside the log's lock, so lines recorded at once share one.
     pub fn write(&self, entry: Entry) -> std::io::Result<()> {
+        self.write_as(entry, |_, entry| entry)
+    }
+
+    /// [`Self::write`], `entry` made what `checked` makes of it against the log's writer, under
+    /// the same hold as the write.
+    fn write_as(
+        &self,
+        entry: Entry,
+        checked: impl FnOnce(&Recorder, Entry) -> Entry,
+    ) -> std::io::Result<()> {
         let Some(log) = self.recorder() else {
             return Err(std::io::Error::other(NO_EVENT_LOG));
         };
         let (written, durable) = {
             let mut log = log.lock().unwrap_or_else(PoisonError::into_inner);
+            let entry = checked(&log, entry);
             (log.apply(entry), log.durable())
         };
         match written?.last() {
@@ -399,7 +410,7 @@ impl KeptBoard {
         Box::new(move |id, heard| {
             let told = serde_json::to_value(heard).is_ok_and(|line| hand_on(id, line));
             if !told {
-                kept.board().hear(heard);
+                kept.board().hear_at(heard, chrono::Utc::now().timestamp());
             }
             told
         })
@@ -445,7 +456,7 @@ impl KeptBoard {
     /// A line handed on whose window went before it replied (#2006): heard here, as one no
     /// window took is.
     fn unheard(&self, heard: &crate::hookwire::relay::Heard) {
-        self.board().hear(heard);
+        self.board().hear_at(heard, chrono::Utc::now().timestamp());
     }
 
     /// Chat `number`'s program ended, `exit`, with no window there to say so.
@@ -529,6 +540,11 @@ impl purlis_host::Hear for HookChannels {
         // A `secret exec` of a chat composed here runs here on the values its desktop sends
         // (#2047).
         relaying.of_project_at(path);
+        // A Claude Code chat's server dials in on macOS alone (#3316): each slot is handed on to
+        // the window beside this socket, which holds the doors.
+        if cfg!(target_os = "macos") {
+            relaying.handing_slots_to(&crate::hookwire::serve::beside(&socket));
+        }
         let reading = listener.hear(relaying.hearing(Arc::clone(&tokens)));
         Ok(Some(Arc::new(HookChannel {
             socket,
@@ -555,7 +571,7 @@ fn hook_lines_recorded(
     let root = root.to_path_buf();
     Box::new(move |entry| {
         let plane = root.clone();
-        log.write(match entry {
+        let entry = match entry {
             Entry::Report {
                 report,
                 followed,
@@ -574,6 +590,22 @@ fn hook_lines_recorded(
                     "what the window sent back to record is not a hook line",
                 ));
             }
+        };
+        // What the window's board made of a state hook's line is checked against what the log
+        // holds of the chat's run, and decided here where it is not taken (#3394).
+        log.write_as(entry, |recorder, entry| match entry {
+            Entry::Report {
+                plane,
+                report,
+                followed,
+                begun,
+            } => Entry::Report {
+                followed: recorder.followed_as_heard(&plane, &report, followed),
+                plane,
+                report,
+                begun,
+            },
+            other => other,
         })
     })
 }

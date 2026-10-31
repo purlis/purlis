@@ -4,11 +4,13 @@
 /**
  * **The title bar's workspace family** (#2916, spec #2897 R92, R101–R106, R167 and N17, ADR
  * 0104): the project in front's pinned workspaces as chips after its name, the dashed chip that
- * pins the current workspace while it is not pinned, and the strip that holds them. A screen
- * draws them from these and never its own (`purlis/titlebar-family` in `eslint.config.js`).
+ * pins the current workspace while it is not pinned, the strip that holds them, and the plane
+ * root's house before the strip (`RootChip`, #3654). A screen draws them from these and never
+ * its own (`purlis/titlebar-family` in `eslint.config.js`).
  *
  * - **Drawn by its parts.** A chip carries `data-scope="titlebar"`, `data-part="workspace"` and
- *   its `data-variant`: `pinned` or `unpinned`. Its waiting count is the `count` part.
+ *   its `data-variant`: `pinned`, `unpinned`, `dormant` for a pin whose workspace is gone
+ *   (#3651), or `root` for the plane root's house, which stands outside the strip. Its waiting count is the `count` part.
  *   `titlebar.css` draws the defaults (the Purlis look: 28px, corners of 8, quiet words) and a
  *   theme's parts reach the same attributes (`titlebar.workspace.corner-radius`, ADR 0103).
  * - **States a theme can key** are the ones this wrapper marks: `data-hovered` under the pointer,
@@ -17,6 +19,12 @@
  * - **A plain `<button>` underneath**, as the rail's is: a chip is also a context menu's trigger,
  *   which hands it its handlers and its ref (`asChild`). The hover and the keyboard's focus are
  *   React Aria's own hooks.
+ * - **A chip's notice dot** (#3648, spec #3647): a hidden notice about the workspace that is not
+ *   dismissed leaves a `dot` part on the chip's leading corner, opposite its count, which brings
+ *   the notice's card back. Each chip stands in a `slot` the dot is placed in, so the dot coming
+ *   and going moves nothing. Its shape and its part are the most urgent kind's (#3649): `dot`,
+ *   a disc, for news; `dot-warning`, a triangle, for a warning; `dot-needs`, a raised hand, for
+ *   a chat asking to remove the workspace (#3652).
  * - **The strip is a toolbar**, one Tab stop whose arrows walk its chips. It is at most 62% of the bar and scrolls sideways with its scrollbar hidden
  *   (R103, R167); the slash before it is a part of its own, in the faint tier (R92, R156).
  */
@@ -28,11 +36,56 @@ import type {
   Ref,
 } from "react";
 import { mergeProps, useFocusRing, useHover, useId } from "react-aria";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Circle, Hand, House, Triangle, type LucideIcon } from "lucide-react";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
 
+/**
+ * **The kinds of notice, least urgent first** (spec #3647): `info` ●, `warning` ▲, `needs` ✋, a
+ * chat waiting on the person's answer about the workspace (#3652). A chip's dot shows the most
+ * urgent kind among its notices, so the order is the urgency: a kind's place in this list is its
+ * rank.
+ */
+export const NOTICE_KINDS = ["info", "warning", "needs"] as const;
+export type NoticeKind = (typeof NOTICE_KINDS)[number];
+
+/** How urgent `kind` is: its place in {@link NOTICE_KINDS}. */
+export const urgencyOf = (kind: NoticeKind): number => NOTICE_KINDS.indexOf(kind);
+
+/** **The most urgent of `kinds`**: what a dot shows. None is `info`, the least urgent. */
+export const mostUrgentOf = (kinds: Iterable<NoticeKind>): NoticeKind => {
+  let top: NoticeKind = NOTICE_KINDS[0];
+  for (const one of kinds) if (urgencyOf(one) > urgencyOf(top)) top = one;
+  return top;
+};
+
+/**
+ * **What each kind draws and says**: the dot's part, which a theme keys its colours by (one
+ * part per kind, `titlebar.dot`, `titlebar.dot-warning` and `titlebar.dot-needs`, so a theme
+ * colouring one never colours another the same); its shape, a Lucide icon, never a colour alone
+ * (WCAG 1.4.1), filled, or drawn in its strokes where it is `stroked` (the hand, which filled is
+ * a blob); and the words a description gives it after the count, none for news.
+ */
+const KINDS: Record<
+  NoticeKind,
+  { part: string; shape: LucideIcon; said: string | undefined; stroked?: true }
+> = {
+  info: { part: "dot", shape: Circle, said: undefined },
+  warning: { part: "dot-warning", shape: Triangle, said: "warning" },
+  needs: { part: "dot-needs", shape: Hand, said: "a chat asks you to remove it", stroked: true },
+};
+
+/** How many notices a chip has and the most urgent kind among them, as its description says it:
+ *  "1 notice", "3 notices, most urgent: warning". A ✋ alone, with no notice, says only its kind
+ *  ("a chat asks you to remove it"), never "0 notices" (#3652); nothing at all says nothing. */
+export const noticesSaid = (count: number, kind: NoticeKind = "info"): string | undefined => {
+  const counted = count === 0 ? undefined : count === 1 ? "1 notice" : `${count} notices`;
+  const said = KINDS[kind].said;
+  if (said === undefined) return counted;
+  return counted === undefined ? said : `${counted}, most urgent: ${said}`;
+};
+
 /** The family's variants, in the order the manifest names them. */
-export const TITLEBAR_VARIANTS = ["pinned", "unpinned"] as const;
+export const TITLEBAR_VARIANTS = ["pinned", "unpinned", "root", "dormant"] as const;
 export type TitleBarVariant = (typeof TITLEBAR_VARIANTS)[number];
 
 type Native = Omit<
@@ -43,14 +96,18 @@ type Native = Omit<
 export interface WorkspaceChipProps extends Native {
   /** The workspace's name: what the chip says, and its name. */
   name: string;
-  /** A pin, or the current workspace while it is not pinned, whose press pins it (R105). */
-  variant?: TitleBarVariant;
+  /** A pin, or the current workspace while it is not pinned, whose press pins it (R105), or a
+   *  pin whose workspace is gone, kept dormant, whose press shows its notice (#3651). The `root`
+   *  variant is `RootChip`'s alone (#3654). */
+  variant?: Exclude<TitleBarVariant, "root">;
   /** It is the workspace in front (R101). */
   current?: boolean;
   /** How many things wait on the person in it (R101); none draws no count. */
   waiting?: number;
   /** Its tooltip: `‹name› · ⌘N` for the first nine pins (R102), `Pin ‹name›` on the dashed one. */
   tooltip?: Tip;
+  /** The notices about it its dot shows (#3648), said in its description; none says nothing. */
+  notices?: { count: number; kind: NoticeKind };
   ref?: Ref<HTMLButtonElement>;
   /** A place for it, never a look. */
   style?: CSSProperties;
@@ -69,6 +126,7 @@ export function WorkspaceChip({
   current = false,
   waiting = 0,
   tooltip,
+  notices,
   ref,
   style,
   ...handed
@@ -86,7 +144,11 @@ export function WorkspaceChip({
   const describedBy =
     [
       (handed as { "aria-describedby"?: string })["aria-describedby"],
-      waiting > 0 ? said : undefined,
+      waiting > 0 ||
+      variant === "dormant" ||
+      (notices !== undefined && noticesSaid(notices.count, notices.kind) !== undefined)
+        ? said
+        : undefined,
     ]
       .filter(Boolean)
       .join(" ") || undefined;
@@ -111,17 +173,28 @@ export function WorkspaceChip({
         </span>
       )}
       {waiting > 0 && (
-        <span data-scope="titlebar" data-part="count" aria-hidden="true">
-          {counted}
+        // The count's wash is laid on the bar's own ground, whatever the chip's fill
+        // (D-3345-3): this holds that ground under it.
+        <span data-scope="titlebar" data-ground="count" aria-hidden="true">
+          <span data-scope="titlebar" data-part="count">
+            {counted}
+          </span>
         </span>
       )}
     </button>
   );
-  // What waits in it, beside it and not in it, so its words are only what it draws.
+  // What waits in it and what its dot shows, beside it and not in it, so its words are only
+  // what it draws.
+  const describes = [
+    // A dormant chip says what it is, as its dotted edge and slanted words draw it (#3651).
+    variant === "dormant" ? "gone, kept dormant" : undefined,
+    waiting > 0 ? `${waiting} waiting` : undefined,
+    notices === undefined ? undefined : noticesSaid(notices.count, notices.kind),
+  ].filter((one) => one !== undefined);
   const description =
-    waiting > 0 ? (
+    describes.length > 0 ? (
       <span id={said} hidden>
-        {`${waiting} waiting`}
+        {describes.join(", ")}
       </span>
     ) : null;
   return (
@@ -129,6 +202,148 @@ export function WorkspaceChip({
       {tooltip === undefined ? chip : <Tooltip tip={tooltip}>{chip}</Tooltip>}
       {description}
     </>
+  );
+}
+
+/**
+ * **Where a chip stands in the strip** (#3648): the chip, and the dot of the notices about it,
+ * placed over the chip's leading corner. Its own box is the chip's, so a dot coming or going
+ * moves nothing (R153).
+ */
+export function ChipSlot({ children }: { children: ReactNode }) {
+  return (
+    <span data-scope="titlebar" data-part="slot">
+      {children}
+    </span>
+  );
+}
+
+/**
+ * **A chip's notice dot** (#3648, spec #3647): a hidden notice about the workspace, not yet
+ * dismissed, as a shape on the chip's leading corner, opposite its waiting count. A press
+ * brings the notice's card back; a needs-you dot's press brings forward the chat that asks
+ * (#3652). It is one of the stops the strip's arrows walk, never a Tab
+ * stop of its own, as every chip but one is (charter-app#189). Its glyph is the kind's shape
+ * (WCAG 1.4.1); its name says what a press shows, and the chip's description says it too.
+ */
+export function NoticeDot({
+  workspace,
+  count,
+  kind,
+  stop = false,
+  scope = "titlebar",
+  onPress,
+}: {
+  /** What it is on, as its name says it: a workspace, or the status bar (#3653). */
+  workspace: string;
+  count: number;
+  kind: NoticeKind;
+  /** A Tab stop of its own, where no strip's arrows walk to it: the plane root's house's, and
+   *  the status bar's. */
+  stop?: boolean;
+  /** The family it is a part of: a title-bar chip's, or the status bar's Notices item's
+   *  (`status-item.dot`, `status-item.dot-warning`, #3653), the same dot on the same ground. */
+  scope?: "titlebar" | "status-item";
+  onPress: () => void;
+}) {
+  const marked = useMarked({ onClick: onPress }, false);
+  const { part, shape: Shape, stroked } = KINDS[kind];
+  const shows =
+    count === 1 ? `Show the notice on ${workspace}` : `Show the ${count} notices on ${workspace}`;
+  const said = KINDS[kind].said;
+  // The disc and the triangle are filled shapes; the hand is read by its strokes (#3652).
+  const filled = stroked !== true;
+  return (
+    <button
+      type="button"
+      {...marked}
+      tabIndex={stop ? 0 : -1}
+      // What a press shows, then the most urgent kind where it is not news: the shape says it
+      // to the eye, this to the ear (WCAG 1.4.1). A ✋'s press brings the asking chat forward,
+      // and the workspace's own notices with it where it has some (#3652).
+      aria-label={
+        kind === "needs"
+          ? `Show the chat asking to remove ${workspace}${
+              count === 0 ? "" : count === 1 ? ", and its notice" : `, and its ${count} notices`
+            }`
+          : said === undefined
+            ? shows
+            : `${shows}, most urgent: ${said}`
+      }
+      data-scope={scope}
+      data-part={part}
+      data-kind={kind}
+    >
+      {filled ? (
+        <Shape aria-hidden="true" fill="currentColor" strokeWidth={0} />
+      ) : (
+        <Shape aria-hidden="true" strokeWidth={2.5} />
+      )}
+    </button>
+  );
+}
+
+/**
+ * **The plane root's chip** (#3654, spec #3647): a house right after the project's name and
+ * outside the strip, so it never scrolls away, the `root` variant of the workspace's chip. It is
+ * always drawn and has no pin to let go. It takes the chosen look while the plane root is in
+ * front, as a chip does while its workspace is; its name is the root's (`name`), as the
+ * workspace popover's row and the palette say it.
+ */
+export function RootChip({
+  name,
+  current,
+  notices,
+  onPress,
+  ref,
+  ...handed
+}: Omit<Native, "onClick" | "aria-label"> & {
+  /** What the root is called: its name and its tooltip, the words the palette gives it. */
+  name: string;
+  /** The plane root is in front. */
+  current: boolean;
+  /** The notices about the root its dot shows (#3648), said in its description. */
+  notices?: { count: number; kind: NoticeKind };
+  onPress: () => void;
+  ref?: Ref<HTMLButtonElement>;
+  /** `data-*` attributes reach the element as they are. */
+  [attribute: `data-${string}`]: string | number | boolean | undefined;
+}) {
+  // What a context menu around it hands it (`asChild`) reaches the button with the press.
+  const marked = useMarked({ ...handed, onClick: onPress }, current);
+  const said = useId();
+  const shown = notices === undefined ? undefined : noticesSaid(notices.count, notices.kind);
+  const shows = shown !== undefined;
+  return (
+    <Tooltip tip={name}>
+      <button
+        type="button"
+        {...marked}
+        ref={ref}
+        // A Tab stop of its own, before the strip's one (it is not in the strip).
+        tabIndex={0}
+        aria-label={name}
+        aria-describedby={
+          [
+            (handed as { "aria-describedby"?: string })["aria-describedby"],
+            shows ? said : undefined,
+          ]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
+        aria-current={current ? "true" : undefined}
+        data-scope="titlebar"
+        data-part="workspace"
+        data-variant="root"
+      >
+        <House aria-hidden="true" />
+        {shows && (
+          <span id={said} hidden>
+            {shown}
+          </span>
+        )}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -156,7 +371,7 @@ export function PinnedStrip({
   const walk = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const items = [
       ...event.currentTarget.querySelectorAll<HTMLElement>(
-        '[data-part="workspace"][data-scope="titlebar"], [data-titlebar-all]',
+        '[data-part="workspace"][data-scope="titlebar"], [data-kind][data-scope="titlebar"], [data-titlebar-all]',
       ),
     ];
     const at = items.findIndex((one) => one === document.activeElement);

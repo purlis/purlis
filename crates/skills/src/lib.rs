@@ -42,10 +42,11 @@ pub mod budget;
 pub mod change;
 pub mod compat;
 mod declared;
+pub mod fence;
 pub mod grade;
 mod grant;
 pub mod handed;
-mod held;
+pub mod held;
 pub mod lifecycle;
 pub mod lint;
 mod load;
@@ -68,17 +69,22 @@ pub use declared::{Argument, Declared, Given, declared};
 pub use grant::{Grant, grant_file, grant_of, set_grant};
 pub use handed::{Frontmatter, MOST_BYTES, Refusal, read_skill_md, read_skill_md_of};
 pub use lifecycle::{About, Deprecated, Lifecycle, about_of, set_lifecycle, set_owners};
-pub use lint::{BuiltInLints, Finding, Lint, Severity, SkillFiles, SkillLint};
+pub use lint::{
+    BuiltInLints, Finding, Lint, MOST_LINT_BYTES, MOST_LIST_BYTES, ReadBudget, Severity,
+    SkillFiles, SkillLint,
+};
 pub use load::{Entry, Loaded, Narrowing, POINTER, SkillFolder, by_name, find, load};
 pub use moving::{Unmoved, move_between, move_skill};
 pub use read::{
     DIR_IN_BUNDLE, FILE, frontmatter, in_bundle, listing, parsed, read, scan, scan_dir,
 };
 use reference::Seen;
-pub use reference::{BUILT_IN_PREFIXES, OnMachine, Reference};
-pub use router::{Hidden, HiddenWhy, INDEX, Index, Router, Routing, StillOver};
+pub use reference::{BUILT_IN_PREFIXES, OLD_BUILT_IN_PREFIX, OnMachine, Reference};
+pub use router::{
+    Candidate, Candidates, Hidden, HiddenWhy, INDEX, Index, Line, Router, Routing, StillOver,
+};
 pub use share::{Shared, named, named_at, share};
-pub use stamp::{Reload, Stamp};
+pub use stamp::{Reload, SkillsChanged, Stamp};
 
 /// A skill, as a chat is told about it: a folder in the open SKILL.md format.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -370,6 +376,13 @@ pub enum Reason {
         /// The clone's name.
         repo: String,
     },
+    /// A plane skill a repo of the chat's clone has a narrower copy of, which the chat gets in
+    /// its place (decision 51, [`Outcome::RepoWins`]): named by the repo, as
+    /// [`Self::RepoUnread`] is (#3234).
+    HiddenByRepo {
+        /// The clone's name.
+        repo: String,
+    },
     /// A plane skill its project archived (SK-19, decision 62): it never loads, takes no name
     /// from another copy, and is restored by making it active again.
     Archived,
@@ -386,18 +399,27 @@ pub enum Reason {
 
 impl Reason {
     /// **Whether a repo of the chat's clone is why** (SK-53, #3213): a narrower repo copy took
-    /// the name ([`Self::NameTaken`] by [`Origin::Repo`], decision 51), or purlis could not read
-    /// a skills folder of the clone whole ([`Self::RepoUnread`]). A plane skill left out so is
-    /// one only a chat in that clone loses, and its tab says so (decision 41).
+    /// the name ([`Self::HiddenByRepo`], decision 51), or purlis could not read a skills folder
+    /// of the clone whole ([`Self::RepoUnread`]). A plane skill left out so is one only a chat in
+    /// that clone loses, and its tab says so (decision 41).
     pub fn of_a_repo(&self) -> bool {
-        matches!(
-            self,
-            Self::RepoUnread { .. }
-                | Self::NameTaken {
-                    by: Origin::Repo,
-                    ..
-                }
-        )
+        matches!(self, Self::RepoUnread { .. } | Self::HiddenByRepo { .. })
+    }
+
+    /// **Why, as the tab of a chat in that repo says it** (#3234): a reason [`Self::of_a_repo`]
+    /// in words that read for the chat it happened to, after the tab's "because of the repo it
+    /// works in"; any other reason as [`std::fmt::Display`] says it everywhere.
+    pub fn to_its_chat(&self) -> String {
+        match self {
+            Self::HiddenByRepo { repo } => {
+                format!("the repo {repo} has its own copy, which loads in its place")
+            }
+            Self::RepoUnread { repo } => format!(
+                "purlis could not read the skills folder of {repo} whole, so it is left out in \
+                 case the repo has its own"
+            ),
+            other => other.to_string(),
+        }
     }
 }
 
@@ -415,6 +437,9 @@ pub enum Missing {
     Link,
     /// Its `SKILL.md` is larger than purlis reads ([`MOST_BYTES`]).
     TooLarge,
+    /// The level's folder holds more names than purlis reads of one ([`held::MOST_NAMES`]), so
+    /// none of its skills is read (SK-52).
+    Crowded,
 }
 
 impl std::fmt::Display for Reason {
@@ -434,6 +459,11 @@ impl std::fmt::Display for Reason {
                 f,
                 "its SKILL.md is larger than purlis reads ({} KiB)",
                 MOST_BYTES / 1024
+            ),
+            Self::NotASkill(Missing::Crowded) => write!(
+                f,
+                "{}, so none of its skills is read",
+                held::NotListed::Crowded
             ),
             Self::NotGranted => f.write_str(
                 "not granted to this workspace: a project skill is for chats at the project's root \
@@ -478,6 +508,9 @@ impl std::fmt::Display for Reason {
                 "purlis could not read the skills folder of {repo} whole, so a copy of this \
                  skill may be there, and a chat in that repo would get that one"
             ),
+            Self::HiddenByRepo { repo } => {
+                write!(f, "hidden by the skill of this name in the repo {repo}")
+            }
             Self::Archived => {
                 f.write_str("archived: it never loads until it is restored from its tab")
             }
@@ -864,6 +897,12 @@ impl SkillSet {
                     outcome,
                 });
                 if outcome == Outcome::RepoWins {
+                    // A repo copy is always a clone's ([`Owner::Repo`]), which its reason names.
+                    debug_assert!(matches!(one.owner, Owner::Repo(_)), "{:?}", one.owner);
+                    let repo = match &one.owner {
+                        Owner::Repo(repo) => repo.clone(),
+                        Owner::You | Owner::Plugin(_) => String::new(),
+                    };
                     let hidden = self.effective.remove(at);
                     self.left_out.push(LeftOut {
                         name: hidden.skill.name,
@@ -875,10 +914,7 @@ impl SkillSet {
                             .parent()
                             .map(Path::to_path_buf)
                             .unwrap_or_default(),
-                        reason: Reason::NameTaken {
-                            by: Origin::Repo,
-                            local: false,
-                        },
+                        reason: Reason::HiddenByRepo { repo },
                     });
                 }
             }
@@ -1069,48 +1105,10 @@ pub(crate) fn plain(name: &str) -> bool {
 pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -> SkillSet {
     let mut set = SkillSet::default();
     let route = chat.harness.route;
-    if let Some(dir) = machine.built_in {
-        let root = dir.parent().unwrap_or(dir);
-        level(
-            &mut set,
-            (root, dir),
-            (Origin::BuiltIn, false),
-            route,
-            |_| None,
-        );
-        // Each under the name its route knows it by, from here on: what a plane skill's name is
-        // checked against, and what the chat is told and handed.
-        for effective in set
-            .effective
-            .iter_mut()
-            .filter(|e| e.origin == Origin::BuiltIn)
-        {
-            effective.skill.name = route.built_in_name(&effective.skill.name);
-        }
-    }
+    built_in_level(&mut set, machine, route);
     if let Some(plane) = plane {
         if let Some(persona) = chat.persona {
-            for local in [true, false] {
-                if let Some(dir) = persona_dir(plane, persona, local) {
-                    let made = made_since(machine, &plane.join("personas").join(persona));
-                    level(
-                        &mut set,
-                        (plane, &dir),
-                        (Origin::Persona, local),
-                        route,
-                        |skill| {
-                            if let Some(why) = &made {
-                                return Some(Reason::MadeWhileAChatRan(why.clone()));
-                            }
-                            if local {
-                                kept_here(machine, folder_of_skill(skill))
-                            } else {
-                                None
-                            }
-                        },
-                    );
-                }
-            }
+            persona_levels(&mut set, plane, machine, persona, route);
         }
         let workspace = chat.workspace.filter(|ws| plain(ws));
         if let Some(ws) = workspace {
@@ -1168,10 +1166,87 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
     set
 }
 
+/// **A persona's own skills** (#3462): the rows of `persona`'s local and shared levels in the
+/// plane at `plane`, on `machine` by `route`, as [`skill_set`] gives them to every chat as that
+/// persona. Only the built-in skills are read beside them: a persona's levels are the narrowest
+/// and read first, so no wider level of the plane changes what they hold, and the project's and
+/// a workspace's folders are not read for them, nor their local skills asked git about.
+pub fn persona_set(plane: &Path, machine: &Machine<'_>, persona: &str, route: Route) -> SkillSet {
+    let mut set = SkillSet::default();
+    built_in_level(&mut set, machine, route);
+    persona_levels(&mut set, plane, machine, persona, route);
+    set.effective
+        .sort_by(|a, b| a.skill.name.cmp(&b.skill.name));
+    widest_first(&mut set.left_out);
+    set
+}
+
+/// The built-in skills `machine` has, into `set`, each under the name `route` knows it by.
+fn built_in_level(set: &mut SkillSet, machine: &Machine<'_>, route: Route) {
+    let Some(dir) = machine.built_in else {
+        return;
+    };
+    let root = dir.parent().unwrap_or(dir);
+    level(set, (root, dir), (Origin::BuiltIn, false), route, |_| None);
+    // Each under the name its route knows it by, from here on: what a plane skill's name is
+    // checked against, and what the chat is told and handed.
+    for effective in set
+        .effective
+        .iter_mut()
+        .filter(|e| e.origin == Origin::BuiltIn)
+    {
+        effective.skill.name = route.built_in_name(&effective.skill.name);
+    }
+}
+
+/// `persona`'s local skills, then its shared ones, in the plane at `plane`, into `set`.
+fn persona_levels(
+    set: &mut SkillSet,
+    plane: &Path,
+    machine: &Machine<'_>,
+    persona: &str,
+    route: Route,
+) {
+    for local in [true, false] {
+        if let Some(dir) = persona_dir(plane, persona, local) {
+            let made = made_since(machine, &plane.join("personas").join(persona));
+            level(
+                set,
+                (plane, &dir),
+                (Origin::Persona, local),
+                route,
+                |skill| {
+                    if let Some(why) = &made {
+                        return Some(Reason::MadeWhileAChatRan(why.clone()));
+                    }
+                    if local {
+                        kept_here(machine, folder_of_skill(skill))
+                    } else {
+                        None
+                    }
+                },
+            );
+        }
+    }
+}
+
 /// Why the levels of the workspace or persona folder `owner` reach no chat, where `machine`
 /// asks (SK-9).
 fn made_since(machine: &Machine<'_>, owner: &Path) -> Option<String> {
     machine.made_since.and_then(|asked| asked(owner))
+}
+
+/// **Whether the project skill `name` in `folder` reaches a chat in `workspace`** that turned
+/// off the names in `turned_off`: its grant reaches the workspace, and the workspace has not
+/// turned it off. The rule [`skill_set`] hands a chat its project skills by, for whatever must
+/// agree with it, such as which skills an install brings along (#4154).
+pub fn reaches_workspace(
+    folder: &Path,
+    workspace: &str,
+    turned_off: &[String],
+    name: &str,
+) -> bool {
+    reach(folder, workspace, turned_off, name).is_none()
 }
 
 /// Why a project skill in `folder`, named `name`, does not reach a chat in `workspace`, which

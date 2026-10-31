@@ -21,7 +21,7 @@
 //! `names_tests.rs` pins every entry's old name to the literal the code still uses.
 //!
 //! **The contract step (RN-2z, #1262).** This module is the only code allowed to spell an old
-//! name. `tests/no_old_name_is_spelled_outside_the_name_module.rs` fails on any string literal
+//! name. `tests/it/no_old_name_is_spelled_outside_the_name_module.rs` fails on any string literal
 //! elsewhere that spells one of the old file, folder, marker, keychain, variable, branch or
 //! trailer names listed here, apart from a shrink-only allow-list of visible text and other
 //! named leftovers, and test fixtures.

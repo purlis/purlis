@@ -88,6 +88,7 @@ pub(super) struct Holding {
 /// [`ENDS_UNREAD`]'s, which ends without reading any.
 pub(super) fn the_windows(window: &Arc<Window>, holding: &Arc<Holding>) -> Hearing {
     Hearing {
+        serve: crate::hookwire::serve::refusing(),
         each: {
             let window = Arc::clone(window);
             Box::new(move |report| {
@@ -482,6 +483,62 @@ fn when_the_link_ends_no_secret_execs_input_is_kept() {
         an_exec_heard_on(&heeding, AGAIN, 5, ECHOES),
         [Replied::Ended]
     );
+}
+
+/// #3408: a host the lines are relayed from that is lost to its relay let go of every line it
+/// handed on, so every `secret exec` from it ends its input here: one that runs, and one taken
+/// but not yet begun, which begins already ended. The link stays, and the next exec on it reads
+/// its own input. A host lost over another link ends nothing here.
+#[test]
+fn a_host_lost_to_its_relay_ends_every_secret_execs_input_and_the_link_goes_on() {
+    let heeding = a_heeding();
+    assert!(admitted(&heeding, LINK, 5, ECHOES));
+    heeding.hear(LINK, 2, input(5, "typed"), nothing());
+    assert!(admitted(&heeding, LINK, 6, ECHOES));
+    let (replies, replied) = mpsc::channel();
+    std::thread::spawn({
+        let heeding = Arc::clone(&heeding);
+        move || {
+            let reply: Reply = Arc::new(move |r| {
+                let _ = replies.send(r);
+            });
+            heeding.hear(LINK, 6, an_exec(ECHOES), reply);
+        }
+    });
+    heeding.hear(LINK, 3, input(6, "first"), nothing());
+    assert_eq!(
+        replied.recv_timeout(Duration::from_secs(10)),
+        Ok(Replied::Wrote {
+            text: "ran first\n".into()
+        })
+    );
+
+    heeding.lost_its_host(AGAIN);
+    heeding.hear(LINK, 4, input(6, "second"), nothing());
+    assert_eq!(
+        replied.recv_timeout(Duration::from_secs(10)),
+        Ok(Replied::Wrote {
+            text: "ran second\n".into()
+        }),
+        "lost over a link these lines do not come over: nothing ends"
+    );
+
+    heeding.lost_its_host(LINK);
+
+    assert_eq!(
+        replied.recv_timeout(Duration::from_secs(10)),
+        Ok(Replied::Ended),
+        "the running exec's input did not end"
+    );
+    assert_eq!(
+        an_exec_heard(&heeding, 5, ECHOES),
+        ran(&["typed"]),
+        "the exec not begun begins with its input ended"
+    );
+    assert!(admitted(&heeding, LINK, 9, ECHOES), "the link goes on");
+    heeding.hear(LINK, 12, input(9, "own"), nothing());
+    heeding.hear(LINK, 13, Heard::InputEnded { of: 9 }, nothing());
+    assert_eq!(an_exec_heard(&heeding, 9, ECHOES), ran(&["own"]));
 }
 
 /// A host started again numbers its lines from the start: an exec under a number used before
@@ -1081,18 +1138,39 @@ fn the_windows_carrying(window: &Arc<Window>) -> Hearing {
 
 /// A host's hearing over JSON to `window`'s, keeping the event log in `kept`.
 fn relayed_keeping(window: Hearing, kept: &Arc<Kept>) -> Hearing {
+    relayed_keeping_as(window, kept, false, None).0
+}
+
+/// [`relayed_keeping`], of a host told it holds the project at `root` where one is named, and
+/// that said it records a line there where `pathless` (1.40, #3400): the window's replies then
+/// name no path, as the window sends them to such a host. And each reply as it went over, in
+/// JSON.
+fn relayed_keeping_as(
+    window: Hearing,
+    kept: &Arc<Kept>,
+    pathless: bool,
+    root: Option<&str>,
+) -> (Hearing, Arc<Mutex<Vec<serde_json::Value>>>) {
+    let sent: Arc<Mutex<Vec<serde_json::Value>>> = Arc::default();
+    let without_path = pathless;
     let heeding = Arc::new(Heeding::new(window));
     let host: Arc<Mutex<Option<Arc<Relaying>>>> = Arc::default();
     let relaying = Relaying::keeping(
         {
-            let host = Arc::clone(&host);
+            let (host, sent) = (Arc::clone(&host), Arc::clone(&sent));
             Box::new(move |id, heard| {
                 let heard: Heard =
                     serde_json::from_str(&serde_json::to_string(heard).unwrap()).unwrap();
-                let host = Arc::clone(&host);
+                let (host, sent) = (Arc::clone(&host), Arc::clone(&sent));
                 let reply: Reply = Arc::new(move |replied: Replied| {
-                    let replied: Replied =
-                        serde_json::from_str(&serde_json::to_string(&replied).unwrap()).unwrap();
+                    let replied = if without_path {
+                        replied.without_path()
+                    } else {
+                        replied
+                    };
+                    let json = serde_json::to_value(&replied).unwrap();
+                    sent.lock().unwrap().push(json.clone());
+                    let replied: Replied = serde_json::from_value(json).unwrap();
                     let relaying = host.lock().unwrap().clone().unwrap();
                     relaying.replied(id, replied);
                 });
@@ -1102,8 +1180,97 @@ fn relayed_keeping(window: Hearing, kept: &Arc<Kept>) -> Hearing {
         },
         kept.keeping(),
     );
+    if let Some(root) = root {
+        relaying.of_project_at(std::path::Path::new(root));
+    }
     *host.lock().unwrap() = Some(Arc::clone(&relaying));
-    relaying.hearing(Arc::new(ChatTokens::default()))
+    (relaying.hearing(Arc::new(ChatTokens::default())), sent)
+}
+
+#[test]
+fn a_host_that_said_it_records_a_line_where_it_holds_the_project_is_sent_no_path() {
+    // A pool's runner holds the project at `<data>/projects/<id>` (#3400): the window's record
+    // of each line names no project, and the host records it under the one it holds.
+    let window = Arc::new(Window::default());
+    let kept = Arc::new(Kept::default());
+    let held = "/data/projects/01J9PRJCT00000000000000000";
+    let (host, sent) = relayed_keeping_as(the_windows_carrying(&window), &kept, true, Some(held));
+
+    let taken = (host.each)(report(3));
+    let tool = {
+        let window = Arc::new(Window::default());
+        let kept = Arc::new(Kept::default());
+        let (host, sent) = relayed_keeping_as(
+            the_windows_sending_back(&window, a_tool_entry(tool_call(5, "c1"))),
+            &kept,
+            true,
+            Some(held),
+        );
+        ((host.tool)(tool_call(5, "c1")), sent, kept)
+    };
+
+    assert!(taken.is_ok(), "{taken:?}");
+    assert_eq!(
+        *kept.recorded.lock().unwrap(),
+        [Entry::Report {
+            plane: held.into(),
+            report: report(3),
+            followed: crate::eventlog::Followed::No,
+            begun: None,
+        }]
+    );
+    assert!(tool.0.is_ok(), "{:?}", tool.0);
+    assert_eq!(
+        *tool.2.recorded.lock().unwrap(),
+        [Entry::Tool {
+            plane: held.into(),
+            call: tool_call(5, "c1"),
+        }]
+    );
+    for said in sent
+        .lock()
+        .unwrap()
+        .iter()
+        .chain(tool.1.lock().unwrap().iter())
+    {
+        let said = said.to_string();
+        assert!(said.starts_with(r#"{"line":"#), "{said}");
+        assert!(
+            !said.contains("plane") && !said.contains("/planes/one"),
+            "{said}"
+        );
+    }
+}
+
+#[test]
+fn a_host_that_has_not_said_it_is_sent_the_path_as_before() {
+    let window = Arc::new(Window::default());
+    let kept = Arc::new(Kept::default());
+    let (host, sent) = relayed_keeping_as(the_windows_carrying(&window), &kept, false, None);
+
+    let taken = (host.each)(report(3));
+
+    assert!(taken.is_ok(), "{taken:?}");
+    assert_eq!(*kept.recorded.lock().unwrap(), [a_report_entry(3)]);
+    let said = sent.lock().unwrap()[0].to_string();
+    assert!(said.contains(r#""plane":"/planes/one""#), "{said}");
+}
+
+#[test]
+fn a_line_sent_back_with_no_path_is_still_recorded_only_as_the_record_of_its_own_line() {
+    let window = Arc::new(Window::default());
+    let kept = Arc::new(Kept::default());
+    let (host, _) = relayed_keeping_as(
+        the_windows_sending_back(&window, a_report_entry(4)),
+        &kept,
+        true,
+        Some("/data/projects/one"),
+    );
+
+    let refused = (host.each)(report(3));
+
+    assert!(refused.is_err());
+    assert!(kept.recorded.lock().unwrap().is_empty());
 }
 
 #[test]
@@ -1650,4 +1817,16 @@ fn a_login_that_waited_is_handed_on_once_and_a_window_gone_mid_answer_is_told_no
             .any(|said| said.contains("went again before it answered")),
         "{told:?}"
     );
+}
+
+#[test]
+fn a_line_sent_back_with_no_path_to_a_channel_that_knows_no_project_is_not_recorded() {
+    let window = Arc::new(Window::default());
+    let kept = Arc::new(Kept::default());
+    let (host, _) = relayed_keeping_as(the_windows_carrying(&window), &kept, true, None);
+
+    let refused = (host.each)(report(3));
+
+    assert!(refused.is_err());
+    assert!(kept.recorded.lock().unwrap().is_empty());
 }

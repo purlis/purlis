@@ -647,3 +647,92 @@ mod made_elsewhere {
         assert!(refused.contains("its own addresses"), "{refused}");
     }
 }
+
+/// #2019: a port a chat was given for a listen grant alone that gets no door is withdrawn from
+/// its proxy, so the grant leaves it no plain connect there; a port it holds a grant to connect
+/// to besides is left.
+#[cfg(unix)]
+#[test]
+fn a_listen_grant_s_port_that_gets_no_door_is_withdrawn_from_the_chat_s_proxy() {
+    let holder = Arc::new(Holder::default());
+    let mut confinement = Confinement::held_elsewhere(
+        placed(50871, 50872, None),
+        Box::new(Holding(Arc::clone(&holder))),
+    )
+    .expect("held");
+    // No folder can be made where a file stands, so no door opens.
+    let base = tempfile::tempdir().expect("a folder");
+    std::fs::write(base.path().join("file"), "x").expect("a file");
+    let folder = base.path().join("file").join("0123456789abcdef");
+    let widened = crate::sandbox::Widened {
+        ports: vec![5173, 8080],
+        listens: vec![5173, 8080],
+        listen_only: vec![5173],
+        ..crate::sandbox::Widened::default()
+    };
+    assert!(confinement.serve(&folder, &widened).is_err());
+    assert_eq!(*holder.withdrawn.lock().expect("held"), [5173]);
+    assert_eq!(confinement.served(), None);
+}
+
+/// #3316: a Claude Code chat's doors are dialled. A slot for a port with no door is refused, the
+/// chat's slots are capped across its doors, and its door closed for a grant taken back closes
+/// its slots and parks none again. First runs on CI: this sandbox binds no port.
+#[cfg(unix)]
+#[test]
+fn a_dialled_chat_parks_slots_only_at_its_own_doors_and_capped() {
+    let free = || {
+        std::net::TcpListener::bind(("127.0.0.1", 0))
+            .and_then(|listener| listener.local_addr())
+            .expect("a free port")
+            .port()
+    };
+    let (one, two) = (free(), free());
+    let mut confinement = Confinement::held_elsewhere(
+        placed(50873, 50874, None),
+        Box::new(Holding(Arc::new(Holder::default()))),
+    )
+    .expect("held");
+    let widened = crate::sandbox::Widened {
+        ports: vec![one, two],
+        listens: vec![one, two],
+        ..crate::sandbox::Widened::default()
+    };
+    assert_eq!(
+        confinement.dial(&widened).expect("dialled"),
+        Vec::<u16>::new()
+    );
+    assert!(confinement.dials_in());
+    assert_eq!(confinement.served(), None, "no folder of sockets");
+    assert_eq!(confinement.serving_ports(), [one, two]);
+    let pair = || std::os::unix::net::UnixStream::pair().expect("a pair");
+    let (slot, _server) = pair();
+    let (_, why) = confinement.park(1, slot).expect_err("no door there");
+    assert_eq!(why, crate::sandbox::door::NO_DOOR);
+    let mut servers = Vec::new();
+    for at in 0..crate::sandbox::CHAT_SLOTS_MOST {
+        let (slot, server) = pair();
+        let port = if at < crate::sandbox::door::SLOTS_MOST {
+            one
+        } else {
+            two
+        };
+        let first = confinement.park(port, slot).expect("parked");
+        assert_eq!(first, at == 0 || at == crate::sandbox::door::SLOTS_MOST);
+        servers.push(server);
+    }
+    let (slot, _server) = pair();
+    let (_, why) = confinement
+        .park(two, slot)
+        .expect_err("the chat holds its most");
+    assert_eq!(why, crate::sandbox::door::SLOTS_FULL);
+    assert!(confinement.stop_serving(one));
+    for server in servers.iter_mut().take(crate::sandbox::door::SLOTS_MOST) {
+        let mut said = String::new();
+        std::io::Read::read_to_string(server, &mut said).expect("read to its end");
+        assert_eq!(said, crate::sandbox::door::PARKED, "closed");
+    }
+    let (slot, _server) = pair();
+    let (_, why) = confinement.park(one, slot).expect_err("its door is gone");
+    assert_eq!(why, crate::sandbox::door::NO_DOOR);
+}

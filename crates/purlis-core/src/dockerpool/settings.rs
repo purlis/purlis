@@ -366,6 +366,40 @@ pub fn prepare(from: &Source<'_>) -> Result<Prepared, Refused> {
     Ok(Prepared { folder, lock, env })
 }
 
+/// The folder under `settings_in` a typed sign-in on a pool's runner names as Docker's settings
+/// (#2049). Not a run's, so no sweep takes it.
+pub const SIGN_IN: &str = "sign-in";
+
+/// **The settings a sign-in on a pool's runner runs `docker` with** (#2049): the folder
+/// [`SIGN_IN`] under `settings_in`, private to this user and denied to every chat as the whole
+/// of `settings_in` is, holding a `config.json` of `{}`. An `exec` on a local socket needs
+/// nothing of Docker's own settings, so none of the person's `config.json` (its plugins, their
+/// hooks, its contexts) is read by the line a shell types.
+pub fn for_a_sign_in(settings_in: &Path) -> Result<PathBuf, Refused> {
+    if let Some(why) = crate::datahome::refusal(settings_in) {
+        return Err(refused(why));
+    }
+    let private = |at: &Path| {
+        purlis_same_user::PrivateDirectory::open(at).map_err(|why| {
+            refused(format!(
+                "purlis could not make {} for docker's settings: {why}",
+                at.display()
+            ))
+        })
+    };
+    private(settings_in)?;
+    let folder = settings_in.join(SIGN_IN);
+    private(&folder)?
+        .replace_file("config.json", b"{}")
+        .map_err(|why| {
+            refused(format!(
+                "purlis could not write docker's settings in {}: {why}",
+                folder.display()
+            ))
+        })?;
+    Ok(folder)
+}
+
 /// A run's variables, those it is not handed, and what is held until it ends.
 pub type Parts = (
     Vec<(OsString, OsString)>,
@@ -374,6 +408,20 @@ pub type Parts = (
 );
 
 impl Prepared {
+    /// **`contents` kept as `name` in the run's folder, `0600`**, for as long as the run goes:
+    /// a file `docker` reads during the run (the runner's seccomp profile). Its path.
+    pub fn keep(&self, name: &str, contents: &str) -> std::io::Result<PathBuf> {
+        use std::os::unix::fs::OpenOptionsExt;
+        let at = self.folder.path().join(name);
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&at)?;
+        std::io::Write::write_all(&mut file, contents.as_bytes())?;
+        Ok(at)
+    }
+
     /// Its variables, those not handed on, and what is held until the run ends, for a
     /// connector that runs `docker` itself (`purlis_host::CommandConnector::preparing`).
     pub fn into_parts(self) -> Parts {

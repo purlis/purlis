@@ -47,6 +47,9 @@ pub struct Known {
     pub workspace: Place,
     /// Its state on the app's board.
     pub state: State,
+    /// Whether its turn ended waiting on work of its own, which wakes it (#3878,
+    /// [`crate::state::Chat::own_work`]): at work through it, never idle.
+    pub own_work: bool,
     /// When its current run began, in seconds since 1970, where the app knows
     /// ([`run_started`]): this start of its program, not the chat's first.
     pub started: Option<i64>,
@@ -101,6 +104,12 @@ pub struct Asker {
     pub mode: Mode,
     /// Whether this chat still owes it a report.
     pub owes: bool,
+    /// Where its report stands, by its record: what [`Doing::ReportedStillRunning`] (#3899) is
+    /// read from, by [`crate::dispatched::still_running_after_report`].
+    pub report: crate::reopen::Owed,
+    /// Whether it was dispatched as a long-running task (#3905): notes are its heartbeat, and
+    /// purlis never asks it for a report.
+    pub long: bool,
 }
 
 /// How the chat that asked for a chat started it, as the chat is told it (#1455): the
@@ -133,8 +142,15 @@ pub enum Doing {
     Running,
     /// It handed control back: it asked something, or its turn ended.
     Waiting,
+    /// Its turn ended while work of its own is in flight, which wakes it (#3878): helpers,
+    /// monitors, a background command or a wake-up it scheduled. At work through it.
+    WaitingOnItsOwnWork,
     /// It has sent its report, and is still open.
     Reported,
+    /// **It reported and its program still runs** (#3899,
+    /// [`crate::dispatched::still_running_after_report`]): purlis made its report from its last
+    /// message, or it came out blocked. Still its asking chat's to tell and cancel.
+    ReportedStillRunning,
     /// Its program ended, content.
     Ended,
     /// Its program ended badly.
@@ -146,9 +162,18 @@ impl Doing {
         match known.state {
             State::Done => Self::Ended,
             State::Failed => Self::Failed,
+            // The one rule a follow-up and a cancel read (#3899). Its program has not ended:
+            // that was asked above.
+            _ if known.from.as_ref().is_some_and(|from| {
+                crate::dispatched::still_running_after_report(from.report, false)
+            }) =>
+            {
+                Self::ReportedStillRunning
+            }
             _ if known.from.as_ref().is_some_and(|from| from.reported) => Self::Reported,
             State::Unknown => Self::Open,
             State::Running => Self::Running,
+            State::Waiting if known.own_work => Self::WaitingOnItsOwnWork,
             State::Waiting => Self::Waiting,
         }
     }
@@ -159,7 +184,9 @@ impl Doing {
             Self::Open => "open",
             Self::Running => "running",
             Self::Waiting => "waiting",
+            Self::WaitingOnItsOwnWork => crate::dispatched::WAITING_ON_ITS_OWN_WORK,
             Self::Reported => "reported",
+            Self::ReportedStillRunning => crate::dispatched::REPORTED_STILL_RUNNING,
             Self::Ended => "ended",
             Self::Failed => "failed",
         }
@@ -293,6 +320,76 @@ pub struct Working {
     /// is said at the first of them. At most [`MOST_ROWS`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub waiting_on_you: Vec<Waiting>,
+    /// The chat's own tasks it was told were waiting on the person that are at work again
+    /// (only for [`Tell::Turn`], #3788): each by its name, once, at the first turn after its
+    /// prompt or block cleared.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub back_at_work: Vec<String>,
+    /// **The chat's own tasks still open** (only for [`Tell::Turn`], #3788): said at every turn
+    /// while there is one, so a chat keeps the picture across a compaction. At most
+    /// [`MOST_ROWS`]; how many more in [`Self::more_tasks`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub open_tasks: Vec<OpenTask>,
+    /// How many more open tasks there were than are listed.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub more_tasks: usize,
+}
+
+/// One of a chat's own open tasks, as its turn's roster says it (#3788): **its number, its
+/// name and its state**. The number is the one `dispatch_list` gives the same chat for it, and
+/// what `dispatch_wait`, `dispatch_tell` and `dispatch_cancel` take.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct OpenTask {
+    /// The app's number for the task's chat.
+    pub chat: u32,
+    /// The task's name as its tab shows it.
+    pub name: String,
+    pub state: Doing,
+    /// Whether it is stopped on the person: a prompt of its harness's or its sandbox's Notice.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_the_person: bool,
+    /// Whether it is a long-running task (#3905): said beside its state.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub long: bool,
+    /// Whether it is alive (#3900): its program, what it last did, and how it stands across
+    /// the app's restart, or that it is orphaned by one. None from an app older than this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub liveness: Option<crate::dispatchliveness::Liveness>,
+}
+
+impl Working {
+    /// Says of each open task in its roster whether it is alive (#3900), as `of` has it for
+    /// the task's number: the app's ledger and board, which this module does not hold.
+    pub fn with_liveness(
+        mut self,
+        of: impl Fn(u32) -> Option<crate::dispatchliveness::Liveness>,
+    ) -> Self {
+        for task in &mut self.open_tasks {
+            task.liveness = of(task.chat);
+        }
+        self
+    }
+
+    /// Adds the chat's own tasks **orphaned by the app's restart** (#3900) to its roster, each
+    /// by its number and name: tasks whose dispatch still runs that this app cannot reach, so
+    /// the chat does not take one for a task at work, nor forget it. Held to [`MOST_ROWS`] with
+    /// the rest. Only a turn's answer carries a roster, so only it is given these. A task known
+    /// only by its dispatch record comes as number 0, which names no chat (#3932).
+    pub fn with_orphans(mut self, orphans: impl IntoIterator<Item = (u32, String)>) -> Self {
+        let mut all: Vec<OpenTask> = std::mem::take(&mut self.open_tasks);
+        all.extend(orphans.into_iter().map(|(chat, name)| OpenTask {
+            chat,
+            name,
+            state: Doing::Open,
+            on_the_person: false,
+            long: false,
+            liveness: Some(crate::dispatchliveness::Liveness::orphaned()),
+        }));
+        self.more_tasks += all.len().saturating_sub(MOST_ROWS);
+        all.truncate(MOST_ROWS);
+        self.open_tasks = all;
+        self
+    }
 }
 
 /// Why a chat asks, which decides whether the app counts it as told.
@@ -332,8 +429,11 @@ enum Stage {
 impl Stage {
     fn of(doing: Doing) -> Self {
         match doing {
-            Doing::Open | Doing::Running | Doing::Waiting => Self::Live,
-            Doing::Reported => Self::Reported,
+            Doing::Open | Doing::Running | Doing::Waiting | Doing::WaitingOnItsOwnWork => {
+                Self::Live
+            }
+            // It reported: a sibling is told so once, as of any report.
+            Doing::Reported | Doing::ReportedStillRunning => Self::Reported,
             Doing::Ended => Self::Finished,
             Doing::Failed => Self::Failed,
         }
@@ -438,16 +538,59 @@ pub fn answer(known: &[Known], chat: u32, tell: Tell, told: &mut Told) -> Option
     }
     let more_changes = changes.len().saturating_sub(MOST_ROWS);
     changes.truncate(MOST_ROWS);
-    let waiting_on_you = match tell {
-        Tell::Turn => newly_waiting(known, chat, &mut told.waiting),
+    let (waiting_on_you, back_at_work) = match tell {
+        // Read before what it was told is kept anew: a task leaves `told` as it goes back.
+        Tell::Turn => {
+            let back = back_at_work(known, chat, &told.waiting);
+            (newly_waiting(known, chat, &mut told.waiting), back)
+        }
+        Tell::Asked | Tell::Start => (Vec::new(), Vec::new()),
+    };
+    let mut open_tasks = match tell {
+        Tell::Turn => open_tasks(known, chat),
         Tell::Asked | Tell::Start => Vec::new(),
     };
+    let more_tasks = open_tasks.len().saturating_sub(MOST_ROWS);
+    open_tasks.truncate(MOST_ROWS);
     Some(Working {
         picture,
         changes,
         more_changes,
         waiting_on_you,
+        back_at_work,
+        open_tasks,
+        more_tasks,
     })
+}
+
+/// `chat`'s own tasks that are still open (#3788): asked for by it as a task, in its lineage
+/// ([`parent_of`]), and neither reported nor ended. By number, as `dispatch_list` lists them.
+fn open_tasks(known: &[Known], chat: u32) -> Vec<OpenTask> {
+    let mut tasks: Vec<OpenTask> = known
+        .iter()
+        .filter(|one| parent_of(known, one).is_some_and(|parent| parent.chat == chat))
+        .filter(|one| {
+            one.from
+                .as_ref()
+                .is_some_and(|from| from.mode == Mode::Task)
+        })
+        // A task that reported while its program still runs is open too (#3899): it is still
+        // its asking chat's to tell and cancel.
+        .filter(|one| {
+            let doing = Doing::of(one);
+            Stage::of(doing) == Stage::Live || doing == Doing::ReportedStillRunning
+        })
+        .map(|one| OpenTask {
+            chat: one.chat,
+            name: one.name.clone(),
+            state: Doing::of(one),
+            on_the_person: one.asking.is_some(),
+            long: one.from.as_ref().is_some_and(|from| from.long),
+            liveness: None,
+        })
+        .collect();
+    tasks.sort_by_key(|one| one.chat);
+    tasks
 }
 
 /// `chat`'s own tasks that are waiting on the person and were not told as waiting, and the
@@ -486,6 +629,22 @@ fn newly_waiting(
                 prompt: one.asking?,
             })
         })
+        .collect()
+}
+
+/// `chat`'s own tasks it was `told` were waiting on the person that are **at work again**
+/// (#3788): still its own, still live, and no longer stopped on the person. Each is said once:
+/// [`newly_waiting`] then lets it go from `told`.
+fn back_at_work(known: &[Known], chat: u32, told: &std::collections::BTreeSet<u32>) -> Vec<String> {
+    known
+        .iter()
+        .filter(|one| told.contains(&one.chat) && one.asking.is_none())
+        .filter(|one| parent_of(known, one).is_some_and(|parent| parent.chat == chat))
+        .filter(|one| Stage::of(Doing::of(one)) == Stage::Live)
+        .map(|one| (one.chat, one.name.clone()))
+        .collect::<BTreeMap<u32, String>>()
+        .into_values()
+        .take(MOST_ROWS)
         .collect()
 }
 
@@ -667,14 +826,99 @@ pub fn briefing(picture: &Picture, now: chrono::DateTime<chrono::FixedOffset>) -
     Some(lines.join("\n"))
 }
 
-/// What a turn is told: one line when the picture changed, and one when a task of its own
-/// began waiting on the person; `None` when neither did.
+/// What a turn is told: one line when the picture changed, one when a task of its own began
+/// waiting on the person, one when such a task is at work again, and the roster of its open
+/// tasks while it has any (#3788); `None` when there is none of these.
 pub fn update(working: &Working, now: chrono::DateTime<chrono::FixedOffset>) -> Option<String> {
-    let lines: Vec<String> = [changed_line(working, now), waiting_line(working)]
-        .into_iter()
-        .flatten()
-        .collect();
+    let lines: Vec<String> = [
+        changed_line(working, now),
+        waiting_line(working),
+        back_line(working),
+        roster_line(working),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
     (!lines.is_empty()).then(|| lines.join("\n"))
+}
+
+/// The line for a chat's own tasks that are at work again after it was told they waited on the
+/// person (#3788): so it waits for them rather than giving the work out again.
+fn back_line(working: &Working) -> Option<String> {
+    if working.back_at_work.is_empty() {
+        return None;
+    }
+    let said: Vec<String> = working
+        .back_at_work
+        .iter()
+        .map(|name| format!("task {} is at work again", quoted(name)))
+        .collect();
+    Some(format!(
+        "⬢ A task of yours is back at work ({AS_DATA}): {}. Wait for its report, and do not \
+         dispatch it again.",
+        said.join("; ")
+    ))
+}
+
+/// The roster of a chat's own open tasks (#3788), said at every turn while it has one: each
+/// by number, name and state, and what to do with one instead of dispatching it again.
+fn roster_line(working: &Working) -> Option<String> {
+    if working.open_tasks.is_empty() {
+        return None;
+    }
+    let mut said: Vec<String> = working
+        .open_tasks
+        .iter()
+        .map(|task| {
+            let state = if task.on_the_person {
+                "waiting on the person"
+            } else {
+                task.state.word()
+            };
+            // A long-running task says so beside its state (#3905).
+            let long = if task.long {
+                format!("{}, ", crate::dispatched::LONG_RUNNING)
+            } else {
+                String::new()
+            };
+            // Whether it is alive (#3900): an orphan says that in place of a state; any other
+            // task says it after its state, long-running or not.
+            match &task.liveness {
+                // Found by its dispatch record alone (#3932): no number here is its own.
+                Some(live)
+                    if live.is_orphaned() && task.chat == crate::dispatched::NO_NUMBER_KNOWN =>
+                {
+                    format!(
+                        "{}, under a chat number no longer known, {}",
+                        quoted(&task.name),
+                        live.said()
+                    )
+                }
+                Some(live) if live.is_orphaned() => {
+                    format!("chat {} {} {}", task.chat, quoted(&task.name), live.said())
+                }
+                Some(live) => format!(
+                    "chat {} {} {long}{state} ({})",
+                    task.chat,
+                    quoted(&task.name),
+                    live.said()
+                ),
+                None => format!("chat {} {} {long}{state}", task.chat, quoted(&task.name)),
+            }
+        })
+        .collect();
+    if working.more_tasks > 0 {
+        said.push(format!("and {} more", working.more_tasks));
+    }
+    Some(format!(
+        "⬢ Your open tasks ({AS_DATA}): {}. Look after one of these with `{}`, `{}` or `{}` \
+         before dispatching the same work again; `{}` shows them all.",
+        said.join("; "),
+        crate::chattools::DISPATCH_WAIT,
+        crate::chattools::DISPATCH_TELL,
+        crate::chattools::DISPATCH_CANCEL,
+        crate::chattools::DISPATCH_LIST,
+    ))
 }
 
 /// The line for a chat's own tasks that began waiting on the person: who, and for what, and

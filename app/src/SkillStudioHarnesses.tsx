@@ -6,23 +6,28 @@ import {
   commands,
   type HarnessKind,
   type Owner,
-  type StudioClash,
   type StudioHarness,
-  type StudioPlugin,
+  type StudioNotSupported,
   type StudioSkill,
-  type StudioSwitched,
 } from "./bindings";
-import { counted } from "./dispatches";
 import { Notice } from "./Notice";
 import { SkillCompatBadges } from "./SkillCompatBadges";
-import { Button } from "./ui/button/Button";
+import { Badge } from "./ui/badge/Badge";
+import { Fact, Facts } from "./ui/card/Facts";
+import { Switch } from "./ui/choice/Switch";
+import { EmptyState } from "./ui/empty-state/EmptyState";
+import { List, ListRow, ListRowSection, type Selection } from "./ui/list/List";
+import { RowBelow, RowLabel, RowTrail } from "./ui/list/Row";
+import { ViewPageHeader } from "./ui/panel/ViewFrame";
+import { capitalised } from "./saving";
+import { harnessOfId, harnessSkillId, skillOfRowId, skillRowId } from "./skillStudio";
 
 /** Whose a skill from outside the project is, as a row says it. */
 export function ownerShown(owner: Owner | null): string {
   if (owner === null) return "";
   if (owner.kind === "you") return "You";
   if (owner.kind === "repo") return `Repo ${owner.name}`;
-  return owner.name;
+  return `Plugin ${owner.name}`;
 }
 
 /** Who a harness or repo skill is from, as its row says it. */
@@ -30,59 +35,273 @@ export function fromWhom(skill: StudioSkill): string {
   return ownerShown(skill.owner);
 }
 
-/** What the project has a plugin at, in the chats the studio shows, as its row says it. */
-export function pluginShown(plugin: StudioPlugin, title: string): string {
-  if (plugin.pinned !== null) return plugin.pinned;
-  if (plugin.state === "on") return "On";
-  if (plugin.state === "off") return "Off";
-  return `${title} decides`;
+/**
+ * **One row of the Harness skills page** (#3692): a program's own skill; a project skill a repo
+ * leaves out of that program's chats (SK-53); the line of a program with none of its own; or a
+ * declared program skills are not supported on (SK-30).
+ */
+export type HarnessRow =
+  | { kind: "own"; id: string; harness: HarnessKind; title: string; skill: StudioSkill }
+  | { kind: "left-out"; id: string; harness: HarnessKind; title: string; skill: StudioSkill }
+  | { kind: "none"; id: string; harness: HarnessKind; title: string }
+  | { kind: "not-supported"; id: string; one: StudioNotSupported };
+
+/** **One group of the page**, under its program's name. */
+export interface HarnessGroup {
+  key: string;
+  title: string;
+  /** How many skills of its own the program has. */
+  count?: number;
+  rows: HarnessRow[];
 }
 
 /**
- * **The project's skill that clashes with one a program or repo brings** (SK-6, #2769; ADR 0099
- * §3): both load, so the row says so and names the other copy.
+ * **The page's groups** (#3692): each program with its own skills, then the project's skills a
+ * repo leaves out of its chats; a program with none of its own says so in one row; the declared
+ * programs skills are not supported on come last.
  */
-export function clashSaid(clash: StudioClash): string {
-  const owner = clash.owner;
-  const whose =
-    owner.kind === "repo"
-      ? `the repo ${owner.name}`
-      : owner.kind === "you"
-        ? `your own ${clash.harness} skills`
-        : `${owner.name} in ${clash.harness}`;
-  if (clash.outcome === "repo-wins")
-    return `${whose} has a skill of this name too, and ${clash.harness} chats there get the repo's copy alone`;
-  if (clash.outcome === "either-one")
-    return `${whose} has a skill of this name too, and ${clash.harness} chats there get both under one name and may use either: rename that one`;
-  return `${whose} has a skill of this name too, and a chat there gets both`;
+export function harnessGroups(
+  harnesses: readonly StudioHarness[],
+  notSupported: readonly StudioNotSupported[],
+): HarnessGroup[] {
+  const groups: HarnessGroup[] = harnesses.map((harness) => {
+    const own: HarnessRow[] = harness.skills.map((skill) => ({
+      kind: "own",
+      id: harnessSkillId(harness.harness, skill),
+      harness: harness.harness,
+      title: harness.title,
+      skill,
+    }));
+    const none: HarnessRow[] =
+      own.length === 0
+        ? [
+            {
+              kind: "none",
+              id: `${harness.harness}/none`,
+              harness: harness.harness,
+              title: harness.title,
+            },
+          ]
+        : [];
+    const leftOut: HarnessRow[] = harness.repo_left_out.map((skill) => ({
+      kind: "left-out",
+      id: `${harness.harness}/left-out/${skillRowId(skill)}\u0000${skill.left_out ?? ""}`,
+      harness: harness.harness,
+      title: harness.title,
+      skill,
+    }));
+    return {
+      key: harness.harness,
+      title: harness.title,
+      count: harness.skills.length,
+      rows: [...own, ...none, ...leftOut],
+    };
+  });
+  if (notSupported.length > 0)
+    groups.push({
+      key: "not-supported",
+      title: "Programs that take no skills",
+      rows: notSupported.map((one) => ({
+        kind: "not-supported",
+        id: `not-supported/${one.name}`,
+        one,
+      })),
+    });
+  return groups;
 }
 
 /**
- * **Each harness's own, in the Skill studio** (SK-6, #2769): the plugins and skills the program
- * finds itself, in the person's own folders, its plugins, and the workspace's repos. purlis lists
- * them and never changes them. Each has a switch where the program can leave it out of one chat,
- * and says plainly where it cannot. A switch writes this machine's own file at the project's root
- * and the workspace's settings in a workspace, and reaches chats started after it. Under each, the
- * project's skills a repo leaves out of its chats there, with why (SK-53): never a silent drop.
+ * **The row a place names** (#3692): by its id, or, for a place that names a program's skill only
+ * by its name (`harnessSkillNamed`), that program's first row of that name.
  */
-export function SkillStudioHarnesses({
+export function harnessRowAt(
+  groups: readonly HarnessGroup[],
+  id: string | undefined,
+): HarnessRow | undefined {
+  if (id === undefined) return undefined;
+  const rows = groups.flatMap((group) => group.rows);
+  const exact = rows.find((row) => row.id === id);
+  if (exact !== undefined) return exact;
+  const named = harnessOfId(id);
+  if (named === undefined) return undefined;
+  const name = skillOfRowId(named.row);
+  return rows.find(
+    (row) => row.kind === "own" && row.harness === named.harness && row.skill.name === name,
+  );
+}
+
+/** What a program's own skill's row says under its name: what it does, or why it has no
+ *  switch. */
+function lineOf(skill: StudioSkill): string {
+  if (skill.switch?.kind === "not") return `${capitalised(skill.switch.why)}.`;
+  return skill.description === "" ? "It says nothing of what it does." : skill.description;
+}
+
+/**
+ * **The Harness skills page's list** (#3692, S9, `prototype/studio-secondary-pages` variant A):
+ * each program's own skills under its name, each with whose it is and one mark. The row chosen
+ * opens beside the list ({@link HarnessItem}), with its switch.
+ */
+export function HarnessList({
+  groups,
+  chosen,
+  onChoose,
+}: {
+  groups: readonly HarnessGroup[];
+  chosen: HarnessRow | undefined;
+  onChoose: (id: string) => void;
+}) {
+  return (
+    <List
+      aria-label="Each program's own skills"
+      className="skill-library"
+      selectionMode="single"
+      disallowEmptySelection
+      selectedKeys={chosen === undefined ? new Set() : new Set([chosen.id])}
+      onSelectionChange={(keys: Selection) => {
+        const [first] = keys === "all" ? [] : [...keys];
+        if (first !== undefined) onChoose(String(first));
+      }}
+    >
+      {groups.map((group) => (
+        <ListRowSection
+          key={group.key}
+          id={`group-${group.key}`}
+          title={group.title}
+          count={group.count}
+          aria-label={group.title}
+        >
+          {group.rows.map((row) => (
+            <HarnessListRow key={row.id} row={row} />
+          ))}
+        </ListRowSection>
+      ))}
+    </List>
+  );
+}
+
+function HarnessListRow({ row }: { row: HarnessRow }) {
+  if (row.kind === "none")
+    return (
+      <ListRow id={row.id} textValue={row.title} data-testid={`harness-none-${row.harness}`}>
+        <RowLabel>{`${row.title} has no skills of its own here.`}</RowLabel>
+      </ListRow>
+    );
+  if (row.kind === "not-supported")
+    return (
+      <ListRow
+        id={row.id}
+        textValue={row.one.title}
+        data-testid={`skill-studio-not-supported-${row.one.name}`}
+      >
+        <RowLabel>{row.one.title}</RowLabel>
+        <RowTrail>
+          <Badge>No skills</Badge>
+        </RowTrail>
+        <RowBelow clamp={2}>{row.one.said}</RowBelow>
+      </ListRow>
+    );
+  const { skill } = row;
+  if (row.kind === "left-out")
+    return (
+      <ListRow
+        id={row.id}
+        textValue={skill.name}
+        data-testid={`repo-left-out-${row.harness}-${skill.name}`}
+      >
+        <RowLabel>{skill.name}</RowLabel>
+        <RowTrail>
+          <Badge>{skill.label}</Badge>
+          <Badge variant="waiting">Left out by a repo</Badge>
+        </RowTrail>
+        <RowBelow clamp={1}>{skill.left_out ?? ""}</RowBelow>
+      </ListRow>
+    );
+  return (
+    <ListRow id={row.id} textValue={skill.name} data-testid={`found-${row.harness}-${skill.name}`}>
+      <RowLabel>{skill.name}</RowLabel>
+      <RowTrail>
+        <Badge>{fromWhom(skill)}</Badge>
+        {skill.switch?.kind === "not" ? (
+          <Badge>Read-only</Badge>
+        ) : (
+          !skill.on && <Badge variant="waiting">Off here</Badge>
+        )}
+      </RowTrail>
+      <RowBelow clamp={1}>{lineOf(skill)}</RowBelow>
+    </ListRow>
+  );
+}
+
+/**
+ * **The row chosen on Harness skills, beside the list** (#3692): its facts (the program, whose it
+ * is, how a chat takes it, which programs it works on) and, where the program can leave it out of
+ * a chat on its own, its switch for these chats. A plugin's skill is read-only, with why: whether
+ * a plugin is on is the program's own to say (#3467). A switch writes this machine's own file at
+ * the project's root and the workspace's settings in a workspace, and reaches chats started after
+ * it.
+ */
+export function HarnessItem({
   plane,
   workspace,
-  harnesses,
+  row,
   onSwitched,
 }: {
   plane: string;
   workspace: string | null;
-  harnesses: readonly StudioHarness[];
+  row: HarnessRow | undefined;
   onSwitched: () => void;
 }) {
   const [refused, setRefused] = useState<string>();
-  const [busy, setBusy] = useState<string>();
-  const turn = (harness: HarnessKind, what: StudioSwitched, id: string, on: boolean) => {
-    const doing = `${harness}\u0000${what}\u0000${id}`;
-    setBusy(doing);
+  const [busy, setBusy] = useState(false);
+  if (row === undefined)
+    return (
+      <EmptyState
+        headline="Pick a skill"
+        body="Where it comes from, how a chat takes it and its switch open here."
+        testid="harness-unpicked"
+      />
+    );
+  if (row.kind === "none")
+    return (
+      <div className="skill-studio-item" data-testid="harness-skill-item">
+        <ViewPageHeader name={row.title} description="It has no skills of its own here." />
+        <p className="honest">
+          {`A skill ${row.title} finds itself, in your own folders, in a plugin or in a repo, is listed here.`}
+        </p>
+      </div>
+    );
+  if (row.kind === "not-supported")
+    return (
+      <div className="skill-studio-item" data-testid="harness-skill-item">
+        <ViewPageHeader name={row.one.title} tag={<Badge>No skills</Badge>} />
+        <p className="honest">{row.one.said}</p>
+      </div>
+    );
+  const { skill } = row;
+  const these = workspace === null ? "this project's chats" : `${workspace}'s chats`;
+  if (row.kind === "left-out")
+    return (
+      <div className="skill-studio-item" data-testid="harness-skill-item">
+        <ViewPageHeader
+          name={skill.name}
+          tag={<Badge>{skill.label}</Badge>}
+          mark={<Badge variant="waiting">Left out by a repo</Badge>}
+          description={skill.description}
+        />
+        <div>
+          <Facts aria-label={`About ${skill.name}`}>
+            <Fact label="Program">{row.title}</Fact>
+            <Fact label="Skill level">{skill.label}</Fact>
+            <Fact label="In a chat">{`Left out: ${skill.left_out ?? ""}`}</Fact>
+          </Facts>
+        </div>
+      </div>
+    );
+  const turn = (on: boolean) => {
+    setBusy(true);
     void commands
-      .skillStudioSwitch(plane, workspace, harness, what, id, on)
+      .skillStudioSwitch(plane, workspace, row.harness, skill.name, on)
       .then((answer) => {
         if (answer.status === "error") setRefused(answer.error);
         else {
@@ -90,162 +309,62 @@ export function SkillStudioHarnesses({
           onSwitched();
         }
       })
-      .finally(() => setBusy(undefined));
+      .catch((err: unknown) => setRefused(String(err)))
+      .finally(() => setBusy(false));
   };
-  // `back` is what the button that undoes an off says: "Turn on", or, where the program decides
-  // whether one is on (Codex's plugins), "Leave to <program>".
-  const switchFor = (
-    harness: HarnessKind,
-    what: StudioSwitched,
-    id: string,
-    on: boolean,
-    back = "Turn on",
-  ) => (
-    <Button size="sm" isDisabled={busy !== undefined} onPress={() => turn(harness, what, id, !on)}>
-      {on ? "Turn off" : back}
-    </Button>
-  );
+  const readOnly = skill.switch?.kind === "not" ? skill.switch.why : undefined;
+  const inAChat =
+    readOnly !== undefined
+      ? `${capitalised(readOnly)}.`
+      : skill.on
+        ? `On for ${these}`
+        : `Left out: ${skill.left_out ?? ""}`;
   return (
-    <section className="skill-studio-harnesses" aria-label="Skills and plugins from each program">
+    <div className="skill-studio-item" data-testid="harness-skill-item">
+      <ViewPageHeader
+        name={skill.name}
+        tag={<Badge>{fromWhom(skill)}</Badge>}
+        mark={
+          readOnly !== undefined ? (
+            <Badge>Read-only</Badge>
+          ) : skill.on ? undefined : (
+            <Badge variant="waiting">Off here</Badge>
+          )
+        }
+        description={skill.description}
+      />
       {refused !== undefined && (
-        <Notice
-          cause="skill-studio-switch-refused"
-          tone="trouble"
-          label="Nothing was changed"
-          onDismiss={() => setRefused(undefined)}
-        >
-          {refused}
-        </Notice>
-      )}
-      {harnesses.map((harness) => (
-        <div key={harness.harness} data-testid={`skill-studio-${harness.harness}`}>
-          <h3>{harness.title}</h3>
-          <p className="honest">
-            {`The skills and plugins ${harness.title} finds itself. purlis lists them and never changes them; a switch here reaches the chats started after it.`}
-          </p>
-          {harness.trouble !== null && <p className="honest">{harness.trouble}</p>}
-          {harness.plugins.length > 0 && (
-            <table className="ui-table" aria-label={`${harness.title} plugins`}>
-              <thead>
-                <tr>
-                  <th scope="col">Plugin</th>
-                  <th scope="col">Installed</th>
-                  <th scope="col">In a chat</th>
-                </tr>
-              </thead>
-              <tbody>
-                {harness.plugins.map((plugin) => (
-                  <tr key={plugin.id} data-testid={`plugin-${harness.harness}-${plugin.id}`}>
-                    <td>
-                      <code>{plugin.name}</code>
-                    </td>
-                    <td>{plugin.origin}</td>
-                    <td>
-                      {pluginShown(plugin, harness.title)}
-                      {plugin.pinned === null &&
-                        harness.unsupported === null &&
-                        plugin.installed && (
-                          <>
-                            {" "}
-                            {switchFor(
-                              harness.harness,
-                              "plugin",
-                              plugin.id,
-                              plugin.state !== "off",
-                              harness.only_off === null ? "Turn on" : `Leave to ${harness.title}`,
-                            )}
-                          </>
-                        )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          {harness.unsupported !== null && <p className="honest">{harness.unsupported}.</p>}
-          {harness.only_off !== null && (
-            <p className="honest">{`${harness.title}'s own config decides whether a plugin is on; purlis can only turn one off for these chats.`}</p>
-          )}
-          {harness.skills.length === 0 ? (
-            <p className="honest">{`${harness.title} has no skills of its own here.`}</p>
-          ) : (
-            <table className="ui-table" aria-label={`${harness.title} skills`}>
-              <thead>
-                <tr>
-                  <th scope="col">Skill</th>
-                  <th scope="col">From</th>
-                  <th scope="col">In a chat</th>
-                  <th scope="col">What it does</th>
-                  <th scope="col">Works on</th>
-                </tr>
-              </thead>
-              <tbody>
-                {harness.skills.map((skill) => (
-                  <tr
-                    key={`${skill.level}\u0000${skill.folder}`}
-                    data-testid={`found-${harness.harness}-${skill.name}`}
-                  >
-                    <td>
-                      <code>{skill.name}</code>
-                    </td>
-                    <td>{fromWhom(skill)}</td>
-                    <td>
-                      {skill.on ? "On" : `Left out: ${skill.left_out ?? ""}`}
-                      {skill.switch?.kind === "alone" && (
-                        <> {switchFor(harness.harness, "skill", skill.name, skill.on)}</>
-                      )}
-                      {skill.switch?.kind === "not" && (
-                        <span className="honest">{` ${skill.switch.why}.`}</span>
-                      )}
-                    </td>
-                    <td>{skill.description}</td>
-                    <td>
-                      <SkillCompatBadges
-                        name={skill.name}
-                        compat={skill.compat}
-                        lint={skill.lint}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          {harness.repo_left_out.length > 0 && (
-            <>
-              <p className="honest">
-                {`${harness.title} chats in a repo here start without ${counted(harness.repo_left_out.length, "skill", "skills")} of this project's:`}
-              </p>
-              <table
-                className="ui-table"
-                aria-label={`What a repo leaves out of ${harness.title} chats`}
-              >
-                <thead>
-                  <tr>
-                    <th scope="col">Skill</th>
-                    <th scope="col">Level</th>
-                    <th scope="col">Why</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {harness.repo_left_out.map((skill) => (
-                    <tr
-                      key={`${skill.level}\u0000${skill.folder}\u0000${skill.left_out ?? ""}`}
-                      data-testid={`repo-left-out-${harness.harness}-${skill.name}`}
-                    >
-                      <td>
-                        <code>{skill.name}</code>
-                      </td>
-                      <td>{skill.label}</td>
-                      <td>{`Left out: ${skill.left_out ?? ""}`}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          )}
+        <div>
+          <Notice
+            cause="skill-studio-switch-refused"
+            tone="trouble"
+            label="Nothing was changed"
+            onDismiss={() => setRefused(undefined)}
+          >
+            {refused}
+          </Notice>
         </div>
-      ))}
-    </section>
+      )}
+      <div>
+        <Facts aria-label={`About ${skill.name}`}>
+          <Fact label="Program">{row.title}</Fact>
+          <Fact label="From">{fromWhom(skill)}</Fact>
+          <Fact label="In a chat">{inAChat}</Fact>
+          <Fact label="Works on">
+            <SkillCompatBadges name={skill.name} compat={skill.compat} lint={skill.lint} />
+          </Fact>
+        </Facts>
+      </div>
+      {skill.switch?.kind === "alone" && (
+        <div>
+          <Switch isSelected={skill.on} isDisabled={busy} onChange={turn}>
+            {`On for ${these}`}
+          </Switch>
+        </div>
+      )}
+      <p className="honest">
+        {`purlis lists ${row.title}'s own skills and never changes them; a switch reaches the chats started after it.`}
+      </p>
+    </div>
   );
 }

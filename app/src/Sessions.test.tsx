@@ -5,7 +5,6 @@ import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
-  configure,
   fireEvent,
   render as renderBare,
   screen,
@@ -36,7 +35,6 @@ vi.mock("./SessionPane", () => ({
 }));
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
-configure({ asyncUtilTimeout: 5_000 });
 
 beforeEach(() => globalThis.localStorage.clear());
 afterEach(() => {
@@ -209,11 +207,19 @@ describe("the Sessions panel", () => {
     const panel = await showThePanel("Sessions");
     await waitFor(() => expect(within(panel).getByText("Ship the widget")).toBeTruthy());
 
-    // One line a record (#1674): its title, and when, as whom and whether it resumes on hover.
+    // One line a record (#1674): its title and its day short at its end (#3340), and when, as
+    // whom and whether it resumes on hover.
     const rows = within(panel)
       .getAllByRole("row")
       .filter((row) => /^\d{4}-/.test(tipOf(row) ?? ""));
-    expect(rows.map((row) => row.textContent)).toEqual(["Ship the widget", "Plan it"]);
+    expect(rows.map((row) => row.querySelector(".row-text")?.textContent)).toEqual([
+      "Ship the widget",
+      "Plan it",
+    ]);
+    expect(rows.map((row) => row.querySelector(".row-date")?.textContent)).toEqual([
+      "09-28",
+      "09-27",
+    ]);
     expect(tipOf(rows[0])).toContain("↻ resumable");
     expect(tipOf(rows[1])).not.toContain("resumable");
   });

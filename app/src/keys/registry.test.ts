@@ -89,6 +89,10 @@ describe("the key registry (N24)", () => {
       "finder.copyPath",
       "finder.reveal",
       "app.quit",
+      // Ctrl+[ is Escape to a terminal and Ctrl+[ ] an editor's indent; Alt+← → are Back and
+      // Forward off a Mac (`viewKeys.ts`).
+      "view.back",
+      "view.forward",
     ]);
     for (const one of SHORTCUTS) {
       if (apart.has(one.id)) continue;
@@ -415,6 +419,30 @@ describe("a key in words", () => {
     expect(spokenKeys("Ctrl+Shift+]", false)).toBe("Control Shift Right Bracket");
     expect(spokenKeys("⌥⌘P", true)).toBe("Option Command P");
     expect(spokenKeys("Esc", true)).toBe("Escape");
+  });
+});
+
+describe("Use skill…'s key (#3954)", () => {
+  it("is each chat tab's Use skill… row's, from anywhere in the window", () => {
+    expect(rowKey("tab.useskill:7", true, true)).toBe("⌘⇧S");
+    expect(rowKey("tab.useskill:7", false, true)).toBe("Ctrl+Shift+S");
+    expect(shortcut("chat.useSkill").group).toBe("Tabs and chats");
+  });
+
+  it("is the window's in a chat's terminal on either keyboard, never under a modal", () => {
+    const terminal = landOn({}, { [CHAT_KEYBOARD]: "" });
+    const mac = keystroke({ key: "S", meta: true, shift: true }, terminal);
+    expect(pressed(mac, ["chat.useSkill"], { mac: true })?.id).toBe("chat.useSkill");
+    const other = keystroke({ key: "S", ctrl: true, shift: true }, terminal);
+    expect(pressed(other, ["chat.useSkill"], { mac: false })?.id).toBe("chat.useSkill");
+    // Plain ⌘S is not it.
+    const save = keystroke({ key: "s", meta: true }, terminal);
+    expect(pressed(save, ["chat.useSkill"], { mac: true })).toBeUndefined();
+    const modal = document.createElement("div");
+    modal.setAttribute("data-scope", "dialog");
+    modal.setAttribute("data-part", "root");
+    document.body.append(modal);
+    expect(pressed(mac, ["chat.useSkill"], { mac: true })).toBeUndefined();
   });
 });
 

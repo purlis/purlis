@@ -179,6 +179,9 @@ zeroize = "1"
 # engine already links, and archived with `tar`, already in the tree. Neither adds a crate.
 ring = "0.17"
 tar = { version = "0.4", default-features = false }
+# A runner unpacks the harness its profile pins from its vendor's gzipped release (#3446).
+# Already linked here through `zip`'s deflate backend, so it adds no crate to the tree.
+flate2 = "1"
 # A browser login's host written in another script is compared in its ASCII spelling, as the
 # engine records a page's address (#2016). Already in the tree through `url`.
 idna = "1"
@@ -242,6 +245,14 @@ log = { version = "0.4", features = ["std"] }
 # brings into this workspace's lockfile.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 
+# Every integration test but one, as modules of one binary (#3613): each `tests/*.rs` was a binary
+# of its own that linked the whole graph, 160 of them. `tests/it/main.rs` fails on a `.rs` left
+# straight under `tests/`, and on a file in `tests/it/` it does not name. `design_tokens_memory`
+# stays a binary of its own, found by Cargo as before: its counting allocator is the process's.
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
 [lints]
 workspace = true
 
@@ -257,7 +268,7 @@ bytes = "1"
 # directly (this crate's one exception is `executor::inherit_nothing_else`; see AGENTS.md). `system` is
 # for `uname`: the dispatch and skill logs are one file per machine, named by its host. `event`
 # is for `poll`: the hook socket's reading thread waits on the socket and on a pair that wakes it.
-rustix = { version = "1", features = ["event", "fs", "process", "stdio", "system", "termios"] }
+rustix = { version = "1", features = ["event", "fs", "net", "process", "stdio", "system", "termios"] }
 # Whether a hook socket's peer and its directory are this user's alone (FD-6).
 purlis-same-user.workspace = true
 # The system calls in the executor's one audited `pre_exec` (`fcntl`, and `close_range` on

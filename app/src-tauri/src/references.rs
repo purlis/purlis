@@ -27,7 +27,7 @@ use purlis_core::engine::Size;
 use purlis_core::harness::Harness;
 use purlis_core::reference::{self, Lines, Now, Reference};
 
-use crate::curation::{self, ChatTyped};
+use crate::curation::{self, ChatTyped, StartRefused};
 use crate::planes::{Held, PlaneId, Planes};
 
 /// A range of lines, as the window names one: both ends counted from 1 and included.
@@ -293,7 +293,7 @@ pub async fn start_chat_here(
     lines: Option<LineRange>,
     columns: u16,
     rows: u16,
-) -> Result<StartedHere, String> {
+) -> Result<StartedHere, StartRefused> {
     // Off the window's thread (SC-2): finding the branch's folder waits on the bounded reader's
     // child, and a busy gate holds each ask for its deadline, twice over (`BUSY_TRIES`). Only
     // the clipboard is left for here: a reference that could not be typed is handed back to
@@ -343,7 +343,8 @@ fn folder_found(
         .map_err(|why| why.to_string())
 }
 
-/// [`start_chat_here`], against a project the registry has already vouched for.
+/// [`start_chat_here`], against a project the registry has already vouched for. A refused start
+/// says the approval its profile needs, where it needs one (#3968).
 pub fn here(
     held: &Arc<Held>,
     at: purlis_core::files::Branch<'_>,
@@ -351,7 +352,7 @@ pub fn here(
     lines: Option<Lines>,
     size: Size,
     copy: &dyn Fn(&str) -> Result<(), String>,
-) -> Result<StartedHere, String> {
+) -> Result<StartedHere, StartRefused> {
     let root = held.root().to_path_buf();
     // The branch's folder is found by the bounded reader's child, so this process starts no git
     // for it (#1189).
@@ -364,7 +365,7 @@ pub fn here(
     let started = curation::start_typed_where_it_can_be(
         held,
         ChatTyped {
-            profile,
+            profile: profile.clone(),
             persona: None,
             cwd: folder.clone(),
             label: label.clone(),
@@ -377,7 +378,8 @@ pub fn here(
             Ok(declared.and_then(purlis_core::harness_declaration::Declaration::ready_to_type))
         },
         |why| format!("{why}, so the reference would not be readable and no chat was started"),
-    )?;
+    )
+    .map_err(StartRefused::on(&profile, &root))?;
     let copied = if started.typed {
         None
     } else {

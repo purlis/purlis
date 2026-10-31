@@ -15,7 +15,15 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import type { FinishedTask, InboxUpdate, Moved, Need, OpenChat, UpdateNoted } from "./bindings";
+import type {
+  FinishedTask,
+  InboxUpdate,
+  Moved,
+  Need,
+  OpenChat,
+  RunnerAway,
+  UpdateNoted,
+} from "./bindings";
 import type { State } from "./chatState";
 import { setChatsListPrefs } from "./chatsListPrefs";
 import { forgetThisLaunch } from "./regions";
@@ -208,6 +216,8 @@ function core(open: OpenChat[], rows: FinishedTask[] = [], other?: Project) {
     if (cmd === "dispatch_grants_needed") return [];
     if (cmd === "vault_refusals") return [];
     if (cmd === "owed_restarts") return [];
+    // Where each chat runs (#2051): this machine, unless a test puts some on a runner.
+    if (cmd === "runners_away") return runners;
     if (cmd === "alerts_everywhere") return [{ plane: PLANE, alerts: [], stopped: null }];
     // The Inbox's updates (#1693): kept as the core keeps them, where a test gives a store.
     if (keeps !== null && cmd === "inbox_updates") return keeps.shown();
@@ -305,7 +315,10 @@ const comeBack = (at: number) =>
 
 const summary = () => document.querySelector<HTMLElement>('[data-cause="away-summary"]');
 const said = (notice: HTMLElement) =>
-  notice.querySelector(".notice-says")?.textContent?.replace(/\s+/g, " ").trim();
+  notice
+    .querySelector("[data-scope=notice][data-part=message]")
+    ?.textContent?.replace(/\s+/g, " ")
+    .trim();
 const theSummary = () =>
   waitFor(() => {
     const found = summary();
@@ -339,6 +352,9 @@ async function whileAway(held: Awaited<ReturnType<typeof drawn>>) {
  *  none, as most tests here have. */
 let keeps: ReturnType<typeof keeping> | null = null;
 
+/** The runners the core says the project's chats run on (#2051): none, unless a test says. */
+let runners: RunnerAway[] = [];
+
 function keeping(kept: InboxUpdate[] = []) {
   const dismissed = new Set<string>();
   const shown = () =>
@@ -364,6 +380,7 @@ function keeping(kept: InboxUpdate[] = []) {
 
 beforeEach(() => {
   keeps = null;
+  runners = [];
   globalThis.localStorage.clear();
   forgetThisLaunch();
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -389,7 +406,7 @@ describe("while you were away (#1514)", () => {
     const notice = await theSummary();
     expect(said(notice)).toBe("While you were away: 7 tasks done, 1 failed, 2 waiting on you");
     // In the Inbox, one for the project; never focused, so nothing typed goes astray.
-    expect(notice.closest(".pane-notices")).toBeNull();
+    expect(notice.closest("[data-scope=notice-row][data-part=stack]")).toBeNull();
     expect(notice.contains(document.activeElement)).toBe(false);
   });
 
@@ -792,5 +809,75 @@ describe("the Inbox's updates (#1693)", () => {
         how: "read",
       }),
     );
+  });
+});
+
+describe("while you were away, a section per runner (#2051)", () => {
+  it("says what each runner's chats did in a sentence of its own, with its branches", async () => {
+    runners = [
+      {
+        pool: "qa",
+        chats: [4],
+        branches: [
+          {
+            workspace: "alpha",
+            repo: "app",
+            branches: [{ pool: "qa", branch: "fix-login", ahead: 2 }],
+          },
+        ],
+        log: "read",
+        ended: [],
+      },
+    ];
+    const held = await drawn();
+    await leave();
+    await held.finish(SEVEN_DONE[0], finished("01K7ONQA", "check qa", { chat: 4 }));
+    await held.move(4, "waiting", [4]);
+    await comeBack(LEFT + 30 * MINUTE);
+
+    const notice = await theSummary();
+    await waitFor(() =>
+      expect(said(notice)).toBe(
+        "While you were away: 1 task done. On qa's runner: 1 finished, 1 waiting on you, " +
+          "1 branch ready to push.",
+      ),
+    );
+    expect(held.asked("runners_away").at(-1)).toEqual({ plane: PLANE, sessions: [4] });
+
+    await userEvent.click(within(notice).getByRole("button", { name: /^1 branch ready to push/ }));
+    await waitFor(() =>
+      expect(held.asked("workspace_focused").at(-1)).toMatchObject({ workspace: "alpha" }),
+    );
+  });
+
+  it("says what a runner's own log says ended there, and a runner whose link is down (#3393)", async () => {
+    const at = LEFT + 20 * MINUTE;
+    runners = [
+      {
+        pool: "qa",
+        chats: [],
+        branches: [],
+        log: "read",
+        ended: [
+          { chat: 4, ended: "completed", at: at / 1000, device: "01JB0RUNNER0000000000000000" },
+        ],
+      },
+      { pool: "build", chats: [], branches: [], log: "link_down", ended: [] },
+    ];
+    await drawn();
+    await leave();
+    await comeBack(LEFT + 30 * MINUTE);
+
+    const notice = await theSummary();
+    const time = new Date(at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    await waitFor(() =>
+      expect(said(notice)).toBe(
+        "While you were away. On qa's runner: 1 finished. On build's runner: its link " +
+          "is down, so what happened there is not known yet.",
+      ),
+    );
+    expect(
+      within(notice).getByRole("button", { name: `1 finished: talk finished at ${time}` }),
+    ).toBeTruthy();
   });
 });

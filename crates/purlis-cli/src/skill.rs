@@ -21,7 +21,8 @@ use purlis_core::skills::review::escaped as esc;
 use purlis_core::skills::source::{self, Remote, Source, VaultEntry};
 use purlis_core::skills::verbs::{self, By, Level};
 use purlis_core::skills::{
-    Deprecated, Grant, Lifecycle, StudioRow, Switch, Template, TemplateId, history, lifecycle,
+    Clash, Deprecated, Grant, HarnessInTheStudio, Lifecycle, Outcome, StudioList, StudioRow,
+    Switch, Template, TemplateId, clash_said, history, lifecycle,
 };
 use serde_json::{Value, json};
 
@@ -177,6 +178,10 @@ pub enum SkillCommand {
     Restore {
         /// The deleted skill's name.
         name: Option<String>,
+        /// Restore it under this new name instead: its `SKILL.md`'s `name:` and its folder are
+        /// renamed to match. A skill whose name belongs to a built-in skill now comes back only so.
+        #[arg(long = "as", value_name = "NEW_NAME", requires = "name")]
+        under: Option<String>,
     },
     /// Share a local skill: move it from `skills.local/` into `skills/` at its level, so the
     /// next save commits it and the team gets it. With `-w`, that workspace's local skill; with
@@ -192,12 +197,19 @@ pub enum SkillCommand {
     /// outside the workspace, each risky one marked, and every file) and asks before it copies
     /// anything. The copy is pinned to the commit it was reviewed at, in `skills.lock`
     /// (`skills.local.lock` with `--local`). Skills the named ones refer to come along. With no
-    /// skill named, lists what the source offers.
+    /// skill named, lists what the source offers; with `--all`, installs every skill it offers
+    /// that is not installed from it yet, through one review and one commit.
     Install {
         /// The source: an https:// URL, or a folder on this machine by its full path.
         url: String,
         /// The skills to install, by name.
+        #[arg(conflicts_with = "all")]
         names: Vec<String>,
+        /// Every skill the source offers that is not installed from it yet, in one review, asked
+        /// once (`--yes` skips the question). Past what one read of the source may take, it says
+        /// which skills fit, to install in parts.
+        #[arg(long)]
+        all: bool,
         /// The source's branch (default: its own default branch).
         #[arg(long)]
         branch: Option<String>,
@@ -210,7 +222,8 @@ pub enum SkillCommand {
         /// The entry in that vault that holds the token.
         #[arg(long, requires = "vault")]
         key: Option<String>,
-        /// Where a project skill reaches: `root`, `all`, or workspace names (default: root).
+        /// Where a project skill reaches: `root`, `all`, or workspace names (default: root). A
+        /// project skill they refer to reaches those workspaces too: its grant is widened.
         #[arg(long, num_args = 1..)]
         grant: Vec<String>,
         /// Install without asking: for a script that printed and read the review itself.
@@ -411,7 +424,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             command,
             SkillCommand::List { .. }
                 | SkillCommand::Show { .. }
-                | SkillCommand::Restore { name: None }
+                | SkillCommand::Restore { name: None, .. }
                 | SkillCommand::Update {
                     name: None,
                     confirm: None,
@@ -437,8 +450,13 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         say: &mut said,
     };
     // A delete a crash or a quit cut short is finished or undone before any change (SK-35).
+    // And the skills this machine kept deleted past their time are removed (SK-33), but before a
+    // restore, which `purlis skill restore`'s list offered the person as they saw it.
     if writes {
         verbs::interrupted(&mut cx);
+        if !matches!(command, SkillCommand::Restore { .. }) {
+            verbs::expire_now(root);
+        }
     }
     // The studio's own list (SK-34, #3008): the plane's skills, and each harness's, the same
     // call the window makes.
@@ -462,19 +480,34 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 println!(
                     "{}",
                     json!({
-                        "skills": list.rows.iter().map(row_json).collect::<Vec<_>>(),
+                        "skills": list.rows.iter().map(|row| plane_json(&list, row))
+                            .collect::<Vec<_>>(),
                         "harnesses": list.harnesses.iter().map(|one| json!({
                             "harness": one.harness.name(),
                             "title": one.harness.title(),
                             "skills": one.rows.iter().map(|row| outside_json(one.harness, row))
                                 .collect::<Vec<_>>(),
-                            "repo_left_out": one.repo_left_out.iter().map(row_json)
+                            "repo_left_out": one.repo_left_out.iter()
+                                .map(|row| left_out_json(one, row, row_json(row)))
                                 .collect::<Vec<_>>(),
+                            // Its own catalogue, which purlis's budget never counts (#3324).
+                            "own": one.own.map(|own| json!({
+                                "skills": own.skills,
+                                "chars": own.chars,
+                                "manual": own.manual,
+                                "said": own.said(one.harness.title()),
+                            })),
+                        })).collect::<Vec<_>>(),
+                        // A declared harness skills are not supported on, with why (SK-30).
+                        "not_supported": list.not_supported.iter().map(|one| json!({
+                            "harness": one.name,
+                            "title": one.title,
+                            "said": one.said,
                         })).collect::<Vec<_>>(),
                     })
                 );
             } else {
-                print!("{}", table(&list.rows));
+                print!("{}", table(&list.rows, &|row| clashes_said(&list, row)));
                 for one in &list.harnesses {
                     if !one.rows.is_empty() {
                         print!(
@@ -483,14 +516,22 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             outside_table(&one.rows)
                         );
                     }
+                    // What its own catalogue costs, beside purlis's budget (#3324).
+                    if let Some(said) = one.own.and_then(|own| own.said(one.harness.title())) {
+                        println!("{}", harness_line(&said));
+                    }
                     // What a repo takes from its chats, never a silent drop (SK-53).
                     if !one.repo_left_out.is_empty() {
                         print!(
                             "\n{} chats in a repo here start without these:\n{}",
                             one.harness.title(),
-                            table(&one.repo_left_out)
+                            table(&one.repo_left_out, &|_| Vec::new())
                         );
                     }
+                }
+                // Never a silent drop (SK-30): a declared harness's chats get no skills, and why.
+                for one in &list.not_supported {
+                    println!("\n{}", harness_line(&one.said));
                 }
             }
             Ok(0)
@@ -506,15 +547,19 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             // A harness's own copies follow the plane's, harness by harness, as the studio lists
             // them (SK-34).
             let list = list_for(workspace.as_deref(), persona.as_deref());
-            let copies: Vec<(Option<Harness>, &StudioRow)> = list
+            let copies: Vec<(CopyOf, &StudioRow)> = list
                 .rows
                 .iter()
-                .map(|row| (None, row))
+                .map(|row| (CopyOf::Plane, row))
                 .chain(list.harnesses.iter().flat_map(|one| {
                     one.rows
                         .iter()
-                        .chain(&one.repo_left_out)
-                        .map(|row| (Some(one.harness), row))
+                        .map(move |row| (CopyOf::Outside(one), row))
+                        .chain(
+                            one.repo_left_out
+                                .iter()
+                                .map(move |row| (CopyOf::LeftOut(one), row)),
+                        )
                 }))
                 .filter(|(_, row)| row.name == name)
                 .collect();
@@ -527,16 +572,24 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             if json {
                 let shown: Vec<Value> = copies
                     .iter()
-                    .map(|(harness, row)| match harness {
-                        Some(harness) => outside_json(*harness, row),
-                        None => row_json(row),
+                    .map(|(copy, row)| match copy {
+                        CopyOf::Plane => plane_json(&list, row),
+                        CopyOf::Outside(one) => outside_json(one.harness, row),
+                        CopyOf::LeftOut(one) => {
+                            left_out_json(one, row, outside_json(one.harness, row))
+                        }
                     })
                     .collect();
                 println!("{}", json!({ "copies": shown }));
             } else {
                 let shown: Vec<String> = copies
                     .iter()
-                    .map(|(harness, row)| detail(*harness, row))
+                    .map(|(copy, row)| match copy {
+                        CopyOf::Plane => detail(None, row, &clashes_said(&list, row)),
+                        CopyOf::Outside(one) | CopyOf::LeftOut(one) => {
+                            detail(Some(one.harness), row, &[])
+                        }
+                    })
                     .collect();
                 print!("{}", shown.join("\n"));
             }
@@ -662,17 +715,29 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             }
             done(verbs::delete(&mut cx, &level, &name))
         }
-        SkillCommand::Restore { name: None } => {
+        SkillCommand::Restore { name: None, .. } => {
             let deleted = verbs::deleted(root);
             if deleted.is_empty() {
                 println!("No deleted skill can be restored here.");
             }
+            let now = std::time::SystemTime::now();
+            let reserved = purlis_core::skills::Reserved::of(built_in.as_deref());
             for one in deleted {
-                println!("{}", restorable(&one.name, &one.level));
+                let line = restorable(&one.name, &one.level, &one.stays(now));
+                // Its name a built-in skill took (#3729): it comes back under a new one.
+                let line = if reserved.holds(&one.name) {
+                    line.own(" · its name belongs to a built-in skill now: restore it with --as <new-name>")
+                } else {
+                    line
+                };
+                println!("{line}");
             }
             Ok(0)
         }
-        SkillCommand::Restore { name: Some(name) } => {
+        SkillCommand::Restore {
+            name: Some(name),
+            under,
+        } => {
             let Some(one) = verbs::deleted(root)
                 .into_iter()
                 .find(|one| one.name == name)
@@ -682,7 +747,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 ));
                 return Ok(2);
             };
-            done(verbs::restore(&mut cx, &one))
+            done(verbs::restore(&mut cx, &one, under.as_deref()))
         }
         SkillCommand::Grant {
             name,
@@ -772,6 +837,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         SkillCommand::Install {
             url,
             names,
+            all,
             branch,
             folder,
             vault,
@@ -789,7 +855,12 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     user: None,
                 }),
             };
-            install(&mut cx, &source, &names, &grant, yes, &at.level())
+            let names = if all {
+                Named::All
+            } else {
+                Named::These(&names)
+            };
+            install(&mut cx, &source, names, &grant, yes, &at.level())
         }
         SkillCommand::Update {
             confirm: Some(url),
@@ -845,7 +916,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             ..
         } => {
             let level = at.level();
-            let update = match source::update_review(root, &level, &name) {
+            let update = match source::update_review(root, built_in.as_deref(), &level, &name) {
                 Ok(update) => update,
                 Err(why) => {
                     voice::err(esc(&why).to_string());
@@ -863,7 +934,13 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 voice::info("Nothing was changed.");
                 return Ok(1);
             }
-            done(source::update(&mut cx, &level, &name, &update.accepted()))
+            done(source::update(
+                &mut cx,
+                &level,
+                &name,
+                &update.accepted(),
+                update.grant.as_ref(),
+            ))
         }
         SkillCommand::Runs { name, limit, json } => {
             let runs = purlis_core::skills::studio_runs(root, name.as_deref(), limit);
@@ -904,14 +981,25 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         },
         SkillCommand::Grade { name, at, json } => {
             let level = at.level();
-            match purlis_core::skills::grades::planned(root, &level, &name) {
+            // The terminal knows no profile: the estimate is the newest grade's whose chats ran.
+            match purlis_core::skills::grades::planned(root, &level, &name, None) {
                 Ok(planned) => {
-                    let graded = purlis_core::skills::grades::grades_of(root, &name, Some(&level));
+                    // The record as the plan read it, once: its rows, and what it left out
+                    // (`plan.record_said`).
                     if json {
-                        println!("{}", json!({ "plan": planned, "grades": graded }));
+                        println!(
+                            "{}",
+                            json!({ "plan": planned, "grades": planned.record.grades })
+                        );
                     } else {
                         let local_file = purlis_core::settings::Which::Local.file_at(root);
-                        print!("{}", grade_said(&planned, &graded, local_file));
+                        print!(
+                            "{}",
+                            grade_said(&planned, &planned.record.grades, local_file)
+                        );
+                        if let Some(said) = &planned.record_said {
+                            voice::warn(said.clone());
+                        }
                     }
                     Ok(0)
                 }
@@ -1067,8 +1155,20 @@ fn already_in(name: &str, lifecycle: &Lifecycle) -> Markup {
         .own(".")
 }
 
-fn restorable(name: &str, level: &Level) -> Markup {
-    Markup::new().text(name).own("  ").text(level)
+/// A line of the core's about a harness, whose title is the project's words, so the line is
+/// escaped: that skills are not supported on a declared harness (SK-30), and what a harness's
+/// own catalogue holds beside purlis's budget (#3324).
+fn harness_line(said: &str) -> Markup {
+    Markup::new().text(said)
+}
+
+fn restorable(name: &str, level: &Level, stays: &str) -> Markup {
+    Markup::new()
+        .text(name)
+        .own("  ")
+        .text(level)
+        .own(" · ")
+        .text(stays)
 }
 
 /// What `skill uses` says of `name`: each skill it names, as its text says it, then each skill
@@ -1169,6 +1269,60 @@ fn versions_table(name: &str, history: &history::History) -> String {
     text
 }
 
+/// **What a grade should spend, from a grade before, in a line** (#3273): which grade it is
+/// worked out from, or that its cost is not known where that grade's chats did not say, or that
+/// there was none.
+fn estimate_said(estimate: Option<&purlis_core::skills::grades::Estimate>) -> String {
+    let Some(estimate) = estimate else {
+        return "It has not been graded here before, so what a grade spends is not known yet.\n"
+            .to_owned();
+    };
+    let when = estimate.ts.get(..10).unwrap_or(&estimate.ts);
+    let on = match (&estimate.profile, &estimate.harness) {
+        (Some(profile), Some(harness)) => format!(
+            " on {profile} ({})",
+            purlis_core::skilluse::harness_title(harness)
+        ),
+        (Some(profile), None) => format!(" on {profile}"),
+        (None, Some(harness)) => format!(" on {}", purlis_core::skilluse::harness_title(harness)),
+        (None, None) => String::new(),
+    };
+    // The model its chats reported (SK-60): a grade on another model spends otherwise.
+    let on = match &estimate.model {
+        Some(model) => format!("{on} on {model}"),
+        None => on,
+    };
+    if estimate.chats_then == 0 {
+        return format!(
+            "Its last grade{on}, {when}, ran no chat, so what a grade spends is not known yet.\n"
+        );
+    }
+    let mut parts = Vec::new();
+    if let Some(tokens) = estimate.tokens {
+        parts.push(format!("about {tokens} tokens"));
+    }
+    if let Some(cost) = estimate.cost_usd {
+        parts.push(format!("about ${cost:.2}"));
+    }
+    if parts.is_empty() {
+        return format!(
+            "Its last grade{on}, {when}, did not say what its chats spent, so what a grade spends \
+             is not known.\n"
+        );
+    }
+    // A grade purlis stopped under is gone by as far as its chats went, and says so (#3602).
+    let which = if estimate.interrupted {
+        "interrupted grade"
+    } else {
+        "grade"
+    };
+    format!(
+        "From its {which}{on}, {when}, of {}, a grade spends {}.\n",
+        counted(estimate.chats_then, "chat", "chats"),
+        parts.join(", ")
+    )
+}
+
 /// **`purlis skill grade`'s text**: the plan, cost first, then each grade, newest first.
 fn grade_said(
     planned: &purlis_core::skills::grades::Planned,
@@ -1186,33 +1340,26 @@ fn grade_said(
     }
     match (&planned.request, planned.plan) {
         (Some(request), Some(plan)) => {
+            let times = counted(u32::from(request.runs), "time", "times");
+            // The version it compares with too, where the skill has one (SK-57).
+            let previous = match &planned.previous {
+                Some(previous) => format!(
+                    ", and {times} with its previous version, {} ({})",
+                    history::short(&previous.commit),
+                    previous.subject
+                ),
+                None => String::new(),
+            };
             text.push_str(&format!(
-                "Grading {name} runs {}, one turn each: each of {} {} with the skill and {} \
-                 without it.\n",
+                "Grading {name} runs {}, one turn each: each of {} {times} with the skill and \
+                 {times} without it{previous}.\n",
                 counted(plan.chats, "chat", "chats"),
                 counted(plan.trigger_tests, "trigger test", "trigger tests"),
-                counted(u32::from(request.runs), "time", "times"),
-                counted(u32::from(request.runs), "time", "times"),
             ));
-            match planned.estimate {
-                Some(estimate) if estimate.tokens.is_some() || estimate.cost_usd.is_some() => {
-                    let mut parts = Vec::new();
-                    if let Some(tokens) = estimate.tokens {
-                        parts.push(format!("about {tokens} tokens"));
-                    }
-                    if let Some(cost) = estimate.cost_usd {
-                        parts.push(format!("about ${cost:.2}"));
-                    }
-                    text.push_str(&format!(
-                        "From its last grade, of {}, a grade spends {}.\n",
-                        counted(estimate.chats_then, "chat", "chats"),
-                        parts.join(", ")
-                    ));
-                }
-                _ => text.push_str(
-                    "It has not been graded here before, so what a grade spends is not known yet.\n",
-                ),
+            if let Some(why) = &planned.previous_refused {
+                text.push_str(&format!("Its previous version is not compared: {why}.\n"));
             }
+            text.push_str(&estimate_said(planned.estimate.as_ref()));
             for (at, test) in request.triggers.iter().enumerate() {
                 text.push_str(&format!(
                     "  {}. {}  ({})\n",
@@ -1225,19 +1372,25 @@ fn grade_said(
                     }
                 ));
             }
-            for (at, why) in &planned.left_out {
-                text.push_str(&format!("Test {} is left out: {why}\n", at + 1));
+            for left in &planned.left_out {
+                text.push_str(&format!("Test {} is left out: {}\n", left.at + 1, left.why));
             }
+            // The terminal knows no profile, so its limit is at the dearest known price: the
+            // Skill studio's plan prices it from the model its profile's chats run on (#3469).
+            let dearest = purlis_core::skills::grades::price::of_model(None);
             text.push_str(&format!(
                 "A grade stops once its chats have spent {} ({}; [skill_grades] token_cap in {} \
-                 sets it), or once they cost ${:.2}, where the harness says what they cost.\n",
+                 sets it), or once they cost ${:.2}, its tokens at the dearest known price of \
+                 ${:.2} a million; the Skill studio's plan prices it from the model the chats \
+                 run on.\n",
                 counted(planned.cap.tokens, "token", "tokens"),
                 match planned.cap.from {
                     purlis_core::skills::grades::cap::From::Default => "the default",
                     purlis_core::skills::grades::cap::From::Yours => "this machine's cap",
                 },
                 local_file,
-                planned.cap.cost_usd(),
+                planned.cap.cost_usd(&dearest),
+                dearest.usd_per_million,
             ));
             text.push_str("Grade it from its tab in the Skill studio, which shows this first.\n");
         }
@@ -1273,18 +1426,46 @@ fn grade_said(
                 )
         };
         let (passed, of) = one.report.passed_with();
+        // The chats that asked the person something (SK-59): ended there, and said here.
+        let asked = match one.report.asked() {
+            0 => String::new(),
+            asked => format!(
+                "  {} asked you something, and purlis ended {them} there without counting {them}",
+                counted(asked, "chat", "chats"),
+                them = if asked == 1 { "it" } else { "them" }
+            ),
+        };
+        // The version it compared with, where it compared one (SK-57).
+        let previous = one.compared_with().map(history::short);
         text.push_str(&format!(
-            "  {}  {}  {passed} of {} passed  with {}  without {}{}  ({})\n",
+            "  {}  {}  {passed} of {} passed  with {}  without {}{}{}{asked}  ({}){}\n",
             purlis_core::skills::review::escaped_line(&one.ts),
             one.commit.as_deref().map_or("uncommitted", history::short),
             counted(of, "test", "tests"),
             rate(Arm::With),
             rate(Arm::Without),
+            previous
+                .map(|commit| format!("  previous {commit} {}", rate(Arm::Previous)))
+                .unwrap_or_default(),
             one.report
                 .delta
-                .map(|delta| format!("  difference {:+.0} points", delta * 100.0))
+                .map(|delta| match previous {
+                    Some(commit) =>
+                        format!("  difference {:+.0} points against {commit}", delta * 100.0),
+                    None => format!("  difference {:+.0} points", delta * 100.0),
+                })
                 .unwrap_or_default(),
-            counted(one.spent.chats, "chat", "chats"),
+            match &one.model {
+                // The model its chats reported (SK-60): a model's id, which the record checks.
+                Some(model) => format!("{} on {model}", counted(one.spent.chats, "chat", "chats")),
+                None => counted(one.spent.chats, "chat", "chats"),
+            },
+            // A grade a saved edit started says so (SK-58).
+            if one.after_edit {
+                "  after an edit"
+            } else {
+                ""
+            },
         ));
     }
     text
@@ -1385,18 +1566,30 @@ fn seconds(ms: u64) -> String {
     }
 }
 
+/// Which skills `purlis skill install` installs.
+#[derive(Clone, Copy)]
+enum Named<'a> {
+    /// Those named, and the ones they refer to.
+    These(&'a [String]),
+    /// Every skill the source offers that is not installed from it yet (`--all`, #4024).
+    All,
+}
+
 /// `purlis skill install`: what `source` offers where no skill is named; else the review of
-/// `names`, asked about, then the install at `level`.
+/// `names` (or of every skill not installed from it yet), asked about, then the install at
+/// `level`.
 fn install(
     cx: &mut verbs::Ctx<'_>,
     source: &Source,
-    names: &[String],
+    named: Named<'_>,
     grant: &[String],
     yes: bool,
     level: &Level,
 ) -> Result<Code, String> {
     let root = cx.plane;
-    if names.is_empty() {
+    if let Named::These(names) = named
+        && names.is_empty()
+    {
         let browse = match source::browse(root, source) {
             Ok(browse) => browse,
             Err(why) => {
@@ -1430,14 +1623,57 @@ fn install(
             }
         }
     };
-    let review = match source::review(root, source, names) {
+    let review = match named {
+        Named::These(names) => source::review(root, cx.built_in, source, names, level),
+        Named::All => match source::review_all(root, cx.built_in, source, level) {
+            Ok(source::SetReview::Review { review, there }) => {
+                // Those the level has already, made there or from another source, or a
+                // built-in's name: left as they are, and said (#4153).
+                for name in &there {
+                    voice::info(format!(
+                        "{} is there already at {level}, so it is left as it is.",
+                        esc(name)
+                    ));
+                }
+                if review.skills.is_empty() {
+                    voice::info(format!(
+                        "{} {} offers is installed already.",
+                        if there.is_empty() {
+                            "Every skill"
+                        } else {
+                            "Every other skill"
+                        },
+                        esc(&source.to_string())
+                    ));
+                    return Ok(0);
+                }
+                Ok(review)
+            }
+            Ok(source::SetReview::TooMuch(too_much)) => {
+                voice::err(esc(&too_much_text(&too_much)).to_string());
+                return Ok(1);
+            }
+            Err(why) => Err(why),
+        },
+    };
+    let review = match review {
         Ok(review) => review,
         Err(why) => {
             voice::err(esc(&why).to_string());
             return Ok(1);
         }
     };
-    print!("{}", review_text(&review));
+    // A project skill it relies on reaches the workspaces the grant names too (#4172).
+    let widenings = source::widenings(
+        root,
+        level,
+        grant.as_ref(),
+        review
+            .skills
+            .iter()
+            .flat_map(|skill| skill.already.iter().map(String::as_str)),
+    );
+    print!("{}", review_text(&review, &widenings));
     let question = format!(
         "Install {} at {level}, pinned to {}?",
         counted(review.skills.len(), "skill", "skills"),
@@ -1471,6 +1707,23 @@ fn install(
         &review.accepted(),
         grant.as_ref(),
     ))
+}
+
+/// What `--all` says where its review is more than one read of the source may take: why, and the
+/// skills to install first, by name, so the rest follow with `--all` again (#4024). Nothing is
+/// cut from a review silently.
+fn too_much_text(too_much: &source::TooMuch) -> String {
+    if too_much.fits.is_empty() {
+        return format!("{}, so nothing was reviewed.", too_much.why);
+    }
+    format!(
+        "{}, so nothing was reviewed. Install them in two parts: first run this command with \
+         these {} named in place of --all: {}; then run it with --all again for the other {}.",
+        too_much.why,
+        counted(too_much.fits.len(), "skill", "skills"),
+        too_much.fits.join(" "),
+        too_much.rest.len()
+    )
 }
 
 /// Asks `question` on the terminal and answers whether the person said yes. No answer is no.
@@ -1545,7 +1798,8 @@ fn summary_text(summary: &purlis_core::skills::review::Summary, pad: &str) -> St
 }
 
 /// An install review as the terminal prints it: each skill's summary first, then its files.
-fn review_text(review: &source::Review) -> String {
+/// `widenings` says what the install's grant asks of the project skills they refer to (#4172).
+fn review_text(review: &source::Review, widenings: &[source::Widening]) -> String {
     let mut out = format!(
         "Review of {} from {} at {}\n",
         counted(review.skills.len(), "skill", "skills"),
@@ -1565,6 +1819,7 @@ fn review_text(review: &source::Review) -> String {
             esc(&skill.description)
         ));
         out.push_str(&summary_text(&skill.summary, "  "));
+        out.push_str(&already_text(skill, widenings, "install"));
         for line in &skill.lint {
             out.push_str(&format!("  lint: {}\n", esc(line)));
         }
@@ -1589,6 +1844,30 @@ fn review_text(review: &source::Review) -> String {
         "\nThe review is read from the files: a script can do more when it runs, and the chat's \
          sandbox bounds that.\n",
     );
+    out
+}
+
+/// What a reviewed skill says of each reference it leaves as it is: met there already, or met by
+/// a project skill whose grant `by` (`install`, `update`) widens (#4172, #4186), and each
+/// workspace that turned that skill off.
+fn already_text(skill: &source::SkillReview, widenings: &[source::Widening], by: &str) -> String {
+    let mut out = String::new();
+    for name in &skill.already {
+        let one = widenings.iter().find(|one| &one.name == name);
+        match one.and_then(|one| one.said(by)) {
+            Some(said) => out.push_str(&format!("  {}\n", esc(&said))),
+            None => out.push_str(&format!(
+                "  refers to {}, which its chats there have already: it is left as it is\n",
+                esc(name)
+            )),
+        }
+        for line in one
+            .map(|one| one.turned_off_said(&skill.name))
+            .unwrap_or_default()
+        {
+            out.push_str(&format!("  {}\n", esc(&line)));
+        }
+    }
     out
 }
 
@@ -1634,13 +1913,30 @@ fn update_text(update: &source::UpdateReview) -> String {
         ));
         changes(&update.local_edits, &mut out);
     }
+    if update
+        .review
+        .already
+        .iter()
+        .any(|name| update.widenings.iter().any(|one| &one.name == name))
+    {
+        out.push_str(&format!("\n{}:\n", esc(&update.name)));
+        out.push_str(&already_text(&update.review, &update.widenings, "update"));
+    }
     for skill in &update.brought {
         out.push_str(&format!(
             "\nComes along: {} ({})\n",
             esc(&skill.name),
             esc(&skill.description)
         ));
+        if let Some(grant) = &update.grant {
+            out.push_str(&format!(
+                "  granted to {}, as {} is\n",
+                esc(&grant.to_string()),
+                esc(&update.name)
+            ));
+        }
         out.push_str(&summary_text(&skill.summary, "  "));
+        out.push_str(&already_text(skill, &update.widenings, "update"));
     }
     out
 }
@@ -1797,9 +2093,69 @@ fn row_json(row: &StudioRow) -> Value {
     })
 }
 
+/// Whose list a copy `show` prints is from: the plane's, the skills a harness finds itself, or
+/// the plane's a repo leaves out of that harness's chats in it.
+enum CopyOf<'a> {
+    Plane,
+    Outside(&'a HarnessInTheStudio),
+    LeftOut(&'a HarnessInTheStudio),
+}
+
+/// A plane or built-in row as JSON: [`row_json`]'s, with each skill from outside the plane that
+/// has its name (SK-46, #3149), as the studio marks it.
+fn plane_json(list: &StudioList, row: &StudioRow) -> Value {
+    let mut shown = row_json(row);
+    shown["clashes"] = list
+        .clashes_of(row)
+        .map(|(harness, clash)| clash_json(harness, clash))
+        .collect();
+    shown
+}
+
+/// `shown`, a plane row a repo leaves out of `one`'s chats in it, with the clash that left it
+/// out (#3461): the repo's copy that won, as a row purlis hands says each of its clashes.
+fn left_out_json(one: &HarnessInTheStudio, row: &StudioRow, mut shown: Value) -> Value {
+    shown["clashes"] = one
+        .clashes_of_left_out(row)
+        .map(|clash| clash_json(one.harness, clash))
+        .collect();
+    shown
+}
+
+/// One clash on `harness` as JSON, with what the studio says of it.
+fn clash_json(harness: Harness, clash: &Clash) -> Value {
+    json!({
+        "harness": harness.name(),
+        "outside": clash.outside.level(),
+        "owner": clash.owner,
+        "outcome": match clash.outcome {
+            Outcome::BothLoad => "both-load",
+            Outcome::RepoWins => "repo-wins",
+            Outcome::EitherOne => "either-one",
+        },
+        "said": clash_said(harness, clash),
+    })
+}
+
+/// What the studio says of each clash of a plane or built-in row (SK-46, #3149), harness by
+/// harness: the lines `list` and `show` add to it, each once (two harnesses on which both
+/// copies load say the same).
+fn clashes_said(list: &StudioList, row: &StudioRow) -> Vec<String> {
+    let mut said: Vec<String> = Vec::new();
+    for line in list
+        .clashes_of(row)
+        .map(|(harness, clash)| clash_said(harness, clash))
+    {
+        if !said.contains(&line) {
+            said.push(line);
+        }
+    }
+    said
+}
+
 /// One copy of a skill, as `show` prints it: one a harness finds itself with that harness,
-/// whose it is and how it can be left out.
-fn detail(harness: Option<Harness>, row: &StudioRow) -> String {
+/// whose it is and how it can be left out, and for purlis's copy each clash `also` says.
+fn detail(harness: Option<Harness>, row: &StudioRow, also: &[String]) -> String {
     let mut text = format!("{}\n  level: {}\n", esc(&row.name), level(row));
     if let Some(harness) = harness {
         text.push_str(&format!("  harness: {}\n", harness.title()));
@@ -1818,16 +2174,31 @@ fn detail(harness: Option<Harness>, row: &StudioRow) -> String {
         text.push_str(&format!("  grant: {}\n", esc(grant)));
     }
     text.push_str(&format!("  in this chat's skills: {}\n", esc(&state(row))));
+    for said in also {
+        text.push_str(&format!("  also: {}\n", esc(said)));
+    }
     text
 }
 
-fn table(rows: &[StudioRow]) -> String {
+/// The rows of a chat's skills, each with its state and, after it, each line `also` says of it
+/// (a clash, SK-46). A repo's names are the least trusted text here, so every cell is escaped.
+fn table(rows: &[StudioRow], also: &dyn Fn(&StudioRow) -> Vec<String>) -> String {
     if rows.is_empty() {
         return "No skills here yet. A project skill is a folder in skills/ at the plane root, \
                 holding its SKILL.md.\n"
             .to_owned();
     }
-    let states: Vec<String> = rows.iter().map(|row| esc(&state(row))).collect();
+    let states: Vec<String> = rows
+        .iter()
+        .map(|row| {
+            let mut said = state(row);
+            for one in also(row) {
+                said.push_str("; also: ");
+                said.push_str(&one);
+            }
+            esc(&said)
+        })
+        .collect();
     let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
     let name_w = voice::column(names.iter().copied().chain(["SKILL"]));
     let levels: Vec<String> = rows.iter().map(level).collect();

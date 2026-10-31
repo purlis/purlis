@@ -9,6 +9,7 @@
  */
 import { ESLint } from "eslint";
 import { describe, expect, it } from "vitest";
+import { LINTED_FAMILIES } from "../../eslint.ui-rules.js";
 
 const eslint = new ESLint({ cwd: process.cwd() });
 
@@ -29,6 +30,22 @@ describe("the window's lint on a screen (#3129)", () => {
     `<button type="button" className="plane-updated fresh-mark">x</button>`,
     `<button type="button" className="gear">x</button>`,
     `<button type="button" className="strip-offer">x</button>`,
+    // A bare button, and the strip's controls by the words they wore before the tabs family's
+    // one class (#3012): a crumb, a chip's hand and counts, a closer.
+    `<button type="button" className="bare">x</button>`,
+    `<button type="button" className="crumb own">x</button>`,
+    `<button type="button" className="tab-tasks-hand">x</button>`,
+    `<button type="button" className="tab-tasks-counts">x</button>`,
+    `<button type="button" className="closer">x</button>`,
+    // The other families' controls by the words views gave them, before each family's one
+    // class (#3523): a list's, a card's and the title bar's.
+    `<button type="button" className="vault-secret">x</button>`,
+    `<button type="button" className="needs-you-mark rolled-up">x</button>`,
+    `<button type="button" className="welcome-door">x</button>`,
+    `<button type="button" className="welcome-link repo-card">x</button>`,
+    `<button type="button" className="plane-root">x</button>`,
+    // The card family's old class for a card pressed whole, now its own member (#3655).
+    `<button type="button" className="ui-card-control welcome-door">x</button>`,
   ])("refuses a raw button drawn by hand: %s", async (code) => {
     expect(await broken(`export const X = () => ${code};`)).toContain("purlis/button-family");
   });
@@ -39,6 +56,26 @@ describe("the window's lint on a screen (#3129)", () => {
     `<Select className={["ui-field", "wide"].join(" ")} />`,
   ])("refuses the old field wrapper: %s", async (code) => {
     expect(await broken(`export const X = () => ${code};`)).toContain("purlis/field-family");
+  });
+
+  it.each([
+    // The strip's own controls, by the tabs family's class (#3012).
+    `<button type="button" className="ui-tabs-control closer">x</button>`,
+  ])("lets another family's control through by that family's class: %s", async (code) => {
+    expect(await broken(`export const X = () => ${code};`)).toEqual([]);
+  });
+
+  it("names, in each family's rawButtons, only that family's own classes (#3523)", async () => {
+    for (const family of LINTED_FAMILIES) {
+      const { rawButtons } = (await import(`./${family}/lint.js`)) as {
+        rawButtons?: { classes?: string[] };
+      };
+      // A family's own class is `ui-<family>-…`; the list's row is the list's `ui-row` (DS-12).
+      for (const name of rawButtons?.classes ?? [])
+        expect(name, family).toMatch(
+          family === "list" ? /^ui-(?:list-|row$)/ : new RegExp(`^ui-${family}-`),
+        );
+    }
   });
 
   it("lets the families' members through", async () => {

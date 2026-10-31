@@ -14,9 +14,10 @@
  *   is never under the footer (WCAG 2.4.11): the two never overlap.
  * - **The width is the size's, never the content's**: `standard` (600 px) or `wide` (800 px,
  *   only for a list beside its details; the operator's ruling on #2918), each at most the window's width less its gutters.
- * - **The height follows the content up to the window less 48 px**; a dialog given a `height`
- *   takes the lesser of the two and keeps it whatever its content.
- * - **Anchored at a fixed top**, so a change in its content moves only its bottom edge.
+ * - **The height follows the content up to the window less its top less 24 px**; a dialog given
+ *   a `height` takes the lesser of the two and keeps it whatever its content.
+ * - **Anchored at a fixed top**, `max(24px, 6vh)` down (R2), so a change in its content moves
+ *   only its bottom edge.
  * - **At most three answers, each in its place**: Cancel leads, the main action trails, and one
  *   other answer may stand between them. They are props, not children, so a fourth, or a main
  *   action anywhere but last, cannot be written.
@@ -128,7 +129,7 @@ interface Surface {
   /** Esc, Cancel, or any other way out the person takes. */
   onClose: () => void;
   size?: DialogSize;
-  /** A height of its own, in px, taken whatever its content, at most the window's less 48 px. */
+  /** A height of its own, in px, taken whatever its content, at most the window's less its top less 24 px. */
   height?: number;
   /** Where the keyboard starts (see the family's rules). */
   initialFocus?: InitialFocus;
@@ -528,9 +529,9 @@ const FooterPlace = createContext<Place | null>(null);
 
 /**
  * Whether `main` is the one ⏎ finds: an act that grants never is, and one that cannot be taken
- * back is not unless it says so (#1210).
+ * back is not unless it says so (#1210). A review page's bar asks the same (#3672).
  */
-const submits = (main: DialogAction | undefined): boolean =>
+export const returnFinds = (main: DialogAction | undefined): boolean =>
   main !== undefined && main.variant !== "grants" && (main.byReturn ?? main.variant !== "danger");
 
 /** The room of a grant's lock, held and never drawn, on an answer that may be a grant. */
@@ -549,8 +550,13 @@ function buttonOf(action: Partial<DialogAction> | undefined): Omit<ButtonProps, 
   return props as Omit<ButtonProps, "onPress">;
 }
 
-/** The answers in their places: Cancel, the other, the main action. */
-function DialogAnswerRow({
+/**
+ * **The answers in their places**: Cancel, the other, the main action. A dialog's footer draws
+ * them, and so does a review page's bar (`ui/review-page`, #3672), so the two keep one set of
+ * rules: the places, the reserved words, a grant's lock, and which answer Return finds
+ * ({@link returnFinds}).
+ */
+export function DialogAnswerRow({
   cancel,
   main,
   alternative,
@@ -560,7 +566,7 @@ function DialogAnswerRow({
   const mainRest = buttonOf(main);
   const outRest = buttonOf(out);
   const otherRest = buttonOf(alternative);
-  const submitting = submits(main);
+  const submitting = returnFinds(main);
   return (
     <ButtonRow size="md">
       {cancel !== false && (
@@ -606,7 +612,7 @@ export function DialogAnswers(answers: Answers) {
   useLayoutEffect(() => {
     if (!place) return;
     place.setSubmit(
-      main !== undefined && submits(main) && !main.isDisabled ? main.onPress : undefined,
+      main !== undefined && returnFinds(main) && !main.isDisabled ? main.onPress : undefined,
     );
   });
   if (!place) return null;
@@ -677,7 +683,7 @@ function DialogRows({ props, names }: { props: DialogProps; names: ReturnType<ty
     if (event.target !== event.currentTarget) return;
     event.preventDefault();
     if (inside) submitFromInside.current?.();
-    else if (main !== undefined && submits(main) && !main.isDisabled) main.onPress?.();
+    else if (main !== undefined && returnFinds(main) && !main.isDisabled) main.onPress?.();
   };
   const chord = (event: ReactKeyboardEvent<HTMLFormElement>) => {
     if (!chordSends(event.nativeEvent) || !event.currentTarget.contains(event.target as Node))

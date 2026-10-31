@@ -32,6 +32,9 @@ pub enum Move {
         reports_its_process: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         conversation: Option<String>,
+        /// [`Board::opened_as`]: a grade's chat, never in the queue (#3583).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        kept_from_the_window: bool,
     },
     /// [`Board::closed`].
     Closed,
@@ -39,6 +42,10 @@ pub enum Move {
     Reported { report: Report, waits: Waits },
     /// [`Board::rested`].
     Rested,
+    /// [`Board::own_work_lapsed`].
+    OwnWorkLapsed { now: i64, waits: Waits },
+    /// [`Board::blocked_while_waiting`].
+    BlockedWhileWaiting,
     /// [`Board::task_failed`].
     TaskFailed { failed: FailedTask },
     /// [`Board::failures_seen`].
@@ -135,8 +142,14 @@ impl Board {
             Move::Opened {
                 reports_its_process,
                 conversation,
+                kept_from_the_window,
             } => {
-                self.opened_reporting(number, reports_its_process, conversation);
+                self.opened_reporting(
+                    number,
+                    reports_its_process,
+                    conversation,
+                    kept_from_the_window,
+                );
                 true
             }
             Move::Closed => {
@@ -148,6 +161,8 @@ impl Board {
                 number == report.chat && self.reported_while(&report, waits)
             }
             Move::Rested => self.rested(number),
+            Move::OwnWorkLapsed { now, waits } => self.own_work_lapsed(number, now, waits),
+            Move::BlockedWhileWaiting => self.blocked_while_waiting(number),
             Move::TaskFailed { failed } => self.task_failed(number, failed),
             Move::FailuresSeen => self.failures_seen(number),
             Move::FailureCleared { id } => self.failure_cleared(number, &id),
@@ -199,19 +214,28 @@ impl Board {
     /// said of what a chat waits on, so the end of a turn is the person's. Whether anything a
     /// reader can see changed.
     pub fn hear(&mut self, heard: &crate::hookwire::relay::Heard) -> bool {
+        self.hear_at(heard, 0)
+    }
+
+    /// [`Board::hear`], with `now`, the hearing process's clock in seconds since 1970: what a
+    /// turn's end on work of its own is stamped at (#3878, [`Waits::now`]).
+    pub fn hear_at(&mut self, heard: &crate::hookwire::relay::Heard, now: i64) -> bool {
         use crate::hookwire::relay::Heard;
         match heard {
-            Heard::Report(report) => self.reported_while(report, Waits::default()),
+            Heard::Report(report) => self.reported_while(
+                report,
+                Waits {
+                    now,
+                    ..Waits::default()
+                },
+            ),
             Heard::Refused(refused) => self.commit_refused(refused.chat, &refused.commit_refused),
             Heard::Tool(call) => {
-                let mut changed = false;
-                if call.refused_a_root_update() {
-                    changed |= self.needs(call.chat, Need::RootUpdateRefused);
-                }
-                if let Some(agent) = &call.agent {
-                    changed |= self.child_heard(call.chat, agent);
-                }
-                changed
+                // A refused root update raises nothing (#3877): the chat retries it with
+                // `purlis worktree update`.
+                call.agent
+                    .as_ref()
+                    .is_some_and(|agent| self.child_heard(call.chat, agent))
             }
             Heard::Doing(doing) => {
                 if !doing.doing.goes_on_past_a_prompt() && !doing.doing.starts_a_tool_of_its_own() {

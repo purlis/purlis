@@ -350,6 +350,18 @@ pub fn spellings_of(root: &Path) -> Vec<PathBuf> {
     planes
 }
 
+/// [`config_root`]'s ladder for a process whose home is `home` and whose environment is
+/// otherwise this one's: where a cluster runner's host will keep its config once its pod sets
+/// `HOME` to `home`, as its pod's first step reads it (#2057).
+pub fn config_root_under(home: &Path) -> PathBuf {
+    rooted(
+        crate::envvar::var_os(HOME_VAR),
+        std::env::var_os("XDG_CONFIG_HOME"),
+        Some(home.to_path_buf()),
+    )
+    .unwrap_or_else(|| home.join(".config"))
+}
+
 /// [`config_root`]'s ladder, with the three answers handed in.
 ///
 /// Split out because the environment is the one thing this module's tests cannot drive:
@@ -400,6 +412,16 @@ pub const PEERS_FILE: &str = "peers.json";
 /// lock its one read-modify-write takes.
 pub const RUNNERS_FILE: &str = "runners.json";
 pub const RUNNERS_LOCK: &str = "runners.json.lock";
+
+/// When each runner ran, inside [`dir`] (`crate::runnerhours`, #3492), and the lock its one
+/// read-modify-write takes.
+pub const RUNNER_HOURS_FILE: &str = "runner-hours.jsonl";
+
+pub const RUNNER_HOURS_LOCK: &str = "runner-hours.jsonl.lock";
+
+/// Each cluster pool's own copy of its kubeconfig's context, taken as it was added, inside
+/// [`dir`] (`crate::runners`, #3292): `<pool>.yaml`, `0600`, and its kubectl's caches.
+pub const CLUSTER_KUBECONFIGS_DIR: &str = "cluster-kubeconfigs";
 
 /// The session host's folder's old name inside [`dir`] (`names::DAEMON_DIR`).
 pub const DAEMON_DIR: &str = "charterd";

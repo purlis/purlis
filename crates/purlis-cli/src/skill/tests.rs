@@ -17,8 +17,15 @@ const SHOWN: &str = "de⟦U+001B⟧[8mploy⟦U+202E⟧x⟦U+200B⟧";
 
 #[test]
 fn skill_restore_lists_a_deleted_name_escaped() {
-    let line = restorable(HOSTILE, &Level::workspace("w\u{2066}s"));
-    assert_eq!(line.as_str(), format!("{SHOWN}  workspace w⟦U+2066⟧s"));
+    let line = restorable(
+        HOSTILE,
+        &Level::workspace("w\u{2066}s"),
+        "kept in the project's history",
+    );
+    assert_eq!(
+        line.as_str(),
+        format!("{SHOWN}  workspace w⟦U+2066⟧s · kept in the project's history")
+    );
 }
 
 #[test]
@@ -82,6 +89,9 @@ fn skill_versions_shows_a_commit_s_author_and_subject_escaped() {
             tree: String::new(),
             runs: Totals::default(),
             grade: None,
+            folder: "skills/deploy".into(),
+            name: "deploy".into(),
+            before: None,
         }],
         uncommitted: Totals::default(),
     };

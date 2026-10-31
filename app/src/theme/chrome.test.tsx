@@ -26,13 +26,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, configure, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "../App";
 import { AboutCharter } from "../About";
 import { ENDS_IT, OUTSIDE } from "../actions";
 import { TitleBarSwitch, type SwitchDoes, type SwitchProject } from "../TitleBarSwitch";
+import { workspaceMade } from "../actionResult";
 import { InboxAlerts } from "../InboxAlerts";
 import { NoticeList } from "../Notice";
 import { AnswerPanel } from "../AnswerPanel";
@@ -40,7 +41,7 @@ import { ApproveExtension } from "../ApproveExtension";
 import { ApprovePlane } from "../ApprovePlane";
 import { AskPersona } from "../AskPersona";
 import { UseSkill } from "../UseSkill";
-import type { LandQuestion, PlaneId, VaultContents } from "../bindings";
+import type { LandQuestion, PlaneId, StudioSkill, VaultContents } from "../bindings";
 import { BriefPanel } from "../Brief";
 import { LandAsk, PushAsk } from "../ChangeActions";
 import { ChatAsk } from "../ChatAsk";
@@ -66,6 +67,7 @@ import { NewPersona } from "../NewPersona";
 import { NewProject } from "../NewProject";
 import { PublishProject } from "../PublishProject";
 import { NewVault } from "../NewVault";
+import { AddSourceDialog } from "../SkillSources";
 import { NewWorkspace } from "../NewWorkspace";
 import { Palette } from "../Palette";
 import { PanelList } from "../PanelList";
@@ -75,6 +77,12 @@ import { RelaunchAsk } from "../RelaunchAsk";
 import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
 import { RemovePersona } from "../RemovePersona";
 import { RenameWorkspace } from "../RenameWorkspace";
+import { AddVision } from "../AddVision";
+import { DeprecateDialog, OwnersDialog } from "../SkillPage";
+import { NewSkillDialog } from "../NewSkillDialog";
+import { DeleteDialog, MoveDialog, RenameDialog } from "../SkillChangeDialogs";
+import { LeaveQuestion } from "../UnsavedWorkQuestion";
+import { SkillCopy } from "../SkillCopy";
 import { RequestMerge } from "../SavingMerge";
 import { SavingView } from "../SavingView";
 import { StartChat } from "../StartChat";
@@ -86,6 +94,7 @@ import { PinItem, UpdateItem } from "../Updates";
 import { VaultTab } from "../VaultTab";
 import { OpenVault } from "../Vaults";
 import { AddToAChat } from "../AddToAChat";
+import { RouterChange } from "../SkillStudioRouting";
 import { KeepAsk } from "../ThemeDraftStrip";
 import { forgetThisLaunch } from "../regions";
 import { complaints } from "./complaints.testkit";
@@ -99,8 +108,6 @@ vi.mock("../SessionPane", () => ({
     </div>
   ),
 }));
-
-configure({ asyncUtilTimeout: 5_000 });
 
 const PLANE = "/home/dev/plane";
 const ALPHA = `${PLANE}/workspaces/alpha`;
@@ -201,12 +208,14 @@ function core(theme: string, colour: string | null) {
                   severity: "warn",
                   subject: "reinit",
                   detail: "1 workspace is behind the current layout: alpha",
+                  workspaces: ["alpha"],
                   way: { kind: "fix", id: "workspace-reinit" },
                 },
                 {
                   severity: "bad",
                   subject: "save",
                   detail: "the project's save is blocked: a conflict",
+                  workspaces: [],
                   way: { kind: "saving" },
                 },
               ],
@@ -248,8 +257,9 @@ async function windowIn(theme: string, colour: string | null = null) {
   render(<App />);
   await waitFor(() => expect(inForce()).toBe(BUILT_IN[theme]));
   await screen.findByTestId("pane");
-  // The workspace in front, a chip in the title bar (#2916).
-  await within(screen.getByTestId("title-bar")).findByRole("button", { name: /alpha/ });
+  // The workspace in front, a chip in the title bar (#2916), named by its words alone: the
+  // layout alert on it puts a ▲ dot beside it too (#3650), which is drawn and checked here.
+  await within(screen.getByTestId("title-bar")).findByRole("button", { name: "alpha" });
 }
 
 describe.each(Object.keys(BUILT_IN))("the window's chrome in %s", (theme) => {
@@ -296,6 +306,7 @@ describe.each(Object.keys(BUILT_IN))("the window's chrome in %s", (theme) => {
                     severity: "bad",
                     subject: "save",
                     detail: "the project's save is blocked: a conflict",
+                    workspaces: [],
                     way: { kind: "saving" },
                   },
                 ],
@@ -379,6 +390,33 @@ const LAND: LandQuestion = {
   said: ["checks passed"],
 };
 
+/** A project skill, for the dialogs that change one (#3685). */
+const SKILL: StudioSkill = {
+  name: "deploy",
+  level: "project",
+  label: "project",
+  local: false,
+  grant: "root",
+  granted: { to: "root" },
+  turned_off: false,
+  not_granted: null,
+  on: true,
+  left_out: null,
+  accept: null,
+  description: "Ships it.",
+  folder: "skills/deploy",
+  written: "deploy",
+  named: false,
+  unchecked: null,
+  owner: null,
+  switch: null,
+  compat: [],
+  lint: [],
+  hidden: [],
+  pinned: false,
+  pinned_by: [],
+};
+
 /** The core, for the dialogs that read something as they open. Anything else is refused, so a
  *  dialog that reads more draws its refusal, which is a state to check too. */
 function dialogCore() {
@@ -412,8 +450,21 @@ function dialogCore() {
           dropped: [],
           unreadable: null,
         };
+      case "skill_routers":
+        return [{ id: "relevance", name: "Relevance router" }];
       case "reachable_repos":
         return { repos: [{ name: "svc", path: "acme/svc", description: "" }], trouble: [] };
+      case "skill_users":
+        return {
+          root: true,
+          workspaces: ["ops"],
+          persona: null,
+          personas: ["steward"],
+          skills: ["release"],
+          pinned_by: [{ at: "workspace", name: "ops" }],
+        };
+      case "skill_move_needs_grant":
+        return false;
       case "forge_device_sign_in_start":
         return {
           flow: 1,
@@ -550,6 +601,40 @@ const DIALOGS: Opened[] = [
     },
   },
   {
+    name: "a title-bar chip's card of notices (#3648)",
+    file: "ChipNotices.tsx",
+    open: async () =>
+      render(
+        <TitleBarSwitch
+          projects={SWITCHING}
+          inFront="/home/dev/one"
+          railShown
+          does={SWITCHED}
+          notices={{
+            on: new Map([
+              [
+                "alpha",
+                [
+                  {
+                    id: 1,
+                    kind: "info",
+                    said: workspaceMade("alpha", ["✓ Workspace 'alpha' ready (LOCAL)"], {
+                      onAddVision: nothing,
+                    }),
+                  },
+                ],
+              ],
+            ]),
+            open: "alpha",
+            show: nothing,
+            hide: nothing,
+            dismiss: nothing,
+            onSettings: nothing,
+          }}
+        />,
+      ),
+  },
+  {
     name: "Answer",
     file: "AnswerPanel.tsx",
     open: async () =>
@@ -660,8 +745,13 @@ const DIALOGS: Opened[] = [
               hidden: 0,
               still_over: null,
               pinned_by: [],
+              pins_together: null,
               warns: "both",
             },
+            repos: [],
+            not_supported: null,
+            routing: null,
+            missing: null,
           }}
           trouble="the chat is in the middle of a turn"
           busy={false}
@@ -885,12 +975,12 @@ const DIALOGS: Opened[] = [
     open: async () => render(<RemovePool name="builds" onRemove={nothing} onCancel={nothing} />),
   },
   {
-    name: "adding a Docker pool",
+    name: "adding a pool",
     file: "AddDockerPool.tsx",
     open: async () => {
       startAddingAPool();
       render(<AddDockerPoolHost />);
-      await screen.findByRole("dialog", { name: "Add a Docker pool" });
+      await screen.findByRole("dialog", { name: "Add a pool" });
     },
   },
   {
@@ -987,6 +1077,13 @@ const DIALOGS: Opened[] = [
     file: "PublishProject.tsx",
     open: async () =>
       render(<PublishProject plane={PLANE} suggested="notebook" onClose={nothing} />),
+  },
+  {
+    name: "add a skill source",
+    file: "SkillSources.tsx",
+    open: async () => {
+      render(<AddSourceDialog busy={false} onCancel={nothing} onAdd={nothing} />);
+    },
   },
   {
     name: "a new vault",
@@ -1140,6 +1237,151 @@ const DIALOGS: Opened[] = [
           renaming={false}
           onRename={nothing}
           onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "deprecating a skill, from its page's menu (#3682)",
+    file: "SkillPage.tsx",
+    open: async () =>
+      render(
+        <DeprecateDialog name="deploy" busy={false} onClose={nothing} onDeprecate={nothing} />,
+      ),
+  },
+  {
+    name: "leaving a view's unsaved work (#3683, #3929)",
+    file: "UnsavedWorkQuestion.tsx",
+    open: async () =>
+      render(
+        <LeaveQuestion
+          names={["deploy"]}
+          blocked={false}
+          busy={false}
+          onKeep={nothing}
+          onDiscard={nothing}
+          onSave={nothing}
+        />,
+      ),
+  },
+  {
+    name: "naming who looks after a skill, from its page (#3682)",
+    file: "SkillPage.tsx",
+    open: async () =>
+      render(
+        <OwnersDialog
+          name="deploy"
+          owners={["alice"]}
+          busy={false}
+          onClose={nothing}
+          onSave={nothing}
+        />,
+      ),
+  },
+  {
+    name: "adding a workspace's vision",
+    file: "AddVision.tsx",
+    open: async () =>
+      render(
+        <AddVision
+          workspace="gamma"
+          current=""
+          trouble="a vision has words: nothing was written"
+          saving={false}
+          onSave={nothing}
+          onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "making your own copy of a built-in skill",
+    file: "SkillCopy.tsx",
+    open: async () =>
+      render(
+        <SkillCopy
+          builtIns={["browser", "secrets"]}
+          descriptionOf={(name) => `What ${name} does.`}
+          levels={[{ level: { at: "project", local: false }, label: "project" }]}
+          start={{ at: "project", local: false }}
+          busy={false}
+          refused="the project skills already have one named my-browser"
+          onEdit={nothing}
+          onCopy={nothing}
+          onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "renaming a skill, from its page's menu (#3685)",
+    file: "SkillChangeDialogs.tsx",
+    open: async () =>
+      render(
+        <RenameDialog
+          plane="p"
+          skill={SKILL}
+          level={{ at: "project", local: false }}
+          taken={["review"]}
+          builtIns={["secrets"]}
+          busy={false}
+          refused="the project is opened read-only"
+          onEdit={nothing}
+          onRename={nothing}
+          onClose={nothing}
+        />,
+      ),
+  },
+  {
+    name: "moving a skill to another level (#3685)",
+    file: "SkillChangeDialogs.tsx",
+    open: async () =>
+      render(
+        <MoveDialog
+          plane="p"
+          skill={SKILL}
+          from={{ at: "project", local: false }}
+          levels={[
+            { level: { at: "project", local: false }, label: "project" },
+            { level: { at: "workspace", name: "ops", local: false }, label: "workspace ops" },
+          ]}
+          workspaces={["ops"]}
+          busy={false}
+          onEdit={nothing}
+          onMove={nothing}
+          onClose={nothing}
+        />,
+      ),
+  },
+  {
+    name: "deleting a skill (#3685)",
+    file: "SkillChangeDialogs.tsx",
+    open: async () =>
+      render(
+        <DeleteDialog
+          plane="p"
+          skill={SKILL}
+          level={{ at: "project", local: false }}
+          busy={false}
+          onDelete={nothing}
+          onClose={nothing}
+        />,
+      ),
+  },
+  {
+    name: "New skill…, asking how (#3684)",
+    file: "NewSkillDialog.tsx",
+    open: async () =>
+      render(
+        <NewSkillDialog
+          plane="p"
+          levels={[{ level: { at: "project", local: false }, label: "project" }]}
+          start={{ at: "project", local: false }}
+          takenAt={() => []}
+          builtIns={["secrets"]}
+          busy={false}
+          onEdit={nothing}
+          onMake={nothing}
+          onDraft={nothing}
+          onSources={nothing}
+          onClose={nothing}
         />,
       ),
   },
@@ -1367,6 +1609,20 @@ const DIALOGS: Opened[] = [
       ),
   },
   {
+    name: "Change the router",
+    file: "SkillStudioRouting.tsx",
+    open: async () =>
+      render(
+        <RouterChange
+          plane={PLANE}
+          by={{ at: "persona", name: "reviewer" }}
+          written="relevance"
+          onClose={nothing}
+          onChoose={nothing}
+        />,
+      ),
+  },
+  {
     name: "Add to a chat's context",
     file: "AddToAChat.tsx",
     open: async () =>
@@ -1395,7 +1651,7 @@ const DIALOGS: Opened[] = [
 
 /** Opens the menu of the vault tab's row for `key` and picks `item`. */
 async function fromTheMenuOf(key: string, item: string) {
-  await userEvent.click(await screen.findByRole("button", { name: key }));
+  await userEvent.click(await screen.findByRole("button", { name: `More for ${key}` }));
   await userEvent.click(await screen.findByRole("menuitem", { name: item }));
 }
 

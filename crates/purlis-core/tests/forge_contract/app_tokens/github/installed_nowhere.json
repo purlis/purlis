@@ -1,0 +1,22 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/apps/apps (Get a repository installation for the authenticated app; Create an installation access token for an app)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/installation"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "",
+        "err": "Not Found (HTTP 404)",
+        "status": 404
+      }
+    }
+  ]
+}

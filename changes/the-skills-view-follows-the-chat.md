@@ -1,0 +1,3 @@
+### Changed
+
+- **The Skills view shows what the chat in front gets, as small cards** (Skill studio preview, #3693). Its header names whose skills they are, "steward 5 · 11 skills", or "A new chat in ops" while no chat is in front. Cards are grouped Needs you, In this chat (A new chat gets, while no chat is in front) and Left out, each with its skill level, two lines of what it does or why it is left out, Use, a ⋯ menu, and one fix where it has one, such as Turn on in ops. The built-in skills fold into one quiet line, with Make my own copy under it. A click opens the Skill studio at that skill, and the chat keeps its pane. The menu adds Open the file and Open in Skill studio, and says why an item can't run. Only this chat's is gone.

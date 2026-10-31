@@ -26,9 +26,10 @@ import {
 } from "../ui/choice/Radio";
 import { Slider } from "../ui/choice/Slider";
 import { Switch } from "../ui/choice/Switch";
-import { TextArea, TextField } from "../ui/field/Field";
+import { TextArea, TextField, useFormSummary } from "../ui/field/Field";
 import { Tooltip } from "../ui/tooltip/Tooltip";
 import { useReadOnlyReasonId } from "../readOnlyReason";
+import { Badge } from "../ui/badge/Badge";
 
 /**
  * **The house settings set** (SE-16, #1166; DS-3 #626; V89f, V89j): the six pieces every
@@ -301,8 +302,10 @@ export type Badge = { label: string; says: string };
  * name: its name is drawn as plain text, and the group is named by `aria-labelledby` instead.
  *
  * **A write the core refused is said here** (`error`, SE-17, V89e): beside the setting, as an
- * alert, and in the control's description, while the control shows what is on disk. And the
- * last change's **Undo** sits in the row it was made in.
+ * alert, and in the control's description, while the control shows what is on disk. In a form
+ * (a collection's New… or Rename), the send is what was refused, and the form's one summary is
+ * its alert (#3291): the row's line is a polite live region, quiet while the summary says it.
+ * And the last change's **Undo** sits in the row it was made in.
  *
  * **Where the value comes from** (SE-18, V89d; drawn quietly since DS-8, #1840): the group says
  * once where its values are kept ({@link SettingGroup}'s `kept`), so a row says nothing more
@@ -356,6 +359,7 @@ export function SettingRow({
   const refused = useId();
   const failed = error !== undefined && error.length > 0;
   const quiet = useContext(QuietHints);
+  const summary = useFormSummary();
   // Off on a read-only project: why, with the rest of what describes it (#2908).
   const readOnly = useReadOnlyReasonId();
   const describedBy =
@@ -444,12 +448,24 @@ export function SettingRow({
           {origin}
         </p>
       )}
-      {failed && (
-        <div className="ui-setting-error" id={refused} role="alert">
-          {error.map((why, at) => (
-            <p key={at}>{why}</p>
-          ))}
+      {summary.inForm ? (
+        // There from the start, so its words are heard as they land (#3033), and only once.
+        <div
+          className="ui-setting-error"
+          id={refused}
+          aria-live={summary.quiet ? "off" : "polite"}
+          aria-atomic="true"
+        >
+          {failed && error.map((why, at) => <p key={at}>{why}</p>)}
         </div>
+      ) : (
+        failed && (
+          <div className="ui-setting-error" id={refused} role="alert">
+            {error.map((why, at) => (
+              <p key={at}>{why}</p>
+            ))}
+          </div>
+        )
       )}
     </div>
   );
@@ -481,7 +497,7 @@ function OriginBadge({ badge }: { badge: Badge }) {
     // A word, not a control: it presses nothing, so it is no button. It takes the keyboard only
     // so the tooltip can be read without a pointer.
     <Tooltip tip={badge.says}>
-      <span className="ui-setting-badge">{badge.label}</span>
+      <Badge variant="accent">{badge.label}</Badge>
     </Tooltip>
   );
 }
@@ -676,6 +692,8 @@ export type Option = {
   says?: ReactNode;
   disabled?: boolean;
   title?: string;
+  /** How many things a chip stands for, after its words and never in its name (#3484). */
+  count?: number;
 };
 
 /**
@@ -762,6 +780,7 @@ function Chips({ ids, options, checked, onCheckedChange }: Tied & Ticks) {
           tooltip={one.title}
           isSelected={checked.has(one.value)}
           isDisabled={one.disabled}
+          count={one.count}
           onChange={(on) => onCheckedChange(one.value, on)}
         >
           {one.label}

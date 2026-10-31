@@ -382,6 +382,30 @@ rule while one who reads a bare refusal files an issue.
   through a filter and no
   program a repository's configuration names is started. A path that reads as prose is
   counted in a refusal and never repeated.
+- **`git add` or `git commit` in a branch folder purlis made** (#3830). A branch folder keeps
+  its index in its clone's `.git/worktrees/<name>`, which every sandboxed chat's sandbox
+  denies writing, so these stopped on "Operation not permitted" and raised a sandbox Notice
+  for you, though the chat could fix it itself. Asked only of a chat the app sandboxed, and
+  only in a folder git's own record places at `workspaces/<ws>/.worktrees/<repo>/<piece>`;
+  refused before it runs with the command that commits there, `purlis worktree commit -m
+  "<message>" <path>…` (or `--all` in place of the paths), which the app runs outside the
+  sandbox on the folder's branch. A worktree you made yourself with `git worktree add` is
+  left to the sandbox. A `cd` to a folder named on the line is followed where every command
+  on it runs in one shell in turn (`&&`, `;`); a `cd` in a subshell or a pipeline, or a move
+  the guard cannot place (`cd $X`, `cd -`, `popd`), leaves the line to the sandbox. Read-only
+  git and the dry runs (`add -n`, `add --dry-run`, `commit --dry-run`) run.
+- **Plain git in a branch folder another live chat holds** (#3931). A branch folder has one
+  live writer (#3901). A chat the app started without the sandbox runs git itself, so its
+  guard reads the line for git that writes the folder's branch (`git commit`, `merge`,
+  `cherry-pick`, `revert`, `am`, `pull`, `rebase`, `push`), every one on the line, placed as
+  the arm above places it (and `env -C <folder> git …` too), and asks the app whether this chat
+  may write there. A folder no live chat holds is taken by the chat. A folder another live chat
+  holds is refused, naming that chat and how to hand the folder over, in the words `purlis
+  worktree commit`, `update` and `push` are refused in. **A guard with no answer lets the call
+  through**: with no app, one that does not answer within the guard's wait, or any answer but
+  that another live chat holds the folder, the git runs, since this keeps chats from colliding
+  by accident and is not a wall. Your own terminal, a harness you start yourself, and a shell
+  tab are never held to it. Dry runs and `--abort` run.
 - **One credential.** SSH to a forge, `GIT_SSH_COMMAND`, `-S`/`--gpg-sign`, and the
   `core.sshCommand` family that reaches the same transport by another road (`-c`,
   `--config-env`, `GIT_CONFIG_KEY_n`, and a `git config` write of it). This one *is*
@@ -498,8 +522,8 @@ rule while one who reads a bare refusal files an issue.
   reaches a public repository by an indirect route:
 
   ```bash
-  purlis persona remember "the marker is appended to `pending` each pass"   # DENIED
-  purlis persona remember "the marker is appended to \`pending\` each pass"  # allowed
+  purlis persona remember devops "the marker is appended to `pending` each pass"   # DENIED
+  purlis persona remember devops "the marker is appended to \`pending\` each pass"  # allowed
   ```
 
   That is not a constructed example. It happened while a guard review's findings were being
@@ -567,20 +591,25 @@ rule while one who reads a bare refusal files an issue.
   handoff now. An operator's own `deny` on the handoff glob is still held under every
   spelling, by the rule backstop below; the `ask` `purlis init` used to write is not.
 
-  **What it asks about and does not refuse: a rider.** A Claude Code chat the app starts is
-  handed an `allow` for `purlis dispatch …` and `purlis handoff …`. Where a call runs one
-  of them and any other command (a compound, a pipe, a line before or after the heredoc,
-  a substitution, a second dispatch), the hook answers `permissionDecision: "ask"` for the
-  call and names the other command; where it cannot read the call, it asks. A function or an
-  alias defined earlier in the call is such a command. Alone in its call, a dispatch or a
-  handoff is answered with nothing. Asked about too: a handoff that carries the hidden
-  `--now`, which pins the time its records are written at for purlis's own tests; a
-  redirection on the dispatch's or the handoff's own line that writes a file (`> notes.md`;
-  not `2>&1` and not `/dev/null`); and a dispatch whose brief is fed from anything but one
-  quoted heredoc on its own line (a pipe, `< file`, `<<<`, an unquoted heredoc, none), the
-  shapes a handoff is refused for above. This is purlis's own wall, built
-  because whether Claude Code asks about the second command of such a call has not been
-  measured. On Codex and opencode no allow is handed, so nothing is asked.
+  **What it refuses and never asks about: a rider** (#3785, superseding D-1444-14). A
+  Claude Code chat the app starts is handed an `allow` for `purlis dispatch …` and
+  `purlis handoff …`. Where a call runs one of them that writes and any other command (a
+  compound, a pipe, a line before or after the heredoc, a substitution, a second dispatch),
+  the hook denies the call, names the other command and says to run the dispatch in a call of
+  its own; where it cannot read the call, it refuses. A function or an alias defined earlier
+  in the call is such a command. Alone in its call, a dispatch or a handoff is answered with
+  nothing, and so is a call whose every dispatch only looks (`list`, `read`, `wait`, a
+  `--help` in a flag position) whatever stands beside it, unless a redirection on the line
+  writes a file: the harness's own rules decide that call. Refused too: a handoff that
+  carries the hidden `--now`, which pins the time its records are written at for purlis's own
+  tests; a redirection on the dispatch's or the handoff's own line that writes a file
+  (`> notes.md`; not `2>&1` and not `/dev/null`); and a dispatch whose brief is fed from
+  anything but one quoted heredoc on its own line (a pipe, `< file`, `<<<`, an unquoted
+  heredoc, none), the shapes a handoff is refused for above. purlis never answers `ask`
+  here: a hook's `ask` stops the chat on a prompt in every permission mode, auto mode
+  included, and the person is asked only where something new reaches someone new (the
+  dispatch grant). On Codex and opencode no allow is handed, so nothing is refused for a
+  rider.
 
   **Text that only mentions a handoff is not one.** A heredoc body a reader takes (`cat > f
   <<'EOF'`), a quoted argument (`grep 'purlis handoff' docs`), an `echo`'s words, and the
@@ -740,7 +769,7 @@ it, is not winnable in a tokeniser, so the honest move is to say what is open:
   one: a `gh`/`glab` command that publishes prose, and a purlis command that persists it,
   are refused whenever a live substitution stands on the line — so
   `gh issue create --body "$(cat <vault>)"` and
-  `purlis persona remember "$(cat <vault>)"` both stop. See *Forge body substitution* and
+  `purlis persona remember <persona> "$(cat <vault>)"` both stop. See *Forge body substitution* and
   *purlis's own text substitution* above. Neither guard looks inside the substitution or
   knows anything about vaults; they refuse the shape. Everywhere else on this page, a quoted
   substitution is still open;
@@ -890,6 +919,15 @@ Some guards name a narrower move first, and it is usually the one you want:
   what the sub-agent found to its chat, which can hand it off. Your own terminal is the
   override here too, and it does something different: outside the app, the command opens
   nothing and says to open purlis ([handoff.md](handoff.md)).
+
+**A refusal the chat can fix itself does not send it to you** (#3830, the operator's ruling of
+2026-10-29). Where the refusal already names the exact shape to retry — a dispatch, handoff or
+commit beside another command ("in a call of its own"), a live substitution in a forge's or
+purlis's own text, a commit that skips the hooks, a handoff's brief, and `git add` or `git
+commit` in a branch folder — it ends with that shape, and not with the note above that says
+to run it yourself in your own terminal, so a chat in a loop corrects its own call instead of
+stopping on you. Every other refusal keeps the note. Your terminal is still the override for
+all of them.
 
 **If a guard is wrong about you *every time*, that is not an override problem.** It means
 purlis is holding a policy your organisation does not — an org that mandates signed

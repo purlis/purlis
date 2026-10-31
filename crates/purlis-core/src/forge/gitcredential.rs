@@ -61,9 +61,9 @@ pub const REFUSED_IN_A_CHAT: &str =
     "purlis's git credential helper answers only the git the purlis window runs, never a chat's.";
 
 /// The git the window runs on this thread: the app's binary, and the config home its accounts are
-/// in.
+/// in. Carried to a command's own threads with [`held`] and [`within`].
 #[derive(Clone)]
-struct Window {
+pub struct Window {
     exe: PathBuf,
     config_root: PathBuf,
     /// Renews a browser sign-in's token before the git that will ask for it starts.
@@ -83,6 +83,23 @@ pub fn as_the_window<T>(
     config_root: &Path,
     then: impl FnOnce() -> T,
 ) -> T {
+    let window = Window {
+        exe: exe.to_path_buf(),
+        config_root: config_root.to_path_buf(),
+        refresher: std::sync::Arc::new(Refresher::new(host, config_root)),
+    };
+    within(Some(&window), then)
+}
+
+/// The scope this thread runs under ([`as_the_window`]), for a command that hands work to threads
+/// of its own, as [`crate::worktree::git::isolation`] is. A chat's is never the window's:
+/// [`for_the_window`] asks that of the thread that runs the git.
+pub fn held() -> Option<Window> {
+    WINDOW.with(|held| held.borrow().clone())
+}
+
+/// Runs `then` with this thread in `window`'s scope, where there is one.
+pub fn within<T>(window: Option<&Window>, then: impl FnOnce() -> T) -> T {
     struct Restore(Option<Window>);
     impl Drop for Restore {
         fn drop(&mut self) {
@@ -90,14 +107,17 @@ pub fn as_the_window<T>(
             WINDOW.with(|held| *held.borrow_mut() = before);
         }
     }
-    let window = Window {
-        exe: exe.to_path_buf(),
-        config_root: config_root.to_path_buf(),
-        refresher: std::sync::Arc::new(Refresher::new(host, config_root)),
+    let Some(window) = window else {
+        return then();
     };
-    let before = WINDOW.with(|held| held.borrow_mut().replace(window));
+    let before = WINDOW.with(|held| held.borrow_mut().replace(window.clone()));
     let _restore = Restore(before);
     then()
+}
+
+/// Whether the git this thread runs is the window's, and no chat's.
+pub fn in_the_window() -> bool {
+    git::isolation().is_none() && held().is_some()
 }
 
 /// The `credential.helper` value for a git the window runs against `host`: purlis's helper, for
@@ -353,7 +373,7 @@ const PUSH_REMOTES_MOST: u64 = 1 << 20;
 
 /// The recorded remotes, or none when the file is missing, unreadable or not a record: a push
 /// then gets no purlis helper until the person saves from the window.
-fn read_push_remotes(config_root: &Path) -> std::collections::BTreeMap<String, String> {
+pub(crate) fn read_push_remotes(config_root: &Path) -> std::collections::BTreeMap<String, String> {
     crate::machine::read_beside(
         config_root,
         PUSH_REMOTES,
@@ -367,7 +387,7 @@ fn read_push_remotes(config_root: &Path) -> std::collections::BTreeMap<String, S
 }
 
 /// Writes the record into purlis's own folder of the config home, private to the person.
-fn write_push_remotes(
+pub(crate) fn write_push_remotes(
     config_root: &Path,
     recorded: &std::collections::BTreeMap<String, String>,
 ) -> std::io::Result<()> {

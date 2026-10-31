@@ -4,9 +4,10 @@
 //! `charter persona lint` — a deterministic check of each persona's definition: a reference
 //! that names no persona, a key charter cannot read, a missing role, vault or
 //! `delegate-when`, an unfinished draft, a `bin/` file that cannot run, an MCP server that
-//! cannot be declared, a skill its charter names that no agent can invoke, a key that only
-//! fed the retired sub-agent, and a generated sub-agent file that is still there (#1451). A
-//! port of `commands_persona.cmd_persona_lint` and `persona.lint`, `structural_errors`,
+//! cannot be declared, a skill its charter names that no agent can invoke, an entry of its
+//! `skills:` list its chats start without (#2934), a key that only fed the retired
+//! sub-agent, and a generated sub-agent file that is still there (#1451). A port of
+//! `commands_persona.cmd_persona_lint` and `persona.lint`, `structural_errors`,
 //! `key_issues`, `bin_issues` and the skill checks beneath them.
 //!
 //! [`Linter`] is the one implementation, and three readers ask it: this command, and the
@@ -62,6 +63,11 @@ impl Issue {
     }
 }
 
+/// What is said of a `skills:` line while the Skill studio's flag is off, when no chat reads it.
+const SKILLS_UNREAD: &str = "`skills:` is read only with the Skill studio preview on (Settings \
+     › You › Previews): then a chat as this persona loads each skill it names. Until then a \
+     chat loads a skill when it uses it";
+
 /// `persona.EMPTY_REFERENCE`.
 const EMPTY_REFERENCE: &str = "is empty — remove the key, or name a persona";
 
@@ -71,6 +77,13 @@ pub struct Linter<'a> {
     root: &'a Path,
     state: &'a Path,
     home: Option<PathBuf>,
+    /// Whether a variable a harness's skills are found by may be looked up in this process: off
+    /// where the caller named the home ([`Linter::with_home`]).
+    read_process_env: bool,
+    /// The built-in skills' directory a `purlis:` entry is checked against, where there is one.
+    built_in: Option<PathBuf>,
+    /// Whether the Skill studio's flag is on, where the caller said; else this machine's.
+    studio: Option<bool>,
     known: BTreeSet<String>,
     skills: OnceLock<Option<BTreeMap<String, bool>>>,
     /// The names of the profiles the project offers, read the first time a `model:` asks.
@@ -86,6 +99,9 @@ impl<'a> Linter<'a> {
             root,
             state,
             home: crate::profiles::home(),
+            read_process_env: true,
+            built_in: crate::skills::built_in_here(),
+            studio: None,
             known: super::names(root).into_iter().collect(),
             skills: OnceLock::new(),
             offered: OnceLock::new(),
@@ -93,8 +109,24 @@ impl<'a> Linter<'a> {
     }
 
     /// This linter, looking for installed skills under `home` rather than `$HOME`.
+    /// The harness skills a persona's `skills:` list is checked against are looked for there
+    /// too, by the harnesses' default places under it, and no variable of this process is read.
     pub fn with_home(mut self, home: Option<PathBuf>) -> Self {
         self.home = home;
+        self.read_process_env = false;
+        self
+    }
+
+    /// This linter, checking a `purlis:` entry of a persona's `skills:` list against the
+    /// built-in skills in `dir` rather than the bundle beside this binary, or against none.
+    pub fn with_built_in(mut self, dir: Option<PathBuf>) -> Self {
+        self.built_in = dir;
+        self
+    }
+
+    /// This linter, with the Skill studio's flag as `on` rather than as this machine has it.
+    pub fn with_studio(mut self, on: bool) -> Self {
+        self.studio = Some(on);
         self
     }
 
@@ -254,6 +286,7 @@ impl<'a> Linter<'a> {
         issues.extend(self.structural_errors(name));
         issues.extend(bin_issues(root, name));
         issues.extend(self.skill_ref_issues(&charter));
+        issues.extend(self.skills_list_issues(name));
         issues.extend(self.mcp_issues(name));
         // Its curation actions, each under its file: the same judgement the menus make when
         // they leave a broken one out ([`crate::curation::parse`]).
@@ -271,6 +304,9 @@ impl<'a> Linter<'a> {
             .collect();
         if let Some(refused) = definition_refusal(root, name) {
             issues.push(Issue::error(format!("persona.md: {refused}")));
+        }
+        if let Some(unread) = frontmatter_refusal(root, name) {
+            issues.push(Issue::error(format!("persona.md: {unread}")));
         }
         for used in crate::personagrant::uses_of(root, name) {
             issues.extend(self.reference_problem("uses", &used));
@@ -420,6 +456,75 @@ impl<'a> Linter<'a> {
         ))]
     }
 
+    /// **The entries of `name`'s own `skills:` list** (#2934): one that names nothing, one written
+    /// with the old `charter:` prefix, and one its chats start without
+    /// ([`crate::skills::persona::unresolved`]), each with its fix. Read through
+    /// [`Reference`](crate::skills::Reference), as a chat's start reads the list. With the
+    /// Skill studio's flag off no chat reads the list, and that is what is said of it.
+    fn skills_list_issues(&self, name: &str) -> Vec<Issue> {
+        use crate::skills::{Reason, Reference};
+        let written = super::declared_skills(self.root, name);
+        if written.is_empty() {
+            return Vec::new();
+        }
+        let studio = self.studio.unwrap_or_else(crate::skills::studio_on_here);
+        if !studio {
+            return vec![Issue::warn(SKILLS_UNREAD)];
+        }
+        let mut issues = Vec::new();
+        for entry in &written {
+            let shown = crate::personas::one_line(entry);
+            match Reference::parse(entry) {
+                None => issues.push(Issue::warn(format!(
+                    "`skills:` entry '{shown}' names no skill, so its chats load nothing for \
+                     it. Write `purlis:<name>` for a built-in skill, `<plugin>:<name>` for a \
+                     plugin's, or a skill's name"
+                ))),
+                Some(Reference::BuiltIn(skill)) if Reference::written_old(entry) => {
+                    issues.push(Issue::warn(format!(
+                        "`skills:` entry '{shown}' has the old prefix: it names \
+                         `purlis:{skill}`, and `purlis doctor --fix project-skills` rewrites it \
+                         to that"
+                    )))
+                }
+                Some(_) => {}
+            }
+        }
+        let env = self.home.as_ref().map(|home| crate::harness_plugin::Env {
+            chat: &[],
+            home: Some(home.clone()),
+            process: self.read_process_env,
+        });
+        let missing = crate::skills::persona::unresolved(
+            self.built_in.as_deref(),
+            self.root,
+            name,
+            env.as_ref(),
+        );
+        for (reference, reason) in missing {
+            let (what, fix) = match (&reference, reason) {
+                (_, Reason::NoSuchBuiltIn) => (
+                    "purlis has no built-in skill of this name",
+                    "Fix the name: `purlis skill list` lists the built-in skills",
+                ),
+                (Reference::Named(_), _) => (
+                    "no skill of this persona's, a workspace's or the project's has this name, \
+                     and no harness this project's profiles run has it on this machine",
+                    "Make the skill, install it, or fix the name",
+                ),
+                _ => (
+                    "no harness this project's profiles run has it on this machine",
+                    "Install its plugin, or fix the name",
+                ),
+            };
+            issues.push(Issue::warn(format!(
+                "`skills:` names {}: {what}, so its chats start without it. {fix}",
+                crate::personas::one_line(&reference.to_string())
+            )));
+        }
+        issues
+    }
+
     /// Every installed skill by name, and whether a model may invoke it — `None` when this
     /// machine has no plugin cache to look in.
     fn installed_skills(&self) -> Option<&BTreeMap<String, bool>> {
@@ -520,6 +625,19 @@ pub fn key_issues(root: &Path, name: &str) -> Vec<String> {
         }
     }
     issues
+}
+
+/// Why the definition's frontmatter reads as none though the file opens one (#3460): its first
+/// line is `---` and no later `---` line closes it ([`purlis_skills::fence::unclosed`]).
+/// Every key then reads as none, its `skills:` and `pinned-skills:` included, so it is an error.
+fn frontmatter_refusal(root: &Path, name: &str) -> Option<String> {
+    let text = crate::personas::load_text(root, name)?;
+    purlis_skills::fence::unclosed(&text).then(|| {
+        "its frontmatter is not one purlis reads, so none of its keys reach purlis (its role, \
+         skills, pinned skills and profile read as none). A frontmatter opens on a first line \
+         that is only `---` and ends at the next line that is only `---`: add that closing line"
+            .to_owned()
+    })
 }
 
 /// `persona.definition_refusal`: the definition, or its directory, resolves out of the plane.
@@ -706,20 +824,17 @@ fn skill_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
 /// A `SKILL.md`'s name (its `name:`, else its directory's) and whether a model may invoke it.
 fn read_skill(file: &Path) -> Option<(String, bool)> {
     let text = std::fs::read_to_string(file).ok()?;
-    let mut lines = text.lines();
-    if lines.next().map(str::trim) != Some("---") {
-        return None;
-    }
+    let fence = purlis_skills::fence::Fence::find(&text)?;
     let mut name: Option<String> = None;
     let mut human_only = false;
-    for line in lines {
-        if line.trim() == "---" {
-            break;
-        }
-        if let Some(value) = line.strip_prefix("name:") {
-            name = Some(value.trim().trim_matches(['"', '\'']).to_string());
-        } else if let Some(value) = line.strip_prefix("disable-model-invocation:") {
-            human_only = value.trim().eq_ignore_ascii_case("true");
+    for entry in fence.entries() {
+        match entry.key {
+            // A harness reads this file as YAML, so a quoted name is the name inside its quotes.
+            "name" => name = Some(entry.value.trim_matches(['"', '\'']).to_string()),
+            "disable-model-invocation" => {
+                human_only = entry.value.eq_ignore_ascii_case("true");
+            }
+            _ => {}
         }
     }
     let name = name.filter(|n| !n.is_empty()).or_else(|| {

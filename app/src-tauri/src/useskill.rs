@@ -110,6 +110,10 @@ pub struct SkillBudget {
     /// Which of the chat's workspace and persona pin a skill (SK-15d): where the pins are
     /// undone in the Skill studio when they alone are past the budget.
     pub pinned_by: Vec<crate::skillchange::SkillPinner>,
+    /// Where the chat reads none of its pins because its workspace's and its persona's together
+    /// pass the most it reads, though each alone is accepted (#3391): both, and how many each
+    /// pins. Null where its pins are read.
+    pub pins_together: Option<crate::skillchange::SkillPinsTogether>,
 }
 
 /// What Use skill… offers a chat, and its budget.
@@ -124,6 +128,44 @@ pub struct ChatSkills {
     pub skills: Vec<ChatSkill>,
     /// Its budget, where it is known.
     pub budget: Option<SkillBudget>,
+    /// The clones of its workspace it works in, by name, whose repo skills its harness reads
+    /// (#3462): what the Skills view narrows a chat's repo skills to. None for a chat in no clone.
+    pub repos: Vec<String>,
+    /// Why the chat gets no skills, where its harness is a declared one skills are not supported
+    /// on (SK-30): said in place of the words for a tool purlis does not know.
+    pub not_supported: Option<String>,
+    /// How its router extension did at its start (SK-15b): null for a chat routed by the
+    /// built-in router, which is asked nothing.
+    pub routing: Option<SkillRouting>,
+    /// The skills its persona names that it started without, as its tab's Notice says them
+    /// (SK-5), until that is put away: null for a chat that has every one. Held from its start,
+    /// so the chip on its pane says every need of the chat's own with no read of its own (#3953).
+    pub missing: Option<crate::chats::SkillsMissing>,
+}
+
+/// **How a chat's router extension did at its start** (SK-15b, ADR 0102 §6): the core's routing
+/// record, as the chat's tab and the studio say it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillRouting {
+    /// The router asked, by its extension's id.
+    pub router: String,
+    /// How long its question took, in milliseconds.
+    pub ms: u32,
+    /// Whether the chat lists what the built-in router shows instead.
+    pub fell_back: bool,
+    /// What a person is told of it, in the core's words.
+    pub said: String,
+}
+
+impl From<&purlis_core::skills::router::Routed> for SkillRouting {
+    fn from(routed: &purlis_core::skills::router::Routed) -> SkillRouting {
+        SkillRouting {
+            router: routed.record.router.clone(),
+            ms: u32::try_from(routed.record.ms).unwrap_or(u32::MAX),
+            fell_back: routed.record.fell_back.is_some(),
+            said: routed.said(),
+        }
+    }
 }
 
 impl ChatSkills {
@@ -134,6 +176,10 @@ impl ChatSkills {
             known: false,
             skills: Vec::new(),
             budget: None,
+            repos: Vec::new(),
+            not_supported: None,
+            routing: None,
+            missing: None,
         }
     }
 }
@@ -154,21 +200,19 @@ const NOT_STARTED: &str =
     "This chat has not started yet, so nothing was typed. Try again once it has.";
 
 /// A count the window draws: a `u32`, as large as it gets.
-fn small(n: usize) -> u32 {
+pub(crate) fn small(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 
-/// The skills of chat `session` of `held`, as the core works them out, and the salt its prompts
-/// are digested under, or `None` for a chat that is not open or runs no tool purlis knows the
-/// skills of. One read of the chat.
-fn of_the_chat(
+/// **The skills of `chat` of `held`, as the core works them out**, and the salt its prompts are
+/// digested under, or `None` for a chat that runs no tool purlis knows the skills of.
+fn of_this_chat(
     held: &Held,
-    session: u32,
+    chat: &crate::chats::ChatForSkills,
 ) -> Option<(
     purlis_core::skills::ChatSkills,
     Option<purlis_core::skillspan::PromptSalt>,
 )> {
-    let chat = held.chats().skills_of(session)?;
     let built_in =
         crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
     let skills = purlis_core::skills::for_use_skill(&purlis_core::skills::Running {
@@ -177,9 +221,22 @@ fn of_the_chat(
         persona: chat.persona.as_deref(),
         harness: chat.harness?,
         built_in: built_in.as_deref(),
-        plane_skills: true,
+        plane_skills: chat.plane_skills,
+        start: Some(&chat.start),
     });
-    Some((skills, chat.salt))
+    Some((skills, chat.salt.clone()))
+}
+
+/// **The clones `chat` of `held` works in**, by name (#3462): none for a chat at the project's
+/// root or in no clone.
+fn repos_of_the_chat(held: &Held, chat: &crate::chats::ChatForSkills) -> Vec<String> {
+    let (Some(workspace), Some(cwd)) = (chat.workspace.as_deref(), chat.cwd.as_deref()) else {
+        return Vec::new();
+    };
+    purlis_core::skills::clones_of_chat(held.root(), workspace, cwd)
+        .into_iter()
+        .map(|repo| repo.name)
+        .collect()
 }
 
 /// `skills`, for the window: none for a chat that runs no tool purlis knows.
@@ -222,7 +279,12 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
             ),
             still_over: skills.still_over.map(Into::into),
             pinned_by: skills.pinned_by.iter().cloned().map(Into::into).collect(),
+            pins_together: skills.pins_together.as_ref().map(Into::into),
         }),
+        repos: Vec::new(),
+        not_supported: None,
+        routing: None,
+        missing: None,
     }
 }
 
@@ -240,11 +302,22 @@ pub(crate) async fn chat_skills(
         if !purlis_core::skills::studio_on_here() {
             return Ok(ChatSkills::none(false));
         }
-        Ok(shown(
-            of_the_chat(&held, session)
+        let Some(chat) = held.chats().skills_of(session) else {
+            return Ok(shown(None));
+        };
+        let mut shown = shown(
+            of_this_chat(&held, &chat)
                 .map(|(skills, _)| skills)
                 .as_ref(),
-        ))
+        );
+        if shown.known {
+            shown.repos = repos_of_the_chat(&held, &chat);
+            shown.routing = chat.start.routed.as_ref().map(Into::into);
+            shown.missing = held.chats().skills_missing(session);
+        } else {
+            shown.not_supported = chat.not_supported.clone();
+        }
+        Ok(shown)
     })
     .await
 }
@@ -272,13 +345,22 @@ pub(crate) fn use_skill(
     if !purlis_core::skills::studio_on_here() {
         return Err("The Skill studio is not turned on on this machine.".to_owned());
     }
-    let (skills, salt) = of_the_chat(&held, session).ok_or_else(|| NO_TOOL.to_owned())?;
+    let chat = held
+        .chats()
+        .skills_of(session)
+        .ok_or_else(|| NO_TOOL.to_owned())?;
+    let (skills, salt) = of_this_chat(&held, &chat).ok_or_else(|| {
+        chat.not_supported
+            .clone()
+            .unwrap_or_else(|| NO_TOOL.to_owned())
+    })?;
     let typing = typing_of(&skills, salt.as_ref(), &skill, &values)?;
     typed_and_held(&held, session, typing, &|text| clipboard.put_text(text))
 }
 
 /// What Use skill… types to start `skill` of `skills` with `values`, its text digested under
-/// the chat's `salt`; refused for a chat that has no id yet, whose prompts nothing could match.
+/// the chat's `salt`; refused for a chat that has no prompt key, whose prompts nothing could
+/// match.
 fn typing_of(
     skills: &purlis_core::skills::ChatSkills,
     salt: Option<&purlis_core::skillspan::PromptSalt>,

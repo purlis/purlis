@@ -123,6 +123,24 @@ describe("a menu opened by its trigger", () => {
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
   });
 
+  it("closes on a press outside on a control, which keeps the keyboard", async () => {
+    render(
+      <>
+        <Button>Elsewhere</Button>
+        <Dropdown />
+      </>,
+    );
+    screen.getByRole("button", { name: "Things" }).focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(screen.getByRole("menuitem", { name: /Rename/ })).toHaveFocus());
+    const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
+    await userEvent.click(elsewhere);
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    // After the family's hand-back and React Aria's, a frame later: the press's control has it.
+    await new Promise((frame) => requestAnimationFrame(frame));
+    expect(elsewhere).toHaveFocus();
+  });
+
   it("tells its owner it closed, and the keyboard stays where its owner put it", async () => {
     const closed = vi.fn(() =>
       screen.getByRole("button", { name: "Elsewhere", hidden: true }).focus(),
@@ -136,8 +154,10 @@ describe("a menu opened by its trigger", () => {
     await userEvent.click(screen.getByRole("button", { name: "Things" }));
     await userEvent.keyboard("{Escape}");
     expect(closed).toHaveBeenCalledTimes(1);
-    // React Aria's own hand-back, a frame later, finds the keyboard already given.
+    // React Aria's own hand-back, a frame later, finds the keyboard already given, and so does
+    // the family's, a microtask after the menu goes: the owner's place stands.
     await new Promise((frame) => requestAnimationFrame(frame));
+    expect(screen.getByRole("button", { name: "Elsewhere" })).toHaveFocus();
     await new Promise((frame) => requestAnimationFrame(frame));
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Elsewhere" }));
   });
@@ -446,6 +466,28 @@ describe("a context menu", () => {
     await waitFor(() => expect(document.activeElement).toBe(row));
     fireEvent.keyDown(row, { key: "ContextMenu" });
     expect(await screen.findByRole("menu")).toBeInTheDocument();
+  });
+
+  it("stays up for a scroll that left its row where it was, and closes for one that moved it", async () => {
+    // #3797: the keyboard's arrival scrolls a list to the row, and that scroll's event comes a
+    // frame later, after a Shift+F10 pressed at once has opened the menu.
+    render(
+      <div data-testid="scroller" style={{ overflow: "auto" }}>
+        <OnARow />
+      </div>,
+    );
+    const row = screen.getByRole("button", { name: "steward 4" });
+    row.focus();
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    await screen.findByRole("menu", { name: "Row steward 4" });
+
+    fireEvent.scroll(screen.getByTestId("scroller"));
+    await new Promise((soon) => setTimeout(soon, 20));
+    expect(screen.getByRole("menu", { name: "Row steward 4" })).toBeInTheDocument();
+
+    vi.spyOn(row, "getBoundingClientRect").mockReturnValue(new DOMRect(0, -58, 100, 20));
+    fireEvent.scroll(screen.getByTestId("scroller"));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
   });
 
   it("runs no row on the release of the press that opened it (a Mac's Ctrl+click)", async () => {

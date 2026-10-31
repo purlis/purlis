@@ -12,6 +12,7 @@ import type { BrowserFrame, ChatBrowser, OpenChat, TimelineMoment } from "./bind
 import { setChatsListPrefs } from "./chatsListPrefs";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
+import { wears } from "./textRoles.testkit";
 import { eventually, tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
@@ -75,8 +76,17 @@ const CHAT_1 = "01JB0000000000000000000001";
 /** Chat 1's browser timeline, as the core keeps it (#2017). */
 let timeline: TimelineMoment[] = [];
 
-/** The core, with chats 1 and 2 open in alpha and `browsers` as their browsers. */
-function core(browsers: ChatBrowser[]) {
+/** A second project this window holds, where a test asks for one: chat 5 open in its alpha. */
+const OTHER = "/home/dev/other";
+
+/** The core, with chats 1 and 2 open in alpha and `browsers` as their browsers; and, where
+ *  `other` is given, a second project restored beside it, with chat 5 and `other` its browsers. */
+function core(
+  browsers: ChatBrowser[],
+  other?: ChatBrowser[],
+  /** Where given, the other project's view tabs are answered only once this settles. */
+  otherViews?: Promise<unknown>,
+) {
   const asked: Asked[] = [];
   // Every listener of each event: more than one part of the window hears an event.
   const listeners = new Map<string, number[]>();
@@ -92,8 +102,14 @@ function core(browsers: ChatBrowser[]) {
       return 1;
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
-    if (cmd === "opened_chats") return open;
-    if (cmd === "chat_browsers") return browsers;
+    const there = other !== undefined && a.plane === OTHER;
+    if (cmd === "planes_to_restore" && other !== undefined)
+      return { windows: [{ planes: [PLANE, OTHER], active: 0 }], dropped: [] };
+    if (cmd === "open_plane") return { plane: a.path, ask: null };
+    if (cmd === "opened_chats") return there ? [chat(5)] : open;
+    if (cmd === "reopened_views" && there && otherViews !== undefined)
+      return otherViews.then(() => []);
+    if (cmd === "chat_browsers") return there ? other : browsers;
     if (cmd === "browsers_taken_back") return takenBack.splice(0, takenBack.length);
     if (cmd === "chat_browser_timeline") return a.chat === CHAT_1 ? timeline : [];
     if (cmd === "chat_browser_timeline_shot") return "iVBORw==";
@@ -102,6 +118,24 @@ function core(browsers: ChatBrowser[]) {
       views.set(`${String(a.program)} ${String(a.role)}`, a.frames as Channel<BrowserFrame>);
       return { view, width: 1280, height: 800, person_drives: false };
     }
+    if (cmd === "plane_sidebar" && there)
+      return {
+        root: OTHER,
+        personas: ["steward"],
+        persona: "steward",
+        unfiled: [],
+        workspaces: [
+          {
+            name: "alpha",
+            path: `${OTHER}/workspaces/alpha`,
+            vision: "",
+            todos: [],
+            colour: null,
+            live: false,
+            chats: [chat(5)],
+          },
+        ],
+      };
     if (cmd === "plane_sidebar")
       return {
         root: PLANE,
@@ -168,13 +202,13 @@ function core(browsers: ChatBrowser[]) {
       act(() =>
         views
           .get(`${program} ${role}`)
-          ?.onmessage({ aim: "", jpeg: "", reconnection: null, page: { origin } }),
+          ?.onmessage({ aim: "", jpeg: "", reconnection: null, page: { origin }, closed: null }),
       ),
     /** A frame on the view of `program` attached as `role`. */
     frame: (program: string, role: "focused" | "thumbnail", base64: string) =>
       views
         .get(`${program} ${role}`)
-        ?.onmessage({ aim: "p1:1", jpeg: base64, reconnection: null, page: null }),
+        ?.onmessage({ aim: "p1:1", jpeg: base64, reconnection: null, page: null, closed: null }),
   };
 }
 
@@ -372,7 +406,7 @@ describe("a chat's browsers counted on its tab", () => {
     await opened();
 
     const count = await screen.findByRole("img", { name: "2 browsers" });
-    expect(count).toHaveClass("count-pill");
+    expect(count).toHaveAttribute("data-scope", "count");
     expect(count.closest(".tab")).not.toBeNull();
   });
 });
@@ -658,6 +692,9 @@ describe("who drives a chat's browser, on its row and its thumbnail (#2300)", ()
     });
     const row = within(browsers).getByRole("button", { name: /Browser b1/ });
     expect(row.textContent).toContain("you are driving");
+    // Louder than the row's other marks by its weight: the meta role, strong (#3917). A colour
+    // App.css set on it lost to the role's layer and was never drawn.
+    wears(row.querySelector(".chat-browser-driver"), "meta", "the person's driving mark", true);
     expect(tipOf(row)).toContain("You are driving this browser.");
     const thumbnail = await screen.findByRole("button", {
       name: "Open browser b1 of steward 1, you are driving",
@@ -830,5 +867,129 @@ describe("a browser's view tab, told to the core (#2025)", () => {
         viewed: false,
       }),
     );
+  });
+});
+
+describe("the Browsers grid (#2027)", () => {
+  const grid = () => screen.findByRole("listbox", { name: "Browsers" });
+
+  it("opens from the palette in a tab of its own, every browser of the project a live tile", async () => {
+    const host = core([B7, B8]);
+    await opened();
+    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+
+    await fromThePalette("Open browsers");
+
+    await waitFor(() => expect(tabNames()).toContain("Browsers"));
+    const tiles = within(await grid()).getAllByRole("option");
+    expect(tiles.map((one) => one.getAttribute("data-program"))).toEqual(["B7", "B8"]);
+    expect(within(tiles[0]).getByText("Browser b1 of steward 1")).toBeInTheDocument();
+    // Each tile is a thumbnail view, about a frame a second, drawn from a wider frame.
+    await waitFor(() => {
+      host.frame("B8", "thumbnail", "/9j/2A==");
+      expect(painted.some((one) => one.across === 800)).toBe(true);
+    });
+  });
+
+  it("opens a pressed tile's browser view, on its chat's strip", async () => {
+    core([B7]);
+    await opened();
+    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+    await fromThePalette("Open browsers");
+
+    await userEvent.click(within(await grid()).getByRole("option", { name: /Browser b1/ }));
+
+    await waitFor(() => expect(tabNames()).toContain("Browser b1 of steward 1"));
+  });
+
+  it("is a button on the Chats view's heading while the project has a browser", async () => {
+    const host = core([]);
+    await opened();
+    await chatsTree();
+    const chats = screen.getByTestId("chats-section");
+    expect(within(chats).queryByRole("button", { name: "Open browsers" })).toBeNull();
+
+    host.listed([B7]);
+    await userEvent.click(await within(chats).findByRole("button", { name: "Open browsers" }));
+    await waitFor(() => expect(tabNames()).toContain("Browsers"));
+  });
+
+  it("opens another project's browser in that project, brought to the front", async () => {
+    core([B7], [{ ...B7, session: 5, program: "C1" }]);
+    await opened();
+    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+    await fromThePalette("Open browsers");
+    await userEvent.click(
+      within(await screen.findByRole("radiogroup", { name: "Show the browsers of" })).getByRole(
+        "radio",
+        { name: /All projects/ },
+      ),
+    );
+
+    const theirs = await within(await grid()).findByRole("option", {
+      name: "Browser b1 of steward 5",
+    });
+    await userEvent.click(theirs);
+
+    // The other project is in front, its browser's view chosen on its strip.
+    await waitFor(() => expect(tabNames()).toContain("Browser b1 of steward 5"));
+    expect(tabNames()).not.toContain("Browsers");
+    const tab = within(stripNamed("Tabs"))
+      .getAllByRole("tab")
+      .find((one) => one.querySelector(".tab-name")?.textContent === "Browser b1 of steward 5");
+    expect(tab).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("is on the Chats view's heading for the grid's own tiles: one not ended yet is none", async () => {
+    core([{ ...B7, unended: true }]);
+    await opened();
+    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+    const chats = screen.getByTestId("chats-section");
+    expect(within(chats).queryByRole("button", { name: "Open browsers" })).toBeNull();
+
+    // A browser of the person's own, which the grid lists.
+    await fromThePalette("New browser");
+    await waitFor(() => expect(tabNames()).toContain("Browser"));
+    expect(await within(chats).findByRole("button", { name: "Open browsers" })).toBeTruthy();
+  });
+
+  it("offers another project's browsers once that project has put its tabs back", async () => {
+    let putBack: (value?: unknown) => void = () => undefined;
+    core(
+      [B7],
+      [{ ...B7, session: 5, program: "C1" }],
+      new Promise((done) => {
+        putBack = done;
+      }),
+    );
+    await opened();
+    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+    await fromThePalette("Open browsers");
+    const scopes = await screen.findByRole("radiogroup", { name: "Show the browsers of" });
+    await userEvent.click(within(scopes).getByRole("radio", { name: /All projects/ }));
+    // Its tabs are not back yet: a tab its tile opened now would be laid out over.
+    expect(
+      within(await grid()).queryByRole("option", { name: "Browser b1 of steward 5" }),
+    ).toBeNull();
+
+    await act(async () => putBack());
+    await userEvent.click(
+      await within(await grid()).findByRole("option", { name: "Browser b1 of steward 5" }),
+    );
+    await waitFor(() => expect(tabNames()).toContain("Browser b1 of steward 5"));
+    // And it stays: nothing put back after it lays it out over.
+    await act(async () => new Promise((done) => setTimeout(done, 50)));
+    expect(tabNames()).toContain("Browser b1 of steward 5");
+  });
+
+  it("follows the chats' browsers as they come and go", async () => {
+    const host = core([B7]);
+    await opened();
+    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+    await fromThePalette("Open browsers");
+    await grid();
+
+    host.listed([]);
+    expect(await screen.findByText("No browser runs in this project")).toBeInTheDocument();
   });
 });

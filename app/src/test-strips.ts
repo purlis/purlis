@@ -196,13 +196,16 @@ export async function showThePanel(view: string, testid = `panel-${view.toLowerC
 
 /**
  * **The title bar's workspace chips** (#2916): each pin of the project in front, and the one in
- * front when it is not pinned (the dashed chip), in the bar's order.
+ * front when it is not pinned (the dashed chip), in the bar's order. The plane root's chip is
+ * not one (#3654): it is the house before them.
  */
 export function workspaceChips(): HTMLElement[] {
   return [
     ...screen
       .getByTestId("title-bar")
-      .querySelectorAll<HTMLElement>('[data-scope="titlebar"][data-part="workspace"]'),
+      .querySelectorAll<HTMLElement>(
+        '[data-scope="titlebar"][data-part="workspace"]:not([data-variant="root"])',
+      ),
   ];
 }
 
@@ -263,7 +266,9 @@ export async function findTheWorkspaces(): Promise<HTMLElement> {
 
 /** What waits in a chip or a row, as its count says it: ` , 2 waiting`, or nothing. */
 const waitingSaid = (one: Element) => {
-  const count = one.querySelector('[data-part="count"]')?.textContent;
+  // A chip's count is the chip's part, a switcher row's its own (#3947).
+  const part = one.matches('[data-part="row"]') ? "row-count" : "count";
+  const count = one.querySelector(`[data-part="${part}"]`)?.textContent;
   return count ? `, ${count} waiting` : "";
 };
 

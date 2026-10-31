@@ -143,6 +143,13 @@ fn zero_renders_nothing_and_a_count_renders_beside_what_it_counts() {
     std::fs::write(todos.join("MEMORY.md"), "# todos\n").unwrap();
     std::fs::write(todos.join("20260302-090000-one.md"), "# one\n").unwrap();
     std::fs::write(todos.join("20260302-090100-two.md"), "# two\n").unwrap();
+    // A done todo stays in `archive/` (ADR 0106), and is not open.
+    std::fs::create_dir_all(todos.join("archive")).unwrap();
+    std::fs::write(
+        todos.join("archive").join("20260301-090000-old.md"),
+        "# old\n",
+    )
+    .unwrap();
     // The index is not a todo, and the count is the store's own gate — two files, not three.
     assert!(row(&root, &serde_json::Value::Null, &env).contains("\x1b[2mtodo\x1b[0m 2"));
 }

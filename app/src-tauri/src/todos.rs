@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! A workspace's todos, written from the window's Todos panel (SI-3): record one, close one as
-//! done, forget one — and read one, for its view tab (#1214).
+//! done, reopen a done one, forget one open or done — and read one, for its view tab (#1214).
 //!
 //! **Every command names its workspace.** The panel is about the focused workspace and says
 //! which, and what it sends is that name — never "the active one", which is a terminal's idea
@@ -11,9 +11,10 @@
 //!
 //! Thin, as `workspaces.rs` is. The rules are `purlis_core::workspaces::Workspace`'s, which is
 //! what `charter ws todo` calls too: a todo with no words or about work already on the list is
-//! refused ([`Workspace::record_todo`]), a close writes the journal first and then deletes
-//! ([`Workspace::close_todo`]), and a forget journals nothing and refuses a slug that is not one
-//! path segment ([`Workspace::forget_todo`]).
+//! refused ([`Workspace::record_todo`]), a close writes the journal first and then keeps the
+//! todo as done ([`Workspace::close_todo`], ADR 0106), a reopen brings a done one back as it was
+//! ([`Workspace::reopen_todo`]), and a forget journals nothing and refuses a slug that is not one
+//! path segment ([`Workspace::forget_todo`], [`Workspace::forget_done_todo`]).
 
 use std::path::Path;
 
@@ -37,6 +38,14 @@ fn title_of(ws: &Workspace, slug: &str) -> String {
     ws.todos()
         .ok()
         .and_then(|open| open.into_iter().find(|todo| todo.slug == slug))
+        .map_or_else(|| slug.to_owned(), |todo| todo.title)
+}
+
+/// The title of the done todo `slug`, or the slug when charter cannot read one.
+fn done_title_of(ws: &Workspace, slug: &str) -> String {
+    ws.done_todos()
+        .ok()
+        .and_then(|done| done.into_iter().find(|todo| todo.slug == slug))
         .map_or_else(|| slug.to_owned(), |todo| todo.title)
 }
 
@@ -130,7 +139,7 @@ fn add_in(
     Ok(format!("Todo recorded in '{name}'."))
 }
 
-/// Close a todo as done: the journal records it, then the todo goes.
+/// Close a todo as done: the journal records it, then the todo is kept as done (ADR 0106).
 #[tauri::command]
 #[specta::specta]
 pub async fn todo_done(
@@ -142,7 +151,7 @@ pub async fn todo_done(
     let held = planes.held(&plane)?;
     crate::off_the_window(WRITING, move || {
         let said = done_in(held.root(), &workspace, &slug, now());
-        // The journal records it, then the todo goes.
+        // The journal records it, then the todo moves to the done ones.
         held.wrote(&[
             format!("workspaces/{workspace}/memory"),
             format!("workspaces/{workspace}/todos"),
@@ -163,6 +172,62 @@ fn done_in(
     ws.close_todo(slug, stamp).map_err(|e| e.to_string())?;
     Ok(format!(
         "Closed '{}' in '{name}' — the journal has the trace.",
+        purlis_core::personas::one_line(&title)
+    ))
+}
+
+/// Open a done todo again, as it was: the Todos view's checkbox unticked (R131, ADR 0106).
+#[tauri::command]
+#[specta::specta]
+pub async fn todo_reopen(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    slug: String,
+) -> Result<String, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window(WRITING, move || {
+        let said = reopen_in(held.root(), &workspace, &slug);
+        held.wrote(&[format!("workspaces/{workspace}/todos")]);
+        said
+    })
+    .await
+}
+
+fn reopen_in(root: &Path, name: &str, slug: &str) -> Result<String, String> {
+    let ws = workspace(root, name)?;
+    let title = done_title_of(&ws, slug);
+    ws.reopen_todo(slug).map_err(|e| e.to_string())?;
+    Ok(format!(
+        "Reopened '{}' in '{name}'.",
+        purlis_core::personas::one_line(&title)
+    ))
+}
+
+/// Delete a done todo: it goes from the done ones, and nothing is journalled.
+#[tauri::command]
+#[specta::specta]
+pub async fn todo_forget_done(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    slug: String,
+) -> Result<String, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window(WRITING, move || {
+        let said = forget_done_in(held.root(), &workspace, &slug);
+        held.wrote(&[format!("workspaces/{workspace}/todos")]);
+        said
+    })
+    .await
+}
+
+fn forget_done_in(root: &Path, name: &str, slug: &str) -> Result<String, String> {
+    let ws = workspace(root, name)?;
+    let title = done_title_of(&ws, slug);
+    ws.forget_done_todo(slug).map_err(|e| e.to_string())?;
+    Ok(format!(
+        "Deleted the done todo '{}' from '{name}'.",
         purlis_core::personas::one_line(&title)
     ))
 }
@@ -254,8 +319,18 @@ mod tests {
         assert!(!dir.path().join("workspaces/gamma").exists());
     }
 
+    fn done(root: &Path, name: &str) -> Vec<String> {
+        workspace(root, name)
+            .unwrap()
+            .done_todos()
+            .unwrap()
+            .into_iter()
+            .map(|todo| todo.title)
+            .collect()
+    }
+
     #[test]
-    fn a_todo_closed_as_done_is_gone_and_the_journal_names_it() {
+    fn a_todo_closed_as_done_stays_done_and_the_journal_names_it() {
         let dir = plane();
         add_in(dir.path(), "alpha", "Drop the old importer", at()).unwrap();
         let slug = open(dir.path(), "alpha")[0].0.clone();
@@ -264,9 +339,37 @@ mod tests {
 
         assert!(said.contains("Drop the old importer"), "{said}");
         assert!(open(dir.path(), "alpha").is_empty());
+        assert_eq!(done(dir.path(), "alpha"), ["Drop the old importer"]);
         let journal = workspace(dir.path(), "alpha").unwrap().memories().unwrap();
         assert_eq!(journal.len(), 1, "{journal:?}");
         assert!(journal[0].title.contains("Drop the old importer"));
+    }
+
+    #[test]
+    fn a_done_todo_reopens_as_it_was_and_a_deleted_one_is_gone() {
+        let dir = plane();
+        add_in(dir.path(), "alpha", "Drop the old importer", at()).unwrap();
+        let slug = open(dir.path(), "alpha")[0].0.clone();
+        done_in(dir.path(), "alpha", &slug, at()).unwrap();
+
+        let said = reopen_in(dir.path(), "alpha", &slug).unwrap();
+
+        assert_eq!(said, "Reopened 'Drop the old importer' in 'alpha'.");
+        assert_eq!(
+            open(dir.path(), "alpha"),
+            [(slug.clone(), "Drop the old importer".into())]
+        );
+        assert!(done(dir.path(), "alpha").is_empty());
+
+        done_in(dir.path(), "alpha", &slug, at()).unwrap();
+        let said = forget_done_in(dir.path(), "alpha", &slug).unwrap();
+        assert_eq!(
+            said,
+            "Deleted the done todo 'Drop the old importer' from 'alpha'."
+        );
+        assert!(done(dir.path(), "alpha").is_empty());
+        assert!(open(dir.path(), "alpha").is_empty());
+        assert!(reopen_in(dir.path(), "alpha", &slug).is_err());
     }
 
     #[test]
@@ -312,6 +415,8 @@ mod tests {
 
         assert!(forget_in(dir.path(), "alpha", "../../beta/workspace").is_err());
         assert!(done_in(dir.path(), "alpha", "../../beta/workspace", at()).is_err());
+        assert!(reopen_in(dir.path(), "alpha", "../../beta/workspace").is_err());
+        assert!(forget_done_in(dir.path(), "alpha", "../../beta/workspace").is_err());
         assert!(charter.exists());
     }
 }

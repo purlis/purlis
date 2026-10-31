@@ -11,7 +11,8 @@ import { forgetExtensionsOn } from "./extensionsOn";
 import { forgetProjectThemes } from "./projectTheme";
 import { forgetScreenReaderMode, screenReaderMode } from "./screenReader";
 import App from "./App";
-import { sayingSomething, stripNamed } from "./test-strips";
+import { stripNamed } from "./test-strips";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * The palette against the whole window: every action it lists reaching what the window
@@ -350,9 +351,8 @@ describe("the palette reaching what the window can do", () => {
 
     await runFromPalette("merge this chat");
 
-    await waitFor(() =>
-      expect(sayingSomething()[0]).toHaveTextContent("charter/fix-it landed: abc1234 → def5678"),
-    );
+    // Said on the status bar's card (#3653), wherever that stands among the window's statuses.
+    expect(await findResult("charter/fix-it landed: abc1234 → def5678")).toBeInTheDocument();
     expect(asked.find(({ cmd }) => cmd === "worktree_merge")?.args).toMatchObject({
       plane: "/home/dev/plane",
       workspace: "alpha",
@@ -372,11 +372,14 @@ describe("the palette reaching what the window can do", () => {
 
     await runFromPalette("remove the folder of this chat");
 
-    // Verbatim, beside the rows rather than behind them, and the palette is still up.
-    const alert = await within(
+    // Verbatim, beside the rows rather than behind them, and the palette is still up: a polite
+    // status, told as a refusal in words (#3344).
+    const line = await within(
       await screen.findByRole("dialog", { name: "Command palette" }),
-    ).findByRole("alert");
-    expect(alert).toHaveTextContent(said);
+    ).findByText((text) => text.includes(said));
+    const status = line.closest('[role="status"]');
+    expect(status).toHaveTextContent(said);
+    expect(status).toHaveTextContent(/^Not done:/);
     expect(
       asked.filter(({ cmd }) => cmd === "worktree_remove").map(({ args }) => args),
     ).toMatchObject([{ force: false }]);
@@ -397,9 +400,10 @@ describe("the palette reaching what the window can do", () => {
     await userEvent.keyboard("{Escape}");
 
     await runFromPalette("remove the folder of this chat");
-    await within(await screen.findByRole("dialog", { name: "Command palette" })).findByRole(
-      "alert",
-    );
+    const refused = await within(
+      await screen.findByRole("dialog", { name: "Command palette" }),
+    ).findByText((text) => text.includes("svc/fix-it has uncommitted changes"));
+    expect(refused.closest('[role="status"]')).toHaveTextContent(/^Not done:/);
     refuse = false;
     // The palette stayed open, and the answer to the sentence is now a row in it.
     await userEvent.clear(screen.getByRole("combobox"));

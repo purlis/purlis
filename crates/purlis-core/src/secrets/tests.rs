@@ -243,6 +243,18 @@ fn a_rename_of_a_key_the_vault_does_not_hold_is_not_found() {
 }
 
 #[test]
+fn a_key_name_holding_a_line_end_is_shown_on_the_refusal_s_one_line_and_never_starts_another() {
+    // A refusal names the key it was asked for. The name is not purlis's: its line end is
+    // shown marked, so it cannot start a line that reads as purlis's own (#3321).
+    let (_tmp, ctx, v) = plane_with("keyring");
+    let err = cmd::rename(&ctx, &v, "MISSING\n\u{2713} renamed", "NEW").unwrap_err();
+
+    let said = err.said();
+    assert_eq!(said.lines().count(), 1, "{said}");
+    assert!(said.contains("MISSING\u{27e6}U+000A\u{27e7}"), "{said}");
+}
+
+#[test]
 fn renaming_in_a_reference_vault_moves_the_reference_and_never_resolves_it() {
     // No `op` on this PATH: a rename that resolved the reference would fail, and one that
     // then stored what it resolved would turn a pointer into a plaintext.
@@ -416,7 +428,7 @@ fn no_refusal_or_debug_of_an_identity_move_carries_the_token() {
     let err = identity::move_to_keyring(&carrying, &v).unwrap_err();
 
     for shown in [
-        err.message.clone(),
+        err.message.to_string(),
         format!("{err:?}"),
         format!("{carrying:?}"),
     ] {

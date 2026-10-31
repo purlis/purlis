@@ -17,6 +17,7 @@ import { forgetTextSizes, onTextSizes, textSizes, type TextSizes } from "./textS
 import { CHATS_LIST, type ChatsListPrefs } from "./chatsListPrefs";
 import { YOUR_EDITOR } from "./yourEditor";
 import { RAIL_MODE } from "./railMode";
+import { SKILLS_VIEW } from "./skillsViewPrefs";
 import { APPEARANCE, type Appearance } from "./appearance";
 import { NOTIFICATIONS, type NotificationPrefs } from "./notificationPrefs";
 import { STATUS_BAR, type StatusBarPrefs } from "./statusBarPrefs";
@@ -34,6 +35,7 @@ import {
 import { forgetEntering } from "./settings/entering";
 import { forgetDismissals } from "./dismissals";
 import type { YourEditor } from "./bindings";
+import type { GroupId } from "./skillsListing";
 import { atCreation, onLayoutMovedAside, sayAboutThisMachine, type Reading } from "./windowprefs";
 
 /**
@@ -542,6 +544,7 @@ const LAYOUT_PREFS = [
   NOTIFICATIONS,
   STATUS_BAR,
   RAIL_MODE,
+  SKILLS_VIEW,
 ] as const satisfies readonly {
   readonly key: PrefField;
 }[];
@@ -584,6 +587,9 @@ type Document = {
   status?: StatusBarPrefs;
   /** The project rail hiding itself (`railMode.ts`, #2915), while it does. */
   rail?: "auto";
+  /** The Skills view's folded groups (`skillsViewPrefs.ts`, #3281, #3693), while they are not
+   *  the default. */
+  skills?: { folded?: GroupId[] };
 };
 
 /** One project's entry: its own arrangement, once it has one, and what its views keep

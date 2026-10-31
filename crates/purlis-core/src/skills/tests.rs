@@ -325,6 +325,7 @@ fn a_host_on(tmp: &Path) -> (PathBuf, crate::hoststart::Kit) {
         plugin: Some(plugin),
         git_hooks: None,
         skill_sets: Some(root.join("data").join(crate::hoststart::SKILL_SETS)),
+        chat_settings: None,
     };
     (plane, kit)
 }
@@ -358,20 +359,24 @@ fn a_skills_folder_a_running_chat_uses_is_kept_and_removed_once_the_chat_has_end
     let (plane, kit) = a_host_on(tmp.path());
     let sets = kit.skill_sets.clone().unwrap();
     // The host arms a Claude Code chat as the window would, with the Skill studio on.
-    let (args, env) = crate::hoststart::armed_as(
-        true,
-        &crate::hoststart::Arming {
-            root: &plane,
-            kit: &kit,
-            harness: Some(Harness::ClaudeCode),
-            cwd: Some(&plane),
-            plugins: &crate::harness_plugin::Chosen::new(),
-            sandbox: None,
-            persona: None,
-            env: &[],
-            graded: false,
-        },
-    )
+    let (args, env) = crate::hoststart::armed(&crate::hoststart::Arming {
+        root: &plane,
+        kit: &kit,
+        harness: Some(Harness::ClaudeCode),
+        cwd: Some(&plane),
+        plugins: &crate::harness_plugin::Chosen::new(),
+        sandbox: None,
+        persona: None,
+        env: &[],
+        graded: false,
+        skills: &Box::new(crate::hoststart::ChatSkills::read(
+            true,
+            &plane,
+            Some(Harness::ClaudeCode),
+            Some(&plane),
+            None,
+        )),
+    })
     .unwrap();
     let folder = args
         .windows(2)
@@ -403,6 +408,7 @@ fn a_skills_folder_a_running_chat_uses_is_kept_and_removed_once_the_chat_has_end
             },
             number: 1,
             reporting: None,
+            prompt_key: None,
         },
     );
     assert!(
@@ -487,6 +493,94 @@ fn a_skills_folder_no_chat_uses_is_removed_once_its_grace_has_passed_and_never_w
     assert_eq!(
         std::fs::read_to_string(skill.join("SKILL.md")).unwrap(),
         "keep me"
+    );
+}
+
+/// An event log that counts the ends it was told of, and keeps nothing.
+#[cfg(unix)]
+#[derive(Clone, Default)]
+struct CountsEnds(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+#[cfg(unix)]
+impl purlis_host::Record for CountsEnds {
+    fn record(&self, _entry: serde_json::Value) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn ended(&self, _ended: &purlis_host::Ended<'_>) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_host_with_no_window_tidies_after_each_program_ends_and_keeps_a_folder_a_running_one_uses() {
+    use purlis_host::Record as _;
+    let tmp = tempfile::tempdir().unwrap();
+    let sets = tmp.path().join("skill-sets");
+    let skill = tmp.path().join("plane/skills/deploy");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(skill.join("SKILL.md"), "keep me").unwrap();
+    let unused = a_set_folder(&sets, A, &skill);
+    last_laid_out_long_ago(&unused);
+    // Used by a program that runs: this test's own process, noted after it started.
+    let used = a_set_folder(&sets, B, &skill);
+    last_laid_out_long_ago(&used);
+    std::fs::create_dir_all(sets.join(HELD).join(B)).unwrap();
+    std::fs::write(
+        sets.join(HELD).join(B).join(std::process::id().to_string()),
+        "",
+    )
+    .unwrap();
+    let ends = CountsEnds::default();
+    let host_log =
+        TidiesAfterEachEnd::of(ends.clone(), Some(sets.clone()), std::time::Duration::ZERO);
+
+    host_log.ended(&purlis_host::Ended {
+        project_path: tmp.path(),
+        number: 1,
+        exit: purlis_session_protocol::session::Exit::Code(0),
+        stopped: None,
+        watched: false,
+    });
+
+    assert_eq!(
+        ends.0.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "the end is the log's own still"
+    );
+    assert!(
+        within_ten_seconds(|| !unused.exists()),
+        "a folder no running program uses goes"
+    );
+    assert!(
+        used.join("skills/deploy").is_symlink(),
+        "one a running program uses is kept"
+    );
+    assert_eq!(
+        std::fs::read_to_string(skill.join("SKILL.md")).unwrap(),
+        "keep me"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_host_with_no_sets_folder_only_keeps_the_end() {
+    use purlis_host::Record as _;
+    let tmp = tempfile::tempdir().unwrap();
+    let ends = CountsEnds::default();
+    let host_log = TidiesAfterEachEnd::of(ends.clone(), None, std::time::Duration::ZERO);
+    host_log.ended(&purlis_host::Ended {
+        project_path: tmp.path(),
+        number: 1,
+        exit: purlis_session_protocol::session::Exit::Code(0),
+        stopped: None,
+        watched: true,
+    });
+    assert_eq!(ends.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(
+        host_log.log_end().is_err(),
+        "what the log does not keep, it still does not"
     );
 }
 
@@ -830,6 +924,7 @@ fn running<'a>(root: &'a Path, bundle: &'a Path, workspace: Option<&'a str>) -> 
         harness: Harness::ClaudeCode,
         built_in: Some(bundle),
         plane_skills: true,
+        start: None,
     }
 }
 
@@ -887,7 +982,7 @@ fn use_skill_offers_exactly_the_chats_set_and_a_manual_only_one_is_free_on_every
         ["deploy", "purlis-handoff", "release", "review"]
     );
     assert_eq!(opencode.offered[1].known_as, "purlis-handoff");
-    let salt = crate::skillspan::PromptSalt::of_chat("01JB00000000000000000000C4").unwrap();
+    let salt = crate::skillspan::PromptSalt::of_key("01JB00000000000000000000C4").unwrap();
     assert_eq!(
         opencode.typed("purlis-handoff", &[], &salt).unwrap().text,
         "/purlis-handoff"
@@ -938,7 +1033,7 @@ fn use_skill_types_a_skill_of_the_set_in_its_harnesss_syntax_and_holds_the_run_i
             harness,
             ..running(root, &bundle, Some("smart-ide"))
         });
-        let salt = crate::skillspan::PromptSalt::of_chat("01JB00000000000000000000C4").unwrap();
+        let salt = crate::skillspan::PromptSalt::of_key("01JB00000000000000000000C4").unwrap();
         let typing = chat.typed("review", &values, &salt).unwrap();
         assert_eq!(typing.text, text, "{harness:?}");
         let Start::Held(held) = typing.start else {
@@ -1034,9 +1129,10 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
         &[],
         &env,
         &Known::of(&plane, None),
+        Reading::Whole,
     );
 
-    let titles: Vec<&str> = harnesses.iter().map(|h| h.group.adapter.title()).collect();
+    let titles: Vec<&str> = harnesses.iter().map(|h| h.harness.title()).collect();
     assert_eq!(titles, ["Claude Code", "opencode", "Codex"]);
     let on_codex = &harnesses[2];
     assert_eq!(
@@ -1053,7 +1149,7 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
         }]
     );
     let rows: Vec<(String, Option<String>)> =
-        outside_rows(on_codex, &plane, &Known::of(&plane, None))
+        outside_rows(on_codex, &plane, &Known::of(&plane, None), Reading::Whole)
             .into_iter()
             .map(|row| (row.name, row.left_out))
             .collect();
@@ -1162,6 +1258,7 @@ fn a_repo_skill_named_as_a_built_in_one_never_replaces_it_on_codex_and_is_anothe
                 plane: &plane,
                 workspace: Some("alpha"),
                 repo: &repo,
+                routed: None,
             }),
             None,
             route,
@@ -1417,20 +1514,24 @@ fn a_try_chat_turns_off_the_skills_of_its_profiles_own_config_folder() {
     .unwrap();
     let env = vec![("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string())];
     let armed_in = |cwd: &Path| {
-        crate::hoststart::armed_as(
-            true,
-            &crate::hoststart::Arming {
-                root: &plane,
-                kit: &kit,
-                harness: Some(Harness::ClaudeCode),
-                cwd: Some(cwd),
-                plugins: &crate::harness_plugin::Chosen::new(),
-                sandbox: None,
-                persona: None,
-                env: &env,
-                graded: false,
-            },
-        )
+        crate::hoststart::armed(&crate::hoststart::Arming {
+            root: &plane,
+            kit: &kit,
+            harness: Some(Harness::ClaudeCode),
+            cwd: Some(cwd),
+            plugins: &crate::harness_plugin::Chosen::new(),
+            sandbox: None,
+            persona: None,
+            env: &env,
+            graded: false,
+            skills: &Box::new(crate::hoststart::ChatSkills::read(
+                true,
+                &plane,
+                Some(Harness::ClaudeCode),
+                Some(cwd),
+                None,
+            )),
+        })
         .unwrap()
         .0
         .join(" ")
@@ -1461,20 +1562,24 @@ fn a_grades_limits_follow_the_start_and_a_mismatch_with_its_folder_refuses() {
     };
     let arm = verbs::drafts::lay_out_arm(&plane, Some(&copy)).unwrap();
     let armed = |cwd: &Path, graded: bool, harness: Harness| {
-        crate::hoststart::armed_as(
-            true,
-            &crate::hoststart::Arming {
-                root: &plane,
-                kit: &kit,
-                harness: Some(harness),
-                cwd: Some(cwd),
-                plugins: &crate::harness_plugin::Chosen::new(),
-                sandbox: None,
-                persona: None,
-                env: &[],
-                graded,
-            },
-        )
+        crate::hoststart::armed(&crate::hoststart::Arming {
+            root: &plane,
+            kit: &kit,
+            harness: Some(harness),
+            cwd: Some(cwd),
+            plugins: &crate::harness_plugin::Chosen::new(),
+            sandbox: None,
+            persona: None,
+            env: &[],
+            graded,
+            skills: &Box::new(crate::hoststart::ChatSkills::read(
+                true,
+                &plane,
+                Some(harness),
+                Some(cwd),
+                None,
+            )),
+        })
         .map(|(args, _)| args.join(" "))
     };
     let graded = armed(&arm.piece, true, Harness::ClaudeCode).unwrap();
@@ -1494,6 +1599,53 @@ fn a_grades_limits_follow_the_start_and_a_mismatch_with_its_folder_refuses() {
     );
     let ordinary = armed(&plane, false, Harness::ClaudeCode).unwrap();
     assert!(!ordinary.contains("--strict-mcp-config"), "{ordinary}");
+}
+
+/// #3461: a start `armed` refuses reads none of the chat's skill folders, its clone's included:
+/// the read waits until every fail-closed check has passed, and a start that passes reads once.
+#[test]
+fn a_start_armed_refuses_reads_no_skills_and_one_it_arms_reads_them_once() {
+    crate::unsteered!();
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, kit) = a_host_on(tmp.path());
+    std::fs::write(plane.join("charter.toml"), "schema = 1\n").unwrap();
+    let reads = std::cell::Cell::new(0);
+    let armed = |graded: bool| {
+        let skills = std::cell::LazyCell::new(|| {
+            reads.set(reads.get() + 1);
+            crate::hoststart::ChatSkills::read(
+                true,
+                &plane,
+                Some(Harness::ClaudeCode),
+                Some(&plane),
+                None,
+            )
+        });
+        crate::hoststart::armed(&crate::hoststart::Arming {
+            root: &plane,
+            kit: &kit,
+            harness: Some(Harness::ClaudeCode),
+            cwd: Some(&plane),
+            plugins: &crate::harness_plugin::Chosen::new(),
+            sandbox: None,
+            persona: None,
+            env: &[],
+            graded,
+            skills: &skills,
+        })
+        .map(|_| ())
+    };
+    assert!(
+        armed(true).is_err(),
+        "a grade's start outside a grade's folder"
+    );
+    assert_eq!(reads.get(), 0, "a refused start read the chat's skills");
+    armed(false).unwrap();
+    assert_eq!(
+        reads.get(),
+        1,
+        "a start that is armed reads its skills once"
+    );
 }
 
 #[test]
@@ -1754,13 +1906,16 @@ fn a_repo_skills_folder_purlis_could_not_list_leaves_the_plane_skills_out_of_a_c
     let sets = tmp.path().join("sets");
     let lay_out = |repo: &[OutsideSkill]| {
         lay_out_for_chat(
-            Some(&plane),
-            Some("alpha"),
+            Some(crate::skills::PlaneSkills {
+                plane: &plane,
+                workspace: Some("alpha"),
+                repo,
+                routed: None,
+            }),
             None,
             None,
             &sets,
             Harness::Codex,
-            repo,
         )
     };
 
@@ -1853,9 +2008,15 @@ fn a_workspace_whose_repos_leave_skills_out() -> (tempfile::TempDir, PathBuf, Pa
     (tmp, plane, api, web)
 }
 
-const HIDDEN_BY_THE_REPO: &str = "hidden by the repo skill of this name";
+/// What the studio and `purlis skill list` say of a skill `api` leaves out (#3234: by name).
+const HIDDEN_BY_THE_REPO: &str = "hidden by the skill of this name in the repo api";
 const WEB_UNREAD: &str = "purlis could not read the skills folder of web whole, so a copy of \
                           this skill may be there, and a chat in that repo would get that one";
+/// What the tab of a chat in that repo says of the same (#3234), after "because of the repo it
+/// works in".
+const API_HAS_ITS_OWN: &str = "the repo api has its own copy, which loads in its place";
+const WEB_UNREAD_TO_ITS_CHAT: &str = "purlis could not read the skills folder of web whole, so \
+                                      it is left out in case the repo has its own";
 
 #[test]
 fn a_chat_in_a_clone_is_told_which_skills_its_repo_leaves_out_and_why() {
@@ -1884,7 +2045,7 @@ fn a_chat_in_a_clone_is_told_which_skills_its_repo_leaves_out_and_why() {
         [(
             "review".to_owned(),
             Origin::Workspace,
-            HIDDEN_BY_THE_REPO.to_owned()
+            API_HAS_ITS_OWN.to_owned()
         )]
     );
     let mut in_web = said(Harness::Codex, &web);
@@ -1895,9 +2056,13 @@ fn a_chat_in_a_clone_is_told_which_skills_its_repo_leaves_out_and_why() {
             (
                 "review".to_owned(),
                 Origin::Workspace,
-                WEB_UNREAD.to_owned()
+                WEB_UNREAD_TO_ITS_CHAT.to_owned()
             ),
-            ("ship".to_owned(), Origin::Workspace, WEB_UNREAD.to_owned()),
+            (
+                "ship".to_owned(),
+                Origin::Workspace,
+                WEB_UNREAD_TO_ITS_CHAT.to_owned()
+            ),
         ]
     );
     assert_eq!(
@@ -1910,6 +2075,55 @@ fn a_chat_in_a_clone_is_told_which_skills_its_repo_leaves_out_and_why() {
         [],
         "a chat in no clone"
     );
+}
+
+#[test]
+fn a_chats_tab_says_what_the_repo_skills_it_was_armed_with_leave_out_and_reads_the_clone_no_more() {
+    // #3234: the host reads a chat's scope and its clone's repo skills once, at its start, and
+    // what arms it and what its tab says are both worked out from that one read.
+    let (_tmp, plane, api, _web) = a_workspace_whose_repos_leave_skills_out();
+    let kit = crate::hoststart::Kit {
+        binary: None,
+        plugin: None,
+        git_hooks: None,
+        skill_sets: None,
+        chat_settings: None,
+    };
+    let read =
+        crate::hoststart::ChatSkills::read(true, &plane, Some(Harness::Codex), Some(&api), None);
+    let said = |skills: &crate::hoststart::ChatSkills| {
+        crate::hoststart::skills_not_here(skills, &kit, Some(Harness::Codex), &[])
+            .map(|not| {
+                not.by_a_repo
+                    .into_iter()
+                    .map(|one| (one.name, one.why.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
+
+    assert_eq!(read.workspace.as_deref(), Some("alpha"));
+    assert!(
+        read.repo.iter().any(|one| one.id == "review"),
+        "{:?}",
+        read.repo
+    );
+    assert_eq!(
+        said(&read),
+        [("review".to_owned(), API_HAS_ITS_OWN.to_owned())]
+    );
+    let handed_none = crate::hoststart::ChatSkills {
+        repo: Vec::new(),
+        ..read.clone()
+    };
+    assert_eq!(said(&handed_none), [], "the tab reads no clone of its own");
+    let off =
+        crate::hoststart::ChatSkills::read(false, &plane, Some(Harness::Codex), Some(&api), None);
+    assert!(
+        off.repo.is_empty(),
+        "nothing is read where the plane's skills reach no chat"
+    );
+    assert_eq!(said(&off), []);
 }
 
 #[test]
@@ -2170,3 +2384,563 @@ fn a_run_of_purlis_secrets_is_the_built_in_skill_s_on_opencode_and_a_project_ski
         Some(Origin::BuiltIn)
     );
 }
+
+/// #3462: every persona's own rows come from one read of its own levels, so a local skill of
+/// the project or a workspace is never asked about, and each persona's local skill once.
+#[test]
+fn persona_rows_asks_of_each_personas_own_local_skills_once_and_of_no_others() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(plane.join("workspaces/alpha")).unwrap();
+    let write = |dir: &Path, name: &str| {
+        std::fs::create_dir_all(dir.join(name)).unwrap();
+        std::fs::write(
+            dir.join(name).join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Does {name}.\n---\n"),
+        )
+        .unwrap();
+    };
+    write(&plane.join("skills.local"), "scratch");
+    write(&plane.join("workspaces/alpha/skills.local"), "notes");
+    for persona in ["ops", "reviewer"] {
+        let at = plane.join("personas").join(persona);
+        std::fs::create_dir_all(&at).unwrap();
+        std::fs::write(at.join("persona.md"), "---\n---\n").unwrap();
+        write(&at.join("skills"), &format!("{persona}-shared"));
+        write(&at.join("skills.local"), &format!("{persona}-local"));
+    }
+    let asked = std::sync::Mutex::new(Vec::<PathBuf>::new());
+    let kept = |folder: &Path| {
+        asked.lock().unwrap().push(folder.to_path_buf());
+        Ok(())
+    };
+
+    let rows = persona_rows_with(None, &plane, &kept);
+
+    let mut asked = asked.into_inner().unwrap();
+    asked.sort();
+    assert_eq!(
+        asked,
+        [
+            plane.join("personas/ops/skills.local/ops-local"),
+            plane.join("personas/reviewer/skills.local/reviewer-local"),
+        ]
+    );
+    let read: Vec<(&str, Vec<(&str, bool)>)> = rows
+        .iter()
+        .map(|one| {
+            (
+                one.persona.as_str(),
+                one.rows
+                    .iter()
+                    .map(|row| (row.name.as_str(), row.local))
+                    .collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        read,
+        [
+            ("ops", vec![("ops-local", true), ("ops-shared", false)]),
+            (
+                "reviewer",
+                vec![("reviewer-local", true), ("reviewer-shared", false)]
+            ),
+        ]
+    );
+}
+
+/// #3462: the clones a chat works in are the ones its folder is in, which the Skills view
+/// narrows its repo skills to: none for a chat at its workspace's own folder.
+#[test]
+fn a_chat_works_in_the_clone_its_folder_is_in_and_in_none_at_its_workspaces_folder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    for repo in ["api", "web"] {
+        std::fs::create_dir_all(plane.join("workspaces/alpha").join(repo).join(".git")).unwrap();
+    }
+    std::fs::create_dir_all(plane.join("workspaces/alpha/api/src")).unwrap();
+    let names = |cwd: &Path| -> Vec<String> {
+        clones_of_chat(&plane, "alpha", cwd)
+            .into_iter()
+            .map(|repo| repo.name)
+            .collect()
+    };
+    assert_eq!(names(&plane.join("workspaces/alpha/api/src")), ["api"]);
+    assert_eq!(names(&plane.join("workspaces/alpha/web")), ["web"]);
+    assert!(names(&plane.join("workspaces/alpha")).is_empty());
+}
+
+/// The harnesses purlis ships and `goose`, a harness a project declares, taking MCP servers or
+/// not.
+fn with_goose(mcp: bool) -> crate::harness_declaration::Declarations {
+    let goose = format!(
+        "name = \"goose\"\ntitle = \"Goose\"\nprogram = \"goose\"\n\n[session]\n\n\
+         [terminal]\nready_to_type = \"raw-and-quiet\"\n\n[levels]\n\n[capabilities]\n\
+         mcp_servers = \"{}\"\n",
+        if mcp { "yes" } else { "no: it takes none" }
+    );
+    let mut declared = crate::harness_declaration::builtins().to_vec();
+    declared.push(
+        crate::harness_declaration::parse(
+            &goose,
+            crate::harness_declaration::Origin::Project,
+            "harnesses/goose.toml",
+        )
+        .expect("a declaration"),
+    );
+    crate::harness_declaration::Declarations {
+        declared,
+        refused: Vec::new(),
+    }
+}
+
+#[test]
+fn a_harness_with_neither_a_skill_format_nor_mcp_is_told_skills_are_not_supported() {
+    let declarations = with_goose(false);
+    assert_eq!(
+        route_of(Some("goose"), &declarations),
+        None,
+        "it gets no skills"
+    );
+    let said = not_supported(&declarations);
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert_eq!(
+        (said[0].name.as_str(), said[0].title.as_str()),
+        ("goose", "Goose")
+    );
+    assert_eq!(
+        said[0].said,
+        "Skills are not supported on Goose: it has no skill format purlis can hand skills by, \
+         and its declaration does not say it takes MCP servers, so its chats get no skills."
+    );
+    assert!(!said[0].said.contains('\n'), "one line");
+}
+
+#[test]
+fn a_harness_purlis_ships_or_one_that_takes_mcp_is_never_said_unsupported() {
+    assert!(not_supported(&with_goose(true)).is_empty());
+    for shipped in crate::harness_declaration::builtins() {
+        assert_eq!(not_supported_on(shipped), None, "{}", shipped.name);
+    }
+}
+
+/// Spec #3679 S12: the names compiled in as purlis's own are its bundle's skills, each folder
+/// named as its skill, so a name stays reserved where no bundle is found beside the binary.
+#[test]
+fn the_shipped_names_are_the_bundles_skills() {
+    let bundle = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/plugin/skills");
+    let skills = crate::skills::read(&bundle);
+    let names: Vec<&str> = skills.iter().map(|skill| skill.name.as_str()).collect();
+    assert_eq!(names, crate::skills::SHIPPED);
+    for skill in &skills {
+        assert_eq!(
+            skill.path.parent().and_then(Path::file_name),
+            Some(std::ffi::OsStr::new(&skill.name)),
+            "{skill:?}"
+        );
+    }
+}
+
+/// #3686: Make my own copy copies a built-in skill's `SKILL.md` alone, so every built-in skill
+/// is that one file. One that ships more files makes the copy carry them first.
+#[test]
+fn each_built_in_skill_is_its_skill_md_alone() {
+    let bundle = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/plugin/skills");
+    for skill in crate::skills::read(&bundle) {
+        let folder = skill.path.parent().unwrap();
+        let held: Vec<String> = std::fs::read_dir(folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(held, ["SKILL.md"], "{}", skill.name);
+    }
+}
+
+/// #3777: the description Make my own copy proposes for a copy, each built-in skill's with the
+/// note `copyDescriptionOf` (`app/src/SkillCopy.tsx`) adds, is one the core takes, so the copy
+/// is made in one click whichever built-in it is of.
+#[test]
+fn each_built_in_skills_proposed_copy_description_keeps_the_rules() {
+    let bundle = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/plugin/skills");
+    let skills = crate::skills::read(&bundle);
+    assert!(!skills.is_empty());
+    for skill in skills {
+        let proposed = format!("{} (your copy of {})", skill.description.trim(), skill.name);
+        assert_eq!(
+            purlis_skills::change::description_problem(&proposed),
+            None,
+            "{}",
+            skill.name
+        );
+        assert!(purlis_skills::fence::holds(&proposed), "{}", skill.name);
+    }
+}
+
+#[test]
+fn a_built_in_skills_name_is_reserved_with_or_without_a_bundle() {
+    let bundle = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(bundle.path().join("bundled")).unwrap();
+    std::fs::write(
+        bundle.path().join("bundled/SKILL.md"),
+        "---\nname: bundled\ndescription: Comes with purlis.\n---\n",
+    )
+    .unwrap();
+    let with = Some(bundle.path());
+    for name in [
+        "secrets",
+        "browser",
+        "skill-index",
+        "purlis-secrets",
+        "purlis-skill-index",
+    ] {
+        assert!(crate::skills::name_reserved(None, name), "{name}");
+        assert!(crate::skills::name_reserved(with, name), "{name}");
+    }
+    assert!(crate::skills::name_reserved(with, "bundled"));
+    assert!(crate::skills::name_reserved(with, "purlis-bundled"));
+    assert!(!crate::skills::name_reserved(None, "bundled"));
+    for name in [
+        "deploy",
+        "purlis",
+        "purlis-deploy",
+        "my-secrets",
+        "secrets-two",
+    ] {
+        assert!(!crate::skills::name_reserved(with, name), "{name}");
+    }
+}
+
+#[test]
+fn the_studio_lints_the_planes_own_skills_a_chat_gets_once_per_list() {
+    // #3780: Needs you's problems in a skill hold the plane's own too. The prototype's deploy,
+    // whose step names a script it never shipped; a clean skill beside it says nothing.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(plane.join("skills/deploy/scripts")).unwrap();
+    std::fs::create_dir_all(plane.join("skills/review")).unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    std::fs::write(
+        plane.join("skills/deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Deploys the app to staging, then to production.\n---\n\n\
+         1. Run scripts/build.sh.\n2. Check it.\n3. Tag it with scripts/tag.sh.\n4. Then scripts/kept.sh.\n",
+    )
+    .unwrap();
+    std::fs::write(plane.join("skills/deploy/scripts/build.sh"), "#!/bin/sh\n").unwrap();
+    // A link the listing does not follow is there all the same.
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("build.sh", plane.join("skills/deploy/scripts/kept.sh")).unwrap();
+    #[cfg(not(unix))]
+    std::fs::write(plane.join("skills/deploy/scripts/kept.sh"), "").unwrap();
+    std::fs::write(
+        plane.join("skills/review/SKILL.md"),
+        "---\nname: review\ndescription: Reviews a change before it is merged.\n---\n",
+    )
+    .unwrap();
+    let env = crate::harness_plugin::Env {
+        chat: &[],
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let list = studio_list(None, &plane, None, None, &env);
+
+    let lint_of = |name: &str| {
+        list.rows
+            .iter()
+            .find(|row| row.name == name && row.origin == Origin::Project)
+            .map(|row| row.lint.clone())
+            .unwrap_or_else(|| panic!("{name} listed: {:?}", list.rows))
+    };
+    assert_eq!(
+        lint_of("deploy"),
+        [
+            "it names scripts/tag.sh, which its folder doesn't have: a chat told to run it finds none"
+        ]
+    );
+    assert_eq!(lint_of("review"), Vec::<String>::new());
+}
+
+#[test]
+fn a_list_read_for_needs_you_has_every_row_lint_and_clash_of_the_whole_and_no_badge() {
+    // #3781: the persona view's count reads only what Needs you's items are worked out from.
+    let (tmp, plane, _clone, built_in) = a_clone_with_a_secrets_skill_of_its_own();
+    std::fs::create_dir_all(plane.join("workspaces/alpha/skills/deploy")).unwrap();
+    std::fs::write(
+        plane.join("workspaces/alpha/skills/deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Deploys.\n---\n",
+    )
+    .unwrap();
+    let env = crate::harness_plugin::Env {
+        chat: &[],
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+    type Seen = (
+        String,
+        Origin,
+        bool,
+        Option<String>,
+        Option<String>,
+        Vec<String>,
+    );
+    let seen = |rows: &[StudioRow]| -> Vec<Seen> {
+        rows.iter()
+            .map(|row| {
+                (
+                    row.name.clone(),
+                    row.origin,
+                    row.local,
+                    row.left_out.clone(),
+                    row.accept.clone(),
+                    row.lint.clone(),
+                )
+            })
+            .collect()
+    };
+    let read = |reading| {
+        studio_list_for(
+            reading,
+            Some(&built_in),
+            &plane,
+            Some("alpha"),
+            None,
+            &env,
+            &[],
+        )
+    };
+
+    let whole = read(Reading::Whole);
+    let needs = read(Reading::Needs);
+
+    assert_eq!(seen(&needs.rows), seen(&whole.rows));
+    assert!(
+        whole.rows.iter().any(|row| !row.lint.is_empty()),
+        "deploy's short description is linted: {:?}",
+        seen(&whole.rows)
+    );
+    for (one, other) in needs.harnesses.iter().zip(&whole.harnesses) {
+        assert_eq!(seen(&one.rows), seen(&other.rows), "{:?}", one.harness);
+        assert_eq!(one.set.clashes, other.set.clashes, "{:?}", one.harness);
+    }
+    assert!(
+        whole
+            .harnesses
+            .iter()
+            .any(|one| !one.set.clashes.is_empty()),
+        "the repo's secrets clashes"
+    );
+    assert!(needs.rows.iter().all(|row| row.compat.is_empty()));
+    assert!(
+        needs
+            .harnesses
+            .iter()
+            .flat_map(|one| &one.rows)
+            .all(|row| row.compat.is_empty())
+    );
+}
+
+/// A lint that answers many skills at once, recording each question: one finding per skill.
+#[derive(Default)]
+struct AtOnce {
+    asked: std::cell::RefCell<Vec<Vec<String>>>,
+}
+
+impl purlis_skills::SkillLint for AtOnce {
+    fn findings(&self, skill: &purlis_skills::SkillFiles<'_>) -> Vec<Finding> {
+        self.findings_of_each(std::slice::from_ref(skill))
+            .pop()
+            .unwrap_or_default()
+    }
+
+    fn findings_of_each(&self, skills: &[purlis_skills::SkillFiles<'_>]) -> Vec<Vec<Finding>> {
+        self.asked
+            .borrow_mut()
+            .push(skills.iter().map(|it| it.name.to_owned()).collect());
+        skills
+            .iter()
+            .map(|skill| {
+                vec![Finding {
+                    severity: purlis_skills::Severity::Warns,
+                    lint: purlis_skills::Lint::Said {
+                        by: "House style".to_owned(),
+                        says: format!("{} was asked with the others", skill.name),
+                    },
+                }]
+            })
+            .collect()
+    }
+}
+
+#[test]
+fn a_studio_list_hands_each_extension_lint_every_plane_skill_at_once_4195() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    for name in ["deploy", "review"] {
+        std::fs::create_dir_all(plane.join("skills").join(name)).unwrap();
+        std::fs::write(
+            plane.join("skills").join(name).join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Does the {name} work when asked to.\n---\n"),
+        )
+        .unwrap();
+    }
+    std::fs::write(plane.join("skills/deploy/notes.md"), "Some notes.\n").unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    let env = crate::harness_plugin::Env {
+        chat: &[],
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+    let lint = AtOnce::default();
+
+    let list = studio_list_for(Reading::Whole, None, &plane, None, None, &env, &[&lint]);
+
+    let mut asked = lint.asked.borrow().clone();
+    assert_eq!(asked.len(), 1, "one question for the list: {asked:?}");
+    asked[0].sort();
+    assert_eq!(asked[0], ["deploy", "review"]);
+    for name in ["deploy", "review"] {
+        let row = list
+            .rows
+            .iter()
+            .find(|row| row.name == name)
+            .expect("its row");
+        assert!(
+            row.lint
+                .iter()
+                .any(|line| line.contains(&format!("{name} was asked with the others"))),
+            "{name}: {:?}",
+            row.lint
+        );
+    }
+}
+
+#[test]
+fn each_harness_s_own_catalogue_is_measured_beside_purlis_s_budget_3324() {
+    // #3324 (SK-39's follow-up): the skills a harness finds itself in the person's own folders
+    // are never in purlis's budget, so each harness in the studio measures them as a figure of
+    // their own: what it lists, its manual-only ones apart, and one the project turned off not
+    // at all. Each harness reads manual-only its own way: Claude Code by the frontmatter key,
+    // Codex by its sidecar alone.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(&plane).unwrap();
+    std::fs::write(
+        plane.join("charter.toml"),
+        "[harness_skills.codex]\nnotes = false\n",
+    )
+    .unwrap();
+    let manual_key = |dir: &Path, name: &str| {
+        std::fs::create_dir_all(dir.join(name)).unwrap();
+        std::fs::write(
+            dir.join(name).join("SKILL.md"),
+            format!(
+                "---\nname: {name}\ndescription: Does {name}.\ndisable-model-invocation: true\n---\n"
+            ),
+        )
+        .unwrap();
+    };
+    let claude = tmp.path().join("claude-config/skills");
+    a_skill_with_a_sidecar(&claude, "review", None);
+    manual_key(&claude, "quiet");
+    let codex = tmp.path().join("codex-home/skills");
+    a_skill_with_a_sidecar(&codex, "review", None);
+    a_skill_with_a_sidecar(&codex, "mine", Some(CODEX_MANUAL_ONLY));
+    a_skill_with_a_sidecar(&codex, "notes", None);
+    // Codex does not read the frontmatter key: it lists this one.
+    manual_key(&codex, "quiet");
+    let chat = [
+        (
+            "CLAUDE_CONFIG_DIR".to_owned(),
+            tmp.path().join("claude-config").display().to_string(),
+        ),
+        (
+            "CODEX_HOME".to_owned(),
+            tmp.path().join("codex-home").display().to_string(),
+        ),
+    ];
+    let env = crate::harness_plugin::Env {
+        chat: &chat,
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let list = studio_list(None, &plane, None, None, &env);
+
+    let own = |harness: Harness| {
+        list.harnesses
+            .iter()
+            .find(|one| one.harness == harness)
+            .and_then(|one| one.own)
+            .unwrap_or_else(|| panic!("{harness:?} measured"))
+    };
+    let described = "Does review.".chars().count();
+    assert_eq!(
+        own(Harness::ClaudeCode),
+        OwnCatalogue {
+            skills: 1,
+            chars: described,
+            manual: 1,
+        },
+        "Claude Code: review listed, quiet manual-only by its key"
+    );
+    // Codex lists each skill's path beside its description, and purlis measures it so.
+    let path = |name: &str| codex.join(name).join("SKILL.md").display().to_string();
+    assert_eq!(
+        own(Harness::Codex),
+        OwnCatalogue {
+            skills: 2,
+            chars: described
+                + path("review").chars().count()
+                + "Does quiet.".chars().count()
+                + path("quiet").chars().count(),
+            manual: 1,
+        },
+        "Codex: review and quiet listed, mine manual-only by its sidecar, notes turned off"
+    );
+    // A read for a count of needs measures nothing.
+    let needs = studio_list_for(Reading::Needs, None, &plane, None, None, &env, &[]);
+    assert!(needs.harnesses.iter().all(|one| one.own.is_none()));
+}
+
+#[test]
+fn a_harness_s_own_catalogue_is_said_beside_the_budget_and_never_counted_3324() {
+    let own = |skills, chars, manual| OwnCatalogue {
+        skills,
+        chars,
+        manual,
+    };
+    assert_eq!(
+        own(2, 1_310, 1).said("Codex").as_deref(),
+        Some("Codex's own, not counted: 2 skills, 1,310 characters, 1 manual-only skill")
+    );
+    assert_eq!(
+        own(1, 12, 0).said("Claude Code").as_deref(),
+        Some("Claude Code's own, not counted: 1 skill, 12 characters")
+    );
+    assert_eq!(
+        own(0, 0, 3).said("Codex").as_deref(),
+        Some("Codex's own, not counted: 3 manual-only skills"),
+        "nothing listed is not said as 0 skills"
+    );
+    assert_eq!(own(0, 0, 0).said("Codex"), None, "none of its own");
+    assert_eq!(
+        own(1, 1_234_567, 0).said("Codex").as_deref(),
+        Some("Codex's own, not counted: 1 skill, 1,234,567 characters")
+    );
+}
+
+#[test]
+fn purlis_s_own_plugin_is_no_part_of_a_harness_s_own_catalogue_3324() {
+    // Its skills are purlis's built-in ones, or a plugin it pins off in every chat.
+    let claude = &crate::harness_plugin::CLAUDE_CODE;
+    for name in ["charter", "purlis"] {
+        assert!(
+            crate::harness_plugin::purlis_s_own_named(claude, name),
+            "{name}"
+        );
+    }
+    assert!(!crate::harness_plugin::purlis_s_own_named(claude, "figma"));
+}
+
+mod read_budget;

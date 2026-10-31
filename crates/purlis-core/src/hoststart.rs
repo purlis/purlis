@@ -46,6 +46,9 @@ pub struct Kit {
     /// Where the folders of links a chat is handed the plane's skills by are laid out
     /// ([`crate::skills::lay_out`]): `<app data>/skill-sets`, where purlis has a data folder.
     pub skill_sets: Option<PathBuf>,
+    /// Where a chat's settings too long for its command line are kept ([`settings_in_a_file`]):
+    /// `<app data>/chat-settings`, where purlis has a data folder.
+    pub chat_settings: Option<PathBuf>,
 }
 
 impl Kit {
@@ -73,6 +76,7 @@ impl Kit {
             plugin,
             git_hooks,
             skill_sets: skill_sets_here(),
+            chat_settings: chat_settings_here(),
         }
     }
 
@@ -104,6 +108,7 @@ impl Kit {
             plugin,
             git_hooks,
             skill_sets: Some(skill_sets_in(data)),
+            chat_settings: Some(chat_settings_in(data)),
         }
     }
 
@@ -117,6 +122,7 @@ impl Kit {
                 plugin: None,
                 git_hooks: None,
                 skill_sets: None,
+                chat_settings: None,
             },
         }
     }
@@ -139,6 +145,20 @@ pub fn skill_sets_in(data: &Path) -> PathBuf {
     data.join(crate::names::BUNDLE_ID.write).join(SKILL_SETS)
 }
 
+/// The folder of the app's data folder chats' settings files are kept in, one folder per plane
+/// by its clone key ([`settings_in_a_file`]).
+pub const CHAT_SETTINGS: &str = "chat-settings";
+
+/// [`CHAT_SETTINGS`] in this user's app data folder.
+pub fn chat_settings_here() -> Option<PathBuf> {
+    dirs::data_dir().map(|data| chat_settings_in(&data))
+}
+
+/// [`CHAT_SETTINGS`] in the app data folder of the data home `data`.
+pub fn chat_settings_in(data: &Path) -> PathBuf {
+    data.join(crate::names::BUNDLE_ID.write).join(CHAT_SETTINGS)
+}
+
 /// **The folder of links a chat in `root` is handed its set's folder by**, laid out by the host
 /// before the chat is armed where `kit` says where folders go
 /// ([`crate::skills::lay_out_for_chat`]), each skill as `harness` reads it: the plane's skills
@@ -153,22 +173,27 @@ pub fn plane_skills_laid_out(
     kit: &Kit,
     harness: Harness,
 ) -> Option<PathBuf> {
-    laid_out_on(on, root, workspace, persona, kit, harness, &[])
+    let at = on.then_some(crate::skills::PlaneSkills {
+        plane: root,
+        workspace,
+        repo: &[],
+        routed: None,
+    });
+    laid_out_on(at, persona, kit, harness)
 }
 
-/// [`plane_skills_laid_out`] for a chat on `harness`, with `repo` the repo skills of the clone
-/// it works in (SK-6): a plane skill a narrower repo copy hides is not laid out.
+/// [`plane_skills_laid_out`] for a chat on `harness` whose plane skills come from `at`, with the
+/// repo skills of the clone it works in (SK-6) and its router's answer (SK-15b): a plane skill a
+/// narrower repo copy hides, or its router hid, is not laid out. `None` where they do not reach
+/// it.
 fn laid_out_on(
-    on: bool,
-    root: &Path,
-    workspace: Option<&str>,
+    at: Option<crate::skills::PlaneSkills<'_>>,
     persona: Option<&str>,
     kit: &Kit,
     harness: Harness,
-    repo: &[crate::skills::OutsideSkill],
 ) -> Option<PathBuf> {
     let own_names = harness.skills().names_built_ins_its_own();
-    if !on && !own_names {
+    if at.is_none() && !own_names {
         return None;
     }
     let Some(sets) = kit.skill_sets.as_deref() else {
@@ -181,44 +206,174 @@ fn laid_out_on(
         return None;
     };
     let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
-    crate::skills::lay_out_for_chat(
-        on.then_some(root),
-        workspace,
-        persona,
-        built_in.as_deref(),
-        sets,
-        harness,
-        repo,
-    )
+    crate::skills::lay_out_for_chat(at, persona, built_in.as_deref(), sets, harness)
 }
 
-/// **The skills a chat starts without** (SK-5, #2768; SK-8, #2771), where the Skill studio's
-/// flag is `on`: the chat in `root` started in `cwd` on `harness` as `persona` (or on none),
-/// whose environment is `env` ([`crate::skills::not_here`]). What its tab's Notice says. `None`
-/// otherwise, and where it has every one.
+/// **Where a chat's plane skills come from, read once at its start** (#3234): what arms it
+/// ([`Arming::skills`]) and what its tab's Notice says it starts without ([`skills_not_here`])
+/// are both worked out from this one value, so the two never disagree.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ChatSkills {
+    /// Whether the plane's skills reach the chat: the Skill studio's flag, once the project
+    /// requires them (`skills::reach_chats`, #2784).
+    pub on: bool,
+    /// The project the plane's skills are read from: the chat's, or a Try it's own scope (SK-9).
+    pub root: PathBuf,
+    /// A Try it's scratch chat: the draft alone, with no workspace's, persona's or harness's.
+    pub tried: bool,
+    /// The workspace the chat works in, and the persona whose skills it gets; neither for a
+    /// Try it's chat.
+    pub workspace: Option<String>,
+    pub persona: Option<String>,
+    /// The repo skills of the clone the chat works in (SK-6), as its harness reads them:
+    /// nothing where the plane's skills do not reach it, or it works in no clone.
+    pub repo: Vec<crate::skills::OutsideSkill>,
+    /// What its router extension made of its set at its start (SK-15b, [`Self::routed_by`]):
+    /// `None` for a chat routed by the built-in router, which is asked nothing.
+    pub routed: Option<crate::skills::router::Routed>,
+    /// The router a router's grade's arm is routed by (SK-15e,
+    /// [`crate::skills::verbs::drafts::arm_router`]): what a Try it's scratch chat of that arm is
+    /// routed by in place of a workspace's or persona's choice. `None` for every other chat.
+    pub arm_router: Option<String>,
+}
+
+impl ChatSkills {
+    /// **The chat in the project at `root`, started in `cwd` on `harness` as `persona`**, with
+    /// the plane's skills reaching it where `on` says so: its scope, its workspace and the repo
+    /// skills of its clone, each read here once.
+    pub fn read(
+        on: bool,
+        root: &Path,
+        harness: Option<Harness>,
+        cwd: Option<&Path>,
+        persona: Option<&str>,
+    ) -> Self {
+        // A Try it's scratch chat (SK-9, #2772): its project skills are the one skill its try
+        // laid out, at a root of its own, so it gets the built-in skills and the draft alone.
+        let scope = crate::skills::verbs::drafts::scope_of(root, cwd.filter(|_| on));
+        let (workspace, persona) = if scope.tried {
+            (None, None)
+        } else {
+            (
+                cwd.and_then(|cwd| crate::active::workspace_of_tree(root, cwd)),
+                persona.map(str::to_owned),
+            )
+        };
+        // The repo skills of the clone it works in, so a narrower repo copy of a plane skill is
+        // the one its harness gets where purlis builds what it is handed (SK-6).
+        let repo = match (on, harness, workspace.as_deref(), cwd) {
+            (true, Some(harness), Some(ws), Some(cwd)) => {
+                crate::skills::repo_skills_of_chat(harness, root, ws, cwd)
+            }
+            _ => Vec::new(),
+        };
+        // A router's grade's arm is routed by the router it grades (SK-15e).
+        let arm_router = cwd
+            .filter(|_| scope.tried)
+            .and_then(|cwd| crate::skills::verbs::drafts::arm_router(root, cwd));
+        ChatSkills {
+            on,
+            root: scope.root,
+            tried: scope.tried,
+            workspace,
+            persona,
+            repo,
+            routed: None,
+            arm_router,
+        }
+    }
+
+    /// **These skills, routed by the router the chat's persona or workspace chose** (SK-15b,
+    /// ADR 0102 §5, §6): where it is an extension's, `asker` asks it once, now, within
+    /// [`crate::extension::studio::ROUTER_DEADLINE`], which of the set's skills to hide, and the
+    /// answer or the built-in router's fallback is kept as [`Self::routed`], what every later
+    /// routing of the chat's set applies. Nothing is asked where the plane's skills do not reach
+    /// the chat, for a Try it's scratch chat, or where the built-in router is the one chosen. A
+    /// router's grade's arm is routed by the router it grades ([`Self::arm_router`]).
+    #[must_use]
+    pub fn routed_by(
+        self,
+        built_in: Option<&Path>,
+        harness: Option<Harness>,
+        asker: Option<&std::sync::Arc<dyn crate::skills::router::AskRouter>>,
+    ) -> Self {
+        let Some(harness) =
+            harness.filter(|_| self.on && (!self.tried || self.arm_router.is_some()))
+        else {
+            return self;
+        };
+        let chosen = match &self.arm_router {
+            Some(id) => Ok(crate::skills::router::Chosen::Extension(id.clone())),
+            None => crate::skills::router::chosen(
+                &self.root,
+                self.workspace.as_deref(),
+                self.persona.as_deref(),
+            ),
+        };
+        if chosen == Ok(crate::skills::router::Chosen::BuiltIn) {
+            return self;
+        }
+        let (set, pins) = crate::skills::unrouted(
+            built_in,
+            crate::skills::PlaneSkills {
+                plane: &self.root,
+                workspace: self.workspace.as_deref(),
+                repo: &self.repo,
+                routed: None,
+            },
+            self.persona.as_deref(),
+            harness,
+        );
+        let routed = crate::skills::router::at_start(
+            &set,
+            chosen,
+            harness.skill_budget(),
+            &pins,
+            asker,
+            crate::extension::studio::ROUTER_DEADLINE,
+        );
+        Self { routed, ..self }
+    }
+
+    /// **These skills, routed as the chat's start routed them** (SK-15f, #3578): for a chat
+    /// reattached from the session host, whose harness still holds the listing that start handed
+    /// it. Its router is not asked again; a chat the plane's skills do not reach, a Try it's, or
+    /// one on no harness purlis knows, keeps routing nothing, as [`Self::routed_by`] would.
+    #[must_use]
+    pub fn routed_as(self, kept: crate::skills::router::Kept, harness: Option<Harness>) -> Self {
+        if !self.on || self.tried || harness.is_none() {
+            return self;
+        }
+        Self {
+            routed: kept.routed(),
+            ..self
+        }
+    }
+}
+
+/// **The skills a chat starts without** (SK-5, #2768; SK-8, #2771), where the plane's skills
+/// reach it: the chat whose skills are `skills`, on `harness` with the environment `env`
+/// ([`crate::skills::not_here_beside`]), beside the very repo skills it was armed with (#3234).
+/// What its tab's Notice says. `None` otherwise, and where it has every one.
 pub fn skills_not_here(
-    on: bool,
-    root: &Path,
+    skills: &ChatSkills,
     kit: &Kit,
     harness: Option<Harness>,
-    cwd: Option<&Path>,
-    persona: Option<&str>,
     env: &[(String, String)],
 ) -> Option<crate::skills::NotHere> {
-    if !on {
+    if !skills.on {
         return None;
     }
     let harness = harness?;
-    let workspace = cwd.and_then(|cwd| crate::active::workspace_of_tree(root, cwd));
     let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
-    crate::skills::not_here(
-        root,
-        workspace.as_deref(),
-        persona,
+    crate::skills::not_here_beside(
+        &skills.root,
+        skills.workspace.as_deref(),
+        skills.persona.as_deref(),
         built_in.as_deref(),
         harness,
         &crate::harness_plugin::Env::of(env),
-        cwd,
+        &skills.repo,
     )
 }
 
@@ -237,12 +392,77 @@ where
     }
 }
 
+/// The host's [`Beside`] as two calls and what asks a chat's router extension at its start
+/// (SK-15b).
+impl<C, R> Beside for (C, R, std::sync::Arc<dyn crate::skills::router::AskRouter>)
+where
+    C: Fn(&session::ConfinePlan) -> Result<session::Confined, String>,
+    R: Fn(serde_json::Value) -> Result<(), String>,
+{
+    fn confine(&self, plan: &session::ConfinePlan) -> Result<session::Confined, String> {
+        (self.0)(plan)
+    }
+
+    fn record(&self, entry: serde_json::Value) -> Result<(), String> {
+        (self.1)(entry)
+    }
+
+    fn router(&self) -> Option<std::sync::Arc<dyn crate::skills::router::AskRouter>> {
+        Some(std::sync::Arc::clone(&self.2))
+    }
+}
+
+/// The host's [`Beside`] as two calls, what asks a chat's router extension at its start
+/// (SK-15b), and what reads a confinement it started as it is now (#3407).
+impl<C, R, L> Beside
+    for (
+        C,
+        R,
+        std::sync::Arc<dyn crate::skills::router::AskRouter>,
+        L,
+    )
+where
+    C: Fn(&session::ConfinePlan) -> Result<session::Confined, String>,
+    R: Fn(serde_json::Value) -> Result<(), String>,
+    L: Fn(&str) -> Option<crate::hostedchats::Live>,
+{
+    fn confine(&self, plan: &session::ConfinePlan) -> Result<session::Confined, String> {
+        (self.0)(plan)
+    }
+
+    fn record(&self, entry: serde_json::Value) -> Result<(), String> {
+        (self.1)(entry)
+    }
+
+    fn router(&self) -> Option<std::sync::Arc<dyn crate::skills::router::AskRouter>> {
+        Some(std::sync::Arc::clone(&self.2))
+    }
+
+    fn reach_of(&self, confinement: &str) -> Option<crate::hostedchats::Live> {
+        (self.3)(confinement)
+    }
+}
+
 /// What the host does beside a start it composes: what [`compose`] asks of it.
 pub trait Beside {
     /// The confinement `plan` plans, started by the host as the program's own.
     fn confine(&self, plan: &session::ConfinePlan) -> Result<session::Confined, String>;
     /// Writes `entry` in the host's event log, durably, or says why not.
     fn record(&self, entry: serde_json::Value) -> Result<(), String>;
+    /// What asks a chat's router extension at its start (SK-15b): `None` where this host asks
+    /// none, so a chat whose workspace or persona chose one is routed by the built-in router,
+    /// and its routing record says why.
+    fn router(&self) -> Option<std::sync::Arc<dyn crate::skills::router::AskRouter>> {
+        None
+    }
+    /// What reads confinement `confinement`, which this host started for the chat being
+    /// composed, as it is now (#3407): the hosts allowed live for the chat since it started,
+    /// which a run of its tool here is held to too. `None` where this host reads none, and the
+    /// chat's runs are held to what its sandbox was compiled to.
+    fn reach_of(&self, confinement: &str) -> Option<crate::hostedchats::Live> {
+        let _ = confinement;
+        None
+    }
 }
 
 /// A start, as the host hands it to be composed.
@@ -255,6 +475,8 @@ pub struct Starting<'a> {
     pub start: &'a StartProgram,
     /// Where its hooks report, and its token, as its project's channel issued them.
     pub reporting: Option<&'a session::Reporting>,
+    /// The chat's prompt key, as the host minted it for a start it composes (#3369).
+    pub prompt_key: Option<&'a session::PromptKey>,
     /// The scope of the link the start came on, by its word: what its run says started it.
     pub started_by: &'a str,
 }
@@ -273,6 +495,7 @@ pub fn spec(
         None => {
             let mut launch = compose(starting, kit, beside)?;
             launch.reporting = starting.reporting.cloned();
+            launch.prompt_key = starting.prompt_key.cloned();
             crate::chatspec::from_launch_here(&launch, starting.number, size)
         }
     }
@@ -320,7 +543,10 @@ pub fn compose(starting: &Starting<'_>, kit: &Kit, beside: &dyn Beside) -> Resul
             resuming: None,
             without_sandbox: start.without_sandbox.then(crate::sandbox::OptOut::default),
             held: None,
-            grants: crate::sandbox::grant::Grants::default(),
+            grants: crate::sandbox::grant::Grants {
+                tools_allowed_by_desktop: what_its_desktop_allowed(starting),
+                ..Default::default()
+            },
             made: crate::sandbox::Made::Unnamed,
         },
         root,
@@ -334,6 +560,15 @@ pub fn compose(starting: &Starting<'_>, kit: &Kit, beside: &dyn Beside) -> Resul
         return Err(NOT_HANDED.into());
     }
     compose_ready(starting, ready, kit, beside)
+}
+
+/// **What a start from this runner's desktop says its person allowed of the chat's persona**
+/// (#4071): a runner has nobody to allow it. Only a link's start says so: a start of this
+/// machine's is held to this machine's Allow.
+fn what_its_desktop_allowed(starting: &Starting<'_>) -> Option<String> {
+    (starting.started_by == purlis_session_protocol::auth::Scope::RemoteLink.word())
+        .then(|| starting.start.tools_allowed.clone())
+        .flatten()
 }
 
 /// [`compose`] from what [`crate::start::ready`] decided for it: the seam a test hands a sandbox
@@ -355,14 +590,18 @@ pub fn compose_ready(
     }
     let persona = persona_of(&ready.env, root);
     let sandbox = ready.sandbox.as_ref();
-    // What the start decided about the sandbox, written before anything runs (ADR 0067 §7).
-    let (trust, counted) =
-        crate::sandbox::at_start(ready.unsandboxed.as_ref(), sandbox.is_some(), false, true);
-    if let Some(change) = &trust {
-        recorded(change, start, ready.harness, persona.as_deref(), beside)?;
+    // No app state, no record of the folders there at a sandboxed chat's start (#3718): such a
+    // chat is not started, and nothing about its start is written.
+    if sandbox.is_some()
+        && crate::skills::reach_chats_here(root)
+        && start.program.is_some()
+        && let Some(refused) = crate::skills::levels::refusal_for_a_sandboxed_start(root)
+    {
+        return Err(refused);
     }
     // A sandboxed chat could make a workspace or persona folder while it runs: the ones there
-    // now are noted as not its own (SK-9), before it is armed.
+    // now are noted as not its own (SK-9), before it is armed, and before anything about its start is
+    // written, so a start refused here records nothing.
     if sandbox.is_some()
         && crate::skills::reach_chats_here(root)
         && let Some(id) = start.program.as_deref()
@@ -370,10 +609,34 @@ pub fn compose_ready(
         let name = start
             .number
             .map_or_else(|| id.to_owned(), |number| number.to_string());
-        if let Err(why) = crate::skills::levels::note(root, id, &name) {
-            tracing::warn!("purlis: a sandboxed chat's start was not noted for its skills ({why})");
+        match crate::skills::levels::note_or_hold(root, id, &name) {
+            Ok(None) => {}
+            Ok(Some(why)) => tracing::warn!(
+                "purlis: a sandboxed chat's start was not noted for its skills ({why}); every \
+                 workspace and persona folder made since waits for the person's Accept"
+            ),
+            Err(refused) => return Err(refused),
         }
     }
+    // What the start decided about the sandbox, written before anything runs (ADR 0067 §7).
+    let (trust, counted) =
+        crate::sandbox::at_start(ready.unsandboxed.as_ref(), sandbox.is_some(), false, true);
+    if let Some(change) = &trust {
+        recorded(change, start, ready.harness, persona.as_deref(), beside)?;
+    }
+    // Read once `armed` has checked the start is not refused (#3461), and routed by the router
+    // its persona or workspace chose (SK-15b).
+    let skills = std::cell::LazyCell::new(|| {
+        let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
+        ChatSkills::read(
+            crate::skills::reach_chats_here(root),
+            root,
+            ready.harness,
+            Some(&cwd),
+            persona.as_deref(),
+        )
+        .routed_by(built_in.as_deref(), ready.harness, beside.router().as_ref())
+    });
     let armed = armed(&Arming {
         root,
         kit,
@@ -385,6 +648,7 @@ pub fn compose_ready(
         env: &ready.env,
         // The host starts no grade's chat: a grade is the window's (SK-16).
         graded: false,
+        skills: &skills,
     })?;
     let (hooks, armed_env) = armed;
     // No watcher of the project's own settings runs here, so a sandboxed Claude Code chat is
@@ -395,9 +659,12 @@ pub fn compose_ready(
     } else {
         hooks
     };
-    let confinement = match sandbox.and_then(crate::sandbox::Applied::plan) {
-        Some(plan) => Some(confined(&plan, beside)?),
-        None => None,
+    let (confinement, live) = match sandbox.and_then(crate::sandbox::Applied::plan) {
+        Some(plan) => {
+            let (confinement, id) = confined(&plan, beside)?;
+            (Some(confinement), beside.reach_of(&id))
+        }
+        None => (None, None),
     };
     let socket = starting
         .reporting
@@ -426,7 +693,7 @@ pub fn compose_ready(
     };
     // Settings too long for one word of a command line go through a file of their own (SK-9).
     let args = match start.program.as_deref() {
-        Some(id) => settings_in_a_file(root, id, args)?,
+        Some(id) => settings_in_a_file(kit.chat_settings.as_deref(), root, id, args)?,
         None => args,
     };
     let env = finished_env(
@@ -446,14 +713,16 @@ pub fn compose_ready(
     };
     // The run this start begins, written before its program can send a line (ADR 0066), and the
     // new chat counted towards this machine's opt-out rate (ADR 0067 §7, ruling V78 d).
-    if let Err(why) = begun(
-        starting,
-        &ready,
-        persona.as_deref(),
-        sandbox.is_some(),
-        beside,
-    ) {
+    if let Err(why) = begun(starting, &ready, persona.as_deref(), sandbox, beside) {
         tracing::warn!("purlis: a composed chat's run was not written ({why})");
+    }
+    // Its routing record, under the run just begun, where its arming asked a router extension
+    // (SK-15b).
+    if let Some(routed) =
+        std::cell::LazyCell::get(&skills).and_then(|skills| skills.routed.as_ref())
+        && let Err(why) = routed_recorded(starting, &routed.record, beside)
+    {
+        tracing::warn!("purlis: a composed chat's routing record was not written ({why})");
     }
     if let Some(counted) = counted
         && let Err(why) = crate::sandbox::local::count(root, counted)
@@ -472,6 +741,7 @@ pub fn compose_ready(
                 folder: cwd.clone(),
                 harness: ready.harness,
                 confines: applied.confines().clone(),
+                live: live.map(crate::hostedchats::Reached),
             },
         ),
     }
@@ -497,6 +767,8 @@ pub fn compose_ready(
             .as_ref()
             .and_then(crate::sandbox::Confinement::held_as)
             .map(str::to_owned),
+        // Given with its token, by the host that starts it ([`spec`]).
+        prompt_key: None,
     })
 }
 
@@ -541,6 +813,23 @@ fn persona_of(env: &[(String, String)], root: &Path) -> Option<String> {
         .or_else(|| crate::start::persona_for_a_new_chat(root))
 }
 
+/// Writes chat `starting`'s routing `record` in the host's event log (SK-15b), after its run's
+/// `run.started`.
+fn routed_recorded(
+    starting: &Starting<'_>,
+    record: &crate::skills::router::Record,
+    beside: &dyn Beside,
+) -> Result<(), String> {
+    let entry = crate::eventlog::Entry::SkillRouted {
+        plane: starting.root.to_path_buf(),
+        number: starting.number,
+        record: record.clone(),
+    };
+    serde_json::to_value(entry)
+        .map_err(|why| why.to_string())
+        .and_then(|entry| beside.record(entry))
+}
+
 /// **Writes the run `starting` begins** in the host's event log, as the window writes a run of
 /// its own: under the start's chat and run, with what the start decided, and who started it.
 /// A run that is not written is said in the host's log, as the window says one, and the chat
@@ -549,7 +838,7 @@ fn begun(
     starting: &Starting<'_>,
     ready: &crate::start::Ready,
     persona: Option<&str>,
-    sandboxed: bool,
+    sandbox: Option<&crate::sandbox::Applied>,
     beside: &dyn Beside,
 ) -> Result<(), String> {
     use crate::eventlog::{Attributes, Began, Entry, NONE};
@@ -570,13 +859,7 @@ fn begun(
             .map(|sign_in| sign_in.kind.word().to_owned()),
         provider: None,
         model: None,
-        sandbox: if sandboxed {
-            crate::sandbox::Os::this()
-                .backend_word(ready.harness)
-                .map(str::to_owned)
-        } else {
-            none()
-        },
+        sandbox: sandbox.map_or_else(none, |applied| applied.backend_word().map(str::to_owned)),
         conversation: ready.session.as_ref().map(ToString::to_string),
         started_by: Some(starting.started_by.to_owned()),
     };
@@ -646,15 +929,22 @@ fn recorded(
 /// level of which it is denied writing, goes through a file.
 pub const SETTINGS_IN_A_WORD: usize = 96 * 1024;
 
-/// The folder of this machine's state a chat's settings file is kept in, by the chat's id.
+/// The folder of the plane's state chats' settings files were kept in by earlier builds
+/// (`<state>/chat-settings`): never read now, swept ([`sweep_settings`]), and held as an
+/// integrity path.
 pub const SETTINGS_DIR: &str = "chat-settings";
 
 /// **`args` with a `--settings` JSON longer than [`SETTINGS_IN_A_WORD`] put in a file**, the
-/// chat `id`'s in this machine's state of the project at `root` (`chat-settings/<id>.json`,
-/// private, written through folder handles with no link followed), and its path in the JSON's
-/// place: Claude Code reads `--settings` as JSON or as a file. Words with a shorter one, or none,
-/// are as they were. Refused for an id that is no chat's.
+/// chat `id`'s in `folder`, the app data folder's [`CHAT_SETTINGS`], under the clone key of the
+/// project at `root` (`<app data>/chat-settings/<clone key>/<id>.<digest>.json`, private,
+/// written through folder handles with no link followed), and its path in the JSON's place:
+/// Claude Code reads `--settings` as JSON or as a file. The app data folder is outside every
+/// plane, so the file sits apart from what a chat works in. Its name carries the digest of what
+/// purlis wrote ([`settings_digest`]), so what it is read back as is only ever what was written
+/// ([`settings_from_its_file`]). Words with a shorter one, or none, are as they were. Refused for
+/// an id that is no chat's, and where purlis has no data folder.
 pub fn settings_in_a_file(
+    folder: Option<&Path>,
     root: &Path,
     id: &str,
     mut args: Vec<String>,
@@ -677,90 +967,142 @@ pub fn settings_in_a_file(
                 .to_owned(),
         );
     }
-    let state = crate::plane::state_dir(root);
-    std::fs::create_dir_all(&state).map_err(|why| why.to_string())?;
-    crate::profiletrust::private_dir(&state).map_err(|why| why.to_string())?;
-    let rel = std::path::PathBuf::from(SETTINGS_DIR).join(format!("{id}.json"));
-    let was = crate::proposed::read_pinned(&state, &rel)
+    let Some(folder) = folder else {
+        return Err(
+            "a chat whose settings are too long for its command line was not started: purlis \
+             has no data folder to keep them in"
+                .to_owned(),
+        );
+    };
+    std::fs::create_dir_all(folder).map_err(|why| why.to_string())?;
+    crate::profiletrust::private_dir(folder).map_err(|why| why.to_string())?;
+    let key = crate::plane::CloneKey::of(root);
+    let rel = std::path::PathBuf::from(key.as_str()).join(format!(
+        "{id}.{}.json",
+        settings_digest(args[at].as_bytes())
+    ));
+    let was = crate::proposed::read_pinned(folder, &rel)
         .map_err(|_| "a chat's settings file is not a plain file, so it was not started")?;
     let base = was
         .as_deref()
         .and_then(|bytes| crate::proposed::base_of(Some(bytes)));
-    crate::proposed::write_pinned_making(&state, &rel, base.as_deref(), &args[at], &|_, _| true)
+    crate::proposed::write_pinned_making(folder, &rel, base.as_deref(), &args[at], &|_, _| true)
         .map_err(|_| "a chat's settings could not be written to its file, so it was not started")?;
-    args[at] = state.join(&rel).display().to_string();
+    args[at] = folder.join(&rel).display().to_string();
     Ok(args)
 }
 
-/// **The settings in `path`, where it is a chat's settings file purlis wrote**
-/// ([`settings_in_a_file`]): `<state>/chat-settings/<chat id>.json`, read without following a
-/// link. `None` for any other path.
-pub fn settings_from_its_file(path: &Path) -> Option<serde_json::Value> {
+/// The digest a chat's settings file is named by: the first 32 hex digits of the SHA-256 of what
+/// it holds.
+fn settings_digest(bytes: &[u8]) -> String {
+    use sha2::Digest as _;
+    sha2::Sha256::digest(bytes)[..16]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// The chat id and the digest a chat's settings file `name` is named by, where it is one:
+/// `<chat id>.<digest>.json`.
+fn settings_file_name(name: &str) -> Option<(String, &str)> {
+    let (id, digest) = name.strip_suffix(".json")?.split_once('.')?;
+    let id = crate::reopen::a_ulid(id)?;
+    (digest.len() == 32 && digest.bytes().all(|b| b.is_ascii_hexdigit())).then_some((id, digest))
+}
+
+/// The parts of `path` a chat's settings file purlis writes is named by: the [`CHAT_SETTINGS`]
+/// folder, the plane's clone key, and the file's name with its digest.
+fn settings_file_parts(path: &Path) -> Option<(&Path, &str, &str, &str)> {
     let name = path.file_name()?.to_str()?;
-    crate::reopen::a_ulid(name.strip_suffix(".json")?)?;
-    let dir = path.parent()?;
-    if dir.file_name()? != SETTINGS_DIR {
+    let (_, digest) = settings_file_name(name)?;
+    let plane = path.parent()?;
+    let key = plane.file_name()?.to_str()?;
+    crate::plane::CloneKey::parse(key)?;
+    let folder = plane.parent()?;
+    (folder.file_name()? == CHAT_SETTINGS).then_some((folder, key, name, digest))
+}
+
+/// **Whether `path` is named as a chat's settings file purlis writes**
+/// (`<app data>/chat-settings/<clone key>/<chat id>.<digest>.json`), whatever it holds now.
+pub fn names_a_settings_file(path: &Path) -> bool {
+    settings_file_parts(path).is_some()
+}
+
+/// **The settings in `path`, where it is a chat's settings file purlis wrote**
+/// ([`settings_in_a_file`]): `<app data>/chat-settings/<clone key>/<chat id>.<digest>.json`,
+/// read without following a link, and only while what it holds is what its name's digest says
+/// was written. `None` for any other path, a file in the plane's state among them, and for a
+/// file that holds anything else.
+pub fn settings_from_its_file(path: &Path) -> Option<serde_json::Value> {
+    let (folder, key, name, digest) = settings_file_parts(path)?;
+    let bytes = crate::proposed::read_pinned(folder, &Path::new(key).join(name)).ok()??;
+    if settings_digest(&bytes) != digest {
         return None;
     }
-    let bytes =
-        crate::proposed::read_pinned(dir.parent()?, &Path::new(SETTINGS_DIR).join(name)).ok()??;
     serde_json::from_slice(&bytes).ok()
 }
 
-/// **Removes every chat's settings file whose chat is not among `open`**, older than a couple of
-/// minutes (the time between a start writing it and the chat being on the app's record): the
-/// app's, each time it writes that record. Only names this module makes, through the folder's
-/// handle.
-pub fn sweep_settings(root: &Path, open: &[String]) {
-    let dir = crate::plane::state_dir(root).join(SETTINGS_DIR);
-    let Ok(entries) = std::fs::read_dir(&dir) else {
+/// **Removes every settings file of the project at `root` whose chat is not among `open`**,
+/// older than a couple of minutes (the time between a start writing it and the chat being on
+/// the app's record), in `folder`, the app data folder's [`CHAT_SETTINGS`]; and every file an
+/// earlier build kept in the plane's state ([`SETTINGS_DIR`]) past that time, whatever its chat,
+/// as none is read now. The app's, each time it writes that record. Only names this module makes,
+/// through each folder's handle.
+pub fn sweep_settings(folder: Option<&Path>, root: &Path, open: &[String]) {
+    if let Some(folder) = folder {
+        let key = crate::plane::CloneKey::of(root);
+        sweep_in(&folder.join(key.as_str()), |name| {
+            settings_file_name(name).is_some_and(|(id, _)| !open.contains(&id))
+        });
+    }
+    sweep_in(&crate::plane::state_dir(root).join(SETTINGS_DIR), |name| {
+        settings_file_name(name).is_some()
+            || name
+                .strip_suffix(".json")
+                .and_then(crate::reopen::a_ulid)
+                .is_some()
+    });
+}
+
+/// Removes each file of `dir` that `goes` takes by its name, once it is older than the sweep's
+/// grace, through the folder's handle with no link followed.
+fn sweep_in(dir: &Path, goes: impl Fn(&str) -> bool) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.filter_map(Result::ok) {
-        let Some(id) = entry
-            .file_name()
-            .to_str()
-            .and_then(|name| name.strip_suffix(".json"))
-            .and_then(crate::reopen::a_ulid)
-        else {
+        let file_name = entry.file_name();
+        let Some(name) = file_name.to_str() else {
             continue;
         };
+        if !goes(name) {
+            continue;
+        }
         let young = entry
             .metadata()
             .and_then(|meta| meta.modified())
             .ok()
             .and_then(|at| at.elapsed().ok())
             .is_some_and(|age| age < crate::skills::verbs::drafts::SWEEP_GRACE);
-        if young || open.contains(&id) {
+        if young {
             continue;
         }
         #[cfg(unix)]
         if let Ok(at) = rustix::fs::openat(
             rustix::fs::CWD,
-            &dir,
+            dir,
             rustix::fs::OFlags::RDONLY
                 | rustix::fs::OFlags::DIRECTORY
                 | rustix::fs::OFlags::NOFOLLOW,
             rustix::fs::Mode::empty(),
         ) {
-            let _ = rustix::fs::unlinkat(
-                &at,
-                format!("{id}.json").as_str(),
-                rustix::fs::AtFlags::empty(),
-            );
+            let _ = rustix::fs::unlinkat(&at, name, rustix::fs::AtFlags::empty());
         }
     }
 }
 
 /// What arms a chat's harness: the arguments its adapter adds, and the variables.
 pub type Armed = (Vec<String>, Vec<(String, String)>);
-
-/// **What arms a chat's harness** for this session alone: the arguments and the variables its
-/// adapter adds, as the window arms it. **Fail closed**: a sandbox compiled for another harness,
-/// or one the harness cannot be armed to carry here, refuses the chat.
-pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
-    armed_as(crate::skills::reach_chats_here(arming.root), arming)
-}
 
 /// What [`armed`] arms a chat from, as one value.
 #[derive(Clone, Copy)]
@@ -780,11 +1122,20 @@ pub struct Arming<'a> {
     /// or one in a grade's arm that does not, is refused: the two never disagree in a chat that
     /// starts (the review of #3229).
     pub graded: bool,
+    /// Where its plane skills come from, read once at its start ([`ChatSkills::read`], #3234):
+    /// what its tab's Notice is worked out from too. Read the first time it is looked at, which
+    /// [`armed`] does only once the checks that need nothing of it have passed (#3461): a start
+    /// they refuse (a sandbox for another harness, a grade's mismatch, no binary for a sandbox)
+    /// reads none of the chat's skill folders, its clone's included. The one refusal after it,
+    /// a sandboxed chat whose harness cannot carry the arming, needs the arming built from it. A
+    /// [`std::cell::LazyCell`] over the read is what a start passes.
+    pub skills: &'a dyn std::ops::Deref<Target = ChatSkills>,
 }
 
-/// [`armed`], with the Skill studio's flag `studio` as given rather than as this machine and
-/// this process say it.
-pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, String> {
+/// **What arms a chat's harness** for this session alone: the arguments and the variables its
+/// adapter adds, as the window arms it. **Fail closed**: a sandbox compiled for another harness,
+/// or one the harness cannot be armed to carry here, refuses the chat.
+pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
     let Arming {
         root,
         kit,
@@ -795,6 +1146,7 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
         persona,
         env,
         graded,
+        skills,
     } = *arming;
     let not_carried = |then: &str| {
         crate::sandbox::under_policy(
@@ -837,50 +1189,39 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
             None => Ok((Vec::new(), Vec::new())),
         };
     };
+    // Every check that needs nothing of the chat's skills has passed: they are read from here
+    // on (#3461), as the arming below is built from them.
+    let skills: &ChatSkills = skills;
+    // Read for this very chat: its persona, unless a Try it's, which has none (#3234).
+    debug_assert!(
+        skills.tried || skills.persona.as_deref() == persona,
+        "a chat is armed with the skills read for it"
+    );
     // The plane's skills, where they reach the project's chats: while the Skill studio's flag is
     // on, and once the project requires them (`skills::reach_chats`, #2784): their
     // folder of links laid out here, by the host, as the git hooks are, so the adapter only
-    // turns the set into words (ADR 0063 as amended 2026-10-20).
-    let workspace = cwd.and_then(|cwd| crate::active::workspace_of_tree(root, cwd));
-    let on = studio;
-    // A Try it's scratch chat (SK-9, #2772): its project skills are the one skill its try laid
-    // out, at a root of its own, so it gets the built-in skills and the draft alone.
-    let scope = crate::skills::verbs::drafts::scope_of(root, cwd.filter(|_| on));
-    let skills_root = scope.root.as_path();
-    let (workspace, skills_persona) = if scope.tried {
-        (None, None)
-    } else {
-        (workspace, persona)
-    };
-    // And every harness skill and plugin off, so the draft is tried alone.
+    // turns the set into words (ADR 0063 as amended 2026-10-20). Its scope, workspace and repo
+    // skills were read once at its start (`ChatSkills::read`).
+    let on = skills.on;
+    let skills_root = skills.root.as_path();
+    let workspace = skills.workspace.as_deref();
+    // A Try it's scratch chat: every harness skill and plugin off, so the draft is tried alone.
     let alone;
-    let plugins = if scope.tried {
+    let plugins = if skills.tried {
         alone =
             crate::skills::verbs::drafts::alone_on(harness, &crate::harness_plugin::Env::of(env));
         &alone
     } else {
         plugins
     };
-    // And the repo skills of the clone it works in, read here too, so a narrower repo copy of a
-    // plane skill is the one its harness gets where purlis builds what it is handed (SK-6).
-    let repo = match (on, workspace.as_deref(), cwd) {
-        (true, Some(ws), Some(cwd)) => crate::skills::repo_skills_of_chat(harness, root, ws, cwd),
-        _ => Vec::new(),
-    };
-    let linked = laid_out_on(
-        on,
-        skills_root,
-        workspace.as_deref(),
-        skills_persona,
-        kit,
-        harness,
-        &repo,
-    );
-    let skills = on.then_some(crate::skills::PlaneSkills {
+    let at = on.then_some(crate::skills::PlaneSkills {
         plane: skills_root,
-        workspace: workspace.as_deref(),
-        repo: &repo,
+        workspace,
+        repo: &skills.repo,
+        routed: skills.routed.as_ref(),
     });
+    let linked = laid_out_on(at, skills.persona.as_deref(), kit, harness);
+    let skills = at;
     let armed = crate::harness::Kit {
         binary,
         plugin: kit.plugin.as_deref(),
@@ -981,16 +1322,19 @@ pub fn declared_identity_vars(root: &Path) -> Vec<String> {
     names
 }
 
-/// The confinement `plan` plans, started by the host, as the chat is named one.
+/// The confinement `plan` plans, started by the host, as the chat is named one, and the id the
+/// host holds it by.
 fn confined(
     plan: &crate::sandbox::plan::Plan,
     beside: &dyn Beside,
-) -> Result<crate::sandbox::Confinement, String> {
+) -> Result<(crate::sandbox::Confinement, String), String> {
     let confined = beside.confine(&plan.wired())?;
+    let id = confined.confinement.clone();
     crate::sandbox::Confinement::held_elsewhere(
         crate::sandbox::Placed::of_wire(&confined),
         Box::new(HeldByThisHost(confined.confinement)),
     )
+    .map(|confinement| (confinement, id))
     .map_err(|why| why.to_string())
 }
 

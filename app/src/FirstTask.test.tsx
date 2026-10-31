@@ -16,7 +16,7 @@ import { hoverTipOf } from "./ui/tooltip/tooltip.testkit";
  *
  * What a run is — its branch, the task typed and unsent, the diff command — is the core's
  * (`purlis_core::firsttask`, `firsttask.rs`), and the CI run of the script is
- * `crates/purlis-cli/tests/first_task_script.rs`. This is about the window: that the tab is
+ * `crates/purlis-cli/tests/it/first_task_script.rs`. This is about the window: that the tab is
  * offered without asking anything, which profile each run starts on, and that a run's diff is
  * one press away.
  */

@@ -303,34 +303,6 @@ body {
   cursor: grabbing;
 }
 
-/* **A tab's counts, in one pill** (`CountPill.tsx`, qw337): how many chats are open in a
-   workspace, which with the chat strip showing one workspace's chats is the answer to "where
-   are the other forty"; and, as a second segment of the same pill, how many of them are asking
-   for you (below). A workspace's tab, the plane root's and a project's draw it, and the rows of
-   their show-more menus.
-
-   It does not shrink: the title gives way first, and then the pill goes whole
-   (`wholeWays.fitPill`, D-1867-1), set aside by `data-away`. */
-.count-pill {
-  display: inline-flex;
-  flex: none;
-  align-items: stretch;
-  overflow: hidden;
-  border-radius: var(--radius-full);
-  background: var(--control-count);
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-variant-numeric: tabular-nums;
-}
-
-.count-pill > span {
-  padding: var(--space-0) var(--space-2);
-}
-
-.count-pill[data-away] {
-  display: none;
-}
-
 /* **A LIVE workspace's dot** (`LiveMark`, qw337): right after the name, in the accent colour,
    with a ring of the same colour so it is not taken for the workspace's own colour mark before
    the name. The margin is the ring's room. */
@@ -342,29 +314,6 @@ body {
   border-radius: var(--radius-full);
   background: var(--accent-base);
   box-shadow: 0 0 0 var(--space-1) color-mix(in srgb, var(--accent-base) 35%, transparent);
-}
-
-/* And how many of them are asking for you, which is the hole scoping the chats would
-   otherwise open. The same mark the project tabs carry one scope up — **the count of chats
-   waiting for the operator is the one thing in this window that exists to be seen**, so it is
-   the only mark on a strip drawn in a colour charter chose — a workspace's own colour is the
-   operator's (above) — and it is drawn in the weight of a
-   number rather than the weight of a label. A show-more button draws the same mark for what it
-   hides (ADR 0054), because a hidden workspace's count is still a chat waiting on you.
-
-   On a tab it is the second segment of the tab's one pill (`.count-pill`, above). */
-.count-pill-needs,
-.show-more-needs {
-  background: var(--needs-you-base);
-  color: var(--needs-you-text);
-  font-weight: var(--font-weight-strong);
-  font-variant-numeric: tabular-nums;
-}
-
-.show-more-needs {
-  padding: var(--space-0) var(--space-2);
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
 }
 
 /* **No strip scrolls. What does not fit is not drawn** — the operator, looking at the
@@ -618,17 +567,6 @@ body {
   border-color: var(--border-strong);
 }
 
-/* How many: the tab's count pill (`.count-pill`), with a browser's mark before the digit. */
-.tab-browsers-count {
-  align-items: center;
-  padding-inline-start: var(--space-2);
-}
-
-.tab-browsers-count > svg {
-  inline-size: 1em;
-  block-size: 1em;
-}
-
 .browser-thumbnail {
   display: inline-flex;
   align-items: center;
@@ -651,6 +589,34 @@ body {
   block-size: var(--space-5);
 }
 
+/* A canvas with no frame yet is not laid out: `display: block` above would otherwise take the
+   mark's room. */
+.browser-thumbnail > canvas[hidden] {
+  display: none;
+}
+
+/* **The Browsers grid** (#2027): as many tiles to a row as the width holds, each its live
+   picture over what it is called and where it is. A tile is drawn under twice its least width,
+   so its frame (`TILE_ACROSS`, 800 across) is over twice the widest it is drawn. */
+.browsers-grid {
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+}
+
+.browsers-grid .browser-thumbnail {
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-sunken);
+}
+
+.browsers-grid .browser-thumbnail > svg {
+  inline-size: var(--space-6);
+  block-size: var(--space-6);
+  color: var(--text-quiet);
+}
+
 /* Who drives a browser where its agent does not (#2300): the bar's own mark, under the
    thumbnail, for the person; the waiting colour for purlis signing in. */
 .browser-thumbnail[data-driver="person"] {
@@ -659,10 +625,6 @@ body {
 
 .browser-thumbnail[data-driver="purlis"] {
   box-shadow: inset 0 -2px 0 var(--state-waiting);
-}
-
-.chat-browser-driver[data-driver="person"] {
-  color: var(--text-primary);
 }
 
 /* **No rule dresses every button on the bar** (#3129): one that did drew a bordered box around
@@ -700,16 +662,10 @@ body {
   min-height: 0;
 }
 
+/* The empty sentence is a secondary line (`ui-text-secondary`, #1920): the role's colour is what
+   makes it quiet, never a fade over it, which took it to 3.4:1 in Purlis light (#3790). */
 .empty {
   padding: var(--space-5);
-  opacity: 0.6;
-}
-
-/* In the Explorer and in a panel the empty sentence is a secondary line (`ui-text-secondary`,
-   #1920): the role's colour is what makes it quiet, so the dimming is not drawn on top of it. */
-.explorer .empty,
-.panels .empty {
-  opacity: 1;
 }
 
 .pane {
@@ -809,66 +765,6 @@ body {
   height: var(--size-chrome);
 }
 
-/* **A pane's row of Notices, above its terminal** (`NoticePaneRow`, #1647): the stack, and
-   beside it "+N more" while more than two have something to say. In a chat's pane it is the
-   band, inside the pane on its fill, and `paneFrame.css` places it (#3142).
-
-   - **Never over the terminal**: it is in the pane's column, before the body, and the terminal
-     has what it leaves.
-   - **Never more than most of the pane**: the terminal keeps at least two fifths of it, whatever
-     is opened (`max-height`); past that the stack scrolls, and the box that is too tall gives way
-     first (`.notice-pane-box`).
-   - **None, no row**: a pane with nothing to say is all terminal. */
-.pane-notice-row {
-  display: flex;
-  flex: 0 1 auto;
-  align-items: stretch;
-  gap: var(--space-2);
-  min-height: 0;
-  max-height: 60%;
-  padding: var(--space-1) var(--space-4);
-  background: var(--surface-base);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.pane-notice-row.pane-notice-row-empty {
-  display: none;
-}
-
-/* **A pane's Notices, one under another** (`PlaneView`, `PaneFrame`), in the order the pane
-   wrote them: the one that waits for an answer first. Two stand; the rest are `hidden` by the
-   row until "+N more" is open.
-
-   - **Together never taller than the row**: the stack is the row's height (`stretch`), gives
-     way (`min-height: 0`) and scrolls, so a Notice's buttons are always reachable.
-   - **Each as wide as what it says, never wider than the pane, and no wider than a sentence
-     reads well** (`max-width`). The cap is here and not on each Notice, so the stack is never
-     wider than its widest Notice may be. */
-.pane-notices {
-  display: flex;
-  flex-direction: column;
-  flex: 0 1 auto;
-  align-items: flex-start;
-  gap: var(--space-2);
-  min-width: 0;
-  max-width: min(100%, 40rem);
-  min-height: 0;
-  overflow-y: auto;
-}
-
-/* `hidden` hides a Notice the row keeps behind "+N more": its box's own `display` would
-   otherwise win over the browser's rule for the attribute. */
-.pane-notices > [hidden] {
-  display: none;
-}
-
-/* "+N more", beside the stack and at its top, so it takes no line of its own: a third Notice
-   changes the row's width by a button, never its height. */
-.pane-notice-row > .notice-more-pane {
-  flex: none;
-  align-self: flex-start;
-}
-
 /* **A runner's chat while its link is down** (#2496, `SessionPane.tsx`): its last screen dimmed
    under one quiet word, until the link is back and the screen draws again. The word is a
    sibling of the terminal like the find bar, over the whole body and under the corners, and it
@@ -957,6 +853,48 @@ body {
   outline-offset: var(--focus-ring-inset);
 }
 
+/* **A read-only terminal** (#3676, `ReadOnlyTerminal.tsx`): the words that say it is read-only,
+   then the screen, one Tab stop with the ring on its edge, and the find bar over its corner. The
+   grid's ground is the terminal's own, so the screen reads as a terminal that is over. */
+.read-only-terminal {
+  display: grid;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.read-only-terminal-note {
+  margin: 0;
+}
+
+.read-only-terminal-said:empty {
+  display: none;
+}
+
+.read-only-terminal-said {
+  margin: 0;
+}
+
+.read-only-terminal-frame {
+  position: relative;
+  min-inline-size: 0;
+}
+
+.read-only-terminal-screen {
+  min-inline-size: 0;
+  overflow: auto;
+  border-radius: var(--radius-md);
+  background-color: var(--terminal-background);
+}
+
+.read-only-terminal-screen:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.read-only-terminal .pane-find {
+  top: var(--space-2);
+}
+
 /* **The gauge takes no row of its own.** For one build (#207) the pane gave the gauge a row of
    its own, and the operator saw the cost at once: *"context usage component position is not
    absolute and its changing harness container sizes"* — a pane with a gauge was a row shorter
@@ -980,7 +918,6 @@ body {
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  opacity: 0.92;
 }
 
 .gauge-label {
@@ -1003,7 +940,6 @@ body {
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  opacity: 0.92;
 }
 
 /* The harness a chat runs, at a glance (HP-19): a button, because it opens the harness's card
@@ -1018,37 +954,17 @@ body {
   text-overflow: ellipsis;
 }
 
-/* **A chat's skills** (`SkillsChip`, #2775): how many it lists, and Use skill… for it, drawn by
-   the button family (ghost, or warning-soft while the chat's set is past its skill budget). Its
-   place on the line only: it never pushes the line wider than it is. */
+/* **A chat's skills** (`SkillsChip`, #2775, S8): how many its set holds, and the way to them in
+   the Skills view, drawn by the button family (ghost, or warning-soft while something in the set
+   needs the person). Its place on the line only: it never pushes the line wider than it is. */
 .pane-chips > .pane-skills {
   flex: 0 1 auto;
   min-width: 0;
 }
 
-/* **Use skill…** (`UseSkill.tsx`, #2775): the chat's skills to pick from, then the boxes of the
-   one picked, in a dialog of the family (#2910); each row says the skill's name, its level,
-   whether it is manual-only, and what it does. */
-.use-skill-budget {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-}
-
-.use-skill-over {
-  display: flex;
-  gap: var(--space-2);
-  align-items: flex-start;
-  color: var(--state-waiting);
-}
-
-.use-skill-over > svg {
-  flex: none;
-  inline-size: 1em;
-  block-size: 1em;
-  margin-block-start: var(--space-1);
-}
-
+/* **Use skill…** (`UseSkill.tsx`, #2775, S8): a quick picker of the chat's skills, then the
+   boxes of the one picked, in a dialog of the family (#2910); each row says the skill's name,
+   its level, whether it is manual-only, and what it does. */
 /* The skills are a list of the family (`ui/list`, #2911): a skill's name, its level and its
    description under them, in the row. The list scrolls inside the dialog. */
 .use-skill-list {
@@ -1266,7 +1182,6 @@ body {
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  opacity: 0.92;
 }
 
 /* **A pane's breadcrumb, while its tab shows a task** (#1486, `PaneCrumbs.tsx`): `steward 4 ›
@@ -1353,7 +1268,6 @@ body {
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  opacity: 0.92;
 }
 
 /* **The two ways to end the task a pane shows** (#1488), beside its path: words, small buttons
@@ -1508,33 +1422,19 @@ body {
   overflow: hidden;
 }
 
+/* A name in the path, a way to that chat or not: its place in the line, and how it gives way.
+   A way is the button family's quiet ghost drawn inline (#3264), which draws its look; a name
+   that is no way is words in the line's colour. */
 .pane-crumbs .crumb {
   flex: 0 1 auto;
   min-width: 1.5em;
   overflow: hidden;
-  padding: 0;
-  font: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: inherit;
-  background: none;
-  border: none;
-  border-radius: var(--radius-sm);
 }
 
 .pane-crumbs .crumb.between {
   flex-shrink: 100;
-}
-
-.pane-crumbs button.crumb {
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.pane-crumbs button.crumb:hover,
-.pane-crumbs button.crumb:focus-visible {
-  color: var(--text-primary);
-  text-decoration: underline;
 }
 
 /* The chat on screen: the one name in the path that is not a way to somewhere else, and the
@@ -1600,13 +1500,6 @@ body {
   white-space: nowrap;
 }
 
-/* **Whose a pane's Notice is**, where it is a chat's that is not the one on screen (#1486,
-   `NoticeOf`): the first words of its sentence, in the sentence's own colour and its weight
-   up, so it is read before what the Notice asks. */
-.notice-whose {
-  font-weight: var(--font-weight-strong);
-}
-
 /* **A pane whose tab shows a task that is not there to be drawn** (#1486, `TaskAway.tsx`): in
    the terminal's place and on its surface, under the pane's top line, which still says the
    path. A sentence, how it ended, and the way back. Nothing here is a terminal, so nothing
@@ -1648,6 +1541,23 @@ body {
   max-height: 60vh;
   overflow: auto;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* **A runner chat's held dispatch, in its own tab**: what it would start, as label and value. */
+.runner-dispatch-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+
+.runner-dispatch-facts dt {
+  color: var(--text-muted);
+}
+
+.runner-dispatch-facts dd {
+  margin: 0;
   overflow-wrap: anywhere;
 }
 
@@ -1710,7 +1620,9 @@ body {
   align-items: center;
   align-self: center;
   min-width: min-content;
-  height: var(--size-chrome);
+  /* At least the chrome's height, and as tall as its marks: the family's small buttons are
+     never under 24px (#3210), which the compact density's chrome is (#3264). */
+  min-height: var(--size-chrome);
   /* Clear of the tab's close, whose press ends the chat: a press a pixel off a count must
      not be one. */
   margin-inline-end: var(--space-2);
@@ -1727,50 +1639,55 @@ body {
 /* The name gives way a thousand times sooner than the chip, and stops at its floor: the tabs
    family's (`ui/tabs/tabs.css`), which draws the tab's button. */
 
-.tabs .tab-tasks button {
+/* **The chip's pill** (#3264): the sunken ground the counts stand on. The counts are the button
+   family's quiet ghost, which draws no ground of its own at rest, so the pill shows through it;
+   under the pointer, and while their menu is open (the family's open state, #3524), its hover
+   fill is clipped to the pill's ends. The ring of a keyboard's focus is drawn on the pill, inside it,
+   as a strip's are (`theme/geometry.css`): the strip clips, and the pill clips the button's
+   own. The hand stands in a box of its own (`.tab-tasks-mark`) for the same ring. */
+.tabs .tab-tasks-pill {
   display: flex;
   flex: none;
   align-items: center;
-  height: var(--size-chrome);
-  padding: 0 var(--space-2);
-  border: 0;
-  border-radius: var(--radius-full);
-  background: none;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: var(--font-size-sm);
-  line-height: 1;
-  cursor: pointer;
-}
-
-/* The counts are one line, and which are drawn is measured (`wholeWays.ts`): one that does
-   not fit is set aside, below the line, where the clip hides it. */
-.tabs .tab-tasks button.tab-tasks-counts {
-  position: relative;
-  flex: none;
-  gap: 0 var(--space-3);
   overflow: hidden;
+  border-radius: var(--radius-full);
   background: var(--surface-sunken);
-  font-variant-numeric: tabular-nums;
 }
 
-.tabs .tab-tasks button:hover,
-.tabs .tab-tasks[data-open] button.tab-tasks-counts {
-  background: var(--surface-hover);
-  color: var(--text-primary);
+.tabs .tab-tasks-mark {
+  display: flex;
+  flex: none;
+  overflow: hidden;
+  border-radius: var(--radius-control);
 }
 
-.tabs .tab-tasks button:focus-visible {
+.tabs :is(.tab-tasks-pill, .tab-tasks-mark):has(> [data-focus-visible]) {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-inset);
 }
 
+/* The counts are one line, and which are drawn is measured (`wholeWays.ts`): one that does
+   not fit is set aside, below the line, where the clip hides it. */
+.tabs .tab-tasks-counts {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A count: its state's mark and its number, in the secondary words on the pill, a step from
+   the count before it (the button's own gap is the small size's). */
 .tab-tasks-counts .count {
   display: inline-flex;
   flex: none;
   gap: var(--space-1);
   align-items: center;
   height: var(--size-chrome);
+  color: var(--text-secondary);
+}
+
+.tab-tasks-counts > .count + .count {
+  margin-inline-start: var(--space-2);
 }
 
 .tab-tasks-counts > .count[data-away] {
@@ -1793,22 +1710,15 @@ body {
   height: 0.75rem;
 }
 
-/* The hand is pressed, so it is as wide as a thing to press. */
-.tabs .tab-tasks button.tab-tasks-hand {
-  justify-content: center;
-  min-width: var(--size-chrome);
-  padding: 0 var(--space-1);
-}
-
 /* The narrowest tab that also wears the hand has no room for a count beside it (the third
    step above). Asked of the tab's own cell, and only of a cell that wears the hand, so no
    other tab is measured any differently than it was. */
-.tabs .tab:has(> .tab-tasks > .tab-tasks-hand) {
+.tabs .tab:has(> .tab-tasks > .tab-tasks-mark) {
   container: tab-with-hand / inline-size;
 }
 
 @container tab-with-hand (max-width: 7.5rem) {
-  .tab-tasks > .tab-tasks-hand ~ .tab-tasks-counts {
+  .tab-tasks > .tab-tasks-mark ~ .tab-tasks-pill {
     display: none;
   }
 }
@@ -2011,7 +1921,7 @@ body {
   justify-content: space-between;
   margin-top: var(--space-1);
   padding: var(--space-2) var(--space-3) var(--space-1);
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
   color: var(--text-secondary);
   font-size: var(--font-size-md);
 }
@@ -2022,124 +1932,51 @@ body {
   overflow-wrap: anywhere;
 }
 
-/* **A Notice in a pane** (`Notice` with `at="pane"`), first for a harness started by hand in a
-   shell tab (ADR 0062). It stood in the pane's top-left corner, over the terminal and taking no
-   row; since #1647 it stands in the pane's row of Notices, above the terminal, and the terminal
-   is that much shorter, two Notices at most. Bordered in the waiting colour so it reads as
-   charter speaking to the operator and not as the shell's output, and quieter than a needs-you
-   item: nothing is waiting, and the harness is running whatever is pressed.
-
-   **One box: the line, and under it what a way out opened** (#1481). The box is the inline
-   surface edged in the waiting colour (`.ui-inline-surface-waiting`, #1855), so the two read as
-   one thing; this places it. */
-/* **Never taller than the pane** (#1483's dispatch question in a short pane): the box may
-   shrink in the stack (`flex` and `min-height: 0`), the line and its answers never do, and
-   what a way out opened under them gives way first, its brief before anything else, then by
-   scrolling. Every answer stays whole and reachable, and nothing is drawn over another. */
-.notice-pane-box {
-  display: flex;
-  flex-direction: column;
-  flex: 0 1 auto;
-  min-height: 0;
-  min-width: 0;
-  max-width: 100%;
-  font-size: var(--font-size-xs);
-}
-
-/* In a pane a Notice is as wide as its line, up to the stack's width. One that has opened
-   something takes that width whole, so what it opened is not drawn as narrow as a short line. */
-.pane-notices > .notice-pane-box.notice-opened {
-  width: 40rem;
-}
-
-/* **The sentence has the row.** It is as wide as it reads on one line, so the ways out stand
-   beside it only when all of it fits unwrapped; when it does not, the sentence takes the whole
-   row and wraps there, and the ways out go under it, on as many rows as they need. The line is
-   a `ButtonRow` (#1855): a way out that alone is wider than the Notice breaks its words
-   over lines, and is never clipped. */
-.notice-pane {
-  flex: none;
-  padding: var(--space-1) var(--space-3);
-}
-
-.notice-pane > .notice-says {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
 /* The persona the line names: the sentence's first word (`Notice`). */
-.notice-pane > .notice-says > .persona-mark {
+[data-placement="pane"] [data-scope="notice"][data-part="message"] > .persona-mark {
   margin-right: var(--space-2);
   vertical-align: middle;
 }
 
-/* Where "Show the request" lands (`VaultRefusedNotice`): the line itself, never one of its
-   buttons, so no key pressed next answers it. */
-.notice-pane:focus {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: calc(var(--focus-ring-offset) / 2);
-}
-
-/* **What a way out opened, under the line and at its width.** `min-width: 0` and the `pre`
-   rule: a long line of a draft scrolls inside its own box and never widens the Notice. */
-.notice-under-pane {
-  display: flex;
-  flex-direction: column;
-  flex: 0 1 auto;
-  min-height: 0;
-  min-width: 0;
-  overflow-y: auto;
-  padding: 0 var(--space-3) var(--space-2);
-}
-
-.notice-under-pane > * {
-  flex: none;
-  max-width: 100%;
-}
-
 /* What gives way first: an opened report, and inside it its scrolling draft (the brief),
    down to a few lines. */
-.notice-under-pane > .block-report {
+[data-placement="pane"] > [data-scope="notice"][data-part="under"] > .block-report {
   display: flex;
   flex-direction: column;
   flex: 0 1 auto;
   min-height: 0;
 }
 
-.notice-under-pane > .block-report > * {
+[data-placement="pane"] > [data-scope="notice"][data-part="under"] > .block-report > * {
   flex: none;
 }
 
-.notice-under-pane > .block-report > .block-report-draft,
-.notice-under-pane > .block-report > section {
+[data-placement="pane"]
+  > [data-scope="notice"][data-part="under"]
+  > .block-report
+  > .block-report-draft,
+[data-placement="pane"] > [data-scope="notice"][data-part="under"] > .block-report > section {
   flex: 0 1 auto;
   min-height: 3.5em;
 }
 
-.notice-under-pane > .block-report > section {
+[data-placement="pane"] > [data-scope="notice"][data-part="under"] > .block-report > section {
   display: flex;
   flex-direction: column;
 }
 
-.notice-under-pane > .block-report > section > .block-report-draft {
+[data-placement="pane"]
+  > [data-scope="notice"][data-part="under"]
+  > .block-report
+  > section
+  > .block-report-draft {
   flex: 0 1 auto;
   min-height: 3.5em;
-}
-
-.notice-under-pane pre {
-  max-width: 100%;
-  margin: var(--space-2) 0;
-  overflow: auto;
-}
-
-.notice-under-pane p {
-  margin: var(--space-2) 0;
 }
 
 /* A sandbox block's Report (#1338), opened under its Notice in the pane's corner: the draft
-   exactly as it would be filed, and the one button that files it. On the inline surface
-   (`.ui-inline-surface`, #1855); this places and pads it. */
+   exactly as it would be filed, and the one button that files it. A card (the card family's,
+   #2912); this places it. */
 .block-report {
   max-width: 36rem;
   margin-top: var(--space-2);
@@ -2547,11 +2384,9 @@ body {
     calc(var(--space-5) + var(--space-1));
 }
 
+/* Its words are a strong body (`ui-text-body ui-text-strong`, #1920): 13px in the primary tier. */
 .side-title {
   margin: 0;
-  color: var(--text-primary);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-strong);
 }
 
 /* The project after the workspace on Chats' title (R123): its own words, quiet and not
@@ -2623,13 +2458,7 @@ body {
 .inbox-updates {
   margin-top: var(--space-5);
 }
-/* The project's Notices (#1695): one box, a row per Notice. */
-.notice-list {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-raised);
-  overflow-wrap: anywhere;
-}
+
 /* **The scope switch** (qw359): the Chats view's own segments (`ScopeSwitch.tsx`), at the top of
    the Inbox. In a narrow side a segment's words are cut before its count is, and the group is
    never wider than the view. */
@@ -2752,6 +2581,14 @@ body {
   line-clamp: 2;
   overflow: hidden;
 }
+/* A command over several lines, one per line (#3502). */
+.ask-lines {
+  display: flex;
+  flex-direction: column;
+}
+.ask-more-lines {
+  font-weight: var(--font-weight-regular);
+}
 .inbox-secondary {
   grid-area: 2 / 2;
   overflow: hidden;
@@ -2819,9 +2656,7 @@ body {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
 }
-.inbox-notice .notice-pane-box {
-  max-width: 100%;
-}
+
 .inbox-refused {
   margin: 0;
   color: var(--text-secondary);
@@ -2829,6 +2664,11 @@ body {
 /* What an Allow's restart of the chat ends (#1986): a secondary line of the row, its colour
    the text role's (`ui-text-secondary`). */
 .inbox-restart {
+  margin: 0;
+}
+/* Why a permission offers no Allow, where a character it holds reads otherwise (SK-51, #3202):
+   a secondary line of the row, as the restart's is. */
+.inbox-hidden {
   margin: 0;
 }
 .inbox-none {
@@ -2943,8 +2783,6 @@ body {
   padding: var(--space-4);
 }
 
-.explorer .pieces,
-.explorer .files,
 .explorer .absent ul {
   list-style: none;
   margin: 0;
@@ -2964,27 +2802,21 @@ body {
    second — because a run with only one of them in place still looks right.
 
    **Nothing here touches padding, font size or line height**: what this rule is about is
-   wrapping, and a row's metrics are its own rule's. The tree's guides (`.ui-tree`) are straight
-   lines down the group a level is (#1672), so no row's height is a number they are tuned to. */
+   wrapping, and a row's metrics are its own rule's. The tree's guides (`ui/tree`) are straight
+   lines down the rows a level is (#1672), so no row's height is a number they are tuned to. */
 .explorer .spot,
 .explorer .file-node,
-.explorer .clone > summary,
+.explorer .clone,
 .explorer .worktree,
 .explorer .absent-row {
   min-width: max-content;
   white-space: nowrap;
 }
 
-/* **The explorer's rows are the shared tree row** (DS-12, `.ui-row.ui-tree-row` in
-   `primitives/collections.css`): its height, its steps by `aria-level`, its guides, its twist,
-   its hover, its selected look and the keyboard's ring. What a row holds under it (a folder's
-   "Nothing here", a clone's "Asking git…", a branch's marks) stands where the row's children's
-   names start: the element holding it carries the children's level (`heldUnder` in
-   `Explorer.tsx`), and the sentence is drawn one step and a row's padding in from that depth. */
-.explorer .ui-tree :is(.none, .pending, .trouble, .worktree),
-.explorer .ui-tree .pieces > li > .worktree + .label {
-  padding-inline-start: calc((var(--ui-tree-depth) + 1) * var(--ui-tree-step) + var(--space-4));
-}
+/* **The explorer's rows are the tree family's** (#2911, `ui/tree`): its height, its steps by its
+   level, its guides, its twist, its hover, its chosen look and the keyboard's ring. What a row
+   holds under it (a folder's "Nothing here", a clone's "Asking git…") is a line of the tree, one
+   level under it. */
 
 /* An icon per kind of node, which is what tells the two kinds of leaf apart: a worktree is a
    branch and a chat is a terminal, and at four levels of indent the indent alone stopped
@@ -3046,25 +2878,24 @@ body {
 }
 
 /* A spot is what the next chat starts in. The current one is marked with more than colour —
-   a bar down its inline start and its own weight — because "where will this chat open" is
-   the one thing in this region that must never be read wrong. */
-/* Its fill and edge are a selected row's (`.ui-row`); the weight is the spot's own, on top. */
-.explorer .spot[aria-current="true"] {
-  font-weight: var(--font-weight-strong);
-}
+   a bar down its inline start, the tree family's chosen look — because "where will this chat
+   open" is the one thing in this region that must never be read wrong. No weight of its own:
+   a state never changes a row's size (#2800), and a bolder name is a wider one. */
 
 .explorer .explorer-section-head .twisty[data-open] {
   rotate: 90deg;
 }
 
-/* What git ignores, shown on request: there, and plainly not the branch's own work. */
-.explorer [data-ignored] > .file-node {
-  opacity: 0.55;
-}
-
 /* A file charter will not open says so beside it; its name is quieter than an openable one. */
 .explorer .file-node[data-refused] .spot-name {
   color: var(--text-muted);
+}
+
+/* What git ignores, shown on request: there, and plainly not the branch's own work. It never
+   opens, so its name is in the faint tier, a disabled row's (no opacity, #2794·4). After the
+   refused rule, which an ignored file is too. */
+.explorer .file-node[data-ignored] .spot-name {
+  color: var(--text-faint);
 }
 
 /* *Changed only*, *Show ignored files* and the picked rows' buttons: small toggles and buttons
@@ -3085,6 +2916,77 @@ body {
    width. */
 .explorer .files-filter {
   margin-block-end: var(--space-3);
+}
+
+/* **Explorer as a view** (#3343, the sidebar-views prototype's Q2 A): the panel family's view
+   frame draws the top (its title line, the filter, the scope and the Search link) held at the
+   top on the panel's fill, so the region keeps no padding of its own above it; the tree and
+   what follows it keep the room at the sides the rows had. */
+.explorer.explorer-view {
+  padding: 0 0 var(--space-4);
+}
+.explorer.explorer-view [data-frame] > :not([data-part="top"]) {
+  margin-inline: var(--space-2);
+}
+.explorer.explorer-view [data-part="top"] .files-filter {
+  margin-block-end: 0;
+}
+/* What stands beside the title (the one repo and its branch) and a repo row's branch: in the
+   code face, quiet, as the prototype's `.branch`. */
+.explorer .head-beside,
+.view-actions > .head-beside,
+.explorer .repo-branch {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.explorer .repo-branch {
+  margin-inline-start: auto;
+  padding-inline-start: var(--space-4);
+}
+/* On a region's head, the title gives way so what stands beside it sits right after it, and
+   the view's actions go to the end. */
+.side-head:has(> .view-actions:not([hidden]) > .head-beside) > h2 {
+  flex: 0 1 auto;
+}
+.view-actions:has(> .head-beside) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.view-actions > .head-beside {
+  margin-inline-end: auto;
+}
+[data-part="head"] > .head-beside {
+  margin-inline-end: auto;
+}
+.explorer .files-scope-note,
+.explorer .files-search-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+.explorer .files-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-base);
+  font-family: var(--font-mono);
+}
+.explorer .files-search-key {
+  font-family: var(--font-mono);
+}
+/* The repo the filter's *Selected* scope is of: the chosen wash, without the chosen edge. */
+.explorer [data-scope="tree"][data-part="root"][data-in-scope]:not([data-selected]) {
+  color: var(--text-primary);
+  background-color: var(--list-selected);
+}
+/* The letters of a found file's name the filter matched (#3343). */
+.explorer .found-match {
+  background: none;
+  color: var(--accent-text);
 }
 
 /* The branch cockpit (FM-5): a breadcrumb back out, then the branch's state with Merge and
@@ -3113,7 +3015,7 @@ body {
 .explorer .cockpit-head {
   margin-block-end: var(--space-4);
   padding-block-end: var(--space-4);
-  border-block-end: 1px solid var(--border-subtle);
+  border-block-end: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .explorer .cockpit-name {
@@ -3140,15 +3042,6 @@ body {
    the same. Added takes `state-success` and deleted `danger-base`, the editor's diff gutters'
    marks; changed takes `state-waiting` and renamed `accent-base`. Each is held on the window,
    the row under the pointer and the selected row in the engine's contrast pairs (#2392). */
-/* **Explorer's tree** (R129, #2917): 14px a level, its twisties in the quiet tier. */
-.explorer .ui-tree {
-  --ui-tree-step: calc(var(--space-5) + var(--space-1));
-}
-
-.explorer .ui-tree-twist {
-  color: var(--text-quiet);
-}
-
 .explorer .change-mark {
   margin-inline-start: auto;
   padding-inline: var(--space-2);
@@ -3158,26 +3051,26 @@ body {
 }
 
 .explorer .change-mark,
-.explorer [data-mark] > .file-node > .spot-name {
+.explorer .file-node[data-mark] .spot-name {
   color: var(--state-waiting);
 }
 
 .explorer .change-mark[data-mark="added"],
-.explorer [data-mark="added"] > .file-node > .spot-name {
+.explorer .file-node[data-mark="added"] .spot-name {
   color: var(--state-success);
 }
 
 .explorer .change-mark[data-mark="deleted"],
-.explorer [data-mark="deleted"] > .file-node > .spot-name {
+.explorer .file-node[data-mark="deleted"] .spot-name {
   color: var(--danger-base);
 }
 
 .explorer .change-mark[data-mark="renamed"],
-.explorer [data-mark="renamed"] > .file-node > .spot-name {
+.explorer .file-node[data-mark="renamed"] .spot-name {
   color: var(--accent-base);
 }
 
-.explorer [data-mark="deleted"] > .file-node > .spot-name {
+.explorer .file-node[data-mark="deleted"] .spot-name {
   text-decoration: line-through;
 }
 
@@ -3200,30 +3093,12 @@ body {
   margin-inline-start: var(--space-2);
 }
 
-/* A clone's heading, a tree row like the others. The default disclosure marker goes, because
-   the platform draws it at its own size in its own glyph and the row has its own twist, which
-   points the way the disclosure went (`aria-expanded`). */
-.explorer .clone > summary {
-  cursor: pointer;
-  list-style: none;
-}
-
-.explorer .clone > summary::-webkit-details-marker {
-  display: none;
-}
-
 /* How many pieces a clone has, on its heading. A count is a pill; the two things that are not
    a count — `unreadable`, and the `…` while git has not answered — are words, and `.none` and
    `.pending` below already draw those. A pill saying "unreadable" would read as a quantity. */
 .explorer .piece-count {
   margin-inline-start: auto;
   font-variant-numeric: tabular-nums;
-}
-
-.explorer .piece-count:not(.none):not(.pending) {
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--control-count);
 }
 
 /* What a piece's row says under its name: the branch, and the two states the operator has to
@@ -3269,8 +3144,8 @@ body {
   border-color: var(--state-unreadable);
 }
 
-.explorer .none,
-.explorer .pending {
+/* A sentence of the region's. A line of a tree of the tree family is laid out as its rows are. */
+.explorer :where(.none, .pending):not([data-part="root"]) {
   display: flex;
   gap: var(--space-3);
   align-items: center;
@@ -3303,21 +3178,14 @@ body {
   min-width: 0;
   white-space: nowrap;
 }
-.explorer .explorer-section-head .section-of {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-transform: none;
-  letter-spacing: normal;
-}
 .explorer .explorer-section-head .twisty {
   flex: none;
 }
 
 .explorer .absent {
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
   margin-top: var(--space-4);
   padding-top: var(--space-2);
-  opacity: 0.7;
 }
 
 .explorer .absent-heading,
@@ -3362,8 +3230,21 @@ body {
   display: flex;
   gap: var(--space-3);
   align-items: flex-start;
-  color: var(--state-failed);
+}
+
+.explorer .trouble:where(:not([data-part="root"])) {
   margin: var(--space-2) 0;
+}
+
+/* A folder that could not be read, a line of the file tree (#2911): its words in `danger.text`,
+   as every word that says something is wrong, and its mark in the failed state's colour, on the
+   line the tree family draws (#3938). */
+.explorer .trouble[data-part="root"] [role="alert"] {
+  color: var(--danger-text);
+}
+
+.explorer .trouble[data-part="root"] .node-icon {
+  color: var(--state-failed);
 }
 
 /* The mark is on the sentence's first line, not centred on a paragraph that wraps to three. */
@@ -3377,15 +3258,6 @@ body {
    at the strong weight (`ui-text-meta ui-text-strong`, #1920), as every count is. */
 .chats-section .task-count {
   flex: none;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  font-variant-numeric: tabular-nums;
-  line-height: var(--line-height-tight);
-}
-
-.explorer .needs-you-mark.rolled-up:hover {
-  background: var(--surface-hover);
 }
 
 /* **A row another part of the window asked for** (#1490, `revealTask.ts`): the explorer's
@@ -3404,17 +3276,6 @@ body {
 .chats-section li:has(> .ui-row[data-revealed]) {
   background-color: var(--surface-hover);
   animation: charter-revealed var(--motion-duration-settle) var(--motion-easing-standard);
-}
-
-/* The hand a session's row wears for a task of it that needs you: a button of its own beside
-   the row, as on a row of the Chats section. */
-.explorer .needs-you-mark.rolled-up {
-  padding: var(--space-1);
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  vertical-align: top;
-  cursor: default;
 }
 
 .chats-section {
@@ -3439,33 +3300,28 @@ body {
      twist hangs (`--ui-tree-step`, `--space-5` in `collections.css`), the state mark's column,
      and the row's gap. The filter's text starts here too, and the group headings, so the list
      reads as one column under its filter (`chats-list.e2e.ts` measures it). */
-  --chats-mark: var(--space-5);
+  /* The persona's mark, which the row starts with (#3342): 20px, the prototype's. */
+  --chats-mark: calc(var(--space-6) + var(--space-2));
   --chats-name-at: calc(var(--space-5) + var(--chats-mark) + var(--space-3));
 }
 
-/* The title, the filter and the line under it stay at the top while the rows scroll under
-   them (#1499): at fifty chats the filter is what the person scrolled away from. */
-.chats-head {
-  position: sticky;
-  z-index: 1;
-  top: 0;
+/* The title, the filter, the scope and the chips stay at the top while the rows scroll under
+   them (#1499): at fifty chats the filter is what the person scrolled away from. The view's
+   top (`ui/panel`, #3342) holds them on the panel's own fill, from edge to edge. */
+.chats-section > [data-part="top"] {
   margin-inline: calc(-1 * var(--space-4));
-  padding: var(--space-4) var(--space-4) var(--space-2);
-  /* The panel's own fill, so the head is one piece with the rows under it (#3331): Purlis fills
-     its panels a step up from the window. */
-  background: var(--panel-fill, var(--surface-base));
 }
 
 /* **The title and the scope switch share a line** (#1679), the switch at its end, as a view's
    own controls sit in its title bar; where the sidebar is too narrow for both, the switch goes
    under the title and is never cut. */
 .chats-top {
-  /* **The line's text is the notes', the secondary's** (#1920). The scope switch at its end
-     has a fixed size of its own (the segmented control's `sm`, #2907), so this line's
-     size no longer moves it. The title and the notes each wear their own role. */
+  /* **The line's text is the notes', the secondary's** (#1920). The title and the notes each
+     wear their own role; the new chat's button ends the line (Q1 A, #3342), and the scope
+     switch is a line of its own under the filter. */
   font-size: var(--font-size-sm);
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: var(--space-2) var(--space-3);
   align-items: center;
   justify-content: space-between;
@@ -3505,10 +3361,73 @@ body {
   inline-size: var(--chats-mark);
 }
 
-.chats-section .chat .ui-row-trail > svg,
-.chats-section .chat .ui-row-trail > .persona-mark {
-  inline-size: var(--space-6);
-  block-size: var(--space-6);
+/* **Who it runs as, with its state on it** (#3342, the operator's ruling of 2026-10-26): the
+   persona's mark leads the row, in its colour, and a chat that asks for the person or is at work
+   wears its state's own mark, about 10px, on the mark's lower end corner, ringed in the row's own
+   ground so it reads apart from the mark. **The mark keeps its shape** (`shownState.ts`: a state
+   is told without its colour, WCAG 1.4.1): the hand, the ring, the question, the hourglass, the
+   cross, the triangle. A chat at rest (done, idle, reported, stopped or closed) wears none, so no
+   grey mark stands for seven states; its state is still the row's word to a screen reader and
+   its tooltip's. */
+.chats-section .chat-persona {
+  position: relative;
+  display: inline-flex;
+  /* The ground the badge is ringed in: the row's, at rest, under the pointer, chosen. */
+  --chat-badge-ground: var(--panel-fill);
+}
+
+.chats-section .chat:hover .chat-persona {
+  --chat-badge-ground: var(--surface-hover);
+}
+
+.chats-section
+  .chat:is([aria-selected="true"], [aria-current]:not([aria-current="false"]))
+  .chat-persona {
+  --chat-badge-ground: var(--list-selected);
+}
+
+.chats-section .chat-persona > svg,
+.chats-section .chat-persona > .persona-mark {
+  inline-size: var(--chats-mark);
+  block-size: var(--chats-mark);
+}
+
+/* At rest, no badge. */
+.chats-section .chat-persona > .shown-state {
+  display: none;
+}
+
+/* The states that ask for the person or are at work. */
+.chats-section
+  .chat-persona:is(
+    [data-state="needs-you"],
+    [data-state="working"],
+    [data-state="asking"],
+    [data-state="waiting-on-tasks"],
+    [data-state="waiting-on-own-work"],
+    [data-state="failed"],
+    [data-state="unreported"],
+    [data-state="last-message"]
+  )
+  > .shown-state {
+  display: block;
+  position: absolute;
+  inset-block-end: calc(-1 * var(--space-2));
+  inset-inline-end: calc(-1 * var(--space-2));
+}
+
+.chats-section .chat-persona > .shown-state .shape {
+  display: grid;
+  place-items: center;
+  inline-size: calc(var(--space-4) + var(--space-2));
+  block-size: calc(var(--space-4) + var(--space-2));
+  border-radius: 50%;
+  background-color: var(--chat-badge-ground);
+}
+
+.chats-section .chat-persona > .shown-state .shape > svg {
+  inline-size: calc(var(--space-4) + var(--space-1));
+  block-size: calc(var(--space-4) + var(--space-1));
 }
 
 /* **A finished row says how it ended by its mark** (#1687, as a chat's row does, #1675): the
@@ -3563,7 +3482,6 @@ body {
   flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
-  margin-block-start: var(--space-2);
 }
 
 /* The box and its glass. **Its text starts where a top-level chat's name does** (DS-11): the
@@ -3575,7 +3493,10 @@ body {
   flex: 1 1 5rem;
   --text-input-start: var(--space-5);
   --text-input-icon: var(--chats-mark);
-  --text-input-gap: calc(var(--chats-name-at) - 1px - var(--space-5) - var(--chats-mark));
+  /* Less the step the view's top stands in further than the rows (its 10 to their 8). */
+  --text-input-gap: calc(
+    var(--chats-name-at) - 1px - var(--space-5) - var(--chats-mark) - var(--space-1)
+  );
 }
 
 /* **The notes, on the title's line** (#1499, DS-11). What the filter hides and why a key did
@@ -3639,11 +3560,29 @@ body {
   color: var(--needs-you-base);
 }
 
-/* A workspace's name over its sessions, where the list is grouped by workspace: a label over a
-   group, so the one section label (`ui-text-label`, #1920), as the section's own title is. */
+/* A workspace's name over its sessions, where the list is grouped by workspace: **the frame's
+   group head** (#3484), drawn by the panel family's rule for it (`ui/panel/panel.css`) on the
+   tree family's `header` part, so a theme that restyles a view's group heads restyles these too.
+   What is the Chats list's own: where its name starts, the room above it, and a long name cut.
+   Not a row of the tree, which stays flat (#1672): each row says its own workspace. */
 .chats-section li.chats-group {
   margin-block-start: var(--space-2);
-  padding-inline-start: var(--chats-name-at);
+  padding-inline: var(--chats-name-at) var(--space-4);
+}
+
+.chats-section li.chats-group > .chats-group-name {
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A chat row's time at its end (#3484, the prototype's `.rm`): short and quiet, in figures of one
+   width, and never what gives way: the name does (#1675). */
+.chats-section .chat-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* **Every tree in the window is the shared tree** (#1672, DS-12): `.ui-tree` and its
@@ -3674,14 +3613,10 @@ body {
 }
 
 /* The hand rolled up from a chat below: a button of its own beside the row, since a press goes
-   to that chat and not to the row's. */
-.chats-section .needs-you-mark.rolled-up {
+   to that chat and not to the row's. The button family draws it (#3523); here is its place. */
+.chats-section .rolled-up-at {
+  display: inline-flex;
   flex: none;
-  padding: var(--space-1);
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  cursor: default;
 }
 
 /* **A chat's finished tasks, under its row** (#1485): the rows that stand alone, then the one
@@ -3738,8 +3673,7 @@ body {
 /* **A chat's browsers, under its row** (#2024) wear a finished task's name's rules: the shared
    tree row at the level below the chat's, its mark and name in a chat's row's columns. */
 .chats-section .finished-name,
-.chats-section .chat-browser,
-.chats-section .finished-count {
+.chats-section .chat-browser {
   color: inherit;
   font: inherit;
 }
@@ -3814,10 +3748,6 @@ body {
   overflow-wrap: anywhere;
 }
 
-.chats-section .needs-you-mark.rolled-up:hover {
-  background: var(--surface-hover);
-}
-
 .needs-you-mark svg {
   width: 1em;
   height: 1em;
@@ -3838,7 +3768,7 @@ body {
 /* **A row that names something is one line** (#1701, #1718), the explorer's rule: a branch and
    its upstream folded into three lines in a narrow side, and a tree whose rows are three lines
    tall is not a tree you can read down. The view scrolls sideways instead (`overflow: auto`).
-   The rest of a row is the shared tree row's (`.ui-row.ui-tree-row`, DS-12). */
+   The rest of a row is the tree family's (`ui/tree`, #2911). */
 .state-bar .tree-row {
   min-width: max-content;
   white-space: nowrap;
@@ -3884,7 +3814,7 @@ body {
 .state-bar .pending,
 .state-bar .note,
 .state-bar .stamp {
-  opacity: 0.6;
+  color: var(--text-muted);
 }
 
 .state-bar .note {
@@ -3934,7 +3864,6 @@ body {
   display: flex;
   gap: var(--space-3);
   align-items: flex-start;
-  color: var(--state-failed);
   margin: var(--space-2) 0;
 }
 
@@ -3950,40 +3879,11 @@ body {
   padding: var(--space-2) var(--space-5);
   font-size: var(--font-size-sm);
   background: var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .came-back code {
-  opacity: 0.7;
-}
-
-/* **A Notice** (`Notice.tsx`, V91a–d): a standing line about something true now, with its ways
-   out — a fix, a link, Copy command, Dismiss — as the shared small buttons in a row that wraps
-   (`ButtonRow`, #1855). Outside a list (a Notice on a Settings page) the line is the inline
-   surface (`.ui-inline-surface`, `primitives/overlays.css`); this only pads it. */
-.notice-inbox {
-  margin: 0;
-  padding: var(--space-2) var(--space-5);
-  font-size: var(--font-size-sm);
-  /* **It wraps, whatever it says** (#1497): a reason with a path or one long word in it
-     breaks inside the window, never past its edge. */
-  overflow-wrap: anywhere;
-}
-
-.notice-inbox.notice-trouble {
-  color: var(--danger-text);
-}
-
-.notice-inbox .notice-says {
-  display: inline;
-}
-
-.notice-inbox code {
-  opacity: 0.7;
-}
-
-.notice-inbox p {
-  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
 }
 
 /* **While you were away** (`AwaySummary.tsx`, #1514): each part of the sentence is a link to
@@ -3996,6 +3896,88 @@ body {
   border: 0;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* **What an action answered** (`ActionResultNotice.tsx`, #3344, the sidebar-views prototype's
+   Q3 A): a card Notice at the top of the content (its width is the card's, `notice.css`); what the core said, behind
+   Details, in mono on the code ground inside it. The same notice is listed under Results in the
+   Inbox's Notices, where the list's row is its box. */
+.action-result {
+  margin: var(--space-3) var(--space-5) 0;
+}
+
+/* **A chip's card** (`ChipNotices.tsx`, #3648): the popover family's notice surface, 360px at
+   most, its notices the card Notices of what an action answered, standing in it with no margin
+   of their own. F6 lands on it (`regionCycle.CARD_STOP`): the ring says so. */
+.chip-card {
+  inline-size: min(360px, calc(100vw - 16px));
+}
+
+.chip-card .action-result {
+  margin: 0;
+}
+
+/* How many notices a card holds, above them, while it holds more than one (#3649). */
+.chip-card-count {
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.chip-card [data-f6-card] {
+  /* Held to the room the card is given (React Aria's max height on the surface, a flex column):
+     shrunk to it, never its content's height, its notices scroll inside it, the point outside it
+     left whole, and nothing of them runs past it into the page (#3653). */
+  /* The place of what its notices place absolutely (a status's words for a screen reader), so
+     that is clipped with the list too and never lengthens the page from far down it. */
+  position: relative;
+  box-sizing: border-box;
+  flex: 0 1 auto;
+  min-block-size: 0;
+  /* At most a few notices tall, whatever the room: a card stays over the page until it is
+     hidden, so it covers no more of it than it must. */
+  max-block-size: min(28rem, 60vh);
+  overflow-y: auto;
+  border-radius: var(--radius-lg);
+  outline: none;
+}
+
+/* **The status bar's Notices item and its dot** (`StatusLine.tsx`, #3653): the item's box, which
+   the dot stands over the leading corner of, so the dot coming or going moves nothing. */
+.status-notices {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.chip-card [data-f6-card]:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-width) * -1);
+}
+
+/* A kept result's notice is drawn in the Results list's place; its keyboard handler is no box. */
+.action-result-kept {
+  display: contents;
+}
+
+.action-result-meter,
+.clone-bar {
+  margin-block-start: var(--space-1);
+}
+
+.action-result-details {
+  margin: 0;
+  /* 8 and 10, as the prototype's details box. */
+  padding: var(--space-4) calc(var(--space-4) + var(--space-1));
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background-color: var(--terminal-background);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* **A refusal's way to its setting** (`SaidLink.tsx`, #1201): beside the last action's words, on
@@ -4064,17 +4046,17 @@ body {
   gap: var(--space-3);
   align-items: baseline;
   padding: var(--space-1) 0;
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .ending .what {
   min-width: 4rem;
-  opacity: 0.7;
+  color: var(--text-muted);
 }
 
 .ending .where {
   font-size: var(--font-size-xs);
-  opacity: 0.55;
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4184,8 +4166,7 @@ body {
   flex: none;
 }
 /* Its tab's amber underline is the tabs family's (`ui/tabs/tabs.css`). */
-.tabs .tab[data-wrapping-up] .tab-name,
-.chat[data-wrapping-up] .session {
+.tabs .tab[data-wrapping-up] .tab-name {
   color: var(--text-muted);
 }
 
@@ -4250,7 +4231,7 @@ body {
 .refused {
   margin: 0 0 var(--space-5);
   font-size: var(--font-size-sm);
-  opacity: 0.8;
+  color: var(--text-secondary);
 }
 
 .refused summary {
@@ -4279,7 +4260,19 @@ body {
   padding: var(--space-3) var(--space-3) var(--space-5);
 }
 .panels > section + section {
-  border-top: 1px solid var(--layer-divider);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--layer-divider));
+}
+/* **A view is its region's one scroll** (#3340): no room around it, so its top is held flush with
+   the region's edge, and its own sentences (a refusal, the plane being read) keep their room. */
+.panels.panels-view {
+  padding: 0;
+}
+.panels.panels-view > section {
+  margin-inline: 0;
+  padding: 0;
+}
+.panels.panels-view > :not(section) {
+  margin: var(--space-4) calc(var(--space-4) + var(--space-1));
 }
 .panels ul {
   list-style: none;
@@ -4320,8 +4313,8 @@ body {
 .panels .ci-pending {
   color: var(--state-waiting);
 }
+/* Its words are `.trouble`'s `danger.text` (#3938): `state.failed` is a state's mark. */
 .panels .trouble {
-  color: var(--state-failed);
   margin: var(--space-2) 0;
 }
 
@@ -4334,7 +4327,7 @@ body {
    placeholder disappears the moment somebody types. */
 .palette-ask {
   font-size: var(--font-size-xs);
-  opacity: 0.7;
+  color: var(--text-muted);
 }
 
 /* The field family's box (#2905), across the palette. */
@@ -4376,7 +4369,7 @@ body {
 .palette .held,
 .palette .none {
   margin: 0;
-  opacity: 0.8;
+  color: var(--text-secondary);
 }
 
 /* The way out of the key the palette claimed (charter-app#47). Quieter than a row and
@@ -4385,7 +4378,7 @@ body {
 .palette-through {
   margin: 0;
   font-size: var(--font-size-xs);
-  opacity: 0.7;
+  color: var(--text-muted);
 }
 
 /* ⌘P's files (FM-7): a group of their own under the projects, headed by the scope they were
@@ -4401,29 +4394,6 @@ body {
   margin: var(--space-2) 0 0;
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-strong);
-}
-
-/* **The window's own lines** (D-LB-1, `App.tsx`): one list. With a project in front it is
-   listed at the top of that project's Inbox's Notices (#1695), as part of that list; until the
-   Inbox is first drawn it stands under the title bar, the window's width, as a band rather than
-   a box. With none, it is drawn at the top of the opener's page, at the page's width, with the
-   opener's own lines in it. */
-.notice-list.window-notices {
-  border-width: 0 0 1px;
-  border-radius: 0;
-}
-
-.inbox-window-lines > .notice-list.window-notices {
-  border-width: 0;
-}
-
-.window-notices-at > .notice-list.window-notices {
-  box-sizing: border-box;
-  width: calc(100% - 3rem);
-  max-width: 37rem;
-  margin: var(--space-7) auto 0;
-  border-width: 1px;
-  border-radius: var(--radius-md);
 }
 
 /* **The welcome** (#1812, `Welcome.tsx`): what a window with no project draws, and the pages
@@ -4463,28 +4433,6 @@ body {
   max-width: 38rem;
   line-height: var(--line-height-body);
   color: var(--text-secondary);
-}
-
-/* **The welcome's cards**: a door and a repo to get, each a card pressed whole, not a button of
-   the family (the card family's, `eslint.config.js`). Every other button on the welcome and the
-   guided steps is the family's and draws itself (#3129); no rule here reaches one. */
-.welcome :is(.welcome-door, .repo-card) {
-  padding: var(--space-2) var(--space-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.welcome :is(.welcome-door, .repo-card):hover:not(:disabled, [aria-disabled="true"]) {
-  background: var(--surface-hover);
-}
-
-.welcome :is(.welcome-door, .repo-card):is(:disabled, [aria-disabled="true"]) {
-  opacity: 0.45;
-  cursor: default;
 }
 
 /* **The guided steps** (#1817, `Onboarding.tsx`): the welcome and the pages after it, with
@@ -4549,10 +4497,8 @@ body {
   padding: var(--space-7) 0 0;
 }
 
-/* **The three doors**: one row of equal cards, as many to a row as the width holds, each a
-   single button whose title is its name and whose line is its description. A card is a thing
-   that is pressed, so it is drawn in the `control.*` shades. The mark is the accent, the only
-   colour on the page, so the eye finds the doors before the prose. */
+/* **The three doors**: one row of equal cards, as many to a row as the width holds, each a card
+   pressed whole (`ui/card/CardButton`), which draws itself. */
 .welcome-doors {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12.5rem, 1fr));
@@ -4564,47 +4510,6 @@ body {
 
 .welcome-doors li {
   display: flex;
-}
-
-.welcome .welcome-door {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-5) var(--space-5) var(--space-6);
-  border-radius: var(--radius-xl);
-  background: var(--control-base);
-  text-align: left;
-  transition:
-    background-color var(--motion-duration-quick) var(--motion-easing-standard),
-    border-color var(--motion-duration-quick) var(--motion-easing-standard);
-}
-
-.welcome .welcome-door:hover:not(:disabled, [aria-disabled="true"]) {
-  border-color: var(--border-strong);
-  background: var(--control-hover);
-}
-
-/* A card's ring sits outside it: inside, it would run over the mark's corner. */
-.welcome .welcome-door:focus-visible {
-  outline-offset: var(--focus-ring-offset);
-}
-
-.welcome-door-mark {
-  margin-bottom: var(--space-2);
-  font-size: var(--font-size-xl);
-  color: var(--accent-base);
-}
-
-.welcome-door-title {
-  font-weight: var(--font-weight-strong);
-}
-
-.welcome-door-says {
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height-body);
-  color: var(--text-secondary);
 }
 
 /* A quiet act inside the page's prose: Sign in under the doors, Back above a door's page, and
@@ -4666,7 +4571,7 @@ body {
 
 .first-run-found li {
   padding: var(--space-2) 0;
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 /* The harness setup tab (FR-29): one row per harness, its installer's command on a line of
@@ -4684,7 +4589,7 @@ body {
 
 .harness-setup-rows li {
   padding: var(--space-3) 0;
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .harness-installer {
@@ -4697,7 +4602,7 @@ body {
    that looks pressable, as the refused profiles' is. */
 .advanced {
   margin-top: var(--space-6);
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
   padding-top: var(--space-5);
 }
 
@@ -4717,7 +4622,7 @@ body {
   margin: var(--space-5) 0 var(--space-2);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-regular);
-  opacity: 0.7;
+  color: var(--text-muted);
 }
 
 .changes,
@@ -4736,7 +4641,7 @@ body {
 [data-scope="dialog"] .where {
   margin: 0;
   font-size: var(--font-size-xs);
-  opacity: 0.7;
+  color: var(--text-muted);
   overflow-wrap: anywhere;
 }
 
@@ -4748,7 +4653,7 @@ body {
 }
 
 [data-scope="dialog"] .value {
-  opacity: 0.6;
+  color: var(--text-muted);
 }
 
 /* A slot with nothing in it keeps its handle in the group — `RegionFrame`'s `Slot` says why —
@@ -4872,35 +4777,6 @@ body {
   overflow-wrap: anywhere;
 }
 
-/* **A Notice in the Inbox** (`NoticeList`, #1695): what stood under the strip and what the Alerts
-   drawer listed, one row each in the side — the mark, the words, then its ways out on a line of
-   their own under the words, so a long detail never pushes a button off the side. */
-.notice-list > div + div {
-  border-top: 1px solid var(--border-subtle);
-}
-
-.notice-list .notice-inbox {
-  padding: var(--space-2) var(--space-3);
-  font-size: inherit;
-  background: none;
-  border: 0;
-}
-
-.notice-list .notice-inbox.notice-trouble {
-  background: var(--danger-surface);
-}
-
-.notice-list .notice-inbox .notice-says {
-  display: flex;
-  flex: 1 1 100%;
-  gap: var(--space-3);
-  align-items: baseline;
-}
-
-.notice-list .notice-under-inbox {
-  padding: 0 var(--space-3) var(--space-2);
-}
-
 /* An alert's mark (`InboxAlerts.tsx`): a warning's colour, or a failure's. */
 .alert-mark[data-severity="warn"] {
   color: var(--state-waiting);
@@ -4919,8 +4795,8 @@ body {
 }
 
 /* On a trouble row, the mark and the details take the row's own colour (`danger.text`). */
-.notice-trouble .alert-mark,
-.notice-trouble .alert-detail {
+[data-scope="notice"][data-variant="trouble"] .alert-mark,
+[data-scope="notice"][data-variant="trouble"] .alert-detail {
   color: inherit;
 }
 
@@ -4947,7 +4823,7 @@ body {
   gap: var(--space-3);
   align-items: baseline;
   padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
   overflow-wrap: anywhere;
 }
 
@@ -5225,6 +5101,14 @@ body {
   overflow-y: auto;
 }
 
+/* **In a view the region is the one scroll** (#3340, the operator's 2026-10-26 pass): the rows are
+   not a second scroller with a cap, and the search box and the heading stay put because the
+   view's top holds them, not because the list scrolls under them. */
+.panels-view .panel-rows {
+  max-height: none;
+  overflow: visible;
+}
+
 /* **A panel's row is the list family's** (`ui/list`, #2911): one line and never three, its words
    cut with an ellipsis by the family and to a line's characters by `PanelList.shorten`, which is
    the half a jsdom test can see. Its own words and weight are the list's, and not `pointer`: a row
@@ -5233,6 +5117,13 @@ body {
 .panel-row .row-note {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
+}
+
+/* A view's row's date at its end (#3340, the prototype's `.rm`): short, quiet, in figures of one
+   width. */
+.panel-row .row-date {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .panel-row .node-icon {
@@ -5251,11 +5142,35 @@ body {
   color: var(--danger-base);
 }
 
+/* **The Todos view's tabs** (#3358, the prototype's Q1 A): Open, Done and All across the view's
+   width under the box that adds one, each segment an equal share. */
+.todo-tabs {
+  display: flex;
+  inline-size: 100%;
+  margin-block: var(--space-2);
+}
+.todo-tabs > [data-scope="segment"] {
+  flex: 1 1 0;
+}
+
+/* **A done todo stays, struck through** (R131, ADR 0106): its box ticked, its words in the quiet
+   tier and crossed out. Nothing moves: the box takes the mark's place at the mark's size. The
+   quiet tier is the meta role, which the row's words wear while done (`PanelList.tsx`, #3917):
+   a colour set here would lose to the body role's later layer. */
+.panel-row.is-checked .row-text {
+  text-decoration: line-through;
+}
+
 /* **The search, once there is more than a page** — and it stays once it is there, because a
    box that vanished when a search narrowed the list would take away the control in use. */
 /* The box is the field family's (#2905), the list's width. */
 .panel-search {
   margin: var(--space-2) 0;
+}
+
+/* In a view's top the top's own gap parts its lines. */
+[data-part="top"] .panel-search {
+  margin: 0;
 }
 
 /* Load-more: a row of the list (`.ui-row`) rather than a button beside it, so the list ends with
@@ -5437,6 +5352,25 @@ body {
   overflow-y: auto;
 }
 
+/* **Devices** (#2052, `DevicesView.tsx`): no heading of its own (#3147). Refresh is its first
+   row, keeping the room the pane's actions take at its end; the devices and the use scroll under
+   it. */
+.devices-view {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5);
+}
+
+/* Whatever its first row is: Refresh, the line that says it is reading, or the Notice of a
+   read that failed (#3147). */
+.pane-frame.pane-viewed .devices-view > :first-child {
+  margin-inline-end: calc(var(--pane-actions-room) - var(--space-5));
+}
+
 /* The light editor (RC-5): a piece's files beside the file picked, or one file filling its
    tab. CodeMirror draws its own colours from `src/editor/look.ts`; only the layout is here. */
 .view-body:has(> .piece-files, > .piece-file) {
@@ -5581,6 +5515,11 @@ nav.piece-files-head {
   max-width: 60rem;
 }
 
+/* **The one muted outside the meta, until the view tabs wear the roles** (#3938): a view's
+   sentence that wears no role (`.none`, `.pending`) is drawn muted here. A sentence's role is
+   `ui-text-secondary` (`docs/ui-primitives.md`), and this colour goes when the view tabs move
+   onto the roles (`docs/design-system.md`, "The order the surfaces move in"). A sentence that
+   already wears the role keeps it: the role's layer wins. */
 .view-body .pending,
 .view-body .none {
   margin: var(--space-2) 0;
@@ -5708,7 +5647,7 @@ nav.piece-files-head {
   align-items: baseline;
   padding-block: var(--space-2);
   padding-inline-end: var(--space-3);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .activity-at {
@@ -5774,15 +5713,19 @@ nav.piece-files-head {
   justify-self: stretch;
 }
 
+/* The card the question stands in (the card family's), and its form inside it. */
 .answer-question {
-  display: grid;
-  gap: var(--space-2);
   max-width: 44rem;
   margin: var(--space-2) 0;
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-raised);
+}
+
+.answer-form {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.answer-pending {
+  margin: var(--space-2) 0;
 }
 
 /* The task's own words, as text: line breaks kept, a long word broken. */
@@ -5873,70 +5816,13 @@ nav.piece-files-head {
   margin: 0;
 }
 
-/* The secrets: the shared table (`.ui-table`, DS-12), its headings, cells and hairlines; names
-   on the left, the size band and when each was written muted beside them. The row under the
-   pointer or the keyboard takes `layer.selected`: "where you are", which is what it means on a
-   strip too. The Dispatches view draws its table the same way. */
+/* The secrets: the table family's (`ui/table`, #2911), as wide as a page of them reads. */
 .vault-secrets {
   max-width: 60rem;
-  font-size: var(--font-size-sm);
-}
-
-.vault-secrets td {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.vault-secrets td:first-child {
-  width: 100%;
-}
-
-.vault-secrets tbody tr {
-  transition: background-color var(--motion-duration-quick) var(--motion-easing-standard);
-}
-
-.vault-secrets tbody tr:hover,
-.vault-secrets tbody tr:focus-within {
-  background: var(--layer-selected);
-}
-
-/* A secret's name is the row's one control (`.ui-row`): pressing it opens the row's menu. The
-   glyph says there is one, and is quiet until the row is under the pointer or the keyboard. */
-.vault-secret {
-  font: inherit;
 }
 
 .vault-secret-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.vault-secret .node-icon {
-  color: var(--text-muted);
-  opacity: 0;
-  transition: opacity var(--motion-duration-quick) var(--motion-easing-standard);
-}
-
-.vault-secrets tr:hover .vault-secret .node-icon,
-.vault-secret:focus-visible .node-icon,
-.vault-secret[data-state="open"] .node-icon {
-  opacity: 1;
-}
-
-/* The eye (charter-app#236), a small ghost button: quiet until its row is under the pointer or
-   the keyboard, and plain while it is pressed, so a value on the page always has its hide
-   button showing. No easing: a row's hover is not animated (`docs/design-system.md`, motion). */
-.vault-reveal {
-  opacity: 0;
-}
-
-.vault-secrets tr:hover .vault-reveal,
-.vault-secrets tr:focus-within .vault-reveal,
-.vault-reveal[aria-pressed="true"] {
-  opacity: 1;
+  overflow-wrap: anywhere;
 }
 
 /* A revealed value, under its name: the only place one is ever drawn, for 30 seconds. It wraps
@@ -6049,7 +5935,7 @@ nav.piece-files-head {
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-5) var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 .persona-mark-shown {
   display: flex;
@@ -6346,12 +6232,6 @@ nav.piece-files-head {
   animation: charter-settle var(--motion-duration-settle) var(--motion-easing-standard);
 }
 
-/* The explorer's twisty turns with the disclosure: motion that is the direct answer to a click,
-   saying which way the thing just went. */
-.explorer .ui-tree-twist {
-  transition: transform var(--motion-duration-quick) var(--motion-easing-standard);
-}
-
 .explorer .explorer-section-head .twisty {
   transition: rotate var(--motion-duration-quick) var(--motion-easing-standard);
 }
@@ -6606,7 +6486,7 @@ nav.piece-files-head {
   font-size: inherit;
   color: var(--text-primary);
 }
-/* One row per workspace repo (charter-app#299): the shared table (`.ui-table`, DS-12), so
+/* One row per workspace repo (charter-app#299): the table family's (`ui/table`, #2911), so
    "which of these is unsaved" reads down a column. */
 .saving-repos td {
   white-space: nowrap;
@@ -6722,7 +6602,7 @@ nav.piece-files-head {
 
 .memory-archived {
   padding-top: var(--space-5);
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 /* A memory's Move (KN-3): under the body, set apart from it by a rule. */
@@ -6730,7 +6610,7 @@ nav.piece-files-head {
   max-width: 60rem;
   margin-top: var(--space-7);
   padding-top: var(--space-5);
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 /* The repo's agent instructions, offered to a workspace's memory (FR-18a): each file whole, under
@@ -6754,8 +6634,9 @@ nav.piece-files-head {
   border-radius: var(--radius-md);
 }
 
-/* An invisible character in a previewed file, drawn as its code point (FR-18a). */
-.repo-instruction-text .invisible-char {
+/* A character a reader does not see, drawn as its mark, `⟦U+XXXX⟧` (FR-18a; SK-51, #3202): in a
+   previewed file, and in an ask's line. */
+.invisible-char {
   padding: 0 var(--space-1);
   border-radius: var(--radius-sm);
   background: var(--danger-surface);
@@ -6792,7 +6673,7 @@ nav.piece-files-head {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 /* The box and its glass: the field family's (#2905). */
@@ -6892,13 +6773,9 @@ nav.piece-files-head {
   padding-inline-start: calc(var(--space-6) + var(--space-7));
 }
 
+/* A file's hits, counted at the end of its line (the count family's pill). */
 .search-count {
   margin-inline-start: auto;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-full);
-  background: var(--control-count);
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
 }
 
 /* **A hit is the list family's row** (`ui/list`, #2911): its height, its hover, and the hit
@@ -6960,7 +6837,7 @@ nav.piece-files-head {
   align-items: baseline;
   gap: var(--space-3) var(--space-5);
   padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .ui-settings-about {
@@ -7035,7 +6912,7 @@ nav.piece-files-head {
   gap: var(--space-1);
   margin-top: var(--space-3);
   padding-top: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .ui-settings-raw-label {
@@ -7084,6 +6961,13 @@ nav.piece-files-head {
   color: var(--text-muted);
 }
 
+/* A row's refusal line in a form, there from the start so its words are heard as they land
+   (#3291): empty, it takes no place in the row's grid, so nothing moves and no gap is added. It
+   stays in the accessibility tree. */
+.ui-setting-error:empty {
+  position: absolute;
+}
+
 /* A write the core refused (SE-17, V89e), said under the setting it was for. */
 .ui-setting-error p {
   margin: var(--space-1) 0 0;
@@ -7109,8 +6993,8 @@ nav.piece-files-head {
 }
 
 /* Settings › Project › Dispatch (#1439): the limits table, a row per level and a box per
-   limit; and the same table on a persona's view, under its own heading. The table is the shared
-   `.ui-table` (DS-9, #1841): its cells, headings and alignment are that class's. */
+   limit; and the same table on a persona's view, under its own heading. The table is the
+   table family's `ControlTable` (`ui/table`, #2911): its cells, headings and alignment are its. */
 /* The limits and their notes take the row's width and no more: a table wider than the column
    scrolls in its own box (`contain: inline-size` keeps its width out of the row's), and the
    notes wrap in the column (#1545). */
@@ -7145,7 +7029,7 @@ nav.piece-files-head {
 }
 
 /* Settings › Project › Dispatch (#1504): the one table of who may dispatch to whom, the shared
-   `.ui-table-fixed` (DS-9, #1841). A row group per persona; under it each target, with a row for
+   table family's fixed `ControlTable` (#2911). A row group per persona; under it each target, with a row for
    every grant that covers the pair. The columns are fixed shares of the width, so nothing a cell
    says moves another column; a question is a row of its own across the whole table, under the
    row it is about; and words break between words, a name only where it is longer than its
@@ -7155,26 +7039,27 @@ nav.piece-files-head {
 }
 
 .dispatch-table thead th:nth-child(1) {
-  width: 18%;
+  width: 22%;
 }
 
 .dispatch-table thead th:nth-child(2) {
-  width: 40%;
+  width: 32%;
 }
 
+/* "Workspace" in the label role's capitals and tracking fits whole on macOS's fonts too. */
 .dispatch-table thead th:nth-child(3) {
-  width: 17%;
+  width: 23%;
 }
 
 .dispatch-table thead th:nth-child(4) {
-  width: 25%;
+  width: 23%;
 }
 
 /* A persona's row group is named in bold above a hairline. The cell is the shared table's
-   (its padding and weight come from `.ui-table`, a layer above this one), so the name's own
+   (its padding and weight come from the table family, a layer above this one), so the name's own
    words carry the weight. */
 .dispatch-table .dispatch-grant-group {
-  border-block-end: 1px solid var(--border-subtle);
+  border-block-end: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .dispatch-grant-group > span:first-child {
@@ -7200,7 +7085,7 @@ nav.piece-files-head {
 }
 
 .dispatch-confirm-row td {
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .dispatch-confirm p {
@@ -7308,7 +7193,7 @@ nav.piece-files-head {
   display: grid;
   gap: var(--space-2);
   padding-block: var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .ui-setting-line {
@@ -7364,29 +7249,6 @@ nav.piece-files-head {
   block-size: var(--space-3);
   border-radius: var(--radius-full);
   background-color: var(--accent-base);
-}
-
-/* Where a value comes from, when that is not where its group keeps its values (DS-8): Team,
-   This machine, Workspace, with the whole sentence in its tooltip. You › This machine's notes
-   wear it too. */
-.ui-setting-badge {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  align-self: center;
-  padding-block: 0;
-  padding-inline: var(--space-3);
-  border: 1px solid var(--accent-base);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-xs);
-  color: var(--text-primary);
-  background-color: var(--accent-surface);
-  cursor: default;
-}
-
-.ui-setting-badge:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-offset);
 }
 
 /* "Move to…"'s menu: as wide as the longest file name it offers. */
@@ -7451,6 +7313,35 @@ nav.piece-files-head {
   margin-inline-start: auto;
 }
 
+/* **A profile's sign-in on a pool's runner, in place** (#4042, `PoolSignIn.tsx`): the strip its
+   line on the pool's row opens into, the whole row wide. A head that says the step, the step's
+   body, and a foot with Cancel and Open in terminal. */
+.pool-sign-in {
+  flex: 1 0 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.pool-sign-in-head,
+.pool-sign-in-foot,
+.pool-sign-in-paste {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.pool-sign-in-head {
+  align-items: baseline;
+}
+
+.pool-sign-in-terminal {
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+
 /* A form's buttons (SettingActions, V89j): the row a form ends in, under its rows or as a
    dialog's answers. Its buttons, as a row's reset and undo, are the family's (#3129). */
 .ui-setting-actions {
@@ -7502,23 +7393,6 @@ nav.piece-files-head {
 .doctor-form {
   grid-column: 2 / -1;
   margin-top: var(--space-3);
-}
-
-/* The same form opened from a Notice (#1250): right under the line, outside its live region
-   (`Notice`'s `under`), in the page's own colours. */
-.notice-under-band {
-  padding: var(--space-2) var(--space-5);
-  background: var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.notice-under-band .doctor-form {
-  max-width: 36rem;
-  padding: var(--space-3) var(--space-5);
-  color: var(--text-primary);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
 }
 
 /* The set-up of a 1Password vault's sign-in (#1527): its lines sit apart from the rows. */
@@ -7744,11 +7618,6 @@ nav.piece-files-head {
   white-space: nowrap;
 }
 
-/* A skill's tab (SK-3): the run its chip opened it on stands out in its Runs panel. */
-.skill-tab .ui-table tr[data-wanted] {
-  background: var(--surface-hover);
-}
-
 /* A skill's state, owners, history and uses (SK-19, #2782). */
 .skill-details {
   display: flex;
@@ -7786,8 +7655,111 @@ nav.piece-files-head {
   text-decoration: line-through;
 }
 
-/* The Skill studio's changes (SK-7, #2770): the panel a change opens under the toolbar, the
-   levels a row is dropped on to move it, the editor's lint and the deleted skills. */
+/* **The Skill studio** (#3681): one view tab per project, laid out by the view frame
+   (`ui/panel/ViewFrame.tsx`), which takes the whole tab. Each of its panes scrolls on its own, so
+   nothing scrolls as one long page. */
+.view-body:has(> .skill-studio) {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+
+.skill-studio {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+/* The Library's search box and chips, under its lead line, wrapping where the list is narrow. */
+.skill-library-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-block-start: var(--space-3);
+}
+
+/* What a page other than Library holds, and the skill chosen beside the Library: the frame's
+   pane gives the room, these the padding. */
+.skill-studio-page,
+.skill-studio-item > :not(header) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+}
+
+/* **A skill's page** (#3682): each tab's panel under the page tabs, and its Text as it is now,
+   read only, wrapping so a long line never scrolls the page sideways. */
+.skill-page-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-block-start: var(--space-4);
+}
+
+/* **A skill's Grades tab** (S6, #3688): its bars, its list and the after-each-edit row; and one
+   test's arm on a scorecard: its runs, its verdict and its chats, wrapping in a narrow cell. */
+.skill-grades {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.skill-grading-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.skill-grading-head > * {
+  margin: 0;
+}
+
+.skill-grading-arm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.skill-page-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+}
+
+.skill-page-text pre {
+  margin: 0;
+  padding: var(--space-3);
+  overflow: auto;
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Rows held while the skills are read (S11): the list's own height, so nothing jumps when they
+   are. */
+.skill-studio-placeholders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+
+.skill-studio-placeholder {
+  block-size: calc(var(--size-control) * 1.5);
+  border-radius: var(--radius-control);
+  background-color: var(--surface-hover);
+}
+
+/* The Skill studio's changes (SK-7, #2770): the panel a change opens in the item pane, the
+   editor's lint and the deleted skills. */
 .skill-change,
 .skill-editor {
   display: flex;
@@ -7801,20 +7773,6 @@ nav.piece-files-head {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  font-size: var(--font-size-sm);
-}
-
-.skill-levels {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-3);
-}
-
-.skill-level-target {
-  padding: var(--space-1) var(--space-3);
-  border: 1px dashed var(--border-subtle);
-  border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
 }
 
@@ -7856,41 +7814,45 @@ nav.piece-files-head {
   font-size: var(--font-size-sm);
 }
 
-.skill-deleted ul {
-  margin: 0;
-  padding-left: var(--space-5);
-}
-
-/* The empty studio's three starts (SK-22): side by side where they fit, stacked where not. */
-.skill-starts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: var(--space-3);
-  max-width: 48rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  text-align: left;
-}
-
-.skill-starts > li {
+/* A draft's page (S9, #3690): its files, one fold each, then Try it on beside its picker. */
+.skill-draft-files {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
 }
 
-.skill-starts p {
+.skill-draft-try {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* A deleted skill's last text (S9, #3691), as it was: its lines kept, wrapped in the pane. */
+.skill-deleted-text {
   margin: 0;
+  font-family: var(--font-mono);
   font-size: var(--font-size-sm);
-  /* Each start's line, in the empty state's quiet tier, which holds AA on every theme. */
-  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
-/* The Skills view (#3266): a sidebar view, its header's two ways in, the switch to the chat in
-   front, then the list, which takes the rest and scrolls. The list's look is the list family's. */
+/* New skill…'s ways (#3684, S4): one pressed card each, stacked in the dialog. */
+.skill-new-ways {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.skill-new-ways > li {
+  display: flex;
+}
+
+/* The Skills view (#3266, #3693): a sidebar view, whose skills it shows, its header's two ways
+   in, then its list of cards, which takes the rest and scrolls. The cards' look is the list
+   family's (#3669, #3670). */
 .skills-view {
   display: flex;
   flex-direction: column;
@@ -7906,12 +7868,20 @@ nav.piece-files-head {
   flex-shrink: 0;
 }
 
-.skills-view .skill-starts {
-  grid-template-columns: 1fr;
+/* Whose skills: the chat's name, cut short where the view is narrow, and the count. */
+.skills-view-whose {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.skills-view-only {
-  align-self: flex-start;
+/* The chat's budget and how its router did at its start, under whose skills (S8, #3694): what
+   Use skill… used to say above its list, said once, here. */
+.skills-view-said {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
 }
 
 .skills-view > .skills-view-list {
@@ -7920,45 +7890,62 @@ nav.piece-files-head {
   overflow: auto;
 }
 
-/* A row's one mark, in the quiet tier: never a colour alone (WCAG 1.4.1). */
-.skills-view-mark {
-  color: var(--text-quiet);
-  font-size: var(--font-size-sm);
+/* The Sources pages (#3687, `prototype/skill-sources` A): each part of a page a heading over
+   what it holds; the offered sources as cards, as many to a line as fit. */
+.skill-sources-part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
-/* A row's tooltip, one line each: what the skill does, then why it has its mark. */
-.skills-view-tip {
-  display: block;
+.skill-offered-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-/* Skill sources (SK-10): the install review leads with its summary, risky items marked. */
-.skill-sources,
+/* A review's skill: what it adds, then its files, each under its mark. */
 .skill-review {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   max-width: 60rem;
 }
 
-.skill-summary,
-.skill-review-files,
-.skill-updates,
-.skill-source-list {
+.skill-review h3,
+.skill-review h4 {
+  margin: 0;
+}
+
+.skill-summary {
   margin: 0;
   padding-left: var(--space-5);
   font-size: var(--font-size-sm);
 }
 
-.skill-summary li[data-risky="true"],
-.skill-review-files li[data-risky="true"] {
+.skill-summary li[data-risky="true"] {
   color: var(--danger-text);
 }
 
-.skill-review-file,
-.skill-update-file pre {
+.skill-review-files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skill-review-file {
   max-height: 24rem;
+  margin: 0;
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: var(--font-size-sm);
+}
+
+/* The Personas view's list is held still by an element around it (#3566), which is no box. */
+.panel-list-held {
+  display: contents;
 }

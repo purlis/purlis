@@ -689,7 +689,16 @@ fn upkeep(
             guard(root, &ws.dir().join("todos"), None)?;
             guard_store(root, &Scope::Workspace(ws.name().to_owned()))?;
             crate::wscmd::todo::finish_promotes(&plane, &ws, now, &mut say);
-            let code = crate::wscmd::todo::close(&plane, &ws, *how, slug, now, &mut say);
+            // A chat's: its `forget` reaches the open todos only (ADR 0106).
+            let code = crate::wscmd::todo::close_as(
+                &plane,
+                &ws,
+                *how,
+                slug,
+                now,
+                crate::wscmd::todo::Asker::Chat,
+                &mut say,
+            );
             let owner = ws.name().to_owned();
             let store = format!("workspaces/{owner}/todos");
             (code, code == 0, (owner, store))
@@ -996,7 +1005,7 @@ fn within_the_budget(
     Err(format!(
         "workspace.md would be {next} bytes, past the {} KiB a chat may grow it to, since every \
          later chat here reads it whole: nothing was written. Keep it to what each later chat \
-         must act on: record the rest as a workspace memory (purlis workspace remember), and \
+         must act on: record the rest as a workspace memory (the memory_add tool), and \
          ask the person to fold older entries down",
         WORKSPACE_MD_GROWS_TO_AT_MOST / 1024
     ))

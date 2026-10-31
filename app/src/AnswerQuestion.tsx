@@ -1,10 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { commands, type PlaneId } from "./bindings";
 import { Button } from "./ui/button/Button";
-import { Form, TextArea } from "./ui/field/Field";
+import { Card } from "./ui/card/Card";
+import { Form, TextArea, useFormRefusal, type Refused } from "./ui/field/Field";
 
 /** What the form says when it is sent with nothing in it. The core says the same of blanks. */
 export const EMPTY_ANSWER = "The answer is empty, so nothing was sent.";
@@ -57,41 +58,44 @@ export function AnswerQuestion(props: AnswerProps & { onCancel: () => void }) {
   if (asked === undefined) return <ReadingTheQuestion />;
   if (asked === null) {
     return (
-      <div className="answer-question" data-testid="answer-question">
+      <Card className="answer-question" data-testid="answer-question">
         <NoQuestion task={task} refused={refused} />
         <div className="answer-actions">
           <Button size="sm" onPress={onCancel}>
             Close
           </Button>
         </div>
-      </div>
+      </Card>
     );
   }
   return (
-    <Form
-      className="answer-question"
-      data-testid="answer-question"
-      aria-label={`Answer ${task}'s question`}
-      onSubmit={(event) => {
-        event.preventDefault();
-        void send();
-      }}
-    >
-      <AnswerBox answering={answering} />
-      <div className="answer-actions">
-        <Button size="sm" type="submit" isDisabled={sending || shut !== undefined}>
-          Send
-        </Button>
-        <Button size="sm" onPress={onCancel}>
-          {shut === undefined ? "Cancel" : "Close"}
-        </Button>
-        {shut === undefined && (
-          <span className="answer-how" id={`${ids}-how`}>
-            {answerHowSaid(task)}
-          </span>
-        )}
-      </div>
-    </Form>
+    <Card className="answer-question">
+      <Form
+        className="answer-form"
+        // The form is what is named and what a test finds: the card only stands it off the line.
+        data-testid="answer-question"
+        aria-label={`Answer ${task}'s question`}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
+      >
+        <AnswerBox answering={answering} />
+        <div className="answer-actions">
+          <Button size="sm" type="submit" isDisabled={sending || shut !== undefined}>
+            Send
+          </Button>
+          <Button size="sm" onPress={onCancel}>
+            {shut === undefined ? "Cancel" : "Close"}
+          </Button>
+          {shut === undefined && (
+            <span className="answer-how" id={`${ids}-how`}>
+              {answerHowSaid(task)}
+            </span>
+          )}
+        </div>
+      </Form>
+    </Card>
   );
 }
 
@@ -140,6 +144,16 @@ export function useAnswerQuestion({
   const [sending, setSending] = useState(false);
   const [refused, setRefused] = useState<string>();
   const box = useRef<HTMLTextAreaElement>(null);
+  /** The form the box is drawn in, which says a refused send once (#3291): set by the box. */
+  const sayTo = useRef<(refused: Refused) => void>(undefined);
+  const heardBy = useCallback((say: (refused: Refused) => void) => {
+    sayTo.current = say;
+  }, []);
+  /** A send refused, in the box's error line and, once, by its form. */
+  const refuse = (why: string) => {
+    setRefused(why);
+    sayTo.current?.({ fields: [{ name: "Your answer", why }] });
+  };
   const ids = useId();
 
   const has = given !== undefined;
@@ -179,7 +193,7 @@ export function useAnswerQuestion({
   const send = async () => {
     if (sending || shut !== undefined || asked === undefined || asked === null) return;
     if (text.trim() === "") {
-      setRefused(EMPTY_ANSWER);
+      refuse(EMPTY_ANSWER);
       box.current?.focus();
       return;
     }
@@ -191,14 +205,14 @@ export function useAnswerQuestion({
     setSending(false);
     if (answer.status === "error") {
       // Said as the core says it, with what was typed still in the box.
-      setRefused(answer.error);
+      refuse(answer.error);
       box.current?.focus();
       return;
     }
     onDone();
   };
 
-  return { asked, text, setText, sending, refused, setRefused, shut, send, box, ids };
+  return { asked, text, setText, sending, refused, setRefused, shut, send, box, ids, heardBy };
 }
 
 /** What {@link useAnswerQuestion} hands what draws the form. */
@@ -207,7 +221,7 @@ export type Answering = ReturnType<typeof useAnswerQuestion>;
 /** The form while the question is read. */
 export function ReadingTheQuestion() {
   return (
-    <p className="answer-question pending" aria-busy="true">
+    <p className="answer-pending" aria-busy="true">
       Reading the question…
     </p>
   );
@@ -224,7 +238,11 @@ export function NoQuestion({ task, refused }: { task: string; refused?: string }
 
 /** The question, the box the answer is typed in, and what is wrong, if anything is. */
 export function AnswerBox({ answering }: { answering: Answering }) {
-  const { asked, text, setText, sending, refused, setRefused, shut, send, box, ids } = answering;
+  const { asked, text, setText, sending, refused, setRefused, shut, send, box, ids, heardBy } =
+    answering;
+  // The form the box is in says the answer's refusal once (#3291).
+  const say = useFormRefusal();
+  useLayoutEffect(() => heardBy(say), [say, heardBy]);
   if (asked === undefined || asked === null) return null;
   return (
     <>

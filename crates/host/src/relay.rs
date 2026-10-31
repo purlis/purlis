@@ -180,6 +180,8 @@ pub struct Relay {
     links: ByLink,
     named: Named,
     claimed: Claimed,
+    /// What each new link to the other host sends first while this host is stopped (#2051).
+    stop_first: Option<crate::reach::StopFirst>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -217,7 +219,15 @@ impl Relay {
             links: Arc::default(),
             named: Arc::default(),
             claimed: Arc::default(),
+            stop_first: None,
         }
+    }
+
+    /// This relay, each new link it makes to the other host carrying `first`'s stop before
+    /// anything else while this host is stopped (#2051, ADR 0078 §7).
+    pub(crate) fn stopping_first(mut self, first: crate::reach::StopFirst) -> Relay {
+        self.stop_first = Some(first);
+        self
     }
 
     /// This relay, holding the names its client links take in `claimed`, which other relays of
@@ -240,6 +250,7 @@ impl Relay {
                 peer.opener().clone(),
                 peer.scope(),
                 lock(&self.named).remove(&peer.link()),
+                self.stop_first.clone(),
             ))
         }));
         // The link ended while this one was made: what it made goes with it.
@@ -329,8 +340,9 @@ enum Standing {
     /// No link is up, and why.
     Down(Down),
     /// No link is up and no more will come of the links being taken: the next command takes
-    /// links anew.
-    Over,
+    /// links anew. With the Down that ended them where the other host is gone for good
+    /// (#4149): a command that took links anew once and found it still gone is refused.
+    Over(Option<Down>),
 }
 
 /// What the relay keeps for one client link.
@@ -352,9 +364,16 @@ impl Drop for Relayed {
 impl Relayed {
     /// What the relay keeps for a client link, named to the other host as `window`, where it
     /// named itself, and else by a name of its own.
-    fn start(source: Source, opener: Opener, scope: Scope, window: Option<String>) -> Relayed {
+    fn start(
+        source: Source,
+        opener: Opener,
+        scope: Scope,
+        window: Option<String>,
+        stop_first: Option<crate::reach::StopFirst>,
+    ) -> Relayed {
         let client = Arc::new(ClientLink {
             scope,
+            stop_first,
             window: window.unwrap_or_else(|| ulid::Ulid::generate().to_string()),
             opener,
             kept: Mutex::default(),
@@ -379,12 +398,19 @@ impl Relayed {
     /// sent is sent on.
     async fn up(&self, peer: &Peer) -> Result<Arc<Upstream>, Refusal> {
         let mut standing = self.standing.clone();
+        // Whether this command took links anew after a far end found gone (#4149): it does
+        // once, and is refused if it is gone still, so nothing loops on it.
+        let mut asked_again = false;
         loop {
             match standing.borrow_and_update().clone() {
                 Standing::Up(_) if peer.has_ended() => return Err(ended()),
                 Standing::Up(upstream) => return Ok(upstream),
                 Standing::Down(down) => return Err(not_linked(&down)),
-                Standing::Over => self.again.notify_one(),
+                Standing::Over(Some(gone)) if asked_again => return Err(not_linked(&gone)),
+                Standing::Over(gone) => {
+                    asked_again |= gone.is_some();
+                    self.again.notify_one();
+                }
                 Standing::Linking => {}
             }
             if standing.changed().await.is_err() {
@@ -421,6 +447,15 @@ fn not_linked(down: &Down) -> Refusal {
             ),
         };
     }
+    if down.gone {
+        return Refusal {
+            code: session::NOT_STARTED.into(),
+            why: format!(
+                "Runner removed outside purlis ({why}). purlis sent it nothing and does not link \
+                 to it again: make the runner again in its pool's settings, then send this again"
+            ),
+        };
+    }
     Refusal {
         code: session::NOT_STARTED.into(),
         why: format!(
@@ -443,6 +478,8 @@ async fn keep(
     let mut told = LinkTold::default();
     loop {
         let mut links = source();
+        // The far end was found gone for good, which ends the links (#4149).
+        let mut gone: Option<Down> = None;
         let mut up: Option<Arc<Upstream>> = None;
         // A link renewed ahead of its limit, which still answers what was sent on it.
         let mut retiring: Option<Arc<Upstream>> = None;
@@ -469,7 +506,16 @@ async fn keep(
                             tell.send_replace(Standing::Linking);
                         }
                         match carry_over(*link, &client, &tell).await {
-                            Some(upstream) => {
+                            Err(NotCarried::StopRefused) => {
+                                // The runner did not take the stop: no link to it carries the
+                                // window on, the one being renewed neither (#2051).
+                                up = None;
+                                retiring = None;
+                                let why = "the runner did not take this machine's stop";
+                                tell.send_replace(Standing::Down(Down::because(why)));
+                                told.down(&client, &Down::because(why));
+                            }
+                            Ok(upstream) => {
                                 // The link it replaces ends once what was sent on it is
                                 // answered: the kept link is told the relay has moved then.
                                 retiring = up.replace(Arc::clone(&upstream));
@@ -481,14 +527,14 @@ async fn keep(
                             }
                             // The new link ended first: a link renewed ahead of its limit carries
                             // on until it ends, and with none, no link is up.
-                            None => match &up {
+                            Err(NotCarried::Ended) => match &up {
                                 Some(old) => {
                                     tell.send_replace(Standing::Up(Arc::clone(old)));
                                 }
                                 None => {
                                     let why = "the link to it ended as it came up";
                                     tell.send_replace(Standing::Down(Down::because(why)));
-                                    told.down(&client, why, false);
+                                    told.down(&client, &Down::because(why));
                                 }
                             },
                         }
@@ -496,7 +542,8 @@ async fn keep(
                     Some(Linked::Down(down)) => {
                         up = None;
                         retiring = None;
-                        told.down(&client, &down.why, down.key_changed);
+                        told.down(&client, &down);
+                        gone = down.gone.then(|| down.clone());
                         tell.send_replace(Standing::Down(down));
                     }
                     None => no_more = true,
@@ -509,11 +556,11 @@ async fn keep(
                     up = None;
                     let why = "the link to it ended";
                     tell.send_replace(Standing::Down(Down::because(why)));
-                    told.down(&client, why, false);
+                    told.down(&client, &Down::because(why));
                 }
             }
         }
-        tell.send_replace(Standing::Over);
+        tell.send_replace(Standing::Over(gone));
         again.notified().await;
         tell.send_replace(Standing::Linking);
     }
@@ -525,17 +572,28 @@ enum LinkTold {
     /// Nothing since the link was last up: it is up, as far as the client knows.
     #[default]
     Up,
-    /// That no link is up.
-    Down,
+    /// That no link is up, and whether the other host is gone for good (#4149).
+    Down { gone: bool },
 }
 
 impl LinkTold {
-    /// No link is up, for `why`: the client is told, unless it was told already.
-    fn down(&mut self, client: &ClientLink, why: &str, key_changed: bool) {
-        if std::mem::replace(self, LinkTold::Down) == LinkTold::Up {
+    /// No link is up, for `why`: the client is told, unless it was told already. A link that
+    /// went down and then finds the other host gone for good is told again, gone (#4149): the
+    /// container removed while a link was up first ends that link.
+    fn down(&mut self, client: &ClientLink, down: &Down) {
+        let tell = match *self {
+            LinkTold::Up => true,
+            LinkTold::Down { gone } => down.gone && !gone,
+        };
+        let was_gone = matches!(*self, LinkTold::Down { gone: true });
+        *self = LinkTold::Down {
+            gone: down.gone || was_gone,
+        };
+        if tell {
             client.tell_now(Pushed::LinkDown {
-                why: why.into(),
-                key_changed,
+                why: down.why.clone(),
+                key_changed: down.key_changed,
+                gone: down.gone,
             });
         }
     }
@@ -544,7 +602,7 @@ impl LinkTold {
     /// told it is back. One word for each outage, so it waits for room, on a task of its own,
     /// and never holds up the link.
     fn back(&mut self, client: &Arc<ClientLink>) {
-        if std::mem::replace(self, LinkTold::Up) == LinkTold::Down {
+        if matches!(std::mem::replace(self, LinkTold::Up), LinkTold::Down { .. }) {
             let client = Arc::clone(client);
             tokio::spawn(async move { client.tell(Pushed::LinkBack {}).await });
         }
@@ -555,6 +613,8 @@ impl LinkTold {
 /// carries over to each new link to the other host.
 struct ClientLink {
     scope: Scope,
+    /// What a new link to the other host sends first while this host is stopped (#2051).
+    stop_first: Option<crate::reach::StopFirst>,
     /// The relay's name for this client link, which every link to the other host made for it
     /// says ([`Command::TakeBack`], #2511): a name no other live client link is given, the
     /// digest of the window's own where it named itself ([`taken_back_as`], #2623).
@@ -858,19 +918,38 @@ async fn carry_over(
     link: Link,
     client: &Arc<ClientLink>,
     tell: &watch::Sender<Standing>,
-) -> Option<Arc<Upstream>> {
+) -> Result<Arc<Upstream>, NotCarried> {
     let upstream = Upstream::on(link, client);
+    // While this host is stopped, a stop is the first thing the new link carries (#2051), and a
+    // link whose runner does not take it carries nothing of the window's.
+    if let Some(first) = &client.stop_first
+        && !first.on(&upstream.client).await
+    {
+        return Err(NotCarried::StopRefused);
+    }
     let mut carried = Carried::default();
-    carry(&upstream, client, &mut carried).await.ok()?;
+    carry(&upstream, client, &mut carried)
+        .await
+        .map_err(|LinkEnded| NotCarried::Ended)?;
     tell.send_replace(Standing::Linking);
     let _ = client
         .changing
         .subscribe()
         .wait_for(|changing| *changing == 0)
         .await;
-    let refused = carry(&upstream, client, &mut carried).await.ok()?;
+    let refused = carry(&upstream, client, &mut carried)
+        .await
+        .map_err(|LinkEnded| NotCarried::Ended)?;
     not_held_on(client, refused);
-    Some(upstream)
+    Ok(upstream)
+}
+
+/// Why a new link carried nothing of the client's.
+enum NotCarried {
+    /// It ended first.
+    Ended,
+    /// Its runner did not take the stop it carried first while this host is stopped (#2051).
+    StopRefused,
 }
 
 /// The projects the new link's last pass could not hold are no longer kept for the client: no
@@ -1136,6 +1215,12 @@ async fn push_on(
         if client.scope != Scope::LocalUi && heard_by_the_window_alone(&pushed) {
             continue;
         }
+        // The other host's own event log is the window's alone (1.41, #3393).
+        if client.scope != Scope::LocalUi
+            && matches!(pushed, Pushed::Event(_) | Pushed::Missed { .. })
+        {
+            continue;
+        }
         match pushed {
             Pushed::Event(event) => client.hand_event(event).await,
             Pushed::ViewEnded { view, why } => {
@@ -1198,6 +1283,8 @@ fn the_windows_power(power: Power) -> bool {
             | Power::Code
             | Power::Browser
             | Power::LogIn
+            | Power::EventLog
+            | Power::Rearm
     )
 }
 
@@ -1242,6 +1329,45 @@ impl session::Host for Relay {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
                 why: "a runner is unpaired as purlis removes it, never through a relaying host"
+                    .into(),
+            });
+        }
+        // A runner keeps a profile for the desktop it is paired with, on that desktop's own link
+        // to it (#2049): never sent on for a client.
+        if let Command::KeepProfile(_)
+        | Command::ForgetProfile { .. }
+        | Command::StageProfileSettings(_)
+        | Command::SettingsHeld { .. }
+        | Command::KeptProfiles = command
+        {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "a runner keeps a profile for its desktop on that desktop's own link, never \
+                      through a relaying host"
+                    .into(),
+            });
+        }
+        // A sign-in's redirect is that desktop's too (#4044): never sent on for a client.
+        if let Command::SignInRedirect { .. } = command {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "a sign-in's redirect goes to a runner on its desktop's own link, never \
+                      through a relaying host"
+                    .into(),
+            });
+        }
+        // While this host is stopped nothing starts on the runner either (#2051): its stop is
+        // carried first, and a start sent meanwhile is refused here, whatever the runner holds.
+        if matches!(command, Command::StartProgram(_) | Command::Start(_))
+            && self
+                .stop_first
+                .as_ref()
+                .is_some_and(|first| (first.stopped)())
+        {
+            return Err(Refusal {
+                code: session::STOPPED.into(),
+                why: "every chat is stopped by the kill switch; nothing starts on a runner until \
+                      it is re-armed in purlis's window"
                     .into(),
             });
         }

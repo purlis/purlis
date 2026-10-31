@@ -13,10 +13,15 @@ import StoryFailures, {
   annotations,
   cellOf,
   gateOf,
+  named,
   picturesAlone,
+  picturesToDraw,
   placeOf,
   REPORT,
   reportPath,
+  shardOf,
+  shardProblems,
+  undrawn,
 } from "./story-failures.mjs";
 
 const DEPS = "http://localhost:1/node_modules/.cache/storybook/sb-vitest/deps";
@@ -585,4 +590,296 @@ test("an error outside a story, a run that failed naming nothing, or no failure 
     ]),
     false,
   );
+});
+
+// The stories run in shards (#4013): a shard draws again only the pictures of its own story
+// files in its own cells, and the check counts every shard's report and drawing.
+const pictureFailure = (file, cell) => ({
+  file,
+  story: "Probe A",
+  cell,
+  errors: [failedAt("screenshot")],
+});
+
+test("a shard draws again each story file and cell whose picture failed, once each", () => {
+  assert.deepEqual(
+    picturesToDraw({
+      failed: true,
+      errors: [],
+      failures: [
+        pictureFailure("src/A.stories.tsx", "purlis_dark"),
+        pictureFailure("src/A.stories.tsx", "purlis_dark"),
+        pictureFailure("src/A.stories.tsx", "purlis-classic_light"),
+        pictureFailure("src/B.stories.tsx", "purlis_dark"),
+      ],
+    }),
+    [
+      { file: "src/A.stories.tsx", cell: "purlis_dark" },
+      { file: "src/A.stories.tsx", cell: "purlis-classic_light" },
+      { file: "src/B.stories.tsx", cell: "purlis_dark" },
+    ],
+  );
+});
+
+test("a shard draws nothing when more than a picture failed, or a failure names no cell", () => {
+  assert.equal(
+    picturesToDraw(reportOf("Probe A", failedAt("keyboard"))),
+    undefined,
+  );
+  assert.equal(
+    picturesToDraw({
+      failed: true,
+      errors: [],
+      failures: [pictureFailure("src/A.stories.tsx", undefined)],
+    }),
+    undefined,
+  );
+});
+
+test("a shard's name is its browser, its number and how many there are", () => {
+  assert.deepEqual(shardOf("report-webkit-2-of-3.json"), {
+    browser: "webkit",
+    shard: 2,
+    of: 3,
+    name: "webkit-2-of-3",
+  });
+  assert.equal(shardOf("index.json"), undefined);
+  assert.equal(shardOf("report-webkit-4-of-3.json"), undefined);
+});
+
+test("every shard of every browser reported, or the check names the one missing", () => {
+  const all = [
+    "report-chromium-1-of-2.json",
+    "report-chromium-2-of-2.json",
+    "report-webkit-1-of-2.json",
+    "report-webkit-2-of-2.json",
+  ];
+  assert.deepEqual(shardProblems(all), []);
+  assert.deepEqual(shardProblems(all.slice(1)), [
+    "chromium 1 of 2 wrote no report",
+  ]);
+  // A browser none of whose shards reported.
+  assert.deepEqual(shardProblems(all.slice(0, 2)), ["webkit: no shard wrote a report"]);
+  // A matrix that runs fewer shards than `--shard` splits the files into.
+  assert.deepEqual(
+    shardProblems([
+      "report-chromium-1-of-3.json",
+      "report-chromium-2-of-3.json",
+      "report-webkit-1-of-2.json",
+      "report-webkit-2-of-2.json",
+    ]),
+    ["chromium 3 of 3 wrote no report"],
+  );
+  // Shards that disagree on how many there are.
+  assert.deepEqual(
+    shardProblems([
+      "report-chromium-1-of-2.json",
+      "report-chromium-2-of-3.json",
+      "report-webkit-1-of-1.json",
+    ]),
+    ["chromium: its shards disagree on how many there are (2, 3)"],
+  );
+});
+
+test("each shard that failed drew its pictures, or the check names it", () => {
+  const passed = { failed: false, failures: [], errors: [] };
+  const failed = { failed: true, failures: [], errors: [] };
+  assert.deepEqual(
+    undrawn(
+      [
+        { name: "chromium-1-of-2", report: passed },
+        { name: "chromium-2-of-2", report: failed },
+        { name: "webkit-1-of-2", report: failed },
+      ],
+      ["drew-webkit-1-of-2"],
+    ),
+    ["chromium-2-of-2"],
+  );
+  // A report whose `failed` is not a boolean is not read as one that passed.
+  assert.deepEqual(undrawn([{ name: "webkit-2-of-2", report: {} }], []), [
+    "webkit-2-of-2",
+  ]);
+});
+
+// What blocks the baselines comes first (#4050): GitHub keeps 10 error annotations a step, so a
+// story failing on more than its picture, the one thing that stops the run drawing, is named in
+// the first annotation, and in the step's summary, which is never capped, however many pictures
+// also failed.
+const pictures = (count, browser = "chromium") => ({
+  failed: true,
+  failures: Array.from({ length: count }, (_, at) => ({
+    file: `src/Picture${at}.stories.tsx`,
+    story: `Picture ${at}`,
+    cell: "purlis_dark",
+    errors: [failedAt("screenshot", browser)],
+  })),
+  errors: [],
+});
+
+test("a story failing on more than its picture is named first, past any number of pictures", () => {
+  const blocked = {
+    failed: true,
+    failures: [
+      ...pictures(12, "webkit").failures,
+      {
+        file: "src/Probe.stories.tsx",
+        story: "Probe K",
+        cell: "purlis_light",
+        errors: [failedAt("screenshot", "webkit"), failedAt("keyboard", "webkit")],
+      },
+    ],
+    errors: [],
+  };
+  const { headline, annotations: lines } = named([
+    { browser: "chromium", report: pictures(12) },
+    { browser: "webkit", report: blocked },
+  ]);
+  assert.match(headline, /^::error title=No baselines drawn%3A 1 story failed on more than its picture::/);
+  assert.match(headline, /Probe K \(src\/Probe.stories.tsx\): keyboard, in webkit \(purlis_light\)$/);
+  assert.doesNotMatch(headline, /Picture/);
+  // Probe K's own annotation, then the 24 pictures'.
+  assert.equal(lines.length, 1 + 24);
+  assert.match(lines[0], /title=Probe K in webkit/);
+  assert.ok(lines.slice(1).every((line) => /title=Picture \d+ in/.test(line)));
+});
+
+test("the headline names each blocking story once, with the browsers and cells it failed in", () => {
+  const keyboard = (browser, cell) => ({
+    failed: true,
+    failures: [
+      { file: "src/Probe.stories.tsx", story: "Probe K", cell, errors: [failedAt("keyboard", browser)] },
+    ],
+    errors: [],
+  });
+  const { headline } = named([
+    { browser: "chromium", report: keyboard("chromium", "purlis_light") },
+    { browser: "chromium", report: keyboard("chromium", "purlis_dark") },
+    { browser: "webkit", report: keyboard("webkit", "purlis_dark") },
+  ]);
+  assert.match(headline, /title=No baselines drawn%3A 1 story failed/);
+  assert.match(
+    headline,
+    /::Probe K \(src\/Probe.stories.tsx\): keyboard, in chromium \(purlis_dark, purlis_light\) and webkit \(purlis_dark\)$/,
+  );
+});
+
+test("the headline names every story, error and report that blocks the baselines", () => {
+  const { headline } = named([
+    { browser: "chromium", report: reportOf("Probe A", failedAt("accessibility")) },
+    {
+      browser: "webkit",
+      report: { failed: true, failures: [], errors: [{ file: "src/Gone.stories.tsx", message: "would not load", stack: "" }] },
+    },
+    { browser: "webkit", report: { failed: true, failures: [], errors: [] } },
+    { browser: "chromium", report: undefined },
+  ]);
+  assert.match(headline, /4 stories failed on more than their picture/);
+  assert.match(headline, /Probe A \(src\/Probe.stories.tsx\): accessibility, in chromium/);
+  assert.match(headline, /src\/Gone.stories.tsx in webkit: an error outside any story/);
+  assert.match(headline, /stories in webkit: the run failed but named no story/);
+  assert.match(headline, /stories in chromium: the run wrote no report/);
+});
+
+test("pictures alone need no headline: the baselines are drawn", () => {
+  const { headline, annotations: lines, summary } = named([
+    { browser: "chromium", report: pictures(2) },
+    { browser: "webkit", report: { failed: false, failures: [], errors: [] } },
+  ]);
+  assert.equal(headline, undefined);
+  assert.equal(lines.length, 2);
+  assert.ok(lines.every((line) => /title=Picture \d+ in chromium/.test(line)));
+  assert.match(summary, /2 stories failed on their picture alone/);
+  assert.doesNotMatch(summary, /more than/);
+});
+
+test("the summary names what blocks the baselines first, then every picture that failed", () => {
+  const { summary } = named([
+    { browser: "chromium", report: pictures(30) },
+    { browser: "webkit", report: reportOf("Probe K", failedAt("keyboard", "webkit")) },
+  ]);
+  const blocking = summary.indexOf("Probe K in webkit");
+  assert.ok(blocking > 0);
+  assert.ok(summary.indexOf("failed on more than its picture") < blocking);
+  assert.ok(blocking < summary.indexOf("Picture 0 in chromium"));
+  assert.match(summary, /30 stories failed on their picture alone/);
+  assert.match(summary, /Picture 29 in chromium, purlis_dark/);
+  assert.match(summary, /- Probe K in webkit \(src\/Probe.stories.tsx\): keyboard: expect\(element\)/);
+});
+
+test("a run where nothing failed names nothing", () => {
+  const { annotations: lines, summary } = named([
+    { browser: "chromium", report: { failed: false, failures: [], errors: [] } },
+  ]);
+  assert.deepEqual(lines, []);
+  assert.equal(summary, "");
+});
+
+test("the headline names a shard that wrote no report", () => {
+  const { headline } = named(
+    [{ browser: "chromium", report: { failed: false, failures: [], errors: [] } }],
+    undefined,
+    ["webkit 2 of 3 wrote no report"],
+  );
+  assert.match(headline, /title=No baselines drawn%3A 1 story failed/);
+  assert.match(headline, /::webkit 2 of 3 wrote no report$/);
+});
+
+// Vitest's browser mode can hand a story file's module to the reporter under another cell's
+// project (#4073): a story that failed in all 10 cells came out in 7 or 8, some twice. The
+// cell the page ran in, which `cell.setup.ts` puts in each test's meta, is the one named.
+const CELLS = [
+  "purlis-classic_dark",
+  "purlis-classic_light",
+  "purlis-classic_dark_compact",
+  "purlis-classic_light_compact",
+  "purlis_dark",
+  "purlis_light",
+  "purlis_dark-high-contrast",
+  "purlis_dark_compact",
+  "purlis_light_compact",
+  "purlis_dark-high-contrast_compact",
+];
+
+test("a story failing in all 10 cells is named once in each, whatever project Vitest says", () => {
+  const to = join(mkdtempSync(join(tmpdir(), "story-failures-")), "report.json");
+  // Each module under a project Vitest named wrongly: the next cell's, and the first one twice.
+  const modules = CELLS.map((cell, at) => ({
+    ...moduleOf({
+      tests: [
+        {
+          fullName: "Probe > Steps",
+          meta: () => ({ cell }),
+          result: () => ({ errors: [failedAt("keyboard")] }),
+        },
+      ],
+    }),
+    project: { name: `stories ${CELLS[at === 9 ? 0 : (at + 1) % 9]} (chromium)` },
+  }));
+  reporting(to, (reporter) => reporter.onTestRunEnd(modules, [], "failed"));
+  const report = JSON.parse(readFileSync(to, "utf8"));
+  assert.deepEqual(
+    report.failures.map(({ cell }) => cell).sort(),
+    [...CELLS].sort(),
+  );
+  const { headline } = named([{ browser: "chromium", report }]);
+  assert.match(headline, new RegExp(`in chromium \\(${[...CELLS].sort().join(", ")}\\)$`));
+});
+
+test("a test with no cell in its meta is named by its project, as before", () => {
+  const to = join(mkdtempSync(join(tmpdir(), "story-failures-")), "report.json");
+  reporting(to, (reporter) =>
+    reporter.onTestRunEnd(
+      [
+        {
+          ...moduleOf({
+            tests: [{ fullName: "Probe > Steps", result: () => ({ errors: [failedAt("keyboard")] }) }],
+          }),
+          project: { name: "stories purlis_light (webkit)" },
+        },
+      ],
+      [],
+      "failed",
+    ),
+  );
+  assert.equal(JSON.parse(readFileSync(to, "utf8")).failures[0].cell, "purlis_light");
 });

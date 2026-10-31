@@ -1,0 +1,369 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! The old `[harness_plugins]` keys (#3467): said once, and removed only by an Apply.
+
+use std::sync::Mutex;
+
+use super::*;
+use crate::proposals::{From, apply_in};
+
+const SHARED: &str = "[plane]\nname = \"p\"\n\n[harness_plugins.claude]\n\"figma@x\" = true\n";
+const LOCAL: &str = "harness_plugins.codex.\"a@b\" = false\n# mine\n[memory]\nshare = true\n";
+
+fn project(files: &[(&str, &str)]) -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("a folder");
+    let root = dir.path().canonicalize().expect("real");
+    for (name, text) in files {
+        std::fs::write(root.join(name), text).expect("written");
+    }
+    (dir, root)
+}
+
+fn read(root: &Path, name: &str) -> String {
+    std::fs::read_to_string(root.join(name)).expect("the file")
+}
+
+#[test]
+fn a_project_without_the_old_keys_has_no_notice() {
+    let (_dir, root) = project(&[("charter.toml", "[plane]\nname = \"p\"\n")]);
+    assert_eq!(notice_of(&root, &[]), None);
+}
+
+#[test]
+fn a_project_with_the_old_keys_is_told_once_and_dismiss_keeps_it_away() {
+    let (_dir, root) = project(&[("charter.toml", SHARED)]);
+    let notice = notice_of(&root, &[]).expect("the notice");
+    assert_eq!(notice.files, ["charter.toml"]);
+    assert!(notice.removable);
+    assert!(notice.said.contains("is ignored"), "{}", notice.said);
+    answer(&root).expect("kept");
+    assert_eq!(notice_of(&root, &[]), None, "said once");
+    assert_eq!(read(&root, "charter.toml"), SHARED, "nothing rewritten");
+}
+
+#[test]
+fn remove_holds_a_change_per_file_and_writes_nothing_until_it_is_applied() {
+    let (_dir, root) = project(&[("charter.toml", SHARED), ("charter.local.toml", LOCAL)]);
+    let proposals = Proposals::default();
+    let ids = removal_held(&root, &proposals, 7).expect("held");
+    assert_eq!(ids.len(), 2);
+    assert_eq!(read(&root, "charter.toml"), SHARED, "only an Apply writes");
+    assert_eq!(read(&root, "charter.local.toml"), LOCAL);
+    assert_eq!(
+        notice_of(&root, &proposals.paths_of(BY_PURLIS)),
+        None,
+        "while Remove's changes wait, the notice stays out of the Inbox"
+    );
+
+    let audit = |_: &purlis_core::proposed::Applied<'_>| Ok(());
+    let files: Vec<&str> = ids.iter().map(|one| one.file.as_str()).collect();
+    assert_eq!(files, ["charter.toml", "charter.local.toml"]);
+    for held in ids {
+        let one = proposals.get(held.id).expect("it waits");
+        assert_eq!(one.path, held.file);
+        assert_eq!(one.session, BY_PURLIS, "no chat's");
+        apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Tab).expect("applied");
+    }
+    assert_eq!(read(&root, "charter.toml"), "[plane]\nname = \"p\"\n");
+    assert_eq!(
+        read(&root, "charter.local.toml"),
+        "# mine\n[memory]\nshare = true\n"
+    );
+}
+
+#[test]
+fn a_change_purlis_proposes_is_stale_once_the_file_moves() {
+    let (_dir, root) = project(&[("charter.toml", SHARED)]);
+    let proposals = Proposals::default();
+    let ids = removal_held(&root, &proposals, 7).expect("held");
+    std::fs::write(root.join("charter.toml"), "[plane]\nname = \"q\"\n").expect("moved");
+    let audit = |_: &purlis_core::proposed::Applied<'_>| Ok(());
+    let one = proposals.get(ids[0].id).expect("it waits");
+    assert_eq!(
+        apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Tab),
+        Err(crate::proposals::Refusal::Stale)
+    );
+}
+
+/// A workspace `alpha` whose manifest holds the old key, as purlis's own writer wrote it
+/// (`stamped`) or as a hand did.
+fn a_workspace_with_the_old_key(root: &Path, stamped: bool) -> String {
+    std::fs::create_dir_all(root.join("workspaces/alpha")).expect("a workspace");
+    let mut doc = serde_json::json!({
+        "name": "alpha",
+        "settings": {"harness_plugins": {"claude": {"a@b": true}}, "theme": {"color": "teal"}},
+    });
+    purlis_core::manifest::stamp(&mut doc, stamped, purlis_core::manifest::key_for(root));
+    let text = purlis_core::pyjson::dumps_indent2(&doc);
+    std::fs::write(root.join(MANIFEST), &text).expect("its manifest");
+    text
+}
+
+const MANIFEST: &str = "workspaces/alpha/workspace.json";
+
+#[test]
+fn a_workspaces_old_key_gets_a_change_and_nothing_is_written_until_apply() {
+    let (_dir, root) = project(&[("charter.toml", "[plane]\nname = \"p\"\n")]);
+    let before = a_workspace_with_the_old_key(&root, true);
+    let notice = notice_of(&root, &[]).expect("the notice");
+    assert_eq!(notice.files, [MANIFEST]);
+    assert!(notice.removable, "Remove reaches a workspace's manifest");
+    let proposals = Proposals::default();
+    let held = removal_held(&root, &proposals, 1).expect("held");
+    assert_eq!(
+        held.iter().map(|one| one.file.as_str()).collect::<Vec<_>>(),
+        [MANIFEST]
+    );
+    assert_eq!(read(&root, MANIFEST), before, "only an Apply writes");
+    assert_eq!(
+        notice_of(&root, &proposals.paths_of(BY_PURLIS)),
+        None,
+        "while Remove's changes wait, the notice stays out of the Inbox"
+    );
+    let one = proposals.get(held[0].id).expect("it waits");
+    assert_eq!(one.session, BY_PURLIS);
+    match crate::proposals::now_of(&root, &one) {
+        crate::proposals::Now::Made {
+            before: shown,
+            after,
+        } => {
+            assert_eq!(shown, before, "shown against the manifest as it is");
+            assert!(!after.contains("harness_plugins"), "{after}");
+        }
+        other => panic!("the change is shown whole: {other:?}"),
+    }
+}
+
+#[test]
+fn after_apply_a_manifest_purlis_wrote_keeps_its_stamp_as_after_a_form_save() {
+    let (_dir, root) = project(&[("charter.toml", "[plane]\nname = \"p\"\n")]);
+    a_workspace_with_the_old_key(&root, true);
+    let proposals = Proposals::default();
+    let held = removal_held(&root, &proposals, 1).expect("held");
+    let one = proposals.get(held[0].id).expect("it waits");
+    let audit = |_: &purlis_core::proposed::Applied<'_>| Ok(());
+    apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Tab).expect("applied");
+    let after = read(&root, MANIFEST);
+    assert!(!after.contains("harness_plugins"), "{after}");
+    assert!(
+        after.contains("\"theme\""),
+        "every other setting kept: {after}"
+    );
+    assert_eq!(
+        purlis_core::manifest::ownership(Some(&after)),
+        purlis_core::manifest::Ownership::Charter,
+        "still purlis's: {after}"
+    );
+
+    // The same as a form's save of that removal would have written.
+    let (_other, twin) = project(&[("charter.toml", "[plane]\nname = \"p\"\n")]);
+    let base = a_workspace_with_the_old_key(&twin, true);
+    purlis_core::settings::workspace::save(
+        &twin,
+        "alpha",
+        Some(&base),
+        &[purlis_core::settings::Edit {
+            path: vec![purlis_core::settings::Step::Key(
+                "harness_plugins".to_owned(),
+            )],
+            value: None,
+        }],
+    )
+    .expect("a form's save");
+    assert_eq!(after, read(&twin, MANIFEST));
+}
+
+#[test]
+fn after_apply_a_hand_written_manifest_stays_the_persons() {
+    let (_dir, root) = project(&[("charter.toml", "[plane]\nname = \"p\"\n")]);
+    a_workspace_with_the_old_key(&root, false);
+    let proposals = Proposals::default();
+    let held = removal_held(&root, &proposals, 1).expect("held");
+    let one = proposals.get(held[0].id).expect("it waits");
+    let audit = |_: &purlis_core::proposed::Applied<'_>| Ok(());
+    apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Tab).expect("applied");
+    let after = read(&root, MANIFEST);
+    assert!(!after.contains("harness_plugins"), "{after}");
+    assert_eq!(
+        purlis_core::manifest::ownership(Some(&after)),
+        purlis_core::manifest::Ownership::Operator
+    );
+}
+
+#[test]
+fn a_manifest_that_moved_since_remove_is_stale_at_apply() {
+    let (_dir, root) = project(&[("charter.toml", "[plane]\nname = \"p\"\n")]);
+    a_workspace_with_the_old_key(&root, true);
+    let proposals = Proposals::default();
+    let held = removal_held(&root, &proposals, 1).expect("held");
+    std::fs::write(root.join(MANIFEST), "{\"name\": \"alpha\"}\n").expect("moved");
+    let one = proposals.get(held[0].id).expect("it waits");
+    let audit = |_: &purlis_core::proposed::Applied<'_>| Ok(());
+    assert_eq!(
+        apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Tab),
+        Err(crate::proposals::Refusal::Stale)
+    );
+    assert_eq!(read(&root, MANIFEST), "{\"name\": \"alpha\"}\n");
+}
+
+#[test]
+fn remove_alone_answers_nothing_the_notice_waits_on_its_change() {
+    let (_dir, root) = project(&[("charter.toml", SHARED)]);
+    let proposals = Proposals::default();
+    removal_held(&root, &proposals, 7).expect("held");
+    assert!(!answered_at(&root).exists(), "Remove is no answer yet");
+    assert!(
+        notice_of(&root, &[]).is_some(),
+        "with no change waiting, it is said"
+    );
+}
+
+#[test]
+fn a_stale_remove_change_once_dismissed_brings_the_notice_back_while_the_file_holds_the_key() {
+    let (_dir, root) = project(&[("charter.toml", SHARED)]);
+    let proposals = Proposals::default();
+    let ids = removal_held(&root, &proposals, 7).expect("held");
+    // The file moves before Apply, and still holds the key.
+    let moved = format!("# moved\n{SHARED}");
+    std::fs::write(root.join("charter.toml"), &moved).expect("moved");
+    assert_eq!(
+        notice_of(&root, &proposals.paths_of(BY_PURLIS)),
+        None,
+        "its change still waits"
+    );
+
+    let one = proposals.take(ids[0].id).expect("it waited");
+    purlis_change_dismissed(&root, &one);
+
+    let back = notice_of(&root, &proposals.paths_of(BY_PURLIS)).expect("the notice is back");
+    assert_eq!(back.files, ["charter.toml"]);
+    assert!(back.removable, "with Remove");
+    assert_eq!(read(&root, "charter.toml"), moved, "nothing rewritten");
+}
+
+#[test]
+fn a_stale_change_dismissed_after_the_key_went_brings_nothing_back() {
+    let (_dir, root) = project(&[("charter.toml", SHARED)]);
+    let proposals = Proposals::default();
+    let ids = removal_held(&root, &proposals, 7).expect("held");
+    std::fs::write(root.join("charter.toml"), "[plane]\nname = \"p\"\n").expect("by hand");
+    let one = proposals.take(ids[0].id).expect("it waited");
+    purlis_change_dismissed(&root, &one);
+    assert_eq!(notice_of(&root, &proposals.paths_of(BY_PURLIS)), None);
+}
+
+#[test]
+fn dismissing_a_change_that_still_applies_answers_the_notice_once() {
+    let (_dir, root) = project(&[("charter.toml", SHARED)]);
+    let proposals = Proposals::default();
+    let ids = removal_held(&root, &proposals, 7).expect("held");
+    let one = proposals.take(ids[0].id).expect("it waited");
+    purlis_change_dismissed(&root, &one);
+    assert!(answered_at(&root).exists(), "the person's no");
+    assert_eq!(notice_of(&root, &[]), None, "said once");
+    assert_eq!(read(&root, "charter.toml"), SHARED);
+}
+
+#[test]
+fn applying_a_change_answers_the_notice_once() {
+    let (_dir, root) = project(&[("charter.toml", SHARED), ("charter.local.toml", LOCAL)]);
+    let proposals = Proposals::default();
+    let ids = removal_held(&root, &proposals, 7).expect("held");
+    let audit = |_: &purlis_core::proposed::Applied<'_>| Ok(());
+    let one = proposals.take(ids[0].id).expect("it waited");
+    apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Tab).expect("applied");
+    purlis_change_applied(&root, &one);
+    assert!(answered_at(&root).exists(), "the person's yes");
+    // The other file's change is dismissed: still no notice, the Ask was answered.
+    let other = proposals.take(ids[1].id).expect("it waited");
+    purlis_change_dismissed(&root, &other);
+    assert_eq!(
+        notice_of(&root, &proposals.paths_of(BY_PURLIS)),
+        None,
+        "said once"
+    );
+}
+
+#[test]
+fn a_chats_proposal_neither_answers_nor_hides_the_notice() {
+    let (_dir, root) = project(&[("charter.toml", SHARED)]);
+    let proposals = Proposals::default();
+    let id = proposals
+        .note(
+            3,
+            "charter.toml",
+            base_of(Some(SHARED.as_bytes())),
+            Change::Whole {
+                content: String::new(),
+            },
+            1,
+        )
+        .expect("held");
+    assert!(
+        notice_of(&root, &proposals.paths_of(BY_PURLIS)).is_some(),
+        "a chat's change is not Remove's"
+    );
+    let one = proposals.take(id).expect("it waited");
+    purlis_change_dismissed(&root, &one);
+    purlis_change_applied(&root, &one);
+    assert!(!answered_at(&root).exists());
+}
+
+#[test]
+fn a_stale_change_dismissed_while_another_waits_is_asked_again_for_its_file_alone() {
+    let (_dir, root) = project(&[("charter.toml", SHARED), ("charter.local.toml", LOCAL)]);
+    let proposals = Proposals::default();
+    let ids = removal_held(&root, &proposals, 7).expect("held");
+    // charter.toml moves by hand and still holds the key: its change goes stale.
+    std::fs::write(root.join("charter.toml"), format!("# moved\n{SHARED}")).expect("moved");
+    let stale = proposals.take(ids[0].id).expect("it waited");
+    purlis_change_dismissed(&root, &stale);
+
+    let back = notice_of(&root, &proposals.paths_of(BY_PURLIS)).expect("asked again");
+    assert_eq!(
+        back.files,
+        ["charter.toml"],
+        "the waiting file is not asked about"
+    );
+
+    // The other change is applied: the stale file is still asked about.
+    let audit = |_: &purlis_core::proposed::Applied<'_>| Ok(());
+    let other = proposals.take(ids[1].id).expect("it waited");
+    apply_in(&root, &other, None, &audit, &Mutex::new(()), From::Tab).expect("applied");
+    purlis_change_applied(&root, &other);
+    let still = notice_of(&root, &proposals.paths_of(BY_PURLIS)).expect("still asked");
+    assert_eq!(still.files, ["charter.toml"]);
+
+    // A second Remove holds a change for that file alone.
+    let again = removal_held(&root, &proposals, 8).expect("held again");
+    assert_eq!(
+        again
+            .iter()
+            .map(|one| one.file.as_str())
+            .collect::<Vec<_>>(),
+        ["charter.toml"]
+    );
+}
+
+#[test]
+fn a_change_of_purliss_to_a_file_the_keys_cannot_be_in_is_none_of_the_asks() {
+    let (_dir, root) = project(&[("charter.toml", SHARED)]);
+    let proposals = Proposals::default();
+    let id = proposals
+        .note(
+            BY_PURLIS,
+            "workspaces/alpha/notes.md",
+            None,
+            Change::Whole {
+                content: String::new(),
+            },
+            1,
+        )
+        .expect("held");
+    let one = proposals.take(id).expect("it waited");
+    purlis_change_applied(&root, &one);
+    purlis_change_dismissed(&root, &one);
+    assert!(!answered_at(&root).exists());
+    assert!(notice_of(&root, &[]).is_some());
+}

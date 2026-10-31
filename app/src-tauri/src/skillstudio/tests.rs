@@ -92,7 +92,49 @@ fn the_studio_shows_nothing_while_its_flag_is_off() {
             clashes: Vec::new(),
             first: StudioFirst::default(),
             pins_refused: None,
+            not_supported: Vec::new(),
+            router: None,
+            levels_to_confirm: None,
+            needs: Vec::new(),
         }
+    );
+}
+
+#[test]
+fn a_declared_harness_with_neither_a_skill_format_nor_mcp_is_said_in_one_line() {
+    // SK-30, #2985: its chats get no skills, and the studio says why.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plane");
+    skill(
+        &root.join("skills"),
+        "deploy",
+        "---\nname: deploy\ndescription: Deploys.\n---\n",
+    );
+    std::fs::create_dir_all(root.join("harnesses")).unwrap();
+    std::fs::write(
+        root.join("harnesses/goose.toml"),
+        "name = \"goose\"\ntitle = \"Goose\"\nprogram = \"goose\"\n\n[session]\n\n\
+         [terminal]\nready_to_type = \"raw-and-quiet\"\n\n[levels]\n\n[capabilities]\n\
+         mcp_servers = \"no: it takes none\"\n",
+    )
+    .unwrap();
+
+    let studio = studio(&root, None, true, None, None, &no_harness());
+
+    assert_eq!(
+        studio.not_supported,
+        [StudioNotSupported {
+            name: "goose".to_owned(),
+            title: "Goose".to_owned(),
+            said: "Skills are not supported on Goose: it has no skill format purlis can hand \
+                   skills by, and its declaration does not say it takes MCP servers, so its \
+                   chats get no skills."
+                .to_owned(),
+        }]
+    );
+    assert!(
+        studio.harnesses.iter().all(|one| one.title != "Goose"),
+        "it is no harness skills reach"
     );
 }
 
@@ -318,21 +360,12 @@ fn the_studio_lists_each_harnesss_own_skills_and_plugins_and_marks_a_clash_with_
                     name: "figma".to_owned()
                 }),
                 Some(&SkillSwitch::Not {
-                    why: "Claude Code turns a plugin's skill off only with the whole plugin, \
-                          figma"
+                    why: "it comes with the plugin figma, which Claude Code turns on or off \
+                          itself, so its skills are shown read-only"
                         .to_owned()
                 })
             ),
         ]
-    );
-    let figma_plugin = on_claude
-        .plugins
-        .iter()
-        .find(|p| p.id == "figma@official")
-        .expect("listed");
-    assert_eq!(
-        (figma_plugin.state, figma_plugin.pinned.is_none()),
-        (PluginState::NotSet, true)
     );
     assert_eq!(
         studio.clashes,
@@ -344,14 +377,10 @@ fn the_studio_lists_each_harnesss_own_skills_and_plugins_and_marks_a_clash_with_
             outside: Level::Installed,
             owner: Owner::You,
             outcome: ClashOutcome::BothLoad,
+            said: "your own Claude Code skills has a skill of this name too, and a chat there \
+                   gets both"
+                .to_owned(),
         }]
-    );
-    let codex = &studio.harnesses[2];
-    assert_eq!(codex.unsupported, None);
-    assert!(codex.only_off.is_some(), "{:?}", codex.only_off);
-    assert!(
-        studio.harnesses[1].unsupported.is_some(),
-        "opencode's plugins"
     );
 }
 
@@ -563,5 +592,96 @@ fn a_row_says_which_of_the_studios_workspace_and_persona_pin_it_sk15d() {
         studio(&root, None, true, None, Some("ops"), &no_harness())
             .pins_refused
             .is_none()
+    );
+}
+
+#[test]
+fn the_studio_says_which_router_its_chats_are_routed_by() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
+    let router = |workspace: Option<&str>| {
+        studio(root, None, true, workspace, None, &no_harness())
+            .router
+            .expect("a router while the studio is on")
+    };
+
+    let built_in = router(Some("alpha"));
+    assert_eq!(
+        built_in.said,
+        "Chats here are routed by the built-in router."
+    );
+    assert_eq!(built_in.extension, None);
+    assert!(!built_in.problem);
+
+    std::fs::write(
+        root.join("workspaces/alpha/workspace.json"),
+        r#"{"settings": {"skills": {"router": "relevance"}}}"#,
+    )
+    .unwrap();
+    let chosen = router(Some("alpha"));
+    assert_eq!(chosen.extension.as_deref(), Some("relevance"));
+    assert!(
+        chosen.said.contains("the router relevance"),
+        "{}",
+        chosen.said
+    );
+
+    std::fs::write(
+        root.join("workspaces/alpha/workspace.json"),
+        r#"{"settings": {"skills": {"router": "no such/router"}}}"#,
+    )
+    .unwrap();
+    let wrong = router(Some("alpha"));
+    assert!(wrong.problem);
+    assert!(wrong.said.contains("built-in router"), "{}", wrong.said);
+}
+
+#[test]
+fn the_studio_says_the_budget_and_what_its_scope_writes_as_its_router_3692() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
+    std::fs::create_dir_all(root.join("personas/reviewer")).unwrap();
+    std::fs::write(
+        root.join("personas/reviewer/persona.md"),
+        "---\nname: reviewer\nrole: Reviews.\nskill-router: built-in\n---\n\nReviews.\n",
+    )
+    .unwrap();
+    let router = |workspace: Option<&str>, persona: Option<&str>| {
+        studio(root, None, true, workspace, persona, &no_harness())
+            .router
+            .expect("a router while the studio is on")
+    };
+
+    let at_root = router(None, None);
+    assert_eq!(
+        at_root.written, None,
+        "the project's root chooses no router"
+    );
+    assert_eq!(
+        at_root.budget,
+        StudioBudget {
+            skills: 30,
+            chars: 6_000
+        }
+    );
+    assert_eq!(router(Some("alpha"), None).written, None);
+
+    std::fs::write(
+        root.join("workspaces/alpha/workspace.json"),
+        r#"{"settings": {"skills": {"router": "relevance"}}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        router(Some("alpha"), None).written.as_deref(),
+        Some("relevance")
+    );
+    assert_eq!(
+        router(None, Some("reviewer")).written.as_deref(),
+        Some("built-in"),
+        "a persona's own line"
     );
 }

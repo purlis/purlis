@@ -7,27 +7,16 @@
 //! beside it. The filename is part of the format — `ws todo done <slug>` closes a todo by
 //! its file stem — so the slug rule is reproduced exactly rather than approximated.
 
-/// Is `c` whitespace to Python's `str.strip()`?
+/// Python's `str.isspace()`, `str.strip()` and `str.rstrip()`: the line format's one copy
+/// (`purlis_skills::fence`, #3482).
 ///
 /// **Not `char::is_whitespace`.** Python drives `strip()` off `str.isspace()`, which is true
 /// for the four separator controls U+001C–U+001F; Rust's `White_Space` property is false for
 /// all four. The difference is not cosmetic here: `write` refuses an empty body so that a
 /// failed substitution cannot land a secret in a memory file, and a body of only U+001F is
-/// empty to Python and not to Rust.
-pub fn is_python_space(c: char) -> bool {
-    c.is_whitespace() || matches!(c, '\u{1c}' | '\u{1d}' | '\u{1e}' | '\u{1f}')
-}
-
-/// `str.strip()`.
-pub fn py_strip(text: &str) -> &str {
-    text.trim_matches(is_python_space)
-}
-
-/// `str.rstrip()` — what a table row is trimmed with, so a row whose last column is empty
-/// carries no trailing spaces into whatever reads it back.
-pub fn py_rstrip(text: &str) -> &str {
-    text.trim_end_matches(is_python_space)
-}
+/// empty to Python and not to Rust. `py_rstrip` is what a table row is trimmed with, so a row
+/// whose last column is empty carries no trailing spaces into whatever reads it back.
+pub use purlis_skills::fence::{is_python_space, py_rstrip, py_strip};
 
 /// The longest a memory title may be: it becomes a heading, an index row and part of a
 /// filename.

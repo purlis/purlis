@@ -19,7 +19,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { builtStyles } from "../ui/stylesheets";
+import { builtStyles, isForcedColoursSheet } from "../ui/stylesheets";
 import { property, TOKENS, type Token } from "./theme";
 
 /**
@@ -89,13 +89,29 @@ const KEYWORDS = new Set(["inherit", "transparent", "none", "currentcolor", "uns
  * a colour and no background draws no pair of its own, so the change marks' colours are held on
  * their backgrounds by hand, in the engine's `PAIRS`, and the test below fails when one is not.
  *
- * - The Chats view's sticky head (#3331) is filled with its panel's fill, `--panel-fill`: the
- *   family default's `surface.base`, or the token a theme's `panel.root.fill` names. Its words
- *   (primary, secondary, muted) are held on `surface.base` and `surface.raised`, the two fills
- *   the built-in themes give a panel, in `PAIRS`.
+ * - The Chats view's top (#3331, #3342) and a view's top and its groups' names
+ *   (`ui/panel/panel.css`, #3340; the Chats view's workspace names, #3342) are drawn on the
+ *   panel's own fill, `--panel-fill`: the family default's `surface.base`, or the token a
+ *   theme's `panel.root.fill` names. What stands on them (primary, secondary, muted and quiet
+ *   words) is held on `surface.base` and `surface.raised`, the two fills the built-in themes
+ *   give a panel, in `PAIRS`.
  */
 const READ_BY_HAND: readonly string[] = [
-  ".chats-head | background: var(--panel-fill, var(--surface-base))",
+  // A chat's state badge (#3342) is ringed in the ground of the row it stands on: the panel's
+  // fill, the hover's or the chosen row's (`--chat-badge-ground`). Its mark is a state token the
+  // engine holds at 3:1 on each of those grounds in `PAIRS`.
+  ".chats-section .chat-persona > .shown-state .shape | background-color: var(--chat-badge-ground)",
+  '[data-scope="panel-section"][data-part="top"] | background-color: var(--panel-fill)',
+  '[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="header"] | background-color: var(--panel-fill)',
+  // A view frame's page header (#3666), held over the item's body on the panel's fill.
+  '[data-scope="view-frame"][data-part="header"] | background-color: var(--panel-fill)',
+  // A review page's bar (#3672), held at the foot of the page on the panel's fill.
+  '[data-scope="review-page"][data-part="bar"] | background-color: var(--panel-fill)',
+  // A secondary way on a notice card (#3478): a mix of the button's fill and the words, which no
+  // pair names; its words and its distance from each card ground are read in every built-in
+  // appearance by `ui/notice/noticeCardFill.test.ts`.
+  '[data-scope="notice"][data-part="root"][data-layout="card"] > [data-scope="button-row"] [data-scope="button"][data-part="root"][data-variant="secondary"] | background-color: color-mix(in oklab, var(--control-base), var(--text-primary) 14%)',
+  '[data-scope="notice"][data-part="root"][data-layout="card"] > [data-scope="button-row"] [data-scope="button"][data-part="root"][data-variant="secondary"]:is( [data-hovered]:not([data-disabled]) | background-color: color-mix(in oklab, var(--control-base), var(--text-primary) 22%)',
 ];
 
 /** The parts of a selector that say a state, not what is drawn: the pointer on it, the
@@ -147,7 +163,7 @@ describe("every pair a stylesheet draws", () => {
         .matchAll(/@import "\.\/([^"]+\.css)"/g),
     ]
       .map((hit) => hit[1])
-      .filter((file) => !file.startsWith("theme/")),
+      .filter((file) => !file.startsWith("theme/") && !isForcedColoursSheet(file)),
   ];
   const sheets = sheetNames.map(read);
 

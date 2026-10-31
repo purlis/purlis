@@ -13,7 +13,7 @@ use super::{ALL, Consent, Family, Length, Look, Part, Prop, State, TRANSPARENT, 
 pub(super) const POPOVER: Family = Family {
     name: "popover",
     description: "A popover, and the surface a menu stands on: a card beside a row, a refusal \
-                  under a field, a list with its filter, a menu.",
+                  under a field, a list with its filter, a menu, a chip's card of notices.",
     since: 6,
     parts: &[
         Part {
@@ -65,6 +65,13 @@ pub(super) const POPOVER: Family = Family {
             description: "A key the footer names, in its cap.",
             properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
         },
+        Part {
+            name: "point",
+            since: super::NEXT,
+            description: "The point a notice's card takes from what it hangs from: its ground \
+                          and its edge, in every variant and state alike.",
+            properties: &[Prop::Fill, Prop::BorderColour],
+        },
     ],
     variants: &[
         Variant {
@@ -79,6 +86,13 @@ pub(super) const POPOVER: Family = Family {
             description: "The surface a menu stands on.",
             consent: None,
         },
+        Variant {
+            name: "notice",
+            since: super::NEXT,
+            description: "A card of notices hung from what they are about, a title-bar chip, \
+                          centred under it with its point.",
+            consent: None,
+        },
     ],
     grounds: &["surface.base", "surface.raised"],
     keeps_size: &[],
@@ -91,10 +105,15 @@ pub(super) const POPOVER: Family = Family {
     // A surface is drawn by what it holds: no state of its own.
     states: &[],
     focused: "[data-focus-visible]",
-    words: &[],
+    // The footer's keys in the quiet tier, and each key in its cap on the raised surface
+    // (`popover.css`), read on that cap (#3099).
+    words: &[("footer", "text.quiet"), ("key", "text.secondary")],
     corner_most: None,
-    around: &[],
-    fills: &[],
+    // The notice card's point (`HungPopover`) is drawn inside the surface's root, but it is the
+    // same in every variant and state: listed here, it takes no variant or state keys.
+    around: &["point"],
+    fills: &[("key", "surface.raised")],
+    under: &[],
 };
 
 pub(super) const MENU: Family = Family {
@@ -174,6 +193,7 @@ pub(super) const MENU: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **The popover's colours as `app/src/ui/popover/popover.css` draws them**: one surface for a

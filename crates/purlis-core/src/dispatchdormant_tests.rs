@@ -574,6 +574,8 @@ fn purlis_creating_a_persona_that_only_had_acceptances_says_so_too() {
 #[test]
 fn purlis_does_not_create_a_persona_whose_name_s_grants_it_could_not_set_aside() {
     use std::os::unix::fs::PermissionsExt;
+    // Its own: the folder it makes read-only is where every other test here keeps its grants.
+    let _home = local::OwnConfigHome::new();
     let dir = project(&["steward"]);
     let root = dir.path();
     local::grant_dispatch(root, "steward", "devops").expect("yours");

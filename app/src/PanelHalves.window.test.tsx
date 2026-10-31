@@ -186,7 +186,7 @@ describe("each half of the Panel, to the keyboard", () => {
     const stops = stopsIn(half("left"));
 
     expect(stops).toHaveLength(1);
-    expect(stops[0]).toHaveAttribute("role", "treeitem");
+    expect(stops[0]).toHaveAttribute("role", "row");
     // The chevron on the half's line is the pointer's: its Lower icon and ⌘J are the keyboard's.
     expect(
       within(half("left")).getByRole("button", { name: "Put the panel's left half away" }),
@@ -261,7 +261,7 @@ describe("F6 (P-13)", () => {
     expect(document.activeElement).toHaveAccessibleName("What Claude Code can do here");
     f6();
     f6();
-    expect(document.activeElement).toHaveAttribute("role", "treeitem");
+    expect(document.activeElement).toHaveAttribute("role", "row");
     expect(document.activeElement).toHaveAttribute("tabindex", "0");
   });
 

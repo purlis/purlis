@@ -5,7 +5,7 @@
 //! asks, the danger colours and the state marks whatever a theme says, every time a theme is
 //! drawn.
 //!
-//! A theme may set every token, the consent surfaces' and the state marks' included. Five floors
+//! A theme may set every token, the consent surfaces' and the state marks' included. These floors
 //! hold for them:
 //!
 //! - **an ask contrasts with its surface** ([`Floor::Ask`]): an ask's words on the dialog it is
@@ -37,6 +37,13 @@
 //!   through it only when it is laid before the theme is drawn, never in the window after.
 //!   Where it fails, the primary's fill is drawn as purlis's own first, and
 //!   Allow's only when that is not enough.
+//! - **waiting is distinguishable from the accent** ([`Floor::WaitingApart`], #3130): the
+//!   waiting colour is at least [`WAITING_APART`] apart as OKLab draws colour from the accent
+//!   and from each edge drawn in it ([`tint::WAITING_KIN`]), as the theme writes them and under
+//!   each of its own tints, so the waiting edge of an ask or
+//!   a Notice never reads as a chosen or primary mark. The tint holds it as it holds danger
+//!   apart: at a hue that would bring the accent near the waiting amber (a yellow or an orange
+//!   workspace), the accent is given less colour.
 //!
 //! The contrast floors are pairs of the check's own [`PAIRS`], held to the floor the check holds
 //! each to, so a pair is measured in one place. Each holds as the theme is and tinted by every
@@ -76,6 +83,8 @@ pub enum Floor {
     StateMarks,
     /// Allow is distinguishable from the primary (#2948).
     AllowNotPrimary,
+    /// Waiting is distinguishable from the accent (#3130).
+    WaitingApart,
 }
 
 impl Floor {
@@ -88,6 +97,7 @@ impl Floor {
             Self::DangerApart => "danger is distinguishable from primary",
             Self::StateMarks => "the state marks meet the mark floor",
             Self::AllowNotPrimary => "Allow is distinguishable from the primary",
+            Self::WaitingApart => "waiting is distinguishable from the accent",
         }
     }
 }
@@ -102,6 +112,11 @@ pub const DANGER_APART: f64 = 0.1;
 /// `accent.base` and `border.control` in OKLab, held as [`DANGER_APART`] is, for the same reason:
 /// two answers told apart at a glance, not on a second look.
 pub const ALLOW_APART: f64 = 0.1;
+
+/// **How far apart the waiting colour and the accent are, at least**: the distance between
+/// `state.waiting` and `accent.base` in OKLab, held as [`DANGER_APART`] is (#3130): the waiting
+/// signal told from a chosen or primary mark at a glance.
+pub const WAITING_APART: f64 = 0.1;
 
 /// **How far apart Allow's look and the primary's are, at least**, as a theme's tokens alone
 /// draw them ([`Floor::AllowNotPrimary`]): measured as the component parts check measures two
@@ -139,7 +154,7 @@ const SELECTED: [(&str, Floor); 3] = [
 /// Whether `token` is a consent surface's or a state mark's: what purlis draws its own value of
 /// first when a floor fails.
 fn is_consent(token: &str) -> bool {
-    ["danger.", "needs-you.", "state."]
+    ["danger.", "needs-you.", "state.", "attention."]
         .iter()
         .any(|prefix| token.starts_with(prefix))
 }
@@ -264,13 +279,14 @@ struct Failure {
 #[derive(Default)]
 struct Chromas {
     rules: Vec<(String, bool, String, bool)>,
-    at: Vec<Option<f64>>,
+    at: Vec<tint::Most>,
 }
 
 impl Chromas {
     /// Each whole degree's chroma for `theme`, found again only when its rules are not the last.
-    fn of(&mut self, theme: &ResolvedTheme) -> &[Option<f64>] {
+    fn of(&mut self, theme: &ResolvedTheme) -> &[tint::Most] {
         let held = tint::held_rules(theme);
+        let shared = tint::shared_rules(theme);
         let rules: Vec<(String, bool, String, bool)> = held
             .iter()
             .map(|rule| {
@@ -288,8 +304,8 @@ impl Chromas {
                 if let Some((_, at)) = known.iter().find(|(them, _)| *them == rules) {
                     return at.clone();
                 }
-                let at: Vec<Option<f64>> = (0..360)
-                    .map(|degree| tint::apart_chroma_of(&held, f64::from(degree)))
+                let at: Vec<tint::Most> = (0..360)
+                    .map(|degree| tint::most_of(&held, &shared, f64::from(degree)))
                     .collect();
                 if known.len() == KNOWN_MOST {
                     known.remove(0);
@@ -308,7 +324,7 @@ impl Chromas {
 const KNOWN_MOST: usize = 8;
 
 /// The recipes' chromas this thread found last, by their rules.
-type Known = Vec<(Vec<(String, bool, String, bool)>, Vec<Option<f64>>)>;
+type Known = Vec<(Vec<(String, bool, String, bool)>, Vec<tint::Most>)>;
 
 thread_local! {
     static KNOWN: std::cell::RefCell<Known> = const { std::cell::RefCell::new(Vec::new()) };
@@ -369,7 +385,7 @@ fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
             let mut drawn = theme.clone();
             for (degree, most) in (0_u32..).zip(chromas.of(theme).to_vec()) {
                 for token in &turned {
-                    let chroma = tint::chroma_for(token, most);
+                    let chroma = tint::chroma_of(token, most);
                     if let Some(value) = drawn.values.get_mut(token) {
                         *value = chroma.map_or_else(
                             || theme.value(token).to_owned(),
@@ -445,12 +461,13 @@ pub(super) fn moves_with_hue(theme: &ResolvedTheme, pair: &Pair) -> bool {
 }
 
 /// The floor a rule of [`tint::APART`] keeps: danger apart from primary for a rule from the
-/// danger colour, Allow apart from Keep blocked for the other.
+/// danger colour, waiting apart from the accent for one from the waiting colour, and Allow
+/// apart from Keep blocked for the other.
 fn apart_floor(rule: &tint::Apart) -> Floor {
-    if rule.from == "danger.base" {
-        Floor::DangerApart
-    } else {
-        Floor::AllowApart
+    match rule.from {
+        "danger.base" => Floor::DangerApart,
+        "state.waiting" => Floor::WaitingApart,
+        _ => Floor::AllowApart,
     }
 }
 

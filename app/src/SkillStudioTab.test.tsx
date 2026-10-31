@@ -2,24 +2,29 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { SkillStudioTab } from "./SkillStudioTab";
+import { forgetStudio, openSkill, renderStudio } from "./SkillStudioTab.testkit";
 import {
   AT_THE_ROOT,
+  SKILL_STUDIO_TITLE,
   asPersona,
   inWorkspace,
-  scopeOf,
   skillStudioAs,
+  skillStudioAt,
   skillStudioTitle,
   skillStudioView,
+  studioOpening,
 } from "./skillStudio";
 import { catalogue, SKILL_STUDIO_SHOW, type Now } from "./actions";
+import { skill, studio } from "./skillsListing.testkit";
 import { noTabs } from "./tabs";
 
 afterEach(() => {
   cleanup();
   clearMocks();
+  forgetStudio();
 });
 
 function answering(studio: unknown) {
@@ -110,17 +115,38 @@ describe("the Skill studio", () => {
       ],
     });
 
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio();
 
     const deploy = await screen.findByTestId("skill-deploy");
     expect(within(deploy).getByText("project")).toBeInTheDocument();
-    expect(within(deploy).getByText("On")).toBeInTheDocument();
+    // One line of what it does under its name, and no mark for a skill a chat simply gets.
+    expect(within(deploy).getByText("Deploys the site.")).toBeInTheDocument();
+    expect(within(deploy).queryByText("Left out")).toBeNull();
+    expect(within(screen.getByTestId("skill-review")).getByText("Left out")).toBeInTheDocument();
+    expect(
+      within(await openSkill("skill-deploy")).getByTestId("skill-in-a-chat"),
+    ).toHaveTextContent("On: a chat at the project's root gets it.");
     expect(within(screen.getByTestId("skill-secrets")).getByText("built-in")).toBeInTheDocument();
     expect(
       within(screen.getByTestId("skill-review")).getByText(
         "Left out: a built-in skill has this name, and a built-in skill is never replaced",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("keeps the Library's tools to search and chips, with New skill… the one way in (#4041)", async () => {
+    answering(studio([skill("deploy")]));
+
+    renderStudio();
+
+    await screen.findByTestId("skill-deploy");
+    const tools = screen.getByTestId("skill-studio").querySelector(".skill-library-tools");
+    if (!(tools instanceof HTMLElement)) throw new Error("the Library draws no tools");
+    expect(within(tools).getByRole("searchbox", { name: "Search skills" })).toBeInTheDocument();
+    // Search and chips, and no button: New skill… on the bar is the way a skill is started,
+    // its Ask a chat to draft it (#3684) included.
+    expect(within(tools).queryAllByRole("button")).toEqual([]);
+    expect(screen.getByRole("button", { name: "New skill…" })).toBeInTheDocument();
   });
 
   it("says why the router hid a skill, and which are pinned (SK-15)", async () => {
@@ -173,15 +199,25 @@ describe("the Skill studio", () => {
       ],
     });
 
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio();
 
-    const deploy = await screen.findByTestId("skill-deploy");
+    const user = userEvent.setup();
+    // The row's one mark says the router hid it; its page says how, on which program.
     expect(
-      within(deploy).getByText(
-        "On, hidden by the built-in router: over this chat's skill budget, so it is in the index skill (on Codex)",
-      ),
+      within(await screen.findByTestId("skill-deploy")).getByText("Hidden by the router"),
     ).toBeInTheDocument();
-    expect(within(screen.getByTestId("skill-review")).getByText("On, pinned")).toBeInTheDocument();
+    expect(within(screen.getByTestId("skill-review")).getByText("Pinned")).toBeInTheDocument();
+    const deploy = await openSkill("skill-deploy", user);
+    expect(within(deploy).getByTestId("skill-in-a-chat")).toHaveTextContent(
+      "On, hidden by the built-in router: over this chat's skill budget, so it is in the index skill (on Codex)",
+    );
+    // Its banner says so too, and the chat can still load it.
+    expect(within(deploy).getByTestId("skill-banner-hidden")).toHaveTextContent(
+      "Hidden by the router on Codex",
+    );
+    expect(
+      within(await openSkill("skill-review", user)).getByTestId("skill-in-a-chat"),
+    ).toHaveTextContent(/^On, pinned/);
   });
 
   it("shows a workspace's chats, its own copy over the project's, and both copies", async () => {
@@ -247,16 +283,21 @@ describe("the Skill studio", () => {
       };
     });
 
-    render(<SkillStudioTab plane="p" scope={inWorkspace("alpha")} changed={0} />);
+    renderStudio(inWorkspace("alpha"));
 
     const mine = await screen.findByTestId("skill-lint");
     expect(within(mine).getByText("workspace")).toBeInTheDocument();
-    const hidden = screen.getByTestId("skill-lint-hidden-1");
+    expect(
+      within(screen.getByTestId("skill-lint-hidden-1")).getByText(
+        "Left out: hidden by the workspace skill of this name",
+      ),
+    ).toBeInTheDocument();
+    const hidden = await openSkill("skill-lint-hidden-1");
     expect(within(hidden).getByText("Every workspace")).toBeInTheDocument();
     expect(
       within(hidden).getByText("Left out: hidden by the workspace skill of this name"),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Every skill a chat in alpha gets/)).toBeInTheDocument();
+    expect(screen.getByText(/Every skill a chat in alpha can get/)).toBeInTheDocument();
     expect(asked[0]).toMatchObject({ plane: "p", workspace: "alpha" });
   });
 
@@ -311,15 +352,15 @@ describe("the Skill studio", () => {
       };
     });
 
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio();
     const row = await screen.findByTestId("skill-scratch");
     expect(within(row).getByText(/local project/)).toBeInTheDocument();
-    within(row).getByRole("button", { name: "Share" }).click();
+    within(await openSkill("skill-scratch"))
+      .getByRole("button", { name: "Share" })
+      .click();
 
     await waitFor(() =>
-      expect(
-        within(screen.getByTestId("skill-scratch")).queryByRole("button", { name: "Share" }),
-      ).toBeNull(),
+      expect(within(screen.getByTestId("skill-scratch")).getByText("project")).toBeInTheDocument(),
     );
     expect(calls.filter((cmd) => cmd === "skill_studio")).toHaveLength(2);
   });
@@ -352,11 +393,15 @@ describe("the Skill studio", () => {
     // SK-35 (#3013): the core finishes or undoes it, and the studio says which in one line.
     const line = "release's delete was cut short; it is finished now, and Restore brings it back";
     const calls = cutShort({ settled: [line], unsettled: [] });
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio();
 
     const notice = await screen.findByRole("status", { name: /Skill delete cut short/ });
     expect(notice).toHaveTextContent(line);
-    expect(notice).not.toHaveClass("notice-trouble");
+    // The notice family's box says its tone (#2912).
+    expect(notice.closest('[data-scope="notice"][data-part="root"]')).toHaveAttribute(
+      "data-variant",
+      "news",
+    );
     await waitFor(() =>
       expect(calls.filter((cmd) => cmd === "skill_studio").length).toBeGreaterThanOrEqual(2),
     );
@@ -370,12 +415,15 @@ describe("the Skill studio", () => {
     const finished =
       "deploy's delete was cut short; it is finished now, and Restore brings it back";
     cutShort({ settled: [finished], unsettled: [failed] });
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio();
 
     const notice = await screen.findByRole("status", {
       name: /A skill delete could not be finished/,
     });
-    expect(notice).toHaveClass("notice-trouble");
+    expect(notice.closest('[data-scope="notice"][data-part="root"]')).toHaveAttribute(
+      "data-variant",
+      "trouble",
+    );
     expect(notice).toHaveTextContent(`${failed} ${finished}`);
   });
 
@@ -389,7 +437,7 @@ describe("the Skill studio", () => {
       harnesses: [],
       clashes: [],
     });
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio();
     expect(await screen.findByTestId("skill-studio-off")).toBeInTheDocument();
   });
 
@@ -478,30 +526,57 @@ describe("the Skill studio", () => {
       };
     });
 
-    render(<SkillStudioTab plane="p" scope={asPersona("ops")} changed={0} />);
+    renderStudio(asPersona("ops"));
 
-    const triage = await screen.findByTestId("skill-triage");
-    expect(within(triage).getByText("persona")).toBeInTheDocument();
-    expect(within(triage).queryByRole("button", { name: /Remove/ })).toBeNull();
+    const user = userEvent.setup();
     expect(
-      within(screen.getByTestId("skill-deploy")).getByRole("button", {
-        name: "Remove deploy from ops",
+      within(await screen.findByTestId("skill-triage")).getByText("persona"),
+    ).toBeInTheDocument();
+    const triage = await openSkill("skill-triage", user);
+    expect(within(triage).queryByRole("button", { name: /Take .* out of/ })).toBeNull();
+    expect(
+      within(await openSkill("skill-deploy", user)).getByRole("button", {
+        name: "Take deploy out of ops",
       }),
     ).toBeInTheDocument();
     expect(
-      within(screen.getByTestId("skill-superpowers:tdd")).getByText(/purlis can't check/),
+      within(await openSkill("skill-superpowers:tdd", user)).getByText(/purlis can't check/),
     ).toBeInTheDocument();
     expect(screen.getByRole("form", { name: "Add a skill to ops" })).toBeInTheDocument();
-    expect(screen.getByText(/Every skill a chat as ops gets/)).toBeInTheDocument();
+    expect(screen.getByText(/Every skill a chat as ops can get/)).toBeInTheDocument();
     expect(asked[0]).toMatchObject({ plane: "p", workspace: null, persona: "ops" });
   });
 
-  it("keys a persona's studio apart from every workspace's", () => {
-    const view = skillStudioView(asPersona("ops"));
-    expect(view.key).toBe("persona/ops");
-    expect(scopeOf(view)).toEqual(asPersona("ops"));
-    expect(scopeOf(skillStudioView(AT_THE_ROOT))).toEqual(AT_THE_ROOT);
-    expect(scopeOf(skillStudioView(inWorkspace("ops")))).toEqual(inWorkspace("ops"));
+  it("opens one tab per project, at the page and scope each way in names (#3681)", () => {
+    const free = () => false;
+    for (const scope of [AT_THE_ROOT, inWorkspace("ops"), asPersona("ops")])
+      expect(studioOpening(skillStudioView(scope), free)).toEqual({
+        tab: { from: null, view: "skill-studio", key: "" },
+        place: { page: "library", scope },
+      });
+    expect(studioOpening(skillStudioAt(inWorkspace("ops"), "sources"), free).place).toEqual({
+      page: "sources",
+      scope: inWorkspace("ops"),
+    });
+    // A tab put back from an older launch, keyed by its scope, is the one tab on its Library.
+    expect(
+      studioOpening({ from: null, view: "skill-studio", key: "persona/ops" }, () => true),
+    ).toEqual({
+      tab: { from: null, view: "skill-studio", key: "" },
+      place: { page: "library", scope: asPersona("ops") },
+    });
+    // ⌘-click: a tab of its own, beside the ones open.
+    const open = new Set(["", "#2"]);
+    expect(
+      studioOpening(
+        skillStudioAt(AT_THE_ROOT, "library", { newTab: true }),
+        (key) => !open.has(key),
+      ).tab.key,
+    ).toBe("#3");
+    // A studio tab itself opens as itself.
+    expect(studioOpening({ from: null, view: "skill-studio", key: "#2" }, free)).toEqual({
+      tab: { from: null, view: "skill-studio", key: "#2" },
+    });
     expect(skillStudioTitle(asPersona("ops"))).toBe("Skill studio · ops");
   });
 
@@ -520,7 +595,7 @@ describe("the Skill studio", () => {
     expect(row(true)?.does).toEqual({
       verb: "openView",
       view: skillStudioView(asPersona("ops")),
-      title: "Skill studio · ops",
+      title: SKILL_STUDIO_TITLE,
     });
     expect(row(false)).toBeUndefined();
   });
@@ -598,34 +673,15 @@ function withClaudeCode(offLangfuse: boolean) {
         outside: "repo",
         owner: { kind: "repo", name: "api" },
         outcome: "both-load",
+        said: "the repo api has a skill of this name too, and a chat there gets both",
       },
     ],
     harnesses: [
       {
         harness: "claude",
         title: "Claude Code",
-        unsupported: null,
-        only_off: null,
         repo_left_out: [],
-        trouble: null,
-        plugins: [
-          {
-            id: "figma@official",
-            name: "figma",
-            origin: "official, user",
-            installed: true,
-            state: "not-set",
-            pinned: null,
-          },
-          {
-            id: "purlis@inline",
-            name: "purlis",
-            origin: "",
-            installed: false,
-            state: "on",
-            pinned: "purlis@inline is always on: it is purlis's own plugin",
-          },
-        ],
+        own: null,
         skills: [
           {
             ...ROW,
@@ -659,7 +715,7 @@ function withClaudeCode(offLangfuse: boolean) {
             owner: { kind: "plugin", name: "figma" },
             switch: {
               kind: "not",
-              why: "Claude Code turns a plugin's skill off only with the whole plugin, figma",
+              why: "it comes with the plugin figma, which Claude Code turns on or off itself, so its skills are shown read-only",
             },
           },
           {
@@ -682,11 +738,8 @@ function withClaudeCode(offLangfuse: boolean) {
       {
         harness: "opencode",
         title: "opencode",
-        unsupported: "plugins for opencode are not supported yet — it has no switch",
-        only_off: null,
         repo_left_out: [],
-        trouble: null,
-        plugins: [],
+        own: null,
         skills: [],
       },
     ],
@@ -694,164 +747,56 @@ function withClaudeCode(offLangfuse: boolean) {
 }
 
 describe("each program's own skills in the Skill studio (SK-6)", () => {
-  it("lists them read only with whose each is, and says plainly where one cannot be switched", async () => {
-    answering(withClaudeCode(false));
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
-
-    const claude = await screen.findByTestId("skill-studio-claude");
-    expect(within(claude).getByRole("heading", { name: "Claude Code" })).toBeInTheDocument();
-    const own = within(claude).getByTestId("found-claude-langfuse");
-    expect(within(own).getByText("You")).toBeInTheDocument();
-    expect(within(own).getByRole("button", { name: "Turn off" })).toBeInTheDocument();
-    const plugin = within(claude).getByTestId("found-claude-figma:frame");
-    expect(within(plugin).queryByRole("button")).toBeNull();
-    expect(
-      within(plugin).getByText(
-        /Claude Code turns a plugin's skill off only with the whole plugin, figma/,
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(within(claude).getByTestId("found-claude-review")).getByText("Repo api"),
-    ).toBeInTheDocument();
-    const pinned = within(claude).getByTestId("plugin-claude-purlis@inline");
-    expect(within(pinned).queryByRole("button")).toBeNull();
-    expect(
-      within(screen.getByTestId("skill-studio-opencode")).getByText(
-        /plugins for opencode are not supported yet/,
-      ),
-    ).toBeInTheDocument();
-  });
-
   it("marks a project skill a repo also has, and says a built-in skill is always on", async () => {
     answering(withClaudeCode(false));
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio();
 
-    expect(await screen.findByTestId("clash-review")).toHaveTextContent(
+    const user = userEvent.setup();
+    await openSkill("skill-review", user);
+    expect(await screen.findByTestId("skill-banner-clash")).toHaveTextContent(
       "the repo api has a skill of this name too, and a chat there gets both",
     );
     expect(
-      within(screen.getByTestId("skill-secrets")).getByText(/cannot be turned off/),
-    ).toBeInTheDocument();
+      within(await openSkill("skill-secrets", user)).getByTestId("skill-built-in"),
+    ).toHaveTextContent(/can't be edited, moved or turned off/);
   });
 
-  it("turns one off through the core and reads the project again", async () => {
-    let off = false;
-    const asked: unknown[] = [];
-    mockIPC((cmd, args) => {
-      if (cmd === "skill_studio_switch") {
-        asked.push(args);
-        off = true;
-        return null;
-      }
-      if (cmd === "skill_studio") return withClaudeCode(off);
-      throw new Error(`unexpected ${cmd}`);
-    });
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
-
-    const row = await screen.findByTestId("found-claude-langfuse");
-    within(row).getByRole("button", { name: "Turn off" }).click();
-
-    await waitFor(() =>
-      expect(
-        within(screen.getByTestId("found-claude-langfuse")).getByText(
-          "Left out: turned off for this project's chats",
-        ),
-      ).toBeInTheDocument(),
-    );
-    expect(asked).toEqual([
-      { plane: "p", workspace: null, harness: "claude", what: "skill", id: "langfuse", on: false },
-    ]);
-  });
-
-  it("says what the core refused, and changes nothing", async () => {
-    mockIPC((cmd) => {
-      if (cmd === "skill_studio_switch") throw "Claude Code turns it off only with its plugin";
-      if (cmd === "skill_studio") return withClaudeCode(false);
-      throw new Error(`unexpected ${cmd}`);
-    });
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
-    const plugin = await screen.findByTestId("plugin-claude-figma@official");
-    within(plugin).getByRole("button", { name: "Turn off" }).click();
-    expect(
-      await screen.findByText("Claude Code turns it off only with its plugin"),
-    ).toBeInTheDocument();
-  });
-
-  it("offers Codex a plugin's way back as Leave to Codex, saying its own config decides", async () => {
+  it("marks no clash on a copy left out, which no chat gets (SK-46)", async () => {
     const studio = withClaudeCode(false);
-    const codexHarness = {
-      harness: "codex",
-      title: "Codex",
-      unsupported: null,
-      only_off: "Codex is handed a plugin only to turn it off",
-      repo_left_out: [],
-      trouble: null,
-      plugins: [
+    answering({
+      ...studio,
+      skills: [
         {
-          id: "zp@zmkt",
-          name: "zp",
-          origin: "zmkt, on in config.toml",
-          installed: true,
-          state: "off",
-          pinned: null,
+          ...studio.skills[0],
+          on: false,
+          left_out: "hidden by another project skill of this name",
         },
+        ...studio.skills.slice(1),
       ],
-      skills: [],
-    };
-    answering({ ...studio, harnesses: [...studio.harnesses, codexHarness] });
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    });
+    renderStudio();
 
-    const codex = await screen.findByTestId("skill-studio-codex");
-    const plugin = within(codex).getByTestId("plugin-codex-zp@zmkt");
-    expect(within(plugin).getByRole("button", { name: "Leave to Codex" })).toBeInTheDocument();
-    expect(
-      within(codex).getByText(/Codex's own config decides whether a plugin is on/),
-    ).toBeInTheDocument();
+    await openSkill("skill-review");
+    expect(screen.queryByTestId("skill-banner-clash")).toBeNull();
   });
 
-  it("says a Codex or opencode chat in the repo gets the repo's copy alone", async () => {
+  it("marks a clash in the core's words, as `purlis skill list` says it (SK-46)", async () => {
     const studio = withClaudeCode(false);
-    studio.clashes = [{ ...studio.clashes[0], harness: "opencode", outcome: "repo-wins" }];
+    studio.clashes = [
+      {
+        ...studio.clashes[0],
+        harness: "opencode",
+        outcome: "repo-wins",
+        said: "the repo api has a skill of this name too, and opencode chats there get the repo's copy alone",
+      },
+    ];
     answering(studio);
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio();
 
-    expect(await screen.findByTestId("clash-review")).toHaveTextContent(
+    await openSkill("skill-review");
+    expect(await screen.findByTestId("skill-banner-clash")).toHaveTextContent(
       "the repo api has a skill of this name too, and opencode chats there get the repo's copy alone",
     );
-  });
-
-  it("lists under a program each project skill a repo leaves out of its chats, with why (SK-53)", async () => {
-    const studio = withClaudeCode(false);
-    const opencode = {
-      ...studio.harnesses[1],
-      repo_left_out: [
-        {
-          ...ROW,
-          name: "ship",
-          level: "workspace" as const,
-          label: "workspace",
-          on: false,
-          left_out:
-            "purlis could not read the skills folder of web whole, so a copy of this skill may be there, and a chat in that repo would get that one",
-          folder: "workspaces/alpha/skills/ship",
-        },
-      ],
-    };
-    answering({ ...studio, harnesses: [studio.harnesses[0], opencode] });
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
-
-    const section = await screen.findByTestId("skill-studio-opencode");
-    expect(
-      within(section).getByText(
-        "opencode chats in a repo here start without 1 skill of this project's:",
-      ),
-    ).toBeInTheDocument();
-    const row = within(section).getByTestId("repo-left-out-opencode-ship");
-    expect(row).toHaveTextContent("workspace");
-    expect(row).toHaveTextContent("Left out: purlis could not read the skills folder of web whole");
-    expect(
-      within(screen.getByTestId("skill-studio-claude")).queryByText(/start without/),
-    ).toBeNull();
   });
 
   it("renames the project's copy from the clash mark, through the studio's own Rename", async () => {
@@ -865,11 +810,12 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
       if (cmd === "skills_deleted") return [];
       throw new Error(`unexpected ${cmd}`);
     });
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio();
 
-    const clash = await screen.findByTestId("clash-review");
-    within(clash).getByRole("button", { name: "Rename the project's copy" }).click();
-    const form = await screen.findByRole("form", { name: "Rename review" });
-    expect(within(form).getByLabelText("New name")).toBeInTheDocument();
+    await openSkill("skill-review");
+    await screen.findByTestId("skill-banner-clash");
+    screen.getByRole("button", { name: "Rename the project's copy" }).click();
+    const dialog = await screen.findByRole("dialog", { name: "Rename review" });
+    expect(within(dialog).getByLabelText("New name")).toBeInTheDocument();
   });
 });

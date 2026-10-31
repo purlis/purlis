@@ -9,6 +9,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { type Interrupts, countInterrupts, withinTheBudget } from "./interruptBudget";
 import { findStripNamed, stripNamed } from "./test-strips";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * The first run (FR-4, #603), now the welcome's Create a project page (#1812): a new machine
@@ -323,9 +324,7 @@ describe("the first run", () => {
 
     await openRepoByPath(REPO);
 
-    expect(
-      await screen.findByText("GitLab was added to this project's forges."),
-    ).toBeInTheDocument();
+    expect(await findResult("GitLab was added to this project's forges.")).toBeInTheDocument();
   });
 
   it("costs three prompts at most, on its longest way to a chat (W10)", async () => {
@@ -853,7 +852,7 @@ describe("the repo's agent instructions", () => {
     );
 
     const pane = await screen.findByRole("region", { name: "Memory from the repo · widget" });
-    expect(await within(pane).findByText("U+200B", { selector: "mark" })).toBeInTheDocument();
+    expect(await within(pane).findByText("⟦U+200B⟧", { selector: "mark" })).toBeInTheDocument();
     expect(within(pane).getByText(/holds an invisible character/)).toBeInTheDocument();
     const box = within(pane).getByRole("checkbox", { name: "widget/CLAUDE.md" });
     expect(box).not.toBeChecked();

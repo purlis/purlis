@@ -18,6 +18,7 @@ fn builds(image: &str) -> Bound {
         runner: "01JB0RUNNER0000000000000000".into(),
         runner_key: "ab".repeat(32),
         runner_image: "a".repeat(64),
+        pod: String::new(),
         engine: "this machine's Docker".into(),
     }
 }
@@ -86,6 +87,19 @@ fn a_run_that_passes_every_check_is_the_personas_tool_on_the_pool_as_it_is_now()
             run: "r1".into(),
         })
     );
+}
+
+#[test]
+fn a_cluster_pool_not_marked_is_refused_saying_how_and_nobody_is_asked() {
+    let ask = kubectl_asked();
+    let not_marked = |_: &Path, pool: &str| Err(purlis_core::poollogins::not_marked_said(pool));
+    let gate = Gate {
+        owned: &not_marked,
+        ..a_gate(&ask)
+    };
+    let refused = refused(&gate);
+    assert!(refused.contains("kubectl was sent no value"), "{refused}");
+    assert!(refused.contains("This is my own"), "{refused}");
 }
 
 #[test]
@@ -166,6 +180,35 @@ fn a_run_asking_for_another_vault_or_hand_over_is_sent_nothing() {
     }
 }
 
+/// The tool's `args` and the forge's built-in refusals (#3421) are judged here too, before
+/// anything is read or minted, and not only by the runner's host.
+#[test]
+fn a_run_with_arguments_the_tool_does_not_allow_is_sent_nothing() {
+    let only_get = |_: &Path, _: &str| {
+        let mut tool = kubectl();
+        tool.args = Some(vec!["get".into()]);
+        (vec![tool.clone()], vec![tool])
+    };
+    let ask = kubectl_asked();
+    let gate = Gate {
+        tools: &only_get,
+        ..a_gate(&ask)
+    };
+    assert!(refused(&gate).contains("pods"), "{}", refused(&gate));
+    let gh = || Tool::one("gh", "team", "GH_TOKEN", As::Env, "token");
+    let gh_tools = |_: &Path, _: &str| (vec![gh()], vec![gh()]);
+    let mut auth = kubectl_asked();
+    auth.runs_as = Some("gh".into());
+    auth.secret_exec.file = Vec::new();
+    auth.secret_exec.env = vec!["GH_TOKEN=token".into()];
+    auth.secret_exec.command = vec!["/opt/gh/gh".into(), "auth".into(), "token".into()];
+    let gate = Gate {
+        tools: &gh_tools,
+        ..a_gate(&auth)
+    };
+    assert!(refused(&gate).contains("auth"), "{}", refused(&gate));
+}
+
 #[test]
 fn a_vault_the_persona_may_not_use_here_is_sent_nothing() {
     let ask = kubectl_asked();
@@ -221,7 +264,7 @@ fn deciding(
     reads: Arc<Mutex<u32>>,
     owned: Arc<Mutex<Bound>>,
     within: Duration,
-) -> mpsc::Receiver<Result<Handed, String>> {
+) -> mpsc::Receiver<Result<Approved, String>> {
     let (done, decided) = mpsc::channel();
     std::thread::spawn(move || {
         let ask = kubectl_asked();
@@ -234,7 +277,7 @@ fn deciding(
             *reads.lock().unwrap() += 1;
             Ok(vec![(
                 tool.values[0].key.clone(),
-                "v-kubeconfig".to_owned(),
+                Zeroizing::new("v-kubeconfig".to_owned()),
             )])
         };
         let checked = checked(&gate).expect("passes the gate");
@@ -269,7 +312,7 @@ type Deciding = (
     Arc<AtomicBool>,
     Arc<Mutex<u32>>,
     Arc<Mutex<Bound>>,
-    mpsc::Receiver<Result<Handed, String>>,
+    mpsc::Receiver<Result<Approved, String>>,
 );
 
 fn a_run_deciding(within: Duration) -> Deciding {
@@ -301,7 +344,8 @@ fn a_run_waits_on_the_person_and_once_allowed_is_sent_its_values_for_that_run() 
     let handed = decided
         .recv_timeout(Duration::from_secs(10))
         .unwrap()
-        .expect("sent");
+        .expect("sent")
+        .handed;
     assert!(
         handed.is_for(6, "kubectl", "r1"),
         "bound to the run: {handed:?}"
@@ -402,6 +446,49 @@ fn a_pool_that_changed_while_the_person_was_asked_is_sent_nothing() {
 }
 
 #[test]
+fn a_pool_that_changed_while_its_vault_was_read_is_sent_nothing() {
+    let tools = Arc::new(PoolTools::default());
+    let gone = Arc::new(AtomicBool::new(false));
+    let owned = Arc::new(Mutex::new(builds("a")));
+    let (done, decided) = mpsc::channel();
+    {
+        let (tools, gone, owned) = (Arc::clone(&tools), gone, owned);
+        std::thread::spawn(move || {
+            let ask = kubectl_asked();
+            let shown = Arc::clone(&owned);
+            let now = move |_: &Path, _: &str| Ok(shown.lock().unwrap().clone());
+            let gate = Gate {
+                owned: &now,
+                ..a_gate(&ask)
+            };
+            let read = move |tool: &Tool| {
+                *owned.lock().unwrap() = builds("b");
+                Ok(vec![(
+                    tool.values[0].key.clone(),
+                    Zeroizing::new("v-kubeconfig".to_owned()),
+                )])
+            };
+            let checked = checked(&gate).expect("passes the gate");
+            let mut said = Vec::new();
+            let _ = done.send(answered(
+                &gate,
+                checked,
+                &waiting(&tools, &gone, &read, Duration::from_secs(60)),
+                &mut said,
+            ));
+        });
+    }
+    let asked = the_run_asked(&tools);
+    tools.answer(6, asked.run, true);
+    let refused = decided.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert!(
+        refused
+            .expect_err("changed")
+            .contains("changed while the person was asked")
+    );
+}
+
+#[test]
 fn a_run_answered_already_or_of_another_chat_is_not_answered_again() {
     let tools = PoolTools::default();
     let (_answered, run) = tools.ask(PoolToolWaits {
@@ -418,4 +505,210 @@ fn a_run_answered_already_or_of_another_chat_is_not_answered_again() {
     assert!(tools.answer(7, run, true).is_none(), "another chat's");
     assert!(tools.answer(6, run, true).is_some());
     assert!(tools.answer(6, run, true).is_none(), "once");
+}
+
+/// What a run the person allowed sends: chat 6's run `r1` of kubectl on pool builds.
+fn allowed() -> Approved {
+    let ask = kubectl_asked();
+    let checked = checked(&a_gate(&ask)).expect("passes the gate");
+    Approved {
+        handed: Handed::of(
+            6,
+            "kubectl",
+            "r1",
+            [("kubeconfig".to_owned(), "v-kubeconfig".to_owned())],
+        ),
+        checked,
+    }
+}
+
+/// Every line of chat 6's trace in `project`.
+fn traced(project: &Path) -> Vec<serde_json::Value> {
+    std::fs::read_to_string(purlis_core::trace::file(project, "6"))
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("a trace line"))
+        .collect()
+}
+
+#[test]
+fn values_sent_to_a_runner_are_recorded_on_this_desktop_as_forwarded() {
+    let desktop = tempfile::tempdir().unwrap();
+    let mut went = None;
+
+    let sent = sent(desktop.path(), allowed(), |handed| {
+        went = Some(handed);
+        Ok(())
+    });
+
+    assert!(sent.is_ok());
+    assert!(went.is_some_and(|handed| handed.is_for(6, "kubectl", "r1")));
+    let lines = traced(desktop.path());
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    let forwarded = &lines[0];
+    assert_eq!(forwarded["event"], "secret.forwarded");
+    assert_eq!(forwarded["vault"], "team");
+    assert_eq!(forwarded["key_names"], serde_json::json!(["kubeconfig"]));
+    assert_eq!(forwarded["runner"], "01JB0RUNNER0000000000000000");
+    assert_eq!(forwarded["pool"], "builds");
+    assert_eq!(forwarded["chat"], 6);
+    assert_eq!(forwarded["persona"], "devops");
+    assert_eq!(forwarded["tool"], "kubectl");
+    assert!(
+        !forwarded.to_string().contains("v-kubeconfig"),
+        "{forwarded}"
+    );
+}
+
+#[test]
+fn values_that_could_not_be_sent_are_not_recorded_as_sent() {
+    let desktop = tempfile::tempdir().unwrap();
+
+    let sent = sent(desktop.path(), allowed(), |_| Err(()));
+
+    assert!(sent.is_err());
+    assert_eq!(traced(desktop.path()), Vec::<serde_json::Value>::new());
+}
+
+/// #3408: values the person allowed for a command that has gone since are never handed on, and
+/// not recorded as sent.
+#[test]
+fn values_for_a_command_that_went_after_the_answer_are_never_handed_on() {
+    let desktop = tempfile::tempdir().unwrap();
+    let gone = AtomicBool::new(true);
+
+    let sent = sent(
+        desktop.path(),
+        allowed(),
+        while_its_asker_waits(&gone, |_| panic!("handed on")),
+    );
+
+    assert!(sent.is_err());
+    assert_eq!(traced(desktop.path()), Vec::<serde_json::Value>::new());
+}
+
+#[test]
+fn values_too_large_for_the_link_are_never_handed_on() {
+    let ask = kubectl_asked();
+    let huge = "v".repeat(purlis_session_protocol::link::MOST_CONTROL_FRAME_BYTES);
+    let handed = Handed::of(6, "kubectl", "r1", [("kubeconfig".to_owned(), huge)]);
+    let approved = Approved {
+        handed,
+        checked: checked(&a_gate(&ask)).expect("passes the gate"),
+    };
+    let desktop = tempfile::tempdir().unwrap();
+
+    assert!(sent(desktop.path(), approved, hand_on_the_link).is_err());
+    assert_eq!(traced(desktop.path()), Vec::<serde_json::Value>::new());
+}
+
+/// A mint that answers a token only for chat 6's `gh` on a runner.
+fn minted_for_chat_6(
+    _: &Ctx,
+    chat: &purlis_core::forge::apptoken::For<'_>,
+    tool: &Tool,
+) -> Result<Zeroizing<String>, String> {
+    if chat.chat == 6
+        && chat.on_a_runner
+        && tool.name == "gh"
+        && chat.started.is_some_and(|started| started.len() == 1)
+    {
+        Ok(Zeroizing::new("minted-for-the-runner-7e1f".to_owned()))
+    } else {
+        Err("asked for another chat or tool".to_owned())
+    }
+}
+
+fn refused_mint(
+    _: &Ctx,
+    _: &purlis_core::forge::apptoken::For<'_>,
+    _: &Tool,
+) -> Result<Zeroizing<String>, String> {
+    Err("installed on none of this chat's repos".to_owned())
+}
+
+/// A GitHub App's tool on a runner (#2053): its key is sent the token minted for the chat, as
+/// that key's one value, and the token is remembered as a value so this desktop masks it.
+#[test]
+fn a_github_app_tool_on_a_runner_is_sent_the_token_minted_for_it_as_its_key_s_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = Ctx::new(dir.path(), Env::of(&[]));
+    let started = [purlis_core::forge::apptoken::Started {
+        clone: dir.path().join("workspaces/ws/api"),
+        git: Some((1, 2)),
+    }];
+    let gh = Tool {
+        mint: Some(purlis_core::sandbox::tools::mint::Mint {
+            app: "Iv23liExample".into(),
+        }),
+        ..Tool::one("gh", "forge", "GH_TOKEN", As::Env, "app-key")
+    };
+    let chat = purlis_core::forge::apptoken::For {
+        root: dir.path(),
+        chat: 6,
+        folder: None,
+        here: None,
+        writes: &[],
+        started: Some(&started),
+        on_a_runner: true,
+        config_root: None,
+        ends_seen: None,
+    };
+    let sent: Vec<(String, String)> = minted(&ctx, &gh, &chat, &minted_for_chat_6)
+        .unwrap()
+        .into_iter()
+        .map(|(key, value)| (key, value.to_string()))
+        .collect();
+    assert_eq!(
+        sent,
+        [(
+            "app-key".to_owned(),
+            "minted-for-the-runner-7e1f".to_owned()
+        )]
+    );
+    assert!(purlis_core::secrets::seen::holds(
+        "it said minted-for-the-runner-7e1f"
+    ));
+    // A refused mint sends nothing.
+    assert_eq!(
+        minted(&ctx, &gh, &chat, &refused_mint).map(|sent| sent.len()),
+        Err("installed on none of this chat's repos".to_owned())
+    );
+}
+
+/// A runner chat whose session start this window did not see (#2053): no record of its
+/// workspace clones then, so nothing is minted, and the mint is never asked.
+#[test]
+fn a_runner_chat_with_no_recorded_start_is_minted_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = Ctx::new(dir.path(), Env::of(&[]));
+    let gh = Tool {
+        mint: Some(purlis_core::sandbox::tools::mint::Mint {
+            app: "Iv23liExample".into(),
+        }),
+        ..Tool::one("gh", "forge", "GH_TOKEN", As::Env, "app-key")
+    };
+    let chat = purlis_core::forge::apptoken::For {
+        root: dir.path(),
+        chat: 6,
+        folder: None,
+        here: None,
+        writes: &[],
+        started: None,
+        on_a_runner: true,
+        config_root: None,
+        ends_seen: None,
+    };
+    assert_eq!(
+        minted(&ctx, &gh, &chat, &never_minted).map(|sent| sent.len()),
+        Err(NO_START_RECORDED.to_owned())
+    );
+}
+
+fn never_minted(
+    _: &Ctx,
+    _: &purlis_core::forge::apptoken::For<'_>,
+    _: &Tool,
+) -> Result<Zeroizing<String>, String> {
+    panic!("a runner chat with no recorded start is never minted for")
 }

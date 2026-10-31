@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use purlis_core::engine::Size;
-use purlis_host::Hosting;
 use purlis_host::standin::{Savers, StandIns};
+use purlis_host::{ComposesNothing, Hosting};
 use purlis_session_protocol::session::{self, Exit};
 
 use super::*;
@@ -65,6 +65,150 @@ pub(crate) fn in_memory_with_a_runner<H: session::Host + Clone, R: session::Host
     let connection = Arc::new(Connection::default());
     connection.ready_relaying(link, dial, relayed);
     connection
+}
+
+/// **Removing a pool ends the window's links to its runner**: each chat on them is told, the host
+/// sees the link close, a pool of another name keeps its own, and the next link is dialled anew.
+#[test]
+fn removing_a_pool_ends_its_links_and_the_next_is_dialled_anew() {
+    let runtime = a_runtime();
+    let hosting = Hosting::running_with(ComposesNothing, StandIns::default());
+    let window = Arc::new(
+        runtime
+            .block_on(a_link_to(hosting.clone(), || {}))
+            .expect("the window speaks to the host"),
+    );
+    let handle = runtime.handle().clone();
+    let dial: Dial = Arc::new({
+        let (handle, hosting) = (handle.clone(), hosting.clone());
+        move |within, naming| open_within(&handle, within, a_named_link_to(hosting.clone(), naming))
+    });
+    let dials = Arc::new(Mutex::new(Vec::<String>::new()));
+    let closed = Arc::new(Mutex::new(Vec::<String>::new()));
+    let relayed: RelayedDial = Arc::new({
+        let (dials, closed) = (Arc::clone(&dials), Arc::clone(&closed));
+        move |within, _naming, pool: &str| {
+            dials.lock().unwrap().push(pool.to_owned());
+            let (hosting, closed, pool) = (hosting.clone(), Arc::clone(&closed), pool.to_owned());
+            open_within(&handle, within, async move {
+                let link =
+                    a_bare_link_to(hosting, move || closed.lock().unwrap().push(pool)).await?;
+                HostLink::over(link, tokio::runtime::Handle::current(), || {}).await
+            })
+        }
+    });
+    let connection = Arc::new(Connection::default());
+    connection.ready_relaying(window, dial, relayed);
+    let (builds, other) = (
+        connection.to_a_pool("builds"),
+        connection.to_a_pool("other"),
+    );
+    let root = Path::new("/planes/a");
+    let link = builds.of_project(root, Duration::from_secs(5)).unwrap();
+    let kept = other.of_project(root, Duration::from_secs(5)).unwrap();
+    let (told, heard) = std::sync::mpsc::channel();
+    link.when_it_ends(
+        "chat",
+        Box::new(move |ending| {
+            let _ = told.send(matches!(ending, Ending::WithTheHost));
+        }),
+    );
+
+    connection.pool_removed("builds");
+
+    assert_eq!(
+        heard.recv_timeout(Duration::from_secs(5)),
+        Ok(true),
+        "the chat is told it ended with its host"
+    );
+    assert!(
+        builds.of_project(root, Duration::ZERO).is_err(),
+        "the window holds no link to its runner"
+    );
+    // What a chat's tab holds does not keep it open: the host sees it close while `link` is held.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while closed.lock().unwrap().is_empty() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(*closed.lock().unwrap(), ["builds"], "the host saw it close");
+    assert!(
+        link.call(session::Command::List).is_err(),
+        "nothing more goes"
+    );
+    assert!(
+        Arc::ptr_eq(&kept, &other.of_project(root, Duration::ZERO).unwrap()),
+        "another pool's stays"
+    );
+    builds.of_project(root, Duration::from_secs(5)).unwrap();
+    assert_eq!(*dials.lock().unwrap(), ["builds", "other", "builds"]);
+}
+
+/// **A link only the window's connection holds is told too**: its end is not undone as it is let
+/// go of.
+#[test]
+fn a_chat_on_a_link_nothing_else_holds_is_told_as_its_pool_is_removed() {
+    let runtime = a_runtime();
+    let connection = in_memory_with_a_runner(
+        Hosting::running_with(ComposesNothing, StandIns::default()),
+        Hosting::running_with(ComposesNothing, StandIns::default()),
+        &runtime,
+    );
+    let builds = connection.to_a_pool("builds");
+    let root = Path::new("/planes/a");
+    let (told, heard) = std::sync::mpsc::channel();
+    let link = builds.of_project(root, Duration::from_secs(5)).unwrap();
+    link.when_it_ends(
+        "chat",
+        Box::new(move |ending| {
+            let _ = told.send(matches!(ending, Ending::WithTheHost));
+        }),
+    );
+    drop(link);
+    connection.pool_removed("builds");
+    assert_eq!(heard.recv_timeout(Duration::from_secs(5)), Ok(true));
+}
+
+/// **A pool removed takes what the window held against its name**: one added under it is new.
+#[test]
+fn a_pool_removed_is_no_longer_held_untrusted_by_its_name() {
+    let window = Arc::new(Connection::default());
+    let pool = window.to_a_pool("builds");
+    let _ = pool.ran_unsandboxed();
+    assert!(window.untrusts("builds"));
+    window.pool_removed("builds");
+    assert!(!window.untrusts("builds"));
+}
+
+/// **A link dialled across its pool's removal is not kept.**
+#[test]
+fn a_link_dialled_while_its_pool_is_removed_is_not_kept() {
+    let runtime = a_runtime();
+    let hosting = Hosting::running_with(ComposesNothing, StandIns::default());
+    let window = Arc::new(
+        runtime
+            .block_on(a_link_to(hosting.clone(), || {}))
+            .expect("the window speaks to the host"),
+    );
+    let handle = runtime.handle().clone();
+    let dial: Dial = Arc::new({
+        let (handle, hosting) = (handle.clone(), hosting.clone());
+        move |within, naming| open_within(&handle, within, a_named_link_to(hosting.clone(), naming))
+    });
+    let connection = Arc::new(Connection::default());
+    let removing = Arc::downgrade(&connection);
+    let relayed: RelayedDial = Arc::new(move |within, naming, pool: &str| {
+        removing.upgrade().unwrap().pool_removed(pool);
+        open_within(&handle, within, a_named_link_to(hosting.clone(), naming))
+    });
+    connection.ready_relaying(window, dial, relayed);
+    let builds = connection.to_a_pool("builds");
+    let root = Path::new("/planes/a");
+    let refused = builds
+        .of_project(root, Duration::from_secs(5))
+        .err()
+        .unwrap();
+    assert!(refused.contains("was removed"), "{refused}");
+    assert!(builds.of_project(root, Duration::ZERO).is_err());
 }
 
 /// A `local-ui` link to `hosting` over an in-memory stream; `closed` is called once the host's
@@ -338,6 +482,7 @@ fn a_start_hands_the_host_what_the_window_composed_and_the_host_composes_it_as_t
             },
             number: 1,
             reporting: None,
+            prompt_key: None,
         },
     );
     assert_eq!(spec.env, in_the_window.env, "the same environment and PATH");
@@ -398,6 +543,49 @@ fn a_start_carries_the_run_it_begins_and_the_host_lists_it_and_names_it_as_it_en
     });
     assert_eq!(ended.as_deref(), Some(run.as_str()));
     drop(sessions);
+    drop(runtime);
+}
+
+/// #3274: a grade's chat ends with its window. The start says so to the host (1.42), and once
+/// the window's links end without a quit the host ends that chat at once, while every other
+/// waits for the window to come back.
+#[test]
+fn a_chat_that_ends_with_its_window_is_ended_by_the_host_once_the_window_goes() {
+    let runtime = a_runtime();
+    let runs = StandIns::default();
+    let hosting = Hosting::running_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        runs.clone(),
+    );
+    let (connection, window) = in_memory(hosting, &runtime);
+    let (_dir, root) = a_project();
+    let sessions = HostedSessions::new(connection, &root);
+    sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .expect("it starts");
+    let kept = runs.last();
+    sessions
+        .open(
+            None,
+            &Opening {
+                ends_with_its_window: true,
+                ..a_shell("true")
+            },
+            &|_| {},
+        )
+        .expect("it starts");
+    let graded = runs.last();
+    assert!(!graded.seen().stopped, "it runs while the window is there");
+
+    drop(sessions);
+    drop(window);
+
+    let deadline = Instant::now() + PATIENCE;
+    while !graded.seen().stopped {
+        assert!(Instant::now() < deadline, "the host never ended it");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(!kept.seen().stopped, "the other waits for its window");
     drop(runtime);
 }
 
@@ -611,6 +799,8 @@ fn a_start_the_host_numbers_otherwise_fails_and_is_closed() {
 struct HooksHeard {
     relaying: Arc<Mutex<Option<Arc<purlis_core::hookwire::relay::Relaying>>>>,
     issued: Arc<Mutex<Vec<u32>>>,
+    /// Each reply the window sent to a line the host handed on, as it came over the link.
+    replies: Arc<Mutex<Vec<serde_json::Value>>>,
     /// The project's board, kept as the window's binary keeps it in the host (#2194).
     board: purlis_core::hookchannel::KeptBoard,
 }
@@ -631,14 +821,17 @@ impl purlis_host::Hear for HooksHeard {
     fn open(
         &self,
         _project: &str,
-        _path: &std::path::Path,
+        path: &std::path::Path,
         hand_on: purlis_host::HandOn,
     ) -> Result<Option<Arc<dyn purlis_host::Channel>>, String> {
         let relaying = purlis_core::hookwire::relay::Relaying::new(self.board.handing_on(hand_on));
+        // As the host's own channel is told where it holds the project (#3400).
+        relaying.of_project_at(path);
         *self.relaying.lock().unwrap() = Some(Arc::clone(&relaying));
         Ok(Some(Arc::new(StandInChannel {
             relaying,
             issued: Arc::clone(&self.issued),
+            replies: Arc::clone(&self.replies),
             board: self.board.clone(),
         })))
     }
@@ -647,6 +840,7 @@ impl purlis_host::Hear for HooksHeard {
 struct StandInChannel {
     relaying: Arc<purlis_core::hookwire::relay::Relaying>,
     issued: Arc<Mutex<Vec<u32>>>,
+    replies: Arc<Mutex<Vec<serde_json::Value>>>,
     board: purlis_core::hookchannel::KeptBoard,
 }
 
@@ -666,6 +860,7 @@ impl purlis_host::Channel for StandInChannel {
     fn forget(&self, _number: u32) {}
 
     fn replied(&self, id: u64, reply: serde_json::Value) {
+        self.replies.lock().unwrap().push(reply.clone());
         self.relaying
             .replied(id, serde_json::from_value(reply).expect("a reply"));
     }
@@ -727,8 +922,8 @@ fn heard_in_the_window() -> Heard {
 
 /// A window on `hosting`, over a link of its own, whose hooks for the project at `root` hear
 /// what the host hands on.
-fn a_window_of(
-    hosting: &Hosting,
+fn a_window_of<H: session::Host + Clone>(
+    hosting: &H,
     root: &std::path::Path,
     runtime: &tokio::runtime::Runtime,
 ) -> (
@@ -753,6 +948,97 @@ fn a_window_of(
     let sessions = HostedSessions::new(connection, root);
     sessions.hear_through(hooks.relayed_from_the_host().expect("relayed"));
     (link, hooks, sessions, moved)
+}
+
+/// Input that never ends while its sender is held: an asker that is still there.
+struct StillThere(std::sync::mpsc::Receiver<()>);
+
+impl std::io::Read for StillThere {
+    fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+        let _ = self.0.recv();
+        Ok(0)
+    }
+}
+
+/// What a command's asker is written, as it comes.
+#[derive(Clone, Default)]
+struct Written(Arc<Mutex<Vec<u8>>>);
+
+impl std::io::Write for Written {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Written {
+    fn says(&self, text: &str) -> bool {
+        String::from_utf8_lossy(&self.0.lock().unwrap()).contains(text)
+    }
+}
+
+/// #3408: a host this window's link reaches through a relay, which says the link to it went
+/// down, let go of every line it had handed on: a `secret exec` of it that waits here ends its
+/// input, whose asker is still there on that host's side, so whatever waits on it here hears it
+/// went.
+#[test]
+fn a_secret_exec_of_a_host_the_relay_lost_ends_here() {
+    use std::io::{BufRead, Write};
+    let runtime = a_runtime();
+    let runs = StandIns::default();
+    let channel = HooksHeard::default();
+    let hosting = Hosting::hearing_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        runs.clone(),
+        channel.clone(),
+    );
+    let between = Between::new(hosting.clone(), false);
+    let pushes = between.pushes.clone();
+    let (dir, root) = a_project();
+    let (link, hooks, sessions, _moved) = a_window_of(&between, &root, &runtime);
+    hooks.exec_secrets_with(Arc::new(|_ask, reader, mut writer, _told| {
+        let _ = writeln!(writer, "began");
+        for _ in reader.lines() {}
+        let _ = writeln!(writer, "its input ended");
+    }));
+    let chat = sessions
+        .open(None, &a_shell("true"), &|id| {
+            hooks.board().opened(id, None, None)
+        })
+        .expect("it starts");
+    let (_asker, still_there) = std::sync::mpsc::channel::<()>();
+    let written = Written::default();
+    std::thread::spawn({
+        let (hearing, written) = (channel.hearing(), written.clone());
+        move || {
+            (hearing.secret_exec)(
+                purlis_core::secrets::brokered::Ask {
+                    chat,
+                    ..Default::default()
+                },
+                Box::new(std::io::BufReader::new(StillThere(still_there))),
+                Box::new(written),
+            );
+        }
+    });
+    until("the command begins in the window", || written.says("began"));
+
+    pushes
+        .send(session::Pushed::LinkDown {
+            why: "the link to it ended".into(),
+            key_changed: false,
+            gone: false,
+        })
+        .unwrap();
+
+    until("its input ends in the window", || {
+        written.says("its input ended")
+    });
+    drop((link, dir));
 }
 
 impl Heard {
@@ -820,6 +1106,29 @@ fn a_report_the_host_hears_moves_the_windows_board_and_its_needs_you() {
     let last = moved.last().expect("the window is told");
     assert_eq!((last.session, last.needs_you), (id, true));
     assert_eq!(last.queue, [id]);
+}
+
+#[test]
+fn a_hook_lines_record_goes_back_naming_no_path_to_a_host_that_said_it_uses_none() {
+    // The host's push of the line says it records it under the project as it holds it (1.40,
+    // #3400): the record the window's hearing sends back with its reply names no project path.
+    let heard = heard_in_the_window();
+    let id = heard.a_chat();
+
+    let taken = (heard.channel.hearing().each)(reported(id, purlis_core::state::Event::Stop));
+
+    assert!(taken.is_ok(), "{taken:?}");
+    let replies = heard.channel.replies.lock().unwrap().clone();
+    let records: Vec<String> = replies
+        .iter()
+        .filter(|reply| reply.get("line").is_some() || reply.get("record").is_some())
+        .map(serde_json::Value::to_string)
+        .collect();
+    assert_eq!(records.len(), 1, "{replies:?}");
+    assert!(records[0].starts_with(r#"{"line":"#), "{}", records[0]);
+    assert!(!records[0].contains("plane"), "{}", records[0]);
+    let root = heard.hosted.root.display().to_string();
+    assert!(!records[0].contains(&root), "{}", records[0]);
 }
 
 #[test]
@@ -1685,6 +1994,7 @@ impl purlis_host::Compose for ComposesConfined {
 
 pub(crate) fn by_its_names() -> Named {
     Named {
+        tools_allowed: None,
         chat: None,
         run: None,
         profile: Some("work".to_owned()),
@@ -2165,6 +2475,7 @@ fn a_window_that_fell_behind_its_host_leaves_no_chat_reconnecting() {
         .send(session::Pushed::LinkDown {
             why: "the link to it ended".into(),
             key_changed: false,
+            gone: false,
         })
         .unwrap();
     for seq in 1..=3000 {
@@ -2205,6 +2516,7 @@ fn a_runner_whose_key_changed_leaves_its_chats_dimmed_and_says_so() {
         .send(session::Pushed::LinkDown {
             why: "the runner answered with another key".into(),
             key_changed: true,
+            gone: false,
         })
         .unwrap();
     until("the window is told the runner's key changed", || {
@@ -2212,6 +2524,40 @@ fn a_runner_whose_key_changed_leaves_its_chats_dimmed_and_says_so() {
             == [
                 (vec![id], Reconnection::Reconnecting),
                 (vec![id], Reconnection::KeyChanged),
+            ]
+    });
+    assert_eq!(hosted.sessions.reconnecting(), [id]);
+}
+
+/// A runner removed outside purlis (#4149): its chats are dimmed as for any outage, and the
+/// window is told it is gone, so it offers Make the runner again.
+#[test]
+fn a_runner_removed_outside_purlis_leaves_its_chats_dimmed_and_says_so() {
+    let runs = StandIns::default();
+    let host = Between::new(
+        Hosting::running_with(
+            crate::sessionhost::Composes::as_the_tests_ship(),
+            runs.clone(),
+        ),
+        false,
+    );
+    let pushes = host.pushes.clone();
+    let hosted = hosted_in(host, runs);
+    let told = told_of_reconnecting(&hosted);
+    let (id, _seen) = a_drawn_chat(&hosted);
+
+    pushes
+        .send(session::Pushed::LinkDown {
+            why: "pool first's runner first was removed outside purlis".into(),
+            key_changed: false,
+            gone: true,
+        })
+        .unwrap();
+    until("the window is told the runner is gone", || {
+        *told.lock().unwrap()
+            == [
+                (vec![id], Reconnection::Reconnecting),
+                (vec![id], Reconnection::RunnerGone),
             ]
     });
     assert_eq!(hosted.sessions.reconnecting(), [id]);
@@ -2999,6 +3345,27 @@ fn a_jpeg_of(width: u16, height: u16) -> Vec<u8> {
     jpeg
 }
 
+/// #3297: a pool's own limits move the window's hold with them: a wider frame and a quicker
+/// pace where the pool sets them.
+#[test]
+fn the_window_holds_a_runner_browsers_frames_to_its_pools_own_limits() {
+    let mut held = HeldFrames::to(purlis_session_protocol::browsing::LinkFrames {
+        frames: 30,
+        width: 1920,
+    });
+    let start = Instant::now();
+    assert!(held.draws(&a_jpeg_of(1920, 1080), start));
+    assert!(
+        held.draws(&a_jpeg_of(1920, 1080), start + Duration::from_millis(30)),
+        "at 30 a second, 25 ms apart is drawn"
+    );
+    assert!(
+        !held.draws(&a_jpeg_of(1921, 1080), start + Duration::from_millis(200)),
+        "wider than the pool's widest"
+    );
+    assert_eq!(HeldFrames::default().at_least(), Duration::from_millis(50));
+}
+
 #[test]
 fn the_window_draws_a_runner_browsers_frames_only_within_the_links_caps() {
     let mut held = HeldFrames::default();
@@ -3032,4 +3399,32 @@ fn the_window_draws_a_runner_browsers_frames_only_within_the_links_caps() {
         held.draws(&a_jpeg_of(390, 844), later),
         "and the next within them"
     );
+}
+
+/// **A pool a chat ran on, or may have run on, without the sandbox is held untrusted by the
+/// window whatever its record answers** (D-2050-27, #3702): a record of runners that cannot be
+/// read is said, and the pool is still untrusted. A connection to this machine's host has no
+/// pool to untrust.
+#[test]
+fn a_pool_a_chat_ran_on_without_the_sandbox_is_untrusted_though_its_record_cannot_be_written() {
+    let config = tempfile::tempdir().unwrap();
+    let folder = purlis_core::machine::dir(config.path());
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join(purlis_core::machine::RUNNERS_FILE), "not json").unwrap();
+    let window = Arc::new(Connection::default());
+    window.runners_in(config.path().to_path_buf());
+    let ended = Arc::new(Mutex::new(Vec::<String>::new()));
+    window.ending_browsers_with({
+        let ended = Arc::clone(&ended);
+        Arc::new(move |pool: &str| ended.lock().unwrap().push(pool.to_owned()))
+    });
+
+    assert!(window.ran_unsandboxed().is_ok(), "no pool");
+    assert!(ended.lock().unwrap().is_empty());
+
+    let pool = window.to_a_pool("builds");
+    assert!(pool.ran_unsandboxed().is_err(), "its record cannot be read");
+    assert!(window.untrusts("builds") && pool.untrusts("builds"));
+    assert!(!window.untrusts("other"));
+    assert_eq!(*ended.lock().unwrap(), ["builds"]);
 }

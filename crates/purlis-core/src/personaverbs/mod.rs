@@ -142,6 +142,15 @@ pub fn pinned_skills(root: &Path, name: &str) -> Vec<String> {
     own_list(root, name, crate::skills::persona::PINS_KEY)
 }
 
+/// **The router the persona's chats are routed by**, as written (SK-15b, ADR 0102 §5): its OWN
+/// `skill-router:`, `None` where it writes none. Not inherited along `extends`, as
+/// `pinned-skills:` is not.
+pub fn skill_router(root: &Path, name: &str) -> Option<String> {
+    let meta = own_meta(root, name)?;
+    let written = crate::memstore::py_strip(meta.get(crate::skills::router::PERSONA_KEY)?);
+    (!written.is_empty()).then(|| written.to_owned())
+}
+
 /// The persona's OWN `key:`, comma-separated, in order, blanks dropped.
 fn own_list(root: &Path, name: &str, key: &str) -> Vec<String> {
     let Some(meta) = own_meta(root, name) else {
@@ -194,7 +203,7 @@ pub fn vault(root: &Path, state: &Path, name: &str) -> crate::personas::Vault {
         };
     }
     match crate::secrets::registry::load_registry(&vault_ctx(root, state)) {
-        Err(why) => Vault::RegistryUnreadable(why.message),
+        Err(why) => Vault::RegistryUnreadable(why.message.to_string()),
         Ok(doc) => crate::secrets::registry::vaults_for_persona(&doc, name)
             .into_iter()
             .next()

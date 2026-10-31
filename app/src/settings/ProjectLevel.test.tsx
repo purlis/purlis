@@ -14,7 +14,6 @@ import { ReadOnlySaid } from "../ReadOnlyLine";
 import { GLOBAL } from "../windowprefs";
 import { typeable } from "../editor/typing.testkit";
 import type {
-  HarnessPlugins,
   ProjectExtension,
   SettingsEdit,
   SettingsField,
@@ -130,28 +129,6 @@ const LINTER: ProjectExtension = {
   ignored: [],
 };
 
-const CLAUDE: HarnessPlugins = {
-  harness: "claude",
-  title: "Claude Code",
-  unsupported: null,
-  only_off: null,
-  record: null,
-  trouble: null,
-  plugins: [
-    {
-      id: "review@acme",
-      name: "review",
-      origin: "acme",
-      state: "not-set",
-      source: "default",
-      installed: true,
-      pinned: null,
-      ignored: [],
-    },
-  ],
-  local_left_out: null,
-};
-
 /** A file as the core would answer it after `edits`: each edited key set or gone, and a text
  *  that differs, so the next write is checked against the new one. */
 function applied(file: SettingsFile, edits: readonly SettingsEdit[]): SettingsFile {
@@ -196,7 +173,6 @@ function moved(
 /** The core, as a mock. `refuse` answers a write with these reasons instead of writing it. */
 function core({
   extensions = [] as ProjectExtension[],
-  harnesses = [] as HarnessPlugins[],
   refuse = undefined as string[] | undefined,
   sandboxOn = false,
   /** Each write waits for `release()` before the core answers it. */
@@ -220,8 +196,6 @@ function core({
           return { shared: files.shared, local: files.local };
         case "project_extensions":
           return { extensions, local_left_out: null };
-        case "project_harness_plugins":
-          return harnesses;
         case "project_saving_in_force":
           return SAVING;
         case "project_theme":
@@ -340,8 +314,8 @@ describe("the Project level", () => {
     expect(await within(nav()).findByRole("button", { name: "General" })).toBeInTheDocument();
   });
 
-  it("lists the eight groups in order when each has something to set, each profile's page under its group", async () => {
-    core({ extensions: [LINTER], harnesses: [CLAUDE] });
+  it("lists the groups in order when each has something to set, each profile's page under its group", async () => {
+    core({ extensions: [LINTER] });
     await atProject();
 
     await waitFor(() =>
@@ -360,7 +334,6 @@ describe("the Project level", () => {
         "Extensions",
         "Theme",
         "Appearance",
-        "Plugins",
       ]),
     );
   });
@@ -393,6 +366,7 @@ describe("the Project level", () => {
 
     // Offered for its link to the Extensions dialog, saying why it has nothing (#1387, #1198).
     expect(groups()).toContain("Extensions");
+    // #3467: no Plugins group is left, whatever the project holds.
     expect(groups()).not.toContain("Plugins");
     expect(groups()).toContain("Forges");
   });
@@ -437,9 +411,8 @@ describe("every project setting there is, at the Project level", () => {
     ["Forges", ["Forge 1: kind", "Forge 1: owner", "Forge 1: host", "Forge 1: repos never listed"]],
     ["Extensions", ["Linter: enabled"]],
     ["Appearance", ["Theme", "Icons"]],
-    ["Plugins", ["Claude Code: review@acme"]],
   ])("%s has its settings", async (name, labels) => {
-    core({ extensions: [LINTER], harnesses: [CLAUDE] });
+    core({ extensions: [LINTER] });
     await atProject();
     await waitFor(() => expect(groups()).toContain(name));
 
@@ -738,10 +711,10 @@ describe("one form for Shared and Local (SE-18)", () => {
     const group = screen.getByRole("region", { name: "Harness & profiles" });
     expect(within(group).getAllByText(/Kept in charter\.local\.toml/)).toHaveLength(1);
     expect(
-      within(rowOf("Default harness")).getByText("Team", { selector: ".ui-setting-badge" }),
+      within(rowOf("Default harness")).getByText("Team", { selector: "[data-scope=badge]" }),
     ).toBeVisible();
     expect(
-      within(rowOf("Default profile")).queryByText("Team", { selector: ".ui-setting-badge" }),
+      within(rowOf("Default profile")).queryByText("Team", { selector: "[data-scope=badge]" }),
     ).toBeNull();
   });
 
@@ -794,7 +767,7 @@ describe("one form for Shared and Local (SE-18)", () => {
     expect(screen.getByLabelText("Mode")).toHaveValue("push");
     // Now kept elsewhere than its group keeps its values: badged with where.
     expect(
-      within(rowOf("Mode")).getByText("This machine", { selector: ".ui-setting-badge" }),
+      within(rowOf("Mode")).getByText("This machine", { selector: "[data-scope=badge]" }),
     ).toBeVisible();
   });
 
@@ -871,7 +844,7 @@ describe("one form for Shared and Local (SE-18)", () => {
     // Kept where its group keeps its values: no badge.
     expect(
       within(rowOf("Default profile")).queryByText(/Team|This machine/, {
-        selector: ".ui-setting-badge",
+        selector: "[data-scope=badge]",
       }),
     ).toBeNull();
     expect(screen.getByLabelText("Default profile")).not.toHaveAccessibleDescription(/overrides/);
@@ -903,7 +876,7 @@ describe("one form for Shared and Local (SE-18)", () => {
 
     expect(screen.getByLabelText("Mode")).toHaveValue("pr");
     const badge = within(rowOf("Mode")).getByText("This machine", {
-      selector: ".ui-setting-badge",
+      selector: "[data-scope=badge]",
     });
     expect(screen.getByLabelText("Mode")).toHaveAccessibleDescription(
       /charter\.toml has push, which this overrides/,
@@ -923,7 +896,7 @@ describe("one form for Shared and Local (SE-18)", () => {
     });
     await waitFor(() => expect(screen.getByLabelText("Mode")).toHaveValue("push"));
     expect(
-      within(rowOf("Mode")).queryByText("This machine", { selector: ".ui-setting-badge" }),
+      within(rowOf("Mode")).queryByText("This machine", { selector: "[data-scope=badge]" }),
     ).toBeNull();
     expect(screen.getByLabelText("Mode")).toHaveAccessibleDescription(/From charter\.toml/);
   });
@@ -954,7 +927,7 @@ describe("one form for Shared and Local (SE-18)", () => {
     await userEvent.click(within(menu).getByRole("menuitemradio", { name: /^This machine/ }));
     expect(sent).toEqual([]);
     expect(
-      within(rowOf("Target branch")).getByText("This machine", { selector: ".ui-setting-badge" }),
+      within(rowOf("Target branch")).getByText("This machine", { selector: "[data-scope=badge]" }),
     ).toBeVisible();
     await userEvent.type(screen.getByLabelText("Target branch"), "trunk");
     await userEvent.tab();
@@ -1030,9 +1003,9 @@ describe("one form for Shared and Local (SE-18)", () => {
   });
 
   it("shows no group twice, and each setting once", async () => {
-    core({ extensions: [LINTER], harnesses: [CLAUDE], local: LOCAL_MODE });
+    core({ extensions: [LINTER], local: LOCAL_MODE });
     await atProject();
-    await waitFor(() => expect(groups()).toContain("Plugins"));
+    await waitFor(() => expect(groups()).toContain("Appearance"));
 
     expect(new Set(groups()).size).toBe(groups().length);
     const labels: string[] = [];

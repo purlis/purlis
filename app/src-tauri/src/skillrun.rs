@@ -24,10 +24,22 @@ pub const EVENT: &str = "chat-skill-run";
 pub struct OpenRun {
     /// The skill, by the name its harness started it by.
     pub skill: String,
+    /// The skill it is a run of, by its own name, as the core counts it
+    /// ([`purlis_core::skilluse::own_name`]): `secrets` for opencode's `purlis-secrets`. The
+    /// skill whose tab its chip opens.
+    pub name: String,
     /// The run's id, as the skill's Runs panel lists it.
     pub id: String,
     /// Tool calls made inside it so far, each once.
     pub tool_calls: u32,
+    /// The tokens the chat has spent since it opened, as its harness last said them (SK-26,
+    /// #3694): what the eventlog records the run's tokens from, live. `None` where the harness
+    /// says none, so the chip shows no zero. A `u32`, as the window reads it whole: a run past
+    /// four billion tokens says the most it can.
+    pub tokens: Option<u32>,
+    /// The level of the copy it is of, as a person reads it (`persona`, `local workspace`), where
+    /// its start knew it: the scope its chip opens the Skill studio at (#3694).
+    pub level: Option<String>,
 }
 
 /// What `chat-skill-run` carries, and what `chat_skill_runs` answers a list of: one chat's open
@@ -42,6 +54,11 @@ pub struct ChatSkillRun {
 
 /// Told each change of a chat's open run.
 pub type Teller = Arc<dyn Fn(ChatSkillRun) + Send + Sync + 'static>;
+
+/// **The tokens chat `chat` has spent**, as its harness last said them
+/// ([`purlis_core::usage::spent`]), or `None` where it said none: what a run's tokens are counted
+/// from. Handed in, so a test reads no machine's files.
+pub type Tokens = Arc<dyn Fn(u32) -> Option<u64> + Send + Sync + 'static>;
 
 /// **What a watched chat did** (SK-16): what a grade waits for of the chat it asked purlis for.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +78,12 @@ pub struct SkillRuns {
     plane: PlaneId,
     runs: Mutex<Tracker>,
     teller: Mutex<Option<Teller>>,
+    /// How a chat's tokens are read ([`Self::count_tokens_by`]): none until it is told.
+    tokens: Mutex<Option<Tokens>>,
+    /// The tokens each open run's chat had spent as the run was first seen open with a figure,
+    /// by chat and run id: what its tokens so far are counted from. A chat's go once it has no
+    /// run open.
+    started_at: Mutex<std::collections::HashMap<(u32, String), u64>>,
     /// The chats a grade watches, by number, each told what it did ([`Self::watch`]).
     watched: Mutex<std::collections::HashMap<u32, std::sync::mpsc::Sender<Watched>>>,
 }
@@ -72,6 +95,8 @@ impl SkillRuns {
             plane,
             runs: Mutex::new(Tracker::default()),
             teller: Mutex::new(None),
+            tokens: Mutex::new(None),
+            started_at: Mutex::new(std::collections::HashMap::new()),
             watched: Mutex::new(std::collections::HashMap::new()),
         })
     }
@@ -108,6 +133,41 @@ impl SkillRuns {
         *self.teller.lock().unwrap_or_else(PoisonError::into_inner) = Some(teller);
     }
 
+    /// How each chat's tokens are read from now on, for the tokens of its open run (SK-26).
+    pub fn count_tokens_by(&self, tokens: Tokens) {
+        *self.tokens.lock().unwrap_or_else(PoisonError::into_inner) = Some(tokens);
+    }
+
+    /// **Run `run` of chat `chat` with its tokens so far** (SK-26): what the chat has spent since
+    /// the run was first seen open with a figure. Read here, outside every lock this holds, and
+    /// only for a run that is open: a chat with none reads nothing. A run first seen before its
+    /// harness said any usage is counted from the first figure it says.
+    ///
+    /// The read takes a moment, in which another hook of the chat may have moved its run on: the
+    /// run as it is once the figure is read is what is told, so a run the turn's end closed
+    /// meanwhile is never told open again.
+    fn with_tokens(&self, chat: u32, run: Option<OpenRun>) -> Option<OpenRun> {
+        if run.is_none() {
+            lock(&self.started_at).retain(|(of, _), _| *of != chat);
+            return None;
+        }
+        let reader = lock(&self.tokens).clone();
+        let now = reader.and_then(|tokens| tokens(chat));
+        let Some(mut run) = open_of(&self.runs(), &chat.to_string()) else {
+            lock(&self.started_at).retain(|(of, _), _| *of != chat);
+            return None;
+        };
+        let mut started = lock(&self.started_at);
+        let start = match now {
+            Some(now) => Some(*started.entry((chat, run.id.clone())).or_insert(now)),
+            None => started.get(&(chat, run.id.clone())).copied(),
+        };
+        run.tokens = now
+            .zip(start)
+            .map(|(now, then)| u32::try_from(now.saturating_sub(then)).unwrap_or(u32::MAX));
+        Some(run)
+    }
+
     /// A tool hook of chat `call.chat`: one that starts a skill opens its run, and every one
     /// inside a run counts toward it ([`Tracker::call`]).
     pub fn heard(&self, call: &purlis_core::hookwire::ToolCall) {
@@ -134,6 +194,7 @@ impl SkillRuns {
         if let Some(skill) = opened {
             self.tell_watching(call.chat, Watched::Started(skill));
         }
+        let told = self.with_tokens(call.chat, told);
         self.tell(call.chat, told);
     }
 
@@ -168,6 +229,7 @@ impl SkillRuns {
             }
             open_of(&runs, &key)
         };
+        let told = self.with_tokens(report.chat, told);
         self.tell(report.chat, told);
     }
 
@@ -190,21 +252,26 @@ impl SkillRuns {
             .runs()
             .close(&chat.to_string(), Ended::Session, now_ms());
         if !closed.is_empty() {
-            self.tell(chat, None);
+            let told = self.with_tokens(chat, None);
+            self.tell(chat, told);
         }
     }
 
     /// The open run of every chat that has one, for a window that has just opened.
     pub fn now(&self, chats: impl IntoIterator<Item = u32>) -> Vec<ChatSkillRun> {
-        let runs = self.runs();
-        chats
-            .into_iter()
-            .filter_map(|chat| {
-                open_of(&runs, &chat.to_string()).map(|run| ChatSkillRun {
-                    plane: self.plane.clone(),
-                    session: chat,
-                    run: Some(run),
-                })
+        let open: Vec<(u32, OpenRun)> = {
+            let runs = self.runs();
+            chats
+                .into_iter()
+                .filter_map(|chat| open_of(&runs, &chat.to_string()).map(|run| (chat, run)))
+                .collect()
+        };
+        // Their tokens read once the runs' lock is let go, as a change's are.
+        open.into_iter()
+            .map(|(chat, run)| ChatSkillRun {
+                plane: self.plane.clone(),
+                session: chat,
+                run: self.with_tokens(chat, Some(run)),
             })
             .collect()
     }
@@ -243,9 +310,18 @@ fn now_ms() -> u64 {
 fn open_of(runs: &Tracker, key: &str) -> Option<OpenRun> {
     runs.inside(key).map(|open| OpenRun {
         skill: open.skill.clone(),
+        name: purlis_core::skilluse::own_name(&open.skill, open.whose.level).to_owned(),
         id: open.id.clone(),
         tool_calls: open.signals.tool_calls,
+        // Counted by the caller, outside the runs' lock ([`SkillRuns::with_tokens`]).
+        tokens: None,
+        level: open.whose.level.map(|level| level.word()),
     })
+}
+
+/// A lock, through poisoning too: a panic elsewhere must not cost a chip.
+fn lock<T>(held: &Mutex<T>) -> MutexGuard<'_, T> {
+    held.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 #[cfg(test)]

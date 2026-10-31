@@ -307,6 +307,46 @@ describe("the select", () => {
     expect(await screen.findByRole("listbox")).toBeInTheDocument();
   });
 
+  it("stands in a field and says why in its error line, heard as it lands (#3334)", async () => {
+    function Refusing() {
+      const [value, setValue] = useState("");
+      return (
+        <Select
+          aria-label="Harness"
+          className="placed"
+          value={value}
+          options={[
+            { value: "", label: "None" },
+            { value: "claude", label: "Claude Code" },
+          ]}
+          error={value === "" ? "A persona needs a harness to run." : undefined}
+          onValueChange={setValue}
+        />
+      );
+    }
+    render(<Refusing />);
+    const select = selectNamed("Harness");
+    const field = select.closest('[data-scope="field"][data-part="root"]') as Element;
+    // The field is placed where the select would be.
+    expect(field).toHaveClass("placed");
+    expect(select).not.toHaveClass("placed");
+    const line = field.querySelector('[data-scope="field"][data-part="error"]') as Element;
+    // One signal (#3291): a polite live region, never an alert as well.
+    expect(line).not.toHaveAttribute("role");
+    expect(line).toHaveAttribute("aria-live", "polite");
+    expect(line).toHaveTextContent("A persona needs a harness to run.");
+    expect(select).toHaveAttribute("aria-invalid", "true");
+    expect(select).toHaveAttribute("data-invalid");
+    expect(select).toHaveAccessibleDescription("A persona needs a harness to run.");
+    // Taken: the same line, empty, kept, so nothing moves.
+    await pickIn(select, "Claude Code");
+    await waitFor(() => expect(line).toBeEmptyDOMElement());
+    expect(field.querySelector('[data-part="error"]')).toBe(line);
+    expect(line).not.toHaveAttribute("role");
+    expect(select).not.toHaveAttribute("aria-invalid");
+    expect(select).not.toHaveAccessibleDescription();
+  });
+
   it("is not refused unless it is told so", () => {
     render(<Filter start="beta" />);
     const select = selectNamed("Filter by workspace");
@@ -325,6 +365,23 @@ describe("the select", () => {
       />,
     );
     expect(selectNamed("Page size")).toHaveAttribute("data-size", "sm");
+  });
+
+  // WCAG 2.5.8 (#3250): the compact density draws the chrome at 18px, so sm's floor is 24 CSS
+  // px, as the sm button's is (#3210).
+  it("never draws an sm select under the 24px target, in any density or text size", () => {
+    render(
+      <Select
+        aria-label="Page size"
+        size="sm"
+        value="a"
+        options={[{ value: "a", label: "A" }]}
+        onValueChange={() => {}}
+      />,
+    );
+    expect(drawnWith(selectNamed("Page size"), "block-size")).toBe(
+      "max(24px, var(--size-chrome), var(--space-7))",
+    );
   });
 });
 

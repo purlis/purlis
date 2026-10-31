@@ -12,6 +12,11 @@ use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
 /// opencode's adapter.
+///
+/// **What its reports can prove** (#3822): only the chat's token. Its shim's hooks run inside
+/// purlis's wrap, which denies them the spool their armed key is in
+/// ([`crate::hookwire::armed`]), so any mode a report named would read as asking. None is
+/// read (the trait's default `reported_mode`): opencode documents no classifier-backed mode.
 pub struct Opencode;
 
 /// The one opencode adapter.
@@ -60,12 +65,16 @@ impl HarnessAdapter for Opencode {
     /// beside the plane's, is handed to the shim as its option, which adds it to the skills
     /// opencode discovers for this process ([`Harness::skills`], [`skill_dirs`]).
     ///
+    /// **Each dispatch tool runs on purlis's own dispatch grant** (#3794), allowed by name in
+    /// the same config, except where a rule of the operator's own opencode config, read from
+    /// where the chat works up ([`crate::opencode::Layers::here`]), names it.
+    ///
     /// It cannot report `SessionEnd`: quitting opencode fires no event and runs no exit
     /// handler in a plugin (measured). The app sees the process end.
     fn arm_under(
         &self,
         kit: Kit<'_>,
-        _cwd: Option<&std::path::Path>,
+        cwd: Option<&std::path::Path>,
         plugins: &crate::harness_plugin::Chosen,
         sandbox: Sandbox<'_>,
     ) -> StateHooks {
@@ -91,6 +100,9 @@ impl HarnessAdapter for Opencode {
                         Some(kit.binary),
                         sandbox.applied().is_some(),
                         &crate::skills::skills_off_for(kit, Harness::Opencode, plugins),
+                        // The operator's own rules, which an allow of purlis's yields to
+                        // (#3794).
+                        &crate::opencode::OperatorRules::read(&crate::opencode::Layers::here(cwd)),
                     ),
                 ),
                 (crate::opencode::PURE_ENV.to_owned(), "0".to_owned()),
@@ -214,6 +226,23 @@ impl HarnessAdapter for Opencode {
         true
     }
 
+    /// Never, by the operator's ruling P8 of 2026-10-27 (#3468): opencode's plugins are code it
+    /// loads into its own process, and it has no switch that turns one off for a single chat,
+    /// so a grade's chat here would run with the person's plugins and not measure the skill
+    /// alone. (Its limits and spend, #3272, would be a second reason.)
+    fn can_grade(&self) -> Result<(), String> {
+        Err(
+            "opencode's plugins are code that runs inside it, which purlis cannot turn off for \
+             one chat, so a grade there could not measure the skill alone"
+                .into(),
+        )
+    }
+
+    /// `--model <provider/model>`, as `opencode --help` names it (`-m, --model`).
+    fn model_words(&self, model: &str) -> Vec<String> {
+        vec!["--model".to_owned(), model.to_owned()]
+    }
+
     /// The wrap's program first, with the profile written for where the chat opens, then the
     /// chat's whole line. Its traffic is pointed at charter's egress proxy, the only place the
     /// profile lets it connect, and its temp directory is its own.
@@ -247,12 +276,17 @@ impl HarnessAdapter for Opencode {
             ));
         };
         crate::sandbox::opencode::prepare(wrap);
-        let profile = crate::sandbox::opencode::profile(
+        // The doors its confinement opened (#2019): a socket for each, in its own folder.
+        let served = confinement.served();
+        let profile = crate::sandbox::opencode::profile_serving(
             wrap,
             cwd,
             tmp,
             &confinement.proxy_ports(),
             at.hook_socket,
+            served
+                .as_ref()
+                .map(|(folder, ports)| (*folder, ports.as_slice())),
         )
         .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
         let mut env = crate::sandbox::seatbelt::env(&confinement.proxy_url(), tmp);
@@ -279,185 +313,4 @@ impl HarnessAdapter for Opencode {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_reference_is_written_as_opencodes_own_mention() {
-        use crate::reference::{Lines, Reference};
-        let r = |path, lines, folder| ADAPTER.reference(&Reference::for_tests(path, lines, folder));
-        assert_eq!(r("src/main.rs", None, false), "@src/main.rs");
-        assert_eq!(r("src", None, true), "@src/");
-        assert_eq!(
-            r(
-                "src/main.rs",
-                Some(Lines {
-                    first: 10,
-                    last: 20
-                }),
-                false
-            ),
-            "@src/main.rs#10-20"
-        );
-        assert_eq!(
-            r("src/main.rs", Some(Lines::one(7)), false),
-            "@src/main.rs#7"
-        );
-        assert_eq!(
-            r("my dir/note one.txt", None, false),
-            "\"my dir/note one.txt\""
-        );
-    }
-
-    /// opencode reads `!…` as a shell command and `/…` as one of its own: the clipboard is
-    /// never handed a reference beginning with either, its plain-words fallback included.
-    #[test]
-    fn a_reference_never_begins_as_a_shell_or_slash_command() {
-        use crate::reference::{Reference, starts_safely};
-        let r = |path| ADAPTER.reference(&Reference::for_tests(path, None, false));
-        assert_eq!(r("!cmd"), "@./!cmd");
-        assert_eq!(r("!a b"), "\"./!a b\"");
-        for path in ["!x", "!x#y", "/abs/x", "/abs/a b", "#x"] {
-            assert!(starts_safely(&r(path)), "{path} -> {}", r(path));
-        }
-    }
-
-    #[test]
-    fn an_opencode_chat_is_handed_charter_s_mcp_server_in_its_session_config() {
-        // HP-7: opencode merges the config in OPENCODE_CONFIG_CONTENT key by key, so the server
-        // sits beside the operator's own and nothing is written.
-        let bundle = tempfile::tempdir().expect("a bundle");
-        let shim = crate::opencode::shim_in(bundle.path());
-        std::fs::create_dir_all(shim.parent().expect("a parent")).expect("dirs");
-        std::fs::write(&shim, "").expect("the shim");
-        let StateHooks::ThisSessionOnly { env, .. } = ADAPTER.arm(
-            Kit {
-                skills: None,
-                laid_out: None,
-                binary: std::path::Path::new("/bin/charter"),
-                plugin: Some(bundle.path()),
-                persona: None,
-                graded: false,
-            },
-            None,
-            &crate::harness_plugin::Chosen::new(),
-            None,
-        ) else {
-            panic!("armed per session");
-        };
-        let config = env
-            .iter()
-            .find(|(name, _)| name == crate::opencode::CONFIG_ENV)
-            .map(|(_, value)| value)
-            .expect("the session config");
-        let config: serde_json::Value = serde_json::from_str(config).expect("JSON");
-        assert_eq!(
-            config["mcp"]["purlis"],
-            serde_json::json!({"type": "local", "command": ["/bin/charter", "mcp"], "enabled": true})
-        );
-        assert!(config["plugin"].is_array(), "{config}");
-    }
-
-    #[test]
-    fn an_opencode_chat_denies_each_skill_turned_off_except_a_built_in_skills_name() {
-        // SK-6 (#2769): opencode's `permission.skill` goes by the name alone, so a built-in
-        // skill's name is never denied, whatever a file says. It is `purlis-secrets` here, so a
-        // skill of the person's or the clone's named `secrets` is another, and is denied.
-        let bundle = tempfile::tempdir().expect("a bundle");
-        let shim = crate::opencode::shim_in(bundle.path());
-        std::fs::create_dir_all(shim.parent().expect("a parent")).expect("dirs");
-        std::fs::write(&shim, "").expect("the shim");
-        let secrets = bundle.path().join("skills/secrets");
-        std::fs::create_dir_all(&secrets).expect("a built-in skill");
-        std::fs::write(
-            secrets.join("SKILL.md"),
-            "---\nname: secrets\ndescription: Keeps secrets.\n---\n",
-        )
-        .expect("its SKILL.md");
-        let chosen = crate::harness_plugin::Chosen {
-            plugins: std::collections::BTreeMap::new(),
-            skills_off: [
-                "review".to_owned(),
-                "secrets".to_owned(),
-                "purlis-secrets".to_owned(),
-            ]
-            .into(),
-        };
-        let StateHooks::ThisSessionOnly { env, .. } = ADAPTER.arm(
-            Kit {
-                skills: None,
-                laid_out: None,
-                binary: std::path::Path::new("/bin/charter"),
-                plugin: Some(bundle.path()),
-                persona: None,
-                graded: false,
-            },
-            None,
-            &chosen,
-            None,
-        ) else {
-            panic!("armed per session");
-        };
-        let config = env
-            .iter()
-            .find(|(name, _)| name == crate::opencode::CONFIG_ENV)
-            .map(|(_, value)| value)
-            .expect("the session config");
-        let config: serde_json::Value = serde_json::from_str(config).expect("JSON");
-        assert_eq!(
-            config["permission"],
-            serde_json::json!({ "skill": { "review": "deny", "secrets": "deny" } })
-        );
-    }
-
-    /// The shim is handed the set's folder the host laid out, which holds the built-in skills
-    /// as `purlis-<name>`, and never the bundle's own `skills/`, whose `secrets` is a bare name.
-    #[test]
-    fn an_opencode_chat_is_handed_the_set_s_folder_alone_never_the_bundle_s_skills() {
-        let bundle = tempfile::tempdir().expect("a bundle");
-        let shim = crate::opencode::shim_in(bundle.path());
-        std::fs::create_dir_all(shim.parent().expect("a parent")).expect("dirs");
-        std::fs::write(&shim, "").expect("the shim");
-        let secrets = bundle.path().join("skills/secrets");
-        std::fs::create_dir_all(&secrets).expect("a built-in skill");
-        std::fs::write(
-            secrets.join("SKILL.md"),
-            "---\nname: secrets\ndescription: Keeps secrets.\n---\n",
-        )
-        .expect("its SKILL.md");
-        let folder = bundle.path().join("set");
-        let handed = |laid_out| {
-            let StateHooks::ThisSessionOnly { env, .. } = ADAPTER.arm(
-                Kit {
-                    skills: None,
-                    laid_out,
-                    binary: std::path::Path::new("/bin/charter"),
-                    plugin: Some(bundle.path()),
-                    persona: None,
-                    graded: false,
-                },
-                None,
-                &crate::harness_plugin::Chosen::new(),
-                None,
-            ) else {
-                panic!("armed per session");
-            };
-            let config = env
-                .iter()
-                .find(|(name, _)| name == crate::opencode::CONFIG_ENV)
-                .map(|(_, value)| value.clone())
-                .expect("the session config");
-            let config: serde_json::Value = serde_json::from_str(&config).expect("JSON");
-            config["plugin"][0].clone()
-        };
-
-        assert_eq!(
-            handed(Some(folder.as_path()))[1]["skills"],
-            folder.join("skills").display().to_string()
-        );
-        assert!(
-            handed(None).is_string(),
-            "no folder: the shim with no skills option, never the bundle's"
-        );
-    }
-}
+mod tests;

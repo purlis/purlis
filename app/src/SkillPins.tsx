@@ -3,24 +3,19 @@
 
 /**
  * **A skill's pins in the window** (SK-15d, #3232; ADR 0102 §4): the Pin switch on a Skill studio
- * row filtered to a workspace or a persona, and the list on a skill's own tab of every workspace
+ * row filtered to a workspace or a persona, and the list on a skill's page of every workspace
  * and persona that pins it, each with Unpin. Each change is the core's `skills::verbs::pin`, which
  * `purlis skill pin` calls too, one commit. A chat may write its persona's pins, so a pin is
  * always seen and can always be undone.
  */
 import { type SkillPinner, type SkillPinsRefused } from "./bindings";
-import { pinnerSaid } from "./skillStudio";
+import { pinnerSaid, pinsRefusedSaid } from "./skillStudio";
 import { Button } from "./ui/button/Button";
 import { Switch } from "./ui/choice/Switch";
 
 /** Whose chats a pin keeps a skill listed for, as a sentence says it. */
 export function pinnedChats(by: SkillPinner): string {
   return by.at === "workspace" ? `${by.name}'s chats` : `chats as ${by.name}`;
-}
-
-/** Why a chat reads none of a pinner's pins, in one sentence: `workspace ops's pins aren't used: …`. */
-export function pinsRefusedSaid(refused: SkillPinsRefused): string {
-  return `${pinnerSaid(refused.by)}'s pins aren't used: ${refused.why}.`;
 }
 
 /**

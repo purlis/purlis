@@ -1417,6 +1417,26 @@ fn a_held_connection_nobody_answers_is_refused_recorded_and_told_to_retry_later(
     assert_eq!(retry, vec!["held.invalid:443".to_owned()]);
 }
 
+/// Keep blocked after an Allow of the same host refuses it again, through both the HTTP and the
+/// SOCKS proxy: the later answer wins.
+#[test]
+fn keep_blocked_after_an_allow_refuses_the_host_through_both_proxies() {
+    let (proxy, asks, _) = asking(Duration::from_millis(300));
+    let held = crate::sandbox::hosts::Host::parse("held.invalid").unwrap();
+    asks.allow(&held, By::Chat);
+    // Carried: the proxy tried the host, which never resolves.
+    assert_eq!(socks_connect(&mut to_socks(&proxy), "held.invalid", 443), 4);
+
+    asks.keep_blocked(&held);
+
+    let said = status(
+        &mut to(&proxy),
+        "CONNECT held.invalid:443 HTTP/1.1\r\nHost: held.invalid:443\r\n\r\n",
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    assert_eq!(socks_connect(&mut to_socks(&proxy), "held.invalid", 443), 2);
+}
+
 #[test]
 fn without_a_board_an_ask_is_refused_at_once_as_before() {
     let heard = Heard::default();
@@ -1524,6 +1544,30 @@ fn a_host_the_projects_hosts_files_allow_already_is_let_on_at_once_and_never_ask
         "{:?}",
         told.lock().unwrap()
     );
+}
+
+/// Keep blocked holds for this chat even for a host the project's hosts list names, through
+/// both the HTTP and the SOCKS proxy: the later answer wins. Writes a manifest, so it first runs
+/// on CI.
+#[test]
+fn keep_blocked_holds_for_the_chat_even_for_a_host_the_projects_hosts_list_names() {
+    let root = tempfile::tempdir().expect("a project");
+    let (proxy, asks, _heard, _told) = armed_in(root.path(), Duration::from_millis(300));
+    std::fs::write(
+        root.path().join(crate::plane::MANIFEST),
+        "[sandbox]\nmode = \"on\"\negress = []\nhosts = [\"team.invalid\"]\n",
+    )
+    .expect("the project's file");
+
+    asks.keep_blocked(&crate::sandbox::hosts::Host::parse("team.invalid").unwrap());
+
+    let said = status(
+        &mut to(&proxy),
+        "CONNECT team.invalid:443 HTTP/1.1\r\nHost: team.invalid:443\r\n\r\n",
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    assert_eq!(socks_connect(&mut to_socks(&proxy), "team.invalid", 443), 2);
+    assert_eq!(asks.allows("team.invalid", 443, &[443]), None);
 }
 
 // ---- qw384b: a service on this Mac by name, for a client that never proxies this machine -----

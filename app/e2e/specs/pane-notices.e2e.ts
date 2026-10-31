@@ -27,7 +27,7 @@ import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLef
  *
  * **What is raised is the shape, not the cause.** A vault refusal and a held dispatch need a
  * persona chat and a core holding them, which this suite's fake harness has no way to make. So
- * a Notice is drawn into the pane's own stack (`.pane-notices`, which `PaneFrame` draws for
+ * a Notice is drawn into the pane's own stack (`[data-scope=notice-row][data-part=stack]`, which `PaneFrame` draws for
  * every pane) with the elements and classes `Notice at="pane"` draws, and the dialog with the
  * ones `AskPersona` draws. `Notice.pane.test.tsx` and `AskPersona.window.test.tsx` hold the
  * components to those shapes; this file holds the stylesheet to what they must look like. A
@@ -120,7 +120,9 @@ async function raise(
       const frames = [...document.querySelectorAll(".pane-frame")].filter((frame) =>
         frame.querySelector('[data-testid="pane"]'),
       );
-      const stack = frames[at]?.querySelector(".pane-notice-row > .pane-notices");
+      const stack = frames[at]?.querySelector(
+        "[data-scope=notice-row][data-part=root] > [data-scope=notice-row][data-part=stack]",
+      );
       if (!stack) return false;
       // Held in a list, not bound by name: the spec's bundler wraps a named function in a
       // `__name` call the page does not have (`gauge.e2e.ts`, `view-tabs.e2e.ts`).
@@ -132,21 +134,30 @@ async function raise(
           return made;
         },
       ][0];
-      // The inline surface edged in the waiting colour, and a line that is the shared row of
-      // buttons that wraps (#1855), as `Notice` draws them.
-      const surface = "notice-pane-box ui-inline-surface ui-inline-surface-waiting";
-      const box = el("div", opened === null ? surface : `${surface} notice-opened`);
+      // The notice family's box in a pane (`ui/notice`, #2912), and a line that is the shared
+      // row of buttons that wraps (#1855), as `Notice` draws them.
+      const box = el("div", "");
+      Object.assign(box.dataset, {
+        scope: "notice",
+        part: "root",
+        variant: "trouble",
+        placement: "pane",
+      });
+      if (opened !== null) box.setAttribute("data-opened", "");
       box.dataset.raised = "pane-notices.e2e";
       // As `Notice` marks one with an answer besides Dismiss: what the pane's row stands first
       // (#1647), so a Notice this file raises is one of the two that stand.
       if (ways.some((way) => way !== "Dismiss")) box.setAttribute("data-asks", "");
       // The line is a small `ButtonRow` of the button family's buttons (#2904).
-      const line = el("div", "notice notice-pane notice-trouble");
+      const line = el("div", "");
       Object.assign(line.dataset, { scope: "button-row", size: "sm", wraps: "" });
       line.setAttribute("role", "status");
-      line.append(el("div", "notice-says", sentence));
+      const says = el("div", "", sentence);
+      Object.assign(says.dataset, { scope: "notice", part: "message" });
+      line.append(says);
       for (const way of ways) {
-        const button = el("button", "notice-fix");
+        const button = el("button", "");
+        button.dataset.way = way === "Dismiss" ? "dismiss" : "fix";
         Object.assign(button.dataset, {
           scope: "button",
           part: "root",
@@ -162,7 +173,8 @@ async function raise(
       }
       box.append(line);
       if (opened !== null) {
-        const under = el("div", "notice-under notice-under-pane");
+        const under = el("div", "");
+        Object.assign(under.dataset, { scope: "notice", part: "under" });
         if (also !== null) {
           // As `DispatchGrantNotice` draws it, above the brief: the house `Choice` of checks,
           // each the checkbox family's box in its own label (#2907), then the access line and
@@ -227,7 +239,7 @@ async function raise(
         const frames = [...document.querySelectorAll(".pane-frame")].filter((frame) =>
           frame.querySelector('[data-testid="pane"]'),
         );
-        const row = frames[at]?.querySelector(".pane-notice-row");
+        const row = frames[at]?.querySelector("[data-scope=notice-row][data-part=root]");
         return row !== null && row !== undefined && getComputedStyle(row).display !== "none";
       }, pane),
     { timeout: 10_000, interval: 50, timeoutMsg: `pane ${pane} never drew its row of Notices` },
@@ -256,15 +268,15 @@ async function measured(pane: number) {
       frame.querySelector('[data-testid="pane"]'),
     );
     const frame = frames[at];
-    const stack = frame?.querySelector<HTMLElement>(".pane-notices");
+    const stack = frame?.querySelector<HTMLElement>("[data-scope=notice-row][data-part=stack]");
     const notices = [...(frame?.querySelectorAll('[data-raised="pane-notices.e2e"]') ?? [])].map(
       (raised) => {
-        const line = raised.querySelector(".notice-pane");
+        const line = raised.querySelector("[data-placement=pane] > [data-scope=button-row]");
         const pre = raised.querySelector<HTMLElement>("pre");
         return {
           box: box(raised),
           line: box(line),
-          says: box(raised.querySelector(".notice-says")),
+          says: box(raised.querySelector("[data-scope=notice][data-part=message]")),
           buttons: [...(line?.querySelectorAll("button") ?? [])].map((button) => {
             const css = getComputedStyle(button);
             const lineHeight = Number.parseFloat(css.lineHeight);
@@ -286,7 +298,7 @@ async function measured(pane: number) {
                 Number.parseFloat(css.borderBottomWidth),
             };
           }),
-          under: box(raised.querySelector(".notice-under-pane")),
+          under: box(raised.querySelector("[data-scope=notice][data-part=under]")),
           also: box(raised.querySelector(".dispatch-also")),
           options: [
             ...raised.querySelectorAll('.dispatch-also [data-scope="checkbox"][data-part="root"]'),
@@ -310,13 +322,13 @@ async function measured(pane: number) {
       rem: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
       frame: box(frame),
       neighbours: frames.filter((one) => one !== frame).map((one) => box(one)),
-      row: box(frame?.querySelector(".pane-notice-row")),
+      row: box(frame?.querySelector("[data-scope=notice-row][data-part=root]")),
       terminal: box(frame?.querySelector('[data-testid="pane"]')),
-      more: box(frame?.querySelector(".pane-notice-row > .notice-more-pane")),
+      more: box(frame?.querySelector("[data-scope=notice-row][data-part=root] > [data-way=more]")),
       // What it says: of its two labels, the one not hidden (#3142).
       moreSays:
         frame?.querySelector(
-          ".pane-notice-row > .notice-more-pane .notice-more-says > :not([data-off])",
+          "[data-scope=notice-row][data-part=root] > [data-way=more] [data-scope=notice-row][data-part=says] > :not([data-off])",
         )?.textContent ?? null,
       stack: box(stack),
       // The stack's width inside its scrollbar, which a card takes whole.
@@ -423,7 +435,7 @@ async function briefInTheBoxUnder(pane: number) {
       frame.querySelector('[data-testid="pane"]'),
     );
     const raised = frames[at]?.querySelector('[data-raised="pane-notices.e2e"]');
-    const under = raised?.querySelector<HTMLElement>(".notice-under-pane");
+    const under = raised?.querySelector<HTMLElement>("[data-scope=notice][data-part=under]");
     const pre = raised?.querySelector<HTMLElement>("pre");
     if (under && pre)
       under.scrollTop += pre.getBoundingClientRect().top - under.getBoundingClientRect().top;
@@ -477,6 +489,9 @@ describe("a Notice in a pane", () => {
   let wereAlreadyOpen: string[] = [];
   /** The chats running when the file began, so only the ones it started are ended again. */
   let chatsBefore: Running = {};
+  /** How tall the result standing at the top of the content was, Details open (#3344); 0 for
+   *  none. */
+  let standingResult = 0;
   let was = { width: 1280, height: 800 };
 
   before(async () => {
@@ -487,6 +502,38 @@ describe("a Notice in a pane", () => {
     await untilShows(0, READY);
     await pressAndStart("Split right");
     await untilShows(1, READY);
+    // What an earlier action answered stands at the top of the content until it is closed
+    // (#3344), and takes the panes' height with it: measured with its Details open, its tallest,
+    // for the case that squeezes a pane with it, then closed, as a person reading a pane would,
+    // so each other case measures the pane the window gives.
+    await browser.execute(() => {
+      document
+        .querySelector<HTMLElement>('.window-work > .action-result [data-way="disclosure"]')
+        ?.click();
+    });
+    await browser.pause(250);
+    standingResult = await browser.execute(
+      () => document.querySelector<HTMLElement>(".window-work > .action-result")?.offsetHeight ?? 0,
+    );
+    // A project's result pops from the status bar's Notices item over the window instead
+    // (#3653), where it would stand over a pane: dismissed too, as a person would.
+    await browser.execute(() => {
+      for (const close of document.querySelectorAll<HTMLElement>(
+        '.window-work > .action-result button[aria-label="Dismiss"], [data-chip="status/bar/notices"] > .action-result button[aria-label="Dismiss"]',
+      ))
+        close.click();
+    });
+  });
+
+  // A result said since (a chat started) pops from the status bar's Notices item again
+  // (#3653): put away before each case, so no card stands over the pane it measures.
+  beforeEach(async () => {
+    await browser.execute(() => {
+      for (const close of document.querySelectorAll<HTMLElement>(
+        '[data-chip="status/bar/notices"] > .action-result button[aria-label="Dismiss"]',
+      ))
+        close.click();
+    });
   });
 
   afterEach(async () => {
@@ -814,7 +861,7 @@ describe("a Notice in a pane", () => {
 
     // Opened, every one is in the row, one under another in the order raised, the row scrolls
     // inside the pane, and the last one's last button is reached there.
-    await $("button.notice-more-pane").click();
+    await $("button[data-way=more]").click();
     await browser.waitUntil(async () => (await measured(0)).notices.every((one) => one.shown), {
       timeout: 10_000,
       interval: 100,
@@ -832,7 +879,7 @@ describe("a Notice in a pane", () => {
     }
     const reached = await browser.execute(() => {
       const buttons = document.querySelectorAll<HTMLElement>(
-        '[data-raised="pane-notices.e2e"] .notice-pane > button',
+        '[data-raised="pane-notices.e2e"][data-placement=pane] > [data-scope=button-row] > button',
       );
       const last = buttons[buttons.length - 1];
       last?.focus();
@@ -934,6 +981,56 @@ describe("a Notice in a pane", () => {
     offTheTerminal(seen);
   });
 
+  it("keeps each Notice's drawn box inside a pane a standing result squeezes (#3344)", async () => {
+    await windowIs(1600, 1000);
+    // What an action answered stands at the top of the content until it is closed, and takes the
+    // panes' height: one as tall as the real result card this run found standing, Details open,
+    // and never shorter than a card with its Details shut, raised as this file raises its
+    // Notices.
+    const tall = Math.max(standingResult, 120);
+    check("the stand-in is shorter than the real result", tall, "atLeast", standingResult);
+    const stood = await browser.execute((height: number) => {
+      const work = document.querySelector(".window-work");
+      if (!work) return false;
+      const result = document.createElement("div");
+      result.dataset.raised = "pane-notices.e2e";
+      result.style.blockSize = `${height}px`;
+      result.style.flex = "none";
+      work.prepend(result);
+      return true;
+    }, tall);
+    expect(stood).toBe(true);
+    expect(await raise(0, { sentence: "Restarting this chat…", ways: ["Dismiss"] })).toBe(true);
+    expect(await raise(0, { sentence: SENTENCE, ways: WAYS, opened: BRIEF })).toBe(true);
+
+    const seen = await measured(0);
+    const [frame, stack] = [seen.frame as Box, seen.stack as Box];
+    // The band keeps to its share of the pane, and scrolls what it cannot show.
+    check(
+      "the band runs past its share of the pane",
+      stack.height,
+      "atMost",
+      frame.height * 0.46 + 1,
+    );
+    // What each Notice draws, its box clipped to the stack, stays inside the pane and off the
+    // terminal, however short the pane is.
+    for (const [index, notice] of seen.notices.entries()) {
+      if (!notice.shown) continue;
+      const box = notice.box as Box;
+      const top = Math.max(box.top, stack.top);
+      const bottom = Math.min(box.bottom, stack.bottom);
+      if (bottom - top <= 0) continue;
+      const left = Math.max(box.left, stack.left);
+      const right = Math.min(box.right, stack.right);
+      inside(
+        { left, right, top, bottom, width: right - left, height: bottom - top },
+        frame,
+        `Notice ${index + 1}, as drawn`,
+      );
+    }
+    offTheTerminal(seen);
+  });
+
   it("is above its terminal and never over it, and under a dialog and its scrim", async () => {
     await windowIs(1024, 768);
     expect(await raise(1, { sentence: SENTENCE, ways: WAYS, opened: BRIEF })).toBe(true);
@@ -941,7 +1038,9 @@ describe("a Notice in a pane", () => {
     /** What is drawn at the middle of the Notice's sentence: the Notice, or something over it. */
     const atTheNotice = () =>
       browser.execute(() => {
-        const says = document.querySelector('[data-raised="pane-notices.e2e"] .notice-says');
+        const says = document.querySelector(
+          '[data-raised="pane-notices.e2e"] [data-scope=notice][data-part=message]',
+        );
         if (!says) return "(no Notice)";
         const box = says.getBoundingClientRect();
         const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
@@ -987,7 +1086,9 @@ describe("a Notice in a pane", () => {
     await windowIs(1024, 768);
     expect(await raise(0, { sentence: ASKS, ways: FIVE_WAYS, opened: BRIEF })).toBe(true);
     const drawn = await browser.execute((workspace: string) => {
-      const under = document.querySelector('[data-raised="pane-notices.e2e"] .notice-under-pane');
+      const under = document.querySelector(
+        '[data-raised="pane-notices.e2e"] [data-scope=notice][data-part=under]',
+      );
       if (!under) return false;
       const choice = document.createElement("div");
       choice.className = "dispatch-within my-1 min-w-0 max-w-full text-xs wrap-anywhere";
@@ -1027,7 +1128,7 @@ describe("a Notice in a pane", () => {
         },
       ][0];
       const under = document.querySelector<HTMLElement>(
-        '[data-raised="pane-notices.e2e"] .notice-under-pane',
+        '[data-raised="pane-notices.e2e"] [data-scope=notice][data-part=under]',
       );
       const choice = document.querySelector<HTMLElement>(
         '[data-raised="pane-notices.e2e"] .dispatch-within',
@@ -1037,7 +1138,11 @@ describe("a Notice in a pane", () => {
       return {
         under: box(under),
         underScrolls: under ? under.scrollHeight > under.clientHeight + 1 : false,
-        line: box(document.querySelector('[data-raised="pane-notices.e2e"] .notice-pane')),
+        line: box(
+          document.querySelector(
+            '[data-raised="pane-notices.e2e"][data-placement=pane] > [data-scope=button-row]',
+          ),
+        ),
         pre: box(document.querySelector('[data-raised="pane-notices.e2e"] pre')),
         choice: box(choice),
         says: box(choice?.querySelector("p")),

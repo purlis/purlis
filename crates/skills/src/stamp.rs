@@ -67,18 +67,88 @@ impl Stamp {
             })
             .collect();
         // The index a router hands in place of what it hid (SK-15): a change to what is hidden
-        // changes it.
+        // changes it: what it names, and what it says to use instead, but not its text (#3245).
+        // The harness lists the index by its fixed description, and a hidden skill is loaded as
+        // it is now (`skill_load`), so a hidden skill's description edit is nothing a running
+        // chat misses.
         if let Some(index) = set.index() {
             rows.push(Stamped {
                 name: index.name,
                 path: PathBuf::new(),
-                description: index.text,
+                description: named_by_the_index(set),
                 body: None,
             });
         }
         rows.sort();
         Stamp(rows)
     }
+
+    /// **What changed from this stamp to `now`, by skill name** (#3694, S8): the skills a chat
+    /// started at this one lacks, the ones it has that are gone, and the ones in both that
+    /// changed (moved, described anew, or edited where its harness would not read the edit). Each
+    /// list in name order, each name once.
+    pub fn changed_to(&self, now: &Stamp) -> SkillsChanged {
+        let names = |stamp: &Stamp| -> std::collections::BTreeSet<String> {
+            stamp.0.iter().map(|row| row.name.clone()).collect()
+        };
+        let rows_of = |stamp: &Stamp, name: &str| -> Vec<Stamped> {
+            stamp
+                .0
+                .iter()
+                .filter(|row| row.name == name)
+                .cloned()
+                .collect()
+        };
+        let (then, now_names) = (names(self), names(now));
+        SkillsChanged {
+            added: now_names.difference(&then).cloned().collect(),
+            gone: then.difference(&now_names).cloned().collect(),
+            edited: then
+                .intersection(&now_names)
+                .filter(|name| rows_of(self, name) != rows_of(now, name))
+                .cloned()
+                .collect(),
+        }
+    }
+}
+
+/// **What changed in a running chat's skills since it started, by name** ([`Stamp::changed_to`]):
+/// what the Skills view marks when its chat's skills changed (#3694).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SkillsChanged {
+    /// Skills a chat started now would get that it does not have.
+    pub added: Vec<String>,
+    /// Skills it has that a chat started now would not get.
+    pub gone: Vec<String>,
+    /// Skills it has whose file, description or (where its harness does not read an edit by
+    /// itself) text changed.
+    pub edited: Vec<String>,
+}
+
+impl SkillsChanged {
+    /// Whether nothing changed.
+    pub fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.gone.is_empty() && self.edited.is_empty()
+    }
+}
+
+/// What `set`'s index names, one line each, by name: every skill a router hid, and where one is
+/// deprecated, that it is and what it names instead.
+fn named_by_the_index(set: &SkillSet) -> String {
+    let mut named: Vec<String> = set
+        .effective
+        .iter()
+        .filter(|effective| set.hidden_by_router(&effective.skill.name).is_some())
+        .map(|effective| match &effective.deprecated {
+            None => effective.skill.name.clone(),
+            Some(deprecated) => match &deprecated.replacement {
+                None => format!("{}\tdeprecated", effective.skill.name),
+                Some(instead) => format!("{}\tdeprecated\t{instead}", effective.skill.name),
+            },
+        })
+        .collect();
+    named.sort();
+    named.join("\n")
 }
 
 #[cfg(test)]

@@ -10,11 +10,11 @@
 //! the chat's number), sandboxed or not, so a chat gets one behaviour (D-2). Outside a chat, or
 //! where no app takes the ask, the command runs here as it always has.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use purlis_core::gitbroker::commit as broker;
-use purlis_core::hookwire::{self, CommitAsk, GitAsk, GitWork, SOCKET_ENV, Stage};
+use purlis_core::hookwire::{self, CommitAsk, FolderName, GitAsk, GitWork, SOCKET_ENV, Stage};
 use purlis_core::repocmd::Say;
 use purlis_core::worktree::git;
 
@@ -30,14 +30,13 @@ pub enum Forwarded {
     Unsure(String),
 }
 
-/// How long the app may take to clone `repos` repos: git's own limit for each round of
-/// [`purlis_core::repocmd::clone::WORKERS`] clones at once, and one more for the wiring and the
-/// manifest after them (D-6). Above git's limit, so the asker never gives up on a clone git is
-/// still allowed to finish.
-pub fn a_clone_takes_at_most(repos: usize) -> Duration {
-    let rounds = repos.max(1).div_ceil(purlis_core::repocmd::clone::WORKERS);
-    git::NETWORK * u32::try_from(rounds + 1).unwrap_or(u32::MAX)
-}
+/// The longest a clone the app runs for this chat may show no life before this command stops
+/// waiting on it (#4080). Not a bound on the whole clone: the app says the clone is alive
+/// whenever git says something ([`hookwire::Answer::Alive`]), and stops a git that has said
+/// nothing for [`purlis_core::cloning::STALL`] itself. Above that, so the app's own sentence for
+/// a stalled clone reaches the chat, with git's network limit for the steps around a clone.
+pub const A_CLONE_IS_SILENT_AT_MOST: Duration =
+    Duration::from_secs(purlis_core::cloning::STALL.as_secs() + git::NETWORK.as_secs());
 
 /// How long the app may take to cut a worktree: several local git calls, each held to
 /// [`git::READ`] (D-6).
@@ -51,6 +50,8 @@ pub fn forwarded(workspace: &str, work: GitWork, within: Duration) -> Forwarded 
             hookwire::Ask::Git(Box::new(GitAsk {
                 chat,
                 workspace: workspace.to_owned(),
+                // A clone's wait follows its liveness (#4080).
+                alive: matches!(work, GitWork::Clone { .. } | GitWork::Create { .. }),
                 work,
             }))
         },
@@ -119,16 +120,122 @@ pub fn commit_ask(
     Ok((message, stage))
 }
 
+/// Where `purlis worktree commit` runs (#3927): the project at `root` and the folder `cwd`.
+pub struct RunIn<'a> {
+    pub root: &'a Path,
+    pub cwd: &'a Path,
+}
+
+impl RunIn<'_> {
+    /// The branch folder the command runs in, by its names, and its top and where the command
+    /// stands, as the kernel names them; `None` outside one.
+    fn folder(&self) -> Option<(FolderName, PathBuf, PathBuf)> {
+        let at = purlis_core::worktree::locate(self.root, self.cwd)?;
+        let top = purlis_core::worktree::path_for(self.root, &at.workspace, &at.repo, &at.piece)
+            .ok()
+            .and_then(|top| std::fs::canonicalize(top).ok())?;
+        let here = std::fs::canonicalize(self.cwd).ok()?;
+        Some((
+            FolderName {
+                workspace: at.workspace,
+                repo: at.repo,
+                piece: at.piece,
+            },
+            top,
+            here,
+        ))
+    }
+}
+
+/// `paths`, named from `here` in the branch folder `named` whose top is `top`, as paths
+/// relative to that top, as git takes them there (#3927): `..` within the folder, a path
+/// written whole inside it, and one spelled from the workspace or the project
+/// (`.worktrees/<repo>/<piece>/…`, `workspaces/<ws>/.worktrees/<repo>/<piece>/…`) that names
+/// this very folder. A path that leaves the folder is refused, naming the spellings that work.
+pub fn relative_to_the_folder(
+    top: &Path,
+    here: &Path,
+    named: &FolderName,
+    paths: Vec<String>,
+) -> Result<Vec<String>, String> {
+    use std::path::Component;
+    let below = here.strip_prefix(top).unwrap_or(Path::new(""));
+    let from_workspace = Path::new(purlis_core::worktree::DIR_NAME)
+        .join(&named.repo)
+        .join(&named.piece);
+    let from_project = Path::new("workspaces")
+        .join(&named.workspace)
+        .join(&from_workspace);
+    let outside = |path: &str| {
+        format!(
+            "the path {path:?} is outside branch folder {} · {}: name paths relative to the \
+             branch folder, running the command inside it or with `env -C <branch folder>`, or \
+             from the workspace as `{}/<path>`. Nothing was committed",
+            purlis_core::shown::short(&named.repo),
+            purlis_core::shown::short(&named.piece),
+            from_workspace.display()
+        )
+    };
+    paths
+        .into_iter()
+        .map(|path| {
+            let given = Path::new(&path);
+            let from_top = if given.is_absolute() {
+                given
+                    .strip_prefix(top)
+                    .map_err(|_| outside(&path))?
+                    .to_path_buf()
+            } else if let Ok(rest) = given
+                .strip_prefix(&from_workspace)
+                .or_else(|_| given.strip_prefix(&from_project))
+            {
+                rest.to_path_buf()
+            } else {
+                below.join(given)
+            };
+            let mut parts: Vec<String> = Vec::new();
+            for part in from_top.components() {
+                match part {
+                    Component::Normal(name) => parts.push(name.to_string_lossy().into_owned()),
+                    Component::CurDir => {}
+                    Component::ParentDir => {
+                        parts.pop().ok_or_else(|| outside(&path))?;
+                    }
+                    Component::RootDir | Component::Prefix(_) => return Err(outside(&path)),
+                }
+            }
+            Ok(if parts.is_empty() {
+                ".".to_owned()
+            } else {
+                parts.join("/")
+            })
+        })
+        .collect()
+}
+
 /// `purlis worktree commit`: hands the commit to the app that started this sandboxed chat
 /// (#1055), prints what it answers, and answers the exit status. Nothing is committed by this
-/// process: a chat that is not sandboxed is told to use git.
+/// process: a chat that is not sandboxed is told to use git. Run inside a branch folder, its
+/// paths are taken from where it runs there and the ask names that folder (#3927).
 pub fn commit(
+    run_in: &RunIn<'_>,
     message: Option<String>,
     all: bool,
     amend: bool,
     paths: Vec<String>,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
+    let folder = run_in.folder();
+    let paths = match &folder {
+        Some((named, top, here)) => match relative_to_the_folder(top, here, named, paths) {
+            Ok(paths) => paths,
+            Err(why) => {
+                say(Say::Fail(why.into()));
+                return 2;
+            }
+        },
+        None => paths,
+    };
     let (message, stage) = match commit_ask(message, all, amend, paths) {
         Ok(ask) => ask,
         Err(why) => {
@@ -140,12 +247,14 @@ pub fn commit(
         say(Say::Fail(broker::PLAIN_GIT.into()));
         return 1;
     }
+    let folder = folder.map(|(named, _, _)| named);
     let forwarded = asked(
         |chat| {
             hookwire::Ask::Commit(Box::new(CommitAsk {
                 chat,
                 message,
                 stage,
+                folder,
             }))
         },
         A_COMMIT_TAKES_AT_MOST,
@@ -214,142 +323,4 @@ pub fn told(forwarded: Forwarded, say: &mut dyn FnMut(Say)) -> Option<u8> {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::io::{Error, ErrorKind};
-
-    use super::*;
-
-    #[test]
-    fn an_app_that_ends_the_connection_at_once_did_not_take_it_and_a_quiet_one_may_have() {
-        for kind in [
-            ErrorKind::UnexpectedEof,
-            ErrorKind::BrokenPipe,
-            ErrorKind::ConnectionReset,
-        ] {
-            assert!(matches!(
-                answered(Err(Error::from(kind))),
-                Forwarded::NotTaken
-            ));
-        }
-        assert!(matches!(
-            answered(Err(Error::from(ErrorKind::WouldBlock))),
-            Forwarded::Unsure(_)
-        ));
-        assert!(matches!(
-            answered(Ok(hookwire::Answer::No {
-                why: hookwire::NOTHING_ANSWERS.to_owned()
-            })),
-            Forwarded::NotTaken
-        ));
-    }
-
-    #[test]
-    fn a_commit_is_asked_for_by_message_and_paths_and_other_spellings_are_refused() {
-        let paths = |of: &[&str]| of.iter().map(|p| (*p).to_owned()).collect::<Vec<_>>();
-        assert_eq!(
-            commit_ask(Some("one".to_owned()), true, false, Vec::new()),
-            Ok(("one".to_owned(), Stage::Tracked))
-        );
-        assert_eq!(
-            commit_ask(Some("one".to_owned()), false, false, paths(&["a", "-n"])),
-            Ok(("one".to_owned(), Stage::Paths(paths(&["a", "-n"]))))
-        );
-        // An amend is refused in the sentence that names everything this never does.
-        let amend = commit_ask(Some("one".to_owned()), true, true, Vec::new()).unwrap_err();
-        assert_eq!(amend, broker::COMMITS_ONLY);
-        for (message, all, of) in [
-            (None, true, vec![]),
-            (Some(" "), true, vec![]),
-            (Some("one"), false, vec![]),
-            (Some("one"), true, vec!["a"]),
-            (Some("one"), false, vec!["../a"]),
-            (Some("one"), false, vec![".git/config"]),
-        ] {
-            assert!(
-                commit_ask(message.map(str::to_owned), all, false, paths(&of)).is_err(),
-                "{message:?} {all} {of:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn the_command_has_no_spelling_for_a_reset_or_a_forced_push() {
-        use clap::Parser as _;
-        for words in [
-            vec!["purlis", "worktree", "reset"],
-            vec!["purlis", "worktree", "push", "--force"],
-            vec!["purlis", "worktree", "push", "-f"],
-            vec!["purlis", "worktree", "push", "origin", "main"],
-            vec!["purlis", "worktree", "update", "--continue", "--abort"],
-            vec!["purlis", "worktree", "update", "--base", "main", "--abort"],
-            vec![
-                "purlis", "worktree", "commit", "-m", "x", "--all", "--reset",
-            ],
-            vec!["purlis", "worktree", "commit", "-m", "x", "--all", "--push"],
-            vec![
-                "purlis",
-                "worktree",
-                "commit",
-                "-m",
-                "x",
-                "--all",
-                "--no-verify",
-            ],
-            vec![
-                "purlis", "worktree", "commit", "-m", "x", "--all", "--branch", "main",
-            ],
-            vec![
-                "purlis", "worktree", "commit", "-m", "x", "--all", "--author", "a",
-            ],
-        ] {
-            assert!(crate::Cli::try_parse_from(&words).is_err(), "{words:?}");
-        }
-        assert!(
-            crate::Cli::try_parse_from(["purlis", "worktree", "commit", "-m", "x", "--", "-n"])
-                .is_ok()
-        );
-        for words in [
-            vec!["purlis", "worktree", "push"],
-            vec!["purlis", "worktree", "push", "--force-with-lease"],
-            vec!["purlis", "worktree", "update"],
-            vec!["purlis", "worktree", "update", "--base", "main"],
-            vec!["purlis", "worktree", "update", "--continue"],
-            vec!["purlis", "worktree", "update", "--abort"],
-            vec!["purlis", "worktree", "add", "r", "p", "--base", "HEAD"],
-        ] {
-            assert!(crate::Cli::try_parse_from(&words).is_ok(), "{words:?}");
-        }
-    }
-
-    #[test]
-    fn the_wait_is_longer_than_git_may_take() {
-        assert!(a_clone_takes_at_most(1) > git::NETWORK);
-        assert!(a_clone_takes_at_most(purlis_core::repocmd::clone::WORKERS + 1) > git::NETWORK * 2);
-        assert!(A_WORKTREE_TAKES_AT_MOST > git::READ);
-        assert!(A_COMMIT_TAKES_AT_MOST > broker::STAGING + broker::COMMITTING);
-    }
-
-    #[test]
-    fn what_the_app_said_is_printed_line_for_line_and_its_status_is_the_commands() {
-        let mut printed = Vec::new();
-        let code = told(
-            Forwarded::Said {
-                lines: vec![
-                    Say::Info("a".to_owned().into()),
-                    Say::Fail("b".to_owned().into()),
-                ],
-                code: 2,
-            },
-            &mut |line| printed.push(line),
-        );
-        assert_eq!(code, Some(2));
-        assert_eq!(
-            printed,
-            [
-                Say::Info("a".to_owned().into()),
-                Say::Fail("b".to_owned().into())
-            ]
-        );
-        assert_eq!(told(Forwarded::NotTaken, &mut |_| {}), None);
-    }
-}
+mod tests;

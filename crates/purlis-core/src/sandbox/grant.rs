@@ -31,6 +31,10 @@
 //!
 //! - **A service on this Mac** ([`What::Port`], [`super::localport`]): one loopback port, never
 //!   a range, every port or one of purlis's own; this chat's or this project's on this machine.
+//! - **A port to serve on** ([`What::Listen`], #2019): one port from 1024 that nothing on this
+//!   Mac listens on, never a range or one of purlis's own; this chat's or this project's on this
+//!   machine. The chat's server listens on a socket of its own behind purlis's door on the port
+//!   ([`super::door`]), which its browser reaches as a named local port.
 //!
 //! **No read is granted.** A chat's sandbox denies reads only for the classes above, so a read
 //! block is always one of those and is answered with the brokered route.
@@ -72,6 +76,9 @@ pub enum What {
     /// Connect to a service on this Mac: whatever listens on this one port of the loopback
     /// interface ([`super::localport::port`], qw384).
     Port(u16),
+    /// Run a server on this one port (#2019): on a socket of the chat's own, behind purlis's door
+    /// on the port, which the chat and its browser reach as a named local port.
+    Listen(u16),
 }
 
 impl What {
@@ -83,6 +90,7 @@ impl What {
             Self::Socket(_) => "socket",
             Self::Service(_) => "service",
             Self::Port(_) => "port",
+            Self::Listen(_) => "listen",
         }
     }
 
@@ -92,7 +100,7 @@ impl What {
             Self::Host(host) => host.to_string(),
             Self::Write(path) | Self::Socket(path) => path.display().to_string(),
             Self::Service(name) => name.clone(),
-            Self::Port(port) => port.to_string(),
+            Self::Port(port) | Self::Listen(port) => port.to_string(),
         }
     }
 
@@ -119,6 +127,7 @@ impl fmt::Display for What {
             Self::Socket(path) => write!(f, "connecting to the local socket {}", path.display()),
             Self::Service(name) => write!(f, "reaching the system service {name}"),
             Self::Port(port) => write!(f, "connecting to the service on this Mac at port {port}"),
+            Self::Listen(port) => write!(f, "running a server on port {port}"),
         }
     }
 }
@@ -255,9 +264,15 @@ pub struct Grants {
     pub services: Vec<String>,
     /// Services on this Mac, each by its one port (qw384).
     pub ports: Vec<u16>,
+    /// Ports of this Mac's loopback the chat may listen on (#2019).
+    pub listens: Vec<u16>,
     /// Which of them were allowed for the chat's next run alone ([`Level::Once`], D-sock-3):
     /// a scope of its own, so a start can judge each against the scopes policy leaves open.
     pub once: Vec<What>,
+    /// **On a runner, what the start from its desktop says its person allowed of the chat's
+    /// persona** (#4071, [`super::persona::tools_its_desktop_allowed`]), as its digest: for this
+    /// start alone, set only for a start a link made, and it arms tools and grants nothing else.
+    pub tools_allowed_by_desktop: Option<String>,
 }
 
 impl Grants {
@@ -268,6 +283,7 @@ impl Grants {
             && self.sockets.is_empty()
             && self.services.is_empty()
             && self.ports.is_empty()
+            && self.listens.is_empty()
     }
 
     /// `what` added, once.
@@ -280,8 +296,13 @@ impl Grants {
                 self.services.push(name.clone());
             }
             What::Port(port) if !self.ports.contains(port) => self.ports.push(*port),
-            What::Host(_) | What::Write(_) | What::Socket(_) | What::Service(_) | What::Port(_) => {
-            }
+            What::Listen(port) if !self.listens.contains(port) => self.listens.push(*port),
+            What::Host(_)
+            | What::Write(_)
+            | What::Socket(_)
+            | What::Service(_)
+            | What::Port(_)
+            | What::Listen(_) => {}
         }
     }
 
@@ -499,6 +520,43 @@ pub fn brokered_route(class: Class) -> &'static str {
              ever writes it. Make the change yourself, in your own editor or terminal."
         }
     }
+}
+
+/// What a Notice says of a refused write of a repository's git folder that was there as a
+/// Claude Code chat started, or of a folder above one ([`keeps_git_folder`]): no grant lets it
+/// through, so it says the way that works.
+pub const GIT_FOLDER_KEPT: &str = "That holds a repository's git folder, which stays where it is \
+     while the chat runs, so no grant would let this through. Make the change yourself, in your \
+     own terminal; a branch folder is removed with `purlis worktree remove`.";
+
+/// **Whether `path`, refused to a Claude Code chat of the plane at `root`, is held so a
+/// repository's git folder stays where it is** ([`super::Denied::git_folder_pins`]): a path
+/// that holds a git folder as a whole, or a folder above one, up to the folder it was found in
+/// ([`super::git_folders_searched`]). Allowing the chat to write such a folder would not let
+/// the refused write through, so its Notice offers no Allow. Compared as written and as the
+/// kernel names it, case-folded where names are (`folded`).
+pub fn keeps_git_folder(path: &Path, root: &Path, folded: bool) -> bool {
+    let fold = |path: &Path| {
+        if folded {
+            PathBuf::from(path.to_string_lossy().to_lowercase())
+        } else {
+            path.to_path_buf()
+        }
+    };
+    let asked = lexical(path);
+    let asked = [fold(&asked), fold(&super::real(&asked))];
+    super::planted::git_folders_kept(&super::git_folders_searched(root))
+        .into_iter()
+        .any(|(pin, searched)| {
+            let searched = lexical(&searched);
+            pin.ancestors()
+                .take_while(|folder| folder.starts_with(&searched))
+                .any(|held| {
+                    [fold(held), fold(&super::real(held))]
+                        .iter()
+                        .any(|held| asked.contains(held))
+                })
+        })
 }
 
 /// `typed` as a host a grant names, or why not.
@@ -810,5 +868,5 @@ pub fn told(what: &What, level: Level) -> String {
 }
 
 #[cfg(test)]
-#[path = "grant_tests.rs"]
+#[path = "grant/tests.rs"]
 mod tests;

@@ -53,6 +53,31 @@ fn a_vault_value_written_over_several_lines_is_masked_on_the_one_line_shown() {
 }
 
 #[test]
+fn a_vault_value_across_the_lines_a_command_is_shown_on_is_masked_on_each() {
+    // #3502: a command over several lines is shown line by line. A value written over those
+    // lines, with its own line end or with a space where the command breaks the line, shows
+    // no part of itself on any line shown.
+    seen::remember("first-half-3502a\nsecond-half-3502a");
+    seen::remember("left-3502b right-3502b");
+
+    for text in [
+        "Run a command: printf 'first-half-3502a\nsecond-half-3502a' > key",
+        "Run a command: echo left-3502b\nright-3502b > key",
+        "Run a command: echo left-3502b\r\n  right-3502b\nls",
+    ] {
+        let lines = Summary::lines_of(text).expect("it runs over several lines");
+
+        assert!(lines.count > 1, "{text:?}");
+        assert!(
+            !lines.shown.iter().any(|line| line.contains("3502")),
+            "{text:?}: {:?}",
+            lines.shown
+        );
+        assert!(!Summary::of(text).as_str().contains("3502"), "{text:?}");
+    }
+}
+
+#[test]
 fn a_vault_value_that_overlaps_a_credential_shape_leaves_no_part_of_either() {
     // One that ends inside the shape, and one that begins inside it: each is masked with it
     // as one, so the part of the value outside the shape is not left beside the mask.
@@ -182,4 +207,23 @@ fn a_question_answer_that_carries_a_vault_value_is_answered_in_the_pane() {
             .iter()
             .all(|option| !option.label.contains("1047g"))
     );
+}
+
+#[test]
+fn a_vault_value_across_a_kept_blank_and_a_line_end_is_masked_on_the_line_shown() {
+    // #3470: a vertical tab (or a no-break space) stays on the summary's line while the line
+    // end beside it is collapsed. The value, put on one line the same way, is still found.
+    for (value, said) in [
+        ("ab-1047d\u{0B}\ncd-1047d", "echo ab-1047d\u{0B}\ncd-1047d"),
+        (
+            "ab-1047e\u{00A0}\ncd-1047e",
+            "echo ab-1047e\u{00A0}\ncd-1047e",
+        ),
+    ] {
+        seen::remember(value);
+
+        let summary = Summary::of(said);
+
+        assert!(!summary.as_str().contains("1047"), "{}", summary.as_str());
+    }
 }
