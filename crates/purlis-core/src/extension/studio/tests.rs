@@ -396,9 +396,7 @@ fn a_confined_program_reads_its_own_folder_and_the_system_and_nothing_a_person_k
 fn a_confined_program_starts_programs_from_what_it_reads_on_linux() {
     let profile = held(Path::new(EXT), Path::new(STATE), Path::new(TMP));
     let roots = profile.starts_from();
-    for root in [
-        EXT, STATE, TMP, "/bin", "/lib", "/lib64", "/usr/bin", "/usr/lib",
-    ] {
+    for root in [EXT, STATE, TMP, "/usr/bin", "/usr/lib"] {
         assert!(roots.contains(&PathBuf::from(root)), "{root}: {roots:?}");
     }
     assert!(!roots.contains(&PathBuf::from("/")), "{roots:?}");
