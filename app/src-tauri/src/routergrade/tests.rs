@@ -59,7 +59,7 @@ fn the_plan_says_the_library_its_tested_skills_and_the_chats_before_anything_run
         models: Vec::new(),
         model: None,
     };
-    let plan = RouterGradePlan::of(&planned, None, on);
+    let plan = RouterGradePlan::of(&planned, None, on, None);
     assert_eq!(plan.router, "relevance");
     assert_eq!(plan.library, 1);
     assert_eq!(plan.skills.len(), 1);
@@ -146,4 +146,58 @@ fn a_router_s_scorecard_shows_each_skill_s_tests_in_both_arms_and_each_chat_3617
             .all(|chat| !chat.kept),
         "not kept on this machine"
     );
+}
+
+/// Where a router's grade's chats run, as a test names it: `profile` and `model`.
+fn on(profile: &str, model: Option<&str>) -> crate::skillgrade::On {
+    crate::skillgrade::On {
+        profile: Some(profile.into()),
+        checked: Ok("Full sandbox".into()),
+        priced: grades::price::of_model(model),
+        models: vec!["sonnet".into(), "opus".into()],
+        model: model.map(str::to_owned),
+    }
+}
+
+/// #3618: pressing Grade consents to the profile, the model, the cap and the dollar limit the
+/// plan shows, as a skill's does: a press on a plan that showed others starts nothing.
+#[test]
+fn a_router_s_plan_consents_to_its_profile_model_and_limits_3618() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    let folder = root.join("skills/deploy");
+    std::fs::create_dir_all(folder.join("evals")).unwrap();
+    std::fs::write(
+        folder.join("SKILL.md"),
+        "---\nname: deploy\ndescription: Ships.\n---\n",
+    )
+    .unwrap();
+    std::fs::write(
+        folder.join("evals/triggers.json"),
+        r#"[{"query": "ship it", "should_trigger": true}]"#,
+    )
+    .unwrap();
+    let planned = routers::planned(root, None, None, "relevance").unwrap();
+    let consent = |on: &crate::skillgrade::On| consent_shown(&planned, on).unwrap();
+    let first = consent(&on("work", None));
+    assert_eq!(first, consent(&on("work", None)), "the same plan");
+    assert_ne!(first, consent(&on("home", None)), "another profile");
+    assert_ne!(first, consent(&on("work", Some("opus"))), "another model");
+    let mut capped = planned.clone();
+    capped.cap.tokens += 1;
+    assert_ne!(
+        first,
+        consent_shown(&capped, &on("work", None)).unwrap(),
+        "another cap"
+    );
+    let plan = RouterGradePlan::of(&planned, None, on("work", Some("opus")), None);
+    assert_eq!(plan.models, ["sonnet", "opus"]);
+    assert_eq!(plan.model.as_deref(), Some("opus"));
+    assert_eq!(
+        plan.consent.as_deref(),
+        Some(consent(&on("work", Some("opus"))).as_str())
+    );
+    assert!(plan.estimate.is_none(), "never graded: none known");
+    assert!(plan.estimate_same_library.is_none());
 }

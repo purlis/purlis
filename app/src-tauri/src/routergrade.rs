@@ -36,8 +36,9 @@ use purlis_core::skills::grades::{self, Spent};
 use crate::planes::{PlaneId, Planes};
 use crate::skillchange::flag_on;
 use crate::skillgrade::{
-    GradeEnded, GradeLeftOut, GradeOutcome, GradePrice, GradeSpent, InChats, Running, ScoredTest,
-    chats_on, held_to_its_end, not_kept, record_interrupted, running, scored_tests,
+    GradeEnded, GradeEstimate, GradeLeftOut, GradeOutcome, GradePrice, GradeSpent, InChats, On,
+    Running, ScoredTest, chats_on, held_to_its_end, not_kept, record_interrupted, running,
+    scored_tests, set_cap, terms,
 };
 
 /// The event the window is told each step of a router's grade by.
@@ -71,23 +72,51 @@ pub struct RouterGradePlan {
     pub cap_set_here: bool,
     pub cost_cap_usd: f64,
     pub priced: GradePrice,
-    /// The profile its chats run on (the project's default), the sandbox they run in there, or
-    /// why no grade can run on it.
+    /// The profile its chats run on (the one picked, else the project's default), the sandbox
+    /// they run in there, or why no grade can run on it.
     pub profile: Option<String>,
     pub sandbox: Option<String>,
     pub refused: Option<String>,
+    /// The models its harness offers for a grade, and the one picked (#3618, as SK-60's).
+    pub models: Vec<String>,
+    pub model: Option<String>,
+    /// **What it should spend, from the router's last grade in this scope** (#3618), as a skill's
+    /// plan works it out (#3273): null where it has none.
+    pub estimate: Option<GradeEstimate>,
+    /// Whether that grade ran on the library this one runs on: a chat is handed the whole
+    /// library, so one of another may spend otherwise, and the plan says so. Null where there
+    /// is no estimate.
+    pub estimate_same_library: Option<bool>,
     /// A grade running in this project now, where one is: a skill's or a router's.
     pub running: Option<String>,
+    /// What pressing Grade consents to: what it grades, and the profile, model, cap and dollar
+    /// limit this plan shows (`grades::consent_on`).
     pub consent: Option<String>,
 }
 
+/// **What pressing Grade on `planned`, its chats `on`, consents to**: what it grades, and the
+/// profile, model, token cap and dollar limit the plan shows, as a skill's plan's (#3618).
+fn consent_shown(planned: &RouterPlanned, on: &On) -> Option<String> {
+    planned
+        .consent
+        .as_deref()
+        .map(|consent| grades::consent_on(consent, &terms(&planned.cap, on)))
+}
+
 impl RouterGradePlan {
-    fn of(planned: &RouterPlanned, running: Option<String>, on: crate::skillgrade::On) -> Self {
-        let crate::skillgrade::On {
+    fn of(
+        planned: &RouterPlanned,
+        running: Option<String>,
+        on: On,
+        estimate: Option<routers::RouterEstimate>,
+    ) -> Self {
+        let consent = consent_shown(planned, &on);
+        let On {
             profile,
             checked,
             priced,
-            ..
+            models,
+            model,
         } = on;
         RouterGradePlan {
             router: planned.router.clone(),
@@ -120,10 +149,40 @@ impl RouterGradePlan {
             profile,
             refused: checked.as_ref().err().cloned(),
             sandbox: checked.ok(),
+            models,
+            model,
+            estimate: estimate.as_ref().map(|one| (&one.estimate).into()),
+            estimate_same_library: estimate.map(|one| one.same_library),
             running,
-            consent: planned.consent.clone(),
+            consent,
         }
     }
+}
+
+/// **The plan of grading the router `scope` chose**, its chats on `profile` and `model` (the
+/// project's default and the profile's own where none is picked), with its estimate.
+fn plan_of(
+    root: &std::path::Path,
+    plane: &PlaneId,
+    scope: &Scope,
+    profile: Option<String>,
+    model: Option<String>,
+) -> Result<RouterGradePlan, String> {
+    let router = chosen(root, scope)?;
+    let planned = routers::planned(
+        root,
+        scope.workspace.as_deref(),
+        scope.persona.as_deref(),
+        &router,
+    )?;
+    let on = chats_on(root, profile, model);
+    let estimate = routers::estimate(root, &planned, on.profile.as_deref());
+    Ok(RouterGradePlan::of(
+        &planned,
+        running_in(plane),
+        on,
+        estimate,
+    ))
 }
 
 /// **One step of a router's grade**, as the window is told it.
@@ -190,20 +249,43 @@ pub(crate) async fn router_grade_plan(
     plane: PlaneId,
     workspace: Option<String>,
     persona: Option<String>,
+    profile: Option<String>,
+    model: Option<String>,
 ) -> Result<RouterGradePlan, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading what a router's grade runs", move || {
         flag_on()?;
-        let scope = scope(workspace, persona)?;
-        let router = chosen(held.root(), &scope)?;
-        let planned = routers::planned(
+        plan_of(
             held.root(),
-            scope.workspace.as_deref(),
-            scope.persona.as_deref(),
-            &router,
-        )?;
-        let on = chats_on(held.root(), None, None);
-        Ok(RouterGradePlan::of(&planned, running_in(&plane), on))
+            &plane,
+            &scope(workspace, persona)?,
+            profile,
+            model,
+        )
+    })
+    .await
+}
+
+/// **Sets the token cap a grade in the project is held to**, on this machine, as a skill's plan
+/// sets it (#3618; the operator's ruling of 2026-10-26): one cap for every grade of the project.
+/// The answer is the router's plan again, with it.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn router_grade_set_cap(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: Option<String>,
+    persona: Option<String>,
+    profile: Option<String>,
+    model: Option<String>,
+    tokens: f64,
+) -> Result<RouterGradePlan, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("setting a grade's cap", move || {
+        flag_on()?;
+        let scope = scope(workspace, persona)?;
+        set_cap(held.root(), tokens)?;
+        plan_of(held.root(), &plane, &scope, profile, model)
     })
     .await
 }
@@ -216,18 +298,23 @@ impl LibraryChats for InChats<'_> {
     }
 }
 
-/// **Grades the router the studio's workspace or persona chose**, on the project's default
-/// profile: its chats run one at a time behind the window, which is told each step ([`EVENT`]).
-/// The answer is the grade's id. Refused while a grade runs in the project, and where the plan
-/// the person pressed Grade on no longer holds.
+/// **Grades the router the studio's workspace or persona chose**, on `profile` (the project's
+/// default where none is picked) and `model` (the profile's own where none is, #3618): its chats
+/// run one at a time behind the window, which is told each step ([`EVENT`]). The answer is the
+/// grade's id. Refused while a grade runs in the project, and where the plan the person pressed
+/// Grade on no longer holds: what it grades, the profile, the model, the cap or the limit.
 #[tauri::command]
 #[specta::specta]
+// A command's arguments are the window's call, named one by one, as the other commands' are.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn router_grade_start(
     app: tauri::AppHandle,
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     workspace: Option<String>,
     persona: Option<String>,
+    profile: Option<String>,
+    model: Option<String>,
     consent: String,
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
@@ -242,10 +329,14 @@ pub(crate) async fn router_grade_start(
             scope.persona.as_deref(),
             &router,
         )?;
-        if planned.consent.as_deref() != Some(consent.as_str()) {
+        // What runs is what the plan showed: its library and tests, on the profile, model and
+        // limits it showed (#3618).
+        let on = chats_on(&root, profile, model);
+        if consent_shown(&planned, &on).as_deref() != Some(consent.as_str()) {
             return Err(
-                "The router's library or its trigger tests changed since the plan was shown, so \
-                 nothing was started: read the plan again."
+                "The router's plan changed since it was shown (its library or trigger tests, the \
+                 profile or model its chats run on, or its limits), so nothing was started: read \
+                 the plan again."
                     .to_owned(),
             );
         }
@@ -256,12 +347,13 @@ pub(crate) async fn router_grade_start(
                     .to_owned(),
             );
         };
-        let crate::skillgrade::On {
+        let On {
             profile,
             checked,
             priced,
+            model,
             ..
-        } = chats_on(&root, None, None);
+        } = on;
         checked?;
         let profile = profile.ok_or("The grade did not start: no profile was found.")?;
         let id = purlis_core::reopen::mint();
@@ -404,7 +496,7 @@ pub(crate) async fn router_grade_start(
                         asked_for: 0,
                         harness: None,
                         plugins_off: None,
-                        model: None,
+                        model: model.as_deref(),
                         reported: Vec::new(),
                     };
                     let report = engine::grade(&request, &mut chats, Some(limits.clone()));

@@ -339,3 +339,61 @@ fn an_interrupted_grade_says_it_was_interrupted_and_no_count_3616() {
          before any trigger test was scored."
     );
 }
+
+/// #3618: a router's plan's estimate is its last grade's spend per chat, times the chats this one
+/// runs, from the newest on this profile; it says which grade that was and whether it ran on this
+/// library. An interrupted grade, which scored no skill, gives none to go by.
+#[test]
+fn a_router_s_estimate_is_its_last_grade_s_spend_per_chat_3618() {
+    let tmp = plane();
+    let root = tmp.path();
+    let planned = planned(root, Some("ops"), None, "relevance").unwrap();
+    let chats = planned.plan.unwrap().chats;
+    assert!(
+        estimate(root, &planned, Some("claude")).is_none(),
+        "never graded"
+    );
+
+    // 12 chats asked for in all (two skills, two arms, three runs) spent 12,000 tokens.
+    let mut on_this = graded("01OLDER", "2026-10-01T10:00:00Z");
+    on_this.library = planned.copies.iter().map(RecordedCopy::of).collect();
+    let mut elsewhere = graded("01NEWER", "2026-10-02T10:00:00Z");
+    elsewhere.profile = Some("work".to_owned());
+    elsewhere.spent.tokens = Some(24_000);
+    elsewhere.report.spent_tokens = Some(24_000);
+    let mut stopped = graded("01STOPPED", "2026-10-03T10:00:00Z");
+    stopped.report = interrupted_report("relevance", 200_000, None, None);
+    stopped.spent.chats = 0;
+    written(
+        root,
+        &[
+            serde_json::to_value(&on_this).unwrap(),
+            serde_json::to_value(&elsewhere).unwrap(),
+            serde_json::to_value(&stopped).unwrap(),
+        ],
+    );
+    assert_eq!(grades_of(root, "relevance", Some("ops"), None).len(), 3);
+
+    let said = estimate(root, &planned, Some("claude")).expect("an estimate");
+    assert_eq!(
+        said.estimate.ts, "2026-10-01T10:00:00Z",
+        "the newest on this profile"
+    );
+    assert_eq!(said.estimate.chats_then, 12);
+    assert_eq!(
+        said.estimate.tokens,
+        Some(1_000 * u64::from(chats)),
+        "a thousand a chat"
+    );
+    assert_eq!(said.estimate.same_profile, Some(true));
+    assert!(!said.estimate.interrupted);
+    assert!(said.same_library, "{said:?}");
+
+    let said = estimate(root, &planned, Some("other")).expect("an estimate");
+    assert_eq!(
+        said.estimate.ts, "2026-10-02T10:00:00Z",
+        "the newest that asked for a chat, the interrupted one passed over"
+    );
+    assert_eq!(said.estimate.same_profile, Some(false));
+    assert!(!said.same_library, "graded on another library");
+}

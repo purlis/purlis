@@ -2136,14 +2136,21 @@ export const commands = {
 	 *  **What grading the router the studio's workspace or persona chose would run**, before
 	 *  anything runs.
 	 */
-	routerGradePlan: (plane: PlaneId, workspace: string | null, persona: string | null) => typedError<RouterGradePlan, string>(__TAURI_INVOKE("router_grade_plan", { plane, workspace, persona })),
+	routerGradePlan: (plane: PlaneId, workspace: string | null, persona: string | null, profile: string | null, model: string | null) => typedError<RouterGradePlan, string>(__TAURI_INVOKE("router_grade_plan", { plane, workspace, persona, profile, model })),
 	/**
-	 *  **Grades the router the studio's workspace or persona chose**, on the project's default
-	 *  profile: its chats run one at a time behind the window, which is told each step ([`EVENT`]).
-	 *  The answer is the grade's id. Refused while a grade runs in the project, and where the plan
-	 *  the person pressed Grade on no longer holds.
+	 *  **Grades the router the studio's workspace or persona chose**, on `profile` (the project's
+	 *  default where none is picked) and `model` (the profile's own where none is, #3618): its chats
+	 *  run one at a time behind the window, which is told each step ([`EVENT`]). The answer is the
+	 *  grade's id. Refused while a grade runs in the project, and where the plan the person pressed
+	 *  Grade on no longer holds: what it grades, the profile, the model, the cap or the limit.
 	 */
-	routerGradeStart: (plane: PlaneId, workspace: string | null, persona: string | null, consent: string) => typedError<string, string>(__TAURI_INVOKE("router_grade_start", { plane, workspace, persona, consent })),
+	routerGradeStart: (plane: PlaneId, workspace: string | null, persona: string | null, profile: string | null, model: string | null, consent: string) => typedError<string, string>(__TAURI_INVOKE("router_grade_start", { plane, workspace, persona, profile, model, consent })),
+	/**
+	 *  **Sets the token cap a grade in the project is held to**, on this machine, as a skill's plan
+	 *  sets it (#3618; the operator's ruling of 2026-10-26): one cap for every grade of the project.
+	 *  The answer is the router's plan again, with it.
+	 */
+	routerGradeSetCap: (plane: PlaneId, workspace: string | null, persona: string | null, profile: string | null, model: string | null, tokens: number | null) => typedError<RouterGradePlan, string>(__TAURI_INVOKE("router_grade_set_cap", { plane, workspace, persona, profile, model, tokens })),
 	/**
 	 *  **The scorecard of the grade `grade` of the router the studio's workspace or persona chose**
 	 *  (#3617), as the routers' record holds it.
@@ -11587,14 +11594,32 @@ export type RouterGradePlan = {
 	cost_cap_usd: number | null,
 	priced: GradePrice,
 	/**
-	 *  The profile its chats run on (the project's default), the sandbox they run in there, or
-	 *  why no grade can run on it.
+	 *  The profile its chats run on (the one picked, else the project's default), the sandbox
+	 *  they run in there, or why no grade can run on it.
 	 */
 	profile: string | null,
 	sandbox: string | null,
 	refused: string | null,
+	/**  The models its harness offers for a grade, and the one picked (#3618, as SK-60's). */
+	models: string[],
+	model: string | null,
+	/**
+	 *  **What it should spend, from the router's last grade in this scope** (#3618), as a skill's
+	 *  plan works it out (#3273): null where it has none.
+	 */
+	estimate: GradeEstimate | null,
+	/**
+	 *  Whether that grade ran on the library this one runs on: a chat is handed the whole
+	 *  library, so one of another may spend otherwise, and the plan says so. Null where there
+	 *  is no estimate.
+	 */
+	estimate_same_library: boolean | null,
 	/**  A grade running in this project now, where one is: a skill's or a router's. */
 	running: string | null,
+	/**
+	 *  What pressing Grade consents to: what it grades, and the profile, model, cap and dollar
+	 *  limit this plan shows (`grades::consent_on`).
+	 */
 	consent: string | null,
 };
 

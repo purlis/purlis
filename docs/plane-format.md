@@ -3910,7 +3910,12 @@ An end row, never a pass or a fail:
   router; a row is skipped where it says more than purlis writes: a router that is not an
   extension's id, or not the report's; a name that is not plain; a commit that is no whole hex
   id; a tree that is neither one nor `uncommitted`; more than 200 copies or skills; or a skill's
-  report that does not hold together as a skill's grade's must.
+  report that does not hold together as a skill's grade's must. A router's grade plan's estimate (#3618) is worked
+  out from these rows as a skill's is from the eval record (`grades::routers::estimate`): the
+  newest on the profile the grade runs on whose skills asked for a chat, else the newest that
+  asked for one, its spend shared over every chat its skills' arms asked for; an `interrupted`
+  row with no skill scored counts none. The plan says which grade that was, and that it ran on
+  another library where its copies (by level, name and tree) are not the plan's.
 - **Git:** committed. Nothing commits it by itself: the next save does.
 - **Encoding details:** path `personas/_grades/routers/{%Y-%m}.{device}.jsonl`; keys sorted,
   `\n`, `O_APPEND` through no link, `0o644` (`dispatch::append`). The skills' eval record never

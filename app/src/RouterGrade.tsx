@@ -3,7 +3,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { commands, ROUTER_GRADE, type RouterGradePlan, type RouterGradeStep } from "./bindings";
+import {
+  commands,
+  ROUTER_GRADE,
+  type ProfileRow,
+  type RouterGradePlan,
+  type RouterGradeStep,
+} from "./bindings";
 import { counted } from "./dispatches";
 import {
   KeptChatShown,
@@ -13,12 +19,23 @@ import {
   TriggerTestsTable,
 } from "./GradeScorecard";
 import { Notice } from "./Notice";
-import { dollarsSaid, GradingHeading, tokensSaid } from "./SkillGrade";
+import {
+  costSaid,
+  dollarsSaid,
+  GradingHeading,
+  limitSaid,
+  TokenCap,
+  tokensSaid,
+} from "./SkillGrade";
 import { NotRead, ReadingRows, useRead } from "./SkillPanels";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Tile, Totals } from "./ui/card/Totals";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { PanelSectionTitle } from "./ui/panel/Panel";
+import { Select } from "./ui/select/Select";
+
+/** The project's default profile, or the profile's own model, in a picker. */
+const DEFAULT = "";
 
 /** How a router's grade that ended is said, in one line. */
 export function routerEndedSaid(step: RouterGradeStep): string {
@@ -71,6 +88,13 @@ export function RouterGrade({
   const [asking, setAsking] = useState(false);
   const [step, setStep] = useState<RouterGradeStep>();
   const [said, setSaid] = useState<{ tone: "news" | "trouble"; text: string }>();
+  // Where its chats run (#3618): the project's default profile and the profile's own model
+  // until the person picks others.
+  const [profiles, setProfiles] = useState<readonly ProfileRow[]>([]);
+  const [profile, setProfile] = useState(DEFAULT);
+  const [model, setModel] = useState(DEFAULT);
+  const picked = profile === DEFAULT ? null : profile;
+  const pickedModel = model === DEFAULT ? null : model;
   const running = step !== undefined && step.ended === null;
   // The latest to tell, read as an event lands: the listener is not drawn again with it, so no
   // step is lost while it would be.
@@ -95,20 +119,33 @@ export function RouterGrade({
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
   }, [plane, router]);
 
+  /** Reads the plan of a grade on `on` and `onModel`. */
+  const read = (on: string | null, onModel: string | null) =>
+    void commands
+      .routerGradePlan(plane, workspace, persona, on, onModel)
+      .then((answer) => {
+        if (answer.status === "ok") {
+          setPlan(answer.data);
+          setRefused(undefined);
+        } else setRefused(answer.error);
+      })
+      .catch((err: unknown) => setRefused(String(err)));
+
   const open = () => {
     setAsking(true);
     setSaid(undefined);
-    void commands.routerGradePlan(plane, workspace, persona).then((answer) => {
-      if (answer.status === "ok") {
-        setPlan(answer.data);
-        setRefused(undefined);
-      } else setRefused(answer.error);
-    });
+    read(picked, pickedModel);
+    void commands
+      .startOptions(plane)
+      .then((answer) => {
+        if (answer.status === "ok") setProfiles(answer.data.profiles);
+      })
+      .catch(() => undefined);
   };
 
   const start = () => {
     void commands
-      .routerGradeStart(plane, workspace, persona, plan?.consent ?? "")
+      .routerGradeStart(plane, workspace, persona, picked, pickedModel, plan?.consent ?? "")
       .then((answer) => {
         if (answer.status === "ok") {
           setAsking(false);
@@ -123,7 +160,11 @@ export function RouterGrade({
             ended: null,
             said: null,
           });
-        } else setSaid({ tone: "trouble", text: answer.error });
+        } else {
+          setSaid({ tone: "trouble", text: answer.error });
+          // A plan that changed since it was shown is read again, to be pressed again.
+          read(picked, pickedModel);
+        }
       });
   };
 
@@ -173,25 +214,72 @@ export function RouterGrade({
           Reading what a grade runs…
         </p>
       ) : (
-        <RouterGradePlanShown plan={plan} onStart={start} onCancel={() => setAsking(false)} />
+        <RouterGradePlanShown
+          plan={plan}
+          profiles={profiles}
+          profile={profile}
+          model={model}
+          onProfile={(to) => {
+            // Another profile may be another program, whose models are its own.
+            setProfile(to);
+            setModel(DEFAULT);
+            read(to === DEFAULT ? null : to, null);
+          }}
+          onModel={(to) => {
+            setModel(to);
+            read(picked, to === DEFAULT ? null : to);
+          }}
+          onCap={(tokens) =>
+            void commands
+              .routerGradeSetCap(plane, workspace, persona, picked, pickedModel, tokens)
+              .then((answer) => {
+                if (answer.status === "ok") setPlan(answer.data);
+                else setSaid({ tone: "trouble", text: answer.error });
+              })
+          }
+          onStart={start}
+          onCancel={() => setAsking(false)}
+        />
       )}
     </div>
   );
 }
 
-/** The cost-first plan of a router's grade, and the press that starts it. */
+/** **What a router's grade should spend, from its last grade** (#3618): a skill's plan's words
+ *  (`costSaid`), and, where that grade ran on another library, that this one may spend otherwise. */
+export function routerCostSaid(plan: RouterGradePlan): string {
+  const said = costSaid(plan, "router");
+  return plan.estimate_same_library === false
+    ? `${said} That grade ran on another library, and each chat is handed the whole library, so this one may spend otherwise.`
+    : said;
+}
+
+/** The cost-first plan of a router's grade, where its chats run and what it may spend, and the
+ *  press that starts it. */
 function RouterGradePlanShown({
   plan,
+  profiles,
+  profile,
+  model,
+  onProfile,
+  onModel,
+  onCap,
   onStart,
   onCancel,
 }: {
   plan: RouterGradePlan;
+  profiles: readonly ProfileRow[];
+  /** The profile and model picked, `DEFAULT` for none. */
+  profile: string;
+  model: string;
+  onProfile: (to: string) => void;
+  onModel: (to: string) => void;
+  onCap: (tokens: number) => void;
   onStart: () => void;
   onCancel: () => void;
 }) {
   const nothing = plan.chats === 0;
   const tests = plan.skills.reduce((all, one) => all + one.tests, 0);
-  const limit = `$${(plan.cost_cap_usd ?? 0).toFixed(2)}`;
   return (
     <div data-testid="router-grade-plan">
       {plan.refused !== null && (
@@ -214,10 +302,11 @@ function RouterGradePlanShown({
             with the router {plan.router} in place and {counted(plan.runs, "time", "times")} with
             the built-in router, each chat handed the library of{" "}
             {counted(plan.library, "skill", "skills")}, up to {counted(plan.chats, "chat", "chats")}{" "}
-            × {plan.chat_minutes} min. It stops once its chats have spent{" "}
+            × {plan.chat_minutes} min. {routerCostSaid(plan)} It stops once its chats have spent{" "}
             {tokensSaid(plan.token_cap ?? 0)}
             {plan.cap_set_here ? ", the cap you set on this machine" : ", the default cap"}, or cost{" "}
-            {limit}. The chats run on {plan.profile ?? "the project's default profile"}
+            {limitSaid(plan)}. The chats run on {plan.profile ?? "the project's default profile"}
+            {plan.model === null ? "" : `, on ${plan.model}`}
             {plan.sandbox === null ? "" : `, in the project's ${plan.sandbox}`}, with none of your
             own Allows and no tools but purlis's that only read, and its account pays for them as
             for any chat. It is recorded{" "}
@@ -241,6 +330,31 @@ function RouterGradePlanShown({
               </li>
             ))}
           </ul>
+          <ButtonRow>
+            <Select
+              size="sm"
+              aria-label={`Grade the router ${plan.router} on`}
+              value={profile}
+              options={[
+                { value: DEFAULT, label: "The project's default" },
+                ...profiles.map((one) => ({ value: one.name, label: one.name })),
+              ]}
+              onValueChange={onProfile}
+            />
+            {plan.models.length > 0 && (
+              <Select
+                size="sm"
+                aria-label={`Model the router ${plan.router}'s grade runs on`}
+                value={model}
+                options={[
+                  { value: DEFAULT, label: "The profile's own model" },
+                  ...plan.models.map((one) => ({ value: one, label: one })),
+                ]}
+                onValueChange={onModel}
+              />
+            )}
+          </ButtonRow>
+          <TokenCap key={plan.token_cap ?? 0} cap={plan.token_cap ?? 0} onCap={onCap} />
         </>
       )}
       <ButtonRow>

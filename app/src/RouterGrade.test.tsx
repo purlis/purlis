@@ -3,12 +3,14 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import {
   RouterGrade,
   RouterGradeChatPage,
   RouterGradeScorecardPage,
+  routerCostSaid,
   routerEndedSaid,
 } from "./RouterGrade";
 import type { RouterGradePlan, RouterGradeScorecard, ScoredTest } from "./bindings";
@@ -53,6 +55,10 @@ function plan(over: Partial<RouterGradePlan> = {}): RouterGradePlan {
     profile: "work",
     sandbox: "full sandbox",
     refused: null,
+    models: ["opus", "sonnet"],
+    model: null,
+    estimate: null,
+    estimate_same_library: null,
     running: null,
     consent: "c0ffee",
     ...over,
@@ -153,6 +159,107 @@ describe("Grade the router, cost first (SK-15e)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Grade the router…" }));
     await screen.findByTestId("router-grade-none");
     expect(screen.queryByRole("button", { name: "Grade" })).toBeNull();
+  });
+
+  it("runs on the profile and model picked, held to the cap set, consented to on the plan shown (#3618)", async () => {
+    const asked: Array<{ cmd: string; args: Record<string, unknown> }> = [];
+    mockIPC(
+      (cmd, args) => {
+        asked.push({ cmd, args: args as Record<string, unknown> });
+        if (cmd === "router_grade_plan") {
+          const { profile, model } = args as { profile: string | null; model: string | null };
+          return plan({ profile: profile ?? "work", model, consent: `c-${profile}-${model}` });
+        }
+        if (cmd === "router_grade_set_cap")
+          return plan({
+            token_cap: 50000,
+            cost_cap_usd: 3.75,
+            cap_set_here: true,
+            consent: "capped",
+          });
+        if (cmd === "start_options") return { profiles: [{ name: "work" }, { name: "home" }] };
+        if (cmd === "router_grade_start") return "01GRADE";
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(
+      <RouterGrade
+        plane="p"
+        router="relevance"
+        workspace="ops"
+        persona={null}
+        onGraded={() => undefined}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Grade the router…" }));
+    await screen.findByTestId("router-grade-cost");
+    await userEvent.click(
+      screen.getByRole("button", { name: /Model the router relevance's grade runs on/ }),
+    );
+    await userEvent.click(await screen.findByRole("option", { name: "sonnet" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("router-grade-cost").textContent).toContain("on work, on sonnet"),
+    );
+    expect(asked.filter((one) => one.cmd === "router_grade_plan").at(-1)?.args).toMatchObject({
+      profile: null,
+      model: "sonnet",
+    });
+
+    const field = screen.getByRole("textbox", { name: "Token cap" });
+    fireEvent.change(field, { target: { value: "50,000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Set the cap" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("router-grade-cost").textContent).toContain(
+        "have spent 50,000 tokens, the cap you set on this machine, or cost $3.75",
+      ),
+    );
+    expect(asked.find((one) => one.cmd === "router_grade_set_cap")?.args).toMatchObject({
+      workspace: "ops",
+      model: "sonnet",
+      tokens: 50000,
+    });
+    expect(asked.some((one) => one.cmd === "router_grade_start")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Grade" }));
+    await screen.findByTestId("router-grade-running");
+    expect(asked.find((one) => one.cmd === "router_grade_start")?.args).toMatchObject({
+      profile: null,
+      model: "sonnet",
+      consent: "capped",
+    });
+  });
+
+  it("says what its last grade spent per chat, or that it is not known (#3618)", () => {
+    const from = {
+      ts: "2026-10-25T10:00:00+00:00",
+      profile: "work",
+      harness: "Claude Code",
+      model: "sonnet",
+      same_profile: true,
+      interrupted: false,
+    };
+    expect(routerCostSaid(plan())).toBe(
+      "This router has not been graded here before, so purlis cannot say yet what a grade spends. Each chat is one turn, and ends once the skill it tests starts.",
+    );
+    const estimated = plan({
+      estimate: { tokens: 18000, cost_usd: 0.18, chats_then: 12, ...from },
+      estimate_same_library: true,
+    });
+    expect(routerCostSaid(estimated)).toBe(
+      "From its grade on work (Claude Code, sonnet), 2026-10-25, of 12 chats, this one should spend about 18,000 tokens, about $0.18.",
+    );
+    expect(routerCostSaid({ ...estimated, estimate_same_library: false })).toContain(
+      "That grade ran on another library, and each chat is handed the whole library, so this one may spend otherwise.",
+    );
+    expect(
+      routerCostSaid(
+        plan({
+          estimate: { tokens: null, cost_usd: null, chats_then: 12, ...from },
+          estimate_same_library: true,
+        }),
+      ),
+    ).toContain("did not say what its chats spent, so purlis cannot say what this one spends");
   });
 
   it("says each way a grade ends", () => {

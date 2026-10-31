@@ -450,6 +450,83 @@ pub fn library_is_local(root: &Path, copies: &[LibraryCopy]) -> bool {
     copies.iter().any(|one| is_local(root, &one.level))
 }
 
+impl super::Spends for RouterGraded {
+    /// Every chat of every skill's arms, ran or not. A grade purlis stopped under before it
+    /// scored a skill asked for none to go by: a router's row never counts them (#3602).
+    fn asked(&self) -> u64 {
+        self.report
+            .skills
+            .iter()
+            .map(|part| super::asked_in(&part.report.arms))
+            .sum()
+    }
+
+    fn stopped_unscored(&self) -> bool {
+        self.report.ended == grade::GradeEnd::Interrupted && self.report.skills.is_empty()
+    }
+
+    fn spent(&self) -> &Spent {
+        &self.spent
+    }
+
+    fn ts(&self) -> &str {
+        &self.ts
+    }
+
+    fn profile(&self) -> Option<&str> {
+        self.profile.as_deref()
+    }
+
+    fn harness(&self) -> Option<&str> {
+        self.harness.as_deref()
+    }
+
+    fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+}
+
+/// **What a grade of a router would cost, from its grade before** (#3618), as a skill's plan
+/// works it out ([`super::estimate_of`]), and whether that grade ran on the library this one
+/// runs on: a chat is handed the whole library, so one of another library may spend otherwise,
+/// and the plan says so.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct RouterEstimate {
+    pub estimate: super::Estimate,
+    pub same_library: bool,
+}
+
+/// **The estimate of grading `planned` on `profile`** (#3618), from the grades of its router in
+/// its scope in the project at `root`: `None` where it has none, or the plan runs no chat.
+pub fn estimate(
+    root: &Path,
+    planned: &RouterPlanned,
+    profile: Option<&str>,
+) -> Option<RouterEstimate> {
+    let chats = planned.plan?.chats;
+    let grades = grades_of(
+        root,
+        &planned.router,
+        planned.workspace.as_deref(),
+        planned.persona.as_deref(),
+    );
+    let (estimate, last) = super::estimate_from(&grades, chats, profile)?;
+    // The same library: the same copies, each by its level, its name and what its folder held,
+    // whatever commit holds them.
+    let held = |copies: &mut dyn Iterator<Item = RecordedCopy>| {
+        let mut held: Vec<_> = copies
+            .map(|copy| (copy.level, copy.skill, copy.tree))
+            .collect();
+        held.sort();
+        held
+    };
+    let now = held(&mut planned.copies.iter().map(RecordedCopy::of));
+    Some(RouterEstimate {
+        estimate,
+        same_library: held(&mut last.library.iter().cloned()) == now,
+    })
+}
+
 /// The first twelve characters of a commit id.
 fn short(commit: &str) -> &str {
     commit.get(..12).unwrap_or(commit)

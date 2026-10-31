@@ -271,11 +271,36 @@ fn consent_shown(planned: &Planned, on: &On) -> Option<String> {
 /// run on (their line's, the price's, where it names one, so a change of the profile's own model
 /// is a change too; else the one picked), the cap and the dollar limit at that model's price.
 fn terms_of<'a>(planned: &Planned, on: &'a On) -> grades::Terms<'a> {
+    terms(&planned.cap, on)
+}
+
+/// **The terms a grade held to `cap` would start on, on `on`** ([`terms_of`]): a skill's grade's
+/// or a router's (#3618).
+pub(crate) fn terms<'a>(cap: &grades::cap::Cap, on: &'a On) -> grades::Terms<'a> {
     grades::Terms {
         profile: on.profile.as_deref(),
         model: on.priced.model.as_deref().or(on.model.as_deref()),
-        token_cap: planned.cap.tokens,
-        limit_usd: planned.cap.cost_usd(&on.priced),
+        token_cap: cap.tokens,
+        limit_usd: cap.cost_usd(&on.priced),
+    }
+}
+
+impl From<&grades::Estimate> for GradeEstimate {
+    fn from(estimate: &grades::Estimate) -> Self {
+        GradeEstimate {
+            tokens: estimate.tokens.map(|tokens| tokens as f64),
+            cost_usd: estimate.cost_usd,
+            chats_then: estimate.chats_then,
+            ts: estimate.ts.clone(),
+            profile: estimate.profile.clone(),
+            harness: estimate
+                .harness
+                .as_deref()
+                .map(purlis_core::skilluse::harness_title),
+            model: estimate.model.clone(),
+            same_profile: estimate.same_profile,
+            interrupted: estimate.interrupted,
+        }
     }
 }
 
@@ -355,20 +380,7 @@ impl SkillGradePlan {
                 .outcomes
                 .refused()
                 .map(purlis_core::skills::grade::Refused::in_window),
-            estimate: planned.estimate.as_ref().map(|estimate| GradeEstimate {
-                tokens: estimate.tokens.map(|tokens| tokens as f64),
-                cost_usd: estimate.cost_usd,
-                chats_then: estimate.chats_then,
-                ts: estimate.ts.clone(),
-                profile: estimate.profile.clone(),
-                harness: estimate
-                    .harness
-                    .as_deref()
-                    .map(purlis_core::skilluse::harness_title),
-                model: estimate.model.clone(),
-                same_profile: estimate.same_profile,
-                interrupted: estimate.interrupted,
-            }),
+            estimate: planned.estimate.as_ref().map(GradeEstimate::from),
             record_said: planned.record_said.clone(),
             running,
             token_cap: planned.cap.tokens as f64,
@@ -889,18 +901,22 @@ pub(crate) async fn skill_grade_set_cap(
     let held = planes.held(&plane)?;
     crate::off_the_window("setting a grade's cap", move || {
         flag_on()?;
-        if !tokens.is_finite() || tokens.fract() != 0.0 || tokens < 0.0 {
-            return Err(
-                "A grade's cap is a whole number of tokens, so nothing was changed.".into(),
-            );
-        }
-        grades::cap::set_token_cap(held.root(), tokens as u64)?;
+        set_cap(held.root(), tokens)?;
         let on = chats_on(held.root(), profile, model);
         let planned =
             grades::planned(held.root(), &(&level).into(), &skill, on.profile.as_deref())?;
         Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill), on))
     })
     .await
+}
+
+/// **Sets the token cap every grade in the project at `root` is held to, on this machine**: a
+/// skill's and a router's (#3618), refused for what is not a whole number of tokens.
+pub(crate) fn set_cap(root: &std::path::Path, tokens: f64) -> Result<(), String> {
+    if !tokens.is_finite() || tokens.fract() != 0.0 || tokens < 0.0 {
+        return Err("A grade's cap is a whole number of tokens, so nothing was changed.".into());
+    }
+    grades::cap::set_token_cap(root, tokens as u64).map(|_| ())
 }
 
 /// **Stops the grade `grade`**: the chat it runs now is ended, no other starts, and what ran is
