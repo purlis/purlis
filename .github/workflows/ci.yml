@@ -114,9 +114,8 @@ jobs:
   # of them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
   # request waits on (2026-10-10), and each of two took 15 to 16 minutes by 2026-10-27. Runners
   # start at once (no queue on 2026-10-14..27), so a part costs runner minutes, not wait. Part 2
-  # also runs the doctests and the schema check (fmt and clippy are `lint`'s): `hash:` places a
-  # test by its name, and part 2 held the least (7.3 minutes of tests against 11.5 for part 1 on
-  # #3572's run), so the 3 minutes those take wait on no one. Each part builds
+  # also runs the schema check, a few seconds (fmt and clippy are `lint`'s; the doctests are
+  # `rust-doctests`'s). Each part builds
   # for itself: a build handed from one job to the next saves runner minutes, not the wait, since
   # no test can start before the build ends. An optimised test build was tried and dropped
   # (#3553: 21 to 32 minutes to build cold, then the runners stopped). `rust-checks` below
@@ -209,10 +208,6 @@ jobs:
         if: ${{ !cancelled() }}
         continue-on-error: true
         run: node tools/slowest-tests.mjs target/nextest/ci/junit.xml
-      # nextest does not run doctests, so cargo does.
-      - name: Run the doctests
-        if: matrix.part == 2
-        run: tools/no-orphans.sh --reap -- cargo test --workspace --locked --doc
       # **Claude Code's own sandbox on Linux, on the settings purlis writes** (#2211): the macOS
       # step in `scenario`'s, here on bubblewrap. The version purlis supports, this runner's build
       # of it from npm with no install scripts run, against a stand-in model on a loopback port;
@@ -303,22 +298,50 @@ jobs:
       # The app's `e2e` feature, so what only the scenario build compiles (`ipc_commands.rs`'s
       # `e2e_only` and what it calls, #2836) is linted too.
       - run: cargo clippy -p purlis-app --lib --features e2e --locked -- -D warnings
-  # The required check `rust (fmt, clippy, test)`: green only when the lint and every part of
-  # `rust` are. `!cancelled()` so a red one still reports here as red, not as skipped, which a
+  # nextest does not run doctests, so cargo does, in a job of its own (#4255). In `rust`'s part 2
+  # this step was 3 of the 5 minutes that made that part the slowest (22.8 against 17.6 to 18.4,
+  # 2026-10-31), and no part needs it: the workspace has no doctest yet, so the 3 minutes are
+  # `--doc` recompiling `purlis-core`, `purlis-app` and Tauri for its own set of features. Kept so
+  # that a doctest written later runs. `shared-key: rust` restores `rust`'s cache: a key of its own
+  # would be cold on every pull request, since only `main` saves one.
+  rust-doctests:
+    name: rust doctests
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tauri's Linux build dependencies
+        timeout-minutes: 9
+        uses: ./.github/actions/linux-packages
+        with:
+          tauri: true
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: rust
+          save-if: false
+      # tauri::generate_context! reads the built frontend, so it has to exist before a build.
+      - run: mkdir -p app/dist
+      - name: Run the doctests
+        run: tools/no-orphans.sh --reap -- cargo test --workspace --locked --doc
+  # The required check `rust (fmt, clippy, test)`: green only when the lint, the doctests and every
+  # part of `rust` are. `!cancelled()` so a red one still reports here as red, not as skipped, which a
   # required check would count as passing.
   # Skipped is green only when the change touched nothing Rust reads (`changes`).
   rust-checks:
     name: rust (fmt, clippy, test)
-    needs: [changes, lint, rust]
+    needs: [changes, lint, rust, rust-doctests]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: The lint and every part passed
+      - name: The lint, the doctests and every part passed
         env:
           SCOPE: ${{ needs.changes.outputs.rust }}
-          RESULTS: ${{ needs.lint.result }} ${{ needs.rust.result }}
+          RESULTS: ${{ needs.lint.result }} ${{ needs.rust.result }} ${{ needs.rust-doctests.result }}
         run: |
-          if [ "$SCOPE" = false ]; then want="skipped skipped"; else want="success success"; fi
+          if [ "$SCOPE" = false ]; then want="skipped skipped skipped"; else want="success success success"; fi
           echo "scope: ${SCOPE:-unknown}, results: $RESULTS"
           test "$RESULTS" = "$want"
   # **The parity suite against a Docker pool** (#2045, spec #2041): the behaviour suite
