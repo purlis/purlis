@@ -308,6 +308,13 @@
   opacity: 1;
 }
 
+/* **The fade only softens words.** A way out, a consent's Allow above all, reads at full strength
+   wherever it rests: it is drawn above the fade, which moves nothing. */
+[data-scope="notice-row"][data-part="stack"] :is(button, a) {
+  position: relative;
+  z-index: 2;
+}
+
 /* `hidden` hides a Notice the row keeps behind "+N more": its box's own `display` would otherwise
    win over the browser's rule for the attribute. */
 [data-scope="notice-row"][data-part="stack"] > [hidden] {
