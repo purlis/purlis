@@ -167,6 +167,7 @@ export const READ_BY_WEB = ["crates/purlis-core/src/theme/built-in/"];
 // a Rust path and fails when one is missing here, or names none now.
 export const RUST_READERS = [
   "e2e/dialogs.test.ts",
+  "e2e/fakeGitLab.test.ts",
   "e2e/fence.test.ts",
   "e2e/gitAnswer.test.ts",
   "e2e/recordedForge.test.ts",

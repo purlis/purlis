@@ -108,6 +108,24 @@ export const RECORDED_FORGE_VARIABLE = "PURLIS_E2E_RECORDED_FORGE";
 export const THE_RUNS_RECORDED_FORGE = join(THE_RUNS_TREE, "recorded-forge.json");
 
 /**
+ * The variable that names the file naming the run's fake forge, as the `e2e` build reads it
+ * (`FAKE_FORGE` in `src-tauri/src/e2eforge.rs`; `fakeGitLab.ts`).
+ */
+export const FAKE_FORGE_VARIABLE = "PURLIS_E2E_FAKE_FORGE";
+
+/** The file every app this run launches finds its fake forge in, while a spec runs one. */
+export const THE_RUNS_FAKE_FORGE = join(THE_RUNS_TREE, "fake-forge.json");
+
+/**
+ * The variable that names the file holding a clone's shorter stall limit, in seconds, as the
+ * core's test builds read it (`stall_of_a_scenario` in `purlis-core/src/cloning.rs`).
+ */
+export const CLONE_STALL_VARIABLE = "PURLIS_E2E_CLONE_STALL";
+
+/** The file every app this run launches reads that limit from, while a spec has written one. */
+export const THE_RUNS_CLONE_STALL = join(THE_RUNS_TREE, "clone-stall");
+
+/**
  * The environment a charter process this run starts is given: the plane it means, a machine
  * store of its own, and the fence.
  *
@@ -147,6 +165,10 @@ export function theRunsEnvironment(
     // The forge the window signs in to and lists from, read by the `e2e` build alone (#1818,
     // `recordedForge.ts`): no run reaches a real one.
     [RECORDED_FORGE_VARIABLE]: THE_RUNS_RECORDED_FORGE,
+    // The fake forge a spec clones from over the network, and the stall limit it waits out, read
+    // by the `e2e` build alone (`fakeGitLab.ts`).
+    [FAKE_FORGE_VARIABLE]: THE_RUNS_FAKE_FORGE,
+    [CLONE_STALL_VARIABLE]: THE_RUNS_CLONE_STALL,
     ...extra,
   };
 }

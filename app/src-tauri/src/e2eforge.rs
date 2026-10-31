@@ -19,13 +19,69 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use purlis_core::forge::Kind;
+use purlis_core::forge::oauth::Endpoints;
 use purlis_core::forge::recorded::Recorded;
+use purlis_core::forge::registration::{Flow, Registration};
 use purlis_core::forge::transport::{Call, NoAnswer, Reply, Transport};
 use purlis_core::forge::{Forge, ForgeError};
 
 /// The variable a scenario run sets to the file its recorded forge answers from.
 /// `e2e/recordedForge.test.ts` holds the spec's spelling to this one.
 pub(crate) const RECORDED_FORGE: &str = "PURLIS_E2E_RECORDED_FORGE";
+
+/// The variable a scenario run sets to the file naming its fake forge
+/// (`THE_RUNS_FAKE_FORGE` in `e2e/harness.ts`, written by `e2e/fakeGitLab.ts`).
+pub(crate) const FAKE_FORGE: &str = "PURLIS_E2E_FAKE_FORGE";
+
+/// **A real forge's stand-in on this machine, which a spec names while it runs.** It serves git
+/// over smart HTTP and the OAuth side of a browser sign-in. With it named:
+///
+/// - **Sign in with GitLab** signs in to its host, with the shipped flow, listener and exchange.
+///   A shipped build has a registration on gitlab.com alone, and a self-managed GitLab takes a
+///   token (ADR 0077): this registration exists only here.
+/// - The browser is the spec: the page the flow would open is written to `page` for it to answer.
+/// - The window's git names purlis's own credential helper, as a shipped build's does
+///   ([`crate::forgeaccounts::window_git`]).
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BrowserForge {
+    /// The forge's server: its host and port, as an account and a clone URL name it.
+    host: String,
+    /// The root of its OAuth side, on this machine's loopback.
+    oauth: String,
+    /// The file the page to open is written to.
+    page: PathBuf,
+}
+
+/// The fake forge a spec names now, read for each ask: `None` before it starts and after it ends.
+pub(crate) fn browser_forge() -> Option<BrowserForge> {
+    browser_forge_from(purlis_core::envvar::var)
+}
+
+fn browser_forge_from(var: impl FnOnce(&str) -> Option<String>) -> Option<BrowserForge> {
+    let file = var(FAKE_FORGE).filter(|v| !v.is_empty())?;
+    serde_json::from_str(&std::fs::read_to_string(file).ok()?).ok()
+}
+
+impl BrowserForge {
+    /// Its registration and endpoints. Leaked: a spec signs in a handful of times in a run, and
+    /// a [`Registration`] is the static a shipped one is.
+    pub(crate) fn registration(&self) -> (&'static Registration, Endpoints) {
+        let registration = Box::leak(Box::new(Registration {
+            kind: Kind::GitLab,
+            host: Box::leak(self.host.clone().into_boxed_str()),
+            client_id: "purlise2eclient",
+            flow: Flow::Pkce,
+        }));
+        (registration, Endpoints::at(Kind::GitLab, &self.oauth))
+    }
+
+    /// Has the spec play the browser on `page`.
+    pub(crate) fn open(&self, page: &str) -> Result<(), String> {
+        std::fs::write(&self.page, page).map_err(|err| err.to_string())
+    }
+}
 
 /// The recorded forge this run names, or `None` when its environment names none.
 pub(crate) fn stand_in() -> Option<Arc<dyn Transport>> {
@@ -61,11 +117,28 @@ impl Transport for Replayed {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use purlis_core::forge::Kind;
 
     const RECORDING: &str = r#"{"source": "a scenario's forge", "exchanges": [
         {"call": {"endpoint": {"rest": {"method": null, "path": "user"}}, "fields": []},
          "reply": {"code": 0, "out": "{\"login\": \"octocat\"}", "err": "", "status": 200}}]}"#;
+
+    #[test]
+    fn a_fake_forge_is_named_only_while_its_file_says_so() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let file = dir.path().join("fake.json");
+        let named =
+            || browser_forge_from(|name| (name == FAKE_FORGE).then(|| file.display().to_string()));
+        assert!(named().is_none());
+        std::fs::write(
+            &file,
+            r#"{"host": "git.example.test:8443", "oauth": "http://127.0.0.1:9", "page": "/p"}"#,
+        )
+        .expect("written");
+        let (registration, endpoints) = named().expect("named").registration();
+        assert_eq!(registration.host, "git.example.test:8443");
+        assert_eq!(endpoints.token, "http://127.0.0.1:9/oauth/token");
+        assert!(browser_forge_from(|_| None).is_none());
+    }
 
     #[test]
     fn a_recorded_exchange_answers_every_time_it_is_asked_and_nothing_else_does() {
