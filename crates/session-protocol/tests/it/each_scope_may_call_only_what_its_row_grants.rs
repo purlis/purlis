@@ -325,7 +325,7 @@ fn every_command() -> Vec<Command> {
         }),
         // The profiles a runner keeps for its desktop (1.57, #4060).
         Command::KeptProfiles,
-        // A sign-in's redirect handed to a login on the runner (1.58, #4044).
+        // A sign-in's redirect handed to a login on the runner (1.59, #4044).
         Command::SignInRedirect {
             target: session::RedirectTarget("/auth/callback?code=c&state=s".into()),
         },

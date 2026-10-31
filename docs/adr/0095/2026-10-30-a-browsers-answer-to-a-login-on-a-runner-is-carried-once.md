@@ -14,6 +14,6 @@ stored, vaulted or relayed.
 2. **What the login answers stays on the runner.** Only whether it took the redirect crosses the
    link. Codex's next page, whose address carries the account's values, is asked for on the runner
    by its path alone, so those values are not read or sent on.
-3. **It is one request, not a port.** Session protocol 1.58's `sign_in_redirect` is the paired
+3. **It is one request, not a port.** Session protocol 1.59's `sign_in_redirect` is the paired
    desktop's alone, and reaches one login's own port and path on the runner's loopback and nothing
    else there, so ADR 0089 §8 stands: a runner's ports stay private, and nothing is opened on it.

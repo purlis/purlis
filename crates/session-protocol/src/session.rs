@@ -826,7 +826,7 @@ pub enum Command {
     /// that desktop, never one of its own or another desktop's. Carried out and refused as
     /// [`Command::KeepProfile`] is ([`crate::grants::Power::KeepProfile`]).
     KeptProfiles,
-    /// The desktop on this link hands the runner a sign-in's redirect (1.58, #4044): `target` is
+    /// The desktop on this link hands the runner a sign-in's redirect (1.59, #4044): `target` is
     /// the request the person's browser made of the desktop's loopback, which the runner's host
     /// makes of a login waiting on its own, at that login's own port and path alone. Answered
     /// [`Answer::Done`] where the login took it; nothing of the login's answer crosses the link.
@@ -1041,7 +1041,7 @@ pub struct Confine {
     pub asks: bool,
 }
 
-/// **The request a browser made of a sign-in's redirect** (1.58, #4044): it holds a one-time code,
+/// **The request a browser made of a sign-in's redirect** (1.59, #4044): it holds a one-time code,
 /// so it prints as nothing in a log.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -3350,7 +3350,7 @@ impl Client {
         }
     }
 
-    /// Have the runner hand a login on its loopback the redirect `target` (1.58, #4044): `Ok`
+    /// Have the runner hand a login on its loopback the redirect `target` (1.59, #4044): `Ok`
     /// once the login took it. Refused by every host but a runner's, on its link from the
     /// desktop it is paired with.
     pub async fn sign_in_redirect(&self, target: &str) -> Result<(), CallError> {

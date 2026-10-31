@@ -75,7 +75,7 @@ pub type Forgetting = Arc<dyn Fn(&Pinned, &str) -> Result<(), String> + Send + S
 pub type Listing = Arc<dyn Fn(&Pinned) -> Result<Vec<String>, String> + Send + Sync>;
 
 /// Hands a sign-in's redirect to the login waiting on the runner's loopback, and says whether it
-/// took it (`sign_in_redirect`, 1.58, #4044).
+/// took it (`sign_in_redirect`, 1.59, #4044).
 pub type Delivering = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
 
 /// A runner's pairing, as its host serves it: who it is and whom it admits ([`Answering`]),
@@ -275,7 +275,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
 /// runner's peers, `keep_profile` (1.43, #2049), which keeps one of its profiles here, its
 /// settings staged on this link first (`stage_profile_settings`, 1.56, #4081),
 /// `forget_profile` (1.52, #4047), which forgets one, `kept_profiles` (1.57, #4060), which
-/// names the ones kept, and `sign_in_redirect` (1.58, #4044), which hands a login here its
+/// names the ones kept, and `sign_in_redirect` (1.59, #4044), which hands a login here its
 /// browser's answer.
 struct PairedLink {
     hosting: Hosting,
@@ -412,7 +412,7 @@ impl PairedLink {
             })
     }
 
-    /// `sign_in_redirect` (1.58, #4044): the desktop's browser's answer handed to the login
+    /// `sign_in_redirect` (1.59, #4044): the desktop's browser's answer handed to the login
     /// waiting here, off the runtime, since the login signs in with its vendor before it answers.
     async fn deliver(&self, target: String) -> Result<session::Answer, session::Refusal> {
         let delivering = Arc::clone(&self.delivering);
