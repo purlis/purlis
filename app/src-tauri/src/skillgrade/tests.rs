@@ -453,6 +453,7 @@ fn a_scorecard_against_the_previous_version_shows_three_arms_and_both_difference
             chats: 9,
             tokens: Some(90_000),
             cost_usd: Some(1.92),
+            asked_for: None,
         },
         report: GradeReport {
             ended: GradeEnd::OverLimit,

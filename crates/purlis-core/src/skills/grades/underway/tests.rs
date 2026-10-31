@@ -243,6 +243,8 @@ fn a_grade_stopped_after_its_chats_spent_is_recorded_with_what_they_spent_3582()
         chats: 2,
         tokens: Some(12_000),
         cost_usd: Some(0.12),
+        // #3602: and how many it asked for, ran or not.
+        asked_for: Some(3),
     };
     marker.spent(spent).expect("rewritten");
     assert!(
@@ -281,12 +283,14 @@ fn a_spend_no_row_could_hold_leaves_the_marker_as_it_was_3582() {
         chats: 1,
         tokens: Some(5_000),
         cost_usd: None,
+        asked_for: None,
     };
     marker.spent(first).expect("rewritten");
     let past = Spent {
         chats: 2,
         tokens: Some(u64::MAX),
         cost_usd: None,
+        asked_for: None,
     };
     assert!(marker.spent(past).is_err(), "refused");
     drop(marker);
@@ -355,8 +359,15 @@ fn a_router_s_grade_purlis_stopped_under_is_recorded_interrupted_3616() {
         chats: 2,
         tokens: Some(4_000),
         cost_usd: Some(0.04),
+        asked_for: None,
     };
-    marker.spent(spent).expect("rewritten");
+    // As a grade's chats say it (#3602): a router's row keeps no count of what it asked for.
+    marker
+        .spent(Spent {
+            asked_for: Some(3),
+            ..spent
+        })
+        .expect("rewritten");
     assert!(
         interrupted(root, laptop, |_| false).is_empty(),
         "a held lock reads as a grade that runs, whatever it grades"

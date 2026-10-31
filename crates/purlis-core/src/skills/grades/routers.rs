@@ -412,6 +412,8 @@ impl RouterGraded {
             && (1..=MOST_RUNS).contains(&self.runs)
             && self.spent.tokens.is_none_or(tokens)
             && self.spent.cost_usd.is_none_or(dollars)
+            // Its arms count what it asked for: only a skill's interrupted row says it (#3602).
+            && self.spent.asked_for.is_none()
             && self.report.spent_tokens.is_none_or(tokens)
             && self.model.as_deref().is_none_or(super::price::model_id)
             && copies

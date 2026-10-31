@@ -401,6 +401,7 @@ pub(crate) async fn router_grade_start(
                         },
                         grade: &grade,
                         asked: 0,
+                        asked_for: 0,
                         harness: None,
                         plugins_off: None,
                         model: None,

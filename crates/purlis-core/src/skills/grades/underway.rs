@@ -54,11 +54,12 @@ impl Marker {
 
     /// **Says in the file what the grade's chats spent so far** (#3582): `spent`, its chats,
     /// tokens and cost as the chats said them, in the row and in its report, so a grade purlis
-    /// stops under is recorded with what it spent. Written whole beside the file and renamed
-    /// over it, as [`began`] writes it, and locked before it is in its place where the first
-    /// was: the lock is the file's, so the new file takes it before the old one lets it go. A
-    /// spend no sound row could hold is refused, and the file stays as it was, so the grade is
-    /// never taken away unrecorded at the next start.
+    /// stops under is recorded with what it spent, and the chats it asked for so far, ran or
+    /// not (`Spent::asked_for`, #3602), so an estimate can share that spend over them. Written
+    /// whole beside the file and renamed over it, as [`began`] writes it, and locked before it
+    /// is in its place where the first was: the lock is the file's, so the new file takes it
+    /// before the old one lets it go. A spend no sound row could hold is refused, and the file
+    /// stays as it was, so the grade is never taken away unrecorded at the next start.
     pub fn spent(&mut self, spent: Spent) -> std::io::Result<()> {
         let mut held = self.held.clone();
         held.row.spent(spent);
@@ -211,8 +212,13 @@ impl Row {
                 graded.report.spent_tokens = spent.tokens;
                 graded.report.spent_usd = spent.cost_usd;
             }
+            // A router's row never says the chats it asked for (#3602): its estimate counts
+            // a scored grade's arms alone, so an interrupted one gives none.
             Row::Router(graded) => {
-                graded.spent = spent;
+                graded.spent = Spent {
+                    asked_for: None,
+                    ..spent
+                };
                 graded.report.spent_tokens = spent.tokens;
                 graded.report.spent_usd = spent.cost_usd;
             }
