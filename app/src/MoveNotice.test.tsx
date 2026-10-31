@@ -8,6 +8,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ChatMove, PoolSignInStep } from "./bindings";
 import { chatMovesOf, forgetMove, heardMove } from "./chatMoves";
 import { MoveNotice } from "./MoveNotice";
+import { PROFILE_SIGN_IN, type ProfileSignInAsk } from "./settings/links";
 
 /**
  * **Move to runner waits for the chat's profile to sign in there** (#3477, spec #4023 story
@@ -25,7 +26,26 @@ const waiting = (kind = "claude"): ChatMove => ({
   stage: "signing-in",
   why: null,
   with: [],
-  sign_in: { profile: "work", kind, harness: kind === "claude" ? "Claude Code" : "Codex" },
+  sign_in: {
+    profile: "work",
+    kind,
+    harness: kind === "claude" ? "Claude Code" : "Codex",
+    plans: [],
+  },
+});
+
+/** A move waiting on an opencode profile, whose harness serves several plans. */
+const opencode = (): ChatMove => ({
+  ...waiting(),
+  sign_in: {
+    profile: "work",
+    kind: "opencode",
+    harness: "opencode",
+    plans: [
+      { id: "openai", title: "ChatGPT" },
+      { id: "github-copilot", title: "GitHub Copilot" },
+    ],
+  },
 });
 
 let asked: { cmd: string; args: Record<string, unknown> }[];
@@ -125,6 +145,55 @@ describe("a move waiting on its profile's sign-in", () => {
     await waitFor(() =>
       expect(calls("chat_move_signed_in")).toEqual([{ plane: PLANE, session: 3 }]),
     );
+  });
+
+  it("asks a harness that serves several plans which one, and signs that one in (#4181)", async () => {
+    await notice(opencode());
+    expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Sign in to ChatGPT" }));
+
+    await screen.findByRole("group", { name: "Signing work in on builds" });
+    await waitFor(() =>
+      expect(calls("pool_sign_in_start")).toEqual([
+        { pool: "builds", name: "work", provider: "openai", terminal: null },
+      ]),
+    );
+  });
+
+  it("a plan's Open in terminal runs its device code, which has a way back (#4181)", async () => {
+    const heard: ProfileSignInAsk[] = [];
+    const hear = (event: Event) => heard.push((event as CustomEvent<ProfileSignInAsk>).detail);
+    window.addEventListener(PROFILE_SIGN_IN, hear);
+    try {
+      await notice(opencode());
+      await userEvent.click(screen.getByRole("button", { name: "Sign in to ChatGPT" }));
+      const opened = await screen.findByRole("group", { name: "Signing work in on builds" });
+
+      await userEvent.click(within(opened).getByRole("button", { name: "Open in terminal" }));
+
+      expect(heard).toEqual([
+        { plane: PLANE, profile: "work", provider: "openai", pool: "builds", device: true },
+      ]);
+      // The strip's login ended: only the shell tab's runs.
+      await waitFor(() => expect(calls("pool_sign_in_cancel")).toEqual([{ flow: 7 }]));
+      expect(calls("put_away_chat_move")).toEqual([]);
+    } finally {
+      window.removeEventListener(PROFILE_SIGN_IN, hear);
+    }
+  });
+
+  it("a plan pressed by mistake can be left, and the move stays (#4181)", async () => {
+    await notice(opencode());
+    await userEvent.click(screen.getByRole("button", { name: "Sign in to ChatGPT" }));
+    await screen.findByRole("group", { name: "Signing work in on builds" });
+    await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(1));
+
+    await userEvent.click(screen.getByRole("button", { name: "Choose another plan" }));
+
+    expect(await screen.findByRole("button", { name: "Sign in to GitHub Copilot" })).toBeVisible();
+    await waitFor(() => expect(calls("pool_sign_in_cancel")).toEqual([{ flow: 7 }]));
+    expect(calls("put_away_chat_move")).toEqual([]);
   });
 
   it("a refused Try the move reads the core's moves back, never inventing a failure", async () => {

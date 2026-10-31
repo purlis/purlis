@@ -1001,13 +1001,7 @@ fn row(record: &profilestore::MachineProfile, kept: Result<Standing, String>) ->
         harness: harness_title(&record.harness),
         standing,
         not_kept,
-        plans: profilestore::sign_in::providers(&record.harness)
-            .iter()
-            .map(|plan| crate::machineprofiles::PlanRow {
-                id: plan.provider.clone(),
-                title: plan.title.clone(),
-            })
-            .collect(),
+        plans: crate::machineprofiles::PlanRow::of_harness(&record.harness),
     }
 }
 
@@ -1220,7 +1214,7 @@ pub struct PoolSignInTerminal {
 /// long as it runs: the redirect, and only that, is carried to the runner over a link of its own
 /// (`sign_in_redirect`, #4044). A sign-in of the same profile on the same pool already running is
 /// cancelled. Answers the sign-in's number. With `terminal`, where purlis could not follow the
-/// login, it runs in a terminal the runner makes, for the person to drive in the strip (#4043):
+/// login or the person asked for a device code (#4106), it runs in a terminal the runner makes, for the person to drive in the strip (#4043):
 /// what it prints is [`PoolSignInStep::Printed`], and what is typed goes back by
 /// [`pool_sign_in_type`]. A login that waits for the browser runs there by its harness's
 /// device-code flow, since nothing carries the browser's answer to that terminal (#4044).
@@ -1357,10 +1351,12 @@ pub async fn pool_sign_in_next(
     app: tauri::AppHandle,
     flow: u32,
 ) -> Result<Option<PoolSignInStep>, String> {
-    let driving = driving(flow)?;
-    let event = tauri::async_runtime::spawn_blocking(move || driving.next(STEP_WITHIN))
-        .await
-        .map_err(|why| format!("the sign-in did not answer: {why}"))?;
+    // Asked at each step, as a login at its device code may take nothing typed.
+    let event = tauri::async_runtime::spawn_blocking(move || {
+        still_driving(flow).map(|driving| driving.next(STEP_WITHIN))
+    })
+    .await
+    .map_err(|why| format!("the sign-in did not answer: {why}"))??;
     if let Some(event) = event.as_ref().filter(|event| event.is_last()) {
         let over = {
             let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -1409,9 +1405,12 @@ fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
         .ok_or_else(|| "that sign-in is over".to_owned())?;
     if let Some((pool, judged)) = judged {
         let held = config_root().and_then(|config| still_yours(&config, &pool, &judged));
-        if let Err(why) = held {
+        if held.is_err() {
             pool_sign_in_cancel(flow);
-            return Err(why);
+            // Not the start's words: by now something of it may have reached the runner.
+            return Err(format!(
+                "the sign-in was stopped, as pool {pool} or its runner changed. Try again."
+            ));
         }
     }
     Ok(driving)
@@ -1635,16 +1634,6 @@ pub fn pool_sign_in_cancel(flow: u32) {
     for one in gone {
         one.driving.cancel();
     }
-}
-
-fn driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
-    SIGN_INS
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .iter()
-        .find(|one| one.flow == flow)
-        .map(|one| Arc::clone(&one.driving))
-        .ok_or_else(|| "that sign-in is over".to_owned())
 }
 
 fn record_named(config: &Path, name: &str) -> Result<profilestore::MachineProfile, String> {

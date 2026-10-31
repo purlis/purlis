@@ -402,6 +402,7 @@ fn a_move_waits_for_its_profiles_sign_in_and_goes_ahead_once_signed_in() {
             profile: "work".into(),
             kind: "claude".into(),
             harness: "Claude Code".into(),
+            plans: Vec::new(),
         })
     );
     assert!(matches!(moves.due(3, |_| true), Due::NotYet(_)), "it waits");
@@ -787,4 +788,22 @@ fn a_late_preparation_of_a_move_put_away_leaves_a_new_move_alone() {
     );
     assert_eq!(moves.shown()[0].stage, "signing-in");
     assert_eq!(moves.shown()[0].to.as_deref(), Some("b"));
+}
+
+/// **A move waiting on an opencode profile offers its plans** (#4181): a profile keeps none.
+#[test]
+fn a_move_waiting_on_a_sign_in_names_its_harness_plans() {
+    let asked = SignInAsked {
+        kind: "opencode".into(),
+        ..work_on_builds()
+    };
+
+    let ids: Vec<String> = MoveSignIn::of(&asked)
+        .plans
+        .into_iter()
+        .map(|plan| plan.id)
+        .collect();
+
+    assert!(ids.contains(&"openai".to_owned()), "{ids:?}");
+    assert!(ids.contains(&"github-copilot".to_owned()), "{ids:?}");
 }

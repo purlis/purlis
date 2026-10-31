@@ -3116,7 +3116,7 @@ export const commands = {
 	 *  long as it runs: the redirect, and only that, is carried to the runner over a link of its own
 	 *  (`sign_in_redirect`, #4044). A sign-in of the same profile on the same pool already running is
 	 *  cancelled. Answers the sign-in's number. With `terminal`, where purlis could not follow the
-	 *  login, it runs in a terminal the runner makes, for the person to drive in the strip (#4043):
+	 *  login or the person asked for a device code (#4106), it runs in a terminal the runner makes, for the person to drive in the strip (#4043):
 	 *  what it prints is [`PoolSignInStep::Printed`], and what is typed goes back by
 	 *  [`pool_sign_in_type`]. A login that waits for the browser runs there by its harness's
 	 *  device-code flow, since nothing carries the browser's answer to that terminal (#4044).
@@ -8807,6 +8807,11 @@ export type MoveSignIn = {
 	kind: string,
 	/**  Its harness as people call it: `Claude Code`. */
 	harness: string,
+	/**
+	 *  The plans to choose from, where its harness serves several (#4181): a profile keeps none
+	 *  of its own, and a login approved in the browser is told by its plan.
+	 */
+	plans: PlanRow[],
 };
 
 /**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */

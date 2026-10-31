@@ -25,7 +25,12 @@ const a_profile = (name: string, kind = "claude", standing = "signed-out"): Pool
 });
 
 /** This machine's profiles, as the core says them; the pool keeps `chosen`. */
-const ALL = [a_profile("work"), a_profile("personal"), a_profile("oss", "gemini")];
+const ALL = [
+  a_profile("work"),
+  a_profile("personal"),
+  a_profile("oss", "gemini"),
+  a_profile("oc", "opencode"),
+];
 let chosen: string[];
 let signedIn: Set<string>;
 let changes: unknown[];
@@ -155,6 +160,16 @@ describe("choosing the profiles a new pool signs in", () => {
     await userEvent.click(screen.getByRole("button", { name: "Sign in 1 profile" }));
     const list = await screen.findByRole("list", { name: "Profiles on pool builds" });
     expect(within(list).getByText("oss")).toBeInTheDocument();
+    expect(started).toEqual([]);
+  });
+
+  it("leaves an opencode profile to its line, which asks its plan first (#4181)", async () => {
+    const group = await strip();
+    await userEvent.click(within(group).getByRole("checkbox", { name: /work/ }));
+    await userEvent.click(within(group).getByRole("checkbox", { name: /oc/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Sign in 1 profile" }));
+    const list = await screen.findByRole("list", { name: "Profiles on pool builds" });
+    expect(within(list).getByText("oc")).toBeInTheDocument();
     expect(started).toEqual([]);
   });
 

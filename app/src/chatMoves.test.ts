@@ -30,7 +30,7 @@ describe("Move to runner and Move here (#2048)", () => {
     const one: ChatMove = {
       ...ready(1),
       stage: "signing-in",
-      sign_in: { profile: "work", kind: "claude", harness: "Claude Code" },
+      sign_in: { profile: "work", kind: "claude", harness: "Claude Code", plans: [] },
     };
     expect(moveSaid(one)).toEqual({
       words: "Moves to pool builds once work is signed in there. It keeps working here meanwhile.",

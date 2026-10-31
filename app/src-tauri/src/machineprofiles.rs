@@ -72,6 +72,19 @@ pub struct PlanRow {
     pub title: String,
 }
 
+impl PlanRow {
+    /// The plans harness `kind` signs in to, where it serves several.
+    pub(crate) fn of_harness(kind: &str) -> Vec<Self> {
+        sign_in::providers(kind)
+            .iter()
+            .map(|plan| Self {
+                id: plan.provider.clone(),
+                title: plan.title.clone(),
+            })
+            .collect()
+    }
+}
+
 impl From<&profilestore::MachineProfile> for MachineProfileRow {
     fn from(record: &profilestore::MachineProfile) -> Self {
         Self {
@@ -96,13 +109,7 @@ impl From<&profilestore::MachineProfile> for MachineProfileRow {
                 .map(|i| i.from.display().to_string()),
             signs_in: signs_in(record),
             standing: None,
-            plans: sign_in::providers(&record.harness)
-                .iter()
-                .map(|plan| PlanRow {
-                    id: plan.provider.clone(),
-                    title: plan.title.clone(),
-                })
-                .collect(),
+            plans: PlanRow::of_harness(&record.harness),
             pinned: record.pinned.as_ref().map(|p| p.version.clone()),
             installed: None,
             offered: None,

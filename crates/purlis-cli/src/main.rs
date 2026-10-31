@@ -4367,9 +4367,25 @@ fn pool_sign_in(
         ));
     }
     // A login approved in the browser waits for an answer only the window carries (#4044).
+    if sign_in::driven::waits_for_the_browser(&record.harness, provider) {
+        let said = "purlis follows only Claude Code's and opencode's Copilot sign-in on a pool \
+                    from a terminal: nothing here can carry your browser's answer to the runner.";
+        // Only a name that could be made is printed as a command to copy.
+        if !purlis_core::profiles::name_ok(&record.name) {
+            return Err(format!(
+                "{said} '{}' cannot be a profile's name, so no runner keeps it: make a profile with \
+                 another name.",
+                shown::short(&record.name)
+            ));
+        }
+        let plan = provider.map_or(String::new(), |plan| format!(" --provider {plan}"));
+        return Err(format!(
+            "{said} On the runner, run: purlis profile sign-in {}{plan} --way device",
+            record.name
+        ));
+    }
     if sign_in::driven::Driven::of_plan(&record.harness, provider, std::time::Instant::now())
         .is_none()
-        || sign_in::driven::waits_for_the_browser(&record.harness, provider)
     {
         return Err(format!(
             "purlis follows only Claude Code's and opencode's Copilot sign-in on a pool so far. \

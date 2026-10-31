@@ -714,7 +714,7 @@ fn a_login_is_driven_end_to_end() {
         "printf '%s' \"$PRINTED\"; read code; [ \"$code\" = 'abc#recorded' ] || exit 3; \
          echo 'Login successful.'",
     );
-    let driving = drive(&login, "claude", || Standing::SignedIn).unwrap();
+    let driving = drive_with(&login, "claude", None, None, || Standing::SignedIn).unwrap();
 
     assert_eq!(
         next(&driving),
@@ -755,7 +755,7 @@ fn a_copilot_login_is_driven_end_to_end() {
 #[test]
 fn a_login_that_ended_is_not_waited_on_past_what_it_left_running() {
     let login = stand_in("printf '%s' \"$PRINTED\"; sleep 20 & exit 0");
-    let driving = drive(&login, "claude", || Standing::SignedIn).unwrap();
+    let driving = drive_with(&login, "claude", None, None, || Standing::SignedIn).unwrap();
 
     assert!(matches!(next(&driving), Event::Open { .. }));
     assert_eq!(next(&driving), Event::AskCode);
@@ -768,7 +768,7 @@ fn a_login_that_ended_is_not_waited_on_past_what_it_left_running() {
 #[test]
 fn a_cancelled_sign_in_ends_its_login() {
     let login = stand_in("printf '%s' \"$PRINTED\"; exec sleep 600");
-    let driving = drive(&login, "claude", || Standing::SignedIn).unwrap();
+    let driving = drive_with(&login, "claude", None, None, || Standing::SignedIn).unwrap();
     assert!(matches!(next(&driving), Event::Open { .. }));
     assert_eq!(next(&driving), Event::AskCode);
 
@@ -848,7 +848,10 @@ fn what_is_typed_reaches_a_login_in_a_terminal_alone() {
         "yes"
     );
 
-    let piped = drive(&stand_in("sleep 30"), "claude", || Standing::SignedIn).expect("runs");
+    let piped = drive_with(&stand_in("sleep 30"), "claude", None, None, || {
+        Standing::SignedIn
+    })
+    .expect("runs");
     assert!(piped.typed("yes\n").is_err());
 }
 
@@ -993,7 +996,31 @@ fn a_login_that_waits_for_the_browser_needs_a_way_to_carry_its_answer() {
         cleared: Vec::new(),
     };
 
-    assert!(drive(&login, "codex", || Standing::SignedIn).is_err());
+    assert!(drive_with(&login, "codex", None, None, || Standing::SignedIn).is_err());
+}
+
+/// **A login at its device code, or in the window's terminal, takes the person's time** (#4160):
+/// neither the page's limit nor the next step's ends it, only [`LONGEST`], which `watching` holds
+/// every login to.
+#[test]
+fn a_login_the_person_is_at_is_not_ended_by_the_page_or_next_step_limits() {
+    let long_past = PAGE_WITHIN.max(NEXT_WITHIN) * 2;
+    assert!(long_past < LONGEST, "these limits come first");
+
+    let start = Instant::now();
+    let mut terminal = Driven::in_a_terminal(start);
+    assert_eq!(terminal.waited(start + long_past), None);
+    assert!(!terminal.is_over());
+
+    let mut device =
+        Driven::of_plan("opencode", Some("github-copilot"), start).expect("it is followed");
+    let said = device.read("Go to: https://github.com/login/device\nEnter code: WDJB-MJHT\n");
+    assert!(
+        matches!(said.as_slice(), [Event::DeviceCode { .. }]),
+        "{said:?}"
+    );
+    assert_eq!(device.waited(Instant::now() + long_past), None);
+    assert!(!device.is_over());
 }
 
 #[cfg(unix)]
