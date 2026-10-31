@@ -525,6 +525,8 @@ impl From<&source::Review> for InstallReview {
 pub enum InstallSetReview {
     Review {
         review: InstallReview,
+        /// Those named that the level holds already (#4153): left out, and left as they are.
+        there: Vec<String>,
     },
     TooMuch {
         /// Those named first that fit one read, the first part; empty where the first alone
@@ -533,6 +535,8 @@ pub enum InstallSetReview {
         /// The rest of those named.
         rest: Vec<String>,
         why: String,
+        /// Those named that the level holds already (#4153), left out of every part.
+        there: Vec<String>,
     },
 }
 
@@ -625,11 +629,6 @@ pub struct UpdateReview {
     pub local_edits: Vec<UpdateFile>,
     pub skill: ReviewSkill,
     pub brought: Vec<ReviewSkill>,
-    /// Those of `brought` under a built-in skill's name (#3728).
-    pub reserved: Vec<String>,
-    /// Why it cannot be taken as it is, said before Accept update: it brings along a skill under
-    /// a built-in skill's name (#3728).
-    pub refused: Option<String>,
     pub accepted: Reviewed,
 }
 
@@ -875,15 +874,22 @@ pub(crate) async fn skill_install_review(
     let held = planes.held(&plane)?;
     crate::off_the_window("reviewing the install", move || {
         flag_on()?;
-        let review = source::review(held.root(), &source.core(), &names, &(&level).into())?;
+        let built_in = crate::skillchange::built_in();
+        let review = source::review(
+            held.root(),
+            built_in.as_deref(),
+            &source.core(),
+            &names,
+            &(&level).into(),
+        )?;
         Ok(InstallReview::from(&review))
     })
     .await
 }
 
 /// **The review of installing `names` from a source together** (#4024, Install all…): one review
-/// of the set into `level` and the skills they refer to that it does not hold already, or which of
-/// them fit one read.
+/// of the set into `level` and the skills they refer to that it does not hold already, those named
+/// that it holds already left out (#4153), or which of them fit one read.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_install_set_review(
@@ -896,15 +902,24 @@ pub(crate) async fn skill_install_set_review(
     let held = planes.held(&plane)?;
     crate::off_the_window("reviewing the install", move || {
         flag_on()?;
+        let built_in = crate::skillchange::built_in();
         Ok(
-            match source::review_set(held.root(), &source.core(), &names, &(&level).into())? {
-                source::SetReview::Review(review) => InstallSetReview::Review {
+            match source::review_set(
+                held.root(),
+                built_in.as_deref(),
+                &source.core(),
+                &names,
+                &(&level).into(),
+            )? {
+                source::SetReview::Review { review, there } => InstallSetReview::Review {
                     review: (&review).into(),
+                    there: there.iter().map(|one| esc(one)).collect(),
                 },
                 source::SetReview::TooMuch(too_much) => InstallSetReview::TooMuch {
                     fits: too_much.fits.iter().map(|one| esc(one)).collect(),
                     rest: too_much.rest.iter().map(|one| esc(one)).collect(),
                     why: esc(&too_much.why),
+                    there: too_much.there.iter().map(|one| esc(one)).collect(),
                 },
             },
         )
@@ -1017,8 +1032,6 @@ pub(crate) async fn skill_update_review(
             local_edits: files_shown(&update.local_edits),
             skill: (&update.review).into(),
             brought: update.brought.iter().map(Into::into).collect(),
-            reserved: update.reserved.iter().map(|n| esc(n)).collect(),
-            refused: update.refused().map(|why| esc(&why)),
             accepted: (&update.accepted()).into(),
         })
     })

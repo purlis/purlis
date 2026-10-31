@@ -665,11 +665,13 @@ pub fn keeps_profiles(version: purlis_session_protocol::version::Version) -> boo
 }
 
 /// **Has the runner `to` reaches forget this machine's profile `name`** (`forget_profile`, 1.52,
-/// #4047), its folder and sign-in there with it. `None`, with nothing sent, from a runner before
-/// 1.52, which keeps it.
+/// #4047), its folder and sign-in there with it. `None`, with nothing sent, from a runner from
+/// 1.43 to before 1.52, which keeps it; one before 1.43 keeps no desktop's profile, so it has
+/// nothing to forget.
 pub fn forget_profile(to: &ToARunner, name: &str) -> Result<Option<()>, String> {
     let name = name.to_owned();
     on_one_link(to, async move |linked| match linked {
+        Ok(client) if !keeps_profiles(client.version()) => Ok(Some(())),
         Ok(client) if !forgets_profiles(client.version()) => Ok(None),
         Ok(client) => {
             client
@@ -678,8 +680,55 @@ pub fn forget_profile(to: &ToARunner, name: &str) -> Result<Option<()>, String> 
                 .map(Some)
                 .map_err(|why| match why.refusal() {
                     Some(refused) => said_by_the_runner(&refused.why),
-                    None => why.to_string(),
+                    None => purlis_core::shown::short(&why.to_string()),
                 })
+        }
+        Err(down) => Err(down.why),
+    })
+}
+
+/// **What a runner said of this machine's profiles it keeps** (#4060): the ones it keeps on,
+/// by name, and each it was asked to forget: forgotten, or why not in words.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Listed {
+    pub kept: Vec<String>,
+    pub forgot: Vec<(String, Result<(), String>)>,
+}
+
+/// **Has the runner `to` reaches forget each of this machine's profiles it keeps but those
+/// `keep` says to keep** (#4060), over one link of its own: it names the ones it keeps for this
+/// machine (`kept_profiles`, 1.57), and each other one is forgotten as [`forget_profile`]
+/// forgets it, its folder and sign-in there with it. `keep` is asked of each name just before
+/// it is forgotten, so a profile a chat's start readies meanwhile is kept. A name that is not a
+/// profile's name is passed over. `None`, with nothing forgotten, from a runner before 1.57,
+/// which cannot say what it keeps.
+pub fn forget_all_but(
+    to: &ToARunner,
+    keep: impl Fn(&str) -> bool + Send + 'static,
+) -> Result<Option<Listed>, String> {
+    let refused = |why: purlis_session_protocol::session::CallError| match why.refusal() {
+        Some(refused) => said_by_the_runner(&refused.why),
+        None => purlis_core::shown::short(&why.to_string()),
+    };
+    on_one_link(to, async move |linked| match linked {
+        Ok(client) if client.version() < purlis_session_protocol::session::KNOWS_KEPT_PROFILES => {
+            Ok(None)
+        }
+        Ok(client) => {
+            let names = client.kept_profiles().await.map_err(refused)?;
+            let mut listed = Listed::default();
+            for name in names
+                .into_iter()
+                .filter(|name| purlis_core::profiles::name_ok(name))
+            {
+                if keep(&name) {
+                    listed.kept.push(name);
+                    continue;
+                }
+                let said = client.forget_profile(&name).await.map_err(refused);
+                listed.forgot.push((name, said));
+            }
+            Ok(Some(listed))
         }
         Err(down) => Err(down.why),
     })

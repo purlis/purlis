@@ -1116,7 +1116,7 @@ function SkillReviewed({
       )}
       {skill.already.map((one) => (
         <p key={one} className="honest" data-testid={`already-${skill.name}-${one}`}>
-          It refers to <code>{one}</code>, which is installed there already: it is left as it is.
+          It refers to <code>{one}</code>, which its chats there have already: it is left as it is.
         </p>
       ))}
       <h4 className="ui-text-small ui-text-strong">What it adds</h4>
@@ -1494,9 +1494,11 @@ function InstallSetReviewPage({
           ? "The review could not be read."
           : review === undefined
             ? "It is more than one review can read: install it in two parts."
-            : busy
-              ? BUSY
-              : undefined;
+            : review.skills.length === 0
+              ? `Every skill ticked is in the ${labelOf(levels, level)} skills already.`
+              : busy
+                ? BUSY
+                : undefined;
   const risky = review === undefined ? 0 : riskyIn(review);
   return (
     <ReviewPage
@@ -1515,8 +1517,9 @@ function InstallSetReviewPage({
       }}
     >
       <h2 className="ui-text-strong">
-        Install {counted(review?.skills.length ?? names.length, "skill", "skills")} from{" "}
-        {source.label}
+        {review !== undefined && review.skills.length === 0
+          ? `Nothing to install from ${source.label}`
+          : `Install ${counted(review?.skills.length ?? names.length, "skill", "skills")} from ${source.label}`}
       </h2>
       <SettingRow
         label="Lands in"
@@ -1563,7 +1566,12 @@ function InstallSetReviewPage({
                       Back to the list
                     </Button>
                   ) : (
-                    <Button size="sm" variant="primary" onPress={() => narrow(data.fits)}>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      // Those there already stay named, so the next review says so again.
+                      onPress={() => narrow([...data.fits, ...data.there])}
+                    >
                       Review {firstPart(data.fits.length)}
                     </Button>
                   )
@@ -1605,6 +1613,29 @@ function InstallSetReviewPage({
                     }
                   />
                 ))}
+                {data.there.length > 0 && (
+                  <section aria-labelledby="install-all-there" className="skill-review">
+                    <h3 id="install-all-there" className="ui-text-small ui-text-strong">
+                      There already
+                    </h3>
+                    <p className="honest">
+                      {data.there.length === 1
+                        ? "Chats there have this one already, so it is left as it is."
+                        : "Chats there have these already, so they are left as they are."}
+                    </p>
+                    {data.there.map((name) => (
+                      <Checkbox
+                        key={name}
+                        isSelected={false}
+                        isDisabled
+                        tooltip={`${name} is there already.`}
+                        data-testid={`there-${name}`}
+                      >
+                        Install {name}
+                      </Checkbox>
+                    ))}
+                  </section>
+                )}
               </>
             )
           }
@@ -1691,8 +1722,9 @@ function UpdateReviewPage({
         ? "The review is being read."
         : review === undefined
           ? "The review could not be read."
-          : // It brings along a skill under a built-in skill's name, which accepting refuses (#3728).
-            (review.refused ?? (busy ? BUSY : undefined));
+          : busy
+            ? BUSY
+            : undefined;
   let body: ReactNode;
   if (offer === undefined)
     body = updatesRead ? (
@@ -1719,11 +1751,6 @@ function UpdateReviewPage({
                 <code>{data.newer.short}</code>
               </Fact>
             </Facts>
-            {data.refused !== null && (
-              <p className="honest" role="note" data-testid="update-refused">
-                {data.refused}
-              </p>
-            )}
             {!data.from_pin && (
               <p className="honest">
                 The pinned commit is no longer in the source, so this compares with the copy here.

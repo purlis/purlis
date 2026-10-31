@@ -3627,7 +3627,8 @@ impl session::Host for Hosting {
             // (`serving`) before this host hears of it (1.43, #2049).
             Command::KeepProfile(_)
             | Command::ForgetProfile { .. }
-            | Command::StageProfileSettings(_) => Err(Refusal {
+            | Command::StageProfileSettings(_)
+            | Command::KeptProfiles => Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
                 why: "this host is paired with no desktop over this link, so it keeps no \
                       desktop's profile"

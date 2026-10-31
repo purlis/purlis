@@ -1191,6 +1191,21 @@ fn adding_and_removing_a_profile_start_from_the_default_and_change_the_record() 
     );
 }
 
+/// **A pool that names none is given its profiles once** (#4060); one that names its own
+/// keeps them as they are.
+#[test]
+fn a_pool_that_names_none_is_given_its_profiles_and_one_that_names_its_own_keeps_them() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(config.path(), &pool("builds", Set::default())).unwrap();
+    let named = |config: &Path| pools(config).unwrap()[0].profiles().map(<[String]>::to_vec);
+
+    name_pool_profiles_where_none(config.path(), "builds", vec!["work".to_owned()]).unwrap();
+    assert_eq!(named(config.path()), Some(vec!["work".to_owned()]));
+
+    name_pool_profiles_where_none(config.path(), "builds", vec!["home".to_owned()]).unwrap();
+    assert_eq!(named(config.path()), Some(vec!["work".to_owned()]));
+}
+
 /// The profiles a pool keeps are not how it is defined: choosing them leaves its definition's
 /// digest as it was, as a price does.
 #[test]
@@ -1200,4 +1215,81 @@ fn a_pools_profiles_leave_its_definition_digest_as_it_was() {
         .clone()
         .keeping_profiles(Some(vec!["work".to_owned()]));
     assert_eq!(plain.definition_digest(), named.definition_digest());
+}
+
+/// A cluster pool as purlis writes it, with its one runner, in `config`'s `runners.json`.
+fn a_cluster_pool_in(config: &Path) {
+    let folder = purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config)).unwrap();
+    let file = serde_json::json!({
+        "version": 1,
+        "pools": [{
+            "name": "team", "kind": "cluster", "kubeconfig": "/home/ada/.kube/config",
+            "context": "team", "pool": "default", "namespace": "ada",
+            "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
+            "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
+            "holds": ["/opt/homebrew/bin/kubectl"],
+        }],
+        "runners": [{
+            "name": "team", "pool": "cluster", "namespace": "ada", "claim": "team-1",
+            "claimUid": "6f1c2b8e-0f43-4c2e-9d7a-1b2c3d4e5f60", "requester": "ada@example.com",
+            "pod": "team-1", "device": "01JB0RUNNER0000000000000000", "key": "4d".repeat(32),
+            "paired": 1_800_000_000_u64,
+        }],
+    });
+    folder
+        .replace_file(crate::machine::RUNNERS_FILE, file.to_string().as_bytes())
+        .unwrap();
+}
+
+/// **A cluster pool keeps the profiles chosen for it, as a Docker pool does** (#3819, `profiles`
+/// in its record, ruled 2026-10-30): the same key, read and written the same way, changed by the
+/// same adds and removes, and a list of another shape refuses the file.
+#[test]
+fn a_cluster_pools_profiles_are_kept_in_its_record_as_a_docker_pools_are() {
+    let config = tempfile::tempdir().unwrap();
+    a_cluster_pool_in(config.path());
+    assert_eq!(profiles_of(config.path(), "team").unwrap(), None);
+    assert_eq!(
+        profiles_kept_of(config.path(), "team", Some("work")).unwrap(),
+        vec!["work".to_owned()]
+    );
+
+    add_pool_profile(config.path(), "team", "home", Some("work")).unwrap();
+    assert_eq!(
+        the_file(config.path())["pools"][0]["profiles"],
+        serde_json::json!(["work", "home"])
+    );
+    assert_eq!(
+        profiles_of(config.path(), "team").unwrap(),
+        Some(vec!["work".to_owned(), "home".to_owned()])
+    );
+    // What else the row holds stays as it was: the runner is still reached.
+    assert!(cluster_runner_for(config.path(), "team").unwrap().is_some());
+
+    remove_pool_profile(config.path(), "team", "work", Some("work")).unwrap();
+    assert_eq!(
+        profiles_kept_of(config.path(), "team", Some("work")).unwrap(),
+        vec!["home".to_owned()]
+    );
+    set_pool_profiles(config.path(), "team", None).unwrap();
+    assert!(
+        the_file(config.path())["pools"][0]
+            .get("profiles")
+            .is_none()
+    );
+
+    let refused = profiles_of(config.path(), "nowhere").unwrap_err();
+    assert!(
+        refused.to_string().contains("no pool named nowhere"),
+        "{refused}"
+    );
+
+    // A list of another shape is no list, and the file is refused whole.
+    let mut text = the_file(config.path());
+    text["pools"][0]["profiles"] = serde_json::json!(["work", "work"]);
+    purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path()))
+        .unwrap()
+        .replace_file(crate::machine::RUNNERS_FILE, text.to_string().as_bytes())
+        .unwrap();
+    assert!(cluster_pools(config.path()).is_err());
 }

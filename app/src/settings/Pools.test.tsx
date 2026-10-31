@@ -72,6 +72,8 @@ let chosen: string[];
 let profileChanges: unknown[];
 /** What `pool_profiles` keeps, in turn, where a test says; the last again once the rest are. */
 let profileAnswers: PoolProfileRow[][] | undefined;
+/** Whether `pool_profiles` says the runner is on a fresh claim (#3819). */
+let freshClaim: boolean;
 
 const a_profile = (name: string, standing: string): PoolProfileRow => ({
   name,
@@ -108,6 +110,7 @@ beforeEach(() => {
   releaseImage = { state: "local_build" };
   chosen = ["work", "claude"];
   profileChanges = [];
+  freshClaim = false;
   profileAnswers = undefined;
   mockIPC(
     (cmd, args) => {
@@ -154,6 +157,7 @@ beforeEach(() => {
           return {
             kept: profileAnswers.length > 1 ? profileAnswers.shift() : profileAnswers[0],
             addable: [],
+            fresh_claim: freshClaim,
           };
         const here = [a_profile("work", "signed-out"), a_profile("claude", "signed-in")];
         const home = { ...a_profile("home", "signed-out"), kind: "codex", harness: "Codex" };
@@ -163,6 +167,7 @@ beforeEach(() => {
           addable: all
             .filter((one) => !chosen.includes(one.name))
             .map((one) => ({ name: one.name, harness: one.harness })),
+          fresh_claim: freshClaim,
         };
       }
       if (cmd === "pool_profile_add") {
@@ -848,6 +853,42 @@ describe("A cluster pool (#3292)", () => {
     );
     await userEvent.click(within(group).getByRole("switch", { name: "This is my own" }));
     await waitFor(() => expect(clusters[0].owned).toBe(false));
+  });
+
+  it("lists no profile until it is marked, then its profiles with Sign in, as a Docker pool's (#3819)", async () => {
+    clusters = [a_cluster_pool("team")];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(
+        /go to pool team's runner, and sign in there, only once you turn on This is my own/,
+      ),
+    ).toBeInTheDocument();
+    expect(within(group).queryByRole("list", { name: "Profiles on pool team" })).toBeNull();
+    expect(profilesAsked).toEqual([]);
+    await userEvent.click(within(group).getByRole("switch", { name: "This is my own" }));
+    const profiles = await within(group).findByRole("list", { name: "Profiles on pool team" });
+    expect(profilesAsked).toContain("team");
+    expect(
+      within(profiles).getByRole("button", { name: "Sign work in on pool team" }),
+    ).toBeInTheDocument();
+    expect(within(group).queryByText(/lasts only for this claim/)).toBeNull();
+  });
+
+  it("on a fresh claim says a sign-in there lasts only for this claim (#3819)", async () => {
+    clusters = [{ ...a_cluster_pool("team"), owned: true }];
+    freshClaim = true;
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(
+        "Pool team's runner is on a fresh claim, which keeps nothing once it ends: a sign-in there lasts only for this claim.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("whose cluster names another operator key has the key-changed Notice with Remove", async () => {

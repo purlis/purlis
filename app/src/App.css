@@ -6961,6 +6961,13 @@ nav.piece-files-head {
   color: var(--text-muted);
 }
 
+/* A row's refusal line in a form, there from the start so its words are heard as they land
+   (#3291): empty, it takes no place in the row's grid, so nothing moves and no gap is added. It
+   stays in the accessibility tree. */
+.ui-setting-error:empty {
+  position: absolute;
+}
+
 /* A write the core refused (SE-17, V89e), said under the setting it was for. */
 .ui-setting-error p {
   margin: var(--space-1) 0 0;

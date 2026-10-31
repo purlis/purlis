@@ -623,13 +623,25 @@ pub fn kept_for_the_desktop(
     Ok(standing_for_the_wire(standing(&record, look)))
 }
 
+/// **The name of each profile this runner, with `homes` its store, keeps for the desktop
+/// `desktop`** (#4060): what the desktop asks before it forgets the ones no longer chosen for
+/// the pool. Never one of the runner's own, or one kept for another desktop.
+pub fn kept_for(homes: &Homes, desktop: &str) -> Result<Vec<String>, String> {
+    Ok(super::list(homes.config_root())?
+        .into_iter()
+        .filter(|record| record.kept_for.as_deref() == Some(desktop))
+        .map(|record| record.name)
+        .collect())
+}
+
 /// **Forgets the profile `name` this runner keeps for the desktop `desktop`** (#4047), with
 /// `homes` its store and `home` its home: what a desktop that takes the profile off the pool
 /// asks. Its record goes, and with it where its harness keeps its sign-in here: a made
 /// profile's folder, or, for the desktop's adopted folder kept as the harness's default folder,
-/// that harness's own folder in `home` (`~/.claude`, `~/.codex`, opencode's `opencode` under
+/// that harness's own folders in `home` (`~/.claude`, `~/.codex`, opencode's `opencode` under
 /// the XDG folders), never the XDG folders themselves. A profile the runner does not keep is
-/// nothing; one of its own, or kept for another desktop, is refused and stays as it is.
+/// nothing, and so is one of its own or one kept for another desktop, which stays as it is:
+/// nothing of this desktop's has that name, so its pool's record may leave it out (#4060).
 pub fn forget(homes: &Homes, home: &Path, name: &str, desktop: &str) -> Result<(), String> {
     let Some(record) = super::list(homes.config_root())?
         .into_iter()
@@ -645,7 +657,7 @@ pub fn forget(homes: &Homes, home: &Path, name: &str, desktop: &str) -> Result<(
         )
     };
     if record.kept_for.as_deref() != Some(desktop) {
-        return Err(theirs());
+        return Ok(());
     }
     // The harness's own folders here, for the desktop's adopted folder kept in its place.
     let own_folders = match &record.adopted {

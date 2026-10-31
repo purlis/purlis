@@ -34,6 +34,10 @@ const STANDING_SAID: Record<SignInStanding, string> = {
   "signed-in": "Signed in",
 };
 
+/** What a cluster pool on a fresh claim says of a sign-in there (#3819, spec #4023 Q6). */
+export const lastsOnlyForThisClaim = (pool: string) =>
+  `Pool ${pool}'s runner is on a fresh claim, which keeps nothing once it ends: a sign-in there lasts only for this claim.`;
+
 /** What a profile's row on a pool says of it (#2049). */
 export function standingOnPool(pool: string, row: PoolProfileRow): string {
   if (row.not_kept !== null) return `Not on pool ${pool}: ${row.not_kept}.`;
@@ -179,6 +183,10 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
         </Menu>
       </MenuTrigger>
     );
+  // Said above its profiles, so it stays in sight while a sign-in's strip is open.
+  const lasts = rows.fresh_claim ? (
+    <p className="ui-setting-help">{lastsOnlyForThisClaim(pool)}</p>
+  ) : null;
   const told =
     said === undefined ? null : (
       <p className="ui-setting-help" role="status">
@@ -188,6 +196,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   if (rows.kept.length === 0) {
     return (
       <>
+        {lasts}
         <p className="ui-setting-help">
           {rows.addable.length === 0
             ? "This machine keeps no profile of its own yet."
@@ -200,6 +209,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   }
   return (
     <>
+      {lasts}
       <ul className="ui-machine-list" aria-label={`Profiles on pool ${pool}`}>
         {rows.kept.map((row) => (
           <li key={row.name} className="ui-machine-entry">

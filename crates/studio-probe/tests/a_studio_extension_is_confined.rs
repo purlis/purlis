@@ -246,6 +246,7 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
     assert_eq!(names, [studio_probe::OFFERED]);
     let review = purlis_core::skills::source::extension::review(
         studio,
+        None,
         ID,
         &[studio_probe::OFFERED.to_owned()],
     )
