@@ -1313,10 +1313,10 @@ fn on_a_runner_the_tools_name_says_why_and_fails_as_a_missing_program() {
         .write(Path::new("/usr/local/bin/purlis"))
         .expect("written")
         .expect("a shim, though no tool is ready");
-    let out = std::process::Command::new(written.bin.join("gh"))
-        .arg("--version")
-        .output()
-        .expect("the shim runs");
+    let out = crate::forklock::output(
+        std::process::Command::new(written.bin.join("gh")).arg("--version"),
+    )
+    .expect("the shim runs");
     assert_eq!(out.status.code(), Some(127));
     let said = String::from_utf8_lossy(&out.stderr);
     assert!(said.contains("has no gh"), "{said}");

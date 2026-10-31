@@ -101,13 +101,16 @@ Its source is [`runner-image/Dockerfile`](../runner-image/Dockerfile).
 of the contract, so a team's own image may leave them out. Each comes from its vendor's own
 release package, GitHub's and GitLab's, pinned in the Dockerfile by version and checked by
 SHA-256 for each architecture as the build fetches it. A new version of either is a change to
-that file, made by hand, so a security fix in either reaches the image only then. They add about
-90 MB to the `amd64` image and about 84 MB to the `arm64` one, and the image's SBOM lists both.
+that file, made by hand, so a security fix in either reaches the image only then. Together they
+add about 90 MB to the `amd64` image and about 85 MB to the `arm64` one, of about 530 MB, and the
+image's SBOM lists both.
 
-No credential comes with them. Without a tool declared for the chat's persona, `gh` on a runner
-is simply not signed in. A persona's tool named `gh` or `glab` runs as any declared tool does
-([ADR 0077](adr/0077-a-forge-sign-in-is-the-humans-through-one-registration-per-forge-host-and-it-mints-nothing-for-an-agent.md)). On an image without the program, the tool is refused with a sentence naming the
-program and the pool's image.
+No credential comes with them, and what they keep in a runner's home (`.config/gh`,
+`.config/glab-cli`, `.local/share/gh`) is out of every chat's reach. Without a tool declared for
+the chat's persona, `gh` on a runner is simply not signed in. A persona's tool named `gh` or `glab` runs as any declared tool does
+([ADR 0077](adr/0077-a-forge-sign-in-is-the-humans-through-one-registration-per-forge-host-and-it-mints-nothing-for-an-agent.md)). On an image without the program, an allowed tool is refused with a sentence naming
+the program and the pool's image, which a pool gives its runner as `PURLIS_POOL_IMAGE`. Only the
+runner's host reads that variable.
 
 ## The contract
 

@@ -3696,14 +3696,18 @@ fn a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(target: &Targe
 /// **`gh` and `glab` run in a chat on a runner, and a declared tool of them is what its persona
 /// says** (#4354): a Codex chat the runner's own host composes, inside purlis's wrap, on the runner
 /// image as it ships but for the test's own files. With no tool `gh` answers and is not signed in
-/// (ADR 0077). Declared, `gh` runs through its shim on the value its desktop sent for that run,
-/// which stands in for the person's Allow and vault. A declared program the image does not have
-/// says so, naming the image.
+/// (ADR 0077), and what the programs keep in the runner's home is out of its reach. Declared, `gh`
+/// runs through its shim on the value its desktop sent for that run, which stands in for the
+/// person's Allow and vault. A declared program the image does not have says so, naming the image.
 fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Target) {
     let Some(runner) = &target.runner else {
         return;
     };
-    const TOKEN: &str = "a-token-no-service-takes";
+    runner.runs(
+        false,
+        "mkdir -p \"$HOME/.config/gh\" && echo stand-in > \"$HOME/.config/gh/hosts.yml\"",
+        b"",
+    );
     let bin = tempfile::tempdir().expect("a folder for the harness");
     let program = stand_in::program(
         bin.path(),
@@ -3714,8 +3718,13 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
              for word in \"$@\"; do [ \"$word\" = --version ] && {{ echo 'codex-cli 0.147.0'; exit 0; }}; done\n\
              gh --version | head -1 | sed 's/ version.*/ ANSWERED./'\n\
              glab --version | head -1 | cut -c1-4 | sed 's/$/ ANSWERED./'\n\
-             if [ \"$(gh auth token 2>/dev/null)\" = {TOKEN} ]; then echo 'TOKEN handed.'; else echo 'TOKEN none.'; fi\n\
-             kubectl version; echo \"KUBECTL ended $?.\"\n\
+             if gh auth token >/dev/null 2>&1; then echo 'TOKEN some.'; else echo 'TOKEN none.'; fi\n\
+             echo \"AT $HOME.\"\n\
+             if cat \"$HOME/.config/gh/hosts.yml\" >/dev/null 2>&1; then echo 'KEPT read.'; else echo 'KEPT held.'; fi\n\
+             if echo x >> \"$HOME/.config/gh/hosts.yml\" 2>/dev/null; then echo 'KEPT written.'; else echo 'KEPT unwritten.'; fi\n\
+             if printenv PURLIS_POOL_IMAGE CHARTER_POOL_IMAGE >/dev/null; then echo 'IMAGE told.'; else echo 'IMAGE untold.'; fi\n\
+             said=$(kubectl version 2>&1); code=$?\n\
+             case \"$said\" in *\"image, \"*@sha256:*\" has no kubectl\"*) echo \"KUBECTL named the image, ended $code.\" ;; *) echo \"KUBECTL ended $code.\" ;; esac\n\
              printf 'TRIED.\\n'\n\
              read line\n",
         ),
@@ -3744,6 +3753,14 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
     pane.shows("gh ANSWERED.");
     pane.shows("glab ANSWERED.");
     pane.shows("TOKEN none.");
+    // The home the runner's user keeps it in, so the refusals below are of that file.
+    pane.shows(&format!(
+        "AT {}.",
+        runner.prints("printf %s \"$HOME\"").trim()
+    ));
+    pane.shows("KEPT held.");
+    pane.shows("KEPT unwritten.");
+    pane.shows("IMAGE untold.");
     target.sessions.close(id).expect("it closes");
 
     // Declared, in the project as the runner holds it and here, and allowed by this desktop.
@@ -3763,16 +3780,21 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
     );
     let tools = purlis_core::sandbox::tools::declared_and_allowed_here(&target.root, "steward").0;
     assert_eq!(tools.len(), 2, "both tools are read: {tools:?}");
+    let handed_gh = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = Arc::clone(&handed_gh);
     target
         .hooks
-        .exec_secrets_with(Arc::new(|ask, _reader, _writer, _told| {
+        .exec_secrets_with(Arc::new(move |ask, _reader, _writer, _told| {
+            if ask.runs_as.as_deref() == Some("gh") {
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
             let handed = purlis_core::secrets::brokered::Handed::of(
                 ask.chat,
                 ask.runs_as
                     .as_deref()
                     .expect("the tool its host said it runs"),
                 ask.run.as_deref().expect("the run its host numbered"),
-                [("token".to_owned(), TOKEN.to_owned())],
+                [("token".to_owned(), "a-token-no-service-takes".to_owned())],
             );
             assert!(purlis_core::hookwire::relay::hand_values(handed).is_ok());
         }));
@@ -3781,9 +3803,14 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
     pane.shows("TRIED.");
     pane.shows("gh ANSWERED.");
     pane.shows("glab ANSWERED.");
-    pane.shows("TOKEN handed.");
-    pane.shows("has no kubectl");
-    pane.shows("KUBECTL ended 127.");
+    // `auth` is refused a declared tool (`tools::args`), so the token is never read back.
+    pane.shows("TOKEN none.");
+    pane.shows("KUBECTL named the image, ended 127.");
+    assert_eq!(
+        handed_gh.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "the `gh --version` a shim ran asked its desktop once; `auth` never reached it"
+    );
     target.sessions.close(id).expect("it closes");
 }
 

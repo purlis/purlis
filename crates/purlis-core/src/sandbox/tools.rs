@@ -1119,8 +1119,9 @@ pub struct Resolved {
 
 /// **The variable a pool's runner is made with, naming the image it runs** (#4354):
 /// [`crate::dockerpool::Runner::create_args`], and `operator/src/upstream.rs` for a cluster's. It
-/// is only ever said back to the person, in [`not_in_the_image`]. A runner made before it is
-/// told "this pool's image".
+/// is read by the runner's own host and never inherited by a chat
+/// ([`crate::hookwire::NOT_INHERITED`]); a chat sees the name only in [`not_in_the_image`]. A
+/// runner made before it is told "this pool's image".
 pub const POOL_IMAGE_VAR: &str = "PURLIS_POOL_IMAGE";
 
 /// **What a persona's declared tool says on a runner whose image has no such program** (#4354),
@@ -1130,10 +1131,14 @@ pub fn not_in_the_image(persona: &str, name: &str, image: Option<&str>) -> Strin
         || "this pool's image".to_owned(),
         |image| format!("this pool's image, {image},"),
     );
+    let or_own = if matches!(name, "gh" | "glab") {
+        ", or run the pool on purlis's own runner image, which carries it"
+    } else {
+        ""
+    };
     format!(
         "{name} is {persona}'s tool, and {image} has no {name}, so nothing ran. Add {name} to the \
-         pool's image, or run the pool on purlis's own runner image, which carries gh and glab \
-         (docs/runner-image.md)."
+         pool's image{or_own} (docs/runner-image.md)."
     )
 }
 
@@ -1885,7 +1890,7 @@ impl Resolved {
     }
 
     /// **Writes the shims**, each running `purlis`, and Claude Code's env file, replacing every
-    /// shim of an earlier start: none where no tool is ready.
+    /// shim of an earlier start: none where no tool is ready and none refuses.
     #[cfg(unix)]
     pub fn write(&self, purlis: &Path) -> std::io::Result<Option<Written>> {
         use std::os::unix::fs::{DirBuilderExt, PermissionsExt};

@@ -14,6 +14,7 @@
 # later; a newer glibc runs what an older one linked. The base is pinned by the digest of its
 # multi-architecture index; Dependabot proposes the next one. The packages are the archive's
 # current ones at build time, so every build of `main` carries the security fixes of that day.
+# `gh` and `glab` alone are pinned, below, so a fix in either waits for a new pin.
 
 # `gh` and `glab` (#4354): each vendor's own release package, pinned by version and checked by
 # SHA-256 as the file is fetched, for the architecture being built. The sums were read from each
@@ -34,7 +35,6 @@ ADD --checksum=sha256:cac3ff84b60b68e64cca69f31f303210c26320361cc3286b773655d422
 ADD --checksum=sha256:2b9989364afacf34a9a75328a241b596df4318cfc8c11f437b8d65ca24d3fe7e \
     https://gitlab.com/gitlab-org/cli/-/releases/v1.126.0/downloads/glab_1.126.0_linux_arm64.deb /glab.deb
 
-ARG TARGETARCH
 FROM forge-programs-${TARGETARCH} AS forge-programs
 
 FROM ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944

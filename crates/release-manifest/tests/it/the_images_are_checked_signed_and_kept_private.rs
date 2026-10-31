@@ -51,7 +51,7 @@ const RUNNER: Image = Image {
     ],
     package: "purlis-runner",
     checks: &[
-        "node tools/runner-image-contract.mjs purlis-runner:candidate",
+        "node tools/runner-image-contract.mjs --carries gh,glab purlis-runner:candidate",
         "node tools/runner-image-contract.mjs purlis-runner-team-example:candidate",
     ],
     released: true,
@@ -595,11 +595,34 @@ fn each_image_starts_from_a_base_pinned_by_digest_and_runs_as_a_numbered_user() 
     ] {
         let (from, user) = dockerfile(path);
         assert!(!from.is_empty(), "{path}");
-        for base in &from {
+        // A stage of nothing, or an earlier stage of this file, brings nothing in.
+        let stages: Vec<&str> = from
+            .iter()
+            .filter_map(|line| line.split_once(" AS ").map(|(_, stage)| stage.trim()))
+            .collect();
+        let arch_stage = |base: &str| {
+            base.split_once("-${TARGETARCH}").is_some_and(|(stem, _)| {
+                ["amd64", "arm64"]
+                    .iter()
+                    .all(|arch| stages.contains(&format!("{stem}-{arch}").as_str()))
+            })
+        };
+        for base in from.iter().filter(|line| {
+            let named = line.split_whitespace().next().unwrap_or_default();
+            named != "scratch" && !stages.contains(&named) && !arch_stage(named)
+        }) {
             let digest = base.split_once("@sha256:").map(|(_, d)| d);
             assert!(
                 digest.is_some_and(|d| d.len() == 64 && d.chars().all(|c| c.is_ascii_hexdigit())),
                 "{path}: {base} is not pinned by digest"
+            );
+        }
+        // What is fetched is checked as it is fetched (#4354).
+        let text = read(&workflows_dir().join("../..").join(path));
+        for add in text.lines().filter(|line| line.starts_with("ADD ")) {
+            assert!(
+                add.contains("--checksum=sha256:"),
+                "{path}: {add} is not checked"
             );
         }
         assert_eq!(user.len(), 1, "{path}");
