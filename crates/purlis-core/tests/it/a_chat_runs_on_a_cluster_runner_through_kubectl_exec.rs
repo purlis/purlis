@@ -11,13 +11,16 @@
 //! home as it was left (#2057). A profile kept there is asked its standing over the link and by
 //! the sign-in's own `kubectl exec`, and what a sign-in leaves in its folder outlives the pod
 //! (#3819); and a killed `kubectl exec -i` closes the input of what it ran in the pod, which
-//! is how Cancel ends a sign-in there. Everything it made is removed, whatever the outcome.
+//! is how Cancel ends a sign-in there. `purlis profile sign-in --pool` is refused an unmarked pool
+//! and a stopped claim, and on a marked, vouched one reaches the runner's own sign-in over kubectl
+//! (#4164), and the runner names and forgets a profile over the link (#4183). Everything it made
+//! is removed, whatever the outcome.
 //!
 //! It needs a cluster with purlis's cluster operator installed and the runner image of this
 //! build named by digest in `CLUSTER_POOL_TEST_IMAGE`, with the kubeconfig context in
 //! `CLUSTER_POOL_TEST_CONTEXT` (and `kubectl` on `PATH`): `operator/e2e/kind.sh` sets both on
-//! a kind cluster and runs it with `--ignored`. It is ignored anywhere else, and fails when
-//! either is missing.
+//! a kind cluster and runs it with `--ignored`, with this build's binary in
+//! `CLUSTER_POOL_TEST_PURLIS`. It is ignored anywhere else, and fails when any is missing.
 
 #![cfg(unix)]
 
@@ -694,4 +697,224 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
     });
     runtime.shutdown_timeout(Duration::from_secs(5));
     let _ = kubectl.delete_claim(&namespace, "ada-kept");
+}
+
+/// `purlis` with `args`, on the machine at `machine`: what it printed to its error stream, and
+/// whether it succeeded. Its input is closed, and it is held to [`PATIENCE`] twice over.
+fn the_command(purlis: &str, machine: &std::path::Path, args: &[&str]) -> (bool, String) {
+    use std::process::Stdio;
+    let mut running = std::process::Command::new(purlis)
+        .args(args)
+        .current_dir(machine.join("project"))
+        .env("CHARTER_ROOT", machine.join("project"))
+        .env("PURLIS_CONFIG_HOME", machine.join("config-home"))
+        .env("PURLIS_DATA_HOME", machine.join("data"))
+        .env_remove("PURLIS_CHAT")
+        .env_remove("CHARTER_CHAT")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("the binary runs");
+    let until = Instant::now() + PATIENCE * 2;
+    while running.try_wait().expect("it is waited on").is_none() {
+        if Instant::now() > until {
+            let _ = running.kill();
+            let out = running.wait_with_output().expect("it ended");
+            panic!(
+                "purlis {args:?} did not end: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let out = running.wait_with_output().expect("it ended");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+#[test]
+#[ignore = "needs a cluster with purlis's cluster operator: operator/e2e/kind.sh"]
+fn the_command_signs_in_on_a_cluster_pool_only_marked_and_vouched_and_a_runner_forgets() {
+    purlis_core::unsteered!();
+    let image = std::env::var("CLUSTER_POOL_TEST_IMAGE")
+        .expect("CLUSTER_POOL_TEST_IMAGE names the runner image by digest");
+    let context = std::env::var("CLUSTER_POOL_TEST_CONTEXT")
+        .expect("CLUSTER_POOL_TEST_CONTEXT names the cluster's kubeconfig context");
+    let purlis = std::env::var("CLUSTER_POOL_TEST_PURLIS")
+        .expect("CLUSTER_POOL_TEST_PURLIS names this build's binary");
+    let machine = tempfile::tempdir().unwrap();
+    for folder in ["config-home", "data", "project"] {
+        std::fs::create_dir_all(machine.path().join(folder)).unwrap();
+    }
+    std::fs::write(machine.path().join("project/charter.toml"), "").unwrap();
+    let config = machine.path().join("config-home");
+
+    let kubectl = Kubectl::at("kubectl").with_context(&context);
+    let suffix = ulid::Ulid::generate().to_string().to_lowercase();
+    let namespace = format!("e2e-cli-{}", &suffix[..10]);
+    let pool = format!("e2e-cli-{}", &suffix[..10]);
+    let _removes = Removes {
+        kubectl: kubectl.clone(),
+        namespace: namespace.clone(),
+        pool: pool.clone(),
+    };
+    kubectl
+        .run(
+            &kubectl.args(&["create", "namespace", &namespace]),
+            None,
+            64 * 1024,
+        )
+        .expect("a namespace of the test's own");
+    let definition = serde_json::json!({
+        "apiVersion": "runners.purlis.dev/v1alpha1",
+        "kind": "Pool",
+        "metadata": { "name": pool },
+        "spec": { "image": image, "keptVolume": { "size": "1Gi" } },
+    });
+    kubectl
+        .run(
+            &kubectl.args(&["apply", "--filename", "-"]),
+            Some(&definition.to_string()),
+            64 * 1024,
+        )
+        .expect("the pool");
+    let operator = eventually("the pool names the operator's key", || {
+        kubectl.pool_pin(&pool).ok()
+    });
+
+    // Added as the window adds one: claimed, vouched for, paired and kept, and not marked.
+    let ours = Identity {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: LinkKey::generate().unwrap(),
+    };
+    let desktop = Pinned {
+        device: ours.device.clone(),
+        key: ours.key.public(),
+    };
+    let kubeconfig = std::env::var_os("KUBECONFIG").map_or_else(
+        || std::path::PathBuf::from(std::env::var_os("HOME").unwrap()).join(".kube/config"),
+        std::path::PathBuf::from,
+    );
+    let team = purlis_core::runners::ClusterPool::new(
+        "team",
+        &kubeconfig,
+        &context,
+        &pool,
+        &namespace,
+        operator.clone(),
+    )
+    .expect("a cluster pool");
+    let added = purlis_core::pools::add_cluster(
+        &config,
+        &purlis_core::pools::kubectl_here(&config).expect("kubectl on this machine"),
+        &team,
+        &desktop,
+        PATIENCE * 2,
+    )
+    .expect("the pool is added");
+    let paired = Paired {
+        claimed: added.claimed.clone(),
+        vouched: vouched(&kubectl, &operator, &added.claimed),
+        pinned: added.pinned.clone(),
+    };
+
+    // Its runner keeps two profiles, named and forgotten over the link (#4183).
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let (client, _views) = linked(&kubectl, &operator, &paired, ours).await;
+        for name in ["work", "chosen-no-longer"] {
+            let mut profile = work();
+            profile.name = name.into();
+            client.keep_profile(profile).await.expect("it keeps it");
+        }
+        let kept = client
+            .kept_profiles()
+            .await
+            .expect("it names what it keeps");
+        assert!(kept.iter().any(|one| one == "chosen-no-longer"), "{kept:?}");
+        client
+            .forget_profile("chosen-no-longer")
+            .await
+            .expect("it forgets it");
+        let kept = client
+            .kept_profiles()
+            .await
+            .expect("it names what it keeps");
+        assert_eq!(kept, ["work"], "only what is chosen stays");
+    });
+    runtime.shutdown_timeout(Duration::from_secs(5));
+    let gone = in_the_pod(
+        &kubectl,
+        &paired.vouched.runner_namespace,
+        &paired.vouched.pod,
+        "find \"$HOME\" -type d -path '*/profiles/chosen-no-longer' | wc -l",
+    );
+    assert_eq!(gone.trim(), "0", "its folder went with it");
+
+    let (made, said) = the_command(
+        &purlis,
+        machine.path(),
+        &["profile", "create", "work", "--harness", "claude"],
+    );
+    assert!(made, "{said}");
+    let sign_in = ["profile", "sign-in", "work", "--pool", "team"];
+
+    // Unmarked: refused, in words.
+    let (signed_in, said) = the_command(&purlis, machine.path(), &sign_in);
+    assert!(!signed_in);
+    assert!(said.contains("not marked as your own"), "{said}");
+
+    // Marked and vouched for: the gate passes, the runner's version is this one's, its standing
+    // is asked over kubectl exec, and its own sign-in runs. The runner has no harness to log in
+    // with, so no vendor is reached and it ends there.
+    purlis_core::runners::set_cluster_owned(&config, "team", true).unwrap();
+    let (signed_in, said) = the_command(&purlis, machine.path(), &sign_in);
+    assert!(
+        said.contains("asking pool team's runner whether it keeps 'work'"),
+        "{said}"
+    );
+    assert!(!said.contains("could not confirm"), "{said}");
+    assert!(!said.contains("could not say whether"), "{said}");
+    assert!(!said.contains("so purlis signs nothing in"), "{said}");
+    assert!(!signed_in, "nothing signed it in: {said}");
+
+    // The mark taken back: refused again.
+    purlis_core::runners::set_cluster_owned(&config, "team", false).unwrap();
+    let (_, said) = the_command(&purlis, machine.path(), &sign_in);
+    assert!(said.contains("not marked as your own"), "{said}");
+
+    // Marked, with its claim stopped: not vouched for now, so refused, and nothing asked of it.
+    purlis_core::runners::set_cluster_owned(&config, "team", true).unwrap();
+    kubectl
+        .run(
+            &kubectl.args(&[
+                "patch",
+                "claims.runners.purlis.dev",
+                &paired.claimed.name,
+                "--namespace",
+                &namespace,
+                "--type",
+                "merge",
+                "-p",
+                "{\"spec\":{\"stopped\":true}}",
+            ]),
+            None,
+            64 * 1024,
+        )
+        .expect("the claim patched");
+    let (signed_in, said) = the_command(&purlis, machine.path(), &sign_in);
+    assert!(!signed_in);
+    assert!(
+        said.contains("could not confirm pool team's runner"),
+        "{said}"
+    );
+    assert!(!said.contains("asking pool team's runner"), "{said}");
+    let _ = kubectl.delete_claim(&namespace, &paired.claimed.name);
 }

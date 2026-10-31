@@ -3104,3 +3104,27 @@ fn a_sign_out_in_a_terminal_is_typed_with_a_terminal() {
     assert_eq!(args[..2], ["exec", "-it"]);
     assert_eq!(args[args.len() - 3..], ["profile", "sign-out", "work"]);
 }
+
+/// **A standing is asked with `--check` alone** (#4164): a login's `--until-input-ends` is left
+/// out, since the runner's `purlis` refuses the two together.
+#[cfg(unix)]
+#[test]
+fn a_standing_is_not_held_to_its_input() {
+    let login = crate::profilestore::sign_in::Login {
+        program: "/bin/sh".to_owned(),
+        args: vec![
+            "-c".to_owned(),
+            "case \"$*\" in *--until-input-ends*) echo refused;; *--check*) echo \"'work' is not \
+             signed in\";; esac"
+                .to_owned(),
+            "sh".to_owned(),
+            "--until-input-ends".to_owned(),
+        ],
+        env: Vec::new(),
+        cleared: Vec::new(),
+    };
+    assert_eq!(
+        standing_by_login(&login, "work"),
+        Ok(crate::profilestore::sign_in::Standing::SignedOut)
+    );
+}

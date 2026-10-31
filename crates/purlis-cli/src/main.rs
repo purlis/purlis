@@ -4326,10 +4326,10 @@ fn profile_sign_in(
 }
 
 /// `purlis profile sign-in <name> --pool <pool>` (#4046, spec #4023): the sign-in the window's
-/// strip drives ([`sign_in::driven`]), run on pool `pool`'s runner through this machine's `docker`
-/// and followed here ([`sign_in::terminal`]), for a profile the runner already keeps. Only a pool
-/// shown to be the person's own is signed in on, as the window's is. Nothing of this machine's
-/// sign-in goes to the runner (ADR 0095).
+/// strip drives ([`sign_in::driven`]), run on pool `pool`'s runner through this machine's `docker`,
+/// or its `kubectl` on a cluster pool (#4164), and followed here ([`sign_in::terminal`]), for a
+/// profile the runner already keeps. Only a pool shown to be the person's own is signed in on, as
+/// the window's is. Nothing of this machine's sign-in goes to the runner (ADR 0095).
 ///
 /// [`sign_in::driven`]: purlis_core::profilestore::sign_in::driven
 /// [`sign_in::terminal`]: purlis_core::profilestore::sign_in::terminal
@@ -4378,19 +4378,15 @@ fn pool_sign_in(
             record.name
         ));
     }
+    if let Some((cluster, kept)) =
+        runners::cluster_runner_for(config, pool).map_err(|why| why.to_string())?
+    {
+        return cluster_pool_sign_in(config, &record, pool, provider, &cluster, &kept);
+    }
     // Nothing reaches a runner, nor is read of one, before its engine is shown to be yours.
     let engine = Docker::engine_on_this_machine();
     purlis_core::poollogins::owned(engine.clone())?;
     let engine = engine?;
-    if runners::cluster_runner_for(config, pool)
-        .map_err(|why| why.to_string())?
-        .is_some()
-    {
-        return Err(format!(
-            "pool {pool} is a cluster pool, and purlis signs a profile in only on a Docker \
-             pool's runner so far."
-        ));
-    }
     let runner = runners::runner_for(config, pool)
         .map_err(|why| format!("{why}. Settings › Pools lists this machine's pools."))?;
     let path = purlis_core::envvar::var("PATH");
@@ -4398,34 +4394,11 @@ fn pool_sign_in(
     let docker = Docker::on_this_machine(path.as_deref(), home.as_deref()).map_err(|why| why.0)?;
     // A runner on another version has no sign-in held to what drives it (#4043): refused in
     // words, as the window refuses it.
-    let ours = purlis_core::adopt::release_version();
-    match docker.version_of(&runner.made) {
-        Ok(theirs) if theirs == ours => {}
-        Ok(theirs) => {
-            return Err(format!(
-                "pool {pool}'s runner runs purlis {theirs}, and this runs {ours}, so purlis signs \
-                 nothing in there itself. Sign '{name}' in from its line in Settings › Pools with \
-                 Open in terminal, or once the runner runs this version."
-            ));
-        }
-        Err(why) => {
-            return Err(format!(
-                "pool {pool}'s runner's version could not be read, so it may not run this \
-                 purlis {ours}: {}. Nothing was started.",
-                why.0
-            ));
-        }
-    }
+    this_commands_runner(pool, name, docker.version_of(&runner.made).map_err(|why| why.0))?;
     eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
     docker
         .standing_on_runner(&runner.made, &engine, name)
-        .map_err(|why| {
-            format!(
-                "pool {pool}'s runner could not say whether '{name}' is signed in there, so \
-                 nothing was started: {why}. A profile goes on a pool from its row in Settings \
-                 › Pools."
-            )
-        })?;
+        .map_err(|why| not_asked(pool, name, &why))?;
     let login = docker.driven_sign_in(&runner.made, &engine, name, provider)?;
     let check = {
         let (docker, made, engine, name) = (
@@ -4450,6 +4423,100 @@ fn pool_sign_in(
         }
     });
     sign_in::terminal::follow(&driving, &lines, &mut ThisTerminal, name, pool)
+}
+
+/// Refused where a pool's runner, whose `purlis --version` said `theirs`, runs another version
+/// than this command: it has no sign-in held to what drives it (#4043), refused in words, as the
+/// window refuses it.
+fn this_commands_runner(pool: &str, name: &str, theirs: Result<String, String>) -> Result<(), String> {
+    let ours = purlis_core::adopt::release_version();
+    match theirs {
+        Ok(theirs) if theirs == ours => Ok(()),
+        Ok(theirs) => Err(format!(
+            "pool {pool}'s runner runs purlis {theirs}, and this runs {ours}, so purlis signs \
+             nothing in there itself. Sign '{name}' in from its line in Settings › Pools with \
+             Open in terminal, or once the runner runs this version."
+        )),
+        Err(why) => Err(format!(
+            "pool {pool}'s runner's version could not be read, so it may not run this purlis \
+             {ours}: {why}. Nothing was started."
+        )),
+    }
+}
+
+/// What the person is told where a pool's runner could not say how `name` stands there.
+fn not_asked(pool: &str, name: &str, why: &str) -> String {
+    format!(
+        "pool {pool}'s runner could not say whether '{name}' is signed in there, so nothing was \
+         started: {why}. A profile goes on a pool from its row in Settings › Pools."
+    )
+}
+
+/// [`pool_sign_in`] on the cluster pool `pool`, kept as `cluster` with its runner `kept` (#4164):
+/// behind the gate the window's strip passes ([`purlis_core::pools::cluster_runner_yours`]), over
+/// `kubectl exec -i` into the pod the gate judged. Each `kubectl exec` makes the check every link
+/// makes first; each code is held to the runner's still being as the gate judged it, as a code
+/// pasted in the strip is.
+fn cluster_pool_sign_in(
+    config: &std::path::Path,
+    record: &purlis_core::profilestore::MachineProfile,
+    pool: &str,
+    provider: Option<&str>,
+    cluster: &purlis_core::runners::ClusterPool,
+    kept: &purlis_core::runners::ClusterKept,
+) -> Result<(), String> {
+    use purlis_core::pools;
+    use purlis_core::profilestore::sign_in;
+    let name = record.name.as_str();
+    let judged = pools::cluster_runner_yours(config, pool, cluster, kept, &pools::vouched_now)?;
+    pools::cluster_runner_still_yours(config, pool, &judged)?;
+    let kubectl = pools::kubectl_here(config)?.within(pools::VOUCHED_NOW_WITHIN);
+    this_commands_runner(
+        pool,
+        name,
+        pools::cluster_runner_version(config, &kubectl, pool, &judged),
+    )?;
+    eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
+    pools::cluster_standing(config, &kubectl, pool, &judged, name)
+        .map_err(|why| not_asked(pool, name, &why))?;
+    pools::cluster_runner_still_yours(config, pool, &judged)?;
+    let login = pools::cluster_sign_in(
+        config,
+        &kubectl,
+        pool,
+        &judged,
+        name,
+        provider,
+        purlis_core::dockerpool::Typed::Driven,
+    )?;
+    let check = {
+        let (config, kubectl, pool, judged, name) = (
+            config.to_path_buf(),
+            kubectl.clone(),
+            pool.to_owned(),
+            judged.clone(),
+            name.to_owned(),
+        );
+        move || {
+            if pools::cluster_runner_still_yours(&config, &pool, &judged).is_err() {
+                return sign_in::Standing::CannotTell;
+            }
+            pools::cluster_standing(&config, &kubectl, &pool, &judged, &name)
+                .unwrap_or(sign_in::Standing::CannotTell)
+        }
+    };
+    let driving = sign_in::driven::drive_with(&login, &record.harness, provider, None, check)?;
+    let (typed, lines) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lines().map_while(Result::ok) {
+            if typed.send(line).is_err() {
+                return;
+            }
+        }
+    });
+    sign_in::terminal::follow_while(&driving, &lines, &mut ThisTerminal, name, pool, &|| {
+        pools::cluster_runner_still_yours(config, pool, &judged).map(drop)
+    })
 }
 
 /// This command's terminal, as a sign-in on a pool's runner says its steps there.

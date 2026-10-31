@@ -1357,6 +1357,43 @@ mod cluster {
         );
     }
 
+    /// **A cluster runner's standing is its own `--check` in the vouched pod** (#4164); a runner
+    /// not vouched for now is not asked.
+    #[test]
+    fn a_cluster_runners_standing_is_asked_in_its_vouched_pod_after_the_links_check() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        cluster.write(
+            "paired.txt",
+            "'work' is signed in by Claude Code's own sign-in on x\n",
+        );
+        let asked = cluster_standing(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            &judged(config.path()),
+            "work",
+        );
+        assert!(
+            cluster.calls().contains("sign-in work --check"),
+            "{}",
+            cluster.calls()
+        );
+        assert_eq!(asked, Ok(crate::profilestore::sign_in::Standing::SignedIn));
+
+        cluster.write("claim.json", "{}");
+        assert!(
+            cluster_standing(
+                config.path(),
+                &cluster.kubectl(),
+                "team",
+                &judged(config.path()),
+                "work",
+            )
+            .is_err()
+        );
+    }
+
     /// **A cluster runner's version and sign-out are asked of its own `purlis` in the vouched pod**
     /// (#3819), after the check every link makes.
     #[test]

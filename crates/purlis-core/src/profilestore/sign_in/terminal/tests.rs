@@ -192,3 +192,24 @@ fn an_input_that_ends_with_no_code_says_so() {
 
     assert!(ended.unwrap_err().contains("input ended"));
 }
+
+/// **A code goes on only while what the sign-in was opened on still holds** (#4164): where it no
+/// longer does, the sign-in is cancelled and the code goes nowhere, as in the window's strip.
+#[cfg(unix)]
+#[test]
+fn a_code_is_not_passed_on_once_the_runner_is_no_longer_yours() {
+    let dir = tempfile::tempdir().unwrap();
+    let got = dir.path().join("got");
+    let login = claude(&format!("read code; echo \"$code\" > '{}'", got.display()));
+    let driving = drive_with(&login, "claude", None, None, || Standing::SignedOut).unwrap();
+    let (typed, lines) = channel();
+    typed.send("the-code".to_owned()).unwrap();
+    let mut written = Written::default();
+
+    let said = follow_while(&driving, &lines, &mut written, "work", "team", &|| {
+        Err("the mark was taken back".to_owned())
+    });
+
+    assert_eq!(said, Err("the mark was taken back".to_owned()));
+    assert!(!got.exists(), "the code went nowhere");
+}

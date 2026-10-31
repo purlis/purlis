@@ -977,6 +977,97 @@ pub fn vouched_now_with(
     )
 }
 
+/// **Whether the cluster pool `name`, kept as `cluster` with its runner `kept`, is shown to be
+/// the person's own now** (#3819, #4164), for a profile to reach its runner or sign in there: the
+/// gate a vault value or a token passes ([`crate::poollogins::Bound::of_a_cluster_pool`], #4071),
+/// the person's mark, no chat run there without the sandbox, and its operator vouching for its
+/// claim now, read again after. Answers the runner it judged, the only one anything then reaches
+/// ([`cluster_runner_still_yours`]). Its cluster is asked only for a marked pool. The gate's own
+/// reason goes to the log, so no word of the cluster's reaches the person.
+pub fn cluster_runner_yours(
+    config_root: &Path,
+    name: &str,
+    cluster: &runners::ClusterPool,
+    kept: &runners::ClusterKept,
+    vouch: &dyn Fn(&Path, &str) -> Result<String, crate::clusterpool::Refused>,
+) -> Result<runners::ClusterKept, String> {
+    if !cluster.owned() {
+        return Err(format!(
+            "pool {name} is not marked as your own, so purlis keeps no profile of yours on its \
+             runner and signs none in there. Only you can mark it: turn on This is my own on its \
+             row"
+        ));
+    }
+    match crate::poollogins::Bound::of_a_cluster_pool(
+        config_root,
+        name,
+        Some(&kept.reached()),
+        vouch,
+    ) {
+        Ok(Some(_)) => Ok(kept.clone()),
+        Ok(None) => Err(format!("no cluster pool named {name} is on this machine")),
+        Err(why) => {
+            tracing::info!("purlis: pool {name}'s runner keeps no profile now: {why}");
+            Err(format!(
+                "purlis could not confirm pool {name}'s runner as yours just now, so it kept no \
+                 profile there and signed none in. Try again; if it stays so, look at the pool's \
+                 row"
+            ))
+        }
+    }
+}
+
+/// **The cluster pool `name` and its runner, still as the gate judged them** (#3819, #4164), read
+/// again right before a link, a sign-in or a pasted code reaches it: the same runner `judged`,
+/// still marked, and no chat run there without the sandbox since. The cluster is not asked again
+/// here: a link's own check vouches for it before every connection, and a sign-in's before it
+/// runs.
+pub fn cluster_runner_still_yours(
+    config_root: &Path,
+    name: &str,
+    judged: &runners::ClusterKept,
+) -> Result<(runners::ClusterPool, runners::ClusterKept), String> {
+    let changed = || {
+        format!(
+            "pool {name} or its runner changed since purlis confirmed it as yours, so nothing \
+             of your profiles went there. Try again"
+        )
+    };
+    let (cluster, kept) = runners::cluster_runner_for(config_root, name)
+        .map_err(|why| why.to_string())?
+        .ok_or_else(changed)?;
+    if kept != *judged || !cluster.owned() {
+        return Err(changed());
+    }
+    if crate::runnertaint::pool_ran_unsandboxed(config_root, name) {
+        return Err(crate::runnertaint::sent_nothing_on(name));
+    }
+    Ok((cluster, kept))
+}
+
+/// **Whether the cluster pool `name`'s runner says `profile` is signed in** (#4164), by its own
+/// `purlis profile sign-in --check` in the vouched pod ([`cluster_sign_in`]), for a sign-in with
+/// no link to the runner to ask over. Refused where the check every link makes fails, or the
+/// runner says neither, as for a profile it does not keep.
+pub fn cluster_standing(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    judged: &runners::ClusterKept,
+    profile: &str,
+) -> Result<crate::profilestore::sign_in::Standing, String> {
+    let login = cluster_sign_in(
+        config_root,
+        kubectl,
+        name,
+        judged,
+        profile,
+        None,
+        crate::dockerpool::Typed::Driven,
+    )?;
+    crate::dockerpool::standing_by_login(&login, profile)
+}
+
 /// **The runner's own sign-in of its profile `profile` on the cluster pool `name`'s runner**
 /// (#3819), to `provider`'s plan where one is named, by `typed`: through `kubectl` pointed at
 /// the pool's context, into the pod its pairing named, in its requester's runner namespace, as

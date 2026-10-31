@@ -33,6 +33,20 @@ pub fn follow(
     profile: &str,
     pool: &str,
 ) -> Result<(), String> {
+    follow_while(driving, lines, terminal, profile, pool, &|| Ok(()))
+}
+
+/// [`follow`], with `still` asked before each code goes on, as the window's strip asks before a
+/// paste (#3819, #4164): where it refuses, the sign-in is cancelled, the code goes nowhere, and
+/// this answers its refusal.
+pub fn follow_while(
+    driving: &Driving,
+    lines: &Receiver<String>,
+    terminal: &mut dyn Terminal,
+    profile: &str,
+    pool: &str,
+    still: &dyn Fn() -> Result<(), String>,
+) -> Result<(), String> {
     let mut asked = false;
     loop {
         if let Some(event) = driving.next(LOOK_EVERY) {
@@ -107,10 +121,18 @@ pub fn follow(
             continue;
         }
         match lines.try_recv() {
-            Ok(code) => match driving.paste(&code) {
-                Ok(()) => asked = false,
-                Err(why) => terminal.say(&format!("{why}. Paste it again, then press Return:")),
-            },
+            Ok(code) => {
+                if let Err(why) = still() {
+                    driving.cancel();
+                    return Err(why);
+                }
+                match driving.paste(&code) {
+                    Ok(()) => asked = false,
+                    Err(why) => {
+                        terminal.say(&format!("{why}. Paste it again, then press Return:"));
+                    }
+                }
+            }
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => {
                 driving.cancel();
