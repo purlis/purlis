@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793427375682,
+  "lastUpdate": 1793428836679,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32676,6 +32676,48 @@ window.BENCHMARK_DATA = {
             "value": 102.572352,
             "unit": "ms",
             "extra": "median of 5 runs: 100.506, 101.499, 102.572, 102.900, 103.372 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9121bb19a18a072a77621148f57555b3fe15e705",
+          "message": "ui: the close that ends a chat keeps its danger cue under any theme (#3295) (#4191)\n\nA theme reaches the quiet ghost's hover (button.root.quiet.hover.*) in\nthe parts layer, after the button family, so it replaced the danger\nhover of the pane close that ends a chat. A new cues layer, declared\nafter parts and written into by no theme, draws that close's danger\nmark under the pointer: its glyph in the danger colour and an inset\nedge of it. Its fill stays the family's to theme. On the built-ins'\ndanger ground the danger words are held at 4.5:1.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T05:53:36Z",
+          "tree_id": "9119f0f496d9e60faf00143aabd7007cc318600f",
+          "url": "https://github.com/purlis/purlis/commit/9121bb19a18a072a77621148f57555b3fe15e705"
+        },
+        "date": 1793428830875,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.671019,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.652, 0.666, 0.671, 0.679, 0.687 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.613757,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.420, 16.602, 16.614, 16.680, 16.853 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.09777500000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.001, 102.012, 102.098, 102.191, 102.440 ms"
           }
         ]
       }
