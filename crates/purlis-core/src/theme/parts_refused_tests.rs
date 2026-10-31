@@ -312,6 +312,15 @@ fn an_edge_at_rest_that_reaches_the_refused_box_falls_back() {
                 parts::refusal_shown(theme, family, &[state, State::Invalid]),
                 "{family} {name}: {all:?}"
             );
+            // And while it is under the pointer and has the keyboard at once (#4196's review).
+            assert!(
+                parts::refusal_shown(
+                    theme,
+                    family,
+                    &[State::Hover, State::Focused, State::Invalid]
+                ),
+                "{family} {name}: {all:?}"
+            );
         }
     }
     // What falls back draws the danger edge in the refused state, after the theme's rules.
