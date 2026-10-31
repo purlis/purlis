@@ -64,7 +64,7 @@ export function PoolLimits({ pool }: { pool: string }) {
         </>
       )}
       {shown && (
-        <>
+        <div className="pool-limits-body">
           <p className="ui-setting-help">{ABOUT}</p>
           {shown.groups.map((group) => (
             <Group key={group.label} pool={pool} group={group} />
@@ -76,7 +76,7 @@ export function PoolLimits({ pool }: { pool: string }) {
               ))}
             </Disclosure>
           )}
-        </>
+        </div>
       )}
     </Disclosure>
   );
@@ -105,6 +105,7 @@ function Group({ pool, group }: { pool: string; group: PoolLimitGroup }) {
 function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
   const unit = useId();
   const says = useId();
+  const refusal = useId();
   // What is typed, until what the core holds replaces it.
   const [typed, setTyped] = useState<string>();
   const [why, setWhy] = useState<string>();
@@ -172,12 +173,12 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
             <TextField
               id={ids.id}
               aria-labelledby={`${ids.labelledBy} ${unit}`}
-              aria-describedby={[ids.describedBy, says].filter(Boolean).join(" ")}
+              aria-describedby={[ids.describedBy, refusal, says].filter(Boolean).join(" ")}
               inputMode="numeric"
               columns={8}
               placeholder={String(row.default)}
               value={typed ?? held}
-              error={why}
+              isInvalid={why !== undefined}
               onChange={type}
               onBlur={(event) => {
                 // Still the focused box: it is the window that lost the focus, mid-typing.
@@ -201,6 +202,11 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
           </span>
         )}
       />
+      {/* There from the start, so its words are heard as they land, politely, under the typing:
+        empty, it takes no room, so the box stays where it is. */}
+      <div className="ui-setting-error" id={refusal} aria-live="polite" aria-atomic="true">
+        {why !== undefined && <p>{why}</p>}
+      </div>
       <p className="ui-setting-help pool-limit-says" id={says}>
         {isSet && <Badge variant="accent">You set this</Badge>}
         <span>Default {row.default_said}.</span>

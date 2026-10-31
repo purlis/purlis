@@ -43,13 +43,9 @@ const REFUSING: Record<string, { grounds: string[]; where: string }> = {
     where: "HexColour: in a persona's card, a view tab's panel (Views.tsx)",
   },
   "RaiseLimit.tsx": {
-    grounds: ["surface.base"],
+    grounds: ["surface.raised"],
     where:
       "RaiseLimit: a limit's new value, on its own ground, in the Start a chat dialog and under a move's line",
-  },
-  "settings/PoolLimits.tsx": {
-    grounds: ["surface.base"],
-    where: "PoolLimits: a limit's box, on a pool's row in Settings",
   },
 };
 

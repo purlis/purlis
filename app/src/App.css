@@ -7320,6 +7320,13 @@ nav.piece-files-head {
   min-inline-size: 0;
 }
 
+/* Its own ground, which a text box's fill shows on. */
+.pool-limits-body {
+  padding: var(--space-4);
+  border-radius: var(--radius-control);
+  background-color: var(--surface-raised);
+}
+
 .pool-limits-group {
   margin-block-start: var(--space-5);
 }
@@ -7343,6 +7350,11 @@ nav.piece-files-head {
 .pool-limit .ui-setting-row {
   border: 0;
   padding: 0;
+}
+
+/* The boxes of a group line up, whatever each limit is called. */
+.pool-limit .ui-setting-name {
+  flex: 0 0 40%;
 }
 
 .pool-limit-edit {
@@ -7372,8 +7384,9 @@ nav.piece-files-head {
   padding: var(--space-4);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
-  /* Its own ground: under a trouble Notice it would stand on the danger wash. */
-  background-color: var(--surface-base);
+  /* Its own ground: under a trouble Notice it would stand on the danger wash, and a text box's
+     fill shows on this one. */
+  background-color: var(--surface-raised);
   color: var(--text-primary);
 }
 
