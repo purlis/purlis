@@ -90,9 +90,9 @@ pub const HELPERS: [&str; 6] = [
 /// each has a job now ([`crate::personaprofile`], [`crate::personamark`], [`description`]).
 /// So has `disallowed-tools` ([`DENIED_TOOLS`]), and so has `dispatch-isolation` since #1453:
 /// it is the persona's default place to work when a dispatch names none
-/// ([`crate::dispatchplace::isolates`]). `skills` is here for what it did in a chat;
-/// `persona stats` still reads it as the persona's declared skills.
-pub const KEYS: [&str; 3] = ["agent-tools", "skills", "memory"];
+/// ([`crate::dispatchplace::isolates`]). So has `skills` since #2768: a chat as the persona loads
+/// each skill it names, and `persona lint` checks the list's entries (#2934).
+pub const KEYS: [&str; 2] = ["agent-tools", "memory"];
 
 /// The tools of a sub-agent's allow-list that write a file.
 const WRITERS: [&str; 4] = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
@@ -121,10 +121,6 @@ pub fn key_notice(key: &str, value: &str) -> Option<String> {
                  (#1460); `disallowed-tools:` denies a chat the ones it names"
             )
         }
-        "skills" => "it preloaded those skills into the generated sub-agent, and a persona \
-                     chat loads a skill when it uses it. Preloading a persona's skills into \
-                     its chats is not in this version yet (#1460)"
-            .to_owned(),
         "memory" => "it chose the harness's own memory store for the generated sub-agent. A \
                      persona chat has the persona's memory in `personas/<name>/memory/`, and \
                      choosing a harness store for it is not in this version yet (#1460)"
