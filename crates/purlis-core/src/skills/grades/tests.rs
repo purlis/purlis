@@ -1312,3 +1312,14 @@ fn a_plans_consent_covers_the_profile_model_and_limits_it_shows() {
 }
 
 mod follows;
+
+#[test]
+fn the_record_reads_back_a_grader_at_the_longest_id_a_grader_may_declare() {
+    let by = |grader: String| purlis_skills::grade::GradeReport {
+        grader,
+        ..underway::interrupted_report(1, None, None)
+    };
+    let most = crate::extension::MOST_GRADER_ID_BYTES;
+    assert!(report_holds_together(&by("g".repeat(most)), 3));
+    assert!(!report_holds_together(&by("g".repeat(most + 1)), 3));
+}

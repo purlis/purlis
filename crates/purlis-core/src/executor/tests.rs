@@ -2485,3 +2485,120 @@ fn a_report_names_five_paths_and_counts_the_rest() {
         "{said}"
     );
 }
+
+/// A question of many lines whose every answer is `next`, stopped once `stop` is set.
+struct Saying {
+    next: Vec<u8>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Talk for Saying {
+    fn heard(&mut self, _protocol: u32, _line: &[u8]) -> Option<Vec<u8>> {
+        Some(self.next.clone())
+    }
+
+    fn stopped(&self) -> bool {
+        self.stop.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+/// `talk_through` on a program that says one line and reads nothing, with `writer` as the writer
+/// of its question, a Stop pressed after 200 ms and a deadline far past it: how long it took.
+fn stopped_while_writing(writer: &std::thread::JoinHandle<bool>, next: Vec<u8>) -> Duration {
+    use std::io::Write as _;
+    let (ours, mut theirs) = std::os::unix::net::UnixStream::pair().expect("a socket pair");
+    theirs.write_all(b"{}\n").expect("its line");
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let pressed = {
+        let stop = std::sync::Arc::clone(&stop);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        })
+    };
+    let mut talk = Saying { next, stop };
+    let deadline = Duration::from_secs(60);
+    let began = Instant::now();
+    let talked = talk_through(
+        "probe",
+        &ours,
+        writer,
+        &mut talk,
+        4,
+        deadline,
+        Instant::now() + deadline,
+    );
+    let took = began.elapsed();
+    pressed.join().expect("the press");
+    assert_eq!(talked, Ok(()), "a Stop is no fault of the program's");
+    drop(theirs);
+    took
+}
+
+#[test]
+fn a_stop_ends_a_graders_question_while_purlis_writes_it_a_line_it_does_not_read() {
+    let writer = std::thread::spawn(|| true);
+    while !writer.is_finished() {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    // Far more than a socket holds, so the write blocks on a program that reads nothing.
+    let took = stopped_while_writing(&writer, vec![b'x'; 64 << 20]);
+    assert!(took < Duration::from_secs(5), "held for {took:?}");
+}
+
+#[test]
+fn a_stop_ends_a_graders_question_while_its_first_line_is_still_being_written() {
+    let (done, wait) = std::sync::mpsc::channel::<()>();
+    let writer = std::thread::spawn(move || {
+        let _ = wait.recv();
+        false
+    });
+    let took = stopped_while_writing(&writer, b"{}\n".to_vec());
+    assert!(took < Duration::from_secs(5), "held for {took:?}");
+    drop(done);
+    writer.join().expect("the writer");
+}
+
+#[test]
+fn a_write_that_is_not_stopped_still_ends_at_its_deadline() {
+    let (ours, theirs) = std::os::unix::net::UnixStream::pair().expect("a socket pair");
+    let began = Instant::now();
+    let wrote = ask_within(
+        &ours,
+        &vec![b'x'; 64 << 20],
+        Instant::now() + Duration::from_millis(300),
+        false,
+        &|| false,
+    );
+    assert!(!wrote);
+    assert!(began.elapsed() >= Duration::from_millis(300));
+    drop(theirs);
+}
+
+#[test]
+fn a_question_during_a_grade_fails_at_once_and_says_the_extension_is_grading() {
+    let executor = patient();
+    let held = executor.hold("probe").expect("the slot");
+    held.grading();
+
+    let refused = executor.hold("probe").err().expect("refused");
+    assert!(refused.contains("'probe' is grading a skill"), "{refused}");
+    assert!(
+        !refused.contains("seconds"),
+        "no wait it is not on: {refused}"
+    );
+
+    let began = Instant::now();
+    let refused = executor
+        .hold_within("probe", Instant::now() + Duration::from_secs(60))
+        .err()
+        .expect("refused");
+    assert!(refused.contains("'probe' is grading a skill"), "{refused}");
+    assert!(began.elapsed() < Duration::from_secs(5), "it did not wait");
+
+    drop(held);
+    assert!(
+        executor.hold("probe").is_ok(),
+        "the grade over, it is asked again"
+    );
+}

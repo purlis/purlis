@@ -3578,3 +3578,22 @@ fn the_record_opens_in_your_editor_at_its_own_path_and_a_link_does_not() {
         assert!(refused.contains("is not a plain file"), "{refused}");
     }
 }
+
+#[test]
+fn a_graders_id_is_no_longer_than_the_eval_record_reads_back() {
+    let manifest = |id: &str| {
+        format!(
+            r#"{{"version":4,"id":"{id}","capabilities":["grader"],"contributes":{{"runs":"bin/run",
+                "grader":{{"title":"G"}}}}}}"#
+        )
+    };
+    let most = "g".repeat(MOST_GRADER_ID_BYTES);
+    let made = Made::new();
+    made.ordinary();
+    made.file("bin/run", "#!/bin/sh\n");
+    made.manifest(&manifest(&most));
+    assert!(read_at(&made.at()).is_ok(), "at most is a Grader");
+    made.manifest(&manifest(&format!("{most}g")));
+    let why = read_at(&made.at()).expect_err("past it is refused as it is declared");
+    assert!(why.contains("a Grader's id is at most 64"), "{why}");
+}
