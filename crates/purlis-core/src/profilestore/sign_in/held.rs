@@ -69,6 +69,7 @@ pub fn until_answered_or_input_ends(
                 driven,
                 kept_in: kept_in.to_path_buf(),
                 waiting: None,
+                over: false,
             })),
             out: Box::new(out),
             err: Box::new(err),
@@ -87,6 +88,8 @@ struct Reading {
     driven: Driven,
     kept_in: PathBuf,
     waiting: Option<Waiting>,
+    /// The login ended: nothing it printed is recorded any more.
+    over: bool,
 }
 
 /// Takes the login's record away as it ends, whichever way, whatever still reads its output.
@@ -94,10 +97,9 @@ struct RecordEnds(Arc<Mutex<Reading>>);
 
 impl Drop for RecordEnds {
     fn drop(&mut self) {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .waiting = None;
+        let mut reading = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        reading.over = true;
+        reading.waiting = None;
     }
 }
 
@@ -123,7 +125,7 @@ fn run_until_input_ends(
         .map_err(|e| format!("{} could not be run: {e}", login.program))?;
     let (not_recorded, refused) = mpsc::channel();
     let mut readers = Vec::new();
-    let _record_ends = watched.map(|watched| {
+    let mut record_ends = watched.map(|watched| {
         if let Some(from) = child.stdout.take() {
             readers.push(passing_on(
                 Stream::Out,
@@ -171,12 +173,15 @@ fn run_until_input_ends(
             }
         }
         if let Ok(why) = refused.try_recv() {
+            drop(record_ends.take());
             end_group(&mut child);
             return Err(why);
         }
         match closed.recv_timeout(LOOK) {
             Err(RecvTimeoutError::Timeout) => {}
+            // No longer waiting, from before its listener goes.
             Ok(()) | Err(RecvTimeoutError::Disconnected) => {
+                drop(record_ends.take());
                 end_group(&mut child);
                 return Ok(None);
             }
@@ -278,8 +283,7 @@ fn passing_on(
                 let _ = refused.send(why);
                 return;
             }
-            // Whoever reads it may have gone: its input ends too, and meanwhile the login never
-            // waits on a full pipe.
+            // Whoever reads it may have gone, and then its input ends too.
             let _ = to.write_all(&buffer[..read]).and_then(|()| to.flush());
         }
     })
@@ -289,7 +293,9 @@ impl Reading {
     /// `text`, read as the desktop reads it: the page of a login that waits is recorded.
     fn read(&mut self, stream: Stream, text: &str) -> Result<(), String> {
         for event in self.driven.read_from(stream, text) {
-            if let Event::Approve { state, .. } = event {
+            if let Event::Approve { state, .. } = event
+                && !self.over
+            {
                 self.waiting = Some(Waiting::record(&self.kept_in, &state).map_err(|why| {
                     format!("purlis could not note this sign-in on this runner: {why}")
                 })?);

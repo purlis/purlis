@@ -2043,6 +2043,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             data.join(crate::dockerpool::settings::DIR),
             Access::ReadWrite,
         );
+        // Which sign-ins this runner's logins wait for (#4044): a read could lock a record, so a
+        // chat neither reads nor writes them.
+        deny(
+            Class::HumanPowers,
+            crate::profilestore::sign_in::waiting::in_data_home(&data),
+            Access::ReadWrite,
+        );
         // The browser logins this device keeps sealed (#2021, the person's ruling of
         // 2026-10-18): a chat neither reads nor writes any of them.
         deny(

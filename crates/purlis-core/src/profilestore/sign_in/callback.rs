@@ -20,11 +20,11 @@
 //! browser sent. Codex's answer redirects to its own page, with the account's values in the
 //! address, and ends only once that page is asked for. That page is asked for by its path alone, which is all it
 //! needs, so the address is not read, not sent again, and never seen by the browser: the Mac is
-//! told only whether it worked, and shows a page of its own. Nothing is kept on either side,
-//! nothing here is logged, and nothing is opened on the runner for this: the only listener there
+//! told only whether it worked, and shows a page of its own. None of the redirect is kept on
+//! either side, nothing here is logged, and nothing is opened on the runner for this: the only listener there
 //! is the login's own. It connects to nothing unless a login purlis holds there waits with the
 //! redirect's own `state` ([`waiting`]), once: a login that ended, or another sign-in's, gets
-//! nothing, and neither does what else listens on that port.
+//! nothing.
 
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream};

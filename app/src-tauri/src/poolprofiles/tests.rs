@@ -512,10 +512,9 @@ fn a_runner_in(container: char, device: &str) -> purlis_core::runners::Kept {
                 .unwrap(),
             runner: purlis_core::dockerpool::Runner::new(
                 "builds",
-                purlis_core::dockerpool::Image::pinned(&format!(
-                    "ghcr.io/purlis/purlis-runner@sha256:{}",
-                    "a".repeat(64)
-                ))
+                purlis_core::dockerpool::Image::pinned(
+                    "ghcr.io/purlis/purlis-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                )
                 .unwrap(),
                 purlis_core::dockerpool::User::new(10001, 10001).unwrap(),
                 "/home/purlis",
@@ -550,4 +549,34 @@ fn a_runner_made_again_is_not_the_one_a_sign_in_started_on() {
         &a_runner_in('a', "01JB0RUNNER0000000000000001"),
         &started
     ));
+}
+
+/// **The carry refuses a Docker runner made again since the sign-in started**, by what this
+/// machine keeps of its pool's runner.
+#[test]
+fn a_carry_goes_on_only_while_the_kept_runner_is_the_one_it_started_on() {
+    let config = a_pool_naming(None);
+    let ours = purlis_session_protocol::hostlink::Pinned {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: purlis_session_protocol::hostlink::PublicKey::from_bytes([1; 32]),
+    };
+    let runner = a_runner_in('a', "01JB0RUNNER0000000000000000");
+    let locked = purlis_core::runners::lock(config.path());
+    let kept = purlis_core::runners::keep_for_its_pool(
+        config.path(),
+        &runner.made,
+        &runner.pinned,
+        &ours,
+        &locked,
+    )
+    .unwrap();
+    drop(locked);
+
+    assert_eq!(
+        still_the_runner(config.path(), "builds", &kept).as_ref(),
+        Ok(&kept)
+    );
+    let other = a_runner_in('b', "01JB0RUNNER0000000000000000");
+    let why = still_the_runner(config.path(), "builds", &other).unwrap_err();
+    assert!(why.contains("made again"), "{why}");
 }

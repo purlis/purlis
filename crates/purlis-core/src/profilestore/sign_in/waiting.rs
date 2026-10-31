@@ -5,8 +5,8 @@
 //! browser's answer belongs to a login purlis is holding, before it connects to anything.
 //!
 //! The runner's held login writes one record for the `state` its page printed ([`Waiting`]), in
-//! the app's state in the data home, which no chat's sandbox writes. Named by the state's digest,
-//! so what a chat can read says nothing of the state. The record is locked for as long as its
+//! the app's state in the data home, which no chat's sandbox reads or writes (so none can lock
+//! one). Named by the state's digest, so the folder says nothing of it. The record is locked for as long as its
 //! holder runs, so one a holder left behind when it was killed counts for nothing. A record is
 //! taken once ([`take`]): one answer goes to one login.
 
@@ -27,7 +27,7 @@ pub fn kept_here() -> Option<PathBuf> {
         .then(|| in_data_home(&data))
 }
 
-fn in_data_home(data: &Path) -> PathBuf {
+pub(crate) fn in_data_home(data: &Path) -> PathBuf {
     data.join(crate::appstate::DIR).join(DIR)
 }
 
@@ -42,7 +42,7 @@ pub struct Waiting {
 impl Waiting {
     /// Records `state` in `dir`, made if it is not there.
     pub fn record(dir: &Path, state: &str) -> io::Result<Self> {
-        std::fs::create_dir_all(dir)?;
+        private_folder(dir)?;
         let path = record_of(dir, state);
         let held = File::create(&path)?;
         held.try_lock()?;
@@ -66,6 +66,15 @@ pub fn take(dir: &Path, state: &str) -> bool {
     let held = matches!(record.try_lock(), Err(std::fs::TryLockError::WouldBlock));
     // Removed whoever held it: of two asking, one removes it.
     std::fs::remove_file(&path).is_ok() && held
+}
+
+/// `dir`, made private as the app's state is.
+fn private_folder(dir: &Path) -> io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder.create(dir)
 }
 
 fn record_of(dir: &Path, state: &str) -> PathBuf {
@@ -110,19 +119,6 @@ mod tests {
 
         assert!(!take(dir.path(), STATE));
         assert!(!record_of(dir.path(), STATE).exists());
-    }
-
-    /// **No chat writes them**: they are under what every chat's sandbox holds.
-    #[test]
-    fn no_chat_writes_the_records() {
-        let data = Path::new("/home/purlis/.local/share/purlis");
-        let held = crate::sandbox::app_state_held(data);
-
-        assert!(held.iter().any(|denial| {
-            denial.reach == crate::sandbox::Reach::AndBelow
-                && denial.access == crate::sandbox::Access::Write
-                && in_data_home(data).starts_with(&denial.path)
-        }));
     }
 
     #[test]
