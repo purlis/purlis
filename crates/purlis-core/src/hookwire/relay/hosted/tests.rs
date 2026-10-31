@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use super::super::tests::{LINK, Shared, a_window, the_windows};
 use super::super::*;
+use super::InCluster;
 
 /// The chat its host composed, with the tool `kubectl` armed.
 const COMPOSED: u32 = 21;
@@ -102,6 +103,11 @@ struct Desktop {
 const LIVE_HOST: &str = "pypi.example.com";
 
 fn a_desktop(there: &Arc<AtomicBool>, deciding: Deciding) -> Desktop {
+    a_desktop_minting(there, deciding, Arc::new(|_, _| None))
+}
+
+/// [`a_desktop`], whose host asks `mints` of the cluster first.
+fn a_desktop_minting(there: &Arc<AtomicBool>, deciding: Deciding, mints: InCluster) -> Desktop {
     let (window, holding) = a_window();
     let heard: ExecsHeard = Arc::default();
     let mut hearing = the_windows(&window, &holding);
@@ -176,11 +182,13 @@ fn a_desktop(there: &Arc<AtomicBool>, deciding: Deciding) -> Desktop {
                 writeln!(writer, "read {}", line.unwrap()).unwrap();
             }
         })
-    });
+    })
+    .minting_in_cluster_with(mints);
     *host.lock().unwrap() = Some(Arc::clone(&relaying));
     // The chat is there: its token is held.
     let tokens = Arc::new(ChatTokens::default());
     tokens.issue(COMPOSED).expect("issued");
+    tokens.issue(MINTING).expect("issued");
     Desktop {
         host: relaying.hearing(tokens),
         heard,
@@ -633,4 +641,128 @@ fn a_waiting_exec_counts_within_the_bounds_logins_wait_in() {
         relaying.admit(COMPOSED),
         "room again once one waits no more"
     );
+}
+
+/// The chat its host composed, with the minting tool `gh` armed (#4207).
+const MINTING: u32 = 22;
+
+/// [`a_composed_chat`], whose chat [`MINTING`] has tool `gh`, a GitHub App's.
+fn a_composed_minting_chat() -> tempfile::TempDir {
+    use crate::sandbox::tools::{Handed as As, Ready, Tool};
+    let tmp = tempfile::tempdir().unwrap();
+    let mut tool = Tool::one("gh", "forge", "GH_TOKEN", As::Env, "app-key");
+    tool.mint = Some(crate::sandbox::tools::mint::Mint {
+        app: "Iv23liExample".into(),
+    });
+    let mut confines = crate::sandbox::Confines::default();
+    confines.tools.push(Ready {
+        tool,
+        program: std::path::PathBuf::from("/opt/gh/gh"),
+    });
+    crate::hostedchats::record(
+        tmp.path(),
+        MINTING,
+        crate::hostedchats::Composed {
+            persona: Some("devops".into()),
+            folder: tmp.path().to_path_buf(),
+            harness: None,
+            confines,
+            live: None,
+        },
+    );
+    tmp
+}
+
+fn gh_asked() -> brokered::Ask {
+    brokered::Ask {
+        chat: MINTING,
+        secret_exec: brokered::Wanted {
+            vault: "forge".into(),
+            env: vec!["GH_TOKEN=app-key".into()],
+            command: vec!["/opt/gh/gh".into(), "pr".into(), "list".into()],
+            ..Default::default()
+        },
+        runs_as: None,
+        waited: false,
+        run: None,
+    }
+}
+
+/// On an opted-in pool the run goes with the cluster's token: nobody is asked, the desktop may be
+/// away, and the window hears nothing of it (the person's ruling on #3807, Q1).
+#[test]
+fn a_minting_tool_told_of_the_port_runs_on_its_token_with_the_desktop_away() {
+    let project = a_composed_minting_chat();
+    let there = Arc::new(AtomicBool::new(false));
+    let desktop = a_desktop_minting(
+        &there,
+        sends_its_values(),
+        Arc::new(|_, tool| {
+            assert_eq!(tool, "gh");
+            Some(Ok((
+                "app-key".to_owned(),
+                zeroize::Zeroizing::new("minted-here".to_owned()),
+            )))
+        }),
+    );
+    desktop.relaying.of_project_at(project.path());
+    let (_written, asker, done) = an_exec_through(desktop.host, gh_asked());
+    soon("it never ran", || !desktop.ran.lock().unwrap().is_empty());
+    asker.shutdown(std::net::Shutdown::Write).unwrap();
+    assert_eq!(done.recv_timeout(Duration::from_secs(10)), Ok(()));
+    assert!(
+        desktop.heard.lock().unwrap().is_empty(),
+        "the window is asked nothing"
+    );
+    let ran = desktop.ran.lock().unwrap();
+    assert!(ran[0].contains("[\"app-key\"]"), "{ran:?}");
+}
+
+/// **A refusal never becomes a token without the person** (#4207): the line goes to the window,
+/// whose gate and Ask decide.
+#[test]
+fn a_mint_the_port_refuses_is_handed_to_the_window_with_the_refusal_said() {
+    let project = a_composed_minting_chat();
+    let there = Arc::new(AtomicBool::new(true));
+    let desktop = a_desktop_minting(
+        &there,
+        Arc::new(|_, _| None),
+        Arc::new(|_, _| Some(Err("the claim or its pool is stopped".to_owned()))),
+    );
+    desktop.relaying.of_project_at(project.path());
+    let (written, asker, done) = an_exec_through(desktop.host, gh_asked());
+    soon("the refusal was never said", || {
+        said(&written).contains("the claim or its pool is stopped")
+    });
+    soon("the window never heard it", || {
+        !desktop.heard.lock().unwrap().is_empty()
+    });
+    asker.shutdown(std::net::Shutdown::Write).unwrap();
+    let _ = done.recv_timeout(Duration::from_secs(10));
+    assert!(
+        desktop.ran.lock().unwrap().is_empty(),
+        "nothing ran on no token"
+    );
+    assert_eq!(
+        desktop.heard.lock().unwrap()[0],
+        (Some("gh".to_owned()), false, true),
+        "handed on as any run on a pool not opted in is"
+    );
+}
+
+/// A host told of no port, as on a pool not opted in, changes nothing.
+#[test]
+fn a_host_told_of_no_port_hands_a_minting_tool_to_the_window_saying_nothing_of_it() {
+    let project = a_composed_minting_chat();
+    let there = Arc::new(AtomicBool::new(true));
+    let desktop = a_desktop_minting(&there, Arc::new(|_, _| None), Arc::new(|_, _| None));
+    desktop.relaying.of_project_at(project.path());
+    let (written, asker, done) = an_exec_through(desktop.host, gh_asked());
+    soon("the window never heard it", || {
+        !desktop.heard.lock().unwrap().is_empty()
+    });
+    assert!(!said(&written).contains("cluster"), "{}", said(&written));
+    asker.shutdown(std::net::Shutdown::Write).unwrap();
+    let _ = done.recv_timeout(Duration::from_secs(10));
+    assert!(desktop.ran.lock().unwrap().is_empty());
 }

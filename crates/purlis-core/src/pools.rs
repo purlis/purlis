@@ -926,6 +926,27 @@ pub fn before_cluster_link_to(
     before_cluster_link(config_root, kubectl, name, now)
 }
 
+/// **Puts a workspace's repos on the Claim of the cluster pool `name`'s runner** (#4207), as a chat
+/// is sent there. Only for a pool that opted in, which says so as it is added; the cluster's policy
+/// and the operator decide from the Claim and the Pool as they are now.
+pub fn add_repos_to_claim(config_root: &Path, name: &str, repos: &[String]) -> Result<(), String> {
+    if repos.is_empty() {
+        return Ok(());
+    }
+    let Some((pool, kept)) =
+        runners::cluster_runner_for(config_root, name).map_err(|why| why.to_string())?
+    else {
+        return Ok(());
+    };
+    if !pool.mints_in_cluster() {
+        return Ok(());
+    }
+    let kubectl = kubectl_here(config_root)?.within(VOUCHED_NOW_WITHIN);
+    pool.kubectl(&kubectl)
+        .add_claim_repos(&kept.claimed.namespace, &kept.claimed.name, repos)
+        .map_err(|why| why.to_string())
+}
+
 /// How long each kubectl run of the check before a value is sent waits (#4071).
 pub const VOUCHED_NOW_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
 

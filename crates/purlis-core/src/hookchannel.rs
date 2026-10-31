@@ -649,6 +649,8 @@ impl purlis_host::Channel for HookChannel {
     fn forget(&self, number: u32) {
         self.tokens.forget(number);
         crate::hostedchats::forget(&self.root, number);
+        // A token the operator minted for it goes with it (#4207, #3808).
+        crate::forge::apptoken::chat_ended(&self.root, number);
         // What it spooled is recorded and its keys dropped, off the host's runtime: a drain
         // makes each line durable (V99i, #2003).
         let (socket, root, log) = (self.socket.clone(), self.root.clone(), self.log.clone());

@@ -9,7 +9,8 @@
 //! The runner's link key is read out of its pod, as only the cluster's admin could, and the proof
 //! is made with it here: `openssl` does the X25519 agreement with a key that already exists. The
 //! requests go through `curl`, pinned to the signing key every Pool's status names, as a runner
-//! will pin it.
+//! does. Then the runner image's own client asks from inside its pod (#4207). What runs a chat's
+//! tool on that token is tested apart, and a token's revoke goes to GitHub, not this stand-in.
 
 use base64::Engine as _;
 use k8s_openapi::api::core::v1::{Pod, Secret};
@@ -340,6 +341,24 @@ fn exec(namespace: &str, pod: &str, container: &str, command: &[&str]) -> std::p
         .args(command)
         .output()
         .expect("kubectl")
+}
+
+/// [`exec`], `input` on its standard input.
+fn exec_fed(namespace: &str, pod: &str, command: &[&str], input: &str) -> std::process::Output {
+    let mut run = Command::new("kubectl")
+        .args(["-n", namespace, "exec", "-i", pod, "-c", "runner", "--"])
+        .args(command)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("kubectl");
+    run.stdin
+        .take()
+        .expect("its input")
+        .write_all(input.as_bytes())
+        .expect("written");
+    run.wait_with_output().expect("kubectl")
 }
 
 async fn apply_rbac(client: &Client, body: Value) {
@@ -781,6 +800,89 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
         assert_eq!(claims["iss"], APP);
     }
 
+    // **A real runner client** (#4207): the runner image's own purlis, in the pod, over the way a
+    // runner has, not this test's forward. Its Claim says where to ask, and the key.
+    let said = read
+        .get(CLAIM)
+        .await
+        .expect("the Claim")
+        .status
+        .and_then(|status| status.mint)
+        .expect("the Claim's status says where to ask");
+    assert_eq!(said.address, format!("{address}:{}", mint::PORT));
+    assert_eq!(said.operator_key, *OPERATOR.get().expect("set"));
+    let paired = exec_fed(
+        &runner_ns,
+        &pod,
+        &[
+            "purlis",
+            "bridge",
+            "--pair",
+            "--key-made-at-start",
+            "/run/purlis-link/link-key",
+        ],
+        &format!(
+            "{}\n",
+            json!({ "device": "01E2EDESKTOP", "key": "22".repeat(32) })
+        ),
+    );
+    assert!(
+        paired.status.success(),
+        "the runner did not pair: {}",
+        String::from_utf8_lossy(&paired.stderr)
+    );
+    let told = |keys: &[&str]| {
+        json!({
+            "namespace": NAMESPACE, "claim": CLAIM, "cluster": line("cluster"),
+            "address": said.address, "keys": keys,
+        })
+        .to_string()
+    };
+    let tell = |keys: &[&str]| {
+        let out = exec_fed(
+            &runner_ns,
+            &pod,
+            &["purlis", "bridge", "--mint-port"],
+            &format!("{}\n", told(keys)),
+        );
+        assert!(
+            out.status.success(),
+            "the runner was not told: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    let check = || {
+        exec(
+            &runner_ns,
+            &pod,
+            "runner",
+            &["purlis", "bridge", "--mint-check", APP],
+        )
+    };
+    // Held to another key, it asks nothing of the port.
+    let other = format!("ed25519:{}", "11".repeat(32));
+    tell(&[&other]);
+    let refused = check();
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("not the operator"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    tell(&[&said.operator_key]);
+    let checked = check();
+    assert!(
+        checked.status.success(),
+        "the runner got no token: {}",
+        String::from_utf8_lossy(&checked.stderr)
+    );
+    let out = String::from_utf8_lossy(&checked.stdout);
+    assert!(!out.contains(TOKEN), "a check prints no token");
+    let answered: Value = serde_json::from_str(out.trim()).expect("what it says");
+    assert_eq!(answered["owner"], "acme");
+    assert_eq!(answered["repos"], json!(["app", "web"]));
+    assert_eq!(answered["operator"], json!(said.operator_key));
+
     // A repo outside the allow-list alone; more than one owner; nothing at all. Patched by the
     // requester, as only they may.
     let patched = |repos: &'static [&'static str]| {
@@ -798,6 +900,14 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
     refused_saying(&ask(&pin, &link_key, CLAIM, APP), "owners");
     patched(&[]).await;
     refused_saying(&ask(&pin, &link_key, CLAIM, APP), "no repos");
+    // The real client hears the operator's own words.
+    let refused = check();
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("no repos"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
     patched(&["acme/app"]).await;
 
     // A revoked `use` stops new tokens: the operator asks before each mint.

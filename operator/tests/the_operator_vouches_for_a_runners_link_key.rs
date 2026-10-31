@@ -847,6 +847,7 @@ fn a_statement_once_written_goes_when_it_no_longer_holds() {
     let mut written = ClaimStatus {
         conditions: vec![vouched.condition()],
         link_key: vouched.link_key(),
+        mint: None,
     };
     assert!(written.link_key.is_some());
     // Looked at again and refused: the statement is taken away.
@@ -854,6 +855,7 @@ fn a_statement_once_written_goes_when_it_no_longer_holds() {
     let next = ClaimStatus {
         conditions: vec![refused.condition()],
         link_key: refused.link_key(),
+        mint: None,
     };
     let patch = status_patch(Some(&written), next.clone(), LinkKeyIs::Said).expect("a change");
     assert_eq!(patch["status"]["linkKey"], serde_json::Value::Null);
@@ -882,6 +884,7 @@ fn a_statement_once_written_goes_when_it_no_longer_holds() {
         ClaimStatus {
             conditions: vec![again.condition()],
             link_key: again.link_key(),
+            mint: None,
         },
         LinkKeyIs::Said,
     )
@@ -1080,6 +1083,7 @@ fn during_a_roll_a_statement_is_signed_by_both_keys() {
     claim.status = Some(ClaimStatus {
         conditions: Vec::new(),
         link_key: Some(before.clone()),
+        mint: None,
     });
     // A roll starting: the statement on the claim is signed again at once, by both keys.
     let during = at(&rolling(), &claim);
@@ -1107,6 +1111,7 @@ fn during_a_roll_a_statement_is_signed_by_both_keys() {
         ClaimStatus {
             conditions: Vec::new(),
             link_key: Some(after.clone()),
+            mint: None,
         },
         LinkKeyIs::Said,
     )
@@ -1646,6 +1651,7 @@ fn a_statement_holds_ten_minutes_and_is_signed_again_in_its_last_five() {
     claim.status = Some(ClaimStatus {
         conditions: Vec::new(),
         link_key: Some(first.clone()),
+        mint: None,
     });
     // Looked at again before its last five minutes: the same statement, nothing written.
     assert_eq!(at(NOW + 290, &claim).link_key(), Some(first.clone()));

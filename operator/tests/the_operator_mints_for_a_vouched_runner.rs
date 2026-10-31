@@ -157,6 +157,7 @@ fn claim_with(keys: &SigningKeys, key: &str, until: u64) -> Claim {
             statement,
         }),
         conditions: Vec::new(),
+        mint: None,
     });
     claim
 }
@@ -751,4 +752,134 @@ fn a_runner_namespaces_way_out_is_to_the_operators_mint_port_alone() {
             "ports": [{ "port": mint::PORT, "protocol": "TCP" }],
         }])
     );
+}
+
+fn proof_fixture(name: &str) -> String {
+    std::fs::read_to_string(format!(
+        "{}/../fixtures/forge-proof/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .expect("the worked example")
+}
+
+fn fixture_bytes(name: &str) -> Vec<u8> {
+    let text = proof_fixture(name);
+    let text = text.trim();
+    (0..text.len())
+        .step_by(2)
+        .map(|at| u8::from_str_radix(&text[at..at + 2], 16).expect("hex"))
+        .collect()
+}
+
+/// The runner is built apart, and holds its side to the same files (`forge/mintport.rs`).
+#[test]
+fn a_proof_is_the_worked_example_a_runner_holds_too() {
+    let text = proof_fixture("text.txt");
+    assert_eq!(
+        mint::proof_for(
+            &fixture_bytes("shared.hex"),
+            &fixture_bytes("challenge.hex"),
+            &text
+        )
+        .expect("a proof"),
+        proof_fixture("proof.hex").trim()
+    );
+    assert_eq!(
+        text,
+        mint::proof_text(
+            &format!("ed25519:{}", "ab".repeat(32)),
+            "team",
+            "ada-1",
+            "Iv23liExample",
+            proof_fixture("challenge.hex").trim(),
+        )
+    );
+}
+
+fn a_pool_minting(opted_in: bool) -> Pool {
+    let mut spec = PoolSpec::new(IMAGE.to_owned());
+    spec.forge = Some(PoolForge {
+        app_key_secret_ref: SecretRef {
+            name: "org-app".to_owned(),
+        },
+        repos: strings(&["acme/*"]),
+        mint_in_cluster: opted_in,
+    });
+    Pool::new("pool", spec)
+}
+
+#[test]
+fn a_claims_status_says_where_to_ask_only_for_a_vouched_runner_on_a_pool_that_opts_in() {
+    let key = format!("ed25519:{}", "ab".repeat(32));
+    let address = || Some("10.96.0.5:8443".to_owned());
+    let said = mint::mint_status(&a_pool_minting(true), true, address(), &key).expect("said");
+    assert_eq!(said.address, "10.96.0.5:8443");
+    assert_eq!(said.operator_key, key);
+    assert_eq!(
+        serde_json::to_value(&said).expect("a value"),
+        json!({ "address": "10.96.0.5:8443", "operatorKey": key }),
+    );
+    assert_eq!(
+        mint::mint_status(&a_pool_minting(false), true, address(), &key),
+        None
+    );
+    assert_eq!(
+        mint::mint_status(&a_pool_minting(true), false, address(), &key),
+        None
+    );
+    assert_eq!(
+        mint::mint_status(&a_pool_minting(true), true, None, &key),
+        None
+    );
+    assert_eq!(
+        mint::mint_status(
+            &Pool::new("pool", PoolSpec::new(IMAGE.to_owned())),
+            true,
+            address(),
+            &key
+        ),
+        None
+    );
+}
+
+#[test]
+fn the_ports_address_is_the_services_cluster_ip_and_nothing_else() {
+    use k8s_openapi::api::core::v1::{Service, ServiceSpec};
+    let with = |ip: Option<&str>| Service {
+        spec: Some(ServiceSpec {
+            cluster_ip: ip.map(str::to_owned),
+            ..ServiceSpec::default()
+        }),
+        ..Service::default()
+    };
+    assert_eq!(
+        mint::address_of(&with(Some("10.96.0.5"))).as_deref(),
+        Some("10.96.0.5:8443")
+    );
+    assert_eq!(
+        mint::address_of(&with(Some("fd00::5"))).as_deref(),
+        Some("[fd00::5]:8443")
+    );
+    for none in [None, Some("None"), Some("")] {
+        assert_eq!(mint::address_of(&with(none)), None, "{none:?}");
+    }
+}
+
+#[test]
+fn a_status_that_stops_saying_where_to_ask_takes_it_away() {
+    use purlis_cluster_operator::{LinkKeyIs, status_patch};
+    let with = |mint| ClaimStatus {
+        conditions: Vec::new(),
+        link_key: None,
+        mint,
+    };
+    let said = purlis_cluster_operator::ClaimMint {
+        address: "10.96.0.5:8443".to_owned(),
+        operator_key: format!("ed25519:{}", "ab".repeat(32)),
+    };
+    let held = with(Some(said));
+    let patch = status_patch(Some(&held), with(None), LinkKeyIs::Said).expect("a change");
+    assert_eq!(patch["status"]["mint"], Value::Null);
+    // A pass that did not look at the runner leaves it as it was.
+    assert_eq!(status_patch(Some(&held), with(None), LinkKeyIs::Kept), None);
 }

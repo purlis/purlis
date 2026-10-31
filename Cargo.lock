@@ -5689,6 +5689,7 @@ dependencies = [
  "bytes",
  "changelog",
  "chrono",
+ "curve25519-dalek",
  "dhat",
  "dirs",
  "flate2",
