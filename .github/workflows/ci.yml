@@ -139,7 +139,7 @@ jobs:
       # The repository holds 10 GB of caches, and each pull request's own 0.8-1.2 GB ones
       # pushed `main`'s out: on 2026-10-08 the caches held 12 GB and a run on `main` started
       # with none (the rust-cache README's own advice for a busy repository).
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
@@ -147,7 +147,7 @@ jobs:
       # cargo-nextest runs every test binary's tests at once, each test in a process of its own,
       # where `cargo test` runs the binaries one after another. Its settings are in
       # `.config/nextest.toml`. A machine without it runs the same tests with `cargo test`.
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # The pinned engine makes its sandbox with user namespaces, which Ubuntu 23.10 and later
@@ -248,7 +248,7 @@ jobs:
       - uses: ./.github/actions/rust-toolchain
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # tauri::generate_context! reads the built frontend, so it has to exist before clippy.
@@ -261,7 +261,7 @@ jobs:
       # (the header records each one's sha256) or a generator change without its output each
       # turn this red. The Python is pinned by minor version, because a minor release is what
       # fixes CPython's Unicode version: 3.14 is Unicode 16.0.0.
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
       - name: The Unicode tables are what the generator makes of their pinned inputs
@@ -359,11 +359,11 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/rust-toolchain
       - if: steps.scope.outputs.run == 'true'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - if: steps.scope.outputs.run == 'true'
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
@@ -385,6 +385,15 @@ jobs:
           cp target/debug/purlis "$context/purlis"
           cp -R app/src-tauri/plugin "$context/plugin"
           docker build --file runner-image/Dockerfile --tag purlis-runner:parity "$context"
+          # The runner image as it ships, with no harness, and one an update moves it to, for the
+          # test of a person's whole way through a pool (`behaviour::pool_journey`).
+          docker tag purlis-runner:parity localhost:5000/purlis-runner:shipped
+          docker push localhost:5000/purlis-runner:shipped
+          echo "DOCKER_POOL_JOURNEY_IMAGE=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner:shipped | sed 's/.*@//')" >> "$GITHUB_ENV"
+          printf 'FROM purlis-runner:parity\nLABEL dev.purlis.parity.next=true\n' \
+            | docker build --tag localhost:5000/purlis-runner:next -
+          docker push localhost:5000/purlis-runner:next
+          echo "DOCKER_POOL_JOURNEY_NEXT_IMAGE=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner:next | sed 's/.*@//')" >> "$GITHUB_ENV"
           parity="$RUNNER_TEMP/parity"
           mkdir -p "$parity"
           cp target/debug/purlis target/debug/fake-harness "$parity/"
@@ -614,7 +623,7 @@ jobs:
       - if: steps.scope.outputs.measure == 'true'
         uses: ./.github/actions/rust-toolchain
       - if: steps.scope.outputs.measure == 'true'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - if: steps.scope.outputs.measure == 'true'
@@ -799,7 +808,7 @@ jobs:
         if: needs.changes.outputs.app != 'false'
       # Not on the newer images: rust-cache's key has the OS and architecture but not the image,
       # so they would restore objects compiled on macOS 26 or Ubuntu 24.04 and only link them.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
         if: ${{ needs.changes.outputs.app != 'false' && (!matrix.evidence) }}
@@ -1082,13 +1091,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
       # tauri::generate_context! reads the built frontend, as in the `rust` job.
       - run: mkdir -p app/dist
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # The names the studio probe's network tests look up, from the hosts file, not outside DNS
@@ -1136,7 +1145,7 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/rust-toolchain
       - if: steps.scope.outputs.run == 'true'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: false
       # Not under `no-orphans.sh`: on a macOS runner the system starts processes of the job's
@@ -1178,7 +1187,7 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/rust-toolchain
       - if: steps.scope.outputs.run == 'true'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: false
       # The names the studio probe's network tests look up, from the hosts file, not outside DNS
@@ -1274,7 +1283,7 @@ jobs:
         run: echo "::notice::nothing Rust reads has changed; the recorded behaviour is not replayed, and only the whole-tree and window guards run"
       # On every change: the whole-tree guards below need the toolchain when nothing else does.
       - uses: ./.github/actions/rust-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # **The whole-tree guards** (`WHOLE_TREE_GUARDS` in `tools/ci-scope.mjs`): Rust tests that
@@ -1397,7 +1406,7 @@ jobs:
           tauri: true
           packages: xvfb dbus-x11 bubblewrap socat
       - uses: ./.github/actions/rust-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # **sccache for the workspace's own crates, on macOS** (2026-10-12, an experiment kept only
@@ -1743,7 +1752,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: What this runner is

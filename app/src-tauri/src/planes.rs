@@ -4400,6 +4400,17 @@ impl Planes {
                     });
                 }));
         }
+        // A pool runner's chats' skill runs, logged in this plane's skill log (SK-20b, #3084).
+        {
+            let me = Arc::clone(&me);
+            chats
+                .sessions()
+                .when_skill_runs_heard(Arc::new(move |pool, run| {
+                    if let Some(held) = me.get().and_then(std::sync::Weak::upgrade) {
+                        held.chats.skill_run_heard(pool, run);
+                    }
+                }));
+        }
 
         // Never fatal, as the socket above is not: a plane that cannot be watched still opens,
         // and its panels read it when a workspace is focused.

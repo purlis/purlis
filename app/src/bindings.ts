@@ -13964,6 +13964,12 @@ export type StudioRouter = {
 	 *  list shows. The same on every harness.
 	 */
 	budget: StudioBudget,
+	/**
+	 *  **What the rows' "hidden by the router" marks preview** (#4215), in a sentence: a chat at
+	 *  the workspace's root (or the project's), in no clone, routed by the built-in router. Where
+	 *  an extension's router is chosen, it says that the marks are the built-in router's choice.
+	 */
+	preview: string,
 };
 
 /**

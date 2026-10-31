@@ -571,6 +571,34 @@ fn what_its_desktop_allowed(starting: &Starting<'_>) -> Option<String> {
         .flatten()
 }
 
+/// **Whether the plane's skills reach a chat this host composes** (SK-20b, #3084): the Skill
+/// studio's flag as the desktop that starts it on this runner read it, where its start says
+/// (1.62); a runner has no person to turn the preview on. A start that does not say, and one of
+/// this machine's, takes this machine's own reading ([`crate::skills::reach_chats_here`]).
+fn plane_skills_of(starting: &Starting<'_>) -> bool {
+    its_desktop_said(starting).unwrap_or_else(|| crate::skills::reach_chats_here(starting.root))
+}
+
+/// The desktop's word on the Skill studio's flag, where a link's start says it (1.62, #3084).
+fn its_desktop_said(starting: &Starting<'_>) -> Option<bool> {
+    (starting.started_by == purlis_session_protocol::auth::Scope::RemoteLink.word())
+        .then_some(starting.start.plane_skills)
+        .flatten()
+}
+
+/// **The Skill studio's flag a chat this host composes is started with** (#3084): its desktop's
+/// word, as the variable that decides the flag over this machine's store
+/// ([`crate::skills::STUDIO_ENV`]), so what the chat runs here (purlis's MCP server, its hooks)
+/// reads the word its arming took. Nothing where its desktop did not say.
+fn studio_env_of(starting: &Starting<'_>) -> Option<(String, String)> {
+    its_desktop_said(starting).map(|on| {
+        (
+            crate::skills::STUDIO_ENV.to_owned(),
+            if on { "1" } else { "0" }.to_owned(),
+        )
+    })
+}
+
 /// [`compose`] from what [`crate::start::ready`] decided for it: the seam a test hands a sandbox
 /// compiled for another machine through.
 pub fn compose_ready(
@@ -582,6 +610,7 @@ pub fn compose_ready(
     let (root, start) = (starting.root, starting.start);
     let cwd = ready.cwd.clone().unwrap_or_else(|| root.to_path_buf());
     let mut ready = told_first(ready, start.first_message.as_deref())?;
+    ready.env.extend(studio_env_of(starting));
     // What it is armed with, never where it writes, and never written by it.
     if let Some(applied) = ready.sandbox.as_mut() {
         applied
@@ -590,10 +619,12 @@ pub fn compose_ready(
     }
     let persona = persona_of(&ready.env, root);
     let sandbox = ready.sandbox.as_ref();
+    // Whether the plane's skills reach it, read once: its desktop's word, where it says (SK-20b).
+    let plane_skills = plane_skills_of(starting);
     // No app state, no record of the folders there at a sandboxed chat's start (#3718): such a
     // chat is not started, and nothing about its start is written.
     if sandbox.is_some()
-        && crate::skills::reach_chats_here(root)
+        && plane_skills
         && start.program.is_some()
         && let Some(refused) = crate::skills::levels::refusal_for_a_sandboxed_start(root)
     {
@@ -603,7 +634,7 @@ pub fn compose_ready(
     // now are noted as not its own (SK-9), before it is armed, and before anything about its start is
     // written, so a start refused here records nothing.
     if sandbox.is_some()
-        && crate::skills::reach_chats_here(root)
+        && plane_skills
         && let Some(id) = start.program.as_deref()
     {
         let name = start
@@ -629,7 +660,7 @@ pub fn compose_ready(
     let skills = std::cell::LazyCell::new(|| {
         let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
         ChatSkills::read(
-            crate::skills::reach_chats_here(root),
+            plane_skills,
             root,
             ready.harness,
             Some(&cwd),

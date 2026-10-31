@@ -77,6 +77,7 @@ struct Shared {
     ends: Mutex<Option<Ends>>,
     reconnecting: Mutex<Option<Reconnecting>>,
     relayed: Mutex<Option<Arc<crate::hooks::Relayed>>>,
+    skill_runs: Mutex<Option<crate::host::SkillRunsHeard>>,
     /// The highest number said to have gone out, for a pool made after it was said.
     dealt: AtomicU32,
     /// When the runners' branches were last fetched for the window's focus.
@@ -237,6 +238,9 @@ fn pool_of(
     if let Some(reconnecting) = lock(&shared.reconnecting).clone() {
         made.when_reconnecting(reconnecting);
     }
+    if let Some(tell) = lock(&shared.skill_runs).clone() {
+        made.when_skill_runs_heard(of_the_pool(pool, tell));
+    }
     let dealt = shared.dealt.load(Ordering::Relaxed);
     if dealt > 0 {
         made.already_dealt(dealt);
@@ -245,6 +249,12 @@ fn pool_of(
     Ok(Arc::clone(
         lock(&shared.pools).entry(pool.to_owned()).or_insert(made),
     ))
+}
+
+/// `tell`, told each skill run as one of `pool`'s runner's (#3084).
+fn of_the_pool(pool: &str, tell: crate::host::SkillRunsHeard) -> crate::host::SkillRunsHeard {
+    let pool = pool.to_owned();
+    Arc::new(move |_, run| tell(Some(&pool), run))
 }
 
 /// Which pool each chat runs on, as the router has it now: `None` for this machine's.
@@ -336,6 +346,13 @@ impl SessionHost for RoutedSessions {
             // A start whose pool is not kept is refused as it opens, in its own words.
             Ok(Some(_)) | Err(_) => true,
             Ok(None) => self.here.composes_its_harness_chats_in(workspace),
+        }
+    }
+
+    fn composes_the_harness_chat(&self, id: u32) -> bool {
+        match self.host_of(id) {
+            Some(host) => host.composes_its_harness_chats(),
+            None => self.here.composes_the_harness_chat(id),
         }
     }
 
@@ -465,6 +482,18 @@ impl SessionHost for RoutedSessions {
             pool.when_reconnecting(Arc::clone(&tell));
         }
         self.here.when_reconnecting(tell);
+    }
+
+    /// Each pool's runner tells its own, as the pool's (#3084); this machine's host tells none.
+    fn when_skill_runs_heard(&self, tell: crate::host::SkillRunsHeard) {
+        *lock(&self.shared.skill_runs) = Some(Arc::clone(&tell));
+        let pools: Vec<(String, Arc<dyn SessionHost>)> = lock(&self.shared.pools)
+            .iter()
+            .map(|(name, pool)| (name.clone(), Arc::clone(pool)))
+            .collect();
+        for (name, pool) in pools {
+            pool.when_skill_runs_heard(of_the_pool(&name, Arc::clone(&tell)));
+        }
     }
 
     fn reconnecting(&self) -> Vec<u32> {
