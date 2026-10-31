@@ -216,6 +216,14 @@ jobs:
           cargo build --locked -p purlis-linux-sandbox --bin sandbox-probe
           PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
             -E 'package(purlis-core) & binary(it) & test(/a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it::/)'
+          # Again with the pod's hand-over folder really mounted, in memory as a pod's is, so the row
+          # that denies it compiles and is tried (#4329). It goes as the step ends: no other test
+          # expects this machine to have one.
+          sudo mkdir -p /run/purlis-link
+          sudo mount -t tmpfs -o "mode=0700,uid=$(id -u),gid=$(id -g)" tmpfs /run/purlis-link
+          trap 'sudo umount /run/purlis-link; sudo rmdir /run/purlis-link' EXIT
+          PURLIS_TEST_LINK_HANDOVER=/run/purlis-link PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
+            -E 'package(purlis-core) & binary(it) & test(/a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it::/)'
       # **Claude Code's own sandbox on Linux, on the settings purlis writes** (#2211): the macOS
       # step in `scenario`'s, here on bubblewrap. The version purlis supports, this runner's build
       # of it from npm with no install scripts run, against a stand-in model on a loopback port;
