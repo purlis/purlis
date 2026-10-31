@@ -400,7 +400,21 @@ pub fn type_profile_sign_in(
     if let Some(pool) = pool {
         let line = crate::poolprofiles::sign_in_line(&pool, &name, provider.as_deref(), device)?;
         held.operator_input(session, line.as_bytes())?;
-        crate::poolprofiles::watch(pool, name, held.hooks().asks_teller());
+        let teller = held.hooks().asks_teller();
+        let (root, watched) = (held.root().to_path_buf(), std::sync::Arc::downgrade(&held));
+        let shell_root = root.clone();
+        crate::poolprofiles::watch(
+            root,
+            pool,
+            name,
+            session,
+            move |shell| {
+                watched
+                    .upgrade()
+                    .is_some_and(|held| held.chats().is_shell_at(shell, &shell_root))
+            },
+            teller,
+        );
         return Ok(());
     }
     let record = profilestore::list(store()?.config_root())?
