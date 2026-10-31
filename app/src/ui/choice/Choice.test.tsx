@@ -432,3 +432,27 @@ describe("a choice's target size (#4173)", () => {
     expect(drawnWith(area, "block-size")).toBe(FLOOR);
   });
 });
+
+// WCAG 2.5.8 (#4197): a choice with no words is drawn its mark's size, 14px across; its press
+// reaches a 24 by 24 square around it, placed on its root. The story hit-tests the square.
+describe("a choice with no words (#4197)", () => {
+  it("places the press it reaches past its mark on its root", () => {
+    render(
+      <>
+        <Checkbox aria-label="Choose the row" />
+        <RadioGroup aria-label="Density" value="compact" onChange={() => {}}>
+          <Radio value="compact" aria-label="Compact" />
+        </RadioGroup>
+        <Switch aria-label="Auto-save" />
+      </>,
+    );
+    for (const [role, name] of [
+      ["checkbox", "Choose the row"],
+      ["radio", "Compact"],
+      ["switch", "Auto-save"],
+    ] as const)
+      expect(drawnWith(rootOf(screen.getByRole(role, { name })), "position"), name).toBe(
+        "relative",
+      );
+  });
+});

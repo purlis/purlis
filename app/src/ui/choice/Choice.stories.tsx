@@ -390,6 +390,49 @@ export const ChoicesBesideASmallButton: Story = {
   },
 };
 
+/**
+ * **A choice with no words is a 24px target across too** (#4197, WCAG 2.5.8): a row's selection
+ * box, a radio or a switch named by `aria-label` is drawn its mark's size (a 14px box), and its
+ * press reaches a 24 by 24 square around it, which changes nothing it draws. Each is hit-tested
+ * at that square's corners.
+ */
+function Unlabelled() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+      <Checkbox aria-label="Choose the row" />
+      <RadioGroup aria-label="Density" value="compact" onChange={() => {}}>
+        <Radio value="compact" aria-label="Compact" />
+      </RadioGroup>
+      <Switch aria-label="Auto-save" />
+    </div>
+  );
+}
+
+export const ChoicesWithNoWords: Story = {
+  render: () => <Unlabelled />,
+  play: async ({ canvas }) => {
+    const roots = [
+      canvas.getByRole("checkbox", { name: "Choose the row" }),
+      canvas.getByRole("radio", { name: "Compact" }),
+      canvas.getByRole("switch", { name: "Auto-save" }),
+    ].map((control) => control.closest('[data-part="root"]') as HTMLElement);
+    for (const root of roots) {
+      const box = root.getBoundingClientRect();
+      const [x, y] = [box.left + box.width / 2, box.top + box.height / 2];
+      // The corners of the 24 by 24 square around its centre, half a px in.
+      for (const [dx, dy] of [
+        [-11.5, -11.5],
+        [11.5, -11.5],
+        [-11.5, 11.5],
+        [11.5, 11.5],
+      ]) {
+        const hit = document.elementFromPoint(x + dx, y + dy);
+        await expect(hit?.closest('[data-part="root"]'), root.dataset.scope).toBe(root);
+      }
+    }
+  },
+};
+
 function TextSize() {
   const [px, setPx] = useState(14);
   return (
