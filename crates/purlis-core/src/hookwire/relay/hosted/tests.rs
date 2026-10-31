@@ -849,6 +849,7 @@ fn a_run_the_window_refused_is_not_asked_of_the_person_again_at_once() {
 /// The window says the person is being asked before they answer: only its refusal paces.
 #[test]
 fn the_windows_note_that_it_asks_is_no_refusal() {
+    use super::is_a_refusal;
     let line = |frame: &brokered::Frame| serde_json::to_string(frame).unwrap();
     let note = line(&brokered::Frame::Note("asked".to_owned()));
     let refusal = line(&brokered::Frame::Refused {
