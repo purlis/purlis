@@ -21,25 +21,5 @@ jobs:
           save-if: false
       - name: Build
         run: cargo test --locked -p purlis-browser-engine --no-run
-      - name: Timed tests alone, 15 times
-        continue-on-error: true
-        run: |
-          for i in $(seq 15); do
-            echo "### lib round $i"
-            cargo test --locked -p purlis-browser-engine --lib reading -- --test-threads=2 2>&1 | grep -E "FAILED|panicked|test result" || true
-          done
-      - name: The retitle test alone, 15 times
-        continue-on-error: true
-        run: |
-          for i in $(seq 15); do
-            echo "### retitle round $i"
-            cargo test --locked -p purlis-browser-engine --test it retitles -- --nocapture 2>&1 | grep -E "DEBUG-4353|FAILED|panicked|PageInfo|test result: " || true
-          done
-      - name: The job's own command, 4 times
-        continue-on-error: true
-        run: |
-          for i in 1 2 3 4; do
-            echo "### suite round $i"
-            cargo test --locked --no-fail-fast -p purlis-browser-engine -- --test-threads=2 > suite.txt 2>&1 || true
-            grep -E "DEBUG-4353.*(MISS|SLOW)|FAILED|panicked at|PageInfo|test result: " suite.txt | cut -c1-400 || true
-          done
+      - name: Red first, the new test before its fix
+        run: cargo test --locked -p purlis-browser-engine --lib a_page_slow_to_read -- --test-threads=2

@@ -1799,15 +1799,6 @@ impl Browser {
                     MOST_TITLE_BYTES,
                 )
             });
-            let left_after = deadline.saturating_duration_since(Instant::now());
-            let now_shows = lock(&self.inner.state)
-                .page_mut(&target)
-                .map(|p| p.shows);
-            eprintln!(
-                "[DEBUG-4353] title read {} left={left_after:?} shows={shows}/{now_shows:?} {} {read:?}",
-                &target[..6.min(target.len())],
-                if read.is_err() || now_shows != Some(shows) { "MISS" } else { "ok" },
-            );
             if let Some(title) = read
                 .ok()
                 .and_then(|r| r.pointer("/result/value")?.as_str().map(kept_title))
