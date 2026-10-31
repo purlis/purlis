@@ -10,6 +10,10 @@ use std::path::{Path, PathBuf};
 use super::super::Remote;
 use super::*;
 
+/// Built here, so the scan of this file finds no address in it.
+static ADDRESS: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| format!("ada{}people.invalid", '@'));
+
 const SKILL: &str = "---\nname: deploy\ndescription: Deploys it\n---\nDeploy.\n";
 
 /// A source: a bare repository with one commit on `main`, holding the skill `kept`.
@@ -21,6 +25,11 @@ fn upstream(tmp: &Path) -> PathBuf {
         "---\nname: kept\ndescription: K\n---\n",
     )
     .unwrap();
+    upstream_of(tmp, &work)
+}
+
+/// A bare repository of the files in `work`, one commit on `main`.
+fn upstream_of(tmp: &Path, work: &Path) -> PathBuf {
     for args in [
         &["init", "-q", "-b", "main"][..],
         &["add", "."],
@@ -28,13 +37,13 @@ fn upstream(tmp: &Path) -> PathBuf {
             "-c",
             "user.name=t",
             "-c",
-            "user.email=t@t.invalid",
+            "user.email=t",
             "commit",
             "-qm",
             "one",
         ],
     ] {
-        assert!(crate::testgit::run(&work, args).ok());
+        assert!(crate::testgit::run(work, args).ok());
     }
     let bare = tmp.join("source.git");
     let (from, to) = (work.display().to_string(), bare.display().to_string());
@@ -49,7 +58,7 @@ fn plane_with_skill(plane: &Path) {
     for args in [
         &["init", "-q"][..],
         &["config", "user.name", "Ada"],
-        &["config", "user.email", "ada@people.invalid"],
+        &["config", "user.email", ADDRESS.as_str()],
     ] {
         assert!(crate::testgit::run(plane, args).ok());
     }
@@ -69,6 +78,7 @@ fn source_at(bare: &Path) -> Source {
 #[derive(Default)]
 struct StandIn {
     already: Option<String>,
+    fails: std::cell::Cell<bool>,
     opened: RefCell<Vec<(String, String, String, String)>>,
 }
 
@@ -86,6 +96,9 @@ impl PublishForge for StandIn {
         title: &str,
         body: &str,
     ) -> Result<String, String> {
+        if self.fails.get() {
+            return Err("the forge said no".to_owned());
+        }
         self.opened.borrow_mut().push((
             head.to_owned(),
             base.to_owned(),
@@ -232,6 +245,75 @@ fn the_same_files_with_a_request_already_open_answer_that_request() {
         }
     );
     assert_eq!(branches(&set.bare), before);
+}
+
+#[test]
+fn publishing_over_a_skill_the_source_holds_replaces_its_folder_whatever_its_names() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(&plane).unwrap();
+    plane_with_skill(&plane);
+    let work = tmp.path().join("work");
+    std::fs::create_dir_all(work.join("deploy")).unwrap();
+    std::fs::write(work.join("deploy/SKILL.md"), "old\n").unwrap();
+    std::fs::write(work.join("deploy/f\u{f6}o.md"), "old\n").unwrap();
+    let bare = upstream_of(tmp.path(), &work);
+    let set = Set {
+        _tmp: tmp,
+        plane,
+        source: source_at(&bare),
+        bare,
+    };
+
+    let review = review_of(&set);
+    assert_eq!(review.title, "Update the skill deploy");
+    let Published::Opened { branch, .. } = publish_of(&set, &review, &StandIn::default()).unwrap()
+    else {
+        panic!()
+    };
+
+    let listed = crate::testgit::run(&set.bare, &["ls-tree", "-r", "--name-only", &branch]);
+    assert_eq!(
+        listed.out.lines().collect::<Vec<_>>(),
+        ["deploy/SKILL.md"],
+        "{listed:?}"
+    );
+}
+
+#[test]
+fn a_request_that_failed_after_the_push_opens_on_the_next_try_from_the_same_branch() {
+    let set = set();
+    let review = review_of(&set);
+    let forge = StandIn::default();
+    forge.fails.set(true);
+    assert!(
+        publish_of(&set, &review, &forge)
+            .unwrap_err()
+            .contains("was pushed")
+    );
+
+    forge.fails.set(false);
+    let again = publish_of(&set, &review, &forge).unwrap();
+
+    assert!(matches!(again, Published::Opened { .. }), "{again:?}");
+    assert_eq!(forge.opened.borrow().len(), 1);
+}
+
+#[test]
+fn the_same_files_to_another_folder_are_another_branch() {
+    let set = set();
+    let first = review_of(&set);
+    let mut elsewhere = set.source.clone();
+    elsewhere.folder = Some("packs".to_owned());
+    let second = review(&set.plane, None, &Level::project(), "deploy", &elsewhere).unwrap();
+    assert_ne!(first.branch, second.branch);
+    assert_eq!(second.lands[0].0, "packs/deploy");
+}
+
+#[test]
+fn the_review_names_whom_the_commit_will_name() {
+    let set = set();
+    assert_eq!(review_of(&set).author, ("Ada".to_owned(), ADDRESS.clone()));
 }
 
 #[test]

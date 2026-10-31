@@ -22,6 +22,7 @@
 use std::path::Path;
 
 use purlis_skills::tree;
+use sha2::Digest as _;
 
 use super::fetch::{REMOTE, Scratch, handing};
 use super::outgoing::{self, OutSkill, Outgoing, Purpose, Stop};
@@ -40,7 +41,7 @@ const MOST_GRADES: usize = 10;
 pub trait PublishForge {
     /// The credential helper the push gets, or `None` for a folder on this machine.
     fn helper(&self) -> Option<String>;
-    /// The page of the request already on `branch`, in any state.
+    /// The page of the open request already on `branch`. A closed or merged one does not count.
     fn already(&self, branch: &str) -> Result<Option<String>, String>;
     /// Opens the draft request, and answers its page.
     fn open_draft(&self, head: &str, base: &str, title: &str, body: &str)
@@ -87,7 +88,9 @@ impl PublishForge for OnTheForge {
             .backend()
             .by_head(&self.caller, &self.repo.path, branch)
             .map_err(|why| why.to_string())?;
-        Ok(found.map(|request| request.url))
+        Ok(found
+            .filter(|request| request.state == crate::forge::pr::State::Open)
+            .map(|request| request.url))
     }
 
     fn open_draft(
@@ -118,6 +121,8 @@ pub struct PublishReview {
     /// Each skill's folder in the source, and whether the source holds it already.
     pub lands: Vec<(String, bool)>,
     pub title: String,
+    /// Whom the commit names, as the project's git config says: it goes out with the commit.
+    pub author: (String, String),
     /// The request's description, the grades among it, whole.
     pub body: String,
 }
@@ -152,6 +157,7 @@ fn reviewed(
     at: Option<&PublishReview>,
 ) -> Result<PublishReview, String> {
     source.check()?;
+    let author = author_of(plane)?;
     let mut outgoing = outgoing::gather(plane, built_in, level, name, Purpose::Publish)?;
     let base = match at {
         Some(reviewed) => reviewed.base.clone(),
@@ -175,7 +181,12 @@ fn reviewed(
         let held = scratch.git(&["ls-tree", "--name-only", "refs/purlis/base", "--", &folder])?;
         lands.push((folder, held.ok() && !held.out.trim().is_empty()));
     }
-    let digest = outgoing.digest();
+    // Named by what it holds and where it goes: the same files elsewhere are another request.
+    let digest = {
+        let folders: Vec<&str> = lands.iter().map(|land| land.0.as_str()).collect();
+        let place = format!("{}\n{base}\n{}", outgoing.digest(), folders.join("\n"));
+        crate::runnerlink::hex_of(&sha2::Sha256::digest(place.as_bytes()))
+    };
     let title = title_of(&outgoing.skills, lands.first().is_some_and(|land| land.1));
     let body = body_of(plane, &outgoing.skills, &lands);
     // The description goes out too: anything in it stops the publish as a file would.
@@ -197,8 +208,27 @@ fn reviewed(
         commit,
         lands,
         title,
+        author,
         body,
     })
+}
+
+/// The name and address the commit carries, from the project's git config.
+fn author_of(plane: &Path) -> Result<(String, String), String> {
+    let identity = |key: &str| {
+        git::run(plane, &["config", key], git::READ)
+            .ok()
+            .filter(git::Run::ok)
+            .map(|run| run.line().trim().to_owned())
+            .filter(|value| !value.is_empty())
+    };
+    identity("user.name")
+        .zip(identity("user.email"))
+        .ok_or_else(|| {
+            "git has no user.name and user.email for this project, so no commit can be made. Set \
+             them, then publish again"
+                .to_owned()
+        })
 }
 
 /// The branch a request goes into: the one the source names, or its repository's default.
@@ -371,16 +401,20 @@ pub fn publish(
     if let Some(url) = forge.already(&now.branch)? {
         return Ok(Published::Already { url });
     }
-    let commit = commit_of(plane, &scratch, &now)?;
-    let helper = forge.helper();
-    let pushed =
-        scratch.push_new_branch(&source.remote.url, helper.as_deref(), &commit, &now.branch)?;
-    if !pushed.ok() {
-        return Err(format!(
-            "Nothing was opened: git could not push to {source}, which takes write access to it: \
-             {}",
-            super::fetch::complaint(&pushed)
-        ));
+    let (commit, tree) = commit_of(&scratch, &now)?;
+    // A branch an earlier publish pushed, whose request never opened or has since closed, is used
+    // again when it holds these files, and nothing else is ever pushed over.
+    if !branch_holds(plane, source, &scratch, &now.branch, &tree)? {
+        let helper = forge.helper();
+        let pushed =
+            scratch.push_new_branch(&source.remote.url, helper.as_deref(), &commit, &now.branch)?;
+        if !pushed.ok() {
+            return Err(format!(
+                "Nothing was opened: git could not push to {source}, which takes write access to \
+                 it: {}",
+                super::fetch::complaint(&pushed)
+            ));
+        }
     }
     let url = forge
         .open_draft(&now.branch, &now.base, &now.title, &now.body)
@@ -396,34 +430,69 @@ pub fn publish(
     })
 }
 
-/// The commit: the source's tree at the reviewed commit, each skill's folder replaced.
-fn commit_of(plane: &Path, scratch: &Scratch, review: &PublishReview) -> Result<String, String> {
+/// Whether `branch` is on the source already and holds `tree`. Holding anything else is refused,
+/// as the branch is someone's work.
+fn branch_holds(
+    plane: &Path,
+    source: &Source,
+    scratch: &Scratch,
+    branch: &str,
+    tree: &str,
+) -> Result<bool, String> {
+    let handed = handing(plane, source)?;
+    let wanted = format!("refs/heads/{branch}");
+    let listed = scratch.network(
+        &source.remote,
+        &handed,
+        &["ls-remote", "--", REMOTE, &wanted],
+    )?;
+    if !listed.ok() {
+        return Err(format!(
+            "{source} could not be asked: {}",
+            super::fetch::complaint(&listed)
+        ));
+    }
+    if listed.out.trim().is_empty() {
+        return Ok(false);
+    }
+    let run = scratch.fetch(&source.remote, &handed, &wanted, "refs/purlis/earlier")?;
+    let held = scratch.git(&["rev-parse", "refs/purlis/earlier^{tree}"])?;
+    if run.ok() && held.ok() && held.line().trim() == tree {
+        return Ok(true);
+    }
+    Err(format!(
+        "{source} already has a branch {branch} that holds something else, so nothing was sent. \
+         Delete that branch, then publish again"
+    ))
+}
+
+/// The commit and its tree: the source's tree at the reviewed commit, each skill's folder
+/// replaced. Nothing here reaches the source.
+fn commit_of(scratch: &Scratch, review: &PublishReview) -> Result<(String, String), String> {
     let failed = |doing: &str, run: &git::Run| format!("{doing}: {}", run.err.trim());
-    let identity = |key: &str| {
-        git::run(plane, &["config", key], git::READ)
-            .ok()
-            .filter(git::Run::ok)
-            .map(|run| run.line().trim().to_owned())
-            .filter(|value| !value.is_empty())
-    };
-    let (Some(author), Some(email)) = (identity("user.name"), identity("user.email")) else {
-        return Err(
-            "git has no user.name and user.email for this project, so no commit can be made. Set \
-             them, then publish again"
-                .to_owned(),
-        );
-    };
     let read = scratch.git(&["read-tree", "refs/purlis/base"])?;
     if !read.ok() {
         return Err(failed("the source could not be read", &read));
     }
     for (skill, (folder, _)) in review.outgoing.skills.iter().zip(&review.lands) {
-        let held = scratch.git(&["ls-files", "--", folder])?;
-        for path in held.out.lines() {
-            let gone = scratch.git(&["update-index", "--force-remove", "--", path])?;
-            if !gone.ok() {
-                return Err(failed("a file of the source could not be replaced", &gone));
-            }
+        let held = scratch.git_raw(&["ls-files", "-z", "--", folder], Vec::new())?;
+        // Mode 0 takes an entry out, and asks for no work tree where `--force-remove` does.
+        let mut gone = Vec::new();
+        for path in held
+            .out
+            .split(|byte| *byte == 0)
+            .filter(|path| !path.is_empty())
+        {
+            gone.extend_from_slice(format!("0 {}\t", "0".repeat(40)).as_bytes());
+            gone.extend_from_slice(path);
+            gone.push(0);
+        }
+        let removed = scratch.git_raw(&["update-index", "-z", "--index-info"], gone)?;
+        if !removed.ok() {
+            return Err(format!(
+                "a file of the source could not be replaced: {}",
+                String::from_utf8_lossy(&removed.err).trim()
+            ));
         }
         for file in &skill.files {
             let blob = scratch.git_raw(&["hash-object", "-w", "--stdin"], file.bytes.clone())?;
@@ -446,8 +515,8 @@ fn commit_of(plane: &Path, scratch: &Scratch, review: &PublishReview) -> Result<
     if base_tree.line().trim() == tree {
         return Err("The source already holds exactly these files, so nothing was sent".to_owned());
     }
-    let name = format!("user.name={author}");
-    let mail = format!("user.email={email}");
+    let name = format!("user.name={}", review.author.0);
+    let mail = format!("user.email={}", review.author.1);
     let made = scratch.git(&[
         "-c",
         &name,
@@ -463,7 +532,7 @@ fn commit_of(plane: &Path, scratch: &Scratch, review: &PublishReview) -> Result<
     if !made.ok() {
         return Err(failed("the commit could not be made", &made));
     }
-    Ok(made.line().trim().to_owned())
+    Ok((made.line().trim().to_owned(), tree))
 }
 
 #[cfg(test)]

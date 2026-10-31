@@ -85,17 +85,18 @@ pub fn unattended(permission_mode: Option<&str>) -> bool {
 /// be a documented way around a floor charter itself wrote. A cross-repo landing is N merges,
 /// each individually revertible, so it is not treated as a release; the split is attended versus
 /// unattended, exactly as it already is for `gh pr merge`.
-///
-/// **`charter skill publish` is here** (#2781): it sends a person's skill to a forge, and the
-/// command itself refuses without a terminal or inside a chat. This row denies it earlier.
-pub const PUBLISH_FORGE: [(&str, &str, &str); 6] = [
+pub const PUBLISH_FORGE: [(&str, &str, &str); 5] = [
     ("gh", "release", "create"),
     ("gh", "pr", "merge"),
     ("glab", "release", "create"),
     ("glab", "mr", "merge"),
     ("charter", "change", "land"),
-    ("charter", "skill", "publish"),
 ];
+
+/// **The same floor, for verbs newer than the frozen recording** of [`PUBLISH_FORGE`], which the
+/// corpus replays row by row. `charter skill publish` sends a person's skill to a forge (#2781),
+/// and the command itself refuses without a terminal or inside a chat. This denies it earlier.
+const PUBLISH_SINCE: [(&str, &str, &str); 1] = [("charter", "skill", "publish")];
 
 /// A forge CLI's `(noun, verb)`.
 type ForgeAct = (&'static str, &'static str);
@@ -347,7 +348,9 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             if let [noun, verb, ..] = words[..] {
                 // A CLI's own alias of a verb is that verb (#866).
                 let held = merge::canonical_verb(&name, noun, verb);
-                if PUBLISH_FORGE.contains(&(name.as_str(), noun, held)) {
+                if PUBLISH_FORGE.contains(&(name.as_str(), noun, held))
+                    || PUBLISH_SINCE.contains(&(name.as_str(), noun, held))
+                {
                     return Some(format!(
                         "{fix}`{name} {noun} {verb}` publishes or lands code."
                     ));

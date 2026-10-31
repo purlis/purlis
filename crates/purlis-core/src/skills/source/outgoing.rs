@@ -178,8 +178,9 @@ pub fn gather(
         for file in &skill.files {
             stops_in(&name, file, purpose, &mut out.stops);
         }
+        let text = skill_text(&skill);
         out.skills.push(skill);
-        for used in graph::uses_of(plane, built_in, &name).uses {
+        for used in graph::uses_of_copy(plane, built_in, &name, &text).uses {
             if used.broken {
                 if !out.broken.contains(&used.name) {
                     out.broken.push(used.name);
@@ -202,6 +203,16 @@ pub fn gather(
     Ok(out)
 }
 
+/// The `SKILL.md` of the copy that goes.
+fn skill_text(skill: &OutSkill) -> String {
+    skill
+        .files
+        .iter()
+        .find(|file| file.path() == "SKILL.md")
+        .map(|file| String::from_utf8_lossy(&file.bytes).into_owned())
+        .unwrap_or_default()
+}
+
 /// One skill's files, read through no link, and what stays behind.
 fn one_skill(plane: &Path, level: &Level, name: &str) -> Result<OutSkill, String> {
     let dir = level
@@ -212,7 +223,7 @@ fn one_skill(plane: &Path, level: &Level, name: &str) -> Result<OutSkill, String
     let held = write::read_all(plane, &folder, MOST_SKILL_BYTES, MOST_FILES).ok_or_else(|| {
         format!("{name} could not be read whole: a file of it is too large or unreadable")
     })?;
-    let ignored = ignored_of(plane, &folder, &held);
+    let ignored = ignored_of(plane, &folder, &held)?;
     let mut left = links_in(&dir);
     let mut files = Vec::new();
     for HeldFile {
@@ -274,11 +285,17 @@ fn links_in(dir: &Path) -> Vec<Behind> {
     out
 }
 
-/// The paths of `held` the plane's git ignores: none where the plane is no repository.
-fn ignored_of(plane: &Path, folder: &[String], held: &[HeldFile]) -> BTreeSet<String> {
+/// The paths of `held` the plane's git ignores: none where the plane is no repository. Any other
+/// failure of git is an error, since a file it would have named must not go out.
+fn ignored_of(
+    plane: &Path,
+    folder: &[String],
+    held: &[HeldFile],
+) -> Result<BTreeSet<String>, String> {
     let prefix = folder.join("/");
     let mut args = vec![
         "check-ignore".to_owned(),
+        "-z".to_owned(),
         "--no-index".to_owned(),
         "--".to_owned(),
     ];
@@ -287,14 +304,25 @@ fn ignored_of(plane: &Path, folder: &[String], held: &[HeldFile]) -> BTreeSet<St
             .map(|file| format!("{prefix}/{}", file.parts.join("/"))),
     );
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let Ok(run) = git::run(plane, &args, git::READ) else {
-        return BTreeSet::new();
-    };
-    run.out
-        .lines()
-        .filter_map(|line| line.strip_prefix(&format!("{prefix}/")))
-        .map(str::to_owned)
-        .collect()
+    let run = git::run(plane, &args, git::READ).map_err(|why| why.to_string())?;
+    ignored_from(&run, &prefix)
+}
+
+/// What `git check-ignore -z` answered: 0 some are ignored, 1 none are.
+fn ignored_from(run: &git::Run, prefix: &str) -> Result<BTreeSet<String>, String> {
+    match run.code {
+        Some(0 | 1) => Ok(run
+            .out
+            .split('\0')
+            .filter_map(|line| line.strip_prefix(prefix)?.strip_prefix('/'))
+            .map(str::to_owned)
+            .collect()),
+        _ if run.err.contains("not a git repository") => Ok(BTreeSet::new()),
+        _ => Err(format!(
+            "purlis could not ask git which files of the skill it ignores, so nothing goes: {}",
+            run.err.trim()
+        )),
+    }
 }
 
 /// A home folder's path, which works on one machine alone.
@@ -324,6 +352,13 @@ fn stops_in(skill: &str, file: &OutFile, purpose: Purpose, stops: &mut Vec<Stop>
             masked: secretshape::masked(value),
         });
     };
+    // A file's own name goes out too.
+    let path = file.path();
+    for leak in secretshape::leaks(&path) {
+        if purpose == Purpose::Publish || !secretshape::is_personal(leak.rule) {
+            stop(0, leak.kind, &path[leak.span.clone()]);
+        }
+    }
     let mut any = false;
     for (index, line) in text.lines().enumerate() {
         for leak in secretshape::leaks(line) {

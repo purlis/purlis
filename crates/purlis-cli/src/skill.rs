@@ -1912,6 +1912,14 @@ fn publish_text(review: &source::publish::PublishReview, source: &Source) -> Str
         esc(&review.branch),
         esc(&review.title)
     );
+    text.insert_str(
+        text.find("\n\nFiles").unwrap_or(text.len()),
+        &format!(
+            "\n  the commit names: {} <{}>",
+            esc(&review.author.0),
+            esc(&review.author.1)
+        ),
+    );
     for (skill, (folder, replaces)) in review.outgoing.skills.iter().zip(&review.lands) {
         if *replaces {
             text.push_str(&format!("  {} replaces what is there\n", esc(folder)));

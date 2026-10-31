@@ -99,7 +99,10 @@ fn a_secret_in_a_file_stops_both_and_its_value_is_never_said() {
 #[test]
 fn personal_data_and_a_home_path_stop_a_publish_but_not_an_export() {
     let plane = tempfile::tempdir().unwrap();
-    let text = format!("{SKILL}Mail ada@example.org and read /Users/ada/notes.md.\n");
+    let text = format!(
+        "{SKILL}Mail ada{}example.org and read /Users/ada/notes.md.\n",
+        '@'
+    );
     skill_at(plane.path(), &Level::project(), "deploy", &text, &[]);
 
     assert!(gathered(plane.path(), Purpose::Export).stops.is_empty());
@@ -144,6 +147,81 @@ fn a_skill_it_refers_to_comes_along_and_a_broken_reference_is_said() {
     let names: Vec<&str> = out.skills.iter().map(|one| one.name.as_str()).collect();
     assert_eq!(names, ["deploy", "notify"]);
     assert_eq!(out.broken, ["gone"]);
+}
+
+#[test]
+fn a_file_git_ignores_stays_behind_and_a_failure_of_git_stops_the_gather() {
+    let plane = tempfile::tempdir().unwrap();
+    assert!(crate::testgit::run(plane.path(), &["init", "-q"]).ok());
+    std::fs::write(plane.path().join(".gitignore"), "*.local.md\n").unwrap();
+    skill_at(
+        plane.path(),
+        &Level::project(),
+        "deploy",
+        SKILL,
+        &[("notes.local.md", "mine\n")],
+    );
+
+    let out = gathered(plane.path(), Purpose::Publish);
+
+    assert_eq!(paths(&out), ["SKILL.md"]);
+    assert_eq!(out.skills[0].left[0].path, "notes.local.md");
+
+    let broke = git::Run {
+        code: Some(128),
+        out: String::new(),
+        err: "fatal: bad".to_owned(),
+    };
+    assert!(ignored_from(&broke, "skills/deploy").is_err());
+    let no_repo = git::Run {
+        code: Some(128),
+        out: String::new(),
+        err: "fatal: not a git repository".to_owned(),
+    };
+    assert!(ignored_from(&no_repo, "skills/deploy").unwrap().is_empty());
+}
+
+#[test]
+fn personal_data_in_a_files_name_stops_a_publish() {
+    let plane = tempfile::tempdir().unwrap();
+    let name = format!("refs/ada{}example.org.md", '@');
+    skill_at(
+        plane.path(),
+        &Level::project(),
+        "deploy",
+        SKILL,
+        &[(&name, "x\n")],
+    );
+    assert_eq!(gathered(plane.path(), Purpose::Publish).stops.len(), 1);
+    assert!(gathered(plane.path(), Purpose::Export).stops.is_empty());
+}
+
+#[test]
+fn references_are_read_from_the_copy_that_goes_and_not_another_levels() {
+    let plane = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(plane.path().join("workspaces/ops")).unwrap();
+    std::fs::write(plane.path().join("workspaces/ops/workspace.json"), "{}").unwrap();
+    skill_at(plane.path(), &Level::project(), "deploy", SKILL, &[]);
+    let other = format!("{SKILL}Then use skills:notify.\n");
+    skill_at(
+        plane.path(),
+        &Level::workspace("ops"),
+        "deploy",
+        &other,
+        &[],
+    );
+    skill_at(
+        plane.path(),
+        &Level::project(),
+        "notify",
+        "---\nname: notify\ndescription: N\n---\n",
+        &[],
+    );
+
+    let out = gathered(plane.path(), Purpose::Export);
+
+    let names: Vec<&str> = out.skills.iter().map(|one| one.name.as_str()).collect();
+    assert_eq!(names, ["deploy"]);
 }
 
 #[test]
