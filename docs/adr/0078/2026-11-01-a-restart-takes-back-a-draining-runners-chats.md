@@ -10,3 +10,7 @@ implementation, to be confirmed*.
 2. **That link goes under the pool's one name.** A name takes back only what that runner started
    for it, and each of the pool's runners started under this name.
 3. **A suspended draining runner is not asked.** A link would wake it, and it runs no chat.
+4. **A runner whose drain began, with only its home left, is removed without being asked** (#4298).
+   On a row with no engine kept, its home listed by this Docker is what says this is its engine.
+   Docker listing neither container nor home leaves the row as it is, so what is on its engine is
+   not orphaned.

@@ -88,6 +88,9 @@ struct Shared {
     /// Each pool's host left with the chats that stayed on a draining runner (#4248): its pool's
     /// next chats start on a host of their own, on the pool's runner now.
     left: Mutex<Vec<Left>>,
+    /// Each draining runner a window's restart asked for its chats (#4271), by `<pool>/<runner>`:
+    /// in `left` too only once it gave one back.
+    asked: Mutex<BTreeMap<String, (u64, Arc<dyn SessionHost>)>>,
     /// The chats that stayed on a draining runner, and how they are found in `left`.
     stayed: Mutex<HashMap<u32, u64>>,
     /// Held while a pool's host is replaced for a start: two starts make one host between them.
@@ -278,35 +281,48 @@ impl RoutedSessions {
         self.pool(pool)
     }
 
-    /// **The host of the chats a window's restart left on the draining `runner` of `pool`**
-    /// (#4271): one of its own, made the first time it is asked for, as a chat that stayed is
-    /// held. `None` where this window moved the project off a draining runner itself: a link of
-    /// its own to that runner holds what it started, and a second would be refused its name.
-    fn left_by_a_restart(&self, pool: &str, runner: &str) -> Option<(u64, Arc<dyn SessionHost>)> {
+    /// **The host a window's restart asks the draining `runner` of `pool` through** (#4271), made
+    /// the first time. `None` where this window moved the project off a draining runner itself: a
+    /// link of its own to that runner holds what it started, and a second would be refused its name.
+    fn asking(&self, pool: &str, runner: &str) -> Option<(u64, Arc<dyn SessionHost>)> {
         let _one_at_a_time = lock(&self.shared.replacing);
+        if let Some((made, host)) = lock(&self.shared.asked).get(runner) {
+            return Some((*made, Arc::clone(host)));
+        }
+        if lock(&self.shared.left)
+            .iter()
+            .any(|left| left.pool == pool && left.runner.is_none())
         {
-            let left = lock(&self.shared.left);
-            if let Some(found) = left
-                .iter()
-                .find(|left| left.runner.as_deref() == Some(runner))
-            {
-                return Some((found.made, Arc::clone(&found.host)));
-            }
-            if left
-                .iter()
-                .any(|left| left.pool == pool && left.runner.is_none())
-            {
-                return None;
-            }
+            return None;
         }
         let (made, host) = made_for(&self.shared, &self.to_a_pool, runner, pool).ok()?;
-        lock(&self.shared.left).push(Left {
-            pool: pool.to_owned(),
-            runner: Some(runner.to_owned()),
-            made,
-            host: Arc::clone(&host),
-        });
+        lock(&self.shared.asked).insert(runner.to_owned(), (made, Arc::clone(&host)));
         Some((made, host))
+    }
+
+    /// **Chat `number` is held on the host `made`, of the draining `runner`** (#4271), as a chat
+    /// that stayed is.
+    fn stays_where_it_was_found(
+        &self,
+        number: u32,
+        pool: String,
+        runner: &str,
+        made: u64,
+        host: Arc<dyn SessionHost>,
+    ) {
+        {
+            let mut left = lock(&self.shared.left);
+            if !left.iter().any(|left| left.made == made) {
+                left.push(Left {
+                    pool: pool.clone(),
+                    runner: Some(runner.to_owned()),
+                    made,
+                    host,
+                });
+            }
+        }
+        lock(&self.shared.stayed).insert(number, made);
+        lock(&self.shared.chats).insert(number, pool);
     }
 
     /// The host chat `id` runs on: a pool's, where it was started there, else this machine's.
@@ -923,11 +939,10 @@ impl SessionHost for RoutedSessions {
             return true;
         }
         for runner in (self.draining_of)(&pool) {
-            if let Some((made, host)) = self.left_by_a_restart(&pool, &runner)
+            if let Some((made, host)) = self.asking(&pool, &runner)
                 && host.left_running(number)
             {
-                lock(&self.shared.stayed).insert(number, made);
-                lock(&self.shared.chats).insert(number, pool);
+                self.stays_where_it_was_found(number, pool, &runner, made, host);
                 return true;
             }
         }
@@ -991,6 +1006,13 @@ impl SessionHost for RoutedSessions {
     fn close_what_was_not_reattached(&self) {
         for pool in self.pools() {
             pool.close_what_was_not_reattached();
+        }
+        // What a draining runner holds that nothing took back would keep its drain open.
+        let asked = std::mem::take(&mut *lock(&self.shared.asked));
+        for (made, host) in asked.into_values() {
+            if !lock(&self.shared.left).iter().any(|left| left.made == made) {
+                host.close_what_was_not_reattached();
+            }
         }
         self.here.close_what_was_not_reattached();
     }

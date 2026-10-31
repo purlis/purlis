@@ -365,10 +365,14 @@ pub fn follow_and_drain(
         }
     }
     for kept in purlis_core::runners::draining(&machine.config).unwrap_or_default() {
-        // Its drain began and its container is gone, so nothing is left to ask: only its removal
-        // is tried again (#4298).
+        // Its drain began and only its home is left, so nothing is left to ask: only its removal
+        // is tried again (#4298). Its home listed here says this is its engine: with no engine
+        // kept, a Docker reaching another one lists no such volume, and the row stays (#4149).
         if (kept.carried || kept.carry_failed)
-            && matches!(machine.docker.gone(&kept.made), Ok(Some(_)))
+            && matches!(
+                machine.docker.gone(&kept.made),
+                Ok(Some(purlis_core::dockerpool::Gone { home_kept: true }))
+            )
         {
             lock_waiting().remove(&(
                 machine.config.clone(),

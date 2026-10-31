@@ -324,16 +324,17 @@ fn an_unpaired_runner_is_removed_without_being_asked_again() {
     assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
 }
 
-/// A machine in `config` whose `docker` lists no container and still lists each runner's home:
-/// removing a home fails while `volume-stays` is there.
+/// A machine in `config` whose `docker` lists no container and still lists each runner's home,
+/// unless `no-home` is there: removing a home fails while `volume-stays` is there.
 fn a_machine_with_only_a_home_left(config: &std::path::Path) -> Machine {
     let machine = a_machine(config);
     std::fs::write(
         config.join("docker"),
         format!(
-            "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$1 $2\" in\n  'volume ls')              [ -e '{stays}' ] && echo purlis-runner-first-home ;;\n  'volume rm')              [ -e '{stays}' ] && exit 1 ;;\n  'container inspect') echo 'no such container' >&2;              exit 1 ;;\nesac\nexit 0\n",
+            "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$1 $2\" in\n  'volume ls')              [ -e '{no_home}' ] || echo purlis-runner-first-home ;;\n  'volume rm')              [ -e '{stays}' ] && exit 1 ;;\n  'container inspect') echo 'no such container' >&2;              exit 1 ;;\nesac\nexit 0\n",
             log = config.join("log").display(),
             stays = config.join("volume-stays").display(),
+            no_home = config.join("no-home").display(),
         ),
     )
     .unwrap();
@@ -364,6 +365,25 @@ fn a_runner_with_only_its_home_left_is_only_removed() {
 
     assert!(said[0].contains("had no chat left"), "{said:?}");
     assert_eq!(names(&machine), ["first-fedcba98"]);
+}
+
+/// **A Docker that lists neither its container nor its home may be another engine** (#4149): a row
+/// with no engine kept stays, though its drain began, and what is on its engine is not orphaned.
+#[test]
+fn a_runner_whose_home_is_not_listed_either_is_not_removed_on_dockers_word() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine_with_only_a_home_left(config.path());
+    a_pool_draining(&machine);
+    let locked = purlis_core::runners::lock(config.path());
+    purlis_core::runners::note_locked(config.path(), "first", |kept| kept.carried = true, &locked)
+        .unwrap();
+    drop(locked);
+    std::fs::write(config.path().join("no-home"), "").unwrap();
+
+    let said = follow_and_drain(&machine, None, &|_| Err("down".into()));
+
+    assert!(said[0].contains("stays until it answers"), "{said:?}");
+    assert_eq!(names(&machine), ["first", "first-fedcba98"]);
 }
 
 /// A row no drain began on is not removed on Docker's word alone: without an engine kept, Docker
