@@ -596,8 +596,9 @@ fn clear_leftovers_locked(
 /// by two runners at once (#4055, ruled 2026-10-30). One the pool's runner signed in on its own
 /// is kept over the carried one, and one signed out of the pool is not carried (#4145). A sign-in
 /// that cannot be carried is said in the log, and the runner is removed all the same: that
-/// profile is signed in again on the pool. None is carried to or from a runner a chat ran on
-/// without the sandbox ([`crate::runnertaint`]).
+/// profile is signed in again on the pool, unless its removal fails too and the next look's second
+/// try carries it (#4298). None is carried to or from a runner a chat ran on without the sandbox
+/// ([`crate::runnertaint`]).
 pub fn drain(
     config_root: &Path,
     docker: &Docker,
@@ -625,14 +626,7 @@ pub fn drain(
             {
                 tracing::warn!("purlis: runner {name} may be asked again: {why}");
             }
-            if !kept.carried {
-                carry_sign_ins(config_root, docker, &kept);
-                if let Err(why) =
-                    runners::note_locked(config_root, name, |kept| kept.carried = true, &locked)
-                {
-                    tracing::warn!("purlis: runner {name} may be carried from again: {why}");
-                }
-            }
+            carry_once(config_root, docker, &kept, false, &locked);
             let mut removed = runners::remove_locked(config_root, docker, name, None, &locked)?;
             removed.peer = peer;
             Ok(removed)
@@ -646,15 +640,57 @@ pub fn drain(
     }
 }
 
+/// **Carries `kept`'s sign-ins once, however many looks its removal takes** (#4055), and once more
+/// where Docker failed the first try (#4298). A second try comes later, so like a carry from a
+/// runner with no container (`only_its_own_home`) it takes only a home that is still its own.
+fn carry_once(
+    config_root: &Path,
+    docker: &Docker,
+    kept: &Kept,
+    only_its_own_home: bool,
+    locked: &runners::Locked,
+) {
+    if kept.carried {
+        return;
+    }
+    let name = kept.name();
+    let its_own = if only_its_own_home || kept.carry_failed {
+        is_its_own_home(docker, kept)
+    } else {
+        Ok(true)
+    };
+    let dockers_failure = match its_own {
+        Ok(true) => carry_sign_ins(config_root, docker, kept),
+        Ok(false) => false,
+        Err(why) => {
+            tracing::warn!("purlis: runner {name}'s home could not be read to carry from: {why}");
+            true
+        }
+    };
+    let try_again = dockers_failure && !kept.carry_failed;
+    if let Err(why) = runners::note_locked(
+        config_root,
+        name,
+        |kept| {
+            kept.carried = !try_again;
+            kept.carry_failed = try_again;
+        },
+        locked,
+    ) {
+        tracing::warn!("purlis: runner {name} may be carried from again: {why}");
+    }
+}
+
 /// **Carries the draining runner `drained`'s sign-ins to its pool's runner** (#4011, #4055),
 /// as it drains: what cannot be carried is said in the log and never holds the drain back.
-fn carry_sign_ins(config_root: &Path, docker: &Docker, drained: &Kept) {
+/// Whether what stopped it was Docker's failure, which may pass, and not a rule that holds.
+fn carry_sign_ins(config_root: &Path, docker: &Docker, drained: &Kept) -> bool {
     let pool = drained.pool();
     let Ok(to) = runners::runner_for(config_root, pool) else {
-        return;
+        return false;
     };
     if to.name() == drained.name() {
-        return;
+        return false;
     }
     if [&drained.made, &to.made]
         .iter()
@@ -667,7 +703,7 @@ fn carry_sign_ins(config_root: &Path, docker: &Docker, drained: &Kept) {
             drained.name(),
             to.name()
         );
-        return;
+        return false;
     }
     if drained.made.runner.user() != to.made.runner.user() {
         tracing::warn!(
@@ -678,20 +714,25 @@ fn carry_sign_ins(config_root: &Path, docker: &Docker, drained: &Kept) {
             to.name(),
             to.made.runner.user().spelled()
         );
-        return;
+        return false;
     }
-    if let Err(why) = docker.copy_profiles(
+    match docker.copy_profiles(
         &drained.made,
         &to.made,
         &runners::desktop_label(config_root),
         &drained.signed_out,
     ) {
-        tracing::warn!(
-            "purlis: the sign-ins of runner {} were not carried to pool {pool}'s runner {}, so \
-             its profiles are signed in again there: {why}",
-            drained.name(),
-            to.name()
-        );
+        Ok(()) => false,
+        Err(why) => {
+            tracing::warn!(
+                "purlis: the sign-ins of runner {} were not carried to pool {pool}'s runner {}, \
+                 so its profiles are signed in again there unless a later look carries them: \
+                 {why}",
+                drained.name(),
+                to.name()
+            );
+            true
+        }
     }
 }
 
@@ -719,16 +760,8 @@ pub fn drain_removed(config_root: &Path, docker: &Docker, name: &str) -> Result<
             "runner {name} is not known to be removed, so it stays as it is"
         )));
     };
-    if !kept.carried {
-        if gone.home_kept && is_its_own_home(docker, &kept).unwrap_or(false) {
-            carry_sign_ins(config_root, docker, &kept);
-        }
-        // Once, however many looks its removal takes, as a drain carries (#4055).
-        if let Err(why) =
-            runners::note_locked(config_root, name, |kept| kept.carried = true, &locked)
-        {
-            tracing::warn!("purlis: runner {name} may be carried from again: {why}");
-        }
+    if gone.home_kept {
+        carry_once(config_root, docker, &kept, true, &locked);
     }
     runners::remove_locked(config_root, docker, name, None, &locked)
 }
@@ -739,15 +772,18 @@ pub type DrainingSignOut = (String, Result<(), String>);
 /// **What signing `profile` out of pool `pool` did on its draining runners** (#4121, #4145): each
 /// one's name and whether its harness's sign-out ran. Whatever it did, no drain carries that
 /// sign-in ([`runners::hold_from_carrying`]), so a runner it did not reach holds the sign-in only
-/// until it is removed with its home.
+/// until it is removed with its home. The harness's sign-out runs only on a runner not in `seen`,
+/// those an earlier look of this sign-out answered for (#4298).
 pub fn sign_out_draining(
     config_root: &Path,
     docker: &Docker,
     pool: &str,
     profile: &str,
+    seen: &[DrainingSignOut],
 ) -> Result<Vec<DrainingSignOut>, Refused> {
     Ok(runners::hold_from_carrying(config_root, pool, profile)?
         .into_iter()
+        .filter(|kept| !seen.iter().any(|(runner, _)| runner == kept.name()))
         .map(|kept| {
             let did = docker.sign_out(&kept.made, profile);
             (kept.name().to_owned(), did)

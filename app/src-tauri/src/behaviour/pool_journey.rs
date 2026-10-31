@@ -695,6 +695,44 @@ fn in_the_journey(
         "the chat runs on the new runner"
     );
     target.sessions.close(id).expect("it closes");
+
+    step("a runner with only its home left");
+    // A drain began and took its container, and not its home volume (#4298). Nothing is left to
+    // ask, so a look only removes what is left.
+    crate::poolfollow::follow_and_drain(machine, Some(next), &|_| Ok(1));
+    let draining = purlis_core::runners::draining(&machine.config).expect("read");
+    let old = draining.first().expect("the old runner drains");
+    let locked = purlis_core::runners::lock(&machine.config);
+    purlis_core::runners::note_locked(
+        &machine.config,
+        old.name(),
+        |kept| kept.carried = true,
+        &locked,
+    )
+    .expect("noted");
+    drop(locked);
+    let removed =
+        purlis_core::forklock::output(std::process::Command::new(machine.docker.program()).args([
+            "container",
+            "rm",
+            "--force",
+            old.made.container.as_str(),
+        ]))
+        .expect("docker runs");
+    assert!(removed.status.success(), "{removed:?}");
+    let said =
+        crate::poolfollow::follow_and_drain(machine, None, &|_| panic!("nothing is left to ask"));
+    assert!(
+        said.iter().any(|line| line.contains("had no chat left")),
+        "{said:?}"
+    );
+    assert_eq!(
+        purlis_core::runners::draining(&machine.config)
+            .expect("read")
+            .len(),
+        0,
+        "{said:?}"
+    );
 }
 
 /// Whether `file` is anywhere under `folder`.

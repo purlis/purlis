@@ -118,6 +118,20 @@ pub struct RunnerLogNow {
     pub down: bool,
 }
 
+impl RunnerLogNow {
+    /// **Two runners' logs of one pool, read as the pool's** (#4271): the ends of both, oldest
+    /// first; what either missed, or a link either has down, is said of the pool.
+    pub fn beside(mut self, other: RunnerLogNow) -> RunnerLogNow {
+        self.device = self.device.or(other.device);
+        self.lines.extend(other.lines);
+        // A ULID's order is its time's.
+        self.lines.sort_by(|one, next| one.ulid.cmp(&next.ulid));
+        self.missed |= other.missed;
+        self.down |= other.down;
+        self
+    }
+}
+
 impl RunnerLog {
     /// The runner's host said its log is `device`'s and ends at `seq`: read on from there.
     pub fn starts_at(&mut self, device: String, seq: u64) {
@@ -191,6 +205,37 @@ impl RunnerLog {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **Two runners' logs are one pool's** (#4271): both's ends oldest first, and what either
+    /// missed or has down is said.
+    #[test]
+    fn a_pools_two_runners_read_as_one() {
+        let line = |ulid: &str| RunEndLine {
+            chat: "chat".into(),
+            ended: RunEnded::Completed,
+            ulid: ulid.into(),
+            device: "device".into(),
+        };
+        let now = RunnerLogNow {
+            device: Some("new".into()),
+            lines: vec![line("02")],
+            missed: false,
+            down: false,
+        };
+        let draining = RunnerLogNow {
+            device: Some("old".into()),
+            lines: vec![line("01"), line("03")],
+            missed: true,
+            down: true,
+        };
+
+        let joined = now.beside(draining);
+
+        let ulids: Vec<&str> = joined.lines.iter().map(|line| line.ulid.as_str()).collect();
+        assert_eq!(ulids, ["01", "02", "03"]);
+        assert_eq!(joined.device.as_deref(), Some("new"));
+        assert!(joined.missed && joined.down);
+    }
 
     const RUNNER: &str = "01JB0RUNNER0000000000000000";
     const CHAT: &str = "01K6W0RKER000000000000000B";

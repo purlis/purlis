@@ -523,6 +523,16 @@ impl Connection {
         self.to_a_pool.as_ref().map(|(_, pool)| pool.as_str())
     }
 
+    /// Whether a runner of this connection's pool drains now: neither runner's fetch removes what
+    /// only the other has (#4248), after a window's restart too, with one link open (#4271).
+    fn pool_drains(&self) -> bool {
+        let (Some(pool), Some(config)) = (self.pool(), self.runners_config()) else {
+            return false;
+        };
+        purlis_core::runners::draining(&config)
+            .is_ok_and(|draining| draining.iter().any(|kept| kept.pool() == pool))
+    }
+
     /// `end` ends the browsers the window started on a pool once a chat ran there, or may have
     /// run there, without the sandbox (D-2050-28).
     pub fn ending_browsers_with(&self, end: EndingBrowsers) {
@@ -4001,7 +4011,8 @@ impl SessionHost for HostedSessions {
         match self.link() {
             Ok((link, project)) => {
                 let beside = self.connection.links_of(&self.root).len() > 1
-                    || lock(&self.stays_on).is_some();
+                    || lock(&self.stays_on).is_some()
+                    || self.connection.pool_drains();
                 crate::runnercode::fetch_workspace(
                     &link, &project, &self.root, workspace, pool, beside,
                 )
