@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793408891113,
+  "lastUpdate": 1793412863266,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32508,6 +32508,48 @@ window.BENCHMARK_DATA = {
             "value": 101.835998,
             "unit": "ms",
             "extra": "median of 5 runs: 100.185, 100.675, 101.836, 101.923, 102.128 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f6183512c3c0345baf195ca37676ce10085e4683",
+          "message": "Runners: Codex and opencode's ChatGPT sign in on a runner by approving in the browser (#4044) (#4179)\n\n* Runners: Codex and opencode's ChatGPT sign in on a runner by approving in the browser (#4044)\n\nThe change of #4100, applied onto main beside #4108's Copilot device code and\ncarried over the paired link to the login on the runner (session protocol 1.57,\nsign_in_redirect). An approve login purpose cannot follow restarts in the\nrunner's terminal by its device code. Includes the re-review's fixes: the\nforward's IPv6 listener is left out only where there is none, and the\nundriven-login test has room on a busy runner.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66ZT322QGMH2H7EFFSAYQZT\nPurlis-Persona: steward\n\n* Runners: only a plan whose login waits for the browser is told --way browser, so an older runner still signs Copilot in (#4044)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66ZT322QGMH2H7EFFSAYQZT\nPurlis-Persona: steward\n\n* Runners: the sign-in redirect is session protocol 1.58, after #4139's 1.57 (#4044)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66ZT322QGMH2H7EFFSAYQZT\nPurlis-Persona: steward\n\n* Runners: a login approved in the browser is not offered the CLI's --pool sign-in, which cannot carry its answer (#4044)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66ZT322QGMH2H7EFFSAYQZT\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image (#4044)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66ZT322QGMH2H7EFFSAYQZT\nPurlis-Persona: steward\n\n* Runners: CI fixes: --pool refuses an approve login before any engine, the carry test sheds the shell's steering, uiRpc regenerated (#4044)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66ZT322QGMH2H7EFFSAYQZT\nPurlis-Persona: steward\n\n* Runners: the carry's end-to-end test is a plain test the steering scan follows, and the taken-port test waits for its stand-in login to end (#4044)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66ZT322QGMH2H7EFFSAYQZT\nPurlis-Persona: steward\n\n* Runners: the browser's answer is carried to a cluster pool's runner too, through the link #3819 made (#4044)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66ZT322QGMH2H7EFFSAYQZT\nPurlis-Persona: steward\n\n* Runners: sign_in_words as rustfmt writes it (#4044)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66ZT322QGMH2H7EFFSAYQZT\nPurlis-Persona: steward\n\n* Runners: the sign-in redirect is session protocol 1.59, after #4149's 1.58 (#4044)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66ZT322QGMH2H7EFFSAYQZT\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T01:48:15Z",
+          "tree_id": "d340ed68c5e97ddc4936d4b1863cbb8961044b55",
+          "url": "https://github.com/purlis/purlis/commit/f6183512c3c0345baf195ca37676ce10085e4683"
+        },
+        "date": 1793412857795,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.33887,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.328, 0.329, 0.339, 0.348, 0.354 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6095105,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.503, 16.553, 16.610, 16.616, 16.632 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.761651,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.365, 101.549, 101.762, 101.846, 102.241 ms"
           }
         ]
       }
