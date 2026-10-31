@@ -6,9 +6,11 @@ import { listen } from "@tauri-apps/api/event";
 import {
   commands,
   ROUTER_GRADE,
+  SKILL_GRADE,
   type ProfileRow,
   type RouterGradePlan,
   type RouterGradeStep,
+  type SkillGradeStep,
 } from "./bindings";
 import { counted } from "./dispatches";
 import {
@@ -49,6 +51,51 @@ type RouterScope = {
   workspace: string | null;
   persona: string | null;
 };
+
+/** Whether `step` is of `router` as this scope chose it. */
+function isOurs(
+  step: RouterGradeStep | null,
+  router: string,
+  workspace: string | null,
+  persona: string | null,
+): boolean {
+  return (
+    step !== null &&
+    step.router === router &&
+    step.workspace === workspace &&
+    step.persona === persona
+  );
+}
+
+/**
+ * **The router's grade running in this scope, told as it goes** (#4222): what Routing says of it,
+ * with the way to its page, from wherever the person left it. `onEnded` is told at the end of any
+ * router's grade in the project, so the studio reads the router's line again.
+ */
+export function useRouterGradeRunning(
+  plane: string,
+  workspace: string | null,
+  persona: string | null,
+  onEnded: () => void,
+): RouterGradeStep | undefined {
+  const [step, setStep] = useState<RouterGradeStep>();
+  const told = useRef(onEnded);
+  useEffect(() => {
+    told.current = onEnded;
+  });
+  useEffect(() => {
+    const listening = listen<RouterGradeStep>(ROUTER_GRADE, (event) => {
+      const now = event.payload;
+      if (now.plane !== plane) return;
+      if (now.ended !== null) {
+        setStep(undefined);
+        told.current();
+      } else if (now.workspace === workspace && now.persona === persona) setStep(now);
+    }).catch(() => undefined);
+    return () => void listening.then((stop) => stop?.()).catch(() => undefined);
+  }, [plane, workspace, persona]);
+  return step;
+}
 
 /** Why the plan's Start can't be pressed now, or nothing where it can. */
 function startRefused(router: string, plan: RouterGradePlan, newer: boolean): string | undefined {
@@ -113,13 +160,22 @@ export function RouterGradePlanPage({
   // The latest read asked for: an answer to an older one, landing after it, is never drawn, so
   // the plan shown is always of the profile and model picked.
   const asked = useRef(0);
+  const settling = useRef(false);
   /** Reads the plan: drawn, or (`check`) held as newer where it consents to something else. */
   const read = (on: string | null, onModel: string | null, check = false) => {
+    // A plain read under way answers with what is there now, so a check waits on nothing: it
+    // never supersedes the read, nor mistakes the person's own pick for a change under them.
+    if (check && settling.current) return;
+    if (!check) settling.current = true;
     const ask = ++asked.current;
+    const settled = () => {
+      if (!check && ask === asked.current) settling.current = false;
+    };
     void commands
       .routerGradePlan(plane, workspace, persona, on, onModel)
       .then((answer) => {
         if (ask !== asked.current) return;
+        settled();
         if (answer.status !== "ok") {
           if (!check) setRefused(answer.error);
           return;
@@ -134,6 +190,7 @@ export function RouterGradePlanPage({
         }
       })
       .catch((err: unknown) => {
+        settled();
         if (ask === asked.current && !check) setRefused(String(err));
       });
   };
@@ -158,7 +215,21 @@ export function RouterGradePlanPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [changed]);
 
-  // Whether the grade running in the project is this router's, so Show it can open it.
+  // A skill's grade that ends frees the project: read again, so Start is not held on it. A
+  // router's end reaches `changed`, as the studio is told it.
+  const readNow = useRef(() => undefined as void);
+  useEffect(() => {
+    readNow.current = () => read(picked, pickedModel, true);
+  });
+  useEffect(() => {
+    const listening = listen<SkillGradeStep>(SKILL_GRADE, (event) => {
+      if (event.payload.plane === plane && event.payload.ended !== null) readNow.current();
+    }).catch(() => undefined);
+    return () => void listening.then((stop) => stop?.()).catch(() => undefined);
+  }, [plane]);
+
+  // Whether the grade running in the project is this scope's of this router, so Show it can open
+  // it: a scorecard is read by scope, and another scope's would not be found from here.
   const running = plan?.running ?? null;
   // Only the grade running now: one found before it is no grade to show.
   const ours = found !== undefined && found === running ? found : undefined;
@@ -168,13 +239,14 @@ export function RouterGradePlanPage({
     void commands
       .routerGradeRunning(plane, running)
       .then((answer) => {
-        if (live && answer.status === "ok" && answer.data?.router === router) setFound(running);
+        if (live && answer.status === "ok" && isOurs(answer.data, router, workspace, persona))
+          setFound(running);
       })
       .catch(() => undefined);
     return () => {
       live = false;
     };
-  }, [plane, router, running]);
+  }, [plane, router, workspace, persona, running]);
 
   if (refused !== undefined)
     return (
@@ -387,27 +459,32 @@ export function RouterGradePlanPage({
   );
 }
 
+/** Whether an end says all it has to on its scorecard, which this scope can read. */
+function opensItsScorecard(step: RouterGradeStep, chosen: string | null): boolean {
+  return step.ended !== null && step.said === null && step.recorded && step.router === chosen;
+}
+
 /**
  * **A router's grade running, a page on Routing** (#4222), as a skill's is (S6,
  * `GradeRunningPage`): its chats done, what it has spent against its dollar limit and its tokens
  * against its cap, with Stop fixed at the foot. A grade's chats are drawn nowhere. `onEnded` is
  * told once it ends with nothing more to say, so Routing opens its scorecard (#3617); an end with
- * words to say stays here and says them. `onGraded` is told at any end, so the studio reads the
- * router's line again.
+ * words to say stays here and says them, as does one of a router no longer chosen here, whose
+ * grades are not read from this scope. It stays drawn whichever router is chosen meanwhile: `router`
+ * is the one chosen now, and the grade's own name comes from its step, so Stop is never lost.
  */
 export function RouterGradeRunningPage({
   plane,
   router,
   grade,
   onEnded,
-  onGraded,
   onBack,
 }: {
   plane: string;
-  router: string;
+  /** The router chosen in this scope now, where an extension's is. */
+  router: string | null;
   grade: string;
   onEnded: () => void;
-  onGraded: () => void;
   /** Back to Routing: the grade keeps going. */
   onBack: () => void;
 }) {
@@ -418,13 +495,14 @@ export function RouterGradeRunningPage({
   const [again, setAgain] = useState(0);
   const [stopping, setStopping] = useState(false);
   const [stopRefused, setStopRefused] = useState<string>();
+  const name = step?.router ?? router ?? "chosen here before";
   // The latest to tell, read as an event lands: the listener is not drawn again with them, so no
   // step is lost while it would be.
   const ended = useRef(onEnded);
-  const graded = useRef(onGraded);
+  const chosen = useRef(router);
   useEffect(() => {
     ended.current = onEnded;
-    graded.current = onGraded;
+    chosen.current = router;
   });
 
   // Listened to first, then the app's word on whether it runs and its latest step: an end told
@@ -435,10 +513,7 @@ export function RouterGradeRunningPage({
       const now = event.payload;
       if (now.plane !== plane || now.grade !== grade) return;
       setStep(now);
-      if (now.ended !== null) {
-        graded.current();
-        if (now.said === null) ended.current();
-      }
+      if (opensItsScorecard(now, chosen.current)) ended.current();
     }).catch(() => undefined);
     void listening
       .then(() => commands.routerGradeRunning(plane, grade))
@@ -453,6 +528,8 @@ export function RouterGradeRunningPage({
         // A step told since is newer than the one the read says.
         const now = answer.data;
         if (now !== null) setStep((told) => told ?? now);
+        // Ended before this page listened: the event is gone, and its end is read here.
+        if (now !== null && opensItsScorecard(now, chosen.current)) ended.current();
       })
       .catch((err: unknown) => {
         if (live) setUnread(String(err));
@@ -467,7 +544,7 @@ export function RouterGradeRunningPage({
   if (step === undefined && unread !== undefined)
     return (
       <NotRead
-        what={`the grade of the router ${router}`}
+        what={`the grade of the router ${name}`}
         why={unread}
         onAgain={() => {
           setUnread(undefined);
@@ -477,14 +554,12 @@ export function RouterGradeRunningPage({
       />
     );
   if (step === undefined && runs === undefined)
-    return (
-      <ReadingRows what={`the grade of the router ${router}`} testid="router-grading-reading" />
-    );
+    return <ReadingRows what={`the grade of the router ${name}`} testid="router-grading-reading" />;
   if (step === undefined && runs === false)
     return (
       <EmptyState
         variant="panel"
-        headline={`This grade of the router ${router} is not running any more`}
+        headline={`This grade of the router ${name} is not running any more`}
         body="It ended while this page was away. Its scorecard says how."
         testid="router-grade-gone"
         action={<Button onPress={onEnded}>Open its scorecard</Button>}
@@ -493,7 +568,7 @@ export function RouterGradeRunningPage({
   const over = step !== undefined && step.ended !== null;
   return (
     <ReviewPage
-      label={`Grading the router ${router}`}
+      label={`Grading the router ${name}`}
       data-testid="router-grade-running"
       summary={over ? "It has ended." : "Stopping keeps what ran so far."}
       summaryReserve={["It has ended.", "Stopping keeps what ran so far."]}
@@ -521,7 +596,7 @@ export function RouterGradeRunningPage({
         },
       }}
     >
-      <GradingHeading name={`Grading the router ${router}`} />
+      <GradingHeading name={`Grading the router ${name}`} />
       {stopRefused !== undefined && (
         <Notice
           cause={`router-grade-stop:${grade}`}
@@ -532,23 +607,31 @@ export function RouterGradeRunningPage({
           {stopRefused}
         </Notice>
       )}
-      {over && step.said !== null && (
-        // An end with words to say: something went wrong on the way (not recorded, chats that
-        // did not start, a fault), so its scorecard may not be there to open.
+      {over && !opensItsScorecard(step, router) && (
+        // An end with words to say: something went wrong on the way, or the router it graded is
+        // no longer chosen here, so its scorecard is offered only where it can open.
         <Notice
           cause={`router-grade-ended:${grade}`}
-          tone="trouble"
+          tone={step.said === null ? "news" : "trouble"}
           label="The grade ended"
-          fixes={[
-            { label: "Open its scorecard", onPress: onEnded },
-            { label: "Back to Routing", onPress: onBack },
-          ]}
+          fixes={
+            step.recorded && step.router === router
+              ? [
+                  { label: "Open its scorecard", onPress: onEnded },
+                  { label: "Back to the list", onPress: onBack },
+                ]
+              : [{ label: "Back to the list", onPress: onBack }]
+          }
         >
-          <span data-testid="router-grade-ended">{endSaid(step)}</span>
+          <span data-testid="router-grade-ended">
+            {step.router === router
+              ? endSaid(step)
+              : `${endSaid(step)} It graded the router ${step.router}, no longer chosen here: choose it again to read its scorecard.`}
+          </span>
         </Notice>
       )}
       <GradeProgress
-        label={`How far the grade of the router ${router} is`}
+        label={`How far the grade of the router ${name} is`}
         ran={step?.ran ?? 0}
         of={step?.of ?? 0}
         tokens={step?.tokens ?? null}

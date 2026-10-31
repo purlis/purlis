@@ -190,6 +190,9 @@ fn plan_of(
 pub struct RouterGradeStep {
     pub plane: PlaneId,
     pub router: String,
+    /// The scope that chose it, as its grades are read: only that scope's page shows it (#4222).
+    pub workspace: Option<String>,
+    pub persona: Option<String>,
     pub grade: String,
     pub ran: u32,
     pub of: u32,
@@ -204,21 +207,47 @@ pub struct RouterGradeStep {
     /// start, that it was not recorded or could not be held to its cap, or a fault. `None` for
     /// an end its scorecard says, which the window then opens (#4222), as a skill's grade's.
     pub said: Option<String>,
+    /// Whether its end is in the record, so a scorecard is there to open (#4222).
+    pub recorded: bool,
 }
 
-/// **The latest step of the router's grade `grade`, where it runs in `plane` now** (#4222): what
-/// its page starts from when it opens while the grade runs, as a skill's grade's page starts from
-/// `skill_grades`. `None` once it runs no more.
+/// **Each project's router grade that ended last, as it was told** (#4222): a page opens only
+/// once `router_grade_start` has answered, and a grade can end before that, so its end is read
+/// here and never lost. At most one per project, held in memory alone.
+static LAST_ENDED: std::sync::Mutex<Vec<RouterGradeStep>> = std::sync::Mutex::new(Vec::new());
+
+fn last_ended() -> std::sync::MutexGuard<'static, Vec<RouterGradeStep>> {
+    LAST_ENDED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Keeps `step`, an end, as its project's last.
+fn keep_end(step: &RouterGradeStep) {
+    let mut all = last_ended();
+    all.retain(|one| one.plane != step.plane);
+    all.push(step.clone());
+}
+
+/// **The latest step of the router's grade `grade` in `plane`** (#4222): what its page starts
+/// from when it opens, as a skill's grade's page starts from `skill_grades`: where it runs, or
+/// its end where it is the project's last. `None` for any other.
 pub(crate) fn step_of_running(plane: &PlaneId, grade: &str) -> Option<RouterGradeStep> {
-    running()
+    let running_now = running()
         .get(grade)
         .filter(|one| one.plane == *plane)
-        .and_then(|one| one.router_step.clone())
+        .and_then(|one| one.router_step.clone());
+    running_now.or_else(|| {
+        last_ended()
+            .iter()
+            .find(|one| one.plane == *plane && one.grade == grade)
+            .cloned()
+    })
 }
 
-/// **Where the router's grade `grade` is now** (#4222): its latest step while it runs, `None`
-/// once it runs no more (its scorecard then says how it ended). Read only, from this app's own
-/// record of the grades running, as Stop is.
+/// **Where the router's grade `grade` is now** (#4222): its latest step while it runs, its end
+/// where it is the project's last, else `None` (its scorecard then says how it ended). Read only,
+/// from this app's own memory of its grades, as Stop is.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn router_grade_running(
@@ -398,10 +427,16 @@ pub(crate) async fn router_grade_start(
         // the grade runs (`router_grade_running`, #4222).
         let step_of = {
             let (plane, router, grade) = (plane.clone(), router.clone(), id.clone());
+            let (workspace, persona) = (planned.workspace.clone(), planned.persona.clone());
             let limit_usd = limits.cost_usd;
-            move |spent: Spent, ended: Option<GradeEnded>, said: Option<String>| RouterGradeStep {
+            move |spent: Spent,
+                  ended: Option<GradeEnded>,
+                  said: Option<String>,
+                  recorded: bool| RouterGradeStep {
                 plane: plane.clone(),
                 router: router.clone(),
+                workspace: workspace.clone(),
+                persona: persona.clone(),
                 grade: grade.clone(),
                 ran: spent.chats,
                 of,
@@ -411,6 +446,7 @@ pub(crate) async fn router_grade_start(
                 cap: cap as f64,
                 ended,
                 said,
+                recorded,
             }
         };
         {
@@ -433,7 +469,7 @@ pub(crate) async fn router_grade_start(
                     after_edit: None,
                     step: None,
                     // Held from the start: a page opened before its first chat ends finds it.
-                    router_step: Some(step_of(Spent::default(), None, None)),
+                    router_step: Some(step_of(Spent::default(), None, None, false)),
                 },
             );
         }
@@ -477,16 +513,21 @@ pub(crate) async fn router_grade_start(
             .name("purlis-router-grade".to_owned())
             .spawn(move || {
                 let marker = std::cell::RefCell::new(marker);
-                let tell = |spent: Spent, ended: Option<GradeEnded>, said: Option<String>| {
-                    let step = step_of(spent, ended, said);
+                let tell = |spent: Spent,
+                            ended: Option<GradeEnded>,
+                            said: Option<String>,
+                            recorded: bool| {
+                    let step = step_of(spent, ended, said, recorded);
                     // Kept while it runs, so a page opened later starts from it; an end is told
-                    // once it runs no more, and kept nowhere.
-                    if let Some(one) = running().get_mut(&grade) {
+                    // once it runs no more, and kept as the project's last.
+                    if step.ended.is_some() {
+                        keep_end(&step);
+                    } else if let Some(one) = running().get_mut(&grade) {
                         one.router_step = Some(step.clone());
                     }
                     let _ = app.emit(EVENT, step);
                 };
-                tell(Spent::default(), None, None);
+                tell(Spent::default(), None, None, false);
                 let run = || {
                     let snapshots: Vec<_> = planned
                         .copies
@@ -518,7 +559,7 @@ pub(crate) async fn router_grade_start(
                         profile: &profile,
                         stop: &stop,
                         spent: Spent::default(),
-                        tell: &|spent, _asked| tell(spent, None, None),
+                        tell: &|spent, _asked| tell(spent, None, None, false),
                         // Said in its marker as each chat ends (#3582, #3616).
                         on_spent: &|spent| {
                             if let Some(marker) = marker.borrow_mut().as_mut()
@@ -559,6 +600,7 @@ pub(crate) async fn router_grade_start(
                     grades::kept::sweep_of(&root, &kept_of(&planned));
                     drop(marker.borrow_mut().take());
                     running().remove(&grade);
+                    let in_record = recorded.is_some();
                     let said = match (&graded.report.not_started, recorded) {
                         (Some(why), _) => Some(why.clone()),
                         (None, None) => Some(
@@ -582,12 +624,14 @@ pub(crate) async fn router_grade_start(
                         },
                         Some(graded.report.ended.into()),
                         said,
+                        in_record,
                     );
                 };
                 held_to_its_end(&grade, run, || {
                     // Recorded as interrupted, unless the fault came once it was recorded whole.
                     // Its lock let go of first: a start reads a held lock as a grade that runs.
                     drop(marker.borrow_mut().take());
+                    // Either way below, it is in the record.
                     let said = if record_interrupted(&root).contains(&grade) {
                         "A fault in purlis ended the router's grade before it was scored, so it \
                          is recorded as interrupted: grade it again."
@@ -598,6 +642,7 @@ pub(crate) async fn router_grade_start(
                         Spent::default(),
                         Some(GradeEnded::Failed),
                         Some(said.to_owned()),
+                        true,
                     );
                 });
             })

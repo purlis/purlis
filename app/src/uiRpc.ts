@@ -1089,9 +1089,9 @@ export const commands = {
 	 */
 	routerGradeChat: (plane: PlaneId, workspace: string | null, persona: string | null, grade: string, chat: string) => typedError<string, string>(__TAURI_INVOKE("router_grade_chat", { plane, workspace, persona, grade, chat })),
 	/**
-	 *  **Where the router's grade `grade` is now** (#4222): its latest step while it runs, `None`
-	 *  once it runs no more (its scorecard then says how it ended). Read only, from this app's own
-	 *  record of the grades running, as Stop is.
+	 *  **Where the router's grade `grade` is now** (#4222): its latest step while it runs, its end
+	 *  where it is the project's last, else `None` (its scorecard then says how it ended). Read only,
+	 *  from this app's own memory of its grades, as Stop is.
 	 */
 	routerGradeRunning: (plane: PlaneId, grade: string) => typedError<RouterGradeStep | null, string>(__TAURI_INVOKE("router_grade_running", { plane, grade })),
 	/**  **The opt-in of the copy of `skill` at `level`**, where it is on. */
@@ -9505,6 +9505,9 @@ export type RouterGradeSkill = {
 export type RouterGradeStep = {
 	plane: PlaneId,
 	router: string,
+	/**  The scope that chose it, as its grades are read: only that scope's page shows it (#4222). */
+	workspace: string | null,
+	persona: string | null,
 	grade: string,
 	ran: number,
 	of: number,
@@ -9523,6 +9526,8 @@ export type RouterGradeStep = {
 	 *  an end its scorecard says, which the window then opens (#4222), as a skill's grade's.
 	 */
 	said: string | null,
+	/**  Whether its end is in the record, so a scorecard is there to open (#4222). */
+	recorded: boolean,
 };
 
 /**

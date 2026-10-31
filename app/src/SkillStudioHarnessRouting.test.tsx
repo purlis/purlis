@@ -512,6 +512,8 @@ describe("the Routing page (#3692)", () => {
     const step = {
       plane: PLANE,
       router: "relevance",
+      workspace: "ops",
+      persona: null,
       grade: "01GRADE",
       ran: 0,
       of: 12,
@@ -521,6 +523,7 @@ describe("the Routing page (#3692)", () => {
       cap: 200000,
       ended: null,
       said: null,
+      recorded: false,
     };
     const asked = core(() => studio([], { router: RELEVANCE }), {
       router_grade_plan: () => plan,

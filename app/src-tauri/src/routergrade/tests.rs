@@ -210,6 +210,8 @@ fn a_router_grade_s_page_finds_its_latest_step_while_it_runs_and_none_after() {
     let step = RouterGradeStep {
         plane: plane.clone(),
         router: "relevance".into(),
+        workspace: Some("ops".into()),
+        persona: None,
         grade: "router-step".into(),
         ran: 3,
         of: 8,
@@ -219,6 +221,7 @@ fn a_router_grade_s_page_finds_its_latest_step_while_it_runs_and_none_after() {
         cap: 200_000.0,
         ended: None,
         said: None,
+        recorded: false,
     };
     running().insert(
         "router-step".to_owned(),
@@ -232,10 +235,24 @@ fn a_router_grade_s_page_finds_its_latest_step_while_it_runs_and_none_after() {
             router_step: Some(step.clone()),
         },
     );
-    assert_eq!(step_of_running(&plane, "router-step"), Some(step));
+    assert_eq!(step_of_running(&plane, "router-step"), Some(step.clone()));
     // Another project's page never reads it, and an id nothing runs is no step.
     assert_eq!(step_of_running(&other, "router-step"), None);
     assert_eq!(step_of_running(&plane, "not-running"), None);
     running().remove("router-step");
+    assert_eq!(step_of_running(&plane, "router-step"), None);
+    // An end told before its page listened is still read, until the project's next end.
+    let ended = RouterGradeStep {
+        ended: Some(GradeEnded::ChatsDidNotStart),
+        said: Some("no profile".into()),
+        ..step
+    };
+    keep_end(&ended);
+    assert_eq!(step_of_running(&plane, "router-step"), Some(ended.clone()));
+    assert_eq!(step_of_running(&other, "router-step"), None);
+    keep_end(&RouterGradeStep {
+        grade: "router-next".into(),
+        ..ended
+    });
     assert_eq!(step_of_running(&plane, "router-step"), None);
 }

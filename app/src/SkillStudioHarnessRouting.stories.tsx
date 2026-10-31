@@ -221,6 +221,8 @@ const PLAN: RouterGradePlan = {
 const STEP: RouterGradeStep = {
   plane: "p",
   router: "relevance",
+  workspace: "smart-ide",
+  persona: null,
   grade: "01GRADING",
   ran: 7,
   of: 18,
@@ -230,6 +232,7 @@ const STEP: RouterGradeStep = {
   cap: 200000,
   ended: null,
   said: null,
+  recorded: false,
 };
 
 /** The studio tab as a view tab draws it, `width` by 520 px, opened at `page` on `scope`, at

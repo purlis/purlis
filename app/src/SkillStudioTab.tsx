@@ -25,6 +25,7 @@ import {
   RouterGradePlanPage,
   RouterGradeRunningPage,
   RouterGradeScorecardPage,
+  useRouterGradeRunning,
 } from "./RouterGrade";
 import { Button } from "./ui/button/Button";
 import { Badge } from "./ui/badge/Badge";
@@ -304,6 +305,10 @@ export function SkillStudioTab({
   // core did not make the last one asked for.
   const [copying, setCopying] = useState<{ from?: string; refused?: string }>();
   const { workspace, persona } = whoseChats(scope);
+  // A router's grade told as it goes, from whichever page: its end reads the router's line again.
+  const gradeRunning = useRouterGradeRunning(plane, workspace, persona, () =>
+    setDone((was) => was + 1),
+  );
   const key = scopeKey(scope);
   // What was read for another scope is not this one's: placeholders until this one's is.
   const studio = read?.key === key ? read.studio : undefined;
@@ -1464,6 +1469,10 @@ export function SkillStudioTab({
                   () => Promise.resolve({ tone: "news", label: "Router changed", text }),
                 )
               }
+              gradeRunning={gradeRunning}
+              onGradeRunning={(grade) =>
+                go({ page: "routing", scope, item: routerGradingItem(grade) })
+              }
               onGradePlan={() => go({ page: "routing", scope, item: ROUTER_GRADE_PLAN })}
               onScorecard={(grade) =>
                 go({ page: "routing", scope, item: routerGradeItem({ grade }) })
@@ -1500,7 +1509,7 @@ export function SkillStudioTab({
           onRunning={(grade) => go({ page: "routing", scope, item: routerGradingItem(grade) })}
           onCancel={toRouting}
         />
-      ) : routerGrading !== undefined && graded !== null ? (
+      ) : routerGrading !== undefined ? (
         <RouterGradeRunningPage
           plane={plane}
           router={graded}
@@ -1512,7 +1521,6 @@ export function SkillStudioTab({
               item: routerGradeItem({ grade: routerGrading }),
             })
           }
-          onGraded={() => setDone((was) => was + 1)}
           onBack={toRouting}
         />
       ) : routerGrade !== undefined && graded !== null ? (

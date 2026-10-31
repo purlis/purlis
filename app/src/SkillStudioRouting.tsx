@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import {
   commands,
+  type RouterGradeStep,
   type SkillPinner,
   type SkillRouterOffer,
   type StudioRouted,
@@ -79,6 +80,8 @@ export function RoutingFacts({
   persona,
   busy,
   onChoose,
+  gradeRunning,
+  onGradeRunning,
   onGradePlan,
   onScorecard,
 }: {
@@ -90,6 +93,9 @@ export function RoutingFacts({
   busy: boolean;
   /** Chooses `router` for `by`'s chats (null takes the choice out), and says `said` once it is. */
   onChoose: (by: SkillPinner, router: string | null, said: string) => void;
+  /** The router's grade running in this scope, and the way to its page and its Stop (#4222). */
+  gradeRunning?: RouterGradeStep;
+  onGradeRunning: (grade: string) => void;
   /** Opens the router's grade plan beside the list, a review page (#4222). */
   onGradePlan: () => void;
   /** Opens the scorecard of the router's grade `grade` beside the list (#3617). */
@@ -152,6 +158,17 @@ export function RoutingFacts({
             )}{" "}
             <Button size="sm" onPress={onGradePlan}>
               Grade the router…
+            </Button>
+          </Fact>
+        )}
+        {gradeRunning !== undefined && (
+          // Whichever router is chosen now: the grade spends until it is stopped.
+          <Fact label="Grading">
+            <span data-testid="skill-routing-grading">
+              {`The router ${gradeRunning.router}: ${gradeRunning.ran} of ${counted(gradeRunning.of, "chat", "chats")} done.`}
+            </span>{" "}
+            <Button size="sm" onPress={() => onGradeRunning(gradeRunning.grade)}>
+              Show the grade
             </Button>
           </Fact>
         )}

@@ -112,6 +112,8 @@ function renderPlan(over: { workspace?: string | null; persona?: string | null }
 const step = (over: Partial<RouterGradeStep> = {}): RouterGradeStep => ({
   plane: "p",
   router: "relevance",
+  workspace: "ops",
+  persona: null,
   grade: "01GRADE",
   ran: 0,
   of: 18,
@@ -121,6 +123,7 @@ const step = (over: Partial<RouterGradeStep> = {}): RouterGradeStep => ({
   cap: 200000,
   ended: null,
   said: null,
+  recorded: true,
   ...over,
 });
 
@@ -270,6 +273,39 @@ describe("Grade the router: its plan, a review page on Routing (SK-15e, #4222)",
     expect(screen.getByText(/A grade of the router relevance is running/)).toBeInTheDocument();
   });
 
+  it("offers no page of the same router's grade in another scope", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "router_grade_plan") return plan({ running: "01THERE" });
+      if (cmd === "start_options") return { profiles: [] };
+      if (cmd === "router_grade_running") return step({ grade: "01THERE", workspace: "web" });
+      return null;
+    });
+    renderPlan();
+    await screen.findByTestId("router-grade-another-running");
+    await new Promise((settled) => setTimeout(settled, 0));
+    expect(screen.queryByRole("button", { name: "Show it" })).toBeNull();
+  });
+
+  it("frees Start when a skill's grade running in the project ends", async () => {
+    let plans = 0;
+    mockIPC(
+      (cmd) => {
+        if (cmd === "router_grade_plan") {
+          plans += 1;
+          return plan({ running: plans === 1 ? "01SKILL" : null });
+        }
+        if (cmd === "start_options") return { profiles: [] };
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    renderPlan();
+    await screen.findByTestId("router-grade-another-running");
+    expect(unavailable(start())).toBe(true);
+    await emit("skill-grade", { plane: "p", grade: "01SKILL", ended: "whole" });
+    await waitFor(() => expect(unavailable(start())).toBe(false));
+  });
+
   it("names no grade of another's to show", async () => {
     mockIPC((cmd) => {
       if (cmd === "router_grade_plan") return plan({ running: "01SKILL" });
@@ -382,14 +418,13 @@ describe("Grade the router: its plan, a review page on Routing (SK-15e, #4222)",
 
 /** The running page of the grade 01GRADE, and what it told Routing. */
 function renderRunning() {
-  const told = { ended: vi.fn(), graded: vi.fn(), back: vi.fn() };
+  const told = { ended: vi.fn(), back: vi.fn() };
   render(
     <RouterGradeRunningPage
       plane="p"
       router="relevance"
       grade="01GRADE"
       onEnded={told.ended}
-      onGraded={told.graded}
       onBack={told.back}
     />,
   );
@@ -420,7 +455,6 @@ describe("A router's grade running, a page on Routing (#4222)", () => {
 
     await emit("router-grade", step({ ran: 18, ended: "whole" }));
     await waitFor(() => expect(told.ended).toHaveBeenCalledTimes(1));
-    expect(told.graded).toHaveBeenCalledTimes(1);
   });
 
   it("stops it on Stop, and keeps it going on Leave it running", async () => {
@@ -464,10 +498,55 @@ describe("A router's grade running, a page on Routing (#4222)", () => {
       "Graded in 2 chats. The grade ran, but this project could not be written, so it was not recorded.",
     );
     expect(told.ended).not.toHaveBeenCalled();
-    expect(told.graded).toHaveBeenCalledTimes(1);
     expect(unavailable(screen.getByRole("button", { name: "Stop" }))).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Open its scorecard" }));
     expect(told.ended).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers no scorecard for an end that was not recorded", async () => {
+    mockIPC(
+      (cmd) =>
+        cmd === "router_grade_running"
+          ? step({ ended: "whole", said: "It was not recorded.", recorded: false })
+          : null,
+      { shouldMockEvents: true },
+    );
+    const told = renderRunning();
+    await screen.findByTestId("router-grade-ended");
+    expect(screen.queryByRole("button", { name: "Open its scorecard" })).toBeNull();
+    expect(told.ended).not.toHaveBeenCalled();
+  });
+
+  it("reads an end that came before it listened, and opens its scorecard", async () => {
+    mockIPC((cmd) => (cmd === "router_grade_running" ? step({ ended: "stopped" }) : null), {
+      shouldMockEvents: true,
+    });
+    const told = renderRunning();
+    await waitFor(() => expect(told.ended).toHaveBeenCalled());
+  });
+
+  it("keeps Stop and names the grade's own router when another is chosen meanwhile", async () => {
+    mockIPC((cmd) => (cmd === "router_grade_running" ? step({ ran: 1 }) : null), {
+      shouldMockEvents: true,
+    });
+    const told = { ended: vi.fn(), back: vi.fn() };
+    render(
+      <RouterGradeRunningPage
+        plane="p"
+        router={null}
+        grade="01GRADE"
+        onEnded={told.ended}
+        onBack={told.back}
+      />,
+    );
+    await screen.findByRole("group", { name: "How far the grade of the router relevance is" });
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    await emit("router-grade", step({ ran: 2, ended: "whole" }));
+    expect(await screen.findByTestId("router-grade-ended")).toHaveTextContent(
+      "no longer chosen here",
+    );
+    expect(told.ended).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Open its scorecard" })).toBeNull();
   });
 
   it("says a grade that ended while the page was away, and opens its scorecard", async () => {
