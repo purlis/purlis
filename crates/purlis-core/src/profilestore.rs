@@ -353,6 +353,10 @@ pub fn sign_in_file_of(harness: &str) -> Option<&'static str> {
 /// that profile for its desktop and takes them in. A profile's name starts with no dot.
 pub const CARRIED: &str = ".carried";
 
+/// **Left in the profiles' folder by a runner whose chats are kept out of other harnesses' default
+/// folders**: only such a runner's default-folder sign-ins are carried. No chat writes there.
+pub const DEFAULTS_HELD: &str = ".default-folders-held";
+
 /// Where the carry put them before: only ever cleared, never taken in ([`made::take_carried`]).
 pub(crate) const CARRIED_BEFORE: &str = "carried";
 

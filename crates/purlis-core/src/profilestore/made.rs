@@ -399,6 +399,9 @@ pub(super) fn make_in(
 /// it taken in: its profiles are signed in again.
 pub(super) fn take_carried(homes: &Homes, home: &Path, record: &MachineProfile) {
     clear_carried_before(&homes.data);
+    if private_dirs(&homes.folders).is_ok() {
+        let _ = std::fs::write(homes.folders.join(super::DEFAULTS_HELD), "");
+    }
     let carried = super::carried_in(&homes.data);
     // A link for the folder itself: nothing is taken through it, and nothing removed through it.
     if crate::contain::no_link_on_the_way(&homes.data, &carried).is_err() {

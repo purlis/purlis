@@ -2848,7 +2848,7 @@ fn carried_under(
     env: &[(&str, &str)],
 ) -> std::process::Output {
     let mut command = std::process::Command::new("/bin/sh");
-    for name in ["PURLIS_DATA_HOME", "XDG_DATA_HOME"] {
+    for name in ["PURLIS_DATA_HOME", "XDG_DATA_HOME", "CODEX_HOME"] {
         command.env_remove(name);
     }
     command
@@ -2938,7 +2938,7 @@ fn a_carry_goes_under_the_data_home_the_runner_has() {
 #[cfg(unix)]
 #[test]
 fn an_image_naming_its_data_home_carries_nothing() {
-    for name in ["PURLIS_DATA_HOME", "XDG_DATA_HOME"] {
+    for name in ["PURLIS_DATA_HOME", "XDG_DATA_HOME", "CODEX_HOME"] {
         let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         let signed_in = from
             .path()
@@ -3044,6 +3044,14 @@ fn a_carry_takes_the_sign_ins_of_a_home_and_nothing_else() {
         old.join(".local/share/opencode/auth.json"),
     )
     .unwrap();
+    put(
+        old,
+        &format!(
+            ".local/share/purlis/profiles/{}",
+            crate::profilestore::DEFAULTS_HELD
+        ),
+        "",
+    );
     put(to.path(), ".codex/auth.json", "the new runner's own");
 
     let ran = carried(old, to.path());
@@ -3138,6 +3146,28 @@ fn a_carry_writes_nothing_through_a_link_on_its_way() {
     carried(from.path(), to.path());
 
     assert_eq!(std::fs::read_dir(&project).unwrap().count(), 0);
+}
+
+/// **A runner that left no mark carries no default-folder sign-in**: its profiles' it does.
+#[cfg(unix)]
+#[test]
+fn a_runner_with_no_mark_carries_no_default_folder() {
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    for file in [
+        ".claude/.credentials.json",
+        ".local/share/purlis/profiles/work/config/.credentials.json",
+    ] {
+        let at = from.path().join(file);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(at, "a sign-in").unwrap();
+    }
+
+    let ran = carried(from.path(), to.path());
+
+    assert!(ran.status.success(), "{ran:?}");
+    let batch = the_batch(to.path());
+    assert!(batch.join("work").is_dir());
+    assert!(!batch.join("claude").exists());
 }
 
 /// **A carry takes nothing through a link inside the old home either**: a profile's folder that

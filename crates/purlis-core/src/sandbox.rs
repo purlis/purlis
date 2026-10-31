@@ -6455,7 +6455,7 @@ pub(crate) fn applied_of(
         access: Access::ReadWrite,
         named: None,
         reach: Reach::AndBelow,
-        any_case: false,
+        any_case: machine.os == Os::MacOs,
     };
     for (folder, files) in signin::other_harnesses_defaults(harness, machine) {
         let whole = [denying(folder)];
