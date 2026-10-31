@@ -2167,7 +2167,33 @@ export const commands = {
 	 *  where it is the project's last, else `None` (its scorecard then says how it ended). Read only,
 	 *  from this app's own memory of its grades, as Stop is.
 	 */
-	routerGradeRunning: (plane: PlaneId, grade: string) => typedError<RouterGradeStep | null, string>(__TAURI_INVOKE("router_grade_running", { plane, grade })),
+	routerGradeRunning: (plane: PlaneId, grade: string) => typedError<{
+	plane: PlaneId,
+	router: string,
+	/**  The scope that chose it, as its grades are read: only that scope's page shows it (#4222). */
+	workspace: string | null,
+	persona: string | null,
+	grade: string,
+	ran: number,
+	of: number,
+	tokens: number | null,
+	/**
+	 *  What its chats have cost so far, in dollars, where they said, and the dollar limit it is
+	 *  held to: the running page's spend (#4222), as a skill's grade's.
+	 */
+	cost_usd: number | null,
+	limit_usd: number | null,
+	cap: number | null,
+	ended: GradeEnded | null,
+	/**
+	 *  What the window says of its end, where its scorecard cannot say it: why its chats did not
+	 *  start, that it was not recorded or could not be held to its cap, or a fault. `None` for
+	 *  an end its scorecard says, which the window then opens (#4222), as a skill's grade's.
+	 */
+	said: string | null,
+	/**  Whether its end is in the record, so a scorecard is there to open (#4222). */
+	recorded: boolean,
+} | null, string>(__TAURI_INVOKE("router_grade_running", { plane, grade })),
 	/**  **The opt-in of the copy of `skill` at `level`**, where it is on. */
 	skillGradeAfterEdit: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<{
 	profile: string,
