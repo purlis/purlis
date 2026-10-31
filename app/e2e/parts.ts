@@ -47,3 +47,4 @@ export function specsOfPart(files: readonly string[], part: string | undefined):
     (name) => (from === undefined || name >= from) && (until === undefined || name < until),
   );
 }
+// demo for #3596
