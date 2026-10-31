@@ -2,8 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState } from "react";
-import type { MoveSignIn, PlaneId, PlanRow } from "./bindings";
 import {
+  commands,
+  type ChatMove,
+  type MoveSignIn,
+  type PlaneId,
+  type PlanRow,
+  type PoolLimitOffer,
+} from "./bindings";
+import {
+  askMove,
   dismissMovedAfterSignIn,
   forgetMove,
   moveCancellable,
@@ -15,6 +23,8 @@ import {
   useMovedAfterSignIn,
 } from "./chatMoves";
 import { Notice, type NoticeAction } from "./Notice";
+import { saveLimits } from "./pools";
+import { RaiseLimit } from "./RaiseLimit";
 import { askProfileSignIn } from "./settings/links";
 import { DRIVEN } from "./settings/PoolProfiles";
 import { PoolSignIn, approvesIn, drivenPlan } from "./settings/PoolSignIn";
@@ -33,6 +43,9 @@ import { PoolSignIn, approvesIn, drivenPlan } from "./settings/PoolSignIn";
  * Try the move tells it the same after a sign-in elsewhere (Open in terminal). The strip's Cancel,
  * like Cancel move, cancels the move, and the chat stays here. Having gone ahead by itself, it
  * says it moved, until that is dismissed (#4135).
+ *
+ * **A move refused by a pool's limit offers to raise it** (#4313), as Start a chat does: saving
+ * the values asks for the move again.
  */
 export function MoveNotice({ plane, session }: { plane: PlaneId; session: number }) {
   const one = useChatMoves(plane)[session];
@@ -50,17 +63,7 @@ export function MoveNotice({ plane, session }: { plane: PlaneId; session: number
     );
   const said = moveSaid(one);
   if (said.trouble)
-    return (
-      <Notice
-        cause={`chat-move-failed:${session}`}
-        at="pane"
-        tone="trouble"
-        label="Move"
-        onDismiss={() => putAwayMove(plane, session)}
-      >
-        {said.words}
-      </Notice>
-    );
+    return <MoveFailed plane={plane} session={session} one={one} words={said.words} />;
   // Being made now, past cancelling (#3814): it says so, and Dismiss only hides the line.
   if (!moveCancellable(one))
     return (
@@ -94,6 +97,69 @@ export function MoveNotice({ plane, session }: { plane: PlaneId; session: number
       fixes={[{ label: "Cancel move", onPress: () => putAwayMove(plane, session) }]}
     >
       {said.words}
+    </Notice>
+  );
+}
+
+/** A move that did not happen, why, and the limit to raise where one refused it. */
+function MoveFailed({
+  plane,
+  session,
+  one,
+  words,
+}: {
+  plane: PlaneId;
+  session: number;
+  one: ChatMove;
+  words: string;
+}) {
+  const { from, to, why } = one;
+  const [offer, setOffer] = useState<PoolLimitOffer | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [refused, setRefused] = useState<string>();
+  useEffect(() => {
+    setOffer(null);
+    if (to === null || why === null) return;
+    let gone = false;
+    void commands
+      .poolLimitOfferForMove(to, why)
+      .catch(() => null)
+      .then((said) => {
+        if (!gone) setOffer(said);
+      });
+    return () => {
+      gone = true;
+    };
+  }, [to, why]);
+  const apply = async (values: ReadonlyArray<readonly [string, number]>) => {
+    if (offer === null) return;
+    setApplying(true);
+    setRefused(undefined);
+    const saved = await saveLimits(offer.pool, values);
+    if (saved === undefined) await askMove(plane, session, from, to);
+    else setRefused(saved);
+    setApplying(false);
+  };
+  return (
+    <Notice
+      cause={`chat-move-failed:${session}`}
+      at="pane"
+      tone="trouble"
+      label="Move"
+      onDismiss={() => putAwayMove(plane, session)}
+      under={
+        offer === null ? undefined : (
+          <RaiseLimit
+            offer={offer}
+            action="Save to the pool and move"
+            applying={applying}
+            refused={refused}
+            onApply={(values) => void apply(values)}
+          />
+        )
+      }
+    >
+      {words}
     </Notice>
   );
 }

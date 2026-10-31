@@ -265,6 +265,18 @@ pub fn over_limit(profile: &str, refused: &str) -> Option<OverLimit> {
         .cloned()
 }
 
+/// **The limits that refused a move to pool `pool` in the words `refused`** (#4313): a move's
+/// window line doesn't name a profile, and a move holds several, so it is found by its pool.
+#[must_use]
+pub fn over_limit_on(pool: &str, refused: &str) -> Option<OverLimit> {
+    OVER_LIMITS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .values()
+        .find(|over| over.pool.as_deref() == Some(pool) && refused.contains(&over.said))
+        .cloned()
+}
+
 /// The hits of a profile of `bytes` in `files`, against what `kept` is held to.
 fn limits_hit(kept: &Kept, bytes: u64, files: u64) -> Vec<LimitHit> {
     [

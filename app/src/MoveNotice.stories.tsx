@@ -13,6 +13,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ChatMove } from "./bindings";
 import { dismissMovedAfterSignIn, forgetMove, heardMove, movedAfterSignIn } from "./chatMoves";
 import { MoveNotice } from "./MoveNotice";
+import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
 const PLANE = "/home/op/project";
 
@@ -38,6 +39,21 @@ const meta = {
   component: Pane,
   beforeEach: () => {
     mockIPC((cmd) => {
+      if (cmd === "pool_limit_offer_for_move")
+        return {
+          pool: "builds",
+          hits: [
+            {
+              key: "profileSize",
+              plain: "Most a profile may send: size",
+              unit: "MiB",
+              in_force: 128,
+              needed: 150,
+              suggested: 192,
+            },
+          ],
+        };
+      if (cmd === "pool_limit_check") return 192;
       if (cmd === "pool_sign_in_start") return 1;
       // The login on the runner has not said its page yet.
       if (cmd === "pool_sign_in_next") return new Promise(() => undefined);
@@ -105,5 +121,32 @@ export const SigningIn: Story = {
     await expect(
       await canvas.findByRole("group", { name: "Signing work in on builds" }),
     ).toBeInTheDocument();
+  },
+};
+
+/** **A move refused by a pool's limit** (#4313): the suggestion to edit, and the press that saves
+ *  it and asks for the move again, by the keyboard. */
+export const RefusedByALimit: Story = {
+  beforeEach: () => {
+    heardMove(PLANE, {
+      ...WAITING,
+      stage: "failed",
+      sign_in: null,
+      why: "it needs 150 MiB, over this pool's limit of 128 MiB (Most a profile may send: size): raise it to 192 MiB",
+    });
+  },
+  play: async ({ canvas, userEvent }) => {
+    const box = await canvas.findByRole("textbox", { name: /Most a profile may send: size/ });
+    await expect(box).toHaveValue("192");
+    await expect(box).toHaveAccessibleDescription(/It needs 150 MiB/);
+    box.focus();
+    await untilFocused(() => box, "the suggested value");
+    expectFocusInSight();
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Save to the pool and move" }),
+      "Tab goes on to the press",
+    );
+    expectFocusInSight();
   },
 };
