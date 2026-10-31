@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793450849340,
+  "lastUpdate": 1793453607142,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33348,6 +33348,48 @@ window.BENCHMARK_DATA = {
             "value": 103.14740699999999,
             "unit": "ms",
             "extra": "median of 5 runs: 102.290, 102.389, 103.147, 103.379, 103.830 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "99bde261aa4253e0a382b40802da0ccac852aa02",
+          "message": "The purlis UI skill (#2928) (#3431)\n\nbuilding-purlis-ui is the skill an agent loads to build or change the\nwindow: compose the families in app/src/ui, add parts under since NEXT,\nhold the closed state list, WCAG 2.2 AA and the consent marks, write\nstories with play tests and CI-drawn baselines, prototype a design\nchange first and build it 1:1, then run the checks. It points into\ndocs/ui-primitives.md, docs/design-system.md, docs/component-stories.md,\nthemes.md and the ADRs rather than restating them.\n\nbuildingSkill.test.ts pins it: every repository path and doc anchor it\nnames exists, every npm script it runs is the app's, its state list is\nthe engine's STATES, and NEXT is the manifest's.\n\nThe \"still square\" notes leave the theme skill and themes.md (N10): the\nstrips they named are gone, and the rail, title-bar chips and session\ntabs round through their parts. Only a tree's rows wait for #2911.\n\nThe skill joins SHIPPED_SKILLS and the plugin's skill lists, and\nAGENTS.md points UI work at it.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T13:08:18Z",
+          "tree_id": "86c1c616b511e1523525502d69e8db573654e20a",
+          "url": "https://github.com/purlis/purlis/commit/99bde261aa4253e0a382b40802da0ccac852aa02"
+        },
+        "date": 1793453603168,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.669554,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.635, 0.642, 0.670, 0.682, 0.694 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5096685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.501, 16.509, 16.510, 16.564, 16.571 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.4720525,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.625, 101.727, 102.472, 102.480, 102.988 ms"
           }
         ]
       }
