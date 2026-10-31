@@ -118,12 +118,14 @@ fn suspensions_and_deletions_count_up_by_pool_and_cause() {
     let metrics = Metrics::default();
     metrics.suspended("team", Cause::Stopped);
     metrics.suspended("team", Cause::Stopped);
+    metrics.suspended("team", Cause::Idle);
     metrics.deleted("team", Cause::Requested);
     metrics.deleted("gpu", Cause::Requested);
     let text = metrics.render(&[], &[]);
     let said = lines(&text);
     for line in [
         r#"purlis_cluster_operator_suspensions_total{pool="team",cause="stopped"} 2"#,
+        r#"purlis_cluster_operator_suspensions_total{pool="team",cause="idle"} 1"#,
         r#"purlis_cluster_operator_claims_deleted_total{pool="gpu",cause="requested"} 1"#,
         r#"purlis_cluster_operator_claims_deleted_total{pool="team",cause="requested"} 1"#,
     ] {

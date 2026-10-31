@@ -1050,6 +1050,26 @@ pub fn before_cluster_link(
     checked
 }
 
+/// **Asks for the cluster pool `name`'s idle runner to run again** (#3980), as a chat starts there. No
+/// check, view, redial or kill switch asks this: they never wake a runner (ADR 0089, amended
+/// 2026-10-27, item 5). A word that cannot be written refuses nothing: the check every
+/// link makes says why the runner is not there.
+pub fn run_cluster_runner_again(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+) {
+    let Ok(Some((pool, kept))) = runners::cluster_runner_for(config_root, name) else {
+        return;
+    };
+    if let Err(why) = pool
+        .kubectl(kubectl)
+        .run_again_if_idle(&kept.claimed.namespace, &kept.claimed.name)
+    {
+        tracing::warn!("purlis: pool {name}'s idle runner could not be asked to run again: {why}");
+    }
+}
+
 /// [`before_cluster_link`], for a link built for the runner `reached` names
 /// ([`runners::ClusterKept::reached`]): refused unless that is the runner kept under `name` now.
 pub fn before_cluster_link_to(

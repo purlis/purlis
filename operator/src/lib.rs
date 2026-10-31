@@ -50,6 +50,7 @@ mod admission;
 pub mod doctor;
 pub mod forge;
 pub mod github;
+pub mod lifecycle;
 pub mod metrics;
 pub mod mint;
 pub mod person;

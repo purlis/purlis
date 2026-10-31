@@ -265,11 +265,24 @@ spec:
   that keeps runners warm takes one already counted. A kept Claim is still refused once warm
   runners fill the quota. The times are a whole number followed by `s`, `m`
   or `h`, as a Docker pool's `suspendAfter` is (`1d` is refused; write `24h`):
-  - `idleAfter` (30m, a minute at least): how long a runner is idle before it is suspended, as
-    `stopped` suspends. Idle is no running chat, no open stream, no forwarded request and no
-    build; a runner a live chat owns, or whose browser holds an Ask, is never idle. It is a
-    different clock from a runner left without a link, which a Docker pool's runner suspends
-    itself after (its `suspendAfter`); a cluster pool's runner does not yet (#3703).
+  - `idleAfter` (30m, a minute at least): how long a paired runner is idle before it is suspended,
+    as `stopped` suspends: its pod ends and a kept Claim's volume stays (#3980). Idle is no chat
+    (a live chat waiting on the person counts as running), no browser (one holding an Ask among
+    them), and no link holding a project. The runner is the only one that knows, so it says so
+    by ending itself with the termination message `purlis-runner-idle`, which the operator reads
+    from the pod's status. It needs no new right, and a runner image older than this never says
+    it, so it is never suspended. The Claim's `Ready` is then `False` with the reason `Idle`, its
+    `Idle` condition is `True`, and the next chat its desktop starts there runs it again: the
+    desktop writes that condition's time in the annotation `runners.purlis.dev/run-again`, which
+    you can do by hand too. That start may be refused while the runner comes back; start it
+    again a minute later. **A fresh Claim's runner keeps nothing**, so it comes back with a new
+    key, which its desktop refuses as it does after `stopped`: make its Claim again. A Pool or
+    Claim set `stopped` and back leaves an idle runner suspended. An idle Claim keeps no runner
+    warm. A runner that says it is idle waits up to five minutes, serving nothing, for the
+    operator to suspend it, and serves again if it does not. A running runner takes a change to
+    `idleAfter` when it next starts, and is still vouched for meanwhile. It is a different
+    clock from a runner left without a link, which a Docker pool's runner suspends itself after
+    (its `suspendAfter`); a cluster pool's runner does not yet (#3703).
   - `deleteSuspendedAfter` (720h, 30 days): how long a kept Claim stays suspended before it is
     deleted, with its volume.
   - `noticeBeforeDelete` (168h, 7 days, shorter than `deleteSuspendedAfter`): how long before
@@ -278,9 +291,9 @@ spec:
     image, and a fresh Claim's is made again.
 
   The cluster refuses any other spelling, a time too long to read, a notice that is not shorter
-  than the deletion, and a warm count below 0 or above 20. **The four times are named, not yet acted on**: the operator suspends,
-  deletes and restarts on them once #3980 (idle), #3981 (retention and its Update) and #3982
-  (maximum age) are built.
+  than the deletion, and a warm count below 0 or above 20. **`deleteSuspendedAfter`,
+  `noticeBeforeDelete` and `maxAge` are named, not yet acted on**: the operator deletes and
+  restarts on them once #3981 (retention and its Update) and #3982 (maximum age) are built.
 - **A Claim is kept or fresh** (#2057), and its `kept` never changes after it is made: the other
   kind is another Claim.
   - **A kept Claim** (`kept: true`) gets a runner of its own, started cold, whose home is a
@@ -578,13 +591,13 @@ Prometheus, or a `ServiceMonitor`, at it:
 
 | Metric | Type | Labels | What it counts |
 |---|---|---|---|
-| `purlis_cluster_operator_claims` | gauge | `pool`, `namespace`, `state` | the Claims the operator watches; `state` is `Ready` when the runner is ready, otherwise the Claim's `Ready` reason (`Stopped`, `Starting`, `OverQuota`, …), and `Unknown` before the operator has said one |
+| `purlis_cluster_operator_claims` | gauge | `pool`, `namespace`, `state` | the Claims the operator watches; `state` is `Ready` when the runner is ready, otherwise the Claim's `Ready` reason (`Stopped`, `Idle`, `Starting`, `OverQuota`, …), and `Unknown` before the operator has said one |
 | `purlis_cluster_operator_warm_runners` | gauge | `pool`, `namespace` | the runners upstream says are warm and ready in each runner namespace |
-| `purlis_cluster_operator_suspensions_total` | counter | `pool`, `cause` | the runners the operator suspended; `cause` is `stopped` (the Claim's or its Pool's `stopped`) |
+| `purlis_cluster_operator_suspensions_total` | counter | `pool`, `cause` | the runners the operator suspended; `cause` is `stopped` (the Claim's or its Pool's `stopped`) or `idle` (nothing ran on it for its pool's `idleAfter`) |
 | `purlis_cluster_operator_claims_deleted_total` | counter | `pool`, `cause` | the Claims whose runner the operator removed as they were deleted; `cause` is `requested` (someone deleted the Claim) |
 
-The counters count from the operator's start. The causes grow as the operator suspends idle
-runners (#3980) and deletes long-suspended Claims (#3981).
+The counters count from the operator's start. The causes grow as the operator deletes
+long-suspended Claims (#3981).
 
 **Nothing may scrape them until you say who may.** The metrics name every namespace that holds
 a Claim and every runner namespace (`purlis-runners-<hash>`, one per person), with their

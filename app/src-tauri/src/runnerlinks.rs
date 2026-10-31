@@ -369,6 +369,19 @@ pub fn relaying(
     })
 }
 
+/// **Asks for a cluster pool's idle runner to run again** (#3980), as a chat starts on it. A Docker
+/// pool's runner is started by its link, and asks nothing here.
+pub fn runs_again(config_root: PathBuf) -> purlis_host::RunsAgain {
+    Arc::new(move |pool: &str| {
+        let Ok(Some((cluster, _))) = cluster_reached(&config_root, pool) else {
+            return;
+        };
+        if let Ok(kubectl) = crate::clusterpools::kubectl(&config_root) {
+            purlis_core::pools::run_cluster_runner_again(&config_root, &kubectl, cluster.name());
+        }
+    })
+}
+
 /// **Every runner this machine keeps, as the session host's kill switch reaches them** (#2051,
 /// ADR 0078 §7): each `<pool>/<runner>` kept under `config_root`, a draining one among them, with
 /// a link kept to it as a relayed window's is, or why there is none. Read as each stop is sent.
