@@ -69,8 +69,6 @@ struct Pool {
     followed: Arc<std::sync::atomic::AtomicBool>,
     config: tempfile::TempDir,
     relays: Arc<Mutex<Vec<String>>>,
-    desktop_host: Hosting,
-    handle: tokio::runtime::Handle,
 }
 
 impl Pool {
@@ -105,8 +103,7 @@ impl Pool {
             let (followed, relays) = (Arc::clone(&followed), Arc::clone(&relays));
             move |name: &str| {
                 relays.lock().unwrap().push(name.to_owned());
-                // A draining runner is reached by its own name, whatever the pool's runner is.
-                let now = followed.load(Ordering::SeqCst) && !name.contains('/');
+                let now = followed.load(Ordering::SeqCst);
                 let (connector, runner) = if now {
                     (to_new.clone(), NEW)
                 } else {
@@ -140,60 +137,19 @@ impl Pool {
             .draining_with(drains)
         });
         let handle = runtime.handle().clone();
-        let config = tempfile::tempdir().unwrap();
-        keep_runners(config.path(), false);
-        let connection = a_window(&desktop_host, &handle, config.path(), runtime);
-        Pool {
-            connection,
-            old,
-            new,
-            followed,
-            config,
-            relays,
-            desktop_host,
-            handle,
-        }
-    }
-
-    /// The window starts again: a connection of its own, on the host that kept running, by the
-    /// names it keeps. Its old links end.
-    fn window_restarts(&self, runtime: &tokio::runtime::Runtime) -> Arc<Connection> {
-        self.connection.links_to_pool_end("builds");
-        a_window(
-            &self.desktop_host,
-            &self.handle,
-            self.config.path(),
-            runtime,
-        )
-    }
-
-    /// An update is followed: a new runner takes the pool's new chats, and the old one drains.
-    fn follows(&self) {
-        keep_runners(self.config.path(), true);
-        self.followed.store(true, Ordering::SeqCst);
-    }
-}
-
-/// A window on `desktop_host`, keeping its runners and link names in `config`.
-fn a_window(
-    desktop_host: &Hosting,
-    handle: &tokio::runtime::Handle,
-    config: &Path,
-    runtime: &tokio::runtime::Runtime,
-) -> Arc<Connection> {
-    let window = Arc::new(
-        runtime
-            .block_on(a_link_to(desktop_host.clone(), || {}))
-            .expect("the window speaks to its host"),
-    );
-    let dial: Dial = Arc::new({
-        let (handle, host) = (handle.clone(), desktop_host.clone());
-        move |within, naming| open_within(&handle, within, a_named_link_to(host.clone(), naming))
-    });
-    let relayed: RelayedDial = Arc::new({
-        let (handle, host) = (handle.clone(), desktop_host.clone());
-        move |within, naming, pool: &str| {
-            let (host, pool) = (host.clone(), pool.to_owned());
+        let window = Arc::new(
+            runtime
+                .block_on(a_link_to(desktop_host.clone(), || {}))
+                .expect("the window speaks to its host"),
+        );
+        let dial: Dial = Arc::new({
+            let (handle, host) = (handle.clone(), desktop_host.clone());
+            move |within, naming| {
+                open_within(&handle, within, a_named_link_to(host.clone(), naming))
+            }
+        });
+        let relayed: RelayedDial = Arc::new(move |within, naming, pool: &str| {
+            let (host, pool) = (desktop_host.clone(), pool.to_owned());
             open_within(&handle, within, async move {
                 let link = a_bare_link_to(purlis_host::Routed::new(host), || {}).await?;
                 HostLink::over_relayed(
@@ -205,13 +161,28 @@ fn a_window(
                 )
                 .await
             })
+        });
+        let connection = Arc::new(Connection::default());
+        let config = tempfile::tempdir().unwrap();
+        keep_runners(config.path(), false);
+        connection.runners_in(config.path().to_path_buf());
+        connection.naming_in(config.path().to_path_buf());
+        connection.ready_relaying(window, dial, relayed);
+        Pool {
+            connection,
+            old,
+            new,
+            followed,
+            config,
+            relays,
         }
-    });
-    let connection = Arc::new(Connection::default());
-    connection.runners_in(config.to_path_buf());
-    connection.naming_in(config.to_path_buf());
-    connection.ready_relaying(window, dial, relayed);
-    connection
+    }
+
+    /// An update is followed: a new runner takes the pool's new chats, and the old one drains.
+    fn follows(&self) {
+        keep_runners(self.config.path(), true);
+        self.followed.store(true, Ordering::SeqCst);
+    }
 }
 
 fn started(sessions: &dyn SessionHost) -> Result<u32, String> {
@@ -222,15 +193,11 @@ fn started(sessions: &dyn SessionHost) -> Result<u32, String> {
 
 /// The project's chats, every start on pool `builds`, as the window routes them.
 fn routed(pool: &Pool, root: &Path) -> crate::routedsessions::RoutedSessions {
-    routed_on(&pool.connection, root)
-}
-
-fn routed_on(window: &Arc<Connection>, root: &Path) -> crate::routedsessions::RoutedSessions {
-    let connection = Arc::clone(window);
+    let connection = Arc::clone(&pool.connection);
     let place = root.to_path_buf();
     crate::routedsessions::RoutedSessions::new(
         root,
-        Box::new(HostedSessions::new(Arc::clone(window), root)),
+        Box::new(HostedSessions::new(Arc::clone(&pool.connection), root)),
         Arc::new(|_| Ok(Some("builds".to_owned()))),
         Arc::new(Default::default),
         Arc::new(move |name| {
@@ -288,63 +255,6 @@ fn a_start_during_a_drain_runs_on_the_pools_runner_and_the_old_chat_stays_reacha
     sessions.close(moved_on).expect("it closes on the new one");
 }
 
-/// **A window that restarts during a drain takes back the chat on the draining runner** (#4271),
-/// on a link of its own under the name it always kept, and the one on the pool's runner as before.
-/// Each is reached where it runs, and no new chat goes to the draining runner.
-#[test]
-fn a_window_that_restarts_during_a_drain_takes_back_both_runners_chats() {
-    let runtime = a_runtime();
-    let pool = Pool::on(&runtime);
-    let (_dir, root) = a_project();
-    let before = routed(&pool, &root);
-    let stayed = started(&before).expect("it starts on the runner");
-    pool.follows();
-    let moved_on = started(&before).expect("it starts on the pool's runner");
-    until("both run", || {
-        pool.old.ran().len() == 1 && pool.new.ran().len() == 1
-    });
-
-    let window = pool.window_restarts(&runtime);
-    let sessions = routed_on(&window, &root)
-        .every_start_on("builds")
-        .taking_back_from(Arc::new(|_| vec![format!("{OLD}/{OLD}")]));
-    until("the pool's runner gives its chat back", || {
-        sessions.left_running_in(moved_on, None)
-    });
-    until("the draining runner gives its chat back", || {
-        sessions.left_running_in(stayed, None)
-    });
-    assert!(
-        pool.relays
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|name| name == "builds/builds")
-    );
-    assert!(
-        !sessions.left_running_in(stayed + moved_on + 7, None),
-        "neither has a chat it did not start"
-    );
-
-    sessions.reattach(stayed, &|_| {}).expect("taken back");
-    sessions.reattach(moved_on, &|_| {}).expect("taken back");
-    sessions
-        .input(stayed, b"still there\n")
-        .expect("typed into");
-    sessions.input(moved_on, b"here\n").expect("typed into");
-    assert_eq!(pool.old.ran().len(), 1, "no chat started again");
-    assert_eq!(pool.new.ran().len(), 1, "no chat started again");
-
-    started(&sessions).expect("a new chat starts on the pool's runner");
-    until("it runs there", || pool.new.ran().len() == 2);
-    assert_eq!(
-        pool.old.ran().len(),
-        1,
-        "the draining runner starts no chat"
-    );
-    assert_eq!(sessions.pool_of(stayed).as_deref(), Some(OLD));
-}
-
 /// **A draining runner's log is read beside the pool's runner's** (#4271), said once for the pool.
 #[test]
 fn a_pools_log_is_read_from_each_link_still_open() {
@@ -372,94 +282,8 @@ fn a_pools_log_is_read_from_each_link_still_open() {
     assert!(sessions.runner_logs()[0].1.down);
 }
 
-/// **The window keeps one name for a pool** (#4271): a link to a draining runner takes back only
-/// what it started under the pool's name, and a name of its own would take back nothing.
-#[test]
-fn a_draining_runner_is_linked_to_under_its_pools_name() {
-    let runtime = a_runtime();
-    let pool = Pool::on(&runtime);
-    let (_dir, root) = a_project();
-    let names = |of: &str| {
-        purlis_core::windownames::name_for(
-            pool.config.path(),
-            &root.join(RELAYED_NAMES).join(of),
-            &[],
-        )
-        .unwrap()
-        .expose()
-        .to_owned()
-    };
-    let named = pool
-        .connection
-        .to_a_pool("builds/builds")
-        .name_for(&root)
-        .expect("it names its links");
-    assert_eq!(named.expose(), names("builds"));
-}
-
-/// **A chat on a draining runner taken back counts against its pool** (#4271): the window's mark
-/// that a chat ran without the sandbox is the pool's, never a name of `<pool>/<runner>`.
-#[test]
-fn a_draining_runners_link_marks_its_pool_untrusted() {
-    let runtime = a_runtime();
-    let pool = Pool::on(&runtime);
-    keep_runners(pool.config.path(), true);
-    let to_it = pool.connection.to_a_pool("builds/builds");
-
-    to_it.ran_unsandboxed().unwrap();
-
-    assert!(pool.connection.untrusts("builds"));
-    assert!(purlis_core::runnertaint::pool_ran_unsandboxed(
-        pool.config.path(),
-        "builds"
-    ));
-}
-
-/// **A pool's removal ends a draining runner's links too** (#4271), and a link to a runner kept no
-/// more ends as it goes.
-#[test]
-fn a_link_taken_back_ends_with_its_runner_and_with_its_pool() {
-    let runtime = a_runtime();
-    let pool = Pool::on(&runtime);
-    let (_dir, root) = a_project();
-    let before = routed(&pool, &root);
-    started(&before).expect("it starts");
-    pool.follows();
-    let window = pool.window_restarts(&runtime);
-    let to_it = window.to_a_pool("builds/builds");
-    let held = until_held(&to_it, &root);
-    assert_eq!(held.reached_runner(), Some(OLD));
-
-    window.links_to_gone_runners_end(pool.config.path());
-    assert_eq!(to_it.links_of(&root).len(), 1, "it is still kept");
-
-    let path =
-        purlis_core::machine::dir(pool.config.path()).join(purlis_core::machine::RUNNERS_FILE);
-    let mut kept: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    kept["runners"].as_array_mut().unwrap().remove(0);
-    write_private(&path, &kept.to_string());
-    window.links_to_gone_runners_end(pool.config.path());
-    assert_eq!(to_it.links_of(&root).len(), 0, "it went with its runner");
-
-    keep_runners(pool.config.path(), true);
-    until_held(&to_it, &root);
-    window.links_to_pool_end("builds");
-    assert_eq!(to_it.links_of(&root).len(), 0, "it went with its pool");
-}
-
-/// The link `to_it` holds `root` on, once a window's old one has let go of its name.
-fn until_held(to_it: &Arc<Connection>, root: &Path) -> Arc<HostLink> {
-    let held = Mutex::new(None);
-    until("the runner is linked to", || {
-        *held.lock().unwrap() = to_it.of_project(root, Duration::from_secs(5)).ok();
-        held.lock().unwrap().is_some()
-    });
-    held.into_inner().unwrap().expect("it is held")
-}
-
 /// **While a runner of the pool drains no fetch removes what only the other has** (#4271): after a
-/// restart the pool's runner has a link of its own and nothing else to say so.
+/// restart the pool's runner has one link and nothing else to say so.
 #[test]
 fn a_pool_drains_as_its_runners_are_kept() {
     let runtime = a_runtime();
@@ -468,7 +292,6 @@ fn a_pool_drains_as_its_runners_are_kept() {
     assert!(!to_it.pool_drains());
     keep_runners(pool.config.path(), true);
     assert!(to_it.pool_drains());
-    assert!(pool.connection.to_a_pool("builds/builds").pool_drains());
     assert!(!pool.connection.pool_drains(), "this machine's host's");
 }
 

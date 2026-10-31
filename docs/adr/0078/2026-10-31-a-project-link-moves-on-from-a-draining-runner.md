@@ -15,5 +15,4 @@ implementation, to be confirmed*.
    runner, and a window that restarts takes back its chats on the pool's runner under the name
    it always kept. *Decided in implementation, to be confirmed* (D-4248-2).
 3. **A window that restarts during a drain still reaches only the pool's runner**, as before this
-   amendment. Reaching a draining runner's chats across a restart stays open (#4271). Settled by
-   the [amendment of 2026-11-01](2026-11-01-a-restart-takes-back-a-draining-runners-chats.md).
+   amendment. Reaching a draining runner's chats across a restart stays open (#4271).
