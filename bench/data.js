@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793459247154,
+  "lastUpdate": 1793461645865,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33558,6 +33558,48 @@ window.BENCHMARK_DATA = {
             "value": 102.24304899999998,
             "unit": "ms",
             "extra": "median of 5 runs: 101.416, 101.861, 102.243, 102.584, 103.757 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ced2a31cf8f7ab727247dfeb17195cb5fcbfbfd0",
+          "message": "Runners: the cluster operator mints a token for a vouched runner (#4252)\n\n* Runners: the cluster operator mints a token for a vouched runner\n\nThe operator serves a TLS mint port. A runner proves its link key with a one-use challenge and gets\nan installation token limited by name to the repos on both its Pool and its Claim. Writing a Pool's\nspec.forge takes use on the key, in a policy and binding of their own, and the operator asks the\ncluster before each mint whether the requester may still use the Pool.\n\nRefs #4206\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6914729KENHQQZ902RW0BHD\nPurlis-Persona: steward\n\n* Runners: fix the mint's first compile\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6914729KENHQQZ902RW0BHD\nPurlis-Persona: steward\n\n* Runners: the mint's clippy\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6914729KENHQQZ902RW0BHD\nPurlis-Persona: steward\n\n* Runners: the mint test's clippy\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6914729KENHQQZ902RW0BHD\nPurlis-Persona: steward\n\n* Runners: the mint test's clippy, again\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6914729KENHQQZ902RW0BHD\nPurlis-Persona: steward\n\n* Runners: hold the mint's boundaries closer, from its reviews\n\nChanging a minting Pool's image takes use on its key. A token asks only for repo-level permissions\nthat administer nothing. A proof names the operator key it is for. A handshake has its own time\nlimit, only a running pod holds its key, and only the operator marks a namespace as its own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6914729KENHQQZ902RW0BHD\nPurlis-Persona: steward\n\n* Runners: the kind job finds the stand-in by the node's route\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6914729KENHQQZ902RW0BHD\nPurlis-Persona: steward\n\n* Runners: a mint holds the pod to its Pool's image, and writes at most\n\nA runner's pod must run its Pool's image as it is now. A token no longer asks for packages, and never\nfor a level above write.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6914729KENHQQZ902RW0BHD\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T14:46:49Z",
+          "tree_id": "1ad9377060f3f4665c0bddae9fd2fbc9fe0e94fa",
+          "url": "https://github.com/purlis/purlis/commit/ced2a31cf8f7ab727247dfeb17195cb5fcbfbfd0"
+        },
+        "date": 1793461642489,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.508156,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.505, 0.506, 0.508, 0.513, 0.520 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4745165,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.168, 16.281, 16.475, 16.596, 17.029 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.36480900000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.508, 101.173, 101.365, 101.475, 101.767 ms"
           }
         ]
       }
