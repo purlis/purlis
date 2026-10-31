@@ -116,19 +116,16 @@ async function theSkillsViewUnfolded(): Promise<void> {
   await chip.waitForDisplayed({ timeout: 20_000 });
   await chip.click();
   await $('[data-testid="skills-view"]').waitForDisplayed({ timeout: 20_000 });
-  await browser.waitUntil(
-    async () =>
-      browser.execute(() => {
-        const fold = [
-          ...document.querySelectorAll<HTMLElement>('[data-testid="skills-view"] button'),
-        ].find((one) => (one.textContent ?? "").startsWith("Left out"));
-        if (fold === undefined) return false;
-        if (fold.getAttribute("aria-expanded") === "true") return true;
-        fold.click();
-        return false;
-      }),
-    { timeout: 20_000, interval: 500, timeoutMsg: "the Skills view has no Left out to unfold" },
-  );
+  const fold = await $('[data-fold="left-out:fold"]');
+  await fold.waitForExist({
+    timeout: 20_000,
+    timeoutMsg: "the Skills view has no Left out to unfold",
+  });
+  if ((await fold.getAttribute("data-expanded")) === null) await fold.click();
+  await browser.waitUntil(async () => (await fold.getAttribute("data-expanded")) !== null, {
+    timeout: 10_000,
+    timeoutMsg: "Left out never unfolded",
+  });
 }
 
 /** **Opens the studio from the palette `OPENINGS` times**, each a new tab that reads the project
@@ -204,7 +201,6 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
     const effort: Effort = { presses: 0, characters: 0 };
     const beforeTheStudio = await tabNames();
     const started = Date.now();
-    let notOurs = 0;
 
     await fromThePalette("Open Skill studio", STUDIO_OF_ALPHA, effort);
     await press("New skill…", effort, '[data-testid="skill-studio"]');
@@ -222,20 +218,17 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       timeoutMsg: "the chat never came back to the front",
     });
 
-    // A chat keeps the skills it started with until it restarts on the same conversation: where
-    // its harness does not take the new one in by itself, the pane's Notice offers that.
-    // Waiting for a Notice that does not come is this test's, not the window's: it is taken off.
-    const restart = await $(`[data-testid="pane"][data-session="${chat.session}"]`).$(
-      "button=Restart",
-    );
-    const waiting = Date.now();
-    if (await restart.waitForExist({ timeout: 30_000 }).catch(() => false)) {
-      await restart.click();
-      effort.presses += 1;
-      await restart.waitForExist({ timeout: 40_000, reverse: true });
-    } else {
-      notOurs = Date.now() - waiting;
-    }
+    // A chat keeps the skills it started with until it restarts on the same conversation (decision
+    // 15), while Use skill… lists what the folders hold now: without this restart the line typed
+    // below would name a skill the harness was never handed. So the Notice is required.
+    const notice = await $(`[data-cause="skills-changed:${chat.session}"]`);
+    await notice.waitForExist({
+      timeout: 30_000,
+      timeoutMsg: `the running chat was never offered a restart for its new skill`,
+    });
+    await notice.$("button=Restart").click();
+    effort.presses += 1;
+    await notice.waitForExist({ timeout: 40_000, reverse: true });
 
     await fromThePalette("Use skill", "palette-row-tab.useskill:", effort);
     await $('[data-testid="use-skill"]').waitForDisplayed({ timeout: 20_000 });
@@ -268,7 +261,7 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       { timeout: 20_000, timeoutMsg: `the window never said it typed ${line}` },
     );
 
-    const verdict = useVerdict(Date.now() - started - notOurs, effort);
+    const verdict = useVerdict(Date.now() - started, effort);
     report(verdict.said);
     if (!verdict.met) throw new Error(`missed: ${verdict.said}`);
   });
@@ -362,6 +355,7 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
           .$('[data-part="below"]')
           .getText()
           .catch(() => "");
+        console.log(`outcome bar (${harness.kind}): ${state}'s row says: ${below}`);
         const problem = reasonProblem(below);
         if (problem !== undefined) problems.push(`${state}: ${problem}`);
         else if (WHAT_IT_DOES.includes(below))
