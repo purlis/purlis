@@ -2082,6 +2082,19 @@ export const commands = {
 	 */
 	skillTriggerTestsChat: (plane: PlaneId, level: SkillLevel, name: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_trigger_tests_chat", { plane, level, name, columns, rows })),
 	/**
+	 *  **"Ask a chat to write outcome evals"** (#2780; decision 43): a chat where `level`'s skills are
+	 *  reached from, with the core's prompt for the outcome evals of the skill `name` typed and never
+	 *  sent ([`drafts::asking_for_outcome_evals`]). Its write comes back as a draft.
+	 */
+	skillOutcomeEvalsChat: (plane: PlaneId, level: SkillLevel, name: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_outcome_evals_chat", { plane, level, name, columns, rows })),
+	/**
+	 *  **"Improve from runs"** (#2780; decision 59): a chat where `level`'s skills are reached from,
+	 *  with the core's prompt to read the recent runs and grades of the skill `name` and draft an edit
+	 *  typed and never sent ([`drafts::improving_from_runs`]). It never edits the skill: its write
+	 *  comes back as a draft.
+	 */
+	skillImproveChat: (plane: PlaneId, level: SkillLevel, name: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_improve_chat", { plane, level, name, columns, rows })),
+	/**
 	 *  **Try it** (decision 50): a scratch chat in a throwaway piece, armed with the built-in skills
 	 *  and the draft `id` alone, on `profile` (the project's default where none is picked), with the
 	 *  core's prompt typed and never sent. Tries a closed chat never ended (a quit, a crash) are
@@ -3063,7 +3076,8 @@ export const commands = {
 	 *  **Make the runner again** (#4149): the pool `name`'s runner, removed outside purlis, made
 	 *  again from the pool's own image and limits, with the sign-ins of its home where that is still
 	 *  there, and paired. The window then has it keep the pool's profiles, as after Add a pool. Refused for
-	 *  a runner Docker still has, which resumes as it is.
+	 *  a runner Docker still has, which resumes as it is. The chats of the runner it replaces do not
+	 *  exist on the new one, so the window's links to it end and each says it ended (#4168).
 	 */
 	dockerPoolMakeAgain: (name: string) => typedError<MadeAgain, string>(__TAURI_INVOKE("docker_pool_make_again", { name })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
@@ -3109,6 +3123,20 @@ export const commands = {
 	 *  runner keeps it the next time the pool's profiles are asked.
 	 */
 	poolProfileAdd: (pool: string, name: string, open: OpenProject) => typedError<null, string>(__TAURI_INVOKE("pool_profile_add", { pool, name, open })),
+	/**
+	 *  **The limits a start on `profile` was refused on, in the words `refused`** (spec #4275): what
+	 *  Start a chat offers beside that refusal. Asked of the core, never read from the words.
+	 */
+	poolLimitOffer: (profile: string, refused: string) => __TAURI_INVOKE<{
+	pool: string,
+	hits: PoolLimitHitRow[],
+} | null>("pool_limit_offer", { profile, refused }),
+	/**
+	 *  **Saves `value` as pool `pool`'s limit `key`** (spec #4275), the person's own press in their
+	 *  window: a chat has no way to it, and can only propose through the edit ask (Q6). It applies
+	 *  from the next attempt, with nothing restarted.
+	 */
+	poolLimitSet: (pool: string, key: string, value: number) => typedError<null, string>(__TAURI_INVOKE("pool_limit_set", { pool, key, value })),
 	/**
 	 *  **Takes profile `name` off pool `pool`** (#4047): its runner forgets it first, its folder
 	 *  and its sign-in there with it, then the pool's record leaves it out, starting from the
@@ -10413,6 +10441,26 @@ export type PoolDisk = {
 	 *  said apart rather than counted as nothing.
 	 */
 	not_listed: number,
+};
+
+/**  **A limit a start was refused on**, as Start a chat offers to raise it (spec #4275). */
+export type PoolLimitHitRow = {
+	/**  The limit's key: what [`pool_limit_set`] takes. */
+	key: string,
+	/**  Its name in plain words. */
+	plain: string,
+	/**  The word beside a number of it. */
+	unit: string,
+	in_force: number,
+	needed: number,
+	/**  The value offered, which the person can edit; none where no value would hold it. */
+	suggested: number | null,
+};
+
+/**  **What a refused start on a pool offers**: the pool, and each limit it was refused on. */
+export type PoolLimitOffer = {
+	pool: string,
+	hits: PoolLimitHitRow[],
 };
 
 /**

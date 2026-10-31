@@ -1457,6 +1457,32 @@ impl Chats {
         self.pools_in = config;
     }
 
+    /// **A runner's refusal of a signed-out profile, in its pool's words** (#4233): a start let
+    /// through while the runner fetched its harness is refused by the runner as a machine of its
+    /// own, whose words send the person to sign in on the wrong one. The row is asked again, which
+    /// raises the pool's own wait; any other refusal is as it was said.
+    fn in_the_pools_words(
+        &self,
+        why: String,
+        profile: Option<&str>,
+        workspace: Option<&str>,
+    ) -> String {
+        if !purlis_core::profilestore::sign_in::is_refusal(&why) {
+            return why;
+        }
+        let (Some(on_pools), Some(profile), Some(pool)) = (
+            &self.profiles_on_pools,
+            profile,
+            self.sessions.pool_for(workspace),
+        ) else {
+            return why;
+        };
+        match on_pools.ready(&self.project, &pool, profile) {
+            Err(words) => words,
+            Ok(_) => purlis_core::profilestore::onrunner::signed_out_on_the_runner(&pool, profile),
+        }
+    }
+
     /// Readies each chat's profile on the pool it starts on through `on_pools` (#2049).
     #[cfg(test)]
     pub fn readying_profiles_on_pools(
@@ -3655,14 +3681,13 @@ impl Chats {
         }
         // **Its profile is kept, and signed in, on the pool's runner before it starts there**
         // (#2049): signed in, it starts with nobody asked, a moved chat's too; signed out, it
-        // starts nothing and waits as one Ask to sign it in on that pool. Settings too large to
-        // go stay behind, and its tab says which (#4081).
-        let mut left_behind = None;
+        // starts nothing and waits as one Ask to sign it in on that pool. Settings over the pool's
+        // limits start nothing either, and say what to raise (spec #4275).
         if on_the_runner
             && let (Some(on_pools), Some(profile)) = (&self.profiles_on_pools, &chat.profile)
             && let Some(pool) = self.sessions.pool_for(workspace.as_deref())
         {
-            left_behind = on_pools.ready(&self.project, &pool, profile)?;
+            on_pools.ready(&self.project, &pool, profile)?;
         }
         // The services of this machine the person allowed it alone, which the runner is told
         // of: it leaves out those its own sandbox does not give, and asks about each (#2590).
@@ -3771,7 +3796,7 @@ impl Chats {
                 why == Why::New,
             )
         };
-        let mut late: Vec<String> = left_behind.into_iter().collect();
+        let mut late: Vec<String> = Vec::new();
         // An older Claude Code keeps its own proxy, and its first chat says so (#1665), marked
         // said once its tab shows it (#1699).
         let older = sandbox
@@ -4351,6 +4376,9 @@ impl Chats {
                     confinement = composed.confinement;
                     prompt_key = composed.prompt_key;
                     composed.number
+                })
+                .map_err(|why| {
+                    self.in_the_pools_words(why, chat.profile.as_deref(), workspace.as_deref())
                 }),
             _ => self.sessions.open(
                 // The number this chat already answers to, where it has one. A chat put

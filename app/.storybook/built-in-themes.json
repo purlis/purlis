@@ -610,6 +610,18 @@
             "alone": false
           },
           {
+            "token": "markdown.link",
+            "from": "danger.base",
+            "distance": 0.1,
+            "alone": false
+          },
+          {
+            "token": "chart.1",
+            "from": "danger.base",
+            "distance": 0.1,
+            "alone": false
+          },
+          {
             "token": "accent.base",
             "from": "state.waiting",
             "distance": 0.1,
@@ -1259,6 +1271,18 @@
           },
           {
             "token": "accent.fill-edge",
+            "from": "danger.base",
+            "distance": 0.1,
+            "alone": false
+          },
+          {
+            "token": "markdown.link",
+            "from": "danger.base",
+            "distance": 0.1,
+            "alone": false
+          },
+          {
+            "token": "chart.1",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false
@@ -1918,6 +1942,18 @@
             "alone": false
           },
           {
+            "token": "markdown.link",
+            "from": "danger.base",
+            "distance": 0.1,
+            "alone": false
+          },
+          {
+            "token": "chart.1",
+            "from": "danger.base",
+            "distance": 0.1,
+            "alone": false
+          },
+          {
             "token": "accent.base",
             "from": "state.waiting",
             "distance": 0.1,
@@ -2401,6 +2437,18 @@
           },
           {
             "token": "accent.fill-edge",
+            "from": "danger.base",
+            "distance": 0.1,
+            "alone": false
+          },
+          {
+            "token": "markdown.link",
+            "from": "danger.base",
+            "distance": 0.1,
+            "alone": false
+          },
+          {
+            "token": "chart.1",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false
@@ -2905,6 +2953,18 @@
           },
           {
             "token": "accent.fill-edge",
+            "from": "danger.base",
+            "distance": 0.1,
+            "alone": false
+          },
+          {
+            "token": "markdown.link",
+            "from": "danger.base",
+            "distance": 0.1,
+            "alone": false
+          },
+          {
+            "token": "chart.1",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false

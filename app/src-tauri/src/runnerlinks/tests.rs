@@ -563,6 +563,8 @@ fn work_with_settings_in(folder: &std::path::Path) -> purlis_core::profilestore:
         sandbox_only: false,
         pinned: None,
         settings_in: Some(folder.to_path_buf()),
+        limits: Default::default(),
+        highest: Default::default(),
     }
 }
 
@@ -626,7 +628,29 @@ fn a_runner_of_1_56_takes_settings_too_large_for_one_keep_in_batches() {
     assert!(sent.batches.len() >= 3, "{} batches", sent.batches.len());
     assert_eq!(sent.profile.settings, None);
     assert_eq!(sent.profile.settings_staged, Some(1));
-    assert!(sent.left_behind.is_empty());
+}
+
+/// **A runner before 1.64 stages no more than it did** (spec #4275): a pool's raised limit is
+/// held to that there, and one of 1.64 takes it.
+#[test]
+fn a_raised_limit_is_held_to_what_a_runner_before_1_64_stages() {
+    use purlis_core::poollimits::{Chosen, LimitId};
+    const OLD_MOST: usize = purlis_session_protocol::session::MOST_PROFILE_SETTINGS_FILES;
+    let folder = tempfile::tempdir().unwrap();
+    let many = folder.path().join("skills/many");
+    std::fs::create_dir_all(&many).unwrap();
+    for one in 0..=OLD_MOST {
+        std::fs::write(many.join(format!("{one}.md")), "x").unwrap();
+    }
+    let mut kept = work_with_settings_in(folder.path());
+    kept.limits = Chosen::default().with(LimitId::ProfileFiles, Some(9000));
+
+    let refused = for_a_runner_of(version(63), &kept).unwrap_err();
+    assert!(refused.contains("send less than 8192 files"), "{refused}");
+    assert!(!refused.contains("raise it"), "{refused}");
+
+    let sent = for_a_runner_of(version(64), &kept).unwrap();
+    assert_eq!(sent.profile.settings_staged, Some(OLD_MOST as u32 + 1));
 }
 
 /// **A runner's refusal is said as its own words, cut short** (#2049, L4): a runner cannot fill

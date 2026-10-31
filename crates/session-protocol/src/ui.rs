@@ -672,6 +672,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // a draft chat does. The person's own press in their window.
     "skill_trigger_tests_start",
     "skill_trigger_tests_chat",
+    "skill_outcome_evals_chat",
+    "skill_improve_chat",
     // A grade of a skill started or stopped (SK-16, #2779): it runs chats on the person's
     // profile, each started on a trigger test's query, and records the grade in the project.
     // The person's own press in their window, after the plan showed what it costs.
@@ -761,6 +763,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // removal deletes its sign-in there, so only the person's own window does.
     "pool_profile_add",
     "pool_profile_remove",
+    // A pool's limits (spec #4275): the person changes them directly, and a chat only proposes
+    // through the edit ask (Q6), so only their own window saves one, or reads the offer to.
+    "pool_limit_offer",
+    "pool_limit_set",
     // Signing a profile in on a pool's runner with no terminal (#4042): it runs the runner's
     // own sign-in and passes the person's code to it, so only their own window drives it.
     "pool_sign_in_start",

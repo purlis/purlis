@@ -24,6 +24,7 @@ import {
 } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { UseSkillOpener } from "./UseSkill";
+import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
 import { bannerOf, skillFileOf, whoGetsIt } from "./SkillPage";
 import { diffLineKind, lifecycleSaid, revertSaid } from "./SkillDetails";
 import { groupSaid } from "./SkillPanels";
@@ -752,6 +753,35 @@ describe('a skill\'s "…" menu', () => {
         lifecycle: { state: "active" },
       }),
     );
+  });
+
+  it("asks for a chat to improve the skill from its runs, and writes nothing itself", async () => {
+    const asked = core();
+    const user = userEvent.setup();
+    renderStudioAt(at(DEPLOY));
+    await page();
+    const asks: SkillChatAsk[] = [];
+    const heard = (event: Event) => asks.push((event as CustomEvent<SkillChatAsk>).detail);
+    window.addEventListener(SKILL_CHAT, heard);
+    await chooseMore("deploy", /^Improve from runs/, user);
+    window.removeEventListener(SKILL_CHAT, heard);
+    expect(asks).toMatchObject([{ kind: "improve", name: "deploy" }]);
+    // The press only asks the window for a chat: no command that changes a skill is called.
+    expect(asked.some((one) => one.cmd === "skill_draft_accept" || one.cmd === "skill_edit")).toBe(
+      false,
+    );
+  });
+
+  it("holds Improve from runs where the skill's files can't be reached, and says why", async () => {
+    const OUTSIDE = skill("deploy", { folder: "/elsewhere/deploy" });
+    core([OUTSIDE]);
+    const user = userEvent.setup();
+    renderStudioAt(at(OUTSIDE));
+    await page();
+    await user.click(screen.getByRole("button", { name: "More for deploy" }));
+    const menu = await screen.findByRole("menu", { name: "More for deploy" });
+    const row = within(menu).getByRole("menuitem", { name: /^Improve from runs/ });
+    expect(row).toHaveAttribute("aria-disabled", "true");
   });
 
   it("opens the skill's file in a tab of its own", async () => {

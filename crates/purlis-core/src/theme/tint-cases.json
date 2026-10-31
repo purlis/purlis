@@ -1046,6 +1046,16 @@
     "distance": 0.1
    },
    {
+    "token": "markdown.link",
+    "from": "danger.base",
+    "distance": 0.1
+   },
+   {
+    "token": "chart.1",
+    "from": "danger.base",
+    "distance": 0.1
+   },
+   {
     "token": "accent.base",
     "from": "state.waiting",
     "distance": 0.1,
@@ -2965,11 +2975,11 @@
   },
   {
    "token": "markdown.link",
-   "held": false
+   "held": true
   },
   {
    "token": "chart.1",
-   "held": false
+   "held": true
   },
   {
    "token": "layer.workspace",

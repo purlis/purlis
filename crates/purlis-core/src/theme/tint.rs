@@ -197,7 +197,7 @@ pub struct Apart {
 /// each accent-hued token drawn beside danger from it as the accent is ([`ACCENT_KIN`]); and the
 /// accent from the waiting colour (waiting is distinguishable from the accent, #3130), so a
 /// yellow or orange workspace's accent never reads as the waiting signal.
-pub const APART: [Apart; 13] = [
+pub const APART: [Apart; 15] = [
     danger_apart("accent.base"),
     // Keep blocked's edge is a plain control's (#3177).
     Apart {
@@ -213,6 +213,8 @@ pub const APART: [Apart; 13] = [
     danger_apart(ACCENT_KIN[4]),
     danger_apart(ACCENT_KIN[5]),
     danger_apart(ACCENT_KIN[6]),
+    danger_apart(ACCENT_KIN[7]),
+    danger_apart(ACCENT_KIN[8]),
     // The waiting edge of an ask or a Notice never draws in the accent, nor in the edges drawn
     // in it (#3130): each gives way alone, and the accent's washes keep their colour.
     waiting_apart(WAITING_KIN[0]),
@@ -245,9 +247,10 @@ const fn waiting_apart(token: &'static str) -> Apart {
 /// The tokens in the accent's hue that the window draws beside the danger colour: the focus
 /// ring, the selected row's edge, the accent's surface and the active tab (#2526), and the
 /// primary's fill at rest and under the pointer and its edge (#3177), which stand beside a danger
-/// answer.
+/// answer; and a link and the first chart colour, which a person reads as the accent (#3049), so a
+/// red, orange or pink workspace never draws a link that looks like danger.
 /// Each is kept apart from danger as the accent is, by the tint and by the floors.
-pub const ACCENT_KIN: [&str; 7] = [
+pub const ACCENT_KIN: [&str; 9] = [
     "focus.ring",
     "list.selected-edge",
     "accent.surface",
@@ -255,6 +258,8 @@ pub const ACCENT_KIN: [&str; 7] = [
     "accent.fill",
     "accent.fill-hover",
     "accent.fill-edge",
+    "markdown.link",
+    "chart.1",
 ];
 
 /// `token` held [`DANGER_APART`] from `danger.base`.

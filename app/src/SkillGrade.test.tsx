@@ -706,7 +706,9 @@ describe("a grade running (S6)", () => {
     expect(totals).toHaveTextContent("Tokens36,000of 200,000 tokens");
     // Another skill's grade, or another grade, moves nothing here.
     await emit("skill-grade", step({ grade: "01OTHER", ran: 9 }));
+    await emit("skill-grade", step({ skill: "other", ended: "stopped" }));
     expect(totals).toHaveTextContent("Chats4 of 12");
+    expect(onEnded).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     await waitFor(() =>

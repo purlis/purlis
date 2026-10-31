@@ -224,6 +224,39 @@ fn a_router_s_plan_consents_to_its_profile_model_and_limits_3618() {
 }
 
 #[test]
+fn a_skill_s_grade_running_is_no_router_s_step() {
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!("plane-of-a-skill-step")).unwrap();
+    running().insert(
+        "skill-step".to_owned(),
+        Running {
+            plane: plane.clone(),
+            skill: "deploy".into(),
+            level: None,
+            stop: Arc::new(AtomicBool::new(false)),
+            after_edit: None,
+            step: RunningStep::Skill(crate::skillgrade::SkillGradeStep {
+                plane: plane.clone(),
+                skill: "deploy".into(),
+                level: crate::skillchange::SkillLevel::Project { local: false },
+                grade: "skill-step".into(),
+                ran: 1,
+                of: 2,
+                tokens: None,
+                cost_usd: None,
+                limit_usd: None,
+                cap: 1_000.0,
+                asked: 0,
+                ended: None,
+                said: None,
+            }),
+        },
+    );
+    assert_eq!(step_of_running(&plane, "skill-step"), None);
+    running().remove("skill-step");
+}
+
+#[test]
 fn a_router_grade_s_page_finds_its_latest_step_while_it_runs_and_none_after() {
     let plane: PlaneId =
         serde_json::from_value(serde_json::json!("plane-of-a-router-step")).unwrap();
@@ -252,8 +285,7 @@ fn a_router_grade_s_page_finds_its_latest_step_while_it_runs_and_none_after() {
             level: None,
             stop: Arc::new(AtomicBool::new(false)),
             after_edit: None,
-            step: None,
-            router_step: Some(step.clone()),
+            step: RunningStep::Router(step.clone()),
         },
     );
     assert_eq!(step_of_running(&plane, "router-step"), Some(step.clone()));

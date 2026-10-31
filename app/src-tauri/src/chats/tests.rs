@@ -7302,38 +7302,73 @@ fn a_harness_chat_on_a_runner_is_started_by_its_names_and_a_shell_by_the_window_
 struct ProfilesOnAPool {
     asked: Mutex<Vec<(PathBuf, String, String)>>,
     refusing: Mutex<Option<String>>,
-    left_behind: Mutex<Option<String>>,
+    /// Why it refuses from its second asking on: the row settled since the first.
+    refusing_after_one: Mutex<Option<String>>,
 }
 
 impl crate::poolprofiles::ProfilesOnPools for ProfilesOnAPool {
-    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<Option<String>, String> {
+    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
         lock(&self.asked).push((root.to_path_buf(), pool.to_owned(), profile.to_owned()));
+        if lock(&self.asked).len() > 1
+            && let Some(why) = lock(&self.refusing_after_one).clone()
+        {
+            return Err(why);
+        }
         match lock(&self.refusing).clone() {
             Some(why) => Err(why),
-            None => Ok(lock(&self.left_behind).clone()),
+            None => Ok(()),
         }
     }
 }
 
-/// **Settings that stayed behind start the chat, and its tab says which** (#4081).
+/// What a runner's host answers a start with where it finds the profile signed out (#4233).
+const THE_RUNNERS_REFUSAL: &str = "the profile 'work' is not signed in on this computer. Nothing \
+     was started. It waits in the Inbox as Sign in work, or run purlis profile sign-in work in \
+     your own terminal; then start the chat again.";
+
+/// **A start that reaches a runner while its profile is signed out there says the pool's words**
+/// (#4233): let through while the runner fetched, it is refused by the runner, and the row, asked
+/// again, says it and raises the pool's wait.
 #[test]
-fn a_chat_whose_settings_stayed_behind_starts_and_its_tab_says_so() {
+fn a_runners_sign_in_refusal_is_said_in_the_pools_words() {
     let host = Pretend::default();
     host.on_pool("builds");
+    host.refuses(Some(THE_RUNNERS_REFUSAL));
     let on_pools = Arc::new(ProfilesOnAPool::default());
-    *lock(&on_pools.left_behind) = Some("skills/large (65 MiB) stayed behind".to_owned());
+    let mut chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
+    chats.readying_profiles_on_pools(on_pools.clone());
+    let refused = |on_pools: &ProfilesOnAPool, chats: &mut Chats| {
+        let said = chats.start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE);
+        assert_eq!(lock(&on_pools.asked).len() % 2, 0, "asked before and after");
+        said.unwrap_err()
+    };
+
+    // The row has not settled even now: the pool's words all the same.
+    let said = refused(&on_pools, &mut chats);
+    assert!(said.contains("is not signed in on pool builds"), "{said}");
+    assert!(said.contains("Sign in on pool builds"), "{said}");
+    assert!(!said.contains("own terminal"), "{said}");
+
+    // Its row says so by now, on the second asking.
+    lock(&on_pools.asked).clear();
+    *lock(&on_pools.refusing_after_one) = Some("the pool's own wait".into());
+    assert_eq!(refused(&on_pools, &mut chats), "the pool's own wait");
+}
+
+/// Any other refusal by a runner is as it said it (#4233).
+#[test]
+fn another_refusal_by_a_runner_is_as_it_said_it() {
+    let host = Pretend::default();
+    host.on_pool("builds");
+    host.refuses(Some("the runner is out of disk"));
+    let on_pools = Arc::new(ProfilesOnAPool::default());
     let mut chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
     chats.readying_profiles_on_pools(on_pools.clone());
 
-    let session = chats
-        .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
-        .expect("it starts on the runner");
+    let said = chats.start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE);
 
-    assert_eq!(host.named().len(), 1);
-    assert_eq!(
-        chats.start_notes(session),
-        vec!["skills/large (65 MiB) stayed behind".to_owned()]
-    );
+    assert_eq!(said, Err("the runner is out of disk".to_owned()));
+    assert_eq!(lock(&on_pools.asked).len(), 1);
 }
 
 /// **A chat on a pool is started there only once its profile is ready on the pool's runner**

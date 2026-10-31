@@ -371,6 +371,27 @@ export function GradesTab({
           </Table>
         </>
       )}
+      <section
+        aria-labelledby="skill-grades-outcome-evals"
+        data-testid="skill-grades-outcome-evals"
+      >
+        <PanelSectionTitle id="skill-grades-outcome-evals">Outcome evals</PanelSectionTitle>
+        <ButtonRow>
+          <p>
+            Tasks with statements a judge checks, kept with the skill. What a chat writes comes back
+            as a draft for you to accept.
+          </p>
+          {/* A chat on the project's default profile, the core's prompt typed and not sent. */}
+          <Button
+            size="sm"
+            isDisabled={held !== undefined}
+            tooltip={held}
+            onPress={() => askSkillChat({ plane, kind: "evals", level, name })}
+          >
+            Ask a chat to write outcome evals
+          </Button>
+        </ButtonRow>
+      </section>
       <section aria-labelledby="skill-grades-after-edit" data-testid="skill-grades-after-edit">
         <PanelSectionTitle id="skill-grades-after-edit">Grade after each edit</PanelSectionTitle>
         <ButtonRow>

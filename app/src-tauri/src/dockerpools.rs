@@ -305,6 +305,7 @@ pub fn pool_of(adding: &PoolAdding) -> Result<Pool, String> {
                 })
             })
             .transpose()?,
+        chosen: Default::default(),
     };
     Pool::new(adding.name.trim(), image, set).map_err(|why| why.to_string())
 }
@@ -545,19 +546,29 @@ pub fn removed_on(machine: &Machine) -> Result<Vec<PoolRemoved>, String> {
 /// **Make the runner again** (#4149): the pool `name`'s runner, removed outside purlis, made
 /// again from the pool's own image and limits, with the sign-ins of its home where that is still
 /// there, and paired. The window then has it keep the pool's profiles, as after Add a pool. Refused for
-/// a runner Docker still has, which resumes as it is.
+/// a runner Docker still has, which resumes as it is. The chats of the runner it replaces do not
+/// exist on the new one, so the window's links to it end and each says it ended (#4168).
 #[tauri::command]
 #[specta::specta]
-pub async fn docker_pool_make_again(name: String) -> Result<MadeAgain, String> {
+pub async fn docker_pool_make_again(
+    app: tauri::AppHandle,
+    name: String,
+) -> Result<MadeAgain, String> {
     #[cfg(unix)]
     {
         crate::off_the_window("making a pool's runner again", move || {
-            make_again_on(&Machine::here(&config_root()?)?, &name)
+            let config = config_root()?;
+            let made = make_again_on(&Machine::here(&config)?, &name)?;
+            if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app) {
+                host.connection().links_to_gone_runners_end(&config);
+            }
+            Ok(made)
         })
         .await
     }
     #[cfg(not(unix))]
     {
+        let _ = (app, name);
         Err(NOT_HERE.to_owned())
     }
 }
