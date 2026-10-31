@@ -338,6 +338,13 @@ fn a_chat_runs(target: &Target, machine: &Machine, pool: &str, chat: &Named) -> 
         .number;
     let pane = Pane::on(target, id);
     pane.shows_within("Claude Code", LONG);
+    eprintln!(
+        "PROBE marked={} {}",
+        purlis_core::runnertaint::pool_ran_unsandboxed(&machine.config, pool),
+        the_runner(machine, pool).prints(
+            "for p in /proc/[0-9]*; do tr '\\0' ' ' < $p/cmdline 2>/dev/null | cut -c1-160; echo; done | grep -E 'claude|sandbox|wrap' | head -8"
+        )
+    );
     (id, pane)
 }
 
