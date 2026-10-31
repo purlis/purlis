@@ -1444,6 +1444,7 @@ jobs:
         extras: [false]
         specs: [true]
         sandbox: [false]
+        outcome: [false]
         include:
           - os: macos-latest
             shard: extras
@@ -1800,6 +1801,7 @@ jobs:
         os: [ubuntu-24.04]
         shard: [1, 2]
         shards: [2]
+        outcome: [false]
         include:
           - shard: 1
             extras: false

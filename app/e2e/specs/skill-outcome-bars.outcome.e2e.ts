@@ -6,6 +6,7 @@ import { join } from "node:path";
 import process from "node:process";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
+import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import {
   OPENINGS,
   SKILLS_AT_THE_BAR,
@@ -38,6 +39,8 @@ import { paneInFront, startAChat } from "../started.js";
 
 const harness = harnessUnderTest(process.env.PURLIS_OUTCOME_HARNESS);
 const MADE = "e2e-bars-wanted";
+/** The studio of the workspace the chats are in: the root's has no skill turned off or ungranted. */
+const STUDIO_OF_ALPHA = "palette-row-skills.studio:alpha";
 /** The first of the two hundred, by name, so the first row the Library draws. */
 const crowd = (n: number) => `e2e-bars-crowd-${String(n).padStart(3, "0")}`;
 
@@ -49,6 +52,9 @@ const NARROWER = "e2e-state-narrower-copy";
 const NO_DESCRIPTION = "e2e-state-no-description";
 const UNSUPPORTED = "e2e-state-unsupported";
 const STATES = [NOT_GRANTED, TURNED_OFF, ARCHIVED, NARROWER, NO_DESCRIPTION, UNSUPPORTED];
+/** Where the Library draws each state's left-out row: the first copy of a name has the plain
+ *  testid, so a narrower copy's wider one is the second (`SkillStudioTab`). */
+const rowOf = (state: string) => (state === NARROWER ? `${state}-hidden-1` : state);
 
 /** What the skills above say they do, which is no reason for the state they are in. */
 const WHAT_IT_DOES = [
@@ -131,18 +137,18 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
   const samples: number[] = [];
   for (let n = 0; n < OPENINGS; n++) {
     await closeTheViewTabsOpenedSince(wereOpen);
-    const effort = { presses: 0, characters: 0 };
+    const already = await $('[data-testid="skill-studio"]').isExisting();
+    if (already) throw new Error("the studio's tab is still open, so this would time no opening");
     await browser.keys(["F2"]);
     const box = await $("#palette-query");
     await box.waitForDisplayed({ timeout: 10_000 });
     await box.addValue("Open Skill studio");
-    await $('[id="palette-row-skills.studio"]').waitForExist({ timeout: 20_000 });
-    effort.presses += 1;
+    await $(`[id="${STUDIO_OF_ALPHA}"]`).waitForExist({ timeout: 20_000 });
     // The clock is the window's own, started in the same task as the press, and stopped by the
     // frame after the row is drawn: so WebDriver's round trips are in neither end of it.
     const armed = await browser.execute(
-      (css: string) => {
-        const row = document.getElementById("palette-row-skills.studio");
+      (id: string, css: string) => {
+        const row = document.getElementById(id);
         if (row === null) return false;
         const holder = globalThis as { __openedInMs?: number };
         holder.__openedInMs = undefined;
@@ -158,6 +164,7 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
         requestAnimationFrame(look);
         return true;
       },
+      STUDIO_OF_ALPHA,
       `[data-testid="skill-${crowd(0)}"]`,
     );
     expect(armed).toBe(true);
@@ -178,12 +185,18 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
   this.timeout(480_000);
 
   let root = "";
+  let wereRunning: Running = {};
+
+  after(async () => {
+    await endTheChatsStartedSince(wereRunning);
+  });
 
   before(async () => {
     root = await projectRoot();
     // The Skills chip is left out of a narrow pane.
     await browser.setWindowSize(1440, 900);
     await focusWorkspace("alpha");
+    wereRunning = await chatsRunning();
   });
 
   it("goes from wanting a skill to using it in a running chat in under 2 minutes", async () => {
@@ -191,8 +204,9 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
     const effort: Effort = { presses: 0, characters: 0 };
     const beforeTheStudio = await tabNames();
     const started = Date.now();
+    let notOurs = 0;
 
-    await fromThePalette("Open Skill studio", "palette-row-skills.studio", effort);
+    await fromThePalette("Open Skill studio", STUDIO_OF_ALPHA, effort);
     await press("New skill…", effort, '[data-testid="skill-studio"]');
     await press("Write it yourself", effort, '[data-testid="skill-new"]');
     await typeInto("Name", MADE, effort);
@@ -210,11 +224,17 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
 
     // A chat keeps the skills it started with until it restarts on the same conversation: where
     // its harness does not take the new one in by itself, the pane's Notice offers that.
-    const restart = await $('[data-testid="pane"]').$("button=Restart");
-    if (await restart.waitForExist({ timeout: 15_000 }).catch(() => false)) {
+    // Waiting for a Notice that does not come is this test's, not the window's: it is taken off.
+    const restart = await $(`[data-testid="pane"][data-session="${chat.session}"]`).$(
+      "button=Restart",
+    );
+    const waiting = Date.now();
+    if (await restart.waitForExist({ timeout: 30_000 }).catch(() => false)) {
       await restart.click();
       effort.presses += 1;
       await restart.waitForExist({ timeout: 40_000, reverse: true });
+    } else {
+      notOurs = Date.now() - waiting;
     }
 
     await fromThePalette("Use skill", "palette-row-tab.useskill:", effort);
@@ -248,13 +268,16 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       { timeout: 20_000, timeoutMsg: `the window never said it typed ${line}` },
     );
 
-    const verdict = useVerdict(Date.now() - started, effort);
+    const verdict = useVerdict(Date.now() - started - notOurs, effort);
     report(verdict.said);
     if (!verdict.met) throw new Error(`missed: ${verdict.said}`);
   });
 
   describe("with two hundred skills", () => {
     before(async () => {
+      // Made at the level its dialog started on, the workspace's. Either way it is not one of the
+      // two hundred.
+      rmSync(join(root, "workspaces", "alpha", "skills", MADE), { recursive: true, force: true });
       rmSync(join(root, "skills", MADE), { recursive: true, force: true });
       rmSync(join(root, "skills", `${MADE}.toml`), { force: true });
       for (let n = 0; n < SKILLS_AT_THE_BAR - STATES.length; n++)
@@ -295,12 +318,16 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       await startAChat();
       await theSkillsViewUnfolded();
       const problems: string[] = [];
+      // Every row of Left out, and any marked elsewhere: a row of Left out with no reason drawn
+      // reads as an empty one, which is the failure this bar is for.
       const left = await browser.execute(() =>
         [...document.querySelectorAll<HTMLElement>('[data-testid^="skills-row-"]')].flatMap(
           (row) => {
             const reason = row.querySelector('[data-part="summary"][data-tone]');
+            const inLeftOut = row.closest('[aria-label="Left out"]') !== null;
+            if (reason === null && !inLeftOut) return [];
             const name = row.querySelector('[data-part="label"]')?.textContent ?? "";
-            return reason === null ? [] : [{ name, said: reason.textContent ?? "" }];
+            return [{ name, said: reason?.textContent ?? "" }];
           },
         ),
       );
@@ -318,14 +345,14 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
     });
 
     it("gives a one-line reason for every state, in the studio's Library", async () => {
-      await fromThePalette("Open Skill studio", "palette-row-skills.studio", {
+      await fromThePalette("Open Skill studio", STUDIO_OF_ALPHA, {
         presses: 0,
         characters: 0,
       });
       await $(`[data-testid="skill-${crowd(0)}"]`).waitForExist({ timeout: 30_000 });
       const problems: string[] = [];
       for (const state of STATES) {
-        const row = await $(`[data-testid="skill-${state}"]`);
+        const row = await $(`[data-testid="skill-${rowOf(state)}"]`);
         if (!(await row.isExisting())) {
           problems.push(`${state}: the Library does not list it`);
           continue;
@@ -345,7 +372,9 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
     });
 
     it("opens the studio in under 300 ms", async () => {
-      const verdict = openVerdict(await theOpenings(await tabNames()));
+      const verdict = openVerdict(
+        await theOpenings((await tabNames()).filter((one) => one !== "Skill studio")),
+      );
       report(verdict.said);
       if (!verdict.met) throw new Error(`missed: ${verdict.said}`);
     });
