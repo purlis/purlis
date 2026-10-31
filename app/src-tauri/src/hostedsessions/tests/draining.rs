@@ -255,6 +255,27 @@ fn a_start_during_a_drain_runs_on_the_pools_runner_and_the_old_chat_stays_reacha
     sessions.close(moved_on).expect("it closes on the new one");
 }
 
+/// **A runner made again in its place leaves the link naming one kept no more** (#4149, #4248): the
+/// desktop's host refuses a start on such a link, so the next start goes to the pool's runner.
+#[test]
+fn a_start_after_a_runner_was_made_again_runs_on_the_new_one() {
+    let runtime = a_runtime();
+    let pool = Pool::on(&runtime);
+    let (_dir, root) = a_project();
+    let sessions = routed(&pool, &root);
+    started(&sessions).expect("it starts");
+    pool.follows();
+    let path =
+        purlis_core::machine::dir(pool.config.path()).join(purlis_core::machine::RUNNERS_FILE);
+    let mut kept: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    kept["runners"].as_array_mut().unwrap().remove(0);
+    write_private(&path, &kept.to_string());
+
+    started(&sessions).unwrap_or_else(|why| panic!("it starts on the new runner: {why}"));
+    until("the new runner runs it", || pool.new.ran().len() == 1);
+}
+
 /// **Only a start moves on** (#4248): a look at the project's link leaves it where it is, so a
 /// fetch while the runner drains still reaches the chats' work.
 #[test]

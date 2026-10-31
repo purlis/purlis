@@ -560,11 +560,7 @@ fn in_the_journey(
     assert_eq!(
         (there_new, there_old),
         (1, 1),
-        "the new chat runs on the pool's runner, and the draining one keeps its one chat.\n\
-         on the new, processes: {}\non the old, processes: {}\nits pane: {:?}",
-        followed.prints("ps -eo pid,etime,args | grep -v ' ps ' | tail -n 30"),
-        runner.prints("ps -eo pid,etime,args | grep -v ' ps ' | tail -n 30"),
-        during_pane.seen.lock().expect("the pane").sent,
+        "the new chat runs on the pool's runner, and the draining one keeps its one chat"
     );
     assert_eq!(
         conversations_on_the_old(),

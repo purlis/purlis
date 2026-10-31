@@ -599,7 +599,8 @@ impl Connection {
         Ok(link)
     }
 
-    /// **`root`'s link reached a runner that drains now, and its pool has a runner to go to**
+    /// **`root`'s link reached a runner that drains now, or is kept no more, and its pool has a
+    /// runner to go to**
     /// (#4248): the link is answered and kept apart for what was started over it, and the next ask
     /// dials the pool's name, which reaches the pool's runner now. Each link kept apart whose
     /// runner is kept no more ends. A list that cannot be read, or that is empty, says nothing.
@@ -627,8 +628,12 @@ impl Connection {
             .get(root)
             .and_then(|link| link.reached_runner().map(str::to_owned))
             .is_some_and(|runner| {
-                kept.iter()
-                    .any(|one| one.draining && one.pool() == pool && one.name() == runner)
+                // A runner made again in its place leaves the link naming one kept no more, which
+                // the desktop's host refuses a start on as it does a draining one's (#4149).
+                !kept.iter().any(|one| one.name() == runner)
+                    || kept
+                        .iter()
+                        .any(|one| one.draining && one.pool() == pool && one.name() == runner)
             });
         if !drains || purlis_core::runners::runner_for(&config, pool).is_err() {
             return None;
