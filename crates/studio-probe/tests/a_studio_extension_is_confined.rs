@@ -611,7 +611,7 @@ fn a_program_that_is_a_script_answers() {
     };
     it_answers_a_question(&Probe::approved_running(&format!(
         "#!{python}\nimport json, sys\nask = json.loads(sys.stdin.readline())[\"ask\"]\n\
-         print(json.dumps({{\"charter\": 3, \"text\": \"---\\nname: %s\\ndescription: %s\\n---\\n\" \
+         print(json.dumps({{\"charter\": 4, \"text\": \"---\\nname: %s\\ndescription: %s\\n---\\n\" \
          % (ask[\"name\"], ask[\"description\"])}}))\n"
     )));
 }
