@@ -9,7 +9,9 @@ use std::path::{Path, PathBuf};
 
 use super::*;
 use crate::harness::Harness;
-use crate::skills::{ChatSkills, DIR_IN_BUNDLE, INDEX, Running, for_use_skill, of_a_chat};
+use crate::skills::{
+    ChatSkills, DIR_IN_BUNDLE, INDEX, Origin, Outcome, Running, for_use_skill, of_a_chat,
+};
 
 /// The most skills a chat lists on every harness (ADR 0102 as amended 2026-10-21).
 const MOST: usize = 30;
@@ -368,6 +370,76 @@ fn the_studio_routes_each_harness_by_its_own_budget() {
         .expect("long-00");
     let on: Vec<Harness> = row.hidden.iter().map(|one| one.harness).collect();
     assert_eq!(on, [Harness::Codex]);
+}
+
+#[test]
+fn the_studio_routes_a_harness_as_a_chat_s_start_does_and_never_counts_its_own_skills_4192() {
+    // #4192 (ADR 0102 as amended 2026-10-31): a harness's own catalogue counts against nothing.
+    // A chat's start routes only what purlis hands it, so the studio's harness page routes the
+    // same set: the person's own skills put no plane skill behind the index skill.
+    let (tmp, bundle) = a_plane_of(MOST - 2);
+    let root = tmp.path();
+    let own = root.join("claude-config/skills");
+    for at in 0..12 {
+        let name = format!("mine-{at:02}");
+        write(
+            &own.join(&name),
+            &format!("---\nname: {name}\ndescription: My own {at}.\n---\n"),
+        );
+    }
+    // One with a plane skill's name: its clash is still said.
+    write(
+        &own.join("skill-00"),
+        "---\nname: skill-00\ndescription: My own copy.\n---\n",
+    );
+    let chat = [(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        root.join("claude-config").display().to_string(),
+    )];
+    let env = crate::harness_plugin::Env {
+        chat: &chat,
+        home: Some(root.join("home")),
+        process: false,
+    };
+
+    let list = crate::skills::studio_list(Some(&bundle), root, Some("smart-ide"), None, &env);
+
+    let claude = list
+        .harnesses
+        .iter()
+        .find(|one| one.harness == Harness::ClaudeCode)
+        .expect("Claude Code in the studio");
+    assert_eq!(
+        claude
+            .outside
+            .iter()
+            .filter(|one| one.origin == Origin::Harness)
+            .count(),
+        13,
+        "the person's own skills are read"
+    );
+    let start = for_use_skill(&running(root, &bundle, None));
+    assert!(hidden(&start).is_empty(), "a chat's start hides none");
+    for row in list.rows.iter().filter(|row| row.origin.of_the_plane()) {
+        assert!(
+            row.hidden
+                .iter()
+                .all(|one| one.harness != Harness::ClaudeCode),
+            "{}: listed on Claude Code, as a chat's start lists it",
+            row.name
+        );
+    }
+    assert!(
+        claude
+            .set
+            .clashes
+            .iter()
+            .any(|clash| clash.name == "skill-00"
+                && clash.outside == Origin::Harness
+                && clash.outcome == Outcome::BothLoad),
+        "{:?}",
+        claude.set.clashes
+    );
 }
 
 #[test]
