@@ -2905,10 +2905,12 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
             // counts as one that does (D-2050-27).
             Ok(other) => {
                 tracing::warn!("purlis: the session host answered its programs with {other:?}");
+                eprintln!("PROBE-OTHER {other:?}");
                 let _ = untrust_taking_back(connection, &link, &mut Vec::new());
             }
             Err(why) => {
                 tracing::warn!("purlis: the session host did not say its programs: {why}");
+                eprintln!("PROBE-ERR {why}");
                 let _ = untrust_taking_back(connection, &link, &mut Vec::new());
             }
         }
