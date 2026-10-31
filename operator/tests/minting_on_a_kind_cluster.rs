@@ -87,11 +87,7 @@ fn github_answer(head: &str, body: &[u8], asked: &Mutex<Asked>) -> String {
     let target = head.lines().next().unwrap_or_default();
     let bearer = head
         .lines()
-        .find_map(|line| {
-            line.to_ascii_lowercase()
-                .starts_with("authorization:")
-                .then_some(line)
-        })
+        .find(|line| line.to_ascii_lowercase().starts_with("authorization:"))
         .and_then(|line| line.split_once("Bearer "))
         .map(|(_, bearer)| bearer.trim().to_owned())
         .unwrap_or_default();
