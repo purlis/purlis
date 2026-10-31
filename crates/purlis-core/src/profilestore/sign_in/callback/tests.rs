@@ -15,6 +15,13 @@ fn redirect_target() -> String {
     format!("/auth/callback?code=the-code&state={STATE}")
 }
 
+/// A folder of records where a login waits with [`STATE`].
+fn waiting_here() -> (tempfile::TempDir, waiting::Waiting) {
+    let dir = tempfile::tempdir().unwrap();
+    let held = waiting::Waiting::record(dir.path(), STATE).unwrap();
+    (dir, held)
+}
+
 /// The redirects a forward carried, and what it was told.
 type Carried = Arc<Mutex<Vec<String>>>;
 type Told = Receiver<Result<(), String>>;
@@ -256,8 +263,9 @@ fn codexs_next_page_is_asked_on_the_runner_and_nothing_of_it_comes_back() {
             "HTTP/1.1 200 OK\r\n\r\ndone".to_owned(),
         ]
     });
+    let (dir, _waiting) = waiting_here();
 
-    assert_eq!(deliver_on(port, &redirect_target()), Ok(()));
+    assert_eq!(deliver_on(dir.path(), port, &redirect_target()), Ok(()));
 
     let heard = heard.join().unwrap();
     assert!(heard[0].starts_with(&format!("GET {} HTTP/1.1\r\n", redirect_target())));
@@ -274,8 +282,9 @@ fn a_next_page_written_by_the_machines_name_is_followed() {
             "HTTP/1.1 200 OK\r\n\r\ndone".to_owned(),
         ]
     });
+    let (dir, _waiting) = waiting_here();
 
-    assert_eq!(deliver_on(port, &redirect_target()), Ok(()));
+    assert_eq!(deliver_on(dir.path(), port, &redirect_target()), Ok(()));
 
     assert_eq!(heard.join().unwrap().len(), 2);
 }
@@ -284,8 +293,9 @@ fn a_next_page_written_by_the_machines_name_is_followed() {
 #[test]
 fn opencodes_login_answers_the_redirect_itself() {
     let (port, heard) = login_answering(|_| vec!["HTTP/1.1 200 OK\r\n\r\nsigned in".to_owned()]);
+    let (dir, _waiting) = waiting_here();
 
-    assert_eq!(deliver_on(port, &redirect_target()), Ok(()));
+    assert_eq!(deliver_on(dir.path(), port, &redirect_target()), Ok(()));
 
     assert_eq!(heard.join().unwrap().len(), 1);
 }
@@ -301,8 +311,9 @@ fn a_refusal_comes_back_as_a_status_alone() {
         "HTTP/1.1 302 Found\r\nLocation: /elsewhere\r\n\r\n",
     ] {
         let (port, heard) = login_answering(|_| vec![answer.to_owned()]);
+        let (dir, _waiting) = waiting_here();
 
-        let why = deliver_on(port, &redirect_target()).unwrap_err();
+        let why = deliver_on(dir.path(), port, &redirect_target()).unwrap_err();
 
         assert!(!why.contains("the-secret"), "{why}");
         assert!(!why.contains("example.com"), "{why}");
@@ -314,6 +325,7 @@ fn a_refusal_comes_back_as_a_status_alone() {
 /// listener hears only [`PATH`] and a query, in one line.
 #[test]
 fn nothing_but_a_redirect_is_delivered() {
+    let dir = tempfile::tempdir().unwrap();
     for target in [
         "/",
         "/cancel",
@@ -326,7 +338,7 @@ fn nothing_but_a_redirect_is_delivered() {
         "http://evil.example/auth/callback?code=c",
     ] {
         assert!(!is_a_redirect(target), "{target}");
-        assert!(deliver_on(1, target).is_err(), "{target}");
+        assert!(deliver_on(dir.path(), 1, target).is_err(), "{target}");
     }
     assert!(!is_a_redirect(&format!(
         "/auth/callback?code={}",
@@ -342,8 +354,67 @@ fn with_no_login_listening_it_says_so() {
     let port = listener.local_addr().unwrap().port();
     drop(listener);
 
+    let (dir, _waiting) = waiting_here();
     assert_eq!(
-        deliver_on(port, &redirect_target()),
+        deliver_on(dir.path(), port, &redirect_target()),
         Err("no sign-in is waiting on the runner".to_owned())
     );
+}
+
+/// **A redirect goes only to a login held here that waits with its own `state`**, and the port is
+/// never reached otherwise: what listens there, another login or a chat, hears nothing of it.
+#[test]
+fn a_redirect_no_login_waits_for_reaches_nothing_on_the_runner() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let dir = tempfile::tempdir().unwrap();
+
+    let refused = Err("no sign-in is waiting on the runner".to_owned());
+    // Nothing waits at all: the login that was cancelled.
+    assert_eq!(deliver_on(dir.path(), port, &redirect_target()), refused);
+    // Another sign-in's login waits.
+    let _other = waiting::Waiting::record(dir.path(), "another-sign-ins-state").unwrap();
+    assert_eq!(deliver_on(dir.path(), port, &redirect_target()), refused);
+
+    assert_eq!(
+        listener.accept().map(|_| ()).unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock,
+        "nothing connected"
+    );
+}
+
+/// **One answer goes to one login**: the same redirect again reaches nothing.
+#[test]
+fn a_login_waiting_takes_one_redirect() {
+    let (port, heard) = login_answering(|_| vec!["HTTP/1.1 200 OK\r\n\r\n".to_owned()]);
+    let (dir, _waiting) = waiting_here();
+
+    assert_eq!(deliver_on(dir.path(), port, &redirect_target()), Ok(()));
+    assert_eq!(heard.join().unwrap().len(), 1);
+    assert_eq!(
+        deliver_on(dir.path(), port, &redirect_target()),
+        Err("no sign-in is waiting on the runner".to_owned())
+    );
+}
+
+/// **A sign-in that ended carries nothing**, though its redirect was read just before.
+#[test]
+fn a_sign_in_that_ended_carries_nothing() {
+    let asked: Carried = Arc::default();
+    let carry: Carry = {
+        let asked = Arc::clone(&asked);
+        Arc::new(move |target: &str| {
+            asked.lock().unwrap().push(target.to_owned());
+            Ok(())
+        })
+    };
+
+    let ended = AtomicBool::new(true);
+    assert_eq!(carried_while_open(&ended, &carry, "/t"), None);
+    assert!(asked.lock().unwrap().is_empty());
+
+    let open = AtomicBool::new(false);
+    assert_eq!(carried_while_open(&open, &carry, "/t"), Some(Ok(())));
+    assert_eq!(asked.lock().unwrap().len(), 1);
 }

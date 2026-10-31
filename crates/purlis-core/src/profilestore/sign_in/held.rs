@@ -11,17 +11,26 @@
 //! [`until_input_ends`] runs the login with pipes, for the driven strip; [`in_own_terminal`]
 //! runs it in a terminal made here, so the bytes that draw it cross a plain pipe and the same
 //! end holds, which a terminal `docker exec` makes for it could not give.
+//!
+//! **A login that waits for the browser says so here too** ([`until_answered_or_input_ends`]):
+//! what it prints is read as the desktop reads it, and the `state` of its page is recorded before
+//! that page goes any further ([`super::waiting`]), for as long as it runs. Only such a login's
+//! browser answer is handed to it on this machine.
 
 use std::io::{Read, Write};
 use std::os::unix::process::CommandExt;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Arc;
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use rustix::process::{Pid, Signal, kill_process_group};
 
 use super::Login;
+use super::driven::{self, Driven, Event, Stream};
+use super::waiting::Waiting;
 use crate::engine::{AlacrittyEngine, Size};
 use crate::session::{Exit, Session, Spec};
 
@@ -37,6 +46,66 @@ pub fn until_input_ends(
     login: &Login,
     input: impl Read + Send + 'static,
 ) -> Result<Option<i32>, String> {
+    run_until_input_ends(login, input, None)
+}
+
+/// **[`until_input_ends`], of a login that waits for the browser's answer**, read by `driven` as
+/// its desktop reads it: what it prints goes on to `out` and `err`, and from before its page does
+/// the login is recorded in `kept_in` as waiting with that page's `state`, until it ends. One that
+/// cannot be recorded is ended, with its page gone nowhere.
+pub fn until_answered_or_input_ends(
+    login: &Login,
+    driven: Driven,
+    kept_in: &Path,
+    input: impl Read + Send + 'static,
+    out: impl Write + Send + 'static,
+    err: impl Write + Send + 'static,
+) -> Result<Option<i32>, String> {
+    run_until_input_ends(
+        login,
+        input,
+        Some(Watched {
+            reading: Arc::new(Mutex::new(Reading {
+                driven,
+                kept_in: kept_in.to_path_buf(),
+                waiting: None,
+            })),
+            out: Box::new(out),
+            err: Box::new(err),
+        }),
+    )
+}
+
+/// What a login's output goes through, where it is read here.
+struct Watched {
+    reading: Arc<Mutex<Reading>>,
+    out: Box<dyn Write + Send>,
+    err: Box<dyn Write + Send>,
+}
+
+struct Reading {
+    driven: Driven,
+    kept_in: PathBuf,
+    waiting: Option<Waiting>,
+}
+
+/// Takes the login's record away as it ends, whichever way, whatever still reads its output.
+struct RecordEnds(Arc<Mutex<Reading>>);
+
+impl Drop for RecordEnds {
+    fn drop(&mut self) {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .waiting = None;
+    }
+}
+
+fn run_until_input_ends(
+    login: &Login,
+    input: impl Read + Send + 'static,
+    watched: Option<Watched>,
+) -> Result<Option<i32>, String> {
     let mut command = Command::new(&login.program);
     command
         .args(&login.args)
@@ -44,11 +113,37 @@ pub fn until_input_ends(
         .stdin(Stdio::piped())
         // A group of its own, so what it started ends with it.
         .process_group(0);
+    if watched.is_some() {
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    }
     for name in &login.cleared {
         command.env_remove(name);
     }
     let mut child = crate::forklock::spawn(&mut command)
         .map_err(|e| format!("{} could not be run: {e}", login.program))?;
+    let (not_recorded, refused) = mpsc::channel();
+    let mut readers = Vec::new();
+    let _record_ends = watched.map(|watched| {
+        if let Some(from) = child.stdout.take() {
+            readers.push(passing_on(
+                Stream::Out,
+                from,
+                watched.out,
+                Arc::clone(&watched.reading),
+                not_recorded.clone(),
+            ));
+        }
+        if let Some(from) = child.stderr.take() {
+            readers.push(passing_on(
+                Stream::Err,
+                from,
+                watched.err,
+                Arc::clone(&watched.reading),
+                not_recorded.clone(),
+            ));
+        }
+        RecordEnds(watched.reading)
+    });
     let mut to_login = child.stdin.take();
     let closed = passing(input, move |bytes| {
         if let Some(to) = to_login.as_mut()
@@ -62,6 +157,11 @@ pub fn until_input_ends(
             // What it started ends with it.
             Ok(Some(status)) => {
                 end_group_of(child.id());
+                // Its last words are still on their way. What it started and let go may hold
+                // them open, so this ends too.
+                purlis_terminal::process::wait_until(Instant::now() + ENDS_WITHIN, || {
+                    readers.iter().all(JoinHandle::is_finished)
+                });
                 return Ok(status.code());
             }
             Ok(None) => {}
@@ -69,6 +169,10 @@ pub fn until_input_ends(
                 end_group(&mut child);
                 return Err(format!("the sign-in could not be watched: {e}"));
             }
+        }
+        if let Ok(why) = refused.try_recv() {
+            end_group(&mut child);
+            return Err(why);
         }
         match closed.recv_timeout(LOOK) {
             Err(RecvTimeoutError::Timeout) => {}
@@ -145,6 +249,53 @@ pub fn in_own_terminal(
             session.stopper().stop();
             return Ok(None);
         }
+    }
+}
+
+/// Reads what the login prints on `from`, its output `stream`, and passes it on to `to`. A page
+/// is recorded as waiting before the line that shows it is passed on: where it cannot be, `refused`
+/// hears why, and nothing more is.
+fn passing_on(
+    stream: Stream,
+    mut from: impl Read + Send + 'static,
+    mut to: Box<dyn Write + Send>,
+    reading: Arc<Mutex<Reading>>,
+    refused: Sender<String>,
+) -> JoinHandle<()> {
+    std::thread::spawn(move || {
+        let mut buffer = [0u8; 4096];
+        let mut carried = Vec::new();
+        while let Ok(read) = from.read(&mut buffer) {
+            if read == 0 {
+                return;
+            }
+            let text = driven::whole_text(&mut carried, &buffer[..read]);
+            let recorded = reading
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .read(stream, &text);
+            if let Err(why) = recorded {
+                let _ = refused.send(why);
+                return;
+            }
+            // Whoever reads it may have gone: its input ends too, and meanwhile the login never
+            // waits on a full pipe.
+            let _ = to.write_all(&buffer[..read]).and_then(|()| to.flush());
+        }
+    })
+}
+
+impl Reading {
+    /// `text`, read as the desktop reads it: the page of a login that waits is recorded.
+    fn read(&mut self, stream: Stream, text: &str) -> Result<(), String> {
+        for event in self.driven.read_from(stream, text) {
+            if let Event::Approve { state, .. } = event {
+                self.waiting = Some(Waiting::record(&self.kept_in, &state).map_err(|why| {
+                    format!("purlis could not note this sign-in on this runner: {why}")
+                })?);
+            }
+        }
+        Ok(())
     }
 }
 
