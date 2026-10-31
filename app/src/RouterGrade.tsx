@@ -392,6 +392,13 @@ export function RouterGradePlanPage({
                 : `on the library at ${plan.commit.slice(0, 12)}`}
               .
             </p>
+            {plan.pointer !== null && (
+              <p data-testid="router-grade-pointer">
+                {plan.pointer
+                  ? `The router ${plan.router} reads prompts here: in its arm, each trigger test's prompt is handed to it, and its pointer reaches that prompt as in a real chat.`
+                  : `The router ${plan.router} can read prompts, but that is off on Routing, so it is graded on its answer at each chat's start alone.`}
+              </p>
+            )}
             <ul aria-label="Skills the router is graded on">
               {plan.skills.map((one) => (
                 <li key={one.skill} data-testid="router-grade-skill">

@@ -215,6 +215,7 @@ const PLAN: RouterGradePlan = {
     chats_then: 60,
   },
   estimate_same_library: true,
+  pointer: null,
   running: null,
   consent: "c0ffee",
 };

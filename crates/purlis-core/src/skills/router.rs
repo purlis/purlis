@@ -214,6 +214,17 @@ pub trait AskRouter: Send + Sync {
     }
 }
 
+/// **Whether a router reads prompts on this machine** (SK-15c, ADR 0102 as amended 2026-10-31).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptReading {
+    /// Its approval says it reads none, or it cannot be asked here.
+    None,
+    /// Its approval says it reads them, and the person has not turned that on.
+    Off,
+    /// Its approval says it reads them, and the person turned that on.
+    On,
+}
+
 /// **The production [`AskRouter`]**: `executor`, gated by this machine's record of extensions and
 /// the choices of the project at `project`, as every studio question is
 /// ([`crate::executor::Executor::studio`]). Both are read only when a router is asked, so a start
@@ -256,26 +267,31 @@ impl AskRouter for OnThisMachine {
     }
 
     fn reads_prompts(&self, extension: &str) -> bool {
+        self.prompt_reading(extension) == PromptReading::On
+    }
+}
+
+impl OnThisMachine {
+    /// **Whether the router `extension` reads prompts here**: what a chat's start and each prompt
+    /// go by, and what a router's grade tells the person it grades (SK-15k).
+    pub fn prompt_reading(&self, extension: &str) -> PromptReading {
         let Some(config) = crate::machine::config_root() else {
-            return false;
+            return PromptReading::None;
         };
         let loaded = crate::extension::read(&config, self.executor.built_in());
-        if !loaded.registry.reads_prompts.contains(extension) {
-            return false;
-        }
         let Some(entry) = loaded
             .registry
             .entries
             .get(extension)
             .filter(|entry| entry.in_force())
         else {
-            return false;
+            return PromptReading::None;
         };
         let Ok(manifest) = crate::extension::manifest_at(&entry.path) else {
-            return false;
+            return PromptReading::None;
         };
         let choices = crate::extension::project::Choices::read(&self.project);
-        manifest
+        let declares = manifest
             .capabilities
             .contains(&crate::extension::capability::Capability::SkillRouter)
             && manifest
@@ -283,7 +299,12 @@ impl AskRouter for OnThisMachine {
                 .as_ref()
                 .and_then(|studio| studio.router.as_ref())
                 .is_some_and(|router| router.reads_prompts)
-            && crate::extension::facts::on_here(extension, &manifest, &choices)
+            && crate::extension::facts::on_here(extension, &manifest, &choices);
+        match (declares, loaded.registry.reads_prompts.contains(extension)) {
+            (false, _) => PromptReading::None,
+            (true, false) => PromptReading::Off,
+            (true, true) => PromptReading::On,
+        }
     }
 }
 

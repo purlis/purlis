@@ -1198,3 +1198,36 @@ fn a_reattached_chat_keeps_what_its_list_leaves_out_for_its_prompts() {
     assert!(back.points());
     assert_eq!(back.left_out, routed.left_out);
 }
+
+// ---------------------------------------------------------------------------------------
+// A router's grade, with its pointer (SK-15k, #3619)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_router_s_arm_that_reads_prompts_points_its_trigger_test_s_prompt_as_a_real_chat_s_3619() {
+    let (tmp, bundle) = a_plane_of(3);
+    let root = tmp.path();
+    let fake = Fake::hiding(&["skill-02"]);
+
+    let graded = arm(root, &bundle, Some("relevance"), &reading(&fake));
+    let routed = graded.routed.as_ref().expect("asked");
+    assert!(routed.points(), "its chat's hook is armed");
+
+    let pick = Fake::answering(serde_json::json!({ "pointed": ["skill-02"] }));
+    let prompted = routed
+        .on_prompt("a trigger test's prompt", &reading(&pick))
+        .expect("asked");
+    assert!(
+        prompted
+            .pointer
+            .is_some_and(|pointer| pointer.contains("- `skill-02`:"))
+    );
+
+    // Off for this router, its arm is graded on its start's answer alone.
+    let off = arm(root, &bundle, Some("relevance"), &as_asker(&fake));
+    assert!(!off.routed.as_ref().expect("asked").points());
+
+    // The built-in router's arm asks nothing, whatever the router under grade reads.
+    let baseline = arm(root, &bundle, None, &reading(&fake));
+    assert!(baseline.routed.is_none());
+}

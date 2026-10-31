@@ -52,6 +52,14 @@ Each of these follows as its own ticket in M65:
 - #3616: a router's grade under way is not held for a crash. One purlis stopped under is not recorded as interrupted, as a skill's is (#3353).
 - #3617: what its chats showed is not kept for a scorecard (SK-59).
 - #3618: the plan runs on the project's default profile and its model alone, with no pickers (SK-60), no Set the cap and no estimate.
-- #3619: a router that reads prompts (SK-15c) is graded on its start's answer alone.
+- ~~#3619~~: built, below.
 
-**Built by #3233.**
+## With its pointer (#3619)
+
+A router that reads prompts here (its approval says so, and [the person turned that on](2026-10-31-a-router-reads-prompts-only-once-the-person-turns-that-on.md)) is graded on what it does in a real chat. Its arm's chat starts with its prompt hook armed, so each trigger test's prompt is handed to it and its pointer reaches that prompt. The built-in router's arm is asked nothing. Grading does not turn the switch on: where it is off the router is graded on its start's answer alone, and the plan says which.
+
+The plan says this before anything runs, and the consent holds to it, so a switch turned since the plan was shown refuses the start. The record's `pointer` says it ran so, and the router's line says "and its pointer".
+
+**A prompt the router was slow on counts as a run.** A chat whose start fell back measured the built-in router, so it is no run. A prompt that fell back measured what this router does in a real chat at that moment, which is no pointer, so it stays a run.
+
+**Built by #3233**, and the pointer by #3619.

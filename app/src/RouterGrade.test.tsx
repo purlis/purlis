@@ -71,6 +71,7 @@ function plan(over: Partial<RouterGradePlan> = {}): RouterGradePlan {
     model: null,
     estimate: null,
     estimate_same_library: null,
+    pointer: null,
     running: null,
     consent: "c0ffee",
     ...over,
@@ -128,6 +129,14 @@ const step = (over: Partial<RouterGradeStep> = {}): RouterGradeStep => ({
 });
 
 describe("Grade the router: its plan, a review page on Routing (SK-15e, #4222)", () => {
+  it("says whether the router is graded with its pointer", async () => {
+    mockIPC((cmd) => (cmd === "router_grade_plan" ? plan({ pointer: true }) : null));
+    renderPlan();
+    expect(await screen.findByTestId("router-grade-pointer")).toHaveTextContent(
+      "each trigger test's prompt is handed to it",
+    );
+  });
+
   it("shows its totals and what it runs before anything runs, then starts it on Start", async () => {
     const asked: Array<{ cmd: string; args: unknown }> = [];
     mockIPC(

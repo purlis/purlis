@@ -9493,6 +9493,12 @@ export type RouterGradePlan = {
 	/**  A grade running in this project now, where one is: a skill's or a router's. */
 	running: string | null,
 	/**
+	 *  **Whether its router's arm runs with its pointer** (SK-15k, #3619): true where the router
+	 *  reads prompts here, false where it could and the person has not turned that on, null
+	 *  where it reads none.
+	 */
+	pointer: boolean | null,
+	/**
 	 *  What pressing Grade consents to: what it grades, and the profile, model, cap and dollar
 	 *  limit this plan shows (`grades::consent_on`).
 	 */
