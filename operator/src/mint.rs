@@ -111,7 +111,9 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 fn unhex(text: &str) -> Option<Vec<u8>> {
-    if text.len() % 2 != 0 || !text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+    if !text.len().is_multiple_of(2)
+        || !text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
         return None;
     }
     (0..text.len())
