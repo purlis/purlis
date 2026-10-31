@@ -134,6 +134,7 @@ The check does not read these rows. The team building the image keeps them.
 | A matching C library | purlis's binary is built on Ubuntu 24.04 and needs glibc 2.39 or later. |
 | An architecture purlis builds | `amd64` or `arm64`. |
 | No secret | No credential, token or key is built into the image or set in its environment. What a runner chat needs comes from the person's desktop, one command at a time (spec #2041). |
+| A purlis that knows the mark | On a Pool that names a GitHub App's key, the runner is made with `PURLIS_MINTING_POOL`, and the `purlis` in the image must refuse any start outside the sandbox but a shell while it is set. A `purlis` from before that does not: do not name a key on a Pool of such an image. |
 | No identity in `HOME` | The image's `HOME` holds no purlis machine store with a device id, no link key and no peers file: nothing a build step got by running `purlis` in it. A new runner's home starts as a copy of the image's, and a runner mints its device id and makes its link key at its one pairing, so a home that came with any of them is refused at pairing. Nothing in the image runs a `purlis` command before `purlis serve` (an entrypoint wrapper or a health check): one that mints a device id first makes the pairing refuse too. Everything else in `HOME` is the runner's first contents, trusted as the image's binaries are (ADR 0078, amended 2026-10-18). |
 
 ### What the Linux sandbox needs

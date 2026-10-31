@@ -456,8 +456,8 @@ async fn clean(client: &Client) {
     let _ = Api::<Claim>::namespaced(client.clone(), NAMESPACE)
         .delete(EARLIER, &params)
         .await;
-    let _ = claims.delete("e2e-mint-unvouched", &params).await;
     let claims = Api::<Claim>::namespaced(client.clone(), NAMESPACE);
+    let _ = claims.delete("e2e-mint-unvouched", &params).await;
     eventually("the claims to go", Duration::from_secs(120), || {
         let claims = claims.clone();
         async move {
