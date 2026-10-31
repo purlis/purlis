@@ -196,3 +196,7 @@
 {"pushed":{"link_down":{"why":"the connector did not connect: pool first's runner first was removed outside purlis: Docker has no container 0f9ad8c1e2b3; its home volume went too, and with it the sign-ins kept there","gone":true}}}
 {"call":{"id":180,"command":"sign_in_redirect","target":"/auth/callback?code=recorded&state=recorded"}}
 {"reply":{"re":180,"ok":"done"}}
+{"call":{"id":181,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"harness","number":13,"launch":{"program":"codex","harness":"codex","prompt_key":"0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"}}}
+{"reply":{"re":181,"ok":{"program_started":{"program":"01J9ZQ5000000000000000000G","number":13,"process":4245,"sandbox":"off","prompt_key":"0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"}}}}
+{"call":{"id":182,"command":"programs_of","project":"01J9PRJCT00000000000000000"}}
+{"reply":{"re":182,"ok":{"programs":[{"program":"01J9ZQ5000000000000000000G","kind":"harness","number":13,"process":4245,"sandbox":"off","cols":80,"rows":24,"prompt_key":"0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"}]}}}

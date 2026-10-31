@@ -338,6 +338,7 @@ fn a_start_hands_the_host_what_the_window_composed_and_the_host_composes_it_as_t
             },
             number: 1,
             reporting: None,
+            prompt_key: None,
         },
     );
     assert_eq!(spec.env, in_the_window.env, "the same environment and PATH");
