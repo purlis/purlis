@@ -1551,16 +1551,17 @@ fn says_signed_in(said: &Result<Option<Standing>, String>) -> bool {
     matches!(said, Ok(Some(Standing::SignedIn)))
 }
 
-/// Whether a watched profile is still there to sign in on a pool: this machine has it, and the
-/// pool names it, or names none and so keeps every profile. What cannot be read is not gone.
+/// Whether a watched profile is still there to sign in on a pool: this machine has it, the pool
+/// exists (`named`'s outer `None` where it does not), and the pool names it, or names none and so
+/// keeps every profile. What cannot be read is not gone.
 fn still_on_the_pool<E, F>(
     records: Result<Vec<profilestore::MachineProfile>, E>,
-    named: Result<Option<Vec<String>>, F>,
+    named: Result<Option<Option<Vec<String>>>, F>,
     name: &str,
 ) -> bool {
     records.map_or(true, |records| records.iter().any(|p| p.name == name))
-        && named.map_or(true, |named| {
-            named.is_none_or(|named| named.iter().any(|one| one == name))
+        && named.map_or(true, |pool| {
+            pool.is_some_and(|named| named.is_none_or(|named| named.iter().any(|one| one == name)))
         })
 }
 
@@ -1580,7 +1581,12 @@ pub fn watched_sign_in(pool: String, name: String) -> Option<crate::signinwatch:
         there: Box::new(move || {
             still_on_the_pool(
                 profilestore::list(&config_there),
-                purlis_core::runners::profiles_of(&config_there, &pool_there),
+                purlis_core::runners::pools(&config_there).map(|pools| {
+                    pools
+                        .iter()
+                        .find(|one| one.name() == pool_there)
+                        .map(|one| one.profiles().map(<[String]>::to_vec))
+                }),
                 &name_there,
             )
         }),

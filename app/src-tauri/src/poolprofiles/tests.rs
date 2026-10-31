@@ -95,25 +95,28 @@ fn only_a_signed_in_answer_says_signed_in() {
     }
 }
 
-/// **A profile off this machine or off the pool is gone for a watcher**; a pool naming none keeps
-/// every profile, and what cannot be read is not gone.
+/// **A profile off this machine or off the pool, or a pool removed, is gone for a watcher**; a
+/// pool naming none keeps every profile, and what cannot be read is not gone.
 #[test]
 fn a_watched_profile_is_there_until_it_is_taken_away() {
-    let ours = || -> Result<Vec<profilestore::MachineProfile>, String> { Ok(Vec::new()) };
+    let none = || -> Result<Vec<profilestore::MachineProfile>, String> { Ok(Vec::new()) };
     let unread = || -> Result<Vec<profilestore::MachineProfile>, String> { Err("no".to_owned()) };
-    let named = |names: &[&str]| -> Result<Option<Vec<String>>, String> {
-        Ok(Some(names.iter().map(|one| (*one).to_owned()).collect()))
+    type Named = Result<Option<Option<Vec<String>>>, String>;
+    let names = |names: &[&str]| -> Named {
+        Ok(Some(Some(
+            names.iter().map(|one| (*one).to_owned()).collect(),
+        )))
     };
+    let every: Named = Ok(Some(None));
+    let no_pool: Named = Ok(None);
+    let cannot_read: Named = Err("no".to_owned());
 
-    assert!(!still_on_the_pool(ours(), Ok::<_, String>(None), "work"));
-    assert!(still_on_the_pool(unread(), Ok::<_, String>(None), "work"));
-    assert!(still_on_the_pool(unread(), named(&["work"]), "work"));
-    assert!(!still_on_the_pool(unread(), named(&["home"]), "work"));
-    assert!(still_on_the_pool(
-        unread(),
-        Err::<Option<Vec<String>>, _>("no"),
-        "work"
-    ));
+    assert!(!still_on_the_pool(none(), every.clone(), "work"));
+    assert!(still_on_the_pool(unread(), every, "work"));
+    assert!(still_on_the_pool(unread(), names(&["work"]), "work"));
+    assert!(!still_on_the_pool(unread(), names(&["home"]), "work"));
+    assert!(!still_on_the_pool(unread(), no_pool, "work"));
+    assert!(still_on_the_pool(unread(), cannot_read, "work"));
 }
 
 /// One of this machine's made profiles, `name`, of `harness`.
