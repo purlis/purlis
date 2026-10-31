@@ -526,8 +526,8 @@ fn in_the_journey(
             .image,
         next.as_str(),
     );
-    the_settings_went_whole_to(&followed, &settings);
     the_row_says(machine, pool, &Standing::SignedOut);
+    the_settings_went_whole_to(&followed, &settings);
     let refused = ready_to_start(machine, &target.root, pool)
         .expect_err("a sign-in follows only once the old runner has drained");
     assert!(refused.contains("is not signed in on pool"), "{refused}");
