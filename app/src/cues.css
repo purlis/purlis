@@ -1,0 +1,18 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **Cues no theme can erase** (#3295), in the `cues` layer `styles.css` declares after `parts`,
+   which no theme writes into. A theme still draws the controls these sit on: only the mark that
+   says what a press does is kept here.
+
+   **The close that ends a chat** (`.ends-a-chat`, `paneFrame.css` and `StripMarks.tsx`): the
+   button family's quiet ghost, whose hover a theme reaches (`button.root.quiet.hover.*`). Its
+   danger hover fill stays the family's, and a theme may draw another; under the pointer its
+   glyph takes the danger colour, and an edge of it, so a press that ends a chat never looks like
+   any other quiet hover. On the built-ins' danger ground the danger words are held at 4.5:1
+   (`purlis_core::theme::check::PAIRS`). */
+.pane-doing
+  > .ends-a-chat[data-scope="button"][data-variant="quiet"][data-hovered]:not([data-disabled]) {
+  color: var(--danger-text);
+  box-shadow: inset 0 0 0 1px var(--danger-text);
+}
