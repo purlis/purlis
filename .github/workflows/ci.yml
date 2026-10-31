@@ -100,6 +100,7 @@ jobs:
       confinement: ${{ steps.scope.outputs.confinement }}
       parity: ${{ steps.scope.outputs.parity }}
       bench: ${{ steps.scope.outputs.bench }}
+      outcome-bars: ${{ steps.scope.outputs.outcome-bars }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1819,10 +1820,14 @@ jobs:
   # required, and no `scenario-checks` waits on it: its 300 ms is measured on a debug build on a
   # shared runner, and a miss is a ticket (the operator's ruling of 2026-10-31), not a block on
   # every merge. It becomes required with the flag's flip (#2786).
+  #
+  # On main's push, and on a pull request that touches what the bars measure (`GATES`), by the
+  # operator's choice of 2026-11-01: it takes a macOS and a Linux runner for 11 to 17 minutes. A
+  # regression from anywhere else shows on main, not on its pull request.
   outcome-bars:
     name: outcome bars (${{ matrix.os }})
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) }}
     strategy:
       fail-fast: false
       matrix:
