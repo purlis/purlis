@@ -2293,11 +2293,10 @@ fn a_keep_of_what_changed_with_no_staged_settings_is_refused() {
 fn forgetting_what_was_carried_leaves_other_profiles_batches() {
     let root = tempfile::tempdir().unwrap();
     let homes = homes(root.path(), "01JA0DESKT0P00000000000000");
-    // The batches beside the profiles' folder, under the data home.
+    // The batches in the profiles' folder.
     let batch = homes
         .folder_of("any")
         .parent()
-        .and_then(Path::parent)
         .unwrap()
         .join(crate::profilestore::CARRIED)
         .join("b1");
