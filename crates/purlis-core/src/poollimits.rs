@@ -63,6 +63,31 @@ pub enum Group {
     Runner,
 }
 
+impl Group {
+    /// Every group, in the order the pool's page draws them.
+    pub const ALL: [Group; 3] = [Group::Code, Group::SignIn, Group::Runner];
+
+    /// Its heading on the pool's page.
+    #[must_use]
+    pub fn plain(self) -> &'static str {
+        match self {
+            Group::Code => "Code",
+            Group::SignIn => "Sign-in",
+            Group::Runner => "Runner",
+        }
+    }
+
+    /// What its limits affect, in a line under the heading.
+    #[must_use]
+    pub fn help(self) -> &'static str {
+        match self {
+            Group::Code => "What purlis sends to the runner.",
+            Group::SignIn => "Profiles going to the runner and signing in there.",
+            Group::Runner => "What the runner is made with.",
+        }
+    }
+}
+
 /// When a changed value takes effect (Q13).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TakesEffect {
@@ -70,6 +95,17 @@ pub enum TakesEffect {
     NextAttempt,
     /// When the runner is next replaced.
     NextReplacement,
+}
+
+impl TakesEffect {
+    /// In the words the person's ruling gave them.
+    #[must_use]
+    pub fn said(self) -> &'static str {
+        match self {
+            TakesEffect::NextAttempt => "Applies from the next attempt.",
+            TakesEffect::NextReplacement => "Applies when this runner is next replaced.",
+        }
+    }
 }
 
 /// **Why a default is what it is** (Q10, user story 35): what was measured, on what, and what it
@@ -190,6 +226,19 @@ impl Limit {
             )),
             _ => Ok(()),
         }
+    }
+
+    /// **The value in the words `typed`**, or why they aren't one this limit can be: [`Self::check`]
+    /// for what a person types, so a window never reads a number by rules of its own.
+    pub fn check_typed(&self, typed: &str, highest: Option<u64>) -> Result<u64, String> {
+        let typed = typed.trim();
+        let value = typed
+            .bytes()
+            .all(|byte| byte.is_ascii_digit())
+            .then(|| typed.parse::<u64>().ok())
+            .flatten()
+            .ok_or_else(|| format!("{} is a whole number", self.plain))?;
+        self.check(value, highest).map(|()| value)
     }
 
     /// **This limit hit**: `needed` against the value `in_force`, under the `highest` allowed.
@@ -336,6 +385,43 @@ mod tests {
         assert_eq!(size.check(512, Some(512)), Ok(()));
         let high = size.check(513, Some(512)).unwrap_err();
         assert!(high.contains("at most 512 MiB on this pool"), "{high}");
+    }
+
+    #[test]
+    fn what_a_person_types_is_a_value_or_the_same_refusal_as_the_file_gets() {
+        let size = LimitId::ProfileSize.limit();
+        assert_eq!(size.check_typed(" 256 ", None), Ok(256));
+        for not_a_number in [
+            "",
+            "  ",
+            "1.5",
+            "-1",
+            "+1",
+            "1e3",
+            "12a",
+            "\u{663}",
+            "99999999999999999999",
+        ] {
+            let why = size.check_typed(not_a_number, None).unwrap_err();
+            assert!(why.contains("whole number"), "{not_a_number:?}: {why}");
+        }
+        assert_eq!(size.check_typed("0", None), size.check(0, None).map(|()| 0));
+        assert_eq!(
+            size.check_typed("513", Some(512)),
+            size.check(513, Some(512)).map(|()| 513)
+        );
+    }
+
+    /// The page draws these, so a new group can't reach it without a heading and a line.
+    #[test]
+    fn every_group_and_every_way_of_taking_effect_says_itself() {
+        for group in Group::ALL {
+            assert!(!group.plain().is_empty() && !group.help().is_empty());
+        }
+        for limit in all() {
+            assert!(Group::ALL.contains(&limit.group), "{}", limit.key);
+            assert!(limit.takes_effect.said().starts_with("Applies "));
+        }
     }
 
     #[test]

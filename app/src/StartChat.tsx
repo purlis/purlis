@@ -36,7 +36,7 @@ import { ListBox, ListOption } from "./ui/list/List";
 import { FILTERED_FROM, ListFilter, noMatchSaid, type Noun } from "./ui/list/ListFilter";
 import { RowLabel, RowLead, RowTrail } from "./ui/list/Row";
 import { reachableWords, startAnswer } from "./StartChatApproval";
-import { StartChatLimit } from "./StartChatLimit";
+import { RaiseLimit } from "./RaiseLimit";
 
 /**
  * The key of the row that stands for "no persona at all".
@@ -638,8 +638,9 @@ export function StartChat({
               </p>
             )}
             {trouble && limitOffer !== undefined && onRaiseLimit && (
-              <StartChatLimit
+              <RaiseLimit
                 offer={limitOffer}
+                action="Save to the pool and start"
                 applying={starting}
                 onApply={(values) => {
                   void onRaiseLimit(values).then((saved) => {

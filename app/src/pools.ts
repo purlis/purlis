@@ -9,6 +9,7 @@ import {
   type ClusterPoolKey,
   type PoolAdding,
   type PoolLink,
+  type PoolLimitsPage,
   type PoolProfiles as PoolProfilesAnswered,
   type PoolRemoved,
   type PoolVersion,
@@ -66,6 +67,8 @@ export type Held = {
   /** This machine's profiles as each pool's runner keeps them, by the pool's name (#2049): the
    *  rows, that they are being asked, or why they could not be. */
   profiles: Readonly<Record<string, PoolProfiles>>;
+  /** Each pool's limits, by the pool's name, once read, or why they could not be (#4285). */
+  limits: Readonly<Record<string, PoolLimitsPage | { trouble: string }>>;
   /** The pool just added, whose profiles the dialog offers to sign in there, until Done. */
   added: string | undefined;
   /** The pool being removed, while it is. */
@@ -88,6 +91,7 @@ const START: Held = {
   links: {},
   versions: {},
   profiles: {},
+  limits: {},
   added: undefined,
   removing: undefined,
   remaking: undefined,
@@ -273,6 +277,44 @@ export async function askProfiles(name: string, plane?: string, { quietly = fals
         ? said.data
         : { trouble: "purlis did not say which profiles the runner keeps." };
   set((was) => ({ ...was, profiles: { ...was.profiles, [name]: rows } }));
+}
+
+/** Reads pool `name`'s limits (#4285); what is shown stays until the answer comes. */
+export async function askLimits(name: string) {
+  const said = await caught(commands.poolLimits(name));
+  const limits =
+    said.status === "error"
+      ? { trouble: said.error }
+      : typeof said.data === "object" && said.data !== null && Array.isArray(said.data.groups)
+        ? said.data
+        : { trouble: "purlis did not say what this pool's limits are." };
+  set((was) => ({ ...was, limits: { ...was.limits, [name]: limits } }));
+}
+
+/** **The value in the words `typed` for limit `key`**, or why they aren't one: the core's check. */
+export function checkLimit(key: string, typed: string) {
+  return caught(commands.poolLimitCheck(key, typed));
+}
+
+/**
+ * **Saves `values` to pool `name`'s limits**, a `null` returning that one to purlis's default
+ * (#4285), then reads them again, so an open page shows them. Why not, in the core's words: those
+ * before it stay saved.
+ */
+export async function saveLimits(
+  name: string,
+  values: ReadonlyArray<readonly [string, number | null]>,
+): Promise<string | undefined> {
+  let refused: string | undefined;
+  for (const [key, value] of values) {
+    const saved = await caught(commands.poolLimitSet(name, key, value));
+    if (saved.status === "error") {
+      refused = saved.error;
+      break;
+    }
+  }
+  await askLimits(name);
+  return refused;
 }
 
 /** Pool `name`'s profiles as last asked, outside React (#4048). */

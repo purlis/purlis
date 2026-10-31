@@ -514,7 +514,7 @@ import {
   useChatMoves,
   useChatMovesHeard,
 } from "./chatMoves";
-import { usePools } from "./pools";
+import { saveLimits, usePools } from "./pools";
 import { useSignOutTerminals } from "./settings/signOutTerminals";
 import { fitting, LEAST, LEAST_CHIP, leastAt, useRoom } from "./fits";
 import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
@@ -10467,21 +10467,12 @@ export const PlaneView = memo(function PlaneView({
                 onRaiseLimit={async (values) => {
                   const pool = pickerLimit?.offer.pool;
                   if (pool === undefined) return false;
-                  for (const [key, value] of values) {
-                    const saved = await commands
-                      .poolLimitSet(pool, key, value)
-                      .catch((err: unknown) => ({
-                        status: "error" as const,
-                        error: String(err),
-                      }));
-                    if (saved.status === "error") {
-                      // The offer stays beside the words that replaced the refusal.
-                      setPickerTrouble(saved.error);
-                      setPickerLimit((was) => was && { ...was, refused: saved.error });
-                      return false;
-                    }
-                  }
-                  return true;
+                  const refused = await saveLimits(pool, values);
+                  if (refused === undefined) return true;
+                  // The offer stays beside the words that replaced the refusal.
+                  setPickerTrouble(refused);
+                  setPickerLimit((was) => was && { ...was, refused });
+                  return false;
                 }}
                 onStart={(profile, persona, footer, label, newBranch, withoutSandbox) =>
                   void startPicked(profile, persona, footer, label, newBranch, withoutSandbox)

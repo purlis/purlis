@@ -42,9 +42,10 @@ const REFUSING: Record<string, { grounds: string[]; where: string }> = {
     grounds: ["surface.raised"],
     where: "HexColour: in a persona's card, a view tab's panel (Views.tsx)",
   },
-  "StartChatLimit.tsx": {
-    grounds: ["surface.overlay"],
-    where: "StartChatLimit: a limit's new value, in the Start a chat dialog",
+  "RaiseLimit.tsx": {
+    grounds: ["surface.overlay", "surface.base"],
+    where:
+      "RaiseLimit: a limit's new value, in the Start a chat dialog and under a move's line on the pane",
   },
 };
 
