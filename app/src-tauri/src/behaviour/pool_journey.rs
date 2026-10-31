@@ -369,16 +369,50 @@ fn measure_limits(target: &Target, machine: &Machine, pool: &str, settings: &Pat
             samples
         })
     };
-    // What goes in code: 1000 MiB that does not compress.
-    for mib in [128_usize, 512, 1000] {
+    // What goes in code: bytes that do not compress.
+    let random = |into: &Path, mib: u64| {
+        let mut from = std::fs::File::open("/dev/urandom").expect("urandom");
+        let mut file = std::fs::File::create(into).expect("its file");
+        std::io::copy(&mut std::io::Read::take(&mut from, mib << 20), &mut file).expect("written");
+    };
+    purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, Some(4096))
+        .expect("raised");
+    for mib in [64_u64, 256, 512] {
         let large = clone.join("measure.bin");
-        let mut file = std::fs::File::create(&large).expect("its file");
-        for one in 0..mib {
-            file.write_all(&data(one, 1 << 20)).expect("written");
-        }
-        drop(file);
-        purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, Some(4096))
-            .expect("raised");
+        random(&large, mib);
+        let began = Instant::now();
+        let scratch = tempfile::tempdir().expect("scratch");
+        let staged = purlis_core::forklock::output(
+            std::process::Command::new("git")
+                .current_dir(clone)
+                .args(["add", "-A"]),
+        );
+        let added = began.elapsed();
+        let _ = purlis_core::forklock::output(
+            std::process::Command::new("git").current_dir(clone).args([
+                "-c",
+                "user.name=m",
+                "-c",
+                "user.email=m@example.com",
+                "commit",
+                "-qm",
+                "measure",
+            ]),
+        );
+        let bundled = Instant::now();
+        let _ = purlis_core::forklock::output(
+            std::process::Command::new("git").current_dir(clone).args([
+                "bundle",
+                "create",
+                scratch.path().join("b").to_str().expect("a path"),
+                "--all",
+            ]),
+        );
+        say(format!(
+            "code {mib} MiB: git add {added:?} ok={}, a bundle alone {:?}",
+            staged.is_ok(),
+            bundled.elapsed()
+        ));
         let began = Instant::now();
         let opened = target.sessions.open_named(
             None,
@@ -387,9 +421,12 @@ fn measure_limits(target: &Target, machine: &Machine, pool: &str, settings: &Pat
             &|_| {},
         );
         say(format!(
-            "code {mib} MiB: start with its send took {:?}, ok={}",
+            "code {mib} MiB: start with its send took {:?}, {:?}",
             began.elapsed(),
-            opened.is_ok()
+            opened
+                .as_ref()
+                .map(|_| ())
+                .map_err(|why| why.chars().take(400).collect::<String>())
         ));
         if let Ok(opened) = opened {
             let _ = target.sessions.close(opened.number);
@@ -400,9 +437,9 @@ fn measure_limits(target: &Target, machine: &Machine, pool: &str, settings: &Pat
     let folder = settings.join("skills/measure");
     std::fs::create_dir_all(&folder).expect("its folder");
     let mut sent = 0;
-    for mib in [128_usize, 512, 1000] {
+    for mib in [128_usize, 512] {
         for one in sent..mib {
-            std::fs::write(folder.join(format!("{one}.bin")), data(one, 1 << 20)).expect("written");
+            random(&folder.join(format!("{one}.bin")), 1);
         }
         sent = mib;
         purlis_core::runners::set_pool_limit(
@@ -608,7 +645,10 @@ fn in_the_journey(
     std::fs::remove_file(clone.join("large.bin")).expect("the file goes");
     purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, None)
         .expect("back to the default");
-    measure_limits(target, machine, pool, &settings, &clone);
+    if std::env::var_os("PURLIS_MEASURE_LIMITS").is_some() {
+        measure_limits(target, machine, pool, &settings, &clone);
+        return;
+    }
 
     step("the chat moves back");
     // Move it back here: its conversation and the work done there come with it.
