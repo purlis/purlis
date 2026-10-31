@@ -2405,6 +2405,48 @@ fn a_draining_runner_removed_outside_purlis_takes_nothing_from_a_home_made_since
     assert_eq!(runners::named(config.path(), "first").unwrap(), None);
 }
 
+/// A removal that failed does not carry again at the next look (#4168).
+#[test]
+fn a_draining_runner_removed_outside_purlis_carries_once() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    home_prints(&fake, HOME_CREATED);
+    a_pool_draining(config.path(), &fake);
+    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("containers", "");
+    fake.set("rm-fails-volume", "1");
+
+    drain_removed(config.path(), &fake.docker(), "first").unwrap();
+    assert!(
+        runners::named(config.path(), "first")
+            .unwrap()
+            .unwrap()
+            .carried
+    );
+    std::fs::write(fake.file_path("log"), "").unwrap();
+    fake.set("volumes", "purlis-runner-first-home\n");
+    drain_removed(config.path(), &fake.docker(), "first").unwrap();
+
+    assert!(
+        !fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
+}
+
+/// With no engine kept, a runner is not taken as removed (#4168).
+#[test]
+fn a_draining_runner_with_no_engine_kept_is_not_taken_as_removed() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    fake.set("containers", "");
+
+    assert!(drain_removed(config.path(), &fake.docker(), "first").is_err());
+    assert!(runners::named(config.path(), "first").unwrap().is_some());
+}
+
 /// A runner the engine still lists is not drained this way (#4168).
 #[test]
 fn a_draining_runner_still_listed_is_not_taken_as_removed() {

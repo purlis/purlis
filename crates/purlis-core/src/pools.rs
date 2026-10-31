@@ -683,6 +683,12 @@ pub fn drain_removed(config_root: &Path, docker: &Docker, name: &str) -> Result<
     let kept = runners::named(config_root, name)?
         .filter(|kept| kept.draining)
         .ok_or_else(|| Refused::Other(format!("no runner {name} is draining on this machine")))?;
+    // With no engine kept, nothing says the engine answering is the one that made it.
+    if kept.engine.is_none() {
+        return Err(Refused::Other(format!(
+            "runner {name} has no engine kept, so it is not known to be removed"
+        )));
+    }
     let missing = docker
         .missing(&kept.made, kept.engine.as_deref())
         .map_err(|why| Refused::Other(why.0))?;
@@ -691,8 +697,16 @@ pub fn drain_removed(config_root: &Path, docker: &Docker, name: &str) -> Result<
             "runner {name} is not known to be removed, so it stays as it is"
         )));
     };
-    if !kept.carried && gone.home_kept && is_its_own_home(docker, &kept).unwrap_or(false) {
-        carry_sign_ins(config_root, docker, &kept);
+    if !kept.carried {
+        if gone.home_kept && is_its_own_home(docker, &kept).unwrap_or(false) {
+            carry_sign_ins(config_root, docker, &kept);
+        }
+        // Once, however many looks its removal takes, as a drain carries (#4055).
+        if let Err(why) =
+            runners::note_locked(config_root, name, |kept| kept.carried = true, &locked)
+        {
+            tracing::warn!("purlis: runner {name} may be carried from again: {why}");
+        }
     }
     runners::remove_locked(config_root, docker, name, None, &locked)
 }

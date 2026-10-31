@@ -384,11 +384,16 @@ pub fn follow_and_drain(
                     &machine.docker,
                     kept.name(),
                 ) {
-                    Ok(_) => format!(
-                        "draining runner {} was removed outside purlis, so it is forgotten and \
-                         its chats ended with it",
-                        kept.name()
-                    ),
+                    Ok(removed) => match removed.left() {
+                        None => format!(
+                            "draining runner {} was removed outside purlis, so it is forgotten \
+                             and its chats ended with it",
+                            kept.name()
+                        ),
+                        Some(left) => {
+                            format!("draining runner {} is not all removed: {left}", kept.name())
+                        }
+                    },
                     Err(why) => format!("draining runner {} was not removed: {why}", kept.name()),
                 },
             );
