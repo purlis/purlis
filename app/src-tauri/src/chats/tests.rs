@@ -6309,6 +6309,40 @@ fn a_shell_tab_is_resumed_by_no_conversation_whatever_ran_in_it() {
     let _ = chats.close(session);
 }
 
+/// **A shell that ran `exit` has left, with its tab still open** (#4202): it is still a shell
+/// tab at its root, but it runs nothing a sign-in could finish in. A program whose restart is
+/// under way has not ended: the new run takes its place.
+#[test]
+fn a_shell_whose_program_ended_runs_no_shell_though_its_tab_is_open() {
+    let (chats, _wrote) = recorded();
+    let root = std::env::temp_dir();
+    let session = chats
+        .start(
+            &Chat {
+                cwd: Some(root.clone()),
+                ..chat("/bin/sh", "shell", None)
+            },
+            SIZE,
+        )
+        .unwrap();
+    assert!(chats.runs_a_shell_at(session, &root));
+
+    chats.claim(session).expect("claimed");
+    chats.its_program_ended(session);
+    assert!(
+        chats.runs_a_shell_at(session, &root),
+        "a restart under way has not ended it"
+    );
+    lock(&chats.restarting).remove(&session);
+
+    chats.its_program_ended(session);
+
+    assert!(chats.is_shell_at(session, &root), "its tab is still open");
+    assert!(!chats.runs_a_shell_at(session, &root));
+    let _ = chats.close(session);
+    assert!(!chats.runs_a_shell_at(session, &root));
+}
+
 #[test]
 fn a_conversation_for_a_chat_that_is_not_open_invents_nothing() {
     let (chats, wrote) = recorded();

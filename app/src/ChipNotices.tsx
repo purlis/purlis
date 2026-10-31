@@ -8,7 +8,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type FocusEvent,
   type KeyboardEvent,
+  type ReactNode,
   type RefObject,
 } from "react";
 import type { Said } from "./actions";
@@ -42,13 +44,32 @@ export type StandingNotice = {
   workspace: string;
   /** What it is about, stably: its dismissal's key (`pin-dormant:delta`). */
   cause: string;
-  /** Its one sentence. */
-  says: string;
-  /** Its ways on, as the Notices centre's line offers them. */
-  fixes: readonly NoticeAction[];
-  /** Dismisses it, here and in the Notices centre. */
-  dismiss: () => void;
-};
+  /** What it says, as the Notices centre's line says it: a sentence, or one with code in it
+   *  (a stale repo's branch and addresses, #3650). */
+  says: ReactNode;
+  /** **How urgent it is**, which the chip's dot shows (#3650): a stale repo and a layout
+   *  behind are warnings (▲). News (●) where it is not said. */
+  kind?: NoticeKind;
+  /** Its look, as the centre's line has it: trouble once a press was refused. */
+  tone?: "news" | "trouble";
+  /** Its accessible name, where the sentence alone would not make a good one. */
+  label?: string;
+} & StandingWays;
+
+/**
+ * **A standing line's ways out**, said in the type (#3930's review): one the person can dismiss,
+ * here and in the Notices centre, with whatever fixes it has; or one that goes only when it is
+ * mended (a layout behind, #3650, which the centre lists with no Dismiss either), which then has
+ * at least one fix.
+ */
+export type StandingWays =
+  | {
+      /** Its ways on, as the Notices centre's line offers them. */
+      fixes: readonly NoticeAction[];
+      /** Dismisses it, here and in the Notices centre. */
+      dismiss: () => void;
+    }
+  | { fixes: readonly [NoticeAction, ...NoticeAction[]]; dismiss?: undefined };
 
 /** **The line of a pin whose workspace is gone** (V91c as amended, NO-1): its cause, the
  *  dismissal record's key, and its words, one for the Notices centre and the dormant chip. */
@@ -80,7 +101,7 @@ export type ChipNotice =
 
 /** Dismisses `one`, wherever it is kept: the kept results, or the per-project record. */
 const dismissOne = (one: ChipNotice, does: Pick<ChipNotices, "dismiss">) => {
-  if ("standing" in one) one.standing.dismiss();
+  if ("standing" in one) one.standing.dismiss?.();
   else does.dismiss(one.id);
 };
 
@@ -198,7 +219,7 @@ export function useChipNotices({
       by.set(place.workspace, [
         ...(by.get(place.workspace) ?? []),
         // A standing line's kind is said, never worked out: it is no result (#3651).
-        { id: line.cause, standing: line, kind: "info" },
+        { id: line.cause, standing: line, kind: line.kind ?? "info" },
       ]);
     }
     if (status !== undefined) by.set(AT_STATUS, status);
@@ -436,11 +457,41 @@ export function ChipCard({
     },
     [],
   );
+  // **The keyboard stays in the card when the line it was on goes** (#3930's review, WCAG 2.4.3):
+  // a stale repo switched, a layout updated, one line of several dismissed. The card stays up for
+  // the rest, so its own hand-off (above) does not run; the region takes the keyboard instead of
+  // the page. A browser may say nothing as a focused element is removed, so every render looks,
+  // as well as the blur.
+  const inside = useRef<HTMLElement | null>(null);
+  const keep = () => {
+    const had = inside.current;
+    if (had === null || had.isConnected) return;
+    inside.current = null;
+    const at = document.activeElement;
+    if (at !== null && at !== document.body) return;
+    region.current?.focus({ preventScroll: true });
+  };
+  useLayoutEffect(keep);
+  const onFocus = (event: FocusEvent) => {
+    inside.current = event.target as HTMLElement;
+  };
+  const onBlur = (event: FocusEvent) => {
+    // To somewhere that takes it: nothing to hand back.
+    if (event.relatedTarget !== null) {
+      inside.current = null;
+      return;
+    }
+    queueMicrotask(keep);
+  };
   const escape = (event: KeyboardEvent) => {
     if (event.key !== "Escape") return;
     event.stopPropagation();
     event.preventDefault();
     for (const one of notices) dismissOne(one, does);
+    // **What cannot be dismissed goes behind its dot** (#3930's review): a layout behind stays
+    // until it is mended, so Esc hides the card rather than doing nothing, and the keyboard
+    // goes back to the chip (D-3648-21).
+    if (notices.some((one) => "standing" in one && one.standing.dismiss === undefined)) does.hide();
   };
   return (
     <HungPopover
@@ -459,6 +510,8 @@ export function ChipCard({
         data-chip={workspace}
         {...{ [CARD_STOP]: "" }}
         onKeyDown={escape}
+        onFocus={onFocus}
+        onBlur={onBlur}
       >
         {/* **Stacked, newest first** (#3649): one card per chip, and a line that says so while
         it holds more than one. */}
@@ -467,18 +520,11 @@ export function ChipCard({
         )}
         {notices.map((one) =>
           "standing" in one ? (
-            <Notice
+            <StandingLine
               key={one.id}
-              cause={one.standing.cause}
-              fixes={
-                one.standing.fixes.length === 0
-                  ? undefined
-                  : (one.standing.fixes as [NoticeAction, ...NoticeAction[]])
-              }
+              line={one.standing}
               onDismiss={() => dismissOne(one, does)}
-            >
-              {one.standing.says}
-            </Notice>
+            />
           ) : (
             <ActionResultNotice
               key={one.id}
@@ -494,5 +540,32 @@ export function ChipCard({
         )}
       </div>
     </HungPopover>
+  );
+}
+
+/**
+ * **One standing line on a card** (#3651, #3650): the Notice the Notices centre draws for it, with
+ * its fixes and, where it has one, its Dismiss. Its ways out are held by its type
+ * ({@link StandingWays}), never by a cast.
+ */
+function StandingLine({ line, onDismiss }: { line: StandingNotice; onDismiss: () => void }) {
+  if (line.dismiss === undefined)
+    return (
+      // Goes only when it is mended: its fixes are its ways out (#3650).
+      <Notice cause={line.cause} tone={line.tone} label={line.label} fixes={line.fixes}>
+        {line.says}
+      </Notice>
+    );
+  const [first, ...rest] = line.fixes;
+  return (
+    <Notice
+      cause={line.cause}
+      tone={line.tone}
+      label={line.label}
+      fixes={first === undefined ? undefined : [first, ...rest]}
+      onDismiss={onDismiss}
+    >
+      {line.says}
+    </Notice>
   );
 }

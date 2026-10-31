@@ -475,35 +475,116 @@ fn a_refused_start_leaves_one_wait_until_the_harness_says_it_is_signed_in() {
     assert!(waiting(root).is_empty(), "gone for good");
 }
 
+/// **A harness that cannot tell keeps the Ask** (#4223): the same rule as a pool's. Only signed
+/// in lets a wait go by itself, while the person may still be signing in.
 #[test]
-fn a_watch_after_sign_in_lets_the_wait_go_once_the_harness_says_signed_in() {
-    struct Then(std::sync::atomic::AtomicU32);
-    impl Look for Then {
-        fn status(&self, _: &str, _: &[&str], _: &[(String, String)]) -> Option<i32> {
-            let asked = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Some(if asked < 2 { 1 } else { 0 })
-        }
-        fn is_there(&self, _: &Path) -> bool {
-            false
-        }
-    }
-    let root = Path::new("/projects/watched");
-    let profile = profile_in("codex", "watched");
+fn a_harness_that_cannot_tell_keeps_the_wait() {
+    let root = Path::new("/projects/cannot-tell");
+    let profile = profile_in("codex", "cannot-tell");
     waits_on(root, &profile);
-    let (tell, told) = std::sync::mpsc::channel();
 
-    watch(
-        profile,
-        Then(std::sync::atomic::AtomicU32::new(0)),
-        Duration::from_millis(1),
-        Duration::from_secs(5),
-        move || tell.send(()).unwrap(),
-    )
-    .join()
-    .unwrap();
+    assert_eq!(
+        look_again(&profile, &Recorded::answering(None)),
+        Standing::CannotTell
+    );
+    assert_eq!(waiting(root).len(), 1, "it cannot tell: it still waits");
 
-    told.try_recv().expect("the window was told");
-    assert!(waiting(root).is_empty());
+    assert_eq!(
+        look_again(&profile, &Recorded::answering(Some(0))),
+        Standing::SignedIn
+    );
+    assert!(waiting(root).is_empty(), "signed in, and let go");
+}
+
+/// **Looking again asks the harness**, whatever it said a moment ago: what a watcher does.
+#[test]
+fn looking_again_asks_the_harness_every_time() {
+    let profile = profile_in("codex", "looked-again");
+
+    assert_eq!(
+        look_again(&profile, &Recorded::answering(Some(1))),
+        Standing::SignedOut
+    );
+    assert_eq!(
+        look_again(&profile, &Recorded::answering(Some(0))),
+        Standing::SignedIn
+    );
+}
+
+/// Signed in lets go that profile's waits in every project.
+#[test]
+fn signed_in_lets_go_every_project_s_wait() {
+    let (one, two) = (Path::new("/projects/one"), Path::new("/projects/two"));
+    let profile = profile_in("codex", "everywhere");
+    waits_on(one, &profile);
+    waits_on(two, &profile);
+
+    let mut went = let_go_everywhere(&profile);
+    went.sort();
+
+    assert_eq!(
+        went,
+        [one, two],
+        "it says whose went, for their windows (#4205)"
+    );
+    assert!(waiting(one).is_empty());
+    assert!(waiting(two).is_empty());
+}
+
+/// **Leaving a sign-in lets go only waits older than the moment the shell was last seen open**
+/// (#4203): a start refused after that says the profile waits in the Inbox, and it does.
+#[test]
+fn leaving_a_sign_in_keeps_a_wait_raised_after_the_shell_was_last_seen() {
+    let root = Path::new("/projects/left");
+    let profile = profile_in("codex", "left");
+    waits_on(root, &profile);
+    let last_seen = Instant::now();
+
+    let_go_older(root, "work", last_seen);
+    assert!(waiting(root).is_empty(), "older: it goes");
+    let gone = Instant::now();
+
+    waits_on(root, &profile);
+    let_go_older(root, "work", gone);
+    assert_eq!(waiting(root).len(), 1, "raised since: it stays");
+    dismiss(root, "work");
+}
+
+/// **A second refusal counts as raised then** (#4203): the usual case, a project whose Ask is why
+/// Sign in was pressed. How long it has waited, as the Inbox says, does not change.
+#[test]
+fn a_start_refused_again_after_the_shell_was_last_seen_keeps_the_wait() {
+    let root = Path::new("/projects/refused-again");
+    let profile = profile_in("codex", "refused-again");
+    waits_on(root, &profile);
+    let since = waiting(root)[0].since;
+    let last_seen = Instant::now();
+
+    waits_on(root, &profile);
+    let_go_older(root, "work", last_seen);
+
+    let waits = waiting(root);
+    assert_eq!(waits.len(), 1);
+    assert_eq!(waits[0].since, since);
+    dismiss(root, "work");
+}
+
+/// **Only a harness that says signed in counts**, for a watcher (#4223).
+#[test]
+fn only_signed_in_counts_as_signed_in_now() {
+    let profile = profile_in("codex", "signed-in-now");
+    for (status, signed_in) in [
+        (Some(0), true),
+        (Some(1), false),
+        (Some(7), false),
+        (None, false),
+    ] {
+        assert_eq!(
+            signed_in_now(&profile, &Recorded::answering(status)),
+            signed_in,
+            "{status:?}"
+        );
+    }
 }
 
 #[test]

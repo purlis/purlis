@@ -235,7 +235,7 @@ import { RegionFrame, stepRegions } from "./RegionFrame";
 import { putAway } from "./regionsAway";
 import { ActivityCount, type PanelTab } from "./ActivityBar";
 import { DoctorNotices, useDoctor } from "./Doctor";
-import { StaleCloneNotices } from "./StaleCloneNotices";
+import { StaleCloneNotices, useStaleClones } from "./StaleCloneNotices";
 import { BrowsersAtQuitNotice } from "./BrowsersAtQuitNotice";
 import { usePin } from "./Updates";
 import { StatusLine, projectName, runningIn, todoCount, type Alerts } from "./StatusLine";
@@ -960,6 +960,14 @@ export const PlaneView = memo(function PlaneView({
    * this machine across relaunches, and let go once the core answers without the cause.
    */
   const { dismissed, dismiss, settle: settleNotices, showAgain } = useDismissals(plane);
+  /** **This project's stale repos** (#1985), read once: listed in the Inbox, and each hung from
+   *  its workspace's chip in the title bar too (#3650), with one dismissal. */
+  const staleClones = useStaleClones({
+    plane,
+    dismissed,
+    dismiss,
+    settle: settleNotices,
+  });
   /** Chats this launch could not start, by name and why. They are still recorded. */
   const [wouldNotStart, setWouldNotStart] = useState<NotStarted[]>([]);
   /**
@@ -8661,12 +8669,15 @@ export const PlaneView = memo(function PlaneView({
               // The pins whose workspace is gone, which the title bar draws dormant (#3651).
               dormant: dormantPins,
               forget: (name: string) => void forgetDormantPin(name),
+              // Its stale repos, for their workspaces' chips (#3650).
+              standing: staleClones.lines,
               focused,
             },
     }),
     [
       dormantPins,
       forgetDormantPin,
+      staleClones.lines,
       focused,
       pinnedWorkspaces,
       strips,
@@ -9191,12 +9202,7 @@ export const PlaneView = memo(function PlaneView({
       <BrowsersAtQuitNotice plane={plane} onOpen={newBrowserAt} />
       {/* **A workspace's repo left off its default branch, or on a moved remote** (#1985): one
           Notice per repo, with the Fix that loses no work. */}
-      <StaleCloneNotices
-        plane={plane}
-        dismissed={dismissed}
-        dismiss={dismiss}
-        settle={settleNotices}
-      />
+      <StaleCloneNotices clones={staleClones} />
       {savedNotice && (
         <Notice
           cause="session-saved"

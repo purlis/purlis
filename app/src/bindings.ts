@@ -1624,8 +1624,8 @@ export const commands = {
 	 *  Types the profile `name`'s sign-in into shell session `session`, and runs it (#2035, ADR
 	 *  0095 §3): its harness's own sign-in command, with the profile's folder variables set, to the
 	 *  plan `provider` names where purlis names one, which the person then drives in that tab. What
-	 *  its harness said of it is forgotten, and it is asked again every few seconds until it says
-	 *  the profile is signed in, when its Ask leaves the Inbox.
+	 *  its harness said of it is forgotten, and it is asked again until it says the profile is signed
+	 *  in or the person closes the shell, when its Ask leaves the Inbox (#4223).
 	 * 
 	 *  **The window names the profile, never the command.** The line is the core's, made from this
 	 *  machine's own record of the profile ([`sign_in::login_of`]), so no text from a project, a
@@ -4565,6 +4565,12 @@ export type AlertRow = {
 	subject: string,
 	/**  What is wrong. */
 	detail: string,
+	/**
+	 *  **The workspaces it is about, by name**, where it is about some (#3650): the `reinit`
+	 *  alert's, every workspace behind the current layout, so the title bar hangs it from each
+	 *  one's chip. Empty for an alert about the project as a whole.
+	 */
+	workspaces: string[],
 	/**
 	 *  **What fixes it, in the window** (NO-6, #1238): the Inbox draws it as the Notice's button,
 	 *  in place of the command the terminal status line names.
