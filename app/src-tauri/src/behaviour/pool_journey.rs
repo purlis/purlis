@@ -302,7 +302,15 @@ fn a_chat_runs(target: &Target, machine: &Machine, pool: &str, chat: &Named) -> 
     let id = target
         .sessions
         .open_named(None, chat, Hearing::default(), &|_| {})
-        .unwrap_or_else(|why| panic!("the chat starts on the runner: {why}"))
+        .unwrap_or_else(|why| {
+            let runner = the_runner(machine, pool);
+            let held = runner.prints(&format!(
+                "cd {}/{}/* && pwd && ls -A && git log --oneline -3 2>&1; git status --short 2>&1 | head -20",
+                purlis_core::datahome::IN_A_RUNNER_CONTAINER,
+                purlis_core::datahome::PROJECTS,
+            ));
+            panic!("the chat starts on the runner: {why}\nthe runner holds: {held}")
+        })
         .number;
     let pane = Pane::on(target, id);
     pane.shows_within("Claude Code", LONG);
