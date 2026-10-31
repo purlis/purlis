@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793407468927,
+  "lastUpdate": 1793408891113,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32466,6 +32466,48 @@ window.BENCHMARK_DATA = {
             "value": 102.111401,
             "unit": "ms",
             "extra": "median of 5 runs: 101.986, 101.999, 102.111, 102.440, 102.558 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "db12a46ad89abef12d045a1b058dd20bf97333e4",
+          "message": "Theme engine: a part that falls at rest keeps its states' looks, in every family (#4040) (#4180)\n\n* theme: a part that falls at rest keeps its states' looks, in every family (#4040)\n\nThe rest fallback is written with no state in the parts layer, above\nevery family's own stylesheet, so it drew over each state the family\ndraws: hover, pressed, chosen, open, a refused box's danger edge, an\nunavailable control's faint words. Only the title bar drew them back.\nNow every family's rest fall writes back each state's change from the\nrest and each set of states that draws a look of its own, keyed on all\nof them, keeping what the theme sets in a state itself. Families drawn\nin marks or read on their track keep their own paths.\n\nA part drawn apart that falls in three or more states is keyed on all\nof them (#4117's review).\n\nTwo expectations change on purpose: a text input whose rest falls no\nlonger has its refused state fall apart from it, since the rest's\nfallback draws the danger edge back; a rest edge that reaches the\nrefused box is held either way.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme: a rest fall writes its parts' words, its unavailable looks and the theme's state colours back too (#4040)\n\n#4180's review:\n- the words of the parts that follow the root's (a label, an icon, a\n  lead) are written back with the root's, keyed on the same states, and\n  a state is written only where its whole default is (finding 1);\n- a property the theme sets in any state of a set is drawn as the theme\n  draws it there; the family default fills only what it leaves unset\n  (the dispatcher's ruling on finding 2);\n- a refused fallback sorts after every set of states without it\n  (finding 3);\n- unavailable looks are written with every other state, and never\n  under the pointer or pressed (finding 4).\n\nThe table test reads the parts inside the root and the unavailable\nsets, fails where a recipe does not fall, and checks every tab's pill;\nthe refused test asserts the path it takes with refusal_shown.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T00:29:40Z",
+          "tree_id": "0f929d6927436c19fa1bf491431bbf23482ee63e",
+          "url": "https://github.com/purlis/purlis/commit/db12a46ad89abef12d045a1b058dd20bf97333e4"
+        },
+        "date": 1793408885059,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.537607,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.529, 0.531, 0.538, 0.540, 0.541 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.410540500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.256, 16.401, 16.411, 16.522, 16.566 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.835998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.185, 100.675, 101.836, 101.923, 102.128 ms"
           }
         ]
       }
