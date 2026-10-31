@@ -1400,12 +1400,17 @@ fn findings_of_many_are_one_per_skill_asked_in_order_failing_closed() {
         ] })),
     )
     .expect("read");
-    assert_eq!(said, [vec!["too long".to_owned()], Vec::new(), Vec::new()]);
-    let too_many: Vec<serde_json::Value> = (0..=MOST_FINDINGS)
-        .map(|_| serde_json::json!({ "says": "ok" }))
-        .collect();
+    assert_eq!(
+        said,
+        [
+            Ok(vec!["too long".to_owned()]),
+            Ok(Vec::new()),
+            Ok(Vec::new())
+        ]
+    );
+    // Refused whole: one left out, one more, another skill, the wrong order, a key no answer
+    // has, another shape.
     for bad in [
-        // One left out, one more, another skill, the wrong order.
         serde_json::json!({ "skills": [{ "skill": "deploy", "findings": [] }] }),
         serde_json::json!({ "skills": [
             { "skill": "deploy", "findings": [] },
@@ -1415,15 +1420,6 @@ fn findings_of_many_are_one_per_skill_asked_in_order_failing_closed() {
         serde_json::json!({ "skills": [
             { "skill": "review", "findings": [] },
             { "skill": "deploy", "findings": [] },
-        ] }),
-        // A finding no single answer may hold, and a key no answer has.
-        serde_json::json!({ "skills": [
-            { "skill": "deploy", "findings": [{ "says": "a\u{202e}b" }] },
-            { "skill": "review", "findings": [] },
-        ] }),
-        serde_json::json!({ "skills": [
-            { "skill": "deploy", "findings": too_many },
-            { "skill": "review", "findings": [] },
         ] }),
         serde_json::json!({ "skills": [
             { "skill": "deploy", "findings": [], "level": "blocks" },
@@ -1435,5 +1431,26 @@ fn findings_of_many_are_one_per_skill_asked_in_order_failing_closed() {
             findings_of_each("x", &["deploy", "review"], &doc(bad.clone())).is_err(),
             "{bad} was taken"
         );
+    }
+    // Refused for one skill alone: findings no single answer may hold.
+    let too_many: Vec<serde_json::Value> = (0..=MOST_FINDINGS)
+        .map(|_| serde_json::json!({ "says": "ok" }))
+        .collect();
+    for bad in [
+        serde_json::json!([{ "says": "a\u{202e}b" }]),
+        serde_json::json!([{ "says": "" }]),
+        serde_json::json!(too_many),
+    ] {
+        let said = findings_of_each(
+            "x",
+            &["deploy", "review"],
+            &doc(serde_json::json!({ "skills": [
+                { "skill": "deploy", "findings": bad },
+                { "skill": "review", "findings": [{ "says": "fine" }] },
+            ] })),
+        )
+        .expect("read");
+        assert!(said[0].is_err(), "{bad} was taken");
+        assert_eq!(said[1], Ok(vec!["fine".to_owned()]));
     }
 }

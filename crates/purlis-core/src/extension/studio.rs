@@ -1165,14 +1165,25 @@ pub fn findings_of(
         .and_then(serde_json::Value::as_array)
         .is_some_and(|list| list.len() > MOST_FINDINGS)
     {
-        return Err(format!(
-            "'{extension}' answered more than {MOST_FINDINGS} findings, the most purlis shows \
-             from one lint"
-        ));
+        return Err(too_many_findings(extension));
     }
     let answered: Findings = answer_of(extension, doc, "findings")?;
-    answered
-        .findings
+    said_of(extension, answered.findings)
+}
+
+fn too_many_findings(extension: &str) -> String {
+    format!(
+        "'{extension}' answered more than {MOST_FINDINGS} findings, the most purlis shows from \
+         one lint"
+    )
+}
+
+/// One skill's `findings` as a lint answered them: each one line of words within bounds.
+fn said_of(extension: &str, findings: Vec<AnsweredFinding>) -> Result<Vec<String>, String> {
+    if findings.len() > MOST_FINDINGS {
+        return Err(too_many_findings(extension));
+    }
+    findings
         .into_iter()
         .map(|finding| {
             let says = finding.says.trim();
@@ -1198,7 +1209,7 @@ pub fn findings_of(
 #[serde(deny_unknown_fields)]
 struct AnsweredSkill {
     skill: String,
-    findings: Vec<serde_json::Value>,
+    findings: Vec<AnsweredFinding>,
 }
 
 /// A lint's answer about many skills at once.
@@ -1210,14 +1221,15 @@ struct FindingsOfEach {
 
 /// **A lint's findings on each of the skills `asked`**, read from its answer `doc` to
 /// [`Ask::FindingsOfEach`] (#4195): one entry for each skill asked, in the order asked, each
-/// naming its skill and holding what [`findings_of`] reads of one. So a skill asked twice under
-/// one name is answered twice, and an answer that leaves a skill out or names another is refused
-/// whole, as any answer purlis cannot read is.
+/// naming its skill. So a skill asked twice under one name is answered twice. An answer that
+/// leaves a skill out, names another or is not this shape is refused whole; past that, each
+/// skill's findings are read as [`findings_of`] reads one answer's, and one skill's that purlis
+/// will not draw are refused for that skill alone, so one skill never hides the rest.
 pub fn findings_of_each(
     extension: &str,
     asked: &[&str],
     doc: &serde_json::Map<String, serde_json::Value>,
-) -> Result<Vec<Vec<String>>, String> {
+) -> Result<Vec<Result<Vec<String>, String>>, String> {
     if doc
         .get("skills")
         .and_then(serde_json::Value::as_array)
@@ -1230,22 +1242,22 @@ pub fn findings_of_each(
         ));
     }
     let answered: FindingsOfEach = answer_of(extension, doc, "findings")?;
-    answered
+    if let Some((one, asked)) = answered
+        .skills
+        .iter()
+        .zip(asked)
+        .find(|(one, asked)| one.skill != **asked)
+    {
+        return Err(format!(
+            "'{extension}' answered findings for {:?} where purlis asked about {asked}",
+            crate::shown::readable(&one.skill, 64)
+        ));
+    }
+    Ok(answered
         .skills
         .into_iter()
-        .zip(asked)
-        .map(|(one, asked)| {
-            if one.skill != *asked {
-                return Err(format!(
-                    "'{extension}' answered findings for {:?} where purlis asked about {asked}",
-                    crate::shown::readable(&one.skill, 64)
-                ));
-            }
-            let mut doc = serde_json::Map::new();
-            doc.insert("findings".to_owned(), one.findings.into());
-            findings_of(extension, &doc)
-        })
-        .collect()
+        .map(|one| said_of(extension, one.findings))
+        .collect())
 }
 
 /// A template's answer.
