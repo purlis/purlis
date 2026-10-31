@@ -65,6 +65,7 @@ fn a_claude_code_chats_commands_cannot_read_or_write_its_profiles_sign_in_file()
         data: None,
         sandbox_only: None,
         state: None,
+        default_config: None,
     });
 
     let file = profile.join(".credentials.json").display().to_string();
@@ -216,7 +217,10 @@ fn a_chat_is_denied_every_other_harnesses_default_sign_in_folder() {
         Harness::Opencode => home.join(".local/share/opencode"),
     };
     for harness in Harness::ALL {
-        let denied = signin::other_harnesses_folders(harness, &machine);
+        let denied: Vec<PathBuf> = signin::other_harnesses_defaults(harness, &machine)
+            .into_iter()
+            .map(|(folder, _)| folder)
+            .collect();
         assert_eq!(denied.len(), 2, "{harness:?}");
         for other in Harness::ALL {
             assert_eq!(
@@ -226,4 +230,22 @@ fn a_chat_is_denied_every_other_harnesses_default_sign_in_folder() {
             );
         }
     }
+}
+
+/// **A chat that works inside another harness's default folder still starts**, kept from that
+/// harness's sign-in file alone.
+#[test]
+fn a_chat_inside_another_harnesses_folder_is_denied_its_sign_in_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap().join("home");
+    let root = home.join(".codex/worktrees/project");
+    std::fs::create_dir_all(&root).unwrap();
+    let machine = machine(&home);
+
+    let applied = applied(Harness::ClaudeCode, &root, &machine);
+
+    let denied = |path: PathBuf| applied.denied.iter().any(|denial| denial.path == path);
+    assert!(denied(home.join(".codex/auth.json")));
+    assert!(!denied(home.join(".codex")));
+    assert!(denied(home.join(".local/share/opencode")));
 }

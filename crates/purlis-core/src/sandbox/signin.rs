@@ -96,13 +96,20 @@ fn default_sign_in_folder(harness: Harness, machine: &Machine) -> Option<PathBuf
     }
 }
 
-/// **Every other harness's default sign-in folder on `machine`**: no chat of `harness` reads or
-/// writes them, the folder as well as the file, so none moves the folder aside either.
-pub fn other_harnesses_folders(harness: Harness, machine: &Machine) -> Vec<PathBuf> {
+/// **Every other harness's default sign-in on `machine`**, each its folder and the files in it:
+/// no chat of `harness` reads or writes the folder, so none moves it aside either, or the files
+/// alone where a chat works inside that folder.
+pub fn other_harnesses_defaults(
+    harness: Harness,
+    machine: &Machine,
+) -> Vec<(PathBuf, Vec<PathBuf>)> {
     Harness::ALL
         .into_iter()
         .filter(|other| *other != harness)
-        .filter_map(|other| default_sign_in_folder(other, machine))
+        .filter_map(|other| {
+            let files = credential_files(other, &ProfileFolders::of(other, &[], machine));
+            Some((default_sign_in_folder(other, machine)?, files))
+        })
         .collect()
 }
 

@@ -6445,20 +6445,26 @@ pub(crate) fn applied_of(
     } else {
         compiled
     };
-    // Every other harness's default sign-in folder, on every harness.
+    // Every other harness's default sign-in, on every harness: its folder, or its files alone
+    // where this chat works inside that folder.
     let mut denied_here = compiled.denied.clone();
-    denied_here.paths.extend(
-        signin::other_harnesses_folders(harness, machine)
-            .into_iter()
-            .map(|path| Denial {
-                class: Class::HumanPowers,
-                path,
-                access: Access::ReadWrite,
-                named: None,
-                reach: Reach::AndBelow,
-                any_case: false,
-            }),
-    );
+    let chat_ground = ground(root, machine.home.as_deref());
+    let denying = |path: PathBuf| Denial {
+        class: Class::HumanPowers,
+        path,
+        access: Access::ReadWrite,
+        named: None,
+        reach: Reach::AndBelow,
+        any_case: false,
+    };
+    for (folder, files) in signin::other_harnesses_defaults(harness, machine) {
+        let whole = [denying(folder)];
+        if covering(&whole, &chat_ground).is_none() {
+            denied_here.paths.extend(whole);
+        } else {
+            denied_here.paths.extend(files.into_iter().map(denying));
+        }
+    }
     let compiled = &Compiled {
         denied: denied_here,
         ..compiled.clone()
