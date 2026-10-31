@@ -2836,8 +2836,23 @@ fn carried_leaving(
     to: &std::path::Path,
     skip: &str,
 ) -> std::process::Output {
+    carried_under(from, to, skip, &[])
+}
+
+/// [`carried_leaving`], in an image whose environment sets `env`.
+#[cfg(unix)]
+fn carried_under(
+    from: &std::path::Path,
+    to: &std::path::Path,
+    skip: &str,
+    env: &[(&str, &str)],
+) -> std::process::Output {
     let mut command = std::process::Command::new("/bin/sh");
+    for name in ["PURLIS_DATA_HOME", "CHARTER_DATA_HOME", "XDG_DATA_HOME"] {
+        command.env_remove(name);
+    }
     command
+        .envs(env.iter().copied())
         .arg("-c")
         .arg(COPY_PROFILES)
         .arg("sh")
@@ -2913,6 +2928,24 @@ fn a_carry_goes_under_the_data_home_the_runner_has() {
             makes && spelling == "purlis",
             "the purlis spelling is made by a migration alone"
         );
+    }
+}
+
+/// **An image that names its data home by a variable carries nothing**: its runner reads that
+/// folder, so what is carried would wait where no keep takes it in.
+#[cfg(unix)]
+#[test]
+fn an_image_naming_its_data_home_carries_nothing() {
+    for name in ["PURLIS_DATA_HOME", "CHARTER_DATA_HOME", "XDG_DATA_HOME"] {
+        let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let signed_in = from.path().join(".claude/.credentials.json");
+        std::fs::create_dir_all(signed_in.parent().unwrap()).unwrap();
+        std::fs::write(&signed_in, "{}").unwrap();
+
+        let out = carried_under(from.path(), to.path(), "", &[(name, "/elsewhere")]);
+
+        assert!(!out.status.success(), "{name}: {out:?}");
+        assert!(!to.path().join(".local").exists(), "{name}");
     }
 }
 
