@@ -82,6 +82,41 @@ pub fn said_idle(pod: &Pod, now: Timestamp) -> bool {
         })
 }
 
+/// `next`, with `previous`'s `Idle` condition kept where `next` does not say it: only a runner
+/// asked to run again stops being idle ([`status_woken`]), so a pool stopped, deleted or in the
+/// way meanwhile wakes nothing.
+pub fn keeping_idle(previous: Option<&ClaimStatus>, mut next: ClaimStatus) -> ClaimStatus {
+    let held = previous.and_then(|status| {
+        status
+            .conditions
+            .iter()
+            .find(|condition| condition.type_ == IDLE && condition.status == "True")
+    });
+    if let Some(held) = held
+        && !next.conditions.iter().any(|one| one.type_ == IDLE)
+    {
+        next.conditions.push(held.clone());
+    }
+    next
+}
+
+/// A Claim's status as its idle runner is asked to run again: no `Idle`, written before its mode
+/// is changed, so a pass that fails after it does not suspend the runner again.
+pub fn status_woken() -> ClaimStatus {
+    ClaimStatus {
+        link_key: None,
+        mint: None,
+        conditions: vec![
+            condition(
+                "False",
+                "Starting",
+                "Its desktop asked for this idle runner to run again.".to_owned(),
+            ),
+            Vouching::Refused("its runner is starting again".into()).condition(),
+        ],
+    }
+}
+
 /// A Claim's status while its runner is suspended for being idle: `Ready` is `False` with the
 /// reason [`IDLE_REASON`], `Idle` is `True`, and no key is vouched for.
 pub fn status_of_an_idle_runner(suspension: Suspension) -> ClaimStatus {
@@ -92,7 +127,8 @@ pub fn status_of_an_idle_runner(suspension: Suspension) -> ClaimStatus {
     };
     let message = format!(
         "Nothing ran on this runner for its pool's idleAfter, so it {runner}. A kept \
-                 claim's volume is kept, and a link from its desktop runs it again."
+                 claim's volume is kept, and the next chat its desktop starts there runs it again; a fresh \
+                 claim's runner keeps nothing, so it comes back with a new key."
     );
     ClaimStatus {
         link_key: None,

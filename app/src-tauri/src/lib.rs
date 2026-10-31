@@ -3346,6 +3346,7 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
                 .relaying_with(runnerlinks::relays_to(config.clone()))
                 // The kill switch reaches every runner this machine keeps (#2051).
                 .stopping_runners_with(runnerlinks::every_runner(config.clone()))
+                .running_again_with(runnerlinks::runs_again(config.clone()))
                 .draining_with(runnerlinks::drains_to(config)),
             None => hosting,
         };

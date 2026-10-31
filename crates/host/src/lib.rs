@@ -116,7 +116,7 @@ pub use recording::{Ended, ReadsLog, Record, RecordsNothing, Stopped};
 #[cfg(unix)]
 pub use relay::{Dial, Keep, Relay};
 #[cfg(unix)]
-pub use routing::{DrainsTo, RelaysTo, Routed};
+pub use routing::{DrainsTo, RelaysTo, Routed, RunsAgain};
 #[cfg(unix)]
 pub use serving::{
     Answering, DeletingOwnFolders, Delivering, Forgetting, Holding, HostError, Keeping, LOCK,

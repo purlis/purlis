@@ -1050,9 +1050,9 @@ pub fn before_cluster_link(
     checked
 }
 
-/// **Asks for the cluster pool `name`'s idle runner to run again** (#3980), for the window's link
-/// a chat starts on. No check, view or kill switch asks this: they never wake a runner (ADR 0089,
-/// amended 2026-10-27, item 5). A word that cannot be written refuses nothing: the check every
+/// **Asks for the cluster pool `name`'s idle runner to run again** (#3980), as a chat starts there. No
+/// check, view, redial or kill switch asks this: they never wake a runner (ADR 0089, amended
+/// 2026-10-27, item 5). A word that cannot be written refuses nothing: the check every
 /// link makes says why the runner is not there.
 pub fn run_cluster_runner_again(
     config_root: &Path,

@@ -12,10 +12,11 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::Time;
 use k8s_openapi::jiff::{SignedDuration, Timestamp};
 use purlis_cluster_operator::lifecycle::{
     IDLE, IDLE_MESSAGE, IDLE_REASON, IDLE_WORD_HOLDS, RUN_AGAIN_ANNOTATION, asked_to_run_again,
-    idle_condition, said_idle, status_of_an_idle_runner,
+    idle_condition, keeping_idle, said_idle, status_of_an_idle_runner, status_woken,
 };
 use purlis_cluster_operator::upstream::{
-    RUNNER_CONTAINER, SUSPENDED, Sandbox, SandboxSpec, Suspension, operating_mode_while_idle,
+    IDLE_AFTER_VAR, RUNNER_CONTAINER, SUSPENDED, Sandbox, SandboxSpec, Suspension,
+    operating_mode_while_idle,
 };
 use purlis_cluster_operator::{Claim, ClaimSpec};
 
@@ -124,4 +125,54 @@ fn an_idle_runner_is_suspended_once() {
         Some(SUSPENDED)
     );
     assert_eq!(operating_mode_while_idle(&sandbox(Some(SUSPENDED))), None);
+}
+
+#[test]
+fn only_a_word_from_its_desktop_ends_a_claims_idle() {
+    let idle = status_of_an_idle_runner(Suspension::Suspended);
+    let other = purlis_cluster_operator::status_of_a_missing_pool(&claim());
+    let says_idle = |status: &purlis_cluster_operator::ClaimStatus| {
+        status.conditions.iter().any(|c| c.type_ == IDLE)
+    };
+    assert!(
+        says_idle(&keeping_idle(Some(&idle), other.clone())),
+        "a status about something else keeps it"
+    );
+    assert!(!says_idle(&keeping_idle(None, other)), "nothing to keep");
+    assert!(!says_idle(&status_woken()));
+}
+
+#[test]
+fn a_change_of_idle_time_leaves_a_runner_its_templates() {
+    use k8s_openapi::api::core::v1::{Container, EnvVar, PodSpec, PodTemplateSpec};
+    use purlis_cluster_operator::vouch::template_is_ours;
+    let with = |env: Vec<(&str, &str)>| PodTemplateSpec {
+        metadata: None,
+        spec: Some(PodSpec {
+            containers: vec![Container {
+                name: RUNNER_CONTAINER.to_owned(),
+                env: Some(
+                    env.into_iter()
+                        .map(|(name, value)| EnvVar {
+                            name: name.to_owned(),
+                            value: Some(value.to_owned()),
+                            ..EnvVar::default()
+                        })
+                        .collect(),
+                ),
+                ..Container::default()
+            }],
+            ..PodSpec::default()
+        }),
+    };
+    let wanted = with(vec![("HOME", "/h"), (IDLE_AFTER_VAR, "30m")]);
+    assert!(template_is_ours(&with(vec![("HOME", "/h")]), &wanted));
+    assert!(template_is_ours(
+        &with(vec![("HOME", "/h"), (IDLE_AFTER_VAR, "2h")]),
+        &wanted
+    ));
+    assert!(
+        !template_is_ours(&with(vec![("HOME", "/other")]), &wanted),
+        "any other variable still counts"
+    );
 }

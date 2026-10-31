@@ -95,7 +95,7 @@ spec:
                   How long a runner of the pool is idle before it is suspended (#3737): no running chat, no
                   open stream, no forwarded request and no build (ADR 0089 §9); a runner a live chat owns,
                   or whose browser holds an Ask, is never idle. A whole number of `s`, `m` or `h`, a minute
-                  at least. 30m unless the pool says otherwise. A change to it renews the pool's template.
+                  at least. 30m unless the pool says otherwise. A runner takes a change to it when it next starts.
                 maxLength: 12
                 pattern: ^[1-9][0-9]*[smh]$
                 type: string

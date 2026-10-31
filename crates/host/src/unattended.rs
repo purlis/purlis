@@ -180,6 +180,16 @@ impl Hosting {
                 since = now;
                 continue;
             }
+            // Its clock starts as a desktop pairs with it: a runner kept warm for hours has not
+            // been idle for its desktop.
+            let asking = std::sync::Arc::clone(&paired);
+            let paired_now = tokio::task::spawn_blocking(move || asking())
+                .await
+                .unwrap_or(false);
+            if !paired_now {
+                since = now;
+                continue;
+            }
             if now.saturating_duration_since(since) < after
                 || self
                     .unattended_links()
@@ -187,14 +197,12 @@ impl Hosting {
             {
                 continue;
             }
-            let asking = std::sync::Arc::clone(&paired);
-            if tokio::task::spawn_blocking(move || asking())
-                .await
-                .unwrap_or(false)
-            {
+            // Looked at again with nothing awaited after it: a chat started while pairing was
+            // read keeps its runner.
+            if self.nothing_running() {
                 crate::say(&format!(
                     "nothing has run on this runner for {}, so it says it is idle and stops: its \
-                     home is kept, and its desktop starts it again as it next links to it",
+                     home is kept, and its desktop starts it again as it next starts a chat there",
                     spelled(after)
                 ));
                 return;

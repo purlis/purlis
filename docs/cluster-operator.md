@@ -274,9 +274,13 @@ spec:
     it, so it is never suspended. The Claim's `Ready` is then `False` with the reason `Idle`, its
     `Idle` condition is `True`, and the next chat its desktop starts there runs it again: the
     desktop writes that condition's time in the annotation `runners.purlis.dev/run-again`, which
-    you can do by hand too. A runner that says it is idle waits up to five minutes, serving
-    nothing, for the operator to suspend it, and serves again if it does not. A change to
-    `idleAfter` changes the pool's template, as a change to `image` does. It is a different
+    you can do by hand too. That start may be refused while the runner comes back; start it
+    again a minute later. **A fresh Claim's runner keeps nothing**, so it comes back with a new
+    key, which its desktop refuses as it does after `stopped`: make its Claim again. A Pool or
+    Claim set `stopped` and back leaves an idle runner suspended. An idle Claim keeps no runner
+    warm. A runner that says it is idle waits up to five minutes, serving nothing, for the
+    operator to suspend it, and serves again if it does not. A running runner takes a change to
+    `idleAfter` when it next starts, and is still vouched for meanwhile. It is a different
     clock from a runner left without a link, which a Docker pool's runner suspends itself after
     (its `suspendAfter`); a cluster pool's runner does not yet (#3703).
   - `deleteSuspendedAfter` (720h, 30 days): how long a kept Claim stays suspended before it is

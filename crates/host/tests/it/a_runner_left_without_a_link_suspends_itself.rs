@@ -146,3 +146,25 @@ async fn a_link_holding_a_project_keeps_a_runner_from_being_idle() {
     let waited = timeout(LIMIT * 4, hosting.until_idle_for(LIMIT, || true)).await;
     assert!(waited.is_err(), "a held project is an open stream");
 }
+
+#[tokio::test]
+async fn a_runner_kept_warm_is_not_idle_the_moment_it_is_paired() {
+    let hosting = Hosting::new(Echo);
+    let paired = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let says = {
+        let paired = paired.clone();
+        move || paired.load(std::sync::atomic::Ordering::SeqCst)
+    };
+    let waiting = tokio::spawn({
+        let hosting = hosting.clone();
+        async move { hosting.until_idle_for(LIMIT, says).await }
+    });
+    tokio::time::sleep(LIMIT * 2).await;
+    paired.store(true, std::sync::atomic::Ordering::SeqCst);
+    tokio::time::sleep(LIMIT / 2).await;
+    assert!(!waiting.is_finished(), "its time starts as it is paired");
+    timeout(LIMIT * 4, waiting)
+        .await
+        .expect("idle once its time has passed since")
+        .unwrap();
+}
