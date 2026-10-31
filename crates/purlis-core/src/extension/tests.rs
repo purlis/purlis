@@ -3588,12 +3588,8 @@ fn a_graders_id_is_no_longer_than_the_eval_record_reads_back() {
         )
     };
     let most = "g".repeat(MOST_GRADER_ID_BYTES);
-    let made = Made::new();
-    made.ordinary();
-    made.file("bin/run", "#!/bin/sh\n");
-    made.manifest(&manifest(&most));
-    assert!(read_at(&made.at()).is_ok(), "at most is a Grader");
-    made.manifest(&manifest(&format!("{most}g")));
-    let why = read_at(&made.at()).expect_err("past it is refused as it is declared");
+    parse_knowing(&manifest(&most), &[Capability::Grader]).expect("at most is a Grader");
+    let why = parse_knowing(&manifest(&format!("{most}g")), &[Capability::Grader])
+        .expect_err("past it is refused as it is declared");
     assert!(why.contains("a Grader's id is at most 64"), "{why}");
 }
