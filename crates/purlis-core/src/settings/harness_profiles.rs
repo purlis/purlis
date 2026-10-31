@@ -151,6 +151,21 @@ pub fn listed(text: &str) -> Vec<Listed> {
         .collect()
 }
 
+/// The icon each `[harness.<name>]` table in `text` names, by the profile's name (#3137): what the
+/// window asks [`crate::harness_icon::fell_back`] about. `text` that is not TOML names none.
+pub fn icons(text: &str) -> std::collections::BTreeMap<String, String> {
+    let Ok(cfg) = text.parse::<toml::Table>() else {
+        return std::collections::BTreeMap::new();
+    };
+    tables(&cfg)
+        .into_iter()
+        .filter_map(|(name, table)| {
+            let icon = table.get("icon")?.as_str()?;
+            Some((name.clone(), icon.to_owned()))
+        })
+        .collect()
+}
+
 /// The local file's name as the plane at `root` has it, for a sentence.
 fn local_name(root: &Path) -> &'static str {
     Which::Local.file_at(root)

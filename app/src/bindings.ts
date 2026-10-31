@@ -12568,6 +12568,11 @@ export type SettingsEntry = {
 	keys: SettingsStep[],
 	/**  The Add form's values that would write it again, by the entry's key. */
 	values: EntryValue[],
+	/**
+	 *  Why a profile's icon fell back to its monogram (#3137), a sentence purlis wrote, never
+	 *  anything from the file. Optional in the window's type, as only a profile has one.
+	 */
+	icon_fell_back?: string | null,
 };
 
 /**  One value in a file, and where it is. */

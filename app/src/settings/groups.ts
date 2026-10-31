@@ -124,6 +124,9 @@ export type CollectionEntry = {
   /** Its status, where its collection says one beside each entry (R66): your own hosts, each
    *  "Waiting for you" until confirmed here, then "Confirmed". */
   status?: "waiting" | "confirmed";
+  /** A sentence that describes the entry, under its heading: why a profile's icon is its monogram
+   *  (#3137). */
+  says?: string;
 };
 
 /** One field of a collection's Add form, written to the entry's key `field`. */
