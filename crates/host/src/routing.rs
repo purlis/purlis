@@ -32,8 +32,9 @@ use crate::relay::{Keep, Relay};
 pub type RelaysTo = Arc<dyn Fn(&str) -> Result<(Keep, String), String> + Send + Sync>;
 
 /// **Asks for the named runner to run again, where it is suspended for being idle** (#3980): only
-/// as a chat starts on a link relayed to it. A link that redials, a check or a view never does,
-/// so a runner's own link does not undo its suspension.
+/// for the window's own steps towards a chat there: relaying a link, holding a project and starting
+/// a program. A link that redials, a check or a view never does, so a runner's own link does not
+/// undo its suspension.
 pub type RunsAgain = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// **The `<pool>/<runner>` a link's `relay_to` answer names** (#4071): a cluster runner's answer
@@ -168,6 +169,9 @@ impl Routed {
             return Err(refused);
         }
         *lock(&self.route) = Route::There(relay.clone());
+        // The window relays a link as a chat starts or is taken back there, and a link to a
+        // suspended runner gets no further without it (#3980).
+        self.run_again().await;
         // A link that ended while this was taken was ended as this host's: its relay is told
         // too, so the name it holds there goes with it.
         if peer.has_ended() {
@@ -258,7 +262,12 @@ impl session::Host for Routed {
                 if matches!(command, Command::StartProgram(_)) && self.drains().await {
                     return Err(not_allowed(session::A_DRAINING_RUNNER_STARTS_NONE));
                 }
-                if matches!(command, Command::StartProgram(_)) {
+                // Before anything that needs the runner: a start holds its project first, and a
+                // relay that is down refuses that hold (#3980).
+                if matches!(
+                    command,
+                    Command::HoldProject { .. } | Command::StartProgram(_)
+                ) {
                     self.run_again().await;
                 }
                 session::Host::call(&relay, command, peer).await

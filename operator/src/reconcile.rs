@@ -497,6 +497,7 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
                 if idle && lifecycle::idle_condition(&claim).is_none() {
                     let status = lifecycle::status_of_an_idle_runner(Suspension::Suspending);
                     write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
+                    return Ok(Action::requeue(vouch::KEY_WAIT));
                 }
                 set_operating_mode(context, &claim, None, &held, sandbox.as_ref(), idle).await?;
                 if upstream::is_stopped(&claim, None) {
