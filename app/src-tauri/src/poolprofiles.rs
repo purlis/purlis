@@ -941,6 +941,9 @@ pub async fn pool_profile_remove(
         let yours = yours(&config, &pool)?;
         changeable(&config, &pool, root.as_deref())?;
         let shown = purlis_core::shown::short(&name);
+        // First: no drain carries its sign-in back to the pool's runner (#4145).
+        purlis_core::runners::hold_from_carrying(&config, &pool, &name)
+            .map_err(|why| why.to_string())?;
         let to = to_a_runner(&config, &pool, Waking::Yes, &yours)?;
         let forgotten = crate::runnerlinks::forget_profile(&to, &name).map_err(|why| {
             format!(
