@@ -22,15 +22,16 @@ import { PANIC_LOG } from "./processes.js";
  * A run of its own, since the app keeps one process and one harness for a run, and the bars are
  * about one harness at a time; and a plane of its own, since two hundred skills would reach every
  * other spec. Codex's profile is the state run's, the only way a Codex chat starts (#2037), with
- * the harness that behaves as Codex does.
+ * the harness that behaves as Codex does. opencode's reports through hooks and names its conversation
+ * the same way, so a restart has something to resume.
  */
 const { kind } = harnessUnderTest(process.env.PURLIS_OUTCOME_HARNESS);
 
 const plane = copyFixturePlane();
 const program =
-  kind === "codex"
-    ? writeReportingShell(built("fake-harness"), built("charter"))
-    : writeShell(built("fake-harness"));
+  kind === "claude"
+    ? writeShell(built("fake-harness"))
+    : writeReportingShell(built("fake-harness"), built("charter"), true);
 const environment = theRunsEnvironment(plane, {
   SHELL: program,
   CHARTER_PANIC_LOG: PANIC_LOG,

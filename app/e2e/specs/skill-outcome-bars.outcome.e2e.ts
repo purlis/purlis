@@ -198,6 +198,9 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
 
   it("goes from wanting a skill to using it in a running chat in under 2 minutes", async () => {
     const chat = await startAChat();
+    // A running chat at its prompt, as a person has one: the reporting stand-ins hold their first
+    // turn until a line is typed, and a restart waits for a turn to end.
+    if (harness.kind !== "claude") await $(".xterm-helper-textarea").addValue("\n");
     const effort: Effort = { presses: 0, characters: 0 };
     const beforeTheStudio = await tabNames();
     const started = Date.now();
