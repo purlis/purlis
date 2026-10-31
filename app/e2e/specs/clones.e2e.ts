@@ -29,6 +29,7 @@ import {
   THE_RUNS_GIT_CONFIG,
   THE_RUNS_TREE,
 } from "../harness.js";
+import { showView } from "../opening.js";
 import { type Exchange, noForgeAnswers, theForgeAnswers } from "../recordedForge.js";
 import { ask, aProjectOfItsOwn, closeTheProjectsOfItsOwn, openFromTheStrip } from "../switching.js";
 
@@ -171,6 +172,18 @@ function aCliThatNotes(name: string): string {
   return at;
 }
 
+/**
+ * The stand-ins' notes that touch a clone: a credential ask, or anything naming this forge. The
+ * window's own look at which CLIs are logged in (`gh auth status --hostname github.com`) runs
+ * whoever is signed in, about the default hosts, and signs nothing.
+ */
+function cliRunsForThisForge(): string[] {
+  if (!existsSync(CLI_NOTE)) return [];
+  return readFileSync(CLI_NOTE, "utf8")
+    .split("\n")
+    .filter((line) => line.includes("git-credential") || line.includes(HOST));
+}
+
 /** The workspace `name`, naming `repos`, none of them cloned yet, focused. */
 async function aWorkspaceNaming(plane: string, name: string, repos: string[]): Promise<void> {
   await ask("workspace_create", { plane, name, vision: null, live: false });
@@ -178,6 +191,7 @@ async function aWorkspaceNaming(plane: string, name: string, repos: string[]): P
   const doc = JSON.parse(readFileSync(manifest, "utf8")) as Record<string, unknown>;
   writeFileSync(manifest, JSON.stringify({ ...doc, repos }, null, 2));
   await focusWorkspace(name);
+  await showView("Repos");
   for (const repo of repos)
     await $(rowOf(repo)).waitForExist({
       timeout: 30_000,
@@ -187,6 +201,8 @@ async function aWorkspaceNaming(plane: string, name: string, repos: string[]): P
 
 /** The workspace `name` made in its dialog with `repos` picked: its clones run on its chip. */
 async function aNewWorkspaceCloning(name: string, repos: string[]): Promise<void> {
+  // Before the card comes: a press anywhere else hides it.
+  await showView("Repos");
   await browser.keys(["F2"]);
   await $(PALETTE).waitForDisplayed({ timeout: 20_000 });
   const box = await $("#palette-query");
@@ -306,6 +322,16 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     plane = aProjectOfItsOwn(4090, (root) => theProjectKnowsTheForge(root, forge));
     await openFromTheStrip(plane);
     await theProjectsFoldersAreAccepted();
+  });
+
+  // What the window looked like when a case failed: a spec of the real window can't be run anywhere
+  // but CI, and a selector's timeout says nothing of what was drawn instead.
+  afterEach(async function () {
+    if (this.currentTest?.state !== "failed") return;
+    const name = `failed-${(this.currentTest.title ?? "").replace(/[^a-z0-9]+/gi, "-").slice(0, 60)}`;
+    await pictures(name, {});
+    const said = await browser.execute(() => document.body.innerText);
+    writeFileSync(join(WHERE_SHOTS_GO, `${name}.txt`), said);
   });
 
   after(async () => {
@@ -500,8 +526,8 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     }
   });
 
-  it("no forge CLI ran for any clone of that sign-in", () => {
-    expect(existsSync(CLI_NOTE) ? readFileSync(CLI_NOTE, "utf8") : "").toBe("");
+  it("no forge CLI signed any clone of that sign-in", () => {
+    expect(cliRunsForThisForge()).toEqual([]);
   });
 
   it("a token, the way a shipped build signs in to this host, clones as well", async () => {
@@ -520,6 +546,6 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     const { landed } = foldersOf(plane, "by-token", repo);
     await untilLanded(landed, 90_000, "the clone with a pasted token");
     aWholeClone(landed);
-    expect(existsSync(CLI_NOTE) ? readFileSync(CLI_NOTE, "utf8") : "").toBe("");
+    expect(cliRunsForThisForge()).toEqual([]);
   });
 });
