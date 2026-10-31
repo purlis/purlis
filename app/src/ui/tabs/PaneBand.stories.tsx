@@ -545,6 +545,42 @@ export const ConsentRewraps: Story = {
 };
 
 /**
+ * **A consent pressed with the pointer, as a person does** (#3399): the real engine's own mouse,
+ * driven from outside the page (Playwright's), never an event the page makes for itself. A press
+ * on the Allow just after the warning above it was put away, and the consent moved up under the
+ * pointer, does nothing and says why; once it has stood still for the settle time, the same
+ * press allows. Every end-to-end press of a grant goes through the keyboard (`pressGrant`), so
+ * this is where a pointer's press on one is held and let through in a real engine.
+ */
+export const ConsentPressedByThePointer: Story = {
+  args: { warnings: ["skills-missing", "vault-refused"] },
+  play: async ({ canvas, userEvent }) => {
+    allowed.length = 0;
+    // The engine's own mouse: imported only where a story runs in it.
+    const { userEvent: mouse } = await import("vitest/browser");
+    const open = await canvas.findByRole("button", { name: "Open in Skill studio" });
+    open.focus();
+    await userEvent.keyboard("{Escape}");
+    const vault = await canvas.findByRole("status", { name: "Vault" });
+    const allow = within(vault).getByRole("button", { name: "Allow steward to use this vault" });
+    try {
+      await mouse.click(allow);
+      expect(allowed).toEqual([]);
+      expect(await canvas.findByText(NOTICE_MOVED_JUST_NOW)).toBeVisible();
+
+      await new Promise((done) => setTimeout(done, SETTLE_MS + 100));
+      await mouse.click(allow);
+    } finally {
+      // **The engine's mouse stays where it last was, story after story**: put back in the page's
+      // corner, so it hovers nothing a later story draws (a tooltip, a row's hover).
+      await mouse.hover(document.body, { position: { x: 0, y: 0 } });
+    }
+    expect(allowed).toEqual(["forge"]);
+    atRest();
+  },
+};
+
+/**
  * **A consent the band was made to scroll back holds its Allow** (#3167): the band is scrolled
  * to its end, a long warning under the consent is put away, and the band, holding less, can no
  * longer stay scrolled: the consent slides down on screen though its place in the band is the
