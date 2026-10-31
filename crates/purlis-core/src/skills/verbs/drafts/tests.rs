@@ -587,6 +587,7 @@ fn a_try_turns_off_every_harness_skill_and_plugin_on_every_harness() {
         skills: None,
         graded: false,
         laid_out: None,
+        judging: false,
     };
     for (harness, own) in [
         (Harness::ClaudeCode, "mine"),
@@ -925,4 +926,53 @@ fn the_draft_prompt_ends_with_what_the_skill_does_on_one_line() {
     let long = asking(&level, &"x".repeat(2_000));
     assert!(long.ends_with(&"x".repeat(500)), "{long}");
     assert!(!long.ends_with(&"x".repeat(501)), "{long}");
+}
+
+/// SK-55 (#3235): an outcome eval's input files are staged into its chat's piece, what that chat
+/// left is read back as it ended, and a judge's piece holds that, the chat's answer and the task,
+/// and nothing of any skill, marked as a judge's.
+#[test]
+fn an_evals_files_are_staged_and_what_its_chat_left_reaches_its_judge_alone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    let arm = lay_out_arm(root, None).unwrap();
+    let inputs = BTreeMap::from([("evals/files/form.txt".to_owned(), "name:\n".to_owned())]);
+    stage(&arm, &["evals/files/form.txt".to_owned()], &inputs).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(arm.piece.join("evals/files/form.txt")).unwrap(),
+        "name:\n"
+    );
+    assert!(
+        stage(&arm, &["evals/files/other.txt".to_owned()], &inputs)
+            .unwrap_err()
+            .contains("was not read")
+    );
+    std::fs::write(arm.piece.join("out.md"), "done\n").unwrap();
+    std::fs::create_dir_all(arm.piece.join(".hidden")).unwrap();
+    std::fs::write(arm.piece.join(".hidden/x"), "no\n").unwrap();
+    let left = outcome_of(root, &arm.piece);
+    assert!(
+        left.contains(&("out.md".to_owned(), "done\n".to_owned())),
+        "{left:?}"
+    );
+    assert!(left.iter().any(|(path, _)| path == "evals/files/form.txt"));
+    assert!(left.iter().all(|(path, _)| !path.starts_with('.')));
+    assert!(!judge_piece(root, &arm.piece), "an eval's chat is no judge");
+
+    let judge = lay_out_judge(root, &left, Some("All done."), "{\"prompt\": \"p\"}\n").unwrap();
+    assert!(graded_piece(root, &judge.piece) && judge_piece(root, &judge.piece));
+    let read = |path: &str| std::fs::read_to_string(judge.piece.join(path)).unwrap();
+    assert_eq!(read("outcome/out.md"), "done\n");
+    assert_eq!(read("answer.md"), "All done.");
+    assert_eq!(read("task.json"), "{\"prompt\": \"p\"}\n");
+    let from = tried(root, &judge.piece).expect("the piece is a try's");
+    let set = crate::skills::in_the_studio(None, &from, None, None);
+    assert!(set.effective.is_empty(), "a judge has no skill under test");
+
+    let silent = lay_out_judge(root, &[], None, "{}\n").unwrap();
+    assert!(!silent.piece.join("answer.md").exists());
+    for laid in [&arm, &judge, &silent] {
+        assert!(end_try_at(root, &laid.piece).unwrap());
+    }
 }

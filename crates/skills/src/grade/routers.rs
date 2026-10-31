@@ -88,15 +88,15 @@ pub fn plan(request: &RouterGradeRequest) -> Plan {
             chats: 0,
             per_arm: 0,
             trigger_tests: 0,
-            outcome_evals_waiting: 0,
+            outcome_evals: 0,
+            judge_chats: 0,
         },
         |all, one| Plan {
             chats: all.chats.saturating_add(one.chats),
             per_arm: all.per_arm.saturating_add(one.per_arm),
             trigger_tests: all.trigger_tests.saturating_add(one.trigger_tests),
-            outcome_evals_waiting: all
-                .outcome_evals_waiting
-                .saturating_add(one.outcome_evals_waiting),
+            outcome_evals: all.outcome_evals.saturating_add(one.outcome_evals),
+            judge_chats: all.judge_chats.saturating_add(one.judge_chats),
         },
     )
 }

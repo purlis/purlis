@@ -663,6 +663,7 @@ fn charters_hooks() -> Vec<String> {
             plugin: None,
             persona: None,
             graded: false,
+            judging: false,
         },
         None,
         &crate::harness_plugin::Chosen::new(),

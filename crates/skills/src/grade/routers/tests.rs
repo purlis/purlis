@@ -44,6 +44,7 @@ impl Chats for Library {
             tokens: Some(self.tokens),
             cost_usd: None,
             ms: 1000,
+            answer: None,
             end: ChatEnd::Turn,
         }
     }

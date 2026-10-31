@@ -82,6 +82,9 @@ fn report(passed_with: bool) -> GradeReport {
             seconds: Some(stat(4.0)),
             chats: 3,
             not_run: 0,
+            outcome_chats: 0,
+            outcome_not_run: 0,
+            outcome_pass_rate: None,
         }],
         delta: Some(0.5),
         ended: GradeEnd::Whole,
@@ -92,6 +95,8 @@ fn report(passed_with: bool) -> GradeReport {
         spent_usd: None,
         counted_usd: None,
         priced: None,
+        outcome_delta: None,
+        outcomes: Vec::new(),
     }
 }
 
@@ -101,7 +106,7 @@ fn graded(root: &Path, id: &str, ts: &str, spent: Spent) -> Graded {
     let level = Level::project();
     let SkillCopy {
         content, commit, ..
-    } = copy_of(root, &level, "deploy").unwrap();
+    } = copy_of(root, &level, "deploy", &[]).unwrap();
     assert!(
         matches!(spent.chats, 0 | 3),
         "the fixture's report ran 3 chats, not {}",
@@ -134,12 +139,19 @@ fn graded(root: &Path, id: &str, ts: &str, spent: Spent) -> Graded {
 }
 
 #[test]
-fn the_plan_comes_before_anything_runs_and_says_what_waits() {
+fn the_plan_comes_before_anything_runs_and_says_what_it_leaves_out() {
     let plane = plane();
     let planned = planned(plane.path(), &Level::project(), "deploy", None).unwrap();
     let plan = planned.plan.unwrap();
     assert_eq!(plan.chats, 12, "two tests, two arms, three runs");
-    assert_eq!(plan.outcome_evals_waiting, 1);
+    assert_eq!(plan.outcome_evals, 0);
+    assert_eq!(
+        planned.outcomes_left_out,
+        vec![LeftOutEval {
+            id: 1,
+            why: "it has no expectations, so a judge would have nothing to check".into()
+        }]
+    );
     assert_eq!(planned.request.unwrap().arms, ARMS.to_vec());
     assert_eq!(
         planned.estimate, None,
@@ -154,7 +166,7 @@ fn a_grade_is_recorded_against_the_version_its_folder_holds() {
     let root = plane.path();
     let SkillCopy {
         content, commit, ..
-    } = copy_of(root, &Level::project(), "deploy").unwrap();
+    } = copy_of(root, &Level::project(), "deploy", &[]).unwrap();
     assert!(matches!(content, Content::Tree(_)), "{content:?}");
     assert_eq!(commit.as_deref().map(str::len), Some(40));
 
@@ -184,7 +196,7 @@ fn a_grade_is_recorded_against_the_version_its_folder_holds() {
         content: changed,
         commit: none,
         ..
-    } = copy_of(root, &Level::project(), "deploy").unwrap();
+    } = copy_of(root, &Level::project(), "deploy", &[]).unwrap();
     assert_eq!((changed, none), (Content::Uncommitted, None));
 }
 
@@ -765,7 +777,7 @@ fn a_row(id: &str, ts: &str, profile: &str, tokens: Option<u64>, ran: bool) -> G
 #[test]
 fn a_grade_whose_chats_said_no_spend_gives_an_estimate_whose_cost_is_not_known() {
     let rows = [a_row("g1", "2026-10-25T10:00:00+00:00", "work", None, true)];
-    let estimate = estimate_of(&rows, 12, Some("work")).expect("it was graded");
+    let estimate = estimate_of(&rows, 12, Some("work"), false).expect("it was graded");
     assert_eq!((estimate.tokens, estimate.cost_usd), (None, None));
     assert_eq!(estimate.ts, "2026-10-25T10:00:00+00:00");
     assert_eq!(estimate.profile.as_deref(), Some("work"));
@@ -774,14 +786,18 @@ fn a_grade_whose_chats_said_no_spend_gives_an_estimate_whose_cost_is_not_known()
     let mut on_haiku = rows[0].clone();
     on_haiku.model = Some("claude-haiku-4-5".into());
     assert_eq!(
-        estimate_of(&[on_haiku], 12, Some("work"))
+        estimate_of(&[on_haiku], 12, Some("work"), false)
             .unwrap()
             .model
             .as_deref(),
         Some("claude-haiku-4-5"),
         "SK-60: the estimate names the model its grade ran on"
     );
-    assert_eq!(estimate_of(&[], 12, Some("work")), None, "never graded");
+    assert_eq!(
+        estimate_of(&[], 12, Some("work"), false),
+        None,
+        "never graded"
+    );
 }
 
 /// #3273: the estimate comes from the closest grade, and says which: the newest on the profile
@@ -812,22 +828,22 @@ fn the_estimate_is_the_closest_grades_and_names_it() {
         ),
     ];
 
-    let on_work = estimate_of(&rows, 12, Some("work")).unwrap();
+    let on_work = estimate_of(&rows, 12, Some("work"), false).unwrap();
     assert_eq!(on_work.tokens, Some(12_000));
     assert_eq!(on_work.profile.as_deref(), Some("work"));
     assert_eq!(on_work.same_profile, Some(true));
 
-    let on_new = estimate_of(&rows, 12, Some("new")).unwrap();
+    let on_new = estimate_of(&rows, 12, Some("new"), false).unwrap();
     assert_eq!(on_new.tokens, Some(36_000), "the newest whose chats ran");
     assert_eq!(on_new.profile.as_deref(), Some("home"));
     assert_eq!(on_new.same_profile, Some(false));
     assert_eq!(
-        estimate_of(&rows, 12, None).unwrap().same_profile,
+        estimate_of(&rows, 12, None, false).unwrap().same_profile,
         None,
         "this grade's profile is not known"
     );
 
-    let only_interrupted = estimate_of(&rows[..1], 12, None).unwrap();
+    let only_interrupted = estimate_of(&rows[..1], 12, None, false).unwrap();
     assert_eq!(only_interrupted.chats_then, 0);
     assert_eq!(only_interrupted.tokens, None, "nothing ran: not known");
 }
@@ -1068,6 +1084,9 @@ fn a_row_with_a_previous_arm_names_the_version_it_compared_with() {
         seconds: None,
         chats: 0,
         not_run: 0,
+        outcome_chats: 0,
+        outcome_not_run: 0,
+        outcome_pass_rate: None,
     });
     let now = chrono::Utc::now();
     assert!(
@@ -1196,7 +1215,8 @@ fn the_estimate_is_worked_out_from_an_interrupted_grades_spend_3602() {
     // Two chats ran, two more were ended at an ask or never started: four spent 4,000 tokens.
     let four = stopped(Some(4), 2);
 
-    let estimate = estimate_of(&[four.clone(), scored_on("home")], 12, Some("work")).unwrap();
+    let estimate =
+        estimate_of(&[four.clone(), scored_on("home")], 12, Some("work"), false).unwrap();
     assert_eq!(estimate.ts, "2026-10-27T10:00:00+00:00", "on this profile");
     assert_eq!(estimate.chats_then, 4, "every chat it asked for");
     assert_eq!(estimate.tokens, Some(12_000), "a thousand a chat, not two");
@@ -1206,7 +1226,8 @@ fn the_estimate_is_worked_out_from_an_interrupted_grades_spend_3602() {
     );
     assert!(estimate.interrupted, "the plan says it was interrupted");
 
-    let estimate = estimate_of(&[four.clone(), scored_on("work")], 12, Some("work")).unwrap();
+    let estimate =
+        estimate_of(&[four.clone(), scored_on("work")], 12, Some("work"), false).unwrap();
     assert_eq!(
         estimate.ts, "2026-10-25T10:00:00+00:00",
         "a scored grade on this profile goes first"
@@ -1214,7 +1235,7 @@ fn the_estimate_is_worked_out_from_an_interrupted_grades_spend_3602() {
     assert!(!estimate.interrupted);
 
     let one_arm = stopped(Some(1), 1);
-    let estimate = estimate_of(&[one_arm], 12, Some("work")).unwrap();
+    let estimate = estimate_of(&[one_arm], 12, Some("work"), false).unwrap();
     assert_eq!(
         (estimate.chats_then, estimate.tokens, estimate.interrupted),
         (0, None, false),
@@ -1222,7 +1243,7 @@ fn the_estimate_is_worked_out_from_an_interrupted_grades_spend_3602() {
     );
 
     let uncounted = stopped(None, 2);
-    let estimate = estimate_of(&[uncounted, scored_on("home")], 12, Some("work")).unwrap();
+    let estimate = estimate_of(&[uncounted, scored_on("home")], 12, Some("work"), false).unwrap();
     assert_eq!(estimate.ts, "2026-10-25T10:00:00+00:00", "passed over");
     assert!(!estimate.interrupted);
 }
@@ -1249,7 +1270,7 @@ fn the_estimate_shares_the_spend_over_the_chats_that_asked_too_3584() {
         asked_for: None,
     };
     assert!(row.sound(chrono::Utc::now()), "{row:?}");
-    let estimate = estimate_of(&[row], 12, Some("work")).unwrap();
+    let estimate = estimate_of(&[row], 12, Some("work"), false).unwrap();
     assert_eq!(
         estimate.chats_then, 3,
         "every chat it asked for, the asked ones too"
@@ -1311,3 +1332,179 @@ fn a_plans_consent_covers_the_profile_model_and_limits_it_shows() {
 }
 
 mod follows;
+
+/// A row of a grade of one outcome eval with two expectations in both arms, as the built-in runner
+/// scores it from chats that each spent 100 tokens and judges that passed the first expectation
+/// alone: what purlis writes (SK-55).
+fn outcome_row() -> Graded {
+    struct Judged;
+    impl grade::Chats for Judged {
+        fn run(&mut self, chat: &grade::RunChat, _: Option<u64>) -> grade::ChatRan {
+            let answer = matches!(chat.kind, grade::ChatKind::Judge { .. }).then(|| {
+                serde_json::json!({"expectations": [
+                    {"text": "It ships", "passed": true, "evidence": "v2 is out"},
+                    {"text": "It tags", "passed": false, "evidence": "no tag"},
+                ]})
+                .to_string()
+            });
+            grade::ChatRan {
+                chat: Some(format!("01{}", chat.prompt.len())),
+                started: Vec::new(),
+                tokens: Some(100),
+                cost_usd: Some(0.01),
+                ms: 1000,
+                end: grade::ChatEnd::Turn,
+                answer,
+            }
+        }
+        fn cancelled(&self) -> bool {
+            false
+        }
+    }
+    let request = GradeRequest {
+        skill: "deploy".into(),
+        triggers: Vec::new(),
+        outcomes: vec![grade::OutcomeEval {
+            id: 1,
+            prompt: "ship v2".into(),
+            expected_output: None,
+            files: Vec::new(),
+            expectations: vec!["It ships".into(), "It tags".into()],
+        }],
+        arms: ARMS.to_vec(),
+        runs: 3,
+    };
+    let report = grade::grade(&request, &mut Judged, None);
+    let mut row = uncommitted_row();
+    row.spent = Spent {
+        chats: 12,
+        tokens: report.spent_tokens,
+        cost_usd: report.spent_usd,
+        asked_for: None,
+    };
+    row.report = report;
+    row
+}
+
+/// SK-55 (#3235): a grade's outcome evals are read back as purlis writes them, and a row whose
+/// outcome evals do not hold together is skipped, as a trigger test's is.
+#[test]
+fn a_row_whose_outcome_evals_do_not_hold_together_is_skipped() {
+    let now = chrono::Utc::now();
+    let row = outcome_row();
+    assert_eq!(row.report.outcomes.len(), 2);
+    assert_eq!(row.report.outcome_delta, Some(0.0));
+    assert!(row.sound(now), "a row purlis writes is kept: {row:?}");
+    type Breaks = fn(&mut Graded);
+    let broken: [(&str, Breaks); 8] = [
+        ("more passed than expectations", |row| {
+            row.report.outcomes[0].results[0].passed = Some(3);
+            row.report.outcomes[0].results[0].checks.clear();
+        }),
+        ("verdicts that are not its passed", |row| {
+            row.report.outcomes[0].results[0].passed = Some(2);
+        }),
+        ("evidence that breaks the line", |row| {
+            row.report.outcomes[0].results[0].checks[0].evidence = "a\u{1b}[2Jb".into();
+        }),
+        ("a failure that still passed", |row| {
+            row.report.outcomes[0].results[0].failed = Some("not whole".into());
+        }),
+        ("a judge's chat that is no id", |row| {
+            row.report.outcomes[0].results[0].judge = Some("\u{202e}x".into());
+        }),
+        ("more runs than the grade had", |row| {
+            let one = row.report.outcomes[0].results[0].clone();
+            row.report.outcomes[0].results.push(one);
+        }),
+        ("an outcome pass rate above all", |row| {
+            row.report.arms[0].outcome_pass_rate.as_mut().unwrap().mean = 2.0;
+        }),
+        ("more chats run than its evals asked for", |row| {
+            row.report.arms[0].outcome_chats = 40;
+        }),
+    ];
+    for (what, breaks) in broken {
+        let mut row = outcome_row();
+        breaks(&mut row);
+        assert!(!row.sound(now), "{what}: {row:?}");
+    }
+}
+
+/// SK-55: a row too long to be read back keeps its verdicts and drops the judges' evidence, and
+/// is never written past what a reader reads.
+#[test]
+fn a_row_too_long_for_the_record_drops_the_evidence_first() {
+    let row = outcome_row();
+    assert_eq!(
+        fitted(&row),
+        serde_json::to_value(&row).ok(),
+        "a row that fits is kept whole"
+    );
+    let mut long = row.clone();
+    let evidence = "e".repeat(grade::outcomes::MOST_EVIDENCE_BYTES);
+    let one = long.report.outcomes[0].clone();
+    // As many evals as it takes to pass a line, each its evidence at the most kept.
+    long.report.outcomes = (0..800)
+        .map(|_| {
+            let mut eval = one.clone();
+            for run in &mut eval.results {
+                for check in &mut run.checks {
+                    check.evidence = evidence.clone();
+                }
+            }
+            eval
+        })
+        .collect();
+    let fitted = fitted(&long).expect("the verdicts fit");
+    let line = serde_json::to_vec(&fitted).unwrap();
+    assert!(line.len() < MOST_LINE_BYTES);
+    let back: Graded = serde_json::from_value(fitted).unwrap();
+    let check = &back.report.outcomes[0].results[0].checks[0];
+    assert!(check.passed && check.evidence.is_empty(), "{check:?}");
+}
+
+/// SK-55: a plan that runs outcome evals is estimated only from a grade that ran some, as a
+/// trigger test's chat says nothing of what an eval's and its judge's spend.
+#[test]
+fn a_plan_with_outcome_evals_is_estimated_only_from_a_grade_that_ran_some() {
+    let triggers_only = uncommitted_row();
+    assert_eq!(
+        estimate_of(&[triggers_only.clone()], 12, Some("work"), true),
+        None
+    );
+    let both = outcome_row();
+    let estimate = estimate_of(&[triggers_only, both], 24, Some("work"), true).unwrap();
+    assert_eq!(estimate.chats_then, 12, "each eval's chat and its judge's");
+    assert_eq!(estimate.tokens, Some(2400));
+}
+
+/// SK-55: an eval a judge has nothing to check, or that names a fixture as its file, is left
+/// out with why, before anything is read.
+#[test]
+fn an_eval_with_nothing_to_judge_or_that_hands_its_chat_its_fixtures_is_left_out() {
+    let eval = |expectations: Vec<&str>, files: Vec<&str>| grade::OutcomeEval {
+        id: 1,
+        prompt: "ship v2".into(),
+        expected_output: None,
+        files: files.into_iter().map(str::to_owned).collect(),
+        expectations: expectations.into_iter().map(str::to_owned).collect(),
+    };
+    assert_eq!(
+        eval_left_out_why(&eval(vec!["It ships"], vec!["evals/files/a.txt"])),
+        None
+    );
+    assert!(
+        eval_left_out_why(&eval(Vec::new(), Vec::new()))
+            .unwrap()
+            .contains("no expectations")
+    );
+    for fixture in ["evals/evals.json", "evals/triggers.json"] {
+        assert!(
+            eval_left_out_why(&eval(vec!["It ships"], vec![fixture]))
+                .unwrap()
+                .contains("what it is graded by"),
+            "{fixture}"
+        );
+    }
+}

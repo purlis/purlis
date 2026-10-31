@@ -30,15 +30,15 @@ const MOST_FIXTURE_BYTES: u64 = 256 * 1024;
 pub const MOST_TRIGGER_TESTS: usize = 100;
 
 /// The most outcome evals one skill has.
-const MOST_OUTCOME_EVALS: usize = 100;
+pub const MOST_OUTCOME_EVALS: usize = 100;
 
 /// The most bytes of one prompt: a trigger test's query or an outcome eval's prompt. A grade
 /// sends it as a chat's first message, on the chat program's command line.
 pub const MOST_PROMPT_BYTES: usize = 8 * 1024;
 
 /// The most expectations one outcome eval has, and the most bytes of one.
-const MOST_EXPECTATIONS: usize = 32;
-const MOST_EXPECTATION_BYTES: usize = 2 * 1024;
+pub const MOST_EXPECTATIONS: usize = 32;
+pub const MOST_EXPECTATION_BYTES: usize = 2 * 1024;
 
 /// The most input files one outcome eval names.
 const MOST_EVAL_FILES: usize = 16;
@@ -70,6 +70,12 @@ pub fn triggers_template(name: &str) -> String {
 /// The trigger test file's path in a skill's folder, `/` between the parts.
 pub fn triggers_path() -> String {
     FixtureFile::Triggers.path()
+}
+
+/// The outcome eval file's path in a skill's folder, `/` between the parts: an eval's input file
+/// may not be it, as a chat staged with it would be handed what it is graded by (SK-55).
+pub fn outcomes_path() -> String {
+    FixtureFile::Outcomes.path()
 }
 
 /// One trigger test: a prompt, and whether the skill should start on it.

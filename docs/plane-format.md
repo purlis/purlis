@@ -1495,7 +1495,7 @@ machine's alone, as the rest of that copy is.
 | File | Shape | Meaning |
 |---|---|---|
 | `evals/triggers.json` | a list of `{"query": <text>, "should_trigger": <bool>}`, at most 100, no query twice, each query 1 byte to 8 KiB | the **trigger tests**: a query the skill should start on, or a near miss it should leave alone. A grade sends each query as a chat's first message; one a harness would read as its own flag is left out and named in the plan |
-| `evals/evals.json` | `{"skill_name": <the skill's name>, "evals": [{"id": <int>, "prompt": <text>, "expected_output": <text>, "files": [<path in the skill's folder>], "expectations": [<text>]}]}`, at most 100 evals, ids unique; `assertions` is read as another name for `expectations`, and an eval with both is refused | the **outcome evals**. Read and counted now; graded by a later version (#3235). `files` are plain paths inside the skill's folder, at most 16, each at most 512 bytes with no control character; each expectation at most 2 KiB, at most 32 |
+| `evals/evals.json` | `{"skill_name": <the skill's name>, "evals": [{"id": <int>, "prompt": <text>, "expected_output": <text>, "files": [<path in the skill's folder>], "expectations": [<text>]}]}`, at most 100 evals, ids unique; `assertions` is read as another name for `expectations`, and an eval with both is refused | the **outcome evals**, graded since SK-55 (#3235): each eval with an expectation runs in each arm, its `files` staged into its chat's throwaway piece (each read as text, at most 1 MiB; an eval naming a fixture file, or a file that does not read, is left out and named), and a judge chat grades what that chat left. `files` are plain paths inside the skill's folder, at most 16, each at most 512 bytes with no control character; each expectation at most 2 KiB, at most 32 |
 
 ### `skills.local/` — the project's local skills
 
@@ -3844,7 +3844,19 @@ An end row, never a pass or a fail:
   another tree, read from git's tree of that commit; SK-57, #3237, ADR 0105 as amended
   2026-10-28), absent in a row written before and for a skill with no other version; and
   `after_edit`, `true` for a grade a saved edit started under the person's opt-in (SK-58, #3238,
-  [`<state>/skill-grade-after-edit.json`](#dataapp-stateclone-keyskill-grade-after-editjson)), absent otherwise.
+  [`<state>/skill-grade-after-edit.json`](#dataapp-stateclone-keyskill-grade-after-editjson)), absent otherwise;
+  and since SK-55 (#3235, ADR 0105 as amended 2026-10-31), a grade's **outcome evals**:
+  `report.outcomes`, each eval in each arm `{eval, arm, expectations, runs, pass_rate, results}`,
+  each run in `results` `{chat, judge, passed, checks, failed}` (its chat's and its judge's ids;
+  how many expectations passed, null where its chat or its judge did not run; each expectation's
+  `{passed, evidence}`, in `expectations`' order, the evidence at most 512 bytes; and `failed`, why
+  the eval failed in that run although its chat ran, the judge's answer not whole or no answer,
+  with `passed` 0 and no `checks`); `report.outcome_delta`, the difference of the outcome pass
+  rates as `delta` is of the trigger tests'; and each arm's `outcome_pass_rate` (each judged
+  run's share of its expectations that passed, over every eval's runs), `outcome_chats` and
+  `outcome_not_run` (its eval chats and judges' chats that ran and did not), each absent where the
+  grade ran no outcome eval and in a row written before. A row too long for a line drops the
+  judges' evidence, then the verdicts, before it is written, so it is never past what is read.
 - **Read:** the folder only where it is a folder of its own (no link) holding at most 600 names,
   newest month first, stopping once 200 grades are held; each file following no link and at most
   16 MiB, each line at most 1 MiB; a line that
@@ -3867,7 +3879,12 @@ An end row, never a pass or a fail:
   arms, its chats at most what its runs could have asked for, #3582, and its `asked_for`, where it
   says one, from its chats to that most, #3602; a `spent.asked_for` in a scored row, whose arms
   count it, #3602), or an arm whose chats are not
-  what its tests ran and asked for) is skipped. **What was left out is said** (#3273): the
+  what its tests ran and asked for; and since SK-55 an outcome eval of an arm the report does not
+  score, with no expectation or more than 32, more runs than the grade's `runs`, a `passed` past
+  its expectations or not what its verdicts make, evidence past 512 bytes or with a control
+  character, a `failed` run that passed, a chat that is no plain id, a pass rate that is no share
+  or not where its runs were judged, or an arm whose outcome chats are fewer than its evals' runs
+  or more than twice them) is skipped. **What was left out is said** (#3273): the
   Grades tab, the plan and `purlis skill grade` say how many rows of the skill were skipped
   (a row of it no purlis parses among them) and name each file not read (a link, or one past
   16 MiB), never dropping them unseen; a byte that is not text spoils only its own row. At most 200 grades of a skill are answered, newest first

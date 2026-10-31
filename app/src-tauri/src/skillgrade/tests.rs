@@ -45,6 +45,7 @@ pub(super) fn planned(query: &str) -> Planned {
             tokens: 50_000,
             from: grades::cap::From::Yours,
         },
+        outcomes_left_out: Vec::new(),
         consent: Some("abc".into()),
         previous: None,
         previous_refused: None,
@@ -64,6 +65,50 @@ fn on(checked: Result<String, String>, priced: grading::Priced) -> On {
         models: ["opus", "sonnet", "haiku"].map(str::to_owned).to_vec(),
         model: None,
     }
+}
+
+/// SK-55 (#3235): the plan shows each outcome eval as its chat reads it, counts its chats and
+/// its judges' in the chats, and names each eval it leaves out.
+#[test]
+fn the_plan_shows_each_outcome_eval_and_counts_its_judges_chats() {
+    let mut planned = planned("ship it");
+    let request = planned.request.as_mut().unwrap();
+    request
+        .outcomes
+        .push(purlis_core::skills::grade::OutcomeEval {
+            id: 4,
+            prompt: "fill\u{200b} it".into(),
+            expected_output: None,
+            files: vec!["evals/files/form.txt".into()],
+            expectations: vec!["It is filled".into(), "It is dated".into()],
+        });
+    planned.plan = Some(grading::plan(request));
+    planned.outcomes_left_out = vec![grades::LeftOutEval {
+        id: 9,
+        why: "it has no expectations, so a judge would have nothing to check".into(),
+    }];
+    let plan = SkillGradePlan::of(
+        &planned,
+        None,
+        on(Ok("full sandbox".into()), grades::price::of_model(None)),
+    );
+    // A test: 3 runs × 2 arms; the eval: 3 runs × 2 arms × its chat and its judge's.
+    assert_eq!(plan.chats, 6 + 12);
+    assert_eq!((plan.outcome_evals, plan.judge_chats), (1, 6));
+    let eval = &plan.evals[0];
+    assert_eq!(eval.id, "4");
+    assert!(eval.hides);
+    assert!(
+        eval.prompt.starts_with("fill⟦U+200B⟧ it"),
+        "{}",
+        eval.prompt
+    );
+    assert!(
+        eval.prompt
+            .ends_with("in this folder: evals/files/form.txt.")
+    );
+    assert_eq!((eval.files.len(), eval.expectations), (1, 2));
+    assert_eq!(plan.outcomes_left_out[0].id, "9");
 }
 
 #[test]

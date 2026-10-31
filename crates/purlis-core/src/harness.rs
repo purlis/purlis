@@ -308,6 +308,10 @@ pub struct Kit<'a> {
     /// purlis's MCP server alone, and that server's read tools alone, where the harness can be
     /// told so. A grade runs on such a harness only (`skills::grades::chat_refused`).
     pub graded: bool,
+    /// **A judge's chat** of a grade (SK-55, #3235), as its piece says
+    /// (`skills::verbs::drafts::judge_piece`): a grade's chat held to reading, denied every tool
+    /// that writes, runs a command or reaches out, where the harness can be told so.
+    pub judging: bool,
     /// The set's folder the host laid out before arming the chat
     /// ([`crate::skills::lay_out_for_chat`]): the plane's skills of its set, and on a route that
     /// names the built-in skills their own (`purlis-<name>`,

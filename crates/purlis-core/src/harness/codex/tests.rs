@@ -55,6 +55,7 @@ fn kit() -> Kit<'static> {
         plugin: Some(std::path::Path::new("/app/plugin")),
         persona: None,
         graded: false,
+        judging: false,
     }
 }
 

@@ -184,6 +184,9 @@ fn a_grade() -> super::super::grades::Graded {
         seconds: None,
         chats: 3,
         not_run: 0,
+        outcome_chats: 0,
+        outcome_not_run: 0,
+        outcome_pass_rate: None,
     };
     super::super::grades::Graded {
         v: super::super::grades::VERSION,
@@ -209,6 +212,8 @@ fn a_grade() -> super::super::grades::Graded {
             spent_usd: None,
             counted_usd: None,
             priced: None,
+            outcome_delta: None,
+            outcomes: Vec::new(),
         },
         spent: super::super::grades::Spent {
             chats: 6,

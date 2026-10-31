@@ -54,6 +54,7 @@ fn a_chat_is_handed_every_built_in_skill_by_its_harness_route() {
         plugin: Some(&plugin),
         persona: None,
         graded: false,
+        judging: false,
     };
     for (harness, secrets) in [
         (Harness::ClaudeCode, "secrets"),

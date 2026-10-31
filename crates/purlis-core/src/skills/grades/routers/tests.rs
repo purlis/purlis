@@ -132,6 +132,9 @@ fn part(skill: &str, router_passes: bool) -> SkillPart {
         seconds: None,
         chats: 3,
         not_run: 0,
+        outcome_chats: 0,
+        outcome_not_run: 0,
+        outcome_pass_rate: None,
     };
     SkillPart {
         skill: skill.to_owned(),
@@ -151,6 +154,8 @@ fn part(skill: &str, router_passes: bool) -> SkillPart {
             spent_usd: None,
             counted_usd: None,
             priced: None,
+            outcome_delta: None,
+            outcomes: Vec::new(),
         },
     }
 }

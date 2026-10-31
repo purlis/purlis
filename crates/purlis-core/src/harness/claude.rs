@@ -853,8 +853,26 @@ fn denied_tools(kit: Kit<'_>) -> Vec<String> {
     if kit.graded {
         denied.extend(SUB_AGENT_TOOLS.map(str::to_owned));
     }
+    // A judge's chat reads what the chat it judges left, and changes nothing (SK-55): no tool
+    // that writes a file, runs a command or reaches past its folder.
+    if kit.judging {
+        denied.extend(JUDGE_DENIED.map(str::to_owned));
+    }
     denied
 }
+
+/// **Claude Code's tools a judge's chat is denied** (SK-55, #3235): every one that writes a file,
+/// runs a command or reaches the network. It keeps the tools that read (`Read`, `Glob`, `Grep`).
+const JUDGE_DENIED: [&str; 8] = [
+    "Bash",
+    "Edit",
+    "MultiEdit",
+    "Write",
+    "NotebookEdit",
+    "WebFetch",
+    "WebSearch",
+    "BashOutput",
+];
 
 /// Claude Code's permission mode that asks before each tool its rules do not allow.
 const DEFAULT_MODE: &str = "default";

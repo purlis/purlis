@@ -38,7 +38,12 @@ function plan(over: Partial<SkillGradePlan> = {}): SkillGradePlan {
     after_edit_chats: 18,
     tests_refused: null,
     left_out: [],
-    outcome_evals: 1,
+    evals: [],
+    outcome_evals: 0,
+    judge_chats: 0,
+    outcomes_left_out: [
+      { id: "1", why: "it has no expectations, so a judge would have nothing to check" },
+    ],
     outcomes_refused: null,
     estimate: null,
     record_said: null,
@@ -118,6 +123,7 @@ const grades = (running: ReturnType<typeof step> | null) => ({
   grades: [],
   said: null,
   tests: 2,
+  evals: 0,
   tests_refused: null,
   running,
 });
@@ -161,7 +167,9 @@ describe("Grade, cost first", () => {
     expect(screen.getAllByTestId("skill-grade-test")[1].textContent).toContain(
       "holds a character no reader would see",
     );
-    expect(screen.getByText(/1 outcome eval waits/)).toBeTruthy();
+    expect(screen.getByTestId("skill-grade-evals-left-out").textContent).toBe(
+      "Left out: Outcome eval 1: it has no expectations, so a judge would have nothing to check.",
+    );
     expect(asked.some((one) => one.cmd === "skill_grade_start")).toBe(false);
 
     // Start, fixed at the foot, says what it may spend of whose account.
@@ -354,9 +362,48 @@ describe("Grade, cost first", () => {
     );
   });
 
+  it("counts each outcome eval's chats and its judges' before anything runs (SK-55)", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan")
+        return plan({
+          chats: 24,
+          evals: [
+            {
+              id: "4",
+              prompt: "Fill in the form",
+              hides: false,
+              files: ["evals/files/form.txt"],
+              expectations: 2,
+            },
+          ],
+          outcome_evals: 1,
+          judge_chats: 6,
+          outcomes_left_out: [],
+        });
+      if (cmd === "start_options") return { profiles: [{ name: "work" }] };
+      return null;
+    });
+    renderPlan();
+    const cost = await screen.findByTestId("skill-grade-cost");
+    expect(cost.textContent).toContain(
+      "each of the 2 trigger tests and 1 outcome eval 3 times with the skill and 3 times without it",
+    );
+    expect(cost.textContent).toContain(
+      "a judge chat for each outcome eval's chat, 6 judge chats in all, which reads what that chat left and changes nothing",
+    );
+    expect(cost.textContent).toContain("outcome evals have not been graded here before");
+    expect(screen.getByTestId("skill-grade-eval").textContent).toBe(
+      "Fill in the form · 2 expectations a judge checks · with evals/files/form.txt",
+    );
+    const totals = screen.getByRole("group", { name: "What a grade of deploy runs and spends" });
+    expect(totals).toHaveTextContent("Chats24");
+    expect(totals).toHaveTextContent("2 tests and 1 outcome eval × 3 × 2 arms, judges among them");
+    expect(start(24)).toBeTruthy();
+  });
+
   it("says a skill with no trigger tests has none, and starts nothing", async () => {
     mockIPC((cmd) => {
-      if (cmd === "skill_grade_plan") return plan({ tests: [], chats: 0, outcome_evals: 0 });
+      if (cmd === "skill_grade_plan") return plan({ tests: [], chats: 0 });
       if (cmd === "start_options") return { profiles: [] };
       return null;
     });

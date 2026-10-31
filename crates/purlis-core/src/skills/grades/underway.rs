@@ -142,6 +142,8 @@ pub fn interrupted_report(
         spent_usd: None,
         counted_usd: None,
         priced,
+        outcome_delta: None,
+        outcomes: Vec::new(),
     }
 }
 

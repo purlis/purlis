@@ -206,7 +206,9 @@ export function GradesTab({
   // Each answer is taken only in its own shape: a core that answers another leaves it unread.
   const rows = Array.isArray(grades.data?.grades) ? grades.data.grades : [];
   const tests = typeof grades.data?.tests === "number" ? grades.data.tests : undefined;
-  const noTests = tests === 0 && grades.data?.tests_refused == null;
+  // A skill with outcome evals alone is graded too (SK-55).
+  const evals = typeof grades.data?.evals === "number" ? grades.data.evals : 0;
+  const noTests = tests === 0 && evals === 0 && grades.data?.tests_refused == null;
   const running = grades.data?.running?.grade ?? null;
   // Why trigger tests can't be written here, where they can't.
   const held =
@@ -307,7 +309,7 @@ export function GradesTab({
           <EmptyState
             variant="panel"
             headline={`No grades of ${name} yet`}
-            body="Grade runs its trigger tests in chats with it and without it, once you have seen what it may spend."
+            body="Grade runs its trigger tests and outcome evals in chats with it and without it, once you have seen what it may spend."
             testid="skill-grades-empty"
             action={
               <Button onPress={() => onGrading({ at: "plan" }, "go")}>{`Grade ${name}…`}</Button>

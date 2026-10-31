@@ -282,7 +282,8 @@ fn the_previous_versions_arm_is_counted_only_where_edits_are_committed_4035() {
         chats: 12,
         per_arm: 6,
         trigger_tests: 2,
-        outcome_evals_waiting: 0,
+        outcome_evals: 0,
+        judge_chats: 0,
     };
     assert_eq!(
         chats_to_accept(&plan, true),
