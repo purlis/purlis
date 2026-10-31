@@ -25,14 +25,15 @@ const tooSmall = (hit: PoolLimitHitRow, value: number) =>
 export function RaiseLimit({
   offer,
   action,
-  applying = false,
+  working,
   refused,
   onApply,
 }: {
   offer: PoolLimitOffer;
   /** The press: `Save to the pool and start`. */
   action: string;
-  applying?: boolean;
+  /** What it says while its press works: `Saving…`. The press keeps the keyboard, doing nothing. */
+  working?: string;
   /** Why the last save was refused, in the core's words, where the caller says it here. */
   refused?: string;
   /** The values typed, by limit key. */
@@ -92,16 +93,17 @@ export function RaiseLimit({
         />
       ))}
       {refused !== undefined && (
-        <p className="honest mid-turn" role="alert">
+        <p className="raise-limit-refused" role="alert">
           {refused}
         </p>
       )}
       <Button
         variant="primary"
-        isDisabled={values.length < raisable.length || applying}
-        onPress={() => onApply(values)}
+        isDisabled={values.length < raisable.length && working === undefined}
+        aria-disabled={working !== undefined}
+        onPress={working === undefined ? () => onApply(values) : undefined}
       >
-        {applying ? "Saving…" : action}
+        {working ?? action}
       </Button>
     </div>
   );

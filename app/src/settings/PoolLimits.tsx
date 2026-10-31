@@ -24,8 +24,11 @@ const ABOUT =
  * **Each limit** ({@link LimitRow}) shows its plain name, its unit, its default, a mark on a value
  * the person set, and Reset. Its box is empty while it follows purlis's default, which it shows
  * greyed. What is typed is checked by the core as it is typed, and saved on leaving the box or on
- * Enter. A refused value stays in the box, unsaved, with why under it, and Reset clears it. An
- * emptied box is a reset.
+ * Enter, never on the window losing the focus. A refused value stays in the box, unsaved, with why
+ * under it, and Reset clears it. An emptied box is a reset, and Escape puts back what is held.
+ *
+ * **One row's saves run in order** ({@link LimitRow}), so a Reset pressed just after typing, whose
+ * press leaves the box and so saves what was typed, is what holds at the end.
  */
 export function PoolLimits({ pool }: { pool: string }) {
   const read = usePools().limits[pool];
@@ -41,7 +44,7 @@ export function PoolLimits({ pool }: { pool: string }) {
   return (
     <Disclosure
       className="pool-limits"
-      label="Limits"
+      label={`Limits of pool ${pool}`}
       level={3}
       trail={set > 0 ? <Badge variant="accent">{`${set} set by you`}</Badge> : undefined}
       // Saved elsewhere meanwhile, say from a refused start in another window.
@@ -120,43 +123,48 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
       if (mine === typing.current) setWhy(said.status === "error" ? said.error : undefined);
     });
   };
-  const save = async (value: number | null, mine: number) => {
-    const refused = await saveLimits(pool, [[row.key, value]]);
-    if (mine !== typing.current) return;
-    setWhy(refused);
-    if (refused === undefined) setTyped(undefined);
+  // One save after another; how many are still to answer, which the last draw can't know of.
+  const saves = useRef<Promise<unknown>>(Promise.resolve());
+  const saving = useRef(0);
+  const save = (value: number | null, mine: number) => {
+    saving.current += 1;
+    saves.current = saves.current.then(async () => {
+      const refused = await saveLimits(pool, [[row.key, value]]);
+      saving.current -= 1;
+      if (mine !== typing.current) return;
+      setWhy(refused);
+      if (refused === undefined) setTyped(undefined);
+    });
   };
   const commit = async () => {
     if (typed === undefined) return;
     const mine = typing.current;
     if (typed.trim() === "") {
-      if (isSet) await save(null, mine);
+      if (isSet || saving.current > 0) save(null, mine);
       else setTyped(undefined);
       return;
     }
     const checked = await checkLimit(row.key, typed);
     if (mine !== typing.current) return;
     if (checked.status === "error") setWhy(checked.error);
-    else if (checked.data === row.set) setTyped(undefined);
-    else await save(checked.data, mine);
+    else if (checked.data === row.set && saving.current === 0) setTyped(undefined);
+    else save(checked.data, mine);
   };
   const refused = why !== undefined;
   return (
     <div className="pool-limit">
       <SettingRow
         label={row.plain}
-        modified={isSet}
-        error={refused ? [why] : undefined}
         reset={{
           label: `Reset to ${row.default_said}`,
-          name: `Reset to ${row.default_said}: ${row.plain}`,
+          name: `Reset to ${row.default_said}: ${row.plain} on pool ${pool}`,
           // A refused value on a limit never set still has to be clearable.
           disabled: !isSet && !refused && (typed ?? "") === "",
           onReset: () => {
             const mine = ++typing.current;
             setWhy(undefined);
             setTyped(undefined);
-            if (isSet) void save(null, mine);
+            if (isSet || saving.current > 0) save(null, mine);
           },
         }}
         control={(ids) => (
@@ -169,13 +177,21 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
               columns={8}
               placeholder={String(row.default)}
               value={typed ?? held}
-              isInvalid={refused}
+              error={why}
               onChange={type}
-              onBlur={() => void commit()}
+              onBlur={(event) => {
+                // Still the focused box: it is the window that lost the focus, mid-typing.
+                if (document.activeElement !== event.target) void commit();
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();
                   void commit();
+                } else if (event.key === "Escape" && typed !== undefined) {
+                  event.preventDefault();
+                  typing.current += 1;
+                  setWhy(undefined);
+                  setTyped(undefined);
                 }
               }}
             />

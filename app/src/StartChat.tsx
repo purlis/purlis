@@ -454,6 +454,7 @@ export function StartChat({
     else box.removeAttribute("aria-activedescendant");
   });
 
+  const [savingLimit, setSavingLimit] = useState(false);
   // A picker cancelled while a limit saves starts nothing after it.
   const open = useRef(true);
   useEffect(() => {
@@ -639,11 +640,15 @@ export function StartChat({
             )}
             {trouble && limitOffer !== undefined && onRaiseLimit && (
               <RaiseLimit
+                // A later refusal's suggestion is a form afresh.
+                key={limitOffer.hits.map((hit) => `${hit.key}:${hit.needed}`).join()}
                 offer={limitOffer}
                 action="Save to the pool and start"
-                applying={starting}
+                working={savingLimit ? "Saving…" : starting ? "Starting…" : undefined}
                 onApply={(values) => {
+                  setSavingLimit(true);
                   void onRaiseLimit(values).then((saved) => {
+                    setSavingLimit(false);
                     if (saved && open.current) start();
                   });
                 }}

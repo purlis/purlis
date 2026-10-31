@@ -48,7 +48,9 @@ const meta = {
   },
   decorators: [
     (Story) => (
-      <div style={{ inlineSize: 480, padding: 16, background: "var(--surface-overlay)" }}>
+      <div
+        style={{ inlineSize: 480, padding: "var(--space-6)", background: "var(--surface-overlay)" }}
+      >
         <Story />
       </div>
     ),
@@ -78,6 +80,33 @@ export const OneLimit: Story = {
 /** **Two limits at once**: a box each, and one press. */
 export const TwoLimits: Story = {
   args: { offer: { pool: "builds", hits: [SIZE, FILES] } },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("textbox", { name: /send: size/ }),
+      "the first limit's box",
+    );
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("textbox", { name: /send: files/ }),
+      "Tab goes on to the second",
+    );
+    expectFocusInSight();
+  },
+};
+
+/** **While it saves**: the press says so, keeps the keyboard and does nothing. */
+export const Saving: Story = {
+  args: { working: "Saving…" },
+  play: async ({ canvas, userEvent, args }) => {
+    const press = canvas.getByRole("button", { name: "Saving…" });
+    await expect(press).toHaveAttribute("aria-disabled", "true");
+    await userEvent.tab();
+    await userEvent.tab();
+    await untilFocused(() => press, "the press keeps the keyboard");
+    await userEvent.keyboard("{Enter}");
+    await expect(args.onApply).not.toHaveBeenCalled();
+  },
 };
 
 /** **A value the core refuses**: why, and no press. */
@@ -104,4 +133,7 @@ export const TooSmall: Story = {
 /** **The save refused**: the core's words, beside the form. */
 export const SaveRefused: Story = {
   args: { refused: "there is no pool named builds on this machine" },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByRole("alert")).toHaveTextContent(/no pool named builds/);
+  },
 };

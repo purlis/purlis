@@ -412,6 +412,32 @@ mod tests {
         );
     }
 
+    /// Q12: the window's word is "limit", so nothing the list says reaches it as another.
+    #[test]
+    fn nothing_the_list_says_calls_a_limit_a_timeout_a_quota_or_config() {
+        let mut said: Vec<String> = Group::ALL
+            .iter()
+            .flat_map(|group| [group.plain().to_owned(), group.help().to_owned()])
+            .collect();
+        said.extend(
+            [TakesEffect::NextAttempt, TakesEffect::NextReplacement]
+                .map(|one| one.said().to_owned()),
+        );
+        for limit in all() {
+            said.push(limit.plain.to_owned());
+            said.push(limit.check(0, None).unwrap_err());
+            said.push(limit.check(limit.most, Some(1)).unwrap_err());
+            said.push(limit.check_typed("x", None).unwrap_err());
+            said.push(limit.hit(limit.default, limit.default + 1, None).said());
+        }
+        for line in said {
+            let lower = line.to_lowercase();
+            for word in ["timeout", "time out", "quota", "config"] {
+                assert!(!lower.contains(word), "{line}");
+            }
+        }
+    }
+
     /// The page draws these, so a new group can't reach it without a heading and a line.
     #[test]
     fn every_group_and_every_way_of_taking_effect_says_itself() {

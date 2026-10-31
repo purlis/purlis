@@ -60,6 +60,18 @@ const LIMITS = (set: Readonly<Record<string, number>>): PoolLimitsPage => {
         applies: "Applies when this runner is next replaced.",
         limits: [row("memory", "Memory", "MiB", 4096)].map(held),
       },
+      {
+        // Its rows differ, so each says when it applies.
+        label: "Mixed",
+        help: "A group whose limits apply at different times.",
+        applies: null,
+        limits: [
+          row("soon", "One that applies soon", "s", 60, { applies: NEXT }),
+          row("later", "One that applies later", "MiB", 512, {
+            applies: "Applies when this runner is next replaced.",
+          }),
+        ].map(held),
+      },
     ],
     advanced: [
       row("answerWait", "Longest wait for a runner's answer", "s", 30, { applies: NEXT }),
@@ -68,11 +80,12 @@ const LIMITS = (set: Readonly<Record<string, number>>): PoolLimitsPage => {
 };
 
 /** The core, faked: it holds `set`, and refuses what the real check does. */
-function theCore(set: Record<string, number>, unread?: string) {
+function theCore(set: Record<string, number>, unread?: string, refuseSave?: string) {
   mockIPC((cmd, args) => {
     const asked = (args ?? {}) as { key: string; typed: string; value: number | null };
     if (cmd === "pool_limits") {
       if (unread !== undefined) throw unread;
+      if (unread === "never") return new Promise(() => undefined);
       return LIMITS(set);
     }
     if (cmd === "pool_limit_check") {
@@ -81,6 +94,7 @@ function theCore(set: Record<string, number>, unread?: string) {
       return Number(asked.typed);
     }
     if (cmd === "pool_limit_set") {
+      if (refuseSave !== undefined) throw refuseSave;
       if (asked.value === null) Reflect.deleteProperty(set, asked.key);
       else set[asked.key] = asked.value;
       return null;
@@ -96,9 +110,10 @@ const meta = {
     theCore(
       { ...(parameters.set as Record<string, number> | undefined) },
       parameters.unread as string | undefined,
+      parameters.refuseSave as string | undefined,
     );
     // The window's limits are held once for every story drawn in this page.
-    await askLimits("builds");
+    if (parameters.unread !== "never") await askLimits("builds");
     return () => clearMocks();
   },
   decorators: [
@@ -114,7 +129,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 const open = async (canvas: Parameters<NonNullable<Story["play"]>>[0]["canvas"]) => {
-  const trigger = await canvas.findByRole("button", { name: "Limits" });
+  const trigger = await canvas.findByRole("button", { name: "Limits of pool builds" });
   trigger.click();
   await canvas.findByRole("region", { name: "Sign-in" });
 };
@@ -125,7 +140,10 @@ export const Folded: Story = {
   play: async ({ canvas, userEvent }) => {
     await canvas.findByText("2 set by you");
     await userEvent.tab();
-    await untilFocused(() => canvas.getByRole("button", { name: "Limits" }), "Limits' trigger");
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Limits of pool builds" }),
+      "Limits' trigger",
+    );
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     await canvas.findByRole("region", { name: "Sign-in" });
@@ -164,10 +182,36 @@ export const ValuesSet: Story = {
     await untilFocused(() => size, "the set limit's box");
     await userEvent.tab();
     const reset = canvas.getByRole("button", {
-      name: "Reset to 128 MiB: Most a profile may send: size",
+      name: "Reset to 128 MiB: Most a profile may send: size on pool builds",
     });
     await untilFocused(() => reset, "Tab goes on to its Reset");
     expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(size).toHaveValue(""));
+    await expect(canvas.getAllByText("You set this")).toHaveLength(1);
+    await untilFocused(() => size, "Reset hands the keyboard back to its box");
+  },
+};
+
+/** **A save the core refused**: its words under the box, which keeps what was typed. */
+export const SaveRefused: Story = {
+  parameters: { refuseSave: "the limit was not saved: this machine's pools could not be read." },
+  play: async ({ canvas, userEvent }) => {
+    await open(canvas);
+    const box = canvas.getByRole("textbox", { name: "Most a profile may send: size MiB" });
+    await userEvent.type(box, "256{Enter}");
+    await canvas.findByText(/the limit was not saved/);
+    await expect(box).toHaveValue("256");
+  },
+};
+
+/** **Still reading**: a pool of its own, whose core has not answered. */
+export const Reading: Story = {
+  args: { pool: "still-reading" },
+  parameters: { unread: "never" },
+  play: async ({ canvas }) => {
+    (await canvas.findByRole("button", { name: "Limits of pool still-reading" })).click();
+    await canvas.findByText("Reading…");
   },
 };
 
@@ -199,7 +243,7 @@ export const AdvancedOpen: Story = {
 export const CouldNotRead: Story = {
   parameters: { unread: "this machine's pools could not be read." },
   play: async ({ canvas }) => {
-    (await canvas.findByRole("button", { name: "Limits" })).click();
+    (await canvas.findByRole("button", { name: "Limits of pool builds" })).click();
     const said = await canvas.findByRole("alert");
     await within(said).findByText(/could not be read/);
     await expect(canvas.getByRole("button", { name: "Read again" })).toBeVisible();

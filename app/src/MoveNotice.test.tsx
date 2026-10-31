@@ -416,6 +416,22 @@ describe("a move refused by a pool's limit (#4313)", () => {
     });
   });
 
+  it("keeps the form and doesn't move where the save was refused", async () => {
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      if (cmd === "pool_limit_offer_for_move") return OFFER;
+      if (cmd === "pool_limit_set") throw "there is no pool named builds on this machine";
+      if (cmd === "pool_limits") return { groups: [], advanced: [] };
+      return null;
+    });
+    const user = userEvent.setup();
+    render(<MoveNotice plane={PLANE} session={3} />);
+    await user.click(await screen.findByRole("button", { name: "Save to the pool and move" }));
+    expect(await screen.findByText(/there is no pool named builds/)).toBeTruthy();
+    expect(asked.some((one) => one.cmd === "move_chat")).toBe(false);
+    expect(screen.getByRole("button", { name: "Save to the pool and move" })).toBeTruthy();
+  });
+
   it("offers nothing on any other refusal, and on a move here", async () => {
     mockIPC((cmd, args) => {
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });

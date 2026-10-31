@@ -279,16 +279,29 @@ export async function askProfiles(name: string, plane?: string, { quietly = fals
   set((was) => ({ ...was, profiles: { ...was.profiles, [name]: rows } }));
 }
 
-/** Reads pool `name`'s limits (#4285); what is shown stays until the answer comes. */
+/** The newest read of each pool's limits out: an answer to an older one is dropped. */
+const readingLimits = new Map<string, number>();
+
+/**
+ * Reads pool `name`'s limits (#4285). What is shown stays until the answer comes, and stays if the
+ * read fails, so a box being typed in isn't lost: the trouble is said only with nothing to show.
+ */
 export async function askLimits(name: string) {
+  const mine = (readingLimits.get(name) ?? 0) + 1;
+  readingLimits.set(name, mine);
   const said = await caught(commands.poolLimits(name));
+  if (readingLimits.get(name) !== mine) return;
   const limits =
     said.status === "error"
       ? { trouble: said.error }
       : typeof said.data === "object" && said.data !== null && Array.isArray(said.data.groups)
         ? said.data
         : { trouble: "purlis did not say what this pool's limits are." };
-  set((was) => ({ ...was, limits: { ...was.limits, [name]: limits } }));
+  set((was) => {
+    const shown = was.limits[name];
+    if ("trouble" in limits && shown !== undefined && "groups" in shown) return was;
+    return { ...was, limits: { ...was.limits, [name]: limits } };
+  });
 }
 
 /** **The value in the words `typed` for limit `key`**, or why they aren't one: the core's check. */
@@ -401,12 +414,15 @@ export async function removePool(name: string): Promise<string | undefined> {
     Reflect.deleteProperty(versions, name);
     const profiles = { ...was.profiles };
     Reflect.deleteProperty(profiles, name);
+    const limits = { ...was.limits };
+    Reflect.deleteProperty(limits, name);
     return {
       ...was,
       removing: undefined,
       links,
       versions,
       profiles,
+      limits,
       said: left,
     };
   });

@@ -862,8 +862,9 @@ pub async fn pool_limits(pool: String) -> Result<PoolLimitsPage, String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn pool_limit_check(key: String, typed: String) -> Result<u32, String> {
-    let value = limit_named(&key)?.check_typed(&typed, None)?;
-    u32::try_from(value).map_err(|why| why.to_string())
+    let limit = limit_named(&key)?;
+    let value = limit.check_typed(&typed, None)?;
+    u32::try_from(value).map_err(|_| format!("{} is too large a number here", limit.plain))
 }
 
 /// **Saves `value` as pool `pool`'s limit `key`, or, `null`, returns it to following purlis's

@@ -407,7 +407,7 @@ export function Notice(props: NoticeProps) {
       opened={under !== undefined}
       // What the pane's row stands first (`NoticePaneRow`): a Notice with something to do
       // about it, before one whose only way out is to put it away.
-      asks={fixes !== undefined || link !== undefined}
+      asks={fixes !== undefined || link !== undefined || under !== undefined}
     >
       {line}
       {under !== undefined && <NoticeUnder>{under}</NoticeUnder>}

@@ -7332,7 +7332,7 @@ nav.piece-files-head {
 .pool-limits-head h4 {
   margin: 0;
   font-size: var(--font-size-base);
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 .pool-limit {
@@ -7372,6 +7372,15 @@ nav.piece-files-head {
   padding: var(--space-4);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
+  /* Its own ground: under a trouble Notice it would stand on the danger wash. */
+  background-color: var(--surface-base);
+  color: var(--text-primary);
+}
+
+.raise-limit-refused {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--danger-text);
 }
 
 /* **A profile's sign-in on a pool's runner, in place** (#4042, `PoolSignIn.tsx`): the strip its

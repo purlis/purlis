@@ -63,7 +63,16 @@ export function MoveNotice({ plane, session }: { plane: PlaneId; session: number
     );
   const said = moveSaid(one);
   if (said.trouble)
-    return <MoveFailed plane={plane} session={session} one={one} words={said.words} />;
+    return (
+      // Another refusal is a form afresh.
+      <MoveFailed
+        key={one.why ?? ""}
+        plane={plane}
+        session={session}
+        one={one}
+        words={said.words}
+      />
+    );
   // Being made now, past cancelling (#3814): it says so, and Dismiss only hides the line.
   if (!moveCancellable(one))
     return (
@@ -115,10 +124,9 @@ function MoveFailed({
 }) {
   const { from, to, why } = one;
   const [offer, setOffer] = useState<PoolLimitOffer | null>(null);
-  const [applying, setApplying] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [refused, setRefused] = useState<string>();
   useEffect(() => {
-    setOffer(null);
     if (to === null || why === null) return;
     let gone = false;
     void commands
@@ -133,12 +141,12 @@ function MoveFailed({
   }, [to, why]);
   const apply = async (values: ReadonlyArray<readonly [string, number]>) => {
     if (offer === null) return;
-    setApplying(true);
+    setSaving(true);
     setRefused(undefined);
     const saved = await saveLimits(offer.pool, values);
     if (saved === undefined) await askMove(plane, session, from, to);
     else setRefused(saved);
-    setApplying(false);
+    setSaving(false);
   };
   return (
     <Notice
@@ -152,7 +160,7 @@ function MoveFailed({
           <RaiseLimit
             offer={offer}
             action="Save to the pool and move"
-            applying={applying}
+            working={saving ? "Saving…" : undefined}
             refused={refused}
             onApply={(values) => void apply(values)}
           />

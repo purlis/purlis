@@ -38,7 +38,7 @@ function Pane() {
 const meta = {
   component: Pane,
   beforeEach: () => {
-    mockIPC((cmd) => {
+    mockIPC((cmd, args) => {
       if (cmd === "pool_limit_offer_for_move")
         return {
           pool: "builds",
@@ -53,7 +53,7 @@ const meta = {
             },
           ],
         };
-      if (cmd === "pool_limit_check") return 192;
+      if (cmd === "pool_limit_check") return Number((args as { typed: string }).typed);
       if (cmd === "pool_sign_in_start") return 1;
       // The login on the runner has not said its page yet.
       if (cmd === "pool_sign_in_next") return new Promise(() => undefined);
@@ -148,5 +148,16 @@ export const RefusedByALimit: Story = {
       "Tab goes on to the press",
     );
     expectFocusInSight();
+  },
+};
+
+/** **A value too small, under the move's line**: the refusal read on the form's own ground. */
+export const RefusedByALimitTooSmall: Story = {
+  beforeEach: RefusedByALimit.beforeEach,
+  play: async ({ canvas, userEvent }) => {
+    const box = await canvas.findByRole("textbox", { name: /Most a profile may send: size/ });
+    await userEvent.clear(box);
+    await userEvent.type(box, "130");
+    await canvas.findByText(/It needs 150 MiB, so this would be refused again/);
   },
 };
