@@ -354,3 +354,52 @@ fn a_theme_of_activity_parts_alone_is_measured_once_as_written() {
     assert!(parts::fallen(loaded.theme.first()).is_empty());
     assert_eq!(parts::drawn_in(), 1);
 }
+
+// ---------------------------------------------------------------------------------------
+// The hot count's own role (#3098)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn the_hot_count_draws_from_its_own_role_and_no_other() {
+    let css = include_str!("../../../../app/src/ui/activity/activity.css");
+    let rule = css
+        .split("[data-tone=\"needs-you\"] {")
+        .nth(1)
+        .and_then(|rest| rest.split('}').next())
+        .expect("the hot count's rule");
+    assert!(
+        rule.contains("background-color: var(--needs-you-count);"),
+        "{rule}"
+    );
+    assert!(
+        rule.contains("color: var(--needs-you-count-text);"),
+        "{rule}"
+    );
+}
+
+#[test]
+fn a_plain_count_rule_that_comes_near_the_hot_count_draws_its_default() {
+    let loaded = load(&with_parts(
+        json!({ "activity.count.fill": "needs-you.count" }),
+    ));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    let fell = parts::fallen(loaded.theme.first());
+    assert!(
+        fell.iter().any(|one| one.part.starts_with("activity.item")
+            && one.floor == "the plain count is told apart from the hot count"),
+        "{fell:?}"
+    );
+}
+
+#[test]
+fn a_plain_count_rule_apart_from_the_hot_count_stays_as_written() {
+    let loaded = load(&with_parts(
+        json!({ "activity.count.fill": "surface.overlay" }),
+    ));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    let fell = parts::fallen(loaded.theme.first());
+    assert!(
+        fell.iter().all(|one| !one.floor.contains("the hot count")),
+        "{fell:?}"
+    );
+}

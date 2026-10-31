@@ -183,6 +183,8 @@
   --color-layer-divider: var(--layer-divider);
   --color-needs-you-base: var(--needs-you-base);
   --color-needs-you-text: var(--needs-you-text);
+  --color-needs-you-count: var(--needs-you-count);
+  --color-needs-you-count-text: var(--needs-you-count-text);
   --color-danger-base: var(--danger-base);
   --color-danger-surface: var(--danger-surface);
   --color-danger-text: var(--danger-text);

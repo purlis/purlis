@@ -929,6 +929,15 @@ Later, `accent.wash-hover` came in (#3345): the chosen title-bar chip's ground u
 a step stronger than `accent.wash`, which is the chosen chip's ground at rest; both hold the
 primary words at 4.5:1 over the title bar.
 
+Later still, the hot count (#3098): `needs-you.count` and `needs-you.count-text`, the fill and the
+words of the Needs-you count on an activity bar. Each follows `needs-you.base` and `needs-you.text`
+in `vocabulary::KIN`, the values Purlis and Purlis Classic give them by default, so a theme that
+sets neither draws as it did. Its words are held to 4.5:1 on its fill and its fill to 3:1 on each
+ground a bar stands on (`surface.deep`, `surface.base`, `surface.raised`). The fill stays at least
+0.1 apart in OKLab from the plain count's `surface.hover`, as written and in every tint, or the
+window draws purlis's own. A rule on `activity.count` never reaches the hot count, and one whose
+fill comes that near the hot count draws the family default.
+
 Over Purlis, whose primary is filled and whose controls draw no edge, a theme keeps Purlis's
 values unless it names them. `radius.control` is Classic's `radius.md`, 4, where a theme names
 neither.

@@ -52,6 +52,8 @@ pub const TOKENS: &[&str] = &[
     "layer.divider",
     "needs-you.base",
     "needs-you.text",
+    "needs-you.count",
+    "needs-you.count-text",
     "danger.base",
     "danger.surface",
     "danger.text",
@@ -377,8 +379,9 @@ pub fn follow_muted(
 /// wash and the primary's fill were its surface, the accent's words were the accent, the
 /// primary's fill under the pointer was the active tab's, its edge was the accent, and its words
 /// were the primary words. A chosen title-bar chip's wash under the pointer (#3345) was the
-/// active tab's, as the primary's fill under the pointer was, which Purlis Classic draws alike.
-pub const KIN: [(&str, &str); 8] = [
+/// active tab's, as the primary's fill under the pointer was, which Purlis Classic draws alike. The
+/// hot count (#3098) was the needs-you mark and its words.
+pub const KIN: [(&str, &str); 10] = [
     ("border.control", "border.strong"),
     ("accent.wash", "accent.surface"),
     ("accent.wash-hover", "tab.active"),
@@ -387,6 +390,8 @@ pub const KIN: [(&str, &str); 8] = [
     ("accent.fill-hover", "tab.active"),
     ("accent.fill-edge", "accent.base"),
     ("accent.fill-text", "text.primary"),
+    ("needs-you.count", "needs-you.base"),
+    ("needs-you.count-text", "needs-you.text"),
 ];
 
 /// **A token of [`KIN`] a theme leaves out follows the one that drew it before**, while `below`

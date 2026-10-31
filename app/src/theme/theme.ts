@@ -160,6 +160,10 @@ export const TOKENS = [
   // The one signal this whole app exists for: a chat that has stopped and is waiting.
   "needs-you.base",
   "needs-you.text",
+  // The hot count on an activity bar (R120, #3098): its own role, so a theme can restyle it apart
+  // from the needs-you mark, with its words at 4.5:1 and its fill held apart from a plain count.
+  "needs-you.count",
+  "needs-you.count-text",
 
   // An answer that cannot be taken back, and the words charter says when something went wrong.
   "danger.base",

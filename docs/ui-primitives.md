@@ -1339,8 +1339,8 @@ are `item` (the root), `icon`, `count` and `indicator`; both corners draw the `b
   accent's wash while its view is open. The `indicator` is empty by default; Purlis Classic paints
   it as its accent edge through parts.
 - **A count** (`ActivityCount`, R119) sits at the item's top right, ringed in its bar's ground;
-  what waits on the person is drawn hot, in the needs-you colours (R120), which a theme's count
-  colours never reach.
+  what waits on the person is drawn hot, in the hot-count role `needs-you.count` and
+  `needs-you.count-text` (R120, #3098), which a theme's count colours never reach.
 - **Only the part that appears moves** (R122, R124, R127, R128): the right panel comes 24px in
   over `duration.open`, a bottom half 16px up over `duration.reveal`, a side view's list 4px up
   over `duration.swap`. A view switch inside an open panel replays nothing, and closing has no

@@ -1011,6 +1011,7 @@ const HUES: &[&str] = &[
     "state.success",
     "state.unreadable",
     "needs-you.base",
+    "needs-you.count",
     "syntax.keyword",
     "syntax.string",
     "syntax.number",
@@ -1390,8 +1391,13 @@ fn findings_for(theme: &ResolvedTheme, token: &'static str) -> usize {
 }
 
 /// The tokens a walk may move that a consent floor names besides the state marks: the danger
-/// colour, Allow's edge and the needs-you mark under its count.
-const FLOORED: &[&str] = &["danger.base", "accent.base", "needs-you.base"];
+/// colour, Allow's edge, the needs-you mark under its count and the hot count (#3098).
+const FLOORED: &[&str] = &[
+    "danger.base",
+    "accent.base",
+    "needs-you.base",
+    "needs-you.count",
+];
 
 // ------------------------------------------------------------------------------------------
 // Writing the theme

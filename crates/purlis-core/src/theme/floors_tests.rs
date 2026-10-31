@@ -72,6 +72,7 @@ fn every_ask_pair_is_one_the_check_measures() {
     assert_eq!(
         asked.into_iter().collect::<Vec<_>>(),
         [
+            ("needs-you.count-text", "needs-you.count"),
             ("needs-you.text", "needs-you.base"),
             // Selected text a theme colours, on its selection over a dialog (#2706).
             ("selection.text", "selection.background"),
@@ -296,6 +297,7 @@ fn a_theme_of_one_colour_everywhere_is_drawn_clearing_every_consent_floor() {
                 Floor::StateMarks,
                 Floor::AllowNotPrimary,
                 Floor::WaitingApart,
+                Floor::HotCountApart,
             ]
         );
         let drawn = drawn.theme.expect("drawn");
@@ -602,4 +604,99 @@ fn a_waiting_colour_drawn_in_the_accent_is_drawn_in_purlis_s_waiting() {
     assert!(held.tokens.contains(&"state.waiting"), "{:?}", held.tokens);
     assert!(held.said().contains(Floor::WaitingApart.says()));
     assert!(waiting_from_accent(&drawn) >= WAITING_APART);
+}
+
+// ---------------------------------------------------------------------------------------
+// The hot count's role (#3098)
+// ---------------------------------------------------------------------------------------
+
+/// How far the hot count's fill is from the plain count's in `theme`, in OKLab.
+fn hot_from_plain(theme: &ResolvedTheme) -> f64 {
+    tint::distance(
+        tint::oklab_of(theme.value("needs-you.count")).expect("a colour"),
+        tint::oklab_of(theme.value("surface.hover")).expect("a colour"),
+    )
+}
+
+#[test]
+fn every_built_in_draws_the_hot_count_as_its_needs_you_colours_and_apart_from_the_plain_count() {
+    for theme in [purlis(), classic()] {
+        for one in &theme.appearances {
+            assert_eq!(one.value("needs-you.count"), one.value("needs-you.base"));
+            assert_eq!(
+                one.value("needs-you.count-text"),
+                one.value("needs-you.text")
+            );
+            assert!(hot_from_plain(one) >= HOT_COUNT_APART, "{}", one.id);
+            assert_eq!(draw(one).held, None, "{}", one.id);
+        }
+    }
+}
+
+#[test]
+fn a_theme_that_leaves_the_hot_count_out_draws_it_in_its_needs_you_colours() {
+    let mine = theme(
+        "Ember",
+        json!({ "needs-you.base": "#d9534f", "needs-you.text": "#000000" }),
+    );
+    assert_eq!(mine.first().value("needs-you.count"), "#d9534f");
+    assert_eq!(mine.first().value("needs-you.count-text"), "#000000");
+}
+
+#[test]
+fn a_theme_restyles_the_hot_count_and_leaves_the_needs_you_mark_alone() {
+    let mine = theme(
+        "Ember",
+        json!({ "needs-you.count": "#ffb000", "needs-you.count-text": "#000000" }),
+    );
+    let (drawn, held) = drawn_of(&mine);
+    assert_eq!(held, None);
+    assert_eq!(drawn.value("needs-you.count"), "#ffb000");
+    assert_eq!(drawn.value("needs-you.base"), ours("needs-you.base"));
+}
+
+#[test]
+fn hot_count_words_under_their_floor_are_drawn_as_purlis_s() {
+    let mine = theme(
+        "Ember",
+        json!({ "needs-you.count": "#ffb000", "needs-you.count-text": "#ffc040" }),
+    );
+    let (drawn, held) = drawn_of(&mine);
+    let held = held.expect("the floor was held");
+    assert!(held.floors.contains(&Floor::Ask), "{held:?}");
+    assert_eq!(
+        drawn.value("needs-you.count-text"),
+        ours("needs-you.count-text")
+    );
+}
+
+#[test]
+fn a_hot_count_that_vanishes_on_a_bar_s_ground_is_drawn_as_purlis_s() {
+    let ground = ours("surface.deep").to_owned();
+    let mine = theme("Ember", json!({ "needs-you.count": ground }));
+    let (drawn, held) = drawn_of(&mine);
+    let held = held.expect("the floor was held");
+    assert!(held.floors.contains(&Floor::StateMarks), "{held:?}");
+    assert_eq!(drawn.value("needs-you.count"), ours("needs-you.count"));
+}
+
+#[test]
+fn a_hot_count_near_the_plain_count_is_held_apart_from_it() {
+    // A hot fill and a plain pill a hair apart, each clearing every contrast the hot count has.
+    let mine = theme(
+        "Ember",
+        json!({
+            "surface.hover": "#b85555",
+            "needs-you.count": "#c05a50",
+            "needs-you.base": "#ffffff",
+            "needs-you.text": "#000000",
+            "needs-you.count-text": "#000000",
+        }),
+    );
+    assert!(hot_from_plain(mine.first()) < HOT_COUNT_APART);
+    let (drawn, held) = drawn_of(&mine);
+    let held = held.expect("the floor was held");
+    assert!(held.floors.contains(&Floor::HotCountApart), "{held:?}");
+    assert!(held.said().contains(Floor::HotCountApart.says()));
+    assert!(hot_from_plain(&drawn) >= HOT_COUNT_APART);
 }
