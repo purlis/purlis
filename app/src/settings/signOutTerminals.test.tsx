@@ -27,7 +27,7 @@ afterEach(() => {
 const nothingFiled = () => "";
 
 it("asks the pool's profiles again when the sign-out's tab closes, and only then (#4274)", async () => {
-  const open = openTab(openTab(noTabs, 7, "shell 1"), 8, "shell 2");
+  const open = openTab(openTab(noTabs(), 7, "shell 1"), 8, "shell 2");
   const { result, rerender } = renderHook(({ tabs }) => useSignOutTerminals(tabs, PLANE), {
     initialProps: { tabs: open as Tabs },
   });
