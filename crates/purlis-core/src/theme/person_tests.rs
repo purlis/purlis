@@ -547,7 +547,11 @@ fn the_hot_count_follows_the_person_s_needs_you_colours() {
 #[test]
 fn a_hot_count_the_person_names_stays_theirs() {
     let layer = layer_of(json!({
-        "colours": { "needs-you.base": "#ff00aa", "needs-you.count": "#ffb000" }
+        "colours": {
+            "needs-you.base": "#ff00aa",
+            "needs-you.text": "#000000",
+            "needs-you.count": "#ffb000",
+        }
     }));
     let (drawn, _) = layer.over(classic_dark());
     assert_eq!(drawn.value("needs-you.count"), "#ffb000");
@@ -580,10 +584,15 @@ fn a_colour_of_the_person_s_left_out_takes_what_follows_it_and_names_only_theirs
     );
     assert_eq!(said.len(), 1, "{said:?}");
     assert!(
-        said[0].said.starts_with("your colour for needs-you.base, #401010,"),
+        said[0]
+            .said
+            .starts_with("your colour for needs-you.base, #401010,"),
         "{said:?}"
     );
-    assert!(!said[0].said.contains("your colour for needs-you.count"), "{said:?}");
+    assert!(
+        !said[0].said.contains("your colour for needs-you.count"),
+        "{said:?}"
+    );
 }
 
 #[test]
@@ -610,6 +619,9 @@ fn more_contrast_raises_a_count_a_theme_names_on_its_own() {
     let mut named = classic_dark().clone();
     named.values.insert("needs-you.count", "#a06020".to_owned());
     let raised = least::raise(&named);
-    assert_ne!(raised.value("needs-you.count"), raised.value("needs-you.base"));
+    assert_ne!(
+        raised.value("needs-you.count"),
+        raised.value("needs-you.base")
+    );
     assert_ne!(raised.value("needs-you.count"), "#a06020");
 }

@@ -934,9 +934,12 @@ words of the Needs-you count on an activity bar. Each follows `needs-you.base` a
 in `vocabulary::KIN`, the values Purlis and Purlis Classic give them by default, so a theme that
 sets neither draws as it did. Its words are held to 4.5:1 on its fill and its fill to 3:1 on each
 ground a bar stands on (`surface.deep`, `surface.base`, `surface.raised`). The fill stays at least
-0.1 apart in OKLab from the plain count's `surface.hover`, as written and in every tint, or the
-window draws purlis's own. A rule on `activity.count` never reaches the hot count, and one whose
-fill comes that near the hot count draws the family default.
+0.1 apart in OKLab from the plain count's `surface.hover`, both laid on each of those grounds as the
+screen draws them, as written and in every tint, or the window draws purlis's own. A count drawn in
+its mark's colour stays on it: when a floor takes either, or more contrast raises the mark, or a
+person's colour for the mark is drawn or left out, the count goes with it. A theme whose count is
+its own colour is held on its own. A rule on `activity.count` never reaches the hot count, and one
+whose fill comes that near the hot count draws the family default.
 
 Over Purlis, whose primary is filled and whose controls draw no edge, a theme keeps Purlis's
 values unless it names them. `radius.control` is Classic's `radius.md`, 4, where a theme names
@@ -1268,7 +1271,6 @@ Tuned after the table (#2589), in this order. base16 makes some roles one colour
 | `state.success` | toward `base05` |
 | `state.unreadable` | toward `base05` |
 | `needs-you.base` | toward `base05` |
-| `needs-you.count` | toward `base05` |
 | `syntax.keyword` | toward `base05` |
 | `syntax.string` | toward `base05` |
 | `syntax.number` | toward `base05` |
@@ -1429,7 +1431,6 @@ Tuned as a base16 scheme is, after the table (#2589):
 | `state.success` | toward `base05` |
 | `state.unreadable` | toward `base05` |
 | `needs-you.base` | toward `base05` |
-| `needs-you.count` | toward `base05` |
 | `syntax.keyword` | toward `base05` |
 | `syntax.string` | toward `base05` |
 | `syntax.number` | toward `base05` |
@@ -1562,7 +1563,6 @@ Tuned after the table (#2589). The terminal's own colours (its background, its w
 | `state.success` | toward `Foreground Color` |
 | `state.unreadable` | toward `Foreground Color` |
 | `needs-you.base` | toward `Foreground Color` |
-| `needs-you.count` | toward `Foreground Color` |
 | `syntax.keyword` | toward `Foreground Color` |
 | `syntax.string` | toward `Foreground Color` |
 | `syntax.number` | toward `Foreground Color` |
@@ -1683,7 +1683,6 @@ Tuned as an iTerm2 preset is, after the table (#2589):
 | `state.success` | toward `foreground` |
 | `state.unreadable` | toward `foreground` |
 | `needs-you.base` | toward `foreground` |
-| `needs-you.count` | toward `foreground` |
 | `syntax.keyword` | toward `foreground` |
 | `syntax.string` | toward `foreground` |
 | `syntax.number` | toward `foreground` |

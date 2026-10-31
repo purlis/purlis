@@ -394,18 +394,13 @@ fn a_plain_count_rule_that_comes_near_the_hot_count_draws_its_default() {
 
 #[test]
 fn a_plain_count_rule_apart_from_the_hot_count_stays_as_written() {
-    // Drawn in the hot count's own two roles the other way round: white fill, the hot colour on it.
-    let loaded = load(&json!({
-        "name": "Shaped",
-        "extends": "purlis-classic",
-        "tokens": { "needs-you.count": "#c05050" },
-        "parts": {
-            "activity.count.fill": "needs-you.count-text",
-            "activity.count.text": "needs-you.count",
-        },
-    }));
+    // A role only the hot count has, as the rule's fill: white, far from the hot colour. Where the
+    // role does not exist the rule names no colour, and it is said.
+    let loaded = load(&with_parts(json!({
+        "activity.count.fill": "needs-you.count-text",
+        "activity.count.text": "surface.deep",
+    })));
     assert!(!loaded.refused, "{:?}", said(&loaded));
     assert_eq!(said(&loaded), Vec::<String>::new());
     assert_eq!(parts::fallen(loaded.theme.first()), []);
-    assert_eq!(loaded.theme.first().value("needs-you.count"), "#c05050");
 }

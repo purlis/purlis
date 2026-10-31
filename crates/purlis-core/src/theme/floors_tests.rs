@@ -436,7 +436,8 @@ fn the_needs_you_mark_is_held_on_a_hovered_control() {
     assert_eq!(drawn.value("needs-you.base"), ours("needs-you.base"));
     let held = held.expect("the floor was held");
     assert_eq!(held.floors, [Floor::StateMarks]);
-    assert_eq!(held.tokens, ["needs-you.base"]);
+    // The hot count follows the mark, so it falls with it (#3098).
+    assert_eq!(held.tokens, ["needs-you.base", "needs-you.count"]);
 }
 
 #[test]
@@ -852,7 +853,10 @@ fn a_count_that_follows_its_mark_falls_with_it() {
     ));
     let held = held.expect("the floor was held");
     assert_eq!(drawn.value("needs-you.base"), ours("needs-you.base"));
-    assert_eq!(drawn.value("needs-you.count"), drawn.value("needs-you.base"));
+    assert_eq!(
+        drawn.value("needs-you.count"),
+        drawn.value("needs-you.base")
+    );
     assert!(held.tokens.contains(&"needs-you.count"), "{held:?}");
 }
 
@@ -889,7 +893,10 @@ fn a_mark_falls_with_the_count_that_follows_it() {
     let held = held.expect("the floor was held");
     assert!(held.floors.contains(&Floor::HotCountApart), "{held:?}");
     assert_eq!(drawn.value("needs-you.count"), ours("needs-you.count"));
-    assert_eq!(drawn.value("needs-you.base"), drawn.value("needs-you.count"));
+    assert_eq!(
+        drawn.value("needs-you.base"),
+        drawn.value("needs-you.count")
+    );
 }
 
 #[test]

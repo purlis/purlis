@@ -413,6 +413,25 @@ pub fn follow_kin(
     }
 }
 
+/// **The hot count and the needs-you mark it follows**, by the count's token (#3098): where a theme
+/// draws one of these alike, it follows the mark, so holding a floor or raising the contrast moves
+/// the two together and the mark and its count never disagree. A theme whose count is its own
+/// colour is held on its own.
+pub const HOT_COUNT_KIN: [(&str, &str); 2] = [
+    ("needs-you.count", "needs-you.base"),
+    ("needs-you.count-text", "needs-you.text"),
+];
+
+/// The pairs of [`HOT_COUNT_KIN`] that `theme` draws alike.
+pub fn hot_count_following(
+    values: &std::collections::BTreeMap<&'static str, String>,
+) -> Vec<(&'static str, &'static str)> {
+    HOT_COUNT_KIN
+        .into_iter()
+        .filter(|(count, mark)| values.get(count) == values.get(mark))
+        .collect()
+}
+
 /// Whether `token` is one of [`TOKENS`].
 pub fn is_token(token: &str) -> bool {
     TOKENS.contains(&token)
