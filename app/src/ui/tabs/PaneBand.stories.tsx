@@ -660,6 +660,48 @@ export const NarrowScrolled: Story = {
       );
     atRest();
 
+    // **A fade never dims a way out**: a consent's ways, resting in the fade at either edge, read
+    // at full strength. The fade takes no pointer, so a hit test would pass through it: for this
+    // one reading it takes the pointer, and the hit test then answers in paint order.
+    const ways = within(vault).getAllByRole("button");
+    const looks = (way: Element) => {
+      const { color, backgroundColor } = getComputedStyle(way);
+      let opacity = 1;
+      for (let at: Element | null = way; at !== null; at = at.parentElement)
+        opacity *= Number(getComputedStyle(at).opacity);
+      return { color, backgroundColor, opacity };
+    };
+    scrollTo(0);
+    const undimmed = ways.map(looks);
+    const fullStrength = (edge: "::before" | "::after", from: (way: Element) => number) => {
+      const reach = parseFloat(fade(edge).height);
+      const hittable = document.createElement("style");
+      hittable.textContent = `[data-scope="notice-row"][data-part="stack"]::before,
+        [data-scope="notice-row"][data-part="stack"]::after { pointer-events: auto; }`;
+      document.head.append(hittable);
+      try {
+        ways.forEach((way, at) => {
+          expect(from(way), "the way out rests in the fade").toBeLessThan(reach);
+          const box = boxOf(way);
+          const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          expect(way.contains(top), `${way.textContent} is on top of the fade`).toBe(true);
+          expect(looks(way)).toEqual({ ...undimmed[at], opacity: 1 });
+        });
+      } finally {
+        hittable.remove();
+      }
+    };
+    // At the top edge, with more above.
+    scrollTo(stack.scrollTop + boxOf(ways[0]).top - boxOf(stack).top - 2);
+    await waitFor(() => expect(stack.hasAttribute("data-more-above")).toBe(true));
+    fullStrength("::before", (way) => boxOf(way).top - boxOf(stack).top);
+    // At the bottom edge, with more below: the band held to just under the consent's ways.
+    scrollTo(0);
+    stack.style.maxBlockSize = `${boxOf(ways[0]).bottom - boxOf(stack).top + 2}px`;
+    await waitFor(() => expect(stack.hasAttribute("data-more-below")).toBe(true));
+    fullStrength("::after", (way) => boxOf(stack).bottom - boxOf(way).bottom);
+    stack.style.maxBlockSize = "";
+
     scrollTo(Math.round((stack.scrollHeight - stack.clientHeight) / 2));
     await shows(true, true);
     atRest();
