@@ -2876,7 +2876,14 @@ fn held_from(
     DRAWN_IN.with(|it| it.set(drawn_in.len()));
     // Built once, for the first family that shows a tint through a see-through colour (#4257).
     let tints = std::cell::OnceCell::new();
-    let tints = || -> &[ResolvedTheme] { tints.get_or_init(|| every_tinted(theme)) };
+    let built_for_consent = &drawn_in[1..];
+    let tints = || -> &[ResolvedTheme] {
+        if built_for_consent.is_empty() {
+            tints.get_or_init(|| every_tinted(theme))
+        } else {
+            built_for_consent
+        }
+    };
     for family in MANIFEST {
         if !rules.iter().any(|rule| std::ptr::eq(rule.family, family)) {
             continue;
@@ -2915,9 +2922,7 @@ fn held_from(
         };
         // At rest and in each state the family names but disabled: a disabled control is
         // exempt, as WCAG has it, and cannot be answered.
-        let singles: Vec<Vec<State>> = std::iter::once(Vec::new())
-            .chain(states_of(family).into_iter().map(|one| vec![one]))
-            .collect();
+        let singles = singles_of(family);
         let mut held = Held {
             family,
             rules: &mut rules,
@@ -2928,20 +2933,17 @@ fn held_from(
         // now. It ends, since each round that writes one names a part that had not fallen.
         loop {
             let written = held.rules.len();
-            for states in &singles {
-                held.readable(theme, states);
-            }
-            held.apart(theme);
             // What shows a tint through it is read in each tint too (#4257).
-            let shown: &[ResolvedTheme] = if shows_through(theme, held.rules, family, &singles) {
+            let shown: &[ResolvedTheme] = if shows_through(theme, held.rules, family) {
                 tints()
             } else {
                 &[]
             };
+            for states in &singles {
+                held.readable(theme, shown, states);
+            }
+            held.apart(theme);
             for one in shown {
-                for states in &singles {
-                    held.readable(one, states);
-                }
                 held.apart(one);
             }
             for states in &singles {
@@ -2970,10 +2972,7 @@ fn held_from(
                     break;
                 }
                 for states in &next {
-                    held.readable(theme, states);
-                    for one in shown {
-                        held.readable(one, states);
-                    }
+                    held.readable(theme, shown, states);
                     held.consented(drawn_in, states);
                 }
             }
@@ -3005,29 +3004,40 @@ fn every_tinted(theme: &ResolvedTheme) -> Vec<ResolvedTheme> {
         .collect()
 }
 
+/// The looks a family is first read in: at rest and in each state it names but disabled, which is
+/// exempt, as WCAG has it, and cannot be answered.
+fn singles_of(family: &Family) -> Vec<Vec<State>> {
+    std::iter::once(Vec::new())
+        .chain(states_of(family).into_iter().map(|one| vec![one]))
+        .collect()
+}
+
 /// **Whether a look of `family` the theme changed draws a see-through colour** (#4257). A tint
-/// keeps each token's luminance, so opaque colours read the same in every tint; what is under a
-/// see-through one comes through turned, and the contrast moves.
-fn shows_through(
-    theme: &ResolvedTheme,
-    rules: &[Rule],
-    family: &Family,
-    singles: &[Vec<State>],
-) -> bool {
+/// keeps each token's luminance, so opaque colours read about the same in every tint; what is
+/// under a see-through one comes through turned, and the contrast moves. Asked of every colour
+/// the floors read: words, fills, edges, marks and tracks, and the grounds the family stands on,
+/// at rest, in each state and in each set of states that hold at once.
+fn shows_through(theme: &ResolvedTheme, rules: &[Rule], family: &Family) -> bool {
     let see_through = |token: &str| hex(theme, token).is_some_and(|one| !is_opaque(one));
-    if !rules
-        .iter()
-        .any(|rule| std::ptr::eq(rule.family, family) && !rule.fallback)
-    {
+    let ours = |rule: &&Rule| std::ptr::eq(rule.family, family) && !rule.fallback;
+    if !rules.iter().any(|rule| ours(&rule)) {
         return false;
+    }
+    let sets_a_see_through_colour = rules.iter().filter(ours).any(|rule| {
+        [Prop::Fill, Prop::Text, Prop::BorderColour]
+            .iter()
+            .any(|property| {
+                matches!(rule.values.get(property), Some(PartValue::Colour(token)) if see_through(token))
+            })
+    });
+    if sets_a_see_through_colour {
+        return true;
     }
     // A part drawn apart from the root that a rule colours, on its own default where the rule
     // leaves one of its colours alone.
     let apart_shows = family.parts.iter().enumerate().any(|(at, part)| {
-        let colours_it = rules.iter().any(|rule| {
-            std::ptr::eq(rule.family, family)
-                && !rule.fallback
-                && rule.part == at
+        let colours_it = rules.iter().filter(ours).any(|rule| {
+            rule.part == at
                 && (rule.values.contains_key(&Prop::Fill) || rule.values.contains_key(&Prop::Text))
         });
         colours_it
@@ -3038,23 +3048,24 @@ fn shows_through(
                 })
             })
     });
-    apart_shows
-        || rules.iter().any(|rule| {
-            std::ptr::eq(rule.family, family)
-                && !rule.fallback
-                && [Prop::Fill, Prop::Text].iter().any(|property| {
-                    matches!(rule.values.get(property), Some(PartValue::Colour(token)) if see_through(token))
-                })
+    if apart_shows {
+        return true;
+    }
+    let on_glass = family.grounds.iter().any(|one| see_through(one));
+    let sets = singles_of(family);
+    let sets = sets.into_iter().chain(combined(family)).collect::<Vec<_>>();
+    family.looks().into_iter().any(|variant| {
+        sets.iter().any(|states| {
+            let look = drawn(rules, family, variant, states);
+            look != drawn(&[], family, variant, states)
+                && (on_glass
+                    || see_through(look.fill)
+                    || see_through(look.border)
+                    || look.grounds.iter().any(|one| see_through(one))
+                    || look.words.iter().any(|one| see_through(one))
+                    || look.marks.iter().any(|one| see_through(one)))
         })
-        || family.looks().into_iter().any(|variant| {
-            singles.iter().any(|states| {
-                let look = drawn(rules, family, variant, states);
-                look != drawn(&[], family, variant, states)
-                    && (see_through(look.fill)
-                        || look.grounds.iter().any(|one| see_through(one))
-                        || look.words.iter().any(|one| see_through(one)))
-            })
-        })
+    })
 }
 
 #[cfg(test)]
@@ -3484,21 +3495,33 @@ struct Held<'a> {
 }
 
 impl Held<'_> {
-    /// Each variant the theme changes while `states` hold, held to the reading floors.
-    fn readable(&mut self, theme: &ResolvedTheme, states: &[State]) {
+    /// Each variant the theme changes while `states` hold, held to the reading floors as written
+    /// and in each of `tints`. A look is the same in every tint, so it is drawn once and only its
+    /// colours are read again; a fall ends the reading, and the next round reads what it drew.
+    fn readable(&mut self, theme: &ResolvedTheme, tints: &[ResolvedTheme], states: &[State]) {
+        let every = || std::iter::once(theme).chain(tints);
         for variant in self.family.looks() {
             let look = drawn(self.rules, self.family, variant, states);
             // A refused box's edge is held whether or not the theme names its refused state: a
             // rule at rest or in another state reaches it too (#3110).
             if states.contains(&State::Invalid)
-                && refusal_hidden(theme, self.rules, self.family, variant, states, &look)
+                && let Some(hidden_in) = every().find(|one| {
+                    refusal_hidden(one, self.rules, self.family, variant, states, &look)
+                })
             {
                 self.fall(variant, states, REFUSAL_HIDDEN.to_owned(), None);
                 // The refused default is the edge the theme already draws when the box is not
                 // refused (a danger edge at rest): then that edge draws its default too, so the
                 // two are told apart again (#3382's review, B1).
                 let redrawn = drawn(self.rules, self.family, variant, states);
-                if refusal_hidden(theme, self.rules, self.family, variant, states, &redrawn) {
+                if refusal_hidden(
+                    hidden_in,
+                    self.rules,
+                    self.family,
+                    variant,
+                    states,
+                    &redrawn,
+                ) {
                     let valid: Vec<State> = states
                         .iter()
                         .copied()
@@ -3511,17 +3534,20 @@ impl Held<'_> {
             if look == drawn(&[], self.family, variant, states) {
                 continue;
             }
-            let broken = if marked(self.family).is_some() {
-                faint_mark(theme, self.rules, self.family, variant, states, &look)
-            } else {
-                let on = grounds(theme, self.family);
-                unreadable(theme, &on, self.rules, self.family, variant, states, &look).or_else(
-                    || {
-                        tracked(self.family)
-                            .and_then(|track| lost_on_track(theme, &on, self.family, track, &look))
-                    },
-                )
-            };
+            let broken = every().find_map(|one| {
+                if marked(self.family).is_some() {
+                    faint_mark(one, self.rules, self.family, variant, states, &look)
+                } else {
+                    let on = grounds(one, self.family);
+                    unreadable(one, &on, self.rules, self.family, variant, states, &look).or_else(
+                        || {
+                            tracked(self.family).and_then(|track| {
+                                lost_on_track(one, &on, self.family, track, &look)
+                            })
+                        },
+                    )
+                }
+            });
             if let Some((floor, ratio)) = broken {
                 self.fall(variant, states, floor, ratio);
             }

@@ -160,15 +160,13 @@ fn a_default_count_reads_at_every_degree_of_a_recipe_that_moves_its_ground() {
 
 #[test]
 fn a_shipped_theme_and_an_opaque_count_build_no_tints_for_this() {
-    // What pays for the tints is a look the theme changed that draws a see-through colour. Every
-    // family asked of the rules as written, at rest.
-    let singles = vec![Vec::new()];
+    // What pays for the tints is a look the theme changed that draws a see-through colour: every
+    // family asked of the rules as held, in every state, as the hold asks.
     let shows = |theme: &ResolvedTheme| {
-        let rules = rules(&theme.parts);
-        // The rules' own families: `shows_through` knows a family by its address.
-        rules
+        let rules = held(theme).0;
+        MANIFEST
             .iter()
-            .any(|rule| shows_through(theme, &rules, rule.family, &singles))
+            .any(|family| shows_through(theme, &rules, family))
     };
     for base in ["purlis", "purlis-classic"] {
         let loaded = load(&json!({ "name": "Plain", "extends": base }));
@@ -187,4 +185,190 @@ fn a_shipped_theme_and_an_opaque_count_build_no_tints_for_this() {
     assert!(!shows(&count("#202020")));
     let see_through = count("#ff000040");
     assert!(shows(&see_through), "{:?}", fallen(&see_through));
+}
+
+/// A theme with these tokens and keys, on a recipe that turns the grounds.
+fn built(id: &str, tokens: Value, parts: Value) -> Option<ResolvedTheme> {
+    let loaded = load(&json!({
+        "name": "See-through", "extends": "purlis-classic",
+        "appearances": [{ "id": id, "tokens": tokens }],
+        "tint": { "tokens": RECIPE },
+        "parts": parts,
+    }));
+    if loaded.refused {
+        return None;
+    }
+    loaded
+        .theme
+        .appearances
+        .into_iter()
+        .find(|one| one.id == id)
+}
+
+/// The washes a case is looked for on: the turned ground shows through each differently.
+const CASES: &[&str] = &[
+    "#ff000040",
+    "#00ff0060",
+    "#0000ff80",
+    "#ff00ffa0",
+    "#ffaa0030",
+    "#00000040",
+    "#ffffff20",
+    "#ff0000c0",
+    "#00ff00a0",
+    "#ff8000a0",
+    "#ffffffa0",
+    "#ff00ffd0",
+];
+
+/// The first of `build`'s themes that holds as written, next to one that falls, and breaks in a
+/// tint: a case with something to hold. `build` takes a wash, and a byte it turns the colour
+/// under test by.
+fn breaking_case(
+    family: &str,
+    build: &dyn Fn(&str, u8) -> Option<ResolvedTheme>,
+) -> Option<ResolvedTheme> {
+    for wash in CASES {
+        let mut before = None;
+        for byte in 0..=0xff_u8 {
+            let Some(theme) = build(wash, byte) else {
+                continue;
+            };
+            let holds = !falls(&untinted(&theme), family);
+            if before == Some(!holds) && holds {
+                let breaks = (0..360).step_by(15).any(|degree| {
+                    falls(
+                        &untinted(&tint::tinted_at(&theme, f64::from(degree))),
+                        family,
+                    )
+                });
+                if breaks {
+                    return Some(theme);
+                }
+            }
+            before = Some(holds);
+        }
+    }
+    None
+}
+
+fn grey(byte: u8) -> String {
+    format!("#{byte:02x}{byte:02x}{byte:02x}")
+}
+
+/// Holds what `build` makes, and says what it found: `missing` when no byte gives a case.
+fn held_in_a_tint(family: &str, build: &dyn Fn(&str, u8) -> Option<ResolvedTheme>) {
+    let theme = breaking_case(family, build).expect("a case that holds as written and breaks");
+    assert!(falls(&theme, family), "{family} is read as written alone");
+}
+
+#[test]
+fn a_see_through_edge_of_a_refused_box_is_read_in_each_tint() {
+    held_in_a_tint("select", &|wash, alpha| {
+        built(
+            "dark",
+            json!({ "chart.4": format!("{}{alpha:02x}", &wash[..7]) }),
+            json!({ "select.root.invalid.border-colour": "chart.4" }),
+        )
+    });
+}
+
+#[test]
+fn a_see_through_edge_of_a_ghost_is_read_in_each_tint() {
+    held_in_a_tint("button", &|wash, alpha| {
+        built(
+            "dark",
+            json!({ "chart.4": format!("{}{alpha:02x}", &wash[..7]) }),
+            json!({ "button.root.ghost.border-colour": "chart.4" }),
+        )
+    });
+}
+
+#[test]
+fn words_on_a_see_through_ground_token_are_read_in_each_tint() {
+    held_in_a_tint("list", &|wash, byte| {
+        built(
+            "dark",
+            json!({ "surface.overlay": wash, "chart.3": grey(byte) }),
+            json!({ "list.label.text": "chart.3" }),
+        )
+    });
+}
+
+#[test]
+fn a_wash_drawn_only_in_a_combined_set_is_read_in_each_tint() {
+    held_in_a_tint("button", &|wash, byte| {
+        built(
+            "dark",
+            json!({ "tab.active": wash, "chart.3": grey(byte) }),
+            json!({ "button.root.secondary.text": "chart.3" }),
+        )
+    });
+}
+
+#[test]
+fn a_mark_on_a_see_through_track_is_read_in_each_tint() {
+    held_in_a_tint("meter", &|wash, byte| {
+        built(
+            "dark",
+            json!({ "border.subtle": wash, "chart.3": grey(byte) }),
+            json!({ "meter.fill.fill": "chart.3" }),
+        )
+    });
+}
+
+#[test]
+fn an_opaque_colour_on_a_default_wash_in_a_state_is_read_in_each_tint() {
+    held_in_a_tint("titlebar", &|wash, byte| {
+        built(
+            "dark",
+            json!({ "accent.wash": wash, "chart.3": grey(byte) }),
+            json!({ "titlebar.workspace.selected.text": "chart.3" }),
+        )
+    });
+}
+
+#[test]
+fn a_key_in_a_state_is_read_in_each_tint() {
+    held_in_a_tint("tabs", &|wash, byte| {
+        built(
+            "dark",
+            json!({ "chart.4": wash, "chart.3": grey(byte) }),
+            json!({ "tabs.tab.selected.fill": "chart.4", "tabs.tab.selected.text": "chart.3" }),
+        )
+    });
+}
+
+#[test]
+fn what_a_tint_makes_fall_is_read_again_and_every_look_left_reads() {
+    let build = |wash: &str, byte| {
+        built(
+            "dark",
+            json!({ "accent.wash": wash, "chart.3": grey(byte) }),
+            json!({ "titlebar.workspace.selected.text": "chart.3" }),
+        )
+    };
+    let theme = breaking_case("titlebar", &build).expect("a case");
+    assert!(held_again(&theme).is_empty(), "{:?}", held_again(&theme));
+    let held_rules = held(&theme).0;
+    let family = family("titlebar").unwrap();
+    let sets: Vec<Vec<State>> = std::iter::once(Vec::new())
+        .chain(states_of(family).into_iter().map(|one| vec![one]))
+        .collect();
+    for variant in family.looks() {
+        for states in &sets {
+            let look = drawn(&held_rules, family, variant, states);
+            if look == drawn(&[], family, variant, states) {
+                continue;
+            }
+            for degree in (0..360).step_by(15) {
+                let tinted = tint::tinted_at(&theme, f64::from(degree));
+                let on = grounds(&tinted, family);
+                assert!(
+                    unreadable(&tinted, &on, &held_rules, family, variant, states, &look).is_none(),
+                    "{variant} {states:?} at {degree}"
+                );
+            }
+        }
+    }
 }
