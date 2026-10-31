@@ -383,11 +383,15 @@ export const InstallReviewGranted: Story = {
     await userEvent.click(
       await within(document.body).findByRole("option", { name: "The root and ops" }),
     );
-    await expect(await within(review).findByText(/the install grants it to ops too/)).toBeVisible();
+    const widened = await within(review).findByText(/the install grants it to ops too/);
+    await expect(widened).toBeVisible();
     await expect(within(review).getByRole("button", { name: "Install" })).not.toHaveAttribute(
       "aria-disabled",
       "true",
     );
+    // The picture shows the line, with the list of grants closed.
+    await waitFor(() => expect(within(document.body).queryByRole("listbox")).toBeNull());
+    widened.scrollIntoView({ block: "center" });
   },
 };
 
