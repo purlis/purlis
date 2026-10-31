@@ -234,6 +234,12 @@ pub(super) fn profile_rows(d: &Doctor) -> Vec<Row> {
     })
 }
 
+/// **`profile icons`** (#3137): each profile whose icon fell back to its monogram, with why. No row
+/// where none did.
+fn icon_row(_named: &[(&str, &str)], _config_root: Option<&Path>) -> Option<Row> {
+    None
+}
+
 /// The row a finished probe answers: green when wired, and otherwise a warning whose hint is
 /// the probe's own fix, or charter's "not checked" when the probe has none to give.
 fn wiring_row(name: &str, w: &wiring::Wiring) -> Row {

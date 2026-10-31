@@ -163,6 +163,22 @@ fn sole_bytes(dir: &crate::theme::opened::Held, _name: &str) -> Result<Option<Ve
     match *dir {}
 }
 
+/// Why an icon file past the cap draws nothing.
+pub const TOO_LARGE: &str = "the icon file is larger than an icon may be";
+
+/// Why an `icon` that is neither a glyph nor a file's name draws nothing.
+pub const NO_SUCH_ICON: &str = "purlis draws no glyph by that name, and it is not the name of an .svg file in its icons folder";
+
+/// Why an icon file cannot be looked for at all.
+pub const NO_CONFIG_HOME: &str = "purlis has no config folder here to read the icon file from";
+
+/// **Why a profile's icon fell back to its monogram** (#3137), `icon` what its definition names and
+/// `config_root` the config home its own SVG is read from: `None` where it draws what it names or
+/// names nothing.
+pub fn fell_back(_icon: Option<&str>, _config_root: Option<&Path>) -> Option<&'static str> {
+    None
+}
+
 /// The most one answer's own SVGs may come to, all of them together: an answer that lists many
 /// profiles (Start a chat's options) holds every person's icon in it to this, however many rows
 /// name one. The window holds the same budget across a list (`HarnessIcon.tsx`).
