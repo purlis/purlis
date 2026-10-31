@@ -1216,9 +1216,9 @@ pub async fn pool_sign_in_start(
         };
         let login = login_on(&yours, &config, &pool, &name, provider.as_deref(), typed)?;
         let carry: callback::Carry = {
-            let (config, pool) = (config.clone(), pool.clone());
+            let (config, pool, yours) = (config.clone(), pool.clone(), yours.clone());
             Arc::new(move |target: &str| {
-                let to = to_a_runner(&config, &pool, Waking::No)?;
+                let to = to_a_runner(&config, &pool, Waking::No, &yours)?;
                 crate::runnerlinks::sign_in_redirect(&to, target)
             })
         };
