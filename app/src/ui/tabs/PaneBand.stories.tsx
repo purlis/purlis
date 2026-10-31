@@ -563,12 +563,18 @@ export const ConsentPressedByThePointer: Story = {
     await userEvent.keyboard("{Escape}");
     const vault = await canvas.findByRole("status", { name: "Vault" });
     const allow = within(vault).getByRole("button", { name: "Allow steward to use this vault" });
-    await mouse.click(allow);
-    expect(allowed).toEqual([]);
-    expect(await canvas.findByText(NOTICE_MOVED_JUST_NOW)).toBeVisible();
+    try {
+      await mouse.click(allow);
+      expect(allowed).toEqual([]);
+      expect(await canvas.findByText(NOTICE_MOVED_JUST_NOW)).toBeVisible();
 
-    await new Promise((done) => setTimeout(done, SETTLE_MS + 100));
-    await mouse.click(allow);
+      await new Promise((done) => setTimeout(done, SETTLE_MS + 100));
+      await mouse.click(allow);
+    } finally {
+      // **The engine's mouse stays where it last was, story after story**: put back in the page's
+      // corner, so it hovers nothing a later story draws (a tooltip, a row's hover).
+      await mouse.hover(document.body, { position: { x: 0, y: 0 } });
+    }
     expect(allowed).toEqual(["forge"]);
     atRest();
   },
