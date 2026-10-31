@@ -43,6 +43,19 @@ pub enum HardLinks {
     Read,
 }
 
+impl HardLinks {
+    /// **How a skill from `origin` has its files read** (SK-44; #3459): a harness skill is the
+    /// person's own, in their folders, so its `SKILL.md` and every other file of it are read
+    /// with a hard link; every other skill's are refused one, as a chat can write them.
+    pub fn of(origin: crate::Origin) -> Self {
+        if origin == crate::Origin::Harness {
+            Self::Read
+        } else {
+            Self::Refused
+        }
+    }
+}
+
 /// The end of a sentence about the file: "it cannot be read (…)", "it is not a plain file", "it
 /// is too large". The one way a file [`read_plain`] read nothing is said.
 impl std::fmt::Display for NotRead {
@@ -151,37 +164,74 @@ fn parts(rel: &Path) -> Option<Vec<&OsStr>> {
         .collect()
 }
 
-/// **The text of `file`, opened as the plain file `meta` says it is**, of at most `most` bytes:
-/// refused where it is no plain file, has a second name (a hard link, which reaches past its
-/// folder as a link does) and `hard_links` refuses it, or is larger. The one reader under
-/// [`read_plain`] and [`Folder::read`].
-fn read_opened(file: std::fs::File, most: u64, hard_links: HardLinks) -> Result<String, NotRead> {
+/// **What a read came to, and how many bytes it read** (#3459): a file that is not text is read
+/// before it is refused, so a caller that holds a budget of bytes counts what it cost too.
+#[derive(Debug)]
+pub struct Counted {
+    pub text: Result<String, NotRead>,
+    /// The bytes read from the file, whether or not they were text.
+    pub read: u64,
+}
+
+impl Counted {
+    fn refused(why: NotRead) -> Self {
+        Self {
+            text: Err(why),
+            read: 0,
+        }
+    }
+}
+
+/// **The text of `file`, opened as the plain file `meta` says it is**, of at most `most` bytes,
+/// and the bytes read: refused where it is no plain file, has a second name (a hard link, which
+/// reaches past its folder as a link does) and `hard_links` refuses it, or is larger. The one
+/// reader under [`read_plain`] and [`Folder::read`].
+fn read_opened(file: std::fs::File, most: u64, hard_links: HardLinks) -> Counted {
     use std::io::Read as _;
     let unreadable = |why: std::io::Error| NotRead::Unreadable(why.to_string());
-    let meta = file.metadata().map_err(unreadable)?;
+    let meta = match file.metadata() {
+        Ok(meta) => meta,
+        Err(why) => return Counted::refused(unreadable(why)),
+    };
     if !meta.is_file() {
-        return Err(NotRead::NotPlain);
+        return Counted::refused(NotRead::NotPlain);
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt as _;
         if meta.nlink() > 1 && hard_links == HardLinks::Refused {
-            return Err(NotRead::NotPlain);
+            return Counted::refused(NotRead::NotPlain);
         }
     }
     #[cfg(not(unix))]
     let _ = hard_links;
     if meta.len() > most {
-        return Err(NotRead::TooLarge);
+        return Counted::refused(NotRead::TooLarge);
     }
-    let mut text = String::new();
-    file.take(most + 1)
-        .read_to_string(&mut text)
-        .map_err(unreadable)?;
-    if text.len() as u64 > most {
-        return Err(NotRead::TooLarge);
+    let mut bytes = Vec::new();
+    if let Err(why) = file.take(most + 1).read_to_end(&mut bytes) {
+        return Counted {
+            text: Err(unreadable(why)),
+            read: bytes.len() as u64,
+        };
     }
-    Ok(text)
+    let read = bytes.len() as u64;
+    if read > most {
+        return Counted {
+            text: Err(NotRead::TooLarge),
+            read,
+        };
+    }
+    Counted {
+        // What `read_to_string` says of bytes that are not text, as it always said it here.
+        text: String::from_utf8(bytes).map_err(|_| {
+            unreadable(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "stream did not contain valid UTF-8",
+            ))
+        }),
+        read,
+    }
 }
 
 /// **The text of the plain file at `path`, following no link at its last step**, of at most
@@ -189,21 +239,35 @@ fn read_opened(file: std::fs::File, most: u64, hard_links: HardLinks) -> Result<
 /// file into something else while it was opened. For a file whose folder purlis holds no handle
 /// to (the file beside a skill's folder); a skill's own files are read through [`Folder::read`].
 pub(crate) fn read_plain(path: &Path, most: u64) -> Result<String, NotRead> {
+    read_plain_counted(path, most).text
+}
+
+/// [`read_plain`], with the bytes it read.
+fn read_plain_counted(path: &Path, most: u64) -> Counted {
     let unreadable = |why: std::io::Error| NotRead::Unreadable(why.to_string());
-    let meta = std::fs::symlink_metadata(path).map_err(unreadable)?;
+    let meta = match std::fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(why) => return Counted::refused(unreadable(why)),
+    };
     if !meta.is_file() {
-        return Err(NotRead::NotPlain);
+        return Counted::refused(NotRead::NotPlain);
     }
     if meta.len() > most {
-        return Err(NotRead::TooLarge);
+        return Counted::refused(NotRead::TooLarge);
     }
-    let file = std::fs::File::open(path).map_err(unreadable)?;
+    let file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(why) => return Counted::refused(unreadable(why)),
+    };
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt as _;
-        let opened = file.metadata().map_err(unreadable)?;
+        let opened = match file.metadata() {
+            Ok(opened) => opened,
+            Err(why) => return Counted::refused(unreadable(why)),
+        };
         if (opened.dev(), opened.ino()) != (meta.dev(), meta.ino()) {
-            return Err(NotRead::NotPlain);
+            return Counted::refused(NotRead::NotPlain);
         }
     }
     read_opened(file, most, HardLinks::Refused)
@@ -355,6 +419,16 @@ impl Folder {
         most: u64,
         hard_links: HardLinks,
     ) -> Result<String, NotRead> {
+        self.read_counted(name, most, hard_links).text
+    }
+
+    /// [`Self::read_as`], with the bytes it read (#3459).
+    pub fn read_counted(
+        &self,
+        name: impl AsRef<OsStr>,
+        most: u64,
+        hard_links: HardLinks,
+    ) -> Counted {
         use rustix::fs::OFlags;
         let name = name.as_ref();
         let opened = rustix::fs::openat(
@@ -365,8 +439,10 @@ impl Folder {
         );
         match opened {
             Ok(fd) => read_opened(std::fs::File::from(fd), most, hard_links),
-            Err(_) if matches!(self.kind(name), Some(Kind::Link { .. })) => Err(NotRead::NotPlain),
-            Err(why) => Err(NotRead::Unreadable(why.to_string())),
+            Err(_) if matches!(self.kind(name), Some(Kind::Link { .. })) => {
+                Counted::refused(NotRead::NotPlain)
+            }
+            Err(why) => Counted::refused(NotRead::Unreadable(why.to_string())),
         }
     }
 }
@@ -415,8 +491,17 @@ impl Folder {
         &self,
         name: impl AsRef<OsStr>,
         most: u64,
-        _hard_links: HardLinks,
+        hard_links: HardLinks,
     ) -> Result<String, NotRead> {
-        read_plain(&self.shown.join(name.as_ref()), most)
+        self.read_counted(name, most, hard_links).text
+    }
+
+    pub fn read_counted(
+        &self,
+        name: impl AsRef<OsStr>,
+        most: u64,
+        _hard_links: HardLinks,
+    ) -> Counted {
+        read_plain_counted(&self.shown.join(name.as_ref()), most)
     }
 }
