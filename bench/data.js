@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793437262217,
+  "lastUpdate": 1793438552161,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32970,6 +32970,48 @@ window.BENCHMARK_DATA = {
             "value": 102.74044749999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.564, 102.083, 102.740, 103.110, 104.442 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ade156f43ac330991df874bfe4dd2f234af38441",
+          "message": "Grades: a router's grade is recorded when interrupted, has a scorecard, and plans like a skill's (#3616, #3617, #3618) (#4221)\n\n* Grades: a router's grade purlis stopped under is recorded as interrupted (#3616)\n\nA router's grade is held under way while it runs, as a skill's is\n(grades::underway): its routers' record row under `router` in the same\nfolder, its lock held, its spend said as each chat ends. The project's next\nstart records it as interrupted in personas/_grades/routers/, and reads a\nheld lock as a grade that runs, whatever it grades. Its router line says it\nwas interrupted, with no count of tests.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grades: a router's grade has a scorecard and keeps its chats (#3617)\n\nA router's grade keeps each chat's screen, as a skill's does\n(grades::kept, now keyed by whose grades: a skill's, or a router's in the\nscope that chose it, in router-grade-chats/), and sweeps its older grades'\nto the three newest. router_grade_scorecard answers each skill's trigger\ntests in both arms with the scorecard's shared rows (scored_tests), and\nrouter_grade_chat a kept chat. The Routing page opens the newest grade's\nscorecard beside its list, and each chat read-only, from the shared\nTriggerTestsTable and KeptChatShown.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grades: a router's grade plan offers the profile, model, cap and estimate (#3618)\n\nThe router's plan reads where its chats run as a skill's does (chats_on): a\nprofile picker, a model picker, and Set the cap (router_grade_set_cap, the\nproject's one cap, through the shared set_cap). Pressing Grade consents to\nthe profile, model, cap and dollar limit the plan shows (consent_on through\nthe shared terms), so a press on a plan that showed others starts nothing,\nand the grade's chats run on the model picked.\n\nIts estimate is worked out from the router's last grade in that scope by the\nskill's estimate, now generic over a grade's row (grades::Spends,\nestimate_from): router rows count their skills' arms, and an interrupted one\ncounts none. The plan says which grade that was, or that none is known, and\nthat it ran on another library where its copies differ.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grades: the review's findings on a router's grade (#3617, #3618)\n\n- The router's new commands are on the session protocol's lists: its\n  scorecard and kept chat served on a link, read only, as a skill's are;\n  Set the cap the window's alone, as a skill's is.\n- An interrupted router grade is none to go by for the estimate, never one\n  that \"ran no chat\"; the plan then says no grade is known to go by.\n- A library holding a copy with changes not committed is never known to be\n  the one an earlier grade ran on, so the plan says it may spend otherwise.\n- The plan draws only the answer to its latest read, so a quick change of\n  profile or model never shows another's plan under the pickers.\n- The library warning is said only beside a figure; the scorecard says how\n  it ended in the record's words, without repeating the date and library,\n  and shares the skill scorecard's points difference and the router line's\n  library wording.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grades: a router's interrupted line names no command (#3616)\n\nThe command-name scan read \"purlis stopped\" in the router line as a\ncommand; the grade stopped, in its words.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Stories: the Routing page's Scorecard, and a router's grade's scorecard (#3617)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T08:53:31Z",
+          "tree_id": "85cd1c2401275be33af40fb316445f7b276b7160",
+          "url": "https://github.com/purlis/purlis/commit/ade156f43ac330991df874bfe4dd2f234af38441"
+        },
+        "date": 1793438545329,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.48734500000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.473, 0.481, 0.487, 0.488, 0.489 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.423059000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.340, 16.347, 16.423, 16.496, 16.578 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.55606499999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.172, 101.332, 101.556, 101.873, 102.001 ms"
           }
         ]
       }
