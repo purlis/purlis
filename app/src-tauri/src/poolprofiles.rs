@@ -1555,8 +1555,8 @@ pub fn watched_sign_in(pool: String, name: String) -> Option<crate::signinwatch:
         }),
         let_go: Box::new(move |whose| match whose {
             crate::signinwatch::Whose::Everywhere => onrunner::let_go(None, &pool, &name),
-            crate::signinwatch::Whose::InTheProject(root) => {
-                onrunner::let_go(Some(root), &pool, &name);
+            crate::signinwatch::Whose::InTheProject(root, seen) => {
+                onrunner::let_go_older(root, &pool, &name, seen);
             }
         }),
     })

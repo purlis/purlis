@@ -56,8 +56,9 @@ pub struct SignIn {
 pub enum Whose<'a> {
     /// Every project's: the profile is signed in, whoever asked.
     Everywhere,
-    /// The project's at this root: only its person left.
-    InTheProject(&'a Path),
+    /// The project's at this root, raised before the moment its shell was last seen open: only
+    /// its person left, and a start refused since then still waits (#4203).
+    InTheProject(&'a Path, Instant),
 }
 
 /// What ended a watcher's asking.
@@ -110,7 +111,7 @@ pub fn watch(sign_in: SignIn, session: u32, project: Project) {
             let_go,
             ..
         } = sign_in;
-        let ended = watched_until(
+        let (ended, last_open) = watched_until(
             Pace {
                 every: WATCHED_EVERY,
                 for_: WATCHED_FOR,
@@ -133,7 +134,7 @@ pub fn watch(sign_in: SignIn, session: u32, project: Project) {
         let open = project_open();
         match asks_go(ended, open) {
             AsksGo::Everywhere => let_go(Whose::Everywhere),
-            AsksGo::InTheProject => let_go(Whose::InTheProject(&root)),
+            AsksGo::InTheProject => let_go(Whose::InTheProject(&root, last_open)),
             AsksGo::None => {}
         }
         // A closed project's teller would say its old, empty list of the project reopened.
@@ -196,28 +197,32 @@ struct Pace {
 /// Asks until the harness says signed in or `shells_open` says the person has left. The harness
 /// is asked first, so a sign-in finished just before the shell closed counts as one. No time
 /// ends it, only slows the asking: a shell is closed sooner or later, and an Ask left with
-/// nothing watching could no longer go by itself.
+/// nothing watching could no longer go by itself. How it ended, and when a shell was last seen
+/// open: the moment before that look, or as the watch began.
 fn watched_until(
     pace: Pace,
     mut signed_in: impl FnMut() -> bool,
     mut shells_open: impl FnMut() -> bool,
-) -> Watch {
+) -> (Watch, Instant) {
     let started = Instant::now();
+    let mut last_open = started;
     let mut next_ask = started;
     loop {
         std::thread::sleep(pace.every);
         let now = Instant::now();
         if now >= next_ask {
             if signed_in() {
-                return Watch::SignedIn;
+                return (Watch::SignedIn, last_open);
             }
             if now.duration_since(started) >= pace.for_ {
                 next_ask = now + pace.later_every;
             }
         }
+        let looked = Instant::now();
         if !shells_open() {
-            return Watch::ShellsClosed;
+            return (Watch::ShellsClosed, last_open);
         }
+        last_open = looked;
     }
 }
 

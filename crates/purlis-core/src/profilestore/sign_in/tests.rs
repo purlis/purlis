@@ -525,6 +525,25 @@ fn signed_in_lets_go_every_project_s_wait() {
     assert!(waiting(two).is_empty());
 }
 
+/// **Leaving a sign-in lets go only waits older than the moment the shell was last seen open**
+/// (#4203): a start refused after that says the profile waits in the Inbox, and it does.
+#[test]
+fn leaving_a_sign_in_keeps_a_wait_raised_after_the_shell_was_last_seen() {
+    let root = Path::new("/projects/left");
+    let profile = profile_in("codex", "left");
+    waits_on(root, &profile);
+    let last_seen = Instant::now();
+
+    let_go_older(root, "work", last_seen);
+    assert!(waiting(root).is_empty(), "older: it goes");
+    let gone = Instant::now();
+
+    waits_on(root, &profile);
+    let_go_older(root, "work", gone);
+    assert_eq!(waiting(root).len(), 1, "raised since: it stays");
+    dismiss(root, "work");
+}
+
 #[test]
 fn a_dismissed_wait_is_gone() {
     let root = Path::new("/projects/dismissed");

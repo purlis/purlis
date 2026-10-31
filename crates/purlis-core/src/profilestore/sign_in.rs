@@ -387,6 +387,8 @@ pub struct Wait {
     pub harness: String,
     /// When the first start was refused, in seconds since 1970.
     pub since: u64,
+    /// That moment, to the instant: what a watcher compares (#4203).
+    pub raised: Instant,
 }
 
 static WAITS: Mutex<Vec<Wait>> = Mutex::new(Vec::new());
@@ -410,6 +412,7 @@ pub fn waits_on(root: &Path, profile: &Profile) {
         since: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs()),
+        raised: Instant::now(),
     });
 }
 
@@ -455,6 +458,16 @@ pub fn dismiss(root: &Path, name: &str) {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .retain(|w| !(w.root == root && w.profile.name == name));
+}
+
+/// The person left the sign-in of `name` in the project at `root`: its wait goes, if it was
+/// raised before `seen`, when the shell was last seen open. One raised since is a start refused
+/// after they left, which says the profile waits in the Inbox (#4203).
+pub fn let_go_older(root: &Path, name: &str, seen: Instant) {
+    WAITS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .retain(|w| !(w.root == root && w.profile.name == name && w.raised < seen));
 }
 
 /// A harness's own sign-in, ready to run in a terminal the person drives.

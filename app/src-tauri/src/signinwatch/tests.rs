@@ -58,7 +58,7 @@ const NO_WAIT: Pace = Pace {
 /// shell closed from the answer numbered `closes_at` on. How it ended, and how many times it asked.
 fn watched_over(said: &[bool], closes_at: usize) -> (Watch, usize) {
     let asked = std::cell::Cell::new(0);
-    let ended = watched_until(
+    let (ended, _) = watched_until(
         NO_WAIT,
         || {
             asked.set(asked.get() + 1);
@@ -102,7 +102,7 @@ fn signed_in_as_the_shell_closes_is_signed_in() {
 fn past_its_time_a_watch_asks_rarely_and_still_sees_the_shell_close() {
     let (asked, looked) = (std::cell::Cell::new(0), std::cell::Cell::new(0));
 
-    let ended = watched_until(
+    let (ended, _) = watched_until(
         Pace {
             every: Duration::ZERO,
             for_: Duration::ZERO,
@@ -121,4 +121,42 @@ fn past_its_time_a_watch_asks_rarely_and_still_sees_the_shell_close() {
     assert_eq!(ended, Watch::ShellsClosed);
     assert_eq!(asked.get(), 1);
     assert_eq!(looked.get(), 5);
+}
+
+/// **It says when it last saw a shell open** (#4203): the moment before that look, so a wait
+/// raised during the look counts as raised after it. Not the look that found them closed.
+#[test]
+fn a_watch_says_when_it_last_saw_a_shell_open() {
+    let started = Instant::now();
+    let looks = std::cell::Cell::new(0);
+    let seen = std::cell::Cell::new(started);
+
+    let (ended, last_open) = watched_until(
+        NO_WAIT,
+        || false,
+        || {
+            looks.set(looks.get() + 1);
+            if looks.get() < 3 {
+                seen.set(Instant::now());
+                return true;
+            }
+            false
+        },
+    );
+
+    assert_eq!(ended, Watch::ShellsClosed);
+    assert!(last_open >= started);
+    assert!(last_open <= seen.get(), "the look that saw it open");
+}
+
+/// With no look seeing a shell open, it was last seen as the watch began: Sign in had just typed
+/// into it.
+#[test]
+fn a_shell_closed_at_the_first_look_was_last_seen_as_the_watch_began() {
+    let before = Instant::now();
+
+    let (_, last_open) = watched_until(NO_WAIT, || false, || false);
+
+    assert!(last_open >= before);
+    assert!(last_open <= Instant::now());
 }

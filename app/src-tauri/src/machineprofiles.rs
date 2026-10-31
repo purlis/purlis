@@ -391,8 +391,8 @@ fn signing_in_here(profile: purlis_core::profiles::Profile) -> crate::signinwatc
         }),
         let_go: Box::new(move |whose| match whose {
             crate::signinwatch::Whose::Everywhere => sign_in::let_go_everywhere(&profile),
-            crate::signinwatch::Whose::InTheProject(root) => {
-                sign_in::dismiss(root, &profile.name);
+            crate::signinwatch::Whose::InTheProject(root, seen) => {
+                sign_in::let_go_older(root, &profile.name, seen);
             }
         }),
     }

@@ -861,6 +861,8 @@ pub struct PoolWait {
     pub harness: String,
     /// When the first start was refused, in seconds since 1970.
     pub since: u64,
+    /// That moment, to the instant: what a watcher compares (#4203).
+    pub raised: std::time::Instant,
 }
 
 static POOL_WAITS: Mutex<Vec<PoolWait>> = Mutex::new(Vec::new());
@@ -882,6 +884,7 @@ fn waits_on_pool(root: &Path, pool: &str, record: &MachineProfile) {
         kind: record.harness.clone(),
         harness: harness_title(&record.harness),
         since: crate::halt::now(),
+        raised: std::time::Instant::now(),
     });
 }
 
@@ -903,6 +906,15 @@ pub fn let_go(root: Option<&Path>, pool: &str, name: &str) {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .retain(|w| !(w.pool == pool && w.profile == name && root.is_none_or(|r| w.root == r)));
+}
+
+/// The person left the sign-in of `name` on pool `pool` in the project at `root`: its wait goes,
+/// if it was raised before `seen`, when the shell was last seen open (#4203).
+pub fn let_go_older(root: &Path, pool: &str, name: &str, seen: std::time::Instant) {
+    POOL_WAITS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .retain(|w| !(w.pool == pool && w.profile == name && w.root == root && w.raised < seen));
 }
 
 #[cfg(test)]
