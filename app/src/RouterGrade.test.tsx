@@ -7,14 +7,26 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import {
-  RouterGrade,
   RouterGradeChatPage,
+  RouterGradePlanPage,
+  RouterGradeRunningPage,
   RouterGradeScorecardPage,
   routerCostSaid,
-  routerEndedSaid,
 } from "./RouterGrade";
-import type { RouterGradePlan, RouterGradeScorecard, ScoredTest } from "./bindings";
-import { routerGradeItem, routerGradeOfItem } from "./skillStudio";
+import { endSaid } from "./SkillGrade";
+import type {
+  RouterGradePlan,
+  RouterGradeScorecard,
+  RouterGradeStep,
+  ScoredTest,
+} from "./bindings";
+import {
+  ROUTER_GRADE_PLAN,
+  routerGradeItem,
+  routerGradeOfItem,
+  routerGradingItem,
+  routerGradingOfItem,
+} from "./skillStudio";
 
 afterEach(() => {
   cleanup();
@@ -65,30 +77,75 @@ function plan(over: Partial<RouterGradePlan> = {}): RouterGradePlan {
   };
 }
 
-describe("Grade the router, cost first (SK-15e)", () => {
-  it("shows what grading the router runs before anything runs, then starts it on the press", async () => {
+/** The plan's Start, as its words say it for a plan of `chats`. */
+const start = (chats = 18) =>
+  screen.getByRole("button", { name: `Start grading · ${chats} chats` });
+
+/** Whether `button` can't be pressed now: disabled, or unavailable with its reason. */
+const unavailable = (button: HTMLElement) =>
+  button.hasAttribute("disabled") || button.getAttribute("aria-disabled") === "true";
+
+/** The plan page of the router relevance, and what it told Routing. */
+function renderPlan(over: { workspace?: string | null; persona?: string | null } = {}) {
+  const told = {
+    started: vi.fn<(grade: string) => void>(),
+    running: vi.fn<(grade: string) => void>(),
+    cancel: vi.fn(),
+  };
+  const page = (changed: number) => (
+    <RouterGradePlanPage
+      plane="p"
+      router="relevance"
+      workspace={over.workspace === undefined ? "ops" : over.workspace}
+      persona={over.persona ?? null}
+      changed={changed}
+      onStarted={told.started}
+      onRunning={told.running}
+      onCancel={told.cancel}
+    />
+  );
+  const drawn = render(page(0));
+  return { ...told, rerender: (changed: number) => drawn.rerender(page(changed)) };
+}
+
+/** A step of the router relevance's grade 01GRADE, as the core tells it. */
+const step = (over: Partial<RouterGradeStep> = {}): RouterGradeStep => ({
+  plane: "p",
+  router: "relevance",
+  grade: "01GRADE",
+  ran: 0,
+  of: 18,
+  tokens: null,
+  cost_usd: null,
+  limit_usd: 15,
+  cap: 200000,
+  ended: null,
+  said: null,
+  ...over,
+});
+
+describe("Grade the router: its plan, a review page on Routing (SK-15e, #4222)", () => {
+  it("shows its totals and what it runs before anything runs, then starts it on Start", async () => {
     const asked: Array<{ cmd: string; args: unknown }> = [];
     mockIPC(
       (cmd, args) => {
         asked.push({ cmd, args });
         if (cmd === "router_grade_plan") return plan();
+        if (cmd === "start_options") return { profiles: [] };
         if (cmd === "router_grade_start") return "01GRADE";
         return null;
       },
       { shouldMockEvents: true },
     );
-    let graded = 0;
-    render(
-      <RouterGrade
-        plane="p"
-        router="relevance"
-        workspace="ops"
-        persona={null}
-        onGraded={() => (graded += 1)}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Grade the router…" }));
+    const told = renderPlan();
     const cost = await screen.findByTestId("router-grade-cost");
+    const totals = screen.getByRole("group", {
+      name: "What a grade of the router relevance runs and spends",
+    });
+    expect(totals).toHaveTextContent("Chats183 tests × 3 × 2 arms");
+    expect(totals).toHaveTextContent("At most$15.00or 200,000 tokens");
+    expect(totals).toHaveTextContent("EstimateNot knownnot graded here before");
+    expect(totals).toHaveTextContent("Runs onIts own modelwork");
     expect(cost.textContent).toContain("18 chats, one turn each");
     expect(cost.textContent).toContain(
       "3 trigger tests of 2 skills 3 times with the router relevance in place and 3 times with the built-in router",
@@ -100,6 +157,9 @@ describe("Grade the router, cost first (SK-15e)", () => {
     expect(screen.getAllByTestId("router-grade-skill")[1].textContent).toContain(
       "left out: test 2: it starts with -",
     );
+    expect(screen.getByText(/Nothing runs until you press Start/)).toHaveTextContent(
+      "It spends at most $15.00 of work's account.",
+    );
     expect(asked.find((one) => one.cmd === "router_grade_plan")?.args).toMatchObject({
       plane: "p",
       workspace: "ops",
@@ -107,58 +167,122 @@ describe("Grade the router, cost first (SK-15e)", () => {
     });
     expect(asked.some((one) => one.cmd === "router_grade_start")).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "Grade" }));
-    await screen.findByTestId("router-grade-running");
+    fireEvent.click(start());
+    await waitFor(() => expect(told.started).toHaveBeenCalledWith("01GRADE"));
     expect(asked.find((one) => one.cmd === "router_grade_start")?.args).toMatchObject({
       consent: "c0ffee",
     });
-
-    await emit("router-grade", {
-      plane: "p",
-      router: "relevance",
-      grade: "01GRADE",
-      ran: 18,
-      of: 18,
-      tokens: 9000,
-      cap: 200000,
-      ended: "whole",
-      said: "Graded on the library at aaaaaaaaaaaa, 2026-10-28: 2 of 3 trigger tests pass with the router relevance, and 3 of 3 with the built-in router.",
-    });
-    await waitFor(() => expect(graded).toBe(1));
-    expect(screen.getByText(/Graded in 18 chats\. Graded on the library/)).toBeInTheDocument();
   });
 
-  it("offers no Grade where no grade can run, or nothing is tested", async () => {
+  it("offers no Start where no grade can run, or nothing is tested", async () => {
     mockIPC((cmd) =>
       cmd === "router_grade_plan" ? plan({ refused: "it is not sandboxed" }) : null,
     );
-    render(
-      <RouterGrade
-        plane="p"
-        router="relevance"
-        workspace={null}
-        persona="r"
-        onGraded={() => undefined}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Grade the router…" }));
+    renderPlan({ workspace: null, persona: "r" });
     await screen.findByTestId("router-grade-cannot-run");
-    expect(screen.getByRole("button", { name: "Grade" })).toBeDisabled();
+    expect(unavailable(start())).toBe(true);
     cleanup();
     clearMocks();
     mockIPC((cmd) => (cmd === "router_grade_plan" ? plan({ chats: 0, skills: [] }) : null));
-    render(
-      <RouterGrade
-        plane="p"
-        router="relevance"
-        workspace={null}
-        persona="r"
-        onGraded={() => undefined}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Grade the router…" }));
+    renderPlan({ workspace: null, persona: "r" });
     await screen.findByTestId("router-grade-none");
-    expect(screen.queryByRole("button", { name: "Grade" })).toBeNull();
+    expect(unavailable(start(0))).toBe(true);
+  });
+
+  it("refuses a plan that changed under you until you read the new one", async () => {
+    let plans = 0;
+    const asked: string[] = [];
+    mockIPC(
+      (cmd) => {
+        asked.push(cmd);
+        if (cmd === "router_grade_plan") {
+          plans += 1;
+          return plans === 1 ? plan() : plan({ consent: "f00d", cost_cap_usd: 30, chats: 24 });
+        }
+        if (cmd === "start_options") return { profiles: [] };
+        if (cmd === "router_grade_start")
+          throw "The router's plan changed since it was shown (its library or trigger tests, the profile or model its chats run on, or its limits), so nothing was started: read the plan again.";
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    const told = renderPlan();
+    await screen.findByTestId("router-grade-cost");
+    fireEvent.click(start());
+
+    // The new plan is held, never drawn under Start: Start waits until it is read.
+    const changed = await screen.findByTestId("router-grade-plan-changed");
+    expect(changed).toHaveTextContent(
+      "The plan changed since you opened it: it now runs 24 chats on work, and may spend at most $30.00. Read it again before you start.",
+    );
+    expect(screen.getByTestId("router-grade-cost").textContent).toContain("cost $15.00");
+    expect(unavailable(start())).toBe(true);
+    fireEvent.click(start());
+    expect(asked.filter((one) => one === "router_grade_start")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show the new plan" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("router-grade-cost").textContent).toContain("cost $30.00"),
+    );
+    expect(screen.queryByTestId("router-grade-plan-changed")).toBeNull();
+    expect(unavailable(start(24))).toBe(false);
+    expect(told.started).not.toHaveBeenCalled();
+  });
+
+  it("holds a plan the project's change made anew, and draws one that consents to the same", async () => {
+    let plans = 0;
+    mockIPC((cmd) => {
+      if (cmd === "router_grade_plan") {
+        plans += 1;
+        // The second read consents to the same; the third does not.
+        return plans <= 2 ? plan() : plan({ consent: "f00d", chats: 6 });
+      }
+      if (cmd === "start_options") return { profiles: [] };
+      return null;
+    });
+    const told = renderPlan();
+    await screen.findByTestId("router-grade-cost");
+    told.rerender(1);
+    await waitFor(() => expect(plans).toBe(2));
+    expect(screen.queryByTestId("router-grade-plan-changed")).toBeNull();
+    told.rerender(2);
+    expect(await screen.findByTestId("router-grade-plan-changed")).toHaveTextContent(
+      "it now runs 6 chats on work",
+    );
+    expect(unavailable(start())).toBe(true);
+  });
+
+  it("says a grade runs in the project, and offers its page where it is this router's", async () => {
+    mockIPC((cmd, args) => {
+      if (cmd === "router_grade_plan") return plan({ running: "01RUNNING" });
+      if (cmd === "start_options") return { profiles: [] };
+      if (cmd === "router_grade_running")
+        return (args as { grade: string }).grade === "01RUNNING"
+          ? step({ grade: "01RUNNING", ran: 2 })
+          : null;
+      return null;
+    });
+    const told = renderPlan();
+    await screen.findByTestId("router-grade-cost");
+    expect(unavailable(start())).toBe(true);
+    fireEvent.click(await screen.findByRole("button", { name: "Show it" }));
+    expect(told.running).toHaveBeenCalledWith("01RUNNING");
+    expect(screen.getByText(/A grade of the router relevance is running/)).toBeInTheDocument();
+  });
+
+  it("names no grade of another's to show", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "router_grade_plan") return plan({ running: "01SKILL" });
+      if (cmd === "start_options") return { profiles: [] };
+      // A skill's grade: the app holds no router step for it.
+      if (cmd === "router_grade_running") return null;
+      return null;
+    });
+    renderPlan();
+    expect(
+      await screen.findByText("A grade is running in this project: one runs at a time."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Show it" })).toBeNull();
   });
 
   it("runs on the profile and model picked, held to the cap set, consented to on the plan shown (#3618)", async () => {
@@ -183,16 +307,7 @@ describe("Grade the router, cost first (SK-15e)", () => {
       },
       { shouldMockEvents: true },
     );
-    render(
-      <RouterGrade
-        plane="p"
-        router="relevance"
-        workspace="ops"
-        persona={null}
-        onGraded={() => undefined}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Grade the router…" }));
+    const told = renderPlan();
     await screen.findByTestId("router-grade-cost");
     await userEvent.click(
       screen.getByRole("button", { name: /Model the router relevance's grade runs on/ }),
@@ -221,8 +336,8 @@ describe("Grade the router, cost first (SK-15e)", () => {
     });
     expect(asked.some((one) => one.cmd === "router_grade_start")).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "Grade" }));
-    await screen.findByTestId("router-grade-running");
+    fireEvent.click(start());
+    await waitFor(() => expect(told.started).toHaveBeenCalledWith("01GRADE"));
     expect(asked.find((one) => one.cmd === "router_grade_start")?.args).toMatchObject({
       profile: null,
       model: "sonnet",
@@ -263,24 +378,115 @@ describe("Grade the router, cost first (SK-15e)", () => {
     );
     expect(unsaid).not.toContain("another library");
   });
+});
 
-  it("says each way a grade ends", () => {
-    const step = {
-      plane: "p",
-      router: "relevance",
-      grade: "g",
-      ran: 4,
-      of: 18,
-      tokens: null,
-      cap: 1000,
-      said: null,
-    } as const;
-    expect(routerEndedSaid({ ...step, ended: "stopped" })).toBe("Stopped after 4 chats.");
-    expect(routerEndedSaid({ ...step, ended: "over-cap" })).toBe(
-      "Stopped at its cap of 1,000 tokens after 4 chats.",
+/** The running page of the grade 01GRADE, and what it told Routing. */
+function renderRunning() {
+  const told = { ended: vi.fn(), graded: vi.fn(), back: vi.fn() };
+  render(
+    <RouterGradeRunningPage
+      plane="p"
+      router="relevance"
+      grade="01GRADE"
+      onEnded={told.ended}
+      onGraded={told.graded}
+      onBack={told.back}
+    />,
+  );
+  return told;
+}
+
+describe("A router's grade running, a page on Routing (#4222)", () => {
+  it("starts from the step the app holds, moves on each step told, and opens its scorecard at its end", async () => {
+    mockIPC(
+      (cmd) => {
+        if (cmd === "router_grade_running") return step({ ran: 4, tokens: 3000, cost_usd: 0.25 });
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    const told = renderRunning();
+    const totals = await screen.findByRole("group", {
+      name: "How far the grade of the router relevance is",
+    });
+    expect(totals).toHaveTextContent("Chats4 of 18");
+    expect(totals).toHaveTextContent("Spent$0.25of at most $15.00");
+    expect(totals).toHaveTextContent("Tokens3,000of 200,000 tokens");
+    // Another grade's step moves nothing here.
+    await emit("router-grade", step({ grade: "01OTHER", ran: 9 }));
+    await emit("router-grade", step({ ran: 7, tokens: 5000 }));
+    await waitFor(() => expect(totals).toHaveTextContent("Chats7 of 18"));
+    expect(told.ended).not.toHaveBeenCalled();
+
+    await emit("router-grade", step({ ran: 18, ended: "whole" }));
+    await waitFor(() => expect(told.ended).toHaveBeenCalledTimes(1));
+    expect(told.graded).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops it on Stop, and keeps it going on Leave it running", async () => {
+    const asked: Array<{ cmd: string; args: unknown }> = [];
+    mockIPC(
+      (cmd, args) => {
+        asked.push({ cmd, args });
+        if (cmd === "router_grade_running") return step({ ran: 1 });
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    const told = renderRunning();
+    await screen.findByRole("group", { name: "How far the grade of the router relevance is" });
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_grade_stop")?.args).toMatchObject({
+        plane: "p",
+        grade: "01GRADE",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Leave it running" }));
+    expect(told.back).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays to say an end its scorecard cannot, with the way to it", async () => {
+    mockIPC((cmd) => (cmd === "router_grade_running" ? step({ ran: 2 }) : null), {
+      shouldMockEvents: true,
+    });
+    const told = renderRunning();
+    await screen.findByRole("group", { name: "How far the grade of the router relevance is" });
+    await emit(
+      "router-grade",
+      step({
+        ran: 2,
+        ended: "whole",
+        said: "The grade ran, but this project could not be written, so it was not recorded.",
+      }),
+    );
+    expect(await screen.findByTestId("router-grade-ended")).toHaveTextContent(
+      "Graded in 2 chats. The grade ran, but this project could not be written, so it was not recorded.",
+    );
+    expect(told.ended).not.toHaveBeenCalled();
+    expect(told.graded).toHaveBeenCalledTimes(1);
+    expect(unavailable(screen.getByRole("button", { name: "Stop" }))).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Open its scorecard" }));
+    expect(told.ended).toHaveBeenCalledTimes(1);
+  });
+
+  it("says a grade that ended while the page was away, and opens its scorecard", async () => {
+    mockIPC((cmd) => (cmd === "router_grade_running" ? null : null), { shouldMockEvents: true });
+    const told = renderRunning();
+    await screen.findByTestId("router-grade-gone");
+    fireEvent.click(screen.getByRole("button", { name: "Open its scorecard" }));
+    expect(told.ended).toHaveBeenCalledTimes(1);
+  });
+
+  it("says each way a grade ends, in a skill's grade's words", () => {
+    expect(endSaid(step({ ran: 4, ended: "stopped" }))).toBe(
+      "Stopped after 4 chats. What ran is scored.",
+    );
+    expect(endSaid(step({ ran: 4, cap: 1000, ended: "over-cap" }))).toBe(
+      "Stopped at its cap of 1,000 tokens after 4 chats. What ran is scored.",
     );
     expect(
-      routerEndedSaid({ ...step, ended: "chats-did-not-start", said: "the router did not answer" }),
+      endSaid(step({ ended: "chats-did-not-start", said: "the router did not answer" })),
     ).toBe("The grade stopped: its chats did not start. the router did not answer");
   });
 });
@@ -331,6 +537,12 @@ describe("A router's grade's scorecard and its chats (#3617)", () => {
     });
     expect(routerGradeOfItem("chat-4")).toBeUndefined();
     expect(routerGradeOfItem(undefined)).toBeUndefined();
+    // Its plan and a grade running are places of their own, never a scorecard (#4222).
+    expect(routerGradeOfItem(ROUTER_GRADE_PLAN)).toBeUndefined();
+    expect(routerGradeOfItem(routerGradingItem("01G"))).toBeUndefined();
+    expect(routerGradingOfItem(routerGradingItem("01G"))).toBe("01G");
+    expect(routerGradingOfItem(routerGradeItem({ grade: "01G" }))).toBeUndefined();
+    expect(routerGradingOfItem(undefined)).toBeUndefined();
   });
 
   it("opens each skill's trigger tests in both arms, its totals, and each kept chat", async () => {

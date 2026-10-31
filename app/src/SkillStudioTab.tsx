@@ -20,7 +20,12 @@ import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { HarnessItem, HarnessList, harnessGroups, harnessRowAt } from "./SkillStudioHarnesses";
 import { RoutedChatItem, RoutedChats, RoutingFacts } from "./SkillStudioRouting";
-import { RouterGradeChatPage, RouterGradeScorecardPage } from "./RouterGrade";
+import {
+  RouterGradeChatPage,
+  RouterGradePlanPage,
+  RouterGradeRunningPage,
+  RouterGradeScorecardPage,
+} from "./RouterGrade";
 import { Button } from "./ui/button/Button";
 import { Badge } from "./ui/badge/Badge";
 import { TextField } from "./ui/field/Field";
@@ -66,8 +71,11 @@ import {
   harnessSkillNamed,
   pinnerOf,
   routedChatId,
+  ROUTER_GRADE_PLAN,
   routerGradeItem,
   routerGradeOfItem,
+  routerGradingItem,
+  routerGradingOfItem,
   sameScope,
   scopeChat,
   scopeKey,
@@ -902,8 +910,14 @@ export function SkillStudioTab({
       : undefined;
   // Or a router's grade's scorecard, or one of its chats (#3617).
   const routerGrade = page === "routing" ? routerGradeOfItem(at.item) : undefined;
-  const itemName =
-    routerGrade !== undefined
+  // Or its grade plan, or a grade of it running (#4222), as a skill's grading pages are named.
+  const routerPlan = page === "routing" && at.item === ROUTER_GRADE_PLAN;
+  const routerGrading = page === "routing" ? routerGradingOfItem(at.item) : undefined;
+  const itemName = routerPlan
+    ? gradingPath({ at: "plan" })[0].label
+    : routerGrading !== undefined
+      ? gradingPath({ at: "running", grade: routerGrading })[0].label
+      : routerGrade !== undefined
       ? routerGrade.chat === undefined
         ? "Grade"
         : "Grade's chat"
@@ -1441,7 +1455,6 @@ export function SkillStudioTab({
               plane={plane}
               router={router}
               by={by}
-              workspace={workspace}
               persona={persona}
               busy={busy}
               onChoose={(whose, chosen, text) =>
@@ -1451,7 +1464,7 @@ export function SkillStudioTab({
                   () => Promise.resolve({ tone: "news", label: "Router changed", text }),
                 )
               }
-              onGraded={() => setDone((was) => was + 1)}
+              onGradePlan={() => go({ page: "routing", scope, item: ROUTER_GRADE_PLAN })}
               onScorecard={(grade) =>
                 go({ page: "routing", scope, item: routerGradeItem({ grade }) })
               }
@@ -1467,8 +1480,42 @@ export function SkillStudioTab({
       ),
     );
     const graded = router?.extension ?? null;
+    /** Back to Routing's list from a grading page beside it: a step back where that is it. */
+    const toRouting = () => {
+      const list: StudioPlace = { page: "routing", scope };
+      if (backIsTo(history.behind, list)) history.back();
+      else history.replace(list);
+    };
     item =
-      studio === undefined ? undefined : routerGrade !== undefined && graded !== null ? (
+      studio === undefined ? undefined : routerPlan && graded !== null ? (
+        <RouterGradePlanPage
+          plane={plane}
+          router={graded}
+          workspace={workspace}
+          persona={persona}
+          changed={changed + done}
+          onStarted={(grade) =>
+            history.replace({ page: "routing", scope, item: routerGradingItem(grade) })
+          }
+          onRunning={(grade) => go({ page: "routing", scope, item: routerGradingItem(grade) })}
+          onCancel={toRouting}
+        />
+      ) : routerGrading !== undefined && graded !== null ? (
+        <RouterGradeRunningPage
+          plane={plane}
+          router={graded}
+          grade={routerGrading}
+          onEnded={() =>
+            history.replace({
+              page: "routing",
+              scope,
+              item: routerGradeItem({ grade: routerGrading }),
+            })
+          }
+          onGraded={() => setDone((was) => was + 1)}
+          onBack={toRouting}
+        />
+      ) : routerGrade !== undefined && graded !== null ? (
         routerGrade.chat === undefined ? (
           <RouterGradeScorecardPage
             plane={plane}

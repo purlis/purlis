@@ -1157,10 +1157,11 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_deleted_text",
     "skill_details",
     "skill_diff",
-    // What a router's grade runs (SK-15e, #3233), and a grade's scorecard and kept chat
-    // (#3617): read only.
+    // What a router's grade runs (SK-15e, #3233), a grade's scorecard and kept chat (#3617),
+    // and how far the one running is (#4222): read only.
     "router_grade_chat",
     "router_grade_plan",
+    "router_grade_running",
     "router_grade_scorecard",
     // A grade's kept chat and its scorecard (SK-59, #3239), and a skill's grading after each
     // edit (SK-58, #3238): read only.
