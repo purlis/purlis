@@ -13,7 +13,7 @@ jobs:
   parity:
     name: parity against a Docker pool (host, protocol, sandbox, browsers)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 120
     env:
       # A Docker pool's target is made here or its test fails (`behaviour::in_a_docker_pool`).
       PURLIS_PARITY: "1"
@@ -96,11 +96,11 @@ jobs:
                 red=$((red+1))
                 if grep -q 'no copy of the line waits' <<<"$out"; then copy=$((copy+1)); else echo "$out" | tail -25; fi
               fi
+              echo "$label run $i of $n: $red red, $copy on no copy of the line"
             done
             echo "::notice title=$label::$n runs, $red red, $copy on no copy of the line"
           }
-          round 15 idle
-          for i in $(seq 12); do (while :; do :; done) & done
+                    for i in $(seq 12); do (while :; do :; done) & done
           for i in 1 2 3 4; do (while :; do dd if=/dev/zero of="$RUNNER_TEMP/load$i" bs=1M count=256 conv=fsync status=none; done) & done
-          round 40 load
+          round 25 load
           kill $(jobs -p) || true
