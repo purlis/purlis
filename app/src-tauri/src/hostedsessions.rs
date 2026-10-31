@@ -2865,9 +2865,17 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     // put back finds here is reattached rather than started again (#2006). A host started
     // again after its last ended has none.
     if link.version() >= REATTACHES {
-        match link.call_heard_in_a_start(Command::ProgramsOf {
-            project: project.clone(),
-        }) {
+        let within = if can_be_cancelled() {
+            UNTIL_THE_HOST_SAYS
+        } else {
+            ANSWER_WITHIN
+        };
+        match link.call_refused_within(
+            Command::ProgramsOf {
+                project: project.clone(),
+            },
+            within,
+        ) {
             Ok(Answer::Programs(programs)) => {
                 // Its browsers, from a host of 1.39 or later (#2025), taken back with their
                 // chats once the put back has settled: those of the first hold alone, so a
@@ -2905,8 +2913,15 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
                 tracing::warn!("purlis: the session host answered its programs with {other:?}");
                 let _ = untrust_taking_back(connection, &link, &mut Vec::new());
             }
-            Err(why) => {
-                tracing::warn!("purlis: the session host did not say its programs: {why}");
+            // A link between hosts is never granted this question (`Power::Reattach`), so that
+            // refusal says nothing of what runs there. This desktop keeps a mark of each chat as
+            // it starts it, and a runner is paired with this desktop alone.
+            Err(refused) if refused.code == session::NOT_ALLOWED => {}
+            Err(refused) => {
+                tracing::warn!(
+                    "purlis: the session host did not say its programs: {}",
+                    refused.why
+                );
                 let _ = untrust_taking_back(connection, &link, &mut Vec::new());
             }
         }

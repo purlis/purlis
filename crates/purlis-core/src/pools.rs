@@ -517,6 +517,14 @@ fn carried_from_its_own_home(
         );
         return false;
     }
+    if crate::runnertaint::ran_unsandboxed(config_root, &old.made.container) {
+        tracing::warn!(
+            "purlis: a chat ran on runner {} without the sandbox, or may have, so its sign-ins \
+             were not carried; sign the profiles in again on pool {pool}",
+            old.name()
+        );
+        return false;
+    }
     if old.made.runner.user() != made.runner.user() {
         tracing::warn!(
             "purlis: runner {} ran as {} and the runner made again as {}, so its sign-ins were \
@@ -588,7 +596,8 @@ fn clear_leftovers_locked(
 /// by two runners at once (#4055, ruled 2026-10-30). One the pool's runner signed in on its own
 /// is kept over the carried one, and one signed out of the pool is not carried (#4145). A sign-in
 /// that cannot be carried is said in the log, and the runner is removed all the same: that
-/// profile is signed in again on the pool.
+/// profile is signed in again on the pool. None is carried to or from a runner a chat ran on
+/// without the sandbox ([`crate::runnertaint`]).
 pub fn drain(
     config_root: &Path,
     docker: &Docker,
@@ -645,6 +654,19 @@ fn carry_sign_ins(config_root: &Path, docker: &Docker, drained: &Kept) {
         return;
     };
     if to.name() == drained.name() {
+        return;
+    }
+    if [&drained.made, &to.made]
+        .iter()
+        .any(|made| crate::runnertaint::ran_unsandboxed(config_root, &made.container))
+    {
+        tracing::warn!(
+            "purlis: a chat ran on runner {} or on pool {pool}'s runner {} without the sandbox, \
+             or may have, so its profiles' sign-ins were not carried; sign them in again on pool \
+             {pool}",
+            drained.name(),
+            to.name()
+        );
         return;
     }
     if drained.made.runner.user() != to.made.runner.user() {

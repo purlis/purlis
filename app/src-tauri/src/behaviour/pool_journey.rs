@@ -338,6 +338,10 @@ fn a_chat_runs(target: &Target, machine: &Machine, pool: &str, chat: &Named) -> 
         .number;
     let pane = Pane::on(target, id);
     pane.shows_within("Claude Code", LONG);
+    assert!(
+        !purlis_core::runnertaint::pool_ran_unsandboxed(&machine.config, pool),
+        "a chat in the sandbox leaves its runner trusted"
+    );
     (id, pane)
 }
 
@@ -354,8 +358,9 @@ fn in_the_journey(
         use std::io::Write as _;
         let _ = writeln!(
             std::io::stderr(),
-            "[{:>4}s] {what}",
-            began.elapsed().as_secs()
+            "[{:>4}s] {what} (marked: {})",
+            began.elapsed().as_secs(),
+            purlis_core::runnertaint::pool_ran_unsandboxed(&machine.config, pool)
         );
     };
     step("the pool is added");
@@ -489,11 +494,12 @@ fn in_the_journey(
         ready_to_start(machine, &target.root, pool).expect_err("nothing starts on it now");
     assert!(refused.contains("removed outside purlis"), "{refused}");
 
+    let marked = purlis_core::runnertaint::pool_ran_unsandboxed(&machine.config, pool);
     let again = crate::dockerpools::make_again_on(machine, pool)
         .unwrap_or_else(|why| panic!("the runner is made again: {why}"));
     assert!(
         again.sign_ins_kept,
-        "its home was there, so its sign-ins came"
+        "its home was there, so its sign-ins came (marked before the make: {marked})"
     );
     assert!(
         crate::dockerpools::removed_on(machine)

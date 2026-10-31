@@ -3697,7 +3697,7 @@ fn a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(target: &Targe
 const REAL_CLAUDE_CODE: &str = "/usr/local/lib/parity/claude-code";
 
 /// What a chat says of [`PastAChat::tries`]: its project reached, and nothing past it.
-const PAST_A_CHAT: [&str; 9] = [
+const PAST_A_CHAT: [&str; 11] = [
     "PROJECT yes.",
     "ENGINE-FOLDER no.",
     "ENGINE-MEMORY no.",
@@ -3705,6 +3705,8 @@ const PAST_A_CHAT: [&str; 9] = [
     "HOST-PIPE no.",
     "HOST-KEY no.",
     "HOST-SOCKET no.",
+    "CARRIED-READ no.",
+    "CARRIED-WRITE no.",
     // Only the browser engine may make namespaces on a runner (D-2050-25), refused by the
     // filter, not for want of a program.
     "NAMESPACE no:",
@@ -3714,6 +3716,8 @@ const PAST_A_CHAT: [&str; 9] = [
 /// What lies past a sandboxed chat on a runner, each found as the runner's own user, outside the
 /// sandbox ([`a_browser_and_what_lies_past_a_chat`]).
 struct PastAChat {
+    /// What a drained runner carried here, waiting for its profile to be kept.
+    carried: String,
     folder: String,
     engine: String,
     host: String,
@@ -3732,6 +3736,7 @@ impl PastAChat {
             pipe,
             socket,
             key,
+            carried,
         } = self;
         format!(
             "try() {{ if ( eval \"$2\" ) >/dev/null 2>&1; then printf '%s yes.\\n' \"$1\"; else printf '%s no.\\n' \"$1\"; fi; }}\n\
@@ -3742,6 +3747,8 @@ impl PastAChat {
              try HOST-PIPE 'exec 3<> /proc/{host}/fd/{pipe}'\n\
              try HOST-KEY 'cat {key}'\n\
              try HOST-SOCKET 'ls {socket}'\n\
+             try CARRIED-READ 'cat {carried}/a/work/file'\n\
+             try CARRIED-WRITE 'mkdir {carried}/planted'\n\
              if said=$(unshare --user true 2>&1); then printf 'NAMESPACE yes.\\n'; else printf 'NAMESPACE no: %s\\n' \"$said\"; fi\n"
         )
     }
@@ -3766,6 +3773,15 @@ fn a_browser_and_what_lies_past_a_chat(
         )
         .unwrap_or_else(|why| panic!("a browser starts on the runner: {why:?}"));
 
+    let carried = runner
+        .prints(&format!(
+            "at=$(dirname \"$HOME\"/.local/share/*/{browsers})/profiles/{carried}; \
+             mkdir -p \"$at/a/work\"; echo held > \"$at/a/work/file\"; printf %s \"$at\"",
+            browsers = purlis_core::datahome::BROWSERS,
+            carried = purlis_core::profilestore::CARRIED,
+        ))
+        .trim()
+        .to_owned();
     let found = runner.prints(&format!(
         r#"set -e
 engine=; host=
@@ -3828,6 +3844,7 @@ printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "
         browsers,
         browser,
         PastAChat {
+            carried,
             folder,
             engine,
             host,

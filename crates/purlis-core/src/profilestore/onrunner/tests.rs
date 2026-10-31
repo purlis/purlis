@@ -1737,10 +1737,7 @@ fn a_runner_keeping_a_profile_takes_in_the_sign_in_carried_to_it() {
     let dir = tempfile::tempdir().unwrap();
     let desktop = a_signed_in_desktop_profile(dir.path());
     let runner = homes(dir.path(), "runner");
-    let carried = dir
-        .path()
-        .join("runner/data")
-        .join(crate::profilestore::CARRIED)
+    let carried = crate::profilestore::carried_in(&dir.path().join("runner/data"))
         .join("Xb4tch01")
         .join("work");
     fs::create_dir_all(carried.join("config")).unwrap();
@@ -1768,6 +1765,74 @@ fn a_runner_keeping_a_profile_takes_in_the_sign_in_carried_to_it() {
     assert!(!carried.exists());
 }
 
+/// **Nothing is taken in through a link where the carried folder should be**: the sign-in it
+/// leads to stays out of the profile, and stays where it was.
+#[test]
+fn a_link_for_the_carried_folder_signs_no_profile_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let elsewhere = dir.path().join("elsewhere");
+    let planted = elsewhere.join("Xb4tch01/work/config/.credentials.json");
+    fs::create_dir_all(planted.parent().unwrap()).unwrap();
+    fs::write(&planted, "someone else's sign-in").unwrap();
+    let stage = crate::profilestore::carried_in(&dir.path().join("runner/data"));
+    fs::create_dir_all(stage.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &stage).unwrap();
+
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&desktop).expect("it goes"),
+        DESKTOP,
+        7,
+    )
+    .expect("kept");
+
+    assert!(!kept.folders.config.join(".credentials.json").exists());
+    assert_eq!(
+        fs::read_to_string(&planted).unwrap(),
+        "someone else's sign-in"
+    );
+}
+
+/// **The folder an earlier version carried to is cleared, and nothing of it taken in**: a folder
+/// goes whole, and a link goes as a link, with what it names left alone.
+#[test]
+fn what_an_earlier_version_carried_is_cleared_and_not_taken_in() {
+    for linked in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let desktop = a_signed_in_desktop_profile(dir.path());
+        let runner = homes(dir.path(), "runner");
+        let before = dir.path().join("runner/data/carried");
+        let holds = if linked {
+            dir.path().join("elsewhere")
+        } else {
+            before.clone()
+        };
+        let file = holds.join("Xb4tch01/work/config/.credentials.json");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, "the old runner's sign-in").unwrap();
+        if linked {
+            fs::create_dir_all(before.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(&holds, &before).unwrap();
+        }
+
+        let kept = keep(
+            &runner,
+            &runner_home(dir.path()),
+            &Kept::of(&desktop).expect("it goes"),
+            DESKTOP,
+            7,
+        )
+        .expect("kept");
+
+        assert!(!kept.folders.config.join(".credentials.json").exists());
+        assert!(fs::symlink_metadata(&before).is_err(), "{linked}");
+        assert_eq!(file.exists(), linked);
+    }
+}
+
 /// **A runner already keeping a profile takes in the sign-in carried to it later** (#4055): its
 /// pool's old runner carries its sign-ins only once its last chat has ended, after the profile
 /// was kept here for a chat, so the next keep takes the carried sign-in in. One the profile
@@ -1781,10 +1846,7 @@ fn a_runner_keeping_a_profile_again_takes_in_a_sign_in_carried_since() {
     let kept = keep(&runner, &runner_home(dir.path()), &sent, DESKTOP, 7).expect("kept");
     assert!(!kept.folders.config.join(".credentials.json").exists());
     let carry = |text: &str| {
-        let carried = dir
-            .path()
-            .join("runner/data")
-            .join(crate::profilestore::CARRIED)
+        let carried = crate::profilestore::carried_in(&dir.path().join("runner/data"))
             .join("Xb4tch01")
             .join("work");
         fs::create_dir_all(carried.join("config")).unwrap();
@@ -1814,18 +1876,14 @@ fn a_runner_keeping_a_profile_again_takes_in_a_sign_in_carried_since() {
     assert!(!carried.exists());
 }
 
-/// **The desktop's adopted folder takes in the sign-in carried to it too** (#4055): kept as
-/// Claude Code's default folder in the runner's home, it takes the default folder's sign-in a
-/// drained runner carried under the harness's name; one of another harness's is left out.
+/// **The desktop's adopted folder takes in nothing carried for now**: what is there under the
+/// harness's name is removed, and its default folder gains no sign-in.
 #[test]
-fn the_desktops_adopted_folder_takes_in_the_sign_in_carried_to_it() {
+fn the_desktops_adopted_folder_takes_in_nothing_carried() {
     let dir = tempfile::tempdir().unwrap();
     let runner = homes(dir.path(), "runner");
     let adopted = the_desktops_adopted_folder(dir.path());
-    let carried = dir
-        .path()
-        .join("runner/data")
-        .join(crate::profilestore::CARRIED)
+    let carried = crate::profilestore::carried_in(&dir.path().join("runner/data"))
         .join("Xb4tch01")
         .join("claude");
     fs::create_dir_all(carried.join("config")).unwrap();
@@ -1842,10 +1900,7 @@ fn the_desktops_adopted_folder_takes_in_the_sign_in_carried_to_it() {
     .expect("kept");
 
     assert_eq!(kept.folders.config, runner_home(dir.path()).join(".claude"));
-    assert_eq!(
-        fs::read_to_string(kept.folders.config.join(".credentials.json")).unwrap(),
-        "the old runner's"
-    );
+    assert!(!kept.folders.config.join(".credentials.json").exists());
     assert!(!kept.folders.config.join("auth.json").exists());
     assert!(!carried.exists());
 }
@@ -2263,11 +2318,10 @@ fn a_keep_of_what_changed_with_no_staged_settings_is_refused() {
 fn forgetting_what_was_carried_leaves_other_profiles_batches() {
     let root = tempfile::tempdir().unwrap();
     let homes = homes(root.path(), "01JA0DESKT0P00000000000000");
-    // The batches beside the profiles' folder, under the data home.
+    // The batches in the profiles' folder.
     let batch = homes
         .folder_of("any")
         .parent()
-        .and_then(Path::parent)
         .unwrap()
         .join(crate::profilestore::CARRIED)
         .join("b1");

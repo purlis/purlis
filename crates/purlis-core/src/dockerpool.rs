@@ -67,18 +67,20 @@ pub const PURLIS: &str = "/usr/local/bin/purlis";
 /// to one folder at a time, never through a link, and held by its real path, and the files go
 /// into a batch folder of its own that no one knew the name of before it was made, each written
 /// only where nothing is (`set -C`) and put in place whole, by a link. Only a plain file inside
-/// the old home is carried, never a link or what a folder linked out of it holds. What it makes is
-/// the runner's user's alone. A file that cannot be carried is said and passed over: the profile
-/// is then signed in again, as before any was carried, and the drain goes on. A profile named in
-/// the colon-separated list after the two folders is not carried at all (#4145).
+/// the old home is carried, never a link or what a folder linked out of it holds. An image that
+/// names its data home by a variable carries nothing, since the runner reads it elsewhere. What
+/// it makes is the runner's user's alone. A file that cannot be carried is said and passed over:
+/// the profile is then signed in again, as before any was carried, and the drain goes on. A
+/// profile named in the colon-separated list after the two folders is not carried at all (#4145).
 pub const COPY_PROFILES: &str = r#"set -u
 umask 077
+[ -z "${PURLIS_DATA_HOME:-}${XDG_DATA_HOME:-}" ] || exit 1
 from=$1 to=$2 stage=$3 old_stage=$4 skip=$5
 shift 5
 from=$(cd -P "$from" && pwd -P) || exit 1
 cd -P "$to" || exit 1
 here=$(pwd -P)
-data=${stage%/*}
+data=${stage%/*/*}
 if [ -L "$data" ] || { [ -e "$data" ] && [ ! -d "$data" ]; }; then exit 1; fi
 [ -d "$data" ] || stage=$old_stage
 set -f
@@ -103,7 +105,7 @@ for pair in "$@"; do
   for found in "$from"/$src; do
     rel=${found#"$from/"}
     [ -f "$found" ] && [ ! -L "$found" ] && [ -r "$found" ] || continue
-    case $(realpath -- "$found") in "$from"/*) ;; *) continue ;; esac
+    [ "$(realpath -- "$found")" = "$from/$rel" ] || continue
     out=$dst
     case $src in
       *'*'*)
