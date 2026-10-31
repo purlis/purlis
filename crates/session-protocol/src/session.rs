@@ -390,9 +390,16 @@ use crate::view::{Limits, Views};
 /// login took it. Its target is that login's own path alone, so nothing else on the runner's
 /// loopback is reached. The paired desktop's, on its own link. A host before 1.59 refuses it
 /// `unknown_command`, and the sign-in says so.
+///
+/// 1.60 added each chat's prompt key (#3369): a random secret its hooks key the digests of its
+/// prompts by ([`PromptKey`]). A window's `launch` may carry it (`prompt_key`); a start the host
+/// composes itself is given one by the host. The host keeps it with the program in memory alone,
+/// and answers it in `program_started` and `programs` (`prompt_key`), so the window that started
+/// or takes back the chat digests what it types under the same key. A host before 1.60 ignores
+/// the field and answers none, and its chats' prompts are marked under no key.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 59,
+    minor: 60,
 };
 
 /// The version that first hands a sign-in's redirect to a login on a runner (#4044).
@@ -1590,6 +1597,54 @@ pub struct Launch {
     /// program does, whether or not the link that made it does (1.4).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confinement: Option<String>,
+    /// The chat's prompt key, which the window minted for it (1.60, #3369): set in its
+    /// environment for its hooks, and kept by the host with the program for a window that takes
+    /// it back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_key: Option<PromptKey>,
+}
+
+/// **A chat's prompt key** (1.60, #3369): 32 random bytes, written as hex, that its hooks key
+/// the digests of its prompts by, and the window the digests of what it types into the chat.
+/// One per chat, minted where the chat is composed: by the window for a launch of its own, by
+/// the host for a start it composes. It is set in the chat's environment, never on its command
+/// line; the host keeps it in memory alone, beside the program, and writes it to no record or
+/// log. **Its `Debug` never shows the value.**
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PromptKey(String);
+
+impl PromptKey {
+    /// How many random bytes a key is.
+    const BYTES: usize = 32;
+
+    /// A fresh key from the operating system's generator, or why there is none.
+    pub fn mint() -> std::io::Result<Self> {
+        let mut bytes = [0u8; Self::BYTES];
+        getrandom::fill(&mut bytes).map_err(std::io::Error::other)?;
+        Ok(Self(
+            bytes.iter().map(|byte| format!("{byte:02x}")).collect(),
+        ))
+    }
+
+    /// The key `value` names, as a chat's environment or a peer carries it; none for an empty
+    /// one.
+    pub fn of(value: &str) -> Option<Self> {
+        (!value.is_empty()).then(|| Self(value.to_owned()))
+    }
+
+    /// The value, for what must write it down: the chat's environment, and the digests keyed
+    /// by it.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Never prints the key.
+impl std::fmt::Debug for PromptKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PromptKey(..)")
+    }
 }
 
 /// Where a chat's hooks report, and the token they carry (1.2).
@@ -1678,6 +1733,10 @@ pub enum Answer {
         /// answers. Absent from a host before 1.29, whose window takes the run as sandboxed.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sandbox: Option<RunSandbox>,
+        /// Its prompt key (1.60, #3369): the launch's, or the one the host minted for a start
+        /// it composed. Absent for a program that has none, and from a host before 1.58.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        prompt_key: Option<PromptKey>,
     },
     /// Whether a program is ready to be typed at: [`Command::Readiness`] (1.2).
     Readiness(Readiness),
@@ -1781,6 +1840,10 @@ pub struct HeldProgram {
     /// named is an empty one, which no note names.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub logins: Vec<String>,
+    /// Its prompt key, as its start was given it (1.60, #3369): what a window that takes the
+    /// chat back digests what it types into it under.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_key: Option<PromptKey>,
 }
 
 /// The kill switch as the host holds it (1.5, ADR 0071).
@@ -1815,6 +1878,8 @@ pub struct ProgramStarted {
     pub confined: Option<Confined>,
     /// How its run is sandboxed, as the host applied it, where the host says (1.29).
     pub sandbox: Option<RunSandbox>,
+    /// Its prompt key, where it has one (1.60).
+    pub prompt_key: Option<PromptKey>,
 }
 
 /// One chat, as [`Command::List`] lists it.
@@ -3014,6 +3079,8 @@ impl CallError {
 pub(crate) enum Ask {
     Session(Command, oneshot::Sender<Result<Answer, CallError>>),
     Ui(ui::Ask),
+    /// End the link, whoever still holds the client ([`Client::end_link`]).
+    End,
 }
 
 /// The client's end of the session protocol: calls from any task, answered in any order.
@@ -3086,6 +3153,12 @@ impl Client {
     /// The scope the link was admitted as.
     pub fn scope(&self) -> Scope {
         self.scope
+    }
+
+    /// **Ends the link now, whoever still holds this client**: the host sees it close, what its
+    /// [`Events`] brought ends, and every call waiting or made after is answered that it closed.
+    pub fn end_link(&self) {
+        let _ = self.asks.send(Ask::End);
     }
 
     /// Send one command and wait for its answer.
@@ -3180,12 +3253,14 @@ impl Client {
                 process,
                 confined,
                 sandbox,
+                prompt_key,
             } => Ok(ProgramStarted {
                 program,
                 number,
                 process,
                 confined,
                 sandbox,
+                prompt_key,
             }),
             other => Err(unexpected(&other)),
         }
@@ -3908,8 +3983,8 @@ async fn drive(mut link: Link, mut asked: mpsc::UnboundedReceiver<Ask>, mut push
             frame = link.control().next() => Driven::Frame(frame),
         };
         match next {
-            // Every handle is gone: nobody is left to answer.
-            Driven::Ask(None) => return,
+            // Every handle is gone, so nobody is left to answer; or a holder ended the link.
+            Driven::Ask(None) | Driven::Ask(Some(Ask::End)) => return,
             Driven::Ask(Some(ask)) => {
                 let id = next_id;
                 next_id += 1;
@@ -3922,6 +3997,7 @@ async fn drive(mut link: Link, mut asked: mpsc::UnboundedReceiver<Ask>, mut push
                         Frame::Call(Call { id, command })
                     }
                     Ask::Ui(ask) => Frame::Ui(ui.ask(id, ask)),
+                    Ask::End => unreachable!("matched above"),
                 };
                 if let Err(e) = link.control().send(frame.to_bytes()).await {
                     break e.to_string();

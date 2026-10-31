@@ -209,12 +209,7 @@ impl SkillFolder {
 
     /// Its `SKILL.md`, read as [`crate::read_skill_md_of`] reads one of a skill from `origin`.
     pub fn skill_md_of(&self, origin: crate::Origin) -> Result<String, crate::Refusal> {
-        let hard_links = if origin == crate::Origin::Harness {
-            crate::held::HardLinks::Read
-        } else {
-            crate::held::HardLinks::Refused
-        };
-        crate::handed::read_held_as(&self.0, crate::FILE, hard_links)
+        crate::handed::read_held_as(&self.0, crate::FILE, crate::held::HardLinks::of(origin))
     }
 
     /// **Every folder and plain file under it but a `SKILL.md`**, by its path inside it, each
@@ -233,27 +228,55 @@ impl SkillFolder {
     /// way opened through the handle of the one above and the file through its folder's, never
     /// following a link, refused as a skill's own file is. `None` where it cannot be read so.
     pub fn read(&self, rel: &Path, most: u64) -> Option<String> {
-        use crate::held::Opened;
-        let name = rel.file_name()?;
+        self.read_counted(rel, most, crate::held::HardLinks::Refused)
+            .text
+            .ok()
+    }
+
+    /// [`Self::read`] of a file of a skill from `origin`: with a hard link read where its
+    /// `SKILL.md` is read so ([`Self::skill_md_of`], #3459).
+    pub fn read_of(&self, rel: &Path, most: u64, origin: crate::Origin) -> Option<String> {
+        self.read_counted(rel, most, crate::held::HardLinks::of(origin))
+            .text
+            .ok()
+    }
+
+    /// [`Self::read`], a hard link read or refused as `hard_links` says, with why it read
+    /// nothing and the bytes it read ([`crate::held::Counted`], #3459): what a budget of bytes
+    /// counts.
+    pub fn read_counted(
+        &self,
+        rel: &Path,
+        most: u64,
+        hard_links: crate::held::HardLinks,
+    ) -> crate::held::Counted {
+        use crate::held::{Counted, NotRead, Opened};
+        let absent = || Counted {
+            text: Err(NotRead::Unreadable("it is not there".to_owned())),
+            read: 0,
+        };
+        let Some(name) = rel.file_name() else {
+            return absent();
+        };
         let mut parts = rel.parent().into_iter().flat_map(Path::components);
         let first = match parts.next() {
-            None => return self.0.read(name, most).ok(),
+            None => return self.0.read_counted(name, most, hard_links),
             Some(std::path::Component::Normal(part)) => part,
-            Some(_) => return None,
+            Some(_) => return absent(),
         };
         let Opened::Folder(mut at) = self.0.child(first, crate::held::Follow::NoLink) else {
-            return None;
+            return absent();
         };
         for part in parts {
             let std::path::Component::Normal(part) = part else {
-                return None;
+                return absent();
             };
             let Opened::Folder(next) = at.child(part, crate::held::Follow::NoLink) else {
-                return None;
+                return absent();
             };
             at = next;
         }
-        at.read(name, most).ok()
+        at.read_counted(name, most, hard_links)
     }
 
     /// Every other file of it, by its whole path, in order: its [`Self::entries`]' files.

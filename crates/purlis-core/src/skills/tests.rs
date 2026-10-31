@@ -408,6 +408,7 @@ fn a_skills_folder_a_running_chat_uses_is_kept_and_removed_once_the_chat_has_end
             },
             number: 1,
             reporting: None,
+            prompt_key: None,
         },
     );
     assert!(
@@ -981,7 +982,7 @@ fn use_skill_offers_exactly_the_chats_set_and_a_manual_only_one_is_free_on_every
         ["deploy", "purlis-handoff", "release", "review"]
     );
     assert_eq!(opencode.offered[1].known_as, "purlis-handoff");
-    let salt = crate::skillspan::PromptSalt::of_chat("01JB00000000000000000000C4").unwrap();
+    let salt = crate::skillspan::PromptSalt::of_key("01JB00000000000000000000C4").unwrap();
     assert_eq!(
         opencode.typed("purlis-handoff", &[], &salt).unwrap().text,
         "/purlis-handoff"
@@ -1032,7 +1033,7 @@ fn use_skill_types_a_skill_of_the_set_in_its_harnesss_syntax_and_holds_the_run_i
             harness,
             ..running(root, &bundle, Some("smart-ide"))
         });
-        let salt = crate::skillspan::PromptSalt::of_chat("01JB00000000000000000000C4").unwrap();
+        let salt = crate::skillspan::PromptSalt::of_key("01JB00000000000000000000C4").unwrap();
         let typing = chat.typed("review", &values, &salt).unwrap();
         assert_eq!(typing.text, text, "{harness:?}");
         let Start::Held(held) = typing.start else {
@@ -2697,8 +2698,17 @@ fn a_list_read_for_needs_you_has_every_row_lint_and_clash_of_the_whole_and_no_ba
             })
             .collect()
     };
-    let read =
-        |reading| studio_list_for(reading, Some(&built_in), &plane, Some("alpha"), None, &env);
+    let read = |reading| {
+        studio_list_for(
+            reading,
+            Some(&built_in),
+            &plane,
+            Some("alpha"),
+            None,
+            &env,
+            &[],
+        )
+    };
 
     let whole = read(Reading::Whole);
     let needs = read(Reading::Needs);
@@ -2814,7 +2824,7 @@ fn each_harness_s_own_catalogue_is_measured_beside_purlis_s_budget_3324() {
         "Codex: review and quiet listed, mine manual-only by its sidecar, notes turned off"
     );
     // A read for a count of needs measures nothing.
-    let needs = studio_list_for(Reading::Needs, None, &plane, None, None, &env);
+    let needs = studio_list_for(Reading::Needs, None, &plane, None, None, &env, &[]);
     assert!(needs.harnesses.iter().all(|one| one.own.is_none()));
 }
 
@@ -2857,3 +2867,5 @@ fn purlis_s_own_plugin_is_no_part_of_a_harness_s_own_catalogue_3324() {
     }
     assert!(!crate::harness_plugin::purlis_s_own_named(claude, "figma"));
 }
+
+mod read_budget;

@@ -57,7 +57,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -247,6 +247,9 @@ pub struct Connection {
     /// The window's connection to each pool's runner, made the first time it is asked for
     /// ([`Connection::to_a_pool`]): what a pool's chats and their browsers share (#2050).
     pools: Mutex<HashMap<String, Arc<Connection>>>,
+    /// How many times this connection's pool was removed ([`Connection::pool_removed`]): a link
+    /// dialled before the last of them is not kept.
+    removals: AtomicU64,
     /// The config home this machine keeps its pools' runners in (`runners.json`): where a runner
     /// a chat ran on without the sandbox is kept as one (D-2050-27). Set on the window's own.
     runners_in: Mutex<Option<PathBuf>>,
@@ -337,6 +340,39 @@ impl Connection {
                 .entry(pool.to_owned())
                 .or_insert_with(|| self.relaying_to(pool)),
         )
+    }
+
+    /// **The pool `pool` was removed from this machine**: every link the window holds to its
+    /// runner ends, each chat on it told it ended with its host, and whatever comes next is
+    /// dialled anew, by the name, to the runner kept under it now. What the window held against
+    /// that name goes too: a pool added under it is a new runner.
+    pub fn pool_removed(&self, pool: &str) {
+        lock(&self.untrusted).remove(pool);
+        self.links_to_pool_end(pool);
+    }
+
+    /// Every link the window holds to the runner of `pool` ends, each chat on it told it ended
+    /// with its host, and whatever comes next is dialled anew.
+    pub fn links_to_pool_end(&self, pool: &str) {
+        let Some(of_it) = lock(&self.pools).get(pool).cloned() else {
+            return;
+        };
+        of_it.removals.fetch_add(1, Ordering::SeqCst);
+        let links: Vec<Arc<HostLink>> = lock(&of_it.projects)
+            .drain()
+            .map(|(_, link)| link)
+            .collect();
+        for link in links {
+            link.end();
+        }
+    }
+
+    /// How many times the pool `pool` was removed.
+    #[cfg(test)]
+    pub(crate) fn removals_of(&self, pool: &str) -> u64 {
+        lock(&self.pools)
+            .get(pool)
+            .map_or(0, |of_it| of_it.removals.load(Ordering::SeqCst))
     }
 
     /// Keep this machine's pools' runners, as `runners.json` is read, in `config` (D-2050-27).
@@ -445,6 +481,7 @@ impl Connection {
         if let Some(link) = lock(&self.projects).get(root) {
             return Ok(Arc::clone(link));
         }
+        let removals = self.removals.load(Ordering::SeqCst);
         // Named on the link as its first command, before it subscribes (#2623).
         let naming = self.name_for(root);
         let link = Arc::new(match &self.to_a_pool {
@@ -473,7 +510,16 @@ impl Connection {
                 root.display()
             );
         }
-        lock(&self.projects).insert(root.to_path_buf(), Arc::clone(&link));
+        let mut projects = lock(&self.projects);
+        // A link dialled across its pool's removal is not kept.
+        if self.removals.load(Ordering::SeqCst) != removals {
+            return Err(format!(
+                "pool {} was removed as its runner was being reached, so nothing was sent",
+                self.pool().unwrap_or_default()
+            ));
+        }
+        projects.insert(root.to_path_buf(), Arc::clone(&link));
+        drop(projects);
         Ok(link)
     }
 
@@ -779,6 +825,8 @@ pub struct HostLink {
     shared: Arc<Shared>,
     /// What hears the host on it, which keeps it open: the link closes once this ends.
     hearing: tokio::task::AbortHandle,
+    /// Whether the window ended it ([`HostLink::end`]): what hears it then runs to its end.
+    ended: std::sync::atomic::AtomicBool,
     /// Why the host did not take the window's name on it, where it was named and did not
     /// (#2623): said by whoever opened it, never with the name.
     unnamed: Option<String>,
@@ -790,7 +838,9 @@ pub struct HostLink {
 /// them.
 impl Drop for HostLink {
     fn drop(&mut self) {
-        self.hearing.abort();
+        if !self.ended.load(Ordering::SeqCst) {
+            self.hearing.abort();
+        }
     }
 }
 
@@ -1012,6 +1062,7 @@ impl HostLink {
             runtime,
             shared,
             hearing,
+            ended: std::sync::atomic::AtomicBool::new(false),
             unnamed,
             most_bundle_bytes: purlis_session_protocol::code::MOST_BUNDLE_BYTES,
         })
@@ -1022,6 +1073,14 @@ impl HostLink {
     pub(crate) fn holding_bundles_to(mut self, most: u64) -> HostLink {
         self.most_bundle_bytes = most;
         self
+    }
+
+    /// **Ends this link from the window's side, whoever still holds it**: the host sees it close,
+    /// each program on it is told it ended with its host and each pane is told, as when the link
+    /// goes, and every later call on it is refused.
+    pub(crate) fn end(&self) {
+        self.ended.store(true, Ordering::SeqCst);
+        self.client.end_link();
     }
 
     /// Send `command` and wait for the host's answer, from any thread.
@@ -2041,6 +2100,10 @@ pub struct HostedSessions {
     /// Each program the host still had for this project as the window held it, from before
     /// this window, that nothing has reattached yet, by its number (#2006).
     left: Arc<Mutex<HashMap<u32, HeldProgram>>>,
+    /// The prompt key the host answered each chat this window launched with (#3369), until the
+    /// start asks for it ([`SessionHost::prompt_key_started`]): none from a host before 1.60,
+    /// which set none in the chat's environment.
+    keys_started: Mutex<HashMap<u32, Option<purlis_core::skillspan::PromptSalt>>>,
     /// Each browser the host still had for this project as the window first held it, from
     /// before this window, until the put back takes them (#2025): `None` until that first hold.
     browsers_left: Arc<Mutex<Option<Vec<HeldProgram>>>>,
@@ -2096,6 +2159,7 @@ impl HostedSessions {
             kill_switch: crate::killswitch::KillSwitch::unthrown(),
             lost: Arc::default(),
             left: Arc::default(),
+            keys_started: Mutex::default(),
             browsers_left: Arc::default(),
             untaken: Arc::default(),
             reconnecting,
@@ -2853,6 +2917,10 @@ fn launch_of(opening: &Opening, program: String) -> Launch {
             .map(|hooks| hooks.dir().display().to_string()),
         reporting: None,
         confinement,
+        prompt_key: opening
+            .prompt_key
+            .as_ref()
+            .and_then(purlis_core::skillspan::PromptSalt::key),
     }
 }
 
@@ -2909,8 +2977,9 @@ impl HostedSessions {
                     process,
                     confined,
                     sandbox,
+                    prompt_key,
                     ..
-                }) => (program, process, confined, sandbox),
+                }) => (program, process, confined, sandbox, prompt_key),
                 Ok(other) => {
                     return Err(unclear(format!(
                         "the session host answered a start with {other:?}"
@@ -2922,7 +2991,7 @@ impl HostedSessions {
                 }
                 Err(refused) => return Err(unclear(refused.why)),
             };
-        let (program, pid, confined, ran) = started;
+        let (program, pid, confined, ran, prompt_key) = started;
         // A chat that runs on a pool's runner with nothing holding its files leaves that runner
         // trusted with no browser and no login until it is made again (D-2050-27): kept here,
         // where no runner reaches, before it is kept as running. Where that cannot be kept, it
@@ -2943,7 +3012,14 @@ impl HostedSessions {
         if !operator_shell && self.kill_switch.is_stopped() {
             link.send(Command::Stop { chat: program });
         }
-        Ok(Begun { id, confined, ran })
+        Ok(Begun {
+            id,
+            confined,
+            ran,
+            prompt_key: prompt_key
+                .as_ref()
+                .and_then(purlis_core::skillspan::PromptSalt::answered),
+        })
     }
 }
 
@@ -2966,6 +3042,8 @@ struct Begun {
     id: u32,
     confined: Option<session::Confined>,
     ran: Option<session::RunSandbox>,
+    /// The chat's prompt key, as the host said it (1.60, #3369).
+    prompt_key: Option<purlis_core::skillspan::PromptSalt>,
 }
 
 /// Each call is documented once, on [`SessionHost`].
@@ -3005,7 +3083,10 @@ impl SessionHost for HostedSessions {
             ..StartProgram::of(project, kind_of(opening))
         };
         self.started(&link, id, start, opening.operator_shell, announce)
-            .map(|begun| begun.id)
+            .map(|begun| {
+                lock(&self.keys_started).insert(begun.id, begun.prompt_key);
+                begun.id
+            })
     }
 
     fn open_named(
@@ -3065,7 +3146,12 @@ impl SessionHost for HostedSessions {
             }
         };
         // How the host applied the sandbox to the run it composed, by its own record (#2692).
-        let Begun { id, confined, ran } = self
+        let Begun {
+            id,
+            confined,
+            ran,
+            prompt_key,
+        } = self
             .started(&link, id, start, false, announce)
             .inspect_err(|_| unheard(&confinement))?;
         // Held from here, where the host named it to this window: dropping it, on any path, lets
@@ -3078,6 +3164,7 @@ impl SessionHost for HostedSessions {
                 number: id,
                 confinement: None,
                 ran,
+                prompt_key,
             });
         };
         let held = HeldInTheHost::new(confinement, Arc::clone(&link), true);
@@ -3097,6 +3184,7 @@ impl SessionHost for HostedSessions {
             number: id,
             confinement: Some(confinement),
             ran,
+            prompt_key,
         })
     }
 
@@ -3499,6 +3587,23 @@ impl SessionHost for HostedSessions {
                 tracing::warn!("purlis: the plan chat {number} ran in could not be read: {why}");
             })
             .ok()
+    }
+
+    fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {
+        self.link().ok()?;
+        lock(&self.left)
+            .get(&number)?
+            .prompt_key
+            .as_ref()
+            .and_then(purlis_core::skillspan::PromptSalt::answered)
+    }
+
+    fn prompt_key_started(
+        &self,
+        number: u32,
+        minted: Option<purlis_core::skillspan::PromptSalt>,
+    ) -> Option<purlis_core::skillspan::PromptSalt> {
+        lock(&self.keys_started).remove(&number).unwrap_or(minted)
     }
 
     /// How the host says it applied the sandbox to chat `number`'s run: none from a host before

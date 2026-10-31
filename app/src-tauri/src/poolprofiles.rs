@@ -38,7 +38,7 @@
 //! Sign in on pool <pool> signs it in there.
 
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -520,7 +520,7 @@ fn yours_on_a_cluster(
     pool: &str,
     cluster: &purlis_core::runners::ClusterPool,
     kept: &purlis_core::runners::ClusterKept,
-    vouch: &dyn Fn(&Path, &str) -> Result<(), purlis_core::clusterpool::Refused>,
+    vouch: &dyn Fn(&Path, &str) -> Result<String, purlis_core::clusterpool::Refused>,
 ) -> Result<Yours, String> {
     if !cluster.owned() {
         return Err(format!(
@@ -628,6 +628,29 @@ fn to_a_runner(
         Waking::Yes => ToARunner::of_kept_waking(&machine, &kept),
         Waking::No => ToARunner::of_kept(&machine, &kept),
     }
+}
+
+/// **The Docker runner of pool `pool`, still the one a sign-in started on**: a runner made again
+/// since holds no login of this sign-in, so nothing goes to it.
+fn still_the_runner(
+    config: &Path,
+    pool: &str,
+    started: &purlis_core::runners::Kept,
+) -> Result<purlis_core::runners::Kept, String> {
+    let now = purlis_core::runners::runner_for(config, pool).map_err(|why| why.to_string())?;
+    if the_same_runner(&now, started) {
+        Ok(now)
+    } else {
+        Err(format!(
+            "pool {pool}'s runner was made again since this sign-in started, so nothing went to \
+             it. Try again"
+        ))
+    }
+}
+
+/// Whether `a` and `b` are one runner: the same container, answering as the same device.
+fn the_same_runner(a: &purlis_core::runners::Kept, b: &purlis_core::runners::Kept) -> bool {
+    a.made == b.made && a.pinned == b.pinned
 }
 
 /// [`keep_on`], with `yours` what [`yours`] said of pool `pool`: nothing is read or sent where
@@ -1214,11 +1237,24 @@ pub async fn pool_sign_in_start(
             }
             None => Typed::Driven,
         };
+        // A cluster pool's is held to the runner its gate judged; a Docker pool's to this one.
+        let started = match &yours {
+            Yours::Docker(_) => Some(
+                purlis_core::runners::runner_for(&config, &pool).map_err(|why| why.to_string())?,
+            ),
+            Yours::Cluster(_) => None,
+        };
         let login = login_on(&yours, &config, &pool, &name, provider.as_deref(), typed)?;
         let carry: callback::Carry = {
             let (config, pool, yours) = (config.clone(), pool.clone(), yours.clone());
             Arc::new(move |target: &str| {
-                let to = to_a_runner(&config, &pool, Waking::No, &yours)?;
+                let to = match &started {
+                    Some(started) => ToARunner::of_kept(
+                        &Machine::here(&config)?,
+                        &still_the_runner(&config, &pool, started)?,
+                    )?,
+                    None => to_a_runner(&config, &pool, Waking::No, &yours)?,
+                };
                 crate::runnerlinks::sign_in_redirect(&to, target)
             })
         };
@@ -1389,16 +1425,30 @@ pub async fn pool_sign_out(pool: String, name: String) -> Result<(), String> {
         }
         // Its harness says whether it is signed out, not the sign-out's exit status alone.
         profilestore::sign_in::forget_of(&record);
-        match keep_on(&config, &pool, &kept)? {
-            Some(Standing::SignedIn) => Err(format!(
-                "{name} is still signed in on pool {pool}: its harness's sign-out ran, and its \
-                 status check says it is signed in"
-            )),
-            _ => Ok(()),
-        }
+        signed_out_by_its_harness(&name, &pool, keep_on(&config, &pool, &kept))
     })
     .await
     .map_err(|why| format!("the sign-out did not run: {why}"))?
+}
+
+/// **What a sign-out says, from what `name`'s harness on pool `pool`'s runner answered after it
+/// ran**: done only where its status check says signed out. Any other answer leaves it unconfirmed.
+fn signed_out_by_its_harness(
+    name: &str,
+    pool: &str,
+    asked: Result<Option<Standing>, String>,
+) -> Result<(), String> {
+    match asked {
+        Ok(Some(Standing::SignedOut)) => Ok(()),
+        Ok(Some(Standing::SignedIn)) => Err(format!(
+            "{name} is still signed in on pool {pool}: its harness's sign-out ran, and its \
+             status check says it is signed in"
+        )),
+        Ok(Some(Standing::CannotTell | Standing::Fetching) | None) | Err(_) => Err(format!(
+            "{name} may still be signed in on pool {pool}: its harness's sign-out ran, and purlis \
+             could not confirm it. Look at the pool's row"
+        )),
+    }
 }
 
 /// **[`this_desktops_runner`], of a cluster pool** (#3819): its runner's `purlis`, asked over
@@ -1484,69 +1534,208 @@ fn record_named(config: &Path, name: &str) -> Result<profilestore::MachineProfil
         })
 }
 
-/// How often, and for how long, a profile's standing on a pool is asked again after its Sign
-/// in, so its Ask leaves the Inbox once it is signed in there.
+/// How often a profile's standing on a pool is asked again after its Sign in, so its Ask leaves
+/// the Inbox once it is signed in; how long at that pace; and how often after that, for a shell
+/// left open.
 const WATCHED_EVERY: Duration = Duration::from_secs(5);
 const WATCHED_FOR: Duration = Duration::from_secs(15 * 60);
+const WATCHED_LATER_EVERY: Duration = Duration::from_secs(60);
 
-/// The (pool, profile) pairs a watcher asks about now: one each, however often Sign in is
-/// pressed.
-static WATCHED: Mutex<Option<HashSet<(String, String)>>> = Mutex::new(None);
+/// What a watcher watches: the open project that pressed Sign in, by the address of its `Held`
+/// (which the watcher's own `Weak` keeps from being dealt again, so a reopened project has a
+/// watcher of its own), the pool and the profile.
+type Watched = (usize, String, String);
 
-/// **Asks pool `pool`'s runner again every few seconds whether `name` is signed in there**, for
-/// a while after its Sign in, and once it is not signed out, lets its waits go and calls
-/// `told`. On a thread of its own, one per pool and profile: a second Sign in while one asks
-/// starts none.
-pub fn watch(pool: String, name: String, told: impl FnOnce() + Send + 'static) {
-    let key = (pool.clone(), name.clone());
+/// The watchers asking now, each with the shell tabs its Sign ins typed into: one each, however
+/// often Sign in is pressed.
+static WATCHED: Mutex<Option<HashMap<Watched, Vec<u32>>>> = Mutex::new(None);
+
+/// The project a watcher was started for, as the watcher needs it.
+pub struct Watcher {
+    /// [`Watched`]'s first part.
+    pub project: usize,
+    /// Its root.
+    pub root: PathBuf,
+    /// Whether shell tab `session` is still open in it.
+    pub shell_open: Box<dyn Fn(u32) -> bool + Send>,
+    /// Whether that project is still open: one closed is not the person leaving a sign-in.
+    pub project_open: Box<dyn Fn() -> bool + Send>,
+    /// Tells its window its Asks changed.
+    pub told: Box<dyn FnOnce() + Send>,
+}
+
+/// What ended a watcher's asking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Watch {
+    /// The runner says the profile is signed in.
+    SignedIn,
+    /// The person closed every shell it was signing in from, and it is not signed in.
+    ShellsClosed,
+}
+
+/// Whose Asks an ended watch lets go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AsksGo {
+    /// Every project's: the profile is signed in on the runner, whoever asked.
+    Everywhere,
+    /// The project's that pressed Sign in: only its person left.
+    InTheProject,
+    /// None: a project closing leaves its Ask for when it opens again.
+    None,
+}
+
+fn asks_go(ended: Watch, project_open: bool) -> AsksGo {
+    match ended {
+        Watch::SignedIn => AsksGo::Everywhere,
+        Watch::ShellsClosed if project_open => AsksGo::InTheProject,
+        Watch::ShellsClosed => AsksGo::None,
+    }
+}
+
+/// **Asks pool `pool`'s runner again every few seconds whether `name` is signed in there**, after
+/// its Sign in in shell tab `session`, until it says so or the person closes the shell, when its
+/// Ask goes ([`asks_go`]). A runner that cannot tell, or is still fetching the harness, says
+/// nothing of a sign-in the person may still be finishing, so its Ask stays (#4009). On a thread
+/// of its own, one per open project, pool and profile: a second Sign in while one asks starts
+/// none, and adds its shell.
+pub fn watch(pool: String, name: String, session: u32, project: Watcher) {
+    let key = (project.project, pool.clone(), name.clone());
     if !claimed(
         WATCHED
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .get_or_insert_with(HashSet::new),
+            .get_or_insert_with(HashMap::new),
         &key,
+        session,
     ) {
         return;
     }
     std::thread::spawn(move || {
-        watching(&pool, &name, told);
-        if let Some(watched) = WATCHED
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .as_mut()
-        {
-            watched.remove(&key);
+        let Watcher {
+            root,
+            shell_open,
+            project_open,
+            told,
+            ..
+        } = project;
+        let ended = watching(&pool, &name, || {
+            // Asked with no lock held: the answer reads the project, and may be the last to hold it.
+            let shells = watched_now(|watched| watched.get(&key).cloned().unwrap_or_default());
+            let closed: Vec<u32> = shells.into_iter().filter(|s| !shell_open(*s)).collect();
+            watched_now(|watched| shells_left(watched, &key, &closed))
+        });
+        // A watcher whose shells closed gave up its claim as it found them closed, so a Sign in
+        // after that has a watcher of its own, which this one must not take away.
+        if ended != Some(Watch::ShellsClosed) {
+            watched_now(|watched| watched.remove(&key));
+        }
+        let Some(ended) = ended else {
+            return;
+        };
+        let open = project_open();
+        match asks_go(ended, open) {
+            AsksGo::Everywhere => onrunner::let_go(None, &pool, &name),
+            AsksGo::InTheProject => onrunner::let_go(Some(&root), &pool, &name),
+            AsksGo::None => {}
+        }
+        // A closed project's teller would say its old, empty list of the project reopened.
+        if open {
+            told();
         }
     });
 }
 
-/// Whether `key` is claimed for a watcher now, in `watched`: only where none watches it.
-fn claimed(watched: &mut HashSet<(String, String)>, key: &(String, String)) -> bool {
-    watched.insert(key.clone())
+fn watched_now<T>(with: impl FnOnce(&mut HashMap<Watched, Vec<u32>>) -> T) -> T {
+    with(
+        WATCHED
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get_or_insert_with(HashMap::new),
+    )
 }
 
-fn watching(pool: &str, name: &str, told: impl FnOnce()) {
-    let Ok(config) = config_root() else {
-        return;
+/// Whether `key` is claimed for a watcher now, in `watched`: only where none watches it. Where
+/// one does, `session` is one more shell it watches.
+fn claimed(watched: &mut HashMap<Watched, Vec<u32>>, key: &Watched, session: u32) -> bool {
+    match watched.get_mut(key) {
+        Some(shells) => {
+            shells.push(session);
+            false
+        }
+        None => {
+            watched.insert(key.clone(), vec![session]);
+            true
+        }
+    }
+}
+
+/// Whether any of `key`'s shells is still open, with those in `closed` dropped. With none left
+/// its claim goes in the same step, so a Sign in now starts a watcher rather than joining this
+/// one.
+fn shells_left(watched: &mut HashMap<Watched, Vec<u32>>, key: &Watched, closed: &[u32]) -> bool {
+    let Some(shells) = watched.get_mut(key) else {
+        return false;
     };
-    let Some(kept) = profilestore::list(&config)
+    shells.retain(|session| !closed.contains(session));
+    if shells.is_empty() {
+        watched.remove(key);
+        return false;
+    }
+    true
+}
+
+fn watching(pool: &str, name: &str, shells_open: impl FnMut() -> bool) -> Option<Watch> {
+    let config = config_root().ok()?;
+    let kept = profilestore::list(&config)
         .ok()
         .and_then(|records| records.into_iter().find(|p| p.name == name))
-        .and_then(|record| onrunner::Kept::of(&record).ok())
-    else {
-        return;
-    };
-    let ends = std::time::Instant::now() + WATCHED_FOR;
-    while std::time::Instant::now() < ends {
-        std::thread::sleep(WATCHED_EVERY);
-        // A runner still fetching its harness cannot tell yet, so it is asked again (#4008).
-        if matches!(
-            keep_on(&config, pool, &kept),
-            Ok(Some(Standing::SignedIn | Standing::CannotTell))
-        ) {
-            onrunner::let_go(None, pool, name);
-            told();
-            return;
+        .and_then(|record| onrunner::Kept::of(&record).ok())?;
+    Some(watched_until(
+        Pace {
+            every: WATCHED_EVERY,
+            for_: WATCHED_FOR,
+            later_every: WATCHED_LATER_EVERY,
+        },
+        || keep_on(&config, pool, &kept),
+        shells_open,
+    ))
+}
+
+/// How a watcher paces its asking.
+#[derive(Debug, Clone, Copy)]
+struct Pace {
+    /// How often it looks at the shells, and asks the runner at first.
+    every: Duration,
+    /// How long it asks at that pace.
+    for_: Duration,
+    /// How often it asks the runner after that.
+    later_every: Duration,
+}
+
+/// Asks until the runner says signed in or `shells_open` says the person has left. The runner is
+/// asked first, so a sign-in finished just before the shell closed counts as one. No time ends
+/// it, only slows the asking: a shell is closed sooner or later, and an Ask left with nothing
+/// watching could no longer go by itself.
+fn watched_until(
+    pace: Pace,
+    mut ask: impl FnMut() -> Result<Option<Standing>, String>,
+    mut shells_open: impl FnMut() -> bool,
+) -> Watch {
+    let started = std::time::Instant::now();
+    let mut next_ask = started;
+    loop {
+        std::thread::sleep(pace.every);
+        let now = std::time::Instant::now();
+        if now >= next_ask {
+            if matches!(ask(), Ok(Some(Standing::SignedIn))) {
+                return Watch::SignedIn;
+            }
+            if now.duration_since(started) >= pace.for_ {
+                next_ask = now + pace.later_every;
+            }
+        }
+        if !shells_open() {
+            return Watch::ShellsClosed;
         }
     }
 }

@@ -92,6 +92,7 @@ fn a_chat_whose_hook_says_it_stopped() -> StartProgram {
             git_hooks: None,
             reporting: None,
             confinement: None,
+            prompt_key: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }

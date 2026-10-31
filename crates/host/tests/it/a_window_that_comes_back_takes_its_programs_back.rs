@@ -189,8 +189,11 @@ async fn every_program_a_held_project_has_is_answered_with_what_takes_it_back() 
     host.runs.ran()[1].1.ends(Exit::Code(7));
     window.client.close(&closed).await.expect("it closes");
 
-    let programs = window.programs().await;
+    let mut programs = window.programs().await;
 
+    // A harness the host composes is given a prompt key there (#3369); a shell none.
+    let key = programs[0].prompt_key.take();
+    assert!(key.is_some(), "the composed harness has its prompt key");
     assert_eq!(
         programs,
         [
@@ -210,6 +213,7 @@ async fn every_program_a_held_project_has_is_answered_with_what_takes_it_back() 
                 driver: None,
                 note: None,
                 logins: Vec::new(),
+                prompt_key: None,
             },
             HeldProgram {
                 program: shell,
@@ -227,10 +231,59 @@ async fn every_program_a_held_project_has_is_answered_with_what_takes_it_back() 
                 driver: None,
                 note: None,
                 logins: Vec::new(),
+                prompt_key: None,
             },
         ],
         "running and ended, never closed"
     );
+}
+
+/// #3369: a chat's prompt key, as its window's launch carried it, is answered back with its
+/// start and to the window that takes it back; one the host composes gets one of its own.
+#[tokio::test]
+async fn a_chats_prompt_key_is_answered_with_its_start_and_to_the_window_that_takes_it_back() {
+    let host = a_host();
+    let window = host.holding().await;
+    let key = session::PromptKey::mint().expect("a key");
+    let launched = window
+        .client
+        .start_program_told(StartProgram {
+            number: Some(1),
+            launch: Some(Launch {
+                program: "/bin/echo".into(),
+                args: Vec::new(),
+                cwd: None,
+                set: Vec::new(),
+                strip: Vec::new(),
+                pass: Vec::new(),
+                declared: Vec::new(),
+                harness: None,
+                git_hooks: None,
+                reporting: None,
+                confinement: None,
+                prompt_key: Some(key.clone()),
+            }),
+            ..StartProgram::of(PROJECT, ProgramKind::Harness)
+        })
+        .await
+        .expect("it starts");
+    let composed = window
+        .client
+        .start_program_told(StartProgram {
+            number: Some(2),
+            ..StartProgram::of(PROJECT, ProgramKind::Harness)
+        })
+        .await
+        .expect("it starts");
+
+    assert_eq!(launched.prompt_key, Some(key.clone()), "the launch's own");
+    let minted = composed
+        .prompt_key
+        .expect("minted for a start composed here");
+    assert_ne!(minted, key);
+    let programs = window.programs().await;
+    assert_eq!(programs[0].prompt_key, Some(key));
+    assert_eq!(programs[1].prompt_key, Some(minted));
 }
 
 #[tokio::test]
@@ -277,6 +330,7 @@ async fn a_program_in_a_confinement_is_answered_with_where_its_confinement_is() 
                 git_hooks: None,
                 reporting: None,
                 confinement: Some(CONFINEMENT.into()),
+                prompt_key: None,
             }),
             ..StartProgram::of(PROJECT, ProgramKind::Harness)
         })

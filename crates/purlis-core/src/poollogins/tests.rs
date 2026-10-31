@@ -13,6 +13,7 @@ fn bound(pool: &str, definition: &str, image: &str) -> Bound {
         runner: "01JB0RUNNER0000000000000000".into(),
         runner_key: "ab".repeat(32),
         runner_image: image.into(),
+        pod: String::new(),
         engine: "this machine's Docker (/var/run/docker.sock)".into(),
     }
 }
@@ -242,6 +243,20 @@ fn a_chat_on_a_link_relayed_before_its_pool_moved_on_is_judged_by_the_runner_it_
     assert_eq!(draining.runner, "01JB0DRAINING000000000000000");
     assert_eq!(new.runner, "01JB0NEW00000000000000000000");
     assert_eq!(draining.definition, new.definition, "the one pool");
+}
+
+/// **A chat that ran without the sandbox on a Docker pool's runner bars tools and tokens there**,
+/// as it bars browser logins, whichever runner of the pool the link reached.
+#[test]
+fn a_docker_runner_a_chat_ran_on_without_the_sandbox_is_sent_nothing() {
+    let config = a_pool_with_a_runner_draining();
+    let here = || Ok("/var/run/docker.sock".into());
+    let reached = Some("first/first-01234567");
+    Bound::over_the_link_with(here(), config.path(), "first", reached)
+        .expect("nothing has run there unconfined");
+    crate::runnertaint::mark_pool(config.path(), "first").unwrap();
+    let refused = Bound::over_the_link_with(here(), config.path(), "first", reached).unwrap_err();
+    assert!(refused.contains("without the sandbox"), "{refused}");
 }
 
 #[test]

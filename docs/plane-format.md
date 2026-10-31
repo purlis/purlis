@@ -374,6 +374,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`index/<clone-key>/` — the project's search index](#indexclone-key--the-projects-search-index)
   - [`index/<clone-key>/writer.lock`](#indexclone-keywriterlock)
   - [State purlis keeps **outside** the plane](#state-purlis-keeps-outside-the-plane)
+  - [`<data>/sign-ins-waiting/<digest>`](#datasign-ins-waitingdigest)
   - [`<data>/app-state/<clone key>/` — the app's own state of a project](#dataapp-stateclone-key--the-apps-own-state-of-a-project)
   - [`<data>/app-state/<clone key>/skill-drafts/<id>/`](#dataapp-stateclone-keyskill-draftsid)
   - [`<data>/app-state/<clone key>/skill-grades/<YYYY-MM>.jsonl`](#dataapp-stateclone-keyskill-gradesyyyy-mmjsonl)
@@ -6819,14 +6820,19 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   line that reads the same, and a copy is passed over only where it is the same chat's, under
   the same id, and says the same thing.
   A `UserPromptSubmit` report carries `prompt_marks` (#2775): a 256-bit Bloom filter of the
-  HMAC-SHA256 digests, keyed by the chat's own id (`PURLIS_CHAT_ULID`, #3029), of the stretches
+  HMAC-SHA256 digests, keyed by the chat's prompt key (`PURLIS_PROMPT_KEY`, #3369), of the stretches
   of each line of the prompt (from any word, up to 6 words; at most 36), and never the prompt's
   words, so the app knows a skill Use skill… typed was in the prompt sent. Only a Codex or
   opencode chat marks every stretch; a Claude Code chat, which names the skill instead, marks
   the prompt's lead alone (the first 6 words of its first line, so a first line that short is
-  digested whole), what a curation action's prompt is known by, and a hook with no chat id marks
-  nothing. The key separates chats and hides nothing: the chat's id is no secret (#3369). It is heard
-  live alone: never spooled, never in the event log. A `userpromptexpansion` tool line (Claude
+  digested whole), what a curation action's prompt is known by, and a hook with no prompt key
+  marks nothing. The prompt key is 32 random bytes in hex, one per chat, minted where the chat is
+  composed: by the window for a chat it composes, by the session host for one it composes (a
+  runner's). It is set in the chat's environment alone, never on its command line, and the
+  window and the host keep it in memory alone, beside the running chat; the host answers it to
+  the window that started the chat or takes it back after a restart (session protocol 1.60). It
+  is written to no file here, no log and no record. The marks are heard live alone: never
+  spooled, never in the event log. A `userpromptexpansion` tool line (Claude
   Code) names the skill a `/<skill>` the person sent expanded into, as its `skill`, started by
   `use-skill`: the app opens a run only for a skill Use skill… typed and still holds.
   Another, `doing`, says what a chat's tool hook saw, for the one line a working chat's row
@@ -7891,6 +7897,14 @@ refuses a `<data>` under a project or inside any git work tree.
 | `/etc/apparmor.d/purlis-engine-here` | Machine, device-bound | Written since #2835: the same profile for this machine's own engine path, wherever its data folder is, written by the command the Notice about the browser engine's sandbox offers, which the person runs (`sudo tee` and `apparmor_parser -r`); purlis never runs it, nor anything as root. Read as `/etc/apparmor.d/purlis-engine` is. A purge of the `.deb` unloads and removes it where it is still that profile (#2900); a remove keeps it, as a remove keeps a package's configuration | the person, with `purlis_core::browsers::sandboxing::install_command`'s command |
 | `<config>/telemetry.json` | Machine, device-bound | **decided, not yet written** (ADR 0083). Whether telemetry is collected, its retention and cap, each project's open content gates, and the export destinations: each one's name, OTLP/HTTP URL, signals and a pointer to its auth header in the keyring. No project file opens a gate or names a destination. Device-bound because of those pointers and consents. Denied to chats (ADR 0067 §5 class 2). Backed up by FR-10 | a `local-ui` caller only (the window, or `purlis` on that scope), through `purlisd` (OB-2, OB-9) |
 | keyring item for a telemetry export destination's auth header | Keyring | **decided, not yet written** (ADR 0083). The header value an export destination sends, such as a backend's API key. Denied to chats | OB-9 |
+
+### `<data>/sign-ins-waiting/<digest>`
+- **Format:** an empty file on a runner, named by the lowercase hex SHA-256 of the `state` a login's
+  page printed (#4044), in a folder made `0700`. Its holder, the runner's `purlis profile sign-in`,
+  keeps it locked for as long as the login runs and removes it as the login ends. The runner's host
+  removes it as it hands that sign-in's redirect on. One no one holds locked counts for nothing. No
+  chat's sandbox reads or writes the folder.
+- **Tier:** Machine, device-bound, transient — it lasts as long as one login on a runner.
 
 ### `<data>/app-state/<clone key>/` — the app's own state of a project
 - **Format:** one folder per project clone (#3718; ADR 0067 as amended 2026-10-28), named by its
