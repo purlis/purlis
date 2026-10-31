@@ -349,7 +349,14 @@ fn in_the_journey(
 ) {
     // How far it got and how long each step took, read where it fails or runs out of time.
     let began = Instant::now();
-    let step = |what: &str| eprintln!("[{:>4}s] {what}", began.elapsed().as_secs());
+    let step = |what: &str| {
+        use std::io::Write as _;
+        let _ = writeln!(
+            std::io::stderr(),
+            "[{:>4}s] {what}",
+            began.elapsed().as_secs()
+        );
+    };
     step("the pool is added");
     // Add a pool from the runner image: its row is there, and nothing says it was removed.
     let shown = crate::dockerpools::pools_on(&machine.config).expect("the pools read");
