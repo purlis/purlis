@@ -5672,11 +5672,12 @@ impl Chats {
         );
     }
 
-    /// **Puts the repos of the workspace chat `session` is sent with on its runner's Claim** (#4207):
-    /// off the chat's start, and only for a pool that opted in: a chat on any other pool, or one
-    /// this machine does not keep, sends nothing and reads no clone for it. A mint asked before they
-    /// arrive goes to the person, or covers what the Claim named by then, till its token is minted
-    /// again.
+    /// **Puts the repos of the workspace chat `session` is sent with on its runner's Claim** (#4207),
+    /// and only for a pool that opted in: a chat on any other pool, or one this machine does not
+    /// keep, sends nothing and reads no clone for it. **The chat's start waits for them, at most
+    /// [`purlis_core::pools::REPOS_WAITED_FOR`]** (#4331), so its first mint covers them and is not
+    /// kept without them. A cluster slower than that lets the chat start: a mint before they arrive
+    /// goes to the person, or covers what the Claim named by then.
     #[cfg(unix)]
     fn puts_its_repos_on_its_claim(
         &self,
@@ -5697,9 +5698,9 @@ impl Chats {
             folder.map(std::path::Path::to_path_buf),
             clones.to_vec(),
         );
-        let sent = std::thread::Builder::new()
-            .name("purlis-claim-repos".to_owned())
-            .spawn(move || {
+        let sent = purlis_core::pools::waited_at_most(
+            purlis_core::pools::REPOS_WAITED_FOR,
+            move || {
                 let record = purlis_core::forge::apptoken::record_root();
                 let repos = || {
                     purlis_core::forge::apptoken::repos_of_workspace(
@@ -5721,9 +5722,14 @@ impl Chats {
                         "purlis: the repos of a chat on pool {pool} did not reach its claim: {why}"
                     );
                 }
-            });
-        if let Err(why) = sent {
-            tracing::warn!("purlis: a chat's repos did not reach its claim: {why}");
+            },
+        );
+        match sent {
+            Ok(true) => {}
+            Ok(false) => tracing::info!(
+                "purlis: a chat started before its repos reached its claim: the cluster was slow"
+            ),
+            Err(why) => tracing::warn!("purlis: a chat's repos did not reach its claim: {why}"),
         }
     }
 

@@ -410,3 +410,102 @@ fn a_refusal_is_said_in_the_operators_words_on_one_line() {
 fn the_mark_a_runner_is_made_with_is_the_operators() {
     assert_eq!(MARK_VAR, proof_fixture("mark-variable.txt").trim());
 }
+
+/// What a runner holds now, from its own file.
+fn held_now(home: &tempfile::TempDir) -> Told {
+    told(home.path()).unwrap().unwrap()
+}
+
+/// A port nobody listens on: bound, then let go.
+fn nobody_at() -> String {
+    let free = TcpListener::bind("127.0.0.1:0").unwrap();
+    free.local_addr().unwrap().to_string()
+}
+
+/// What a desktop says, its pin `key`, of the port at `address`.
+fn a_desktops_word(address: &str, key: &str) -> Told {
+    Told {
+        namespace: "team".into(),
+        claim: "ada-1".into(),
+        cluster: roll_fixture("cluster.txt"),
+        address: address.to_owned(),
+        keys: vec![key.to_owned()],
+    }
+}
+
+#[test]
+fn a_runner_told_nothing_yet_takes_what_it_is_told_again() {
+    let home = tempfile::tempdir().unwrap();
+    let word = a_desktops_word(&nobody_at(), &roll_fixture("operator-key.txt"));
+    tell_again(home.path(), word.clone()).unwrap();
+    assert_eq!(held_now(&home), word);
+}
+
+#[test]
+fn a_runner_keeps_both_keys_of_a_roll_when_told_one_of_them_and_takes_the_address() {
+    let (old, next) = (
+        roll_fixture("operator-key.txt"),
+        roll_fixture("next-operator-key.txt"),
+    );
+    let (home, _) = a_runner(&nobody_at(), &[old.clone(), next.clone()]);
+    let moved = nobody_at();
+    tell_again(home.path(), a_desktops_word(&moved, &old)).unwrap();
+    let held = held_now(&home);
+    assert_eq!(held.keys, [old, next], "nothing it followed is undone");
+    assert_eq!(held.address, moved);
+}
+
+/// A desktop behind its runner: the runner followed a roll by itself, and the port shows that key.
+#[test]
+fn a_desktop_behind_its_runner_does_not_undo_the_key_it_followed() {
+    let (address, _) = a_port("test-only-next-signing-key.pkcs8.hex", |_, _| {
+        "{}".to_owned()
+    });
+    let next = roll_fixture("next-operator-key.txt");
+    let (home, _) = a_runner(&address, std::slice::from_ref(&next));
+    tell_again(
+        home.path(),
+        a_desktops_word(&address, &roll_fixture("operator-key.txt")),
+    )
+    .unwrap();
+    assert_eq!(held_now(&home).keys, [next]);
+}
+
+/// A runner stopped through a whole roll: the port no longer shows what it holds, and shows the key
+/// its desktop followed.
+#[test]
+fn a_runner_that_missed_a_whole_roll_takes_its_desktops_key_once_the_port_shows_it() {
+    let (address, _) = a_port("test-only-next-signing-key.pkcs8.hex", |_, _| {
+        "{}".to_owned()
+    });
+    let next = roll_fixture("next-operator-key.txt");
+    let (home, _) = a_runner(&address, &[roll_fixture("operator-key.txt")]);
+    tell_again(home.path(), a_desktops_word(&address, &next)).unwrap();
+    assert_eq!(held_now(&home).keys, [next]);
+}
+
+/// Nothing there proves the desktop's key, so nothing it holds is moved.
+#[test]
+fn a_port_showing_neither_key_moves_no_key() {
+    let old = roll_fixture("operator-key.txt");
+    let (home, _) = a_runner(&nobody_at(), std::slice::from_ref(&old));
+    tell_again(
+        home.path(),
+        a_desktops_word(&nobody_at(), &roll_fixture("next-operator-key.txt")),
+    )
+    .unwrap();
+    assert_eq!(held_now(&home).keys, [old]);
+}
+
+#[test]
+fn a_word_for_another_claim_or_cluster_is_refused_and_moves_nothing() {
+    let old = roll_fixture("operator-key.txt");
+    let (home, _) = a_runner(&nobody_at(), std::slice::from_ref(&old));
+    let before = held_now(&home);
+    let another = Told {
+        claim: "ada-2".into(),
+        ..a_desktops_word(&nobody_at(), &old)
+    };
+    assert!(tell_again(home.path(), another).is_err());
+    assert_eq!(held_now(&home), before);
+}

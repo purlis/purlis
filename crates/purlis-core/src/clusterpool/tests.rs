@@ -1308,6 +1308,30 @@ fn a_runner_is_told_of_the_port_only_on_a_pool_that_opts_in() {
     assert!(!last_run(dir.path()).contains("--mint-port"));
 }
 
+#[cfg(unix)]
+#[test]
+fn at_a_link_a_runner_is_told_again_only_on_a_pool_that_opts_in_and_by_the_pinned_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let kubectl = says_where_to_ask(dir.path(), true, "ed25519:a-status-says-anything");
+    let paired = a_paired_runner();
+    let seen = kubectl.pool("pool").unwrap();
+    let told = to_tell_at_a_link(&seen, &kubectl, &the_pin(), &paired.claimed)
+        .unwrap()
+        .expect("the status says where");
+    assert_eq!(told.keys, [operator_key().spelled()]);
+    tell_again(&kubectl, "ns", "pod", &told).unwrap();
+    let ran = std::fs::read_to_string(dir.path().join("args")).unwrap();
+    assert!(ran.contains("--mint-port\n--again"), "{ran}");
+
+    let dir = tempfile::tempdir().unwrap();
+    let kubectl = says_where_to_ask(dir.path(), false, &operator_key().spelled());
+    let seen = kubectl.pool("pool").unwrap();
+    assert_eq!(
+        to_tell_at_a_link(&seen, &kubectl, &the_pin(), &paired.claimed).unwrap(),
+        None
+    );
+}
+
 #[test]
 fn a_runner_is_told_the_pinned_key_alone_whatever_a_status_says() {
     let told = told_of_the_port(&claimed(), &the_pin(), "10.96.0.5:8443".to_owned());

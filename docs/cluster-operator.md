@@ -799,9 +799,9 @@ spec:
 - **A Pool never names `purlis-cluster-operator-signing-key`**, and neither do the chart's values.
 - **A tool line names one App.** A persona's tool whose `app` is not the Secret's `app` is refused
   by the operator.
-- **The desktop reads `mintInCluster` from the Pool** as the pool is added, and records it
-  ([`runners.json`](plane-format.md)); the person does not choose it. To pick up a change, remove
-  the pool and add it again, which also releases its claim and runner. The operator goes by the Pool as it is now.
+- **The desktop reads `mintInCluster` from the Pool** as the pool is added and again at each link
+  to its runner, and records it ([`runners.json`](plane-format.md)); the person does not choose it.
+  The operator goes by the Pool as it is now.
 
 ### How a runner gets a token
 
@@ -862,6 +862,17 @@ holds for such tools alone. Any other tool's vault value still comes from the de
 - **A refused mint is not the end of the run, and never a token by itself.** The chat is told the
   operator's words, and the run goes to the desktop, which gates it and asks the person as on any
   other pool. With the desktop away, it waits as such a run does.
+- **A chat's refused mints are paced.** After a refusal the runner asks the operator again no sooner
+  than 5 seconds later, doubling each time up to 5 minutes, and until then each run goes straight to
+  the desktop. Once the desktop has refused such a run too, the chat's next runs of that tool are
+  refused on the runner on the same pace, saying so, so a loop does not keep asking the person. A
+  token or values sent clear the pace.
+- **A chat's start waits for its repos, at most 5 seconds.** The desktop adds the workspace's repos to
+  the Claim before the chat starts, so its first mint covers them. A cluster slower than that lets
+  the chat start: an early mint is refused and goes to the person, or covers what the Claim names by
+  then, and that token is kept as any is.
+- **A run on such a token is recorded as from the cluster:** its `secret-exec` says `"from":
+  "cluster"`, where one on values a desktop sent says `"desktop"`.
 - **What a run is held to on the runner is what its chat's start was armed with.** The desktop's
   gate is not asked: a tool line or vault tag taken away reaches a chat as it starts again. A token
   is kept about 50 minutes for a chat's next runs, so a right revoked stops the next mint, not one
@@ -879,7 +890,8 @@ holds for such tools alone. Any other tool's vault value still comes from the de
 **`Claim.status.mint`** holds `address` (the port as `<cluster IP>:8443`) and `operatorKey` (spelled
 as a Pool's `signingKey`), only for a runner the operator vouches for on a Pool that opts in. As the
 desktop pairs its runner it takes the address, and tells the runner the key it pinned when it added the
-pool, whatever key the status names. A status naming another address only fails the runner's handshake. The runner keeps them in
+pool, whatever key the status names. **It tells it again at each link**, once each for what it says,
+so a runner whose Pool opted in later or whose status said nothing in time comes to use the port. A status naming another address only fails the runner's handshake. The runner keeps them in
 [`mint-port.json`](plane-format.md) in its session host's folder, so it needs no way to the
 Kubernetes API.
 
@@ -888,7 +900,9 @@ alone. `POST /forge/next-key` answers, during a roll, the same next key and word
 key as every Pool's status holds, and a runner holding the current key checks that word as a desktop
 does, then holds both till the port shows the next. It looks about hourly and before a mint. A runner paired while its desktop has already moved to the next key has its mints go to the desktop until the port shows that key. **A
 runner that was stopped through the whole roll, past the old key's removal, does not follow it:** its
-mints are refused and go to its desktop until a new runner is claimed.
+mints are refused and go to its desktop until its desktop's next link, which tells it the key the
+desktop followed, taken only once the port shows that key. Told at a link, a runner keeps any key the
+port still shows, so a desktop behind it undoes nothing it followed.
 
 ## Tests
 

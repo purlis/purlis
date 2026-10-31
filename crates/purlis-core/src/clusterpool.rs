@@ -963,6 +963,14 @@ impl Kubectl {
         args
     }
 
+    /// The words that tell a paired runner again at a link (#4330). A runner from before them
+    /// refuses the word, so it keeps what it followed.
+    pub fn tell_mint_port_again_args(&self, namespace: &str, pod: &str) -> Vec<String> {
+        let mut args = self.tell_mint_port_args(namespace, pod);
+        args.push("--again".to_owned());
+        args
+    }
+
     /// Runs kubectl with `args`, handing it `input`, and answers what it printed, up to `most`
     /// bytes. What it says on standard error is only shown, never read to decide anything.
     pub fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
@@ -1805,6 +1813,39 @@ pub fn tell_the_mint_port(
     kubectl
         .run(
             &kubectl.tell_mint_port_args(&paired.vouched.runner_namespace, &paired.vouched.pod),
+            Some(&format!("{line}\n")),
+            crate::runnerlink::MOST_LINE,
+        )
+        .map(|_| ())
+}
+
+/// **What to tell the runner of `claimed` at a link** (#4330), from one read of its Pool and Claim:
+/// `None` where the Pool does not opt in or the status is yet to say, so the next link asks again.
+pub fn to_tell_at_a_link(
+    seen: &PoolSeen,
+    kubectl: &Kubectl,
+    pin: &PoolPin,
+    claimed: &Claimed,
+) -> Result<Option<crate::forge::mintport::Told>, Refused> {
+    if !seen.mints_in_cluster {
+        return Ok(None);
+    }
+    Ok(kubectl
+        .claim_mint(&claimed.namespace, &claimed.name)?
+        .map(|(address, _says_of_its_key)| told_of_the_port(claimed, pin, address)))
+}
+
+/// **Tells the runner in `pod` again** (#4330, [`crate::forge::mintport::tell_again`]).
+pub fn tell_again(
+    kubectl: &Kubectl,
+    runner_namespace: &str,
+    pod: &str,
+    told: &crate::forge::mintport::Told,
+) -> Result<(), Refused> {
+    let line = serde_json::to_string(told).map_err(|why| Refused::Other(why.to_string()))?;
+    kubectl
+        .run(
+            &kubectl.tell_mint_port_again_args(runner_namespace, pod),
             Some(&format!("{line}\n")),
             crate::runnerlink::MOST_LINE,
         )

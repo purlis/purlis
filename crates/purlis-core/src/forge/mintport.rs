@@ -8,6 +8,10 @@
 //! chat reads). The desktop tells only the key it pinned, whatever the Claim's status says
 //! ([`crate::clusterpool::told_of_the_port`]).
 //!
+//! **A desktop tells it again at a link** ([`tell_again`], #4330), so a runner whose Pool opted in
+//! later, whose Claim's status said nothing in time, or that slept through a whole roll comes to use
+//! the port. It never undoes what the runner followed by itself.
+//!
 //! **A mint** ([`mint`]) answers the operator's one-use X25519 challenge with a MAC only the holder
 //! of this runner's link key can make, and takes back a token limited by name to the Pool's and the
 //! Claim's repos. The operator decides from those alone. Nothing here decides, and nothing is
@@ -114,6 +118,46 @@ pub fn tell(config_root: &Path, told: Told) -> Result<(), String> {
     let text = serde_json::to_vec(&told).map_err(|why| why.to_string())?;
     held.replace_file(FILE, &text)
         .map_err(|why| format!("what this runner was told of the mint port was not kept: {why}"))
+}
+
+/// **What a desktop tells a runner at a link** (#4330), kept where it moves this runner on and
+/// never where it would undo a roll this runner followed:
+///
+/// - Told nothing yet, it takes what it is told, as at pairing.
+/// - Holding the key it is told, or a key the port at that address still shows, it keeps its keys:
+///   a desktop may be behind a runner that followed by itself, or ahead of one in mid-roll, whose
+///   next look follows.
+/// - Otherwise it missed a whole roll, and takes the desktop's pin only once the port shows it.
+///   A port showing neither moves no key, so nothing here can send a proof to a key it did not hold
+///   or was told.
+///
+/// The address is always the one told: it decides nothing, since a wrong one fails the handshake.
+/// Another Claim's or another cluster's word is refused: a runner is paired once.
+pub fn tell_again(config_root: &Path, told: Told) -> Result<(), String> {
+    let told = told.checked()?;
+    let Some(held) = self::told(config_root)? else {
+        return tell(config_root, told);
+    };
+    if held.namespace != told.namespace || held.claim != told.claim || held.cluster != told.cluster
+    {
+        return Err("this runner was told of the mint port for another claim".to_owned());
+    }
+    let at_the_address = Told {
+        keys: held.keys.clone(),
+        ..told.clone()
+    };
+    let next = if told.keys.iter().all(|key| held.keys.contains(key))
+        || connected(&at_the_address).is_ok()
+        || connected(&told).is_err()
+    {
+        at_the_address
+    } else {
+        told
+    };
+    if next == held {
+        return Ok(());
+    }
+    tell(config_root, next)
 }
 
 /// What this runner was told of the port. `None` where nothing was, as on a pool not opted in.

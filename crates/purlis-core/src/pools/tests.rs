@@ -1205,6 +1205,61 @@ mod cluster {
         }
     }
 
+    /// A Pool may opt in after it was added, and the opt-in reaches this machine at a link (#4330).
+    #[test]
+    fn a_pool_that_opts_in_later_is_kept_so_and_nothing_else_of_it_moves() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let claim = claim_name(OURS, "team");
+        cluster.vouch("ada", &claim, &claim, cluster.runner.key);
+        add_cluster(
+            config.path(),
+            &cluster.kubectl(),
+            &team(&cluster),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+        let before = file(config.path());
+        runners::keep_cluster_minting(config.path(), "team", true).unwrap();
+        let mut after = file(config.path());
+        assert_eq!(after["pools"][0]["mintInCluster"], true);
+        after["pools"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("mintInCluster");
+        assert_eq!(after, before);
+        runners::keep_cluster_minting(config.path(), "no-such-pool", true).unwrap();
+    }
+
+    /// A chat's start waits for its repos, and past its time goes on, the work finishing by itself
+    /// (#4331).
+    #[test]
+    fn work_is_waited_for_at_most_its_time_and_goes_on_past_it() {
+        let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let done = std::sync::Arc::clone(&finished);
+        assert!(
+            waited_at_most(Duration::from_secs(30), move || {
+                done.store(true, std::sync::atomic::Ordering::SeqCst);
+            })
+            .unwrap()
+        );
+        assert!(finished.load(std::sync::atomic::Ordering::SeqCst));
+
+        let (go, held) = std::sync::mpsc::channel::<()>();
+        let (came, ended) = std::sync::mpsc::channel::<()>();
+        assert!(
+            !waited_at_most(Duration::from_millis(10), move || {
+                let _ = held.recv();
+                let _ = came.send(());
+            })
+            .unwrap()
+        );
+        go.send(()).unwrap();
+        ended
+            .recv_timeout(Duration::from_secs(30))
+            .expect("it goes on past its time");
+    }
+
     #[test]
     fn a_cluster_pool_naming_another_key_than_the_one_checked_is_not_added() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());

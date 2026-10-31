@@ -159,6 +159,10 @@ enum Command {
         /// input (#4207).
         #[arg(long, conflicts_with_all = ["pair", "make_key"], hide = true)]
         mint_port: bool,
+        /// With `--mint-port`: as said again at a link, so what this runner followed by itself is
+        /// kept (#4330).
+        #[arg(long, requires = "mint_port", hide = true)]
+        again: bool,
         /// Ask the mint port for a token of this GitHub App, say what it covers, and revoke it:
         /// a check of the way there, which prints no token (#4207).
         #[arg(long, conflicts_with_all = ["pair", "make_key", "mint_port"], value_name = "APP", hide = true)]
@@ -5042,6 +5046,7 @@ fn main() -> ExitCode {
         publish,
         home,
         mint_port,
+        again,
         mint_check,
     } = &cli.command
     {
@@ -5054,6 +5059,7 @@ fn main() -> ExitCode {
                 publish,
                 home,
                 mint_port,
+                again,
                 mint_check,
             );
             return bridge();
@@ -5068,7 +5074,7 @@ fn main() -> ExitCode {
             _ if *pair => bridge::Asked::Pair {
                 key_made_at_start: key_made_at_start.clone(),
             },
-            _ if *mint_port => bridge::Asked::MintPort,
+            _ if *mint_port => bridge::Asked::MintPort { again: *again },
             _ if mint_check.is_some() => bridge::Asked::MintCheck {
                 app: mint_check.clone().unwrap_or_default(),
             },
