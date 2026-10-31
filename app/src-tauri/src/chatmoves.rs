@@ -105,6 +105,9 @@ pub(crate) struct MoveSignIn {
     pub(crate) kind: String,
     /// Its harness as people call it: `Claude Code`.
     pub(crate) harness: String,
+    /// The plans to choose from, where its harness serves several (#4181): a profile keeps none
+    /// of its own, and a login approved in the browser is told by its plan.
+    pub(crate) plans: Vec<crate::machineprofiles::PlanRow>,
 }
 
 impl ChatMove {
@@ -121,6 +124,13 @@ impl ChatMove {
                 profile: asked.profile.clone(),
                 kind: asked.kind.clone(),
                 harness: asked.harness.clone(),
+                plans: purlis_core::profilestore::sign_in::providers(&asked.kind)
+                    .iter()
+                    .map(|plan| crate::machineprofiles::PlanRow {
+                        id: plan.provider.clone(),
+                        title: plan.title.clone(),
+                    })
+                    .collect(),
             }),
             _ => None,
         };
