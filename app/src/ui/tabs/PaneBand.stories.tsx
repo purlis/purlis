@@ -605,16 +605,17 @@ export const ConsentClamped: Story = {
 /**
  * **A narrow pane's band says it has more** (#3168): two warnings are taller than the band's
  * room, so it scrolls. At rest a fade at its bottom says more is below; scrolled to its end, the
- * fade is at its top alone; partway, at both. The fade is the theme's shadow (`overlay.shadow`)
- * going to nothing, over the warnings and never in the way of a press. The picture is the band
- * partway, with both.
+ * fade is at its top alone; partway, at both. The warnings fade into the terminal's fill they
+ * stand on, and the fade is never in the way of a press. The picture is the band partway, with
+ * both.
  */
 export const NarrowScrolled: Story = {
   args: { warnings: ["vault-refused", "sandbox-long"], width: 400 },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, canvasElement }) => {
     const vault = await canvas.findByRole("status", { name: "Vault" });
     const stack = vault.closest('[data-scope="notice-row"][data-part="stack"]') as HTMLElement;
     await waitFor(() => expect(stack.scrollHeight).toBeGreaterThan(stack.clientHeight + 24));
+    const ground = getComputedStyle(rowsOf(canvasElement).frame).backgroundColor;
     const fade = (edge: "::before" | "::after") => getComputedStyle(stack, edge);
     const shows = async (above: boolean, below: boolean) => {
       await waitFor(() => {
@@ -632,9 +633,9 @@ export const NarrowScrolled: Story = {
       stack.scrollTop = top;
     };
 
-    // Drawn from the theme's shadow, and never what a press lands on.
+    // Into the ground the warnings stand on, and never what a press lands on.
     for (const edge of ["::before", "::after"] as const) {
-      expect(fade(edge).backgroundImage).toMatch(/gradient/);
+      expect(fade(edge).backgroundImage).toContain(ground);
       expect(fade(edge).pointerEvents).toBe("none");
     }
     scrollTo(0);
