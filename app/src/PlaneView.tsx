@@ -505,6 +505,7 @@ import {
   chatMovesOf,
   forgetMove,
   heardMove,
+  movedAfterSignIn,
   moveOffers,
   movesDue,
   movesWith,
@@ -6212,6 +6213,7 @@ export const PlaneView = memo(function PlaneView({
             else
               // Every chat of the move, each in its place (#3453).
               for (const one of done.data.moved) {
+                movedAfterSignIn(plane, one.was, one.chat.session);
                 forgetMove(plane, one.was);
                 chatRestarted(one.was, one.chat);
                 // What came back that a tool here runs, said on its tab (the person's ruling of

@@ -6,7 +6,14 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ChatMove, PoolSignInStep } from "./bindings";
-import { chatMovesOf, forgetMove, heardMove } from "./chatMoves";
+import {
+  chatMovesOf,
+  dismissMovedAfterSignIn,
+  forgetMove,
+  heardMove,
+  movedAfterSignIn,
+  putAwayMove,
+} from "./chatMoves";
 import { MoveNotice } from "./MoveNotice";
 import { PROFILE_SIGN_IN, type ProfileSignInAsk } from "./settings/links";
 
@@ -67,6 +74,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   forgetMove(PLANE, 3);
+  dismissMovedAfterSignIn(PLANE, 8);
   clearMocks();
 });
 
@@ -207,5 +215,123 @@ describe("a move waiting on its profile's sign-in", () => {
     await userEvent.click(screen.getByRole("button", { name: "Try the move" }));
     expect(await screen.findByText("Moves to pool builds at its next pause.")).toBeInTheDocument();
     expect(chatMovesOf(PLANE)[3]?.stage).toBe("ready");
+  });
+
+  it("forgets a move the core no longer holds once it is read back, so its notice goes (#4138)", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "chat_move_signed_in") throw "Chat 3 has no move.";
+      if (cmd === "chat_moves") return [];
+      return null;
+    });
+    await notice(waiting());
+    await userEvent.click(screen.getByRole("button", { name: "Try the move" }));
+    await waitFor(() => expect(chatMovesOf(PLANE)[3]).toBeUndefined());
+    expect(screen.queryByText(/once work is signed in there/)).toBeNull();
+  });
+
+  it("keeps a move when the read back fails, and a failed move through a read back (#4138)", async () => {
+    let reads = 0;
+    mockIPC((cmd) => {
+      if (cmd === "chat_move_signed_in") throw "Chat 3 has no move.";
+      if (cmd === "chat_moves") {
+        reads += 1;
+        if (reads === 1) throw "no answer";
+        return [];
+      }
+      return null;
+    });
+    const failed: ChatMove = { ...waiting(), session: 4, stage: "failed", why: "refused" };
+    act(() => heardMove(PLANE, failed));
+    await notice(waiting());
+    await userEvent.click(screen.getByRole("button", { name: "Try the move" }));
+    await waitFor(() => expect(reads).toBe(1));
+    expect(chatMovesOf(PLANE)[3]?.stage).toBe("signing-in");
+    await userEvent.click(screen.getByRole("button", { name: "Try the move" }));
+    await waitFor(() => expect(chatMovesOf(PLANE)[3]).toBeUndefined());
+    expect(chatMovesOf(PLANE)[4]?.stage).toBe("failed");
+    forgetMove(PLANE, 4);
+  });
+
+  it("says the chat moved once a move that waited on a sign-in was made, until dismissed (#4135)", async () => {
+    act(() => {
+      heardMove(PLANE, waiting());
+      heardMove(PLANE, { ...waiting(), stage: "switching", sign_in: null });
+      // The core's `over` can come before the answer to the switch.
+      heardMove(PLANE, { ...waiting(), stage: "over", sign_in: null });
+      movedAfterSignIn(PLANE, 3, 8);
+    });
+    render(<MoveNotice plane={PLANE} session={8} />);
+    expect(await screen.findByText("Moved to pool builds.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /dismiss/i }));
+    expect(screen.queryByText("Moved to pool builds.")).toBeNull();
+  });
+
+  it("still says it moved after its moving line was dismissed (#4135)", async () => {
+    act(() => {
+      heardMove(PLANE, waiting());
+      heardMove(PLANE, { ...waiting(), stage: "switching", sign_in: null });
+      forgetMove(PLANE, 3);
+      heardMove(PLANE, { ...waiting(), stage: "over", sign_in: null });
+      movedAfterSignIn(PLANE, 3, 8);
+    });
+    render(<MoveNotice plane={PLANE} session={8} />);
+    expect(await screen.findByText("Moved to pool builds.")).toBeInTheDocument();
+  });
+
+  it("still says it moved where Cancel came too late (#4135)", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "put_away_chat_move") throw "Its move is being made.";
+      if (cmd === "chat_moves") return [{ ...waiting(), stage: "switching", sign_in: null }];
+      return null;
+    });
+    act(() => heardMove(PLANE, waiting()));
+    act(() => putAwayMove(PLANE, 3));
+    await waitFor(() => expect(chatMovesOf(PLANE)[3]?.stage).toBe("switching"));
+    act(() => {
+      heardMove(PLANE, { ...waiting(), stage: "over", sign_in: null });
+      movedAfterSignIn(PLANE, 3, 8);
+    });
+    render(<MoveNotice plane={PLANE} session={8} />);
+    expect(await screen.findByText("Moved to pool builds.")).toBeInTheDocument();
+  });
+
+  it("says nothing of an earlier wait when a later move never waited (#4135)", () => {
+    act(() => {
+      heardMove(PLANE, waiting());
+      forgetMove(PLANE, 3);
+      heardMove(PLANE, { ...waiting(), to: null, stage: "ready", sign_in: null });
+      movedAfterSignIn(PLANE, 3, 8);
+    });
+    render(<MoveNotice plane={PLANE} session={8} />);
+    expect(screen.queryByText(/^Moved to/)).toBeNull();
+  });
+
+  it("says nothing of a move that was put away, here or from another tab (#4135)", async () => {
+    await act(async () => {
+      heardMove(PLANE, waiting());
+      putAwayMove(PLANE, 3);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(calls("put_away_chat_move")).toHaveLength(1));
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 0));
+    });
+    act(() => {
+      movedAfterSignIn(PLANE, 3, 8);
+      heardMove(PLANE, waiting());
+      heardMove(PLANE, { ...waiting(), stage: "over", sign_in: null });
+      movedAfterSignIn(PLANE, 3, 8);
+    });
+    render(<MoveNotice plane={PLANE} session={8} />);
+    expect(screen.queryByText(/^Moved to/)).toBeNull();
+  });
+
+  it("says nothing of a move that never waited on a sign-in (#4135)", () => {
+    act(() => {
+      heardMove(PLANE, { ...waiting(), stage: "ready", sign_in: null });
+      movedAfterSignIn(PLANE, 3, 8);
+    });
+    render(<MoveNotice plane={PLANE} session={8} />);
+    expect(screen.queryByText(/^Moved to/)).toBeNull();
   });
 });

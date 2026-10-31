@@ -41,7 +41,7 @@ use std::path::Path;
 
 use purlis_session_protocol::hostlink::Pinned;
 
-use crate::dockerpool::{Docker, Runner};
+use crate::dockerpool::{Docker, Missing, Runner};
 use crate::runners::{self, Kept, Pool, Refused, Removed, Unpair};
 
 /// **Adds `pool` on this machine**, with `docker`: records it, makes and checks its runner,
@@ -81,7 +81,8 @@ pub fn add(
         .map_err(|why| Refused::Other(why.0))
         .and_then(|answered| {
             runners::keep_for_its_pool(config_root, &made, &answered, desktop, &locked)
-        });
+        })
+        .map(|kept| noted_where_made(config_root, docker, kept, &locked));
     match kept {
         Ok(kept) => Ok(kept),
         Err(why) => {
@@ -251,6 +252,10 @@ pub fn follow(
             pool.image().as_str()
         )));
     }
+    // Made on another engine, the new runner would take the pool from the one it runs on (#4166).
+    if let Ok(kept) = runners::runner_for(config_root, name) {
+        on_its_engine(docker, &kept)?;
+    }
     let successor = crate::dockerpool::successor_name(name, image);
     // What a follow that stopped short of keeping its runner left goes first (#2869).
     clear_leftovers_locked(config_root, docker, &successor, &locked)?;
@@ -269,7 +274,8 @@ pub fn follow(
         .map_err(|why| Refused::Other(why.0))
         .and_then(|answered| {
             runners::succeed_locked(config_root, name, &made, &answered, desktop, &locked)
-        });
+        })
+        .map(|kept| noted_where_made(config_root, docker, kept, &locked));
     match kept {
         Ok(kept) => Ok(Some(kept)),
         Err(why) => Err(match docker.remove(&made) {
@@ -282,6 +288,61 @@ pub fn follow(
             )),
         }),
     }
+}
+
+/// **Refuses unless Docker reaches the engine that made `kept`** (#4166): nothing is made in its
+/// place or removed on another's word. A runner kept before its engine was kept passes.
+fn on_its_engine(docker: &Docker, kept: &Kept) -> Result<(), Refused> {
+    let Some(made_on) = &kept.engine else {
+        return Ok(());
+    };
+    if docker.engine_id().ok().flatten().as_ref() == Some(made_on) {
+        return Ok(());
+    }
+    Err(Refused::Other(format!(
+        "Docker does not reach the engine runner {} was made on, so it stays as it is until it \
+         does",
+        kept.name()
+    )))
+}
+
+/// **Keeps with `kept`, a runner just made, the engine that made it and its home's `CreatedAt`**
+/// (#4166, #4167). What cannot be read or kept is left out, and that runner is then treated as
+/// one made before these were kept: it is said in the log and costs no runner.
+fn noted_where_made(
+    config_root: &Path,
+    docker: &Docker,
+    mut kept: Kept,
+    locked: &runners::Locked,
+) -> Kept {
+    let read = |what: &str, answer: Result<Option<String>, crate::dockerpool::Refused>| {
+        answer.unwrap_or_else(|why| {
+            tracing::warn!("purlis: runner {}'s {what} is not kept: {why}", kept.name());
+            None
+        })
+    };
+    let engine = read("engine", docker.engine_id());
+    let home_created = read("home's making", docker.home_created(&kept.made));
+    let noted = runners::note_locked(
+        config_root,
+        kept.name(),
+        |row| {
+            row.engine.clone_from(&engine);
+            row.home_created.clone_from(&home_created);
+        },
+        locked,
+    );
+    match noted {
+        Ok(()) => {
+            kept.engine = engine;
+            kept.home_created = home_created;
+        }
+        Err(why) => tracing::warn!(
+            "purlis: where runner {} was made is not kept: {why}",
+            kept.name()
+        ),
+    }
+    kept
 }
 
 /// **A runner made again** (#4149, [`make_again`]): the runner kept, and whether the sign-ins
@@ -332,15 +393,26 @@ fn make_again_as(
         .find(|pool| pool.name() == name)
         .ok_or_else(|| Refused::Other(format!("no pool named {name} is on this machine")))?;
     let old = runners::runner_for(config_root, name)?;
-    let Some(gone) = docker
-        .gone(&old.made)
+    let gone = match docker
+        .missing(&old.made, old.engine.as_deref())
         .map_err(|why| Refused::Other(why.0))?
-    else {
-        return Err(Refused::Other(format!(
-            "runner {}'s container is still there, so purlis does not make it again; it is \
-             linked to as it is",
-            old.name()
-        )));
+    {
+        Some(Missing::Removed(gone)) => gone,
+        // Made here, it would be a second runner on the wrong engine (#4166).
+        Some(Missing::OnAnotherEngine) => {
+            return Err(Refused::Other(format!(
+                "Docker points at another engine than the one runner {} was made on, so purlis \
+                 does not make it again; point Docker back at that engine",
+                old.name()
+            )));
+        }
+        None => {
+            return Err(Refused::Other(format!(
+                "runner {}'s container is still there, so purlis does not make it again; it is \
+                 linked to as it is",
+                old.name()
+            )));
+        }
     };
     clear_leftovers_locked(config_root, docker, again, &locked)?;
     let made = docker
@@ -360,7 +432,8 @@ fn make_again_as(
         .map_err(|why| Refused::Other(why.0))
         .and_then(|answered| {
             runners::succeed_locked(config_root, name, &made, &answered, desktop, &locked)
-        });
+        })
+        .map(|kept| noted_where_made(config_root, docker, kept, &locked));
     let kept = match kept {
         Ok(kept) => kept,
         Err(why) => {
@@ -398,15 +471,27 @@ fn make_again_as(
     })
 }
 
-/// How far the Docker host's clock may run ahead of this machine's when a home's making is held
-/// to its runner's pairing (#4149): a Docker Desktop VM drifts after a sleep. A home made under
-/// the runner's name within this of its pairing is an accident this does not guard against.
+/// How far the Docker host's clock may run ahead of this machine's when the home of a runner
+/// kept before #4167, which has no `CreatedAt` noted, is held to its pairing (#4149): a Docker
+/// Desktop VM drifts after a sleep.
 const CLOCKS_APART: u64 = 10 * 60;
 
+/// **Whether the home volume under `old`'s name is the one purlis made for it**: it still prints
+/// the `CreatedAt` kept when it was made (#4167), whatever the clocks say. A runner kept before
+/// that is held to its pairing, give or take [`CLOCKS_APART`] (#4149).
+fn is_its_own_home(docker: &Docker, old: &Kept) -> Result<bool, crate::dockerpool::Refused> {
+    match &old.home_created {
+        Some(kept) => Ok(docker.home_created(&old.made)?.as_ref() == Some(kept)),
+        None => Ok(docker
+            .home_made_at(&old.made)?
+            .is_some_and(|at| at <= old.paired.saturating_add(CLOCKS_APART))),
+    }
+}
+
 /// **Carries the sign-ins of `old`'s home to `made`** (#4149), only where that home is the one
-/// purlis made for it: made no later than `old` was paired (give or take [`CLOCKS_APART`]), so
-/// not one made of its name since its container went, and its runner's user the same. What is not carried is said in the log,
-/// and the profiles are signed in again.
+/// purlis made for it ([`is_its_own_home`]), so not one made of its name since its container
+/// went, and its runner's user the same. What is not carried is said in the log, and the
+/// profiles are signed in again.
 fn carried_from_its_own_home(
     config_root: &Path,
     docker: &Docker,
@@ -414,9 +499,8 @@ fn carried_from_its_own_home(
     made: &crate::dockerpool::Made,
     pool: &str,
 ) -> bool {
-    let its_own = match docker.home_made_at(&old.made) {
-        Ok(Some(at)) => at <= old.paired.saturating_add(CLOCKS_APART),
-        Ok(None) => false,
+    let its_own = match is_its_own_home(docker, old) {
+        Ok(its_own) => its_own,
         Err(why) => {
             tracing::warn!(
                 "purlis: runner {}'s home could not be read: {why}",
@@ -427,8 +511,8 @@ fn carried_from_its_own_home(
     };
     if !its_own {
         tracing::warn!(
-            "purlis: the home of runner {} was made after it was paired, or says not when, so \
-             its sign-ins were not carried; sign the profiles in again on pool {pool}",
+            "purlis: the home of runner {} is not the one made for it, or says not when it was \
+             made, so its sign-ins were not carried; sign the profiles in again on pool {pool}",
             old.name()
         );
         return false;
@@ -514,6 +598,8 @@ pub fn drain(
     let locked = runners::lock(config_root);
     match runners::named(config_root, name)? {
         Some(kept) if kept.draining => {
+            // Another engine knows nothing of its container or its home (#4166).
+            on_its_engine(docker, &kept)?;
             let peer = if kept.unpaired {
                 None
             } else {

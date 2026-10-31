@@ -8216,7 +8216,12 @@ export type PoolLink =
  *  it comes back, and the window offers Make the runner again. Whether its home volume, with
  *  its sign-ins, is still there for the runner made again to take them from.
  */
-{ state: "removed"; home_kept: boolean };
+{ state: "removed"; home_kept: boolean } | 
+/**
+ *  Docker points at another engine than the one that made it (#4166): its container may be
+ *  there still, so it is not said to be removed and Make the runner again is not offered.
+ */
+{ state: "on_another_engine" };
 
 /**  One of this machine's profiles, as a pool's runner stands with it. */
 export type PoolProfileRow = {

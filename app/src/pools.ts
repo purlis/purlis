@@ -387,6 +387,11 @@ export function removedSaid(name: string, homeKept: boolean): string {
     : `Pool ${name}'s runner was removed outside purlis: Docker has no container of its id, so purlis no longer links to it. If Docker now points at another engine, point it back instead. Its home went too, and with it the sign-ins kept there: Make the runner again makes a runner from the pool's image and limits, whose profiles you sign in again.`;
 }
 
+/** What a row says of a runner made on another engine than Docker reaches now (#4166). */
+export function anotherEngineSaid(name: string): string {
+  return `Docker points at another engine than the one pool ${name}'s runner was made on. Point Docker back at that engine and its chats come back. If that engine is gone for good, remove the pool and add it again; anything still on that engine stays there.`;
+}
+
 /** What a row says once its runner was made again, by whether its sign-ins were carried. */
 export function madeAgainSaid(name: string, signInsKept: boolean): string {
   return signInsKept

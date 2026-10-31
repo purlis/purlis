@@ -45,6 +45,19 @@ function subscribe(listener: () => void) {
 
 const NONE: Readonly<Record<number, ChatMove>> = {};
 
+/**
+ * **The moves that waited on a sign-in, by chat, and the pool each goes to** (#4135): a move that
+ * then goes ahead by itself can be missed, so its chat says it moved. Taken when the move is made
+ * ({@link movedAfterSignIn}). A move put away, failed or asked anew leaves nothing here; one past
+ * cancelling stays, whatever its line shows, as its answer may come after its `over`.
+ */
+const waitedOnASignIn = new Map<string, string>();
+const waitKey = (plane: PlaneId, session: number) => `${plane}\0${session}`;
+
+/** **The chats that moved after waiting on a sign-in**, each with its pool, until dismissed. */
+let movedAfterWait: Readonly<Record<string, Readonly<Record<number, string>>>> = {};
+const NOT_MOVED: Readonly<Record<number, string>> = {};
+
 /** Every chat move of `plane`, by session. */
 export function useChatMoves(plane: PlaneId): Readonly<Record<number, ChatMove>> {
   return useSyncExternalStore(subscribe, () => held[plane] ?? NONE);
@@ -60,10 +73,24 @@ export function chatMovesOf(plane: PlaneId): Readonly<Record<number, ChatMove>> 
  * put away, from this tab or another of its workspace (#3814).
  */
 export function heardMove(plane: PlaneId, told: ChatMove) {
+  const key = waitKey(plane, told.session);
   if (told.stage === "over") {
+    // `over` says the same of a move made and one put away. Only these stages can be put away;
+    // with none held, the line was dismissed or put away here, which says so itself.
+    const was = held[plane]?.[told.session]?.stage;
+    if (was === "preparing" || was === "signing-in" || was === "ready") waitedOnASignIn.delete(key);
     forgetMove(plane, told.session);
     return;
   }
+  const had = held[plane]?.[told.session];
+  if (told.stage === "signing-in" && told.to !== null) waitedOnASignIn.set(key, told.to);
+  else if (
+    told.stage === "failed" ||
+    told.to !== waitedOnASignIn.get(key) ||
+    // A move asked anew: one that waited comes here from its wait.
+    (had === undefined && told.stage !== "switching")
+  )
+    waitedOnASignIn.delete(key);
   set(plane, (was) => ({ ...was, [told.session]: told }));
 }
 
@@ -75,6 +102,36 @@ export function forgetMove(plane: PlaneId, session: number) {
       Object.entries(was).filter(([one]) => Number(one) !== session),
     ) as Record<number, ChatMove>;
   });
+}
+
+/**
+ * **Chat `was` moved and is now chat `now`** (#4135): where its move waited on a sign-in, the chat
+ * says it moved, since it went ahead by itself.
+ */
+export function movedAfterSignIn(plane: PlaneId, was: number, now: number) {
+  const key = waitKey(plane, was);
+  const pool = waitedOnASignIn.get(key);
+  if (pool === undefined) return;
+  waitedOnASignIn.delete(key);
+  movedAfterWait = {
+    ...movedAfterWait,
+    [plane]: { ...movedAfterWait[plane], [now]: pool },
+  };
+  for (const one of listeners) one();
+}
+
+/** The pool chat `session` moved to after waiting on a sign-in, until that is dismissed. */
+export function useMovedAfterSignIn(plane: PlaneId, session: number): string | undefined {
+  return useSyncExternalStore(subscribe, () => (movedAfterWait[plane] ?? NOT_MOVED)[session]);
+}
+
+/** Dismisses what chat `session` says of having moved. */
+export function dismissMovedAfterSignIn(plane: PlaneId, session: number) {
+  const left = Object.entries(movedAfterWait[plane] ?? NOT_MOVED).filter(
+    ([one]) => Number(one) !== session,
+  );
+  movedAfterWait = { ...movedAfterWait, [plane]: Object.fromEntries(left) };
+  for (const one of listeners) one();
 }
 
 /**
@@ -139,6 +196,24 @@ export async function askMove(
 }
 
 /**
+ * **The core's moves, read back after it refused a button** (#4138): each it holds is held here,
+ * and a move here it no longer holds is forgotten, say one whose `over` the window missed. A
+ * failed move stays: a refusal the window heard is one the core may never have held, and it stays
+ * until it is dismissed. A read that failed changes nothing.
+ */
+async function readBackMoves(plane: PlaneId) {
+  const read = await commands.chatMoves(plane);
+  if (read.status !== "ok") return;
+  const holds = new Set(read.data.map((one) => one.session));
+  for (const one of Object.values(chatMovesOf(plane)))
+    if (one.stage !== "failed" && !holds.has(one.session)) {
+      waitedOnASignIn.delete(waitKey(plane, one.session));
+      forgetMove(plane, one.session);
+    }
+  for (const one of read.data) heardMove(plane, one);
+}
+
+/**
  * Puts chat `session`'s move away: one still prepared is forgotten, for every chat of it as the
  * core tells each (`over`), and a failed one dismissed. One the core says is being made already
  * is read back, so its tab says so again (#3814).
@@ -148,9 +223,12 @@ export function putAwayMove(plane: PlaneId, session: number) {
   void commands
     .putAwayChatMove(plane, session)
     .then(async (done) => {
-      if (done.status === "ok") return;
-      const read = await commands.chatMoves(plane);
-      if (read.status === "ok") for (const one of read.data) heardMove(plane, one);
+      // Refused, it is being made already, and goes on to say it moved.
+      if (done.status === "ok") {
+        waitedOnASignIn.delete(waitKey(plane, session));
+        return;
+      }
+      await readBackMoves(plane);
     })
     .catch(() => undefined);
 }
@@ -166,8 +244,7 @@ export function signedInForMove(plane: PlaneId, session: number) {
     .chatMoveSignedIn(plane, session)
     .then(async (said) => {
       if (said.status === "ok") return;
-      const read = await commands.chatMoves(plane);
-      if (read.status === "ok") for (const one of read.data) heardMove(plane, one);
+      await readBackMoves(plane);
     })
     .catch(() => undefined);
 }
