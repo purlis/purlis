@@ -1126,8 +1126,10 @@ fn a_second_name_made_as_the_commit_stages_never_reaches_the_object_store() {
 fn a_named_path_git_would_not_stage_is_refused_with_nothing_staged() {
     let t = tree();
     let top = &t.here.top;
-    std::fs::write(top.join(".gitignore"), "ignored.txt\n").unwrap();
+    std::fs::write(top.join(".gitignore"), "ignored.txt\nbuild/\n").unwrap();
     std::fs::write(top.join("ignored.txt"), "ignored\n").unwrap();
+    std::fs::create_dir_all(top.join("build")).unwrap();
+    std::fs::write(top.join("build/out.o"), "built\n").unwrap();
     std::fs::write(top.join("plain.txt"), "plain\n").unwrap();
 
     let missing = stage(&t.here, &staging(&["plain.txt", "missing.txt"])).expect_err("refused");
@@ -1136,6 +1138,10 @@ fn a_named_path_git_would_not_stage_is_refused_with_nothing_staged() {
     let ignored = stage(&t.here, &staging(&["plain.txt", "ignored.txt"])).expect_err("refused");
     assert!(ignored.contains("git did not stage that"), "{ignored}");
     assert!(ignored.contains("is ignored"), "{ignored}");
+    for named in ["./ignored.txt", "build", "build/", "build/out.o"] {
+        let ignored = stage(&t.here, &staging(&["plain.txt", named])).expect_err(named);
+        assert!(ignored.contains("is ignored"), "{named}: {ignored}");
+    }
     assert!(t.nothing_staged());
 }
 

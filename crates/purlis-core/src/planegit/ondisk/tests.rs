@@ -324,11 +324,7 @@ fn a_second_name_made_as_a_checked_add_stages_never_reaches_the_object_store() {
 fn rows_of(root: &Path, paths: &[&str]) -> Vec<Row> {
     paths
         .iter()
-        .map(|path| {
-            Row::of((*path).to_owned(), opened(root, path))
-                .unwrap()
-                .expect("a row")
-        })
+        .map(|path| Row::of((*path).to_owned(), opened(root, path)).unwrap())
         .collect()
 }
 
@@ -368,6 +364,8 @@ fn a_second_name_made_before_the_hashing_never_reaches_the_object_store_and_noth
         }]
     );
     assert!(!crate::testgit::stores_file(&root, &second));
+    // And the blob hashed for the other file, with no row written for it, is gone again.
+    assert!(!crate::testgit::stores_file(&root, &root.join("d.md")));
     assert_eq!(run(&root, &["diff", "--cached", "--name-only"]), "");
 }
 
@@ -452,7 +450,8 @@ fn many_files_are_each_staged_with_their_own_bytes_and_mode() {
 
     let (_dir, root) = staged();
     run(&root, &["commit", "-q", "-m", "two"]);
-    let names: Vec<String> = (0..3 * HASHERS + 1)
+    // More than one part's worth, so a staging holds no more than a part's files open.
+    let names: Vec<String> = (0..OPEN_AT_ONCE + HASHERS + 1)
         .map(|n| format!("many/{n}.md"))
         .collect();
     std::fs::create_dir_all(root.join("many")).unwrap();
@@ -475,4 +474,35 @@ fn many_files_are_each_staged_with_their_own_bytes_and_mode() {
         );
     }
     assert_eq!(whys(&root), []);
+}
+
+/// A folder the file system will not open is not read as a deletion of what it holds: the
+/// staging refuses, and the index keeps every row.
+#[cfg(unix)]
+#[test]
+fn a_folder_that_cannot_be_opened_refuses_the_staging_and_removes_nothing() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (_dir, root) = staged();
+    std::fs::create_dir_all(root.join("shut")).unwrap();
+    std::fs::write(root.join("shut/kept.md"), "kept\n").unwrap();
+    run(&root, &["add", "-A"]);
+    run(&root, &["commit", "-q", "-m", "two"]);
+    let shut = |mode| {
+        std::fs::set_permissions(root.join("shut"), std::fs::Permissions::from_mode(mode)).unwrap();
+    };
+    shut(0o000);
+    // Run with every permission (as root), nothing is shut out, and there is nothing to ask.
+    let open_anyway = std::fs::read_dir(root.join("shut")).is_ok();
+    let found = opened(&root, "shut/kept.md");
+    let staged = stage_named(&root, &[":(literal)shut"], |_| false);
+    shut(0o755);
+    if open_anyway {
+        return;
+    }
+
+    assert!(matches!(found, OnDisk::Unread(_)), "read as gone or beyond");
+    assert!(Row::of("shut/kept.md".to_owned(), found).is_err());
+    assert!(staged.is_err(), "{staged:?}");
+    assert_eq!(run(&root, &["ls-files", "--", "shut"]), "shut/kept.md\n");
 }

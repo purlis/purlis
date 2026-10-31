@@ -241,43 +241,39 @@ pub fn carry_on(root: &Path, shown: &[String], say: Sink) -> Settled {
     }
     if !checked.is_empty() {
         let named: Vec<String> = checked.iter().map(|(path, _)| (*path).clone()).collect();
-        // As a save: a settled file with a second name is refused before it is staged, so its
-        // bytes never reach the project's object store ([`ondisk`]).
-        if let Some(refusal) = ondisk::refused_ahead(&ondisk::second_names_of(root, &named)) {
-            return Settled::Refused(not_the_file(&refusal));
-        }
+        // As a save: a settled file with a second name was refused as it was read, through its
+        // descriptor, before anything is staged ([`read_plain`]).
         #[cfg(test)]
         super::tests::before_the_add(root);
         // Each file staged as the bytes that were checked, from the descriptor they were read
         // through, which is asked again just before that it has one name: nothing is read
         // again by its name ([`ondisk::stage_rows`]).
-        let mut rows = Vec::new();
-        let mut bytes_of: Vec<(&String, Vec<u8>)> = Vec::new();
-        for (path, plain) in checked {
-            bytes_of.push((path, plain.bytes.clone()));
-            rows.push(ondisk::Row {
+        let rows = checked
+            .into_iter()
+            .map(|(path, plain)| ondisk::Row {
                 path: path.clone(),
                 from: ondisk::Source::File {
                     file: plain.file,
                     runs: plain.runs,
                     checked: Some(plain.bytes),
                 },
-            });
-        }
-        let checked = bytes_of;
-        let held = ondisk::stage_rows(root, rows).and_then(|held| {
-            if held.is_empty() {
-                ondisk::refresh(root, false)?;
-            }
-            Ok(held)
-        });
-        let held = match held {
+            })
+            .collect();
+        let held = match ondisk::stage_rows(root, rows) {
             Ok(held) => held,
             Err(said) => {
                 return Settled::Refused(format!("git would not stage them: {}", one_line(&said)));
             }
         };
         if let Some(refusal) = ondisk::refused_unstaged(&held, ondisk::PutBack::Conflicted(&named))
+        {
+            return Settled::Refused(not_the_file(&refusal));
+        }
+        // Staged: where the index cannot be refreshed, whether each is the file on disk cannot
+        // be asked, and every one goes back in conflict.
+        if let Err(said) = ondisk::refresh(root, false)
+            && let Some(refusal) =
+                ondisk::refused_into(root, &Err(said), ondisk::PutBack::Conflicted(&named))
         {
             return Settled::Refused(not_the_file(&refusal));
         }
@@ -311,16 +307,6 @@ pub fn carry_on(root: &Path, shown: &[String], say: Sink) -> Settled {
             ondisk::refused_into(root, &found, ondisk::PutBack::Conflicted(&named))
         {
             return Settled::Refused(not_the_file(&refusal));
-        }
-        // What was staged is what was checked, as git stores it for that path (its clean
-        // filter and line endings applied), or nothing goes on.
-        let moved: Vec<&String> = checked
-            .iter()
-            .filter(|(path, bytes)| !staged_as_checked(root, path, bytes))
-            .map(|(path, _)| *path)
-            .collect();
-        if !moved.is_empty() {
-            return Settled::Refused(put_back_all(root, &named, &moved));
         }
     }
     say(Say::Info("Continuing the replay …".into()));
@@ -700,29 +686,6 @@ fn put_back_all(root: &Path, named: &[String], moved: &[&String]) -> String {
         join(moved),
         if moved.len() == 1 { "it" } else { "them" },
     )
-}
-
-/// Whether what is staged at `path` is `bytes`, as git would store them for that path: its
-/// clean filter and line endings applied (`hash-object --path`).
-pub(super) fn staged_as_checked(root: &Path, path: &str, bytes: &[u8]) -> bool {
-    let staged = git::run(
-        root,
-        &["rev-parse", "--verify", "-q", &format!(":0:{path}")],
-        git::READ,
-    )
-    .ok()
-    .filter(git::Run::ok)
-    .map(|run| run.line().trim().to_string());
-    let checked = git::run_with_input(
-        root,
-        &["hash-object", "--path", path, "--stdin"],
-        bytes.to_vec(),
-        git::READ,
-    )
-    .ok()
-    .filter(|run| run.code == Some(0))
-    .map(|run| String::from_utf8_lossy(&run.out).trim().to_string());
-    staged.is_some() && staged == checked
 }
 
 /// What is staged at `path` (stage 0), as text; `None` where nothing is.

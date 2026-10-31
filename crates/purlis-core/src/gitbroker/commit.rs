@@ -981,36 +981,47 @@ fn ran_out(what: &str, within: std::time::Duration) -> String {
 /// letter for letter, so none is read as an option or as pathspec magic.
 fn stage(here: &Here, stage: &Stage) -> Result<(), String> {
     let refused = |why: String| format!("git did not stage that: {}", first_line(&why));
-    let found = match stage {
-        Stage::Tracked => ondisk::looked_at(&here.top, &[], ondisk::Listing::Tracked),
+    let paths = match stage {
+        Stage::Tracked => ondisk::to_stage(&here.top, &[], ondisk::Listing::Tracked),
         Stage::Paths(paths) => {
             let below = said(&here.cwd, &["rev-parse", "--show-prefix"])?.unwrap_or_default();
             let named: Vec<String> = paths.iter().map(|path| format!("{below}{path}")).collect();
             each_named(&here.top, &named).map_err(refused)?;
             let specs: Vec<String> = named.iter().map(|path| literally(path)).collect();
             let specs: Vec<&str> = specs.iter().map(String::as_str).collect();
-            ondisk::looked_at(&here.top, &specs, ondisk::Listing::All)
+            ondisk::to_stage(&here.top, &specs, ondisk::Listing::All)
         }
     }
     .map_err(refused)?;
-    let mut rows = Vec::new();
+    // Looked at whole before anything is staged, so what would refuse the commit refuses it
+    // with nothing staged: another repository (nothing of it is read), a file with a second
+    // name, and what git would not stage. Nothing is held open here.
     let mut held = Vec::new();
-    for (path, found) in found {
-        match found {
+    for path in &paths {
+        match ondisk::opened(&here.top, path) {
+            ondisk::OnDisk::Folder { nested: true } => return Err(another_repository(path)),
             ondisk::OnDisk::SecondName => held.push(ondisk::Held {
-                path,
+                path: path.clone(),
                 why: ondisk::Why::SecondName,
             }),
-            ondisk::OnDisk::Folder { nested: true } => {
-                return Err(another_repository(&path));
-            }
-            found => rows.extend(ondisk::Row::of(path, found).map_err(refused)?),
+            found => drop(ondisk::Row::of(path.clone(), found).map_err(refused)?),
         }
     }
     if let Some(refusal) = ondisk::refused_unstaged(&held, ondisk::PutBack::AsHead) {
         return Err(not_the_file(&refusal));
     }
-    let held = ondisk::stage_rows(&here.top, rows).map_err(refused)?;
+    // Then staged a part at a time, each file from the descriptor it is opened as then.
+    let held = ondisk::stage_listed(&here.top, paths, |path, found| {
+        Ok(match found {
+            ondisk::OnDisk::SecondName => ondisk::Take::Held(ondisk::Held {
+                path,
+                why: ondisk::Why::SecondName,
+            }),
+            ondisk::OnDisk::Folder { nested: true } => return Err(another_repository(&path)),
+            found => ondisk::Take::Row(ondisk::Row::of(path, found)?),
+        })
+    })
+    .map_err(refused)?;
     if let Some(refusal) = ondisk::refused_unstaged(&held, ondisk::PutBack::AsHead) {
         return Err(not_the_file(&refusal));
     }
@@ -1024,10 +1035,10 @@ fn literally(path: &str) -> String {
 
 /// Why `git add` of `named` (relative to `top`) would have refused, in git's words, or
 /// nothing: a path reached through a link, one that names nothing on disk or in the index, or
-/// an untracked one the repository ignores.
+/// an untracked file or folder the repository ignores, named as itself.
 fn each_named(top: &Path, named: &[String]) -> Result<(), String> {
     for path in named {
-        match ondisk::opened(top, path.trim_end_matches('/')) {
+        match ondisk::opened(top, &plainly(path)) {
             ondisk::OnDisk::Beyond => {
                 return Err(format!(
                     "pathspec {} is beyond a symbolic link",
@@ -1044,35 +1055,47 @@ fn each_named(top: &Path, named: &[String]) -> Result<(), String> {
             _ => {}
         }
     }
-    let mut args = vec![
-        "ls-files".to_owned(),
-        "-z".to_owned(),
-        "--others".to_owned(),
-        "--ignored".to_owned(),
-        "--exclude-standard".to_owned(),
-        "--".to_owned(),
-    ];
-    args.extend(named.iter().map(|path| literally(path)));
-    let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let run = git::run(top, &args, git::READ).map_err(|e| e.to_string())?;
-    if !run.ok() {
-        return Err(run.err);
-    }
-    let asked: std::collections::HashSet<&str> = named
-        .iter()
-        .map(|path| path.trim_end_matches('/'))
-        .collect();
-    if let Some(ignored) = run
-        .out
-        .split('\0')
-        .find(|path| asked.contains(path.trim_end_matches('/')))
-    {
-        return Err(format!(
-            "{} is ignored by one of the repository's .gitignore files",
-            shown(ignored)
-        ));
+    let asked: std::collections::HashSet<String> = named.iter().map(|path| plainly(path)).collect();
+    // Listed file by file, and again with an ignored folder as itself: a path named is refused
+    // where it is either.
+    for folders in [false, true] {
+        let mut args = vec![
+            "ls-files",
+            "-z",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+        ];
+        if folders {
+            args.push("--directory");
+        }
+        args.push("--");
+        let specs: Vec<String> = named.iter().map(|path| literally(path)).collect();
+        args.extend(specs.iter().map(String::as_str));
+        let run = git::run(top, &args, git::READ).map_err(|e| e.to_string())?;
+        if !run.ok() {
+            return Err(run.err);
+        }
+        if let Some(ignored) = run
+            .out
+            .split('\0')
+            .find(|path| !path.is_empty() && asked.contains(&plainly(path)))
+        {
+            return Err(format!(
+                "{} is ignored by one of the repository's .gitignore files",
+                shown(ignored)
+            ));
+        }
     }
     Ok(())
+}
+
+/// `path` as git names it: no `.` part, and no `/` at either end.
+fn plainly(path: &str) -> String {
+    path.split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// Puts the index back to the branch's last commit: what the ask staged is unstaged, and the
