@@ -87,6 +87,7 @@ const BUILT_IN: StudioRouter = {
   extension: null,
   chats: [],
   grade: null,
+  graded: null,
   written: null,
   budget: { skills: 30, chars: 6000 },
 };
@@ -286,6 +287,7 @@ const RELEVANCE: StudioRouter = {
   written: "relevance",
   budget: { skills: 30, chars: 6000 },
   grade: null,
+  graded: null,
   chats: [
     {
       session: 3,
@@ -455,6 +457,34 @@ describe("the Routing page (#3692)", () => {
 
     expect(await screen.findByTestId("skill-studio-router-grade")).toHaveTextContent(grade);
     expect(screen.getByRole("button", { name: "Grade the router…" })).toBeInTheDocument();
+  });
+
+  it("opens the router's newest grade's scorecard beside the list (#3617)", async () => {
+    const grade =
+      "Graded on the library at aaaaaaaaaaaa, 2026-10-02: 1 of 2 trigger tests pass with the router relevance, and 2 of 2 with the built-in router.";
+    const asked = core(() => studio([], { router: { ...RELEVANCE, grade, graded: "01GRADE" } }), {
+      router_grade_scorecard: () => ({
+        grade: "01GRADE",
+        router: "relevance",
+        graded: "2026-10-02 10:00 UTC",
+        library: "the library at aaaaaaaaaaaa",
+        ran_on: "Claude Code",
+        ended: "Finished",
+        said: grade,
+        outcome: "graded",
+        arms: { router: 50, built_in: 100 },
+        spent: { chats: 12, tokens: 12000, cost_usd: null, limit_usd: 1.5 },
+        asked: 0,
+        skills: [],
+      }),
+    });
+    renderStudio(inWorkspace("ops"), "routing");
+
+    await userEvent.click(await screen.findByRole("button", { name: "Scorecard" }));
+    expect(await screen.findByTestId("router-grade-scorecard")).toBeInTheDocument();
+    expect(
+      asked.filter((one) => one.cmd === "router_grade_scorecard").map((one) => one.args),
+    ).toEqual([{ plane: PLANE, workspace: "ops", persona: null, grade: "01GRADE" }]);
   });
 
   it("lets a router written as no router's name be replaced by the built-in one", async () => {

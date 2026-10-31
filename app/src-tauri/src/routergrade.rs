@@ -36,8 +36,8 @@ use purlis_core::skills::grades::{self, Spent};
 use crate::planes::{PlaneId, Planes};
 use crate::skillchange::flag_on;
 use crate::skillgrade::{
-    GradeEnded, GradeLeftOut, GradePrice, InChats, Running, chats_on, held_to_its_end,
-    record_interrupted, running,
+    GradeEnded, GradeLeftOut, GradeOutcome, GradePrice, GradeSpent, InChats, Running, ScoredTest,
+    chats_on, held_to_its_end, not_kept, record_interrupted, running, scored_tests,
 };
 
 /// The event the window is told each step of a router's grade by.
@@ -382,8 +382,8 @@ pub(crate) async fn router_grade_start(
                         unpriced_at: limits.unpriced_usd_per_million,
                         skill: String::new(),
                         label: format!("Grade the router {router}"),
-                        // The scorecard of a router's grade is its line in the studio.
-                        keeps_screens: false,
+                        // Each chat's screen, for the router's scorecard (#3617).
+                        keeps: Some(kept_of(&planned)),
                         profile: &profile,
                         stop: &stop,
                         spent: Spent::default(),
@@ -422,6 +422,9 @@ pub(crate) async fn router_grade_start(
                         &purlis_core::machine::this_log_name(),
                     );
                     grades::underway::ended(&root, &grade);
+                    // The chats of the router's older grades in this scope go: its newest keep
+                    // theirs (#3617).
+                    grades::kept::sweep_of(&root, &kept_of(&planned));
                     drop(marker.borrow_mut().take());
                     running().remove(&grade);
                     let said = match (&graded.report.not_started, recorded) {
@@ -459,6 +462,177 @@ pub(crate) async fn router_grade_start(
                 format!("The grade could not start ({why}).")
             })?;
         Ok(id)
+    })
+    .await
+}
+
+/// **Whose chats a router's grade keeps** (#3617): the router's, in the scope that chose it, whose
+/// grades are read by that scope.
+fn kept_of(planned: &RouterPlanned) -> grades::kept::Of {
+    grades::kept::Of::Router {
+        router: planned.router.clone(),
+        workspace: planned.workspace.clone(),
+        persona: planned.persona.clone(),
+    }
+}
+
+/// **One skill of a router's grade, on its scorecard** (#3617): each of its trigger tests in both
+/// arms, with each chat one press away where this machine kept it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct RouterScoredSkill {
+    pub skill: String,
+    pub tests: Vec<ScoredTest>,
+}
+
+/// **Each arm's pass rate over every skill of a router's grade**, in points from 0 to 100, where
+/// the arm ran: the scorecard's totals.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Type)]
+pub struct RouterGradeArms {
+    pub router: Option<f64>,
+    pub built_in: Option<f64>,
+}
+
+/// **A router's grade's scorecard** (#3617), as a skill's is (SK-59): how it ended, its totals,
+/// then each skill's trigger tests in both arms.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct RouterGradeScorecard {
+    pub grade: String,
+    pub router: String,
+    /// When it ran, and the library it ran on: its commit, or that it held changes not
+    /// committed.
+    pub graded: String,
+    pub library: String,
+    /// What its chats ran on, and how it ended, in the record's words.
+    pub ran_on: String,
+    pub ended: String,
+    /// The router's line of it, as the Routing page says it.
+    pub said: String,
+    pub outcome: GradeOutcome,
+    pub arms: RouterGradeArms,
+    pub spent: GradeSpent,
+    /// How many of its chats asked the person something and were ended there.
+    pub asked: u32,
+    pub skills: Vec<RouterScoredSkill>,
+}
+
+impl RouterGradeScorecard {
+    /// `graded`'s scorecard, each chat `kept` says whether this machine kept.
+    fn of(graded: &RouterGraded, kept: impl Fn(&str) -> bool) -> Self {
+        use purlis_core::skills::studio;
+        let points = |arm: Arm| {
+            let (passed, of) = graded.report.passed_in(arm);
+            (of > 0).then(|| (f64::from(passed) * 100.0 / f64::from(of)).round())
+        };
+        let harness = graded
+            .harness
+            .as_deref()
+            .map(purlis_core::skilluse::harness_title)
+            .unwrap_or_else(|| "Not recorded".to_owned());
+        RouterGradeScorecard {
+            grade: graded.grade.clone(),
+            router: graded.router.clone(),
+            graded: studio::said_at(&graded.ts),
+            library: match &graded.commit {
+                Some(commit) => format!("the library at {}", commit.get(..12).unwrap_or(commit)),
+                None => "a library with changes not committed".to_owned(),
+            },
+            ran_on: match &graded.model {
+                Some(model) => format!("{harness} · {model}"),
+                None => harness,
+            },
+            ended: grades::ended_said(graded.report.ended).to_owned(),
+            said: graded.said(),
+            outcome: graded.report.ended.into(),
+            arms: RouterGradeArms {
+                router: points(Arm::Router),
+                built_in: points(Arm::BuiltInRouter),
+            },
+            spent: GradeSpent {
+                chats: graded.spent.chats,
+                tokens: graded.spent.tokens.map(|tokens| tokens as f64),
+                cost_usd: graded.spent.cost_usd,
+                limit_usd: graded.report.cost_cap_usd,
+            },
+            asked: graded.report.asked(),
+            skills: graded
+                .report
+                .skills
+                .iter()
+                .map(|part| RouterScoredSkill {
+                    skill: part.skill.clone(),
+                    tests: scored_tests(&part.report.triggers, &kept),
+                })
+                .collect(),
+        }
+    }
+}
+
+/// The grade `grade` of the router the scope chose, as its record holds it, and whose chats it
+/// keeps.
+fn router_grade_of(
+    root: &std::path::Path,
+    scope: &Scope,
+    grade: &str,
+) -> Result<(RouterGraded, grades::kept::Of), String> {
+    let router = chosen(root, scope)?;
+    let graded = routers::grades_of(
+        root,
+        &router,
+        scope.workspace.as_deref(),
+        scope.persona.as_deref(),
+    )
+    .into_iter()
+    .find(|one| one.grade == grade)
+    .ok_or_else(|| "That grade of the router is not in the record any more.".to_owned())?;
+    let of = grades::kept::Of::Router {
+        router,
+        workspace: scope.workspace.clone(),
+        persona: scope.persona.clone(),
+    };
+    Ok((graded, of))
+}
+
+/// **The scorecard of the grade `grade` of the router the studio's workspace or persona chose**
+/// (#3617), as the routers' record holds it.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn router_grade_scorecard(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: Option<String>,
+    persona: Option<String>,
+    grade: String,
+) -> Result<RouterGradeScorecard, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading a router's grade", move || {
+        flag_on()?;
+        let root = held.root();
+        let (graded, of) = router_grade_of(root, &scope(workspace, persona)?, &grade)?;
+        Ok(RouterGradeScorecard::of(&graded, |chat| {
+            grades::kept::kept_of(root, &of, &grade, chat).is_some()
+        }))
+    })
+    .await
+}
+
+/// **What chat `chat` of the router's grade `grade` showed as it ended** (#3617): its screen and
+/// scrollback as the escape sequences that draw them, for a page that shows it read-only.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn router_grade_chat(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: Option<String>,
+    persona: Option<String>,
+    grade: String,
+    chat: String,
+) -> Result<String, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading a router's grade's chat", move || {
+        flag_on()?;
+        let root = held.root();
+        let (_, of) = router_grade_of(root, &scope(workspace, persona)?, &grade)?;
+        grades::kept::kept_of(root, &of, &grade, &chat).ok_or_else(|| not_kept("the router's"))
     })
     .await
 }

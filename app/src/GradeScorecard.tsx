@@ -20,6 +20,7 @@ import {
   type ScoredArm,
   type ScoredChat,
   type ScoredRuns,
+  type ScoredTest,
   type SkillLevel,
 } from "./bindings";
 import { counted } from "./dispatches";
@@ -40,7 +41,7 @@ const GRADE_CHAT_COLUMNS = 120;
 const GRADE_CHAT_ROWS = 40;
 
 /** An arm as the scorecard says it. */
-const ARM_SAID: Record<ScoredRuns["arm"], string> = {
+export const ARM_SAID: Record<ScoredRuns["arm"], string> = {
   with: "With the skill",
   without: "Without it",
   previous: "Its previous version",
@@ -103,13 +104,13 @@ function against(one: number | null, other: number | null): string | undefined {
   return `${points(one - other)} points`;
 }
 
-/** Each chat of `card` this machine kept, in the order its rows show them. */
-function keptChats(card: GradeScorecard): {
-  chat: ScoredChat;
-  arm: ScoredArm;
-  query: string;
-}[] {
-  return card.tests.flatMap((test) =>
+/** A chat a scorecard's row offers, with the arm and the trigger test it ran. */
+export type KeptChat = { chat: ScoredChat; arm: ScoredArm; query: string };
+
+/** Each chat of `tests` this machine kept, in the order their rows show them: a skill's
+ *  scorecard's, or every skill's of a router's (#3617). */
+export function keptChats(tests: readonly ScoredTest[]): KeptChat[] {
+  return tests.flatMap((test) =>
     test.arms.flatMap((runs) =>
       runs.chats
         .filter((chat) => chat.kept)
@@ -119,9 +120,9 @@ function keptChats(card: GradeScorecard): {
 }
 
 /** The arms a scorecard's rows have a column for, in the order its tests ran them. */
-function armsOf(card: GradeScorecard): ScoredArm[] {
+function armsOf(tests: readonly ScoredTest[]): ScoredArm[] {
   const arms: ScoredArm[] = [];
-  for (const test of card.tests)
+  for (const test of tests)
     for (const runs of test.arms) if (!arms.includes(runs.arm)) arms.push(runs.arm);
   return arms;
 }
@@ -220,7 +221,6 @@ export function GradeScorecardPage({
     return <ReadingRows what="the grade's scorecard" testid="skill-grading-reading" />;
   const it = card.data;
   const end = OUTCOME_SAID[it.outcome];
-  const arms = armsOf(it);
   const spent = it.spent.cost_usd === null ? "" : ` for ${dollarsSaid(it.spent.cost_usd)}`;
   const about = (
     <span data-testid="grade-scorecard-about">
@@ -293,42 +293,60 @@ export function GradeScorecardPage({
       )}
       <section aria-labelledby="grade-scorecard-tests">
         <PanelSectionTitle id="grade-scorecard-tests">Each trigger test</PanelSectionTitle>
-        <Table aria-label={`Trigger tests of ${name}`} data-testid="grade-scorecard-tests">
-          <TableHeader>
-            <TableColumn isRowHeader>Trigger test</TableColumn>
-            <TableColumn>Should</TableColumn>
-            {arms.map((arm) => (
-              <TableColumn key={arm}>{ARM_SAID[arm]}</TableColumn>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {it.tests.map((test, at) => (
-              <TableRow key={at} id={String(at)} textValue={test.query}>
-                <TableCell>
-                  <code>{test.query}</code>
-                </TableCell>
-                <TableCell>{test.should_trigger ? "Start it" : "Leave it alone"}</TableCell>
-                {arms.map((arm) => {
-                  const runs = test.arms.find((one) => one.arm === arm);
-                  return (
-                    <TableCell
-                      key={arm}
-                      textValue={
-                        runs === undefined ? "Not run" : runsSaid(runs, test.should_trigger)
-                      }
-                    >
-                      <span data-testid={`grade-scorecard-${arm}`}>
-                        <ArmCell runs={runs} query={test.query} onChat={onChat} />
-                      </span>
-                    </TableCell>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <TriggerTestsTable tests={it.tests} label={`Trigger tests of ${name}`} onChat={onChat} />
       </section>
     </section>
+  );
+}
+
+/**
+ * **A scorecard's table of trigger tests** (S6): one row per test, a column per arm with its runs
+ * and verdict, and each of its chats one press away where this machine kept it. A skill's
+ * scorecard draws one; a router's, one per skill (#3617).
+ */
+export function TriggerTestsTable({
+  tests,
+  label,
+  onChat,
+}: {
+  tests: readonly ScoredTest[];
+  label: string;
+  onChat: (chat: string) => void;
+}) {
+  const arms = armsOf(tests);
+  return (
+    <Table aria-label={label} data-testid="grade-scorecard-tests">
+      <TableHeader>
+        <TableColumn isRowHeader>Trigger test</TableColumn>
+        <TableColumn>Should</TableColumn>
+        {arms.map((arm) => (
+          <TableColumn key={arm}>{ARM_SAID[arm]}</TableColumn>
+        ))}
+      </TableHeader>
+      <TableBody>
+        {tests.map((test, at) => (
+          <TableRow key={at} id={String(at)} textValue={test.query}>
+            <TableCell>
+              <code>{test.query}</code>
+            </TableCell>
+            <TableCell>{test.should_trigger ? "Start it" : "Leave it alone"}</TableCell>
+            {arms.map((arm) => {
+              const runs = test.arms.find((one) => one.arm === arm);
+              return (
+                <TableCell
+                  key={arm}
+                  textValue={runs === undefined ? "Not run" : runsSaid(runs, test.should_trigger)}
+                >
+                  <span data-testid={`grade-scorecard-${arm}`}>
+                    <ArmCell runs={runs} query={test.query} onChat={onChat} />
+                  </span>
+                </TableCell>
+              );
+            })}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -365,7 +383,42 @@ export function GradeChatPage({
   useGradedAt(card.data, onGradedAt);
   // Taken only in its own shape: a core that answers another leaves it unread.
   const read = Array.isArray(card.data?.tests) ? card.data : undefined;
-  const kept = read === undefined ? [] : keptChats(read);
+  return (
+    <KeptChatShown
+      screen={screen}
+      kept={read === undefined ? [] : keptChats(read.tests)}
+      graded={read?.graded}
+      chat={chat}
+      whose={`${name}'s grade`}
+      onChat={onChat}
+      onScorecard={onScorecard}
+    />
+  );
+}
+
+/**
+ * **A kept chat of a grade, drawn read-only** (SK-59, S6), with the previous and next of the
+ * grade's kept chats: a skill's grade's or a router's (#3617). `kept` is every chat the grade's
+ * scorecard offers, `graded` when it ran, where its scorecard was read; `whose` names the grade
+ * in its heading ("deploy's grade").
+ */
+export function KeptChatShown({
+  screen,
+  kept,
+  graded,
+  chat,
+  whose,
+  onChat,
+  onScorecard,
+}: {
+  screen: { data?: string; refused?: string };
+  kept: readonly KeptChat[];
+  graded: string | undefined;
+  chat: string;
+  whose: string;
+  onChat: (chat: string) => void;
+  onScorecard: () => void;
+}) {
   const at = kept.findIndex((one) => one.chat.id === chat);
   const here = kept[at];
   const before = kept[at - 1];
@@ -385,13 +438,13 @@ export function GradeChatPage({
     <section className="skill-studio-page" data-testid="grade-chat">
       <GradingHeading
         name={
-          here === undefined || read === undefined
-            ? `A chat of ${name}'s grade`
-            : `Chat ${here.chat.run} of the ${read.graded} grade`
+          here === undefined || graded === undefined
+            ? `A chat of ${whose}`
+            : `Chat ${here.chat.run} of the ${graded} grade`
         }
         description={
           here === undefined
-            ? `What this chat of ${name}'s grade showed when the grade ended it.`
+            ? `What this chat of ${whose} showed when the grade ended it.`
             : `${ARM_SAID[here.arm]} · trigger test “${here.query}”. What it showed when the grade ended it.`
         }
       />
@@ -407,7 +460,7 @@ export function GradeChatPage({
       ) : (
         <ReadOnlyTerminal
           screen={screen.data}
-          label={`A grade's chat of ${name}`}
+          label={`A chat of ${whose}`}
           note="It takes no input and can't be resumed."
           cols={GRADE_CHAT_COLUMNS}
           rows={GRADE_CHAT_ROWS}

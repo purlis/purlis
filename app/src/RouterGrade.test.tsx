@@ -1,17 +1,33 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import { RouterGrade, routerEndedSaid } from "./RouterGrade";
-import type { RouterGradePlan } from "./bindings";
+import {
+  RouterGrade,
+  RouterGradeChatPage,
+  RouterGradeScorecardPage,
+  routerEndedSaid,
+} from "./RouterGrade";
+import type { RouterGradePlan, RouterGradeScorecard, ScoredTest } from "./bindings";
+import { routerGradeItem, routerGradeOfItem } from "./skillStudio";
 
 afterEach(() => {
   cleanup();
   clearMocks();
 });
+
+// jsdom has no `matchMedia`, and xterm asks it for the display's pixel ratio as it opens.
+vi.stubGlobal("matchMedia", (query: string) => ({
+  matches: false,
+  media: query,
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  addListener: () => {},
+  removeListener: () => {},
+}));
 
 function plan(over: Partial<RouterGradePlan> = {}): RouterGradePlan {
   return {
@@ -157,5 +173,143 @@ describe("Grade the router, cost first (SK-15e)", () => {
     expect(
       routerEndedSaid({ ...step, ended: "chats-did-not-start", said: "the router did not answer" }),
     ).toBe("The grade stopped: its chats did not start. the router did not answer");
+  });
+});
+
+/** One trigger test of `skill`, run three times in each arm, each chat kept where `kept`. */
+function scoredTest(skill: string, routerPasses: boolean, kept: boolean): ScoredTest {
+  const runs = (arm: "router" | "built-in-router", pass: boolean) => ({
+    arm,
+    runs: 3,
+    triggered: pass ? 3 : 0,
+    pass,
+    asked: 0,
+    chats: [1, 2, 3].map((run) => ({ id: `${skill}-${arm}-${run}`, run, kept })),
+  });
+  return {
+    query: `${skill} it`,
+    should_trigger: true,
+    arms: [runs("router", routerPasses), runs("built-in-router", true)],
+  };
+}
+
+function scorecard(over: Partial<RouterGradeScorecard> = {}): RouterGradeScorecard {
+  return {
+    grade: "01GRADE",
+    router: "relevance",
+    graded: "2026-10-30 10:00 UTC",
+    library: "the library at aaaaaaaaaaaa",
+    ran_on: "Claude Code · sonnet",
+    ended: "Finished",
+    said: "Graded on the library at aaaaaaaaaaaa, 2026-10-30: 1 of 2 trigger tests pass with the router relevance, and 2 of 2 with the built-in router.",
+    outcome: "graded",
+    arms: { router: 50, built_in: 100 },
+    spent: { chats: 12, tokens: 12000, cost_usd: 0.12, limit_usd: 1.5 },
+    asked: 0,
+    skills: [
+      { skill: "deploy", tests: [scoredTest("deploy", false, true)] },
+      { skill: "rollback", tests: [scoredTest("rollback", true, false)] },
+    ],
+    ...over,
+  };
+}
+
+describe("A router's grade's scorecard and its chats (#3617)", () => {
+  it("names a router's grade's scorecard and its chats as places on Routing", () => {
+    expect(routerGradeOfItem(routerGradeItem({ grade: "01G" }))).toEqual({ grade: "01G" });
+    expect(routerGradeOfItem(routerGradeItem({ grade: "01G", chat: "01C" }))).toEqual({
+      grade: "01G",
+      chat: "01C",
+    });
+    expect(routerGradeOfItem("chat-4")).toBeUndefined();
+    expect(routerGradeOfItem(undefined)).toBeUndefined();
+  });
+
+  it("opens each skill's trigger tests in both arms, its totals, and each kept chat", async () => {
+    const asked: Array<{ cmd: string; args: unknown }> = [];
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args });
+      if (cmd === "router_grade_scorecard") return scorecard();
+      return null;
+    });
+    const opened: string[] = [];
+    render(
+      <RouterGradeScorecardPage
+        plane="p"
+        router="relevance"
+        workspace="ops"
+        persona={null}
+        grade="01GRADE"
+        onChat={(chat) => opened.push(chat)}
+      />,
+    );
+    expect((await screen.findByTestId("router-grade-scorecard-about")).textContent).toContain(
+      "Graded 2026-10-30 10:00 UTC, on the library at aaaaaaaaaaaa, on Claude Code · sonnet for $0.12.",
+    );
+    expect(asked[0].args).toMatchObject({ workspace: "ops", persona: null, grade: "01GRADE" });
+    const totals = screen.getByRole("group", { name: "Totals of the grade of relevance" });
+    expect(totals).toHaveTextContent("With the router50%of tests passed");
+    expect(totals).toHaveTextContent("With the built-in router100%-50 points");
+    expect(totals).toHaveTextContent("Spent$0.12of $1.50 · 12 chats");
+    expect(screen.getByRole("heading", { name: "deploy" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "rollback" })).toBeTruthy();
+    const [deploy, rollback] = await screen.findAllByTestId("grade-scorecard-router");
+    expect(deploy).toHaveTextContent("0 of 3");
+    expect(deploy).toHaveTextContent("Failed");
+    fireEvent.click(deploy.querySelectorAll("button")[0]);
+    expect(opened).toEqual(["deploy-router-1"]);
+    // Not kept on this machine: marked, not removed.
+    expect(rollback.querySelectorAll("button")[0].getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("says a grade purlis stopped under scored no test", async () => {
+    mockIPC((cmd) =>
+      cmd === "router_grade_scorecard"
+        ? scorecard({ outcome: "interrupted", ended: "Interrupted: not scored", skills: [] })
+        : null,
+    );
+    render(
+      <RouterGradeScorecardPage
+        plane="p"
+        router="relevance"
+        workspace={null}
+        persona={null}
+        grade="01GRADE"
+        onChat={() => undefined}
+      />,
+    );
+    expect(await screen.findByTestId("router-grade-scorecard-none")).toBeTruthy();
+  });
+
+  it("draws a kept chat read-only, with the next of the grade's kept chats", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "router_grade_scorecard") return scorecard();
+      if (cmd === "router_grade_chat") return "\u001b[1mclaude\u001b[0m\r\n> deploy it\r\n";
+      return null;
+    });
+    const opened: string[] = [];
+    let back = 0;
+    render(
+      <RouterGradeChatPage
+        plane="p"
+        router="relevance"
+        workspace="ops"
+        persona={null}
+        grade="01GRADE"
+        chat="deploy-router-1"
+        onChat={(chat) => opened.push(chat)}
+        onScorecard={() => (back += 1)}
+      />,
+    );
+    await screen.findByTestId("grade-chat");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Chat 1 of the 2026-10-30 10:00 UTC grade" }),
+      ).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Next chat" }));
+    expect(opened).toEqual(["deploy-router-2"]);
+    fireEvent.click(screen.getByRole("button", { name: "Back to the scorecard" }));
+    expect(back).toBe(1);
   });
 });

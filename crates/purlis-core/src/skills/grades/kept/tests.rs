@@ -67,7 +67,7 @@ fn a_kept_screen_that_is_a_link_is_never_read() {
     keep(root, "deploy", "g", "c", "mine").unwrap();
     let elsewhere = root.join("elsewhere");
     std::fs::write(&elsewhere, "not a screen").unwrap();
-    let path = screen_path(root, "deploy", "g", "c").unwrap();
+    let (path, _) = screen_path(root, &Of::Skill("deploy".to_owned()), "g", "c").unwrap();
     std::fs::remove_file(&path).unwrap();
     std::os::unix::fs::symlink(&elsewhere, &path).unwrap();
     assert_eq!(kept(root, "deploy", "g", "c"), None);
@@ -125,4 +125,77 @@ fn a_kept_chat_in_the_plane_s_state_folder_is_never_read() {
     keep(root, "deploy", "01GRADE", "01CHAT", "screen").expect("kept");
     crate::appstate::put_in_the_plane(root, DIR_NAME);
     assert_eq!(kept(root, "deploy", "01GRADE", "01CHAT"), None);
+}
+
+/// The router `relevance` chosen by `workspace` and `persona`.
+fn router(workspace: Option<&str>, persona: Option<&str>) -> Of {
+    Of::Router {
+        router: "relevance".to_owned(),
+        workspace: workspace.map(str::to_owned),
+        persona: persona.map(str::to_owned),
+    }
+}
+
+/// #3617: a router's grade keeps each chat it ran, by the scope that chose the router, apart
+/// from any skill's, and only its newest grades in that scope keep theirs.
+#[test]
+fn a_router_s_grade_keeps_its_chats_by_scope_and_sweeps_its_older_ones_3617() {
+    let plane = project();
+    let root = plane.path();
+    let ops = router(Some("ops"), None);
+    keep_of(root, &ops, "01A", "01CHAT", "routed").expect("kept");
+    assert_eq!(
+        kept_of(root, &ops, "01A", "01CHAT").as_deref(),
+        Some("routed")
+    );
+    assert_eq!(
+        kept_of(root, &router(None, None), "01A", "01CHAT"),
+        None,
+        "another scope's"
+    );
+    assert_eq!(
+        kept_of(root, &router(Some("ops"), Some("ops")), "01A", "01CHAT"),
+        None,
+        "another scope's"
+    );
+    assert_eq!(kept(root, "relevance", "01A", "01CHAT"), None, "no skill's");
+    assert!(
+        crate::appstate::dir(root)
+            .unwrap()
+            .join("router-grade-chats/relevance/ops/_/01A/01CHAT.screen")
+            .is_file()
+    );
+
+    // The project's own router line keeps its grades all the same.
+    keep_of(root, &router(None, None), "01Z", "01CHAT", "root").expect("kept");
+    for grade in ["01B", "01C", "01D"] {
+        keep_of(root, &ops, grade, "01CHAT", grade).expect("kept");
+    }
+    assert_eq!(sweep_of(root, &ops), ["01A"], "its oldest goes");
+    assert_eq!(kept_of(root, &ops, "01A", "01CHAT"), None);
+    assert_eq!(kept_of(root, &ops, "01D", "01CHAT").as_deref(), Some("01D"));
+    assert_eq!(
+        kept_of(root, &router(None, None), "01Z", "01CHAT").as_deref(),
+        Some("root"),
+        "another scope's are its own to sweep"
+    );
+}
+
+/// #3617: a router or a scope that is not a plain name is never kept or read.
+#[test]
+fn a_router_s_name_that_is_not_plain_is_never_kept_3617() {
+    let plane = project();
+    let root = plane.path();
+    for of in [
+        Of::Router {
+            router: "../up".to_owned(),
+            workspace: None,
+            persona: None,
+        },
+        router(Some(".."), None),
+        router(None, Some("a/b")),
+    ] {
+        assert!(keep_of(root, &of, "01A", "01CHAT", "x").is_err(), "{of:?}");
+        assert_eq!(kept_of(root, &of, "01A", "01CHAT"), None);
+    }
 }

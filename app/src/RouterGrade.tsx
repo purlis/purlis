@@ -5,10 +5,20 @@ import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { commands, ROUTER_GRADE, type RouterGradePlan, type RouterGradeStep } from "./bindings";
 import { counted } from "./dispatches";
+import {
+  KeptChatShown,
+  keptChats,
+  OUTCOME_SAID,
+  pointsSaid,
+  TriggerTestsTable,
+} from "./GradeScorecard";
 import { Notice } from "./Notice";
-import { tokensSaid } from "./SkillGrade";
+import { dollarsSaid, GradingHeading, tokensSaid } from "./SkillGrade";
+import { NotRead, ReadingRows, useRead } from "./SkillPanels";
 import { Button, ButtonRow } from "./ui/button/Button";
+import { Tile, Totals } from "./ui/card/Totals";
 import { EmptyState } from "./ui/empty-state/EmptyState";
+import { PanelSectionTitle } from "./ui/panel/Panel";
 
 /** How a router's grade that ended is said, in one line. */
 export function routerEndedSaid(step: RouterGradeStep): string {
@@ -249,5 +259,162 @@ function RouterGradePlanShown({
         </Button>
       </ButtonRow>
     </div>
+  );
+}
+
+/** Where a router was chosen, as its grades are read: the studio's workspace and persona. */
+type RouterScope = {
+  plane: string;
+  router: string;
+  workspace: string | null;
+  persona: string | null;
+};
+
+/**
+ * **A router's grade's scorecard, a page on Routing** (#3617), as a skill's is (S6): how it ended,
+ * its totals (each arm's pass rate over every skill, and what it spent), then each skill's trigger
+ * tests in both arms, each chat one press away where this machine kept it.
+ */
+export function RouterGradeScorecardPage({
+  plane,
+  router,
+  workspace,
+  persona,
+  grade,
+  onChat,
+}: RouterScope & { grade: string; onChat: (chat: string) => void }) {
+  const [again, setAgain] = useState(0);
+  // Its end, put away once read: Grade the router is on the Routing page's list.
+  const [endPutAway, setEndPutAway] = useState(false);
+  const card = useRead(
+    () => commands.routerGradeScorecard(plane, workspace, persona, grade),
+    [plane, workspace, persona, grade, again],
+  );
+  if (card.refused !== undefined)
+    return (
+      <NotRead
+        what={`this grade of the router ${router}`}
+        why={card.refused}
+        onAgain={() => setAgain((n) => n + 1)}
+        testid="router-grade-scorecard-refused"
+      />
+    );
+  if (card.data === undefined)
+    return <ReadingRows what="the grade's scorecard" testid="router-grade-scorecard-reading" />;
+  const it = card.data;
+  const end = OUTCOME_SAID[it.outcome];
+  const spent = it.spent.cost_usd === null ? "" : ` for ${dollarsSaid(it.spent.cost_usd)}`;
+  const against =
+    it.arms.router === null || it.arms.built_in === null
+      ? undefined
+      : `${it.arms.router - it.arms.built_in > 0 ? "+" : ""}${it.arms.router - it.arms.built_in} points`;
+  return (
+    <section
+      className="skill-studio-page"
+      data-testid="router-grade-scorecard"
+      aria-label={`Scorecard of the router ${router}`}
+    >
+      <GradingHeading name={`Grade of ${router} · ${it.graded}`} />
+      {!endPutAway && (
+        <Notice
+          cause={`router-grade-end:${grade}`}
+          tone={end.tone}
+          label={end.said}
+          onDismiss={() => setEndPutAway(true)}
+        >
+          <span data-testid="router-grade-scorecard-about">
+            {`${end.said} ${it.graded}, on ${it.library}, on ${it.ran_on}${spent}. ${it.said}`}
+          </span>
+        </Notice>
+      )}
+      {it.asked > 0 && (
+        <p className="honest" data-testid="router-grade-scorecard-asked">
+          {counted(it.asked, "chat", "chats")} asked you something. A grade's chat waits on nobody,
+          so purlis ended each at its ask and counts none of them: open its chat below to read what
+          it asked.
+        </p>
+      )}
+      {it.outcome !== "interrupted" && (
+        <Totals aria-label={`Totals of the grade of ${router}`}>
+          <Tile label="With the router" value={pointsSaid(it.arms.router)} line="of tests passed" />
+          <Tile
+            label="With the built-in router"
+            value={pointsSaid(it.arms.built_in)}
+            line={against}
+          />
+          <Tile
+            label="Spent"
+            value={it.spent.cost_usd === null ? "Not said" : dollarsSaid(it.spent.cost_usd)}
+            line={[
+              it.spent.limit_usd === null ? null : `of ${dollarsSaid(it.spent.limit_usd)}`,
+              counted(it.spent.chats, "chat", "chats"),
+            ]
+              .filter((one) => one !== null)
+              .join(" · ")}
+          />
+        </Totals>
+      )}
+      {it.skills.length === 0 ? (
+        <EmptyState
+          variant="panel"
+          headline="No trigger test was scored"
+          body="This grade ended before any skill's trigger tests were scored. Grade the router again to score them."
+          testid="router-grade-scorecard-none"
+        />
+      ) : (
+        it.skills.map((one, at) => (
+          <section key={one.skill} aria-labelledby={`router-grade-skill-${at}`}>
+            <PanelSectionTitle id={`router-grade-skill-${at}`}>{one.skill}</PanelSectionTitle>
+            <TriggerTestsTable
+              tests={one.tests}
+              label={`Trigger tests of ${one.skill}`}
+              onChat={onChat}
+            />
+          </section>
+        ))
+      )}
+    </section>
+  );
+}
+
+/**
+ * **One of a router's grade's chats, read-only** (#3617): what its terminal showed as the grade
+ * ended it, with the previous and next of the grade's kept chats, as a skill's grade's chat is.
+ */
+export function RouterGradeChatPage({
+  plane,
+  router,
+  workspace,
+  persona,
+  grade,
+  chat,
+  onChat,
+  onScorecard,
+}: RouterScope & {
+  grade: string;
+  chat: string;
+  onChat: (chat: string) => void;
+  onScorecard: () => void;
+}) {
+  const screen = useRead(
+    () => commands.routerGradeChat(plane, workspace, persona, grade, chat),
+    [plane, workspace, persona, grade, chat],
+  );
+  const card = useRead(
+    () => commands.routerGradeScorecard(plane, workspace, persona, grade),
+    [plane, workspace, persona, grade],
+  );
+  // Taken only in its own shape: a core that answers another leaves it unread.
+  const read = Array.isArray(card.data?.skills) ? card.data : undefined;
+  return (
+    <KeptChatShown
+      screen={screen}
+      kept={read === undefined ? [] : keptChats(read.skills.flatMap((one) => one.tests))}
+      graded={read?.graded}
+      chat={chat}
+      whose={`the grade of ${router}`}
+      onChat={onChat}
+      onScorecard={onScorecard}
+    />
   );
 }

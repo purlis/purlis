@@ -74,3 +74,76 @@ fn the_plan_says_the_library_its_tested_skills_and_the_chats_before_anything_run
     assert!(plan.consent.is_some());
     assert_eq!(plan.sandbox.as_deref(), Some("Full sandbox"));
 }
+
+/// A router's grade of two skills, `deploy` failing with the router and passing with the
+/// built-in one, `rollback` passing with both: each test's three chats named `<skill>-<arm>-<n>`.
+fn a_router_grade() -> RouterGraded {
+    let score = |skill: &str, arm: &str, pass: bool| {
+        serde_json::json!({
+            "query": format!("{skill} it"), "should_trigger": true, "arm": arm, "runs": 3,
+            "triggered": if pass { 3 } else { 0 }, "rate": if pass { 1.0 } else { 0.0 },
+            "pass": pass, "asked": 0,
+            "chats": (1..=3).map(|n| format!("{skill}-{arm}-{n}")).collect::<Vec<_>>(),
+        })
+    };
+    let part = |skill: &str, router_passes: bool| {
+        serde_json::json!({"skill": skill, "report": {
+            "grader": "purlis", "delta": null, "ended": "whole", "not_started": null,
+            "cap": 200_000, "spent_tokens": 6000,
+            "triggers": [score(skill, "router", router_passes), score(skill, "built-in-router", true)],
+            "arms": [
+                {"arm": "router", "pass_rate": null, "tokens": null, "seconds": null, "chats": 3, "not_run": 0},
+                {"arm": "built-in-router", "pass_rate": null, "tokens": null, "seconds": null, "chats": 3, "not_run": 0},
+            ],
+        }})
+    };
+    serde_json::from_value(serde_json::json!({
+        "v": 1, "grade": "01GRADE", "router": "relevance", "workspace": "ops", "persona": null,
+        "commit": "a".repeat(40), "library": [], "harness": "claude", "profile": "work",
+        "ts": "2026-10-30T10:00:00+00:00", "runs": 3, "model": "sonnet",
+        "spent": {"chats": 12, "tokens": 12000, "cost_usd": 0.12},
+        "report": {
+            "grader": "purlis", "router": "relevance", "ended": "whole", "not_started": null,
+            "cap": 200_000, "spent_tokens": 12000, "cost_cap_usd": 1.5, "spent_usd": 0.12,
+            "skills": [part("deploy", false), part("rollback", true)],
+        },
+    }))
+    .expect("a router's grade")
+}
+
+/// #3617: a router's scorecard says each skill's trigger tests in both arms, each chat it ran
+/// with whether this machine kept it, its totals and how it ended.
+#[test]
+fn a_router_s_scorecard_shows_each_skill_s_tests_in_both_arms_and_each_chat_3617() {
+    let card = RouterGradeScorecard::of(&a_router_grade(), |chat| chat.starts_with("deploy"));
+    assert_eq!(card.router, "relevance");
+    assert_eq!(card.library, "the library at aaaaaaaaaaaa");
+    assert_eq!(card.ran_on, "Claude Code · sonnet");
+    assert_eq!(card.outcome, GradeOutcome::Graded);
+    assert_eq!(
+        card.arms.router,
+        Some(50.0),
+        "one of two tests passes with it"
+    );
+    assert_eq!(card.arms.built_in, Some(100.0));
+    assert_eq!(card.spent.chats, 12);
+    assert_eq!(card.spent.limit_usd, Some(1.5));
+    let skills: Vec<&str> = card.skills.iter().map(|one| one.skill.as_str()).collect();
+    assert_eq!(skills, ["deploy", "rollback"]);
+    let deploy = &card.skills[0].tests;
+    assert_eq!(deploy.len(), 1, "one test, in both arms");
+    assert_eq!(deploy[0].arms.len(), 2);
+    assert_eq!(deploy[0].arms[0].pass, Some(false));
+    assert_eq!(deploy[0].arms[1].pass, Some(true));
+    let chats = &deploy[0].arms[0].chats;
+    assert_eq!(chats.len(), 3);
+    assert_eq!(chats[0].id, "deploy-router-1");
+    assert!(chats.iter().all(|chat| chat.kept));
+    assert!(
+        card.skills[1].tests[0].arms[0]
+            .chats
+            .iter()
+            .all(|chat| !chat.kept),
+        "not kept on this machine"
+    );
+}

@@ -383,6 +383,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`<data>/app-state/<clone key>/grades-under-way/<grade>.json`](#dataapp-stateclone-keygrades-under-waygradejson)
   - [`<data>/app-state/<clone key>/grades-under-way.lock`](#dataapp-stateclone-keygrades-under-waylock)
   - [`<data>/app-state/<clone key>/skill-grade-chats/<skill>/<grade>/<chat>.screen`](#dataapp-stateclone-keyskill-grade-chatsskillgradechatscreen)
+  - [`<data>/app-state/<clone key>/router-grade-chats/<router>/<workspace>/<persona>/<grade>/<chat>.screen`](#dataapp-stateclone-keyrouter-grade-chatsrouterworkspacepersonagradechatscreen)
   - [`<data>/app-state/<clone key>/skill-tries/<id>/`](#dataapp-stateclone-keyskill-triesid)
   - [`<data>/app-state/<clone key>/skill-levels/<chat id>.json`](#dataapp-stateclone-keyskill-levelschat-idjson)
   - [Environment variables that move or key this state](#environment-variables-that-move-or-key-this-state)
@@ -8077,6 +8078,24 @@ refuses a `<data>` under a project or inside any git work tree.
 - **Tier:** Machine, device-bound, transient — what this machine's chats showed, kept for the skill's newest
   grades; losing it loses only the read-only view of those chats. A teammate who pulls the eval
   record sees the grade and not its chats, and its scorecard says they are kept where it ran.
+- **Git:** outside every project, in the data home.
+
+### `<data>/app-state/<clone key>/router-grade-chats/<router>/<workspace>/<persona>/<grade>/<chat>.screen`
+- **Format:** what one chat of a router's grade showed as the grade ended it (#3617), as a
+  skill's grade's chat is kept
+  ([`skill-grade-chats/`](#dataapp-stateclone-keyskill-grade-chatsskillgradechatscreen)), so a
+  row of the router's scorecard on the Skill studio's Routing page opens it read-only.
+  `<router>` is the router extension's id; `<workspace>` and `<persona>` the scope that chose it,
+  `_` for none (a name neither can take); `<grade>` the grade's id, a ULID; and `<chat>` the
+  chat's id, as the routers' record's `report.skills[].report.triggers[].chats` names it. Each a
+  plain name, each folder `0700` and never a link, each file `0600` and at most 4 MiB, written and
+  read through no link (`grades::kept::keep_of`, `grades::kept::kept_of`). When a router's grade
+  ends, the chats of every grade of that router in that scope but the three newest are removed
+  (`grades::kept::sweep_of`).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Machine, device-bound, transient — what this machine's chats showed, kept for the
+  router's newest grades in each scope; losing it loses only the read-only view of those chats.
+  Carried to the project's new clone key when the project moves, as a skill's grades' chats are.
 - **Git:** outside every project, in the data home.
 
 ### `<data>/app-state/<clone key>/skill-tries/<id>/`

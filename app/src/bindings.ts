@@ -2144,6 +2144,16 @@ export const commands = {
 	 *  the person pressed Grade on no longer holds.
 	 */
 	routerGradeStart: (plane: PlaneId, workspace: string | null, persona: string | null, consent: string) => typedError<string, string>(__TAURI_INVOKE("router_grade_start", { plane, workspace, persona, consent })),
+	/**
+	 *  **The scorecard of the grade `grade` of the router the studio's workspace or persona chose**
+	 *  (#3617), as the routers' record holds it.
+	 */
+	routerGradeScorecard: (plane: PlaneId, workspace: string | null, persona: string | null, grade: string) => typedError<RouterGradeScorecard, string>(__TAURI_INVOKE("router_grade_scorecard", { plane, workspace, persona, grade })),
+	/**
+	 *  **What chat `chat` of the router's grade `grade` showed as it ended** (#3617): its screen and
+	 *  scrollback as the escape sequences that draw them, for a page that shows it read-only.
+	 */
+	routerGradeChat: (plane: PlaneId, workspace: string | null, persona: string | null, grade: string, chat: string) => typedError<string, string>(__TAURI_INVOKE("router_grade_chat", { plane, workspace, persona, grade, chat })),
 	/**  **The opt-in of the copy of `skill` at `level`**, where it is on. */
 	skillGradeAfterEdit: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<{
 	profile: string,
@@ -11549,6 +11559,15 @@ export type RiskMark = {
 	said: string,
 };
 
+/**
+ *  **Each arm's pass rate over every skill of a router's grade**, in points from 0 to 100, where
+ *  the arm ran: the scorecard's totals.
+ */
+export type RouterGradeArms = {
+	router: number | null,
+	built_in: number | null,
+};
+
 /**  **What grading a router would run, before anything runs** (decision 22). */
 export type RouterGradePlan = {
 	router: string,
@@ -11577,6 +11596,32 @@ export type RouterGradePlan = {
 	consent: string | null,
 };
 
+/**
+ *  **A router's grade's scorecard** (#3617), as a skill's is (SK-59): how it ended, its totals,
+ *  then each skill's trigger tests in both arms.
+ */
+export type RouterGradeScorecard = {
+	grade: string,
+	router: string,
+	/**
+	 *  When it ran, and the library it ran on: its commit, or that it held changes not
+	 *  committed.
+	 */
+	graded: string,
+	library: string,
+	/**  What its chats ran on, and how it ended, in the record's words. */
+	ran_on: string,
+	ended: string,
+	/**  The router's line of it, as the Routing page says it. */
+	said: string,
+	outcome: GradeOutcome,
+	arms: RouterGradeArms,
+	spent: GradeSpent,
+	/**  How many of its chats asked the person something and were ended there. */
+	asked: number,
+	skills: RouterScoredSkill[],
+};
+
 /**  **One skill of the library a router's grade grades**, as its plan shows it. */
 export type RouterGradeSkill = {
 	skill: string,
@@ -11599,6 +11644,15 @@ export type RouterGradeStep = {
 	ended: GradeEnded | null,
 	/**  What the window says of its end, where it says more than how it ended. */
 	said: string | null,
+};
+
+/**
+ *  **One skill of a router's grade, on its scorecard** (#3617): each of its trigger tests in both
+ *  arms, with each chat one press away where this machine kept it.
+ */
+export type RouterScoredSkill = {
+	skill: string,
+	tests: ScoredTest[],
 };
 
 /**  One action an extension's row offers, as the window draws its button (charter-app#341). */
@@ -13791,6 +13845,8 @@ export type StudioRouter = {
 	 *  graded on. Null where it has none, and for the built-in router.
 	 */
 	grade: string | null,
+	/**  **That grade's id** (#3617): what opens its scorecard. Null where `grade` is. */
+	graded: string | null,
 	/**
 	 *  **What the scope's own choice writes** (#3692): the persona's `skill-router:` line, or
 	 *  else the workspace's `settings.skills.router`, as written. Null where it writes none,

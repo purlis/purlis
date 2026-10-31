@@ -640,6 +640,8 @@ pub struct StudioRouter {
     /// trigger tests pass with it and with the built-in router, and the library's commit it was
     /// graded on. Null where it has none, and for the built-in router.
     pub grade: Option<String>,
+    /// **That grade's id** (#3617): what opens its scorecard. Null where `grade` is.
+    pub graded: Option<String>,
     /// **What the scope's own choice writes** (#3692): the persona's `skill-router:` line, or
     /// else the workspace's `settings.skills.router`, as written. Null where it writes none,
     /// and at the project's root, which chooses no router. What Change… starts from.
@@ -717,11 +719,13 @@ fn router_of(
         ),
         Err(why) => (format!("{why}."), true, None),
     };
-    let grade = extension.as_deref().and_then(|id| {
+    let newest = extension.as_deref().and_then(|id| {
         purlis_core::skills::grades::routers::grades_of(root, id, workspace, persona)
-            .first()
-            .map(purlis_core::skills::grades::routers::RouterGraded::said)
+            .into_iter()
+            .next()
     });
+    let grade = newest.as_ref().map(|newest| newest.said());
+    let graded = newest.map(|newest| newest.grade);
     let pinner = persona
         .map(|p| purlis_core::skills::PinnedBy::Persona(p.to_owned()))
         .or_else(|| workspace.map(|ws| purlis_core::skills::PinnedBy::Workspace(ws.to_owned())));
@@ -731,6 +735,7 @@ fn router_of(
         extension,
         chats: Vec::new(),
         grade,
+        graded,
         written: pinner.and_then(|by| purlis_core::skills::router::written(root, &by)),
         budget: StudioBudget::default(),
     }
