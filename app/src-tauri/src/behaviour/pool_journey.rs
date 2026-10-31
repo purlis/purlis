@@ -569,8 +569,8 @@ fn in_a_docker_pool() {
     in_the_journey(&target, &machine, &pool, &next);
 }
 
-/// TEMPORARY: which of the project's shapes reaches the runner.
-fn probe(with_clone: bool, workspace: Option<&str>) {
+/// TEMPORARY: what before a start keeps the project's code off the runner.
+fn probe(large: bool, until_signed_out: bool) {
     use purlis_core::dockerpool::PURLIS_RUNNER_IMAGE;
     let Ok(image) = std::env::var(IMAGE) else {
         return;
@@ -580,24 +580,25 @@ fn probe(with_clone: bool, workspace: Option<&str>) {
     let (target, machine, pool) =
         a_window_on_a_pool_of(&format!("{PURLIS_RUNNER_IMAGE}@{image}"), docker);
     let settings = tempfile::tempdir().expect("the profile's folder");
-    the_desktops_profile(&machine, &target.root, settings.path());
-    std::fs::create_dir_all(target.root.join("workspaces/app")).expect("its folder");
-    std::fs::write(target.root.join("workspaces/app/workspace.md"), "# app\n").expect("its file");
-    if with_clone {
-        let clone = target.root.join("workspaces/app/web");
-        std::fs::create_dir_all(&clone).expect("its clone");
-        std::fs::write(clone.join("README.md"), "# web\n").expect("its file");
-        a_repository(&clone);
+    if large {
+        a_large_settings_folder(settings.path());
     }
-    let started = target.sessions.open_named(
-        None,
-        &Named {
-            workspace: workspace.map(str::to_owned),
-            ..named("", false)
-        },
-        Hearing::default(),
-        &|_| {},
-    );
+    the_desktops_profile(&machine, &target.root, settings.path());
+    let record = profilestore::list(&machine.config)
+        .expect("the store reads")
+        .into_iter()
+        .find(|record| record.name == PROFILE)
+        .expect("the profile");
+    let kept = Kept::of(&record)
+        .expect("it goes to a runner")
+        .with_settings_of(&record);
+    let said = keep(&machine, &pool, &kept, &RefCell::default());
+    if until_signed_out {
+        the_row_says(&machine, &pool, &Standing::SignedOut);
+    }
+    let started = target
+        .sessions
+        .open_named(None, &named("", false), Hearing::default(), &|_| {});
     let runner = the_runner(&machine, &pool);
     let held = runner.prints(&format!(
         "cd {}/{}/* && ls -A",
@@ -605,7 +606,7 @@ fn probe(with_clone: bool, workspace: Option<&str>) {
         purlis_core::datahome::PROJECTS,
     ));
     panic!(
-        "PROBE clone={with_clone} workspace={workspace:?}: {:?}, the runner holds {held:?}",
+        "PROBE large={large} until={until_signed_out} kept {said:?}: {:?}, the runner holds {held:?}",
         started.map(|started| started.number)
     );
 }
@@ -613,24 +614,24 @@ fn probe(with_clone: bool, workspace: Option<&str>) {
 mod probe_a {
     #[test]
     fn in_a_docker_pool() {
-        super::probe(false, None);
+        super::probe(false, false);
     }
 }
 mod probe_b {
     #[test]
     fn in_a_docker_pool() {
-        super::probe(false, Some("app"));
+        super::probe(true, false);
     }
 }
 mod probe_c {
     #[test]
     fn in_a_docker_pool() {
-        super::probe(true, None);
+        super::probe(false, true);
     }
 }
 mod probe_d {
     #[test]
     fn in_a_docker_pool() {
-        super::probe(true, Some("app"));
+        super::probe(true, true);
     }
 }
