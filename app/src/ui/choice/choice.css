@@ -28,13 +28,22 @@
    field's (#3250). The compact density draws the chrome at 18px and the scale's 24 at 16, and a
    smaller text size shrinks both, so neither token alone keeps one. */
 
-/* **A choice with no words is a 24px target across too** (#4197, WCAG 2.5.8): a checkbox, a
-   radio or a switch named by `aria-label` alone is drawn its mark's size (a 14px box), so its
-   press reaches a square of at least 24px centred on it, which draws nothing. Where the root is
-   already 24px or more each way (a row with words), the reach is the root itself. */
-[data-scope="checkbox"][data-part="root"]::after,
-[data-scope="radio"][data-part="root"]::after,
-[data-scope="switch"][data-part="root"]::after {
+/* **A choice with no words is a 24px target across too** (#4197, #4303, WCAG 2.5.8): a checkbox,
+   a radio or a switch named by `aria-label` alone has only its mark to press (a 14px box). Its
+   press reaches a square of at least 24px centred on the mark, not on the root, which may keep
+   room for words it has none of (a checkbox's gap). It draws nothing, and the root keeps that
+   room, so nothing around it moves. A choice with words has its row as its target. */
+:is([data-scope="checkbox"], [data-scope="radio"], [data-scope="switch"])[data-part="root"]:not(
+    :has([data-part="label"]:not(:empty), [data-part="description"])
+  )
+  > :is([data-part="box"], [data-part="mark"], [data-part="track"]) {
+  position: relative;
+}
+
+:is([data-scope="checkbox"], [data-scope="radio"], [data-scope="switch"])[data-part="root"]:not(
+    :has([data-part="label"]:not(:empty), [data-part="description"])
+  )
+  > :is([data-part="box"], [data-part="mark"], [data-part="track"])::before {
   content: "";
   position: absolute;
   inset-block-start: 50%;
@@ -45,9 +54,10 @@
 }
 
 /* Right to left, the inline start is the right: centred from there. */
-[data-scope="checkbox"][data-part="root"]:dir(rtl)::after,
-[data-scope="radio"][data-part="root"]:dir(rtl)::after,
-[data-scope="switch"][data-part="root"]:dir(rtl)::after {
+:is([data-scope="checkbox"], [data-scope="radio"], [data-scope="switch"])[data-part="root"]:not(
+    :has([data-part="label"]:not(:empty), [data-part="description"])
+  )
+  > :is([data-part="box"], [data-part="mark"], [data-part="track"]):dir(rtl)::before {
   translate: 50% -50%;
 }
 
@@ -60,8 +70,6 @@
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 0 var(--space-4);
-  /* What its press reaches past its mark is placed on it (#4197, below). */
-  position: relative;
   box-sizing: border-box;
   min-block-size: max(24px, var(--size-chrome), var(--space-7));
   min-inline-size: 0;
@@ -200,8 +208,6 @@
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 0 var(--space-4);
-  /* What its press reaches past its mark is placed on it (#4197, below). */
-  position: relative;
   box-sizing: border-box;
   min-block-size: max(24px, var(--size-chrome), var(--space-7));
   color: var(--text-primary);
@@ -276,8 +282,6 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-4);
-  /* What its press reaches past its mark is placed on it (#4197, below). */
-  position: relative;
   box-sizing: border-box;
   min-block-size: max(24px, var(--size-chrome), var(--space-7));
   color: var(--text-primary);
