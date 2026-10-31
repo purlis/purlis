@@ -149,6 +149,21 @@ const LINK_WITHIN: Duration = Duration::from_secs(30);
 /// How long a command waits for the host's answer.
 pub(crate) const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 
+/// **How long the commands of a chat's start wait for the host's answer** (#4264): holding its
+/// project, dealing its number and starting it, each of which a busy machine or a runner just
+/// woken takes far longer over than a quick command. The person watches "Starting…" meanwhile.
+const START_ANSWERS_WITHIN: Duration = Duration::from_secs(180);
+
+/// What a quick command says of a host that did not answer in time.
+const NOT_IN_TIME: &str = "the session host did not answer in time";
+
+/// What a chat's start says of a host that did not answer in time (#4264): what became of it, and
+/// what to do.
+const START_NOT_IN_TIME: &str = "the session host did not answer this start within 3 minutes, so \
+     purlis stopped waiting, and closes the chat if it comes up later. This machine or the runner \
+     may be very busy: start the chat again once it has eased, and restart purlis if it keeps \
+     happening";
+
 /// How a chat whose program ended with its session host is said to have ended: by the hang-up
 /// its terminal's close gives it (#2007).
 pub const ENDED_WITH_THE_HOST: &str = "Hangup";
@@ -229,6 +244,9 @@ pub struct Connection {
     dial: Mutex<Option<Dial>>,
     /// The link each project root is held on, by the root (#2178).
     projects: Mutex<HashMap<PathBuf, Arc<HostLink>>>,
+    /// The links each project root was held on until their runner began to drain (#4248): each
+    /// still carries the chats started over it, until its runner is kept no more.
+    left_on_draining: Mutex<HashMap<PathBuf, Vec<Arc<HostLink>>>>,
     /// Held while a root's link is being opened, by the root: one root never gets two links,
     /// and nothing waits for another root's.
     opening: Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>,
@@ -361,6 +379,7 @@ impl Connection {
         let links: Vec<Arc<HostLink>> = lock(&of_it.projects)
             .drain()
             .map(|(_, link)| link)
+            .chain(lock(&of_it.left_on_draining).drain().flat_map(|(_, on)| on))
             .collect();
         for link in links {
             link.end();
@@ -463,8 +482,12 @@ impl Connection {
             let mut was = lock(&self.window_was);
             if *was != Some(window.id) {
                 lock(&self.projects).clear();
+                lock(&self.left_on_draining).clear();
                 *was = Some(window.id);
             }
+        }
+        if !within.is_zero() {
+            self.moves_off_a_draining_runner(root);
         }
         if let Some(link) = lock(&self.projects).get(root) {
             return Ok(Arc::clone(link));
@@ -521,6 +544,71 @@ impl Connection {
         projects.insert(root.to_path_buf(), Arc::clone(&link));
         drop(projects);
         Ok(link)
+    }
+
+    /// **`root`'s link reached a runner that drains now, and its pool has a runner to go to**
+    /// (#4248): the link is kept for the chats started over it, and the next ask dials the pool's
+    /// name, which reaches the pool's runner now. So a new chat starts there, and what runs on the
+    /// draining runner stays reachable. Each link kept here whose runner is kept no more ends.
+    fn moves_off_a_draining_runner(&self, root: &Path) {
+        let (Some(pool), Some(config)) = (self.pool(), self.runners_config()) else {
+            return;
+        };
+        let Ok(kept) = purlis_core::runners::read(&config) else {
+            return;
+        };
+        let keeps = |link: &HostLink| {
+            link.reached_runner()
+                .is_none_or(|runner| kept.iter().any(|one| one.name() == runner))
+        };
+        let mut ended = Vec::new();
+        if let Some(left) = lock(&self.left_on_draining).get_mut(root) {
+            left.retain(|link| {
+                let keep = keeps(link);
+                if !keep {
+                    ended.push(Arc::clone(link));
+                }
+                keep
+            });
+        }
+        for link in ended {
+            link.end();
+        }
+        let drains = lock(&self.projects)
+            .get(root)
+            .and_then(|link| link.reached_runner().map(str::to_owned))
+            .is_some_and(|runner| {
+                kept.iter()
+                    .any(|one| one.draining && one.pool() == pool && one.name() == runner)
+            });
+        if !drains || purlis_core::runners::runner_for(&config, pool).is_err() {
+            return;
+        }
+        if let Some(link) = lock(&self.projects).remove(root) {
+            tracing::info!(
+                "purlis: pool {pool}'s runner {} drains: a project's next chats go to the pool's \
+                 runner now, and its link stays for the chats already there",
+                link.reached_runner().unwrap_or_default()
+            );
+            lock(&self.left_on_draining)
+                .entry(root.to_path_buf())
+                .or_default()
+                .push(link);
+        }
+    }
+
+    /// Every link open for `root` now: the one it is held on, and each left on a draining runner.
+    pub(crate) fn links_of(&self, root: &Path) -> Vec<Arc<HostLink>> {
+        let left = lock(&self.left_on_draining)
+            .get(root)
+            .cloned()
+            .unwrap_or_default();
+        lock(&self.projects)
+            .get(root)
+            .cloned()
+            .into_iter()
+            .chain(left)
+            .collect()
     }
 
     /// **The name the window keeps for `root`'s link** (`purlis_core::windownames`, #2623),
@@ -832,6 +920,10 @@ pub struct HostLink {
     unnamed: Option<String>,
     /// The most bytes one bundle it moves may carry, either way (1.34, #2046).
     most_bundle_bytes: u64,
+    /// The runner this link reached, as `<pool>/<runner>`, as its host said it (1.48, #3417).
+    reached: Option<String>,
+    /// How long a command of a chat's start waits for an answer ([`START_ANSWERS_WITHIN`]).
+    start_answers_within: Duration,
 }
 
 /// A link nobody holds any more is closed: one that opened after nobody waited for it, among
@@ -949,6 +1041,13 @@ impl HostLink {
         self.client.version()
     }
 
+    /// The runner this link reached, by its name in its pool (1.48, #3417): none on a link to this
+    /// machine's host, or from a host that names none.
+    pub(crate) fn reached_runner(&self) -> Option<&str> {
+        let (_, runner) = self.reached.as_deref()?.split_once('/')?;
+        Some(runner.split_once('@').map_or(runner, |(runner, _)| runner))
+    }
+
     /// Speak the session protocol on `link`, which the host admitted as `local-ui`: subscribe
     /// to word of programs ending, and take every view the host opens. Run on `runtime`;
     /// `ended` is called once the link ends. The tests' link, named nowhere: the window's own
@@ -1044,7 +1143,7 @@ impl HostLink {
                 link: id,
                 client: Arc::clone(&client),
                 runtime: runtime.clone(),
-                reached,
+                reached: reached.clone(),
             },
         );
         let lost = Arc::clone(&shared);
@@ -1068,7 +1167,16 @@ impl HostLink {
             ended: std::sync::atomic::AtomicBool::new(false),
             unnamed,
             most_bundle_bytes: purlis_session_protocol::code::MOST_BUNDLE_BYTES,
+            reached,
+            start_answers_within: START_ANSWERS_WITHIN,
         })
+    }
+
+    /// This link, a chat's start waiting at most `within`: what a test of a slow host makes.
+    #[cfg(test)]
+    pub(crate) fn starts_waiting(mut self, within: Duration) -> HostLink {
+        self.start_answers_within = within;
+        self
     }
 
     /// This link, moving no bundle past `most` bytes: what a test makes a large one with.
@@ -1119,10 +1227,72 @@ impl HostLink {
                 .refusal()
                 .cloned()
                 .unwrap_or_else(|| unanswered(why.to_string()))),
-            Err(_) => Err(unanswered(
-                "the session host did not answer in time".to_owned(),
-            )),
+            Err(_) => Err(unanswered(NOT_IN_TIME.to_owned())),
         }
+    }
+
+    /// [`Self::call`], for a command of a chat's start (#4264): waits as a start does, and says
+    /// what to do where the host did not answer.
+    fn call_of_a_start(&self, command: Command) -> Result<Answer, String> {
+        self.call_within(command, self.start_answers_within)
+            .map_err(|why| {
+                if why == NOT_IN_TIME {
+                    START_NOT_IN_TIME.to_owned()
+                } else {
+                    why
+                }
+            })
+    }
+
+    /// **Starts a program, waiting as a start does** (#4264). A program that comes up after the
+    /// window stopped waiting is closed, so no chat runs that nobody started as far as the person
+    /// was told: the window's giving up and the answer's arrival are decided under one lock.
+    fn call_start(
+        &self,
+        start: StartProgram,
+    ) -> Result<Answer, purlis_session_protocol::session::Refusal> {
+        let (answered, answer) = std::sync::mpsc::channel();
+        let waited_for = Arc::new(Mutex::new(Some(answered)));
+        let client = Arc::clone(&self.client);
+        self.runtime.spawn({
+            let waited_for = Arc::clone(&waited_for);
+            async move {
+                let said = client.call(Command::StartProgram(Box::new(start))).await;
+                let waiting = lock(&waited_for).take();
+                match (waiting, said) {
+                    (Some(answered), said) => {
+                        let _ = answered.send(said);
+                    }
+                    (None, Ok(Answer::ProgramStarted { program, .. })) => {
+                        tracing::warn!(
+                            "purlis: a chat came up after its start stopped waiting, so it is \
+                             closed"
+                        );
+                        if let Err(why) = client.call(Command::Close { program }).await {
+                            tracing::warn!("purlis: it was not closed: {why}");
+                        }
+                    }
+                    (None, _) => {}
+                }
+            }
+        });
+        let said = match answer.recv_timeout(self.start_answers_within) {
+            Ok(said) => said,
+            // Taken before this gave up: its answer is on its way.
+            Err(_) if lock(&waited_for).take().is_none() => match answer.recv() {
+                Ok(said) => said,
+                Err(_) => return Err(start_not_answered()),
+            },
+            Err(_) => return Err(start_not_answered()),
+        };
+        said.map_err(|why| {
+            why.refusal()
+                .cloned()
+                .unwrap_or_else(|| purlis_session_protocol::session::Refusal {
+                    code: String::new(),
+                    why: why.to_string(),
+                })
+        })
     }
 
     /// Send `command` and do not wait for its answer: what it refuses is logged.
@@ -2100,6 +2270,9 @@ struct Program {
     process: Option<u32>,
     /// The views the window has open on it, by the number the host gave each.
     views: Vec<u32>,
+    /// The link it was started over, which every command about it goes over: a project's link
+    /// moves on from a draining runner, and its chats stay where they run (#4248).
+    link: Arc<HostLink>,
 }
 
 /// A project's chats, run in the session host (#1998): [`SessionHost`] over the window's link.
@@ -2297,7 +2470,7 @@ impl HostedSessions {
     /// The next number the host deals in this project.
     fn dealt_by_the_host(&self) -> Result<u32, String> {
         let (link, project) = self.link()?;
-        match link.call(Command::Deal { project })? {
+        match link.call_of_a_start(Command::Deal { project })? {
             Answer::Dealt { number } => {
                 self.opened.fetch_max(number, Ordering::Relaxed);
                 Ok(number)
@@ -2308,11 +2481,10 @@ impl HostedSessions {
 
     /// The link, and the host's id of chat `id`.
     fn program(&self, id: u32) -> Result<(Arc<HostLink>, String), String> {
-        let program = lock(&self.running)
+        lock(&self.running)
             .get(&id)
-            .map(|program| program.id.clone())
-            .ok_or_else(|| gone(id))?;
-        Ok((self.own_link(LINK_WITHIN)?, program))
+            .map(|program| (Arc::clone(&program.link), program.id.clone()))
+            .ok_or_else(|| gone(id))
     }
 
     /// The number a chat opens under: `wanted` where it can still be had, else the next the
@@ -2328,25 +2500,17 @@ impl HostedSessions {
         }
     }
 
-    /// Every chat's id in the host, and the link.
-    fn every_program(&self) -> Option<(Arc<HostLink>, Vec<String>)> {
-        let programs: Vec<String> = lock(&self.running)
-            .values()
-            .map(|program| program.id.clone())
-            .collect();
-        let link = self.own_link(Duration::ZERO).ok()?;
-        Some((link, programs))
-    }
-
-    /// Sends `command` for each program at once, and waits for every answer.
+    /// Sends `command` for each program at once, each over its own link, and waits for every
+    /// answer.
     fn to_every_program(&self, command: impl Fn(String) -> Command) -> usize {
-        let Some((link, programs)) = self.every_program() else {
-            return 0;
-        };
+        let programs: Vec<(Arc<HostLink>, String)> = lock(&self.running)
+            .values()
+            .map(|program| (Arc::clone(&program.link), program.id.clone()))
+            .collect();
         let asked = programs.len();
         let answers: Vec<_> = programs
             .into_iter()
-            .map(|program| {
+            .map(|(link, program)| {
                 let (answered, answer) = std::sync::mpsc::channel();
                 let client = Arc::clone(&link.client);
                 let command = command(program);
@@ -2452,10 +2616,13 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
             return Ok((link, project.clone()));
         }
         crate::runnercode::forget(sent);
+    } else if held.is_some() && *kept_on_the_runner {
+        // Another link: it may reach another runner, which holds none of what was sent.
+        crate::runnercode::forget(sent);
     }
     // Read before the hold and the send, so a runner removed during them is seen as gone next.
     let runners = if *kept_on_the_runner {
-        runners_of_the_pool(connection)
+        runners_of_the_link(connection, &link)
     } else {
         Vec::new()
     };
@@ -2473,7 +2640,7 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     link.when_reconnecting(Arc::clone(reconnects));
     // A runner holds it where it keeps its projects, `<data>/projects/<project id>`, and is
     // sent the project's own code to check out there (#2046).
-    link.call(Command::HoldProject {
+    link.call_of_a_start(Command::HoldProject {
         project: project.clone(),
         project_path: if *kept_on_the_runner {
             String::new()
@@ -2489,7 +2656,7 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     // The numbers that went out before the host held the project are never dealt again.
     let dealt = opened.load(Ordering::Relaxed);
     if dealt > 0 {
-        link.call(Command::DealtAlready {
+        link.call_of_a_start(Command::DealtAlready {
             project: project.clone(),
             dealt,
         })?;
@@ -2594,6 +2761,21 @@ fn runners_of_the_pool(connection: &Connection) -> Vec<String> {
         .chain(draining.into_iter().filter(|kept| kept.pool() == pool))
         .map(|kept| kept.name().to_owned())
         .collect()
+}
+
+/// **The runners a project held on `link` depends on**: the one the link reached, as its host said
+/// it, while this machine keeps it, read or not; else, for a runner made again in its place or a
+/// host that names none, the pool's.
+fn runners_of_the_link(connection: &Connection, link: &HostLink) -> Vec<String> {
+    let reached = link.reached_runner().filter(|runner| {
+        connection
+            .runners_config()
+            .is_some_and(|config| !matches!(purlis_core::runners::named(&config, runner), Ok(None)))
+    });
+    match reached {
+        Some(runner) => vec![runner.to_owned()],
+        None => runners_of_the_pool(connection),
+    }
 }
 
 /// Whether this machine no longer keeps one of `runners`. A list that cannot be read says nothing
@@ -3033,48 +3215,47 @@ impl HostedSessions {
             }
             why
         };
-        let started =
-            match link.call_refused_within(Command::StartProgram(Box::new(start)), ANSWER_WITHIN) {
-                // The host runs it under the number the window announced, or the window would key
-                // it under one its hooks do not carry: it is closed, and the start fails.
-                Ok(Answer::ProgramStarted {
-                    program,
-                    number,
-                    sandbox,
-                    ..
-                }) if number != Some(id) => {
-                    link.send(Command::Close { program });
-                    // It ran, however briefly.
-                    if purlis_core::runnertaint::taints(kind, sandbox.as_ref())
-                        && let Err(kept) = self.connection.ran_unsandboxed()
-                    {
-                        tracing::warn!("purlis: {kept}");
-                    }
-                    return Err(format!(
-                        "the session host started this chat as number {}, not {id}, so it was \
+        let started = match link.call_start(start) {
+            // The host runs it under the number the window announced, or the window would key
+            // it under one its hooks do not carry: it is closed, and the start fails.
+            Ok(Answer::ProgramStarted {
+                program,
+                number,
+                sandbox,
+                ..
+            }) if number != Some(id) => {
+                link.send(Command::Close { program });
+                // It ran, however briefly.
+                if purlis_core::runnertaint::taints(kind, sandbox.as_ref())
+                    && let Err(kept) = self.connection.ran_unsandboxed()
+                {
+                    tracing::warn!("purlis: {kept}");
+                }
+                return Err(format!(
+                    "the session host started this chat as number {}, not {id}, so it was \
                      closed; start it again",
-                        number.map_or_else(|| "none".to_owned(), |number| number.to_string())
-                    ));
-                }
-                Ok(Answer::ProgramStarted {
-                    program,
-                    process,
-                    confined,
-                    sandbox,
-                    prompt_key,
-                    ..
-                }) => (program, process, confined, sandbox, prompt_key),
-                Ok(other) => {
-                    return Err(unclear(format!(
-                        "the session host answered a start with {other:?}"
-                    )));
-                }
-                // Only a refusal whose code says nothing started is taken at its word (#3702).
-                Err(refused) if NOTHING_STARTED.contains(&refused.code.as_str()) => {
-                    return Err(refused.why);
-                }
-                Err(refused) => return Err(unclear(refused.why)),
-            };
+                    number.map_or_else(|| "none".to_owned(), |number| number.to_string())
+                ));
+            }
+            Ok(Answer::ProgramStarted {
+                program,
+                process,
+                confined,
+                sandbox,
+                prompt_key,
+                ..
+            }) => (program, process, confined, sandbox, prompt_key),
+            Ok(other) => {
+                return Err(unclear(format!(
+                    "the session host answered a start with {other:?}"
+                )));
+            }
+            // Only a refusal whose code says nothing started is taken at its word (#3702).
+            Err(refused) if NOTHING_STARTED.contains(&refused.code.as_str()) => {
+                return Err(refused.why);
+            }
+            Err(refused) => return Err(unclear(refused.why)),
+        };
         let (program, pid, confined, ran, prompt_key) = started;
         // A chat that runs on a pool's runner with nothing holding its files leaves that runner
         // trusted with no browser and no login until it is made again (D-2050-27): kept here,
@@ -3104,6 +3285,14 @@ impl HostedSessions {
                 .as_ref()
                 .and_then(purlis_core::skillspan::PromptSalt::answered),
         })
+    }
+}
+
+/// A start the host did not answer in time: it may yet come up, so it says nothing started.
+fn start_not_answered() -> purlis_session_protocol::session::Refusal {
+    purlis_session_protocol::session::Refusal {
+        code: String::new(),
+        why: START_NOT_IN_TIME.to_owned(),
     }
 }
 
@@ -3350,17 +3539,15 @@ impl SessionHost for HostedSessions {
         if let Some(tell) = dimmed {
             tell(vec![id], Reconnection::Reconnected);
         }
-        if let Ok(link) = self.own_link(Duration::ZERO) {
-            for view in &program.views {
-                link.undraw(*view);
-            }
-            // Answered once the host has let go of it, before its program has ended: its
-            // number is free for a chat put back under it.
-            if let Err(why) = link.call(Command::Close {
-                program: program.id,
-            }) {
-                tracing::warn!("purlis: the session host did not close chat {id}: {why}");
-            }
+        for view in &program.views {
+            program.link.undraw(*view);
+        }
+        // Answered once the host has let go of it, before its program has ended: its number is
+        // free for a chat put back under it.
+        if let Err(why) = program.link.call(Command::Close {
+            program: program.id,
+        }) {
+            tracing::warn!("purlis: the session host did not close chat {id}: {why}");
         }
         Ok(())
     }
@@ -3749,7 +3936,7 @@ impl HostedSessions {
     /// Chat `id` runs as `program` in the host, `pid` its process while it runs: what hears its
     /// lines reads them from it, and its end is told as the host says it (#1998), whether it
     /// was started here or reattached (#2006).
-    fn runs(&self, link: &HostLink, id: u32, program: &str, pid: Option<u32>) {
+    fn runs(&self, link: &Arc<HostLink>, id: u32, program: &str, pid: Option<u32>) {
         // Its program, which the host reads every line for the chat from: what a caller that
         // waited compares (qw381).
         let relayed = self.relayed();
@@ -3763,6 +3950,7 @@ impl HostedSessions {
                 id: program.to_owned(),
                 process: pid,
                 views: Vec::new(),
+                link: Arc::clone(link),
             },
         );
         // No hook reports a program dying: the host says so, as the operating system told it.

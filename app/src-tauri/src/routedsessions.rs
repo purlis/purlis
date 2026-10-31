@@ -170,7 +170,8 @@ impl RoutedSessions {
             .unwrap_or_else(|| self.here.deal());
         self.shared.dealt.fetch_max(number, Ordering::Relaxed);
         lock(&self.shared.chats).insert(number, pool.to_owned());
-        match start(host.as_ref(), number) {
+        let started = start(host.as_ref(), number);
+        match started {
             Ok(started) if started.number() == number => Ok(started),
             Ok(started) => {
                 lock(&self.shared.chats).remove(&number);
@@ -183,7 +184,19 @@ impl RoutedSessions {
             }
             Err(why) => {
                 lock(&self.shared.chats).remove(&number);
-                Err(why)
+                // The runner the link reached began to drain as this start went out, between the
+                // window's look and the host's: nothing started, and the next start goes to the
+                // pool's runner now (#4248).
+                Err(
+                    if why == purlis_session_protocol::session::A_DRAINING_RUNNER_STARTS_NONE {
+                        format!(
+                            "pool {pool}'s runner was replaced just as this chat started, so \
+                             nothing was started: start it again, and it runs on the new runner"
+                        )
+                    } else {
+                        why
+                    },
+                )
             }
         }
     }

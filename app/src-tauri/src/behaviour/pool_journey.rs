@@ -502,7 +502,7 @@ fn in_the_journey(
     let runner = the_runner(machine, pool);
     the_row_says(machine, pool, &Standing::SignedIn);
     the_settings_went_whole_to(&runner, &settings);
-    let (old_chat, _old_pane) =
+    let (old_chat, old_pane) =
         a_chat_runs(target, machine, pool, &a_chat(Some("Hello again."), None));
     a_conversation_on(&runner);
 
@@ -531,16 +531,35 @@ fn in_the_journey(
     let refused = ready_to_start(machine, &target.root, pool)
         .expect_err("a sign-in follows only once the old runner has drained");
     assert!(refused.contains("is not signed in on pool"), "{refused}");
-    // The window still uses the project's link while the old runner drains. Whatever that start
-    // comes to, what it does must not cost the new runner the project once the old one is gone.
-    if let Ok(started) = target.sessions.open_named(
-        None,
+    // Signed in there too, a start while the old runner drains just works: it runs on the pool's
+    // runner, and the chat that stayed on the old one stays reachable (#4248).
+    signed_in_on(&followed);
+    the_row_says(machine, pool, &Standing::SignedIn);
+    let conversations_on_the_old = || {
+        runner.prints(&format!(
+            "find '{}/projects' -name '*.jsonl' | wc -l",
+            the_settings_on(&runner)
+        ))
+    };
+    let before = conversations_on_the_old();
+    let (during, _during_pane) = a_chat_runs(
+        target,
+        machine,
+        pool,
         &a_chat(Some("While it drains."), None),
-        Hearing::default(),
-        &|_| {},
-    ) {
-        target.sessions.close(started.number).expect("it closes");
-    }
+    );
+    a_conversation_on(&followed);
+    assert_eq!(
+        conversations_on_the_old(),
+        before,
+        "the draining runner starts no chat"
+    );
+    old_pane.shows_within("Hello again.", LONG);
+    target
+        .sessions
+        .input(old_chat, b"\x1b")
+        .expect("the chat on the draining runner is reached");
+    target.sessions.close(during).expect("it closes");
 
     target.sessions.close(old_chat).expect("it closes");
     let deadline = Instant::now() + LONG;

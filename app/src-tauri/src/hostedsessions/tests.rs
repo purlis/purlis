@@ -18,6 +18,7 @@ use super::*;
 
 #[cfg(unix)]
 mod browsers_back;
+mod draining;
 mod movingcode;
 mod upgrading;
 
