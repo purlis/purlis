@@ -346,6 +346,12 @@ fn a_missing_profile_or_plan_says_what_to_do() {
     assert!(!codex.status.success());
     let said = String::from_utf8_lossy(&codex.stderr);
     assert!(said.contains("follows only"), "{said}");
+    // Said for a terminal: on the runner, the harness's device flow, never the window's words.
+    assert!(
+        said.contains("purlis profile sign-in fast --way device"),
+        "{said}"
+    );
+    assert!(!said.contains("Open in terminal"), "{said}");
     assert_eq!(machine.ran(), None);
 }
 
