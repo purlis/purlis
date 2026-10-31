@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793456362821,
+  "lastUpdate": 1793457787979,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33474,6 +33474,48 @@ window.BENCHMARK_DATA = {
             "value": 100.8659265,
             "unit": "ms",
             "extra": "median of 5 runs: 99.532, 100.677, 100.866, 101.084, 102.742 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "409a459c2e554bcf3f23680d6cbbce356b8612bf",
+          "message": "A refused listen's test expects why the socket was not taken where the machine refuses it (#4254)\n\nThe nightly fedora job runs in Docker, whose default seccomp profile refuses pidfd_getfd\nwithout CAP_SYS_PTRACE, so the wrap rightly names a socket not taken rather than port 0. The\ntest now asks the machine, apart from the wrap, and accepts that only where it is refused.\n\nRefs #4253\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T14:09:26Z",
+          "tree_id": "0e0ffefe637c8b772236029175afa6774bb85b50",
+          "url": "https://github.com/purlis/purlis/commit/409a459c2e554bcf3f23680d6cbbce356b8612bf"
+        },
+        "date": 1793457784685,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6802165,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.670, 0.680, 0.680, 0.686, 0.688 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.531814,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.289, 16.470, 16.532, 16.561, 16.970 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.3321115,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.900, 101.905, 102.332, 102.344, 102.452 ms"
           }
         ]
       }
