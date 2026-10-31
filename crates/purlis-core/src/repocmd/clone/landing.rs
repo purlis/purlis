@@ -58,6 +58,8 @@ pub(super) struct StandIn {
     pub lfs: Option<String>,
     /// Variables for the stand-in forge's git, by name.
     pub pass: Vec<(String, std::ffi::OsString)>,
+    /// The helper this clone's git consults, in place of asking for one.
+    pub helper: Option<String>,
 }
 
 /// What tells git-lfs's filter to leave each file as its pointer, for [`Route::large_files`] to
@@ -136,6 +138,10 @@ impl Route<'_> {
     /// rather than one git would fail to start and say so. A chat's clone is the CLI's alone,
     /// on that same rule, and never the person's sign-in, whatever scope it runs on (#752).
     pub(super) fn helper(&self) -> Option<String> {
+        #[cfg(test)]
+        if let Some(helper) = self.watch.and_then(|watch| watch.stand_in.helper.as_ref()) {
+            return Some(helper.clone());
+        }
         if Self::for_a_chat() {
             return self.cli_here().then(|| forge::cli_helper_for(self.forge));
         }
@@ -192,17 +198,22 @@ impl Route<'_> {
     /// repo's attributes give it is there.
     fn has_large_files(&self, hidden: &Path) -> bool {
         #[cfg(test)]
-        let configured = self.watch.is_some_and(|watch| watch.stand_in.lfs.is_some());
-        #[cfg(not(test))]
-        let configured = git::run(
+        if self.watch.is_some_and(|watch| watch.stand_in.lfs.is_some()) {
+            return Self::names_large_files(hidden);
+        }
+        git::run(
             hidden,
             &["config", "--get-regexp", r"^filter\.lfs\.(process|smudge)$"],
             git::READ,
         )
-        .is_ok_and(|run| run.ok() && !run.out.trim().is_empty());
-        configured
-            && git::run(hidden, &["ls-files", "--", ":(attr:filter=lfs)"], git::READ)
-                .is_ok_and(|run| run.ok() && !run.out.trim().is_empty())
+        .is_ok_and(|run| run.ok() && !run.out.trim().is_empty())
+            && Self::names_large_files(hidden)
+    }
+
+    /// Whether a file the attributes of the clone in `hidden` give git-lfs's filter is there.
+    fn names_large_files(hidden: &Path) -> bool {
+        git::run(hidden, &["ls-files", "--", ":(attr:filter=lfs)"], git::READ)
+            .is_ok_and(|run| run.ok() && !run.out.trim().is_empty())
     }
 
     /// **Git LFS files fetched as a stage of their own** (#4102): `git lfs pull` in `hidden`,

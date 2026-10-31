@@ -968,3 +968,4 @@ fn a_clone_with_no_large_files_never_fetches_any() {
     assert!(!ran.exists(), "{said:?}");
 }
 
+mod real_lfs;
