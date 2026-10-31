@@ -78,7 +78,7 @@ from the same build, so they cannot drift apart.
 The plugin is called `purlis`. It carries every hook purlis answers — the ones that
 report a chat's state and the Bash guard, described in [hooks.md](hooks.md) — and the
 `handoff`, `working-in-a-clone`, `update`, `persona`, `secrets`, `browser`, `safe-remove`,
-`compact` and `add-curation-action` skills, which
+`compact`, `add-curation-action`, `smart-close`, `theme` and `building-purlis-ui` skills, which
 reach the model as
 `purlis:<skill>`. Until the rename to purlis it was called `charter`, with skills
 `charter:<skill>`, and up to 0.2.0 `charter-app`, with skills `charter-app:<skill>`; a chat the
