@@ -40,9 +40,9 @@ fn real_git_lfs() -> bool {
             std::env::var_os("CI").is_none(),
             "CI must run these against a real git-lfs: {version:?}, {filter:?}"
         );
-        eprintln!("no git-lfs configured here: not run");
+        let _ = writeln!(std::io::stderr(), "no git-lfs configured here: not run");
     } else if let Some(version) = version {
-        eprintln!("real git-lfs: {}", version.out.trim());
+        let _ = writeln!(std::io::stderr(), "real git-lfs: {}", version.out.trim());
     }
     here
 }
