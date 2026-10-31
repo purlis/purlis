@@ -1608,8 +1608,9 @@ whole file in one sentence, and nothing installed changes.
   at `refs/purlis/fetched` (and the pinned one at `refs/purlis/pinned` for an update's diff).
   Never checked out: its tree is read with `ls-tree` and `cat-file`.
 - **Status:** **purlis only** (#2773).
-- **Tier:** Machine, device-bound, transient — made for one browse, review, install or update and removed
-  when it ends.
+- **Tier:** Machine, device-bound, transient — made for one browse, review, install, update or publish and
+  removed when it ends. A publish also holds the source's commit at `refs/purlis/base`, and its
+  own commit, built with no checkout, until it is pushed (#2781).
 - **Written by:** `purlis_core::skills::source::fetch`, through purlis's hardened git: no hook,
   no submodule, `transfer.fsckObjects` on, one commit deep, every blob over 1 MiB left on the
   server (`--filter=blob:limit`, the repository a partial clone on that command line alone, so

@@ -43,7 +43,7 @@ pub(super) const HOST_VAR: &str = "PURLIS_SKILL_SOURCE_HOST";
 const FETCHED: &str = "refs/purlis/fetched";
 
 /// The name the scratch repository knows the source by, on the command line alone.
-const REMOTE: &str = "source";
+pub(super) const REMOTE: &str = "source";
 
 /// The most bytes one skill's files may hold in all.
 pub const MOST_SKILL_BYTES: u64 = 16 * 1024 * 1024;
@@ -180,14 +180,14 @@ impl Scratch {
     }
 
     /// git in the scratch repository, reaching nothing.
-    fn git(&self, args: &[&str]) -> Result<git::Run, String> {
+    pub(super) fn git(&self, args: &[&str]) -> Result<git::Run, String> {
         let mut all = vec![self.git_dir.as_str()];
         all.extend_from_slice(args);
         git::run(&self.dir, &all, git::READ).map_err(|why| why.to_string())
     }
 
     /// git in the scratch repository, bytes back, `input` on its standard input.
-    fn git_raw(&self, args: &[&str], input: Vec<u8>) -> Result<git::RawRun, String> {
+    pub(super) fn git_raw(&self, args: &[&str], input: Vec<u8>) -> Result<git::RawRun, String> {
         let mut all = vec![self.git_dir.as_str()];
         all.extend_from_slice(args);
         git::run_with_input(&self.dir, &all, input, git::READ).map_err(|why| why.to_string())
@@ -233,6 +233,29 @@ impl Scratch {
         run.err = crate::secrets::redact_str(&run.err, &handing.secrets);
         run.out = crate::secrets::redact_str(&run.out, &handing.secrets);
         Ok(run)
+    }
+
+    /// **Pushes `commit` to a new branch of `url`**: the one refspec, never forced, no tag, no
+    /// hook. `helper` signs it in, and a folder on this machine needs none.
+    pub(super) fn push_new_branch(
+        &self,
+        url: &str,
+        helper: Option<&str>,
+        commit: &str,
+        branch: &str,
+    ) -> Result<git::Run, String> {
+        let refspec = format!("{commit}:refs/heads/{branch}");
+        let args = [
+            self.git_dir.as_str(),
+            "push",
+            "--quiet",
+            "--no-verify",
+            "--no-follow-tags",
+            "--",
+            url,
+            refspec.as_str(),
+        ];
+        git::run_network(&self.dir, helper, &args).map_err(|why| why.to_string())
     }
 
     /// **Fetches `want` from `remote`** to `to`, one commit deep, blobs past the file limit left
