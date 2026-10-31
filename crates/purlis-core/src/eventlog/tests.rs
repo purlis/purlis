@@ -3752,6 +3752,8 @@ fn a_chats_routing_record_is_under_its_run_and_every_skill_run_it_opens_names_it
             skill: "deploy".to_owned(),
             why: "over-budget".to_owned(),
         }],
+        prompt: false,
+        pointed: Vec::new(),
     };
     host.begin(
         plane.path(),
@@ -3811,6 +3813,8 @@ fn a_routing_record_told_while_its_run_is_held_is_written_after_it_and_never_for
         fell_back: None,
         error: None,
         hidden: Vec::new(),
+        prompt: false,
+        pointed: Vec::new(),
     };
     for (number, run) in [
         (3, "01K6E8ZK6V4Q9T0N3M2B1C5D70"),
@@ -3870,6 +3874,8 @@ fn a_clear_keeps_the_routing_its_chat_started_under_for_its_skill_runs() {
         fell_back: None,
         error: None,
         hidden: Vec::new(),
+        prompt: false,
+        pointed: Vec::new(),
     };
     host.skill_routed(plane.path(), 3, &record).unwrap();
     let cleared = "01K6E8ZK6V4Q9T0N3M2B1C5D7K";
@@ -3923,6 +3929,8 @@ fn a_routing_told_for_a_start_taken_back_is_never_written() {
         fell_back: None,
         error: None,
         hidden: Vec::new(),
+        prompt: false,
+        pointed: Vec::new(),
     };
 
     assert_eq!(host.skill_routed(plane.path(), 3, &record).unwrap(), None);

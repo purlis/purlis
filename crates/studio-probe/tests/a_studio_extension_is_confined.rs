@@ -875,7 +875,43 @@ fn a_router_answers_confined_and_is_stopped_at_its_deadline() {
     assert!(real.running().is_empty(), "its program was stopped");
 }
 
+fn a_router_that_reads_prompts_points_one_confined() {
+    let probe = Probe::approved();
+    let patient = Executor::default()
+        .with_deadline(PATIENT)
+        .with_router_deadline(PATIENT);
+    let skills = [
+        purlis_core::extension::studio::PromptSkill {
+            name: "deploy".to_owned(),
+            line: "Deploys.".to_owned(),
+        },
+        purlis_core::extension::studio::PromptSkill {
+            name: "probe-point-release".to_owned(),
+            line: "Cuts a release.".to_owned(),
+        },
+    ];
+    let doc = patient
+        .studio(
+            &probe.config(),
+            &Choices::read(&probe.plane()),
+            ID,
+            &purlis_core::extension::studio::Ask::Prompt {
+                prompt: purlis_core::extension::studio::HandedPrompt::of("cut the release"),
+                skills: &skills,
+            },
+        )
+        .expect("the probe's router answers a prompt");
+    let pointed =
+        purlis_core::extension::studio::pointed_of(ID, &["deploy", "probe-point-release"], &doc)
+            .expect("pointers it takes");
+    assert_eq!(pointed, ["probe-point-release"]);
+}
+
 const TESTS: &[(&str, fn())] = &[
+    (
+        "a_router_that_reads_prompts_points_one_confined",
+        a_router_that_reads_prompts_points_one_confined,
+    ),
     (
         "a_router_answers_confined_and_is_stopped_at_its_deadline",
         a_router_answers_confined_and_is_stopped_at_its_deadline,

@@ -5444,6 +5444,22 @@ impl Chats {
         })
     }
 
+    /// **What chat `session`'s router points `prompt` at** (SK-15c, ADR 0102 §3): asked where its
+    /// start chose a router that reads prompts and its list leaves skills out, within the
+    /// router's 100 ms, of those skills alone; the routing record told as a start's is. The text
+    /// its prompt hook adds to the turn, or `None`. The prompt is handed to that router and kept
+    /// nowhere.
+    pub fn pointed(&self, session: u32, prompt: &str) -> Option<String> {
+        // Taken out of the lock before the router is asked, which may take its 100 ms.
+        let routed = lock(&self.open).get(&session)?.skills_read.routed.clone()?;
+        let router = lock(&self.router).clone()?;
+        let prompted = routed.on_prompt(prompt, &router)?;
+        if let Some(tell) = lock(&self.routed).as_ref() {
+            tell(session, &prompted.record);
+        }
+        prompted.pointer
+    }
+
     /// **Every chat open here that its start routed by a router extension** (SK-15b), by number,
     /// with where it works and as whom: what the Skill studio shows of the router's timings.
     pub fn routings(&self) -> Vec<ChatRouted> {

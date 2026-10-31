@@ -772,3 +772,44 @@ fn routers_are_said_by_name() {
     assert_eq!(Router::BuiltIn.shown(), "the built-in router");
     assert_eq!(by_the_router().shown(), "the router relevance");
 }
+
+// ---------------------------------------------------------------------------------------
+// The index read back, for a router that reads prompts (SK-15c, #3231)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn an_index_is_read_back_as_the_skills_it_names_each_with_its_line() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+    let set = set_at_the_root(&plane, &built_in).routed(skills(3), &[]);
+    let index = set.index().expect("an index");
+
+    assert_eq!(
+        Index::named_in(&index.text),
+        [
+            ("deploy".to_owned(), "Does deploy.".to_owned()),
+            ("lint".to_owned(), "Does lint.".to_owned()),
+            ("release".to_owned(), "Does release.".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn an_index_read_back_takes_only_its_own_entries() {
+    let text = "---\nname: skill-index\ndescription: d\n---\n\n# This chat's other skills\n\n\
+                - `deploy`: Deploys.\n\
+                - `Not A Name`: never one.\n\
+                - not an entry\n\
+                -`lint`: no space.\n\
+                - `release`: Releases. (deprecated: use `ship` instead)\n";
+    assert_eq!(
+        Index::named_in(text),
+        [
+            ("deploy".to_owned(), "Deploys.".to_owned()),
+            (
+                "release".to_owned(),
+                "Releases. (deprecated: use `ship` instead)".to_owned()
+            ),
+        ]
+    );
+}

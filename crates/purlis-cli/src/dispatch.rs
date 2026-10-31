@@ -457,6 +457,7 @@ pub fn send(
             | Answer::Vaults { .. }
             | Answer::Keys { .. }
             | Answer::Working(_)
+            | Answer::Pointed { .. }
             | Answer::Task(_),
         )
         | Err(_) => Err(no_answer(&ask_name(&ask), cuts_a_worktree)),
@@ -688,6 +689,7 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
             | Answer::Vaults { .. }
             | Answer::Keys { .. }
             | Answer::Working(_)
+            | Answer::Pointed { .. }
             | Answer::Dispatched { .. }
             | Answer::NeedsGrant { .. }
             | Answer::WaitingOnMemory { .. }
@@ -1271,6 +1273,26 @@ pub fn messages(root: &std::path::Path, chat: u32) -> Vec<dispatchtalk::Message>
         .map(|(_, message)| message)
         .collect()
 }
+
+/// **What this chat's router points `prompt` at** (SK-15c): asked of the app that started the
+/// chat, which asks the router within its 100 ms. `None` where there is no app, it answers
+/// nothing in time, or the router points at nothing.
+pub fn pointed(prompt: &str) -> Option<String> {
+    use purlis_core::hookwire::PromptAsk;
+    let (mut asking, chat) = the_app()?;
+    let asked = Ask::Prompt(Box::new(PromptAsk {
+        chat,
+        prompt: prompt.to_owned(),
+    }));
+    match asking.ask(&asked, A_ROUTER_IS_ANSWERED_WITHIN) {
+        Ok(Answer::Pointed { pointer }) => pointer,
+        _ => None,
+    }
+}
+
+/// How long a prompt hook waits for the app's answer about its router: the router's own 100 ms
+/// and the way to the app and back. Past it the prompt goes on with no pointer.
+const A_ROUTER_IS_ANSWERED_WITHIN: std::time::Duration = std::time::Duration::from_millis(400);
 
 /// How much longer than the wait itself the app has to answer one: it answers when the wait
 /// ends, and the answer is one line.

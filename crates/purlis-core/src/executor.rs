@@ -872,7 +872,7 @@ impl Executor {
         // from its program's start.
         let bound = match asked {
             Asked::Studio {
-                ask: extension::studio::Ask::Route { .. },
+                ask: extension::studio::Ask::Route { .. } | extension::studio::Ask::Prompt { .. },
                 ..
             } => Bound {
                 deadline: self.router_deadline,
