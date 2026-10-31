@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793474605359,
+  "lastUpdate": 1793475927568,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33936,6 +33936,48 @@ window.BENCHMARK_DATA = {
             "value": 102.3060945,
             "unit": "ms",
             "extra": "median of 5 runs: 101.889, 102.210, 102.306, 102.654, 102.669 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b7beebac9fab1144072975bd4ae69bf8651b1161",
+          "message": "Runners: a chat on an opted-in pool uses a token minted in the cluster (#4320)\n\n* Runners: a chat on an opted-in pool uses a token minted in the cluster (#4207)\n\nThe operator says where to ask on a Claim's status, the desktop tells its\nrunner as it pairs it, and the runner proves its link key, holds the port to\na pinned key and follows a roll by itself. A refused mint goes to the desktop\nand the person's Ask.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69CAVSV2ZKJEX6A1J8ZB3GE\nPurlis-Persona: steward\n\n* Runners: no chat touches a pod's link key hand-over, measured with a live probe (#4207)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69CAVSV2ZKJEX6A1J8ZB3GE\nPurlis-Persona: steward\n\n* Runners: a minting runner starts nothing outside the sandbox but a shell; review fixes (#4207)\n\nThe person's ruling: once a runner is told of a mint port, its host refuses any\nother start outside the sandbox. A token goes as its chat ends however it ends,\na runner told during a roll holds both keys, and a Claim's repos are written over\nthe version read.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69CAVSV2ZKJEX6A1J8ZB3GE\nPurlis-Persona: steward\n\n* CI: a runner's chat and its link key are tried under the real wrap (#4207)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69CAVSV2ZKJEX6A1J8ZB3GE\nPurlis-Persona: steward\n\n* Runners: the refusal says only what a chat can do; a test's status names mint (#4207)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69CAVSV2ZKJEX6A1J8ZB3GE\nPurlis-Persona: steward\n\n* Runners: a runner holds the key its desktop pinned, whatever a status names (#4207)\n\nAlso an old program's end leaves a restarted chat's token, and a token minted\ntoo late is revoked.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69CAVSV2ZKJEX6A1J8ZB3GE\nPurlis-Persona: steward\n\n* Runners: a fenced build's start reads no machine store for a mint port (#4207)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69CAVSV2ZKJEX6A1J8ZB3GE\nPurlis-Persona: steward\n\n* Runners: the operator mints only for a runner made to refuse starts outside the sandbox (#4207)\n\nA pod of a Pool naming an App's key is made with a mark, so its host refuses from\nits first moment. The operator reads that from the pod's own spec and refuses any\nother, live on the kind job with a runner made before its Pool named a key.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69CAVSV2ZKJEX6A1J8ZB3GE\nPurlis-Persona: steward\n\n* Runners: the kind test compiles, and the image contract names the mark (#4207)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69CAVSV2ZKJEX6A1J8ZB3GE\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T19:17:45Z",
+          "tree_id": "11e93dad5147f343be8c70a0b29e92bd27eeb098",
+          "url": "https://github.com/purlis/purlis/commit/b7beebac9fab1144072975bd4ae69bf8651b1161"
+        },
+        "date": 1793475923638,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6715465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.642, 0.657, 0.672, 0.682, 0.697 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.703751999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.619, 16.663, 16.704, 16.742, 16.757 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.19706500000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.786, 102.012, 102.197, 102.264, 103.198 ms"
           }
         ]
       }
