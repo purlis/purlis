@@ -1,7 +1,12 @@
 [
   "purlis-classic_dark",
+  "purlis-classic_dark_compact",
   "purlis-classic_light",
+  "purlis-classic_light_compact",
   "purlis_dark",
+  "purlis_dark_compact",
   "purlis_dark-high-contrast",
-  "purlis_light"
+  "purlis_dark-high-contrast_compact",
+  "purlis_light",
+  "purlis_light_compact"
 ]
