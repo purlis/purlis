@@ -644,7 +644,8 @@ pub fn sign_in_words(typed: Typed, name: &str, provider: Option<&str>) -> Vec<St
     // cannot reach the runner, the device-code flow is named (#4044).
     match typed {
         Typed::Driven
-            if provider.is_some_and(crate::profilestore::sign_in::driven::plan_waits_for_the_browser) =>
+            if provider
+                .is_some_and(crate::profilestore::sign_in::driven::plan_waits_for_the_browser) =>
         {
             words.extend(["--way".to_owned(), "browser".to_owned()]);
         }
