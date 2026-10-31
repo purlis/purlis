@@ -1550,7 +1550,11 @@ pub fn not_here_beside(
     }
     for left in set.left_out {
         match left.reason {
-            Reason::NotOnThisMachine => not.missing.push(left.name),
+            Reason::NotOnThisMachine => {
+                if !unmoved_skills_read_by(harness, plane).contains(&left.name) {
+                    not.missing.push(left.name);
+                }
+            }
             Reason::NoSuchBuiltIn => not.no_built_in.push(left.name),
             Reason::NotASkill(_) | Reason::Twin { .. } if reaches(&left) => {
                 not.broken.push(Broken {
@@ -1564,6 +1568,31 @@ pub fn not_here_beside(
         }
     }
     (not != NotHere::default()).then_some(not)
+}
+
+/// **The skills `harness` reads for itself from the folders of a project that has not moved them**
+/// (#4344): a name there is no missing skill, whatever the machine holds. Nothing once the project
+/// requires [`PROJECT_SKILLS_FEATURE`], whose skills come by the chat's route.
+pub(crate) fn unmoved_skills_read_by(
+    harness: crate::harness::Harness,
+    plane: &Path,
+) -> Vec<String> {
+    if crate::compat::requires(plane, PROJECT_SKILLS_FEATURE) {
+        return Vec::new();
+    }
+    let the_plane = crate::repos::Repo {
+        name: String::new(),
+        path: plane.to_path_buf(),
+    };
+    crate::harness_plugin::repo_skills(
+        harness.adapter().plugins(),
+        &crate::harness_plugin::Choices::read_in(plane, None),
+        std::slice::from_ref(&the_plane),
+    )
+    .into_iter()
+    .filter(|one| !one.off)
+    .map(|one| one.id)
+    .collect()
 }
 
 /// **The project skills the workspace `workspace` turned off** (#2767): `settings.skills.off`,

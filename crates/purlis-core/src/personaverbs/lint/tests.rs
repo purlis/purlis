@@ -753,6 +753,29 @@ fn with_nowhere_to_look_no_skills_entry_is_said_to_be_missing_from_the_machine()
     );
 }
 
+/// #4344: a skill still in `.claude/skills` is read by the program itself, so lint does not warn
+/// that a persona's chats start without it. Claude Code is what this project runs.
+#[test]
+fn a_persona_naming_a_skill_its_program_reads_itself_is_not_warned() {
+    let home = tempfile::tempdir().unwrap();
+    let p = naming("oldie, ghost");
+    skill_folder(&p.path(".claude/skills"), "oldie");
+    let issues = Linter::new(p.root(), p.root())
+        .with_home(Some(home.path().to_path_buf()))
+        .with_built_in(None)
+        .with_studio(true)
+        .definition("s");
+    let said = messages(&issues);
+    assert!(
+        !said.iter().any(|(_, line)| line.contains("oldie")),
+        "{said:#?}"
+    );
+    assert!(
+        said.iter().any(|(_, line)| line.contains("ghost")),
+        "{said:#?}"
+    );
+}
+
 /// #4344: a moved project's chats read the list with the flag off, so lint checks it.
 #[test]
 fn with_the_skill_studio_off_a_moved_projects_skills_line_is_still_checked() {
