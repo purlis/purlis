@@ -125,3 +125,97 @@ fn a_faint_glow_the_digits_read_on_over_the_bar_holds() {
         parts::stylesheet(theme)
     );
 }
+
+/// A theme whose count is a see-through wash laid on the bar, its digits only just reading there,
+/// with the tint named by `tint`.
+fn near_the_floor(tint: Value) -> Resolved {
+    load(&json!({
+        "name": "Moved", "extends": "purlis-classic",
+        "appearances": [{ "id": "dark", "tokens": {
+            "surface.deep": "#333333", "accent.wash": "#ff000040", "text.primary": "#a5a5a5"
+        } }],
+        "tint": tint,
+        "parts": { "titlebar.count.fill": "accent.wash", "titlebar.count.text": "text.primary" },
+    }))
+}
+
+fn count_fell(theme: &ResolvedTheme) -> bool {
+    parts::fallen(theme)
+        .iter()
+        .any(|one| one.floor.starts_with("the count's words"))
+}
+
+fn dark(loaded: &Resolved) -> &ResolvedTheme {
+    loaded
+        .theme
+        .appearances
+        .iter()
+        .find(|one| one.id == "dark")
+        .unwrap()
+}
+
+#[test]
+fn no_built_in_tint_moves_the_ground_under_a_count() {
+    for base in ["purlis", "purlis-classic"] {
+        let loaded = load(&json!({ "name": "Plain", "extends": base }));
+        for appearance in &loaded.theme.appearances {
+            assert!(
+                !appearance.tint.tabs().contains(&"surface.deep"),
+                "{base} {}",
+                appearance.id
+            );
+            for degree in (0..360).step_by(15) {
+                let tinted = tint::tinted_at(appearance, f64::from(degree));
+                assert_eq!(
+                    tinted.values.get("surface.deep"),
+                    appearance.values.get("surface.deep"),
+                    "{base} {} at {degree}",
+                    appearance.id
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_count_that_only_reads_untinted_is_held_in_each_tint_of_a_recipe_that_moves_its_ground() {
+    // The digits read over the bar as written, and a tint is what breaks them. A wash keeps its
+    // alpha, so the ground turning shows through it, and luminance kept on the ground alone is
+    // not luminance kept under the digits.
+    let untinted = near_the_floor(json!({ "on": false }));
+    assert!(!untinted.refused, "{:?}", said(&untinted));
+    assert!(!count_fell(dark(&untinted)));
+
+    let moved = near_the_floor(json!({ "tokens": ["surface.deep"] }));
+    assert!(!moved.refused, "{:?}", said(&moved));
+    let theme = dark(&moved);
+    assert!(
+        (0..360).any(|degree| {
+            // Measured on the tinted look alone: this is the tint the theme has to hold.
+            count_fell(&tint::tinted_at(theme, f64::from(degree)))
+        }),
+        "no tint breaks the digits"
+    );
+    assert!(count_fell(theme), "{:?}", parts::fallen(theme));
+    // And it falls to the wash the window draws by default, which the token floors hold.
+    assert!(
+        parts::stylesheet(theme).contains("background-color: var(--wash-warning);"),
+        "{}",
+        parts::stylesheet(theme)
+    );
+}
+
+#[test]
+fn a_count_on_an_opaque_fill_keeps_its_colours_when_the_ground_moves() {
+    // Nothing shows through an opaque fill, so a tint of the bar takes nothing from its digits.
+    let loaded = load(&json!({
+        "name": "Solid", "extends": "purlis-classic",
+        "appearances": [{ "id": "dark", "tokens": {
+            "surface.deep": "#333333", "accent.wash": "#202020", "text.primary": "#ffffff"
+        } }],
+        "tint": { "tokens": ["surface.deep"] },
+        "parts": { "titlebar.count.fill": "accent.wash", "titlebar.count.text": "text.primary" },
+    }));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    assert!(!count_fell(dark(&loaded)), "{:?}", parts::fallen(dark(&loaded)));
+}
