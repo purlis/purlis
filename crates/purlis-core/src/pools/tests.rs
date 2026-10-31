@@ -2200,6 +2200,90 @@ fn a_runner_whose_home_went_with_it_is_made_again_to_sign_in_again() {
     );
 }
 
+/// A pool added on engine `engine-a` whose home printed [`HOME_CREATED`] as it was made (#4166,
+/// #4167), then its container removed outside purlis with its home left.
+const HOME_CREATED: &str = "2099-06-01T10:00:00+02:00";
+
+/// Docker's home volume, as it is, printing `at` as when it was made.
+fn home_prints(fake: &FakeDocker, at: &str) {
+    let mut volume: serde_json::Value = serde_json::from_str(&fake.file("volume")).unwrap();
+    volume[0]["CreatedAt"] = at.into();
+    fake.set("volume", &volume.to_string());
+}
+
+fn removed_with_its_making_kept(config: &Path, fake: &FakeDocker, ours: &Pinned) -> Kept {
+    fake.set("engine", "engine-a\n");
+    home_prints(fake, HOME_CREATED);
+    removed_outside_purlis(config, fake, ours, Some(HOME_CREATED))
+}
+
+/// **A runner keeps the engine that made it and its home's `CreatedAt`** (#4166, #4167), and
+/// they stay when it is read back.
+#[test]
+fn a_runner_keeps_its_engine_and_its_homes_making_through_the_file() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    home_prints(&fake, HOME_CREATED);
+
+    let kept = a_pool_added(config.path(), &fake, &desktop());
+
+    assert_eq!(kept.engine.as_deref(), Some("engine-a"));
+    assert_eq!(kept.home_created.as_deref(), Some(HOME_CREATED));
+    let read = runners::runner_for(config.path(), "first").unwrap();
+    assert_eq!(read, kept);
+}
+
+/// **Sign-ins come from the runner's own home whatever the clocks say** (#4167): this home's
+/// time is far past its pairing, which the clock rule would refuse, and it prints what was kept.
+#[test]
+fn a_home_still_printing_what_was_kept_gives_its_sign_ins_whatever_the_clocks_say() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    removed_with_its_making_kept(config.path(), &fake, &ours);
+
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+    assert!(again.sign_ins_kept, "{}", fake.file("log"));
+}
+
+/// **A volume made again under the same name gives nothing** (#4167), even with a time the clock
+/// rule would pass.
+#[test]
+fn a_volume_made_again_under_the_runners_name_gives_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    removed_with_its_making_kept(config.path(), &fake, &ours);
+    home_prints(&fake, "2026-01-01T00:00:00Z");
+
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+    assert!(!again.sign_ins_kept);
+    assert!(
+        !fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
+}
+
+/// **Make the runner again makes nothing on another engine** (#4166).
+#[test]
+fn a_runner_is_not_made_again_on_another_engine() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = removed_with_its_making_kept(config.path(), &fake, &ours);
+    fake.set("engine", "engine-b\n");
+
+    let refused = make_again_here(config.path(), &fake, &ours).unwrap_err();
+
+    assert!(refused.to_string().contains("another engine"), "{refused}");
+    assert!(!fake.file("log").contains("run "), "{}", fake.file("log"));
+    assert_eq!(runners::runner_for(config.path(), "first").unwrap(), old);
+}
+
 /// A home made after the runner was paired is not the one purlis made for it, so none of it is
 /// carried: whoever made it could have put anything there.
 #[test]

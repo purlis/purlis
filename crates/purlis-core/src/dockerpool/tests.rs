@@ -986,7 +986,8 @@ impl FakeDocker {
              'container inspect') cat '{inspect}' ;;\n  \
              'volume inspect') cat '{volume}' ;;\n  \
              'volume ls') cat '{volumes}' 2>/dev/null || true ;;\n  \
-             'info '*) cat '{info}' ;;\n  \
+             'info '*) case \"$*\" in *.ID*) cat '{engine}' 2>/dev/null || true ;; \
+             *) cat '{info}' ;; esac ;;\n  \
              'system df') cat '{df}' ;;\n  \
              'image inspect') cat '{image}' ;;\n  \
              'exec '*) cat > '{input}'; cat '{paired}' ;;\n  \
@@ -1001,6 +1002,7 @@ impl FakeDocker {
             volume = at("volume"),
             volumes = at("volumes"),
             info = at("info"),
+            engine = at("engine"),
             df = at("df"),
             image = at("image"),
             input = at("input"),
@@ -2422,6 +2424,62 @@ fn a_runner_whose_container_docker_no_longer_lists_is_gone_with_or_without_its_h
     assert_eq!(
         fake.docker().gone(&made()),
         Ok(Some(Gone { home_kept: false }))
+    );
+}
+
+/// **Only the engine that made a runner says it was removed** (#4166). Another engine lists no
+/// container of its id either, and that says nothing of the runner.
+#[test]
+fn a_runner_is_removed_only_by_the_word_of_the_engine_that_made_it() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("containers", "");
+    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("engine", "engine-a\n");
+    assert_eq!(
+        fake.docker().missing(&made(), Some("engine-a")),
+        Ok(Some(Missing::Removed(Gone { home_kept: true })))
+    );
+    assert_eq!(
+        fake.docker().missing(&made(), Some("engine-b")),
+        Ok(Some(Missing::OnAnotherEngine))
+    );
+}
+
+/// A runner made before the engine was kept is taken at Docker's word, as it was (#4166).
+#[test]
+fn a_runner_with_no_engine_kept_is_taken_at_dockers_word() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("containers", "");
+    fake.set("engine", "engine-a\n");
+    assert_eq!(
+        fake.docker().missing(&made(), None),
+        Ok(Some(Missing::Removed(Gone { home_kept: false })))
+    );
+}
+
+/// An engine that does not say which it is cannot say a runner made on a known engine was
+/// removed (#4166), and a runner it still lists is simply there.
+#[test]
+fn an_engine_that_names_itself_not_says_nothing_of_a_runner_kept_with_one() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("containers", "");
+    assert!(fake.docker().missing(&made(), Some("engine-a")).is_err());
+    fake.set("containers", &format!("{ID}\n"));
+    assert_eq!(fake.docker().missing(&made(), Some("engine-a")), Ok(None));
+}
+
+/// A home's `CreatedAt` is read as Docker printed it, not as a time (#4167).
+#[test]
+fn a_homes_created_at_is_read_as_docker_printed_it() {
+    let fake = FakeDocker::new(&inspected());
+    assert_eq!(fake.docker().home_created(&made()), Ok(None));
+    fake.set(
+        "volume",
+        r#"[{"CreatedAt":"2026-10-31 20:41:07 +0000 UTC"}]"#,
+    );
+    assert_eq!(
+        fake.docker().home_created(&made()),
+        Ok(Some("2026-10-31 20:41:07 +0000 UTC".to_owned()))
     );
 }
 

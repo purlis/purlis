@@ -691,6 +691,19 @@ describe("You › This machine › Pools", () => {
     await within(group).findByText(/sign-ins kept there/);
   });
 
+  it("says a runner on another engine is not removed, and offers nothing to make again (#4166)", async () => {
+    pools = [a_pool("builds")];
+    link = { state: "on_another_engine" };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await within(group).findByText("on another Docker engine");
+    expect(group).toHaveTextContent(/Point Docker back at that engine/);
+    expect(group).not.toHaveTextContent(/removed outside purlis/);
+    expect(within(group).queryByRole("button", { name: "Make the runner again" })).toBeNull();
+  });
+
   it("says a suspended runner is suspended, not that it would not link (#2051)", async () => {
     pools = [a_pool("builds")];
     link = { state: "suspended" };

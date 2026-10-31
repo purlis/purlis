@@ -6,7 +6,7 @@
 //! "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp", "suspendAfter",
 //! "frames", "width", "profiles"}], "runners":
 //! [{"name", "pool", "container", "image", "user", "home", "device", "key", "paired", "of"?,
-//! "draining"?}]}`.
+//! "draining"?, "engine"?, "home_created"?}]}`.
 //!
 //! - **A pool is named and defined only here** ([`Pool`]): a Docker pool's name, the runner
 //!   image by digest, and the limits the person set, each left out where purlis's default
@@ -316,6 +316,12 @@ pub struct Kept {
     /// The profiles signed out of its pool while it drains (#4145): their sign-ins here are
     /// never carried, even where the sign-out could not reach it.
     pub signed_out: Vec<String>,
+    /// The engine that made it, as `docker info` prints its id (#4166): only that engine's word
+    /// says it was removed. `None` for a runner kept before this, or an engine that prints none.
+    pub engine: Option<String>,
+    /// Its home volume's `CreatedAt`, as Docker printed it when it was made (#4167): only a home
+    /// that still prints this is its own, and gives sign-ins to a runner made again.
+    pub home_created: Option<String>,
 }
 
 impl Kept {
@@ -862,6 +868,8 @@ fn keep_in(
         carried: false,
         unpaired: false,
         signed_out: Vec::new(),
+        engine: None,
+        home_created: None,
     };
     kept.push(new.clone());
     Ok(new)
@@ -1092,7 +1100,21 @@ fn to_row(kept: &Kept) -> serde_json::Value {
     if !kept.signed_out.is_empty() {
         row["signed_out"] = kept.signed_out.clone().into();
     }
+    if let Some(engine) = &kept.engine {
+        row["engine"] = engine.as_str().into();
+    }
+    if let Some(created) = &kept.home_created {
+        row["home_created"] = created.as_str().into();
+    }
     row
+}
+
+/// Whether `text`, an engine's id or a volume's `CreatedAt` as Docker printed it, can be kept
+/// (#4166, #4167): one short line of printable words. It is only ever compared.
+pub(crate) fn usable_noted(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= 128
+        && text.chars().all(|one| one.is_ascii_graphic() || one == ' ')
 }
 
 fn from_row(row: &serde_json::Value) -> Option<Kept> {
@@ -1112,6 +1134,8 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         "carried",
         "unpaired",
         "signed_out",
+        "engine",
+        "home_created",
     ];
     if fields.keys().any(|key| !known.contains(&key.as_str())) {
         return None;
@@ -1154,6 +1178,16 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
             })
             .collect::<Option<Vec<_>>>()?,
     };
+    // Left out where nothing was noted; anything else that is not usable is a file of another shape.
+    let noted = |key: &str| match fields.get(key) {
+        None => Some(None),
+        Some(value) => value
+            .as_str()
+            .filter(|text| usable_noted(text))
+            .map(|text| Some(text.to_owned())),
+    };
+    let engine = noted("engine")?;
+    let home_created = noted("home_created")?;
     if text("pool")? != "docker" {
         return None;
     }
@@ -1182,6 +1216,8 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         carried,
         unpaired,
         signed_out,
+        engine,
+        home_created,
     })
 }
 

@@ -898,6 +898,15 @@ pub struct Gone {
     pub home_kept: bool,
 }
 
+/// **Why Docker lists no container of a runner's id** ([`Docker::missing`], #4166): it was
+/// removed, or Docker now reaches another engine than the one that made the runner, whose
+/// container may well be there still.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Missing {
+    Removed(Gone),
+    OnAnotherEngine,
+}
+
 /// What [`Docker::resumed`] did: what it read of the container first, and whether it started it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Resumed {
@@ -2702,6 +2711,53 @@ impl Docker {
         Ok(Some(Gone {
             home_kept: volumes.lines().any(|line| line.trim() == volume),
         }))
+    }
+
+    /// **[`Docker::gone`], held to the engine that made the runner** (#4166): `made_on` is what
+    /// [`Docker::engine_id`] answered as it was made, `None` for a runner made before that was
+    /// kept, which is taken at Docker's word as it was. Where another engine answers, the runner
+    /// is not said to be removed. An engine that does not say which it is says nothing of the
+    /// runner, like a Docker that does not answer.
+    pub fn missing(&self, made: &Made, made_on: Option<&str>) -> Result<Option<Missing>, Refused> {
+        let Some(gone) = self.gone(made)? else {
+            return Ok(None);
+        };
+        let Some(made_on) = made_on else {
+            return Ok(Some(Missing::Removed(gone)));
+        };
+        match self.engine_id()? {
+            Some(now) if now == made_on => Ok(Some(Missing::Removed(gone))),
+            Some(_) => Ok(Some(Missing::OnAnotherEngine)),
+            None => Err(refused(
+                "this Docker does not say which engine it is, so purlis cannot tell whether the \
+                 runner was removed",
+            )),
+        }
+    }
+
+    /// **Which engine this `docker` reaches** (#4166), by the id `docker info` prints for it.
+    /// `None` where it prints none that reads as an id. A Podman has no such field and is
+    /// refused.
+    pub fn engine_id(&self) -> Result<Option<String>, Refused> {
+        let printed = self.read(
+            &["info".into(), "--format".into(), "{{.ID}}".into()],
+            MOST_INSPECTED,
+        )?;
+        Ok(Some(printed.trim().to_owned()).filter(|id| crate::runners::usable_noted(id)))
+    }
+
+    /// **`made`'s home volume's `CreatedAt`, exactly as Docker printed it** (#4167): the same
+    /// volume prints the same words whatever any clock says. `None` where it prints none.
+    pub fn home_created(&self, made: &Made) -> Result<Option<String>, Refused> {
+        let inspected = self.json(
+            &["volume", "inspect", &made.runner.volume()],
+            "docker volume inspect",
+        )?;
+        Ok(inspected
+            .pointer("/0/CreatedAt")
+            .and_then(serde_json::Value::as_str)
+            .filter(|text| crate::runners::usable_noted(text))
+            .map(str::to_owned))
     }
 
     /// **When `made`'s home volume was made**, in seconds since the epoch, as Docker says it
