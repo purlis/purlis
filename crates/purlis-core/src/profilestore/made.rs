@@ -1156,6 +1156,32 @@ fn a_settings_path(allowed: &Allowed, path: &str) -> bool {
             .all(|part| !part.starts_with('.') && !credential_shaped(part))
 }
 
+/// **`held`, what a runner said it holds of a `kind` profile, by path**, or `None` where it is
+/// not such a list: a path an import would not write, one twice, a digest no digest looks like,
+/// or more than a runner holds (#4088).
+pub fn held_digests<'a>(
+    kind: &str,
+    held: &'a [purlis_session_protocol::session::HeldSetting],
+) -> Option<std::collections::BTreeMap<&'a str, &'a str>> {
+    use purlis_session_protocol::session::{MOST_PROFILE_SETTINGS_FILES, is_settings_digest};
+    let (_, allowed) = harness_of(kind).ok()?;
+    if held.len() > MOST_PROFILE_SETTINGS_FILES {
+        return None;
+    }
+    let mut digests = std::collections::BTreeMap::new();
+    for one in held {
+        let fits = a_settings_path(allowed, &one.path) && is_settings_digest(&one.digest);
+        if !fits
+            || digests
+                .insert(one.path.as_str(), one.digest.as_str())
+                .is_some()
+        {
+            return None;
+        }
+    }
+    Some(digests)
+}
+
 /// **`files`, sent by a desktop for its `kind` profile `name`, as a runner may keep them**:
 /// every path one an import would write ([`a_settings_path`]), none twice, and each file with no
 /// sign-in in it ([`super::sent::without_credentials`], D-3448-8). One that is not refuses all
@@ -1268,6 +1294,110 @@ fn settings_swapped_in(
             e
         }
     })
+}
+
+/// **Whether `record`'s settings folder holds `files` and nothing else its keep would replace**
+/// (#4088): under each listed name, only a private folder that leads to one of them, and each of
+/// them a private regular file of its size with no other name, reached through no link. Anything
+/// else there, or anything that cannot be told, is `false`, so a keep replaces them all as ever:
+/// what a read of the settings passes over (a hidden file, a link, a skill's `node_modules`) is
+/// still taken out, and a second name for a file, which could change it after this, is cut off.
+/// Their bytes were read a moment before, and come to the digest the keep names.
+#[cfg(unix)]
+pub fn settings_exactly_there(record: &MachineProfile, files: &[(String, Vec<u8>)]) -> bool {
+    use rustix::fs::{Mode, OFlags};
+    let Ok((_, allowed)) = harness_of(&record.harness) else {
+        return false;
+    };
+    let dest = settings_dest(allowed, &record.folders.config);
+    let opened = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let Ok(dir) = rustix::fs::open(&dest, opened, Mode::empty()) else {
+        return false;
+    };
+    let sizes: std::collections::HashMap<&str, usize> = files
+        .iter()
+        .map(|(path, bytes)| (path.as_str(), bytes.len()))
+        .collect();
+    let mut folders = std::collections::HashSet::new();
+    for path in sizes.keys() {
+        let mut at = *path;
+        while let Some((folder, _)) = at.rsplit_once('/') {
+            folders.insert(folder);
+            at = folder;
+        }
+    }
+    let mut found = 0;
+    allowed.files.iter().chain(allowed.folders).all(|name| {
+        only_these(
+            std::os::fd::AsFd::as_fd(&dir),
+            name,
+            name,
+            &sizes,
+            &folders,
+            &mut found,
+        )
+        .unwrap_or(false)
+    }) && found == sizes.len()
+}
+
+/// Whether the `name` of the folder `at`, at the path `path`, is only what [`settings_exactly_there`]
+/// allows, counting into `found` each file of `sizes` it met. A name not there is nothing.
+#[cfg(unix)]
+fn only_these(
+    at: std::os::fd::BorrowedFd<'_>,
+    name: &str,
+    path: &str,
+    sizes: &std::collections::HashMap<&str, usize>,
+    folders: &std::collections::HashSet<&str>,
+    found: &mut usize,
+) -> io::Result<bool> {
+    use rustix::fs::{AtFlags, FileType, Mode, OFlags};
+    let stat = match rustix::fs::statat(at, name, AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(stat) => stat,
+        Err(rustix::io::Errno::NOENT) => return Ok(true),
+        Err(e) => return Err(e.into()),
+    };
+    let mode = Mode::from_raw_mode(stat.st_mode);
+    match FileType::from_raw_mode(stat.st_mode) {
+        FileType::RegularFile => {
+            *found += 1;
+            Ok(mode == Mode::RUSR | Mode::WUSR
+                && stat.st_nlink == 1
+                && sizes.get(path).is_some_and(|size| {
+                    u64::try_from(stat.st_size).is_ok_and(|on_disk| on_disk == *size as u64)
+                }))
+        }
+        FileType::Directory if mode == Mode::RWXU && folders.contains(path) => {
+            let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+            let fd = rustix::fs::openat(at, name, flags, Mode::empty())?;
+            let mut names = Vec::new();
+            let mut listing = rustix::fs::Dir::read_from(&fd)?;
+            while let Some(one) = listing.read() {
+                let one = one?;
+                let Ok(text) = one.file_name().to_str() else {
+                    return Ok(false);
+                };
+                if text != "." && text != ".." {
+                    names.push(text.to_owned());
+                }
+            }
+            for inner in names {
+                let below = format!("{path}/{inner}");
+                let fd = std::os::fd::AsFd::as_fd(&fd);
+                if !only_these(fd, &inner, &below, sizes, folders, found)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
+/// Nothing is ever there where no settings are kept.
+#[cfg(not(unix))]
+pub fn settings_exactly_there(_record: &MachineProfile, _files: &[(String, Vec<u8>)]) -> bool {
+    false
 }
 
 /// `path`, `/`-separated, written new under the folder `root`, private, through no link.

@@ -200,3 +200,7 @@
 {"reply":{"re":181,"ok":{"program_started":{"program":"01J9ZQ5000000000000000000G","number":13,"process":4245,"sandbox":"off","prompt_key":"0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"}}}}
 {"call":{"id":182,"command":"programs_of","project":"01J9PRJCT00000000000000000"}}
 {"reply":{"re":182,"ok":{"programs":[{"program":"01J9ZQ5000000000000000000G","kind":"harness","number":13,"process":4245,"sandbox":"off","cols":80,"rows":24,"prompt_key":"0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"}]}}}
+{"call":{"id":183,"command":"settings_held","profile":"work","after":"agents/a.md"}}
+{"reply":{"re":183,"ok":{"settings_held":{"files":[{"path":"settings.json","digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"more":true}}}}
+{"call":{"id":184,"command":"keep_profile","name":"work","harness":"claude","settings_staged":0,"settings_changed":{"removed":["skills/old/SKILL.md"],"whole":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}}
+{"reply":{"re":184,"ok":{"profile_kept":{"standing":"signed_in"}}}}

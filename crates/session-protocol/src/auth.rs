@@ -334,7 +334,7 @@ fn prove(credential: &Credential, label: &[u8], parts: &[&[u8]]) -> String {
     hex(&mac.finalize().into_bytes())
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 

@@ -315,6 +315,7 @@ fn every_command() -> Vec<Command> {
             pinned: None,
             settings: None,
             settings_staged: None,
+            settings_changed: None,
         }),
         // A desktop's profile taken off its runner (1.52, #4047).
         Command::ForgetProfile {
@@ -325,6 +326,11 @@ fn every_command() -> Vec<Command> {
             profile: "work".into(),
             pieces: Vec::new(),
         }),
+        // What a runner holds of a profile's settings (1.60, #4088).
+        Command::SettingsHeld {
+            profile: "work".into(),
+            after: None,
+        },
         // The profiles a runner keeps for its desktop (1.57, #4060).
         Command::KeptProfiles,
         // A sign-in's redirect handed to a login on the runner (1.59, #4044).
@@ -620,6 +626,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "keep_profile",
             "forget_profile",
             "stage_profile_settings",
+            "settings_held",
             "kept_profiles",
             "sign_in_redirect",
             "take_over",

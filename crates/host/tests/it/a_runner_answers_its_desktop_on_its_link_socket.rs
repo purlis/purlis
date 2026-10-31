@@ -184,6 +184,16 @@ async fn hosting_keeping(
             keeping: keeping(kept, desktop.clone()),
             forgetting: forgetting(kept, desktop.clone()),
             listing: listing(kept, desktop),
+            holding: Arc::new(|_, profile, after| {
+                let held = purlis_session_protocol::session::HeldSetting {
+                    path: "settings.json".to_owned(),
+                    digest: purlis_session_protocol::session::settings_digest(profile.as_bytes()),
+                };
+                Ok(purlis_session_protocol::session::settings_held_page(
+                    vec![held],
+                    after,
+                ))
+            }),
             delivering: Arc::new(|target| match target {
                 "/auth/callback?code=c&state=s" => Ok(()),
                 _ => Err("no sign-in is waiting on the runner".to_owned()),
@@ -382,6 +392,7 @@ async fn the_paired_desktop_stages_a_profiles_settings_in_batches_and_a_keep_tak
         pinned: None,
         settings: None,
         settings_staged: Some(staged),
+        settings_changed: None,
     };
     let batches = settings_in_batches("work", files.clone());
     assert!(batches.len() > 3, "{} batches", batches.len());
@@ -475,6 +486,7 @@ async fn the_paired_desktop_has_the_runner_keep_its_profile_and_hears_where_it_s
         pinned: Some("2.1.300".into()),
         settings: None,
         settings_staged: None,
+        settings_changed: None,
     };
     assert_eq!(
         client.keep_profile(profile("signed-in")).await.unwrap(),
@@ -514,6 +526,7 @@ async fn the_paired_desktop_has_the_runner_forget_its_profile() {
             pinned: None,
             settings: None,
             settings_staged: None,
+            settings_changed: None,
         })
         .await
         .unwrap();
@@ -522,6 +535,10 @@ async fn the_paired_desktop_has_the_runner_forget_its_profile() {
         client.kept_profiles().await.unwrap(),
         vec!["work".to_owned()]
     );
+    // What it holds of one (1.60, #4088), on the same link.
+    let (held, more) = client.settings_held("work", None).await.unwrap();
+    assert_eq!(held.len(), 1);
+    assert!(!more);
     client.forget_profile("work").await.expect("forgotten");
 
     assert!(client.kept_profiles().await.unwrap().is_empty());

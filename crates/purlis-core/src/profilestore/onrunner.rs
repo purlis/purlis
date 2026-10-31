@@ -37,6 +37,8 @@ use std::sync::{Mutex, PoisonError};
 
 use std::collections::BTreeMap;
 
+use purlis_session_protocol::session as wire;
+
 use super::made::{Measured, whole_of};
 use super::sign_in::{self, Look, Standing};
 use super::{Homes, MachineProfile};
@@ -242,7 +244,15 @@ const REWRITING_ROOM: usize = 8 * 1024 * 1024;
 /// one that cannot go, over [`MOST_SETTINGS_BYTES`], or one that does not parse, is refused in
 /// words, and nothing is sent.
 pub fn in_batches(kept: &Kept) -> Result<ToKeep, String> {
-    use purlis_session_protocol::session as wire;
+    in_batches_beside(kept, &[])
+}
+
+/// [`in_batches`], for a runner that said it holds `held` (#4088): only the files that differ go,
+/// with the paths it should no longer hold and the digest of the whole. `held` is only what a
+/// runner said, so it decides nothing but what is sent: what the runner keeps must come to that
+/// digest, and any file the desktop has that is sent is sent as [`in_batches`] sends it. All of
+/// them go where `held` has nothing in common with them, or is not a list a runner could hold.
+pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKeep, String> {
     let mut profile = wire::ProfileToKeep::from(kept.clone());
     let Some(folder) = &kept.settings_in else {
         return Ok(ToKeep {
@@ -297,6 +307,13 @@ pub fn in_batches(kept: &Kept) -> Result<ToKeep, String> {
             }
         }
     }
+    let sent = match only_what_changed(&kept.harness, sent, held) {
+        Ok((changed, sent)) => {
+            profile.settings_changed = Some(changed);
+            sent
+        }
+        Err(all) => all,
+    };
     profile.settings_staged = Some(u32::try_from(sent.len()).unwrap_or(u32::MAX));
     Ok(ToKeep {
         batches: wire::settings_in_batches(&kept.name, sent),
@@ -306,6 +323,132 @@ pub fn in_batches(kept: &Kept) -> Result<ToKeep, String> {
             .collect(),
         profile,
     })
+}
+
+/// The most bytes of paths a keep names removed, well within the control frame it goes in: more
+/// than that, and all the settings go.
+const MOST_REMOVED_BYTES: usize = wire::MOST_PROFILE_SETTINGS_FILES * 16;
+
+/// **`sent`, cut down to what differs from `held`**, with what the keep then says of the rest; or
+/// `Err`, all of `sent`, where `held` shares no file with it or is not a list of settings files.
+fn only_what_changed(
+    harness: &str,
+    sent: Vec<wire::SettingsFile>,
+    held: &[wire::HeldSetting],
+) -> Result<(wire::ChangedSettings, Vec<wire::SettingsFile>), Vec<wire::SettingsFile>> {
+    let Some(held_digests) = super::made::held_digests(harness, held) else {
+        return Err(sent);
+    };
+    let digests: Vec<String> = sent
+        .iter()
+        .map(|file| wire::settings_digest(&file.bytes))
+        .collect();
+    let same = |(file, digest): (&wire::SettingsFile, &String)| {
+        held_digests.get(file.path.as_str()) == Some(&digest.as_str())
+    };
+    if !sent.iter().zip(&digests).any(same) {
+        return Err(sent);
+    }
+    let whole = wire::whole_settings_digest(
+        sent.iter()
+            .zip(&digests)
+            .map(|(file, digest)| (file.path.as_str(), digest.as_str())),
+    );
+    let ours: std::collections::HashSet<&str> = sent.iter().map(|f| f.path.as_str()).collect();
+    let removed: Vec<String> = held_digests
+        .keys()
+        .filter(|path| !ours.contains(*path))
+        .map(|path| (*path).to_owned())
+        .collect();
+    if removed.iter().map(String::len).sum::<usize>() > MOST_REMOVED_BYTES {
+        return Err(sent);
+    }
+    let changed = sent
+        .iter()
+        .zip(&digests)
+        .filter(|pair| !same(*pair))
+        .map(|(file, _)| file.clone())
+        .collect();
+    Ok((wire::ChangedSettings { removed, whole }, changed))
+}
+
+/// **A page of what this runner, with `homes` its store, holds of the profile `name` it keeps for
+/// the desktop `desktop`** (`settings_held`, #4088), after the path `after`, and whether more
+/// follow: read off its disk now, never remembered, since a chat may be able to write there. One
+/// it does not keep for that desktop holds nothing, so a runner's own settings are never told.
+pub fn held_for_the_desktop(
+    homes: &Homes,
+    desktop: &str,
+    name: &str,
+    after: Option<&str>,
+) -> Result<(Vec<wire::HeldSetting>, bool), String> {
+    let Some(record) = kept_record(homes, desktop, name)? else {
+        return Ok((Vec::new(), false));
+    };
+    let held = held_files(&record)?
+        .files
+        .iter()
+        .map(|(path, bytes)| wire::HeldSetting {
+            path: path.clone(),
+            digest: wire::settings_digest(bytes),
+        })
+        .collect();
+    Ok(wire::settings_held_page(held, after))
+}
+
+/// The record of the profile `name` this runner keeps for `desktop`, with settings of its own.
+fn kept_record(homes: &Homes, desktop: &str, name: &str) -> Result<Option<MachineProfile>, String> {
+    Ok(super::list(homes.config_root())?
+        .into_iter()
+        .find(|p| p.name == name && p.kept_for.as_deref() == Some(desktop) && !p.sandbox_only))
+}
+
+/// The settings files `record` holds here, read as a desktop reads its own, within the limits a
+/// link holds.
+fn held_files(record: &MachineProfile) -> Result<super::made::SettingsRead, String> {
+    super::made::settings_read(
+        &record.harness,
+        &record.folders.config,
+        wire::MOST_PROFILE_SETTINGS_BYTES,
+        wire::MOST_PROFILE_SETTINGS_FILES,
+        &|_| true,
+    )
+}
+
+/// **The settings of a profile whose keep sent only what changed** (#4088): what this runner
+/// holds now, read off its disk, with `staged` in place and what `changed` names removed. Refused
+/// where it keeps no such profile for `desktop`, or holds what no read takes in, so the desktop
+/// sends them all.
+fn settings_after_change(
+    homes: &Homes,
+    desktop: &str,
+    sent: &wire::ProfileToKeep,
+    changed: &wire::ChangedSettings,
+    staged: Vec<(String, Vec<u8>)>,
+) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let not_as_told = || {
+        format!(
+            "the settings of the profile '{}' here are not what its desktop was told",
+            crate::shown::short(&sent.name)
+        )
+    };
+    let record = kept_record(homes, desktop, &sent.name)?
+        .filter(|record| record.harness == sent.harness)
+        .ok_or_else(not_as_told)?;
+    let read = held_files(&record)?;
+    if !read.left_behind.is_empty() {
+        return Err(not_as_told());
+    }
+    let mut whole: BTreeMap<String, Vec<u8>> = read.files.into_iter().collect();
+    for path in &changed.removed {
+        whole.remove(path);
+    }
+    whole.extend(staged);
+    let size: usize = whole.values().map(Vec::len).sum();
+    if size > wire::MOST_PROFILE_SETTINGS_BYTES || whole.len() > wire::MOST_PROFILE_SETTINGS_FILES {
+        return Err(not_as_told());
+    }
+    Ok(whole.into_iter().collect())
 }
 
 /// How many of what stayed behind a Notice names before it counts the rest.
@@ -552,6 +695,7 @@ impl From<Kept> for purlis_session_protocol::session::ProfileToKeep {
             pinned: kept.pinned,
             settings: None,
             settings_staged: None,
+            settings_changed: None,
         }
     }
 }
@@ -584,7 +728,10 @@ pub fn standing_for_the_wire(
 /// `sent` kept for the desktop `desktop` in this runner's store under `homes`, with `home` the
 /// runner's home, at `now`, and whether its harness says, through `look`, that it is signed in
 /// here. The settings `sent` carries (1.50, #3448) are kept in place of the ones kept before;
-/// none sent leaves them as they are.
+/// none sent leaves them as they are. Those of a keep that sent only what changed (#4088) are
+/// what it holds with those in place, read off its disk now, checked whole as any others and kept
+/// only where they come to the digest the keep names, so nothing it said of them decides it;
+/// where they are already there and nothing else is, nothing is written.
 pub fn kept_for_the_desktop(
     homes: &Homes,
     home: &Path,
@@ -595,6 +742,9 @@ pub fn kept_for_the_desktop(
 ) -> Result<purlis_session_protocol::session::ProfileStanding, String> {
     // The settings are checked before anything of the profile is kept, so settings it refuses
     // leave the runner's record as it was.
+    if sent.settings_changed.is_some() && sent.settings.is_none() {
+        return Err("a keep of what changed named no settings staged for it".to_owned());
+    }
     let checked = match &sent.settings {
         Some(_) if sent.sandbox_only => {
             return Err(format!(
@@ -608,17 +758,39 @@ pub fn kept_for_the_desktop(
                 .iter()
                 .map(|file| (file.path.clone(), file.bytes.clone()))
                 .collect();
-            Some(super::made::settings_checked(
-                &sent.harness,
-                &sent.name,
-                &files,
-            )?)
+            let files = match &sent.settings_changed {
+                Some(changed) => settings_after_change(homes, desktop, sent, changed, files)?,
+                None => files,
+            };
+            let checked = super::made::settings_checked(&sent.harness, &sent.name, &files)?;
+            if let Some(changed) = &sent.settings_changed {
+                let digests: Vec<(&str, String)> = checked
+                    .iter()
+                    .map(|(path, bytes)| (path.as_str(), wire::settings_digest(bytes)))
+                    .collect();
+                let whole = wire::whole_settings_digest(
+                    digests
+                        .iter()
+                        .map(|(path, digest)| (*path, digest.as_str())),
+                );
+                if whole != changed.whole {
+                    return Err(format!(
+                        "the settings of the profile '{}' here would not be what its desktop has",
+                        crate::shown::short(&sent.name)
+                    ));
+                }
+            }
+            Some(checked)
         }
         None => None,
     };
     let record = keep(homes, home, &Kept::from(sent), desktop, now)?;
     if let Some(files) = &checked {
-        super::made::settings_kept(homes, &record, files)?;
+        let there =
+            sent.settings_changed.is_some() && super::made::settings_exactly_there(&record, files);
+        if !there {
+            super::made::settings_kept(homes, &record, files)?;
+        }
     }
     Ok(standing_for_the_wire(standing(&record, look)))
 }
