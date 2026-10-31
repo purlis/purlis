@@ -364,6 +364,11 @@ own fills back after it, keeping what the theme sets in a state itself. A switch
 `titlebar.row-count`, in no state, held on its amber wash over the popover and the selected row;
 `titlebar.count` is a chip's.
 
+A part's fill with alpha is measured where it is drawn: over its root's own fill, then the
+family's grounds, so a `rail.badge.fill` wash is read over the button that holds it. A part drawn
+around its root stands on the grounds alone, and a chip's count on the bar's ground, which
+`titlebar.css` draws under its wash whatever the chip's fill.
+
 A card pressed whole (the welcome's doors, the Get page's repo picks) is the `card-button`
 family, not a part of the card's: a theme's `card.title` reaches a card's own title and never a
 pressed card's, even one drawn inside a card, which `card-button.title` reaches.
