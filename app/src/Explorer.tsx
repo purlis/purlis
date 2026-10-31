@@ -615,6 +615,8 @@ export function Explorer({
       for (const folder of above) now.add(fileFold(filesWorkspace, { ...top, folder }));
       return now;
     });
+    // A picked branch's filter narrows its tree, which would hide the row asked for (#4326).
+    if (reveal.piece !== undefined) setFilter("");
     setRevealing({
       row: fileRow({ ...top, folder: parts.join("/") }),
       repo: top.repo,
@@ -669,8 +671,6 @@ export function Explorer({
         return;
       }
       movedFor.current = revealSeen;
-      // A picked branch's filter narrows its tree, which would hide the row asked for.
-      setFilter("");
       onPick({ repo: wanted.repo, piece: wanted.piece, path });
       return;
     }
