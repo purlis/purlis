@@ -514,6 +514,7 @@ import {
   useChatMovesHeard,
 } from "./chatMoves";
 import { usePools } from "./pools";
+import { useSignOutTerminals } from "./settings/signOutTerminals";
 import { fitting, LEAST, LEAST_CHIP, leastAt, useRoom } from "./fits";
 import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
 import { panelRoot } from "./ui/panel/Panel";
@@ -842,6 +843,7 @@ export const PlaneView = memo(function PlaneView({
   shellAsked?: { typed: string; at: number };
 }) {
   const [tabs, setTabs] = useState<Tabs>(noTabs);
+  const signingOutIn = useSignOutTerminals(tabs, plane);
   // **A pane closed for good lets its band's memory go** (#3167): a pane's number is never
   // used again, so one gone from every tab is gone for good.
   const panesDrawn = useRef<{ plane: string; panes: ReadonlySet<number> }>(undefined);
@@ -3134,13 +3136,15 @@ export const PlaneView = memo(function PlaneView({
               })
               .catch((err: unknown) => refusedBy("shell", String(err)));
           // A sign-out that asks in its terminal (#4124): named, never spelled, as a sign-in.
-          else if (typed?.signOut !== undefined)
+          else if (typed?.signOut !== undefined) {
+            signingOutIn(session, typed.pool);
             void commands
               .typeProfileSignOut(plane, session, typed.signOut, typed.pool)
               .then((said) => {
                 if (said.status === "error") refusedBy("shell", said.error);
               })
               .catch((err: unknown) => refusedBy("shell", String(err)));
+          }
           // Typed and not run: installing needs sudo, so the person presses Return (V78 c).
           else if (typed?.sandboxInstall)
             void commands
@@ -3152,7 +3156,7 @@ export const PlaneView = memo(function PlaneView({
         })
         .catch((err: unknown) => refusedBy("shell", String(err)));
     },
-    [change, plane, refusedBy, succeeded],
+    [change, plane, refusedBy, signingOutIn, succeeded],
   );
   const openShell = useCallback(
     (cwd: string | null, filed: string, typed?: Typed) =>

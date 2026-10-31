@@ -195,11 +195,19 @@ impl Target {
                     ))
                     .expect("the runner's hook socket for the project");
                 let spool = purlis_core::hookwire::spool::dir_for(Path::new(&socket));
-                runner
-                    .copied(&spool.to_string_lossy())
-                    .is_some_and(|(_copy, spool)| {
-                        purlis_core::hookwire::spool::holds_lines(&spool, id)
-                    })
+                let spool = spool.to_string_lossy();
+                match runner.copied(&spool) {
+                    Some((_copy, spool)) => purlis_core::hookwire::spool::holds_lines(&spool, id),
+                    // Gone, which holds nothing; a copy that failed of a spool still there
+                    // says nothing, so it fails the test.
+                    None => {
+                        assert!(
+                            runner.path(&spool).is_none(),
+                            "the runner's spool could not be copied"
+                        );
+                        false
+                    }
+                }
             }
             None => purlis_core::hookwire::spool::holds_lines(
                 &purlis_core::hookwire::spool::dir_for(
@@ -640,6 +648,28 @@ pub(crate) struct OnTheRunner {
     pub pool: String,
 }
 
+/// A runner's host stopped, started again when this is dropped: a test that fails while it is
+/// stopped still has a host to end its chats.
+struct HostStopped<'a> {
+    runner: &'a OnTheRunner,
+    pid: String,
+}
+
+impl Drop for HostStopped<'_> {
+    fn drop(&mut self) {
+        // Not `prints`, whose assertion would be a panic inside the panic of a failed test.
+        let _ = purlis_core::forklock::output(
+            std::process::Command::new(self.runner.docker.program()).args([
+                "exec",
+                self.runner.container.as_str(),
+                "kill",
+                "-CONT",
+                self.pid.as_str(),
+            ]),
+        );
+    }
+}
+
 impl OnTheRunner {
     /// What `script` prints in the runner's container, run as its own user.
     pub(crate) fn prints(&self, script: &str) -> String {
@@ -784,6 +814,18 @@ impl OnTheRunner {
             "the lock could not be tried: {out:?}"
         );
         out.status.code() == Some(HELD)
+    }
+
+    /// The runner's host stopped, until what this returns is dropped: the one child of the
+    /// container's init, which `docker exec`'s processes are not.
+    fn its_host_stopped(&self) -> HostStopped<'_> {
+        let pid = self.prints("cat /proc/1/task/1/children").trim().to_owned();
+        assert!(
+            !pid.is_empty() && pid.chars().all(|c| c.is_ascii_digit()),
+            "the container's init has one child: {pid:?}"
+        );
+        self.prints(&format!("kill -STOP {pid}"));
+        HostStopped { runner: self, pid }
     }
 
     /// Whether the process `pid` of the runner's container is there.
@@ -3230,6 +3272,32 @@ fn a_host_killed_outright_brings_twenty_chats_back_within_thirty_seconds() {
     );
 }
 
+/// How many `hook.stop` lines the log of the machine chat `id` ran on holds, the chat closed.
+///
+/// A hook that hears nothing from its host within a quarter of a second spools the line as well
+/// (ADR 0075 §7, #952), and a busy machine can take that long, so a copy is no fault. And a host
+/// that reads the line once its hook has gone refuses it, so only the copy is left. A chat's end
+/// drains its spool, so the count comes after that, the one moment that holds on every path and
+/// the only one a second writing could show in. That a host in time leaves no copy is
+/// `a_line_the_host_takes_is_answered_only_once_its_hearer_has_recorded_it`.
+fn its_hook_lines_once_it_is_closed(target: &Target, id: u32) -> usize {
+    target.sessions.close(id).expect("it closes");
+    // What the window does at a chat's end; where the host holds the log, the host has done it.
+    target.hooks.chat_ended(id);
+    let stops = || {
+        target
+            .events_where_its_chats_run()
+            .iter()
+            .filter(|event| event.kind == "hook.stop")
+            .count()
+    };
+    until("the hook's line is in the event log", || stops() >= 1);
+    until("the copy of the line in its spool is drained", || {
+        !target.spool_holds_lines_of(id)
+    });
+    stops()
+}
+
 /// **The event log has one writer** (#2003): what a chat's hook says is written once, by the
 /// window where the chat runs in the window and by the host where it runs there, and while
 /// chats run in the host the window holds no log of its own. On a pool's runner, the runner's
@@ -3244,22 +3312,9 @@ fn the_event_log_has_one_writer_and_each_hook_line_is_written_once(target: &Targ
         )),
     );
     Pane::on(target, id).shows("reported.");
-    let stops = || {
-        target
-            .events_where_its_chats_run()
-            .iter()
-            .filter(|event| event.kind == "hook.stop")
-            .count()
-    };
-    until("the hook's line is in the event log", || stops() >= 1);
-    // The hook was told its line was taken, so it spooled no copy that could be recorded later.
-    assert!(
-        !target.spool_holds_lines_of(id),
-        "no copy of the line waits to be drained"
-    );
-
-    assert_eq!(stops(), 1, "one line, written once");
-    // Its host recorded it as it heard it, not later from the spool.
+    let stops = its_hook_lines_once_it_is_closed(target, id);
+    assert_eq!(stops, 1, "one line, written once");
+    // Nothing its host heard failed to reach the log.
     let not_recorded = target.hook_lines_its_host_did_not_record();
     assert!(not_recorded.is_empty(), "{not_recorded:?}");
     assert!(
@@ -3274,7 +3329,6 @@ fn the_event_log_has_one_writer_and_each_hook_line_is_written_once(target: &Targ
             "{here:?}"
         );
     }
-    target.sessions.close(id).expect("it closes");
 }
 
 /// **A chat whose program ends with the window gone still has its end recorded, and its
@@ -3867,6 +3921,56 @@ mod a_chat_without_the_sandbox_on_a_runner_makes_no_namespace_and_leaves_it_no_b
             super::a_chat_without_the_sandbox_on_a_runner_makes_no_namespace_and_leaves_it_no_browser(
                 &target,
             );
+        }
+    }
+}
+
+/// **A hook line its runner's host was too slow for is written once** (ADR 0075 §7, #952): the
+/// host stopped while the hook runs, so the hook gives up on it, spools the line and ends. Started
+/// again, the host refuses what it was sent by a process now gone, and the copy is what reaches
+/// the log, once. A host and a copy that both record it is `hookwire`'s
+/// `a_line_the_host_recorded_late_and_its_hook_spooled_is_recorded_once`.
+fn a_hook_line_its_runners_host_was_too_slow_for_is_written_once(target: &Target) {
+    let runner = target.runner.as_ref().expect("a runner's target");
+    let id = a_chat_on_the_board(
+        target,
+        &a_shell(&format!(
+            "printf 'waiting.'; : > /tmp/hook-up; until [ -e /tmp/hook-go ]; do sleep 0.05; done; \
+             PURLIS_HARNESS=claude '{}' hook stop </dev/null; : > /tmp/hook-told; read line",
+            purlis()
+        )),
+    );
+    Pane::on(target, id).shows("waiting.");
+    // A pool has a container of its own, so its `/tmp` is this test's alone.
+    until("the chat's file is seen from outside it", || {
+        runner.path("/tmp/hook-up").is_some()
+    });
+    let a_copy_waits = {
+        let _stopped = runner.its_host_stopped();
+        runner.prints(": > /tmp/hook-go");
+        until("the hook gives up on its stopped host", || {
+            runner.path("/tmp/hook-told").is_some()
+        });
+        target.spool_holds_lines_of(id)
+    };
+    assert!(
+        a_copy_waits,
+        "the hook spooled the line its host did not take"
+    );
+
+    assert_eq!(
+        its_hook_lines_once_it_is_closed(target, id),
+        1,
+        "written once"
+    );
+}
+
+mod a_hook_line_its_runners_host_was_too_slow_for_is_written_once {
+    /// Run by the parity job, which names a runner image; elsewhere it runs nothing.
+    #[test]
+    fn in_a_docker_pool() {
+        if let Some(target) = super::in_a_docker_pool() {
+            super::a_hook_line_its_runners_host_was_too_slow_for_is_written_once(&target);
         }
     }
 }
