@@ -309,27 +309,6 @@ fn a_chat_runs(target: &Target, machine: &Machine, pool: &str, chat: &Named) -> 
                 purlis_core::datahome::IN_A_RUNNER_CONTAINER,
                 purlis_core::datahome::PROJECTS,
             ));
-            let git = |args: &[&str]| {
-                purlis_core::forklock::output(
-                    std::process::Command::new("git").arg("-C").arg(&target.root).args(args),
-                )
-                .map(|out| {
-                    format!(
-                        "{}{}",
-                        String::from_utf8_lossy(&out.stdout),
-                        String::from_utf8_lossy(&out.stderr)
-                    )
-                })
-            };
-            eprintln!(
-                "here: {:?} {:?} {:?}",
-                git(&["status", "--porcelain", "--untracked-files=all"]),
-                git(&["log", "--oneline", "-3"]),
-                std::fs::read_dir(&target.root).map(|dir| dir
-                    .filter_map(Result::ok)
-                    .map(|entry| entry.file_name())
-                    .collect::<Vec<_>>()),
-            );
             panic!("the chat starts on the runner: {why}\nthe runner holds: {held}")
         })
         .number;
