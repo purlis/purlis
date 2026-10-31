@@ -542,14 +542,14 @@ fn it_starts_nothing_from_what_it_writes() {
         &probe.tried(&["start-written", &own, &state]),
         "its state folder",
     );
-    let said = probe.tried(&["start", "/bin/sh", "-c", "echo \"$TMPDIR\""]);
-    let tmp = said.rsplit(' ').next().expect("its temporary folder");
-    assert!(tmp.contains("purlis-extension-"), "{said}");
-    let written = format!("{tmp}/written");
-    refused(
-        &probe.tried(&["start-written", &own, &written]),
-        "its temporary folder",
+    // A temporary folder lasts one question, so the shell writes and starts within it.
+    let script = format!(
+        "cp '{own}' \"$TMPDIR/written\" && chmod 755 \"$TMPDIR/written\" && echo written; \
+         \"$TMPDIR/written\"; echo \"status=$?\""
     );
+    let said = probe.tried(&["start", "/bin/sh", "-c", &script]);
+    assert!(said.contains("written"), "it writes there: {said}");
+    assert!(said.ends_with("status=126"), "its temporary folder: {said}");
 }
 
 fn it_starts_nothing_kept_in_a_vault_in_its_own_folder() {
