@@ -1871,7 +1871,11 @@ async fn admission_refuses_a_bad_allow_list_and_a_claims_wildcard() {
                 &claim_with("e2e-forge-c", repos.clone()),
             )
             .await;
-        refused_in_words("a claim's wildcard or bare owner", made, "spec.forge.repos");
+        match made {
+            Err(kube::Error::Api(status))
+                if status.code == 422 && status.message.contains("spec.forge.repos") => {}
+            other => panic!("the claim's {repos} was not refused for them: {other:?}"),
+        }
     }
     pools
         .delete("e2e-forge-bad", &DeleteParams::default())
