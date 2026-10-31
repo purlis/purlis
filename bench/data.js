@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793428836679,
+  "lastUpdate": 1793430265701,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32718,6 +32718,48 @@ window.BENCHMARK_DATA = {
             "value": 102.09777500000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.001, 102.012, 102.098, 102.191, 102.440 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "73ef43e5190cc28ac945c152994a9b64576d2400",
+          "message": "Grades: the estimate is worked out from an interrupted grade's spend (#3602) (#4187)\n\n* Grades: the estimate is worked out from an interrupted grade's spend (#3602)\n\nA grade's marker now says how many chats the grade asked for so far, ran or\nnot (`Spent::asked_for`), written as each chat ends. The plan's estimate\nshares an interrupted row's spend over those chats, as it shares a scored\nrow's over its arms' chats + not_run, and says the grade was interrupted\n(window, `purlis skill grade`). A row is held to it: at least the chats\nthat ran, at most what its runs could ask for, and none in a scored row\nor a router's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grades: an interrupted grade's estimate goes after a scored one, and only past a turn of each arm (#3602 review)\n\nA scored grade on the same profile is gone by before an interrupted one,\nand an interrupted row counts only once its chats took a turn of each of\nits arms, so one arm's chats are never shared over every arm. The plan\nsays \"interrupted\" only where that grade gave the figure.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T06:23:36Z",
+          "tree_id": "2e6e69c92004779efb17a03823724ab2cfea139a",
+          "url": "https://github.com/purlis/purlis/commit/73ef43e5190cc28ac945c152994a9b64576d2400"
+        },
+        "date": 1793430259643,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.659031,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.654, 0.654, 0.659, 0.673, 0.682 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.525013,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.399, 16.444, 16.525, 16.534, 16.696 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.54636550000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.108, 102.325, 102.546, 102.640, 102.715 ms"
           }
         ]
       }
