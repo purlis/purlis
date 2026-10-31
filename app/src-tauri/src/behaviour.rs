@@ -3928,20 +3928,21 @@ mod a_chat_without_the_sandbox_on_a_runner_makes_no_namespace_and_leaves_it_no_b
 /// `a_line_the_host_recorded_late_and_its_hook_spooled_is_recorded_once`.
 fn a_hook_line_its_runners_host_was_too_slow_for_is_written_once(target: &Target) {
     let runner = target.runner.as_ref().expect("a runner's target");
+    let id = a_chat_on_the_board(
+        target,
+        &a_shell(&format!(
+            "printf 'waiting.'; until [ -e .hook-go ]; do sleep 0.05; done; \
+             PURLIS_HARNESS=claude '{}' hook stop </dev/null; : > .hook-told; read line",
+            purlis()
+        )),
+    );
+    Pane::on(target, id).shows("waiting.");
+    // Where the chat is: a runner holds the project once its first chat has started.
     let project = target.project_on_its_runner(runner);
     let (go, told) = (
         format!("{project}/.hook-go"),
         format!("{project}/.hook-told"),
     );
-    let id = a_chat_on_the_board(
-        target,
-        &a_shell(&format!(
-            "printf 'waiting.'; until [ -e '{go}' ]; do sleep 0.05; done; \
-             PURLIS_HARNESS=claude '{}' hook stop </dev/null; : > '{told}'; read line",
-            purlis()
-        )),
-    );
-    Pane::on(target, id).shows("waiting.");
     let a_copy_waits = {
         let _stopped = runner.its_host_stopped();
         runner.prints(&format!(": > '{go}'"));
