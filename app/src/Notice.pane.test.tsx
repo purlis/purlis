@@ -17,6 +17,7 @@ import {
   useNoticeSettle,
 } from "./noticeSettle";
 import { drawnWith } from "./cascade.testkit";
+import { OWN_SCROLL_HOLD_MS } from "./wayPlaces";
 
 /**
  * **A Notice in a pane's corner fits its pane, whatever it says** (#1481).
@@ -866,6 +867,142 @@ describe("a granting answer on a pane that moved while its line stood still (#31
     }
   });
 
+  /** **A scroll of the band the guard reads now**: the band slides 80 on screen, and a scroll
+   *  event asks for a read in the next frame, before any press. */
+  async function scrolledAndRead(band: { top: number }, stack: Element) {
+    band.top = 20;
+    stack.dispatchEvent(new Event("scroll"));
+    await act(() => new Promise((done) => setTimeout(done, 50)));
+  }
+
+  /** The band's scrolling box, where the person's input lands. */
+  const stackOf = () =>
+    document.querySelector('[data-scope="notice-row"][data-part="stack"]') as HTMLElement;
+
+  it("holds a press after a scroll that follows a press that was not the primary one (#3399)", async () => {
+    const band = { top: 100, height: 300 };
+    const unscroll = scrolling(band);
+    const { rect, allowed } = aConsent(
+      () => DOMRect.fromRect({ x: 12, y: 140 - band.top, width: 90, height: 24 }),
+      () => 116 - band.top,
+    );
+    const clock = 1_000_000;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    try {
+      // A right press on the band opens a menu: it holds no scrollbar.
+      stackOf().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 2 }));
+      await scrolledAndRead(band, stackOf());
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+    } finally {
+      now.mockRestore();
+      rect.mockRestore();
+      unscroll();
+    }
+  });
+
+  it("holds a press after a scroll that follows a scrollbar press never let go, once another press came (#3399)", async () => {
+    const band = { top: 100, height: 300 };
+    const unscroll = scrolling(band);
+    const { rect, allowed } = aConsent(
+      () => DOMRect.fromRect({ x: 12, y: 140 - band.top, width: 90, height: 24 }),
+      () => 116 - band.top,
+    );
+    let clock = 1_000_000;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    try {
+      // The scrollbar is pressed and its release never comes (the pointer left the window).
+      stackOf().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+      clock += 5000;
+      // The next press, on the page, is the person doing something else.
+      document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+      await scrolledAndRead(band, stackOf());
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+    } finally {
+      now.mockRestore();
+      rect.mockRestore();
+      unscroll();
+    }
+  });
+
+  it("holds a press after a scroll long after a scrollbar press never let go (#3399)", async () => {
+    const band = { top: 100, height: 300 };
+    const unscroll = scrolling(band);
+    const { rect, allowed } = aConsent(
+      () => DOMRect.fromRect({ x: 12, y: 140 - band.top, width: 90, height: 24 }),
+      () => 116 - band.top,
+    );
+    let clock = 1_000_000;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    try {
+      stackOf().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+      clock += OWN_SCROLL_HOLD_MS + 1;
+      await scrolledAndRead(band, stackOf());
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+    } finally {
+      now.mockRestore();
+      rect.mockRestore();
+      unscroll();
+    }
+  });
+
+  it("holds a press after a scroll that follows a Tab the focused field took itself (#3399)", async () => {
+    const band = { top: 100, height: 300 };
+    const unscroll = scrolling(band);
+    const { rect, allowed } = aConsent(
+      () => DOMRect.fromRect({ x: 12, y: 140 - band.top, width: 90, height: 24 }),
+      () => 116 - band.top,
+    );
+    const clock = 1_000_000;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    // A field that takes Tab itself, as the terminal does for its completion.
+    const field = document.createElement("textarea");
+    field.addEventListener("keydown", (event) => {
+      if (event.key === "Tab") event.preventDefault();
+    });
+    stackOf().append(field);
+    try {
+      field.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Tab" }),
+      );
+      await scrolledAndRead(band, stackOf());
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+    } finally {
+      field.remove();
+      now.mockRestore();
+      rect.mockRestore();
+      unscroll();
+    }
+  });
+
+  it("holds a press after a scroll of the band that follows the person's wheel elsewhere (#3399)", async () => {
+    const band = { top: 100, height: 300 };
+    const unscroll = scrolling(band);
+    const { rect, allowed } = aConsent(
+      () => DOMRect.fromRect({ x: 12, y: 140 - band.top, width: 90, height: 24 }),
+      () => 116 - band.top,
+    );
+    const clock = 1_000_000;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    // Somewhere else on the page, which no scroll of the band follows from.
+    const elsewhere = document.createElement("div");
+    document.body.append(elsewhere);
+    try {
+      elsewhere.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -80 }));
+      await scrolledAndRead(band, stackOf());
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+    } finally {
+      elsewhere.remove();
+      now.mockRestore();
+      rect.mockRestore();
+      unscroll();
+    }
+  });
+
   it("dates a move from the frame after it, not from the press: a settled Allow is not held", async () => {
     // The window is narrowed and the Allow moves; its press comes well after. The frame after
     // the resize read the move then, so the press is not held for a move it did not follow.
@@ -1038,6 +1175,58 @@ describe("a granting Notice that arrives in a pane's band (#3167, D-3167-5)", ()
 
       // Once it has stood for the settle time, the same press allows.
       clock += 2000;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge"]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("stands as it arrives in a band its last Notice left by itself long ago (#3399)", async () => {
+    // A warning that puts itself away (its own state, not the pane's): the row hides as it
+    // goes, before any read sees it empty.
+    function Leaves() {
+      const [here, setHere] = useState(true);
+      if (!here) return null;
+      return (
+        <Notice cause="skills-missing:7" at="pane" label="Skills" onDismiss={() => setHere(false)}>
+          A skill is missing.
+        </Notice>
+      );
+    }
+    let clock = 1_000_000;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    try {
+      const allowed: string[] = [];
+      const consent = (
+        <Notice
+          cause="vault-refused:7:forge"
+          at="pane"
+          tone="trouble"
+          label="Vault"
+          fixes={[
+            { label: "Allow forge", onPress: () => allowed.push("forge"), allows: true },
+            { label: "Keep blocked", onPress: () => undefined },
+          ]}
+        >
+          purlis did not open vault forge.
+        </Notice>
+      );
+      const { rerender } = render(
+        <NoticePaneRow>
+          <Leaves />
+        </NoticePaneRow>,
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      await act(() => new Promise((done) => setTimeout(done, 50)));
+      expect(screen.queryByText("A skill is missing.")).toBeNull();
+      clock += 10_000;
+      rerender(
+        <NoticePaneRow>
+          <Leaves />
+          {consent}
+        </NoticePaneRow>,
+      );
       await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
       expect(allowed).toEqual(["forge"]);
     } finally {
