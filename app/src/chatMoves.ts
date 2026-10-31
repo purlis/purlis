@@ -78,8 +78,7 @@ export function heardMove(plane: PlaneId, told: ChatMove) {
     // `over` says the same of a move made and one put away. Only these stages can be put away;
     // with none held, the line was dismissed or put away here, which says so itself.
     const was = held[plane]?.[told.session]?.stage;
-    if (was === "preparing" || was === "signing-in" || was === "ready")
-      waitedOnASignIn.delete(key);
+    if (was === "preparing" || was === "signing-in" || was === "ready") waitedOnASignIn.delete(key);
     forgetMove(plane, told.session);
     return;
   }
