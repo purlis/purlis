@@ -189,7 +189,10 @@ async function aWorkspaceNaming(plane: string, name: string, repos: string[]): P
   await ask("workspace_create", { plane, name, vision: null, live: false });
   const manifest = join(plane, "workspaces", name, "workspace.json");
   const doc = JSON.parse(readFileSync(manifest, "utf8")) as Record<string, unknown>;
-  writeFileSync(manifest, JSON.stringify({ ...doc, repos }, null, 2));
+  writeFileSync(
+    manifest,
+    JSON.stringify({ ...doc, repos: repos.map((repo) => ({ name: repo })) }, null, 2),
+  );
   await focusWorkspace(name);
   await showView("Repos");
   for (const repo of repos)
@@ -230,8 +233,11 @@ async function aNewWorkspaceCloning(name: string, repos: string[]): Promise<void
       const label = [
         ...document.querySelectorAll<HTMLElement>('[data-testid="repo-picker"] label'),
       ].find((one) => (one.textContent ?? "").trim().startsWith(words));
-      label?.click();
-      return label !== undefined;
+      // The input's to take, not its label's: the driver presses without a pointer (`footer`).
+      const box =
+        label?.querySelector("input") ?? document.getElementById(label?.getAttribute("for") ?? "");
+      box?.click();
+      return box !== null && box !== undefined;
     }, repo);
     if (!picked) throw new Error(`the repo picker offers no ${repo}`);
   }
