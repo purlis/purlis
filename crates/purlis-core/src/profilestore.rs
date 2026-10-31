@@ -347,13 +347,22 @@ pub fn sign_in_file_of(harness: &str) -> Option<&'static str> {
     }
 }
 
-/// **The folder under the data home a runner keeps the sign-ins carried to it in** (#4011,
-/// #4055): `<data>/carried/<batch>/<profile>/`, a batch of each drained runner's, in a folder
-/// the carry made, until it keeps that profile for its desktop and takes them in.
-pub const CARRIED: &str = "carried";
+/// **The folder a runner keeps the sign-ins carried to it in** (#4011, #4055), under its profiles'
+/// folder ([`made::DIR`]), which a chat neither reads nor writes:
+/// `<data>/profiles/.carried/<batch>/<profile>/`, a batch of each drained runner's, until it keeps
+/// that profile for its desktop and takes them in. A profile's name starts with no dot.
+pub const CARRIED: &str = ".carried";
 
-/// **Where under a runner's home the carry puts the sign-ins it carries** (#4055): [`CARRIED`]
-/// under its data home, walked to through no link.
+/// Where the carry put them before: only ever cleared, never taken in ([`made::take_carried`]).
+pub(crate) const CARRIED_BEFORE: &str = "carried";
+
+/// [`CARRIED`] under the data home `data`.
+pub fn carried_in(data: &Path) -> PathBuf {
+    data.join(made::DIR).join(CARRIED)
+}
+
+/// **Where under a runner's home the carry puts the sign-ins it carries** (#4055): [`carried_in`]
+/// its data home, walked to through no link.
 pub fn carried_under_a_runner_home() -> String {
     Path::new(".local/share")
         .join(
@@ -362,6 +371,7 @@ pub fn carried_under_a_runner_home() -> String {
                 .next()
                 .unwrap_or("purlis"),
         )
+        .join(made::DIR)
         .join(CARRIED)
         .display()
         .to_string()
@@ -373,6 +383,7 @@ pub fn carried_under_a_runner_home() -> String {
 pub fn carried_under_an_old_runner_home() -> String {
     Path::new(".local/share")
         .join(crate::names::DATA_HOME.newest_old())
+        .join(made::DIR)
         .join(CARRIED)
         .display()
         .to_string()

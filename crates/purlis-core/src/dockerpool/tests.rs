@@ -2887,9 +2887,7 @@ fn a_carry_leaves_a_profile_signed_out_of_the_pool() {
 /// (`crate::datahome`).
 #[cfg(unix)]
 fn the_stage(to: &std::path::Path) -> std::path::PathBuf {
-    crate::names::DATA_HOME
-        .folder_at(&to.join(".local/share"))
-        .join(crate::profilestore::CARRIED)
+    crate::profilestore::carried_in(&crate::names::DATA_HOME.folder_at(&to.join(".local/share")))
 }
 
 /// **A carry never moves a running runner's data home** (only a migration makes the purlis
@@ -3094,7 +3092,7 @@ fn a_carry_writes_nothing_through_a_link_on_its_way() {
         .path()
         .join(crate::profilestore::carried_under_a_runner_home());
     std::fs::create_dir_all(stage.parent().unwrap()).unwrap();
-    std::os::unix::fs::symlink("../../../project", &stage).unwrap();
+    std::os::unix::fs::symlink("../../../../project", &stage).unwrap();
 
     carried(from.path(), to.path());
 

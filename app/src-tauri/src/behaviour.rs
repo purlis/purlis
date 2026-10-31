@@ -3643,7 +3643,7 @@ fn a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(target: &Targe
 const REAL_CLAUDE_CODE: &str = "/usr/local/lib/parity/claude-code";
 
 /// What a chat says of [`PastAChat::tries`]: its project reached, and nothing past it.
-const PAST_A_CHAT: [&str; 9] = [
+const PAST_A_CHAT: [&str; 11] = [
     "PROJECT yes.",
     "ENGINE-FOLDER no.",
     "ENGINE-MEMORY no.",
@@ -3651,6 +3651,8 @@ const PAST_A_CHAT: [&str; 9] = [
     "HOST-PIPE no.",
     "HOST-KEY no.",
     "HOST-SOCKET no.",
+    "CARRIED-READ no.",
+    "CARRIED-WRITE no.",
     // Only the browser engine may make namespaces on a runner (D-2050-25), refused by the
     // filter, not for want of a program.
     "NAMESPACE no:",
@@ -3688,7 +3690,10 @@ impl PastAChat {
              try HOST-PIPE 'exec 3<> /proc/{host}/fd/{pipe}'\n\
              try HOST-KEY 'cat {key}'\n\
              try HOST-SOCKET 'ls {socket}'\n\
-             if said=$(unshare --user true 2>&1); then printf 'NAMESPACE yes.\\n'; else printf 'NAMESPACE no: %s\\n' \"$said\"; fi\n"
+             try CARRIED-READ 'cat $HOME/.local/share/*/profiles/{carried}/a/work/file'\n\
+             try CARRIED-WRITE 'mkdir $HOME/.local/share/*/profiles/{carried}/planted'\n\
+             if said=$(unshare --user true 2>&1); then printf 'NAMESPACE yes.\\n'; else printf 'NAMESPACE no: %s\\n' \"$said\"; fi\n",
+            carried = purlis_core::profilestore::CARRIED,
         )
     }
 }
@@ -3712,6 +3717,13 @@ fn a_browser_and_what_lies_past_a_chat(
         )
         .unwrap_or_else(|why| panic!("a browser starts on the runner: {why:?}"));
 
+    // What a drained runner carried here, waiting for its profile to be kept.
+    runner.prints(&format!(
+        "at=$(dirname \"$HOME\"/.local/share/*/{browsers})/profiles/{carried}/a/work; \
+         mkdir -p \"$at\"; echo held > \"$at/file\"",
+        browsers = purlis_core::datahome::BROWSERS,
+        carried = purlis_core::profilestore::CARRIED,
+    ));
     let found = runner.prints(&format!(
         r#"set -e
 engine=; host=

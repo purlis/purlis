@@ -650,6 +650,38 @@ fn a_drained_runner_whose_sign_ins_are_not_carried_is_removed_all_the_same() {
     );
 }
 
+/// **No sign-in crosses to or from a runner a chat ran on without the sandbox**: not from one, so
+/// a sign-in it could have changed reaches no later runner, and not to one, so none it never had
+/// reaches it. The runner is removed all the same, and its profiles are signed in again.
+#[test]
+fn a_drain_carries_no_sign_in_to_or_from_a_runner_a_chat_ran_on_without_the_sandbox() {
+    for marked_drained in [true, false] {
+        let config = tempfile::tempdir().unwrap();
+        let ours = desktop();
+        let fake = a_docker(&runner_answers());
+        a_pool_added(config.path(), &fake, &ours);
+        let drained = runners::runner_for(config.path(), "first").unwrap();
+        let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+        let successor = crate::dockerpool::successor_name("first", &new_image);
+        makes(&fake, &successor, NEW, &successor_answers());
+        follow(config.path(), &fake.docker(), "first", &new_image, &ours).unwrap();
+        let new = runners::runner_for(config.path(), "first").unwrap();
+        let marked = if marked_drained { &drained } else { &new };
+        crate::runnertaint::mark(config.path(), &marked.made.container).unwrap();
+        std::fs::write(fake.file_path("log"), "").unwrap();
+
+        let removed = drain(config.path(), &fake.docker(), "first", None).unwrap();
+
+        assert!(removed.forgotten);
+        let log = fake.file("log");
+        assert!(!log.contains("-copy "), "{marked_drained}: {log}");
+        assert!(
+            log.contains("volume rm --force purlis-runner-first-home"),
+            "{log}"
+        );
+    }
+}
+
 /// **A copy container an earlier carry left holds no later one back** (#4055): one of this
 /// desktop's, of the pool's runner's copy name, is removed by its id before the carry runs.
 #[test]
@@ -2212,6 +2244,24 @@ fn a_runner_removed_outside_purlis_is_made_again_with_its_sign_ins_and_paired() 
         "{log}"
     );
     assert_ne!(old.made, again.kept.made);
+}
+
+/// A runner a chat ran on without the sandbox is made again with nothing carried, its home there
+/// or not: a new runner starts on no sign-in that chat could have changed.
+#[test]
+fn a_runner_a_chat_ran_on_without_the_sandbox_is_made_again_with_nothing_carried() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    removed_outside_purlis(config.path(), &fake, &ours, Some("2026-01-01T00:00:00Z"));
+    crate::runnertaint::mark_pool(config.path(), "first").unwrap();
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+    assert!(!again.sign_ins_kept);
+    let log = fake.file("log");
+    assert!(!log.contains("-copy "), "{log}");
 }
 
 /// Its home gone too, the runner is made again with nothing carried: its profiles are signed in
