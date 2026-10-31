@@ -29,6 +29,7 @@ fn claim_by(requester: &str, namespace: &str, name: &str, pool: &str) -> Arc<Cla
             requester: requester.into(),
             kept: false,
             stopped: false,
+            forge: None,
         },
         status: None,
     })

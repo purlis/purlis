@@ -12,11 +12,13 @@ import {
   type ReviewSkill,
   type ReviewSummary,
   type SkillChanged,
+  type SkillGrant,
   type SkillLevel,
   type SkillSource,
   type SourceChecked,
   type SkillUpdateOffer,
   type SkillUpdates,
+  type SkillWidening,
   type StudioLevel,
   type UpdateFile,
   type UpdateReview,
@@ -25,6 +27,7 @@ import { counted } from "./dispatches";
 import { Notice, type NoticeAction } from "./Notice";
 import { Choice, Field, SettingRow } from "./settings/components";
 import { labelOf, picking, sameLevel } from "./skillChanges";
+import { GrantPicker } from "./SkillLevelPickers";
 import { NotRead, ReadingRows } from "./SkillPanels";
 import { sourceKey, type SourcesAt } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
@@ -57,14 +60,18 @@ import { ReviewPage } from "./ui/review-page/ReviewPage";
  *   available, or with what its files do ("runs a script", "reaches 1 host"), with Check for
  *   updates and Remove source…, which keeps every skill installed from it.
  * - **The install review**: the pinned commit, what each skill adds with the risky items marked,
- *   each file one click away under its own mark, and where it lands, with Install at the foot.
+ *   each file one click away under its own mark, and where it lands, with Install at the foot. At
+ *   the project level it is granted there too, the root's until the person picks another, and
+ *   says which project skill it relies on that grant widens (#4185, #4172).
  * - **Install all…** (#4024): the source's skills ticked, every one not installed yet, to untick
  *   and narrow; then one review of those ticked, where they land chosen once at its top, each
  *   skill's risky items marked and its files read when it is unfolded, and one Install for all of
  *   them as one change. Past what one read of the source may take, it says so and asks to install
  *   them in two parts.
- * - **The update review**: what changes in what it adds, the source's diff, the edits made here
- *   since the install, then Accept update or Not now at the foot.
+ * - **The update review**: what changes in what it adds, where it reaches (what comes along lands
+ *   with the updated skill's grant, and which project skill it relies on that grant widens,
+ *   #4186), the source's diff, the edits made here since the install, then Accept update or Not
+ *   now at the foot.
  *
  * Both reviews are consent surfaces: they follow the review page's rules (`ui/review-page`), and
  * a main action that cannot be pressed says why.
@@ -259,6 +266,7 @@ export function SkillSourcesPage({
   stillAt,
   onOpenSkill,
   levels,
+  workspaces,
   start,
   busy,
   change,
@@ -276,6 +284,8 @@ export function SkillSourcesPage({
   /** Opens an installed skill in the Library. */
   onOpenSkill: (name: string) => void;
   levels: readonly StudioLevel[];
+  /** The project's workspaces, which an install at the project level may be granted to. */
+  workspaces: readonly string[];
   /** The level an install lands at unless the person picks another: where they came from. */
   start: SkillLevel;
   busy: boolean;
@@ -329,7 +339,7 @@ export function SkillSourcesPage({
         onCancel={() => onGo(sourceAt === undefined ? undefined : toSource(at))}
         onAccept={(offer, review) =>
           changeThen("The skill was not updated", () =>
-            commands.skillUpdate(plane, offer.level, offer.name, review.accepted),
+            commands.skillUpdate(plane, offer.level, offer.name, review.accepted, review.grant),
           )
         }
       />
@@ -372,16 +382,17 @@ export function SkillSourcesPage({
         source={sourceAt}
         named={at.skills}
         levels={levels}
+        workspaces={workspaces}
         start={start}
         busy={busy}
         // Back to the list as it was ticked.
         onCancel={() =>
           onGo({ at: "choose", source: at.source, label: at.label, ticked: at.skills })
         }
-        onInstall={(review, level) =>
+        onInstall={(review, level, grant) =>
           changeThen(
             "The skills were not installed",
-            () => commands.skillInstall(plane, sourceAt, level, review.accepted, null),
+            () => commands.skillInstall(plane, sourceAt, level, review.accepted, grant),
             toSource(at),
           )
         }
@@ -394,13 +405,14 @@ export function SkillSourcesPage({
         source={sourceAt}
         name={at.skill}
         levels={levels}
+        workspaces={workspaces}
         start={start}
         busy={busy}
         onCancel={() => onGo(toSource(at))}
-        onInstall={(review, level) =>
+        onInstall={(review, level, grant) =>
           changeThen(
             "The skill was not installed",
-            () => commands.skillInstall(plane, sourceAt, level, review.accepted, null),
+            () => commands.skillInstall(plane, sourceAt, level, review.accepted, grant),
             toSource(at),
           )
         }
@@ -1069,6 +1081,148 @@ export function Summary({ summary, testid }: { summary: ReviewSummary; testid?: 
   );
 }
 
+/** The change a review is of, as its lines name it. */
+type Change = "install" | "update";
+
+/**
+ * **What a reviewed skill says of each skill it refers to and leaves as it is** (#4032, #4172,
+ * #4186): its chats there have it already, or it is a project skill whose grant the change
+ * widens to where the change reaches, and each workspace that turned it off, whose chats get the
+ * reviewed skill without it.
+ */
+function Relies({
+  skill,
+  widenings,
+  by,
+}: {
+  skill: ReviewSkill;
+  /** None while what the change widens is not known: it is read, or could not be. */
+  widenings: readonly SkillWidening[] | undefined;
+  by: Change;
+}) {
+  return (
+    <>
+      {skill.already.map((one) => {
+        const widened = widenings?.find((each) => each.name === one);
+        return (
+          <div key={one} data-testid={`already-${skill.name}-${one}`}>
+            {widenings === undefined ? (
+              <p className="honest">
+                It refers to <code>{one}</code>, which the project has: it is left as it is.
+              </p>
+            ) : widened?.added != null ? (
+              <p className="honest">
+                It refers to <code>{one}</code>, which is granted to {widened.granted}: it is left
+                as it is, and the {by} grants it to {widened.added} too.
+              </p>
+            ) : (
+              <p className="honest">
+                It refers to <code>{one}</code>, which its chats there have already: it is left as
+                it is.
+              </p>
+            )}
+            {widened?.turned_off.map((ws) => (
+              <p key={ws} className="honest">
+                {ws} turned <code>{one}</code> off, so its chats get {skill.name} without it.
+              </p>
+            ))}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+/** The grant an install starts with: chats at the project's root alone (ADR 0100 §2). */
+const ROOT: SkillGrant = { to: "root" };
+
+/** Whether an install at `level` is granted: one into the project's shared skills alone. */
+function grantedAt(level: SkillLevel): boolean {
+  return level.at === "project" && !level.local;
+}
+
+/**
+ * **Where an install reaches** (#4185, ADR 0100 §2): the grant picked in its review, the root's
+ * until the person picks another, at the project level alone; and what it asks of the project
+ * skills `review` relies on (#4172), asked again each time the grant changes, never the source.
+ * Install waits for that answer, so what it widens is shown before it is pressed.
+ */
+function useInstallGrant(plane: string, level: SkillLevel, review: InstallReview | undefined) {
+  const [grant, setGrant] = useState<SkillGrant>(ROOT);
+  const asks = grantedAt(level);
+  const already = [...new Set(review?.skills.flatMap((skill) => skill.already) ?? [])];
+  // Nothing beyond the root is widened, so only a grant past it asks.
+  const asked = review !== undefined && asks && grant.to !== "root" && already.length > 0;
+  const { read, again } = useRead(
+    asked
+      ? `${JSON.stringify(level)}\u0000${JSON.stringify(grant)}\u0000${already.join("\u0000")}`
+      : undefined,
+    () => commands.skillInstallWidenings(plane, level, grant, already),
+  );
+  return {
+    /** The grant Install hands the core: none where it is not a project install. */
+    grant: asks ? grant : null,
+    picked: grant,
+    asks,
+    setGrant,
+    /** What it widens; none while it is read, or where it could not be. */
+    widenings: asked ? read?.data : [],
+    /** Why Install waits on it, if it does. */
+    why: !asked
+      ? undefined
+      : read === undefined
+        ? "Where it reaches is being read."
+        : read.refused !== undefined
+          ? "Where it reaches could not be read."
+          : undefined,
+    read: asked ? read : undefined,
+    again,
+  };
+}
+
+/** The grant row of an install review at the project level, and why what it widens was unread. */
+function InstallGrant({
+  label,
+  workspaces,
+  busy,
+  reach,
+}: {
+  /** The picker's name: "Where deploy will reach". */
+  label: string;
+  workspaces: readonly string[];
+  busy: boolean;
+  reach: ReturnType<typeof useInstallGrant>;
+}) {
+  if (!reach.asks) return null;
+  return (
+    <>
+      <SettingRow
+        label="Reaches"
+        grouped
+        help="A project skill reaches only the chats its grant names. Change it afterwards from the Library."
+        control={() => (
+          <GrantPicker
+            label={label}
+            workspaces={workspaces}
+            now={reach.picked}
+            disabled={busy}
+            onPick={reach.setGrant}
+          />
+        )}
+      />
+      {reach.read?.refused !== undefined && (
+        <NotRead
+          what="where the install reaches"
+          why={reach.read.refused}
+          onAgain={reach.again}
+          testid="install-reach-unread"
+          size="sm"
+        />
+      )}
+    </>
+  );
+}
+
 /** One skill of a review: what it adds first, then every file under its mark, each readable.
  *  In a review of many (#4024) its box to leave it out comes first, and its files are folded
  *  under one line, read when it is unfolded. */
@@ -1076,12 +1230,22 @@ function SkillReviewed({
   skill,
   pick,
   folded = false,
+  widenings = [],
+  by = "install",
+  relies = true,
 }: {
   skill: ReviewSkill;
   /** Its box in a review of many: ticked, to untick and leave it out. */
   pick?: ReactNode;
   /** Its files under one line, drawn only once it is unfolded. */
   folded?: boolean;
+  /** What the change asks of the project skills it relies on (#4172, #4186); none while it is
+   *  not known. */
+  widenings?: readonly SkillWidening[] | undefined;
+  /** The change, as its lines name it. */
+  by?: Change;
+  /** Whether it says what it refers to and leaves as it is: not where the page said so above. */
+  relies?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const files = (
@@ -1114,11 +1278,7 @@ function SkillReviewed({
       {skill.brought_by !== null && (
         <p className="honest">Comes along: {skill.brought_by} refers to it.</p>
       )}
-      {skill.already.map((one) => (
-        <p key={one} className="honest" data-testid={`already-${skill.name}-${one}`}>
-          It refers to <code>{one}</code>, which its chats there have already: it is left as it is.
-        </p>
-      ))}
+      {relies && <Relies skill={skill} widenings={widenings} by={by} />}
       <h4 className="ui-text-small ui-text-strong">What it adds</h4>
       <Summary summary={skill.summary} testid={`summary-${skill.name}`} />
       {skill.lint.map((line) => (
@@ -1163,6 +1323,7 @@ function InstallReviewPage({
   source,
   name,
   levels,
+  workspaces,
   start,
   busy,
   onCancel,
@@ -1172,10 +1333,11 @@ function InstallReviewPage({
   source: SkillSource;
   name: string;
   levels: readonly StudioLevel[];
+  workspaces: readonly string[];
   start: SkillLevel;
   busy: boolean;
   onCancel: () => void;
-  onInstall: (review: InstallReview, level: SkillLevel) => void;
+  onInstall: (review: InstallReview, level: SkillLevel, grant: SkillGrant | null) => void;
 }) {
   const [level, setLevel] = useState<SkillLevel>(start);
   // Read again where it lands changes: a skill it refers to that the level holds already is
@@ -1191,6 +1353,7 @@ function InstallReviewPage({
     level,
   );
   const review = read?.data;
+  const reach = useInstallGrant(plane, level, review);
   const risky = review?.skills.reduce((n, skill) => n + skill.summary.marked, 0) ?? 0;
   const why =
     read === undefined
@@ -1199,7 +1362,7 @@ function InstallReviewPage({
         ? "The review could not be read."
         : busy
           ? BUSY
-          : undefined;
+          : reach.why;
   return (
     <ReviewPage
       label={`Install ${name} from ${source.label}`}
@@ -1212,7 +1375,7 @@ function InstallReviewPage({
         isDisabled: why !== undefined,
         tooltip: why,
         onPress: () => {
-          if (review !== undefined) onInstall(review, level);
+          if (review !== undefined) onInstall(review, level, reach.grant);
         },
       }}
     >
@@ -1237,6 +1400,12 @@ function InstallReviewPage({
           />
         )}
       />
+      <InstallGrant
+        label={`Where ${name} will reach`}
+        workspaces={workspaces}
+        busy={busy}
+        reach={reach}
+      />
       <Held read={read} what={`the review of ${name}`} again={again}>
         {(data) => (
           <>
@@ -1249,7 +1418,7 @@ function InstallReviewPage({
               runs, and the chat&apos;s sandbox bounds that. Installing copies all of them or none.
             </p>
             {data.skills.map((skill) => (
-              <SkillReviewed key={skill.name} skill={skill} />
+              <SkillReviewed key={skill.name} skill={skill} widenings={reach.widenings} />
             ))}
           </>
         )}
@@ -1446,6 +1615,7 @@ function InstallSetReviewPage({
   source,
   named,
   levels,
+  workspaces,
   start,
   busy,
   onCancel,
@@ -1456,10 +1626,11 @@ function InstallSetReviewPage({
   /** The skills ticked on the list, in its order. */
   named: readonly string[];
   levels: readonly StudioLevel[];
+  workspaces: readonly string[];
   start: SkillLevel;
   busy: boolean;
   onCancel: () => void;
-  onInstall: (review: InstallReview, level: SkillLevel) => void;
+  onInstall: (review: InstallReview, level: SkillLevel, grant: SkillGrant | null) => void;
 }) {
   // Those still in this install: unticking one here leaves it out and reads the review again.
   const [names, setNames] = useState<readonly string[]>(named);
@@ -1480,6 +1651,7 @@ function InstallSetReviewPage({
   );
   const answer: InstallSetReview | undefined = read?.data;
   const review = answer?.kind === "review" ? answer.review : undefined;
+  const reach = useInstallGrant(plane, level, review);
   // A skill left out that another brings along is in the review, and is not listed as left out.
   const leftOut = named.filter(
     (name) => !names.includes(name) && !review?.skills.some((one) => one.name === name),
@@ -1498,7 +1670,7 @@ function InstallSetReviewPage({
               ? `Every skill ticked is in the ${labelOf(levels, level)} skills already.`
               : busy
                 ? BUSY
-                : undefined;
+                : reach.why;
   const risky = review === undefined ? 0 : riskyIn(review);
   return (
     <ReviewPage
@@ -1512,7 +1684,7 @@ function InstallSetReviewPage({
         isDisabled: why !== undefined,
         tooltip: why,
         onPress: () => {
-          if (review !== undefined) onInstall(review, level);
+          if (review !== undefined) onInstall(review, level, reach.grant);
         },
       }}
     >
@@ -1538,6 +1710,12 @@ function InstallSetReviewPage({
             }}
           />
         )}
+      />
+      <InstallGrant
+        label="Where they will reach"
+        workspaces={workspaces}
+        busy={busy}
+        reach={reach}
       />
       {names.length === 0 ? (
         <EmptyState
@@ -1592,6 +1770,7 @@ function InstallSetReviewPage({
                     key={skill.name}
                     skill={skill}
                     folded
+                    widenings={reach.widenings}
                     pick={
                       <Checkbox
                         isSelected
@@ -1685,8 +1864,23 @@ function Changes({ files, open = false }: { files: readonly UpdateFile[]; open?:
   );
 }
 
-/** **The update review**: what changes, the source's diff, the edits made here since the
- *  install, then Accept update or Not now fixed at the foot. */
+/** What `grant` reaches, inside a sentence: "every workspace", "the root and ops". */
+function reachSaid(grant: SkillGrant): string {
+  if (grant.to === "only") return `the root and ${grant.workspaces.join(", ")}`;
+  return grant.to === "all" ? "every workspace" : "the root alone";
+}
+
+/** Whether an update's review says where it reaches (#4186): a skill it brings along lands with
+ *  its grant, or a project skill it relies on is widened or turned off somewhere it reaches. */
+function reaches(update: UpdateReview): boolean {
+  return (
+    (update.grant !== null && update.brought.length > 0) ||
+    update.widenings.some((one) => update.skill.already.includes(one.name))
+  );
+}
+
+/** **The update review**: what changes, the source's diff, where it reaches, the edits made
+ *  here since the install, then Accept update or Not now fixed at the foot. */
 function UpdateReviewPage({
   plane,
   at,
@@ -1773,6 +1967,22 @@ function UpdateReviewPage({
                 </>
               )}
             </section>
+            {reaches(data) && (
+              <section aria-labelledby="update-reach" className="skill-review">
+                <h3 id="update-reach" className="ui-text-strong">
+                  Where it reaches
+                </h3>
+                {data.grant !== null && data.brought.length > 0 && (
+                  <p className="honest" data-testid="update-brought-grant">
+                    {data.brought.length === 1
+                      ? `${data.brought[0].name}, which comes along, reaches`
+                      : "What comes along reaches"}{" "}
+                    {reachSaid(data.grant)}, as {data.name} does.
+                  </p>
+                )}
+                <Relies skill={data.skill} widenings={data.widenings} by="update" />
+              </section>
+            )}
             <section aria-labelledby="update-source" className="skill-review">
               <h3 id="update-source" className="ui-text-strong">
                 The source&apos;s change
@@ -1791,10 +2001,20 @@ function UpdateReviewPage({
               </section>
             )}
             <Disclosure label={`All of ${data.name} at ${data.newer.short}`}>
-              <SkillReviewed skill={data.skill} />
+              <SkillReviewed
+                skill={data.skill}
+                widenings={data.widenings}
+                by="update"
+                relies={!reaches(data)}
+              />
             </Disclosure>
             {data.brought.map((skill) => (
-              <SkillReviewed key={skill.name} skill={skill} />
+              <SkillReviewed
+                key={skill.name}
+                skill={skill}
+                widenings={data.widenings}
+                by="update"
+              />
             ))}
           </>
         )}

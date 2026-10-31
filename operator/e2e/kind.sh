@@ -178,8 +178,9 @@ openssl genpkey -algorithm ed25519 |
   kubectl --context "$context" -n purlis-system create secret generic purlis-cluster-operator-signing-key \
     --from-file=key.pem=/dev/stdin >/dev/null
 # The chart's own default names the image, as in the install a person downloads.
+# It names the one GitHub App key tests/on_a_kind_cluster.rs makes, and no other (#4204).
 helm install purlis-cluster-operator "$install/charts/purlis-cluster-operator" --kube-context "$context" --namespace purlis-system \
-  --wait --timeout 180s
+  --set 'forge.keySecretNames[0]=e2e-forge-app-key' --wait --timeout 180s
 kubectl --context "$context" wait --for=condition=Established --timeout=60s crd/pools.runners.purlis.dev crd/claims.runners.purlis.dev
 kubectl --context "$context" -n purlis-system rollout status deployment/purlis-cluster-operator --timeout=120s
 

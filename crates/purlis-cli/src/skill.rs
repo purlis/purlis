@@ -934,7 +934,13 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 voice::info("Nothing was changed.");
                 return Ok(1);
             }
-            done(source::update(&mut cx, &level, &name, &update.accepted()))
+            done(source::update(
+                &mut cx,
+                &level,
+                &name,
+                &update.accepted(),
+                update.grant.as_ref(),
+            ))
         }
         SkillCommand::Runs { name, limit, json } => {
             let runs = purlis_core::skills::studio_runs(root, name.as_deref(), limit);
@@ -1866,28 +1872,7 @@ fn review_text(review: &source::Review, widenings: &[source::Widening]) -> Strin
             esc(&skill.description)
         ));
         out.push_str(&summary_text(&skill.summary, "  "));
-        for name in &skill.already {
-            let one = widenings.iter().find(|one| &one.name == name);
-            match one.and_then(|one| one.widened.as_ref().map(|to| (one, to))) {
-                Some((one, to)) => out.push_str(&format!(
-                    "  refers to {}, which is granted to {}: it is left as it is, and the install \
-                     grants it to {} too\n",
-                    esc(name),
-                    esc(&one.granted.to_string()),
-                    esc(&source::added(&one.granted, to))
-                )),
-                None => out.push_str(&format!(
-                    "  refers to {}, which its chats there have already: it is left as it is\n",
-                    esc(name)
-                )),
-            }
-            for line in one
-                .map(|one| one.turned_off_said(&skill.name))
-                .unwrap_or_default()
-            {
-                out.push_str(&format!("  {}\n", esc(&line)));
-            }
-        }
+        out.push_str(&already_text(skill, widenings, "install"));
         for line in &skill.lint {
             out.push_str(&format!("  lint: {}\n", esc(line)));
         }
@@ -1912,6 +1897,30 @@ fn review_text(review: &source::Review, widenings: &[source::Widening]) -> Strin
         "\nThe review is read from the files: a script can do more when it runs, and the chat's \
          sandbox bounds that.\n",
     );
+    out
+}
+
+/// What a reviewed skill says of each reference it leaves as it is: met there already, or met by
+/// a project skill whose grant `by` (`install`, `update`) widens (#4172, #4186), and each
+/// workspace that turned that skill off.
+fn already_text(skill: &source::SkillReview, widenings: &[source::Widening], by: &str) -> String {
+    let mut out = String::new();
+    for name in &skill.already {
+        let one = widenings.iter().find(|one| &one.name == name);
+        match one.and_then(|one| one.said(by)) {
+            Some(said) => out.push_str(&format!("  {}\n", esc(&said))),
+            None => out.push_str(&format!(
+                "  refers to {}, which its chats there have already: it is left as it is\n",
+                esc(name)
+            )),
+        }
+        for line in one
+            .map(|one| one.turned_off_said(&skill.name))
+            .unwrap_or_default()
+        {
+            out.push_str(&format!("  {}\n", esc(&line)));
+        }
+    }
     out
 }
 
@@ -1957,13 +1966,30 @@ fn update_text(update: &source::UpdateReview) -> String {
         ));
         changes(&update.local_edits, &mut out);
     }
+    if update
+        .review
+        .already
+        .iter()
+        .any(|name| update.widenings.iter().any(|one| &one.name == name))
+    {
+        out.push_str(&format!("\n{}:\n", esc(&update.name)));
+        out.push_str(&already_text(&update.review, &update.widenings, "update"));
+    }
     for skill in &update.brought {
         out.push_str(&format!(
             "\nComes along: {} ({})\n",
             esc(&skill.name),
             esc(&skill.description)
         ));
+        if let Some(grant) = &update.grant {
+            out.push_str(&format!(
+                "  granted to {}, as {} is\n",
+                esc(&grant.to_string()),
+                esc(&update.name)
+            ));
+        }
         out.push_str(&summary_text(&skill.summary, "  "));
+        out.push_str(&already_text(skill, &update.widenings, "update"));
     }
     out
 }

@@ -80,12 +80,11 @@ function toggled(files: { name: string; text: string }[]): string[] {
       if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
         const attributes = node.attributes.properties.filter(ts.isJsxAttribute);
         const named = (name: string) => attributes.find((one) => one.name.getText(source) === name);
-        const classes = strings(named("className")?.initializer).flatMap((one) => one.split(/\s+/));
+        // A button's look is its variant, as the family draws it (#3365: no class marks one).
         const variants = strings(
           named("data-variant")?.initializer ?? named("variant")?.initializer,
         );
-        const wears = (one: string) =>
-          classes.includes(`ui-button-${one}`) || variants.includes(one);
+        const wears = (one: string) => variants.includes(one);
         const tag = node.tagName.getText(source);
         const marked = (by: string[]) =>
           tag === "ToggleButton" ? "ToggleButton" : by.find((one) => named(one) !== undefined);
@@ -118,22 +117,22 @@ describe("a toggle", () => {
         {
           name: "A.tsx",
           text: `export const A = () => <>
-            <button className="ui-button ui-button-primary" aria-pressed={on} />
-            <button className={\`ui-button \${grants ? "ui-button-grants" : ""}\`} data-selected />
+            <Button variant="primary" aria-pressed={on} />
+            <Button variant={grants ? "grants" : undefined} data-selected />
             <Button variant="danger" aria-pressed={on} />
             <ToggleButton variant="primary" isSelected={on} />
             <Button variant="warning-soft" data-selected />
             <Button variant="soft-accent" aria-pressed={on} />
             <ToggleButton isSelected={on} />
             <ToggleButton variant="ghost" isSelected={on} />
-            <button className="ui-button" aria-pressed={on} />
-            <button className="ui-button ui-button-ghost" aria-pressed={on} />
+            <Button aria-pressed={on} />
+            <Button variant="ghost" aria-pressed={on} />
           </>;`,
         },
       ]),
     ).toEqual([
-      "A.tsx: <button> primary with aria-pressed",
-      "A.tsx: <button> grants with data-selected",
+      "A.tsx: <Button> primary with aria-pressed",
+      "A.tsx: <Button> grants with data-selected",
       "A.tsx: <Button> danger with aria-pressed",
       "A.tsx: <ToggleButton> primary with ToggleButton",
       "A.tsx: <Button> warning-soft with data-selected",

@@ -7,7 +7,7 @@
  * row that wraps** (#1855).
  *
  * A Notice is not drawn over anything (#1647), so it takes no overlay's lift; it is the inline
- * surface (`primitives/overlays.css`): the overlay's border and corner scale, a ground in the
+ * surface (ADR 0094 §4): the overlay's border and corner scale, a ground in the
  * page, and no shadow. Its ways out must still wrap in the narrowest pane (#1481), so they are
  * small `Button` inside a `ButtonRow` (`ui/button/button.css`), where a button may break its
  * words over lines instead of being clipped.

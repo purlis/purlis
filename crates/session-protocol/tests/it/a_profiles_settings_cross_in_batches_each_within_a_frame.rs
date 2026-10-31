@@ -147,3 +147,50 @@ fn a_keep_takes_only_the_settings_it_names() {
     };
     assert!(mixed.add(of_another).is_err());
 }
+
+/// **What a runner holds crosses a page at a time, each within a frame** (#4088, 1.61), every file
+/// once, in the order of their paths.
+#[test]
+fn what_a_runner_holds_crosses_in_pages_each_within_a_frame() {
+    use purlis_session_protocol::session::{
+        Answer, HeldSetting, settings_digest, settings_held_page,
+    };
+    let held: Vec<HeldSetting> = (0..MOST_PROFILE_SETTINGS_FILES)
+        .rev()
+        .map(|one| HeldSetting {
+            path: format!("skills/{}{one}.md", "\u{1}".repeat(200)),
+            digest: settings_digest(one.to_string().as_bytes()),
+        })
+        .collect();
+    let mut after = None;
+    let mut back = Vec::new();
+    loop {
+        let (files, more) = settings_held_page(held.clone(), after.as_deref());
+        let reply = serde_json::json!({
+            "reply": {"re": u64::MAX, "ok": Answer::SettingsHeld { files: files.clone(), more }}
+        });
+        let size = serde_json::to_vec(&reply).unwrap().len();
+        assert!(size <= MOST_CONTROL_FRAME_BYTES, "{size} bytes");
+        after = files.last().map(|last| last.path.clone());
+        back.extend(files);
+        if !more {
+            break;
+        }
+    }
+    assert_eq!(back.len(), held.len());
+    assert!(back.windows(2).all(|two| two[0].path < two[1].path));
+}
+
+/// **The digest of the whole tells two sets apart** (#4088): a path and a digest cannot trade
+/// bytes, and the order they come in does not matter.
+#[test]
+fn the_digest_of_the_whole_tells_sets_apart() {
+    use purlis_session_protocol::session::whole_settings_digest as whole;
+    assert_eq!(
+        whole([("a", "1"), ("b", "2")]),
+        whole([("b", "2"), ("a", "1")])
+    );
+    assert_ne!(whole([("a", "1")]), whole([("a", "2")]));
+    assert_ne!(whole([("a", "1")]), whole([("a", "1"), ("b", "2")]));
+    assert_ne!(whole([("ab", "c")]), whole([("a", "bc")]));
+}

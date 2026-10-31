@@ -293,3 +293,20 @@ fn any_other_block_is_said_after_ten_minutes_and_not_before() {
     assert!(save_blocked(dir.path(), at + 60.0).is_none());
     assert!(save_blocked(dir.path(), at + 601.0).is_some());
 }
+
+#[test]
+fn a_layout_alert_names_the_workspaces_behind_it_and_no_other_alert_names_any() {
+    // Each one's chip hangs the notice (#3650): by name, in the core's order.
+    assert_eq!(
+        about(&alerts::Alert::Reinit {
+            stale: vec!["docs".into(), "ide".into()]
+        }),
+        vec!["docs".to_owned(), "ide".to_owned()]
+    );
+    assert!(
+        about(&alerts::Alert::FrontDoor {
+            declared: "ghost".into()
+        })
+        .is_empty()
+    );
+}

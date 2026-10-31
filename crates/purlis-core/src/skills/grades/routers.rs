@@ -352,26 +352,40 @@ impl RouterGraded {
     pub fn said(&self) -> String {
         let (router, of) = self.report.passed_in(Arm::Router);
         let (built_in, built_in_of) = self.report.passed_in(Arm::BuiltInRouter);
-        let on = match &self.commit {
-            Some(commit) => format!("the library at {}", short(commit)),
-            None => "a library with changes not committed".to_owned(),
-        };
+        let on = self.library_said();
+        let when = self.ts.get(..10).unwrap_or(&self.ts);
+        // A grade purlis stopped under before it was scored (#3616) passed nothing and failed
+        // nothing: it says so, and no count.
+        if super::Spends::stopped_unscored(self) {
+            return format!(
+                "Interrupted on {on}, {when}: the grade stopped while it ran, before any \
+                 trigger test was scored."
+            );
+        }
         let ended = match self.report.ended {
             grade::GradeEnd::Whole => String::new(),
             end => format!(" ({})", super::ended_said(end).to_lowercase()),
         };
         format!(
-            "Graded on {on}, {}{ended}: {router} of {of} trigger tests pass with {}, and \
+            "Graded on {on}, {when}{ended}: {router} of {of} trigger tests pass with {}, and \
              {built_in} of {built_in_of} with the built-in router.",
-            self.ts.get(..10).unwrap_or(&self.ts),
             purlis_skills::Router::Extension(self.router.clone()).shown(),
         )
+    }
+
+    /// **The library it was graded on**, in words: its commit, or that it held changes not
+    /// committed.
+    pub fn library_said(&self) -> String {
+        match &self.commit {
+            Some(commit) => format!("the library at {}", short(commit)),
+            None => "a library with changes not committed".to_owned(),
+        }
     }
 
     /// Whether a row read back says only what purlis writes, as a skill's grade is held
     /// ([`super::Graded`]): plain names, whole commit ids, a time, and each skill's report one
     /// the built-in runner could have written.
-    fn sound(&self, now: chrono::DateTime<chrono::Utc>) -> bool {
+    pub(super) fn sound(&self, now: chrono::DateTime<chrono::Utc>) -> bool {
         let names = |name: &Option<String>| name.as_deref().is_none_or(plain);
         let copies = self.library.len() <= MOST_SKILLS
             && self.library.iter().all(|copy| {
@@ -413,6 +427,125 @@ impl RouterGraded {
     }
 }
 
+/// **The report of a router's grade purlis stopped under before it was scored** (#3616): no skill
+/// scored, the caps it was held to and the price its dollar limit was worked out at, interrupted,
+/// as a skill's is ([`super::underway::interrupted_report`]).
+pub fn interrupted_report(
+    router: &str,
+    cap: u64,
+    cost_cap_usd: Option<f64>,
+    priced: Option<grade::Priced>,
+) -> RouterGradeReport {
+    RouterGradeReport {
+        grader: grade::BUILT_IN.to_owned(),
+        router: router.to_owned(),
+        skills: Vec::new(),
+        ended: grade::GradeEnd::Interrupted,
+        not_started: None,
+        cap: Some(cap),
+        spent_tokens: None,
+        cost_cap_usd,
+        spent_usd: None,
+        priced,
+    }
+}
+
+/// Whether any copy of `copies` is this machine's alone: a grade of their library is kept in
+/// this machine's state, never committed.
+pub fn library_is_local(root: &Path, copies: &[LibraryCopy]) -> bool {
+    copies.iter().any(|one| is_local(root, &one.level))
+}
+
+impl super::Spends for RouterGraded {
+    /// Every chat of every skill's arms, ran or not. A grade purlis stopped under before it
+    /// scored a skill asked for none to go by: a router's row never counts them (#3602).
+    fn asked(&self) -> u64 {
+        self.report
+            .skills
+            .iter()
+            .map(|part| super::asked_in(&part.report.arms))
+            .sum()
+    }
+
+    fn stopped_unscored(&self) -> bool {
+        self.report.ended == grade::GradeEnd::Interrupted && self.report.skills.is_empty()
+    }
+
+    fn spent(&self) -> &Spent {
+        &self.spent
+    }
+
+    fn ts(&self) -> &str {
+        &self.ts
+    }
+
+    fn profile(&self) -> Option<&str> {
+        self.profile.as_deref()
+    }
+
+    fn harness(&self) -> Option<&str> {
+        self.harness.as_deref()
+    }
+
+    fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+}
+
+/// **What a grade of a router would cost, from its grade before** (#3618), as a skill's plan
+/// works it out ([`super::estimate_of`]), and whether that grade is known to have run on the
+/// library this one runs on: a chat is handed the whole library, so one of another library may
+/// spend otherwise, and the plan says so.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct RouterEstimate {
+    pub estimate: super::Estimate,
+    pub same_library: bool,
+}
+
+/// **The estimate of grading `planned` on `profile`** (#3618), from the grades of its router in
+/// its scope in the project at `root`: `None` where it has none to go by, or the plan runs no
+/// chat. A grade purlis stopped under before it scored a skill is none to go by: its row says no
+/// count of the chats it asked for (#3602), so it is passed over, never read as one that ran no
+/// chat.
+pub fn estimate(
+    root: &Path,
+    planned: &RouterPlanned,
+    profile: Option<&str>,
+) -> Option<RouterEstimate> {
+    let chats = planned.plan?.chats;
+    let grades: Vec<RouterGraded> = grades_of(
+        root,
+        &planned.router,
+        planned.workspace.as_deref(),
+        planned.persona.as_deref(),
+    )
+    .into_iter()
+    .filter(|row| !super::Spends::stopped_unscored(row))
+    .collect();
+    let (estimate, last) = super::estimate_from(&grades, chats, profile)?;
+    // The same library: the same copies, each by its level, its name and the tree its folder
+    // held, whatever commit holds them. A copy with changes not committed says no tree, so a
+    // library holding one is never known to be the same.
+    let held = |copies: &mut dyn Iterator<Item = RecordedCopy>| {
+        let mut held: Vec<_> = copies
+            .map(|copy| (copy.level, copy.skill, copy.tree))
+            .collect();
+        held.sort();
+        held
+    };
+    let now = held(&mut planned.copies.iter().map(RecordedCopy::of));
+    let committed = |copies: &[(Option<String>, String, String)]| {
+        copies
+            .iter()
+            .all(|(_, _, tree)| matches!(Content::parse(tree), Some(Content::Tree(_))))
+    };
+    let then = held(&mut last.library.iter().cloned());
+    Some(RouterEstimate {
+        estimate,
+        same_library: committed(&now) && then == now,
+    })
+}
+
 /// The first twelve characters of a commit id.
 fn short(commit: &str) -> &str {
     commit.get(..12).unwrap_or(commit)
@@ -443,9 +576,23 @@ pub fn record(
     graded: &RouterGraded,
     device: &str,
 ) -> Option<PathBuf> {
+    record_to(root, library_is_local(root, copies), graded, || {
+        device.to_owned()
+    })
+}
+
+/// [`record`], to this machine's state where `local`, else to the committed record of the device
+/// `device` names: asked only then, as naming it reads this machine's store (a grade under way
+/// recorded at a start, #3616).
+pub(super) fn record_to(
+    root: &Path,
+    local: bool,
+    graded: &RouterGraded,
+    device: impl FnOnce() -> String,
+) -> Option<PathBuf> {
     let row = serde_json::to_value(graded).ok()?;
     let now = chrono::Utc::now();
-    if copies.iter().any(|one| is_local(root, &one.level)) {
+    if local {
         crate::appstate::made(root).ok()?;
         let path = local_dir(root)?.join(format!("{}.jsonl", now.format("%Y-%m")));
         return super::append_local(&path, &row).ok();
@@ -453,7 +600,7 @@ pub fn record(
     if crate::compat::read_only(root).is_some() {
         return None;
     }
-    crate::dispatch::append(&path_for(root, now, device), root, &row)
+    crate::dispatch::append(&path_for(root, now, &device()), root, &row)
 }
 
 /// **The grades of the router `router` chosen by `workspace` or `persona`** in the project at

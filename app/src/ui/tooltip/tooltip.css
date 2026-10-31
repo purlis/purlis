@@ -6,7 +6,7 @@
    `data-part`, `data-variant`) and React Aria's, never on a class, so a theme's parts reach
    exactly what this file draws.
 
-   **On the overlay surface** (`primitives/overlays.css`, ADR 0094 §4): the ground, edge, corner
+   **On the overlay surface** (ADR 0094 §4, #1845): the ground, edge, corner
    and lift a dialog, a popover and a menu share, so a tooltip reads as one of them. Its words are
    small and it is one short thing, a sentence or two at most, never the window's width.
 
