@@ -335,6 +335,11 @@ tbody:first-of-type
   vertical-align: middle;
 }
 
+/* It has no words, so no room for them: the box alone, in the middle of the square. */
+[data-scope="table"][data-part="select"] > [data-scope="checkbox"][data-part="root"] {
+  gap: 0;
+}
+
 /* ---------------------------------------------------------------------------------------------
    The bar over a table that chooses (`TableBar.tsx`): the filter at its start, and what the
    table offers, or what can be done to the chosen rows, at its end.

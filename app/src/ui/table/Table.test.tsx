@@ -200,6 +200,8 @@ describe("a table of data", () => {
       expect(rootOf(box)).toHaveAttribute("data-scope", "checkbox");
       expect(rootOf(box)).toHaveAttribute("data-part", "root");
       expect(rootOf(box).querySelector('[data-scope="checkbox"][data-part="box"]')).not.toBeNull();
+      // No room for words it does not have, so the box is in the middle of its square.
+      expect(drawnWith(rootOf(box), "gap")).toBe("0");
     }
     await userEvent.click(row);
     expect(row).toBeChecked();

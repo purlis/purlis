@@ -224,6 +224,11 @@ export const OfHosts: Story = {
     const box = within(rows()[0]).getByRole("checkbox").closest("label") as HTMLElement;
     await expect(box).toHaveAttribute("data-scope", "checkbox");
     const [x, y] = [target.left + target.width / 2, target.top + target.height / 2];
+    const drawn = (
+      box.querySelector('[data-scope="checkbox"][data-part="box"]') as HTMLElement
+    ).getBoundingClientRect();
+    await expect(drawn.left + drawn.width / 2).toBeCloseTo(x, 0);
+    await expect(drawn.top + drawn.height / 2).toBeCloseTo(y, 0);
     for (const [dx, dy] of [
       [-11.5, -11.5],
       [11.5, -11.5],
