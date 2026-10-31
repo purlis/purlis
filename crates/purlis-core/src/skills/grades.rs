@@ -438,7 +438,7 @@ const ARMS_THERE_ARE: usize = 3;
 fn outcome_holds(
     eval: &grade::OutcomeScore,
     runs: u8,
-    stat: &dyn Fn(&grade::Stat, fn(f64) -> bool) -> bool,
+    stat: &impl Fn(&grade::Stat, fn(f64) -> bool) -> bool,
 ) -> bool {
     let of = eval.expectations.len();
     let line = |why: &str| why.len() <= MOST_REASON_BYTES && !why.chars().any(char::is_control);
