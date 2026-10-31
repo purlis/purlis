@@ -385,6 +385,15 @@ jobs:
           cp target/debug/purlis "$context/purlis"
           cp -R app/src-tauri/plugin "$context/plugin"
           docker build --file runner-image/Dockerfile --tag purlis-runner:parity "$context"
+          # The runner image as it ships, with no harness, and one an update moves it to, for the
+          # test of a person's whole way through a pool (`behaviour::pool_journey`).
+          docker tag purlis-runner:parity localhost:5000/purlis-runner:shipped
+          docker push localhost:5000/purlis-runner:shipped
+          echo "DOCKER_POOL_JOURNEY_IMAGE=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner:shipped | sed 's/.*@//')" >> "$GITHUB_ENV"
+          printf 'FROM purlis-runner:parity\nLABEL dev.purlis.parity.next=true\n' \
+            | docker build --tag localhost:5000/purlis-runner:next -
+          docker push localhost:5000/purlis-runner:next
+          echo "DOCKER_POOL_JOURNEY_NEXT_IMAGE=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner:next | sed 's/.*@//')" >> "$GITHUB_ENV"
           parity="$RUNNER_TEMP/parity"
           mkdir -p "$parity"
           cp target/debug/purlis target/debug/fake-harness "$parity/"
