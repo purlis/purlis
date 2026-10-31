@@ -320,12 +320,11 @@ tbody:first-of-type
 }
 
 /* ---------------------------------------------------------------------------------------------
-   The check that chooses a row: a box a line tall; chosen, it is drawn as the primary answer is
-   (the accent's edge on its surface), its tick in the primary tier.
+   The check that chooses a row: the choice family's box (#3362), which draws it. This only places
+   it, in the middle of its 24px square, never under WCAG 2.5.8's 24 CSS px, which a compact
+   density's chrome (and its rem) would go below. The box takes a press across that square (#4197).
    --------------------------------------------------------------------------------------------- */
 
-/* Its target is a small control's, and never under WCAG 2.5.8's 24 CSS px, which a compact
-   density's chrome (and its rem) would go below; the 16 px box is drawn in its middle. */
 [data-scope="table"][data-part="select"] {
   display: inline-flex;
   align-items: center;
@@ -334,37 +333,11 @@ tbody:first-of-type
   min-inline-size: max(var(--size-chrome), 24px);
   min-block-size: max(var(--size-chrome), 24px);
   vertical-align: middle;
-  cursor: default;
-  outline: none;
 }
 
-[data-scope="table"][data-part="select"] > [data-part="box"] {
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: var(--font-size-lg);
-  block-size: var(--font-size-lg);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  background-color: var(--surface-base);
-}
-
-[data-scope="table"][data-part="select"]:is([data-selected], [data-indeterminate])
-  > [data-part="box"] {
-  border-color: var(--accent-base);
-  background-color: var(--accent-surface);
-}
-
-[data-scope="table"][data-part="select"] > [data-part="box"] > svg {
-  inline-size: var(--font-size-sm);
-  block-size: var(--font-size-sm);
-}
-
-[data-scope="table"][data-part="select"][data-focus-visible] > [data-part="box"] {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-offset);
+/* It has no words, so no room for them: the box alone, in the middle of the square. */
+[data-scope="table"][data-part="select"] > [data-scope="checkbox"][data-part="root"] {
+  gap: 0;
 }
 
 /* ---------------------------------------------------------------------------------------------
