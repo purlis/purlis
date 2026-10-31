@@ -117,8 +117,8 @@ pub use relay::{Dial, Keep, Relay};
 pub use routing::{DrainsTo, RelaysTo, Routed};
 #[cfg(unix)]
 pub use serving::{
-    Answering, Forgetting, HostError, Keeping, LOCK, Listing, Pairing, Place, Unpairing, Window,
-    serve, serve_answering,
+    Answering, Delivering, Forgetting, HostError, Keeping, LOCK, Listing, Pairing, Place,
+    Unpairing, Window, serve, serve_answering,
 };
 #[cfg(unix)]
 pub use unattended::UNLINKED_FOR;

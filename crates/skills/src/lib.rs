@@ -76,7 +76,7 @@ pub use read::{
     DIR_IN_BUNDLE, FILE, frontmatter, in_bundle, listing, parsed, read, scan, scan_dir,
 };
 use reference::Seen;
-pub use reference::{BUILT_IN_PREFIXES, OnMachine, Reference};
+pub use reference::{BUILT_IN_PREFIXES, OLD_BUILT_IN_PREFIX, OnMachine, Reference};
 pub use router::{
     Candidate, Candidates, Hidden, HiddenWhy, INDEX, Index, Line, Router, Routing, StillOver,
 };

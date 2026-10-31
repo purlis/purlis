@@ -54,7 +54,7 @@ fn followed_with(
     lines: &[&str],
     input: Input,
 ) -> (Result<(), String>, Vec<String>) {
-    let driving = drive_with(login, kind, plan, || Standing::SignedIn).unwrap();
+    let driving = drive_with(login, kind, plan, None, || Standing::SignedIn).unwrap();
     let (type_in, typed) = channel();
     for line in lines {
         type_in.send((*line).to_owned()).unwrap();

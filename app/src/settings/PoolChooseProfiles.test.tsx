@@ -25,7 +25,7 @@ const a_profile = (name: string, kind = "claude", standing = "signed-out"): Pool
 });
 
 /** This machine's profiles, as the core says them; the pool keeps `chosen`. */
-const ALL = [a_profile("work"), a_profile("personal"), a_profile("oss", "codex")];
+const ALL = [a_profile("work"), a_profile("personal"), a_profile("oss", "gemini")];
 let chosen: string[];
 let signedIn: Set<string>;
 let changes: unknown[];

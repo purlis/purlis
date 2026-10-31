@@ -37,6 +37,7 @@ function harnesses(offLangfuse = false): StudioHarness[] {
       harness: "claude",
       title: "Claude Code",
       repo_left_out: [],
+      own: null,
       skills: [
         skill("langfuse", {
           level: "installed",
@@ -75,7 +76,7 @@ function harnesses(offLangfuse = false): StudioHarness[] {
         }),
       ],
     },
-    { harness: "opencode", title: "opencode", repo_left_out: [], skills: [] },
+    { harness: "opencode", title: "opencode", repo_left_out: [], own: null, skills: [] },
   ];
 }
 
@@ -318,6 +319,10 @@ describe("the Routing page (#3692)", () => {
     expect(within(facts).getByTestId("skill-routing-router")).toHaveTextContent("Built-in");
     expect(facts).toHaveTextContent(
       "30 skills, 6,000 characters of descriptions, on every program",
+    );
+    // What it counts, and that a program's own catalogue is not counted (#3324).
+    expect(within(facts).getByTestId("skill-routing-budget-counts")).toHaveTextContent(
+      "the built-in ones, the project's, and those of the repo the chat works in. A program's own skills, in your folders and its plugins, are not counted",
     );
     expect(within(facts).getByRole("button", { name: "Change…" })).toBeEnabled();
     expect(screen.getByTestId("skill-routing-no-chats")).toBeInTheDocument();

@@ -55,6 +55,10 @@ export type ChatSkillsSaid = {
   routing: SkillRouting | null;
   missing: SkillsMissing | null;
   changed: PlaneUpdated | null;
+  /** **Its program's own catalogue** (#3324), in the core's words, beside the budget and never in
+   *  it: what the program lists of its own skills against its own limit. Only the Skills view
+   *  reads it, from the studio answer it reads anyway; none where the program has none. */
+  own?: string | null;
 };
 
 /** The view's own words for a chat whose skills changed since it started (S8). */
@@ -158,11 +162,13 @@ function budgetFix(budget: SkillBudget, routing: ChatNeedFix): ChatNeedFix {
   return routing;
 }
 
-/** **What the view's header says of the chat's set** under whose it is: its budget, and how its
- *  router did at its start where it did not fall back (that is a need). */
+/** **What the view's header says of the chat's set** under whose it is: its budget, its program's
+ *  own catalogue beside it (#3324), and how its router did at its start where it did not fall
+ *  back (that is a need). */
 export function chatSetSaid(said: ChatSkillsSaid): string[] {
   return [
     ...(said.budget === null ? [] : [budgetSaid(said.budget)]),
+    ...(said.budget === null || !said.own ? [] : [said.own]),
     ...(said.routing === null || said.routing.fell_back ? [] : [said.routing.said]),
   ];
 }

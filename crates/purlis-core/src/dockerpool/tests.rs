@@ -813,6 +813,50 @@ fn a_runners_sign_in_check_is_read_by_its_own_words() {
     assert!(standing_said("work", "'workshop' is signed in on r\n").is_err());
 }
 
+/// **A plan's driven sign-in names its browser flow**, which has no list to answer, and the
+/// fallback where the browser's answer cannot reach the runner names its device-code flow in a
+/// terminal the person drives, as does the terminal a login restarts in (#4044).
+#[test]
+fn a_sign_in_on_a_runner_names_the_flow_it_runs() {
+    let driven = made().sign_in_args_by(Typed::Driven, "chatgpt", Some("openai"));
+    assert_eq!(driven[1], "-i");
+    assert!(driven.windows(2).any(|words| words == ["--way", "browser"]));
+
+    let device = made().sign_in_args_by(Typed::DeviceInATerminal, "fast", None);
+    assert_eq!(device[1], "-it");
+    assert!(device.windows(2).any(|words| words == ["--way", "device"]));
+
+    // The terminal a login restarts in when purlis cannot follow it, by its device-code flow.
+    let size = crate::engine::Size {
+        columns: 100,
+        rows: 30,
+    };
+    let restarted = made().sign_in_args_by(Typed::DeviceInOwnTerminal(size), "fast", None);
+    assert_eq!(restarted[1], "-i");
+    assert!(
+        restarted
+            .windows(2)
+            .any(|words| words == ["--way", "device"])
+    );
+    assert_eq!(
+        restarted[restarted.len() - 2..],
+        ["--in-own-terminal", "100x30"]
+    );
+
+    assert!(
+        !made()
+            .sign_in_args_by(Typed::Driven, "work", None)
+            .contains(&"--way".to_owned())
+    );
+    // Copilot's login shows its device code by default, so a runner before #4044, which knows no
+    // `--way`, still signs it in.
+    assert!(
+        !made()
+            .sign_in_args_by(Typed::Driven, "open", Some("github-copilot"))
+            .contains(&"--way".to_owned())
+    );
+}
+
 /// **A sign-in purlis drives runs with pipes, never a terminal** (#4042): the same runner's own
 /// `purlis profile sign-in`, as the same user in the same container, with `-i` alone.
 #[test]

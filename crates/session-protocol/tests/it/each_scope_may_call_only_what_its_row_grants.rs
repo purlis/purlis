@@ -325,6 +325,10 @@ fn every_command() -> Vec<Command> {
         }),
         // The profiles a runner keeps for its desktop (1.57, #4060).
         Command::KeptProfiles,
+        // A sign-in's redirect handed to a login on the runner (1.59, #4044).
+        Command::SignInRedirect {
+            target: session::RedirectTarget("/auth/callback?code=c&state=s".into()),
+        },
         // A browser the person takes over, drives and hands back: the window's alone (1.14).
         Command::TakeOver {
             program: CHAT.into(),
@@ -615,6 +619,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "forget_profile",
             "stage_profile_settings",
             "kept_profiles",
+            "sign_in_redirect",
             "take_over",
             "browser_input",
             "size_browser",

@@ -8243,6 +8243,16 @@ export type PoolSignInStep =
 { at: "open"; url: string } | 
 /**  Show this code to enter on the vendor's own page `url`, before that page is opened. */
 { at: "device"; url: string; code: string } | 
+/**
+ *  Open this page in the browser here, where the person approves: this machine is listening
+ *  for the browser's answer, which purlis carries to the runner, so nothing is pasted (#4044).
+ */
+{ at: "approve"; url: string } | 
+/**
+ *  This machine's `port` is taken, so the browser's answer could not reach the runner: no
+ *  page was opened.
+ */
+{ at: "port-taken"; port: number } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
 /**  What a login in the strip's terminal printed, escapes and all. */
@@ -11547,6 +11557,14 @@ export type StudioHarness = {
 	 *  with why (SK-53): the core's `HarnessInTheStudio::repo_left_out`.
 	 */
 	repo_left_out: StudioSkill[],
+	/**
+	 *  **What its own catalogue holds** (#3324), in the core's words (`OwnCatalogue::said`),
+	 *  which `purlis skill list` says too: the skills it finds itself in the person's own
+	 *  folders and its plugins, listed against its own limit and never counted in purlis's
+	 *  budget. Null for a harness that finds none of its own, and where the studio was read only
+	 *  for a count of its needs.
+	 */
+	own: string | null,
 };
 
 /**  A level a skill can be moved to or made at, and its words. */
