@@ -877,6 +877,21 @@ fn a_router_answers_confined_and_is_stopped_at_its_deadline() {
 
 fn a_router_that_reads_prompts_points_one_confined() {
     let probe = Probe::approved();
+    let handed = purlis_core::extension::studio::HandedPrompt::of("cut the release");
+    // Approved and declaring, and still handed nothing until the person turns it on.
+    let refused = Executor::default()
+        .studio(
+            &probe.config(),
+            &Choices::read(&probe.plane()),
+            ID,
+            &purlis_core::extension::studio::Ask::Prompt {
+                prompt: handed,
+                skills: &[],
+            },
+        )
+        .expect_err("off by default");
+    assert!(refused.contains("not turned on"), "{refused}");
+    extension::set_reads_prompts(&probe.config(), ID, true).expect("turned on");
     let patient = Executor::default()
         .with_deadline(PATIENT)
         .with_router_deadline(PATIENT);

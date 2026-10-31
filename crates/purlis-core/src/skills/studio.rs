@@ -77,6 +77,14 @@ pub fn with_studio<T>(
 }
 
 impl<'a> Studio<'a> {
+    /// **The routers the person turned on to read prompts on this machine** (ADR 0102 as amended
+    /// 2026-10-31), by id: none where the record cannot be read.
+    pub fn reading_prompts(&self) -> std::collections::BTreeSet<String> {
+        crate::extension::read(self.config_root, self.executor.built_in())
+            .registry
+            .reads_prompts
+    }
+
     /// **Each extension this machine approved, the project has on, and that declares
     /// `capability`**, in id order, by its manifest as it is on disk now. The fingerprint is
     /// re-taken by the executor before any program starts, as for every question.

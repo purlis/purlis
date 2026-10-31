@@ -1469,6 +1469,13 @@ export function SkillStudioTab({
                   () => Promise.resolve({ tone: "news", label: "Router changed", text }),
                 )
               }
+              onReadsPrompts={(id, on, text) =>
+                change(
+                  "What the router reads was not changed",
+                  () => commands.skillRouterReadsPrompts(plane, id, on),
+                  () => Promise.resolve({ tone: "news", label: "Router changed", text }),
+                )
+              }
               gradeRunning={gradeRunning}
               onGradeRunning={(grade) =>
                 go({ page: "routing", scope, item: routerGradingItem(grade) })

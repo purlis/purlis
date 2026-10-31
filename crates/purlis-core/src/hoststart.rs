@@ -348,7 +348,7 @@ impl ChatSkills {
             return self;
         }
         Self {
-            routed: kept.routed(),
+            routed: kept.routed().map(std::sync::Arc::new),
             ..self
         }
     }

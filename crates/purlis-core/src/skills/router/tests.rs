@@ -555,7 +555,7 @@ fn a_reattached_chat_routes_as_its_start_did_and_its_router_is_not_asked_again_3
     let skills = started(root, &bundle, None, &as_asker(&first));
 
     // Kept in the reopen record, as text, and read back at the reattach.
-    let kept = Kept::of(skills.routed.as_ref());
+    let kept = Kept::of(skills.routed.as_deref());
     let text = serde_json::to_string(&kept).unwrap();
     let kept: Kept = serde_json::from_str(&text).unwrap();
     let again = reattached(root, None, kept);
@@ -584,7 +584,7 @@ fn a_chat_that_started_on_the_built_in_router_reattaches_on_it_whatever_was_chos
     let fake = Fake::hiding(&["skill-02"]);
     let skills = started(root, &bundle, None, &as_asker(&fake));
     assert_eq!(skills.routed, None);
-    let kept = Kept::of(skills.routed.as_ref());
+    let kept = Kept::of(skills.routed.as_deref());
 
     workspace_skills(root, serde_json::json!({ "router": "relevance" }));
     let again = reattached(root, None, kept);
@@ -613,6 +613,8 @@ fn a_kept_answer_hides_only_what_a_router_may_hide_3578() {
             fell_back: None,
             error: None,
             hidden: Vec::new(),
+            prompt: false,
+            pointed: Vec::new(),
         },
         answer: Some(
             ["skill-00", "handoff", "elsewhere", "skill-01"]
@@ -620,6 +622,8 @@ fn a_kept_answer_hides_only_what_a_router_may_hide_3578() {
                 .map(|name| (name.to_owned(), line()))
                 .collect(),
         ),
+        left_out: Vec::new(),
+        reads_prompts: false,
     });
 
     let again = reattached(root, None, kept);
@@ -644,8 +648,12 @@ fn nothing_kept_is_applied_where_the_plane_s_skills_do_not_reach_the_reattached_
             fell_back: None,
             error: None,
             hidden: Vec::new(),
+            prompt: false,
+            pointed: Vec::new(),
         },
         answer: Some(Vec::new()),
+        left_out: Vec::new(),
+        reads_prompts: false,
     });
     let off = ChatSkills::read(
         false,
@@ -1069,4 +1077,124 @@ fn a_router_slow_at_the_chat_s_start_still_routes_its_prompts() {
         "what the built-in router left out is pointed at"
     );
     assert_eq!(routed.left_out.len(), MOST + 2);
+}
+
+// ---------------------------------------------------------------------------------------
+// The person's switch, and what a record may hold (ADR 0102 as amended 2026-10-31)
+// ---------------------------------------------------------------------------------------
+
+/// A router answering as `fake`, whose switch is `on`.
+struct Switched {
+    fake: Arc<Fake>,
+    on: std::sync::atomic::AtomicBool,
+}
+
+impl AskRouter for Switched {
+    fn ask(
+        &self,
+        extension: &str,
+        ask: &Ask<'_>,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+        self.fake.ask(extension, ask)
+    }
+
+    fn reads_prompts(&self, _: &str) -> bool {
+        self.on.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+#[test]
+fn a_router_turned_off_reads_no_further_prompt_of_a_chat_already_open() {
+    let (tmp, bundle) = a_plane_of(3);
+    let root = tmp.path();
+    workspace_skills(root, serde_json::json!({ "router": "relevance" }));
+    let start = Fake::hiding(&["skill-02"]);
+    let routed = started(root, &bundle, None, &reading(&start))
+        .routed
+        .expect("routed");
+    let fake = Fake::answering(serde_json::json!({ "pointed": ["skill-02"] }));
+    let switched = Arc::new(Switched {
+        fake: Arc::clone(&fake),
+        on: true.into(),
+    });
+    let asker: Arc<dyn AskRouter> = switched.clone();
+
+    assert!(routed.on_prompt("first", &asker).is_some());
+    assert_eq!(fake.asked().len(), 1);
+
+    switched
+        .on
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(routed.on_prompt("second", &asker), None, "no record either");
+    assert_eq!(fake.asked().len(), 1, "the router saw no second prompt");
+}
+
+#[test]
+fn a_prompt_s_record_holds_none_of_what_the_router_said_back() {
+    // A router could echo the prompt in an error or in an answer purlis does not take. The
+    // record's reason is purlis's own, so neither reaches the event log.
+    const PROMPT: &str = "the-private-words";
+    let left = left_out();
+    for answer in [
+        serde_json::json!({ "pointed": [PROMPT] }),
+        serde_json::json!({ "pointed": PROMPT }),
+        serde_json::json!({ "said": PROMPT }),
+    ] {
+        let prompted = on_prompt(
+            Ok(Chosen::Extension("relevance".to_owned())),
+            &left,
+            PROMPT,
+            &reading(&Fake::answering(answer)),
+            ROUTER_DEADLINE,
+        )
+        .expect("asked");
+        assert_eq!(prompted.record.fell_back, Some(FellBack::Wrong));
+        let written = serde_json::to_string(&prompted.record).unwrap();
+        assert!(!written.contains(PROMPT), "{written}");
+    }
+    let failing = on_prompt(
+        Ok(Chosen::Extension("relevance".to_owned())),
+        &left,
+        PROMPT,
+        &(Arc::new(Echoes) as Arc<dyn AskRouter>),
+        ROUTER_DEADLINE,
+    )
+    .expect("asked");
+    assert_eq!(failing.record.fell_back, Some(FellBack::Failed));
+    let written = serde_json::to_string(&failing.record).unwrap();
+    assert!(!written.contains(PROMPT), "{written}");
+}
+
+/// A router whose error quotes the prompt it was handed.
+struct Echoes;
+
+impl AskRouter for Echoes {
+    fn ask(
+        &self,
+        _: &str,
+        ask: &Ask<'_>,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+        Err(serde_json::to_string(ask).unwrap_or_default())
+    }
+
+    fn reads_prompts(&self, _: &str) -> bool {
+        true
+    }
+}
+
+#[test]
+fn a_reattached_chat_keeps_what_its_list_leaves_out_for_its_prompts() {
+    let (tmp, bundle) = a_plane_of(3);
+    let root = tmp.path();
+    workspace_skills(root, serde_json::json!({ "router": "relevance" }));
+    let fake = Fake::hiding(&["skill-02"]);
+    let routed = started(root, &bundle, None, &reading(&fake))
+        .routed
+        .expect("routed");
+    let kept = Kept::of(Some(&routed));
+    let text = serde_json::to_string(&kept).unwrap();
+    let back: Kept = serde_json::from_str(&text).expect("reads back");
+    let back = back.routed().expect("asked");
+    assert!(back.points());
+    assert_eq!(back.left_out, routed.left_out);
 }

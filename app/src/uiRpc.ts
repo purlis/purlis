@@ -1029,6 +1029,12 @@ export const commands = {
 	skillRouters: (plane: PlaneId) => typedError<SkillRouterOffer[], string>(__TAURI_INVOKE("skill_routers", { plane })),
 	skillRouterChoose: __WINDOW_ONLY_RESULT,
 	/**
+	 *  **Lets a router read every prompt of the chats it routes, or stops it**, from the Routing page
+	 *  (ADR 0102 as amended 2026-10-31): this machine's record, and the person's own press in their
+	 *  window. Nothing else turns it on.
+	 */
+	skillRouterReadsPrompts: __WINDOW_ONLY_RESULT,
+	/**
 	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
 	 *  owners, and the skills it names and that name it. Nothing while the flag is off.
 	 */
@@ -11122,6 +11128,10 @@ export type SkillRouterOffer = {
 	id: string,
 	/**  Its name, as its manifest gives it. */
 	name: string,
+	/**  Whether its approval said it reads prompts, which only offers the person the switch. */
+	reads_prompts: boolean,
+	/**  Whether the person turned that on for it on this machine (ADR 0102 as amended 2026-10-31). */
+	prompts_on: boolean,
 };
 
 /**

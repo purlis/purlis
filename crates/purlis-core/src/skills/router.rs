@@ -205,8 +205,9 @@ pub trait AskRouter: Send + Sync {
     ) -> Result<serde_json::Map<String, serde_json::Value>, String>;
 
     /// **Whether the router `extension` may be handed a prompt** (SK-15c): it is approved here,
-    /// on in the project, declares `skill-router`, and its approval said it reads prompts. A
-    /// router that reads none is asked nothing on a prompt, and no record is made of it.
+    /// on in the project, declares `skill-router`, its approval said it reads prompts, and the
+    /// person turned that on for it on this machine (ADR 0102 as amended 2026-10-31). A router
+    /// that may not is asked nothing on a prompt, and no record is made of it.
     fn reads_prompts(&self, extension: &str) -> bool {
         let _ = extension;
         false
@@ -259,6 +260,9 @@ impl AskRouter for OnThisMachine {
             return false;
         };
         let loaded = crate::extension::read(&config, self.executor.built_in());
+        if !loaded.registry.reads_prompts.contains(extension) {
+            return false;
+        }
         let Some(entry) = loaded
             .registry
             .entries
@@ -353,7 +357,9 @@ impl Routed {
     /// **One prompt of the chat, routed** (SK-15c, ADR 0102 §3) by its router, through `asker`,
     /// within [`ROUTER_DEADLINE`]: `None` where its prompts are not routed ([`Self::points`]).
     pub fn on_prompt(&self, prompt: &str, asker: &Arc<dyn AskRouter>) -> Option<Prompted> {
-        if !self.points() {
+        // Asked again on each prompt, before the deadline's clock starts: turned off in the
+        // studio, a router reads no further prompt of a chat already open.
+        if !self.points() || !asker.reads_prompts(&self.record.router) {
             return None;
         }
         on_prompt(
@@ -474,6 +480,14 @@ enum KeptOnDisk {
         /// The router's answer, where it was taken: absent where the chat fell back.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         answer: Option<Vec<RecordHidden>>,
+        /// What the chat's list left out, each with its index line (SK-15c): a reattached chat
+        /// holds the same list, and its prompt hook is still armed.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        left_out: Vec<(String, String)>,
+        /// Whether its start found the router may read prompts. Never enough by itself: each
+        /// prompt asks this machine's record again ([`Routed::on_prompt`]).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        reads_prompts: bool,
     },
 }
 
@@ -481,8 +495,15 @@ impl From<Kept> for KeptOnDisk {
     fn from(kept: Kept) -> Self {
         match kept {
             Kept::BuiltIn => Self::BuiltIn,
-            Kept::Asked(Routed { record, answer }) => Self::Extension {
+            Kept::Asked(Routed {
                 record,
+                answer,
+                left_out,
+                reads_prompts,
+            }) => Self::Extension {
+                record,
+                left_out,
+                reads_prompts,
                 answer: answer.map(|hidden| {
                     hidden
                         .into_iter()
@@ -503,9 +524,14 @@ impl TryFrom<KeptOnDisk> for Kept {
     /// Held to what a start writes: a routing's ULID, a router that is an extension's id or none,
     /// an error a reader sees whole, and each line of the answer a [`Line`].
     fn try_from(disk: KeptOnDisk) -> Result<Self, Self::Error> {
-        let (record, answer) = match disk {
+        let (record, answer, left_out, reads_prompts) = match disk {
             KeptOnDisk::BuiltIn => return Ok(Self::BuiltIn),
-            KeptOnDisk::Extension { record, answer } => (record, answer),
+            KeptOnDisk::Extension {
+                record,
+                answer,
+                left_out,
+                reads_prompts,
+            } => (record, answer, left_out, reads_prompts),
         };
         if ulid::Ulid::from_string(&record.routing).is_err() {
             return Err("a routing that is not a ULID".to_owned());
@@ -525,7 +551,8 @@ impl TryFrom<KeptOnDisk> for Kept {
             .hidden
             .iter()
             .map(|one| one.skill.as_str())
-            .chain(answer.iter().flatten().map(|one| one.skill.as_str()));
+            .chain(answer.iter().flatten().map(|one| one.skill.as_str()))
+            .chain(left_out.iter().map(|(name, _)| name.as_str()));
         if let Some(bad) = named.into_iter().find(|name| !a_skill_name(name)) {
             return Err(format!("a skill named {bad:?}"));
         }
@@ -548,7 +575,15 @@ impl TryFrom<KeptOnDisk> for Kept {
             error: record.error.as_deref().map(clipped),
             ..record
         };
-        Ok(Self::Asked(Routed { record, answer }))
+        if let Some((bad, _)) = left_out.iter().find(|(_, line)| Line::new(line).is_err()) {
+            return Err(format!("a line for {bad:?} that is not one line"));
+        }
+        Ok(Self::Asked(Routed {
+            record,
+            answer,
+            left_out,
+            reads_prompts,
+        }))
     }
 }
 
@@ -774,9 +809,16 @@ pub fn on_prompt(
             format!("purlis could not start asking '{id}': {why}"),
         ));
     }
+    // **What a router says on a prompt is never written**: its words could hold the prompt's, so
+    // the record's reason is purlis's own, whatever the error or the answer said.
     let doc = match receive.recv_timeout(deadline.saturating_sub(began.elapsed())) {
         Ok(Ok(doc)) => doc,
-        Ok(Err(why)) => return Some(fell(FellBack::Failed, why)),
+        Ok(Err(_)) => {
+            return Some(fell(
+                FellBack::Failed,
+                format!("'{id}' could not be asked about this prompt"),
+            ));
+        }
         Err(_) => {
             return Some(fell(
                 FellBack::Slow,
@@ -787,7 +829,12 @@ pub fn on_prompt(
     let names: Vec<&str> = left_out.iter().map(|(name, _)| name.as_str()).collect();
     let pointed = match crate::extension::studio::pointed_of(&id, &names, &doc) {
         Ok(pointed) => pointed,
-        Err(why) => return Some(fell(FellBack::Wrong, why)),
+        Err(_) => {
+            return Some(fell(
+                FellBack::Wrong,
+                format!("'{id}' gave an answer about this prompt that purlis does not take"),
+            ));
+        }
     };
     let pointer = pointer(&pointed, left_out);
     Some(Prompted {

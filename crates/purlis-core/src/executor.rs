@@ -812,6 +812,16 @@ impl Executor {
                 if let Some(why) = ask.unoffered(extension, studio) {
                     return Err(why);
                 }
+                // The same line where the prompt would leave: only the person's own switch, on
+                // this machine, hands a router a prompt (ADR 0102 as amended 2026-10-31).
+                if matches!(ask, extension::studio::Ask::Prompt { .. })
+                    && !loaded.registry.reads_prompts.contains(extension)
+                {
+                    return Err(format!(
+                        "reading prompts is not turned on for '{extension}' on this machine, so \
+                         purlis hands it none"
+                    ));
+                }
                 (None, None)
             }
         };

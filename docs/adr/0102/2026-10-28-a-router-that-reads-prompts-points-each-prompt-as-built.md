@@ -4,6 +4,8 @@
 
 ## Which chats
 
+**[The operator's ruling of 2026-10-31](2026-10-31-a-router-reads-prompts-only-once-the-person-turns-that-on.md) adds a condition: the person turned reading on for that router.**
+
 A chat's prompts are routed only where all of these hold at its start:
 
 - its persona or workspace chose an extension's router (#3230);
