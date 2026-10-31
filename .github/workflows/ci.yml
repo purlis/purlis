@@ -1629,6 +1629,44 @@ jobs:
         run: xvfb-run -a npm run e2e:state
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
+      # The Skill studio's outcome bars, one run per harness on its stand-in (#4343). `outcome-bars`
+      # alone runs these. Each runs whatever the one before it did, so a red run names every miss.
+      - name: The Skill studio's outcome bars on claude's stand-in
+        run: npm run e2e:outcome
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        working-directory: app
+        env:
+          PURLIS_OUTCOME_HARNESS: claude
+      - name: The Skill studio's outcome bars on claude's stand-in
+        run: xvfb-run -a npm run e2e:outcome
+        if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
+        working-directory: app
+        env:
+          PURLIS_OUTCOME_HARNESS: claude
+      - name: The Skill studio's outcome bars on codex's stand-in
+        run: npm run e2e:outcome
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        working-directory: app
+        env:
+          PURLIS_OUTCOME_HARNESS: codex
+      - name: The Skill studio's outcome bars on codex's stand-in
+        run: xvfb-run -a npm run e2e:outcome
+        if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
+        working-directory: app
+        env:
+          PURLIS_OUTCOME_HARNESS: codex
+      - name: The Skill studio's outcome bars on opencode's stand-in
+        run: npm run e2e:outcome
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        working-directory: app
+        env:
+          PURLIS_OUTCOME_HARNESS: opencode
+      - name: The Skill studio's outcome bars on opencode's stand-in
+        run: xvfb-run -a npm run e2e:outcome
+        if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
+        working-directory: app
+        env:
+          PURLIS_OUTCOME_HARNESS: opencode
       # The app started the way an operator starts it — from Finder, with the `PATH` Finder
       # gives — on purlis's own built-in profile. Its own run, because it is the app's
       # ENVIRONMENT that is under test and one run is one environment (charter-app#134).
@@ -1771,6 +1809,28 @@ jobs:
             extras: true
             specs: true
             sandbox: false
+    runs-on: ${{ matrix.os }}
+    steps: *scenario-steps
+
+  # **The Skill studio's outcome bars** (SK-23, #4343): the scenario legs' steps, with every leg's
+  # own flag off and `outcome` on, so it builds as they do and runs the three runs alone. Not
+  # required, and no `scenario-checks` waits on it: its 300 ms is measured on a debug build on a
+  # shared runner, and a miss is a ticket (the operator's ruling of 2026-10-31), not a block on
+  # every merge. It becomes required with the flag's flip (#2786).
+  outcome-bars:
+    name: outcome bars (${{ matrix.os }})
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-24.04]
+        shard: [bars]
+        shards: [1]
+        extras: [false]
+        specs: [false]
+        sandbox: [false]
+        outcome: [true]
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
 

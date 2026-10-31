@@ -2015,3 +2015,73 @@ fn persona_set_is_a_personas_own_rows_of_its_chats_set_and_asks_only_of_its_own(
         "no wider level of the plane is read: {alone:?}"
     );
 }
+
+/// **A skill's state always has a one-line reason** (SK-23, #4343): every reason the core can give,
+/// including the ones only a persona's chat meets, says something on one line. The `match` stops
+/// a new reason compiling until it is added to the list.
+#[test]
+fn every_reason_reads_as_one_line() {
+    fn listed(reason: &Reason) {
+        match reason {
+            Reason::NotASkill(_)
+            | Reason::NotGranted
+            | Reason::GrantUnread(_)
+            | Reason::TurnedOff
+            | Reason::NameTaken { .. }
+            | Reason::Twin { .. }
+            | Reason::NotKeptLocal(_)
+            | Reason::NotOnThisMachine
+            | Reason::NoSuchBuiltIn
+            | Reason::OffForTheHarness
+            | Reason::BuiltInsOwnName
+            | Reason::RepoUnread { .. }
+            | Reason::HiddenByRepo { .. }
+            | Reason::Archived
+            | Reason::MadeWhileAChatRan(_)
+            | Reason::IndexName
+            | Reason::HiddenByIndex => {}
+        }
+    }
+    let said = "the sentence the core was handed".to_string();
+    let repo = "svc".to_string();
+    let reasons = [
+        Reason::NotASkill(Missing::File),
+        Reason::NotASkill(Missing::Name),
+        Reason::NotASkill(Missing::Description),
+        Reason::NotASkill(Missing::Link),
+        Reason::NotASkill(Missing::TooLarge),
+        Reason::NotASkill(Missing::Crowded),
+        Reason::NotGranted,
+        Reason::GrantUnread(said.clone()),
+        Reason::TurnedOff,
+        Reason::NameTaken {
+            by: Origin::Workspace,
+            local: false,
+        },
+        Reason::NameTaken {
+            by: Origin::Workspace,
+            local: true,
+        },
+        Reason::Twin {
+            origin: Origin::Project,
+            local: false,
+        },
+        Reason::NotKeptLocal(said.clone()),
+        Reason::NotOnThisMachine,
+        Reason::NoSuchBuiltIn,
+        Reason::OffForTheHarness,
+        Reason::BuiltInsOwnName,
+        Reason::RepoUnread { repo: repo.clone() },
+        Reason::HiddenByRepo { repo },
+        Reason::Archived,
+        Reason::MadeWhileAChatRan(said),
+        Reason::IndexName,
+        Reason::HiddenByIndex,
+    ];
+    for reason in &reasons {
+        listed(reason);
+        let line = reason.to_string();
+        assert!(!line.trim().is_empty(), "{reason:?} says nothing");
+        assert!(!line.contains('\n'), "{reason:?} runs over lines: {line}");
+    }
+}
