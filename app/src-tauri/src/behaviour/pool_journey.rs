@@ -44,10 +44,9 @@ const LONG: Duration = Duration::from_secs(300);
 const PROFILE: &str = "work";
 const WORKSPACE: &str = "app";
 
-/// How many skills the profile's settings hold, each of [`FILES_OF_A_SKILL`] files, and how
-/// large each one's data is: about 40 MiB in 4,500 files, as a person's folder of skills is.
+/// How many skills the profile's settings hold, each of three files, and how large each one's
+/// data is: about 40 MiB in 4,500 files, as a person's folder of skills is.
 const SKILLS: usize = 1500;
-const FILES_OF_A_SKILL: usize = 3;
 const SKILL_DATA_BYTES: usize = 26 * 1024;
 
 /// The `docker` the pool uses: the real one, told the job's registry in place of purlis's name.
