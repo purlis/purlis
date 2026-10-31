@@ -960,6 +960,20 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
             })?;
             purlis_core::profilestore::onrunner::kept_for(&homes, &desktop.device)
         }),
+        // And says what it holds of one, read off its disk now, so the desktop sends only what
+        // differs (#4088).
+        holding: std::sync::Arc::new(|desktop, profile, after| {
+            let homes = purlis_core::profilestore::Homes::here().ok_or_else(|| {
+                "this runner has no data home its profiles are in, or it is inside a project"
+                    .to_owned()
+            })?;
+            purlis_core::profilestore::onrunner::held_for_the_desktop(
+                &homes,
+                &desktop.device,
+                profile,
+                after,
+            )
+        }),
         // A sign-in's redirect, carried from the desktop's browser to the login listening here
         // (#4044). The login's answer stays here.
         delivering: std::sync::Arc::new(|target| {

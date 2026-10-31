@@ -13,11 +13,11 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.testkit";
-import { inWorkspace, type StudioPage, type StudioScope } from "./skillStudio";
+import { inWorkspace, routerGradeItem, type StudioPage, type StudioScope } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
-import type { Studio, StudioRouter } from "./bindings";
+import type { RouterGradeScorecard, ScoredTest, Studio, StudioRouter } from "./bindings";
 
 /** The prototype's programs: Claude Code's own, a plugin's and a repo's; Codex none; opencode's
  *  one, off here. */
@@ -97,6 +97,7 @@ const ROUTER: StudioRouter = {
     "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root, since the router relevance is asked only at each chat's start. A chat started in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
   grade:
     "Graded on the library at 3f9a2c1d7e40, 2026-10-27: 9 of 10 trigger tests pass with the router relevance, and 8 of 10 with the built-in router.",
+  graded: "01JBGRADE0000000000000000",
   chats: [
     {
       session: 5,
@@ -121,7 +122,49 @@ const ROUTER: StudioRouter = {
   ],
 };
 
-/** The studio tab as a view tab draws it, `width` by 520 px, opened at `page` on `scope`. */
+/** One trigger test of a router's grade, three runs in each arm, each chat kept. */
+function scored(query: string, routerTriggered: number, builtIn: number): ScoredTest {
+  const runs = (arm: "router" | "built-in-router", triggered: number) => ({
+    arm,
+    runs: 3,
+    triggered,
+    pass: triggered >= 2,
+    asked: 0,
+    chats: [1, 2, 3].map((run) => ({ id: `${arm}-${query.length}-${run}`, run, kept: true })),
+  });
+  return {
+    query,
+    should_trigger: true,
+    arms: [runs("router", routerTriggered), runs("built-in-router", builtIn)],
+  };
+}
+
+/** The router's newest grade's scorecard (#3617): two skills, both arms. */
+const SCORECARD: RouterGradeScorecard = {
+  grade: "01JBGRADE0000000000000000",
+  router: "relevance",
+  graded: "2026-10-27 09:12 UTC",
+  library: "the library at 3f9a2c1d7e40",
+  ran_on: "Claude Code · claude-sonnet-4-5",
+  ended: "Finished",
+  outcome: "graded",
+  arms: { router: 90, built_in: 80 },
+  spent: { chats: 60, tokens: 240000, cost_usd: 1.84, limit_usd: 15 },
+  asked: 0,
+  skills: [
+    {
+      skill: "figma-handoff",
+      tests: [
+        scored("turn this frame into a react component", 3, 3),
+        scored("export the figma tokens", 2, 1),
+      ],
+    },
+    { skill: "lint-rs", tests: [scored("why does clippy fail here", 3, 2)] },
+  ],
+};
+
+/** The studio tab as a view tab draws it, `width` by 520 px, opened at `page` on `scope`, at
+ *  `item` on it where one is named. */
 function Tab({
   width,
   narrow,
@@ -131,6 +174,7 @@ function Tab({
   page: StudioPage;
   scope: StudioScope;
   answer: Studio;
+  item?: string;
 }) {
   return <StudioInPanel width={width} height={520} narrow={narrow} />;
 }
@@ -153,9 +197,14 @@ const meta = {
       if (cmd === "skill_studio") return args.answer;
       if (cmd === "skill_routers") return [{ id: "relevance", name: "Relevance router" }];
       if (cmd === "skill_deletes_cut_short") return { settled: [], unsettled: [] };
+      if (cmd === "router_grade_scorecard") return SCORECARD;
       return [];
     });
-    openViewAt(HISTORY, { page: args.page, scope: args.scope });
+    openViewAt(HISTORY, {
+      page: args.page,
+      scope: args.scope,
+      ...(args.item === undefined ? {} : { item: args.item }),
+    });
     return () => {
       clearMocks();
       forgetViewHistory(HISTORY);
@@ -224,6 +273,22 @@ export const Routing: Story = {
     await waitFor(() =>
       expect(canvas.getByText("figma-handoff, gpu-profile, lint-rs")).toBeInTheDocument(),
     );
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **A router's grade's scorecard** (#3617): opened from the router's Scorecard, beside the list:
+ * its end, its totals, then each skill's trigger tests in both arms with each chat.
+ */
+export const RouterScorecard: Story = {
+  args: { page: "routing", item: routerGradeItem({ grade: SCORECARD.grade }) },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("router-grade-scorecard-about")).toHaveTextContent(
+      "Graded 2026-10-27 09:12 UTC, on the library at 3f9a2c1d7e40",
+    );
+    await expect(canvas.getByRole("heading", { name: "lint-rs" })).toBeInTheDocument();
+    await tabInto(() => canvas.getByTestId("router-grade-scorecard"));
     expectFocusInSight();
   },
 };

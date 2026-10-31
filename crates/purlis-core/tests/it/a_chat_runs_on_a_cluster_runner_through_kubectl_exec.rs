@@ -383,6 +383,7 @@ fn work() -> ProfileToKeep {
         pinned: None,
         settings: None,
         settings_staged: None,
+        settings_changed: None,
     }
 }
 

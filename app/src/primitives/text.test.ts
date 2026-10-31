@@ -151,7 +151,7 @@ describe("the text roles", () => {
     const line = ['@import "./primitives/text', 'css" layer(components);'].join(".");
     expect(styles).toContain(line);
     expect(styles.trimEnd().indexOf(line)).toBeGreaterThan(
-      styles.indexOf(['@import "./primitives/overlays', 'css"'].join(".")),
+      styles.indexOf(['@import "./ui/popover/popover', 'css"'].join(".")),
     );
     const order = (/@layer ([\w\s,-]+);/.exec(styles)?.[1] ?? "").split(/\s*,\s*/);
     expect(order.indexOf("components")).toBeGreaterThan(order.indexOf("charter"));

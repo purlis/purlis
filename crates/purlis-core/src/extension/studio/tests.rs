@@ -1320,3 +1320,137 @@ fn a_routers_answer_is_read_failing_closed() {
         "{refused}"
     );
 }
+
+// ---- a lint that answers many skills at once (#4195) ----------------------------------------
+
+#[test]
+fn a_lint_says_whether_it_answers_many_skills_at_once() {
+    let reads = |lint: serde_json::Value| {
+        let text = manifest(
+            &["skill-lint"],
+            serde_json::json!({}),
+            serde_json::json!({ "skill-lint": lint }),
+        );
+        read(&text, true).map(|manifest| {
+            let studio = manifest.studio.expect("a studio extension");
+            (studio.lint, studio.lint_many_at_once)
+        })
+    };
+    assert_eq!(
+        reads(serde_json::json!({ "title": "House style" })),
+        Ok((Some("House style".to_owned()), false)),
+        "a lint that says nothing is asked one skill at a time, as before"
+    );
+    assert_eq!(
+        reads(serde_json::json!({ "title": "House style", "many-at-once": true })),
+        Ok((Some("House style".to_owned()), true))
+    );
+    for bad in [
+        serde_json::json!({ "title": "H", "many-at-once": "yes" }),
+        serde_json::json!({ "title": "H", "batch": true }),
+    ] {
+        assert!(reads(bad.clone()).is_err(), "{bad} was taken");
+    }
+}
+
+#[test]
+fn a_question_of_many_hands_each_skill_by_name_with_its_files() {
+    let skills = [LintedSkill {
+        skill: "deploy".to_owned(),
+        files: vec![HandedFile {
+            path: "SKILL.md".to_owned(),
+            text: "---\n".to_owned(),
+            executable: false,
+        }],
+    }];
+    let ask = Ask::FindingsOfEach { skills: &skills };
+    assert_eq!(
+        ask.line(),
+        serde_json::json!({
+            "ask": "findings-of-each",
+            "skills": [{
+                "skill": "deploy",
+                "files": [{ "path": "SKILL.md", "text": "---\n", "executable": false }],
+            }],
+        })
+    );
+    assert_eq!(ask.capability(), Capability::SkillLint);
+    let one_at_a_time = Declared {
+        lint: Some("House style".to_owned()),
+        ..Declared::default()
+    };
+    let refused = ask.unoffered("x", &one_at_a_time).expect("refused");
+    assert!(refused.contains("one skill at a time"), "{refused}");
+    let many = Declared {
+        lint_many_at_once: true,
+        ..one_at_a_time
+    };
+    assert_eq!(ask.unoffered("x", &many), None);
+}
+
+#[test]
+fn findings_of_many_are_one_per_skill_asked_in_order_failing_closed() {
+    let said = findings_of_each(
+        "x",
+        &["deploy", "review", "deploy"],
+        &doc(serde_json::json!({ "skills": [
+            { "skill": "deploy", "findings": [{ "says": " too long " }] },
+            { "skill": "review", "findings": [] },
+            { "skill": "deploy", "findings": [] },
+        ] })),
+    )
+    .expect("read");
+    assert_eq!(
+        said,
+        [
+            Ok(vec!["too long".to_owned()]),
+            Ok(Vec::new()),
+            Ok(Vec::new())
+        ]
+    );
+    // Refused whole: one left out, one more, another skill, the wrong order, a key no answer
+    // has, another shape.
+    for bad in [
+        serde_json::json!({ "skills": [{ "skill": "deploy", "findings": [] }] }),
+        serde_json::json!({ "skills": [
+            { "skill": "deploy", "findings": [] },
+            { "skill": "review", "findings": [] },
+            { "skill": "other", "findings": [] },
+        ] }),
+        serde_json::json!({ "skills": [
+            { "skill": "review", "findings": [] },
+            { "skill": "deploy", "findings": [] },
+        ] }),
+        serde_json::json!({ "skills": [
+            { "skill": "deploy", "findings": [], "level": "blocks" },
+            { "skill": "review", "findings": [] },
+        ] }),
+        serde_json::json!({ "findings": [] }),
+    ] {
+        assert!(
+            findings_of_each("x", &["deploy", "review"], &doc(bad.clone())).is_err(),
+            "{bad} was taken"
+        );
+    }
+    // Refused for one skill alone: findings no single answer may hold.
+    let too_many: Vec<serde_json::Value> = (0..=MOST_FINDINGS)
+        .map(|_| serde_json::json!({ "says": "ok" }))
+        .collect();
+    for bad in [
+        serde_json::json!([{ "says": "a\u{202e}b" }]),
+        serde_json::json!([{ "says": "" }]),
+        serde_json::json!(too_many),
+    ] {
+        let said = findings_of_each(
+            "x",
+            &["deploy", "review"],
+            &doc(serde_json::json!({ "skills": [
+                { "skill": "deploy", "findings": bad },
+                { "skill": "review", "findings": [{ "says": "fine" }] },
+            ] })),
+        )
+        .expect("read");
+        assert!(said[0].is_err(), "{bad} was taken");
+        assert_eq!(said[1], Ok(vec!["fine".to_owned()]));
+    }
+}

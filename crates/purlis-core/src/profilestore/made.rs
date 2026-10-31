@@ -1156,6 +1156,32 @@ fn a_settings_path(allowed: &Allowed, path: &str) -> bool {
             .all(|part| !part.starts_with('.') && !credential_shaped(part))
 }
 
+/// **`held`, what a runner said it holds of a `kind` profile, by path**, or `None` where it is
+/// not such a list: a path an import would not write, one twice, a digest no digest looks like,
+/// or more than a runner holds (#4088).
+pub fn held_digests<'a>(
+    kind: &str,
+    held: &'a [purlis_session_protocol::session::HeldSetting],
+) -> Option<std::collections::BTreeMap<&'a str, &'a str>> {
+    use purlis_session_protocol::session::{MOST_PROFILE_SETTINGS_FILES, is_settings_digest};
+    let (_, allowed) = harness_of(kind).ok()?;
+    if held.len() > MOST_PROFILE_SETTINGS_FILES {
+        return None;
+    }
+    let mut digests = std::collections::BTreeMap::new();
+    for one in held {
+        let fits = a_settings_path(allowed, &one.path) && is_settings_digest(&one.digest);
+        if !fits
+            || digests
+                .insert(one.path.as_str(), one.digest.as_str())
+                .is_some()
+        {
+            return None;
+        }
+    }
+    Some(digests)
+}
+
 /// **`files`, sent by a desktop for its `kind` profile `name`, as a runner may keep them**:
 /// every path one an import would write ([`a_settings_path`]), none twice, and each file with no
 /// sign-in in it ([`super::sent::without_credentials`], D-3448-8). One that is not refuses all
