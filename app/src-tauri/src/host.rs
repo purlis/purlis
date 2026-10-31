@@ -355,6 +355,11 @@ pub trait SessionHost: Send + Sync {
         false
     }
 
+    /// Whether the draining runner this host stayed on is kept no more (#4248): its link has ended.
+    fn runner_is_gone(&self) -> bool {
+        false
+    }
+
     /// **Fetches the branches of `workspace`'s clones back from the runner of `pool`** (#2046),
     /// where this host runs the project's chats there: each clone's `refs/remotes/<pool>/*`.
     /// Answers what could not be fetched, in sentences. Nothing, where chats run elsewhere.

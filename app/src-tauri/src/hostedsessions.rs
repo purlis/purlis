@@ -175,10 +175,21 @@ pub(crate) fn cancelled_by<T>(
     cancel: Arc<std::sync::atomic::AtomicBool>,
     start: impl FnOnce() -> T,
 ) -> T {
+    struct Forgets;
+    impl Drop for Forgets {
+        fn drop(&mut self) {
+            CANCEL.with_borrow_mut(|held| *held = None);
+        }
+    }
     CANCEL.with_borrow_mut(|held| *held = Some(cancel));
-    let done = start();
-    CANCEL.with_borrow_mut(|held| *held = None);
-    done
+    let _forgets = Forgets;
+    start()
+}
+
+/// Whether this thread runs a start its person can cancel: only such a start waits without limit,
+/// since nothing else can end its wait.
+fn can_be_cancelled() -> bool {
+    CANCEL.with_borrow(Option::is_some)
 }
 
 /// The starts each project's window has running that its person can cancel, by the project's root.
@@ -633,6 +644,13 @@ impl Connection {
             .or_default()
             .push(Arc::clone(&link));
         Some(link)
+    }
+
+    /// Link `id` left on a draining runner is let go of.
+    fn lets_go_of_left(&self, root: &Path, id: u64) {
+        if let Some(left) = lock(&self.left_on_draining).get_mut(root) {
+            left.retain(|link| link.id != id);
+        }
     }
 
     /// Every link open for `root` now: the one it is held on, and each left on a draining runner.
@@ -1263,7 +1281,13 @@ impl HostLink {
 
     /// [`Self::call`], for a command of a chat's start (#4264): waits until the host answers, its
     /// link ends or the person cancels.
+    ///
+    /// A hold or a deal nobody can cancel, a dispatch's, may run under the lock the window's own
+    /// commands wait on, so it keeps a quick command's limit.
     fn call_of_a_start(&self, command: Command) -> Result<Answer, String> {
+        if !can_be_cancelled() {
+            return self.call(command);
+        }
         let (answered, answer) = std::sync::mpsc::channel();
         let client = Arc::clone(&self.client);
         self.runtime.spawn(async move {
@@ -1280,6 +1304,16 @@ impl HostLink {
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             }
+        }
+    }
+
+    /// [`Self::call_of_a_start`] for a command whose answer must be heard, or what it made is left
+    /// behind or misread: a Cancel does not end this wait, and the start stops right after it.
+    fn call_heard_in_a_start(&self, command: Command) -> Result<Answer, String> {
+        if can_be_cancelled() {
+            self.call_within(command, UNTIL_THE_HOST_SAYS)
+        } else {
+            self.call(command)
         }
     }
 
@@ -2661,7 +2695,8 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     let stays = lock(stays_on).clone();
     let link = match stays {
         Some(link) => link,
-        None => connection.of_project(root, UNTIL_THE_HOST_SAYS)?,
+        None if can_be_cancelled() => connection.of_project(root, UNTIL_THE_HOST_SAYS)?,
+        None => connection.of_project(root, LINK_WITHIN)?,
     };
     let mut held = lock(held);
     if let Some(Held {
@@ -2752,7 +2787,7 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     // put back finds here is reattached rather than started again (#2006). A host started
     // again after its last ended has none.
     if link.version() >= REATTACHES {
-        match link.call(Command::ProgramsOf {
+        match link.call_heard_in_a_start(Command::ProgramsOf {
             project: project.clone(),
         }) {
             Ok(Answer::Programs(programs)) => {
@@ -3715,6 +3750,14 @@ impl SessionHost for HostedSessions {
     /// The host deals it (#2000). With no host there is no chat to start under it, so a
     /// number past every one the window knows is taken, and the start says why it cannot run.
     fn deal(&self) -> u32 {
+        // A hold another start waits on may take as long as its host does, and a deal runs under
+        // the lock the window's own commands wait on: this number is dealt here then.
+        if self.held.try_lock().is_err() {
+            return self
+                .opened
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+                .map_or(u32::MAX, |was| was + 1);
+        }
         self.dealt_by_the_host().unwrap_or_else(|why| {
             tracing::warn!("purlis: the session host dealt no number ({why})");
             // Never wrapped round to a chat's that runs: past the last number, the last.
@@ -3774,6 +3817,24 @@ impl SessionHost for HostedSessions {
     /// Fetched over this project's own link to the runner, into each clone of `workspace`
     /// (#2046). Nothing where the runner shares this machine's disk, or the project is not
     /// held on a pool's runner.
+    /// Whether the runner these chats stayed on is kept no more: its link ends with it.
+    fn runner_is_gone(&self) -> bool {
+        let Some(link) = lock(&self.stays_on).clone() else {
+            return false;
+        };
+        let runner = link.reached_runner().unwrap_or_default().to_owned();
+        let gone = self.connection.runners_config().is_some_and(|config| {
+            !runner.is_empty()
+                && matches!(purlis_core::runners::named(&config, &runner), Ok(None))
+                && purlis_core::runners::read(&config).is_ok_and(|kept| !kept.is_empty())
+        });
+        if gone {
+            self.connection.lets_go_of_left(&self.root, link.id());
+            link.end();
+        }
+        gone
+    }
+
     /// Asked as a chat starts: these chats stay where they run, and the project's link goes on to
     /// the pool's runner now.
     fn stays_on_a_draining_runner(&self) -> bool {
@@ -3789,12 +3850,14 @@ impl SessionHost for HostedSessions {
         }
     }
 
+    /// While a runner of the pool drains, neither's fetch removes what only the other has
+    /// (#4248).
     fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {
         if !self.kept_on_the_runner {
             return Vec::new();
         }
-        // What a draining runner has is added beside what the pool's runner has (#4248).
-        let beside = lock(&self.stays_on).is_some();
+        let beside =
+            self.connection.links_of(&self.root).len() > 1 || lock(&self.stays_on).is_some();
         match self.link() {
             Ok((link, project)) => crate::runnercode::fetch_workspace(
                 &link, &project, &self.root, workspace, pool, beside,
@@ -3903,7 +3966,7 @@ impl SessionHost for HostedSessions {
         let asks = hearing.asks.is_some();
         // Heard before it is asked for, so nothing its proxy does is missed.
         link.hear(&id, Hears::of(hearing));
-        let answered = link.call_of_a_start(Command::Confine(Box::new(session::Confine {
+        let answered = link.call_heard_in_a_start(Command::Confine(Box::new(session::Confine {
             confinement: id.clone(),
             project,
             plan: wire(plan),

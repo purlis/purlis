@@ -102,6 +102,7 @@ pub struct Server {
 ///   `forget_chat_that_did_not_start`, `close_plane`, `forget_project`, and the two that quit
 ///   the app to start it again (`restart_on_the_session_bus`, `restart_to_update`);
 /// - **it starts a chat or a shell as the person**: `ask_persona_chat`, `start_chat`,
+///   `cancel_chat_start`,
 ///   `start_chat_here`, `open_session`, `open_shell_in_branch`, `first_task_run`,
 ///   `resume_session`, `retry_chat_that_did_not_start`, `reopen_finished_task`, `curate` (a
 ///   chat with a curation's prompt typed), and `relaunch` (the launch's answer, which starts
@@ -278,6 +279,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Starts.
     "ask_persona_chat",
     "start_chat",
+    "cancel_chat_start",
     "start_chat_here",
     "open_session",
     "open_shell_in_branch",
