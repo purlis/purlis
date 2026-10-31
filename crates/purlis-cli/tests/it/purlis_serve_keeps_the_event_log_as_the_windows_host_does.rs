@@ -93,6 +93,7 @@ fn a_chat_that_ends_once(go: &Path) -> StartProgram {
             git_hooks: None,
             reporting: None,
             confinement: None,
+            prompt_key: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }

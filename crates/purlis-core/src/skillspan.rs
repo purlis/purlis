@@ -172,7 +172,7 @@ pub struct PromptSalt(String);
 impl PromptSalt {
     /// A fresh key for a chat being composed, or why there is none.
     pub fn mint() -> std::io::Result<Self> {
-        purlis_session_protocol::session::PromptKey::mint().map(|key| Self::from(&key))
+        purlis_session_protocol::session::PromptKey::mint().map(|key| Self(key.expose().to_owned()))
     }
 
     /// The key `value` names; none for an empty one.
@@ -188,21 +188,20 @@ impl PromptSalt {
             .and_then(|value| Self::of_key(&value))
     }
 
-    /// The key as the session protocol carries it, to the host that starts the chat.
-    pub fn key(&self) -> purlis_session_protocol::session::PromptKey {
+    /// The key as the session protocol carries it, to the host that starts the chat. None only
+    /// where it could not be carried, which a salt made here never is.
+    pub fn key(&self) -> Option<purlis_session_protocol::session::PromptKey> {
         purlis_session_protocol::session::PromptKey::of(&self.0)
-            .expect("a prompt salt is never empty")
+    }
+
+    /// The key a host answered; none for an empty one, which keys nothing.
+    pub fn answered(key: &purlis_session_protocol::session::PromptKey) -> Option<Self> {
+        Self::of_key(key.expose())
     }
 
     /// The value, for the one place that must write it down: the chat's environment.
     pub fn expose(&self) -> &str {
         &self.0
-    }
-}
-
-impl From<&purlis_session_protocol::session::PromptKey> for PromptSalt {
-    fn from(key: &purlis_session_protocol::session::PromptKey) -> Self {
-        Self(key.expose().to_owned())
     }
 }
 

@@ -2033,6 +2033,10 @@ pub struct HostedSessions {
     /// Each program the host still had for this project as the window held it, from before
     /// this window, that nothing has reattached yet, by its number (#2006).
     left: Arc<Mutex<HashMap<u32, HeldProgram>>>,
+    /// The prompt key the host answered each chat this window launched with (#3369), until the
+    /// start asks for it ([`SessionHost::prompt_key_started`]): none from a host before 1.58,
+    /// which set none in the chat's environment.
+    keys_started: Mutex<HashMap<u32, Option<purlis_core::skillspan::PromptSalt>>>,
     /// Each browser the host still had for this project as the window first held it, from
     /// before this window, until the put back takes them (#2025): `None` until that first hold.
     browsers_left: Arc<Mutex<Option<Vec<HeldProgram>>>>,
@@ -2088,6 +2092,7 @@ impl HostedSessions {
             kill_switch: crate::killswitch::KillSwitch::unthrown(),
             lost: Arc::default(),
             left: Arc::default(),
+            keys_started: Mutex::default(),
             browsers_left: Arc::default(),
             untaken: Arc::default(),
             reconnecting,
@@ -2843,7 +2848,7 @@ fn launch_of(opening: &Opening, program: String) -> Launch {
         prompt_key: opening
             .prompt_key
             .as_ref()
-            .map(purlis_core::skillspan::PromptSalt::key),
+            .and_then(purlis_core::skillspan::PromptSalt::key),
     }
 }
 
@@ -2941,7 +2946,7 @@ impl HostedSessions {
             ran,
             prompt_key: prompt_key
                 .as_ref()
-                .map(purlis_core::skillspan::PromptSalt::from),
+                .and_then(purlis_core::skillspan::PromptSalt::answered),
         })
     }
 }
@@ -3006,7 +3011,10 @@ impl SessionHost for HostedSessions {
             ..StartProgram::of(project, kind_of(opening))
         };
         self.started(&link, id, start, opening.operator_shell, announce)
-            .map(|begun| begun.id)
+            .map(|begun| {
+                lock(&self.keys_started).insert(begun.id, begun.prompt_key);
+                begun.id
+            })
     }
 
     fn open_named(
@@ -3509,16 +3517,25 @@ impl SessionHost for HostedSessions {
             .ok()
     }
 
-    /// How the host says it applied the sandbox to chat `number`'s run: none from a host before
-    /// 1.28 (#2636).
     fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {
+        self.link().ok()?;
         lock(&self.left)
             .get(&number)?
             .prompt_key
             .as_ref()
-            .map(purlis_core::skillspan::PromptSalt::from)
+            .and_then(purlis_core::skillspan::PromptSalt::answered)
     }
 
+    fn prompt_key_started(
+        &self,
+        number: u32,
+        minted: Option<purlis_core::skillspan::PromptSalt>,
+    ) -> Option<purlis_core::skillspan::PromptSalt> {
+        lock(&self.keys_started).remove(&number).unwrap_or(minted)
+    }
+
+    /// How the host says it applied the sandbox to chat `number`'s run: none from a host before
+    /// 1.28 (#2636).
     fn ran_in(&self, number: u32) -> Option<purlis_session_protocol::session::RunSandbox> {
         self.link().ok()?;
         lock(&self.left).get(&number)?.sandbox.clone()

@@ -278,8 +278,13 @@ fn a_minted_prompt_key_is_256_random_bits_and_crosses_the_protocol_whole() {
     assert_eq!(one.expose().len(), 64);
     assert!(one.expose().bytes().all(|byte| byte.is_ascii_hexdigit()));
     // What the host is handed and answers back is the same key.
-    assert_eq!(PromptSalt::from(&one.key()), one);
-    assert_eq!(format!("{:?}", one.key()), "PromptKey(..)");
+    let key = one.key().expect("carried");
+    assert_eq!(PromptSalt::answered(&key), Some(one));
+    assert_eq!(format!("{key:?}"), "PromptKey(..)");
+    // A host that answers an empty key gives the chat none.
+    let empty: purlis_session_protocol::session::PromptKey =
+        serde_json::from_str("\"\"").expect("it reads");
+    assert_eq!(PromptSalt::answered(&empty), None);
 }
 
 #[test]

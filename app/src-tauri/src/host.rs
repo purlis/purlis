@@ -559,6 +559,19 @@ pub trait SessionHost: Send + Sync {
         None
     }
 
+    /// **The prompt key chat `number` started with, as its host answered the start** (#3369),
+    /// where the window `minted` one for its launch: a host before 1.58 answers none and sets
+    /// none in the chat's environment, so its prompts are marked under none. A chat that runs in
+    /// the window's own process started with the key minted.
+    fn prompt_key_started(
+        &self,
+        number: u32,
+        minted: Option<purlis_core::skillspan::PromptSalt>,
+    ) -> Option<purlis_core::skillspan::PromptSalt> {
+        let _ = number;
+        minted
+    }
+
     /// **The prompt key of chat `number`, left running, as its host kept it** (#3369): what the
     /// window digests what it types into the chat under once it is reattached. `None` where its
     /// host keeps none. Read before it is reattached.

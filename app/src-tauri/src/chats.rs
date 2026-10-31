@@ -4330,6 +4330,11 @@ impl Chats {
                 gone(announced);
             }
         })?;
+        // The key its host set in its environment, where the window launched it: a host that
+        // answers none set none, and its prompts are marked under none (#3369).
+        if !reattaching && !on_the_runner {
+            prompt_key = self.sessions.prompt_key_started(session, prompt_key);
+        }
         // Under the id it was actually given, not the one it was recorded with: a chat
         // started fresh is under an id the app just chose, and that is what has to be
         // written down for the next launch to resume it.

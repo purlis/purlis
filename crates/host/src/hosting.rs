@@ -1887,6 +1887,12 @@ impl Hosting {
         if let (Some(reporting), Some(launch)) = (&reporting, start.launch.as_mut()) {
             launch.reporting = Some(reporting.clone());
         }
+        // On every way it fails, nothing runs in its confinement: that ends with the start.
+        let forget = |channel: &Option<Arc<dyn Channel>>| {
+            if let Some(channel) = channel {
+                channel.forget(number);
+            }
+        };
         // Its prompt key (#3369): the window's launch's, or one minted here for a chat's harness
         // this host composes, as its token is issued here.
         let prompt_key = match &start.launch {
@@ -1894,9 +1900,7 @@ impl Hosting {
             None if start.kind == ProgramKind::Harness => match session::PromptKey::mint() {
                 Ok(key) => Some(key),
                 Err(why) => {
-                    if let Some(channel) = &channel {
-                        channel.forget(number);
-                    }
+                    forget(&channel);
                     self.end_confinements_of(&program);
                     return Err(not_started(format!(
                         "chat {number} could not be given its prompt key: {why}"
@@ -1905,12 +1909,9 @@ impl Hosting {
             },
             None => None,
         };
-        // On every way it fails, nothing runs in its confinement: that ends with the start.
-        let forget = |channel: &Option<Arc<dyn Channel>>| {
-            if let Some(channel) = channel {
-                channel.forget(number);
-            }
-        };
+        // Answered only to a link that may compose a start or take one back: the window's, or
+        // its host's relaying it (#3369).
+        let answers_prompt_key = peer.scope().may(Power::Launch);
         // Composed off the runtime: a start the host composes itself reads the project's files
         // and starts its confinement (#2171).
         let composed = {
@@ -2125,7 +2126,7 @@ impl Hosting {
             process,
             confined,
             sandbox: Some(sandbox),
-            prompt_key,
+            prompt_key: prompt_key.filter(|_| answers_prompt_key),
         })
     }
 
