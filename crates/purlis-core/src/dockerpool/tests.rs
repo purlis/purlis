@@ -3075,6 +3075,14 @@ fn a_carry_takes_the_sign_ins_of_a_home_and_nothing_else() {
         read("oc/data/opencode/auth.json").as_deref(),
         Some("oc's sign-in")
     );
+    assert_eq!(
+        read("claude/config/.credentials.json").as_deref(),
+        Some("claude's sign-in")
+    );
+    assert_eq!(
+        read("codex/config/auth.json").as_deref(),
+        Some("codex's sign-in")
+    );
     // Nothing is written in a harness's folder of the new home: its own stays as it was.
     assert_eq!(
         std::fs::read_to_string(to.path().join(".codex/auth.json")).unwrap(),
@@ -3095,8 +3103,6 @@ fn a_carry_takes_the_sign_ins_of_a_home_and_nothing_else() {
     for not in [
         "work/config/settings.json",
         "opencode/data/opencode/auth.json",
-        "claude/config/.credentials.json",
-        "codex/config/auth.json",
     ] {
         assert!(
             std::fs::symlink_metadata(batch.join(not)).is_err(),

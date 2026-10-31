@@ -202,3 +202,28 @@ fn the_profile_page_says_plainly_where_commands_can_read_a_profiles_sign_in() {
         )
     );
 }
+
+/// **A chat of one harness is denied every other harness's default sign-in folder**, reading and
+/// writing, and not its own.
+#[test]
+fn a_chat_is_denied_every_other_harnesses_default_sign_in_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let machine = machine(&home);
+    let folder = |harness: Harness| match harness {
+        Harness::ClaudeCode => home.join(".claude"),
+        Harness::Codex => home.join(".codex"),
+        Harness::Opencode => home.join(".local/share/opencode"),
+    };
+    for harness in Harness::ALL {
+        let denied = signin::other_harnesses_folders(harness, &machine);
+        assert_eq!(denied.len(), 2, "{harness:?}");
+        for other in Harness::ALL {
+            assert_eq!(
+                denied.contains(&folder(other)),
+                other != harness,
+                "{harness:?} of {other:?}"
+            );
+        }
+    }
+}

@@ -4117,6 +4117,24 @@ impl Applied {
         if let Form::ClaudeWrapped(wrap) = &mut *self.form {
             wrap.on_profile(folders);
         }
+        // On a profile of its own, a wrapped Claude Code keeps out of Claude Code's default folder,
+        // whose sign-in a pool's next runner may be given.
+        if let (Form::ClaudeWrapped(wrap), Some(default), Some(config)) =
+            (&mut *self.form, &folders.default_config, &folders.config)
+            && default != config
+        {
+            let denial = Denial {
+                class: Class::HumanPowers,
+                path: default.clone(),
+                access: Access::ReadWrite,
+                named: None,
+                reach: Reach::AndBelow,
+                any_case: false,
+            };
+            wrap.denying(vec![denial.clone()]);
+            self.confines.denied.push(denial.clone());
+            self.denied.push(denial);
+        }
         if !matches!(*self.form, Form::ClaudeCode(_) | Form::ClaudeWrapped(_)) {
             return;
         }
@@ -6426,6 +6444,24 @@ pub(crate) fn applied_of(
         &pinned
     } else {
         compiled
+    };
+    // Every other harness's default sign-in folder, on every harness.
+    let mut denied_here = compiled.denied.clone();
+    denied_here.paths.extend(
+        signin::other_harnesses_folders(harness, machine)
+            .into_iter()
+            .map(|path| Denial {
+                class: Class::HumanPowers,
+                path,
+                access: Access::ReadWrite,
+                named: None,
+                reach: Reach::AndBelow,
+                any_case: false,
+            }),
+    );
+    let compiled = &Compiled {
+        denied: denied_here,
+        ..compiled.clone()
     };
     let (form, denied) = compile_checked(compile, compiled, root, machine)?;
     let mut held = denied.clone();
