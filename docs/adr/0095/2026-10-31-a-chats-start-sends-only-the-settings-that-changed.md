@@ -3,7 +3,7 @@
 **Built by #4088**, under spec #2041, after the person asked that a profile's settings stop
 crossing whole at every chat's start. It extends the 2026-10-30 amendment, whose checks, limits and
 all-or-none stand. Everything here is **decided in implementation, to be confirmed** (D-4088-1 to
-D-4088-6 in the pull request).
+D-4088-7 in the pull request).
 
 1. **A runner says what it holds** (session protocol 1.60, `settings_held`, the paired desktop's
    alone, on its own link, as `keep_profile` is): the path and SHA-256 of each settings file of a
