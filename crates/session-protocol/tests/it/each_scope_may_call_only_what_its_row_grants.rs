@@ -590,11 +590,11 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "give_conversation",
             "clones_of",
             "log_end",
+            "answer_grade",
+            "grade_step",
             "inspect",
             "attach_view", // DevTools' frames
             "inspector_input",
-            "answer_grade",
-            "grade_step",
         ],
         Scope::Terminal => &[
             "list",

@@ -415,8 +415,8 @@ use crate::view::{Limits, Views};
 /// 1.63 added a grade asked for from a terminal (SK-61, #3241): `ask_grade`, `terminal`'s alone,
 /// is pushed as `grade_asked` to the one `local-ui` link that holds the project, since the window
 /// is where a grade runs. It answers with `answer_grade`, tells each step with `grade_step`, which
-/// the asking link is pushed, and is pushed `stop_grade` once that link has gone. A host before
-/// 1.63 refuses `ask_grade` `unknown_command`, and a window before 1.63 is never asked.
+/// the asking link is pushed, and is pushed `stop_grade` once that link has gone. An older host
+/// refuses `ask_grade` `unknown_command`, and an older window is never asked.
 pub const VERSION: Version = Version {
     major: 1,
     minor: 63,
