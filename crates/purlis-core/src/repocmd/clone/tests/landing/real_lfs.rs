@@ -344,26 +344,43 @@ fn real_git_lfs_lands_each_file_as_its_content_signed_by_the_clones_helper() {
         )
     };
     let status = plain(&["status", "--porcelain"]);
-    if !status.trim().is_empty() {
+    assert!(status.trim().is_empty(), "{status}");
+    // And in purlis's own, which its dirty checks ask.
+    let ours = git::run(&dest, &["status", "--porcelain"], git::READ).unwrap();
+    if !ours.out.trim().is_empty() {
+        eprintln!(
+            ".git/config: {}",
+            std::fs::read_to_string(dest.join(".git/config")).unwrap()
+        );
+        eprintln!("listed: {}", plain(&["config", "--list", "--show-scope"]));
         for args in [
-            &["diff", "--stat"][..],
-            &["hash-object", "--path=file0.bin", "file0.bin"][..],
-            &["ls-files", "-s", "file0.bin"][..],
-            &["lfs", "status"][..],
-            &["config", "--list", "--show-origin"][..],
+            &["-c", "core.hooksPath=/dev/null", "status", "--porcelain"][..],
+            &["-c", "core.fsmonitor=false", "status", "--porcelain"][..],
+            &["-c", "diff.ignoreSubmodules=dirty", "status", "--porcelain"][..],
+            &[
+                "-c",
+                "status.submoduleSummary=false",
+                "status",
+                "--porcelain",
+            ][..],
+            &["-c", "filter.lfs.process=", "status", "--porcelain"][..],
         ] {
             eprintln!("{args:?}: {}", plain(args));
         }
-        eprintln!(
-            "the product's git: {:?}",
-            git::run(
-                &dest,
-                &["hash-object", "--path=file0.bin", "file0.bin"],
-                git::READ
-            )
+        let held = git::run(
+            &dest,
+            &["hash-object", "--path=file0.bin", "file0.bin"],
+            git::READ,
         );
+        eprintln!("hash-object: {held:?}");
+        let on = git::run(
+            &dest,
+            &["-c", "trace.x=1", "var", "GIT_CONFIG_PARAMETERS"],
+            git::READ,
+        );
+        eprintln!("var: {on:?}");
     }
-    assert!(status.trim().is_empty(), "{status}");
+    assert!(ours.ok() && ours.out.trim().is_empty(), "{ours:?}");
     // The percent never goes back, across git's stages and git-lfs's own, and the window says it.
     let percents: Vec<u8> = seen.iter().map(|(_, percent)| *percent).collect();
     assert!(percents.is_sorted(), "{seen:?}");
