@@ -412,6 +412,88 @@ fn a_chat_on_a_profile_signed_out_on_the_pool_waits_as_one_sign_in_there() {
     assert!(waiting_on_pools(&project).is_empty());
 }
 
+/// **Letting a pool's waits go says whose went** (#4205): each of those windows has an Ask to
+/// stop drawing.
+#[test]
+fn letting_a_pool_s_waits_go_says_whose_went() {
+    let dir = tempfile::tempdir().unwrap();
+    a_signed_in_desktop_profile(dir.path());
+    let desktop = homes(dir.path(), "desktop");
+    let (one, two) = (dir.path().join("told-1"), dir.path().join("told-2"));
+    for root in [&one, &two] {
+        ready_on(desktop.config_root(), root, "told", "work", &|_| {
+            Ok(Some(Standing::SignedOut))
+        })
+        .unwrap_err();
+    }
+
+    let mut went = let_go(None, "told", "work");
+    went.sort();
+
+    assert_eq!(went, [one, two]);
+    assert!(let_go(None, "told", "work").is_empty(), "none left to go");
+}
+
+/// **A second refusal counts as raised then** (#4203): the usual case, a project whose Ask is why
+/// Sign in was pressed. How long it has waited does not change.
+#[test]
+fn a_start_on_a_pool_refused_again_after_the_shell_was_last_seen_keeps_the_wait() {
+    let dir = tempfile::tempdir().unwrap();
+    a_signed_in_desktop_profile(dir.path());
+    let desktop = homes(dir.path(), "desktop");
+    let project = dir.path().join("refused-again");
+    let refuse = || {
+        ready_on(desktop.config_root(), &project, "again", "work", &|_| {
+            Ok(Some(Standing::SignedOut))
+        })
+        .unwrap_err();
+    };
+    refuse();
+    let since = waiting_on_pools(&project)[0].since;
+    let last_seen = std::time::Instant::now();
+
+    refuse();
+    let_go_older(&project, "again", "work", last_seen);
+
+    let waits = waiting_on_pools(&project);
+    assert_eq!(waits.len(), 1);
+    assert_eq!(waits[0].since, since);
+    let_go(None, "again", "work");
+}
+
+/// **Leaving a sign-in on a pool lets go only waits older than the moment the shell was last
+/// seen open, and only in its project** (#4203).
+#[test]
+fn leaving_a_sign_in_on_a_pool_keeps_a_wait_raised_after_the_shell_was_last_seen() {
+    let dir = tempfile::tempdir().unwrap();
+    a_signed_in_desktop_profile(dir.path());
+    let desktop = homes(dir.path(), "desktop");
+    let (project, other) = (dir.path().join("left"), dir.path().join("other"));
+    let refuse = |root: &Path| {
+        ready_on(desktop.config_root(), root, "builds", "work", &|_| {
+            Ok(Some(Standing::SignedOut))
+        })
+        .unwrap_err();
+    };
+    refuse(&project);
+    refuse(&other);
+    let last_seen = std::time::Instant::now();
+
+    let_go_older(&project, "builds", "work", last_seen);
+    assert!(waiting_on_pools(&project).is_empty(), "older: it goes");
+    assert_eq!(waiting_on_pools(&other).len(), 1, "another project's stays");
+    let gone = std::time::Instant::now();
+
+    refuse(&project);
+    let_go_older(&project, "builds", "work", gone);
+    assert_eq!(
+        waiting_on_pools(&project).len(),
+        1,
+        "raised since: it stays"
+    );
+    let_go(None, "builds", "work");
+}
+
 /// A profile this desktop keeps no record of is the runner's own to say, and a key profile's
 /// chat starts nothing on a pool and sends the runner nothing.
 #[test]

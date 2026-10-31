@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { StaleCloneNotices, staleCloneCause } from "./StaleCloneNotices";
+import { StaleCloneNotices, staleCloneCause, useStaleClones } from "./StaleCloneNotices";
 import type { StaleClone } from "./bindings";
 
 /**
@@ -54,10 +54,22 @@ function core(stale: StaleClone[], fixed?: string, unread: string[] = []) {
   return asked;
 }
 
+/** The Inbox's Notices, from the one reading the title bar's chips share (#3650). */
+function Listed({
+  settle,
+  dismiss,
+  dismissed,
+}: {
+  settle: (family: string, present: readonly string[]) => void;
+  dismiss: (cause: string) => void;
+  dismissed: ReadonlySet<string>;
+}) {
+  const clones = useStaleClones({ plane: PLANE, dismissed, dismiss, settle });
+  return <StaleCloneNotices clones={clones} />;
+}
+
 function shown(settle = vi.fn(), dismiss = vi.fn(), dismissed = new Set<string>()) {
-  render(
-    <StaleCloneNotices plane={PLANE} dismissed={dismissed} dismiss={dismiss} settle={settle} />,
-  );
+  render(<Listed settle={settle} dismiss={dismiss} dismissed={dismissed} />);
   return { settle, dismiss };
 }
 

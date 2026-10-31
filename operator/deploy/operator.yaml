@@ -20,7 +20,8 @@
 # It makes each person's runner namespace and binds purlis-runner-owner, only to that person,
 # only in runner namespaces, as the policy purlis-runner-namespaces (policy.yaml) holds at
 # admission (#2055). Its own signing key is a Secret the kubelet mounts in its pod, made before
-# it is installed (docs/cluster-operator.md).
+# it is installed (docs/cluster-operator.md). The chart's forge.keySecretNames alone adds a Role
+# that reads the GitHub App keys it names (#4204); this default install names none.
 # operator/tests/the_install_manifests.rs holds every rule.
 ---
 # The namespace the chart is installed in, which Helm leaves to the person: only pods that meet
@@ -240,7 +241,7 @@ spec:
           type: RuntimeDefault
       # The key the operator signs runners' link keys with (#2056), made once by whoever
       # installs it (docs/cluster-operator.md) and mounted by the kubelet: the operator holds no
-      # right to read a Secret. The whole Secret is mounted, key.pem and, while a team admin
+      # right to read it. The whole Secret is mounted, key.pem and, while a team admin
       # rolls the key, next.pem (#3305), and the kubelet refreshes it, so a roll needs no restart.
       volumes:
         - name: signing-key
@@ -279,3 +280,7 @@ spec:
             - name: signing-key
               mountPath: /var/run/purlis-cluster-operator/signing-key
               readOnly: true
+---
+# Source: purlis-cluster-operator/templates/forge-key-reader.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0

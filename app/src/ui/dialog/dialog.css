@@ -23,8 +23,8 @@
    **In the `components` layer** (`styles.css`), above `App.css`: a view's rule (`.warning`, a
    dialog's own class) cannot redraw the dialog's size, place or rows.
 
-   **The overlay surface** (#1845): the ground, border, corner and lift every overlay shares
-   (`primitives/overlays.css`), so a dialog reads as related to a popover and a menu. The rows
+   **The overlay surface** (#1845, ADR 0094 §4): the ground, border, corner and lift every overlay
+   shares, so a dialog reads as related to a popover and a menu. The rows
    are the dialog rules' own, from the prototype that stands for every dialog (#2798): a title
    at 16/600, the body padded, the footer under its rule.
 

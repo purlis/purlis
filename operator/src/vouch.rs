@@ -35,7 +35,7 @@ pub const STATEMENT_HEADER: &str = "purlis runner link key v3";
 
 /// Where the operator's pod holds its signing keys: the whole Secret, which the kubelet mounts
 /// there (`deploy/operator.yaml`) and refreshes when it changes, so the operator itself holds no
-/// right to read any Secret and a key roll needs no restart (#3305).
+/// right to read this Secret and a key roll needs no restart (#3305).
 pub const SIGNING_KEY_DIR: &str = "/var/run/purlis-cluster-operator/signing-key";
 
 /// The key the operator signs with now: `key.pem` in the Secret.

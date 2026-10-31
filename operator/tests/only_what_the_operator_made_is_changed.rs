@@ -34,6 +34,7 @@ fn claim() -> Claim {
             requester: "ada@example.com".into(),
             kept: false,
             stopped: false,
+            forge: None,
         },
         status: None,
     }

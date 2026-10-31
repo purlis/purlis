@@ -773,6 +773,8 @@ pub struct Chats {
     /// What the app ships that a chat is armed with: its own `charter` and its own plugin.
     shipped: crate::Shipped,
     open: Mutex<HashMap<u32, Running>>,
+    /// The open chats whose program has ended, their tabs still open (#4202).
+    ended: Mutex<std::collections::HashSet<u32>>,
     front: Mutex<Option<u32>>,
     /// Chats a launch could not start, and why. They are kept because the record has to
     /// keep them: a workspace directory that has moved, or a harness mid-reinstall, must
@@ -1281,6 +1283,7 @@ impl Chats {
             never_started: Mutex::new(None),
             shipped: crate::Shipped::default(),
             open: Mutex::new(HashMap::new()),
+            ended: Mutex::new(std::collections::HashSet::new()),
             front: Mutex::new(None),
             would_not_start: Mutex::new(Vec::new()),
             coming: Mutex::new(Vec::new()),
@@ -1409,6 +1412,12 @@ impl Chats {
                 && one.harness.is_none()
                 && one.chat.cwd.as_deref().is_some_and(|cwd| same(cwd, root))
         })
+    }
+
+    /// **Whether `session` is a shell tab at `root` whose program still runs** (#4202): the tab
+    /// of a shell that ran `exit` stays open, with nothing in it.
+    pub fn runs_a_shell_at(&self, session: u32, root: &std::path::Path) -> bool {
+        self.is_shell_at(session, root) && !lock(&self.ended).contains(&session)
     }
 
     /// The skills chat `session`'s persona names that it started without (SK-5, #2768), until
@@ -3294,6 +3303,11 @@ impl Chats {
         let restarting = lock(&self.restarting).contains(&session);
         if !restarting {
             lock(&self.owed).remove(&session);
+            // Read on its own too. A chat closed first has no tab left to say anything of.
+            let open = lock(&self.open).contains_key(&session);
+            if open {
+                lock(&self.ended).insert(session);
+            }
         }
         self.project_settings.forget(session);
         // The GitHub App tokens minted for it go with its program (#3808).
@@ -4452,6 +4466,7 @@ impl Chats {
         // A start under this number has been told nothing yet (#1450).
         lock(&self.told).remove(&session);
         lock(&self.starting_as).remove(&session);
+        lock(&self.ended).remove(&session);
         lock(&self.open).insert(
             session,
             Running {
@@ -4546,6 +4561,7 @@ impl Chats {
     pub fn close(&self, session: u32) -> Result<(), String> {
         lock(&self.starting_as).remove(&session);
         lock(&self.untaken).remove(&session);
+        lock(&self.ended).remove(&session);
         let gone = lock(&self.open).remove(&session);
         // A Try it's scratch chat takes its throwaway piece with it, where no other open chat
         // stands in it (SK-9): a restart starts before the chat it replaces ends.

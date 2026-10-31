@@ -866,6 +866,46 @@ mod cluster {
         );
     }
 
+    /// #4204: the opt-in is read from the admin's Pool as it is added, and the person chooses
+    /// nothing. Whatever the pool handed in says, the cluster's word is what is recorded.
+    #[test]
+    fn a_cluster_pool_records_the_mint_opt_in_its_pool_says_as_it_is_added() {
+        for (forge, recorded) in [
+            (
+                serde_json::json!({"appKeySecretRef": {"name": "org-app"}, "repos": ["acme/*"], "mintInCluster": true}),
+                Some(true),
+            ),
+            (
+                serde_json::json!({"appKeySecretRef": {"name": "org-app"}, "repos": ["acme/*"]}),
+                None,
+            ),
+        ] {
+            let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+            let claim = claim_name(OURS, "team");
+            cluster.vouch("ada", &claim, &claim, cluster.runner.key);
+            cluster.pool_says_forge(forge);
+            add_cluster(
+                config.path(),
+                &cluster.kubectl(),
+                &team(&cluster).minting_in_cluster(recorded.is_none()),
+                &desktop(),
+                Duration::ZERO,
+            )
+            .unwrap();
+            let row = &file(config.path())["pools"][0];
+            assert_eq!(
+                row.get("mintInCluster").and_then(|it| it.as_bool()),
+                recorded
+            );
+            match runners::runner_of(config.path(), "team").unwrap() {
+                Reached::Cluster(pool, _) => {
+                    assert_eq!(pool.mints_in_cluster(), recorded == Some(true));
+                }
+                other => panic!("{other:?}"),
+            }
+        }
+    }
+
     #[test]
     fn a_cluster_pool_naming_another_key_than_the_one_checked_is_not_added() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
@@ -1554,6 +1594,22 @@ mod cluster {
         )
         .unwrap();
         runners::cluster_pools(config.path()).unwrap_err();
+    }
+
+    /// `mintInCluster` is `true` alone (#4204): spelled any other way, the file is refused.
+    #[test]
+    fn a_mint_opt_in_spelled_any_other_way_refuses_the_file() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let at = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+        for spelled in [serde_json::json!(false), serde_json::json!("true")] {
+            let mut file = file(config.path());
+            let kept = file.clone();
+            file["pools"][0]["mintInCluster"] = spelled;
+            std::fs::write(&at, file.to_string()).unwrap();
+            runners::cluster_pools(config.path()).unwrap_err();
+            std::fs::write(&at, kept.to_string()).unwrap();
+        }
     }
 
     #[test]

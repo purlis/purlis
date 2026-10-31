@@ -2463,6 +2463,59 @@ fn linted(
     plugin: Option<&str>,
     more: &[&dyn purlis_skills::SkillLint],
 ) -> Vec<Finding> {
+    let mut one = built_in_linted(
+        known,
+        known_as,
+        skill_md,
+        name,
+        std::borrow::Cow::Borrowed(text),
+        origin,
+        plugin,
+    );
+    let theirs: Vec<Finding> = more
+        .iter()
+        .flat_map(|lint| lint.findings(&one.files()))
+        .collect();
+    one.findings.extend(theirs);
+    one.findings
+}
+
+/// **A skill's files as a lint reads them, and what the built-in lints found in them**
+/// ([`built_in_linted`]): held so that a list hands every skill's files to each extension's lint
+/// in one go ([`purlis_skills::SkillLint::findings_of_each`], #4195).
+struct BuiltInLinted<'a> {
+    name: &'a str,
+    text: std::borrow::Cow<'a, str>,
+    others: Vec<(String, String)>,
+    listed: Option<Vec<String>>,
+    origin: Origin,
+    plugin: Option<&'a str>,
+    findings: Vec<Finding>,
+}
+
+impl BuiltInLinted<'_> {
+    fn files(&self) -> purlis_skills::SkillFiles<'_> {
+        purlis_skills::SkillFiles {
+            name: self.name,
+            text: &self.text,
+            others: &self.others,
+            origin: self.origin,
+            plugin: self.plugin,
+            listed: self.listed.as_deref(),
+        }
+    }
+}
+
+/// [`linted`]'s built-in lints alone, with the files they read kept for the lints after them.
+fn built_in_linted<'a>(
+    known: &Known,
+    known_as: &std::collections::HashSet<String>,
+    skill_md: Option<(&Path, &Path)>,
+    name: &'a str,
+    text: std::borrow::Cow<'a, str>,
+    origin: Origin,
+    plugin: Option<&'a str>,
+) -> BuiltInLinted<'a> {
     use purlis_skills::SkillLint;
     // Read through the skill's folder held from its root, never through a link (SK-36).
     let folder =
@@ -2495,13 +2548,14 @@ fn linted(
     let listed: Option<Vec<String>> = listed
         .filter(|_| origin.of_the_plane())
         .map(|listed| listed.into_iter().map(|(_, said)| said).collect());
-    let files = purlis_skills::SkillFiles {
+    let mut one = BuiltInLinted {
         name,
         text,
-        others: &others,
+        others,
+        listed,
         origin,
         plugin,
-        listed: listed.as_deref(),
+        findings: Vec::new(),
     };
     let mut findings = purlis_skills::BuiltInLints {
         namespace: LINKED_PLUGIN,
@@ -2510,7 +2564,7 @@ fn linted(
         known_as,
         has: &crate::programs::on_path,
     }
-    .findings(&files);
+    .findings(&one.files());
     // The listing stops at a link and at its depth and number of files: a script past them that
     // is there after all is no finding.
     if let Some(dir) =
@@ -2522,10 +2576,8 @@ fn linted(
         });
     }
     findings.extend(unread);
-    for lint in more {
-        findings.extend(lint.findings(&files));
-    }
-    findings
+    one.findings = findings;
+    one
 }
 
 /// **The text of each of `listed`, the files of a skill from `origin` in `folder`, as far as
@@ -2871,15 +2923,16 @@ pub fn studio_list_for(
 /// **What the built-in lints say of each of the plane's own skills a chat gets** (#3780), as
 /// anywhere but the editor says it: the problems in a skill Needs you holds. Linted once per
 /// list, against the [`Known`] the list already made, and never on a chat's open path. Then by
-/// each of `more` (#3940).
+/// each of `more` (#3940), handed every skill at once (#4195).
 fn with_plane_lint(
     rows: &mut [StudioRow],
     set: &SkillSet,
     known: &Known,
     more: &[&dyn purlis_skills::SkillLint],
 ) {
+    let mut linted: Vec<(usize, BuiltInLinted<'_>)> = Vec::new();
     for got in set.effective.iter().filter(|got| got.origin.of_the_plane()) {
-        let Some(row) = rows.iter_mut().find(|row| {
+        let Some(at) = rows.iter().position(|row| {
             row.left_out.is_none()
                 && row.origin == got.origin
                 && row.local == got.local
@@ -2892,19 +2945,37 @@ fn with_plane_lint(
         else {
             continue;
         };
-        row.lint = linted(
-            known,
-            &known.built_in,
-            Some((&got.root, &got.skill.path)),
-            &got.skill.name,
-            &text,
-            got.origin,
-            None,
-            more,
-        )
-        .iter()
-        .filter_map(Finding::shown)
-        .collect();
+        linted.push((
+            at,
+            built_in_linted(
+                known,
+                &known.built_in,
+                Some((&got.root, &got.skill.path)),
+                &got.skill.name,
+                std::borrow::Cow::Owned(text),
+                got.origin,
+                None,
+            ),
+        ));
+    }
+    // Each of `more` is handed every skill at once, so an extension's lint is asked one question
+    // for the whole list rather than one per skill (#4195).
+    let files: Vec<purlis_skills::SkillFiles<'_>> =
+        linted.iter().map(|(_, one)| one.files()).collect();
+    let mut theirs: Vec<Vec<Finding>> = vec![Vec::new(); files.len()];
+    for lint in more {
+        for (each, found) in theirs.iter_mut().zip(lint.findings_of_each(&files)) {
+            each.extend(found);
+        }
+    }
+    drop(files);
+    for ((at, one), theirs) in linted.into_iter().zip(theirs) {
+        rows[at].lint = one
+            .findings
+            .iter()
+            .chain(&theirs)
+            .filter_map(Finding::shown)
+            .collect();
     }
 }
 

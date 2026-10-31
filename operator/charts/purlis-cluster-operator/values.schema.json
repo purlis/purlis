@@ -61,6 +61,25 @@
         }
       }
     },
+    "forge": {
+      "description": "A team's GitHub App, for minting tokens in the cluster.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "keySecretNames": {
+          "description": "The Secrets the operator may read, in the release's namespace. Empty: it may read none.",
+          "type": ["array", "null"],
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 253,
+            "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+            "not": { "const": "purlis-cluster-operator-signing-key" }
+          }
+        }
+      }
+    },
     "perPerson": {
       "description": "What each person's runners may hold at once, in their runner namespace.",
       "type": "object",

@@ -70,7 +70,8 @@ function markOf(chat: StudioRouted) {
 /**
  * **The Routing page's facts** (#3692, S9, `prototype/studio-secondary-pages` variant A): the
  * router these chats are routed by, with Change… (a dialog), the budget past which it decides
- * what a chat's list shows, and an extension's newest grade with Grade (SK-15e). At the project's
+ * what a chat's list shows, and an extension's newest grade with Grade (SK-15e) and its Scorecard
+ * (#3617). At the project's
  * root, which chooses no router, Change… is out of reach and says why.
  */
 export function RoutingFacts({
@@ -82,6 +83,7 @@ export function RoutingFacts({
   busy,
   onChoose,
   onGraded,
+  onScorecard,
 }: {
   plane: string;
   router: StudioRouter;
@@ -93,6 +95,8 @@ export function RoutingFacts({
   /** Chooses `router` for `by`'s chats (null takes the choice out), and says `said` once it is. */
   onChoose: (by: SkillPinner, router: string | null, said: string) => void;
   onGraded: () => void;
+  /** Opens the scorecard of the router's grade `grade` beside the list (#3617). */
+  onScorecard: (grade: string) => void;
 }) {
   const [changing, setChanging] = useState(false);
   const { budget } = router;
@@ -144,6 +148,11 @@ export function RoutingFacts({
               {router.grade ??
                 "Not graded on this library yet: a grade runs the library's trigger tests with it and with the built-in router."}
             </span>{" "}
+            {router.graded !== null && (
+              <Button size="sm" onPress={() => onScorecard(router.graded ?? "")}>
+                Scorecard
+              </Button>
+            )}{" "}
             <RouterGrade
               plane={plane}
               router={router.extension}

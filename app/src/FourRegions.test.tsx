@@ -2072,6 +2072,7 @@ describe("the status line", () => {
             severity: "warn",
             subject: "reinit",
             detail: "1 workspace is behind the current layout: beta",
+            workspaces: ["beta"],
             way: { kind: "fix", id: "workspace-reinit" },
           },
         ],
