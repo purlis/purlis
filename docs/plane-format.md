@@ -384,6 +384,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`<data>/app-state/<clone key>/grades-under-way/<grade>.json`](#dataapp-stateclone-keygrades-under-waygradejson)
   - [`<data>/app-state/<clone key>/grades-under-way.lock`](#dataapp-stateclone-keygrades-under-waylock)
   - [`<data>/app-state/<clone key>/skill-grade-chats/<skill>/<grade>/<chat>.screen`](#dataapp-stateclone-keyskill-grade-chatsskillgradechatscreen)
+  - [`<data>/app-state/<clone key>/router-grade-chats/<router>/<workspace>/<persona>/<grade>/<chat>.screen`](#dataapp-stateclone-keyrouter-grade-chatsrouterworkspacepersonagradechatscreen)
   - [`<data>/app-state/<clone key>/skill-tries/<id>/`](#dataapp-stateclone-keyskill-triesid)
   - [`<data>/app-state/<clone key>/skill-levels/<chat id>.json`](#dataapp-stateclone-keyskill-levelschat-idjson)
   - [Environment variables that move or key this state](#environment-variables-that-move-or-key-this-state)
@@ -3888,7 +3889,9 @@ An end row, never a pass or a fail:
   §8, as amended 2026-10-28): the trigger tests of a library, run with the router in place and
   with the built-in router.
 - **Status:** **experimental**, behind the `skill-studio` flag; written by the app when a
-  router's grade ends, whole or stopped (`grades::routers::record`), and read by the Skill
+  router's grade ends, whole or stopped (`grades::routers::record`), or at the project's next
+  start for one purlis stopped under, as interrupted with no skill scored (#3616,
+  [grades under way](#dataapp-stateclone-keygrades-under-waygradejson)), and read by the Skill
   studio's router line, which says the newest grade of the router chosen there, in that scope
   (`grades::routers::grades_of`).
 - **Tier:** Plane — committed, beside the skills' eval record, so a teammate sees how the router
@@ -3908,7 +3911,12 @@ An end row, never a pass or a fail:
   router; a row is skipped where it says more than purlis writes: a router that is not an
   extension's id, or not the report's; a name that is not plain; a commit that is no whole hex
   id; a tree that is neither one nor `uncommitted`; more than 200 copies or skills; or a skill's
-  report that does not hold together as a skill's grade's must.
+  report that does not hold together as a skill's grade's must. A router's grade plan's estimate (#3618) is worked
+  out from these rows as a skill's is from the eval record (`grades::routers::estimate`): the
+  newest on the profile the grade runs on whose skills asked for a chat, else the newest that
+  asked for one, its spend shared over every chat its skills' arms asked for; an `interrupted`
+  row with no skill scored counts none. The plan says which grade that was, and that it ran on
+  another library where its copies (by level, name and tree) are not the plan's.
 - **Git:** committed. Nothing commits it by itself: the next save does.
 - **Encoding details:** path `personas/_grades/routers/{%Y-%m}.{device}.jsonl`; keys sorted,
   `\n`, `O_APPEND` through no link, `0o644` (`dispatch::append`). The skills' eval record never
@@ -8050,8 +8058,15 @@ refuses a `<data>` under a project or inside any git work tree.
   and what its chats spent so far: nothing as it starts, then, as each chat ends, its chats that
   ran, its tokens and its cost as the chats said them, in `spent` and in the report's
   `spent_tokens` and `spent_usd`, #3582, and the chats it asked for so far, ran or not, in
-  `spent.asked_for`, #3602). Written `0600` through no link when a grade starts
-  (`grades::underway::began`), written again as each chat ends (`grades::underway::Marker::spent`),
+  `spent.asked_for`, #3602). **A router's grade** (#3616) is held the same way, its
+  row under `router` in place of `graded`: its routers' record row
+  ([`personas/_grades/routers/`](#personas_gradesroutersyyyy-mmdevicejsonl)) as it would be
+  recorded were it interrupted now (`report.ended` `interrupted`, `report.skills` empty, and what
+  its chats spent so far, as a skill's, never `spent.asked_for`), `local` whether any copy of its
+  library is this machine's alone; it is recorded at the next start in the routers' record (a
+  purlis from before #3616 reads such a file as no sound row, and removes it unrecorded once no
+  grade holds its lock). Written `0600` through no link when a grade starts
+  (`grades::underway::began`, `grades::underway::began_router`), written again as each chat ends (`grades::underway::Marker::spent`),
   and removed when it ends (`grades::underway::ended`). Each write goes to
   `.<grade>.json.partial` beside it, locked, and is renamed over it, so a reader finds the whole
   file or none; a spend no sound row could hold is never written. A leftover `.partial` whose lock
@@ -8088,6 +8103,24 @@ refuses a `<data>` under a project or inside any git work tree.
 - **Tier:** Machine, device-bound, transient — what this machine's chats showed, kept for the skill's newest
   grades; losing it loses only the read-only view of those chats. A teammate who pulls the eval
   record sees the grade and not its chats, and its scorecard says they are kept where it ran.
+- **Git:** outside every project, in the data home.
+
+### `<data>/app-state/<clone key>/router-grade-chats/<router>/<workspace>/<persona>/<grade>/<chat>.screen`
+- **Format:** what one chat of a router's grade showed as the grade ended it (#3617), as a
+  skill's grade's chat is kept
+  ([`skill-grade-chats/`](#dataapp-stateclone-keyskill-grade-chatsskillgradechatscreen)), so a
+  row of the router's scorecard on the Skill studio's Routing page opens it read-only.
+  `<router>` is the router extension's id; `<workspace>` and `<persona>` the scope that chose it,
+  `_` for none (a name neither can take); `<grade>` the grade's id, a ULID; and `<chat>` the
+  chat's id, as the routers' record's `report.skills[].report.triggers[].chats` names it. Each a
+  plain name, each folder `0700` and never a link, each file `0600` and at most 4 MiB, written and
+  read through no link (`grades::kept::keep_of`, `grades::kept::kept_of`). When a router's grade
+  ends, the chats of every grade of that router in that scope but the three newest are removed
+  (`grades::kept::sweep_of`).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Machine, device-bound, transient — what this machine's chats showed, kept for the
+  router's newest grades in each scope; losing it loses only the read-only view of those chats.
+  Carried to the project's new clone key when the project moves, as a skill's grades' chats are.
 - **Git:** outside every project, in the data home.
 
 ### `<data>/app-state/<clone key>/skill-tries/<id>/`

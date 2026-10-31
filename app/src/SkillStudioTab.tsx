@@ -20,6 +20,7 @@ import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { HarnessItem, HarnessList, harnessGroups, harnessRowAt } from "./SkillStudioHarnesses";
 import { RoutedChatItem, RoutedChats, RoutingFacts } from "./SkillStudioRouting";
+import { RouterGradeChatPage, RouterGradeScorecardPage } from "./RouterGrade";
 import { Button } from "./ui/button/Button";
 import { Badge } from "./ui/badge/Badge";
 import { TextField } from "./ui/field/Field";
@@ -65,6 +66,8 @@ import {
   harnessSkillNamed,
   pinnerOf,
   routedChatId,
+  routerGradeItem,
+  routerGradeOfItem,
   sameScope,
   scopeChat,
   scopeKey,
@@ -897,16 +900,22 @@ export function SkillStudioTab({
     page === "routing"
       ? studio?.router?.chats.find((one) => routedChatId(one.session) === at.skill)
       : undefined;
+  // Or a router's grade's scorecard, or one of its chats (#3617).
+  const routerGrade = page === "routing" ? routerGradeOfItem(at.item) : undefined;
   const itemName =
-    harnessRow !== undefined
-      ? harnessRow.kind === "not-supported"
-        ? harnessRow.one.title
-        : harnessRow.kind === "none"
-          ? harnessRow.title
-          : harnessRow.skill.name
-      : routedChat === undefined
-        ? undefined
-        : `Chat ${routedChat.session}`;
+    routerGrade !== undefined
+      ? routerGrade.chat === undefined
+        ? "Grade"
+        : "Grade's chat"
+      : harnessRow !== undefined
+        ? harnessRow.kind === "not-supported"
+          ? harnessRow.one.title
+          : harnessRow.kind === "none"
+            ? harnessRow.title
+            : harnessRow.skill.name
+        : routedChat === undefined
+          ? undefined
+          : `Chat ${routedChat.session}`;
   const inSources = page === "sources" ? at.sources : undefined;
   const path: Crumb[] = [
     { id: page, label: STUDIO_PAGE_NAMES[page] },
@@ -1443,6 +1452,9 @@ export function SkillStudioTab({
                 )
               }
               onGraded={() => setDone((was) => was + 1)}
+              onScorecard={(grade) =>
+                go({ page: "routing", scope, item: routerGradeItem({ grade }) })
+              }
             />
             <ViewListHead title="How it did at each chat's start" />
             <RoutedChats
@@ -1454,7 +1466,54 @@ export function SkillStudioTab({
         ),
       ),
     );
-    item = studio === undefined || chats.length === 0 ? undefined : <RoutedChatItem chat={chat} />;
+    const graded = router?.extension ?? null;
+    item =
+      studio === undefined ? undefined : routerGrade !== undefined && graded !== null ? (
+        routerGrade.chat === undefined ? (
+          <RouterGradeScorecardPage
+            plane={plane}
+            router={graded}
+            workspace={workspace}
+            persona={persona}
+            grade={routerGrade.grade}
+            onChat={(chat) =>
+              go({
+                page: "routing",
+                scope,
+                item: routerGradeItem({ grade: routerGrade.grade, chat }),
+              })
+            }
+          />
+        ) : (
+          <RouterGradeChatPage
+            plane={plane}
+            router={graded}
+            workspace={workspace}
+            persona={persona}
+            grade={routerGrade.grade}
+            chat={routerGrade.chat}
+            // The previous and next chat stand in for this one, as a skill's grade's do.
+            onChat={(chat) =>
+              history.replace({
+                page: "routing",
+                scope,
+                item: routerGradeItem({ grade: routerGrade.grade, chat }),
+              })
+            }
+            onScorecard={() => {
+              const card: StudioPlace = {
+                page: "routing",
+                scope,
+                item: routerGradeItem({ grade: routerGrade.grade }),
+              };
+              if (backIsTo(history.behind, card)) history.back();
+              else history.replace(card);
+            }}
+          />
+        )
+      ) : chats.length === 0 ? undefined : (
+        <RoutedChatItem chat={chat} />
+      );
   }
 
   const builtInNames = [
