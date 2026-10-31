@@ -274,8 +274,32 @@ fn addresses_dialled_past_the_proxy_are_one_block_naming_the_first() {
     );
 }
 
+/// Whether this machine refuses the call the wrap takes a chat's socket with, on another process
+/// of ours as the chat is to the wrap. Docker's default seccomp profile does without
+/// `CAP_SYS_PTRACE` (`docs/runner-image.md`), so the nightly `fedora` job's container does and
+/// the Ubuntu jobs, on the runner itself, do not (#3440). The answer is the machine's, read apart
+/// from the wrap, so a wrap that stopped taking sockets where it could still fails below.
+fn the_machine_refuses_taking_a_socket() -> bool {
+    use rustix::io::Errno;
+    use rustix::process::{Pid, PidfdFlags, PidfdGetfdFlags, pidfd_getfd, pidfd_open};
+    let mut other = Command::new("sleep")
+        .arg("60")
+        .stdin(Stdio::null())
+        .spawn()
+        .expect("sleep runs");
+    let answered = pidfd_open(Pid::from_child(&other), PidfdFlags::empty())
+        .and_then(|pidfd| pidfd_getfd(&pidfd, 0, PidfdGetfdFlags::empty()));
+    let _ = other.kill();
+    let _ = other.wait();
+    matches!(answered, Err(Errno::PERM | Errno::ACCESS | Errno::NOSYS))
+}
+
 /// A server the wrap refuses, a socket that listens with no bind of its own, is told as the
-/// block macOS's kernel line of a refused bind is, and stays refused.
+/// block macOS's kernel line of a refused bind is, and stays refused. Where the machine refuses
+/// the call that takes the socket, the wrap never reads the socket, and says that instead: no port
+/// can be read without it (one bound and not listening is not in `/proc/net/tcp`), and none
+/// would help, since no Allow makes that listen work. The app's words for it are
+/// `a_server_whose_socket_could_not_be_taken_is_told_why_and_what_to_do`.
 #[test]
 fn a_listen_the_linux_wrap_refuses_is_told_as_macos_s_refused_bind_is() {
     purlis_core::unsteered!();
@@ -299,13 +323,18 @@ fn a_listen_the_linux_wrap_refuses_is_told_as_macos_s_refused_bind_is() {
     let (as_on_macos, named) = Denial::of_line("Sandbox: perl(4120) deny(1) network-bind *:0")
         .expect("a kernel line")
         .block(&place);
+    let target = if the_machine_refuses_taking_a_socket() {
+        Some(purlis_core::sandbox::localport::SOCKET_NOT_TAKEN.to_owned())
+    } else {
+        named
+    };
     assert_eq!(
         ran.blocked,
         vec![SandboxBlocked {
             chat: 7,
             sandbox_blocked: as_on_macos,
             harness: Some("codex".to_owned()),
-            target: named,
+            target,
             read_back: false,
             suggested: None,
         }],

@@ -5669,6 +5669,7 @@ dependencies = [
  "purlis-session-protocol",
  "regex",
  "rmcp",
+ "rustix",
  "serde_json",
  "sha2 0.11.1",
  "stand-in",
