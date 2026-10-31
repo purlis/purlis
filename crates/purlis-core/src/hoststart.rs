@@ -230,7 +230,7 @@ pub struct ChatSkills {
     pub repo: Vec<crate::skills::OutsideSkill>,
     /// What its router extension made of its set at its start (SK-15b, [`Self::routed_by`]):
     /// `None` for a chat routed by the built-in router, which is asked nothing.
-    pub routed: Option<crate::skills::router::Routed>,
+    pub routed: Option<std::sync::Arc<crate::skills::router::Routed>>,
     /// The router a router's grade's arm is routed by (SK-15e,
     /// [`crate::skills::verbs::drafts::arm_router`]): what a Try it's scratch chat of that arm is
     /// routed by in place of a workspace's or persona's choice. `None` for every other chat.
@@ -332,7 +332,10 @@ impl ChatSkills {
             asker,
             crate::extension::studio::ROUTER_DEADLINE,
         );
-        Self { routed, ..self }
+        Self {
+            routed: routed.map(std::sync::Arc::new),
+            ..self
+        }
     }
 
     /// **These skills, routed as the chat's start routed them** (SK-15f, #3578): for a chat
@@ -345,7 +348,7 @@ impl ChatSkills {
             return self;
         }
         Self {
-            routed: kept.routed(),
+            routed: kept.routed().map(std::sync::Arc::new),
             ..self
         }
     }
@@ -1245,11 +1248,15 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
     } else {
         plugins
     };
+    let points = skills
+        .routed
+        .as_deref()
+        .is_some_and(crate::skills::router::Routed::points);
     let at = on.then_some(crate::skills::PlaneSkills {
         plane: skills_root,
         workspace,
         repo: &skills.repo,
-        routed: skills.routed.as_ref(),
+        routed: skills.routed.as_deref(),
     });
     let linked = laid_out_on(at, skills.persona.as_deref(), kit, harness);
     let skills = at;
@@ -1268,9 +1275,14 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
             folder.display().to_string(),
         )
     });
+    // Whether its prompt hook hands its prompts to the app for its router (SK-15c): only where
+    // a router that reads prompts was chosen for it, and its list leaves skills out.
+    let prompt_router =
+        points.then(|| (crate::skills::PROMPT_ROUTER_ENV.to_owned(), "1".to_owned()));
     match harness.state_hooks(armed, cwd, plugins, sandbox) {
         StateHooks::ThisSessionOnly { args, mut env, .. } => {
             env.extend(held);
+            env.extend(prompt_router);
             Ok((args, env))
         }
         // A grade's chat is never started without its limits.

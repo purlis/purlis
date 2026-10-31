@@ -2035,6 +2035,12 @@ export const commands = {
 	 */
 	skillRouterChoose: (plane: PlaneId, by: SkillPinner, router: string | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_router_choose", { plane, by, router })),
 	/**
+	 *  **Lets a router read every prompt of the chats it routes, or stops it**, from the Routing page
+	 *  (ADR 0102 as amended 2026-10-31): this machine's record, and the person's own press in their
+	 *  window. Nothing else turns it on.
+	 */
+	skillRouterReadsPrompts: (plane: PlaneId, router: string, on: boolean) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_router_reads_prompts", { plane, router, on })),
+	/**
 	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
 	 *  owners, and the skills it names and that name it. Nothing while the flag is off.
 	 */
@@ -11694,6 +11700,12 @@ export type RouterGradePlan = {
 	/**  A grade running in this project now, where one is: a skill's or a router's. */
 	running: string | null,
 	/**
+	 *  **Whether its router's arm runs with its pointer** (SK-15k, #3619): true where the router
+	 *  reads prompts here, false where it could and the person has not turned that on, null
+	 *  where it reads none.
+	 */
+	pointer: boolean | null,
+	/**
 	 *  What pressing Grade consents to: what it grades, and the profile, model, cap and dollar
 	 *  limit this plan shows (`grades::consent_on`).
 	 */
@@ -13329,6 +13341,10 @@ export type SkillRouterOffer = {
 	id: string,
 	/**  Its name, as its manifest gives it. */
 	name: string,
+	/**  Whether its approval said it reads prompts, which only offers the person the switch. */
+	reads_prompts: boolean,
+	/**  Whether the person turned that on for it on this machine (ADR 0102 as amended 2026-10-31). */
+	prompts_on: boolean,
 };
 
 /**

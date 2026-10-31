@@ -490,6 +490,13 @@ fn touched(folder: &Path) -> bool {
 /// it and the terminal notes, while the program runs, that it uses the folder.
 pub const SET_ENV: &str = "PURLIS_SKILL_SET";
 
+/// **The variable a chat whose router reads prompts is started with** (SK-15c): `1`, where
+/// its start asked a router extension whose approval said it reads prompts and its list leaves
+/// skills out ([`router::Routed::points`]). Only then does its prompt hook hand the prompt to
+/// the app, which asks the router which of those skills suit it: no other chat's prompt leaves
+/// its hook.
+pub const PROMPT_ROUTER_ENV: &str = "PURLIS_PROMPT_ROUTER";
+
 /// The folder of a set's folder's notes, beside the sets: `<sets>/.held/<digest>/<pid>`, one
 /// file for each running program that was handed it ([`crate::session::Spec::holds`]).
 pub(crate) const HELD: &str = ".held";
@@ -1074,7 +1081,7 @@ impl Running<'_> {
             plane: start.map_or(self.plane, |start| start.root.as_path()),
             workspace: self.workspace.filter(|_| !tried),
             repo: start.map_or(&[], |start| start.repo.as_slice()),
-            routed: start.and_then(|start| start.routed.as_ref()),
+            routed: start.and_then(|start| start.routed.as_deref()),
         });
         routed(
             self.built_in,
@@ -2686,8 +2693,15 @@ fn badges(
             compat: match &text {
                 Ok(text) => {
                     let badge = compat(text, origin, &harness.skill_frontmatter());
-                    if kept_manual_beside(*harness, (root, path), origin) {
+                    let badge = if kept_manual_beside(*harness, (root, path), origin) {
                         badge.kept_manual()
+                    } else {
+                        badge
+                    };
+                    // A plane skill a router may leave out of a chat's list is pointed at
+                    // only through a prompt hook (SK-15c).
+                    if origin.of_the_plane() && !harness.prompt_hook() {
+                        badge.without_a_pointer()
                     } else {
                         badge
                     }

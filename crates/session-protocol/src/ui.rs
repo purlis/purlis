@@ -643,6 +643,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A router chosen for a workspace's or a persona's chats (#3692): one commit to the project,
     // the person's own press in their window, as a pin is.
     "skill_router_choose",
+    // A router's reading of prompts turned on or off (ADR 0102 as amended 2026-10-31): only the
+    // person's own press in their window, never a chat or another link.
+    "skill_router_reads_prompts",
     // A skill's tab (#2782): reverting it to a version, deprecating, archiving or restoring it,
     // and naming its owners. Each is one commit to the project, the person's own press in their
     // window.

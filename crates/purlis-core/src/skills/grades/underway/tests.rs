@@ -331,6 +331,7 @@ fn a_grade_under_way_in_the_plane_s_state_folder_is_never_read() {
 /// A router's grade starting in `root`'s workspace `ops`, held as this machine's alone.
 fn router_starting(id: &str) -> RouterGraded {
     RouterGraded {
+        pointer: false,
         v: super::super::routers::VERSION,
         grade: id.to_owned(),
         router: "relevance".into(),

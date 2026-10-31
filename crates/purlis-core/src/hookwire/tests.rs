@@ -2771,7 +2771,8 @@ fn an_app_at(path: &std::path::Path, within: &std::path::Path) -> (Reading, Chat
                 | Ask::Propose(_)
                 | Ask::Browse(_)
                 | Ask::ThemePreview(_)
-                | Ask::ThemeDraft(_) => Answer::No {
+                | Ask::ThemeDraft(_)
+                | Ask::Prompt(_) => Answer::No {
                     why: "not here".to_owned(),
                 },
             }
@@ -5260,4 +5261,30 @@ fn an_armed_key_is_read_off_a_report_and_on_no_other_kind() {
     let mut forged = serde_json::to_value(a_stop(7)).unwrap();
     forged[ARMED] = serde_json::json!(7);
     assert!(read_delivered(&forged.to_string()).is_none());
+}
+
+#[test]
+fn a_prompt_for_a_router_names_its_chat_and_says_nothing_of_the_prompt_in_a_dump() {
+    // SK-15c: the prompt crosses to the app on the chat's own line, and no further than the
+    // router; a debug dump of the ask says nothing of it, as a prompt's marks do not (SK-38).
+    let ask = Ask::Prompt(Box::new(PromptAsk {
+        chat: 7,
+        prompt: "deploy the secret plan".to_owned(),
+    }));
+    assert_eq!(ask.chat(), 7);
+    let dumped = format!("{ask:?}");
+    assert!(!dumped.contains("secret"), "{dumped}");
+    let line = serde_json::to_value(&ask).unwrap();
+    let back: Ask = serde_json::from_value(line).unwrap();
+    assert_eq!(back, ask);
+    let answer: Answer = serde_json::from_value(serde_json::json!({
+        "pointed": { "pointer": "- `deploy`: Deploys." }
+    }))
+    .unwrap();
+    assert_eq!(
+        answer,
+        Answer::Pointed {
+            pointer: Some("- `deploy`: Deploys.".to_owned())
+        }
+    );
 }

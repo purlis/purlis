@@ -32,6 +32,7 @@ use purlis_core::skills::grade::routers::{self as engine, LibraryChats};
 use purlis_core::skills::grade::{self as grading, Arm, GradeEnd};
 use purlis_core::skills::grades::routers::{self, RecordedCopy, RouterGraded, RouterPlanned};
 use purlis_core::skills::grades::{self, Spent};
+use purlis_core::skills::router::PromptReading;
 
 use crate::planes::{PlaneId, Planes};
 use crate::skillchange::flag_on;
@@ -89,6 +90,10 @@ pub struct RouterGradePlan {
     pub estimate_same_library: Option<bool>,
     /// A grade running in this project now, where one is: a skill's or a router's.
     pub running: Option<String>,
+    /// **Whether its router's arm runs with its pointer** (SK-15k, #3619): true where the router
+    /// reads prompts here, false where it could and the person has not turned that on, null
+    /// where it reads none.
+    pub pointer: Option<bool>,
     /// What pressing Grade consents to: what it grades, and the profile, model, cap and dollar
     /// limit this plan shows (`grades::consent_on`).
     pub consent: Option<String>,
@@ -96,11 +101,22 @@ pub struct RouterGradePlan {
 
 /// **What pressing Grade on `planned`, its chats `on`, consents to**: what it grades, and the
 /// profile, model, token cap and dollar limit the plan shows, as a skill's plan's (#3618).
-fn consent_shown(planned: &RouterPlanned, on: &On) -> Option<String> {
-    planned
-        .consent
-        .as_deref()
-        .map(|consent| grades::consent_on(consent, &terms(&planned.cap, on)))
+fn consent_shown(planned: &RouterPlanned, on: &On, reading: PromptReading) -> Option<String> {
+    planned.consent.as_deref().map(|consent| {
+        // Whether each test's prompt is handed to the router is part of what the plan showed.
+        let terms = terms(&planned.cap, on);
+        if reading == PromptReading::On {
+            grades::consent_on(&format!("{consent} with its pointer"), &terms)
+        } else {
+            grades::consent_on(consent, &terms)
+        }
+    })
+}
+
+/// **Whether the router `router` reads prompts in the project at `root`**, by this machine's
+/// record, as a chat of its arm's start will find it.
+fn reading_of(root: &std::path::Path, router: &str) -> PromptReading {
+    purlis_core::skills::router::OnThisMachine::with_this_programs(root).prompt_reading(router)
 }
 
 impl RouterGradePlan {
@@ -109,8 +125,9 @@ impl RouterGradePlan {
         running: Option<String>,
         on: On,
         estimate: Option<routers::RouterEstimate>,
+        reading: PromptReading,
     ) -> Self {
-        let consent = consent_shown(planned, &on);
+        let consent = consent_shown(planned, &on, reading);
         let On {
             profile,
             checked,
@@ -154,6 +171,11 @@ impl RouterGradePlan {
             estimate: estimate.as_ref().map(|one| (&one.estimate).into()),
             estimate_same_library: estimate.map(|one| one.same_library),
             running,
+            pointer: match reading {
+                PromptReading::None => None,
+                PromptReading::Off => Some(false),
+                PromptReading::On => Some(true),
+            },
             consent,
         }
     }
@@ -182,6 +204,7 @@ fn plan_of(
         running_in(plane),
         on,
         estimate,
+        reading_of(root, &router),
     ))
 }
 
@@ -389,11 +412,12 @@ pub(crate) async fn router_grade_start(
         // What runs is what the plan showed: its library and tests, on the profile, model and
         // limits it showed (#3618).
         let on = chats_on(&root, profile, model);
-        if consent_shown(&planned, &on).as_deref() != Some(consent.as_str()) {
+        let reading = reading_of(&root, &router);
+        if consent_shown(&planned, &on, reading).as_deref() != Some(consent.as_str()) {
             return Err(
                 "The router's plan changed since it was shown (its library or trigger tests, the \
-                 profile or model its chats run on, or its limits), so nothing was started: read \
-                 the plan again."
+                 profile or model its chats run on, its limits, or whether it reads prompts), so \
+                 nothing was started: read the plan again."
                     .to_owned(),
             );
         }
@@ -496,6 +520,7 @@ pub(crate) async fn router_grade_start(
             ),
             spent: Spent::default(),
             model: None,
+            pointer: reading == PromptReading::On,
         };
         let local = routers::library_is_local(&root, &planned.copies);
         let marker = match grades::underway::began_router(&root, local, &under_way) {

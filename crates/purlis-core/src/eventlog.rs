@@ -1611,9 +1611,10 @@ pub struct Recorder {
     prompted: HashMap<(PathBuf, u32), crate::skillspan::Prompted>,
     /// The routing record of each chat run whose start asked a router extension, by the run: its
     /// id, and whether it fell back, which every skill run the chat opens names
-    /// ([`Recorder::skill_routed`], SK-15b), a clear's run carrying its cleared run's. Held up to
+    /// ([`Recorder::skill_routed`], SK-15b), and its latest prompt's (SK-15c), a clear's run
+    /// carrying its cleared run's start. Held up to
     /// [`ROUTINGS_HELD`] runs, the oldest let go of first.
-    routings: HashMap<String, (String, bool)>,
+    routings: HashMap<String, Routings>,
     /// Every run this writer began in the log, ended or not, up to [`RUNS_HELD`]: an id no run
     /// a clear begins may take (#3394).
     begun: std::collections::HashSet<String>,
@@ -1634,6 +1635,18 @@ const CLOCKS_AGREE_WITHIN_MS: u64 = 5 * 60 * 1000;
 /// How many chats' prompts [`Recorder::skill_prompted`] holds at most: a start that never
 /// reported is let go when there are more.
 const PROMPTED_HELD: usize = 256;
+
+/// **The routings a chat run's skill runs name** (SK-15b, SK-15c): its start's, by its record's
+/// id and whether it fell back, and the latest prompt's, where a router that reads prompts
+/// routed one.
+#[derive(Debug, Clone, Default)]
+struct Routings {
+    start: Option<(String, bool)>,
+    prompt: Option<(String, bool)>,
+    /// Whether `prompt` is for the prompt about to be reported: a turn whose prompt was routed by
+    /// nothing names no earlier prompt's routing.
+    prompt_is_new: bool,
+}
 
 /// The kind of a chat's routing record (SK-15b).
 pub const ROUTED: &str = "skill.routed";
@@ -1850,6 +1863,14 @@ impl Recorder {
         }
         let who = Who::of(&top.attributes);
         let under = self.under(top, report.agent.as_deref())?;
+        if report.event == crate::state::Event::UserPromptSubmit
+            && let Some(held) = self.routings.get_mut(span_of(&under))
+        {
+            if !held.prompt_is_new {
+                held.prompt = None;
+            }
+            held.prompt_is_new = false;
+        }
         self.skills_heard_of_a_report(plane, &under, &who, report)?;
         let mut body = serde_json::json!({});
         if report.event == crate::state::Event::SessionStart {
@@ -2523,11 +2544,23 @@ impl Recorder {
         if let Some(level) = opened.whose.level {
             body["skill_level"] = level.word().into();
         }
-        // The routing its chat started under (SK-15b): every run it opens names it.
-        if let Some((routing, fell_back)) = self.routings.get(span_of(under)) {
-            body["routing"] = routing.as_str().into();
-            if *fell_back {
-                body["routing_fell_back"] = true.into();
+        // The routing its chat started under (SK-15b), and its prompt's where a router that
+        // reads prompts routed the turn's prompt (SK-15c): every run it opens names them.
+        if let Some(routings) = self.routings.get(span_of(under)) {
+            for ((routing, fell_back), (named, fell)) in [
+                (&routings.start, ("routing", "routing_fell_back")),
+                (
+                    &routings.prompt,
+                    ("prompt_routing", "prompt_routing_fell_back"),
+                ),
+            ]
+            .into_iter()
+            .filter_map(|(held, keys)| held.as_ref().map(|held| (held, keys)))
+            {
+                body[named] = routing.as_str().into();
+                if *fell_back {
+                    body[fell] = true.into();
+                }
             }
         }
         self.append(under, "skill.started", body)?;
@@ -2600,21 +2633,25 @@ impl Recorder {
             .insert((plane.to_path_buf(), number), prompted);
     }
 
-    /// **Chat `number` of `plane` was routed at its start by a router extension** (SK-15b, ADR
-    /// 0102 §6), or again as it was reattached: its routing record, `skill.routed`, under the
-    /// chat's run, which every skill run it opens names from now on. Held with a held run, and
-    /// dropped for a start taken back.
+    /// **Chat `number` of `plane` was routed** at its start by a router extension (SK-15b, ADR
+    /// 0102 §6), again as it was reattached, or on a prompt by a router that reads prompts
+    /// (SK-15c): its routing record, `skill.routed`, under the chat's run, which every skill run
+    /// it opens names from now on, a prompt's beside its start's. A start's is held with a held
+    /// run, and dropped for a start taken back.
     pub fn skill_routed(
         &mut self,
         plane: &Path,
         number: u32,
         record: &crate::skills::router::Record,
     ) -> io::Result<Option<Event>> {
-        // A start whose run is held may still be taken back: its record waits with it.
+        // A start whose run is held may still be taken back: its record waits with it. No
+        // prompt is sent to a start still held, so a prompt's record never waits.
         if let Some(who) = self.chats.get_mut(&(plane.to_path_buf(), number))
             && who.held.is_some()
         {
-            who.held_routed = Some(record.clone());
+            if !record.prompt {
+                who.held_routed = Some(record.clone());
+            }
             return Ok(None);
         }
         // A start put aside before its record came ran no chat: it has no routing.
@@ -2627,16 +2664,23 @@ impl Recorder {
         self.routed_under(&who, record).map(Some)
     }
 
-    /// Holds that every skill run of chat run `run` names `routing` from now on, letting go of
-    /// the oldest run held where [`ROUTINGS_HELD`] are (by its id's time): never every one.
-    fn keep_routing(&mut self, run: &str, routing: (String, bool)) {
+    /// Holds that every skill run of chat run `run` names `routing` from now on, its start's or,
+    /// where `prompt`, its latest prompt's, letting go of the oldest run held where
+    /// [`ROUTINGS_HELD`] are (by its id's time): never every one.
+    fn keep_routing(&mut self, run: &str, routing: (String, bool), prompt: bool) {
         if self.routings.len() >= ROUTINGS_HELD
             && !self.routings.contains_key(run)
             && let Some(oldest) = self.routings.keys().min().cloned()
         {
             self.routings.remove(&oldest);
         }
-        self.routings.insert(run.to_owned(), routing);
+        let held = self.routings.entry(run.to_owned()).or_default();
+        if prompt {
+            held.prompt = Some(routing);
+            held.prompt_is_new = true;
+        } else {
+            held.start = Some(routing);
+        }
     }
 
     /// Writes `record` under `who`'s run, which every skill run it opens names from now on.
@@ -2649,6 +2693,7 @@ impl Recorder {
         self.keep_routing(
             &who.run,
             (record.routing.clone(), record.fell_back.is_some()),
+            record.prompt,
         );
         self.write(Some(&who.chat), Some(&who.run), None, ROUTED, body)
     }
@@ -2985,8 +3030,12 @@ impl Recorder {
                 self.close_skills(plane, &cleared, purlis_skills::runs::Ended::Session)?;
                 // A clear keeps the chat's listing, so the run it begins is routed as the
                 // cleared one was (SK-15b).
-                if let Some(routing) = self.routings.get(&cleared.run).cloned() {
-                    self.keep_routing(&who.run, routing);
+                if let Some(start) = self
+                    .routings
+                    .get(&cleared.run)
+                    .and_then(|held| held.start.clone())
+                {
+                    self.keep_routing(&who.run, start, false);
                 }
             }
         }

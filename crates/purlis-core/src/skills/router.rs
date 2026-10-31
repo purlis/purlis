@@ -30,7 +30,9 @@ use std::time::{Duration, Instant};
 
 use purlis_skills::{Budget, Line, Router, SkillSet};
 
-use crate::extension::studio::{Ask, ROUTER_DEADLINE, RouteBudget, RouteSkill};
+use crate::extension::studio::{
+    Ask, HandedPrompt, PromptSkill, ROUTER_DEADLINE, RouteBudget, RouteSkill,
+};
 
 /// The word that chooses the built-in router.
 pub const BUILT_IN: &str = "built-in";
@@ -201,6 +203,26 @@ pub trait AskRouter: Send + Sync {
         extension: &str,
         ask: &Ask<'_>,
     ) -> Result<serde_json::Map<String, serde_json::Value>, String>;
+
+    /// **Whether the router `extension` may be handed a prompt** (SK-15c): it is approved here,
+    /// on in the project, declares `skill-router`, its approval said it reads prompts, and the
+    /// person turned that on for it on this machine (ADR 0102 as amended 2026-10-31). A router
+    /// that may not is asked nothing on a prompt, and no record is made of it.
+    fn reads_prompts(&self, extension: &str) -> bool {
+        let _ = extension;
+        false
+    }
+}
+
+/// **Whether a router reads prompts on this machine** (SK-15c, ADR 0102 as amended 2026-10-31).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptReading {
+    /// Its approval says it reads none, or it cannot be asked here.
+    None,
+    /// Its approval says it reads them, and the person has not turned that on.
+    Off,
+    /// Its approval says it reads them, and the person turned that on.
+    On,
 }
 
 /// **The production [`AskRouter`]**: `executor`, gated by this machine's record of extensions and
@@ -243,6 +265,47 @@ impl AskRouter for OnThisMachine {
         let choices = crate::extension::project::Choices::read(&self.project);
         self.executor.studio(&config, &choices, extension, ask)
     }
+
+    fn reads_prompts(&self, extension: &str) -> bool {
+        self.prompt_reading(extension) == PromptReading::On
+    }
+}
+
+impl OnThisMachine {
+    /// **Whether the router `extension` reads prompts here**: what a chat's start and each prompt
+    /// go by, and what a router's grade tells the person it grades (SK-15k).
+    pub fn prompt_reading(&self, extension: &str) -> PromptReading {
+        let Some(config) = crate::machine::config_root() else {
+            return PromptReading::None;
+        };
+        let loaded = crate::extension::read(&config, self.executor.built_in());
+        let Some(entry) = loaded
+            .registry
+            .entries
+            .get(extension)
+            .filter(|entry| entry.in_force())
+        else {
+            return PromptReading::None;
+        };
+        let Ok(manifest) = crate::extension::manifest_at(&entry.path) else {
+            return PromptReading::None;
+        };
+        let choices = crate::extension::project::Choices::read(&self.project);
+        let declares = manifest
+            .capabilities
+            .contains(&crate::extension::capability::Capability::SkillRouter)
+            && manifest
+                .studio
+                .as_ref()
+                .and_then(|studio| studio.router.as_ref())
+                .is_some_and(|router| router.reads_prompts)
+            && crate::extension::facts::on_here(extension, &manifest, &choices);
+        match (declares, loaded.registry.reads_prompts.contains(extension)) {
+            (false, _) => PromptReading::None,
+            (true, false) => PromptReading::Off,
+            (true, true) => PromptReading::On,
+        }
+    }
 }
 
 /// **Why a chat was routed by the built-in router instead of the one it chose** (ADR 0102 §6).
@@ -282,6 +345,12 @@ pub struct Record {
     pub error: Option<String>,
     /// Every skill the routing hid, by name.
     pub hidden: Vec<RecordHidden>,
+    /// Whether it routed one prompt (SK-15c) rather than the chat's start.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub prompt: bool,
+    /// The skills a router that reads prompts pointed the prompt at, by name (SK-15c).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pointed: Vec<String>,
 }
 
 /// **What came of asking a chat's router at its start**: the record, and the answer the set took,
@@ -291,9 +360,38 @@ pub struct Routed {
     pub record: Record,
     /// The skills the router hid, each with its line, where its answer was taken.
     pub answer: Option<Vec<(String, Line)>>,
+    /// The skills the chat's list leaves out, by name, each with the line its index skill gives
+    /// it (SK-15c): what a router that reads prompts is asked about on each prompt. The list a
+    /// harness takes at its start never changes, so these never do either.
+    pub left_out: Vec<(String, String)>,
+    /// Whether the router's approval said it reads prompts (SK-15c), as its start read it.
+    pub reads_prompts: bool,
 }
 
 impl Routed {
+    /// **Whether the chat's prompts are routed too** (SK-15c): its router reads prompts, and its
+    /// list leaves skills out for it to point at.
+    pub fn points(&self) -> bool {
+        self.reads_prompts && !self.left_out.is_empty()
+    }
+
+    /// **One prompt of the chat, routed** (SK-15c, ADR 0102 §3) by its router, through `asker`,
+    /// within [`ROUTER_DEADLINE`]: `None` where its prompts are not routed ([`Self::points`]).
+    pub fn on_prompt(&self, prompt: &str, asker: &Arc<dyn AskRouter>) -> Option<Prompted> {
+        // Asked again on each prompt, before the deadline's clock starts: turned off in the
+        // studio, a router reads no further prompt of a chat already open.
+        if !self.points() || !asker.reads_prompts(&self.record.router) {
+            return None;
+        }
+        on_prompt(
+            Ok(Chosen::Extension(self.record.router.clone())),
+            &self.left_out,
+            prompt,
+            asker,
+            ROUTER_DEADLINE,
+        )
+    }
+
     /// **What a person is told of it** on the chat's tab and in the studio: which router, how
     /// long it took, and, where it fell back, why.
     pub fn said(&self) -> String {
@@ -403,6 +501,14 @@ enum KeptOnDisk {
         /// The router's answer, where it was taken: absent where the chat fell back.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         answer: Option<Vec<RecordHidden>>,
+        /// What the chat's list left out, each with its index line (SK-15c): a reattached chat
+        /// holds the same list, and its prompt hook is still armed.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        left_out: Vec<(String, String)>,
+        /// Whether its start found the router may read prompts. Never enough by itself: each
+        /// prompt asks this machine's record again ([`Routed::on_prompt`]).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        reads_prompts: bool,
     },
 }
 
@@ -410,8 +516,15 @@ impl From<Kept> for KeptOnDisk {
     fn from(kept: Kept) -> Self {
         match kept {
             Kept::BuiltIn => Self::BuiltIn,
-            Kept::Asked(Routed { record, answer }) => Self::Extension {
+            Kept::Asked(Routed {
                 record,
+                answer,
+                left_out,
+                reads_prompts,
+            }) => Self::Extension {
+                record,
+                left_out,
+                reads_prompts,
                 answer: answer.map(|hidden| {
                     hidden
                         .into_iter()
@@ -432,9 +545,14 @@ impl TryFrom<KeptOnDisk> for Kept {
     /// Held to what a start writes: a routing's ULID, a router that is an extension's id or none,
     /// an error a reader sees whole, and each line of the answer a [`Line`].
     fn try_from(disk: KeptOnDisk) -> Result<Self, Self::Error> {
-        let (record, answer) = match disk {
+        let (record, answer, left_out, reads_prompts) = match disk {
             KeptOnDisk::BuiltIn => return Ok(Self::BuiltIn),
-            KeptOnDisk::Extension { record, answer } => (record, answer),
+            KeptOnDisk::Extension {
+                record,
+                answer,
+                left_out,
+                reads_prompts,
+            } => (record, answer, left_out, reads_prompts),
         };
         if ulid::Ulid::from_string(&record.routing).is_err() {
             return Err("a routing that is not a ULID".to_owned());
@@ -454,7 +572,8 @@ impl TryFrom<KeptOnDisk> for Kept {
             .hidden
             .iter()
             .map(|one| one.skill.as_str())
-            .chain(answer.iter().flatten().map(|one| one.skill.as_str()));
+            .chain(answer.iter().flatten().map(|one| one.skill.as_str()))
+            .chain(left_out.iter().map(|(name, _)| name.as_str()));
         if let Some(bad) = named.into_iter().find(|name| !a_skill_name(name)) {
             return Err(format!("a skill named {bad:?}"));
         }
@@ -477,7 +596,19 @@ impl TryFrom<KeptOnDisk> for Kept {
             error: record.error.as_deref().map(clipped),
             ..record
         };
-        Ok(Self::Asked(Routed { record, answer }))
+        // The index's own line, which may run longer than a router's reason: only its shape is
+        // held. A prompt's pointer takes it as data.
+        if let Some((bad, _)) = left_out.iter().find(|(_, line)| {
+            line.chars().count() > MOST_INDEX_LINE_CHARS || line.chars().any(char::is_control)
+        }) {
+            return Err(format!("a line for {bad:?} that is not one line"));
+        }
+        Ok(Self::Asked(Routed {
+            record,
+            answer,
+            left_out,
+            reads_prompts,
+        }))
     }
 }
 
@@ -489,6 +620,9 @@ fn a_skill_name(name: &str) -> bool {
         && !name.chars().any(char::is_control)
         && !purlis_unicode::hides(name, purlis_unicode::Breaks::Marked)
 }
+
+/// The most characters a kept index line has: well above what the index writes.
+const MOST_INDEX_LINE_CHARS: usize = 2000;
 
 /// The most characters a kept skill name has: well above the open format's 64, for a plugin's
 /// prefix.
@@ -553,6 +687,34 @@ pub fn at_start(
             began,
         ));
     };
+    // Whether its approval said it reads prompts, read once the question is over, so its read
+    // of this machine's record is never inside the router's 100 ms; whatever came of the
+    // question, its prompts are routed (SK-15c).
+    let routed = asked_at_start(set, &id, budget, pins, asker, deadline, began);
+    let reads_prompts = asker.reads_prompts(&id);
+    // What its list left out is kept only for a router that may be asked about it.
+    Some(Routed {
+        reads_prompts,
+        left_out: if reads_prompts {
+            routed.left_out
+        } else {
+            Vec::new()
+        },
+        ..routed
+    })
+}
+
+/// [`at_start`]'s question of the router extension `id`, through `asker`, begun at `began`.
+fn asked_at_start(
+    set: &SkillSet,
+    id: &str,
+    budget: Budget,
+    pins: &[String],
+    asker: &Arc<dyn AskRouter>,
+    deadline: Duration,
+    began: Instant,
+) -> Routed {
+    let id = id.to_owned();
     let candidates = set.candidates(budget, pins);
     let asked = candidates.skills.len();
     let skills: Vec<RouteSkill> = candidates
@@ -583,43 +745,19 @@ pub fn at_start(
         });
     if let Err(why) = spawned {
         let why = format!("purlis could not start asking '{id}': {why}");
-        return Some(fell_back(
-            set,
-            budget,
-            pins,
-            &id,
-            FellBack::Failed,
-            why,
-            began,
-        ));
+        return fell_back(set, budget, pins, &id, FellBack::Failed, why, began);
     }
     let answered = match receive.recv_timeout(deadline.saturating_sub(began.elapsed())) {
         Ok(answered) => answered,
         Err(_) => {
             let why = format!("'{id}' did not answer within {} ms", deadline.as_millis());
-            return Some(fell_back(
-                set,
-                budget,
-                pins,
-                &id,
-                FellBack::Slow,
-                why,
-                began,
-            ));
+            return fell_back(set, budget, pins, &id, FellBack::Slow, why, began);
         }
     };
     let doc = match answered {
         Ok(doc) => doc,
         Err(why) => {
-            return Some(fell_back(
-                set,
-                budget,
-                pins,
-                &id,
-                FellBack::Failed,
-                why,
-                began,
-            ));
+            return fell_back(set, budget, pins, &id, FellBack::Failed, why, began);
         }
     };
     let taken = crate::extension::studio::routed_of(&id, asked, &doc).and_then(|hidden| {
@@ -629,20 +767,138 @@ pub fn at_start(
             .map_err(|why| format!("'{id}' answered a routing purlis does not take: {why}"))
     });
     match taken {
-        Ok((routed, hidden)) => Some(Routed {
+        Ok((routed, hidden)) => Routed {
             record: record(&routed, &id, None, None, began),
             answer: Some(hidden),
-        }),
-        Err(why) => Some(fell_back(
-            set,
-            budget,
-            pins,
-            &id,
-            FellBack::Wrong,
-            why,
-            began,
-        )),
+            left_out: left_out_of(&routed),
+            reads_prompts: false,
+        },
+        Err(why) => fell_back(set, budget, pins, &id, FellBack::Wrong, why, began),
     }
+}
+
+/// **What a router that reads prompts made of one prompt** (SK-15c, ADR 0102 §3): its record,
+/// and the pointer the prompt's hook context is handed, where it pointed at any skill.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Prompted {
+    pub record: Record,
+    pub pointer: Option<String>,
+}
+
+/// **Asks the router `chosen` which of `left_out` suit `prompt`**, on a prompt of a chat (SK-15c,
+/// ADR 0102 §3), within `deadline` however `asker` behaves. `left_out` are the skills the chat's
+/// list leaves out, each with the line its index skill gives it ([`purlis_skills::Index::named_in`]).
+///
+/// `None`, with nothing asked and no record, for the built-in router or a choice that names no
+/// router (its start said so), and for a chat whose list leaves nothing out. Whether the router
+/// reads prompts is its start's to have read ([`Routed::points`]): the executor refuses a prompt
+/// to one whose approval said it reads none, before anything starts. Past the deadline, or on
+/// an error or an answer it does not take, the prompt goes on with no pointer, and the record
+/// says why. The pointer names each skill with purlis's own line, never the router's words.
+pub fn on_prompt(
+    chosen: Result<Chosen, String>,
+    left_out: &[(String, String)],
+    prompt: &str,
+    asker: &Arc<dyn AskRouter>,
+    deadline: Duration,
+) -> Option<Prompted> {
+    let began = Instant::now();
+    let Ok(Chosen::Extension(id)) = chosen else {
+        return None;
+    };
+    if left_out.is_empty() {
+        return None;
+    }
+    let skills: Vec<PromptSkill> = left_out
+        .iter()
+        .map(|(name, line)| PromptSkill {
+            name: name.clone(),
+            line: line.clone(),
+        })
+        .collect();
+    let handed = crate::extension::studio::prompt_handed(prompt).to_owned();
+    let (send, receive) = std::sync::mpsc::sync_channel(1);
+    let asking = Arc::clone(asker);
+    let extension = id.clone();
+    let asked_about = skills.clone();
+    // A thread nobody joins, as at a chat's start: the prompt never waits past the deadline.
+    let spawned = std::thread::Builder::new()
+        .name(format!("router {id}"))
+        .spawn(move || {
+            let ask = Ask::Prompt {
+                prompt: HandedPrompt::of(&handed),
+                skills: &asked_about,
+            };
+            let _ = send.send(asking.ask(&extension, &ask));
+        });
+    let fell = |how: FellBack, why: String| Prompted {
+        record: Record {
+            prompt: true,
+            ..record_of(&id, Vec::new(), Some(how), Some(why), began)
+        },
+        pointer: None,
+    };
+    if let Err(why) = spawned {
+        return Some(fell(
+            FellBack::Failed,
+            format!("purlis could not start asking '{id}': {why}"),
+        ));
+    }
+    // **What a router says on a prompt is never written**: its words could hold the prompt's, so
+    // the record's reason is purlis's own, whatever the error or the answer said.
+    let doc = match receive.recv_timeout(deadline.saturating_sub(began.elapsed())) {
+        Ok(Ok(doc)) => doc,
+        Ok(Err(_)) => {
+            return Some(fell(
+                FellBack::Failed,
+                format!("'{id}' could not be asked about this prompt"),
+            ));
+        }
+        Err(_) => {
+            return Some(fell(
+                FellBack::Slow,
+                format!("'{id}' did not answer within {} ms", deadline.as_millis()),
+            ));
+        }
+    };
+    let names: Vec<&str> = left_out.iter().map(|(name, _)| name.as_str()).collect();
+    let pointed = match crate::extension::studio::pointed_of(&id, &names, &doc) {
+        Ok(pointed) => pointed,
+        Err(_) => {
+            return Some(fell(
+                FellBack::Wrong,
+                format!("'{id}' gave an answer about this prompt that purlis does not take"),
+            ));
+        }
+    };
+    let pointer = pointer(&pointed, left_out);
+    Some(Prompted {
+        record: Record {
+            prompt: true,
+            pointed,
+            ..record_of(&id, Vec::new(), None, None, began)
+        },
+        pointer,
+    })
+}
+
+/// **The pointer a prompt is handed** (ADR 0102 §3): each of `pointed` by its name and its line
+/// in `left_out`, the chat's index, and that `skill_load` loads it. `None` for none.
+pub fn pointer(pointed: &[String], left_out: &[(String, String)]) -> Option<String> {
+    let lines: Vec<String> = pointed
+        .iter()
+        .filter_map(|name| {
+            let (_, line) = left_out.iter().find(|(one, _)| one == name)?;
+            Some(format!("- `{name}`: {line}"))
+        })
+        .collect();
+    (!lines.is_empty()).then(|| {
+        format!(
+            "This chat's skill router suggests these skills for this prompt. They are not in its \
+             list: load one with purlis's `skill_load` tool by its name before you follow it.\n{}",
+            lines.join("\n")
+        )
+    })
 }
 
 /// The question a router is asked, owned, for the thread that asks it.
@@ -676,7 +932,17 @@ fn fell_back(
     Routed {
         record: record(&routed, router, Some(how), Some(why), began),
         answer: None,
+        left_out: left_out_of(&routed),
+        reads_prompts: false,
     }
+}
+
+/// The skills `routed`'s list leaves out, each with its line in the index skill it is handed.
+fn left_out_of(routed: &SkillSet) -> Vec<(String, String)> {
+    routed
+        .index()
+        .map(|index| purlis_skills::Index::named_in(&index.text))
+        .unwrap_or_default()
 }
 
 fn record(
@@ -686,7 +952,7 @@ fn record(
     error: Option<String>,
     began: Instant,
 ) -> Record {
-    let hidden = routed
+    let hidden: Vec<RecordHidden> = routed
         .routing
         .iter()
         .flat_map(|routing| &routing.hidden)
@@ -698,6 +964,16 @@ fn record(
             },
         })
         .collect();
+    record_of(router, hidden, fell_back, error, began)
+}
+
+fn record_of(
+    router: &str,
+    hidden: Vec<RecordHidden>,
+    fell_back: Option<FellBack>,
+    error: Option<String>,
+    began: Instant,
+) -> Record {
     Record {
         routing: ulid::Ulid::generate().to_string(),
         // An extension's id as `chosen` held it (`extension::an_id`), or none for a choice
@@ -707,6 +983,8 @@ fn record(
         fell_back,
         error: error.map(|why| clipped(&why)),
         hidden,
+        prompt: false,
+        pointed: Vec::new(),
     }
 }
 

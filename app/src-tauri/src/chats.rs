@@ -205,7 +205,7 @@ pub struct ChatRouted {
     pub session: u32,
     pub workspace: Option<String>,
     pub persona: Option<String>,
-    pub routed: purlis_core::skills::router::Routed,
+    pub routed: std::sync::Arc<purlis_core::skills::router::Routed>,
 }
 
 /// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
@@ -4427,7 +4427,7 @@ impl Chats {
             // How this start routed its skills (#3578): what its record keeps, and what a later
             // reattach of it routes by. A runner's chat is armed by its runner, so none (#3604).
             routing: (!armed_by_its_runner)
-                .then(|| purlis_core::skills::router::Kept::of(skills.routed.as_ref())),
+                .then(|| purlis_core::skills::router::Kept::of(skills.routed.as_deref())),
             ..chat.clone()
         };
         // What a start says on its tab was said at the start it reattached to (#2006); what
@@ -5442,6 +5442,28 @@ impl Chats {
                 .and_then(purlis_core::skills::not_supported_on)
                 .map(|one| one.said),
         })
+    }
+
+    /// **What chat `session`'s router points `prompt` at** (SK-15c, ADR 0102 §3): asked where its
+    /// start chose a router that reads prompts and its list leaves skills out, within the
+    /// router's 100 ms, of those skills alone; the routing record told as a start's is. The text
+    /// its prompt hook adds to the turn, or `None`. The prompt is handed to that router and kept
+    /// nowhere.
+    pub fn pointed(&self, session: u32, prompt: &str) -> Option<String> {
+        // Taken out of the lock before the router is asked, which may take its 100 ms. A chat a
+        // runner's host composed is routed there, never by this machine's router.
+        let routed = lock(&self.open)
+            .get(&session)
+            .filter(|running| !running.composed_by_its_host)?
+            .skills_read
+            .routed
+            .clone()?;
+        let router = lock(&self.router).clone()?;
+        let prompted = routed.on_prompt(prompt, &router)?;
+        if let Some(tell) = lock(&self.routed).as_ref() {
+            tell(session, &prompted.record);
+        }
+        prompted.pointer
     }
 
     /// **Every chat open here that its start routed by a router extension** (SK-15b), by number,

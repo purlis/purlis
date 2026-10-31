@@ -437,6 +437,50 @@ describe("the Routing page (#3692)", () => {
     );
   });
 
+  it("offers a router that reads prompts a switch, off by default, with the line beside it", async () => {
+    let prompts_on = false;
+    const asked = core(() => studio([], { router: { ...RELEVANCE } }), {
+      skill_routers: () => [
+        { id: "relevance", name: "Relevance router", reads_prompts: true, prompts_on },
+      ],
+      skill_router_reads_prompts: () => {
+        prompts_on = true;
+        return { notes: [] };
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(inWorkspace("ops"), "routing");
+
+    const reading = await screen.findByRole("switch", { name: "Let it read prompts" });
+    expect(reading).not.toBeChecked();
+    expect(screen.getByTestId("skill-routing-reads-every-prompt")).toHaveTextContent(
+      "reads every prompt of every chat it routes",
+    );
+
+    await user.click(reading);
+
+    await waitFor(() =>
+      expect(screen.getByRole("switch", { name: "Let it read prompts" })).toBeChecked(),
+    );
+    expect(
+      asked.filter((one) => one.cmd === "skill_router_reads_prompts").map((one) => one.args),
+    ).toEqual([{ plane: "p", router: "relevance", on: true }]);
+    expect(screen.getByTestId("skill-routing-reads-every-prompt")).toBeInTheDocument();
+  });
+
+  it("offers no switch to a router that reads no prompts", async () => {
+    core(() => studio([], { router: { ...RELEVANCE } }), {
+      skill_routers: () => [
+        { id: "relevance", name: "Relevance router", reads_prompts: false, prompts_on: false },
+      ],
+    });
+    renderStudio(inWorkspace("ops"), "routing");
+
+    await screen.findByTestId("skill-routing-router");
+    await waitFor(() => expect(screen.queryByRole("switch")).toBeNull());
+    expect(screen.queryByTestId("skill-routing-reads-every-prompt")).toBeNull();
+  });
+
   it("offers a persona its workspace's router, and takes its own choice out with it", async () => {
     const asked = core(
       () => studio([], { router: { ...BUILT_IN, written: "built-in" }, persona: "reviewer" }),
