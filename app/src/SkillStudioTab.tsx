@@ -1349,6 +1349,7 @@ export function SkillStudioTab({
         stillAt={(sources) => edits.isAt({ page: "sources", scope, ...(sources && { sources }) })}
         onOpenSkill={(name) => go({ page: "library", scope, skill: skillRowNamed(name) })}
         levels={levels}
+        workspaces={studio?.workspaces ?? []}
         start={start}
         busy={busy}
         change={change}
