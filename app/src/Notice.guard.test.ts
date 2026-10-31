@@ -493,11 +493,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "It stays mounted, so its word is heard as it comes.",
   },
   "StartChat.tsx": {
-    count: 3,
+    count: 4,
     why:
       "a dialog's refusal: an inline error, not a Notice (V91n). NO-8: the local file git " +
       "would carry offers the doctor's local-ignore fix, refused profiles link to Settings › " +
-      "Harness, a sandbox it cannot apply offers its install, and a start's refusal is ACTION's",
+      "Harness, a sandbox it cannot apply offers its install, a start's refusal is ACTION's, and a slow " +
+      "start's status says what it waits for, in the dialog's footer",
   },
   "TabRename.tsx": { count: 1, why: "a rename's refusal, beside the box being typed in" },
   "ThemeDraftStrip.tsx": {
