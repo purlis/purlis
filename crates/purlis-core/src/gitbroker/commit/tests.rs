@@ -149,6 +149,8 @@ fn asker(cwd: Option<&Path>) -> Asker {
         harnessed: true,
         unsandboxed: false,
         config: None,
+        id: None,
+        live: None,
     }
 }
 
@@ -157,6 +159,7 @@ fn ask() -> CommitAsk {
         chat: 4,
         message: "one".to_owned(),
         stage: Stage::Tracked,
+        folder: None,
     }
 }
 
@@ -457,6 +460,7 @@ impl Tree {
             chat: 4,
             message: message.to_owned(),
             stage,
+            folder: None,
         };
         let identity = git::Isolated::identity(Some("The Person"), Some("person@example.invalid"));
         let plain = git::Isolated::default().pinned(&here.top, &here.git_dir);
@@ -1084,4 +1088,146 @@ fn a_file_swapped_after_it_was_staged_is_refused_unstaged_and_its_blob_taken_out
         std::fs::read_to_string(top.join("swapped.txt")).unwrap(),
         "other bytes\n"
     );
+}
+
+/// A named file given a second name after the commit looked at it and before its bytes are
+/// hashed: its descriptor is asked again, so its bytes never reach the object store.
+#[cfg(unix)]
+#[test]
+fn a_second_name_made_as_the_commit_stages_never_reaches_the_object_store() {
+    let t = tree();
+    let top = t.here.top.clone();
+    std::fs::write(
+        top.join("plain.txt"),
+        "one name when looked at: canary-7f3e19\n",
+    )
+    .unwrap();
+    let second = t.root.join("second-name");
+    let before = t.git(&["rev-parse", "HEAD"]);
+
+    let refused = crate::planegit::ondisk::before_hashing_doing(
+        {
+            let second = second.clone();
+            move |top: &Path| std::fs::hard_link(top.join("plain.txt"), &second).unwrap()
+        },
+        || t.asked(staging(&["plain.txt"])),
+    )
+    .expect_err("refused");
+
+    assert!(refused.contains("plain.txt"), "{refused}");
+    assert!(refused.contains("has a second name"), "{refused}");
+    assert!(refused.contains("Nothing was staged"), "{refused}");
+    assert_eq!(t.git(&["rev-parse", "HEAD"]), before);
+    assert!(t.nothing_staged());
+    assert!(!crate::testgit::stores_file(&top, &second));
+}
+
+#[test]
+fn a_named_path_git_would_not_stage_is_refused_with_nothing_staged() {
+    let t = tree();
+    let top = &t.here.top;
+    std::fs::write(top.join(".gitignore"), "ignored.txt\nbuild/\n").unwrap();
+    std::fs::write(top.join("ignored.txt"), "ignored\n").unwrap();
+    std::fs::create_dir_all(top.join("build")).unwrap();
+    std::fs::write(top.join("build/out.o"), "built\n").unwrap();
+    std::fs::write(top.join("plain.txt"), "plain\n").unwrap();
+
+    let missing = stage(&t.here, &staging(&["plain.txt", "missing.txt"])).expect_err("refused");
+    assert!(missing.contains("git did not stage that"), "{missing}");
+    assert!(missing.contains("did not match any files"), "{missing}");
+    let ignored = stage(&t.here, &staging(&["plain.txt", "ignored.txt"])).expect_err("refused");
+    assert!(ignored.contains("git did not stage that"), "{ignored}");
+    assert!(ignored.contains("is ignored"), "{ignored}");
+    for named in ["./ignored.txt", "build", "build/", "build/out.o"] {
+        let ignored = stage(&t.here, &staging(&["plain.txt", named])).expect_err(named);
+        assert!(ignored.contains("is ignored"), "{named}: {ignored}");
+    }
+    assert!(t.nothing_staged());
+}
+
+fn named(workspace: &str, repo: &str, piece: &str) -> FolderName {
+    FolderName {
+        workspace: workspace.to_owned(),
+        repo: repo.to_owned(),
+        piece: piece.to_owned(),
+    }
+}
+
+#[test]
+fn a_folder_the_command_ran_in_takes_its_paths_from_its_top_wherever_the_chat_stands() {
+    // #3927: a chat in its workspace ran the command in a branch folder below it.
+    let (_dir, root, workspace) = folders();
+    let piece = workspace.join(".worktrees/thing/piece");
+    let ran_in = named("alpha", "thing", "piece");
+    for cwd in [
+        root.clone(),
+        workspace.clone(),
+        workspace.join(".worktrees/thing"),
+        piece.clone(),
+        piece.join("src"),
+    ] {
+        let (folder, stage) =
+            named_folder(&root, &cwd, &ran_in, &staging(&["src/a.rs"])).expect("placed");
+        assert_eq!(folder, piece, "{}", cwd.display());
+        assert_eq!(stage, staging(&["src/a.rs"]));
+        let (_, stage) = named_folder(&root, &cwd, &ran_in, &Stage::Tracked).expect("placed");
+        assert_eq!(stage, Stage::Tracked);
+    }
+}
+
+#[test]
+fn a_folder_the_command_ran_in_beside_the_chats_own_or_not_there_is_refused() {
+    let (_dir, root, workspace) = folders();
+    let stage = staging(&["src/a.rs"]);
+    // A chat in another branch folder, or in another workspace.
+    std::fs::create_dir_all(root.join("workspaces/beta")).expect("a workspace");
+    for cwd in [
+        workspace.join(".worktrees/thing/other"),
+        root.join("workspaces/beta"),
+    ] {
+        let why = named_folder(&root, &cwd, &named("alpha", "thing", "piece"), &stage).unwrap_err();
+        assert!(why.contains("thing · piece"), "{why}");
+        assert!(why.contains("nothing was committed"), "{why}");
+    }
+    // A folder that is not there, and names that cannot name one.
+    for bad in [
+        named("alpha", "thing", "gone"),
+        named("alpha", "..", "piece"),
+        named("../x", "thing", "piece"),
+    ] {
+        assert!(
+            named_folder(&root, &workspace, &bad, &stage).is_err(),
+            "{bad:?}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_the_command_ran_in_reached_through_a_link_is_refused() {
+    let (_dir, root, workspace) = folders();
+    std::os::unix::fs::symlink(
+        workspace.join(".worktrees/thing/piece"),
+        workspace.join(".worktrees/thing/linked"),
+    )
+    .expect("a link");
+    let why = named_folder(
+        &root,
+        &workspace,
+        &named("alpha", "thing", "linked"),
+        &staging(&["src/a.rs"]),
+    )
+    .unwrap_err();
+    assert!(why.contains("through a link"), "{why}");
+    // And a path through a link inside it is refused as from where the chat stands.
+    std::os::unix::fs::symlink(&workspace, workspace.join(".worktrees/thing/piece/out"))
+        .expect("a link");
+    let why = named_folder(
+        &root,
+        &workspace,
+        &named("alpha", "thing", "piece"),
+        &staging(&["out/a.rs"]),
+    )
+    .unwrap_err();
+    assert!(why.contains("through a link"), "{why}");
 }

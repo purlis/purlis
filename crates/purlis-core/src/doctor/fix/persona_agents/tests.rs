@@ -310,7 +310,7 @@ fn a_key_nothing_reads_is_reported_with_what_widened_and_its_line_is_kept() {
             .unwrap_or_else(|| panic!("{key}: {said:#?}"))
             .clone()
     };
-    for key in ["agent-tools", "skills", "memory"] {
+    for key in ["agent-tools", "memory"] {
         let line = about(key);
         assert!(
             line.starts_with(&format!(
@@ -328,7 +328,12 @@ fn a_key_nothing_reads_is_reported_with_what_widened_and_its_line_is_kept() {
         "{}",
         about("agent-tools")
     );
-    // `dispatch-isolation` is read again (#1453), so the fix says nothing of it.
+    // `dispatch-isolation` is read again (#1453), and so is `skills` (#2768; `persona lint`
+    // checks it, #2934), so the fix says nothing of either.
+    assert!(
+        !said.iter().any(|line| line.contains("`skills:`")),
+        "{said:#?}"
+    );
     assert!(
         !said.iter().any(|line| line.contains("dispatch-isolation")),
         "{said:#?}"

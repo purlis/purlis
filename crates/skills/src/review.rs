@@ -217,6 +217,40 @@ impl Summary {
             + self.unseen.len()
     }
 
+    /// **Its marks in a few words each**, for a list with no room for the summary (a source's
+    /// skills, before any is reviewed): what it runs, what it reaches, what it writes outside the
+    /// workspace and what it hides. A host only linked to or named in a comment is reached by
+    /// nothing, so it is no mark. Empty for a skill of instructions alone.
+    pub fn marks(&self) -> Vec<String> {
+        let counted = |n: usize, one: &str, many: &str| {
+            if n == 1 {
+                one.to_owned()
+            } else {
+                format!("{n} {many}")
+            }
+        };
+        let mut out = Vec::new();
+        if !self.scripts.is_empty() {
+            let n = self.scripts.len();
+            out.push(format!("runs {}", counted(n, "a script", "scripts")));
+        }
+        let hosts = self.hosts.iter().filter(|one| one.risky).count();
+        if hosts > 0 {
+            out.push(format!("reaches {}", counted(hosts, "1 host", "hosts")));
+        }
+        if !self.commands.is_empty() {
+            let n = self.commands.len();
+            out.push(format!("runs {}", counted(n, "a ! command", "! commands")));
+        }
+        if !self.outside.is_empty() {
+            out.push("writes outside the workspace".to_owned());
+        }
+        if !self.unseen.is_empty() {
+            out.push("hides text".to_owned());
+        }
+        out
+    }
+
     /// Whether it lists nothing at all: a skill of instructions alone.
     pub fn is_empty(&self) -> bool {
         self.scripts.is_empty()

@@ -111,6 +111,7 @@ const ON_A_PANE: ReadonlySet<Shown["source"]> = new Set([
   "workspace-removal",
   "proposed-change",
   "runner-write",
+  "runner-dispatch",
 ]);
 
 /**

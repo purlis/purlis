@@ -17,7 +17,8 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetRepoClones } from "./repoClones";
 import { chipName, openAllWorkspaces, workspaceChips, workspaceInFront } from "./test-strips";
-import { findResult } from "./actionResult.testkit";
+import { findOnCard, findResult } from "./actionResult.testkit";
+import { keepUnsaved, unsavedNow, type UnsavedWork } from "./unsavedWork";
 
 /**
  * Making a workspace and deleting one, from the window.
@@ -49,6 +50,7 @@ afterEach(() => {
   cleanup();
   clearMocks();
   forgetRepoClones();
+  for (const one of unsavedNow()) keepUnsaved(one.key, undefined);
 });
 
 const PLANE = "/home/dev/plane";
@@ -248,6 +250,38 @@ async function settled() {
 }
 
 describe("deleting a workspace", () => {
+  it("asks first about the unsaved work a save writes into it (#3929)", async () => {
+    const { calls } = core();
+    render(<App />);
+    await settled();
+    const deploy: UnsavedWork = {
+      key: "deploy",
+      plane: PLANE,
+      view: { from: null, view: "skill-studio", key: "" },
+      workspace: "alpha",
+      name: "deploy",
+      save: vi.fn(() => Promise.resolve(undefined)),
+      discard: vi.fn(() => keepUnsaved("deploy", undefined)),
+      kind: "test",
+      handOver: () => null,
+    };
+    keepUnsaved("deploy", deploy);
+
+    const asked = await askToDelete("alpha");
+    expect(asked).toHaveAccessibleName("Save your changes to deploy?");
+    expect(calls("workspace_at_risk")).toEqual([]);
+    await userEvent.click(within(asked).getByRole("button", { name: "Discard and leave" }));
+
+    // Then the removal's own question, which deletes nothing until it is answered: the work
+    // goes only with the workspace.
+    expect(deploy.discard).not.toHaveBeenCalled();
+    await waitFor(() => expect(calls("workspace_at_risk")).toHaveLength(1));
+    expect(await screen.findByRole("alertdialog")).not.toHaveAccessibleName(
+      "Save your changes to deploy?",
+    );
+    expect(calls("workspace_remove")).toEqual([]);
+  });
+
   it("is reached from the workspace tab's own menu, which the operator asked for", async () => {
     core();
     render(<App />);
@@ -662,7 +696,8 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
         ["clone_repo", "web"],
       ]),
     );
-    expect(await findResult("Cloned api, web into gamma.")).toBeInTheDocument();
+    // On the new workspace's chip's card, where its clone counted (#3649).
+    expect(await findOnCard("gamma", "Cloned 2 repos")).toHaveTextContent("api, web into gamma.");
   });
 
   it("says a workspace made in plain words on its chip's card, kept under Results (#3344, #3648)", async () => {
@@ -763,7 +798,7 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
 
     await createWithRepos(["api", "web"]);
 
-    expect(await findResult(/Could not clone api into gamma/)).toHaveTextContent(
+    expect(await findOnCard("gamma", /Could not clone api into gamma/)).toHaveTextContent(
       "api: clone failed — no access.",
     );
     expect(calls("clone_repo").map((one) => one.args.repo)).toEqual(["api", "web"]);
@@ -776,7 +811,7 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
 
     await createWithRepos(["api"]);
 
-    expect(await findResult(/Could not clone api into gamma/)).toHaveTextContent(
+    expect(await findOnCard("gamma", /Could not clone api into gamma/)).toHaveTextContent(
       "api was cloned, but purlis does not see it in gamma. purlis said: ✓ api cloned",
     );
   });

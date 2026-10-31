@@ -17,7 +17,8 @@
  *   or leaves): the parts fade in over `duration.enter` (`data-focus-back`), and go at once, as
  *   every part that closes does (R128). Reduced motion makes the duration nothing.
  * - **The keyboard stays on the work**: a key pressed in a part that is going takes the keyboard
- *   to the work in front, else it would be left on nothing.
+ *   to the work in front, else it would be left on nothing; and so does a surface that gives the
+ *   keyboard back into a hidden part once focus mode is on (the palette, #4072).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -40,6 +41,11 @@ export const HIDDEN_IN_FOCUS = [
   'footer[data-scope="status-bar"]',
 ].join(", ");
 
+/** **What goes with them**: the card that pops from the status bar's Notices item (`AT_STATUS`,
+ *  #3653), portaled over the window, no part of the footer, but drawn only while the footer is.
+ *  Not a part the window always draws, so it is kept apart from `HIDDEN_IN_FOCUS`. */
+const GOES_WITH_THEM = '[data-chip="status/bar/notices"]';
+
 /** **The window's focus mode**: whether it is on, whether its parts are coming back, and the
  *  toggle the key and the palette's row press. */
 export function useFocusMode() {
@@ -61,7 +67,24 @@ export function useFocusMode() {
     setOn(!was);
   }, []);
   useEffect(() => () => window.clearTimeout(timer.current), []);
+  // Once the parts are hidden, a keyboard that reached one of them meanwhile is taken off it:
+  // a surface that closed while the toggle was being drawn may have handed it there (#4072).
+  useEffect(() => {
+    if (on) keepTheKeyboardOnTheWork();
+  }, [on]);
   return { on, back, toggle };
+}
+
+/**
+ * **The keyboard kept off what focus mode hides, wherever it was put** (#4072): while focus mode
+ * is on, a keyboard given to an element in a part it hides goes to the work instead. The
+ * palette gives the keyboard back to where it was opened from as it closes, after its row ran:
+ * Focus mode run from a part it hides would otherwise hand the keyboard to a part no longer
+ * drawn, which leaves it on the page.
+ */
+export function keepTheKeyboardOffWhatFocusModeHides(): void {
+  if (document.querySelector(`[${FOCUS_MODE}]`) === null) return;
+  keepTheKeyboardOnTheWork();
 }
 
 /**
@@ -70,7 +93,11 @@ export function useFocusMode() {
  */
 export function keepTheKeyboardOnTheWork(): void {
   const at = document.activeElement;
-  if (!(at instanceof Element) || at.closest(HIDDEN_IN_FOCUS) === null) return;
+  if (
+    !(at instanceof Element) ||
+    (at.closest(HIDDEN_IN_FOCUS) === null && at.closest(GOES_WITH_THEM) === null)
+  )
+    return;
   const work = document.querySelector(".region-centre");
   const to = work?.querySelector<HTMLElement>(
     '[data-chat-keyboard] textarea, [role="tab"][tabindex="0"], button:not([disabled]), [tabindex="0"]',

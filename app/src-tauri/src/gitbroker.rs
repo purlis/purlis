@@ -6,7 +6,8 @@
 //! runs the same core functions the terminal's commands run.
 //!
 //! And a commit in the branch folder a sandboxed chat stands in (#1055), handed to
-//! `purlis_core::gitbroker::commit`.
+//! `purlis_core::gitbroker::commit`; and a finished branch folder's removal (#3879), never
+//! forced, which the core runs only where nothing would be lost.
 //!
 //! Answered on the listener's thread for this one connection, so a slow clone holds no other
 //! chat's hooks or asks (D-6).
@@ -55,7 +56,36 @@ fn asker(held: &Held, chat: u32) -> Result<Asker, Answer> {
         // no record is held as sandboxed here, where a chat with no sandbox is let reach more.
         unsandboxed: held.chats().started_unsandboxed(chat),
         config: held.config().map(std::path::Path::to_path_buf),
+        id: held.chats().id_of(chat),
+        live: Some(live_chats(held)),
     })
+}
+
+/// **The chats a branch folder's claim is judged against** (#3901): each open chat whose program
+/// still runs, and each that has not come back since the launch (restoring, or waiting to start
+/// again), whose liveness cannot be told yet. A chat in neither has ended, and its claim with it.
+pub(crate) fn live_chats(held: &Held) -> Vec<purlis_core::piececlaim::Live> {
+    let mut live: Vec<purlis_core::piececlaim::Live> = held
+        .chats()
+        .open_now()
+        .into_iter()
+        .filter(|open| crate::handoff::still_working(held, open.session))
+        .filter_map(|open| {
+            Some(purlis_core::piececlaim::Live {
+                id: held.chats().id_of(open.session)?,
+                chat: Some(open.session),
+                back: true,
+            })
+        })
+        .collect();
+    live.extend(held.chats().not_back().into_iter().map(|(id, chat)| {
+        purlis_core::piececlaim::Live {
+            id,
+            chat,
+            back: false,
+        }
+    }));
+    live
 }
 
 /// Commits what `ask` names in the branch folder its chat stands in (#1055), or says why not.
@@ -117,24 +147,37 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         }
         GitWork::WorktreeUpdate { repo, piece, .. } => format!("worktree update {repo} {piece}"),
         GitWork::WorktreePush { repo, piece, .. } => format!("worktree push {repo} {piece}"),
+        GitWork::WorktreeRemove { repo, piece, .. } => format!("worktree remove {repo} {piece}"),
         GitWork::CloneUpdate { repo, .. } => format!("worktree update {repo}"),
         GitWork::RootUpdate {} => "worktree update at the project root".to_owned(),
+        // Its own git's claim on a branch folder, asked by the chat's Bash guard (#3931).
+        GitWork::WorktreeClaim { repo, piece, act } => {
+            format!("hold {repo} {piece} for its own git's {act:?}")
+        }
     };
     let isolation = isolation();
-    let run =
-        || purlis_core::gitbroker::answer(held.root(), &asker, ask, &isolation, chrono::Utc::now());
+    let run = || {
+        purlis_core::gitbroker::answer_telling(
+            held.root(),
+            &asker,
+            ask,
+            &isolation,
+            chrono::Utc::now(),
+        )
+    };
     let root_update = matches!(ask.work, GitWork::RootUpdate {});
     // The root's update is the window's own Update (#3831), fetched as the window fetches it:
     // its sign-in, offered to the remote recorded for the project alone.
-    let answer = if root_update {
+    let answered = if root_update {
         crate::forgeaccounts::window_git(run)
     } else {
         run()
     };
     // The tree moved under every reader, as after the window's own Update.
-    if root_update && matches!(answer, Answer::Said { code: 0, .. }) {
+    if root_update && matches!(answered.answer, Answer::Said { code: 0, .. }) {
         held.tree_moved();
     }
+    let answer = told(held, ask.chat, answered);
     match &answer {
         Answer::Said { code, .. } => tracing::info!(
             "purlis: chat {} asked the app to {what} in workspace '{}'; it ran, exit {code}",
@@ -149,6 +192,18 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         _ => {}
     }
     answer
+}
+
+/// **What the person is told of a chat's git ask** (#3877), and the answer the chat reads: a
+/// root update left for a reason only the person settles (a file the chat's sandbox denies, a
+/// conflict, a project not put back) is a needs-you item on the chat, naming the window's
+/// Update. The chat has the reason in its answer. Nothing is raised for any other refusal,
+/// which is the chat's to retry.
+fn told(held: &Held, chat: u32, answered: purlis_core::gitbroker::Answered) -> Answer {
+    if let Some(need) = answered.needs {
+        held.needs_the_person(chat, need);
+    }
+    answered.answer
 }
 
 #[cfg(test)]

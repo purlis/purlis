@@ -13,11 +13,23 @@ D-2047-8 in the pull request). §7's table row for secrets stands, read as below
 1. **What a runner chat may be sent a value for: its persona's declared tool, through `purlis
    secret exec`, and nothing else.** A credential is never granted to a chat. The runner's host
    finds which of the tools its own start armed the command is, and refuses what is none as a run
-   on this machine is refused, before the desktop is asked anything.
+   on this machine is refused, before the desktop is asked anything. **Nobody on a runner can
+   answer the persona's Allow**, so its desktop's start says what its person allowed there, as a
+   digest (session protocol 1.55, #4071). The runner arms the persona's tools only while that is
+   the digest of the persona as it reads it, and the start came over a link. The digest holds
+   for that one start and is kept nowhere, so an Allow taken back holds from the next start. It
+   arms tools alone, never the persona's hosts.
+   A tool armed so is sent nothing but through item 3's gate. *Decided in implementation, to be
+   confirmed* (D-4071-6).
 2. **Only a runner shown to be the person's own is sent a value**, by the one check browser
    logins use (amendment of ADR 0089, 2026-10-26, item 3): a Docker pool whose engine is a local
-   socket on this machine, until a pool can be marked owned (#2561). A hosted runner is never
-   sent one.
+   socket on this machine, or, by the person's ruling of 2026-10-30 (built by #4071), a cluster
+   pool the person marked as their own whose claim the operator vouches for now, at the gate and
+   again after Allow, failing closed where the cluster does not answer. A GitHub App's minted
+   token goes by the same check. A hosted runner is never sent one. Allow is bound for a cluster
+   runner to its pool's name, context, cluster uid, operator key, claim uid, pod, device and link
+   key, and the Ask's engine names the cluster and context; there is no image digest, and any
+   change refuses the run, as item 3 says.
 3. **The desktop's gate is the window's, at each run, and each run asks the person.** The tool
    must be one the persona declares and this machine allowed, asked for with exactly its vault
    and hand-over; the vault one the persona may use here; the chat started in its sandbox, as a
@@ -77,8 +89,9 @@ D-2047-8 in the pull request). §7's table row for secrets stands, read as below
     runner, found in that host's hold by its id and the program that started it. Each run is
     held to the sandbox as it was compiled at the start, plus the hosts that confinement's board
     allows live as its values come, read again then, so a change while the person was asked
-    holds for that run, and a chat gone meanwhile runs nothing. So an Allow on a block's Notice for the chat reaches its tool's next run,
-    and a Forget narrows that run again, as `confines_now` holds a run on the desktop. Only the
+    holds for that run, and a chat gone meanwhile runs nothing. So an Allow on a block's Notice
+    for the chat reaches its tool's next run, and a Forget narrows that run again, as
+    `confines_now` holds a run on the desktop. Only the
     window's answers change the board, so nothing else can widen a run. A confinement that has
     ended, or one held under its id for another program, allows nothing live. *Decided in
     implementation, to be confirmed* (D-3407-1, D-3407-2).

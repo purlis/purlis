@@ -1525,7 +1525,8 @@ fn the_schema_completes_every_part_key_and_no_size_inside_a_state() {
         assert!(
             !said(&loaded)
                 .iter()
-                .any(|one| one.contains("is not a component part")),
+                .any(|one| one.contains("is not a component part")
+                    || one.contains("reaches nothing")),
             "{key}"
         );
     }
@@ -2067,6 +2068,25 @@ fn a_grounds_alpha_is_read_as_drawn() {
 // The field families (#2905)
 // ---------------------------------------------------------------------------------------
 
+/// **An sm field is never clamped under the 24px target** (#3250, WCAG 2.5.8): a theme that
+/// rounds a field family's root clamps its sm roots to the same floor its stylesheet draws them
+/// at, the sm button's (#3210), so a compact density's 18px chrome never makes an sm field a
+/// smaller target.
+#[test]
+fn an_sm_field_is_clamped_to_the_24px_floor_in_every_field_family() {
+    let sheet = sheet_of(json!({
+        "text-input.root.corner-radius": 8,
+        "select.root.corner-radius": 8,
+        "combobox.root.corner-radius": 8,
+    }));
+    for scope in ["text-input", "select", "combobox"] {
+        let sm = format!(
+            ":where([data-scope=\"{scope}\"][data-part=\"root\"][data-size=\"sm\"]) {{ --purlis-part-height: max(24px, var(--size-chrome), var(--space-7)); }}"
+        );
+        assert!(sheet.contains(&sm), "{scope}: {sheet}");
+    }
+}
+
 #[test]
 fn a_family_with_no_variants_is_reached_by_its_part_alone() {
     let sheet = sheet_of(json!({
@@ -2090,7 +2110,7 @@ fn a_family_with_no_variants_is_reached_by_its_part_alone() {
     assert!(!sheet.contains("data-variant"), "{sheet}");
     // Only the families whose corners the theme sets are clamped to their own sizes.
     assert!(sheet.contains(
-        ":where([data-scope=\"text-input\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(var(--size-chrome), var(--space-7)); }"
+        ":where([data-scope=\"text-input\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(24px, var(--size-chrome), var(--space-7)); }"
     ));
     assert!(!sheet.contains("[data-scope=\"button\"]"), "{sheet}");
 }
@@ -2160,9 +2180,10 @@ fn a_boxs_words_on_its_fill_are_held_to_their_floor() {
             .iter()
             .map(|one| one.part.as_str())
             .collect::<Vec<_>>(),
-        // The fill at rest reaches the refused box too, whose danger edge is then under 3:1 on
-        // it (#3323).
-        ["text-input.root", "text-input.root.invalid"]
+        // The fill at rest reached the refused box too, whose danger edge was then under 3:1 on
+        // it (#3323). The rest's fallback now draws the refused state's own look back after it
+        // (#4040), so the refused box is its default again and does not fall on its own.
+        ["text-input.root"]
     );
     // The prototype's look (R54): borderless on the window's fill. A border that is the box's
     // only edge on its own ground must hold 3:1; with none, its words are what is measured. A
@@ -2455,16 +2476,29 @@ fn a_set_of_states_that_falls_back_draws_a_default_its_floors_hold() {
     })));
     let theme = loaded.theme.first();
     let sheet = parts::stylesheet(theme);
-    // The fallback is written once, for the state the stylesheet writes last.
-    let focused = "[data-variant=\"primary\"][data-focus-visible])";
-    let written: Vec<&str> = sheet
+    // The fallback is written once, keyed on both states, as the pair's own default (#4174):
+    // the stylesheet's rule for focus alone stays the theme's. It used to be the focused default
+    // keyed on the focus alone, which took the theme's focus edge from every focused button.
+    let both =
+        "[data-variant=\"primary\"][data-hovered]:not([data-disabled])[data-focus-visible]) {";
+    let written: Vec<&str> = sheet.lines().filter(|line| line.contains(both)).collect();
+    assert_eq!(written.len(), 1, "{sheet}");
+    assert!(written[0].contains("var(--accent-fill-hover)"), "{sheet}");
+    assert!(
+        written[0].contains("border-color: var(--accent-fill-edge)"),
+        "{sheet}"
+    );
+    let focused = "[data-variant=\"primary\"][data-focus-visible]) {";
+    let alone: Vec<&str> = sheet
         .lines()
+        .map(str::trim)
         .filter(|line| line.contains(focused))
         .collect();
-    assert_eq!(written.len(), 2, "{sheet}");
-    assert!(written[1].contains("var(--accent-fill)"), "{sheet}");
-    assert!(
-        written[1].contains("border-color: var(--accent-fill-edge)"),
+    assert_eq!(
+        alone,
+        [
+            ":where([data-scope=\"button\"][data-part=\"root\"][data-variant=\"primary\"][data-focus-visible]) { border-color: var(--accent-base); }"
+        ],
         "{sheet}"
     );
 }

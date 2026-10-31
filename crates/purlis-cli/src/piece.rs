@@ -28,8 +28,9 @@ pub enum WorktreeCommand {
         /// Name the new branch something other than the piece.
         #[arg(long)]
         branch: Option<String>,
-        /// The branch of the clone to cut from, recorded as the piece's base; `HEAD` for
-        /// whatever the clone is on (default: the remote's default branch, else HEAD).
+        /// The branch of the clone to cut from, recorded as the piece's base, or a
+        /// remote-tracking branch (`origin/main`); `HEAD` for whatever the clone is on
+        /// (default: the remote's default branch, else HEAD).
         #[arg(long, value_name = "BRANCH")]
         base: Option<String>,
         /// The workspace (default: the active one).
@@ -41,8 +42,13 @@ pub enum WorktreeCommand {
     /// commits: it never amends, resets, rebases, merges or pushes, and the repository's own
     /// hooks are not run. A chat that is not sandboxed uses `git commit`.
     Commit {
-        /// The commit message.
-        #[arg(short = 'm', long = "message", value_name = "MESSAGE")]
+        /// The commit message. One that starts with `-` is the message too (#3927).
+        #[arg(
+            short = 'm',
+            long = "message",
+            value_name = "MESSAGE",
+            allow_hyphen_values = true
+        )]
         message: Option<String>,
         /// Stage every change to a file git already tracks. A new file must be named.
         #[arg(short = 'a', long = "all")]
@@ -50,7 +56,8 @@ pub enum WorktreeCommand {
         /// Never done. Taken only so that it is refused in a sentence.
         #[arg(long, hide = true)]
         amend: bool,
-        /// Paths to stage, relative to where you stand, inside this folder.
+        /// Paths to stage, relative to where you stand in the branch folder (or with `env -C
+        /// <branch folder>`), or from a folder above it as `.worktrees/<repo>/<piece>/<path>`.
         #[arg(value_name = "PATH")]
         paths: Vec<String>,
     },
@@ -62,7 +69,8 @@ pub enum WorktreeCommand {
     /// back. Refused with uncommitted changes, or where it would overwrite a file on disk that
     /// is not committed. In a chat the app runs it.
     Update {
-        /// The branch to rebase onto (default: the one the piece was cut from). A branch
+        /// The branch to rebase onto, or a remote-tracking branch (`origin/main`), carrying
+        /// only the piece's own commits (default: the one the piece was cut from). A branch
         /// folder's only.
         #[arg(long, value_name = "BRANCH", conflicts_with_all = ["go_on", "abort"])]
         base: Option<String>,
@@ -74,10 +82,12 @@ pub enum WorktreeCommand {
         abort: bool,
     },
     /// Push the branch of the folder you stand in to its remote, under its own name, after
-    /// purlis's scan of what it would publish. In a chat the app runs it.
+    /// purlis's scan of what it would publish. Where purlis's own `update` rewrote the branch,
+    /// it goes over the remote's copy the update saw, also with commits added since (#3895).
+    /// In a chat the app runs it.
     Push {
-        /// Push over the remote's copy of the branch, only right after `update` rewrote it, and
-        /// only if the remote still has what was last fetched.
+        /// Accepted and asks for nothing more: a plain push already goes over the remote's
+        /// copy where purlis's own update rewrote the branch, and only then.
         #[arg(long)]
         force_with_lease: bool,
     },
@@ -110,8 +120,10 @@ pub enum WorktreeCommand {
         workspace: Option<String>,
     },
     /// Remove a piece with `git worktree remove`. Refused, naming what would be lost, while
-    /// it holds uncommitted changes or commits no other ref reaches. A branch folder purlis
-    /// cut for a task is discarded from that task's Changes tab instead.
+    /// it holds uncommitted changes or commits no other ref reaches, unless its branch landed
+    /// by a squash merge (the branch is then kept). A branch folder purlis
+    /// cut for a task is discarded from that task's Changes tab instead. In a chat the app
+    /// removes it, from a folder above it; `--force` there is the person's, from the window.
     Remove {
         repo: String,
         piece: String,
@@ -130,11 +142,14 @@ pub enum WorktreeCommand {
 pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
     let root = here.plane.root().to_path_buf();
     let now = chrono::Utc::now();
+    // In a chat, by its stable id too (#3901): its `done` or `abandon` hands over a branch
+    // folder it holds, and another chat's lets nothing go.
     let who = Who::here(
         purlis_core::machine::config_root_if_there().as_deref(),
         here.ids.session.clone(),
         here.active_persona(None),
-    );
+    )
+    .for_chat(purlis_core::envvar::var(purlis_core::hookwire::CHAT_ID_ENV));
     let mut say = crate::speak;
     let code = match command {
         WorktreeCommand::Add {
@@ -182,14 +197,24 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
             all,
             amend,
             paths,
-        } => crate::gitask::commit(message, all, amend, paths, &mut say),
+        } => crate::gitask::commit(
+            &crate::gitask::RunIn {
+                root: &root,
+                cwd: &here.cwd,
+            },
+            message,
+            all,
+            amend,
+            paths,
+            &mut say,
+        ),
         WorktreeCommand::Update { base, go_on, abort } => {
             let step = match (go_on, abort) {
                 (true, _) => purlis_core::hookwire::UpdateStep::Continue,
                 (_, true) => purlis_core::hookwire::UpdateStep::Abort,
                 _ => purlis_core::hookwire::UpdateStep::Start { base },
             };
-            update(here, &step, &mut say)
+            update(here, &step, &who, &mut say)
         }
         WorktreeCommand::Push { force_with_lease } => standing_in(here, &mut say, |at, say| {
             let work = purlis_core::hookwire::GitWork::WorktreePush {
@@ -198,9 +223,14 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                 lease: force_with_lease,
             };
             ran_by_the_app(at, work, say).unwrap_or_else(|| {
+                if let Err(why) =
+                    no_app_to_tell(&root, at, &who, purlis_core::piececlaim::Act::Push)
+                {
+                    say(purlis_core::repocmd::Say::Fail(why.into()));
+                    return 1;
+                }
                 purlis_core::pieceupdate::push(
                     &piece_of(&root, at),
-                    force_with_lease,
                     &purlis_core::pieceupdate::Reach::default(),
                     say,
                 )
@@ -244,9 +274,36 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
             delete_branch,
             workspace,
         } => {
-            // Never from a chat the app started under the sandbox (#1408, D-qw322-1): refused
-            // before git is run, wherever the chat stands.
             let ws = here.active_workspace(workspace.as_deref());
+            // `--force` discards work, which stays the person's from any chat (#3879): refused
+            // before anything is asked or run, naming the window.
+            if force && crate::session::chat_number().is_some() {
+                say(purlis_core::repocmd::Say::Fail(
+                    crate::brokered::no_forced_piece_removal_in_a_chat(&repo, &piece).into(),
+                ));
+                return Ok(1);
+            }
+            // In a chat the app started, the app removes it where nothing would be lost
+            // (#3879), as it commits and updates for the chat.
+            if let Ok(ws) = &ws {
+                let asked = crate::gitask::told(
+                    crate::gitask::forwarded(
+                        ws,
+                        GitWork::WorktreeRemove {
+                            repo: repo.clone(),
+                            piece: piece.clone(),
+                            delete_branch,
+                        },
+                        crate::gitask::A_WORKTREE_TAKES_AT_MOST,
+                    ),
+                    &mut say,
+                );
+                if let Some(code) = asked {
+                    return Ok(code);
+                }
+            }
+            // No app took it: never from a chat the app started under the sandbox (#1408,
+            // D-qw322-1), refused before git is run, wherever the chat stands.
             let target = ws
                 .as_deref()
                 .ok()
@@ -257,7 +314,36 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                 ));
                 return Ok(1);
             }
-            piececmd::remove(&root, &ws?, &repo, &piece, force, delete_branch, &mut say)
+            // One live writer per branch folder (#3901): a chat with no app to say whether a
+            // folder's holder lives is refused one another chat holds; the person's own
+            // terminal removes any. A removal ends the folder's claim.
+            let ws = ws?;
+            let at = purlis_core::worktree::Located {
+                workspace: ws.clone(),
+                repo: repo.clone(),
+                piece: piece.clone(),
+            };
+            let judged = if crate::session::chat_number().is_some() {
+                purlis_core::piececlaim::Judged::ByAChat(None)
+            } else {
+                purlis_core::piececlaim::Judged::ByThePerson
+            };
+            let a_chat = matches!(judged, purlis_core::piececlaim::Judged::ByAChat(_));
+            match purlis_core::piececlaim::removing(&root, &at, &who, judged, now, || {
+                // A chat's removal keeps what git ignores there (#3879); the person's own
+                // terminal removes as git does.
+                if a_chat && let Some(why) = piececmd::ignored_would_go(&root, &ws, &repo, &piece) {
+                    say(purlis_core::repocmd::Say::Fail(why.into()));
+                    return 1;
+                }
+                piececmd::remove(&root, &ws, &repo, &piece, force, delete_branch, &mut say)
+            }) {
+                Ok(code) => code,
+                Err(why) => {
+                    say(purlis_core::repocmd::Say::Fail(why.into()));
+                    1
+                }
+            }
         }
     };
     Ok(code)
@@ -329,6 +415,7 @@ fn root_takes(step: &purlis_core::hookwire::UpdateStep) -> bool {
 fn update(
     here: &Here,
     step: &purlis_core::hookwire::UpdateStep,
+    who: &Who,
     say: &mut dyn FnMut(purlis_core::repocmd::Say),
 ) -> u8 {
     let Some(updated) = Updated::of(here) else {
@@ -351,6 +438,10 @@ fn update(
     let reach = purlis_core::pieceupdate::Reach::default();
     match &updated {
         Updated::Piece(at) => {
+            if let Err(why) = no_app_to_tell(root, at, who, purlis_core::piececlaim::Act::Update) {
+                say(purlis_core::repocmd::Say::Fail(why.into()));
+                return 1;
+            }
             purlis_core::pieceupdate::update(&piece_of(root, at), step, &reach, say)
         }
         Updated::Clone { ws, repo } => purlis_core::pieceupdate::update_clone(
@@ -383,25 +474,55 @@ pub fn update_by_the_app(
     here: &Here,
     step: &purlis_core::hookwire::UpdateStep,
 ) -> Result<String, String> {
-    use crate::gitask::Forwarded;
-    use purlis_core::repocmd::Say;
     let updated = Updated::of(here).ok_or_else(|| NOT_IN_A_FOLDER.to_owned())?;
     if matches!(updated, Updated::Root) && !root_takes(step) {
         return Err(AT_THE_ROOT.to_owned());
     }
     let (ws, work) = updated.work(step);
-    let (lines, code) =
-        match crate::gitask::forwarded(ws, work, crate::gitask::A_PIECE_UPDATE_TAKES_AT_MOST) {
-            Forwarded::Said { lines, code } => (lines, code),
-            Forwarded::Refused(why) | Forwarded::Unsure(why) => return Err(why),
-            Forwarded::NotTaken => {
-                return Err(
-                    "no app took the update, so nothing was run: run `purlis worktree \
-                            update` in the chat"
-                        .to_owned(),
-                );
-            }
-        };
+    answered_by_the_app(
+        crate::gitask::forwarded(ws, work, crate::gitask::A_PIECE_UPDATE_TAKES_AT_MOST),
+        "no app took the update, so nothing was run: run `purlis worktree update` in the chat",
+    )
+}
+
+/// The `worktree_remove` tool (#3879): `purlis worktree remove <repo> <piece>`, never forced,
+/// for a branch folder of the chat's own workspace, handed to the app that started it and
+/// answered with what it said. **Never run here**, for [`update_by_the_app`]'s reason.
+pub fn remove_by_the_app(
+    here: &Here,
+    repo: &str,
+    piece: &str,
+    delete_branch: bool,
+) -> Result<String, String> {
+    let ws = here.active_workspace(None)?;
+    answered_by_the_app(
+        crate::gitask::forwarded(
+            &ws,
+            GitWork::WorktreeRemove {
+                repo: repo.to_owned(),
+                piece: piece.to_owned(),
+                delete_branch,
+            },
+            crate::gitask::A_WORKTREE_TAKES_AT_MOST,
+        ),
+        "no app took the removal, so nothing was removed: run `purlis worktree remove \
+         <repo> <piece>` in the chat",
+    )
+}
+
+/// What a tool handed to the app answers: the lines it said, as text, an error where it failed
+/// or refused, and `not_taken` where no app took it.
+fn answered_by_the_app(
+    forwarded: crate::gitask::Forwarded,
+    not_taken: &str,
+) -> Result<String, String> {
+    use crate::gitask::Forwarded;
+    use purlis_core::repocmd::Say;
+    let (lines, code) = match forwarded {
+        Forwarded::Said { lines, code } => (lines, code),
+        Forwarded::Refused(why) | Forwarded::Unsure(why) => return Err(why),
+        Forwarded::NotTaken => return Err(not_taken.to_owned()),
+    };
     let text = lines
         .iter()
         .map(|line| match line {
@@ -432,6 +553,22 @@ fn standing_in(
             1
         }
     }
+}
+
+/// **In a chat whose app took no ask**, a branch folder's claim is still held to (#3901): with
+/// no app to say whether its holder lives, a folder another chat holds is refused, and the
+/// holder writes on. Outside a chat it is the person's own terminal, which hands any folder
+/// over, and nothing is asked.
+fn no_app_to_tell(
+    root: &std::path::Path,
+    at: &purlis_core::worktree::Located,
+    who: &Who,
+    act: purlis_core::piececlaim::Act,
+) -> Result<(), String> {
+    if crate::session::chat_number().is_none() {
+        return Ok(());
+    }
+    purlis_core::piececlaim::take(root, at, who, None, act, chrono::Utc::now())
 }
 
 /// The piece `at` names, in the project at `root`.

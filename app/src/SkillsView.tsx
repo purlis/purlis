@@ -6,14 +6,15 @@ import {
   commands,
   type ChatSkill,
   type HarnessKind,
+  type PlaneUpdated,
   type SkillPinsRefused,
   type StudioFirst,
   type StudioLevel,
 } from "./bindings";
 import { Notice } from "./Notice";
-import { skillsIn, useViewChanged } from "./planeChanged";
-import { askDraft } from "./skillDraftAsks";
-import { SkillsNotRead, SkillsReading, type SkillStart } from "./SkillStarts";
+import { INSTRUCTIONS, skillsIn, usePlaneChanged, useViewChanged } from "./planeChanged";
+import { planeUpdatedAt } from "./PlaneUpdated";
+import { SkillsNotRead, SkillsReading } from "./SkillStarts";
 import {
   AT_THE_ROOT,
   SKILL_STUDIO_TITLE,
@@ -46,6 +47,8 @@ import { useFoldedGroups } from "./skillsViewPrefs";
 import { PLANE_ROOT, pieceFileView } from "./pieceViews";
 import type { ViewRef } from "./tabs";
 import { useListFilter } from "./ui/list/ListFilter";
+import { chatNeedsOf, chatSetSaid, type ChatNeed, type ChatSkillsSaid } from "./chatSkillNeeds";
+import { SKILLS_MISSING_PUT_AWAY, type ChatSkillsAsk } from "./chatSkillsAsk";
 
 /** The chat in front, as the Skills view reads its set: its session, its name, where it works,
  *  and the persona it runs as. */
@@ -69,6 +72,8 @@ type Read =
       levels: StudioLevel[];
       /** Why the workspace's chats read none of its pins, where they read none (#3432). */
       pinsRefused: SkillPinsRefused | null;
+      /** What the chat in front's set says as a whole (S8, #3694): none with no chat in front. */
+      said?: ChatSkillsSaid;
     }
   | { refused: string };
 
@@ -101,6 +106,8 @@ async function readSkills(
   plane: string,
   workspace: string | undefined,
   chat: FrontChat | undefined,
+  /** What changed since each chat started: the answer the chats' panes read at this change. */
+  updatedSinceStart: () => Promise<readonly PlaneUpdated[]> = async () => [],
 ): Promise<Read> {
   if (chat === undefined) {
     const base = await answered(commands.skillStudio(plane, workspace ?? null, null));
@@ -112,15 +119,27 @@ async function readSkills(
       pinsRefused: base.ok.pins_refused,
     };
   }
-  const [base, personas, set] = await Promise.all([
+  // And what its set says as a whole (S8): its "started without" notice's, and what changed
+  // since it started, read with the rest so the view is drawn once.
+  const [base, personas, set, updated] = await Promise.all([
     answered(commands.skillStudio(plane, chat.workspace ?? null, chat.persona)),
     answered(commands.skillPersonaSkills(plane, chat.workspace ?? null)),
     answered(commands.chatSkills(plane, chat.session)),
+    updatedSinceStart(),
   ]);
   if ("refused" in base) return base;
   const rows = viewRowsOf(base.ok, "ok" in personas ? personas.ok : undefined);
   const given: { skills: ChatSkill[]; repos: string[] } =
     "ok" in set ? set.ok : { skills: [], repos: [] };
+  const said: ChatSkillsSaid = {
+    budget: "ok" in set ? set.ok.budget : null,
+    routing: "ok" in set ? set.ok.routing : null,
+    // What it started without, from the same answer the Skills chip reads it from (#3953).
+    missing: "ok" in set ? set.ok.missing : null,
+    changed: updated.find((one) => one.session === chat.session && one.skills) ?? null,
+    // Its program's own catalogue (#3324), from the studio answer read above: no read of its own.
+    own: base.ok.harnesses.find((one) => one.harness === chat.harness)?.own ?? null,
+  };
   return {
     rows: narrowedTo(rows, given.skills, {
       persona: chat.persona,
@@ -130,6 +149,7 @@ async function readSkills(
     first: base.ok.first,
     levels: base.ok.levels,
     pinsRefused: base.ok.pins_refused,
+    said,
   };
 }
 
@@ -162,6 +182,7 @@ export function SkillsView({
   onOpenView,
   onUseSkill,
   onShowInExplorer,
+  onRestart,
 }: {
   plane: string;
   /** The title bar's workspace, or `undefined` at the project's root. */
@@ -174,6 +195,8 @@ export function SkillsView({
   /** Opens Explorer on a skill's folder: one of the project's own files, or in a clone of the
    *  title bar's workspace. */
   onShowInExplorer: (place: ExplorerPlace) => void;
+  /** Restarts chat `session` on its conversation: what a chat whose skills changed is offered. */
+  onRestart?: (session: number) => void | Promise<void>;
 }) {
   const [folded, onFold] = useFoldedGroups();
   // Where the rows are read for, and where the switch and the pin act: the chat's own workspace
@@ -181,6 +204,10 @@ export function SkillsView({
   const place = chat === undefined ? workspace : chat.workspace;
   const persona = chat?.persona ?? null;
   const changed = useViewChanged([plane], skillsIn(place));
+  // What changed since its chat started is asked once a change, with the chats' panes (S8).
+  const instructions = usePlaneChanged([plane], INSTRUCTIONS);
+  // Asked again after the chat in front is restarted from here: it then has what changed.
+  const [restarted, setRestarted] = useState(0);
   const [read, setRead] = useState<{ of: FrontChat | undefined; read: Read }>();
   const [said, setSaid] = useState<{ label: string; text: string }>();
   const [busy, setBusy] = useState(false);
@@ -195,7 +222,7 @@ export function SkillsView({
       session === undefined
         ? undefined
         : { session, name: chatName, workspace: chatWorkspace, persona, harness };
-    void readSkills(plane, place, of)
+    void readSkills(plane, place, of, () => planeUpdatedAt(plane, instructions))
       .catch((err: unknown): Read => ({ refused: String(err) }))
       .then((answer) => {
         if (live) setRead({ of, read: answer });
@@ -205,7 +232,24 @@ export function SkillsView({
     };
     // The name is not read by: it only says whose set it is.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plane, place, session, chatWorkspace, persona, harness, changed]);
+  }, [plane, place, session, chatWorkspace, persona, harness, changed, instructions, restarted]);
+
+  // Its "started without" notice put away is put away in the core: its card goes as the Skills
+  // chip's warning does (#3953), with no read again.
+  useEffect(() => {
+    if (session === undefined) return;
+    const hear = (event: Event) => {
+      const { detail } = event as CustomEvent<ChatSkillsAsk>;
+      if (detail.plane !== plane || detail.session !== session) return;
+      setRead((was) =>
+        was === undefined || !("rows" in was.read) || was.read.said === undefined
+          ? was
+          : { ...was, read: { ...was.read, said: { ...was.read.said, missing: null } } },
+      );
+    };
+    window.addEventListener(SKILLS_MISSING_PUT_AWAY, hear);
+    return () => window.removeEventListener(SKILLS_MISSING_PUT_AWAY, hear);
+  }, [plane, session]);
 
   const rows = read !== undefined && "rows" in read.read ? read.read.rows : NO_ROWS;
   const nameOf = useCallback((row: ListedSkill) => row.skill.name, []);
@@ -257,17 +301,9 @@ export function SkillsView({
           }),
       SKILL_STUDIO_TITLE,
     );
-  /** One of the studio's three starts (SK-22): a chat's draft here, the others in the studio. */
-  const startWith = (start: SkillStart) => {
-    if (start === "draft") {
-      askDraft(plane, scope, shown.levels);
-      return;
-    }
-    if (start === "sources") {
-      studioAt("sources");
-      return;
-    }
-    // The studio goes to its Library first, and the start opens there.
+  /** **New skill…** (#3684): the studio's own dialog, which asks how; the studio goes to its
+   *  Library first, and the dialog opens there. */
+  const newSkill = () => {
     openStudio();
     askStudioStart("", "new");
   };
@@ -313,6 +349,19 @@ export function SkillsView({
     else if (one.act === "routing") studioAt("routing");
     else openRow(row);
   };
+  // **The chat's own needs** (S8): its budget, pins, router, what it started without and what
+  // changed, each with its one fix; for the chat its rows were read for alone.
+  const chatNeeds: ChatNeed[] =
+    acting === undefined || shown.said === undefined ? [] : chatNeedsOf(shown.said, scope);
+  const chatFix = (need: ChatNeed) => {
+    const one = need.fix;
+    if (one.act === "restart") {
+      if (acting === undefined || onRestart === undefined) return;
+      void Promise.resolve(onRestart(acting.session)).then(() => setRestarted((was) => was + 1));
+      return;
+    }
+    onOpenView(skillStudioAt(one.scope, one.page), SKILL_STUDIO_TITLE);
+  };
   const usable = (row: ListedSkill) => {
     const mark = markOf(row);
     return acting !== undefined && mark !== "left-out" && mark !== "off" && mark !== "needs-review";
@@ -322,6 +371,9 @@ export function SkillsView({
     <SkillsList
       whose={whose}
       chat={read.of !== undefined}
+      setSaid={shown.said === undefined ? [] : chatSetSaid(shown.said)}
+      chatNeeds={filter.query.trim() === "" ? chatNeeds : []}
+      onChatFix={chatFix}
       groups={groups}
       count={whole.needs.length + whole.inChat.length + whole.builtIns.length}
       clashes={(row) => clashing.has(row.skill.name)}
@@ -331,7 +383,7 @@ export function SkillsView({
       filtered={filter.filtered}
       starts={shown.first.starts}
       busy={busy}
-      onStart={startWith}
+      onNewSkill={newSkill}
       onOpenStudio={openStudio}
       onOpen={openRow}
       usable={usable}

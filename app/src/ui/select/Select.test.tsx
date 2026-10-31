@@ -331,8 +331,9 @@ describe("the select", () => {
     expect(field).toHaveClass("placed");
     expect(select).not.toHaveClass("placed");
     const line = field.querySelector('[data-scope="field"][data-part="error"]') as Element;
-    expect(line).toHaveAttribute("role", "alert");
-    expect(line).toHaveAttribute("aria-live", "assertive");
+    // One signal (#3291): a polite live region, never an alert as well.
+    expect(line).not.toHaveAttribute("role");
+    expect(line).toHaveAttribute("aria-live", "polite");
     expect(line).toHaveTextContent("A persona needs a harness to run.");
     expect(select).toHaveAttribute("aria-invalid", "true");
     expect(select).toHaveAttribute("data-invalid");
@@ -364,6 +365,23 @@ describe("the select", () => {
       />,
     );
     expect(selectNamed("Page size")).toHaveAttribute("data-size", "sm");
+  });
+
+  // WCAG 2.5.8 (#3250): the compact density draws the chrome at 18px, so sm's floor is 24 CSS
+  // px, as the sm button's is (#3210).
+  it("never draws an sm select under the 24px target, in any density or text size", () => {
+    render(
+      <Select
+        aria-label="Page size"
+        size="sm"
+        value="a"
+        options={[{ value: "a", label: "A" }]}
+        onValueChange={() => {}}
+      />,
+    );
+    expect(drawnWith(selectNamed("Page size"), "block-size")).toBe(
+      "max(24px, var(--size-chrome), var(--space-7))",
+    );
   });
 });
 

@@ -194,6 +194,28 @@ jobs:
       - name: Run the doctests
         if: matrix.part == 2
         run: tools/no-orphans.sh --reap -- cargo test --workspace --locked --doc
+      # **Claude Code's own sandbox on Linux, on the settings purlis writes** (#2211): the macOS
+      # step in `scenario`'s, here on bubblewrap. The version purlis supports, this runner's build
+      # of it from npm with no install scripts run, against a stand-in model on a loopback port;
+      # the repositories' probes alone (`tools/seatbelt-case.sh --repositories-here`). Ubuntu
+      # 23.10 and later let only a program an AppArmor profile names make a user namespace, and
+      # Claude Code has none, so the runner allows them, as a machine without that rule does. No
+      # model is called, and no credential is used.
+      - name: Claude Code's own sandbox on Linux, on the settings purlis writes
+        if: matrix.part == 3
+        run: |
+          version=$(sed 's/ .*//' tests/fixtures/harness-versions/claude.txt)
+          case "$RUNNER_ARCH" in
+            ARM64) arch=arm64 ;;
+            X64) arch=x64 ;;
+            *) echo "::error::no Claude Code build for $RUNNER_ARCH"; exit 1 ;;
+          esac
+          package="@anthropic-ai/claude-code-linux-$arch"
+          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/claude-code" "$package@$version"
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
+            cargo nextest run --workspace --locked --profile ci --no-capture \
+            -E 'package(purlis-core) & binary(it) & test(/^claude_codes_own_sandbox_holds_the_settings_purlis_writes::/)'
       # The theme schema only grows within a format (#2524). `Run the tests` holds the engine's
       # schema to the committed `docs/schema/theme.v2.schema.json`; this step holds it to the
       # file the last release's tag holds, fetched with git, so an edit of the committed file
@@ -366,6 +388,13 @@ jobs:
           parity="$RUNNER_TEMP/parity"
           mkdir -p "$parity"
           cp target/debug/purlis target/debug/fake-harness "$parity/"
+          # The Claude Code purlis supports, this runner's build of it from npm with no install
+          # scripts run, for the behaviour that runs it inside the wrap (#4083). No model is
+          # called, and no credential is used.
+          version=$(sed 's/ .*//' tests/fixtures/harness-versions/claude.txt)
+          package="@anthropic-ai/claude-code-linux-x64"
+          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/claude-code" "$package@$version"
+          cp "$RUNNER_TEMP/claude-code/node_modules/$package/claude" "$parity/claude-code"
           docker build --file tests/parity/runner.Dockerfile \
             --build-arg RUNNER=purlis-runner:parity --build-arg "AT=$PWD/target/debug" \
             --tag localhost:5000/purlis-runner-parity:candidate "$parity"
@@ -421,7 +450,7 @@ jobs:
         run: >-
           tools/no-orphans.sh --reap --
           cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
-          --test it -E 'test(/^(a_docker_pool_runner_is_linked_through_docker_exec|code_crosses_to_a_docker_pools_runner_and_back|a_chat_moves_to_a_docker_pools_runner_and_back)::/)'
+          --test it -E 'test(/^(a_docker_pool_runner_is_linked_through_docker_exec|a_killed_docker_exec_closes_what_it_ran_on_a_runner|code_crosses_to_a_docker_pools_runner_and_back|a_chat_moves_to_a_docker_pools_runner_and_back)::/)'
       - name: What the runners left, if a test failed
         if: failure() && steps.scope.outputs.run == 'true'
         run: docker ps --all --no-trunc || true
@@ -1141,7 +1170,7 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
@@ -1157,6 +1186,11 @@ jobs:
       - name: The studio probe's names
         if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/studio-probe-names
+      # Node, for a Claude Code chat's server dialling in to its door (#3316).
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
       - name: The studio probe, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p studio-probe
@@ -1189,7 +1223,8 @@ jobs:
       fail-fast: false
       matrix:
         node: ["20", "22"]
-        kind: [plain, vite, next]
+        # `dial-` kinds: a Claude Code chat's server dials in to its door (#3316).
+        kind: [plain, vite, next, dial-plain, dial-express, dial-vite, dial-refused]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1312,7 +1347,7 @@ jobs:
   # counts files: its four parts would have taken 4.6, 10.8, 6.3 and 8.2 minutes of specs, the
   # cut ones 7.7, 7.7, 6.9 and 7.6. Runners do not queue (Enterprise runners, 2026-10-13), so a
   # part costs runner minutes, not wait. Every part is a run of neighbours in name order, as
-  # before, and the Skill studio's specs keep the predecessors they pass after (#3562).
+  # before.
   #
   # macOS's own sandbox checks are a leg of their own too (`sandbox`): they compile the core's
   # tests and build no app, 4.2 minutes on average that made the single-app leg the next longest.
@@ -1376,16 +1411,28 @@ jobs:
         if: runner.os == 'macOS'
         with:
           version: v0.18.0
+      # A cache that does not answer is a slower job, never a failed one: the storage behind
+      # the Actions cache refuses reads once the account's egress is over its limit
+      # ("ServerBusy"), and sccache then failed `rustc -vV` and the whole job with it
+      # (2026-10-30, three merge-queue drops). The server is started here; only one that comes
+      # up is put in front of rustc, and SCCACHE_IGNORE_SERVER_IO_ERROR has a later failure
+      # compile without it.
       - name: Compile through sccache
         if: runner.os == 'macOS'
         env:
           MODE: ${{ github.ref == 'refs/heads/main' && 'READ_WRITE' || 'READ_ONLY' }}
         run: |
-          {
-            echo "RUSTC_WRAPPER=sccache"
-            echo "SCCACHE_GHA_ENABLED=true"
-            echo "SCCACHE_GHA_RW_MODE=$MODE"
-          } >> "$GITHUB_ENV"
+          export SCCACHE_GHA_ENABLED=true SCCACHE_GHA_RW_MODE="$MODE"
+          if sccache --start-server >/dev/null 2>&1 && sccache --show-stats >/dev/null 2>&1; then
+            {
+              echo "RUSTC_WRAPPER=sccache"
+              echo "SCCACHE_GHA_ENABLED=true"
+              echo "SCCACHE_GHA_RW_MODE=$MODE"
+              echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
+            } >> "$GITHUB_ENV"
+          else
+            echo "::warning title=sccache::the build cache did not answer, so this job compiles without it"
+          fi
       # Whether macOS's sandbox matches a name as typed or as it is on disk, measured; that the
       # case-classed rules purlis writes for Claude Code hold every spelling (#2071, #2107); and
       # the profiles a wrapped chat starts under, at the full sandbox and at the floor, built by

@@ -535,7 +535,7 @@ fn allowed_to(graded: bool) -> Vec<serde_json::Value> {
 /// someone new). `--shared` memory and `worktree push` are named in the ruling. A chat on no
 /// persona and outside any plane: what names its persona or its workspace is tested by
 /// `a_chat_writes_its_own_persona_s_and_workspace_s_memory_unasked_and_no_other_s`.
-const OWN_SCOPE: [&str; 22] = [
+const OWN_SCOPE: [&str; 23] = [
     "purlis persona recall cluster",
     "purlis recall cluster",
     "purlis workspace recall build",
@@ -558,12 +558,14 @@ const OWN_SCOPE: [&str; 22] = [
     "purlis theme list",
     "purlis persona show steward",
     "purlis dispatch list --help",
+    // #3879: the app removes it only where nothing would be lost.
+    "purlis worktree remove purlis guard-port",
 ];
 
 /// What still reaches past the chat's own work, or cannot be taken back (#3829): each is
 /// asked about as before, by the harness or the operator's own rule. A todo is added and
 /// closed by its tools, so no spelling of the command that adds or closes one runs unasked.
-const STILL_ASKED: [&str; 25] = [
+const STILL_ASKED: [&str; 24] = [
     "purlis secret exec db -- psql",
     "purlis persona forget cluster",
     "purlis workspace forget build",
@@ -581,7 +583,6 @@ const STILL_ASKED: [&str; 25] = [
     "purlis ws todo promote port-the-guard --repo purlis",
     "purlis ws todo forget port-the-guard",
     "purlis ws todo reopen port-the-guard",
-    "purlis worktree remove guard-port",
     "purlis worktree add purlis guard-port",
     "purlis persona remove steward",
     "purlis persona remember \"the cluster is eu-west\"",

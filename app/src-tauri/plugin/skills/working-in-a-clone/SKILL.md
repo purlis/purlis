@@ -13,6 +13,7 @@ repo. This skill crosses that boundary correctly.
 
 ```bash
 purlis workspace current      # the active workspace, by name
+purlis root                   # the plane root this folder sits in, from anywhere under it
 ```
 
 Clones live at `workspaces/<workspace>/<repo>`. Work in the **active** workspace only.
@@ -57,26 +58,54 @@ folder (a git worktree) of the clone, on its own branch. Don't switch the shared
 branch, don't make a second workspace just for a second checkout, and don't run a raw
 `git worktree add` (a sandboxed chat is refused it).
 
+A chat that cuts its own piece was started above it, usually in the workspace folder
+`workspaces/<ws>`. This is the whole round from there, one command per call:
+
 ```bash
-purlis worktree add <repo> <piece>     # cuts workspaces/<ws>/.worktrees/<repo>/<piece> on branch <piece>
-cd workspaces/<ws>/.worktrees/<repo>/<piece>
-purlis worktree update                 # rebase onto the base; --continue / --abort after a conflict
-purlis worktree commit -m "<message>" <paths>   # or --all for every tracked change
-purlis worktree push                   # pushes the branch after purlis's scan of what it publishes
-purlis worktree done                   # finished; or: purlis worktree abandon "<why>"
+purlis worktree add <repo> <piece>     # cuts .worktrees/<repo>/<piece> on branch <piece>
+env -C .worktrees/<repo>/<piece> purlis worktree update   # rebase onto the base; --continue / --abort after a conflict
+purlis worktree commit -m "<message>" .worktrees/<repo>/<piece>/<path> …   # or just .worktrees/<repo>/<piece> for every change in it
+env -C .worktrees/<repo>/<piece> purlis worktree push     # pushes the branch after purlis's scan of what it publishes
+env -C .worktrees/<repo>/<piece> purlis worktree done     # finished; or: … purlis worktree abandon "<why>"
+purlis worktree remove <repo> <piece>  # once merged: the app removes the folder if nothing would be lost
 ```
 
 - `add` takes `--base <branch>` to start from something other than the default branch. Exit 2
-  means the piece name is already claimed, so pick another name.
-- Run `commit`, `update`, `push`, `done` and `abandon` from inside the piece. In a sandboxed
-  chat the app runs them outside the sandbox, and it goes by the folder the chat was started
-  in, not the one it `cd`'d into. A chat started above the piece names it instead:
-  `purlis worktree commit -m "<message>" .worktrees/<repo>/<piece>` commits every change in it,
-  or name paths under it. `commit` only commits: no amend, reset, rebase or
-  push, and the repo's own hooks don't run. A chat outside the sandbox can use plain git.
+  means the piece name is already claimed, so pick another name. `add` and `list` work from
+  anywhere in the workspace.
+- **`commit` takes paths as git does where it runs.** Run inside the piece
+  (`env -C .worktrees/<repo>/<piece> purlis worktree commit -m "<message>" <path> …`), paths
+  are relative to that folder, and `--all` commits every change to a tracked file. Run from
+  the folder the chat was started in, name the piece or paths under it from there:
+  `.worktrees/<repo>/<piece>/…` from the workspace folder,
+  `workspaces/<ws>/.worktrees/<repo>/<piece>/…` from the plane root; naming the piece's own
+  folder commits every change in it. Either way the piece must be the chat's own folder or one
+  below it. A message may start with `-`.
+- **`update`, `push`, `done` and `abandon` go by the current folder** of the command. Run them
+  from inside the piece: `env -C <piece> purlis worktree …` does it in one command.
+- **`remove` is for a finished piece**, from the workspace folder, never from inside it. The
+  app removes it only when it holds no uncommitted change and no commit that no other branch
+  reaches, or its branch landed by a squash merge; otherwise it names what would be lost and
+  removes nothing. A piece another live chat works in is not removed for you. `--force` is the
+  person's: ask them to remove it from the window. Where purlis's tools are offered, the
+  `worktree_remove` tool (`repo`, `piece`) does the same, and `worktree_update` updates.
+- Run `commit`, `update` and `remove` alone in their call: a `cd … &&` before them, a pipe or
+  redirection, or a `$(…)` anywhere (a message from `$(cat msg)` too) is refused. Write the
+  message out in the `-m` text.
+- `commit` only commits: no amend, reset, rebase or push, and the repo's own hooks don't run.
+- `purlis worktree commit` is for a sandboxed chat. A chat outside the sandbox, such as a
+  terminal `claude`, is told to use git: it commits with plain `git commit` in the piece, and
+  pushes with `git push` or `purlis worktree push`.
+- **A piece has one live writer.** The first chat to commit, update or push in it holds it. In a
+  piece another live chat holds, those are refused, through `purlis worktree` and with plain
+  `git commit`, `git pull`, `git rebase` or `git push` alike, naming the chat that holds it. Cut a piece of your own; the
+  holder hands it over with `purlis worktree done` or `abandon`.
 - `purlis worktree list` shows the workspace's pieces and what each declared.
 - A new workspace (`purlis workspace create`) is for a new task, not for another checkout of a
   repo you already have.
+- `--base origin/main` (a remote-tracking branch) works for `add` and `update` when the clone's
+  own `main` is stale. `update --base <branch>` moves the piece onto it carrying only the
+  piece's own commits.
 
 ## The boundary that is easy to get wrong
 

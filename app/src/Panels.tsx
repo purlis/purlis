@@ -711,6 +711,8 @@ function AddTodo({
 }) {
   const [text, setText] = useState("");
   const [trouble, setTrouble] = useState<string>();
+  /** How many sends were refused: each is a new answer, said once by the form (#3291). */
+  const [answers, setAnswers] = useState(0);
   const [busy, setBusy] = useState(false);
   /** Why the project is read-only, when it is (#826): a todo is committed, so the box is off,
    *  with the sentence as its tooltip. */
@@ -722,12 +724,18 @@ function AddTodo({
     const refused = await onAdd(workspace, words);
     setBusy(false);
     setTrouble(refused);
+    if (refused !== undefined) setAnswers((n) => n + 1);
     if (refused === undefined) setText("");
   };
   return (
     <>
       <Form
         className="panel-search"
+        refused={
+          trouble === undefined
+            ? undefined
+            : { fields: [{ name: `New todo in ${workspace}`, why: trouble }], answer: answers }
+        }
         onSubmit={(event) => {
           event.preventDefault();
           void add();

@@ -4,7 +4,7 @@
 //! **The pools this desktop added, and the runners it pinned** (ADR 0078 §3 and §8, #2525,
 //! #2679, #2749): `<config>/runners.json`, ruled 2026-10-18 and 2026-10-20, `{"version": 1,
 //! "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp", "suspendAfter",
-//! "frames", "width"}], "runners":
+//! "frames", "width", "profiles"}], "runners":
 //! [{"name", "pool", "container", "image", "user", "home", "device", "key", "paired", "of"?,
 //! "draining"?}]}`.
 //!
@@ -12,7 +12,9 @@
 //!   image by digest, and the limits the person set, each left out where purlis's default
 //!   holds ([`crate::dockerpool::Limits`]), and how long its runner is left without a link
 //!   before it suspends itself (`suspendAfter`, #3471, ruled 2026-10-28), left out at a day. Its browsers' frame limits over the link
-//!   are among them (#3297). A workspace names a pool (`machine.json`), and a name
+//!   are among them (#3297). So are the profiles its runner keeps (`profiles`, #4047, ruled
+//!   2026-10-30): the names chosen for it, or, left out, the profile a new chat in the open
+//!   project gets ([`Pool::profiles_kept`]). A workspace names a pool (`machine.json`), and a name
 //!   that is not kept here, or whose runner is not, starts no chat ([`runner_for`]).
 //! - **A runner's device id and public link key are kept once** ([`keep`]): a later answer for
 //!   a runner already kept, with another device id or key, is refused and what was kept stays
@@ -28,6 +30,10 @@
 //!   replaces is kept `"draining": true` and starts no new chat, and is removed once its last
 //!   chat has ended ([`succeed_locked`], [`draining`]). A runner kept without `of` is the
 //!   runner of the pool of its name.
+//! - **A cluster pool is a Pool of a team's cluster, reached through `kubectl`** (#3292): its
+//!   row names the kubeconfig and context, the cluster's Pool, the namespace its claims are made
+//!   in, and the cluster operator key pinned as it was added ([`ClusterPool`]); its one runner's
+//!   row names its claim, its pod and what its pairing answered ([`ClusterKept`]).
 //! - **The file is this user's alone**, `0600` in the config home's own folder, and denied to
 //!   chats. A file of another version or shape is refused rather than read or replaced.
 
@@ -36,6 +42,7 @@ use std::path::Path;
 use purlis_session_protocol::browsing::LinkFrames;
 use purlis_session_protocol::hostlink::Pinned;
 
+use crate::clusterpool::{self, Claimed, Kubectl, OperatorKey, PoolPin};
 use crate::dockerpool::{ContainerId, Docker, Image, Limits, Made, Runner, User};
 use crate::machine::{RUNNERS_FILE, RUNNERS_LOCK};
 
@@ -90,6 +97,8 @@ pub struct Pool {
     set: Set,
     limits: Limits,
     price: Option<Price>,
+    /// The profiles chosen for it (`profiles`, #4047), in order; `None` where none were.
+    profiles: Option<Vec<String>>,
 }
 
 /// **What one hour of a pool's runner costs, as the pool declares it** (#3491, the person's
@@ -173,6 +182,7 @@ impl Pool {
             set,
             limits,
             price: None,
+            profiles: None,
         })
     }
 
@@ -193,6 +203,23 @@ impl Pool {
     /// The price per hour it declares, if any (#3491): only then is money shown for it.
     pub fn price(&self) -> Option<&Price> {
         self.price.as_ref()
+    }
+
+    /// This pool, keeping the profiles `profiles` on its runner, or, `None`, the default
+    /// (#4047).
+    pub fn keeping_profiles(self, profiles: Option<Vec<String>>) -> Pool {
+        Pool { profiles, ..self }
+    }
+
+    /// The profiles chosen for it (#4047), if any were: `None` keeps the default.
+    pub fn profiles(&self) -> Option<&[String]> {
+        self.profiles.as_deref()
+    }
+
+    /// **The profiles its runner keeps** (#4047): the ones chosen for it, or, where none were,
+    /// `default`, the profile a new chat in the open project gets, if there is one.
+    pub fn profiles_kept(&self, default: Option<&str>) -> Vec<String> {
+        kept_of(self.profiles.as_deref(), default)
     }
 
     pub fn name(&self) -> &str {
@@ -224,12 +251,13 @@ impl Pool {
     /// **What defines this pool, as a digest** (#2050): SHA-256, in hex, of its row as this file
     /// keeps it (its name, kind, image, the limits the person set and its `suspendAfter`), so any
     /// change to how it is defined changes it. Its price is not how it is defined, and is left
-    /// out (#3491).
+    /// out (#3491), and so are the profiles it keeps (#4047).
     pub fn definition_digest(&self) -> String {
         use sha2::Digest as _;
         let mut row = pool_to_row(self);
         if let Some(fields) = row.as_object_mut() {
             fields.remove("pricePerHour");
+            fields.remove("profiles");
         }
         let row = row.to_string();
         crate::runnerlink::hex_of(&sha2::Sha256::digest(row.as_bytes()))
@@ -298,6 +326,32 @@ impl Kept {
 struct Held {
     pools: Vec<Pool>,
     runners: Vec<Kept>,
+    /// The cluster pools, after the Docker pools in the file (#3292).
+    clusters: Vec<ClusterPool>,
+    /// The cluster pools' runners, after the Docker runners in the file.
+    cluster_runners: Vec<ClusterKept>,
+}
+
+impl Held {
+    /// Whether a pool or runner of either kind is kept as `name`.
+    fn names(&self, name: &str) -> bool {
+        self.pools.iter().any(|kept| kept.name() == name)
+            || self.runners.iter().any(|kept| kept.name() == name)
+            || self.clusters.iter().any(|kept| kept.name() == name)
+            || self.cluster_runners.iter().any(|kept| kept.name == name)
+    }
+
+    /// Every runner's pin, of either kind.
+    fn pins(&self) -> impl Iterator<Item = (&str, &Pinned)> {
+        self.runners
+            .iter()
+            .map(|kept| (kept.name(), &kept.pinned))
+            .chain(
+                self.cluster_runners
+                    .iter()
+                    .map(|kept| (kept.name.as_str(), &kept.pinned)),
+            )
+    }
 }
 
 /// The file under `config_root`, or none where there is no file; refused where it cannot be
@@ -338,12 +392,27 @@ fn load(config_root: &Path) -> Result<Held, Refused> {
                 .ok_or_else(unreadable),
         }
     };
-    let runners = rows("runners")?
-        .iter()
+    let kind = |row: &serde_json::Value, key: &str| {
+        row.get(key).and_then(serde_json::Value::as_str) == Some(CLUSTER)
+    };
+    let (cluster_runners, runners): (Vec<&serde_json::Value>, Vec<&serde_json::Value>) =
+        rows("runners")?.iter().partition(|row| kind(row, "pool"));
+    let (clusters, pools): (Vec<&serde_json::Value>, Vec<&serde_json::Value>) =
+        rows("pools")?.iter().partition(|row| kind(row, "kind"));
+    let runners = runners
+        .into_iter()
         .map(|row| from_row(row).ok_or_else(unreadable))
         .collect::<Result<Vec<_>, _>>()?;
-    let pools = rows("pools")?
-        .iter()
+    let cluster_runners = cluster_runners
+        .into_iter()
+        .map(|row| cluster_runner_from_row(row).ok_or_else(unreadable))
+        .collect::<Result<Vec<_>, _>>()?;
+    let clusters = clusters
+        .into_iter()
+        .map(|row| cluster_pool_from_row(row).ok_or_else(unreadable))
+        .collect::<Result<Vec<_>, _>>()?;
+    let pools = pools
+        .into_iter()
         .map(|row| {
             pool_from_row(row).map_err(|why| match why {
                 // Said, so the person who typed it knows which value to put right (#3491).
@@ -355,12 +424,28 @@ fn load(config_root: &Path) -> Result<Held, Refused> {
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let mut names: Vec<&str> = pools.iter().map(Pool::name).collect();
+    let mut names: Vec<&str> = pools
+        .iter()
+        .map(Pool::name)
+        .chain(clusters.iter().map(ClusterPool::name))
+        .collect();
     names.sort_unstable();
     if names.windows(2).any(|two| two[0] == two[1]) {
         return Err(unreadable());
     }
-    Ok(Held { pools, runners })
+    // A cluster runner is kept only as the runner of its pool, under the pool's name.
+    if cluster_runners
+        .iter()
+        .any(|kept| !clusters.iter().any(|pool| pool.name() == kept.name))
+    {
+        return Err(unreadable());
+    }
+    Ok(Held {
+        pools,
+        runners,
+        clusters,
+        cluster_runners,
+    })
 }
 
 /// The runners kept under `config_root`, in the order they were kept: none where there is no
@@ -470,15 +555,138 @@ pub fn record_pool_locked(
 ) -> Result<(), Refused> {
     let mut held = load(config_root)?;
     let name = pool.name();
-    if held.pools.iter().any(|kept| kept.name() == name)
-        || held.runners.iter().any(|kept| kept.name() == name)
-    {
+    if held.names(name) {
         return Err(Refused::Other(format!(
             "a pool or a runner named {name} is on this machine already; name the pool \
              otherwise"
         )));
     }
     held.pools.push(pool.clone());
+    write(config_root, &held)
+}
+
+/// **Has the pool `name` keep the profiles `profiles` on its runner** (#4047), a Docker pool or
+/// a cluster pool (#3819), or, `None`, the default: refused where no such pool is kept, and what
+/// is kept stays.
+pub fn set_pool_profiles(
+    config_root: &Path,
+    name: &str,
+    profiles: Option<Vec<String>>,
+) -> Result<(), Refused> {
+    change_pool_profiles(config_root, name, |_| profiles)
+}
+
+/// **Has the Docker pool `name`, where it names no profiles, name `profiles` from now on**
+/// (#4060): read and written under the file's lock, so a pool that names its own meanwhile
+/// keeps them as they are. Refused where no such pool is kept.
+pub fn name_pool_profiles_where_none(
+    config_root: &Path,
+    name: &str,
+    profiles: Vec<String>,
+) -> Result<(), Refused> {
+    change_pool_profiles(config_root, name, |chosen| {
+        Some(chosen.map_or(profiles, <[String]>::to_vec))
+    })
+}
+
+/// **Adds the profile `profile` to the pool `name`** (#4047, of either kind since #3819): a pool
+/// that named none keeps `default`, the profile a new chat in the open project gets, beside it.
+/// Kept once.
+pub fn add_pool_profile(
+    config_root: &Path,
+    name: &str,
+    profile: &str,
+    default: Option<&str>,
+) -> Result<(), Refused> {
+    if !crate::profiles::name_ok(profile) {
+        return Err(Refused::Other(format!(
+            "'{}' is not a profile's name, so pool {name} keeps it not",
+            crate::shown::short(profile)
+        )));
+    }
+    change_pool_profiles(config_root, name, |chosen| {
+        let mut kept = kept_of(chosen, default);
+        if !kept.iter().any(|one| one == profile) {
+            kept.push(profile.to_owned());
+        }
+        Some(kept)
+    })
+}
+
+/// **Takes the profile `profile` off the pool `name`** (#4047, of either kind since #3819): a
+/// pool that named none starts from `default`, so the last one taken off leaves it keeping none.
+pub fn remove_pool_profile(
+    config_root: &Path,
+    name: &str,
+    profile: &str,
+    default: Option<&str>,
+) -> Result<(), Refused> {
+    change_pool_profiles(config_root, name, |chosen| {
+        let mut kept = kept_of(chosen, default);
+        kept.retain(|one| one != profile);
+        Some(kept)
+    })
+}
+
+/// The profiles `chosen` for a pool, or, where none were, `default` (#4047).
+fn kept_of(chosen: Option<&[String]>, default: Option<&str>) -> Vec<String> {
+    match chosen {
+        Some(chosen) => chosen.to_vec(),
+        None => default.map(str::to_owned).into_iter().collect(),
+    }
+}
+
+/// **The profiles chosen for pool `name`**, a Docker pool or a cluster pool (#4047, #3819), if
+/// any were: `None` keeps the default. Refused where no pool is called `name`.
+pub fn profiles_of(config_root: &Path, name: &str) -> Result<Option<Vec<String>>, Refused> {
+    let held = load(config_root)?;
+    held.pools
+        .iter()
+        .find(|pool| pool.name() == name)
+        .map(|pool| pool.profiles().map(<[String]>::to_vec))
+        .or_else(|| {
+            held.clusters
+                .iter()
+                .find(|pool| pool.name() == name)
+                .map(|pool| pool.profiles().map(<[String]>::to_vec))
+        })
+        .ok_or_else(|| no_pool_keeps_profiles(name))
+}
+
+/// **The profiles pool `name`'s runner keeps**, of either kind (#4047, #3819): the ones chosen
+/// for it, or, where none were, `default`. Refused where no pool is called `name`.
+pub fn profiles_kept_of(
+    config_root: &Path,
+    name: &str,
+    default: Option<&str>,
+) -> Result<Vec<String>, Refused> {
+    Ok(kept_of(profiles_of(config_root, name)?.as_deref(), default))
+}
+
+fn no_pool_keeps_profiles(name: &str) -> Refused {
+    Refused::Other(format!(
+        "there is no pool named {name} on this machine that keeps profiles"
+    ))
+}
+
+/// Changes the profiles chosen for pool `name`, of either kind, to what `change` makes of the
+/// ones chosen for it now, `None` where none were.
+fn change_pool_profiles(
+    config_root: &Path,
+    name: &str,
+    change: impl FnOnce(Option<&[String]>) -> Option<Vec<String>>,
+) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    if let Some(at) = held.pools.iter().position(|pool| pool.name() == name) {
+        let profiles = change(held.pools[at].profiles());
+        held.pools[at] = held.pools[at].clone().keeping_profiles(profiles);
+    } else if let Some(at) = held.clusters.iter().position(|pool| pool.name() == name) {
+        let profiles = change(held.clusters[at].profiles());
+        held.clusters[at].profiles = profiles;
+    } else {
+        return Err(no_pool_keeps_profiles(name));
+    }
     write(config_root, &held)
 }
 
@@ -490,9 +698,10 @@ pub fn forget_pool(config_root: &Path, name: &str) -> Result<(), Refused> {
 /// [`forget_pool`], under `_locked`.
 pub fn forget_pool_locked(config_root: &Path, name: &str, _locked: &Locked) -> Result<(), Refused> {
     let mut held = load(config_root)?;
-    let before = held.pools.len();
+    let before = held.pools.len() + held.clusters.len();
     held.pools.retain(|kept| kept.name() != name);
-    if held.pools.len() != before {
+    held.clusters.retain(|kept| kept.name() != name);
+    if held.pools.len() + held.clusters.len() != before {
         write(config_root, &held)?;
     }
     Ok(())
@@ -584,6 +793,13 @@ fn keep_in(
     of: Option<&str>,
 ) -> Result<Kept, Refused> {
     let name = made.runner.name();
+    if held.clusters.iter().any(|pool| pool.name() == name)
+        || held.cluster_runners.iter().any(|kept| kept.name == name)
+    {
+        return Err(Refused::Other(format!(
+            "a cluster pool named {name} is on this machine already; name the pool otherwise"
+        )));
+    }
     if !for_its_pool && held.pools.iter().any(|pool| pool.name() == name) {
         return Err(Refused::Other(format!(
             "runner {name} is named as pool {name} is, so purlis did not keep it; a pool's \
@@ -612,13 +828,21 @@ fn keep_in(
              it; remove the runner and make it again"
         )));
     }
-    if let Some(other) = kept.iter().find(|kept| {
-        same_device(&kept.pinned.device, &answered.device) || kept.pinned.key == answered.key
-    }) {
+    let other = kept
+        .iter()
+        .map(|kept| (kept.name(), &kept.pinned))
+        .chain(
+            held.cluster_runners
+                .iter()
+                .map(|kept| (kept.name.as_str(), &kept.pinned)),
+        )
+        .find(|(_, pinned)| {
+            same_device(&pinned.device, &answered.device) || pinned.key == answered.key
+        });
+    if let Some((other, _)) = other {
         return Err(Refused::Other(format!(
-            "runner {name} answered with the device id or key of runner {}, so purlis did not \
-             keep it; remove runner {name} and make it again",
-            other.name()
+            "runner {name} answered with the device id or key of runner {other}, so purlis did \
+             not keep it; remove runner {name} and make it again"
         )));
     }
     let new = Kept {
@@ -753,10 +977,20 @@ fn forget_locked(config_root: &Path, name: &str, _locked: &Locked) -> Result<(),
 /// Writes `held` whole: `pools` left out while there is none, so a machine that added no pool
 /// keeps the file #2525 wrote.
 fn write(config_root: &Path, held: &Held) -> Result<(), Refused> {
-    let rows: Vec<serde_json::Value> = held.runners.iter().map(to_row).collect();
+    let rows: Vec<serde_json::Value> = held
+        .runners
+        .iter()
+        .map(to_row)
+        .chain(held.cluster_runners.iter().map(cluster_runner_to_row))
+        .collect();
     let mut text = serde_json::json!({ "version": 1, "runners": rows });
-    if !held.pools.is_empty() {
-        text["pools"] = held.pools.iter().map(pool_to_row).collect();
+    if !held.pools.is_empty() || !held.clusters.is_empty() {
+        text["pools"] = held
+            .pools
+            .iter()
+            .map(pool_to_row)
+            .chain(held.clusters.iter().map(cluster_pool_to_row))
+            .collect();
     }
     purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config_root))
         .and_then(|folder| folder.replace_file(RUNNERS_FILE, format!("{text:#}\n").as_bytes()))
@@ -910,6 +1144,9 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
     if let Some(width) = set.width {
         row["width"] = width.into();
     }
+    if let Some(profiles) = pool.profiles() {
+        row["profiles"] = profiles.into();
+    }
     row
 }
 
@@ -917,7 +1154,8 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
 /// [`pool_to_row`] writes them: `cpus` a number of CPUs to the thousandth, `memory` and `tmp`
 /// in MiB, `processes` a count, `suspendAfter` a duration in seconds, minutes or hours (`"24h"`,
 /// [`crate::spelledtime`]), `frames` a count a second and `width` in pixels (#3297), and
-/// `pricePerHour` where the pool declares one (#3491). Any other
+/// `pricePerHour` where the pool declares one (#3491), and `profiles`, the names of the profiles
+/// chosen for it, each once (#4047). Any other
 /// key, or a value of another shape, is refused: with the reason for a price, which the person
 /// writes by hand (#3491), and with none for anything else.
 fn pool_from_row(row: &serde_json::Value) -> Result<Pool, Option<String>> {
@@ -932,9 +1170,26 @@ fn pool_from_row(row: &serde_json::Value) -> Result<Pool, Option<String>> {
             Some(format!("the pricePerHour of {pool} is not a price: {why}"))
         })?),
     };
+    let profiles = match row.get("profiles") {
+        None => None,
+        Some(profiles) => Some(profiles_from_row(profiles).ok_or(None)?),
+    };
     plain_pool_from_row(row)
-        .map(|pool| pool.priced(price))
+        .map(|pool| pool.priced(price).keeping_profiles(profiles))
         .ok_or(None)
+}
+
+/// A pool's `profiles`: a list of profile names, each once, or `None`.
+fn profiles_from_row(profiles: &serde_json::Value) -> Option<Vec<String>> {
+    let mut named: Vec<String> = Vec::new();
+    for profile in profiles.as_array()? {
+        let profile = profile.as_str()?;
+        if !crate::profiles::name_ok(profile) || named.iter().any(|kept| kept == profile) {
+            return None;
+        }
+        named.push(profile.to_owned());
+    }
+    Some(named)
 }
 
 /// A pool's `pricePerHour`, `{"amount": "<decimal>", "currency": "<ISO 4217>"}`, or why not.
@@ -969,6 +1224,7 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         "pricePerHour",
         "frames",
         "width",
+        "profiles",
     ];
     if fields.keys().any(|key| !known.contains(&key.as_str())) {
         return None;
@@ -1018,6 +1274,719 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
     Pool::new(text("name")?, Image::pinned(text("image")?).ok()?, set).ok()
 }
 
+/// The kind a cluster pool's row, and its runner's, are of (#3292).
+const CLUSTER: &str = "cluster";
+
+/// **A cluster pool on this machine, as the person added it** (#3292): its name, which its one
+/// runner is called by too; the kubeconfig and context its `kubectl` is pointed at, each named
+/// on every run; the cluster's Pool its runner is claimed from; the namespace its claim is made
+/// in; and its pin ([`PoolPin`], #3305): the cluster operator's key and the pool's cluster, as
+/// the pool was added and as the key has rolled since, which every statement about its runner
+/// must be signed with and made in.
+///
+/// **A pin with no cluster is no pin** (#3305): a row holding the key alone is read, so the file
+/// stays readable, but its pool reaches no runner and says to add it again ([`Self::pin`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClusterPool {
+    name: String,
+    kubeconfig: std::path::PathBuf,
+    context: String,
+    pool: String,
+    namespace: String,
+    operator: OperatorKey,
+    cluster: Option<String>,
+    /// The programs its kubectl runs, each as named, every link on the way and its real file, as
+    /// they were found when it was added:
+    /// kubectl itself and each credential plugin its context names (#3292). A chat writes none of
+    /// them ([`cluster_holds`]).
+    holds: Vec<std::path::PathBuf>,
+    /// **The person's mark that this pool is their own** (#4071): set only by their press in
+    /// their window ([`set_cluster_owned`]), never as it is added, and read from nothing a chat,
+    /// the Pool or the operator says.
+    owned: bool,
+    /// **Whether the cluster's Pool opts it in to minting there** (`mintInCluster`, #4204), as
+    /// the Pool's spec said when it was added: the admin's word, never the person's or a chat's.
+    /// The operator holds the Pool itself and refuses by it, so this says only how to ask.
+    mint_in_cluster: bool,
+    /// The profiles chosen for it (`profiles`, #3819), in order, as a Docker pool's are;
+    /// `None` where none were.
+    profiles: Option<Vec<String>>,
+}
+
+impl ClusterPool {
+    /// A cluster pool called `name` (as a Docker pool is named), its kubeconfig an absolute
+    /// path, its context a name kubectl knows, its cluster `pool` and `namespace` named as
+    /// Kubernetes names them, pinning `pin`.
+    pub fn new(
+        name: &str,
+        kubeconfig: &Path,
+        context: &str,
+        pool: &str,
+        namespace: &str,
+        pin: PoolPin,
+    ) -> Result<ClusterPool, Refused> {
+        ClusterPool::held(
+            name,
+            kubeconfig,
+            context,
+            pool,
+            namespace,
+            pin.key,
+            Some(pin.cluster),
+        )
+    }
+
+    /// [`ClusterPool::new`], its pin's cluster `cluster`, where there is one.
+    fn held(
+        name: &str,
+        kubeconfig: &Path,
+        context: &str,
+        pool: &str,
+        namespace: &str,
+        operator: OperatorKey,
+        cluster: Option<String>,
+    ) -> Result<ClusterPool, Refused> {
+        if cluster
+            .as_deref()
+            .is_some_and(|cluster| !clusterpool::is_uid(cluster))
+        {
+            return Err(Refused::Other(
+                "a cluster pool's cluster is the uid of its kube-system namespace".into(),
+            ));
+        }
+        usable_pool_name(name).map_err(Refused::Other)?;
+        if !kubeconfig.is_absolute() || kubeconfig.to_str().is_none_or(|text| !plain_text(text)) {
+            return Err(Refused::Other(format!(
+                "\"{}\" is not a kubeconfig purlis can name: give its absolute path",
+                kubeconfig.display()
+            )));
+        }
+        if !clusterpool::is_context(context) {
+            return Err(Refused::Other(format!(
+                "\"{context}\" is not a kubeconfig context purlis can name"
+            )));
+        }
+        if !clusterpool::is_subdomain(pool) {
+            return Err(Refused::Other(format!(
+                "\"{pool}\" is not a cluster pool's name: lower-case letters, digits, dashes and \
+                 dots, as Kubernetes names it"
+            )));
+        }
+        if !clusterpool::is_label(namespace) {
+            return Err(Refused::Other(format!(
+                "\"{namespace}\" is not a namespace's name"
+            )));
+        }
+        Ok(ClusterPool {
+            name: name.to_owned(),
+            kubeconfig: kubeconfig.to_path_buf(),
+            context: context.to_owned(),
+            pool: pool.to_owned(),
+            namespace: namespace.to_owned(),
+            operator,
+            cluster,
+            holds: Vec::new(),
+            owned: false,
+            mint_in_cluster: false,
+            profiles: None,
+        })
+    }
+
+    /// This pool, as the cluster's Pool `opted_in` to minting there as it was added (#4204).
+    pub fn minting_in_cluster(self, opted_in: bool) -> ClusterPool {
+        ClusterPool {
+            mint_in_cluster: opted_in,
+            ..self
+        }
+    }
+
+    /// Whether the cluster's Pool opted it in to minting there as it was added (#4204).
+    pub fn mints_in_cluster(&self) -> bool {
+        self.mint_in_cluster
+    }
+
+    /// This pool, holding `holds`, the programs its kubectl runs as named, every link on the way
+    /// and their real files, for no chat to write (#3292). Each is absolute.
+    pub fn holding(self, holds: Vec<std::path::PathBuf>) -> Result<ClusterPool, Refused> {
+        if let Some(relative) = holds.iter().find(|held| !held.is_absolute()) {
+            return Err(Refused::Other(format!(
+                "{} is not a program's path purlis can hold",
+                relative.display()
+            )));
+        }
+        Ok(ClusterPool { holds, ..self })
+    }
+
+    /// The real paths of the programs its kubectl runs ([`ClusterPool::holding`]).
+    pub fn holds(&self) -> &[std::path::PathBuf] {
+        &self.holds
+    }
+
+    /// Whether the person marked this pool as their own (#4071). Never enough alone: see
+    /// `poollogins::Bound::of_a_cluster_pool`.
+    pub fn owned(&self) -> bool {
+        self.owned
+    }
+
+    /// The profiles chosen for it (#3819), if any were: `None` keeps the default, as a Docker
+    /// pool's ([`Pool::profiles`]).
+    pub fn profiles(&self) -> Option<&[String]> {
+        self.profiles.as_deref()
+    }
+
+    /// **The profiles its runner keeps** (#3819), as [`Pool::profiles_kept`] says of a Docker
+    /// pool's.
+    pub fn profiles_kept(&self, default: Option<&str>) -> Vec<String> {
+        kept_of(self.profiles.as_deref(), default)
+    }
+
+    /// **What a cluster runner's values are bound to, as a digest** (#4071, the person's ruling
+    /// of 2026-10-30): SHA-256, in hex, of this pool's context, cluster and operator key and
+    /// `kept`'s claim uid and pod, so any change to one asks again. Its device and link key are
+    /// bound apart, as a Docker runner's are; no image digest is.
+    pub fn bound_digest(&self, kept: &ClusterKept) -> String {
+        use sha2::Digest as _;
+        let bound = serde_json::json!([
+            self.context,
+            self.cluster,
+            self.operator.spelled(),
+            kept.claimed.uid,
+            kept.pod,
+        ])
+        .to_string();
+        crate::runnerlink::hex_of(&sha2::Sha256::digest(bound.as_bytes()))
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn kubeconfig(&self) -> &Path {
+        &self.kubeconfig
+    }
+
+    pub fn context(&self) -> &str {
+        &self.context
+    }
+
+    /// The cluster's Pool its runner is claimed from.
+    pub fn pool(&self) -> &str {
+        &self.pool
+    }
+
+    /// The namespace its claim is made in.
+    pub fn namespace(&self) -> &str {
+        &self.namespace
+    }
+
+    /// The cluster operator's key it pins.
+    pub fn operator(&self) -> &OperatorKey {
+        &self.operator
+    }
+
+    /// **Its pin**: the operator's key and its cluster. A pool kept with the key alone has none,
+    /// and is refused, saying to add it again: its statements could be made in any cluster.
+    pub fn pin(&self) -> Result<PoolPin, Refused> {
+        let cluster = self.cluster.clone().ok_or_else(|| {
+            Refused::Other(format!(
+                "cluster pool {} was kept with its cluster operator's key alone, not the cluster \
+                 it is in, so purlis does not link to its runner; remove the pool and add it again",
+                self.name
+            ))
+        })?;
+        Ok(PoolPin {
+            key: self.operator.clone(),
+            cluster,
+        })
+    }
+
+    /// This pool, its kubectl pointed at the kubeconfig `kubeconfig` from now on: its own copy
+    /// of the context, kept as it is added ([`keep_kubeconfig`]).
+    pub fn kept_at(&self, kubeconfig: &Path) -> ClusterPool {
+        ClusterPool {
+            kubeconfig: kubeconfig.to_path_buf(),
+            ..self.clone()
+        }
+    }
+
+    /// This pool, pinning `pin` from now on: its key moved by a roll (#3305).
+    fn repinned(&self, pin: &PoolPin) -> ClusterPool {
+        ClusterPool {
+            operator: pin.key.clone(),
+            cluster: Some(pin.cluster.clone()),
+            ..self.clone()
+        }
+    }
+
+    /// `kubectl`, pointed at this pool's kubeconfig and context.
+    pub fn kubectl(&self, kubectl: &Kubectl) -> Kubectl {
+        kubectl.clone().pointed_at(&self.kubeconfig, &self.context)
+    }
+}
+
+/// Whether `text` can be a kubeconfig's path or context in the file: not empty, at most 4096
+/// bytes, and nothing a control character could hide behind.
+fn plain_text(text: &str) -> bool {
+    !text.is_empty() && text.len() <= 4096 && !text.chars().any(char::is_control)
+}
+
+/// **A cluster pool's runner this desktop paired** (#3292): the claim it was made by, the pod
+/// the operator vouched for at its pairing, and the device id and key its pairing answered, kept
+/// once.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClusterKept {
+    /// Its pool's name, which it is called by.
+    pub name: String,
+    pub claimed: Claimed,
+    pub pod: String,
+    pub pinned: Pinned,
+    /// When it was paired, in seconds since the epoch.
+    pub paired: u64,
+}
+
+impl ClusterKept {
+    /// **The name a link to this runner reports** (`relay_to`'s answer, #4071): `<pool>/<runner>`
+    /// with the link key it was pinned with, so a link made to a runner since forgotten never
+    /// reads as the one kept under its name now.
+    pub fn reached(&self) -> String {
+        format!(
+            "{name}/{name}@{key}",
+            name = self.name,
+            key = crate::runnerlink::hex_of(self.pinned.key.as_bytes())
+        )
+    }
+}
+
+/// **What a pool's name reaches** (#3292): a Docker pool's runner, or a cluster pool with its
+/// runner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reached {
+    Docker(Kept),
+    Cluster(ClusterPool, ClusterKept),
+}
+
+/// The cluster pools added under `config_root`, in the order they were added (#3292).
+pub fn cluster_pools(config_root: &Path) -> Result<Vec<ClusterPool>, Refused> {
+    Ok(load(config_root)?.clusters)
+}
+
+/// The cluster pools' runners kept under `config_root` (#3292).
+pub fn cluster_runners(config_root: &Path) -> Result<Vec<ClusterKept>, Refused> {
+    Ok(load(config_root)?.cluster_runners)
+}
+
+/// The cluster pool `name` and its runner, where both are kept here; `None` where no cluster
+/// pool is called `name`, and refused where one is but its runner is not.
+pub fn cluster_runner_for(
+    config_root: &Path,
+    name: &str,
+) -> Result<Option<(ClusterPool, ClusterKept)>, Refused> {
+    let held = load(config_root)?;
+    let Some(pool) = held.clusters.into_iter().find(|pool| pool.name() == name) else {
+        return Ok(None);
+    };
+    // A pool kept without its cluster reaches nothing (#3305).
+    pool.pin()?;
+    let kept = held
+        .cluster_runners
+        .into_iter()
+        .find(|kept| kept.name == name)
+        .ok_or_else(|| {
+            Refused::Other(format!(
+                "cluster pool {name} has no runner kept on this machine, so nothing was started; \
+                 remove the pool and add it again"
+            ))
+        })?;
+    Ok(Some((pool, kept)))
+}
+
+/// **The runner a workspace whose chats run on `pool` starts them on**, of either kind
+/// (#3292): a cluster pool's, as [`cluster_runner_for`] says, else a Docker pool's, as
+/// [`runner_for`] says.
+pub fn runner_of(config_root: &Path, pool: &str) -> Result<Reached, Refused> {
+    if let Some((cluster, kept)) = cluster_runner_for(config_root, pool)? {
+        return Ok(Reached::Cluster(cluster, kept));
+    }
+    runner_for(config_root, pool).map(Reached::Docker)
+}
+
+/// **Every pool's name on this machine**, of either kind, Docker pools first, each in the order
+/// added: what a workspace's *Runs on* setting offers.
+pub fn pool_names(config_root: &Path) -> Result<Vec<String>, Refused> {
+    let held = load(config_root)?;
+    Ok(held
+        .pools
+        .iter()
+        .map(|pool| pool.name().to_owned())
+        .chain(held.clusters.iter().map(|pool| pool.name().to_owned()))
+        .collect())
+}
+
+/// **The person marks the cluster pool `name` as their own, or takes the mark back** (#4071):
+/// called only from their press in their window (`ui::WINDOW_ONLY`). Refused where no cluster
+/// pool is called `name`. Written only where it changes anything.
+pub fn set_cluster_owned(config_root: &Path, name: &str, owned: bool) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(at) = held.clusters.iter().position(|pool| pool.name() == name) else {
+        return Err(Refused::Other(format!(
+            "no cluster pool named {name} is on this machine"
+        )));
+    };
+    if held.clusters[at].owned == owned {
+        return Ok(());
+    }
+    held.clusters[at].owned = owned;
+    write(config_root, &held)
+}
+
+/// **Records the cluster pool `pool`, once** (#3292), under `_locked`: refused where a pool or
+/// runner of its name is kept already.
+pub fn record_cluster_pool_locked(
+    config_root: &Path,
+    pool: &ClusterPool,
+    _locked: &Locked,
+) -> Result<(), Refused> {
+    let mut held = load(config_root)?;
+    let name = pool.name();
+    if held.names(name) {
+        return Err(Refused::Other(format!(
+            "a pool or a runner named {name} is on this machine already; name the pool \
+             otherwise"
+        )));
+    }
+    held.clusters.push(pool.clone());
+    write(config_root, &held)
+}
+
+/// **Keeps `kept`, the runner of the cluster pool of its name, once** (#3292), under `_locked`,
+/// for the desktop that is `ours`: refused where its pool is not kept, where a runner of its
+/// name is kept already ([`Refused::KeyChanged`] where it was another), and where its device id
+/// or key is the desktop's own or another kept runner's.
+pub fn keep_cluster_runner_locked(
+    config_root: &Path,
+    kept: &ClusterKept,
+    ours: &Pinned,
+    _locked: &Locked,
+) -> Result<(), Refused> {
+    let mut held = load(config_root)?;
+    let name = kept.name.as_str();
+    if !held.clusters.iter().any(|pool| pool.name() == name) {
+        return Err(Refused::Other(format!(
+            "no cluster pool named {name} is on this machine"
+        )));
+    }
+    if let Some(there) = held.cluster_runners.iter().find(|one| one.name == name) {
+        return if there.claimed == kept.claimed
+            && there.pod == kept.pod
+            && same_pin(&there.pinned, &kept.pinned)
+        {
+            Ok(())
+        } else {
+            Err(Refused::KeyChanged {
+                name: name.to_owned(),
+            })
+        };
+    }
+    let answered = &kept.pinned;
+    if same_device(&answered.device, &ours.device) || answered.key == ours.key {
+        return Err(Refused::Other(format!(
+            "runner {name} answered with this machine's own device id or link key, so purlis \
+             did not keep it; remove the pool and add it again"
+        )));
+    }
+    if let Some((other, _)) = held.pins().find(|(_, pinned)| {
+        same_device(&pinned.device, &answered.device) || pinned.key == answered.key
+    }) {
+        return Err(Refused::Other(format!(
+            "runner {name} answered with the device id or key of runner {other}, so purlis did \
+             not keep it; remove the pool and add it again"
+        )));
+    }
+    held.cluster_runners.push(kept.clone());
+    write(config_root, &held)
+}
+
+/// Forgets the cluster runner kept as `name`, under `_locked`; nothing where none is.
+pub fn forget_cluster_runner_locked(
+    config_root: &Path,
+    name: &str,
+    _locked: &Locked,
+) -> Result<(), Refused> {
+    let mut held = load(config_root)?;
+    let before = held.cluster_runners.len();
+    held.cluster_runners.retain(|kept| kept.name != name);
+    if held.cluster_runners.len() != before {
+        write(config_root, &held)?;
+    }
+    Ok(())
+}
+
+/// **The programs every cluster pool's kubectl runs** (#3292), each as named and by its real
+/// path, once: what a chat's sandbox holds whole, with the package each belongs to, for no chat
+/// to write. None where the file cannot be read.
+pub fn cluster_holds(config_root: &Path) -> Vec<std::path::PathBuf> {
+    let mut held: Vec<std::path::PathBuf> = Vec::new();
+    for pool in cluster_pools(config_root).unwrap_or_default() {
+        for program in pool.holds() {
+            if !held.contains(program) {
+                held.push(program.clone());
+            }
+        }
+    }
+    held
+}
+
+/// **Where every cluster pool's kubectl keeps its caches** (`--cache-dir`, #3292): a folder of
+/// this user's alone beside the pools' own copies of their contexts, made where it is not.
+pub fn kubectl_cache(config_root: &Path) -> Result<std::path::PathBuf, Refused> {
+    let at = crate::machine::dir(config_root)
+        .join(crate::machine::CLUSTER_KUBECONFIGS_DIR)
+        .join(KUBECTL_CACHE);
+    purlis_same_user::PrivateDirectory::open(&at).map_err(|why| {
+        Refused::Other(format!("kubectl's cache folder could not be made: {why}"))
+    })?;
+    Ok(at)
+}
+
+/// The cache folder's name in [`crate::machine::CLUSTER_KUBECONFIGS_DIR`]: no pool's copy, which
+/// ends in `.yaml`, is called so.
+const KUBECTL_CACHE: &str = "cache";
+
+/// **Where the cluster pool `name` keeps its own copy of its kubeconfig's context** (#3292):
+/// `<pool>.yaml` in [`crate::machine::CLUSTER_KUBECONFIGS_DIR`].
+pub fn kubeconfig_kept_at(config_root: &Path, name: &str) -> std::path::PathBuf {
+    crate::machine::dir(config_root)
+        .join(crate::machine::CLUSTER_KUBECONFIGS_DIR)
+        .join(format!("{name}.yaml"))
+}
+
+/// **Keeps `context`, a kubeconfig of one context, as the cluster pool `name`'s own copy**
+/// (#3292), `0600` in a folder of this user's alone, replacing whole any it had: every run of
+/// its kubectl is pointed at it from then on, whatever the kubeconfig it was taken from says
+/// later. Where it is.
+pub fn keep_kubeconfig(
+    config_root: &Path,
+    name: &str,
+    context: &str,
+) -> Result<std::path::PathBuf, Refused> {
+    usable_pool_name(name).map_err(Refused::Other)?;
+    let at = kubeconfig_kept_at(config_root, name);
+    let folder = at.parent().map(Path::to_path_buf).unwrap_or_default();
+    purlis_same_user::PrivateDirectory::open(&folder)
+        .and_then(|folder| folder.replace_file(&format!("{name}.yaml"), context.as_bytes()))
+        .map_err(|why| {
+            Refused::Other(format!(
+                "pool {name}'s copy of its kubeconfig could not be kept: {why}"
+            ))
+        })?;
+    Ok(at)
+}
+
+/// **Removes the cluster pool `name`'s own copy of its kubeconfig** (#3292); nothing where
+/// there is none.
+pub fn forget_kubeconfig(config_root: &Path, name: &str) -> Result<(), Refused> {
+    match std::fs::remove_file(kubeconfig_kept_at(config_root, name)) {
+        Ok(()) => Ok(()),
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(why) => Err(Refused::Other(format!(
+            "pool {name}'s copy of its kubeconfig could not be removed: {why}"
+        ))),
+    }
+}
+
+/// **Keeps the cluster pool `name`'s pin as `pin`** (#3305), as [`PoolPin::follow`] moved it
+/// before a link: the pool's runner is linked with it from now on. Nothing where the pool is not
+/// kept, or pins it already.
+pub fn keep_cluster_pin(config_root: &Path, name: &str, pin: &PoolPin) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(at) = held.clusters.iter().position(|pool| pool.name() == name) else {
+        return Ok(());
+    };
+    if held.clusters[at].pin().as_ref() == Ok(pin) {
+        return Ok(());
+    }
+    held.clusters[at] = held.clusters[at].repinned(pin);
+    write(config_root, &held)
+}
+
+/// A cluster pool's row (#3292): `{"name", "kind": "cluster", "kubeconfig", "context", "pool",
+/// "namespace", "operatorKey", "cluster", "holds", "owned", "mintInCluster", "profiles"}`,
+/// `cluster` left out only of a pool kept before its cluster was pinned (#3305), `owned` and
+/// `mintInCluster` `true` alone, left out otherwise (#4071, #4204), and `profiles` as a Docker
+/// pool's, left out where none were chosen (#3819).
+fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
+    let mut row = serde_json::json!({
+        "name": pool.name(),
+        "kind": CLUSTER,
+        "kubeconfig": pool.kubeconfig().display().to_string(),
+        "context": pool.context(),
+        "pool": pool.pool(),
+        "namespace": pool.namespace(),
+        "operatorKey": pool.operator().spelled(),
+        "holds": pool
+            .holds()
+            .iter()
+            .map(|held| held.display().to_string())
+            .collect::<Vec<_>>(),
+    });
+    if let Some(cluster) = &pool.cluster {
+        row["cluster"] = cluster.as_str().into();
+    }
+    if pool.owned {
+        row["owned"] = true.into();
+    }
+    if pool.mint_in_cluster {
+        row["mintInCluster"] = true.into();
+    }
+    if let Some(profiles) = pool.profiles() {
+        row["profiles"] = profiles.into();
+    }
+    row
+}
+
+/// [`cluster_pool_to_row`]'s row read, exactly those keys, each as it writes them.
+fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
+    let fields = row.as_object()?;
+    let known = [
+        "name",
+        "kind",
+        "kubeconfig",
+        "context",
+        "pool",
+        "namespace",
+        "operatorKey",
+        "cluster",
+        "holds",
+        "owned",
+        "mintInCluster",
+        "profiles",
+    ];
+    if fields.keys().any(|key| !known.contains(&key.as_str())) {
+        return None;
+    }
+    let profiles = match fields.get("profiles") {
+        None => None,
+        Some(profiles) => Some(profiles_from_row(profiles)?),
+    };
+    // `true` alone: a mark spelled any other way is no mark, and the row is refused.
+    let owned = match fields.get("owned") {
+        None => false,
+        Some(serde_json::Value::Bool(true)) => true,
+        Some(_) => return None,
+    };
+    let mint_in_cluster = match fields.get("mintInCluster") {
+        None => false,
+        Some(serde_json::Value::Bool(true)) => true,
+        Some(_) => return None,
+    };
+    let holds = fields
+        .get("holds")?
+        .as_array()?
+        .iter()
+        .map(|held| held.as_str().map(std::path::PathBuf::from))
+        .collect::<Option<Vec<_>>>()?;
+    let text = |key: &str| fields.get(key).and_then(serde_json::Value::as_str);
+    // Every key but `cluster` and `owned` is there.
+    if known[..7].iter().any(|key| text(key).is_none()) {
+        return None;
+    }
+    let cluster = match fields.get("cluster") {
+        None => None,
+        Some(cluster) => Some(cluster.as_str()?.to_owned()),
+    };
+    ClusterPool::held(
+        text("name")?,
+        Path::new(text("kubeconfig")?),
+        text("context")?,
+        text("pool")?,
+        text("namespace")?,
+        OperatorKey::from_spelled(text("operatorKey")?).ok()?,
+        cluster,
+    )
+    .and_then(|pool| pool.holding(holds))
+    .map(|pool| ClusterPool {
+        owned,
+        mint_in_cluster,
+        profiles,
+        ..pool
+    })
+    .ok()
+}
+
+/// A cluster runner's row (#3292): `{"name", "pool": "cluster", "namespace", "claim",
+/// "claimUid", "requester", "pod", "device", "key", "paired"}`.
+fn cluster_runner_to_row(kept: &ClusterKept) -> serde_json::Value {
+    serde_json::json!({
+        "name": kept.name,
+        "pool": CLUSTER,
+        "namespace": kept.claimed.namespace,
+        "claim": kept.claimed.name,
+        "claimUid": kept.claimed.uid,
+        "requester": kept.claimed.requester,
+        "pod": kept.pod,
+        "device": kept.pinned.device,
+        "key": crate::runnerlink::hex_of(kept.pinned.key.as_bytes()),
+        "paired": kept.paired,
+    })
+}
+
+/// [`cluster_runner_to_row`]'s row read, exactly those keys, each as it writes them.
+fn cluster_runner_from_row(row: &serde_json::Value) -> Option<ClusterKept> {
+    let fields = row.as_object()?;
+    let known = [
+        "name",
+        "pool",
+        "namespace",
+        "claim",
+        "claimUid",
+        "requester",
+        "pod",
+        "device",
+        "key",
+        "paired",
+    ];
+    if fields.len() != known.len() || fields.keys().any(|key| !known.contains(&key.as_str())) {
+        return None;
+    }
+    let text = |key: &str| fields.get(key).and_then(serde_json::Value::as_str);
+    let name = text("name")?;
+    usable_pool_name(name).ok()?;
+    let (namespace, claim, uid, pod) = (
+        text("namespace")?,
+        text("claim")?,
+        text("claimUid")?,
+        text("pod")?,
+    );
+    let requester = text("requester")?;
+    let named = clusterpool::is_label(namespace)
+        && clusterpool::is_subdomain(claim)
+        && clusterpool::is_uid(uid)
+        && clusterpool::is_subdomain(pod)
+        && plain_text(requester)
+        && requester.len() <= 512;
+    if !named {
+        return None;
+    }
+    let pinned = crate::runnerlink::from_line(
+        &serde_json::json!({ "device": text("device")?, "key": text("key")? }).to_string(),
+    )
+    .ok()?;
+    Some(ClusterKept {
+        name: name.to_owned(),
+        claimed: Claimed {
+            namespace: namespace.to_owned(),
+            name: claim.to_owned(),
+            uid: uid.to_owned(),
+            requester: requester.to_owned(),
+        },
+        pod: pod.to_owned(),
+        pinned,
+        paired: fields.get("paired")?.as_u64()?,
+    })
+}
+
 /// A runner's hours not written are said, and change nothing else (#3492).
 fn record_hours(written: Result<(), String>) {
     if let Err(why) = written {
@@ -1025,7 +1994,7 @@ fn record_hours(written: Result<(), String>) {
     }
 }
 
-fn now() -> u64 {
+pub(crate) fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|since| since.as_secs())

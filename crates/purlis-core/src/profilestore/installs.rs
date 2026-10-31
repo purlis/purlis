@@ -19,15 +19,20 @@
 //! - **Into the runner's data home, on its own volume** (`<data>/harnesses/<kind>/<version>/`),
 //!   never under `/tmp`, which a pool mounts `noexec`. Each version is unpacked beside its final
 //!   place and moved there whole, so a version is there entirely or not at all.
-//! - **Only when a chat starts on it**: nothing is downloaded for a profile no runner chat starts
-//!   on, and a version installed once is run again without a download.
+//! - **Only when a chat starts on it, or it is signed in or asked about** (#4007): a chat's
+//!   start ([`for_a_start`]), its sign-in on the runner (`purlis profile sign-in`, which says
+//!   in its shell what it fetches, [`on_this_runner`]), and the desktop's question whether it is
+//!   signed in there ([`for_a_look`], which fetches it without holding the question up). Nothing
+//!   is downloaded for any other profile, and a version installed once is run again without a
+//!   download.
 //!
 //! Only a profile a runner keeps for its desktop (`kept_for`) with a pin is installed so. Every
 //! other profile, and every profile on the desktop, runs the harness on `PATH`, as before.
 
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::sync::{Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
 
@@ -248,13 +253,15 @@ pub fn program_in(data: &Path, kind: &str, version: &str) -> Option<PathBuf> {
 }
 
 /// **`kind`'s `version`, installed under the data home `data`**: its program, there already or
-/// installed now for `platform` through `fetch`, or why not, in words a chat says.
+/// installed now for `platform` through `fetch`, or why not, in words a chat says. A version not
+/// installed yet is said through `saying`, in one line, before it is fetched.
 pub fn install(
     data: &Path,
     kind: &str,
     version: &str,
     platform: Platform,
     fetch: &dyn Fetch,
+    saying: &dyn Fn(&str),
 ) -> Result<PathBuf, String> {
     let title = crate::harness_declaration::builtin(kind)
         .map_or_else(|| kind.to_owned(), |d| d.title.clone());
@@ -268,6 +275,10 @@ pub fn install(
     if is_installed(&program) {
         return Ok(program);
     }
+    saying(&format!(
+        "purlis is fetching {title} {version} for this runner from its vendor's release, checked \
+         against the SHA-256 its vendor publishes for it…"
+    ));
     let folder = data.join(DIR).join(kind);
     private_dirs(&folder).map_err(|e| not(crate::rewrite::os_words(&e)))?;
     // One install of a harness at a time: a second start waits, and finds it installed.
@@ -422,13 +433,14 @@ fn private_dirs(dir: &Path) -> io::Result<()> {
 
 /// **The program a chat on `record`, this runner's, runs**: for a profile kept for a desktop with
 /// a pin, the pinned version installed under the data home `data` for `platform` through `fetch`
-/// (now, where it is not there yet); `None` for any other profile, which runs the harness on
-/// `PATH`, and nothing is fetched for it.
+/// (now, where it is not there yet, said through `saying` as it is fetched); `None` for any other
+/// profile, which runs the harness on `PATH`, and nothing is fetched for it.
 pub fn program_for(
     record: &MachineProfile,
     data: &Path,
     platform: Option<Platform>,
     fetch: &dyn Fetch,
+    saying: &dyn Fn(&str),
 ) -> Result<Option<PathBuf>, String> {
     let (Some(_), Some(pinned)) = (&record.kept_for, &record.pinned) else {
         return Ok(None);
@@ -439,7 +451,32 @@ pub fn program_for(
             record.harness
         )
     })?;
-    install(data, &record.harness, &pinned.version, platform, fetch).map(Some)
+    install(
+        data,
+        &record.harness,
+        &pinned.version,
+        platform,
+        fetch,
+        saying,
+    )
+    .map(Some)
+}
+
+/// **The program a chat on `record`, one of this machine's profiles, runs, installed now where
+/// it is not there yet** (#3446): on a runner keeping it for its desktop with a pin, that version
+/// in the runner's data home, fetched from its vendor's release over HTTPS as it is said through
+/// `saying`. `None` for every other profile and machine, with nothing fetched. What a chat's start
+/// and a sign-in on the runner (#4007) run.
+pub fn on_this_runner(
+    record: &MachineProfile,
+    saying: &dyn Fn(&str),
+) -> Result<Option<PathBuf>, String> {
+    if record.kept_for.is_none() || record.pinned.is_none() {
+        return Ok(None);
+    }
+    let data = crate::datahome::root()
+        .ok_or_else(|| "this runner has no data home to install its harness in".to_owned())?;
+    program_for(record, &data, Platform::here(), &OverHttps, saying)
 }
 
 /// **The program a chat on `profile` starts with on this machine** (#3446): where this machine
@@ -450,12 +487,7 @@ pub fn for_a_start(profile: &crate::profiles::Profile) -> Result<Option<PathBuf>
     let Some(record) = super::pin::record_of(profile, &records) else {
         return Ok(None);
     };
-    if record.kept_for.is_none() || record.pinned.is_none() {
-        return Ok(None);
-    }
-    let data = crate::datahome::root()
-        .ok_or_else(|| "this runner has no data home to install its harness in".to_owned())?;
-    program_for(record, &data, Platform::here(), &OverHttps)
+    on_this_runner(record, &|_| {})
 }
 
 /// [`for_a_start`]'s program where it is installed already, with nothing fetched: what a check
@@ -463,13 +495,126 @@ pub fn for_a_start(profile: &crate::profiles::Profile) -> Result<Option<PathBuf>
 pub fn installed_for(profile: &crate::profiles::Profile) -> Option<PathBuf> {
     let records = super::listed_here();
     let record = super::pin::record_of(profile, &records)?;
+    installed_of(record, &crate::datahome::root()?)
+}
+
+/// Where `record`'s pinned version is installed under the data home `data`, for a profile kept
+/// for a desktop with a pin that is a version, installed or not.
+fn pinned_in(record: &MachineProfile, data: &Path) -> Option<PathBuf> {
     record.kept_for.as_ref()?;
     let pinned = record.pinned.as_ref()?;
     let version = super::pin::Version::parse(&pinned.version)
         .ok()?
         .to_string();
-    let program = program_in(&crate::datahome::root()?, &record.harness, &version)?;
-    is_installed(&program).then_some(program)
+    program_in(data, &record.harness, &version)
+}
+
+/// [`pinned_in`], where it is installed.
+fn installed_of(record: &MachineProfile, data: &Path) -> Option<PathBuf> {
+    pinned_in(record, data).filter(|program| is_installed(program))
+}
+
+/// How long a look waits after a fetch it started was refused before it fetches again: the
+/// window asks every few seconds while a sign-in is watched, and a refused download is not
+/// downloaded again on each.
+pub const LOOK_AGAIN_AFTER: Duration = Duration::from_secs(5 * 60);
+
+/// A fetch a look started: still running, or refused at that instant.
+#[derive(Debug, Clone, Copy)]
+enum Looked {
+    Fetching,
+    Refused(Instant),
+}
+
+/// The fetches looks started, by the program each installs.
+static LOOKS: Mutex<Vec<(PathBuf, Looked)>> = Mutex::new(Vec::new());
+
+/// **The program whether `record`, this runner's, is signed in is asked of** (#4007): its pinned
+/// version where it is installed under the data home `data`. Where it is not, it is installed in
+/// the background, through the same [`program_for`] a chat's start runs, for `platform` through
+/// `fetch`, and `None` is answered now, so the desktop's question, which waits seconds, is never
+/// held up by a download; a later look finds it. One fetch of a version at a time, and none again
+/// for [`LOOK_AGAIN_AFTER`] after one is refused. `None`, with nothing fetched, for a profile not
+/// kept for a desktop with a pin.
+pub fn for_a_look_at(
+    record: &MachineProfile,
+    data: &Path,
+    platform: Option<Platform>,
+    fetch: &'static (dyn Fetch + Sync),
+) -> Option<PathBuf> {
+    let program = pinned_in(record, data)?;
+    if is_installed(&program) {
+        return Some(program);
+    }
+    {
+        let mut looks = LOOKS.lock().unwrap_or_else(PoisonError::into_inner);
+        match looks.iter().find(|(p, _)| *p == program).map(|(_, l)| *l) {
+            Some(Looked::Fetching) => return None,
+            Some(Looked::Refused(at)) if at.elapsed() < LOOK_AGAIN_AFTER => return None,
+            _ => {}
+        }
+        looks.retain(|(p, _)| *p != program);
+        looks.push((program.clone(), Looked::Fetching));
+    }
+    let (looked, record, data) = (program.clone(), record.clone(), data.to_path_buf());
+    let started = std::thread::Builder::new()
+        .name("purlis-harness-fetch".to_owned())
+        .spawn(move || {
+            let fetched = program_for(&record, &data, platform, fetch, &|_| {});
+            let mut looks = LOOKS.lock().unwrap_or_else(PoisonError::into_inner);
+            looks.retain(|(p, _)| *p != looked);
+            if fetched.is_err() {
+                looks.push((looked, Looked::Refused(Instant::now())));
+            }
+        });
+    if started.is_err() {
+        LOOKS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|(p, _)| *p != program);
+    }
+    None
+}
+
+/// [`for_a_look_at`] on this machine: its data home, its platform, over HTTPS.
+pub fn for_a_look(record: &MachineProfile) -> Option<PathBuf> {
+    for_a_look_in(record, &crate::datahome::root, Platform::here(), &OverHttps)
+}
+
+/// **Whether a fetch a look started of `record`'s pinned version is still running** (#4008), on
+/// this machine: what a runner answers as "fetching" in place of "cannot tell".
+pub fn fetching_for_a_look(record: &MachineProfile) -> bool {
+    if record.kept_for.is_none() || record.pinned.is_none() {
+        return false;
+    }
+    crate::datahome::root().is_some_and(|data| fetching_at(record, &data))
+}
+
+/// [`fetching_for_a_look`], under the data home `data`.
+pub fn fetching_at(record: &MachineProfile, data: &Path) -> bool {
+    let Some(program) = pinned_in(record, data) else {
+        return false;
+    };
+    LOOKS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .any(|(p, looked)| *p == program && matches!(looked, Looked::Fetching))
+}
+
+/// [`for_a_look_at`], with the data home `data_home` finds: asked for only for a profile kept
+/// for a desktop with a pin, so a look at any other, every look on a desktop among them, never
+/// resolves (or fences) a data home.
+fn for_a_look_in(
+    record: &MachineProfile,
+    data_home: &dyn Fn() -> Option<PathBuf>,
+    platform: Option<Platform>,
+    fetch: &'static (dyn Fetch + Sync),
+) -> Option<PathBuf> {
+    if record.kept_for.is_none() || record.pinned.is_none() {
+        return None;
+    }
+    for_a_look_at(record, &data_home()?, platform, fetch)
 }
 
 #[cfg(test)]

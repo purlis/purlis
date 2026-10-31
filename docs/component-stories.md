@@ -2,8 +2,9 @@
 
 **A component is held to what a person sees and does by its stories.** Each story is a test:
 it renders in real Chromium and real WebKit, its `play` function walks it with the keyboard, axe
-checks it against WCAG 2.2 AA, and a picture of it is compared with a baseline. CI fails on any
-of the four (#2901, part of the UI system spec #2897).
+checks it against WCAG 2.2 AA, the words it fades are measured as drawn (#3790), and a picture
+of it is compared with a baseline. CI fails on any of the five (#2901, part of the UI system
+spec #2897).
 
 Its siblings: [`ui-primitives.md`](ui-primitives.md) says what the window is built out of,
 [`design-system.md`](design-system.md) what it is drawn in.
@@ -15,6 +16,7 @@ Its siblings: [`ui-primitives.md`](ui-primitives.md) says what the window is bui
 | **Renders** | The story throws, or its component does, in either browser. | `app/.storybook/vitest.project.ts` |
 | **Keyboard** | Its `play` function fails: a key that does not move the focus or the value it should, Esc that does not dismiss, a focus that ends up out of sight. | the story's `play` |
 | **Accessibility** | Any axe violation of a rule tagged `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` or `wcag22aa`, with `target-size` (WCAG 2.5.8) switched on, which axe leaves off by default. | `app/.storybook/preview.tsx` |
+| **Faded words** | In Chromium, a word that an `opacity` or `filter: opacity()`, on its own box or any box above it, takes under 4.5:1 (3:1 for large text) on its ground, measured as drawn. Disabled controls, words hidden from assistive technology and moving opacities are not measured (#3790). | `app/.storybook/faded.setup.ts`, `app/src/theme/fadedWords.ts` |
 | **Screenshot** | Its picture is not its baseline, or it has no baseline. | `app/.storybook/screenshots.setup.ts` |
 
 Both browsers run every story: WebKit is the engine purlis ships in on macOS and Linux
@@ -89,7 +91,8 @@ Story Format 3. `app/src/settings/Choice.stories.tsx` is the first, and the one 
   `app/eslint.story-rules.js`) refuses it.
 - After each move, `expectFocusInSight()` from `app/src/stories.testkit.ts` checks that the focus
   is on screen and not under anything the page draws over it, such as a dialog's sticky footer
-  (WCAG 2.4.11).
+  (WCAG 2.4.11). `untilFocused` returns once the frame after the move is drawn, the frame a
+  collection scrolls the row it moved to into sight on (#4103), so check it straight after.
 - The story is drawn in every cell of the theme matrix (below): never pin a theme on a story.
 - The picture is of the story's frame. A story that draws outside it (a dialog, a menu, a
   popover) sets `parameters: { screenshot: "page" }`; one with nothing stable to draw sets
@@ -106,8 +109,8 @@ Story Format 3. `app/src/settings/Choice.stories.tsx` is the first, and the one 
 
 A family's ticket (spec #2897) is done when it ships:
 
-- a story for each variant and state that draws differently, each passing all four gates in both
-  browsers;
+- a story for each variant and state that draws differently, each passing the four gates that
+  run in both browsers, and the faded-words gate, which runs in Chromium;
 - a `play` function on every interactive story: its keyboard path, Esc dismissal where it
   dismisses, and the focus in sight after every move;
 - its baselines, drawn by its `stories` run, taken, and reviewed in the pull request;
@@ -191,22 +194,32 @@ A baseline is a PNG at
 `app/src/<dir>/__screenshots__/<Component>.stories.tsx/<story id>_<theme>_<appearance>-<chromium|webkit>-linux.png`,
 one for each pictured cell of the matrix.
 Every baseline is drawn and compared in one image, Playwright's own Docker image for the
-Playwright version the lockfile names, by the `stories` workflow's one job
-(`.github/workflows/stories.yml`). It names the image by its tag and its digest,
+Playwright version the lockfile names, by the `stories` workflow's shards
+(`.github/workflows/stories.yml`). The workflow names the image by its tag and its digest,
 `mcr.microsoft.com/playwright:v<version>-noble@sha256:<digest>`, so a tag pushed again never
-changes a picture; the `stories` check fails unless it names the lockfile's version
+changes a picture; the stories fail unless it names the lockfile's version
 (`tools/story-image.mjs`).
+
+**The stories run in shards.** Each browser's story files are split by Vitest's `--shard`, each
+part a job of its own, `stories (<browser> <part>/<parts>)`, so a part and the pictures it draws
+again stay well inside its time limit. Each shard's check carries the annotations of the stories
+that failed in it. The `stories (Chromium and WebKit, axe, keyboard, screenshots)` check reads
+every shard's report: it fails when any shard failed or never reported, checks the baselines
+below, and keeps the one `story-baselines` artifact a pull request takes.
 
 **A baseline is drawn only by a pull request's `stories` run, and taken only on request.** To
 add or change one:
 
-1. Push the change that adds the story or changes how it draws. Its `stories` check fails,
-   naming the story, the browser and the picture that is new or differs; the pictures that
-   differ are kept on the run as `story-pictures`. When a picture is all that failed (or only an
-   obsolete baseline is wrong), the same run draws the stories again with `--update` in the
-   pinned image and keeps every live baseline as `story-baselines`, with `drawn.json` naming the
+1. Push the change that adds the story or changes how it draws. Its `stories` checks fail, the
+   shard's naming the story, the browser and the picture that is new or differs; the pictures that
+   differ are kept on the run as `story-pictures-<browser>-<part>-of-<parts>`. When a picture is
+   all that failed (or only an obsolete baseline is wrong), each shard that failed draws again,
+   with `--update` in the pinned image, the story files and cells whose pictures failed in it, and the check keeps every live baseline, of every shard,
+   as one `story-baselines`, with `drawn.json` naming the
    head and the base it tested. The check stays red: a picture counts only once it is committed.
-   A story that fails any other gate draws nothing: fix it first.
+   A story that fails any other gate draws nothing: fix it first. The check's first annotation
+   names every such story, and each shard's summary lists them before every picture that failed
+   alone, since GitHub shows only ten annotations of a step.
 2. Take the baselines, in either of two ways. Neither draws again, and both take only whole PNG
    baselines within a size and a count limit, and delete every other file in the
    `__screenshots__` directories (`tools/story-baselines.mjs take`):

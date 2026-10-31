@@ -16,13 +16,7 @@ use purlis_cluster_operator::{Claim, ClaimSpec, Pool, PoolSpec, status_of_an_obj
 const IMAGE: &str = "ghcr.io/purlis/purlis-runner@sha256:1111111111111111111111111111111111111111111111111111111111111111";
 
 fn pool() -> Pool {
-    let mut pool = Pool::new(
-        "team",
-        PoolSpec {
-            image: IMAGE.into(),
-            kept_volume: Default::default(),
-        },
-    );
+    let mut pool = Pool::new("team", PoolSpec::new(IMAGE));
     pool.metadata.uid = Some("pool-uid".into());
     pool
 }
@@ -39,6 +33,8 @@ fn claim() -> Claim {
             pool: "team".into(),
             requester: "ada@example.com".into(),
             kept: false,
+            stopped: false,
+            forge: None,
         },
         status: None,
     }

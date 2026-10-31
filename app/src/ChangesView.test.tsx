@@ -9,6 +9,7 @@ import { catalogue, catalogued, type Catalogued } from "./actions";
 import { noTabs } from "./tabs";
 import type { FactColumn, Panels as PanelsModel, Piece, RepoState } from "./bindings";
 import type { WorkspaceState } from "./workspaceState";
+import { inherited } from "./textRoles.testkit";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 afterEach(cleanup);
@@ -1029,6 +1030,13 @@ describe("a refused read's menu (#1244)", () => {
         state={state({ trouble: "purlis could not read alpha: permission denied" })}
       />,
     );
+
+    // Its words are `danger.text`, not `state.failed`, which is a state's mark (#3938).
+    const said = screen.getByText("purlis could not read alpha: permission denied");
+    expect(inherited(said, "color")).toBe("var(--danger-text)");
+    expect(
+      inherited(said.closest(".trouble")?.querySelector(".node-icon") as Element, "color"),
+    ).toBe("var(--danger-text)");
 
     rightClick(screen.getByText("purlis could not read alpha: permission denied"));
     await screen.findByRole("menu");

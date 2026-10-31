@@ -305,6 +305,8 @@ pub struct Held {
     proposals: crate::proposals::Proposals,
     /// The writes to the project its runner chats asked for, held for the person (#2046).
     runner_writes: crate::runnerwrites::RunnerWrites,
+    /// The opens and dispatches its runner chats asked for, held for the person.
+    runner_dispatches: crate::runnerdispatches::RunnerDispatches,
     /// The chats moving between this machine and a pool's runner (#2048).
     moves: Arc<crate::chatmoves::Moves>,
     /// The persona MCP servers each chat could not start, until the person answers (qw381).
@@ -385,6 +387,13 @@ pub struct PlaneUpdated {
     /// Whether its skills changed since it started, in a way its harness does not take in by
     /// itself (#2770): its pane offers a restart on the same conversation.
     pub skills: bool,
+    /// The skills a chat started now would get that it lacks, by name (#3694): what its Skills
+    /// view marks as new, once its pane's What changed is pressed.
+    pub skills_added: Vec<String>,
+    /// The skills it has that a chat started now would not get, by name.
+    pub skills_gone: Vec<String>,
+    /// The skills it has that changed since it started, by name.
+    pub skills_edited: Vec<String>,
 }
 
 /// Why a task is not started fresh (#1489): what the window's question and the row say. Said
@@ -394,6 +403,9 @@ pub const A_TASK_IS_NOT_STARTED_FRESH: &str = "This chat is a task, and a fresh 
 /// A project's reopen between its two halves ([`Held::begin_reopen`], [`Held::finish_reopen`]).
 pub(crate) struct Reopening {
     begun: crate::restored::Begun,
+    /// Where the record came from, where it was a move's or a copy's (V43), and the clone it
+    /// names: what the project's app state follows ([`Held::follow_arrival`]).
+    arrived: Option<(purlis_core::appstate::Arrived, reopen::CloneSeat)>,
     /// How many chats the record held.
     wanted: usize,
     /// Whether the record was read: only then does a dispatch nothing brings back end (#1513).
@@ -611,6 +623,11 @@ impl Held {
         &self.runner_writes
     }
 
+    /// The opens and dispatches its runner chats asked for, held for the person.
+    pub fn runner_dispatches(&self) -> &crate::runnerdispatches::RunnerDispatches {
+        &self.runner_dispatches
+    }
+
     /// The persona MCP servers each chat could not start, for the Notice on its tab (qw381).
     pub fn mcp_failures(&self) -> &crate::mcpfailed::Failures {
         &self.mcp_failures
@@ -785,17 +802,22 @@ impl Held {
             .into_iter()
             .map(|open| (open.session, open.persona))
             .collect();
-        let skills = self.chats.skills_changed();
+        let skills: HashMap<u32, purlis_core::skills::SkillsChanged> =
+            self.chats.skills_changed().into_iter().collect();
         let mut updated: Vec<PlaneUpdated> = lock_started(&self.started_on)
             .iter()
             .filter_map(|(session, then)| {
                 let persona = personas.get(session).cloned().flatten();
                 let files = now.changed_since(then, persona.as_deref());
-                let skills = skills.contains(session);
-                (!files.is_empty() || skills).then_some(PlaneUpdated {
+                let changed = skills.get(session);
+                let changed_skills = changed.cloned().unwrap_or_default();
+                (!files.is_empty() || changed.is_some()).then_some(PlaneUpdated {
                     session: *session,
                     files,
-                    skills,
+                    skills: changed.is_some(),
+                    skills_added: changed_skills.added,
+                    skills_gone: changed_skills.gone,
+                    skills_edited: changed_skills.edited,
                 })
             })
             .collect();
@@ -849,9 +871,17 @@ impl Held {
         // A record another clone or device wrote is a copy's or a move's (V43): a copy's chats
         // get ids of their own before any of them starts, and are written with them once
         // they are back, so no two clones ever hold one chat's id.
+        let mut arrived = None;
         let record = record.map(|record| {
+            let was = record.clone_seat.clone();
             let (arrival, record) =
                 reopen::arrive(record, &self.records.clone_seat, || self.records.known());
+            let kind = match arrival {
+                reopen::Arrival::Moved => Some(purlis_core::appstate::Arrived::Moved),
+                reopen::Arrival::Copied => Some(purlis_core::appstate::Arrived::Copied),
+                reopen::Arrival::Same | reopen::Arrival::Legacy => None,
+            };
+            arrived = kind.zip(was);
             if arrival == reopen::Arrival::Copied {
                 tracing::info!(
                     "purlis: plane {} is a copy of another clone; its chats get new ids",
@@ -893,6 +923,7 @@ impl Held {
         let begun = crate::restored::begin(self, &record);
         Reopening {
             begun,
+            arrived,
             wanted,
             read,
         }
@@ -904,9 +935,16 @@ impl Held {
     pub(crate) fn finish_reopen(&self, reopening: Reopening, size: Size) {
         let Reopening {
             begun,
+            arrived,
             wanted,
             read,
         } = reopening;
+        // The project's app state follows where its record came from (#3718), before any chat
+        // is put back, on this thread and outside the registry's lock: a move carries its
+        // drafts and grades, and a copy gets an id of its own and none of the original's.
+        if let Some((arrived, was)) = &arrived {
+            let _ = purlis_core::appstate::follow_arrival(&self.root, was, *arrived);
+        }
         let back = crate::restored::finish(self, begun, size, read).len();
         // What the session host still runs of this project from before this window and no
         // chat put back reattached ends now, so nothing runs with no tab (#2006).
@@ -1025,6 +1063,11 @@ impl Held {
             self.chats.owes(session, purlis_core::reopen::Owed::Failed);
         }
         let reported = handoff::reported_by(self, session);
+        // **What it queued while the app did not answer is delivered first** (#3902), while the
+        // app still knows the chat and its tasks; what cannot be is kept on the dispatch record
+        // it is about, and the spool clears its folder as it ends. A chat started again in its
+        // own place (`in_its_place`) goes on, and keeps its queue.
+        crate::dispatched::sender_ending(self, session);
         let closed = self.end_chat(session);
         if let Some(me) = self.me.get().and_then(std::sync::Weak::upgrade) {
             handoff::close_reported(&me, reported, deciding);
@@ -1127,6 +1170,7 @@ impl Held {
         }
         self.proposals.forget(session);
         self.runner_writes.forget(session);
+        self.runner_dispatches.forget(session);
         self.mcp_failures.forget(session);
         self.lost_with_the_host.forget(session);
         // Its id, read before it goes: its dispatch grant for "this chat" ends where its
@@ -1279,6 +1323,7 @@ impl Held {
         // A chat the person is stopping is not started again (#1448): it is ended, as the stop
         // would have ended it.
         if self.stopping.is_stopping(session) {
+            crate::dispatched::sender_ending(self, session);
             if let Err(ended) = self.end_chat(session) {
                 tracing::warn!("purlis: chat {session} did not end cleanly ({ended})");
             }
@@ -1312,6 +1357,7 @@ impl Held {
                 // Kept with why among the chats that would not start, so a window that opens
                 // later still says so.
                 self.chats.keep_aside(session, &said);
+                crate::dispatched::sender_ending(self, session);
                 if let Err(ended) = self.end_chat(session) {
                     tracing::warn!("purlis: chat {session} did not end cleanly ({ended})");
                 }
@@ -1597,8 +1643,9 @@ impl Held {
     /// The chats working in `workspace` that are mid-turn, by the names the window shows —
     /// what a save of that workspace's repos waits for (charter-app#299, ADR 0051).
     ///
-    /// **Mid-turn is the hook state `running`**, and nothing else: charter never reads a
-    /// harness's output to decide (ADR 0018).
+    /// **Mid-turn is the hook state `running`, or a turn that ended waiting on work of its
+    /// own** (#3878, #3887: its monitors and background shells may be writing the clone), and
+    /// nothing else: charter never reads a harness's output to decide (ADR 0018).
     ///
     /// **Who could be writing the clone is wider than who is filed under the workspace.** A
     /// chat counts when it works in the workspace, in a worktree of one of its clones wherever
@@ -1616,9 +1663,7 @@ impl Held {
                     .and_then(|cwd| workspace_working_in(&on_disk, cwd))
                     .is_none_or(|there| there == workspace)
             })
-            .filter(|open| {
-                self.board().glance(open.session).state == purlis_core::state::State::Running
-            })
+            .filter(|open| self.board().glance(open.session).in_its_turn())
             .map(|open| open.label.clone().unwrap_or(open.name))
             .collect()
     }
@@ -2791,6 +2836,10 @@ impl Planes {
         let _opening = self.opening(&id);
         if !self.map().contains_key(&id) {
             (self.sweep)(&root);
+            // The app's own state an older purlis kept in the plane's state folder moves to the
+            // data home, once (#3718): before any chat is put back, so what arms them reads it
+            // there, and outside the registry's lock, as the sweep is.
+            let _ = purlis_core::appstate::move_out_of_the_plane(&root);
         }
 
         let mut open = self.map();
@@ -3096,6 +3145,66 @@ impl Planes {
         held.hooks
             .skill_runs()
             .tell_to(Arc::clone(&self.skill_runs));
+        // And the tokens of its open run (SK-26, #3694): what its harness last said the chat
+        // spent, read from the same record a run's recorded tokens are. Weak for the handoff's
+        // reason.
+        held.hooks.skill_runs().count_tokens_by({
+            let held = Arc::downgrade(&held);
+            Arc::new(move |chat| {
+                let held = held.upgrade()?;
+                let id = held.chats().chat_at(chat)?.id?;
+                let spent = purlis_core::usage::spent(held.root(), &id)?;
+                (spent.input_tokens.is_some() || spent.output_tokens.is_some()).then(|| {
+                    spent
+                        .input_tokens
+                        .unwrap_or_default()
+                        .saturating_add(spent.output_tokens.unwrap_or_default())
+                })
+            })
+        });
+        // A connection a Claude Code chat's server dialled in (#3316): parked at the chat's
+        // door. The first each door is given, and every one refused, is audited: each request
+        // the door carries spends one, so a park after the first says nothing new. Weak for the
+        // handoff's reason.
+        #[cfg(unix)]
+        held.hooks.park_slots_with({
+            let held = Arc::downgrade(&held);
+            let plane = id.clone();
+            // A refusal is audited once a minute for each chat, port and reason at most: a
+            // server that keeps dialling is said once, never a row a dial.
+            const SERVE_REFUSALS_SAID_EVERY: std::time::Duration =
+                std::time::Duration::from_secs(60);
+            type Said = HashMap<(u32, u16, &'static str), std::time::Instant>;
+            let audited: Arc<Mutex<Said>> = Arc::default();
+            Arc::new(move |ask, slot| {
+                let Some(held) = held.upgrade() else {
+                    purlis_core::hookwire::serve::refused(
+                        slot,
+                        purlis_core::hookwire::serve::NOTHING_SERVES,
+                    );
+                    return;
+                };
+                let refused = match held.chats().park_slot(&ask, slot) {
+                    Ok(false) => return,
+                    Ok(true) => None,
+                    Err(why) => {
+                        let now = std::time::Instant::now();
+                        let mut said = audited.lock().unwrap_or_else(PoisonError::into_inner);
+                        said.retain(|_, at| now.duration_since(*at) < SERVE_REFUSALS_SAID_EVERY);
+                        if said.insert((ask.chat, ask.serve, why), now).is_some() {
+                            return;
+                        }
+                        Some(why)
+                    }
+                };
+                if let Err(why) =
+                    held.hooks
+                        .audit_serving(plane.root(), ask.chat, ask.serve, refused)
+                {
+                    tracing::warn!("purlis: a chat's server's connection was not audited ({why})");
+                }
+            })
+        });
         // A sandbox block a chat's hook found (#1338): kept in this machine's network record
         // with the chat it came from (#1662), then shown on the chat's tab. Of what the line
         // named, only a refused host is kept.
@@ -3121,8 +3230,11 @@ impl Planes {
                         strong.chats().runner_of(block.line.chat).as_deref(),
                     );
                     // A server asking for a port the chat serves on already (#2019).
-                    told =
-                        hooks::on_its_serving(told, &strong.chats().served_ports(block.line.chat));
+                    told = hooks::on_its_serving(
+                        told,
+                        &strong.chats().served_ports(block.line.chat),
+                        strong.chats().dials_in(block.line.chat),
+                    );
                     // Held while the person answers (#1666): the chat's own board says so,
                     // never anything the block's sender said.
                     told.held = strong.chats().asking(told.session, told.target.as_deref());
@@ -3134,6 +3246,17 @@ impl Planes {
                             &block,
                             crate::sandboxing::now_secs(),
                         );
+                    }
+                    // A block that is the chat's own to retry (#3861): its hook told it the
+                    // command to retry with, and the person has nothing to answer, so it is
+                    // kept in the record above and raises no Notice, and the chat waits on
+                    // nobody for it.
+                    let chat_dir = strong
+                        .chats()
+                        .chat_at(block.line.chat)
+                        .and_then(|chat| chat.cwd);
+                    if hooks::its_own_to_retry(&block, chat_dir.as_deref()) {
+                        return;
                     }
                     crate::taskblocks::heard(strong.chats(), &told);
                     // The chat now waits on the person for this Notice, until its turn moves
@@ -4352,6 +4475,7 @@ impl Planes {
             browser_timeline,
             proposals: crate::proposals::Proposals::default(),
             runner_writes: crate::runnerwrites::RunnerWrites::default(),
+            runner_dispatches: crate::runnerdispatches::RunnerDispatches::default(),
             moves,
             mcp_failures,
             lost_with_the_host,

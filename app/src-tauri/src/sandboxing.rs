@@ -92,6 +92,7 @@ pub fn ahead_of_each(
                 profile,
                 root,
                 purlis_core::start::may_check_program(profile, root),
+                purlis_core::start::without_sandbox_lock(profile, machine),
             )
         })
         .collect()
@@ -100,23 +101,22 @@ pub fn ahead_of_each(
 /// One row of [`ahead_of_each`], told whether the start's gate lets the program be checked:
 /// the start's own check ([`purlis_core::start::sandbox_ahead`]), asked through `asked`, which
 /// asks the same gate itself and runs the program only past it. `approved` only phrases the
-/// row.
+/// row; `lock` says why it is never started without the sandbox
+/// ([`purlis_core::start::without_sandbox_lock`]).
 fn ahead_with(
     asked: &purlis_core::start::AheadOnce<'_>,
     profile: &purlis_core::profiles::Profile,
     root: &std::path::Path,
     approved: bool,
+    lock: Option<&'static str>,
 ) -> Option<SandboxAhead> {
     let row = SandboxAhead::of(asked.of(profile)?)?;
     let row = SandboxAhead {
-        // Policy's lock first; a profile for sandboxed chats only is never started without it
-        // either (#2037).
+        // Policy's lock first; a profile for sandboxed chats only (#2037), and a Claude Code
+        // profile on a runner (#4083), is never started without it either.
         locked: sandbox::policy::Locks::of(root)
             .opt_out_refused()
-            .or_else(|| {
-                purlis_core::profiles::sandbox_only(profile)
-                    .then(|| purlis_core::start::SANDBOX_ONLY_LOCK.to_owned())
-            }),
+            .or_else(|| lock.map(str::to_owned)),
         ..row
     };
     Some(if !approved && row.state == "sandboxed" {
@@ -2307,7 +2307,8 @@ pub fn keep_sandbox_block(
     let held = planes.held(&plane)?;
     // Answered already, by another press or another window: nothing is left to keep blocked,
     // and the chat was told by that answer (#1987).
-    let Some(block) = keep_block(held.chats(), session, &shown, reason.as_deref()) else {
+    let audit = held.audit_then_record(planes.network());
+    let Some(block) = keep_block(held.chats(), session, &shown, reason.as_deref(), &audit) else {
         return Ok(());
     };
     // The person's no, kept where the Inbox's look back reads it (#1700).
@@ -2330,13 +2331,14 @@ pub(crate) fn keep_block(
     session: u32,
     shown: &crate::taskblocks::BlockShown,
     reason: Option<&str>,
+    audit: Audit<'_>,
 ) -> Option<crate::taskblocks::HeldBlock> {
     let block = crate::taskblocks::shown_one(chats.blocks(), session, shown).ok()?;
     chats.blocks().answered(session, &block);
     if block.what == GrantWhat::Host
         && let Ok(host) = sandbox::grant::host(&block.target)
     {
-        chats.keep_blocked_live(session, &host);
+        chats.keep_blocked_live(session, &host, audit);
     }
     // A service of the runner the chat runs on (#2510): its hold ends at once.
     if block.kind == purlis_core::sandboxblock::Kind::RunnerService.word()
@@ -2839,7 +2841,8 @@ fn revoke(
             }
             // Its server serves until the chat restarts, which it is owed now (#2019).
             if let What::Listen(port) = &grant {
-                chats.owe_restart_serving(Some(chat), *port);
+                let project_holds = sandbox::local::granted_listens(root).contains(port);
+                chats.owe_restart_serving(Some(chat), *port, project_holds);
             }
         }
         (What::Host(host), None) => {
@@ -2889,7 +2892,7 @@ fn revoke(
             }
             // Served no more, whatever else still lets the chats connect there: each serving
             // on it restarts without it once its turn ends.
-            chats.owe_restart_serving(None, *port);
+            chats.owe_restart_serving(None, *port, false);
         }
     }
     if let Err(why) = sandbox::local::forget_made(root, what, target, level.word()) {

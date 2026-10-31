@@ -504,9 +504,14 @@ the select family's (`purlis/select-family`, an error: [The select and combobox 
 | `className` | the field's place in its view (margin, width, flex, order), never a look |
 
 - **A field is its label, its control, its help and its error, as one.** React Aria ties the
-  label to the box and the help and the error to its description. The error is an alert, as every
-  refusal in the window is, and the box's edge takes the danger colour beside it: the words are
-  the cue that is not colour. **A field that can be refused keeps its error's line** whether it
+  label to the box and the help and the error to its description. The error line is a polite
+  live region, never an alert (#3291), and the box's edge takes the danger colour beside it: the
+  words are the cue that is not colour. **A refused send is heard once**, as its `Form`'s one alert
+  summary ("Name: A name is letters…", or "2 fields to fix: Name, Port."), for a screen reader
+  alone; the lines are quiet while it shows, and each stays its field's description. A send the
+  core refuses is handed to the `Form`: `refused` by its owner, with `answer` counting the core's
+  answers, or `useFormRefusal()` from inside it; a select's pick ends the summary as a change
+  does (ADR 0104, amendment 2026-10-30). **A field that can be refused keeps its error's line** whether it
   says anything or not, one line tall, empty and unheard until it does, so a refusal coming or
   going moves nothing; a long one is cut short on screen and read whole as the description.
 - **⌘⏎ sends a form's primary action** (Ctrl+Enter off macOS; N26), its first submit button, from
@@ -581,8 +586,8 @@ refuses all four (`purlis/select-family`, an error).
 - **Refused** (`error`, #3110, #3334): a select whose value the form will not take, or a
   combobox whose typed value is not allowed, draws the danger colour on its edge, inside the box
   as the text input's, and is marked `aria-invalid` and `data-invalid`. `error` says why in the
-  field's error line under the box (the `field.error` part), a live region kept from the start,
-  so a refusal that lands while the person types is heard at once and nothing moves; a select
+  field's error line under the box (the `field.error` part), a polite live region kept from the
+  start, so a refusal that lands while the person types is heard and nothing moves; a select
   given `error` stands in a field of its own, placed by its `className`: a column as wide as its
   place, its button as wide as the field (in a toolbar row, give it a width). `error=""` is no
   refusal. `isInvalid` marks one
@@ -765,7 +770,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 
 | Family | Wrapper | Parts | Variants |
 | --- | --- | --- | --- |
-| Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value` | `raised`, `ask` |
+| Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`); `CardButton`, a card pressed whole (`CardButton.tsx`, #3655), its own family `card-button` (#3885) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value`; a pressed card's `root`, `mark`, `press`, `title`, `more`, `line` | `raised`, `ask`; a pressed card's `door`, `pick` |
 | Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, and `under` (what a way out opened) | `news`, `trouble`, `attention` |
 | Badge | `Badge`, `HostStatus` (`ui/badge/Badge.tsx`) | `root` | `neutral`, `accent`, `waiting`, `ok` |
 | Count | `Count`, `CountGroup` (`ui/badge/Badge.tsx`) | `root`, `group` | `neutral`, `accent`, `waiting`, `hot` |
@@ -1465,9 +1470,10 @@ their rows are tabs and sentences with no part that gives way, so `.more-menu` h
 **What the window draws over itself is one surface** (#1845). A dialog, a popover, a menu and a
 tooltip share one ground (`surface.overlay`), one border, one corner (`--radius-lg`) and one lift
 (`--elevation-overlay`), so they read as related; a dialog and a popover share one padding
-(`--space-6`). The classes are in `app/src/primitives/overlays.css`, after the control families in
-the same `components` layer, and the popover and menu families' surface is this one, a select's
-list's included.
+(`--space-6`). Each family draws it in its own sheet, in the `components` layer (`ui/dialog`,
+`ui/popover`, `ui/tooltip`), and the popover and menu families' surface is this one, a select's
+list's included. The Radix-era classes (`.ui-menu`, `.ui-menu-item`, `.ui-popover`,
+`.ui-overlay-arrow`) and `primitives/overlays.css`, which drew them, are retired (#3365).
 
 | Overlay | Class                                         | On                                                         |
 | ------- | --------------------------------------------- | ---------------------------------------------------------- |
@@ -1476,14 +1482,14 @@ list's included.
 | Popover | the popover family's surface ([above](#the-menu-and-popover-families)) | `AnchoredPopover`, `HeldPopover`, `PopoverDialog` |
 
 (`--elevation-overlay`), so they read as related. A dialog is [the dialog
-family's](#the-dialog-family), drawn on that surface by `app/src/ui/dialog/dialog.css`; the other
-classes are in `app/src/primitives/overlays.css`, after the control families in the same
-`components` layer, and the menu's surface is this one.
+family's](#the-dialog-family), drawn on that surface by `app/src/ui/dialog/dialog.css`; a popover
+and a menu are the popover family's (`app/src/ui/popover/popover.css`), and a tooltip the tooltip
+family's, each in the same `components` layer.
 
 | Overlay | Class                                         | On                                                         |
 | ------- | --------------------------------------------- | ---------------------------------------------------------- |
 | Dialog  | the dialog family's parts (`data-scope="dialog"`) | `Dialog`, `AlertDialog`, `DialogSurface`               |
-| Popover | `.ui-popover`; its arrow `.ui-overlay-arrow`  | Radix Popover's `Content` and `Arrow`                      |
+| Popover | the popover family's surface ([above](#the-menu-and-popover-families)) | `AnchoredPopover`, `HeldPopover`, `PopoverDialog` |
 | Tooltip | the tooltip family's `root` part ([the tooltip family](#the-tooltip-family)) | React Aria's `Tooltip`, wrapped in `app/src/ui/tooltip` |
 | Menu    | the popover family's surface, its `menu` variant | `Menu`, a context menu's too                      |
 
@@ -1535,7 +1541,9 @@ line is `ui-text-body ui-text-strong`**, not a second body class. `ui-text-code`
 monospace family alone, so a path under a name is `ui-text-secondary ui-text-code`.
 
 - **Colour follows the role.** Do not pick a colour to make a word quieter; give it the role it
-  has. **Muted is the meta's only**: a help line or a where line is secondary.
+  has. **Muted is the meta's only**: a help line or a where line is secondary. The one exception,
+  until the view tabs wear the roles, is a view's sentence with no role (`.view-body .none`,
+  `.pending`; `design-system.md`, #3938).
 - **Nothing is under 11px.**
 - **A word that says something is wrong is `danger.text`**, and that is the one colour a view
   still writes for words; `state.failed` is for a state's mark.
@@ -2719,6 +2727,15 @@ palette row names the view, and a side left on it opens on Chats until the previ
 that is not contributed now). Its list is the list family's: one Tab stop, ↑ and ↓ past the
 groups' names, typing finds a skill, Enter opens its tab, and Shift+F10 or the menu key opens a
 row's menu.
+
+**Use skill…'s key is `⌘⇧S`** (#3954), and `Ctrl+Shift+S` off a Mac, `S` for skill: it opens Use
+skill… on the chat in front (in a split tab, the pane with the keyboard), as its palette row does,
+and is said on that row and on each chat
+tab's menu row (`chat.useSkill`, `tab.useskill:<tab>`). `Ctrl` with `Shift` and a letter is no
+byte, so it is the window's while a chat has the keyboard, as `Ctrl+Shift+T` is; an editor keeps
+it, and it is never taken under a modal dialog. With no chat in front, a shell in front or the
+Skill studio off there is no Use skill… to open, and the key goes on to whatever has the keyboard. The row says no budget: a chat's budget is the
+Skills view's to say (S8).
 
 **The Panel's key is `⌘J`** (#1737, P-6), VS Code's, and `Ctrl+J` off a Mac: it hides the whole
 Panel, every half of it, and shows it again on the views its halves had. It hides only a Panel

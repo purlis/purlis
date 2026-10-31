@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { AimedList, AimedOption } from "./ui/list/AimedList";
 import { RowLabel, RowLead, RowShortcut, RowTrail } from "./ui/list/Row";
 import { DialogSurface } from "./ui/dialog/Dialog";
+import { Button } from "./ui/button/Button";
 import {
   aim,
   inPalette,
@@ -30,6 +31,7 @@ import {
 import { onAMac } from "./tabKeys";
 import { landSettingsFocus } from "./settings/entering";
 import { theKeyboardIsBack, thePaletteIsUp } from "./keyboardBack";
+import { keepTheKeyboardOffWhatFocusModeHides } from "./keys/focusMode";
 import type { SettingsLink } from "./settings/links";
 import { SaidLink } from "./SaidLink";
 import { saidInPlainWords } from "./actionResult";
@@ -197,6 +199,8 @@ export function Palette({
   const giveTheKeyboardBack = useCallback(() => {
     const back = came.current;
     if (back instanceof HTMLElement && back.isConnected) back.focus();
+    // Not into a part focus mode hides, as Focus mode run from one leaves it (#4072).
+    keepTheKeyboardOffWhatFocusModeHides();
   }, []);
 
   /** Lists only the projects, from a fresh box: what was typed was typed at the other list. */
@@ -609,6 +613,23 @@ export function Palette({
               }}
             />
           )}
+          {/* Its ways on, as the notice draws them: a refusal's Approve and start… (#3968). The
+              palette goes away first, so what the way opens is in front. */}
+          {showing.ways?.map((way) => (
+            <span key={way.label}>
+              {" "}
+              <Button
+                variant="link"
+                className="said-link"
+                onPress={() => {
+                  close();
+                  way.onPress();
+                }}
+              >
+                {way.label}
+              </Button>
+            </span>
+          ))}
         </p>
       )}
       {held && (

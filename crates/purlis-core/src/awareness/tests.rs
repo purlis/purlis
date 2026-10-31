@@ -39,6 +39,8 @@ fn asked_by(mut known: Known, chat: u32, name: &str) -> Known {
         reported: false,
         mode: Mode::Handoff,
         owes: false,
+        report: crate::reopen::Owed::Nothing,
+        long: false,
     });
     known
 }
@@ -854,6 +856,31 @@ fn every_turn_a_chat_with_open_tasks_is_shown_them_and_one_with_none_is_shown_no
     );
     known[1].asking = None;
 
+    // A task that reported while its program still runs is still open (#3899): it may be
+    // told and cancelled, and the roster says so.
+    {
+        let from = known[1].from.as_mut().expect("asked");
+        from.reported = true;
+        from.owes = false;
+        from.report = crate::reopen::Owed::Again;
+    }
+    let said = turn(&known, 1, &mut told).expect("lines");
+    assert!(
+        said.contains("chat 4 'check prod' reported, still running;"),
+        "{said}"
+    );
+    known[1].from.as_mut().expect("asked").report = crate::reopen::Owed::Sent;
+
+    // A long-running task says so beside its state (#3905).
+    known[1].from.as_mut().expect("asked").reported = false;
+    known[1].from.as_mut().expect("asked").long = true;
+    let said = turn(&known, 1, &mut told).expect("lines");
+    assert!(
+        said.contains("chat 4 'check prod' long-running, running;"),
+        "{said}"
+    );
+    known[1].from.as_mut().expect("asked").long = false;
+
     // A task that reported is no longer open, nor one that ended.
     known[1].from.as_mut().expect("asked").reported = true;
     let said = turn(&known, 1, &mut told).expect("lines");
@@ -881,6 +908,54 @@ fn every_turn_a_chat_with_open_tasks_is_shown_them_and_one_with_none_is_shown_no
     // Asking by command, or at the start, carries no roster: the turn does.
     let asked = answer(&known, 1, Tell::Asked, &mut Told::default()).expect("open");
     assert!(asked.open_tasks.is_empty());
+}
+
+#[test]
+fn a_roster_says_whether_each_task_is_alive_and_marks_an_orphan_by_restart() {
+    // #3900: after a restart a coordinator could not tell a live task from a dead one.
+    let known = a_chat_with_open_tasks();
+    let mut told = told_at_start(&known, 1);
+    let working = answer(&known, 1, Tell::Turn, &mut told)
+        .expect("open")
+        .with_liveness(|chat| {
+            (chat == 4).then_some(crate::dispatchliveness::Liveness {
+                running: true,
+                heard_secs: Some(90),
+                did: Some(crate::dispatchliveness::Did::SentANote),
+                restart: crate::dispatchliveness::Restart::StartedAgain,
+            })
+        })
+        .with_orphans([(7, "forms".to_owned())]);
+    let said = update(&working, now()).expect("a roster");
+    assert!(
+        said.contains(
+            "chat 4 'check prod' running (its program is running, last sent a note 1m ago, \
+             purlis's restart ended it and started it again on its conversation); chat 5 \
+             'lint' running; chat 7 'forms' orphaned by restart: purlis can no longer reach \
+             it, and no program of it runs under this app."
+        ),
+        "{said}"
+    );
+}
+
+#[test]
+fn an_orphan_found_only_in_dispatch_records_is_named_without_a_number_it_does_not_have() {
+    // #3932: a task orphaned by a restart that no launch tried to start again is known by its
+    // dispatch record alone, whose number may be another chat's by now.
+    let known = a_chat_with_open_tasks();
+    let mut told = told_at_start(&known, 1);
+    let working = answer(&known, 1, Tell::Turn, &mut told)
+        .expect("open")
+        .with_orphans([(crate::dispatched::NO_NUMBER_KNOWN, "forms".to_owned())]);
+    let said = update(&working, now()).expect("a roster");
+    assert!(
+        said.contains(
+            "chat 5 'lint' running; 'forms', under a chat number no longer known, orphaned by \
+             restart: purlis can no longer reach it, and no program of it runs under this app."
+        ),
+        "{said}"
+    );
+    assert!(!said.contains("chat 0"), "{said}");
 }
 
 #[test]

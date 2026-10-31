@@ -113,7 +113,7 @@ fn waited(held: &Held, id: &PlaneId, asker: u32, of: u32) -> Waited {
 fn listed(held: &Held, id: &PlaneId, asker: u32) -> Vec<(String, String, bool)> {
     match asks(held, id, asker, What::List) {
         Answer::Task(answered) => match *answered {
-            Answered::Listed { rows } => rows
+            Answered::Listed { rows, .. } => rows
                 .into_iter()
                 .map(|row| (row.name, row.state, row.finished))
                 .collect(),

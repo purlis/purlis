@@ -37,7 +37,13 @@ import {
   useFilter,
 } from "react-aria-components";
 import { Check, ChevronDown } from "lucide-react";
-import { ErrorLine, TextField, describedBy, type PlainTextFieldProps } from "../field/Field";
+import {
+  ErrorLine,
+  TextField,
+  describedBy,
+  useFormSummary,
+  type PlainTextFieldProps,
+} from "../field/Field";
 import { Surface } from "../popover/Popover";
 import { Tooltip } from "../tooltip/Tooltip";
 import type { SelectSize } from "./Select";
@@ -88,6 +94,8 @@ export function ComboBox({
 }: ComboBoxProps) {
   const { contains } = useFilter({ sensitivity: "base" });
   const errorId = `${useId()}-error`;
+  // A pick from the list fires no native change: it ends its form's summary itself (#3291).
+  const { end } = useFormSummary();
   const refusable = "error" in rest;
   const { error: written, ...given } = rest;
   // A reason with no words is no refusal: nothing would be heard or drawn.
@@ -105,7 +113,10 @@ export function ComboBox({
       defaultFilter={contains}
       defaultItems={items}
       inputValue={value}
-      onInputChange={onChange}
+      onInputChange={(to) => {
+        end();
+        onChange(to);
+      }}
       aria-describedby={describedBy(given["aria-describedby"], errorId, error)}
       isDisabled={isDisabled}
       isInvalid={error !== undefined || isInvalid === true}

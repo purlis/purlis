@@ -13,6 +13,7 @@ import { useRef, useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { expectFocusInSight, untilFocusWithin, untilFocused } from "../../stories.testkit";
 import { Button } from "../button/Button";
+import { TextField } from "../field/Field";
 import { InlineMenu, MenuItem } from "../menu/Menu";
 import {
   AnchoredPopover,
@@ -84,19 +85,17 @@ function WorkspacePicker() {
           {({ close }: { close: () => void }) => (
             <>
               <PopoverFilter>
-                <input
-                  className="ui-input"
+                <TextField
                   aria-label="Go to a workspace in purlis"
                   placeholder="Go to a workspace in purlis…"
                   value={typed}
                   autoFocus
-                  onChange={(event) => setTyped(event.target.value)}
+                  onChange={setTyped}
                   onKeyDown={(event) => {
                     if (event.key !== "ArrowDown") return;
                     event.preventDefault();
                     list.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
                   }}
-                  style={{ inlineSize: "100%" }}
                 />
               </PopoverFilter>
               <PopoverList>
@@ -178,14 +177,13 @@ function Refused() {
   const taken = typed.trim() === "web";
   return (
     <div style={{ display: "grid", gap: "var(--space-3)", justifyItems: "start" }}>
-      <input
-        ref={box}
-        className="ui-input"
+      <TextField
+        inputRef={box}
         aria-label="Rename chat claude 4"
-        aria-invalid={taken}
+        isInvalid={taken}
         aria-describedby={taken ? "refused" : undefined}
         value={typed}
-        onChange={(event) => setTyped(event.target.value)}
+        onChange={setTyped}
       />
       <AnchoredPopover triggerRef={box} isOpen={taken} className="row-card">
         <div id="refused" role="alert">

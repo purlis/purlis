@@ -8,7 +8,8 @@
 //! checkout carries (`.vscode/`, `.idea/`, `.claude/settings.json`), and `git clone` and
 //! `git worktree add` write all of them. A branch folder's own git directory is in its clone's
 //! `.git` too, so `purlis worktree update` and `push` are handed over the same way
-//! ([`crate::pieceupdate`], qw387), for a chat standing in that folder or above it. So `purlis clone` and `purlis worktree add`, run in a
+//! ([`crate::pieceupdate`], qw387), for a chat standing in that folder or above it, and so is
+//! `purlis worktree remove`, never forced, for a chat above the folder (#3879). So `purlis clone` and `purlis worktree add`, run in a
 //! chat the app started, hand the work to the app over the chat's hook socket
 //! ([`crate::hookwire::Ask::Git`]), and the app runs **the same core functions** the terminal's
 //! commands run — [`crate::repocmd::clone::clone`] and [`crate::piececmd::add`] — so git is
@@ -54,6 +55,13 @@ pub struct Asker {
     /// The machine store the app holds, whose device id names the piece log (FD-25), as the
     /// window's own pieces are named (`worktrees::window`); `None` on a machine that keeps none.
     pub config: Option<PathBuf>,
+    /// The chat's stable id (ADR 0066), which a branch folder's claim names its one live writer
+    /// by (#3901); `None` for a chat that has none.
+    pub id: Option<String>,
+    /// The chats the app has, live or not yet back since a restart, as a branch folder's claim
+    /// is judged against them (#3901); `None` where no app said, and a folder another chat
+    /// holds is then refused.
+    pub live: Option<Vec<crate::piececlaim::Live>>,
 }
 
 /// Runs `ask` for `asker` in the project at `root`, every git call reading `isolation`'s
@@ -66,6 +74,38 @@ pub fn answer(
     isolation: &git::Isolated,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Answer {
+    answer_telling(root, asker, ask, isolation, now).answer
+}
+
+/// What the app makes of a chat's git ask ([`answer_telling`]): the answer the chat reads, and
+/// what the person is needed for, if anything.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Answered {
+    pub answer: Answer,
+    /// **The need the person is told of** (#3877): only an update of the project root left for
+    /// a reason no chat can settle ([`crate::planegit::Left::needs_the_person`]), which the
+    /// app raises as a needs-you item naming the window's Update. Every other refusal is the
+    /// chat's to retry, told in the answer alone.
+    pub needs: Option<crate::state::Need>,
+}
+
+impl From<Answer> for Answered {
+    fn from(answer: Answer) -> Self {
+        Self {
+            answer,
+            needs: None,
+        }
+    }
+}
+
+/// [`answer`], and what the person is needed for ([`Answered::needs`]).
+pub fn answer_telling(
+    root: &Path,
+    asker: &Asker,
+    ask: &GitAsk,
+    isolation: &git::Isolated,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Answered {
     git::isolated(isolation, || isolated_answer(root, asker, ask, now))
 }
 
@@ -74,8 +114,19 @@ fn isolated_answer(
     asker: &Asker,
     ask: &GitAsk,
     now: chrono::DateTime<chrono::Utc>,
-) -> Answer {
-    let no = |why: String| Answer::No { why };
+) -> Answered {
+    let no = |why: String| Answered::from(Answer::No { why });
+    let mut needs = None;
+    // The guard's question before plain git writes a branch folder (#3931): no git runs, so
+    // none of the checks below on where git would run is asked.
+    if let GitWork::WorktreeClaim { repo, piece, act } = &ask.work {
+        let folder = crate::worktree::Located {
+            workspace: ask.workspace.clone(),
+            repo: repo.clone(),
+            piece: piece.clone(),
+        };
+        return Answered::from(claim(root, asker, &folder, *act, now));
+    }
     // A workspace the ask makes is one no chat works in yet: the chat need only stand in the
     // project. Every other ask writes a workspace the chat already writes.
     let placed = match &ask.work {
@@ -84,6 +135,12 @@ fn isolated_answer(
         GitWork::WorktreeUpdate { repo, piece, .. } | GitWork::WorktreePush { repo, piece, .. } => {
             bound(root, asker.cwd.as_deref(), &ask.workspace)
                 .and_then(|()| at_or_above(root, asker.cwd.as_deref(), repo, piece))
+        }
+        // A branch folder of the chat's own workspace, from above it: never the one it stands
+        // in, whose removal would take the chat's own folder from under it (#3879).
+        GitWork::WorktreeRemove { repo, piece, .. } => {
+            bound(root, asker.cwd.as_deref(), &ask.workspace)
+                .and_then(|()| above(root, asker.cwd.as_deref(), repo, piece))
         }
         // The project root: only for the chat whose place it is.
         GitWork::RootUpdate {} => at_the_root(root, asker.cwd.as_deref()),
@@ -129,6 +186,7 @@ fn isolated_answer(
                 now,
                 author: &crate::wscmd::ensure::author(),
                 hosts: hosts.as_deref(),
+                watch: None,
             },
             &mut say,
         ),
@@ -147,6 +205,22 @@ fn isolated_answer(
                 repo,
                 piece,
             };
+            // One live writer per branch folder (#3901): a second chat is refused, naming the
+            // chat that holds it; a chat writing in a folder nobody live holds takes it.
+            let act = match &ask.work {
+                GitWork::WorktreePush { .. } => crate::piececlaim::Act::Push,
+                _ => crate::piececlaim::Act::Update,
+            };
+            let folder = crate::worktree::Located {
+                workspace: ask.workspace.clone(),
+                repo: repo.clone(),
+                piece: piece.clone(),
+            };
+            if let Err(why) =
+                crate::piececlaim::take(root, &folder, &who(asker), asker.live.as_deref(), act, now)
+            {
+                return no(why);
+            }
             let held = git::isolation().unwrap_or_default();
             let ran = in_a_checked_folder(root, &ask.workspace, repo, piece, &held, || match &ask
                 .work
@@ -154,9 +228,9 @@ fn isolated_answer(
                 GitWork::WorktreeUpdate { step, .. } => {
                     crate::pieceupdate::update(&at, step, &reach, &mut say)
                 }
-                GitWork::WorktreePush { lease, .. } => {
-                    crate::pieceupdate::push(&at, *lease, &reach, &mut say)
-                }
+                // `lease` is the `--force-with-lease` typed, which asks for nothing a plain
+                // push does not (#3895).
+                GitWork::WorktreePush { .. } => crate::pieceupdate::push(&at, &reach, &mut say),
                 _ => 1,
             });
             match ran {
@@ -165,13 +239,79 @@ fn isolated_answer(
                 Err(NotRun::Folder(why)) => return no(why.to_string()),
             }
         }
+        GitWork::WorktreeRemove {
+            repo,
+            piece,
+            delete_branch,
+        } => {
+            // Never forced: the ask has no word for it. A folder holding an uncommitted change
+            // or a commit no other ref reaches, its branch not landed by its files, is
+            // refused, naming what would be lost, and a folder purlis cut for a task is
+            // refused as it is from a terminal. And one live writer per branch folder (#3901):
+            // a folder another live chat holds is not removed for this one, and a removal
+            // ends the folder's claim.
+            let folder = crate::worktree::Located {
+                workspace: ask.workspace.clone(),
+                repo: repo.clone(),
+                piece: piece.clone(),
+            };
+            let held = git::isolation().unwrap_or_default();
+            let mut not_run = None;
+            let removed = crate::piececlaim::removing(
+                root,
+                &folder,
+                &who(asker),
+                crate::piececlaim::Judged::ByAChat(asker.live.as_deref()),
+                now,
+                || {
+                    let ran = in_a_checked_folder(root, &ask.workspace, repo, piece, &held, || {
+                        // What git ignores there goes with the folder: refused, named (#3879).
+                        if let Some(why) =
+                            crate::piececmd::ignored_would_go(root, &ask.workspace, repo, piece)
+                        {
+                            say(Say::Fail(why.into()));
+                            return 1;
+                        }
+                        crate::piececmd::remove(
+                            root,
+                            &ask.workspace,
+                            repo,
+                            piece,
+                            false,
+                            *delete_branch,
+                            &mut say,
+                        )
+                    });
+                    match ran {
+                        Ok(code) => code,
+                        Err(NotRun::Repo(why)) => {
+                            not_run = Some(why);
+                            1
+                        }
+                        Err(NotRun::Folder(why)) => {
+                            not_run = Some(why.to_string());
+                            1
+                        }
+                    }
+                },
+            );
+            match (removed, not_run) {
+                (_, Some(why)) | (Err(why), _) => return no(why),
+                (Ok(code), None) => code,
+            }
+        }
+        // Answered before anything above was asked ([`claim`]), and never reaches here.
+        GitWork::WorktreeClaim { .. } => unreachable!("a claim is answered before any check"),
         GitWork::RootUpdate {} => {
             // Placed at the root above, so its own folder is the root.
             let chat_dir = asker.cwd.as_deref().unwrap_or(root);
             let updated = crate::planegit::update_for_a_chat(root, chat_dir, &mut say);
             let request = crate::forge::request_words_of(root, root).request_noun();
             let said = updated.said(request);
-            if matches!(updated, crate::planegit::Updated::Left(_)) {
+            if let crate::planegit::Updated::Left(left) = &updated {
+                needs = left
+                    .needs_the_person()
+                    .then_some(crate::state::Need::RootUpdateRefused);
                 say(Say::Fail(said.into()));
                 1
             } else {
@@ -278,9 +418,12 @@ fn isolated_answer(
             code
         }
     };
-    Answer::Said {
-        lines: fitted(lines, SAID_AT_MOST),
-        code,
+    Answered {
+        answer: Answer::Said {
+            lines: fitted(lines, SAID_AT_MOST),
+            code,
+        },
+        needs,
     }
 }
 
@@ -413,6 +556,30 @@ pub fn at_or_above(root: &Path, cwd: Option<&Path>, repo: &str, piece: &str) -> 
     }
 }
 
+/// Whether a chat standing at `cwd` may ask for the branch folder `<repo>/<piece>` to be
+/// removed (#3879): [`at_or_above`], and never from inside that folder, which would go from
+/// under the chat. A place that cannot be read is refused.
+pub fn above(root: &Path, cwd: Option<&Path>, repo: &str, piece: &str) -> Result<(), String> {
+    at_or_above(root, cwd, repo, piece)?;
+    // A place that cannot be read is refused: whether it is the folder itself cannot be told.
+    let Some(cwd) = cwd.filter(|cwd| std::fs::canonicalize(cwd).is_ok()) else {
+        return Err(format!(
+            "the app could not place where this chat stands, so it will not remove branch \
+             folder {repo} · {piece} for it"
+        ));
+    };
+    match crate::worktree::locate(root, cwd) {
+        Some(_) => Err(format!(
+            "this chat stands in branch folder {repo} · {piece}, so the app will not remove it \
+             for it: removing it would take the folder this chat works in. The chat that cut \
+             it, or any chat opened in the workspace's folder, removes it from there with \
+             `purlis worktree remove {repo} {piece}` or the worktree_remove tool; or the \
+             person, from the window: Remove folder {piece} in {repo}, in the palette"
+        )),
+        None => Ok(()),
+    }
+}
+
 /// Whether a chat standing at `cwd` stands at the project root itself (#3831): the one chat
 /// whose place the root's working tree is. Anything else, or a place that cannot be read, is
 /// refused.
@@ -515,6 +682,13 @@ pub fn hosts(root: &Path, asker: &Asker) -> Result<Option<Vec<String>>, String> 
     if !asker.harnessed || asker.unsandboxed {
         return Ok(None);
     }
+    sandboxed_hosts(root)
+}
+
+/// The hosts a chat started under the project's sandbox may reach, or `None` where no sandbox
+/// is in force: [`hosts`] for a chat that carries no opt-out, as a dispatched persona chat
+/// never does (#3903, [`crate::dispatchplace::cut`]).
+pub fn sandboxed_hosts(root: &Path) -> Result<Option<Vec<String>>, String> {
     let plane = crate::sandbox::Plane::read(root);
     if plane.unreadable() {
         return Err(crate::sandbox::NotStarted::PlaneUnreadable.to_string());
@@ -526,13 +700,15 @@ pub fn hosts(root: &Path, asker: &Asker) -> Result<Option<Vec<String>>, String> 
         .map(|policy| crate::sandbox::hosts(&locks.presets(&policy.egress), &plane, &locks)))
 }
 
-/// Who the piece log credits: the chat, by the app's number for it, and its persona (D-4).
+/// Who the piece log credits: the chat, by the app's number for it and its stable id (#3901),
+/// and its persona (D-4).
 pub fn who(asker: &Asker) -> Who {
     Who::here(
         asker.config.as_deref(),
         Some(asker.chat.to_string()),
         asker.persona.clone(),
     )
+    .for_chat(asker.id.clone())
 }
 
 /// The most an answer's lines may take as JSON, under the 64 KiB an asker reads one answer in
@@ -603,6 +779,7 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
         | GitWork::WorktreeCut { repo, .. }
         | GitWork::WorktreeUpdate { repo, .. }
         | GitWork::WorktreePush { repo, .. }
+        | GitWork::WorktreeRemove { repo, .. }
         | GitWork::CloneUpdate { repo, .. } => {
             if crate::contain::repo_name_ok(repo) && crate::contain::workspace_name_ok(ws) {
                 vec![root.join("workspaces").join(ws).join(repo)]
@@ -617,6 +794,56 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
         // A workspace that is not there yet holds no clone; one that is there is refused.
         // The root is the window's own Update's to check, as it checks it for the person.
         GitWork::Create { .. } | GitWork::RootUpdate {} => Vec::new(),
+        // Runs no git.
+        GitWork::WorktreeClaim { .. } => Vec::new(),
+    }
+}
+
+/// **Whether a chat's plain git may `act` in the branch folder `at`** (#3931): the
+/// one-live-writer check a brokered write makes ([`crate::piececlaim::take`]),
+/// asked by the Bash guard of a chat that runs git itself, so plain git in a folder another
+/// live chat holds is refused in the brokered refusal's words, and a chat that writes in a
+/// folder no live chat holds takes it. An empty `Said` with exit 0 where it may.
+///
+/// **A shell tab is the person's own terminal** and is never held to a claim, nor takes one:
+/// the person hands any folder over. A name that cannot be a workspace, a repo or a piece is
+/// refused.
+fn claim(
+    root: &Path,
+    asker: &Asker,
+    at: &crate::worktree::Located,
+    act: crate::hookwire::ClaimAct,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Answer {
+    let may = Answer::Said {
+        lines: Vec::new(),
+        code: 0,
+    };
+    if !asker.harnessed {
+        return may;
+    }
+    if !crate::contain::workspace_name_ok(&at.workspace)
+        || !crate::contain::repo_name_ok(&at.repo)
+        || !crate::worktree::name::piece_name_ok(&at.piece)
+    {
+        return Answer::No {
+            why: format!(
+                "'{}' · '{}' · '{}' cannot name a branch folder",
+                crate::shown::short(&at.workspace),
+                crate::shown::short(&at.repo),
+                crate::shown::short(&at.piece)
+            ),
+        };
+    }
+    let live = asker.live.as_deref();
+    match crate::piececlaim::take_telling(root, at, &who(asker), live, act.act(), now) {
+        Ok(()) => may,
+        // The one answer the guard refuses on: another live chat holds the folder.
+        Err(crate::piececlaim::Refusal::HeldByALiveChat(why)) => Answer::Said {
+            lines: vec![Say::Fail(why.into())],
+            code: crate::hookwire::CLAIM_HELD,
+        },
+        Err(crate::piececlaim::Refusal::Otherwise(why)) => Answer::No { why },
     }
 }
 

@@ -21,10 +21,14 @@ use purlis_skills::tree;
 use serde::Serialize;
 
 use super::fetch::{SourceFile, fetch};
-use super::install::{level_parts, paths_fit};
+use super::install::{Written, level_parts, paths_fit};
 use super::lock::{self, Kept, Locked};
-use super::review::{Accepted, SkillReview, digest_of, review_of, sha256, summary_of, wrote};
+use super::review::{
+    Accepted, SkillReview, digest_of, met_at, review_of, sha256, summary_of, wrote,
+};
+use super::widen::{self, Widening};
 use super::{Commit, Remote, Source, listed, write};
+use crate::skills::Grant;
 use crate::skills::verbs::{self, Ctx, Level};
 
 /// **A newer commit for an installed skill**, offered, never applied by itself.
@@ -180,6 +184,11 @@ pub fn updates(plane: &Path) -> Updates {
             }),
         }
     }
+    let answered: Vec<Remote> = asked
+        .into_iter()
+        .filter_map(|(remote, answer)| answer.is_ok().then_some(remote))
+        .collect();
+    super::checked::asked(plane, &answered);
     out
 }
 
@@ -273,7 +282,7 @@ fn file_changes(was: &[SourceFile], now: &[SourceFile]) -> Vec<FileChange> {
 }
 
 /// **An update's review** (ADR 0100 §4).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateReview {
     pub name: String,
     pub level: Level,
@@ -289,8 +298,16 @@ pub struct UpdateReview {
     /// Those edits, as their diff from the pin: beside the source's change, never lost silently.
     pub local_edits: Vec<FileChange>,
     pub review: SkillReview,
-    /// The skills the newer commit refers to that this level does not have: they come along.
+    /// The skills the newer commit refers to that are not met at this level already: they come
+    /// along. Never one under a built-in skill's name, which a reference meets (#4155).
     pub brought: Vec<SkillReview>,
+    /// The updated skill's own grant, where it reaches past the root (#4186): each skill it
+    /// brings along lands with it, as an install's do with the install's grant.
+    pub grant: Option<Grant>,
+    /// What that grant asks of the project skills it and those it brings along refer to and
+    /// leave as they are (#4172, #4186): each grant the update widens, and each workspace that
+    /// turned one off.
+    pub widenings: Vec<Widening>,
 }
 
 impl UpdateReview {
@@ -300,6 +317,33 @@ impl UpdateReview {
         all.extend(self.brought.iter().cloned());
         Accepted::of(&self.newer, &all)
     }
+}
+
+/// **The grant an update of `name` at `level` writes**, where it reaches past the root (#4186):
+/// the updated skill's own, as [`super::install`] grants what it installs. One whose grant
+/// cannot be read reaches the root alone, as a chat reads it.
+fn grant_here(plane: &Path, level: &Level, name: &str) -> Option<Grant> {
+    let mut parts = level_parts(level).ok()?;
+    parts.push(name.to_owned());
+    let grant = crate::skills::grant_of(&plane.join(parts.join("/"))).ok()?;
+    widen::granted_beyond_the_root(level, Some(&grant)).cloned()
+}
+
+/// What `grant` asks of the skills `skills` refer to and leave as they are.
+fn widenings_of<'a>(
+    plane: &Path,
+    level: &Level,
+    grant: Option<&Grant>,
+    skills: impl IntoIterator<Item = &'a SkillReview>,
+) -> Vec<Widening> {
+    widen::widenings(
+        plane,
+        level,
+        grant,
+        skills
+            .into_iter()
+            .flat_map(|skill| skill.already.iter().map(String::as_str)),
+    )
 }
 
 /// The installed skill `name` at `level`, as its lockfile records it, and whether this machine
@@ -323,14 +367,15 @@ fn locked_at(plane: &Path, level: &Level, name: &str) -> Result<(lock::Read, usi
     }
 }
 
-/// Whether `level` holds a skill named `name`.
-fn has(plane: &Path, level: &Level, name: &str) -> bool {
-    level.named(plane, name).is_some()
-}
-
 /// **The review of updating the installed skill `name` at `level`** to its source's newest
-/// commit. Refused where the pin is the newest, or where this machine may not contact the source.
-pub fn update_review(plane: &Path, level: &Level, name: &str) -> Result<UpdateReview, String> {
+/// commit, with the built-in skills in `built_in`, whose names a reference meets already (#4155).
+/// Refused where the pin is the newest, or where this machine may not contact the source.
+pub fn update_review(
+    plane: &Path,
+    built_in: Option<&Path>,
+    level: &Level,
+    name: &str,
+) -> Result<UpdateReview, String> {
     let (held, at) = locked_at(plane, level, name)?;
     let locked = &held.lock.skills[at];
     let source = source_of(plane, locked)?;
@@ -374,7 +419,8 @@ pub fn update_review(plane: &Path, level: &Level, name: &str) -> Result<UpdateRe
         _ => Vec::new(),
     };
     let was = pinned.unwrap_or_else(|| here.clone());
-    let reviewed = fetched.review_with(&[name.to_owned()], &|other| has(plane, level, other))?;
+    let met_here = met_at(plane, built_in, level);
+    let reviewed = fetched.review_with(&[name.to_owned()], &met_here)?;
     let mut skills = reviewed.skills.into_iter();
     let review = skills.next().unwrap_or_else(|| {
         let held_names: Vec<String> = found.iter().map(|f| f.name.clone()).collect();
@@ -384,8 +430,17 @@ pub fn update_review(plane: &Path, level: &Level, name: &str) -> Result<UpdateRe
             tree::left_in(&fetched.left, &one.dir),
             None,
             &held_names,
+            &|other| other != name && met_here(other),
         )
     });
+    let brought: Vec<SkillReview> = skills.collect();
+    let grant = grant_here(plane, level, name);
+    let widenings = widenings_of(
+        plane,
+        level,
+        grant.as_ref(),
+        std::iter::once(&review).chain(&brought),
+    );
     Ok(UpdateReview {
         name: name.to_owned(),
         level: level.clone(),
@@ -397,20 +452,26 @@ pub fn update_review(plane: &Path, level: &Level, name: &str) -> Result<UpdateRe
         edited,
         local_edits,
         review,
-        brought: skills.collect(),
+        brought,
+        grant,
+        widenings,
     })
 }
 
 /// **Accepts an update** of the installed skill `name` at `level` to what `accepted` says: the
 /// newer commit fetched again and checked against the reviewed digests; the skills it brings
-/// along installed beside it; each of its files written over the copy, each file the old commit
-/// had and the newer one does not removed; and the pins moved, as one commit. Where a skill it
+/// along installed beside it, granted as the updated skill is (#4186); each project skill it relies
+/// on widened to reach there too; each of its files written over the copy, each file the old
+/// commit had and the newer one does not removed; and the pins moved, as one commit. `grant` is
+/// the grant the review showed ([`UpdateReview::grant`]): where the skill's grant changed since,
+/// nothing is written. Where a skill it
 /// brings along or the lockfile cannot be written, what this update made is taken back.
 pub fn update(
     cx: &mut Ctx<'_>,
     level: &Level,
     name: &str,
     accepted: &Accepted,
+    grant: Option<&Grant>,
 ) -> Result<PathBuf, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
@@ -418,7 +479,7 @@ pub fn update(
     let locked = held.lock.skills[at].clone();
     let source = source_of(plane, &locked)?;
     let fetched = fetch(plane, &source, Some(&accepted.commit))?;
-    let reviewed = fetched.review_with(&[name.to_owned()], &|other| has(plane, level, other))?;
+    let reviewed = fetched.review_with(&[name.to_owned()], &met_at(plane, cx.built_in, level))?;
     if !accepted.is(&reviewed.accepted()) || reviewed.skills.first().is_none_or(|s| s.name != name)
     {
         return Err(
@@ -442,7 +503,8 @@ pub fn update(
             "the source moved {name}: install it again from where it is now"
         ));
     }
-    // A skill it brings along takes no built-in skill's name, as an install's does not.
+    // A skill it brings along takes no built-in skill's name, as an install's does not. A
+    // reference to one is met already (#4155), so none is brought: this is the guard (S12).
     if let Some(skill) = reviewed
         .skills
         .iter()
@@ -455,18 +517,21 @@ pub fn update(
             skill.name
         ));
     }
+    // What it brings along lands granted as the review said, and what it relies on is widened
+    // by that grant: one that changed since was never shown.
+    let granted = grant_here(plane, level, name);
+    if granted.as_ref() != grant {
+        return Err(format!(
+            "the grant of {name} changed since the review, so nothing was updated: review it again"
+        ));
+    }
     let level_dir = level_parts(level)?;
     let files = fetched.files_of(&one.dir)?;
     paths_fit(&level_dir, name, &files)?;
     let mut lock = held.lock.clone();
     // The skills it brings along, first: each a new copy this update can take back.
-    let mut brought: Vec<(String, write::Made)> = Vec::new();
+    let mut written = Written::none(plane, level_dir.clone());
     let mut paths: Vec<String> = Vec::new();
-    let take_back = |brought: &[(String, write::Made)]| {
-        for (skill, made) in brought.iter().rev() {
-            write::take_back(plane, &level_dir, skill, made);
-        }
-    };
     for skill in reviewed.skills.iter().skip(1) {
         let other = find(&skill.name)?;
         let their = fetched.files_of(&other.dir)?;
@@ -485,9 +550,9 @@ pub fn update(
                 .map_err(|why| format!("{} could not be installed ({why})", skill.name))
         });
         match made {
-            Ok(made) => brought.push((skill.name.clone(), made)),
+            Ok(made) => written.skills.push((skill.name.clone(), made)),
             Err(why) => {
-                take_back(&brought);
+                written.take_back();
                 return Err(format!("{why}, so nothing was updated"));
             }
         }
@@ -503,6 +568,27 @@ pub fn update(
             brought_by: Some(name.to_owned()),
         });
         paths.push(format!("{}/{}", level_dir.join("/"), skill.name));
+    }
+    // Each lands where the skill that brings it reaches, and a project skill they rely on
+    // reaches there too (#4186), as an install with that grant does (#4172).
+    let brought: Vec<String> = written.skills.iter().map(|(n, _)| n.clone()).collect();
+    if let Some(grant) = grant {
+        for skill in &brought {
+            let folder = plane.join(level_dir.join("/")).join(skill);
+            if let Err(why) = crate::skills::set_grant(&folder, grant) {
+                written.take_back();
+                return Err(format!(
+                    "{skill} could not be granted to {grant} ({why}), so nothing was updated"
+                ));
+            }
+            written.grants.push(skill.clone());
+            paths.push(verbs::rel(plane, &crate::skills::beside(&folder)));
+        }
+    }
+    let widenings = widenings_of(plane, level, grant, &reviewed.skills);
+    if let Err(why) = written.widen(&widenings, &mut paths) {
+        written.take_back();
+        return Err(format!("{why}, so nothing was updated"));
     }
     let files_wrote = wrote(&files);
     let mut parts = level_dir.clone();
@@ -522,7 +608,7 @@ pub fn update(
         })
         .collect();
     if let Err(why) = write::replace(plane, &parts, &writes, &gone) {
-        take_back(&brought);
+        written.take_back();
         return Err(format!(
             "{name} could not be updated ({why}): what was written of it is in its folder, and \
              the pin is where it was"
@@ -534,14 +620,27 @@ pub fn update(
     entry.files = files_wrote;
     let kept = Kept::of(level);
     if let Err(why) = lock::write(plane, kept, held.was.as_deref(), &lock) {
-        take_back(&brought);
+        written.take_back();
         return Err(why);
+    }
+    // Each skill it brought is a new one: the grades of one that had its name before are none of
+    // its own (#4104).
+    for skill in &brought {
+        verbs::earlier_dropped(cx, level, skill);
     }
     let folder = plane.join(parts.join("/"));
     cx.done(format!(
         "{name} is updated at {level}, pinned to {}",
         fetched.commit.short()
     ));
+    if let Some(grant) = grant.filter(|_| !brought.is_empty()) {
+        let are = if brought.len() == 1 { "is" } else { "are" };
+        cx.done(format!(
+            "{} {are} granted to {grant}, as {name} is",
+            brought.join(", ")
+        ));
+    }
+    widen::said_done(cx, &widenings, "what was updated");
     if kept == Kept::Shared {
         paths.push(verbs::rel(plane, &folder));
         paths.push(lock::FILE.to_owned());

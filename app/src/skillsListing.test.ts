@@ -195,12 +195,14 @@ describe("the rows of a studio answer", () => {
           title: "Claude Code",
           skills: [skill("pdf", { level: "installed", folder: "" }), repo],
           repo_left_out: [],
+          own: null,
         },
         {
           harness: "codex",
           title: "Codex",
           skills: [repo],
           repo_left_out: [],
+          own: null,
         },
       ],
     });

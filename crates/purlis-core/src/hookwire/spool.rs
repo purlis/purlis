@@ -308,6 +308,15 @@ struct KeptKey {
     /// file is taken under it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     file: Option<u64>,
+    /// The highest number of the dispatch messages queued under this key that the app has
+    /// delivered (#3902, [`crate::dispatchqueue`]): the floor a message's number never goes
+    /// back below, so a copy of one already delivered is refused after its folder drains.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    messages: u64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 /// Which of a chat's two stores a line is in. Each has a sequence of its own under one key.
@@ -944,6 +953,7 @@ fn remember_within(dir: &Path, tokens: &[(u32, &ChatToken)], wait: Duration) -> 
                     drained: 0,
                     missing: Vec::new(),
                     file: None,
+                    messages: 0,
                 });
             }
         }
@@ -1015,6 +1025,96 @@ fn read_keys(dir: &Path) -> io::Result<Keys> {
             );
             Keys::new()
         }))
+}
+
+/// **Signs `body`, number `seq` of chat `chat`, under the key `token` writes its spool lines
+/// under** (#3902): the key's id and the MAC, as [`checks_as`] checks them. What a dispatch
+/// message queued while the app did not answer carries ([`crate::dispatchqueue`]): the same
+/// key, so the host that checks a spooled line checks a queued message too, and nothing that
+/// does not hold the chat's token can queue one as that chat.
+pub fn sign_as(token: &ChatToken, chat: u32, seq: u64, body: &str) -> (String, String) {
+    let key = SpoolKey::of(token);
+    let id = key.id();
+    let mac = key.sign(chat, seq, &id, body);
+    (id, mac)
+}
+
+/// **Whether `mac` is chat `chat`'s MAC over `body`, number `seq`, under the key `id`** (#3902),
+/// where `keys.json` in `dir` holds that key for that chat: one the host issued to it and keeps
+/// until it ends. A key it does not hold, or a `keys.json` that does not read, checks nothing.
+/// Read under no lock: the file is replaced whole, never written in place.
+pub fn checks_as(dir: &Path, chat: u32, seq: u64, id: &str, body: &str, mac: &str) -> bool {
+    let Ok(keys) = read_keys(dir) else {
+        return false;
+    };
+    keys.keys
+        .iter()
+        .filter(|held| held.chat == chat && held.id == id)
+        .filter_map(|held| key_of(&held.key))
+        .any(|key| key.checks(chat, seq, id, body, mac))
+}
+
+/// The id of the key the host keeps for chat `chat` now, the last it issued it: `None` where it
+/// keeps none, or `keys.json` does not read.
+pub fn kept_key_of(dir: &Path, chat: u32) -> Option<String> {
+    read_keys(dir)
+        .ok()?
+        .keys
+        .into_iter()
+        .rev()
+        .find(|held| held.chat == chat)
+        .map(|held| held.id)
+}
+
+/// **Signs `body`, number `seq` of chat `chat`, under the key the host keeps for it now**
+/// ([`kept_key_of`]): what a queued message moved to a chat started again in its place is
+/// written again under (#3902). `None` where no key is kept for it.
+pub fn sign_kept(dir: &Path, chat: u32, seq: u64, body: &str) -> Option<(String, String)> {
+    let keys = read_keys(dir).ok()?;
+    let held = keys.keys.iter().rev().find(|held| held.chat == chat)?;
+    let key = key_of(&held.key)?;
+    Some((held.id.clone(), key.sign(chat, seq, &held.id, body)))
+}
+
+/// The id of the key `token` signs under: what [`message_floor`] is asked by.
+pub fn key_id_of(token: &ChatToken) -> String {
+    SpoolKey::of(token).id()
+}
+
+/// **The highest number of chat `chat`'s queued dispatch messages under key `id` that the app
+/// has delivered** (#3902): 0 where none was, the key is not held, or `keys.json` does not
+/// read. A sender numbers past it, and the app refuses a message at or below it. Read under no
+/// lock: the file is replaced whole.
+pub fn message_floor(dir: &Path, chat: u32, id: &str) -> u64 {
+    read_keys(dir)
+        .ok()
+        .and_then(|keys| {
+            keys.keys
+                .into_iter()
+                .find(|held| held.chat == chat && held.id == id)
+        })
+        .map_or(0, |held| held.messages)
+}
+
+/// **Raises the floor of chat `chat`'s queued messages under key `id` to `seq`** (#3902), under
+/// the lock on the keys, before the message's file is removed: it never goes down. A key that
+/// is not held raises nothing.
+pub fn raise_message_floor(dir: &Path, chat: u32, id: &str, seq: u64) -> io::Result<()> {
+    keys_locked(dir, || {
+        let mut keys = read_keys(dir)?;
+        let Some(held) = keys
+            .keys
+            .iter_mut()
+            .find(|held| held.chat == chat && held.id == id)
+        else {
+            return Ok(());
+        };
+        if held.messages >= seq {
+            return Ok(());
+        }
+        held.messages = seq;
+        write_keys(dir, &keys)
+    })
 }
 
 /// The highest number a drain has handed on under the key `id`, for a hook choosing its next
@@ -1498,11 +1598,73 @@ fn forget(
     ended: impl Fn(u32) -> bool,
 ) -> io::Result<()> {
     let before = keys.keys.len();
-    keys.keys.retain(kept);
+    // **What a chat whose queue is cleared below left queued is set aside first** (#3958),
+    // read while `keys.json` still holds the keys that check it: nothing it queued is dropped
+    // without a record the person can see. A chat whose messages could not be set aside keeps
+    // its keys and its queue, for the next open to set aside again.
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| {
+            i64::try_from(since.as_secs()).unwrap_or(i64::MAX)
+        });
+    let mut not_set_aside = Vec::new();
+    for chat in crate::dispatchqueue::chats_in(dir) {
+        let keeps_a_key = keys.keys.iter().any(|held| held.chat == chat && kept(held));
+        if !ended(chat) || keeps_a_key {
+            continue;
+        }
+        match crate::dispatchqueue::undelivered::set_aside(dir, chat, at) {
+            Ok(0) => {}
+            Ok(count) => tracing::info!(
+                "purlis: chat {chat} ended with {count} dispatch messages still queued; they \
+                 are reported where the person reads them"
+            ),
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: what chat {chat} left queued could not be set aside to report \
+                     ({why}); its queue and its keys are kept for the next open"
+                );
+                not_set_aside.push(chat);
+            }
+        }
+    }
+    keys.keys
+        .retain(|held| kept(held) || not_set_aside.contains(&held.chat));
     if keys.keys.len() != before {
         write_keys(dir, &keys)?;
     }
-    tidy(dir, &keys, ended);
+    tidy(dir, &keys, &ended);
+    // And the keys their hooks were armed with (#3822): no app holds an ended chat's.
+    super::armed::disarm_ended(dir, &ended);
+    // And the dispatch messages an ended chat left queued (#3902): the app delivered or
+    // reported them as the chat closed, and what was left that checked is set aside above
+    // (#3958), so what is here checks under no key it keeps. A chat whose messages could not
+    // be set aside kept its keys, and so its queue.
+    if let Ok(entries) = std::fs::read_dir(dir.join(crate::dispatchqueue::DIR)) {
+        for entry in entries.filter_map(Result::ok) {
+            let name = entry.file_name();
+            let Some(chat) = name
+                .to_str()
+                .and_then(|name| name.parse::<u32>().ok().filter(|n| n.to_string() == name))
+            else {
+                continue;
+            };
+            if ended(chat)
+                && !keys.keys.iter().any(|held| held.chat == chat)
+                && entry.file_type().is_ok_and(|kind| kind.is_dir())
+            {
+                let left = std::fs::read_dir(entry.path()).map_or(0, Iterator::count);
+                if left > 0 {
+                    tracing::warn!(
+                        "purlis: chat {chat} ended with {left} files in its dispatch queue \
+                         that the app did not deliver; what of them checked is reported, and \
+                         they are removed"
+                    );
+                }
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1517,7 +1679,7 @@ fn forget(
 /// lands: a hook that makes the folder again spools into the new one, and a hook that held the
 /// old one open is told the line is lost. Best effort: what cannot be removed now is left for
 /// the next chat's end or open.
-fn tidy(dir: &Path, keys: &Keys, ended: impl Fn(u32) -> bool) {
+fn tidy(dir: &Path, keys: &Keys, ended: &impl Fn(u32) -> bool) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -1671,14 +1833,15 @@ impl<'a> Checked<'a> {
         if self.already.contains(&this) {
             return self.reject(Some(disk.seq), Why::Repeated);
         }
-        let (line, delivery) = match super::read_delivered(&disk.line) {
-            Some((Line::Report(report), _, delivery)) if report.chat == chat => {
+        let read = super::read_delivered(&disk.line).map(|read| (read.line, read.delivery));
+        let (line, delivery) = match read {
+            Some((Line::Report(report), delivery)) if report.chat == chat => {
                 (Spooled::Report(report), delivery)
             }
-            Some((Line::Tool(call), _, delivery)) if call.chat == chat => {
+            Some((Line::Tool(call), delivery)) if call.chat == chat => {
                 (Spooled::Tool(call), delivery)
             }
-            Some((Line::Refused(refused), _, delivery)) if refused.chat == chat => {
+            Some((Line::Refused(refused), delivery)) if refused.chat == chat => {
                 (Spooled::Refused(refused), delivery)
             }
             _ => return self.reject(Some(disk.seq), Why::NotThisChats),

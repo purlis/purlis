@@ -35,7 +35,7 @@ pub const STATEMENT_HEADER: &str = "purlis runner link key v3";
 
 /// Where the operator's pod holds its signing keys: the whole Secret, which the kubelet mounts
 /// there (`deploy/operator.yaml`) and refreshes when it changes, so the operator itself holds no
-/// right to read any Secret and a key roll needs no restart (#3305).
+/// right to read this Secret and a key roll needs no restart (#3305).
 pub const SIGNING_KEY_DIR: &str = "/var/run/purlis-cluster-operator/signing-key";
 
 /// The key the operator signs with now: `key.pem` in the Secret.
@@ -650,6 +650,24 @@ pub fn key_published(pod: &Pod, template: &PodSpec) -> Result<String, NotYet> {
     Ok(key.to_owned())
 }
 
+/// The annotation upstream records an adopted pod's name in on its sandbox, where that name is
+/// not the sandbox's own (agent-sandbox v1.0.6, `SandboxPodNameAnnotation`).
+pub const POD_NAME_ANNOTATION: &str = "agents.x-k8s.io/pod-name";
+
+/// **The name of the pod `sandbox` runs**, as upstream finds it (agent-sandbox v1.0.6,
+/// `resolvePodName`): the one [`POD_NAME_ANNOTATION`] records, where it records one, and the
+/// sandbox's own name otherwise (#2058, from #2056). It names a pod to read; the pod is still
+/// held to being that sandbox's ([`controlled_by`]).
+pub fn pod_name_of(sandbox: &ObjectMeta) -> String {
+    sandbox
+        .annotations
+        .as_ref()
+        .and_then(|annotations| annotations.get(POD_NAME_ANNOTATION))
+        .filter(|name| !name.is_empty())
+        .cloned()
+        .unwrap_or_else(|| sandbox.name.clone().unwrap_or_default())
+}
+
 /// Whether `object` is controlled by the object `owner` of `kind` in the API group `group`, by
 /// its uid: what an owner reference anyone can write cannot fake without the owner's uid, and
 /// what names alone never prove.
@@ -758,7 +776,7 @@ pub struct Held<'a> {
     pub template_spec: Option<&'a PodTemplateSpec>,
     /// The sandbox the upstream claim's status names.
     pub sandbox: Option<&'a ObjectMeta>,
-    /// The pod of that sandbox's name.
+    /// The pod that sandbox records ([`pod_name_of`]).
     pub pod: Option<&'a Pod>,
 }
 
@@ -823,6 +841,9 @@ pub fn vouch(held: &Held<'_>, wanted_template: &PodTemplateSpec, keys: &SigningK
         );
     };
     let template = &template;
+    if pod.metadata.name.as_deref() != Some(pod_name_of(sandbox).as_str()) {
+        return Vouching::Refused("its pod is not the one its sandbox records".into());
+    }
     if !controlled_by(&pod.metadata, "agents.x-k8s.io", "Sandbox", sandbox) {
         return Vouching::Refused("its pod is not the one its sandbox made".into());
     }

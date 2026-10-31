@@ -294,6 +294,16 @@ only that sentence changed, replaced byte for byte: 107 rows of `planeroot-oracl
 rows of `planeroot-generated.jsonl.gz`, and the `pretooluse-plane-root-branch` scenario of
 `tests/fixtures/recorded/behaviour.jsonl`.
 
+**And only a sandboxed chat commits through purlis (#3865).** The guard is asked of every
+chat, and the #3798 sentence told each to commit with `purlis worktree commit`, which a chat
+with no sandbox is refused ("use git"). "then commit and push from it with `purlis worktree
+commit` and `purlis worktree push`." now reads "then commit and push from it: in a sandboxed
+chat with `purlis worktree commit` and `purlis worktree push`, in any other chat with plain
+`git commit` and `git push`." No verdict moved, and only that sentence changed, replaced byte
+for byte in the same rows: 107 of `planeroot-oracle.jsonl`, 373 of
+`planeroot-generated.jsonl.gz`, and the `pretooluse-plane-root-branch` scenario of
+`tests/fixtures/recorded/behaviour.jsonl`.
+
 ## The session recording
 
 Re-record with:

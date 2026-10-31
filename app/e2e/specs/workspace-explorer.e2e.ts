@@ -1043,8 +1043,11 @@ describe("the explorer", () => {
     });
     expect(dropped).toBe(true);
 
-    // What the action answered: its closable notice at the top of the content (#3344).
-    const said = await $('.window-work > .action-result [role="status"]');
+    // What the action answered: its notice on the card that pops from the status bar's Notices
+    // item (#3653), or at the top of the opener's page with no project in front (#3344).
+    const said = await $(
+      '[data-chip="status/bar/notices"] > .action-result [role="status"], .window-work > .action-result [role="status"]',
+    );
     await said.waitForExist({ timeout: 20_000 });
     await expect(said).toHaveText(expect.stringContaining("Nothing was sent."));
     await browser.waitUntil(

@@ -400,7 +400,7 @@ fn tidy(dir: &Path, folders: usize) {
 /// `bytes` put at `path` whole: written to a temp file of this start's own, made fresh and
 /// never through a link, then renamed over `path`, which replaces the entry rather than writing
 /// through it. Two starts at once each write their own, and the last rename wins.
-fn replace(path: &Path, bytes: &[u8], mode: u32) {
+pub(super) fn replace(path: &Path, bytes: &[u8], mode: u32) {
     use std::io::Write;
     use std::sync::atomic::{AtomicU64, Ordering};
     static MADE: AtomicU64 = AtomicU64::new(0);
@@ -695,26 +695,7 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
     // No other profile's folder is read or written, and the chat's own is reached through
     // the folders above it, looked up and never listed.
     if let Some(profiles) = wrap.carved() {
-        for (all, own_home) in super::kernel_names(profiles)
-            .iter()
-            .zip(super::kernel_names(home))
-        {
-            own.deny.push(format!(
-                "(deny file-read* file-write* file-link (require-all (subpath {}) (require-not (subpath \
-                 {}))))",
-                string(&all.display().to_string())?,
-                string(&own_home.display().to_string())?
-            ));
-            for above in own_home.ancestors().skip(1) {
-                if !above.starts_with(all) {
-                    break;
-                }
-                own.after.push(format!(
-                    "(allow file-read-metadata (literal {}))",
-                    string(&above.display().to_string())?
-                ));
-            }
-        }
+        carve(&mut own, profiles, home)?;
     }
     own.allow.push(format!(
         "(regex {})",
@@ -750,6 +731,32 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
         ))?
     ));
     Ok(own)
+}
+
+/// No folder of this machine's `profiles` read or written but `home`, the chat's own, which it
+/// reaches through the folders above it, looked up and never listed.
+pub(super) fn carve(own: &mut Own, profiles: &Path, home: &Path) -> Result<(), &'static str> {
+    for (all, own_home) in super::kernel_names(profiles)
+        .iter()
+        .zip(super::kernel_names(home))
+    {
+        own.deny.push(format!(
+            "(deny file-read* file-write* file-link (require-all (subpath {}) (require-not (subpath \
+             {}))))",
+            string(&all.display().to_string())?,
+            string(&own_home.display().to_string())?
+        ));
+        for above in own_home.ancestors().skip(1) {
+            if !above.starts_with(all) {
+                break;
+            }
+            own.after.push(format!(
+                "(allow file-read-metadata (literal {}))",
+                string(&above.display().to_string())?
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// The flags that go last among a wrapped Codex's flags: its own sandbox off, since it cannot

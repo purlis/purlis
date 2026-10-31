@@ -627,10 +627,6 @@ body {
   box-shadow: inset 0 -2px 0 var(--state-waiting);
 }
 
-.chat-browser-driver[data-driver="person"] {
-  color: var(--text-primary);
-}
-
 /* **No rule dresses every button on the bar** (#3129): one that did drew a bordered box around
    any button it reached that did not say the whole of what it is, the fresh mark among them. A
    button of the family draws itself; each mark below says all of its own look. */
@@ -666,16 +662,10 @@ body {
   min-height: 0;
 }
 
+/* The empty sentence is a secondary line (`ui-text-secondary`, #1920): the role's colour is what
+   makes it quiet, never a fade over it, which took it to 3.4:1 in Purlis light (#3790). */
 .empty {
   padding: var(--space-5);
-  opacity: 0.6;
-}
-
-/* In the Explorer and in a panel the empty sentence is a secondary line (`ui-text-secondary`,
-   #1920): the role's colour is what makes it quiet, so the dimming is not drawn on top of it. */
-.explorer .empty,
-.panels .empty {
-  opacity: 1;
 }
 
 .pane {
@@ -928,7 +918,6 @@ body {
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  opacity: 0.92;
 }
 
 .gauge-label {
@@ -951,7 +940,6 @@ body {
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  opacity: 0.92;
 }
 
 /* The harness a chat runs, at a glance (HP-19): a button, because it opens the harness's card
@@ -966,55 +954,17 @@ body {
   text-overflow: ellipsis;
 }
 
-/* **A chat's skills** (`SkillsChip`, #2775): how many it lists, and Use skill… for it, drawn by
-   the button family (ghost, or warning-soft while the chat's set is past its skill budget). Its
-   place on the line only: it never pushes the line wider than it is. */
+/* **A chat's skills** (`SkillsChip`, #2775, S8): how many its set holds, and the way to them in
+   the Skills view, drawn by the button family (ghost, or warning-soft while something in the set
+   needs the person). Its place on the line only: it never pushes the line wider than it is. */
 .pane-chips > .pane-skills {
   flex: 0 1 auto;
   min-width: 0;
 }
 
-/* **Use skill…** (`UseSkill.tsx`, #2775): the chat's skills to pick from, then the boxes of the
-   one picked, in a dialog of the family (#2910); each row says the skill's name, its level,
-   whether it is manual-only, and what it does. */
-.use-skill-budget {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-}
-
-.use-skill-over {
-  display: flex;
-  gap: var(--space-2);
-  align-items: flex-start;
-  color: var(--state-waiting);
-}
-
-.use-skill-over > svg {
-  flex: none;
-  inline-size: 1em;
-  block-size: 1em;
-  margin-block-start: var(--space-1);
-}
-
-/* Pins past the most a chat reads only together (#3391): the sentence, and under it a way to
-   each pinner's studio. */
-.use-skill-pins-together > div {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.use-skill-pins-together p {
-  margin: 0;
-}
-
-.use-skill-studios {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
+/* **Use skill…** (`UseSkill.tsx`, #2775, S8): a quick picker of the chat's skills, then the
+   boxes of the one picked, in a dialog of the family (#2910); each row says the skill's name,
+   its level, whether it is manual-only, and what it does. */
 /* The skills are a list of the family (`ui/list`, #2911): a skill's name, its level and its
    description under them, in the row. The list scrolls inside the dialog. */
 .use-skill-list {
@@ -1232,7 +1182,6 @@ body {
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  opacity: 0.92;
 }
 
 /* **A pane's breadcrumb, while its tab shows a task** (#1486, `PaneCrumbs.tsx`): `steward 4 ›
@@ -1592,6 +1541,23 @@ body {
   max-height: 60vh;
   overflow: auto;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* **A runner chat's held dispatch, in its own tab**: what it would start, as label and value. */
+.runner-dispatch-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+
+.runner-dispatch-facts dt {
+  color: var(--text-muted);
+}
+
+.runner-dispatch-facts dd {
+  margin: 0;
   overflow-wrap: anywhere;
 }
 
@@ -3220,7 +3186,6 @@ body {
   border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
   margin-top: var(--space-4);
   padding-top: var(--space-2);
-  opacity: 0.7;
 }
 
 .explorer .absent-heading,
@@ -3265,16 +3230,20 @@ body {
   display: flex;
   gap: var(--space-3);
   align-items: flex-start;
-  color: var(--state-failed);
 }
 
 .explorer .trouble:where(:not([data-part="root"])) {
   margin: var(--space-2) 0;
 }
 
-/* A folder that could not be read, a line of the file tree (#2911): its words and its mark in the
-   failed colour, on the line the tree family draws. */
-.explorer .trouble[data-part="root"] :is([role="alert"], .node-icon) {
+/* A folder that could not be read, a line of the file tree (#2911): its words in `danger.text`,
+   as every word that says something is wrong, and its mark in the failed state's colour, on the
+   line the tree family draws (#3938). */
+.explorer .trouble[data-part="root"] [role="alert"] {
+  color: var(--danger-text);
+}
+
+.explorer .trouble[data-part="root"] .node-icon {
   color: var(--state-failed);
 }
 
@@ -3704,8 +3673,7 @@ body {
 /* **A chat's browsers, under its row** (#2024) wear a finished task's name's rules: the shared
    tree row at the level below the chat's, its mark and name in a chat's row's columns. */
 .chats-section .finished-name,
-.chats-section .chat-browser,
-.chats-section .finished-count {
+.chats-section .chat-browser {
   color: inherit;
   font: inherit;
 }
@@ -3846,7 +3814,7 @@ body {
 .state-bar .pending,
 .state-bar .note,
 .state-bar .stamp {
-  opacity: 0.6;
+  color: var(--text-muted);
 }
 
 .state-bar .note {
@@ -3896,7 +3864,6 @@ body {
   display: flex;
   gap: var(--space-3);
   align-items: flex-start;
-  color: var(--state-failed);
   margin: var(--space-2) 0;
 }
 
@@ -3916,7 +3883,7 @@ body {
 }
 
 .came-back code {
-  opacity: 0.7;
+  color: var(--text-secondary);
 }
 
 /* **While you were away** (`AwaySummary.tsx`, #1514): each part of the sentence is a link to
@@ -3950,9 +3917,38 @@ body {
   margin: 0;
 }
 
+/* How many notices a card holds, above them, while it holds more than one (#3649). */
+.chip-card-count {
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
 .chip-card [data-f6-card] {
+  /* Held to the room the card is given (React Aria's max height on the surface, a flex column):
+     shrunk to it, never its content's height, its notices scroll inside it, the point outside it
+     left whole, and nothing of them runs past it into the page (#3653). */
+  /* The place of what its notices place absolutely (a status's words for a screen reader), so
+     that is clipped with the list too and never lengthens the page from far down it. */
+  position: relative;
+  box-sizing: border-box;
+  flex: 0 1 auto;
+  min-block-size: 0;
+  /* At most a few notices tall, whatever the room: a card stays over the page until it is
+     hidden, so it covers no more of it than it must. */
+  max-block-size: min(28rem, 60vh);
+  overflow-y: auto;
   border-radius: var(--radius-lg);
   outline: none;
+}
+
+/* **The status bar's Notices item and its dot** (`StatusLine.tsx`, #3653): the item's box, which
+   the dot stands over the leading corner of, so the dot coming or going moves nothing. */
+.status-notices {
+  position: relative;
+  display: inline-flex;
+  flex: none;
 }
 
 .chip-card [data-f6-card]:focus-visible {
@@ -3963,6 +3959,11 @@ body {
 /* A kept result's notice is drawn in the Results list's place; its keyboard handler is no box. */
 .action-result-kept {
   display: contents;
+}
+
+.action-result-meter,
+.clone-bar {
+  margin-block-start: var(--space-1);
 }
 
 .action-result-details {
@@ -4050,12 +4051,12 @@ body {
 
 .ending .what {
   min-width: 4rem;
-  opacity: 0.7;
+  color: var(--text-muted);
 }
 
 .ending .where {
   font-size: var(--font-size-xs);
-  opacity: 0.55;
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4165,8 +4166,7 @@ body {
   flex: none;
 }
 /* Its tab's amber underline is the tabs family's (`ui/tabs/tabs.css`). */
-.tabs .tab[data-wrapping-up] .tab-name,
-.chat[data-wrapping-up] .session {
+.tabs .tab[data-wrapping-up] .tab-name {
   color: var(--text-muted);
 }
 
@@ -4231,7 +4231,7 @@ body {
 .refused {
   margin: 0 0 var(--space-5);
   font-size: var(--font-size-sm);
-  opacity: 0.8;
+  color: var(--text-secondary);
 }
 
 .refused summary {
@@ -4313,8 +4313,8 @@ body {
 .panels .ci-pending {
   color: var(--state-waiting);
 }
+/* Its words are `.trouble`'s `danger.text` (#3938): `state.failed` is a state's mark. */
 .panels .trouble {
-  color: var(--state-failed);
   margin: var(--space-2) 0;
 }
 
@@ -4327,7 +4327,7 @@ body {
    placeholder disappears the moment somebody types. */
 .palette-ask {
   font-size: var(--font-size-xs);
-  opacity: 0.7;
+  color: var(--text-muted);
 }
 
 /* The field family's box (#2905), across the palette. */
@@ -4369,7 +4369,7 @@ body {
 .palette .held,
 .palette .none {
   margin: 0;
-  opacity: 0.8;
+  color: var(--text-secondary);
 }
 
 /* The way out of the key the palette claimed (charter-app#47). Quieter than a row and
@@ -4378,7 +4378,7 @@ body {
 .palette-through {
   margin: 0;
   font-size: var(--font-size-xs);
-  opacity: 0.7;
+  color: var(--text-muted);
 }
 
 /* ⌘P's files (FM-7): a group of their own under the projects, headed by the scope they were
@@ -4433,28 +4433,6 @@ body {
   max-width: 38rem;
   line-height: var(--line-height-body);
   color: var(--text-secondary);
-}
-
-/* **The welcome's cards**: a door and a repo to get, each a card pressed whole, not a button of
-   the family (the card family's, `eslint.config.js`). Every other button on the welcome and the
-   guided steps is the family's and draws itself (#3129); no rule here reaches one. */
-.welcome :is(.welcome-door, .repo-card) {
-  padding: var(--space-2) var(--space-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.welcome :is(.welcome-door, .repo-card):hover:not(:disabled, [aria-disabled="true"]) {
-  background: var(--surface-hover);
-}
-
-.welcome :is(.welcome-door, .repo-card):is(:disabled, [aria-disabled="true"]) {
-  opacity: 0.45;
-  cursor: default;
 }
 
 /* **The guided steps** (#1817, `Onboarding.tsx`): the welcome and the pages after it, with
@@ -4519,10 +4497,8 @@ body {
   padding: var(--space-7) 0 0;
 }
 
-/* **The three doors**: one row of equal cards, as many to a row as the width holds, each a
-   single button whose title is its name and whose line is its description. A card is a thing
-   that is pressed, so it is drawn in the `control.*` shades. The mark is the accent, the only
-   colour on the page, so the eye finds the doors before the prose. */
+/* **The three doors**: one row of equal cards, as many to a row as the width holds, each a card
+   pressed whole (`ui/card/CardButton`), which draws itself. */
 .welcome-doors {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12.5rem, 1fr));
@@ -4534,47 +4510,6 @@ body {
 
 .welcome-doors li {
   display: flex;
-}
-
-.welcome .welcome-door {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-5) var(--space-5) var(--space-6);
-  border-radius: var(--radius-xl);
-  background: var(--control-base);
-  text-align: left;
-  transition:
-    background-color var(--motion-duration-quick) var(--motion-easing-standard),
-    border-color var(--motion-duration-quick) var(--motion-easing-standard);
-}
-
-.welcome .welcome-door:hover:not(:disabled, [aria-disabled="true"]) {
-  border-color: var(--border-strong);
-  background: var(--control-hover);
-}
-
-/* A card's ring sits outside it: inside, it would run over the mark's corner. */
-.welcome .welcome-door:focus-visible {
-  outline-offset: var(--focus-ring-offset);
-}
-
-.welcome-door-mark {
-  margin-bottom: var(--space-2);
-  font-size: var(--font-size-xl);
-  color: var(--accent-base);
-}
-
-.welcome-door-title {
-  font-weight: var(--font-weight-strong);
-}
-
-.welcome-door-says {
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height-body);
-  color: var(--text-secondary);
 }
 
 /* A quiet act inside the page's prose: Sign in under the doors, Back above a door's page, and
@@ -4687,7 +4622,7 @@ body {
   margin: var(--space-5) 0 var(--space-2);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-regular);
-  opacity: 0.7;
+  color: var(--text-muted);
 }
 
 .changes,
@@ -4706,7 +4641,7 @@ body {
 [data-scope="dialog"] .where {
   margin: 0;
   font-size: var(--font-size-xs);
-  opacity: 0.7;
+  color: var(--text-muted);
   overflow-wrap: anywhere;
 }
 
@@ -4718,7 +4653,7 @@ body {
 }
 
 [data-scope="dialog"] .value {
-  opacity: 0.6;
+  color: var(--text-muted);
 }
 
 /* A slot with nothing in it keeps its handle in the group — `RegionFrame`'s `Slot` says why —
@@ -5219,9 +5154,10 @@ body {
 }
 
 /* **A done todo stays, struck through** (R131, ADR 0106): its box ticked, its words in the quiet
-   tier and crossed out. Nothing moves: the box takes the mark's place at the mark's size. */
+   tier and crossed out. Nothing moves: the box takes the mark's place at the mark's size. The
+   quiet tier is the meta role, which the row's words wear while done (`PanelList.tsx`, #3917):
+   a colour set here would lose to the body role's later layer. */
 .panel-row.is-checked .row-text {
-  color: var(--text-quiet);
   text-decoration: line-through;
 }
 
@@ -5579,6 +5515,11 @@ nav.piece-files-head {
   max-width: 60rem;
 }
 
+/* **The one muted outside the meta, until the view tabs wear the roles** (#3938): a view's
+   sentence that wears no role (`.none`, `.pending`) is drawn muted here. A sentence's role is
+   `ui-text-secondary` (`docs/ui-primitives.md`), and this colour goes when the view tabs move
+   onto the roles (`docs/design-system.md`, "The order the surfaces move in"). A sentence that
+   already wears the role keeps it: the role's layer wins. */
 .view-body .pending,
 .view-body .none {
   margin: var(--space-2) 0;
@@ -7020,6 +6961,13 @@ nav.piece-files-head {
   color: var(--text-muted);
 }
 
+/* A row's refusal line in a form, there from the start so its words are heard as they land
+   (#3291): empty, it takes no place in the row's grid, so nothing moves and no gap is added. It
+   stays in the accessibility tree. */
+.ui-setting-error:empty {
+  position: absolute;
+}
+
 /* A write the core refused (SE-17, V89e), said under the setting it was for. */
 .ui-setting-error p {
   margin: var(--space-1) 0 0;
@@ -7363,6 +7311,35 @@ nav.piece-files-head {
 
 .ui-machine-entry .ui-setting-reset {
   margin-inline-start: auto;
+}
+
+/* **A profile's sign-in on a pool's runner, in place** (#4042, `PoolSignIn.tsx`): the strip its
+   line on the pool's row opens into, the whole row wide. A head that says the step, the step's
+   body, and a foot with Cancel and Open in terminal. */
+.pool-sign-in {
+  flex: 1 0 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.pool-sign-in-head,
+.pool-sign-in-foot,
+.pool-sign-in-paste {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.pool-sign-in-head {
+  align-items: baseline;
+}
+
+.pool-sign-in-terminal {
+  max-inline-size: 100%;
+  overflow-x: auto;
 }
 
 /* A form's buttons (SettingActions, V89j): the row a form ends in, under its rows or as a
@@ -7714,6 +7691,58 @@ nav.piece-files-head {
   padding: var(--space-4) var(--space-6);
 }
 
+/* **A skill's page** (#3682): each tab's panel under the page tabs, and its Text as it is now,
+   read only, wrapping so a long line never scrolls the page sideways. */
+.skill-page-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-block-start: var(--space-4);
+}
+
+/* **A skill's Grades tab** (S6, #3688): its bars, its list and the after-each-edit row; and one
+   test's arm on a scorecard: its runs, its verdict and its chats, wrapping in a narrow cell. */
+.skill-grades {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.skill-grading-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.skill-grading-head > * {
+  margin: 0;
+}
+
+.skill-grading-arm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.skill-page-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+}
+
+.skill-page-text pre {
+  margin: 0;
+  padding: var(--space-3);
+  overflow: auto;
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Rows held while the skills are read (S11): the list's own height, so nothing jumps when they
    are. */
 .skill-studio-placeholders {
@@ -7808,32 +7837,17 @@ nav.piece-files-head {
   overflow-wrap: anywhere;
 }
 
-/* The empty studio's three starts (SK-22): side by side where they fit, stacked where not. */
-.skill-starts {
+/* New skill…'s ways (#3684, S4): one pressed card each, stacked in the dialog. */
+.skill-new-ways {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: var(--space-3);
-  max-width: 48rem;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
-  text-align: left;
 }
 
-.skill-starts > li {
+.skill-new-ways > li {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-}
-
-.skill-starts p {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  /* Each start's line, in the empty state's quiet tier, which holds AA on every theme. */
-  color: var(--text-muted);
 }
 
 /* The Skills view (#3266, #3693): a sidebar view, whose skills it shows, its header's two ways
@@ -7862,14 +7876,12 @@ nav.piece-files-head {
   white-space: nowrap;
 }
 
-.skills-view .skill-starts {
-  grid-template-columns: 1fr;
-}
-
-/* New skill…'s menu, narrower than the family's widest, so at a sidebar's width it stays over
-   the view and not the editor beside it (#3308); its starts' lines wrap. */
-.skills-view-starts {
-  --menu-max: calc(var(--space-8) * 8);
+/* The chat's budget and how its router did at its start, under whose skills (S8, #3694): what
+   Use skill… used to say above its list, said once, here. */
+.skills-view-said {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
 }
 
 .skills-view > .skills-view-list {
@@ -7878,32 +7890,55 @@ nav.piece-files-head {
   overflow: auto;
 }
 
-/* Skill sources (SK-10): the install review leads with its summary, risky items marked. */
-.skill-sources,
+/* The Sources pages (#3687, `prototype/skill-sources` A): each part of a page a heading over
+   what it holds; the offered sources as cards, as many to a line as fit. */
+.skill-sources-part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.skill-offered-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A review's skill: what it adds, then its files, each under its mark. */
 .skill-review {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   max-width: 60rem;
 }
 
-.skill-summary,
-.skill-review-files,
-.skill-updates,
-.skill-source-list {
+.skill-review h3,
+.skill-review h4 {
+  margin: 0;
+}
+
+.skill-summary {
   margin: 0;
   padding-left: var(--space-5);
   font-size: var(--font-size-sm);
 }
 
-.skill-summary li[data-risky="true"],
-.skill-review-files li[data-risky="true"] {
+.skill-summary li[data-risky="true"] {
   color: var(--danger-text);
 }
 
-.skill-review-file,
-.skill-update-file pre {
+.skill-review-files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skill-review-file {
   max-height: 24rem;
+  margin: 0;
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

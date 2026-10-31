@@ -105,7 +105,7 @@ fn a_chat_with_no_id_yet_has_nothing_typed_and_says_so() {
     let refused = typing_of(&skills, None, "review", &[]).unwrap_err();
     assert_eq!(refused, NOT_STARTED);
 
-    let salt = purlis_core::skillspan::PromptSalt::of_chat("01JB00000000000000000000C4").unwrap();
+    let salt = purlis_core::skillspan::PromptSalt::of_key("01JB00000000000000000000C4").unwrap();
     let typing = typing_of(&skills, Some(&salt), "review", &[]).expect("typed with an id");
     assert_eq!(typing.text, "$review");
 }

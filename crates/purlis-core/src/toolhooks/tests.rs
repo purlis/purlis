@@ -762,8 +762,13 @@ fn the_cadence_nudge_names_the_live_workspace_of_the_apps_chat_id_first() {
     live_alpha_for(&p, "chat-1");
     let said = twelfth(&p).unwrap();
     assert!(
-        said.contains("`purlis workspace remember \\\"<fact>\\\"` (workspace **alpha**)"),
+        said.contains("`purlis workspace remember -w alpha \\\"<fact>\\\"` (workspace **alpha**)"),
         "the nudge did not name workspace alpha"
+    );
+    // #3880: the tool first, and the command in the spelling that runs without a prompt.
+    assert!(
+        said.contains("the `memory_add` tool or"),
+        "the nudge did not name the tool"
     );
 }
 

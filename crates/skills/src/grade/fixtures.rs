@@ -46,6 +46,32 @@ const MOST_EVAL_FILES: usize = 16;
 /// The longest path an eval's `files` may name, in bytes.
 const MOST_FILE_PATH_BYTES: usize = 512;
 
+/// **The trigger tests a skill named `name` starts from**, where it has none (#3925): skill-
+/// creator's array, with one query it should start on and one near miss it should leave alone,
+/// each saying what to write in its place. Read back as it is written ([`fixtures_of`]).
+pub fn triggers_template(name: &str) -> String {
+    let tests = [
+        TriggerTest {
+            query: format!("A request {name} should start for, written as a person would type it"),
+            should_trigger: true,
+        },
+        TriggerTest {
+            query: format!(
+                "A near miss {name} should leave alone: close to what it is for, but not it"
+            ),
+            should_trigger: false,
+        },
+    ];
+    let mut text = serde_json::to_string_pretty(&tests).unwrap_or_else(|_| "[]".to_owned());
+    text.push('\n');
+    text
+}
+
+/// The trigger test file's path in a skill's folder, `/` between the parts.
+pub fn triggers_path() -> String {
+    FixtureFile::Triggers.path()
+}
+
 /// One trigger test: a prompt, and whether the skill should start on it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TriggerTest {

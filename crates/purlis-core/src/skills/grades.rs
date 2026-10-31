@@ -52,9 +52,10 @@ pub const ARMS_WITH_PREVIOUS: [Arm; 3] = [Arm::With, Arm::Without, Arm::Previous
 /// The longest one grade's chat runs before purlis ends it: what the plan's "up to" says.
 pub const CHAT_TIME: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
-/// The folder of this machine's state the grades of a local copy are kept in, never committed
-/// (a copy in `skills.local/`, or in a workspace that is this machine's alone).
-pub(crate) const LOCAL_DIR: &str = "skill-grades";
+/// The folder of this machine's app state of the project ([`crate::appstate`]) the grades of a
+/// local copy are kept in, never committed (a copy in `skills.local/`, or in a workspace that is
+/// this machine's alone).
+pub const LOCAL_DIR: &str = "skill-grades";
 
 /// The most files of one record folder looked at: a folder with more is read no further.
 const MOST_FILES: usize = 600;
@@ -71,16 +72,25 @@ fn path_for(root: &Path, when: chrono::DateTime<chrono::Utc>, device: &str) -> P
         .join(format!("{}.{device}.jsonl", when.format("%Y-%m")))
 }
 
-/// `<state>/skill-grades/<YYYY-MM>.jsonl`: where a local copy's grades are kept.
-pub fn local_path_for(root: &Path, when: chrono::DateTime<chrono::Utc>) -> PathBuf {
-    crate::plane::state_dir(root)
-        .join(LOCAL_DIR)
-        .join(format!("{}.jsonl", when.format("%Y-%m")))
+/// `<data>/app-state/<clone key>/skill-grades/<YYYY-MM>.jsonl`: where a local copy's grades are
+/// kept. `None` where this machine has no data home.
+pub fn local_path_for(root: &Path, when: chrono::DateTime<chrono::Utc>) -> Option<PathBuf> {
+    Some(
+        crate::appstate::dir(root)?
+            .join(LOCAL_DIR)
+            .join(format!("{}.jsonl", when.format("%Y-%m"))),
+    )
 }
 
 /// The level a grade of the copy at `level` is recorded by: its folder relative to the plane.
 pub fn recorded_level(level: &Level) -> Option<String> {
     level.rel()
+}
+
+/// **The level a grade was recorded by** ([`recorded_level`]), read back: what a grade's
+/// scorecard says the copy it graded was (#3978). `None` for a word no level's folder is.
+pub fn level_of_recorded(word: &str) -> Option<Level> {
+    Level::of_rel(word)
 }
 
 /// **Whether the copy at `level` is this machine's alone**: a `skills.local/` copy, or one in a
@@ -100,6 +110,13 @@ pub struct Spent {
     pub chats: u32,
     pub tokens: Option<u64>,
     pub cost_usd: Option<f64>,
+    /// **The chats a grade purlis stopped under asked for before it stopped** (#3602), ran or
+    /// not: what an estimate shares its tokens and cost over, as they hold the spend of a chat
+    /// ended at an ask, at a cap or on Stop too. Said by its marker
+    /// ([`underway::Marker::spent`]) alone: a scored row's arms count them (`chats` +
+    /// `not_run`), so it is `None` there, and in an interrupted row written before #3602.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asked_for: Option<u32>,
 }
 
 /// **One grade, as the eval record holds it.**
@@ -258,14 +275,18 @@ fn dollars(value: f64) -> bool {
 /// chats that ran, as the arms count them, and the tokens, as the report adds them up; and the
 /// cost, where the report adds it up (a row before #3469 does not). A grade purlis stopped under
 /// before it was scored has no arms, and says what its chats spent all the same (#3582): as many
-/// chats as a grade of `runs` runs could have run, at most.
+/// chats as a grade of `runs` runs could have run, at most, and as many asked for (#3602), at
+/// least those that ran. A scored row's arms count what it asked for, so it says no more.
 fn spent_is_the_reports(spent: &Spent, report: &GradeReport, runs: u8) -> bool {
-    let chats = if report.ended == grade::GradeEnd::Interrupted && report.arms.is_empty() {
-        let most = (grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE) as u64;
-        u64::from(spent.chats) <= u64::from(runs) * most
+    let chats = if stopped_unscored(report) {
+        let most = u64::from(runs) * (grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE) as u64;
+        u64::from(spent.chats) <= most
+            && spent.asked_for.is_none_or(|asked_for| {
+                (u64::from(spent.chats)..=most).contains(&u64::from(asked_for))
+            })
     } else {
         let ran: u64 = report.arms.iter().map(|arm| u64::from(arm.chats)).sum();
-        u64::from(spent.chats) == ran
+        u64::from(spent.chats) == ran && spent.asked_for.is_none()
     };
     chats
         && spent.tokens == report.spent_tokens
@@ -274,6 +295,12 @@ fn spent_is_the_reports(spent: &Spent, report: &GradeReport, runs: u8) -> bool {
                 .cost_usd
                 .is_some_and(|cost| (cost - said).abs() <= 1e-9 * said.max(1.0))
         })
+}
+
+/// Whether `report` is of a grade purlis stopped under before it was scored: interrupted, with
+/// no arm to count its chats.
+fn stopped_unscored(report: &GradeReport) -> bool {
+    report.ended == grade::GradeEnd::Interrupted && report.arms.is_empty()
 }
 
 /// The most plugin ids a row read back names as off: far past any machine's installs.
@@ -404,7 +431,8 @@ fn record_to(
 ) -> Option<PathBuf> {
     let row = serde_json::to_value(graded).ok()?;
     if local {
-        return append_local(&local_path_for(root, chrono::Utc::now()), &row).ok();
+        crate::appstate::made(root).ok()?;
+        return append_local(&local_path_for(root, chrono::Utc::now())?, &row).ok();
     }
     if crate::compat::read_only(root).is_some() {
         return None;
@@ -572,6 +600,107 @@ pub fn read(root: &Path, name: &str, level: Option<&Level>) -> Read {
     read_at(root, name, level, chrono::Utc::now())
 }
 
+/// **The grades of the skill that had the places `was`** (#3918, [`super::history::places`]):
+/// [`read`]'s rows of each place's copy, by the name and level it had there, so the grades from
+/// before a rename or a move are read with the copy's own. A row of a place it had before is
+/// taken only where its tree is one of that place's versions ([`super::history::Was::trees`]):
+/// a skill that took the old name there since is another, and its grades are none of these. A
+/// place no level's rule reads is left out.
+pub fn read_of(root: &Path, was: &[super::history::Was]) -> Read {
+    read_where(root, &wanted_of(was), None, chrono::Utc::now())
+}
+
+/// The copies [`read_of`] reads the rows of.
+fn wanted_of(was: &[super::history::Was]) -> Vec<Wanted<'_>> {
+    was.iter()
+        .enumerate()
+        .filter_map(|(at, place)| {
+            let level = place.level.as_ref()?;
+            Some(Wanted {
+                name: place.name.as_str(),
+                level: Some(level.rel()),
+                trees: (at > 0).then_some(place.trees.as_slice()),
+                until: None,
+                grades: &[],
+            })
+        })
+        .collect()
+}
+
+/// **The grades of the copy of `name` at `level`, and of the places it had before a rename or a
+/// move** (#3918): what its Grades tab draws. The places git holds ([`super::history::places`]),
+/// and those this machine kept where git could not follow, as for a skill only on this machine
+/// (#4018, [`earlier`]). Its own alone where it had none.
+pub fn read_followed(root: &Path, level: &Level, name: &str) -> Read {
+    let was = super::history::places(root, level, name).unwrap_or_default();
+    let earlier = earlier::of(root, level, name);
+    match followed((level, name), &was, &earlier) {
+        Some(copies) => read_where(root, &copies, None, chrono::Utc::now()),
+        None => read(root, name, Some(level)),
+    }
+}
+
+/// The copies whose rows the copy of `name` at `level` reads, where it had the places `was` in
+/// git ([`wanted_of`], its own first, or none where its history was not read) and `earlier` on
+/// this machine: `None` where it had no place but its own.
+fn followed<'a>(
+    (level, name): (&Level, &'a str),
+    was: &'a [super::history::Was],
+    earlier: &'a [earlier::Earlier],
+) -> Option<Vec<Wanted<'a>>> {
+    if was.len() <= 1 && earlier.is_empty() {
+        return None;
+    }
+    let mut copies = wanted_of(was);
+    if was.is_empty() {
+        copies.push(Wanted {
+            name,
+            level: Some(level.rel()),
+            trees: None,
+            until: None,
+            grades: &[],
+        });
+    }
+    copies.extend(earlier.iter().filter_map(|one| {
+        Some(Wanted {
+            name: one.name.as_str(),
+            level: Some(Some(one.level.clone())),
+            trees: None,
+            until: Some(one.until()?),
+            grades: &one.grades,
+        })
+    }));
+    Some(copies)
+}
+
+/// A copy whose rows [`read_where`] reads: its skill's name; where `level` is `Some`, its
+/// level's folder (`None` in it for a copy no folder holds), else every copy of the name; and
+/// where `trees` is `Some`, only rows whose tree is one of them; where `until` is `Some`, only
+/// rows recorded before it (a place this machine kept, [`earlier`]), or of `grades`, those under
+/// way as it was left (#4104).
+struct Wanted<'a> {
+    name: &'a str,
+    level: Option<Option<String>>,
+    trees: Option<&'a [String]>,
+    until: Option<chrono::DateTime<chrono::Utc>>,
+    grades: &'a [String],
+}
+
+impl Wanted<'_> {
+    /// Whether `row` is of this copy.
+    fn holds(&self, row: &Graded) -> bool {
+        row.skill == self.name
+            && match &self.level {
+                None => true,
+                Some(word) => row.level.is_none() || row.level == *word,
+            }
+            && self.trees.is_none_or(|trees| trees.contains(&row.tree))
+            && (self.until.is_none_or(|until| {
+                chrono::DateTime::parse_from_rfc3339(&row.ts).is_ok_and(|at| at <= until)
+            }) || self.grades.contains(&row.grade))
+    }
+}
+
 /// [`read`], with this machine's clock at `now`.
 fn read_at(
     root: &Path,
@@ -579,9 +708,28 @@ fn read_at(
     level: Option<&Level>,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Read {
-    let wanted = level.map(|level| level.rel());
+    let wanted = Wanted {
+        name,
+        level: level.map(Level::rel),
+        trees: None,
+        until: None,
+        grades: &[],
+    };
+    read_where(root, std::slice::from_ref(&wanted), None, now)
+}
+
+/// The rows of the record of any of `copies` ([`Wanted`]), and of the grade `grade` alone where
+/// it is `Some`, newest first, at most [`MOST_GRADES`].
+fn read_where(
+    root: &Path,
+    copies: &[Wanted<'_>],
+    grade: Option<&str>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Read {
     let mut files = record_files(&root.join("personas").join(DIR_NAME));
-    files.extend(record_files(&crate::plane::state_dir(root).join(LOCAL_DIR)));
+    if let Some(state) = crate::appstate::dir(root) {
+        files.extend(record_files(&state.join(LOCAL_DIR)));
+    }
     // Newest month first, across both folders: a file's name starts with its month.
     files.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
     let mut out = Read::default();
@@ -604,17 +752,14 @@ fn read_at(
                 .then(|| serde_json::from_str::<Graded>(line).ok())
                 .flatten();
             let Some(row) = row else {
-                if names_the_skill(line, name) {
+                if copies.iter().any(|one| names_the_skill(line, one.name)) {
                     out.skipped += 1;
                 }
                 continue;
             };
             let its = row.v <= VERSION
-                && row.skill == name
-                && match &wanted {
-                    None => true,
-                    Some(word) => row.level.is_none() || row.level == *word,
-                };
+                && grade.is_none_or(|grade| row.grade == grade)
+                && copies.iter().any(|one| one.holds(&row));
             if !its {
                 continue;
             }
@@ -647,11 +792,32 @@ pub fn ended_said(end: grade::GradeEnd) -> &'static str {
 }
 
 /// **The grade `grade` of the skill `name`** in the project at `root`, as the eval record holds
-/// it (SK-59, #3239): what its scorecard is drawn from. `None` where no row of it is read.
+/// it (SK-59, #3239): what its scorecard is drawn from. A grade from before a rename or a move
+/// (#3918) is recorded by the name and level a copy of `name` had then, so where no row of `name`
+/// is the grade, the places each copy had before are looked in ([`read_followed`]). `None` where
+/// no row of it is read.
 pub fn grade_of(root: &Path, name: &str, grade: &str) -> Option<Graded> {
-    grades_of(root, name, None)
-        .into_iter()
-        .find(|one| one.grade == grade)
+    let now = chrono::Utc::now();
+    let of = |copies: &[Wanted<'_>]| {
+        read_where(root, copies, Some(grade), now)
+            .grades
+            .into_iter()
+            .next()
+    };
+    let named = Wanted {
+        name,
+        level: None,
+        trees: None,
+        until: None,
+        grades: &[],
+    };
+    of(std::slice::from_ref(&named)).or_else(|| {
+        Level::copies_of(root, name).find_map(|(level, _)| {
+            let was = super::history::places(root, &level, name).unwrap_or_default();
+            let earlier = earlier::of(root, &level, name);
+            of(&followed((&level, name), &was, &earlier)?)
+        })
+    })
 }
 
 /// **What a grade of a copy would cost**, from what a grade of it before spent per chat
@@ -661,8 +827,8 @@ pub fn grade_of(root: &Path, name: &str, grade: &str) -> Option<Graded> {
 pub struct Estimate {
     pub tokens: Option<u64>,
     pub cost_usd: Option<f64>,
-    /// The chats the grade it is worked out from asked for: none where none ran, as in one
-    /// purlis stopped under.
+    /// The chats the grade it is worked out from asked for, ran or not: none where none ran,
+    /// and in one purlis stopped under before its marker counted them (#3602).
     pub chats_then: u32,
     /// That grade: when it ran, and the profile and the harness its chats ran on.
     pub ts: String,
@@ -674,6 +840,10 @@ pub struct Estimate {
     /// Whether it ran on the profile this grade runs on (a grade on another one may have spent
     /// otherwise), or `None` where this grade's profile is not known.
     pub same_profile: Option<bool>,
+    /// **Whether that grade was interrupted before it was scored** (#3602): its spend is what
+    /// its marker said of the chats it asked for before purlis stopped under it, so the plan
+    /// says so. `false` where it asked for none to go by.
+    pub interrupted: bool,
 }
 
 /// **What a grade of `chats` chats on `profile` would cost, from `grades`** (newest first), and
@@ -682,37 +852,118 @@ pub struct Estimate {
 /// cost and no chat. `None` where there is none. What it spent is shared over every chat it
 /// asked for, a chat stopped, ended at a limit or never started among them, as what a chat
 /// stopped spent is counted too.
+///
+/// **A grade purlis stopped under before it was scored** (#3602) counts the chats its marker
+/// said it asked for, once those took a turn of each of its arms: arms take turns, so fewer
+/// would be one arm's chats alone (the skill's dearer, the bare one's cheaper) shared over every
+/// arm. It is gone by only where no scored grade on the same profile is, as its chats are fewer
+/// and stopped where they were; one from before its marker counted them says none.
 fn estimate_of(grades: &[Graded], chats: u32, profile: Option<&str>) -> Option<Estimate> {
-    let asked = |row: &Graded| -> u64 {
-        row.report
-            .arms
-            .iter()
-            .map(|arm| u64::from(arm.chats) + u64::from(arm.not_run))
-            .sum()
-    };
-    let any = |row: &&Graded| asked(row) > 0;
+    estimate_from(grades, chats, profile).map(|(estimate, _)| estimate)
+}
+
+/// **A grade's row an estimate is worked out from** ([`estimate_from`]): a skill's, or a
+/// router's (#3618).
+pub(crate) trait Spends {
+    /// The chats it asked for, ran or not, which what it spent is shared over: none where it
+    /// says none to go by.
+    fn asked(&self) -> u64;
+    /// Whether purlis stopped under it before it was scored.
+    fn stopped_unscored(&self) -> bool;
+    /// What its chats spent, and when, on which profile, harness and model it ran.
+    fn spent(&self) -> &Spent;
+    fn ts(&self) -> &str;
+    fn profile(&self) -> Option<&str>;
+    fn harness(&self) -> Option<&str>;
+    fn model(&self) -> Option<&str>;
+}
+
+impl Spends for Graded {
+    fn asked(&self) -> u64 {
+        if stopped_unscored(&self.report) {
+            let arms = if self.previous.is_some() {
+                ARMS_WITH_PREVIOUS.len()
+            } else {
+                ARMS.len()
+            } as u64;
+            return self
+                .spent
+                .asked_for
+                .map(u64::from)
+                .filter(|asked_for| *asked_for >= arms)
+                .unwrap_or(0);
+        }
+        asked_in(&self.report.arms)
+    }
+
+    fn stopped_unscored(&self) -> bool {
+        stopped_unscored(&self.report)
+    }
+
+    fn spent(&self) -> &Spent {
+        &self.spent
+    }
+
+    fn ts(&self) -> &str {
+        &self.ts
+    }
+
+    fn profile(&self) -> Option<&str> {
+        self.profile.as_deref()
+    }
+
+    fn harness(&self) -> Option<&str> {
+        self.harness.as_deref()
+    }
+
+    fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+}
+
+/// The chats `arms` asked for, ran or not.
+pub(crate) fn asked_in(arms: &[grade::ArmScore]) -> u64 {
+    arms.iter()
+        .map(|arm| u64::from(arm.chats) + u64::from(arm.not_run))
+        .sum()
+}
+
+/// [`estimate_of`], of any grade's rows ([`Spends`]), with the row it was worked out from.
+pub(crate) fn estimate_from<'a, R: Spends>(
+    grades: &'a [R],
+    chats: u32,
+    profile: Option<&str>,
+) -> Option<(Estimate, &'a R)> {
+    let asked = |row: &R| row.asked();
+    let on_profile = |row: &&R| profile.is_some() && row.profile() == profile;
+    let scored = |row: &&R| asked(row) > 0 && !row.stopped_unscored();
+    let any = |row: &&R| asked(row) > 0;
     let last = grades
         .iter()
-        .filter(any)
-        .find(|row| profile.is_some() && row.profile.as_deref() == profile)
+        .filter(scored)
+        .find(on_profile)
+        .or_else(|| grades.iter().filter(any).find(on_profile))
+        .or_else(|| grades.iter().find(scored))
         .or_else(|| grades.iter().find(any))
         .or_else(|| grades.first())?;
     let then = asked(last);
     let per = |of: u64| (then > 0).then(|| of.div_ceil(then).saturating_mul(u64::from(chats)));
-    Some(Estimate {
-        tokens: last.spent.tokens.and_then(per),
+    let estimate = Estimate {
+        tokens: last.spent().tokens.and_then(per),
         cost_usd: last
-            .spent
+            .spent()
             .cost_usd
             .filter(|_| then > 0)
             .map(|cost| cost / then as f64 * f64::from(chats)),
         chats_then: u32::try_from(then).unwrap_or(u32::MAX),
-        ts: last.ts.clone(),
-        profile: last.profile.clone(),
-        harness: last.harness.clone(),
-        model: last.model.clone(),
-        same_profile: profile.map(|profile| last.profile.as_deref() == Some(profile)),
-    })
+        ts: last.ts().to_owned(),
+        profile: last.profile().map(str::to_owned),
+        harness: last.harness().map(str::to_owned),
+        model: last.model().map(str::to_owned),
+        same_profile: profile.map(|profile| last.profile() == Some(profile)),
+        interrupted: then > 0 && last.stopped_unscored(),
+    };
+    Some((estimate, last))
 }
 
 /// **What grading a copy would run, before anything runs** (decision 22): its fixtures, the
@@ -746,6 +997,9 @@ pub struct Planned {
     /// it. And why a previous version is not compared, where it has one that did not read.
     pub previous: Option<ComparedWith>,
     pub previous_refused: Option<String>,
+    /// **The chats each grade after an edit may run** (#4035, [`after_edit::chats_to_accept`]):
+    /// with its previous version's arm counted where its first saved edit brings one.
+    pub after_edit_chats: Option<u32>,
     /// The copy the consent is a digest of, read once: what a grade started on this plan lays
     /// out every arm from, and records its version as. Never shown, so never sent.
     #[serde(skip)]
@@ -824,12 +1078,12 @@ fn copy_of(root: &Path, level: &Level, name: &str) -> Result<SkillCopy, String> 
     });
     let (previous, previous_refused) = match history
         .as_ref()
-        .and_then(|history| super::history::previous_of(history, tree))
+        .and_then(|history| super::history::previous_of(history, name, tree))
     {
         None => (None, None),
         Some(version) => {
-            match super::history::files_of_version(root, &rel(root, &folder), name, &version.commit)
-            {
+            // From before a move, it is read from the folder the skill had then (#3918).
+            match super::history::files_of_version(root, &version.folder, name, &version.commit) {
                 Ok(files) => (
                     Some(Previous {
                         commit: version.commit.clone(),
@@ -942,8 +1196,38 @@ pub fn planned(
         consent,
         previous,
         previous_refused,
+        after_edit_chats: plan
+            .map(|plan| after_edit::chats_to_accept(&plan, !is_local(root, level))),
         copy,
     })
+}
+
+/// **The trigger tests a grade of the copy of `name` at `level` would run**, and why its file was
+/// not read where it was not: what a skill's Grades tab asks to know whether there is anything to
+/// grade (#3928), without the plan's history, estimate and models. A test no chat can be started
+/// on ([`left_out_why`]) is not one a grade runs, as [`planned`] leaves it out.
+pub fn trigger_tests(root: &Path, level: &Level, name: &str) -> Result<TriggerTests, String> {
+    let folder = find(root, level, name)?;
+    let fixtures = grade::fixtures_of(root, Path::new(&rel(root, &folder)), name);
+    let runs = fixtures.triggers.read().map_or(0, |tests| {
+        tests
+            .iter()
+            .filter(|test| left_out_why(&test.query).is_none())
+            .count()
+    });
+    Ok(TriggerTests {
+        runs,
+        refused: fixtures.triggers.refused().cloned(),
+    })
+}
+
+/// **A copy's trigger tests, counted** ([`trigger_tests`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TriggerTests {
+    /// How many a grade runs.
+    pub runs: usize,
+    /// Why the file could not be read, where it could not.
+    pub refused: Option<grade::Refused>,
 }
 
 /// **Why the query `query` is left out of a grade**, or `None` for one a chat is started on: one
@@ -1248,6 +1532,7 @@ fn not_on_this_harness() -> String {
 
 pub mod after_edit;
 pub mod cap;
+pub mod earlier;
 pub mod kept;
 pub mod price;
 pub mod routers;

@@ -10,7 +10,8 @@
 //! - **Clashes:** a harness's or a repo's skill of the name of one purlis hands the chat. A
 //!   repo skill of a built-in skill's name is one too: the built-in is guarded, so the fix is
 //!   the other copy's switch.
-//! - **Problems in a skill:** what the built-in lints say of a skill from outside the plane that
+//! - **Problems in a skill:** what the built-in lints say of one of the plane's own skills a
+//!   chat gets (#3780), whose text the person changes, and of a skill from outside the plane that
 //!   its harness can leave out, so there is something to do about it.
 //! - **Pins no chat reads:** the scope's pins, where a chat reads none of them.
 //! - **Tidy up:** the project's skills still where only some programs read them, and the old
@@ -39,8 +40,18 @@ pub enum NeedKind {
 pub enum NeedFix {
     /// Accept the folder a chat made (`skill_level_accept`).
     Accept { folder: String },
+    /// Accept the project's folders it lists, where purlis cannot confirm which the person
+    /// accepted before (`skill_levels_confirm`, #3718).
+    AcceptFolders { folders: Vec<String> },
     /// Rename the plane's copy of a skill: its page in the Library, with Rename open.
     Rename {
+        name: String,
+        level: Level,
+        local: bool,
+    },
+    /// Open the text of the plane's own skill: its page in the Library, its Text tab in Edit
+    /// (#3780).
+    OpenText {
         name: String,
         level: Level,
         local: bool,
@@ -111,8 +122,34 @@ fn whose(owner: &Owner) -> String {
 pub(crate) fn of(studio: &Studio) -> Vec<NeedsYou> {
     let mut needs = Vec::new();
 
+    // Where purlis cannot confirm which folders the person accepted (#3718): one item for the
+    // project, which lists them, and no item for each skill it holds.
+    let unconfirmed = purlis_core::skills::levels::UNCONFIRMED;
+    if let Some(confirm) = &studio.levels_to_confirm {
+        needs.push(NeedsYou {
+            id: "review:project-folders".to_owned(),
+            kind: NeedKind::Review,
+            title: "The project's folders".to_owned(),
+            tag: None,
+            reason: format!(
+                "{} It accepts {}.",
+                sentence(&confirm.said),
+                confirm.folders.join(", ")
+            ),
+            fix: NeedFix::AcceptFolders {
+                folders: confirm.folders.clone(),
+            },
+            fix_label: "Accept the folders".to_owned(),
+            fix_does: "Their skills reach chats from then on; a folder a running chat could have \
+                       made still waits for its own Accept."
+                .to_owned(),
+        });
+    }
     // A folder a chat made while it ran, which waits for the person's Accept (SK-9).
     for skill in &studio.skills {
+        if studio.levels_to_confirm.is_some() && skill.left_out.as_deref() == Some(unconfirmed) {
+            continue;
+        }
         if let Some(folder) = &skill.accept {
             needs.push(NeedsYou {
                 id: format!("review:{folder}"),
@@ -189,6 +226,29 @@ pub(crate) fn of(studio: &Studio) -> Vec<NeedsYou> {
             } else {
                 "Opens its page with Rename, so only one copy keeps the name.".to_owned()
             },
+        });
+    }
+
+    // What the lints say of one of the plane's own skills a chat gets (#3780): its text is the
+    // person's to change.
+    for skill in &studio.skills {
+        if skill.lint.is_empty() || !level_origin(skill.level).of_the_plane() || !skill.on {
+            continue;
+        }
+        let lines: Vec<String> = skill.lint.iter().map(|one| sentence(one)).collect();
+        needs.push(NeedsYou {
+            id: format!("problem:{}:{}", skill.label, skill.name),
+            kind: NeedKind::Problem,
+            title: skill.name.clone(),
+            tag: Some(skill.label.clone()),
+            reason: lines.join(" "),
+            fix: NeedFix::OpenText {
+                name: skill.name.clone(),
+                level: skill.level,
+                local: skill.local,
+            },
+            fix_label: "Open its text".to_owned(),
+            fix_does: format!("Opens {} › Text in Edit.", skill.name),
         });
     }
 

@@ -33,6 +33,10 @@ pub enum Reconnection {
     /// host sends it nothing and does not link to it again until it is removed and added anew,
     /// so its chats stay dimmed and the window says why in a Notice of its own.
     KeyChanged,
+    /// The runner was removed outside purlis (#4149): its host does not link to it again until
+    /// it is made again, so its chats stay dimmed and the window offers Make the runner again in
+    /// a Notice of its own.
+    RunnerGone,
 }
 
 /// A plane's chats that are reconnecting, or reconnected, as their panes show it.

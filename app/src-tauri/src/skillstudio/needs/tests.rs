@@ -24,7 +24,7 @@ fn one_skill() -> (tempfile::TempDir, Studio) {
     skill(
         &tmp.path().join("skills"),
         "deploy",
-        "---\nname: deploy\ndescription: Deploys.\n---\n",
+        "---\nname: deploy\ndescription: Deploys the app to staging, then to production.\n---\n",
     );
     let studio = studio(tmp.path(), None, true, None, None, &no_harness());
     (tmp, studio)
@@ -162,6 +162,7 @@ fn a_lint_of_a_harness_skill_its_switch_can_leave_out_is_a_problem_in_a_skill() 
         title: "Claude Code".to_owned(),
         skills: vec![mine, plugin],
         repo_left_out: Vec::new(),
+        own: None,
     }];
 
     let needs = of(&studio);
@@ -171,6 +172,55 @@ fn a_lint_of_a_harness_skill_its_switch_can_leave_out_is_a_problem_in_a_skill() 
     assert_eq!(needs[0].reason, "Its description: it is 4 characters.");
     assert_eq!(needs[0].tag.as_deref(), Some("yours"));
     assert_eq!(needs[0].fix, NeedFix::Harness);
+}
+
+#[test]
+fn a_lint_of_the_planes_own_skill_is_a_problem_in_a_skill_that_opens_its_text() {
+    // #3780: the prototype's deploy, whose step names a script it never shipped.
+    let tmp = tempfile::tempdir().unwrap();
+    skill(
+        &tmp.path().join("skills"),
+        "deploy",
+        "---\nname: deploy\ndescription: Deploys the app to staging, then to production.\n---\n\n\
+         1. Build it.\n2. Check it.\n3. Tag it with scripts/tag.sh.\n",
+    );
+
+    let studio = studio(tmp.path(), None, true, None, None, &no_harness());
+
+    let [one] = studio.needs.as_slice() else {
+        panic!("one item: {:?}", studio.needs);
+    };
+    assert_eq!(one.kind, NeedKind::Problem);
+    assert_eq!(one.id, "problem:project:deploy");
+    assert_eq!(one.title, "deploy");
+    assert_eq!(one.tag.as_deref(), Some("project"));
+    assert_eq!(
+        one.reason,
+        "It names scripts/tag.sh, which its folder doesn't have: a chat told to run it finds none."
+    );
+    assert_eq!(
+        one.fix,
+        NeedFix::OpenText {
+            name: "deploy".to_owned(),
+            level: Level::Project,
+            local: false,
+        }
+    );
+    assert_eq!(one.fix_label, "Open its text");
+    assert_eq!(one.fix_does, "Opens deploy › Text in Edit.");
+}
+
+#[test]
+fn a_lint_of_a_skill_no_chat_gets_or_a_built_in_one_is_no_problem_here() {
+    let (_tmp, mut studio) = one_skill();
+    studio.skills[0].lint = vec!["its description: it is 4 characters".to_owned()];
+    studio.skills[0].on = false;
+    let mut built_in = studio.skills[0].clone();
+    built_in.on = true;
+    built_in.level = Level::BuiltIn;
+    studio.skills.push(built_in);
+
+    assert_eq!(of(&studio), []);
 }
 
 #[test]
@@ -212,7 +262,7 @@ fn skills_only_some_programs_read_are_a_tidy_up_that_moves_them() {
     skill(
         &tmp.path().join("skills"),
         "notify",
-        "---\nname: notify\ndescription: Tells.\n---\n",
+        "---\nname: notify\ndescription: Tells the team what shipped.\n---\n",
     );
 
     let studio = studio(tmp.path(), None, true, None, None, &no_harness());
@@ -288,4 +338,90 @@ fn every_item_of_a_studio_has_an_id_of_its_own() {
 
     let ids: std::collections::HashSet<&str> = needs.iter().map(|one| one.id.as_str()).collect();
     assert_eq!(ids.len(), needs.len(), "{needs:?}");
+}
+
+#[test]
+fn a_summary_lines_count_reads_less_and_counts_what_the_page_holds() {
+    // #3781: the persona view's Skills line counts Needs you without the whole studio, and
+    // counts the same items as the page: here a problem in a skill and a tidy-up.
+    let tmp = tempfile::tempdir().unwrap();
+    skill(
+        &tmp.path().join("skills"),
+        "deploy",
+        "---\nname: deploy\ndescription: Deploys.\n---\n",
+    );
+    skill(
+        &tmp.path().join(".claude/skills"),
+        "notify",
+        "---\nname: notify\ndescription: Tells the team what shipped.\n---\n",
+    );
+    let mut page = studio(tmp.path(), None, true, None, None, &no_harness());
+    crate::skillstudio::with_the_projects_needs(&mut page, tmp.path(), &[]);
+
+    let counted = crate::skillstudio::needing(tmp.path(), None, &[], None, None, &no_harness());
+
+    assert_eq!(
+        kinds(&page.needs),
+        [
+            (NeedKind::Problem, "deploy"),
+            (NeedKind::TidyUp, "1 skill only some programs read")
+        ]
+    );
+    assert_eq!(counted, page.needs.len());
+}
+
+/// An extension's lint, as a list asks it: it says one thing of the skill `of`.
+struct HouseStyle {
+    of: &'static str,
+}
+
+impl purlis_core::skills::SkillLint for HouseStyle {
+    fn findings(
+        &self,
+        skill: &purlis_core::skills::SkillFiles<'_>,
+    ) -> Vec<purlis_core::skills::Finding> {
+        (skill.name == self.of)
+            .then(|| purlis_core::skills::Finding {
+                severity: purlis_core::skills::Severity::Warns,
+                lint: purlis_core::skills::Lint::Said {
+                    by: "House style".to_owned(),
+                    says: "steps are numbered".to_owned(),
+                },
+            })
+            .into_iter()
+            .collect()
+    }
+}
+
+#[test]
+fn an_extensions_lint_is_a_problem_in_a_skill_counted_alike_on_the_page_and_a_summary_line() {
+    // #3940: the list asks the extensions' lints of the plane's own skills, and Needs you holds
+    // what they say, counted the same way by a persona's Skills line.
+    let tmp = tempfile::tempdir().unwrap();
+    for name in ["deploy", "ship"] {
+        skill(
+            &tmp.path().join("skills"),
+            name,
+            &format!("---\nname: {name}\ndescription: Does {name} for the whole team.\n---\n"),
+        );
+    }
+    let lint = HouseStyle { of: "deploy" };
+    let more: [&dyn purlis_core::skills::SkillLint; 1] = [&lint];
+    let mut page =
+        crate::skillstudio::studio_linted(tmp.path(), None, true, None, None, &no_harness(), &more);
+    crate::skillstudio::with_the_projects_needs(&mut page, tmp.path(), &[]);
+
+    let counted =
+        crate::skillstudio::needing_with(tmp.path(), None, &[], None, None, &no_harness(), &more);
+
+    let deploy = page
+        .skills
+        .iter()
+        .find(|one| one.name == "deploy")
+        .expect("deploy listed");
+    assert_eq!(deploy.lint, ["House style: steps are numbered"]);
+    assert_eq!(kinds(&page.needs), [(NeedKind::Problem, "deploy")]);
+    assert_eq!(counted, page.needs.len());
+    let unlinted = studio(tmp.path(), None, true, None, None, &no_harness());
+    assert_eq!(unlinted.needs, []);
 }

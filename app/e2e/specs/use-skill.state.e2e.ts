@@ -45,8 +45,9 @@ describe("Use skill… on a Codex chat", function () {
 
     const dialog = await $('[data-testid="use-skill"]');
     await dialog.waitForDisplayed({ timeout: 20_000 });
-    // Every skill a Codex chat is briefed on is listed with its path, and is counted.
-    await expect($('[data-testid="use-skill-budget"]')).toHaveText(/skills? of 30/);
+    // Every skill a Codex chat is briefed on is listed with its path; its count is the Skills
+    // view's now (S8, #3694), and the picker says none.
+    await expect($('[data-testid="use-skill-budget"]')).not.toExist();
     await browser.waitUntil(
       async () => {
         for (const row of await $$('[data-testid="use-skill-row"]')) {
@@ -66,10 +67,13 @@ describe("Use skill… on a Codex chat", function () {
     const typed = `$${USED_SKILL}`;
     await browser.waitUntil(
       async () => {
+        // Said on the status bar's card (#3653), or on the opener's page with no project.
         const lines = await browser.execute(() =>
-          [...document.querySelectorAll('.window-work > .action-result [role="status"]')].map(
-            (one) => one.textContent ?? "",
-          ),
+          [
+            ...document.querySelectorAll(
+              '[data-chip="status/bar/notices"] > .action-result [role="status"], .window-work > .action-result [role="status"]',
+            ),
+          ].map((one) => one.textContent ?? ""),
         );
         return lines.some((line) => line.includes(typed));
       },

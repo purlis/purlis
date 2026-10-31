@@ -176,6 +176,19 @@ pub(super) const NOTICE: Family = Family {
             description: "Whose it is, before what it says, for a chat that is not on screen.",
             properties: &[Prop::Text, Prop::FontWeight],
         },
+        Part {
+            name: "mark",
+            since: super::NEXT,
+            description: "A card's mark before its title (#3478): the shape that says what kind of \
+                          notice it is, in its colour.",
+            properties: &[Prop::Text],
+        },
+        Part {
+            name: "title",
+            since: super::NEXT,
+            description: "A card's title (#3478), over what it says: its colour, size and weight.",
+            properties: &[Prop::Text, Prop::FontSize, Prop::FontWeight],
+        },
     ],
     variants: &[
         Variant {
@@ -209,12 +222,39 @@ pub(super) const NOTICE: Family = Family {
     defaults: notice_look,
     states: &[],
     focused: "[data-focus-visible]",
-    words: &[],
+    // A card's title in the primary words, read on the card's ground (#3478). Its mark's colour
+    // is its variant's (`notice.css`: success, danger, attention), which one default cannot say,
+    // so it names none: a theme's own mark colour is held as a mark, at 3:1. A card's `under`,
+    // the room its Details open in, is no part: it paints nothing and its words are the
+    // Notice's own.
+    words: &[("title", "text.primary")],
     corner_most: None,
     around: &[],
     fills: &[],
     under: &[],
 };
+
+/// **The ground a Notice's card stands on in `variant`** (#4210), as `notice.css` draws a card
+/// alone: news on the overlay, trouble and attention on their own grounds. A card's title, its
+/// mark and its ways are read on it, where a theme sets no fill of the Notice's own; a Notice's
+/// box, in a pane or alone, stands on the family's default fill instead.
+pub(super) fn notice_card_ground(variant: &str) -> &'static str {
+    match variant {
+        "trouble" => "danger.surface",
+        "attention" => "attention.surface",
+        _ => "surface.overlay",
+    }
+}
+
+/// **The colour a card's mark is drawn in by default in `variant`** (#4210), as `notice.css`
+/// draws it: news in the success colour, trouble and attention in their own words.
+pub(super) fn notice_mark_words(variant: &str) -> &'static str {
+    match variant {
+        "trouble" => "danger.text",
+        "attention" => "attention.text",
+        _ => "state.success",
+    }
+}
 
 /// **A Notice's colours as `app/src/ui/notice/notice.css` draws them**: the raised ground edged in
 /// the waiting colour (purlis speaking, #1647), trouble's danger ground and words, and

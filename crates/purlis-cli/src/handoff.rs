@@ -409,6 +409,7 @@ fn as_a_task(
     let options = crate::dispatch::Options {
         profile: None,
         place: Some(&place),
+        long: false,
     };
     match crate::dispatch::send(here, persona, &task, brief, &options, None) {
         Ok(said) => {
@@ -645,6 +646,7 @@ fn in_the_app(
             | Answer::Recorded { .. }
             | Answer::Written { .. }
             | Answer::Said { .. }
+            | Answer::Alive {}
             | Answer::Drafted { .. }
             | Answer::Vaults { .. }
             | Answer::Keys { .. }
@@ -692,6 +694,7 @@ pub(crate) fn ticketed() -> Ticketed {
             | Answer::Recorded { .. }
             | Answer::Written { .. }
             | Answer::Said { .. }
+            | Answer::Alive {}
             | Answer::Drafted { .. }
             | Answer::Vaults { .. }
             | Answer::Keys { .. }

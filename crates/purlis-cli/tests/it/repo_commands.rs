@@ -216,6 +216,23 @@ fn a_clone_checks_out_the_remotes_default_branch_whatever_the_inventory_assumed(
 }
 
 #[test]
+fn a_clone_that_fails_leaves_no_folder_and_says_what_failed_not_a_guess() {
+    // #4079: the sentence was the same for every failure, and it blamed sign-in for a timeout.
+    let w = World::new();
+    w.inventory(json!([World::record("widget", "trunk")]));
+
+    let out = w.charter(&["clone", "widget", "-w", "alpha"]);
+
+    assert!(!out.status.success(), "{}", stderr(&out));
+    let said = stderr(&out);
+    assert!(said.contains("github.com has no such repo"), "{said}");
+    assert!(!said.contains("isn't authed"), "{said}");
+    assert!(!w.clone_dir("widget").exists(), "{said}");
+    let hidden = w.clone_dir("widget").with_file_name(".cloning-widget");
+    assert!(!hidden.exists(), "{said}");
+}
+
+#[test]
 fn a_clone_is_recorded_as_a_member_of_its_workspace_without_a_branch() {
     let w = World::new();
     w.remote("widget", "trunk");

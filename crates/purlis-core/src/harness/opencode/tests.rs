@@ -77,6 +77,23 @@ fn an_opencode_chat_is_handed_charter_s_mcp_server_in_its_session_config() {
         serde_json::json!({"type": "local", "command": ["/bin/charter", "mcp"], "enabled": true})
     );
     assert!(config["plugin"].is_array(), "{config}");
+    // #3794: and each dispatch tool runs on purlis's own dispatch grant, by the name opencode
+    // asks its permission under (`<server>_<tool>`, 1.18.33), never the server as a whole, but
+    // where a rule of this machine's operator names it (`opencode::tests` holds those).
+    let operator = crate::opencode::OperatorRules::read(&crate::opencode::Layers::here(None));
+    let mut wanted: Vec<String> = crate::chattools::run_on_the_dispatch_grant()
+        .map(|tool| format!("purlis_{tool}"))
+        .filter(|name| operator.leaves_unasked(name))
+        .collect();
+    wanted.sort();
+    let mut allowed: Vec<String> = config
+        .get("permission")
+        .and_then(serde_json::Value::as_object)
+        .map(|rules| rules.keys().cloned().collect())
+        .unwrap_or_default();
+    allowed.sort();
+    assert_eq!(allowed, wanted);
+    assert_eq!(crate::chattools::run_on_the_dispatch_grant().count(), 11);
 }
 
 #[test]
@@ -127,8 +144,8 @@ fn an_opencode_chat_denies_each_skill_turned_off_except_a_built_in_skills_name()
         .expect("the session config");
     let config: serde_json::Value = serde_json::from_str(config).expect("JSON");
     assert_eq!(
-        config["permission"],
-        serde_json::json!({ "skill": { "review": "deny", "secrets": "deny" } })
+        config["permission"]["skill"],
+        serde_json::json!({ "review": "deny", "secrets": "deny" })
     );
 }
 

@@ -215,6 +215,7 @@ fn a_launch(harness: Option<&str>, confinement: Option<&str>) -> StartProgram {
             git_hooks: None,
             reporting: None,
             confinement: confinement.map(str::to_owned),
+            prompt_key: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }
@@ -402,6 +403,24 @@ async fn a_client_of_host_a_that_is_not_its_window_hears_nothing_of_the_runners_
             .flatten()
             .is_none(),
         "a client that may not confine hears nothing of a sandbox"
+    );
+}
+
+/// **A sign-in's redirect never goes through a relaying host** (#4044): it is the paired desktop's,
+/// on its own link, so the window's relayed link is refused it before anything reaches the runner.
+#[tokio::test]
+async fn a_sign_ins_redirect_is_never_relayed() {
+    let hosts = hosts();
+    let (window, _events) = the_window(&hosts).await;
+
+    let refused = window
+        .sign_in_redirect("/auth/callback?code=c&state=s")
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        refused.refusal().map(|refusal| refusal.code.as_str()),
+        Some(session::NOT_ALLOWED)
     );
 }
 

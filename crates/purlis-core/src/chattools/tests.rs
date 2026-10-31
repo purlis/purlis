@@ -114,6 +114,7 @@ fn the_tools_are_the_ones_charter_names_and_each_says_what_it_does() {
             "session_record_read",
             "session_record",
             "worktree_update",
+            "worktree_remove",
             "workspace_vision",
             "workspace_section",
             "change_status",
@@ -556,6 +557,7 @@ fn a_dispatch_s_arguments_are_its_name_its_brief_and_a_persona_where_one_is_name
         [
             "brief",
             "in",
+            "long",
             "name",
             "profile",
             "to",
@@ -583,6 +585,18 @@ fn a_dispatch_waits_only_when_told_to_and_for_the_default_unless_told_how_long()
     );
     assert!(dispatch_waits(&args(json!({"wait": "yes"}))).is_err());
     assert!(dispatch_waits(&args(json!({"wait": true, "wait_seconds": -1}))).is_err());
+}
+
+#[test]
+fn a_dispatch_is_long_running_only_when_told_to() {
+    // #3905: one job with one answer is the default.
+    assert_eq!(
+        dispatch_long(&args(json!({"name": "n", "brief": "b"}))),
+        Ok(false)
+    );
+    assert_eq!(dispatch_long(&args(json!({"long": false}))), Ok(false));
+    assert_eq!(dispatch_long(&args(json!({"long": true}))), Ok(true));
+    assert!(dispatch_long(&args(json!({"long": "yes"}))).is_err());
 }
 
 #[test]
@@ -1050,6 +1064,18 @@ fn a_dispatch_tool_names_its_task_by_number_and_its_text_whole() {
         ),
         Ok("and the logs".to_owned())
     );
+    assert_eq!(
+        dispatch_flag(&args(json!({})), "all", DISPATCH_TELL),
+        Ok(false)
+    );
+    assert_eq!(
+        dispatch_flag(&args(json!({"all": true})), "all", DISPATCH_TELL),
+        Ok(true)
+    );
+    assert!(dispatch_flag(&args(json!({"all": "yes"})), "all", DISPATCH_TELL).is_err());
+    assert_eq!(dispatch_ack(&args(json!({"ack": 7}))), Ok(Some(7)));
+    assert_eq!(dispatch_ack(&args(json!({}))), Ok(None));
+    assert!(dispatch_ack(&args(json!({"ack": -1}))).is_err());
     let said = dispatch_text(&args(json!({})), "question", DISPATCH_ASK).expect_err("refused");
     assert_eq!(said, "dispatch_ask needs `question`, as text");
     assert_eq!(dispatch_wait_seconds(&args(json!({}))), Ok(None));
@@ -1060,11 +1086,13 @@ fn a_dispatch_tool_names_its_task_by_number_and_its_text_whole() {
     assert!(dispatch_wait_seconds(&args(json!({"wait_seconds": "60"}))).is_err());
     for (tool, required) in [
         (DISPATCH_WAIT, json!(["chat"])),
-        (DISPATCH_TELL, json!(["chat", "text"])),
+        // `chat`, or `all` for every task still working (#3904).
+        (DISPATCH_TELL, json!(["text"])),
         (DISPATCH_ANSWER, json!(["chat", "text"])),
         (DISPATCH_CANCEL, json!(["chat"])),
         (DISPATCH_CLOSE, json!(["chat"])),
-        (DISPATCH_NOTE, json!(["text"])),
+        // `text`, or `ack` alone (#3904).
+        (DISPATCH_NOTE, serde_json::Value::Null),
         (DISPATCH_ASK, json!(["question"])),
     ] {
         let spec = TOOLS.iter().find(|spec| spec.name == tool).expect("a tool");
@@ -1088,6 +1116,7 @@ fn the_tools_that_write_only_the_chat_s_own_scope_are_named_and_never_among_the_
             "workspace_vision",
             "ask_operator",
             "worktree_update",
+            "worktree_remove",
         ]
     );
     for name in OWN_SCOPE_TOOLS {
@@ -1250,4 +1279,42 @@ fn an_update_s_arguments_are_its_step_and_at_a_start_a_base() {
     assert!(worktree_update_args(&args(json!({"step": "abort", "base": "main"}))).is_err());
     assert!(worktree_update_args(&args(json!({"step": "reset"}))).is_err());
     assert!(worktree_update_args(&args(json!({"base": 3}))).is_err());
+}
+
+#[test]
+fn a_removal_is_handed_to_the_app_by_the_server_and_never_run_by_call() {
+    // #3879: the app removes the folder, only where nothing would be lost.
+    let p = tempfile::tempdir().unwrap();
+    let before = snapshot(p.path());
+    let refused = call(
+        p.path(),
+        &in_ws("alpha"),
+        WORKTREE_REMOVE,
+        &args(json!({"repo": "widget", "piece": "p1"})),
+        at(9, 0),
+    )
+    .unwrap_err();
+    assert!(refused.contains("purlis's MCP server"), "{refused}");
+    assert_eq!(snapshot(p.path()), before, "call wrote something");
+}
+
+#[test]
+fn a_removal_s_arguments_are_a_folder_s_names_and_whether_to_delete_its_branch() {
+    assert_eq!(
+        worktree_remove_args(&args(json!({"repo": "widget", "piece": "p1"}))),
+        Ok(("widget".to_owned(), "p1".to_owned(), false))
+    );
+    assert_eq!(
+        worktree_remove_args(&args(
+            json!({"repo": "widget", "piece": "p1", "delete_branch": true})
+        )),
+        Ok(("widget".to_owned(), "p1".to_owned(), true))
+    );
+    for bad in [
+        json!({"piece": "p1"}),
+        json!({"repo": "widget", "piece": " "}),
+        json!({"repo": "widget", "piece": "p1", "delete_branch": "yes"}),
+    ] {
+        assert!(worktree_remove_args(&args(bad.clone())).is_err(), "{bad}");
+    }
 }

@@ -10,7 +10,7 @@ use crate::support;
 use std::path::{Path, PathBuf};
 
 use purlis_core::gitbroker::{Asker, commit};
-use purlis_core::hookwire::{Answer, CommitAsk, Stage};
+use purlis_core::hookwire::{Answer, CommitAsk, FolderName, Stage};
 use purlis_core::repocmd::Say;
 use purlis_core::worktree::{self, git, link};
 
@@ -38,6 +38,11 @@ fn project() -> Project {
 impl Project {
     /// What the app answers chat 4, standing in `cwd`, asking for `stage` to be committed.
     fn asked_from(&self, cwd: &Path, stage: Stage) -> Answer {
+        self.asked_for(cwd, None, stage)
+    }
+
+    /// [`Self::asked_from`], for a command that ran in branch folder `folder` (#3927).
+    fn asked_for(&self, cwd: &Path, folder: Option<FolderName>, stage: Stage) -> Answer {
         let asker = Asker {
             chat: 4,
             cwd: Some(cwd.to_path_buf()),
@@ -45,11 +50,14 @@ impl Project {
             harnessed: true,
             unsandboxed: false,
             config: None,
+            id: None,
+            live: None,
         };
         let ask = CommitAsk {
             chat: 4,
             message: "piece: one change\n\nWhy it was made.".to_owned(),
             stage,
+            folder,
         };
         let identity = git::Isolated::identity(Some("The Person"), Some("person@example.invalid"));
         commit::answer(&self.f.plane, &asker, &ask, &identity)
@@ -222,6 +230,34 @@ fn a_path_is_read_from_where_the_chat_stands() {
         p.git(&p.piece, &["show", "--format=", "--name-only", "HEAD"]),
         "deep/a.txt"
     );
+}
+
+#[test]
+fn a_command_run_in_the_folder_names_it_and_its_paths_are_the_folders_for_a_chat_above_it() {
+    purlis_core::unsteered!();
+    // #3927: the chat stands in its workspace; the command ran in the branch folder.
+    let p = project();
+    std::fs::write(p.piece.join("b.txt"), "b\n").unwrap();
+    let workspace = p.f.plane.join("workspaces").join(&p.f.ws);
+    let folder = FolderName {
+        workspace: p.f.ws.clone(),
+        repo: p.f.repo.clone(),
+        piece: "piece".to_owned(),
+    };
+
+    committed(&p.asked_for(&workspace, Some(folder.clone()), paths(&["b.txt"])));
+    assert_eq!(
+        p.git(&p.piece, &["show", "--format=", "--name-only", "HEAD"]),
+        "b.txt"
+    );
+
+    // The same names from a chat in another workspace are refused, and nothing is staged.
+    let elsewhere = p.f.plane.join("workspaces/other");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::fs::write(p.piece.join("c.txt"), "c\n").unwrap();
+    let why = refused(&p.asked_for(&elsewhere, Some(folder), paths(&["c.txt"]))).to_owned();
+    assert!(why.contains("nothing was committed"), "{why}");
+    assert!(p.nothing_staged());
 }
 
 #[cfg(unix)]
@@ -631,4 +667,76 @@ fn a_dispatched_tasks_own_folder_is_committed_in_as_any_branch_folder_is() {
     // And the one check of a branch folder's link agrees it is the task's own.
     let git_dir = std::fs::canonicalize(p.f.clone.join(".git")).unwrap();
     assert!(worktree::pointer::verified(&git_dir, &folder, task).is_ok());
+}
+
+/// A chat with this stable id, number and persona, standing in the branch folder, among `live`.
+fn a_chat(p: &Project, chat: u32, id: &str, live: &[purlis_core::piececlaim::Live]) -> Asker {
+    Asker {
+        chat,
+        cwd: Some(p.piece.clone()),
+        persona: Some("builder".to_owned()),
+        harnessed: true,
+        unsandboxed: false,
+        config: None,
+        id: Some(id.to_owned()),
+        live: Some(live.to_vec()),
+    }
+}
+
+#[test]
+fn a_second_live_chats_commit_in_a_held_branch_folder_is_refused_naming_the_holder() {
+    purlis_core::unsteered!();
+    // #3901: an original task and a resume chat both committed in one branch folder.
+    let p = project();
+    const FIRST: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2A";
+    const SECOND: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2B";
+    let live = |id: &str, chat| purlis_core::piececlaim::Live {
+        id: id.to_owned(),
+        chat: Some(chat),
+        back: true,
+    };
+    let both = [live(FIRST, 77), live(SECOND, 91)];
+    let identity = git::Isolated::identity(Some("The Person"), Some("person@example.invalid"));
+    let ask = |chat| CommitAsk {
+        chat,
+        message: "piece: one change".to_owned(),
+        stage: paths(&["notes.md"]),
+        folder: None,
+    };
+
+    std::fs::write(p.piece.join("notes.md"), "one\n").unwrap();
+    let first = commit::answer(
+        &p.f.plane,
+        &a_chat(&p, 77, FIRST, &both),
+        &ask(77),
+        &identity,
+    );
+    let (made, _) = committed(&first);
+
+    std::fs::write(p.piece.join("notes.md"), "two\n").unwrap();
+    let second = commit::answer(
+        &p.f.plane,
+        &a_chat(&p, 91, SECOND, &both),
+        &ask(91),
+        &identity,
+    );
+    let why = refused(&second);
+    assert!(
+        why.starts_with(
+            "thing's branch folder 'piece' is claimed by chat 77 (builder), which is \
+                         still at work there"
+        ),
+        "{why}"
+    );
+    assert!(why.contains("purlis worktree done"), "{why}");
+    assert_eq!(p.head(), made, "nothing was committed for the second chat");
+
+    // Once the first has ended, its claim goes with it, and the second commits.
+    let second = commit::answer(
+        &p.f.plane,
+        &a_chat(&p, 91, SECOND, &[live(SECOND, 91)]),
+        &ask(91),
+        &identity,
+    );
+    committed(&second);
 }

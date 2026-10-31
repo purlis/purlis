@@ -758,6 +758,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "workspace-removal": "Asks you to remove a workspace",
   "proposed-change": "Proposes a change for you to apply",
   "runner-write": "Asks, from a pool's runner, to change this project",
+  "runner-dispatch": "Asks, from a pool's runner, to start a chat here",
   "sign-in": "Asks you to sign a profile in",
   "sandbox-only": "Asks you to make a sandbox-only profile",
   "old-harness-plugins": "Old harness plugin settings, ignored now",

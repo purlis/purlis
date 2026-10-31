@@ -395,6 +395,7 @@ fn it_asks_for_the_rights_to_every_cluster_scoped_kind_the_install_applies() {
         "ServiceAccount",
         "Deployment",
         "Service",
+        "NetworkPolicy",
         "ConfigMap",
         "Role",
         "RoleBinding",

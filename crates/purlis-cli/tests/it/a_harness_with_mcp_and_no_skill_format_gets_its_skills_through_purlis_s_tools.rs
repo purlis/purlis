@@ -129,6 +129,7 @@ fn a_harness_purlis_has_no_adapter_for_finds_and_loads_a_skill_over_mcp_and_the_
     let (into, heard) = mpsc::channel::<ToolCall>();
     let into = Mutex::new(into);
     let _reading = listener.hear(Hearing {
+        serve: purlis_core::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, writer| purlis_core::secrets::brokered::not_answered(writer)),
         each: Box::new(|_| Ok(())),
         answer: Box::new(|_, _| panic!("no ask")),
