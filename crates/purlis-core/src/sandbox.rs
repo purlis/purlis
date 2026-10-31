@@ -1819,7 +1819,16 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 home.join(".config/gh"),
                 home.join(".config/glab-cli"),
                 home.join(".local/share/gh"),
-            ] {
+            ]
+            .into_iter()
+            .chain(
+                // Where the runner's own environment moves them.
+                ["GH_CONFIG_DIR", "GLAB_CONFIG_DIR"]
+                    .iter()
+                    .filter_map(|var| machine.env.get(*var))
+                    .map(PathBuf::from)
+                    .filter(|dir| dir.is_absolute()),
+            ) {
                 deny(Class::Vaults, kept, Access::ReadWrite);
             }
         }

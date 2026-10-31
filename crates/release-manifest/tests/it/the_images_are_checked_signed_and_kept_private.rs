@@ -595,22 +595,26 @@ fn each_image_starts_from_a_base_pinned_by_digest_and_runs_as_a_numbered_user() 
     ] {
         let (from, user) = dockerfile(path);
         assert!(!from.is_empty(), "{path}");
-        // A stage of nothing, or an earlier stage of this file, brings nothing in.
-        let stages: Vec<&str> = from
-            .iter()
-            .filter_map(|line| line.split_once(" AS ").map(|(_, stage)| stage.trim()))
-            .collect();
-        let arch_stage = |base: &str| {
-            base.split_once("-${TARGETARCH}").is_some_and(|(stem, _)| {
-                ["amd64", "arm64"]
-                    .iter()
-                    .all(|arch| stages.contains(&format!("{stem}-{arch}").as_str()))
-            })
-        };
-        for base in from.iter().filter(|line| {
-            let named = line.split_whitespace().next().unwrap_or_default();
-            named != "scratch" && !stages.contains(&named) && !arch_stage(named)
-        }) {
+        // A stage of nothing, or a stage earlier in this file, brings nothing in. Read in order,
+        // as Docker reads them: a name a later stage takes is still a registry's here.
+        let mut stages: Vec<String> = Vec::new();
+        for line in &from {
+            let (base, alias) = match line.split_once(" AS ") {
+                Some((base, alias)) => (base.trim(), Some(alias.trim())),
+                None => (line.as_str(), None),
+            };
+            let of_this_file = base == "scratch"
+                || stages.iter().any(|stage| stage == base)
+                || base.strip_suffix("-${TARGETARCH}").is_some_and(|stem| {
+                    ["amd64", "arm64"]
+                        .iter()
+                        .all(|arch| stages.contains(&format!("{stem}-{arch}")))
+                });
+            stages.extend(alias.map(str::to_owned));
+            if of_this_file {
+                continue;
+            }
+            let base = line;
             let digest = base.split_once("@sha256:").map(|(_, d)| d);
             assert!(
                 digest.is_some_and(|d| d.len() == 64 && d.chars().all(|c| c.is_ascii_hexdigit())),

@@ -357,36 +357,18 @@ fn a_runner_told_of_a_mint_port_starts_nothing_outside_the_sandbox_but_a_shell()
 }
 
 #[test]
-fn a_sandboxed_chat_of_a_link_alone_has_its_own_settings_for_the_forge_programs() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = plane_in(&tmp);
-    let start = purlis_session_protocol::session::StartProgram::of(
-        "01J9PRJCT00000000000000000",
-        purlis_session_protocol::session::ProgramKind::Harness,
+fn a_chats_forge_programs_keep_their_settings_in_its_own_temporary_folder() {
+    let wrapped = [("TMPDIR".to_owned(), "/chat/tmp".to_owned())];
+    assert_eq!(
+        forge_programs_settings_in(&wrapped),
+        [
+            ("GH_CONFIG_DIR".to_owned(), "/chat/tmp/forge/gh".to_owned()),
+            (
+                "GLAB_CONFIG_DIR".to_owned(),
+                "/chat/tmp/forge/glab".to_owned()
+            ),
+        ]
     );
-    let settings = |by: &str, sandboxed: bool| {
-        forge_programs_settings_of(
-            &Starting {
-                root: &root,
-                number: 1,
-                start: &start,
-                reporting: None,
-                started_by: by,
-                prompt_key: None,
-            },
-            sandboxed,
-        )
-    };
-    assert!(settings("local-ui", true).is_empty());
-    assert!(settings("remote-link", false).is_empty());
-    let (first, second) = (settings("remote-link", true), settings("remote-link", true));
-    assert_eq!(first[0].0, "GH_CONFIG_DIR");
-    assert_eq!(first[1].0, "GLAB_CONFIG_DIR");
-    assert_ne!(first, second, "each chat's its own");
-    for (_, at) in first.iter().chain(&second) {
-        let folder = std::path::Path::new(at).parent().expect("its folder");
-        let _ = std::fs::remove_dir(folder);
-    }
     assert!(!crate::sandbox::tools::a_run_starts_from("GH_CONFIG_DIR"));
     assert!(!crate::sandbox::tools::a_run_starts_from("GLAB_CONFIG_DIR"));
 }

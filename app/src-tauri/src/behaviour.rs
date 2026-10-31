@@ -3725,6 +3725,7 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
              if cat \"$HOME/.config/gh/hosts.yml\" >/dev/null 2>&1; then echo 'KEPT read.'; else echo 'KEPT held.'; fi\n\
              if echo x >> \"$HOME/.config/gh/hosts.yml\" 2>/dev/null; then echo 'KEPT written.'; else echo 'KEPT unwritten.'; fi\n\
              if printenv PURLIS_POOL_IMAGE CHARTER_POOL_IMAGE >/dev/null; then echo 'IMAGE told.'; else echo 'IMAGE untold.'; fi\n\
+             if gh config set prompt disabled 2>/dev/null && [ \"$(gh config get prompt 2>/dev/null)\" = disabled ]; then echo 'SETTINGS kept.'; else echo 'SETTINGS refused.'; fi\n\
              said=$(kubectl version 2>&1); code=$?\n\
              case \"$said\" in *\"image, \"*@sha256:*\" has no kubectl\"*) echo \"KUBECTL named the image, ended $code.\" ;; *) echo \"KUBECTL ended $code.\" ;; esac\n\
              printf 'TRIED.\\n'\n\
@@ -3762,6 +3763,24 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
     pane.shows("KEPT held.");
     pane.shows("KEPT unwritten.");
     pane.shows("IMAGE untold.");
+    pane.shows("SETTINGS kept.");
+    target.sessions.close(id).expect("it closes");
+
+    // At the full sandbox too, before any tool is declared: its settings are its own to write.
+    runner.runs(
+        false,
+        &format!(
+            "printf '\\n[sandbox]\\nmode = \"on\"\\negress = [\"model-providers\"]\\n' >> '{}/purlis.toml'",
+            target.project_on_its_runner(runner)
+        ),
+        b"",
+    );
+    let (id, pane) = chat_says(None);
+    pane.shows("TRIED.");
+    pane.shows("gh ANSWERED.");
+    pane.shows("glab ANSWERED.");
+    pane.shows("KEPT held.");
+    pane.shows("SETTINGS kept.");
     target.sessions.close(id).expect("it closes");
 
     // Declared, in the project as the runner holds it and here, and allowed by this desktop.

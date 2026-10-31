@@ -650,28 +650,32 @@ fn studio_env_of(starting: &Starting<'_>) -> Option<(String, String)> {
     })
 }
 
-/// **Where a sandboxed runner chat's `gh` and `glab` keep their settings** (#4354): a folder of
-/// the chat's own in the temporary folder, as what they keep in the runner's home is held from
-/// it, and either program stops without a settings folder. A declared tool's run takes neither
-/// variable ([`crate::sandbox::tools::a_run_starts_from`]). Nothing for any other start; where no
-/// folder can be made the programs say why themselves.
-fn forge_programs_settings_of(starting: &Starting<'_>, sandboxed: bool) -> Vec<(String, String)> {
-    if !sandboxed || starting.started_by != purlis_session_protocol::auth::Scope::RemoteLink.word()
-    {
-        return Vec::new();
-    }
-    match tempfile::Builder::new().prefix("purlis-forge-").tempdir() {
-        Ok(folder) => {
-            let at = folder.keep();
-            [("GH_CONFIG_DIR", "gh"), ("GLAB_CONFIG_DIR", "glab")]
-                .map(|(var, below)| (var.to_owned(), at.join(below).display().to_string()))
-                .to_vec()
-        }
-        Err(why) => {
-            tracing::warn!("purlis: a chat's forge programs have no settings folder ({why})");
-            Vec::new()
-        }
-    }
+/// **Where a sandboxed chat's `gh` and `glab` keep their settings on a runner** (#4354): in the
+/// chat's own temporary folder, the one `wrapped` sets, which it writes at every level and which
+/// goes with it. What they keep in the runner's home is held from it, and either program stops
+/// without a settings folder. A declared tool's run takes neither variable
+/// ([`crate::sandbox::tools::a_run_starts_from`]). A temporary folder of its own is made where
+/// the wrap names none; where none can be made, the programs say why themselves.
+fn forge_programs_settings_in(wrapped: &[(String, String)]) -> Vec<(String, String)> {
+    let at = wrapped
+        .iter()
+        .find(|(var, _)| var == "TMPDIR")
+        .map(|(_, tmp)| PathBuf::from(tmp))
+        .or_else(|| {
+            tempfile::Builder::new()
+                .prefix("purlis-forge-")
+                .tempdir()
+                .ok()
+                .map(tempfile::TempDir::keep)
+        });
+    at.map_or_else(Vec::new, |at| {
+        [
+            ("GH_CONFIG_DIR", "forge/gh"),
+            ("GLAB_CONFIG_DIR", "forge/glab"),
+        ]
+        .map(|(var, below)| (var.to_owned(), at.join(below).display().to_string()))
+        .to_vec()
+    })
 }
 
 /// [`compose`] from what [`crate::start::ready`] decided for it: the seam a test hands a sandbox
@@ -686,10 +690,6 @@ pub fn compose_ready(
     let cwd = ready.cwd.clone().unwrap_or_else(|| root.to_path_buf());
     let mut ready = told_first(ready, start.first_message.as_deref())?;
     ready.env.extend(studio_env_of(starting));
-    ready.env.extend(forge_programs_settings_of(
-        starting,
-        ready.sandbox.is_some(),
-    ));
     // What it is armed with, never where it writes, and never written by it.
     if let Some(applied) = ready.sandbox.as_mut() {
         applied
@@ -806,6 +806,11 @@ pub fn compose_ready(
         Some(id) => settings_in_a_file(kit.chat_settings.as_deref(), root, id, args)?,
         None => args,
     };
+    // The same test as what holds their folders in the home (`kept_by_purlis`).
+    let mut wrapped = wrapped;
+    if sandbox.is_some() && crate::sandbox::Machine::this().is_a_runner() {
+        wrapped.extend(forge_programs_settings_in(&wrapped));
+    }
     let env = finished_env(
         ready.env.clone(),
         armed_env,
