@@ -604,6 +604,8 @@ export function SkillPage({
             : []),
           ...(state === "archived" ? ["deprecate"] : []),
           ...("reason" in file || onOpenView === undefined ? ["file"] : []),
+          // Its draft would not land in the skill: the Grades tab holds its chat offers alike.
+          ...("reason" in file ? ["improve"] : []),
         ]}
         onAction={(key) => {
           if (key === "file" && "place" in file)
@@ -633,7 +635,9 @@ export function SkillPage({
             under={
               level === null
                 ? cannotChange
-                : "A chat reads its runs and grades and drafts an edit for you to accept."
+                : "reason" in file
+                  ? file.reason
+                  : "A chat reads its runs and grades and drafts an edit for you to accept."
             }
           />
         </MenuItem>

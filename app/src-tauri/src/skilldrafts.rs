@@ -302,22 +302,13 @@ pub(crate) async fn skill_trigger_tests_chat(
     let held = planes.held(&plane)?;
     crate::curation::off_the_window_refused("starting the chat", move || {
         crate::skillchange::flag_on()?;
-        let root = held.root().to_path_buf();
         let level: purlis_core::skills::verbs::Level = (&level).into();
-        let prompt = drafts::asking_for_trigger_tests(&root, &level, &name)?;
-        let cwd = where_level_is_reached(&root, &level)?;
-        let (profile, _) = crate::curation::default_profile(&root, "no chat was opened")?;
-        open(
+        let prompt = drafts::asking_for_trigger_tests(held.root(), &level, &name)?;
+        open_on_a_skill(
             &held,
-            ChatTyped {
-                profile,
-                persona: None,
-                cwd,
-                label: format!("Trigger tests of {name}"),
-                prompt,
-                then_a_space: false,
-                starts_runs: None,
-            },
+            &level,
+            format!("Trigger tests of {name}"),
+            prompt,
             purlis_core::engine::Size { columns, rows },
         )
     })

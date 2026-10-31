@@ -766,6 +766,18 @@ describe('a skill\'s "…" menu', () => {
     );
   });
 
+  it("holds Improve from runs where the skill's files can't be reached, and says why", async () => {
+    const OUTSIDE = skill("deploy", { folder: "/elsewhere/deploy" });
+    core([OUTSIDE]);
+    const user = userEvent.setup();
+    renderStudioAt(at(OUTSIDE));
+    await page();
+    await user.click(screen.getByRole("button", { name: "More for deploy" }));
+    const menu = await screen.findByRole("menu", { name: "More for deploy" });
+    const row = within(menu).getByRole("menuitem", { name: /^Improve from runs/ });
+    expect(row).toHaveAttribute("aria-disabled", "true");
+  });
+
   it("opens the skill's file in a tab of its own", async () => {
     core();
     const onOpenView = vi.fn();

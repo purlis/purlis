@@ -49,9 +49,6 @@ import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from 
 /** A skill's trigger tests file, in its folder: skill-creator's, which a grade runs. */
 export const TRIGGER_TESTS_FILE = "evals/triggers.json";
 
-/** A skill's outcome evals file, in its folder: skill-creator's. */
-const OUTCOME_EVALS_FILE = "evals/evals.json";
-
 /** **Where a skill's trigger tests file is opened to write in**, by the skill's page, or why it
  *  can't be (a skill installed from a source, a file outside the project): then neither Write
  *  trigger tests nor Ask a chat to write them is offered, as neither would land in the skill. */
@@ -378,7 +375,10 @@ export function GradesTab({
       >
         <PanelSectionTitle id="skill-grades-outcome-evals">Outcome evals</PanelSectionTitle>
         <ButtonRow>
-          <p>{`Tasks with statements a judge checks, kept with the skill in ${OUTCOME_EVALS_FILE}. A chat's file comes back as a draft for you to accept.`}</p>
+          <p>
+            Tasks with statements a judge checks, kept with the skill. What a chat writes comes back
+            as a draft for you to accept.
+          </p>
           {/* A chat on the project's default profile, the core's prompt typed and not sent. */}
           <Button
             size="sm"
