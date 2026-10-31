@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793488857874,
+  "lastUpdate": 1793490642259,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34314,6 +34314,48 @@ window.BENCHMARK_DATA = {
             "value": 102.710612,
             "unit": "ms",
             "extra": "median of 5 runs: 102.549, 102.707, 102.711, 103.409, 104.270 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "0f5b2fba18c3343b0fb246fa3222fd3242915393",
+          "message": "Skills: publish a skill to a source, and export it (#2781) (#4355)\n\n* Skills: publish a skill to a source as a draft request, and export it (#2781)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69GA1H7ZTQ99Y8J28846K11\nPurlis-Persona: steward\n\n* Skills: the new files of publish and export (#2781)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69GA1H7ZTQ99Y8J28846K11\nPurlis-Persona: steward\n\n* Skills: publish replaces a held skill, recovers a failed open, and stops on what a review missed (#2781)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69GA1H7ZTQ99Y8J28846K11\nPurlis-Persona: steward\n\n* Skills: a raw run says its exit by its code (#2781)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69GA1H7ZTQ99Y8J28846K11\nPurlis-Persona: steward\n\n* Skills: ask check-ignore on stdin, and name no old config file (#2781)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69GA1H7ZTQ99Y8J28846K11\nPurlis-Persona: steward\n\n* Skills: a contract case for draft requests, and corrected publish tests (#2781)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69GA1H7ZTQ99Y8J28846K11\nPurlis-Persona: steward\n\n* Skills: count the draft's recorded call, and list it in the forge doc (#2781)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69GA1H7ZTQ99Y8J28846K11\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T22:54:57Z",
+          "tree_id": "49d6a7b06bf64d41f58a0645ca569e3077c76bc0",
+          "url": "https://github.com/purlis/purlis/commit/0f5b2fba18c3343b0fb246fa3222fd3242915393"
+        },
+        "date": 1793490636266,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5358970000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.528, 0.531, 0.536, 0.538, 0.556 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.460784500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.115, 16.445, 16.461, 16.569, 16.582 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8864285,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.070, 101.107, 101.886, 102.327, 102.536 ms"
           }
         ]
       }
