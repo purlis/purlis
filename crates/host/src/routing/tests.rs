@@ -443,7 +443,11 @@ async fn the_windows_steps_towards_a_chat_ask_a_runner_to_run_again() {
         session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell);
     let _ = window.start_program(start).await;
     assert_eq!(asked.lock().unwrap().len(), 3, "a start does");
-    assert!(asked.lock().unwrap().iter().all(|name| name == "builds"));
+    // Named as the link reached it, `<pool>/<runner>`, as a draining runner is.
+    assert!(
+        asked.lock().unwrap().iter().all(|name| name.starts_with("builds")),
+        "{asked:?}"
+    );
 }
 
 /// **A link relayed to a draining runner keeps its chats and starts no new one** (#2865): the
