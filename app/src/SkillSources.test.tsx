@@ -176,6 +176,8 @@ const UPDATE = {
   local_edits: [{ path: "SKILL.md", change: "changed", diff: "+mine\n" }],
   skill: NOTIFY,
   brought: [],
+  grant: null,
+  widenings: [],
   accepted: { commit: "c".repeat(40), skills: [{ name: "notify", digest: "sha256:n1" }] },
 };
 
@@ -1100,6 +1102,35 @@ describe("the update review", () => {
       skills: [{ name: "notify", digest: "sha256:n1" }],
     });
     expect(await screen.findByTestId("skill-sources")).toBeInTheDocument();
+  });
+
+  it("says where it reaches: what comes along lands with its grant, and what it widens (#4186)", async () => {
+    core({
+      offers: [OFFER],
+      answers: {
+        skill_update_review: () => ({
+          ...UPDATE,
+          skill: { ...NOTIFY, brought_by: null, already: ["lint"] },
+          brought: [{ ...NOTIFY, name: "format", brought_by: "notify" }],
+          grant: { to: "only", workspaces: ["ops"] },
+          widenings: [{ name: "lint", granted: "root", added: "ops", turned_off: [] }],
+        }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    await screen.findByTestId("skill-updates");
+    await user.click(screen.getByRole("button", { name: "Review update" }));
+    const review = await screen.findByTestId("update-review");
+    const reach = await within(review).findByRole("region", { name: "Where it reaches" });
+    expect(within(reach).getByTestId("update-brought-grant")).toHaveTextContent(
+      "format, which comes along, reaches the root and ops, as notify does.",
+    );
+    expect(within(reach).getByTestId("already-notify-lint")).toHaveTextContent(
+      "It refers to lint, which is granted to root: it is left as it is, and the update grants it to ops too.",
+    );
+    // Said once: not again in the folded review of notify.
+    expect(within(review).getAllByTestId("already-notify-lint")).toHaveLength(1);
   });
 
   it("Not now leaves it as it is, and back walks the pages again", async () => {

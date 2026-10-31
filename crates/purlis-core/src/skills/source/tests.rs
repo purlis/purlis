@@ -631,7 +631,7 @@ fn a_newer_commit_is_offered_and_never_applied_by_itself() {
 
     // A third commit lands after the review: accepting the reviewed one still pins that one only.
     on(root, |cx| {
-        update(cx, &Level::project(), "notify", &diff.accepted())
+        update(cx, &Level::project(), "notify", &diff.accepted(), None)
     })
     .0
     .unwrap();
@@ -685,7 +685,9 @@ fn a_force_pushed_source_moves_no_pin() {
         commit: Commit::parse(&rewritten).unwrap(),
         skills: accepted.skills.clone(),
     };
-    let (answer, _) = on(root, |cx| update(cx, &Level::project(), "notify", &wrong));
+    let (answer, _) = on(root, |cx| {
+        update(cx, &Level::project(), "notify", &wrong, None)
+    });
     assert!(answer.is_err());
     assert_eq!(
         lock::read(root, Kept::Shared).unwrap().lock.skills[0]
@@ -1254,7 +1256,7 @@ fn an_update_renaming_a_file_by_its_case_keeps_the_new_one() {
     remote.commit(&tree, Some(&first));
     let diff = update_review(root, None, &Level::project(), "casey").unwrap();
     on(root, |cx| {
-        update(cx, &Level::project(), "casey", &diff.accepted())
+        update(cx, &Level::project(), "casey", &diff.accepted(), None)
     })
     .0
     .unwrap();
@@ -1319,7 +1321,7 @@ fn an_update_brings_along_a_skill_it_newly_refers_to_and_shows_the_local_edits()
         diff.local_edits
     );
     on(root, |cx| {
-        update(cx, &Level::project(), "notify", &diff.accepted())
+        update(cx, &Level::project(), "notify", &diff.accepted(), None)
     })
     .0
     .unwrap();
@@ -1629,7 +1631,9 @@ fn an_update_of_a_skill_from_an_unconfirmed_committed_source_fetches_nothing() {
         commit: Commit::parse(&"0".repeat(40)).unwrap(),
         skills: accepted.skills.clone(),
     };
-    let (answer, _) = on(root, |cx| update(cx, &Level::project(), "notify", &wanted));
+    let (answer, _) = on(root, |cx| {
+        update(cx, &Level::project(), "notify", &wanted, None)
+    });
     assert!(
         answer
             .unwrap_err()
@@ -1781,9 +1785,11 @@ fn a_reference_to_a_built_in_skills_name_is_met_and_brings_nothing_along() {
     let diff = update_review(root, None, &project, "notify").unwrap();
     assert!(diff.brought.is_empty(), "{:?}", diff.brought);
     assert_eq!(diff.review.already, ["secrets"]);
-    on(root, |cx| update(cx, &project, "notify", &diff.accepted()))
-        .0
-        .unwrap();
+    on(root, |cx| {
+        update(cx, &project, "notify", &diff.accepted(), None)
+    })
+    .0
+    .unwrap();
     assert!(!root.join("skills/secrets").exists());
     let notify = std::fs::read_to_string(root.join("skills/notify/SKILL.md")).unwrap();
     assert!(notify.contains("skills:secrets"), "{notify}");
@@ -2508,4 +2514,141 @@ fn a_project_install_with_a_grant_widens_the_grant_of_a_project_skill_it_refers_
             .any(|line| line.to_string().contains("notify is granted to ops too")),
         "{said:?}"
     );
+}
+
+/// #4186: an update at the project level relies on the project skills it refers to as an
+/// install with the updated skill's own grant does. A held one whose grant does not reach the
+/// updated skill's workspaces is widened, and a skill it brings along lands with that grant; a
+/// local update, or one of a skill granted to the root, grants nothing.
+#[cfg(unix)]
+#[test]
+fn an_update_at_the_project_level_widens_and_grants_as_the_updated_skill_is_granted() {
+    use super::widen::Widening;
+    let (remote, first) = good_remote();
+    let tmp = plane();
+    let root = tmp.path();
+    let source = remote.source();
+    let project = Level::project();
+    let ops = Grant::Only(vec!["ops".to_owned()]);
+    let accepted = review(root, None, &source, &["notify".to_owned()], &project)
+        .unwrap()
+        .accepted();
+    on(root, |cx| {
+        install(cx, &source, &project, &accepted, Some(&ops))
+    })
+    .0
+    .unwrap();
+    // lint is the project's own, granted to the root alone; the newer notify refers to it and
+    // to format, which only the source holds.
+    std::fs::create_dir_all(root.join("skills/lint")).unwrap();
+    std::fs::write(
+        root.join("skills/lint/SKILL.md"),
+        b"---\nname: lint\ndescription: Checks it.\n---\n",
+    )
+    .unwrap();
+    let tree = remote.tree(&[
+        (
+            "skills/notify/SKILL.md",
+            "100644",
+            b"---\nname: notify\ndescription: Tells the team.\n---\n\nThen skills:format and skills:lint.\n",
+        ),
+        (
+            "skills/format/SKILL.md",
+            "100644",
+            b"---\nname: format\ndescription: Formats.\n---\n",
+        ),
+        (
+            "skills/lint/SKILL.md",
+            "100644",
+            b"---\nname: lint\ndescription: Checks it.\n---\n",
+        ),
+    ]);
+    let second = remote.commit(&tree, Some(&first));
+    let diff = update_review(root, None, &project, "notify").unwrap();
+    assert_eq!(diff.review.already, ["lint"]);
+    assert_eq!(diff.grant, Some(ops.clone()));
+    assert_eq!(
+        diff.widenings,
+        [Widening {
+            name: "lint".to_owned(),
+            folder: root.join("skills/lint"),
+            granted: Grant::Root,
+            widened: Some(ops.clone()),
+            turned_off: Vec::new(),
+        }]
+    );
+    assert_eq!(
+        diff.widenings[0].said("update").as_deref(),
+        Some(
+            "refers to lint, which is granted to root: it is left as it is, and the update \
+             grants it to ops too"
+        )
+    );
+
+    // A later step that fails takes back the grants it wrote with the rest: here notify's own
+    // folder, which cannot be written.
+    use std::os::unix::fs::PermissionsExt;
+    let notify = root.join("skills/notify");
+    std::fs::set_permissions(&notify, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let (answer, _) = on(root, |cx| {
+        update(
+            cx,
+            &project,
+            "notify",
+            &diff.accepted(),
+            diff.grant.as_ref(),
+        )
+    });
+    std::fs::set_permissions(&notify, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(answer.unwrap_err().contains("could not be updated"));
+    let grant_of = |name: &str| crate::skills::grant_of(&root.join("skills").join(name)).unwrap();
+    assert_eq!(grant_of("lint"), Grant::Root);
+    assert!(!root.join("skills/format").exists());
+    assert!(!root.join("skills/format.toml").exists());
+
+    // A grant that changed since the review is not the one it showed: nothing is written.
+    let (answer, _) = on(root, |cx| {
+        update(cx, &project, "notify", &diff.accepted(), Some(&Grant::All))
+    });
+    assert!(answer.unwrap_err().contains("review it again"));
+    assert!(!root.join("skills/format").exists());
+
+    let (answer, said) = on(root, |cx| {
+        update(
+            cx,
+            &project,
+            "notify",
+            &diff.accepted(),
+            diff.grant.as_ref(),
+        )
+    });
+    answer.unwrap();
+    assert_eq!(grant_of("format"), ops);
+    assert_eq!(grant_of("lint"), ops);
+    assert_eq!(grant_of("notify"), ops);
+    assert!(
+        said.iter()
+            .any(|line| line.to_string().contains("lint is granted to ops too")),
+        "{said:?}"
+    );
+
+    // Granted to the root, or kept on this machine: nothing to widen, nothing granted.
+    crate::skills::grant(root, "notify", &Grant::Root).unwrap();
+    crate::skills::grant(root, "lint", &Grant::Root).unwrap();
+    let tree = remote.tree(&[
+        (
+            "skills/notify/SKILL.md",
+            "100644",
+            b"---\nname: notify\ndescription: Tells the team.\n---\n\nThen skills:lint, again.\n",
+        ),
+        (
+            "skills/lint/SKILL.md",
+            "100644",
+            b"---\nname: lint\ndescription: Checks it.\n---\n",
+        ),
+    ]);
+    remote.commit(&tree, Some(&second));
+    let diff = update_review(root, None, &project, "notify").unwrap();
+    assert_eq!(diff.grant, None);
+    assert_eq!(diff.widenings, []);
 }

@@ -629,7 +629,42 @@ pub struct UpdateReview {
     pub local_edits: Vec<UpdateFile>,
     pub skill: ReviewSkill,
     pub brought: Vec<ReviewSkill>,
+    /// The updated skill's own grant, where it reaches past the root (#4186): each skill it
+    /// brings along lands with it.
+    pub grant: Option<SkillGrant>,
+    /// Each project skill it and those it brings along rely on whose grant the update widens, or
+    /// which a workspace it reaches turned off (#4186).
+    pub widenings: Vec<SkillWidening>,
     pub accepted: Reviewed,
+}
+
+/// **A project skill an install or an update relies on** whose grant it widens, or which a
+/// workspace it reaches turned off (#4172, #4185, #4186): what its review says before the change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillWidening {
+    pub name: String,
+    /// Its grant now, as a person reads it: `root`, `all`, or the workspaces' names.
+    pub granted: String,
+    /// What the change grants it to besides, as a person reads it; `None` where its grant
+    /// reaches every workspace the change does already.
+    pub added: Option<String>,
+    /// The workspaces the change reaches that turned it off, whose chats get the skill that
+    /// refers to it without it: no grant turns it back on.
+    pub turned_off: Vec<String>,
+}
+
+impl From<&source::Widening> for SkillWidening {
+    fn from(one: &source::Widening) -> Self {
+        SkillWidening {
+            name: esc(&one.name),
+            granted: esc(&one.granted.to_string()),
+            added: one
+                .widened
+                .as_ref()
+                .map(|to| esc(&source::added(&one.granted, to))),
+            turned_off: one.turned_off.iter().map(|ws| esc(ws)).collect(),
+        }
+    }
 }
 
 /// The project's skill sources.
@@ -1032,13 +1067,16 @@ pub(crate) async fn skill_update_review(
             local_edits: files_shown(&update.local_edits),
             skill: (&update.review).into(),
             brought: update.brought.iter().map(Into::into).collect(),
+            grant: update.grant.clone().map(Into::into),
+            widenings: update.widenings.iter().map(Into::into).collect(),
             accepted: (&update.accepted()).into(),
         })
     })
     .await
 }
 
-/// **Accepts an update** that was reviewed: the pin moves, as one commit.
+/// **Accepts an update** that was reviewed: the pin moves, as one commit. `grant` is the grant
+/// the review showed (#4186): where the skill's grant changed since, nothing is written.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_update(
@@ -1047,13 +1085,15 @@ pub(crate) async fn skill_update(
     level: SkillLevel,
     name: String,
     reviewed: Reviewed,
+    grant: Option<SkillGrant>,
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("updating the skill", move || {
         flag_on()?;
         let accepted = Accepted::try_from(&reviewed)?;
+        let grant: Option<purlis_core::skills::Grant> = grant.map(Into::into);
         heard(held.root(), |cx| {
-            source::update(cx, &(&level).into(), &name, &accepted)
+            source::update(cx, &(&level).into(), &name, &accepted, grant.as_ref())
         })
     })
     .await

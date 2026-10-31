@@ -2223,8 +2223,17 @@ export const commands = {
 	 *  commit.
 	 */
 	skillUpdateReview: (plane: PlaneId, level: SkillLevel, name: string) => typedError<UpdateReview, string>(__TAURI_INVOKE("skill_update_review", { plane, level, name })),
-	/**  **Accepts an update** that was reviewed: the pin moves, as one commit. */
-	skillUpdate: (plane: PlaneId, level: SkillLevel, name: string, reviewed: Reviewed) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_update", { plane, level, name, reviewed })),
+	/**
+	 *  **Accepts an update** that was reviewed: the pin moves, as one commit. `grant` is the grant
+	 *  the review showed (#4186): where the skill's grant changed since, nothing is written.
+	 */
+	skillUpdate: (plane: PlaneId, level: SkillLevel, name: string, reviewed: Reviewed, grant: 
+/**  Chats at the project's root alone. */
+{ to: "root" } | 
+/**  Every workspace's chats too. */
+{ to: "all" } | 
+/**  The workspaces named. */
+{ to: "only"; workspaces: string[] } | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_update", { plane, level, name, reviewed, grant })),
 	/**
 	 *  **Turns one of a harness's own skills on or off** (SK-6, #2769) for the chats the studio
 	 *  shows (a plugin's is the plugin's, and refused, #3467): at the project's root on this machine alone (`charter.local.toml`), in a
@@ -13304,6 +13313,26 @@ export type SkillVersionBefore = {
 export type SkillWhose = { at: "project" } | { at: "workspace"; name: string } | { at: "persona"; name: string };
 
 /**
+ *  **A project skill an install or an update relies on** whose grant it widens, or which a
+ *  workspace it reaches turned off (#4172, #4185, #4186): what its review says before the change.
+ */
+export type SkillWidening = {
+	name: string,
+	/**  Its grant now, as a person reads it: `root`, `all`, or the workspaces' names. */
+	granted: string,
+	/**
+	 *  What the change grants it to besides, as a person reads it; `None` where its grant
+	 *  reaches every workspace the change does already.
+	 */
+	added: string | null,
+	/**
+	 *  The workspaces the change reaches that turned it off, whose chats get the skill that
+	 *  refers to it without it: no grant turns it back on.
+	 */
+	turned_off: string[],
+};
+
+/**
  *  The skills a chat started without (SK-5, #2768; SK-8, #2771, decision 41): the ones its
  *  persona names, each as the persona's `skills:` list writes it, and the ones that could not be
  *  loaded. What its tab's Notice says.
@@ -14506,6 +14535,16 @@ export type UpdateReview = {
 	local_edits: UpdateFile[],
 	skill: ReviewSkill,
 	brought: ReviewSkill[],
+	/**
+	 *  The updated skill's own grant, where it reaches past the root (#4186): each skill it
+	 *  brings along lands with it.
+	 */
+	grant: SkillGrant | null,
+	/**
+	 *  Each project skill it and those it brings along rely on whose grant the update widens, or
+	 *  which a workspace it reaches turned off (#4186).
+	 */
+	widenings: SkillWidening[],
 	accepted: Reviewed,
 };
 
