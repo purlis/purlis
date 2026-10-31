@@ -17,8 +17,8 @@
  * - **`App.css` draws no overlay surface of its own**: the classes it keeps (`.row-card`) only
  *   place and size theirs.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import ts from "typescript";
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -431,5 +431,51 @@ describe("App.css", () => {
       .filter((value) => value.includes("--overlay-shadow"));
     expect(shadows).toEqual([]);
     expect(app).not.toMatch(/var\(--overlay-scrim\)/);
+  });
+});
+
+/**
+ * **The classes the families retired** (#3365): the old Radix-era overlay and menu classes, and
+ * the button's and the field's old classes, are worn by nothing (each family's lint refuses
+ * them), so nothing draws them and no story wears them. A menu is the menu family, a popover the
+ * popover family, a box the field family and a button the button family.
+ */
+describe("the classes the families retired (#3365)", () => {
+  /** Every file under `src/` whose name ends in `ending`, as text, read from disk. */
+  const filesEnding = (ending: string): [string, string][] => {
+    const found: [string, string][] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name !== "__screenshots__" && entry.name !== "node_modules") walk(path);
+        } else if (entry.name.endsWith(ending))
+          found.push([relative(process.cwd(), path), readFileSync(path, "utf8")]);
+      }
+    };
+    walk(join(process.cwd(), "src"));
+    return found;
+  };
+  const SHEETS = filesEnding(".css");
+  const STORIES = filesEnding(".stories.tsx");
+
+  it("draws none of the old overlay and menu classes in any stylesheet", () => {
+    const RETIRED = /\.ui-(?:menu(?:-[\w-]+)?|popover|overlay-arrow)(?![\w-])/g;
+    const drawn = SHEETS.flatMap(([path, text]) =>
+      [...text.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(RETIRED)].map(
+        ([found]) => `${path} ${found}`,
+      ),
+    );
+    expect(SHEETS.length).toBeGreaterThan(20);
+    expect(drawn).toEqual([]);
+  });
+
+  it("wears no old field or button class in any story", () => {
+    const WORN = /className=(?:"|\{?`)[^"`]*(?<![\w-])ui-(?:input|button)(?:-[\w-]+)?(?![\w-])/g;
+    const worn = STORIES.flatMap(([path, text]) =>
+      [...text.matchAll(WORN)].map(([found]) => `${path} ${found}`),
+    );
+    expect(STORIES.length).toBeGreaterThan(20);
+    expect(worn).toEqual([]);
   });
 });
