@@ -102,6 +102,7 @@ pub struct Server {
 ///   `forget_chat_that_did_not_start`, `close_plane`, `forget_project`, and the two that quit
 ///   the app to start it again (`restart_on_the_session_bus`, `restart_to_update`);
 /// - **it starts a chat or a shell as the person**: `ask_persona_chat`, `start_chat`,
+///   `cancel_chat_start`,
 ///   `start_chat_here`, `open_session`, `open_shell_in_branch`, `first_task_run`,
 ///   `resume_session`, `retry_chat_that_did_not_start`, `reopen_finished_task`, `curate` (a
 ///   chat with a curation's prompt typed), and `relaunch` (the launch's answer, which starts
@@ -264,6 +265,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Typing a profile's sign-in into the person's own shell tab (#2035): the harness's own
     // sign-in, run as the person, never a chat's to start.
     "type_profile_sign_in",
+    "type_profile_sign_out",
     "dismiss_sign_in",
     "machine_profile_pin",
     // A sandbox-only Codex profile made from its Ask (#2037): the person's own profile.
@@ -278,6 +280,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Starts.
     "ask_persona_chat",
     "start_chat",
+    "cancel_chat_start",
     "start_chat_here",
     "open_session",
     "open_shell_in_branch",
@@ -642,6 +645,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A router chosen for a workspace's or a persona's chats (#3692): one commit to the project,
     // the person's own press in their window, as a pin is.
     "skill_router_choose",
+    // A router's reading of prompts turned on or off (ADR 0102 as amended 2026-10-31): only the
+    // person's own press in their window, never a chat or another link.
+    "skill_router_reads_prompts",
     // A skill's tab (#2782): reverting it to a version, deprecating, archiving or restoring it,
     // and naming its owners. Each is one commit to the project, the person's own press in their
     // window.
@@ -1157,10 +1163,11 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_deleted_text",
     "skill_details",
     "skill_diff",
-    // What a router's grade runs (SK-15e, #3233), and a grade's scorecard and kept chat
-    // (#3617): read only.
+    // What a router's grade runs (SK-15e, #3233), a grade's scorecard and kept chat (#3617),
+    // and how far the one running is (#4222): read only.
     "router_grade_chat",
     "router_grade_plan",
+    "router_grade_running",
     "router_grade_scorecard",
     // A grade's kept chat and its scorecard (SK-59, #3239), and a skill's grading after each
     // edit (SK-58, #3238): read only.

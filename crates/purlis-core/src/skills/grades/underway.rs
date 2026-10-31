@@ -263,6 +263,7 @@ pub fn interrupted_report(
         priced,
         outcome_delta: None,
         outcomes: Vec::new(),
+        failed: None,
     }
 }
 

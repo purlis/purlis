@@ -94,7 +94,7 @@ fn skill_grade_says_what_a_grade_runs_and_spends_then_each_grade() {
         ),
         "{text}"
     );
-    assert!(text.contains("1 outcome eval waits"), "{text}");
+    assert!(text.contains("Outcome eval 1 is left out:"), "{text}");
     assert!(
         text.contains("A grade stops once its chats have spent 200000 tokens (the default;"),
         "{text}"
@@ -175,4 +175,60 @@ fn skill_grade_works_its_estimate_out_from_an_interrupted_grade_3602() {
         ),
         "{text}"
     );
+}
+
+/// `purlis skill grade --run` with `env` set: it runs nothing it was not asked to.
+fn runs(p: &Project, env: &[(&str, &str)]) -> (bool, String) {
+    let root = p.at.join("plane");
+    let mut command = support::purlis();
+    command
+        .args(["skill", "grade", "deploy", "--run", "--yes"])
+        .current_dir(&root)
+        .env("CHARTER_ROOT", &root)
+        .env("HOME", p.at.join("home"))
+        .env("PURLIS_CONFIG_HOME", p.at.join("home/config"))
+        .env("XDG_RUNTIME_DIR", p.at.join("home"))
+        .env("TMPDIR", &p.at)
+        .env("PURLIS_SKILL_STUDIO", "1")
+        .env("NO_COLOR", "1")
+        .env_remove(purlis_core::hookwire::CHAT_ENV)
+        .env_remove(purlis_core::hookwire::SOCKET_ENV)
+        .env_remove(purlis_core::hookwire::SANDBOXED_ENV)
+        .env_remove(purlis_core::active::SESSION_ID_ENV)
+        .env_remove("CHARTER_CHAT")
+        .env_remove("CHARTER_HOOK_SOCKET")
+        .env_remove("CHARTER_SANDBOXED")
+        .env_remove("CHARTER_SESSION_ID");
+    for (name, value) in env {
+        command.env(name, value);
+    }
+    let out = command.output().unwrap();
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn a_grades_run_is_refused_inside_a_chat_even_with_its_yes() {
+    let p = Project::new();
+    let (ran, said) = runs(&p, &[(purlis_core::hookwire::CHAT_ENV, "7")]);
+    assert!(!ran);
+    assert!(said.contains("a chat cannot run it"), "{said}");
+}
+
+#[test]
+fn a_grades_run_with_no_host_says_how_to_start_one_and_runs_nothing() {
+    let p = Project::new();
+    let (ran, said) = runs(&p, &[]);
+    assert!(!ran);
+    assert!(said.contains("purlis serve"), "{said}");
+    assert!(said.contains("nothing was run"), "{said}");
+}
+
+#[test]
+fn a_flag_of_a_run_is_refused_without_the_run() {
+    let p = Project::new();
+    let out = p.run(&["skill", "grade", "deploy", "--yes"]);
+    assert!(!out.status.success());
 }

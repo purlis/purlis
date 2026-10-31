@@ -4,17 +4,18 @@
 import { useEffect, useState } from "react";
 import {
   commands,
+  type RouterGradeStep,
   type SkillPinner,
   type SkillRouterOffer,
   type StudioRouted,
   type StudioRouter,
 } from "./bindings";
 import { counted } from "./dispatches";
-import { RouterGrade } from "./RouterGrade";
 import { Badge } from "./ui/badge/Badge";
 import { Button } from "./ui/button/Button";
 import { Fact, Facts } from "./ui/card/Facts";
 import { Radio, RadioGroup } from "./ui/choice/Radio";
+import { Switch } from "./ui/choice/Switch";
 import { Dialog } from "./ui/dialog/Dialog";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { List, ListRow, type Selection } from "./ui/list/List";
@@ -33,6 +34,13 @@ export const BUILT_IN_ROUTER = "built-in";
  */
 export const BUDGET_COUNTS =
   "It counts the skills purlis hands a chat: the built-in ones, the project's, and those of the repo the chat works in. A program's own skills, in your folders and its plugins, are not counted: the program lists them against its own limit, and the Skills view shows them beside a chat's budget.";
+
+/**
+ * **What the person turns on for a router that reads prompts** (ADR 0102 as amended 2026-10-31):
+ * always on screen beside the switch, on or off.
+ */
+export const READS_EVERY_PROMPT =
+  "On, this router reads every prompt of every chat it routes on this machine, to point the chat at skills its list leaves out. It runs confined and has 100 ms: past that the prompt goes on with no pointer, and the routing record says it fell back. purlis writes no prompt down. Turning it on reaches chats started after; turning it off stops at the next prompt.";
 
 /** What Change… sends for a persona's choice taken out: its chats take their workspace's. */
 const THE_WORKSPACES = "";
@@ -70,36 +78,60 @@ function markOf(chat: StudioRouted) {
 /**
  * **The Routing page's facts** (#3692, S9, `prototype/studio-secondary-pages` variant A): the
  * router these chats are routed by, with Change… (a dialog), the budget past which it decides
- * what a chat's list shows, and an extension's newest grade with Grade (SK-15e) and its Scorecard
- * (#3617). At the project's
- * root, which chooses no router, Change… is out of reach and says why.
+ * what a chat's list shows, and an extension's newest grade with its Scorecard (#3617) and Grade
+ * the router…, which opens its plan beside the list (SK-15e, #4222). At the project's root, which chooses no router, Change… is out of reach and says why.
  */
 export function RoutingFacts({
   plane,
   router,
   by,
-  workspace,
   persona,
   busy,
   onChoose,
-  onGraded,
+  onReadsPrompts,
+  gradeRunning,
+  onGradeRunning,
+  onGradePlan,
   onScorecard,
 }: {
   plane: string;
   router: StudioRouter;
   /** Whose router a change writes: the scope's workspace or persona, none at the root. */
   by: SkillPinner | null;
-  workspace: string | null;
   persona: string | null;
   busy: boolean;
   /** Chooses `router` for `by`'s chats (null takes the choice out), and says `said` once it is. */
   onChoose: (by: SkillPinner, router: string | null, said: string) => void;
-  onGraded: () => void;
+  /** Turns the chosen router's reading of prompts on or off, and says `said` once it is. */
+  onReadsPrompts: (router: string, on: boolean, said: string) => void;
+  /** The router's grade running in this scope, and the way to its page and its Stop (#4222). */
+  gradeRunning?: RouterGradeStep;
+  onGradeRunning: (grade: string) => void;
+  /** Opens the router's grade plan beside the list, a review page (#4222). */
+  onGradePlan: () => void;
   /** Opens the scorecard of the router's grade `grade` beside the list (#3617). */
   onScorecard: (grade: string) => void;
 }) {
   const [changing, setChanging] = useState(false);
   const { budget } = router;
+  const extension = router.extension;
+  // Read when the page shows an extension's router, and again each time the studio is read, as
+  // Change…'s offers are: the studio's own read asks no extension's manifest.
+  const [offers, setOffers] = useState<readonly SkillRouterOffer[]>([]);
+  useEffect(() => {
+    if (extension === null) return;
+    let live = true;
+    void commands
+      .skillRouters(plane)
+      .then((answer) => {
+        if (live && answer.status === "ok") setOffers(answer.data);
+      })
+      .catch(() => live && setOffers([]));
+    return () => {
+      live = false;
+    };
+  }, [plane, extension, router]);
+  const offer = offers.find((one) => one.id === extension);
   const shown = router.problem ? (
     <>
       <Badge variant="waiting">Not a router</Badge> {router.said}
@@ -136,6 +168,28 @@ export function RoutingFacts({
             </span>
           )}
         </Fact>
+        {extension !== null && offer?.reads_prompts === true && (
+          <Fact label="Prompts">
+            <Switch
+              isSelected={offer.prompts_on}
+              isDisabled={busy}
+              onChange={(on) =>
+                onReadsPrompts(
+                  extension,
+                  on,
+                  on
+                    ? `The router ${extension} now reads every prompt of chats started after this.`
+                    : `The router ${extension} reads no further prompt.`,
+                )
+              }
+            >
+              Let it read prompts
+            </Switch>
+            <span className="honest" data-testid="skill-routing-reads-every-prompt">
+              {` ${READS_EVERY_PROMPT}`}
+            </span>
+          </Fact>
+        )}
         <Fact label="Preview">
           <span data-testid="skill-routing-preview">{router.preview}</span>
         </Fact>
@@ -156,13 +210,20 @@ export function RoutingFacts({
                 Scorecard
               </Button>
             )}{" "}
-            <RouterGrade
-              plane={plane}
-              router={router.extension}
-              workspace={workspace}
-              persona={persona}
-              onGraded={onGraded}
-            />
+            <Button size="sm" onPress={onGradePlan}>
+              Grade the router…
+            </Button>
+          </Fact>
+        )}
+        {gradeRunning !== undefined && (
+          // Whichever router is chosen now: the grade spends until it is stopped.
+          <Fact label="Grading">
+            <span data-testid="skill-routing-grading">
+              {`The router ${gradeRunning.router}: ${gradeRunning.ran} of ${counted(gradeRunning.of, "chat", "chats")} done.`}
+            </span>{" "}
+            <Button size="sm" onPress={() => onGradeRunning(gradeRunning.grade)}>
+              Show the grade
+            </Button>
           </Fact>
         )}
       </Facts>
@@ -246,7 +307,7 @@ export function RouterChange({
       onClose={onClose}
       title="Change the router"
       subtitle={`For ${whose}`}
-      description="The router decides which skills a chat sees when its list is over the budget. It is asked once, at a chat's start."
+      description="The router decides which skills a chat sees when its list is over the budget. It is asked at a chat's start."
       summary={
         picked === UNREADABLE
           ? `What is chosen for ${whose} now names no router, so they are routed by the built-in router.`
@@ -277,7 +338,17 @@ export function RouterChange({
           Built-in
         </Radio>
         {routers.map((one) => (
-          <Radio key={one.id} value={one.id} description={`The extension ${one.name}.`}>
+          <Radio
+            key={one.id}
+            value={one.id}
+            description={
+              !one.reads_prompts
+                ? `The extension ${one.name}.`
+                : one.prompts_on
+                  ? `The extension ${one.name}. You turned on its reading of prompts, so it reads every prompt of the chats it routes.`
+                  : `The extension ${one.name}. It can read prompts too, once you turn that on for it.`
+            }
+          >
             <code>{one.id}</code>
           </Radio>
         ))}

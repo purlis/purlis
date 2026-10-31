@@ -42,6 +42,10 @@ pub enum Asked {
         published: std::path::PathBuf,
         home: Option<std::path::PathBuf>,
     },
+    /// Keep where the operator's mint port is, as the desktop says on standard input (#4207).
+    MintPort,
+    /// Ask the port for a token, say what it covers, and revoke it (#4207). Prints no token.
+    MintCheck { app: String },
 }
 
 pub fn run(asked: Asked) -> Result<u8, String> {
@@ -89,6 +93,33 @@ pub fn run(asked: Asked) -> Result<u8, String> {
         writeln!(out, "{}", purlis_core::runnerlink::to_line(&ours))
             .and_then(|()| out.flush())
             .map_err(|why| format!("the runner's device id and key could not be written: {why}"))?;
+        return Ok(0);
+    }
+    if let Asked::MintPort = &asked {
+        let mut line = String::new();
+        std::io::stdin()
+            .lock()
+            .take(purlis_core::runnerlink::MOST_LINE)
+            .read_line(&mut line)
+            .map_err(|why| format!("where the mint port is could not be read: {why}"))?;
+        let told = serde_json::from_str(line.trim())
+            .map_err(|_| "what the desktop said of the mint port is not one purlis reads")?;
+        purlis_core::forge::mintport::tell(&config, told)?;
+        return Ok(0);
+    }
+    if let Asked::MintCheck { app } = &asked {
+        let minted = purlis_core::forge::mintport::mint(&config, app)?
+            .ok_or("this runner was told of no mint port")?;
+        let revoked = purlis_core::forge::apptoken::revoke_now(&minted.token);
+        let said = serde_json::json!({
+            "owner": minted.owner,
+            "repos": minted.repos,
+            "expires_at": minted.expires_at,
+            "operator": minted.operator,
+            "revoked": revoked.is_ok(),
+        });
+        let mut out = std::io::stdout().lock();
+        writeln!(out, "{said}").map_err(|why| why.to_string())?;
         return Ok(0);
     }
     let link = purlis_host::Place::at(purlis_core::hostsocket::here(), folder).link();

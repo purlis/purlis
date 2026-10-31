@@ -528,6 +528,7 @@ impl Doctor {
         rows.push(config::charter_toml(self));
         rows.push(profiles::harness_profiles(self));
         rows.extend(profiles::profile_rows(self));
+        rows.extend(profiles::profile_icons(self));
         rows.push(config::schema(self));
         rows.push(git::plane_root(self));
         rows.push(git::index_lock(self));

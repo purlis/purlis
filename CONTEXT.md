@@ -1891,7 +1891,7 @@ them now, and grades them later (#3235).
 One run of a grading framework on a copy of a skill: its trigger tests (and, later, its outcome
 evals) run as real chats in each **arm**, scored and recorded in the **eval record** against the
 version the copy held. A grade shows what it runs and spends before it starts, and starts only on
-the person's press (ADR 0105).
+the person's press, or their yes at a terminal (ADR 0105).
 _Avoid_: test run, benchmark, eval (alone)
 
 **Arm** (of a grade):

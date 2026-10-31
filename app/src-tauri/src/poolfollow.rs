@@ -44,7 +44,13 @@ pub fn watch<R: Runtime>(app: &tauri::AppHandle<R>) {
         tokio::time::sleep(purlis_core::updates::FIRST_CHECK_AFTER).await;
         loop {
             look(&app, &config).await;
-            tokio::time::sleep(purlis_core::updates::CHECK_EVERY).await;
+            // A runner that drains goes soon after its last chat ends, not at the next look for
+            // a new version (#4248): this asks only the runner, never the network.
+            let until = std::time::Instant::now() + purlis_core::updates::CHECK_EVERY;
+            while std::time::Instant::now() < until {
+                tokio::time::sleep(DRAINS_LOOKED_AT_EVERY).await;
+                drained(&config).await;
+            }
         }
     });
 }
@@ -52,6 +58,34 @@ pub fn watch<R: Runtime>(app: &tauri::AppHandle<R>) {
 /// Not on this platform: the Docker pool runs on macOS and Linux alone.
 #[cfg(not(unix))]
 pub fn watch<R: tauri::Runtime>(_app: &tauri::AppHandle<R>) {}
+
+/// How often each draining runner is asked whether its last chat has ended.
+#[cfg(unix)]
+const DRAINS_LOOKED_AT_EVERY: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// Each draining runner with no chat left goes; nothing else is looked at.
+#[cfg(unix)]
+async fn drained(config: &std::path::Path) {
+    if purlis_core::runners::draining(config).is_ok_and(|draining| draining.is_empty()) {
+        return;
+    }
+    let config = config.to_path_buf();
+    let done = crate::off_the_window("removing runners that have drained", move || {
+        let machine = Machine::here(&config)?;
+        Ok::<_, String>(follow_and_drain(&machine, None, &|to| {
+            crate::runnerlinks::chats_on(to)
+        }))
+    })
+    .await;
+    match done {
+        Ok(said) => {
+            for line in said {
+                tracing::warn!("purlis: {line}");
+            }
+        }
+        Err(why) => tracing::warn!("purlis: the draining runners were not looked at: {why}"),
+    }
+}
 
 /// One look: this version's runner image, then each pool and each draining runner.
 #[cfg(unix)]
@@ -340,7 +374,13 @@ pub fn follow_and_drain(
         // longer lists is not taken as idle on its own (#4149): Docker may only be pointing at
         // another engine, and its chats run on where it is.
         let suspended = matches!(machine.running(&kept), Ok(false));
-        let chats = if suspended { Ok(0) } else { chats_on(&to) };
+        // One that answered its unpairing cannot be asked, and takes no chat (#4146): only its
+        // removal is left.
+        let chats = if suspended || kept.unpaired {
+            Ok(0)
+        } else {
+            chats_on(&to)
+        };
         match chats {
             Ok(0) => {
                 lock_waiting().remove(&at);

@@ -97,6 +97,7 @@ fn report(passed_with: bool) -> GradeReport {
         priced: None,
         outcome_delta: None,
         outcomes: Vec::new(),
+        failed: None,
     }
 }
 

@@ -505,6 +505,7 @@ import {
   chatMovesOf,
   forgetMove,
   heardMove,
+  movedAfterSignIn,
   moveOffers,
   movesDue,
   movesWith,
@@ -513,6 +514,7 @@ import {
   useChatMovesHeard,
 } from "./chatMoves";
 import { usePools } from "./pools";
+import { useSignOutTerminals } from "./settings/signOutTerminals";
 import { fitting, LEAST, LEAST_CHIP, leastAt, useRoom } from "./fits";
 import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
 import { panelRoot } from "./ui/panel/Panel";
@@ -524,11 +526,13 @@ import {
   landing,
   linkToGroup,
   PROFILE_SIGN_IN,
+  PROFILE_SIGN_OUT,
   SETTINGS_ACTION,
   SETTINGS_LINK,
   THEME_CHAT,
   askThemeChat,
   type ProfileSignInAsk,
+  type ProfileSignOutAsk,
   type SettingsActionAsk,
   type SettingsLink,
   type SettingsLinkAsk,
@@ -595,9 +599,31 @@ type Typed =
       installer?: undefined;
       sandboxInstall?: undefined;
       signIn?: undefined;
+      signOut?: undefined;
     }
-  | { installer: string; line?: undefined; sandboxInstall?: undefined; signIn?: undefined }
-  | { sandboxInstall: true; line?: undefined; installer?: undefined; signIn?: undefined }
+  | {
+      installer: string;
+      line?: undefined;
+      sandboxInstall?: undefined;
+      signIn?: undefined;
+      signOut?: undefined;
+    }
+  | {
+      sandboxInstall: true;
+      line?: undefined;
+      installer?: undefined;
+      signIn?: undefined;
+      signOut?: undefined;
+    }
+  | {
+      /** A sign-out that asks in its terminal, on this pool's runner (#4124). */
+      signOut: string;
+      pool: string;
+      signIn?: undefined;
+      line?: undefined;
+      installer?: undefined;
+      sandboxInstall?: undefined;
+    }
   | {
       signIn: string;
       provider?: string;
@@ -605,6 +631,7 @@ type Typed =
       pool?: string;
       /** By the harness's device-code flow (#4044). */
       device?: boolean;
+      signOut?: undefined;
       line?: undefined;
       installer?: undefined;
       sandboxInstall?: undefined;
@@ -816,6 +843,7 @@ export const PlaneView = memo(function PlaneView({
   shellAsked?: { typed: string; at: number };
 }) {
   const [tabs, setTabs] = useState<Tabs>(noTabs);
+  const signingOutIn = useSignOutTerminals(tabs, plane);
   // **A pane closed for good lets its band's memory go** (#3167): a pane's number is never
   // used again, so one gone from every tab is gone for good.
   const panesDrawn = useRef<{ plane: string; panes: ReadonlySet<number> }>(undefined);
@@ -3107,6 +3135,16 @@ export const PlaneView = memo(function PlaneView({
                 if (said.status === "error") refusedBy("shell", said.error);
               })
               .catch((err: unknown) => refusedBy("shell", String(err)));
+          // A sign-out that asks in its terminal (#4124): named, never spelled, as a sign-in.
+          else if (typed?.signOut !== undefined) {
+            signingOutIn(session, typed.pool);
+            void commands
+              .typeProfileSignOut(plane, session, typed.signOut, typed.pool)
+              .then((said) => {
+                if (said.status === "error") refusedBy("shell", said.error);
+              })
+              .catch((err: unknown) => refusedBy("shell", String(err)));
+          }
           // Typed and not run: installing needs sudo, so the person presses Return (V78 c).
           else if (typed?.sandboxInstall)
             void commands
@@ -3118,7 +3156,7 @@ export const PlaneView = memo(function PlaneView({
         })
         .catch((err: unknown) => refusedBy("shell", String(err)));
     },
-    [change, plane, refusedBy, succeeded],
+    [change, plane, refusedBy, signingOutIn, succeeded],
   );
   const openShell = useCallback(
     (cwd: string | null, filed: string, typed?: Typed) =>
@@ -3333,6 +3371,15 @@ export const PlaneView = memo(function PlaneView({
     window.addEventListener(PROFILE_SIGN_IN, asked);
     return () => window.removeEventListener(PROFILE_SIGN_IN, asked);
   }, [plane, signIn]);
+  useEffect(() => {
+    const asked = (event: Event) => {
+      const wanted = (event as CustomEvent<ProfileSignOutAsk>).detail;
+      if (wanted.plane === plane && root !== undefined)
+        openShell(root, OUTSIDE, { signOut: wanted.profile, pool: wanted.pool });
+    };
+    window.addEventListener(PROFILE_SIGN_OUT, asked);
+    return () => window.removeEventListener(PROFILE_SIGN_OUT, asked);
+  }, [plane, root, openShell]);
 
   /**
    * A harness started by hand in one of this project's shell tabs (ADR 0062): the core says so,
@@ -3465,6 +3512,10 @@ export const PlaneView = memo(function PlaneView({
   /** Whether the picker's start is in flight: the ref is the guard, the state is the button. */
   const startingNow = useRef(false);
   const [starting, setStarting] = useState(false);
+  /** The person cancelled the start in flight: what it answers is said to nobody. */
+  const startLeft = useRef(false);
+  /** Which start is the dialog's: one the person cancelled may still be winding down. */
+  const startRun = useRef(0);
   const startPicked = useCallback(
     async (
       profile: string,
@@ -3480,6 +3531,8 @@ export const PlaneView = memo(function PlaneView({
       // long as its branch takes to check out, and a second press of Start in that time was a
       // second chat. The ref answers at once, where state would answer on the next render.
       startingNow.current = true;
+      startLeft.current = false;
+      const thisStart = ++startRun.current;
       setStarting(true);
       const refused = await startOn(
         picking.where,
@@ -3492,9 +3545,11 @@ export const PlaneView = memo(function PlaneView({
         undefined,
         withoutSandbox,
       ).finally(() => {
+        if (startRun.current !== thisStart) return;
         startingNow.current = false;
         setStarting(false);
       });
+      if (startRun.current !== thisStart || startLeft.current) return;
       if (refused !== undefined) {
         // In the picker, not behind it: the operator is still choosing, and a refusal they
         // cannot see beside the rows is one they cannot act on.
@@ -6170,6 +6225,7 @@ export const PlaneView = memo(function PlaneView({
             else
               // Every chat of the move, each in its place (#3453).
               for (const one of done.data.moved) {
+                movedAfterSignIn(plane, one.was, one.chat.session);
                 forgetMove(plane, one.was);
                 chatRestarted(one.was, one.chat);
                 // What came back that a tool here runs, said on its tab (the person's ruling of
@@ -10425,6 +10481,14 @@ export const PlaneView = memo(function PlaneView({
                   openSettingsAt({ group, setting });
                 }}
                 onCancel={() => {
+                  // A start the session host has not answered stops here (#4264).
+                  if (startingNow.current) {
+                    startLeft.current = true;
+                    startRun.current += 1;
+                    startingNow.current = false;
+                    setStarting(false);
+                    void commands.cancelChatStart(plane).catch(() => undefined);
+                  }
                   setPicking(undefined);
                   setPickerTrouble(undefined);
                 }}

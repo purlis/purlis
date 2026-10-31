@@ -373,47 +373,26 @@ const JUDGE_CHECK_TIME: std::time::Duration = std::time::Duration::from_secs(5);
 /// **Whether purlis's `binary` refuses a judge in `folder` a read outside it**, answered by
 /// asking it as a chat's harness would. No answer in time, or any other answer, is no.
 pub fn judge_guard_answers(binary: &Path, folder: &Path) -> bool {
-    use std::io::{Read as _, Write as _};
-    use std::process::{Command, Stdio};
     let payload = serde_json::json!({
         "tool_name": "Read",
         "tool_input": {"file_path": "/"},
         "cwd": folder,
     });
-    let Ok(mut child) = Command::new(binary)
+    let mut asking = std::process::Command::new(binary);
+    asking
         .args(["hook", "pretooluse-read"])
         .current_dir(folder)
-        .env(JUDGE_FOLDER_ENV, folder)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-    else {
-        return false;
-    };
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(payload.to_string().as_bytes());
-    }
-    let began = std::time::Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) if began.elapsed() < JUDGE_CHECK_TIME => {
-                std::thread::sleep(std::time::Duration::from_millis(25));
-            }
-            _ => break None,
-        }
-    };
-    let Some(status) = status else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return false;
-    };
-    let mut said = String::new();
-    if let Some(mut out) = child.stdout.take() {
-        let _ = out.read_to_string(&mut said);
-    }
-    status.code() == Some(2) || said.contains("\"deny\"")
+        .env(JUDGE_FOLDER_ENV, folder);
+    crate::boundedrun::run_within(
+        &mut asking,
+        Some(&payload.to_string()),
+        64 * 1024,
+        64 * 1024,
+        Some(JUDGE_CHECK_TIME),
+    )
+    .is_ok_and(|ran| {
+        ran.status.code() == Some(2) || String::from_utf8_lossy(&ran.printed).contains("\"deny\"")
+    })
 }
 
 /// The most of a judge's transcript read: past what a turn of a grade's chat writes.

@@ -37,6 +37,7 @@ fn claim(namespace: &str, name: &str, pool: &str, ready: Option<(&str, &str)>) -
             observed_generation: None,
         }],
         link_key: None,
+        mint: None,
     });
     Arc::new(claim)
 }

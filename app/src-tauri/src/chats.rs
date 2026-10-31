@@ -205,7 +205,7 @@ pub struct ChatRouted {
     pub session: u32,
     pub workspace: Option<String>,
     pub persona: Option<String>,
-    pub routed: purlis_core::skills::router::Routed,
+    pub routed: std::sync::Arc<purlis_core::skills::router::Routed>,
 }
 
 /// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
@@ -4432,7 +4432,7 @@ impl Chats {
             // How this start routed its skills (#3578): what its record keeps, and what a later
             // reattach of it routes by. A runner's chat is armed by its runner, so none (#3604).
             routing: (!armed_by_its_runner)
-                .then(|| purlis_core::skills::router::Kept::of(skills.routed.as_ref())),
+                .then(|| purlis_core::skills::router::Kept::of(skills.routed.as_deref())),
             ..chat.clone()
         };
         // What a start says on its tab was said at the start it reattached to (#2006); what
@@ -4468,6 +4468,13 @@ impl Chats {
         // A runner chat's workspace clones as it starts (#2053), read before any lock is taken.
         let mut clones_at_start = (on_the_runner && !reattaching)
             .then(|| purlis_core::forge::apptoken::clones_now(&self.project));
+        #[cfg(unix)]
+        self.puts_its_repos_on_its_claim(
+            session,
+            workspace.as_deref(),
+            under.cwd.as_deref(),
+            clones_at_start.as_deref(),
+        );
         // A start under this number has been told nothing yet (#1450).
         lock(&self.told).remove(&session);
         lock(&self.starting_as).remove(&session);
@@ -5449,6 +5456,28 @@ impl Chats {
         })
     }
 
+    /// **What chat `session`'s router points `prompt` at** (SK-15c, ADR 0102 §3): asked where its
+    /// start chose a router that reads prompts and its list leaves skills out, within the
+    /// router's 100 ms, of those skills alone; the routing record told as a start's is. The text
+    /// its prompt hook adds to the turn, or `None`. The prompt is handed to that router and kept
+    /// nowhere.
+    pub fn pointed(&self, session: u32, prompt: &str) -> Option<String> {
+        // Taken out of the lock before the router is asked, which may take its 100 ms. A chat a
+        // runner's host composed is routed there, never by this machine's router.
+        let routed = lock(&self.open)
+            .get(&session)
+            .filter(|running| !running.composed_by_its_host)?
+            .skills_read
+            .routed
+            .clone()?;
+        let router = lock(&self.router).clone()?;
+        let prompted = routed.on_prompt(prompt, &router)?;
+        if let Some(tell) = lock(&self.routed).as_ref() {
+            tell(session, &prompted.record);
+        }
+        prompted.pointer
+    }
+
     /// **Every chat open here that its start routed by a router extension** (SK-15b), by number,
     /// with where it works and as whom: what the Skill studio shows of the router's timings.
     pub fn routings(&self) -> Vec<ChatRouted> {
@@ -5618,6 +5647,61 @@ impl Chats {
             },
             &device,
         );
+    }
+
+    /// **Puts the repos of the workspace chat `session` is sent with on its runner's Claim** (#4207):
+    /// off the chat's start, and only for a pool that opted in: a chat on any other pool, or one
+    /// this machine does not keep, sends nothing and reads no clone for it. A mint asked before they
+    /// arrive goes to the person, or covers what the Claim named by then, till its token is minted
+    /// again.
+    #[cfg(unix)]
+    fn puts_its_repos_on_its_claim(
+        &self,
+        session: u32,
+        workspace: Option<&str>,
+        folder: Option<&std::path::Path>,
+        clones: Option<&[purlis_core::forge::apptoken::Started]>,
+    ) {
+        let (Some(config), Some(clones)) = (&self.pools_in, clones) else {
+            return;
+        };
+        let Ok(Some(pool)) = purlis_core::pools::runs_on(config, &self.project, workspace) else {
+            return;
+        };
+        let (config, root, folder, clones) = (
+            config.clone(),
+            self.project.clone(),
+            folder.map(std::path::Path::to_path_buf),
+            clones.to_vec(),
+        );
+        let sent = std::thread::Builder::new()
+            .name("purlis-claim-repos".to_owned())
+            .spawn(move || {
+                let record = purlis_core::forge::apptoken::record_root();
+                let repos = || {
+                    purlis_core::forge::apptoken::repos_of_workspace(
+                        &purlis_core::forge::apptoken::For {
+                            root: &root,
+                            chat: session,
+                            folder: folder.as_deref(),
+                            here: None,
+                            writes: &[],
+                            started: Some(&clones),
+                            on_a_runner: true,
+                            config_root: record.as_deref(),
+                            ends_seen: None,
+                        },
+                    )
+                };
+                if let Err(why) = purlis_core::pools::add_repos_to_claim(&config, &pool, repos) {
+                    tracing::warn!(
+                        "purlis: the repos of a chat on pool {pool} did not reach its claim: {why}"
+                    );
+                }
+            });
+        if let Err(why) = sent {
+            tracing::warn!("purlis: a chat's repos did not reach its claim: {why}");
+        }
     }
 
     /// **Runner chat `session`'s workspace clones as its session started here** (#2053): `None`

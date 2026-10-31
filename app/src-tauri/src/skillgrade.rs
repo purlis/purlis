@@ -22,13 +22,15 @@
 //! Behind the `skill-studio` flag until its finish line (#2786).
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
+use purlis_session_protocol::session;
 use serde::Serialize;
 use specta::Type;
-use tauri::Emitter as _;
+use tauri::{Emitter as _, Manager as _};
 
 use purlis_core::skills::grade::{
     self as grading, Arm, ChatEnd, ChatKind, ChatRan, Chats, GradeEnd, RunChat,
@@ -501,8 +503,9 @@ impl From<GradeEnd> for GradeEnded {
             GradeEnd::OverCap => GradeEnded::OverCap,
             GradeEnd::OverLimit => GradeEnded::OverLimit,
             GradeEnd::SpendNotReported => GradeEnded::SpendNotReported,
-            // Recorded at a start for a grade purlis stopped under, never told as one ends.
-            GradeEnd::Interrupted => GradeEnded::Failed,
+            // Recorded at a start for a grade purlis stopped under, never told as one ends; and a
+            // Grader extension's question that ended its grade (#3236), told with its sentence.
+            GradeEnd::Interrupted | GradeEnd::GraderFailed => GradeEnded::Failed,
         }
     }
 }
@@ -553,6 +556,9 @@ pub(crate) struct Running {
     /// Its latest step told to the window, where it is a skill's grade: what a page that opens
     /// while it runs starts from (#3928). `None` for a router's grade.
     pub(crate) step: Option<SkillGradeStep>,
+    /// Its latest step told to the window, where it is a router's grade (#4222): what its page
+    /// starts from when it opens while the grade runs. `None` for a skill's grade.
+    pub(crate) router_step: Option<crate::routergrade::RouterGradeStep>,
 }
 
 /// **The grades running in this app**, by id: one per project at a time.
@@ -687,11 +693,164 @@ pub(crate) async fn skill_grade_start(
                 profile,
                 model,
                 after_edit: false,
+                follower: None,
             },
             planned,
         )
     })
     .await
+}
+
+/// What a terminal that asked for a grade is told of each of its steps.
+pub(crate) type Follower = Box<dyn Fn(session::GradeStepTold) + Send + Sync>;
+
+/// The app, for what its host asks of it outside a command: a grade a terminal asked for.
+static APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+/// **The app takes the grades terminals ask for** (SK-61, #3241), from here on.
+pub(crate) fn hears_terminals(app: tauri::AppHandle) {
+    let _ = APP.set(app);
+}
+
+/// The level a terminal named, as the window names it.
+fn level_named(level: session::GradeLevel) -> SkillLevel {
+    match level {
+        session::GradeLevel::Project { local } => SkillLevel::Project { local },
+        session::GradeLevel::Workspace { name, local } => SkillLevel::Workspace { name, local },
+        session::GradeLevel::Persona { name, local } => SkillLevel::Persona { name, local },
+    }
+}
+
+/// Dollars in the millionths the session protocol says them in.
+fn micro_usd(usd: f64) -> u64 {
+    (usd * 1_000_000.0).round() as u64
+}
+
+impl From<GradeEnded> for session::GradeEndTold {
+    fn from(ended: GradeEnded) -> Self {
+        match ended {
+            GradeEnded::Whole => session::GradeEndTold::Whole,
+            GradeEnded::Stopped => session::GradeEndTold::Stopped,
+            GradeEnded::ChatsDidNotStart => session::GradeEndTold::ChatsDidNotStart,
+            GradeEnded::OverCap => session::GradeEndTold::OverCap,
+            GradeEnded::OverLimit => session::GradeEndTold::OverLimit,
+            GradeEnded::SpendNotReported => session::GradeEndTold::SpendNotReported,
+            GradeEnded::Failed => session::GradeEndTold::Failed,
+        }
+    }
+}
+
+impl From<&SkillGradeStep> for session::GradeStepTold {
+    fn from(step: &SkillGradeStep) -> Self {
+        session::GradeStepTold {
+            grade: step.grade.clone(),
+            ran: step.ran,
+            of: step.of,
+            tokens: step.tokens.map(|tokens| tokens as u64),
+            cost_micro_usd: step.cost_usd.map(micro_usd),
+            asked: step.asked,
+            ended: step.ended.map(Into::into),
+            said: step.said.clone(),
+        }
+    }
+}
+
+/// The plan a terminal is told, as a press would start it: the words of [`SkillGradePlan::of`].
+fn plan_told(planned: &Planned, on: &On, running: Option<String>) -> session::GradePlanTold {
+    let terms = terms_of(planned, on);
+    session::GradePlanTold {
+        profile: on.profile.clone(),
+        model: terms.model.map(str::to_owned),
+        sandbox: on.checked.as_ref().ok().cloned(),
+        refused: on.checked.as_ref().err().cloned(),
+        chats: planned.plan.map(|plan| plan.chats).unwrap_or_default(),
+        token_cap: terms.token_cap,
+        limit_micro_usd: micro_usd(terms.limit_usd),
+        running,
+        graded: planned.consent.clone(),
+        consent: consent_shown(planned, on),
+    }
+}
+
+/// **The window's answer to a grade a person asked for at a terminal** (SK-61, #3241): `project`'s
+/// plan, or its start through the one check a press of Grade takes ([`plan_holds`]), on the plan's
+/// cap and limit. `follower` hears each step. Named outcome evals are refused until #3235 runs them.
+pub(crate) fn asked_at_a_terminal(
+    project: &str,
+    path: &str,
+    ask: session::GradeAsk,
+    follower: Follower,
+) -> session::GradeAnswer {
+    answering_a_terminal(project, path, ask, follower)
+        .unwrap_or_else(|why| session::GradeAnswer::Refused { why })
+}
+
+fn answering_a_terminal(
+    project: &str,
+    path: &str,
+    ask: session::GradeAsk,
+    follower: Follower,
+) -> Result<session::GradeAnswer, String> {
+    flag_on()?;
+    let app = APP.get().ok_or("The purlis window is still starting.")?;
+    let planes = app.state::<Planes>();
+    let plane = planes
+        .open_now()
+        .into_iter()
+        .find(|plane| {
+            purlis_core::scaffold::planefile::id_to_hold_by(plane.root())
+                .is_ok_and(|id| id == project)
+                && std::fs::canonicalize(plane.root()).is_ok_and(|root| root == Path::new(path))
+        })
+        .ok_or("This project is not open in the purlis window.")?;
+    let held = planes.held(&plane)?;
+    let of = match &ask {
+        session::GradeAsk::Plan { of } | session::GradeAsk::Start { of, .. } => of.clone(),
+    };
+    if !of.evals.is_empty() {
+        return Err(
+            "Outcome evals do not run from a terminal yet (#3235), so nothing was started.".into(),
+        );
+    }
+    let level: SkillLevel = level_named(of.level);
+    let level: Level = (&level).into();
+    let on = chats_on(held.root(), of.profile.clone(), of.model.clone());
+    match ask {
+        session::GradeAsk::Plan { .. } => {
+            let planned = grades::planned(held.root(), &level, &of.skill, on.profile.as_deref())?;
+            let running = running_of(&plane, &of.skill);
+            Ok(session::GradeAnswer::Plan(Box::new(plan_told(
+                &planned, &on, running,
+            ))))
+        }
+        session::GradeAsk::Start { consent, .. } => {
+            let planned = grades::planned(held.root(), &level, &of.skill, None)?;
+            plan_holds(&planned, &on, &consent, &of.skill, "nothing was started")?;
+            let grade = begin(
+                app.clone(),
+                held,
+                Begin {
+                    plane,
+                    level,
+                    skill: of.skill,
+                    profile: of.profile,
+                    model: of.model,
+                    after_edit: false,
+                    follower: Some(follower),
+                },
+                planned,
+            )?;
+            Ok(session::GradeAnswer::Started { grade })
+        }
+    }
+}
+
+/// **Stops `grade`, whose terminal has gone**, where it still runs: nothing spends with nobody
+/// following it.
+pub(crate) fn stop_for_a_terminal(grade: &str) {
+    if let Some(one) = running().get(grade) {
+        one.stop.store(true, Ordering::SeqCst);
+    }
 }
 
 /// **What a grade is started on**: where, of which copy, on which profile and model, and
@@ -703,6 +862,8 @@ pub(crate) struct Begin {
     pub profile: Option<String>,
     pub model: Option<String>,
     pub after_edit: bool,
+    /// The terminal that asked for it (SK-61, #3241), told each step the window is.
+    pub follower: Option<Follower>,
 }
 
 /// **Starts a grade of `planned`**, the plan whose consent was checked or whose bounds the
@@ -721,6 +882,7 @@ pub(crate) fn begin(
         profile,
         model,
         after_edit,
+        follower,
     } = begin;
     let root = held.root().to_path_buf();
     // The one read of the copy the consent was taken from: laid out and recorded as is.
@@ -793,6 +955,7 @@ pub(crate) fn begin(
                     .then(|| grades::after_edit::key(&level, &skill))
                     .flatten(),
                 step: Some(step_of(Spent::default(), 0, None, None)),
+                router_step: None,
             },
         );
     }
@@ -843,6 +1006,9 @@ pub(crate) fn begin(
                     // once it runs no more, and kept nowhere.
                     if let Some(one) = running().get_mut(&grade) {
                         one.step = Some(step.clone());
+                    }
+                    if let Some(follower) = &follower {
+                        follower((&step).into());
                     }
                     let _ = app.emit(EVENT, step);
                 };
@@ -1139,7 +1305,11 @@ impl From<GradeEnd> for GradeOutcome {
             GradeEnd::OverCap | GradeEnd::OverLimit | GradeEnd::SpendNotReported => {
                 GradeOutcome::AtLimit
             }
-            GradeEnd::ChatsDidNotStart | GradeEnd::Interrupted => GradeOutcome::Interrupted,
+            // A Grader that failed its question (#3236) left its grade with no scores of its own:
+            // what ran is purlis's, and its row says why.
+            GradeEnd::ChatsDidNotStart | GradeEnd::Interrupted | GradeEnd::GraderFailed => {
+                GradeOutcome::Interrupted
+            }
         }
     }
 }
@@ -1836,7 +2006,8 @@ impl InChats<'_> {
             cost_usd: spent.and_then(|spent| spent.cost_usd),
             ms: u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX),
             end,
-            answer,
+            // A trigger test's last message is no part of its result, nor told to a Grader.
+            answer: answer.filter(|_| whole_turn),
         }
     }
 }

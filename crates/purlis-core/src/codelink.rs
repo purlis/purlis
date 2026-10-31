@@ -996,6 +996,18 @@ pub fn take_back(
     bundle: Option<&Path>,
     heads: &[Ref],
 ) -> Result<Vec<Ref>, Refused> {
+    take_back_as(repo, pool, false, bundle, heads)
+}
+
+/// [`take_back`], where `beside` leaves every branch it did not name: a draining runner's come
+/// back beside those of the pool's runner now (#4248), and neither's fetch removes the other's.
+fn take_back_as(
+    repo: &Path,
+    pool: &str,
+    beside: bool,
+    bundle: Option<&Path>,
+    heads: &[Ref],
+) -> Result<Vec<Ref>, Refused> {
     if !pool_ok(pool) {
         return Err(not_allowed(format!(
             "`{pool}` is not a pool's name refs can be kept under, so nothing was fetched"
@@ -1086,7 +1098,7 @@ pub fn take_back(
         .map(|head| remote(&head.name))
         .collect::<Result<_, _>>()?;
     for kept in refs_under(repo, &[prefix.as_str()])? {
-        if !wanted.contains(&kept.name) {
+        if !beside && !wanted.contains(&kept.name) {
             let ran = run(repo, &["update-ref", "-d", &kept.name])?;
             if !ran.ok() {
                 return Err(git_failed("remove a branch the runner no longer has", &ran));
@@ -1164,6 +1176,27 @@ pub fn fetch_back(
     scratch: &Path,
     through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
 ) -> Result<Vec<Ref>, Refused> {
+    fetch_back_as(repo, pool, false, scratch, through)
+}
+
+/// [`fetch_back`] from a draining runner: what it has comes back beside what the pool's runner
+/// now has, and removes none of it (#4248).
+pub fn fetch_back_beside(
+    repo: &Path,
+    pool: &str,
+    scratch: &Path,
+    through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
+) -> Result<Vec<Ref>, Refused> {
+    fetch_back_as(repo, pool, true, scratch, through)
+}
+
+fn fetch_back_as(
+    repo: &Path,
+    pool: &str,
+    beside: bool,
+    scratch: &Path,
+    through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
+) -> Result<Vec<Ref>, Refused> {
     if !a_repository(repo) {
         return Ok(Vec::new());
     }
@@ -1176,7 +1209,7 @@ pub fn fetch_back(
     let into = scratch.join("fetch.bundle");
     let (heads, wrote) = through(have, &into).map_err(Refused::Git)?;
     let bundle = wrote.then_some(into.as_path());
-    let kept = take_back(repo, pool, bundle, &heads);
+    let kept = take_back_as(repo, pool, beside, bundle, &heads);
     let _ = std::fs::remove_file(&into);
     kept
 }

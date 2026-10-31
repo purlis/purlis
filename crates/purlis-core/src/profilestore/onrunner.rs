@@ -815,6 +815,7 @@ pub fn forget(homes: &Homes, home: &Path, name: &str, desktop: &str) -> Result<(
         .into_iter()
         .find(|p| p.name == name)
     else {
+        super::forget_carried(homes, name);
         return Ok(());
     };
     let shown = crate::shown::short(name);
@@ -853,6 +854,7 @@ pub fn forget(homes: &Homes, home: &Path, name: &str, desktop: &str) -> Result<(
         }
     };
     sign_in::forget_of(&record);
+    super::forget_carried(homes, name);
     // Its folders go before its record, so one that could not be deleted leaves the record to
     // ask the removal again by.
     for folder in own_folders {
@@ -870,6 +872,22 @@ pub fn forget(homes: &Homes, home: &Path, name: &str, desktop: &str) -> Result<(
     }
     super::remove(homes, name, &super::removal(homes, name)?)?;
     Ok(())
+}
+
+/// **The harness whose own folders [`forget`] would delete for the profile `name`** (#4142): the
+/// desktop `desktop`'s adopted folder, kept here as that harness's default, which a chat here
+/// with no profile uses too. None for a made profile, whose folder is its own alone, and for one
+/// [`forget`] leaves as it is.
+pub fn deleting_own_folders(
+    homes: &Homes,
+    name: &str,
+    desktop: &str,
+) -> Result<Option<String>, String> {
+    Ok(super::list(homes.config_root())?
+        .into_iter()
+        .find(|p| p.name == name && p.kept_for.as_deref() == Some(desktop))
+        .filter(|record| record.adopted.is_some())
+        .map(|record| record.harness))
 }
 
 /// **Whether a chat on the desktop's profile `name` may start on pool `pool`'s runner**, for the

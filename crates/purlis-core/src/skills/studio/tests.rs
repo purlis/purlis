@@ -214,6 +214,7 @@ fn a_grade() -> super::super::grades::Graded {
             priced: None,
             outcome_delta: None,
             outcomes: Vec::new(),
+            failed: None,
         },
         spent: super::super::grades::Spent {
             chats: 6,

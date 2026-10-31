@@ -338,6 +338,10 @@ fn a_chat_runs(target: &Target, machine: &Machine, pool: &str, chat: &Named) -> 
         .number;
     let pane = Pane::on(target, id);
     pane.shows_within("Claude Code", LONG);
+    assert!(
+        !purlis_core::runnertaint::pool_ran_unsandboxed(&machine.config, pool),
+        "a chat in the sandbox leaves its runner trusted"
+    );
     (id, pane)
 }
 
@@ -346,6 +350,7 @@ fn in_the_journey(
     machine: &Machine,
     pool: &str,
     next: &purlis_core::dockerpool::Image,
+    first: &purlis_core::dockerpool::Image,
 ) {
     // How far it got and how long each step took, read where it fails or runs out of time.
     let began = Instant::now();
@@ -353,8 +358,9 @@ fn in_the_journey(
         use std::io::Write as _;
         let _ = writeln!(
             std::io::stderr(),
-            "[{:>4}s] {what}",
-            began.elapsed().as_secs()
+            "[{:>4}s] {what} (marked: {})",
+            began.elapsed().as_secs(),
+            purlis_core::runnertaint::pool_ran_unsandboxed(&machine.config, pool)
         );
     };
     step("the pool is added");
@@ -488,11 +494,12 @@ fn in_the_journey(
         ready_to_start(machine, &target.root, pool).expect_err("nothing starts on it now");
     assert!(refused.contains("removed outside purlis"), "{refused}");
 
+    let marked = purlis_core::runnertaint::pool_ran_unsandboxed(&machine.config, pool);
     let again = crate::dockerpools::make_again_on(machine, pool)
         .unwrap_or_else(|why| panic!("the runner is made again: {why}"));
     assert!(
         again.sign_ins_kept,
-        "its home was there, so its sign-ins came"
+        "its home was there, so its sign-ins came (marked before the make: {marked})"
     );
     assert!(
         crate::dockerpools::removed_on(machine)
@@ -502,7 +509,7 @@ fn in_the_journey(
     let runner = the_runner(machine, pool);
     the_row_says(machine, pool, &Standing::SignedIn);
     the_settings_went_whole_to(&runner, &settings);
-    let (old_chat, _old_pane) =
+    let (old_chat, old_pane) =
         a_chat_runs(target, machine, pool, &a_chat(Some("Hello again."), None));
     a_conversation_on(&runner);
 
@@ -531,17 +538,47 @@ fn in_the_journey(
     let refused = ready_to_start(machine, &target.root, pool)
         .expect_err("a sign-in follows only once the old runner has drained");
     assert!(refused.contains("is not signed in on pool"), "{refused}");
-    // The window still uses the project's link while the old runner drains. Whatever that start
-    // comes to, what it does must not cost the new runner the project once the old one is gone.
-    if let Ok(started) = target.sessions.open_named(
-        None,
+    // Signed in there too, a start while the old runner drains just works: it runs on the pool's
+    // runner, and the chat that stayed on the old one stays reachable (#4248).
+    signed_in_on(&followed);
+    the_row_says(machine, pool, &Standing::SignedIn);
+    let conversations_on_the_old = || {
+        runner.prints(&format!(
+            "find '{}/projects' -name '*.jsonl' | wc -l",
+            the_settings_on(&runner)
+        ))
+    };
+    let before = conversations_on_the_old();
+    let (during, during_pane) = a_chat_runs(
+        target,
+        machine,
+        pool,
         &a_chat(Some("While it drains."), None),
-        Hearing::default(),
-        &|_| {},
-    ) {
-        target.sessions.close(started.number).expect("it closes");
-    }
-
+    );
+    during_pane.shows_within("While it drains.", LONG);
+    // Each runner lists its own chat, as a look at it does: the new chat is on the pool's runner.
+    let on_the_new = purlis_core::runners::runner_for(&machine.config, pool).expect("its runner");
+    let chats_there = |kept: &purlis_core::runners::Kept| {
+        crate::runnerlinks::chats_on(&ToARunner::of_kept(machine, kept).expect("a link to it"))
+            .expect("it lists its chats")
+    };
+    let draining = purlis_core::runners::draining(&machine.config).expect("read");
+    let (there_new, there_old) = (chats_there(&on_the_new), chats_there(&draining[0]));
+    assert_eq!(
+        (there_new, there_old),
+        (1, 1),
+        "the new chat runs on the pool's runner, and the draining one keeps its one chat"
+    );
+    assert_eq!(
+        conversations_on_the_old(),
+        before,
+        "the draining runner starts no chat"
+    );
+    old_pane.shows_within("Hello again.", LONG);
+    target
+        .sessions
+        .input(old_chat, b"\x1b")
+        .expect("the chat on the draining runner is reached");
     target.sessions.close(old_chat).expect("it closes");
     let deadline = Instant::now() + LONG;
     let said = loop {
@@ -557,6 +594,16 @@ fn in_the_journey(
         0,
         "{said:?}"
     );
+    assert_eq!(
+        target.sessions.reconnecting(),
+        Vec::<u32>::new(),
+        "the old runner's going dims no chat on the new one"
+    );
+    target
+        .sessions
+        .input(during, b"\x1b")
+        .expect("the chat on the new runner goes on");
+    target.sessions.close(during).expect("it closes");
     assert_eq!(
         crate::dockerpools::removed_on(machine)
             .expect("asked")
@@ -582,6 +629,34 @@ fn in_the_journey(
         &a_chat(Some("After the update."), None),
     );
     a_conversation_on(&followed);
+    target.sessions.close(id).expect("it closes");
+
+    step("an update with no chat running");
+    // The plain way (#4248): nothing runs, and the project's link is still on the old runner. The
+    // update replaces it at once, its sign-ins follow, and a new chat just starts on the new one.
+    let said = crate::poolfollow::follow_and_drain(machine, Some(first), &chats_on);
+    assert!(
+        said.iter().any(|line| line.contains("had no chat left")),
+        "{said:?}"
+    );
+    assert_eq!(crate::poolfollow::waiting_on(&machine.config, pool), 0);
+    let updated = the_runner(machine, pool);
+    assert_ne!(updated.container, followed.container, "a runner of its own");
+    the_row_says(machine, pool, &Standing::SignedIn);
+    let (id, pane) = a_chat_runs(
+        target,
+        machine,
+        pool,
+        &a_chat(Some("After a plain update."), None),
+    );
+    pane.shows_within("After a plain update.", LONG);
+    let on_it = purlis_core::runners::runner_for(&machine.config, pool).expect("its runner");
+    assert_eq!(
+        crate::runnerlinks::chats_on(&ToARunner::of_kept(machine, &on_it).expect("a link to it"))
+            .expect("it lists its chats"),
+        1,
+        "the chat runs on the new runner"
+    );
     target.sessions.close(id).expect("it closes");
 }
 
@@ -612,5 +687,6 @@ fn in_a_docker_pool() {
     let (target, machine, pool) =
         a_window_on_a_pool_of(&format!("{PURLIS_RUNNER_IMAGE}@{image}"), docker);
     let next = Image::pinned(&format!("{PURLIS_RUNNER_IMAGE}@{next}")).expect("named by digest");
-    in_the_journey(&target, &machine, &pool, &next);
+    let first = Image::pinned(&format!("{PURLIS_RUNNER_IMAGE}@{image}")).expect("named by digest");
+    in_the_journey(&target, &machine, &pool, &next, &first);
 }

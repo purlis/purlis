@@ -110,7 +110,7 @@ pub fn read_file(config_root: &Path, name: &str) -> Result<SafeSvg, Unfit> {
             "the icon is not the name of an .svg file in purlis's icons folder",
         ));
     }
-    let unread = |_| Unfit("the icon file is not a plain file an icon may be read from");
+    let unread = |_| Unfit(NOT_PLAIN);
     let held = crate::theme::opened::walk(
         &crate::machine::dir(config_root),
         Path::new(FOLDER),
@@ -118,9 +118,7 @@ pub fn read_file(config_root: &Path, name: &str) -> Result<SafeSvg, Unfit> {
     )
     .map_err(unread)?
     .ok_or(Unfit("the icon file is not there"))?;
-    let bytes = sole_bytes(&held, name)
-        .map_err(unread)?
-        .ok_or(Unfit("the icon file is not there"))?;
+    let bytes = sole_bytes(&held, name)?.ok_or(Unfit("the icon file is not there"))?;
     safesvg::read(&bytes)
 }
 
@@ -128,7 +126,7 @@ pub fn read_file(config_root: &Path, name: &str) -> Result<SafeSvg, Unfit> {
 /// theme's file (opened refusing a link and without waiting, read only from a descriptor that is
 /// a plain file under the cap), and refused too where the file has more than one name.
 #[cfg(unix)]
-fn sole_bytes(dir: &crate::theme::opened::Held, name: &str) -> Result<Option<Vec<u8>>, String> {
+fn sole_bytes(dir: &crate::theme::opened::Held, name: &str) -> Result<Option<Vec<u8>>, Unfit> {
     use std::io::Read;
     use std::os::unix::fs::MetadataExt;
 
@@ -139,28 +137,58 @@ fn sole_bytes(dir: &crate::theme::opened::Held, name: &str) -> Result<Option<Vec
     let fd = match openat(dir, name, flags, Mode::empty()) {
         Ok(fd) => fd,
         Err(Errno::NOENT) => return Ok(None),
-        Err(why) => return Err(why.to_string()),
+        Err(_) => return Err(Unfit(NOT_PLAIN)),
     };
     let mut open = std::fs::File::from(fd);
-    let found = open.metadata().map_err(|why| why.to_string())?;
-    if !found.file_type().is_file() || found.nlink() != 1 || found.len() > safesvg::MOST_BYTES {
-        return Err("not a plain file of an icon's size with one name".to_owned());
+    let found = open.metadata().map_err(|_| Unfit(NOT_PLAIN))?;
+    if !found.file_type().is_file() || found.nlink() != 1 {
+        return Err(Unfit(NOT_PLAIN));
+    }
+    if found.len() > safesvg::MOST_BYTES {
+        return Err(Unfit(TOO_LARGE));
     }
     let mut bytes = Vec::new();
     (&mut open)
         .take(safesvg::MOST_BYTES + 1)
         .read_to_end(&mut bytes)
-        .map_err(|why| why.to_string())?;
+        .map_err(|_| Unfit(NOT_PLAIN))?;
     if bytes.len() as u64 > safesvg::MOST_BYTES {
-        return Err("larger than an icon may be".to_owned());
+        return Err(Unfit(TOO_LARGE));
     }
     Ok(Some(bytes))
 }
 
 /// Off unix nothing is read ([`crate::theme::opened`]).
 #[cfg(not(unix))]
-fn sole_bytes(dir: &crate::theme::opened::Held, _name: &str) -> Result<Option<Vec<u8>>, String> {
+fn sole_bytes(dir: &crate::theme::opened::Held, _name: &str) -> Result<Option<Vec<u8>>, Unfit> {
     match *dir {}
+}
+
+/// Why an icon file that cannot be read as a plain file of one name draws nothing.
+const NOT_PLAIN: &str = "the icon file is not a plain file an icon may be read from";
+
+/// Why an icon file past the cap draws nothing.
+pub const TOO_LARGE: &str = "the icon file is larger than an icon may be";
+
+/// Why an `icon` that is neither a glyph nor a file's name draws nothing.
+pub const NO_SUCH_ICON: &str = "purlis draws no glyph by that name, and it is not the name of an .svg file in its icons folder";
+
+/// Why an icon file cannot be looked for at all.
+pub const NO_CONFIG_HOME: &str = "purlis has no config folder here to read the icon file from";
+
+/// **Why a profile's icon fell back to its monogram** (#3137), `icon` what its definition names and
+/// `config_root` the config home its own SVG is read from: `None` where it draws what it names or
+/// names nothing. Always one of the sentences purlis wrote ([`Unfit`] holds only those), so nothing
+/// from the file is repeated. Reads the file alone, past any answer's budget.
+pub fn fell_back(icon: Option<&str>, config_root: Option<&Path>) -> Option<&'static str> {
+    match named(icon?) {
+        Named::Glyph(_) => None,
+        Named::Neither => Some(NO_SUCH_ICON),
+        Named::File(file) => match config_root {
+            None => Some(NO_CONFIG_HOME),
+            Some(root) => read_file(root, file).err().map(|unfit| unfit.0),
+        },
+    }
 }
 
 /// The most one answer's own SVGs may come to, all of them together: an answer that lists many

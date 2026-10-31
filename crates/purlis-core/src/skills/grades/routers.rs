@@ -344,6 +344,10 @@ pub struct RouterGraded {
     pub spent: Spent,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// **Whether its router's arm ran with its pointer** (SK-15k, #3619): the router reads
+    /// prompts here, so each trigger test's prompt was handed to it as a real chat's is.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pointer: bool,
 }
 
 impl RouterGraded {
@@ -367,9 +371,10 @@ impl RouterGraded {
             end => format!(" ({})", super::ended_said(end).to_lowercase()),
         };
         format!(
-            "Graded on {on}, {when}{ended}: {router} of {of} trigger tests pass with {}, and \
+            "Graded on {on}, {when}{ended}: {router} of {of} trigger tests pass with {}{}, and \
              {built_in} of {built_in_of} with the built-in router.",
             purlis_skills::Router::Extension(self.router.clone()).shown(),
+            if self.pointer { " and its pointer" } else { "" },
         )
     }
 

@@ -8654,8 +8654,12 @@ fn the_routing_a_chat_started_with_is_what_its_record_keeps_3578() {
                 fell_back: None,
                 error: None,
                 hidden: Vec::new(),
+                prompt: false,
+                pointed: Vec::new(),
             },
             answer: Some(Vec::new()),
+            left_out: Vec::new(),
+            reads_prompts: false,
         })),
         ..chat(&a_claude(dir.path()), "ide.7", Some(ID))
     };

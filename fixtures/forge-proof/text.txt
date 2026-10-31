@@ -1,0 +1,6 @@
+purlis forge token request v1
+operator: ed25519:abababababababababababababababababababababababababababababababab
+namespace: team
+claim: ada-1
+app: Iv23liExample
+challenge: 5869aff450549732cbaaed5e5df9b30a6da31cb0e5742bad5ad4a1a768f1a67b

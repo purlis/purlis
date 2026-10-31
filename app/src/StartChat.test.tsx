@@ -3,7 +3,7 @@
 
 import { answerRowOf, answersOf } from "./ui/dialog/dialog.testkit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { userEvent } from "@testing-library/user-event";
 import type { StartOptions } from "./bindings";
@@ -405,6 +405,31 @@ describe("a start already running (GL-1)", () => {
     expect(start).not.toHaveAttribute("aria-keyshortcuts");
     await userEvent.setup().click(start);
     expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it("says it starts the session host once a start takes a moment, with Cancel to hand", () => {
+    vi.useFakeTimers();
+    try {
+      const onCancel = vi.fn();
+      render(
+        <StartChat
+          options={options()}
+          starting
+          onStart={vi.fn()}
+          onApprove={vi.fn()}
+          onCancel={onCancel}
+        />,
+      );
+      expect(screen.queryByText("Starting the session host…")).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(screen.getByRole("status")).toHaveTextContent("Starting the session host…");
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(onCancel).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

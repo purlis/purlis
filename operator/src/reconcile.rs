@@ -29,6 +29,7 @@ use crate::vouch::{self, MountedKeys, Vouching};
 use futures::StreamExt;
 use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
 use k8s_openapi::api::core::v1::{Namespace, Pod, ResourceQuota};
+use k8s_openapi::api::networking::v1::NetworkPolicy;
 use k8s_openapi::api::rbac::v1::RoleBinding;
 use kube::api::{
     Api, DeleteParams, ObjectMeta, PartialObjectMeta, Patch, PatchParams, PostParams, Preconditions,
@@ -94,6 +95,7 @@ pub fn status_of(upstream: Option<&SandboxClaim>) -> ClaimStatus {
     };
     ClaimStatus {
         link_key: None,
+        mint: None,
         conditions: vec![ready],
     }
 }
@@ -102,6 +104,7 @@ pub fn status_of(upstream: Option<&SandboxClaim>) -> ClaimStatus {
 pub fn status_of_a_missing_pool(claim: &Claim) -> ClaimStatus {
     ClaimStatus {
         link_key: None,
+        mint: None,
         conditions: vec![condition(
             "False",
             "PoolNotFound",
@@ -134,6 +137,7 @@ pub fn status_of_a_deleted_pool(claim: &Claim, upstream: &SandboxClaim) -> Claim
     };
     ClaimStatus {
         link_key: None,
+        mint: None,
         conditions: vec![condition(status, "PoolDeleted", message)],
     }
 }
@@ -144,6 +148,7 @@ pub fn status_of_a_deleted_pool(claim: &Claim, upstream: &SandboxClaim) -> Claim
 pub fn status_of_an_object_in_the_way(kind: &str, name: &str, namespace: &str) -> ClaimStatus {
     ClaimStatus {
         link_key: None,
+        mint: None,
         conditions: vec![condition(
             "False",
             "UpstreamObjectInTheWay",
@@ -181,6 +186,7 @@ pub fn status_of_a_stopped_claim(
     };
     ClaimStatus {
         link_key: None,
+        mint: None,
         conditions: vec![
             condition("False", "Stopped", message),
             Vouching::Refused("its runner is stopped".into()).condition(),
@@ -194,6 +200,7 @@ pub fn status_of_a_stopped_claim(
 pub fn status_of_a_suspended_runner_of_a_deleted_pool(claim: &Claim) -> ClaimStatus {
     ClaimStatus {
         link_key: None,
+        mint: None,
         conditions: vec![condition(
             "False",
             "PoolDeleted",
@@ -507,7 +514,22 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
         return Ok(Action::await_change());
     };
     let (runner, quota) = match runner_namespace_ready(client, requester, &context.quota).await? {
-        Ok(ready) => ready,
+        Ok(ready) => {
+            // A person's namespace with a Claim on an opted-in Pool gets a way to the mint port
+            // (#4206), for all their runners there and until the namespace goes: reaching the
+            // port gets nothing without a proof and an opted-in Pool.
+            if crate::forge::key_to_read(&pool.spec).is_some() {
+                let wanted =
+                    crate::mint::egress_policy(&ready.0.name_any(), client.default_namespace());
+                made_or_applied(
+                    &Api::<NetworkPolicy>::namespaced(client.clone(), &ready.0.name_any()),
+                    wanted.clone(),
+                    |held| held.spec == wanted.spec,
+                )
+                .await?;
+            }
+            ready
+        }
         // The policy's binding is settling: nothing is made, and the claim is looked at again
         // once it is in force.
         Err(RunnerNamespace::Settling { until }) => {
@@ -693,6 +715,13 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     let mut status = stage::staged(status_of(Some(&applied)), pod.as_ref());
     status.conditions.push(vouching.condition());
     status.link_key = vouching.link_key();
+    status.mint = crate::mint::said_on_a_claim(
+        client,
+        &pool,
+        status.link_key.is_some(),
+        &context.keys.now().current.public(),
+    )
+    .await;
     write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
     // The pod is not watched: a claim waiting for its key is looked at again soon, and one
     // vouched for or refused now and then, so a pod changed since is found.
@@ -989,6 +1018,7 @@ pub fn status_patch(
     let mut status = settled(previous, next);
     if link_key == LinkKeyIs::Kept {
         status.link_key = previous.and_then(|held| held.link_key.clone());
+        status.mint = previous.and_then(|held| held.mint.clone());
     }
     if previous == Some(&status) {
         return None;
@@ -1010,6 +1040,8 @@ pub fn status_patch(
                 fields.insert("linkKey".into(), serde_json::Value::Null);
             }
         }
+        // Where a runner asks goes with the statement, or with the Pool's opt-in (#4207).
+        fields.entry("mint").or_insert(serde_json::Value::Null);
     }
     Some(serde_json::json!({ "status": value }))
 }
@@ -1072,6 +1104,7 @@ pub fn status_withdrawn(previous: Option<&ClaimStatus>, why: &str) -> ClaimStatu
     ClaimStatus {
         conditions,
         link_key: None,
+        mint: None,
     }
 }
 
@@ -1165,11 +1198,14 @@ pub async fn cluster_of(client: &Client) -> Result<String, String> {
 /// Run the operator until the process is asked to stop (SIGTERM or Ctrl-C).
 pub async fn run(client: Client, keys: MountedKeys, cluster: String, quota: Quota) {
     let keys = Arc::new(keys);
+    let mint_keys = keys.clone();
+    let mint_cluster = cluster.clone();
     let metrics = Arc::new(Metrics::default());
     tokio::select! {
         () = run_claims(client.clone(), keys.clone(), cluster.clone(), quota, metrics) => {}
         () = publish_pool_status(client.clone(), keys, cluster) => {}
-        () = crate::forge::check_keys(client, vouch::RECHECK) => {}
+        () = crate::forge::check_keys(client.clone(), vouch::RECHECK) => {}
+        () = crate::mint::serve(client, mint_keys, mint_cluster) => {}
     }
     tracing::info!("stopped; upstream {} is pinned", upstream::VERSION);
 }

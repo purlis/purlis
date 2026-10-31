@@ -824,6 +824,146 @@ fn a_process_the_chat_starts_is_held_the_same_and_cannot_lift_it() {
     assert_eq!(p.run(&["signal-parent"]), "EPERM");
 }
 
+/// A profile of the confined shape: programs start from the system's folders and `from` alone,
+/// though every file is read, so what is held is the start and never the file.
+fn starts_only_from(from: &Path, written: &Path) -> String {
+    let mut roots = String::new();
+    for root in ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/nix/store"] {
+        roots.push_str(&format!(" (subpath \"{root}\")"));
+    }
+    format!(
+        "(version 1)\n(deny default)\n(allow process-exec{roots} (subpath \"{}\"))\n\
+         (allow file-read*)\n(allow file-write* (subpath \"{}\") (literal \"/dev/null\"))\n",
+        from.display(),
+        written.display()
+    )
+}
+
+/// The status and output of `sh -c script` under `profile`.
+fn sh_under(profile: &str, cwd: &Path, script: &str) -> (Option<i32>, String) {
+    let out = wrap(purlis_linux_sandbox::line(
+        profile,
+        "/bin/sh".to_owned(),
+        vec!["-c".to_owned(), script.to_owned()],
+    ))
+    .current_dir(cwd)
+    .output()
+    .expect("the wrap ran");
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stdout).trim().to_owned(),
+    )
+}
+
+fn probe_copied_to(dir: &Path) -> PathBuf {
+    let at = dir.join("copied-probe");
+    std::fs::copy(PROBE, &at).expect("a copy of the probe");
+    at
+}
+
+#[test]
+fn a_program_starts_only_from_where_the_profile_says() {
+    let p = project();
+    let inside = probe_copied_to(&p.cwd);
+    let outside = probe_copied_to(&p.outside);
+    let profile = starts_only_from(&p.cwd, &p.cwd);
+    // The system's shell and its tools, and a compiled program with the system's dynamic linker
+    // and libraries, from a folder it may start from.
+    let (status, said) = sh_under(
+        &profile,
+        &p.cwd,
+        &format!("/bin/echo tool; {} status", inside.display()),
+    );
+    assert_eq!(status, Some(0), "{said}");
+    assert!(said.starts_with("tool\nseccomp=2 "), "{said}");
+    // Beside it: refused by the kernel, as a shell says it, though it reads the file.
+    let (status, said) = sh_under(&profile, &p.cwd, &format!("{} status", outside.display()));
+    assert_eq!(status, Some(126), "{said}");
+    assert!(said.is_empty(), "{said}");
+    // The same, as the interpreter of a script it may start.
+    let script = p.cwd.join("by-script");
+    std::fs::write(&script, format!("#!{}\nstatus\n", outside.display())).expect("a script");
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("its mode");
+    let (status, said) = sh_under(&profile, &p.cwd, &script.display().to_string());
+    assert_eq!(status, Some(126), "{said}");
+    // And through a link it may start from.
+    let link = p.cwd.join("pointed");
+    std::os::unix::fs::symlink(&outside, &link).expect("a link");
+    let (status, said) = sh_under(&profile, &p.cwd, &format!("{} status", link.display()));
+    assert_eq!(status, Some(126), "{said}");
+}
+
+/// A file in memory is for a program that starts from anywhere: one held to named folders is
+/// answered as a kernel without the call, and every program it starts with it.
+#[test]
+fn a_program_held_to_named_folders_makes_no_file_in_memory() {
+    let mut p = project();
+    // The system's own, which a profile held to the system's folders starts.
+    let Some(python) = ["/usr/bin/python3", "/bin/python3"]
+        .into_iter()
+        .find(|it| Path::new(it).exists())
+        .map(str::to_owned)
+    else {
+        panic!("the system's python3 is needed for this test");
+    };
+    let script = "import os\ntry:\n    os.memfd_create('m')\n    print('made')\n\
+                  except OSError as why:\n    print(why.strerror)\n";
+    let port = p.proxy_port();
+    let run = |profile: &str| {
+        let out = wrap(purlis_linux_sandbox::line(
+            profile,
+            python.clone(),
+            vec!["-c".to_owned(), script.to_owned()],
+        ))
+        .current_dir(&p.cwd)
+        .output()
+        .expect("the wrap ran");
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    assert_eq!(run(&p.profile(port)), "made");
+    assert_eq!(
+        run(&starts_only_from(&p.cwd, &p.cwd)),
+        "Function not implemented"
+    );
+}
+
+#[test]
+fn a_program_outside_where_the_profile_says_is_not_started_by_the_wrap() {
+    let p = project();
+    let outside = probe_copied_to(&p.outside);
+    let out = wrap(purlis_linux_sandbox::line(
+        &starts_only_from(&p.cwd, &p.cwd),
+        outside.display().to_string(),
+        vec!["status".to_owned()],
+    ))
+    .current_dir(&p.cwd)
+    .output()
+    .expect("the wrap ran");
+    assert_eq!(out.status.code(), Some(127));
+    assert!(out.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("could not be started"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn a_profile_that_names_no_start_starts_nothing() {
+    let p = project();
+    let out = wrap(purlis_linux_sandbox::line(
+        "(version 1)\n(deny default)\n(allow file-read*)\n",
+        "/bin/echo".to_owned(),
+        vec!["started".to_owned()],
+    ))
+    .current_dir(&p.cwd)
+    .output()
+    .expect("the wrap ran");
+    assert_eq!(out.status.code(), Some(127));
+    assert!(out.stdout.is_empty());
+}
+
 #[test]
 fn the_calls_round_the_supervisor_are_refused() {
     let mut p = project();

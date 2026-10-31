@@ -13,6 +13,44 @@ fn work() -> onrunner::Kept {
     }
 }
 
+/// **A wait let go everywhere tells each project whose wait went** (#4228), and nothing is told
+/// where none did.
+#[test]
+fn a_wait_let_go_everywhere_tells_each_project_it_went_from() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config");
+    let store = profilestore::Homes::at(&config, &dir.path().join("data"));
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let env = |_: &str| -> Option<String> { None };
+    profilestore::create(
+        &store,
+        "work",
+        "claude",
+        &profilestore::MachineSettings {
+            home: &home,
+            env: &env,
+        },
+        1,
+    )
+    .expect("made");
+    let (one, two) = (dir.path().join("one"), dir.path().join("two"));
+    for root in [&one, &two] {
+        onrunner::ready_on(&config, root, "tells", "work", &|_| {
+            Ok(Some(Standing::SignedOut))
+        })
+        .unwrap_err();
+    }
+
+    let told = RefCell::new(Vec::new());
+    let_go_telling("tells", "work", |went| told.borrow_mut().extend(went));
+    let mut told = told.into_inner();
+    told.sort();
+    assert_eq!(told, [one, two]);
+
+    let_go_telling("tells", "work", |_| panic!("none was left to tell"));
+}
+
 /// **A pool not shown to be the person's own is sent nothing** (#2049, D-2049-5): keeping a
 /// profile there answers that the runner is its own to say, and reads nothing of the pool, so a
 /// config home that holds none is never asked.
@@ -499,6 +537,23 @@ fn a_cluster_pools_profiles_are_the_ones_chosen_for_it() {
     assert!(kept_on(config.path(), "nowhere", None).is_err());
 }
 
+/// **A sign-out says which draining runners it reached** (#4121).
+#[test]
+fn a_sign_out_names_the_draining_runners_it_reached_and_the_ones_it_did_not() {
+    let (a, b, c) = ("old-a".to_owned(), "old-b".to_owned(), "old-c".to_owned());
+    assert_eq!(draining_said("work", &[]), None);
+    assert_eq!(
+        draining_said(
+            "work",
+            &[(a, Ok(())), (b, Err("stopped".to_owned())), (c, Ok(()))]
+        )
+        .unwrap(),
+        "Also signed out on draining runners old-a and old-c: its chats there sign in again. \
+         Not reached on draining runner old-b: its sign-in stays there until the runner is \
+         removed, and is not carried."
+    );
+}
+
 /// **A sign-out is done only once the runner's status check says signed out**: every other
 /// answer keeps the person from relying on it.
 #[test]
@@ -548,6 +603,11 @@ fn a_runner_in(container: char, device: &str) -> purlis_core::runners::Kept {
         paired: 0,
         of: None,
         draining: false,
+        carried: false,
+        unpaired: false,
+        signed_out: Vec::new(),
+        engine: None,
+        home_created: None,
     }
 }
 
@@ -599,4 +659,123 @@ fn a_carry_goes_on_only_while_the_kept_runner_is_the_one_it_started_on() {
     let other = a_runner_in('b', "01JB0RUNNER0000000000000000");
     let why = still_the_runner(config.path(), "builds", &other).unwrap_err();
     assert!(why.contains("made again"), "{why}");
+}
+
+/// **A cluster runner keeps only what is chosen for its pool** (#4183): what it keeps beyond the
+/// pool's choice is forgotten, as on a Docker pool.
+#[cfg(unix)]
+#[test]
+fn a_cluster_runner_forgets_what_is_no_longer_chosen() {
+    let config = tempfile::tempdir().unwrap();
+    a_cluster_pool(config.path());
+    purlis_core::runners::add_pool_profile(config.path(), "team", "work", None).unwrap();
+    let records = vec![record("work", "claude"), record("home", "claude")];
+
+    let tidied = tidy(
+        config.path(),
+        "team",
+        &records,
+        Some("work"),
+        a_runner_keeping(&["work", "home", "gone"], &[]),
+    )
+    .unwrap();
+
+    assert_eq!(
+        tidied,
+        Tidied::Done {
+            forgotten: names(&["home", "gone"]),
+            refused: false
+        }
+    );
+    assert_eq!(
+        purlis_core::runners::profiles_of(config.path(), "team").unwrap(),
+        Some(names(&["work"]))
+    );
+}
+
+/// **A cluster runner's word never widens what goes to it** (#4183): a pool that names none comes
+/// to name the project's default, not what its runner says it keeps, and the rest is forgotten.
+#[cfg(unix)]
+#[test]
+fn a_cluster_pool_that_names_none_names_its_default_and_not_what_its_runner_says_it_keeps() {
+    let config = tempfile::tempdir().unwrap();
+    a_cluster_pool(config.path());
+    let records = vec![record("work", "claude"), record("private", "claude")];
+
+    let tidied = tidy(
+        config.path(),
+        "team",
+        &records,
+        Some("work"),
+        a_runner_keeping(&["work", "private"], &[]),
+    )
+    .unwrap();
+
+    assert_eq!(
+        tidied,
+        Tidied::Done {
+            forgotten: names(&["private"]),
+            refused: false
+        }
+    );
+    assert_eq!(
+        purlis_core::runners::profiles_of(config.path(), "team").unwrap(),
+        Some(names(&["work"]))
+    );
+}
+
+/// **An unmarked cluster pool is asked nothing** (#4183): not by a chat's start's tidy, nor when
+/// a profile is removed on this Mac, and neither reaches for its cluster.
+#[cfg(unix)]
+#[test]
+fn an_unmarked_cluster_pool_is_asked_nothing_by_a_tidy_or_a_removal() {
+    let config = tempfile::tempdir().unwrap();
+    a_cluster_pool(config.path());
+
+    let refused = forget_on(config.path(), "team", "work").unwrap_err();
+    assert!(refused.contains("not marked as your own"), "{refused}");
+
+    let not_yours = yours(config.path(), "team");
+    assert!(not_yours.is_err());
+    tidy_once(&not_yours, config.path(), Path::new("/nowhere"), "team");
+    assert!(
+        !TIDIED
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .any(|one| one == "team"),
+        "a tidy that asked nothing is not counted as done"
+    );
+}
+
+/// **A profile removed on this Mac goes off each pool whose runner forgot it, of either kind**
+/// (#4183); a pool whose runner was not shown to be yours keeps its name, to be asked again.
+#[cfg(unix)]
+#[test]
+fn a_removed_profile_leaves_a_cluster_pool_only_where_its_runner_forgot_it() {
+    let config = tempfile::tempdir().unwrap();
+    a_cluster_pool(config.path());
+    purlis_core::runners::add_pool_profile(config.path(), "team", "work", None).unwrap();
+    let pools = names(&["team"]);
+
+    let note = forget_off(config.path(), &pools, "work", &|_| {
+        Err("not vouched for now".to_owned())
+    });
+    assert_eq!(note, None);
+    assert_eq!(
+        purlis_core::runners::profiles_of(config.path(), "team").unwrap(),
+        Some(names(&["work"]))
+    );
+
+    let asked = std::sync::Mutex::new(Vec::new());
+    let note = forget_off(config.path(), &pools, "work", &|pool| {
+        asked.lock().unwrap().push(pool.to_owned());
+        Ok(Some(()))
+    });
+    assert_eq!(note, None);
+    assert_eq!(*asked.lock().unwrap(), names(&["team"]));
+    assert_eq!(
+        purlis_core::runners::profiles_of(config.path(), "team").unwrap(),
+        Some(Vec::new())
+    );
 }

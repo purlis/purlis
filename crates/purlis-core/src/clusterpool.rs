@@ -956,6 +956,13 @@ impl Kubectl {
         args
     }
 
+    /// The words that tell a paired runner where the mint port is (#4207), on standard input.
+    pub fn tell_mint_port_args(&self, namespace: &str, pod: &str) -> Vec<String> {
+        let mut args = self.connect_args(namespace, pod);
+        args.push("--mint-port".to_owned());
+        args
+    }
+
     /// Runs kubectl with `args`, handing it `input`, and answers what it printed, up to `most`
     /// bytes. What it says on standard error is only shown, never read to decide anything.
     pub fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
@@ -1293,6 +1300,119 @@ impl Kubectl {
     /// it, the desktop it is marked as ([`DESKTOP_ANNOTATION`]) and whether it is kept (#3819);
     /// `None` where there is none.
     pub fn claim_seen(&self, namespace: &str, name: &str) -> Result<Option<ClaimSeen>, Refused> {
+        let Some(held) = self.claim_json(namespace, name)? else {
+            return Ok(None);
+        };
+        let text = |path: &str| {
+            held.pointer(path)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        };
+        Ok(Some(ClaimSeen {
+            uid: text("/metadata/uid").unwrap_or_default(),
+            requester: text("/spec/requester"),
+            desktop: held
+                .pointer("/metadata/annotations")
+                .and_then(|marks| marks.get(DESKTOP_ANNOTATION))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+            kept: held.pointer("/spec/kept") == Some(&serde_json::Value::Bool(true)),
+        }))
+    }
+
+    /// **`status.mint` of the Claim `namespace`/`name`** (#4207), `(address, operatorKey)`, where
+    /// the operator wrote it.
+    pub fn claim_mint(
+        &self,
+        namespace: &str,
+        name: &str,
+    ) -> Result<Option<(String, String)>, Refused> {
+        let held = self.claim_json(namespace, name)?;
+        let text = |path: &str| {
+            held.as_ref()?
+                .pointer(path)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        };
+        Ok(text("/status/mint/address").zip(text("/status/mint/operatorKey")))
+    }
+
+    /// **Adds `repos` to `Claim.spec.forge.repos`** (#4207), as the Claim's requester, whose word the
+    /// cluster's policy holds it to; what the Claim names already stays, for the runner's other
+    /// chats. Written only where it adds something, and only over the Claim as it was read, so two
+    /// chats starting at once both arrive. Refused past [`MOST_CLAIM_REPOS`].
+    pub fn add_claim_repos(
+        &self,
+        namespace: &str,
+        name: &str,
+        repos: &[String],
+    ) -> Result<(), Refused> {
+        let mut tries = CLAIM_WRITES;
+        loop {
+            tries -= 1;
+            match self.add_claim_repos_once(namespace, name, repos) {
+                Err(_) if tries > 0 => {}
+                done => return done,
+            }
+        }
+    }
+
+    fn add_claim_repos_once(
+        &self,
+        namespace: &str,
+        name: &str,
+        repos: &[String],
+    ) -> Result<(), Refused> {
+        let Some(held) = self.claim_json(namespace, name)? else {
+            return Ok(());
+        };
+        let named: Vec<String> = held
+            .pointer("/spec/forge/repos")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|repo| repo.as_str().map(str::to_owned))
+            .collect();
+        let Some(all) = repos_with(&named, repos) else {
+            return Ok(());
+        };
+        if all.len() > MOST_CLAIM_REPOS {
+            return Err(Refused::Other(format!(
+                "a claim names at most {MOST_CLAIM_REPOS} repos, so this workspace's were not added"
+            )));
+        }
+        let version = held
+            .pointer("/metadata/resourceVersion")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| Refused::Other("the claim holds no resource version".into()))?;
+        let patch = serde_json::json!({
+            "metadata": { "resourceVersion": version },
+            "spec": { "forge": { "repos": all } },
+        })
+        .to_string();
+        self.run(
+            &self.args(&[
+                "patch",
+                "claims.runners.purlis.dev",
+                name,
+                "--namespace",
+                namespace,
+                "--type=merge",
+                "--patch",
+                &patch,
+            ]),
+            None,
+            MOST_PRINTED,
+        )
+        .map(|_| ())
+    }
+
+    /// The Claim `namespace`/`name` as the cluster has it, where it does.
+    fn claim_json(
+        &self,
+        namespace: &str,
+        name: &str,
+    ) -> Result<Option<serde_json::Value>, Refused> {
         let printed = self.run(
             &self.args(&[
                 "get",
@@ -1310,23 +1430,9 @@ impl Kubectl {
         if printed.trim().is_empty() {
             return Ok(None);
         }
-        let held: serde_json::Value = serde_json::from_str(&printed)
-            .map_err(|_| Refused::Other("kubectl get did not answer JSON".into()))?;
-        let text = |path: &str| {
-            held.pointer(path)
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        };
-        Ok(Some(ClaimSeen {
-            uid: text("/metadata/uid").unwrap_or_default(),
-            requester: text("/spec/requester"),
-            desktop: held
-                .pointer("/metadata/annotations")
-                .and_then(|marks| marks.get(DESKTOP_ANNOTATION))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned),
-            kept: held.pointer("/spec/kept") == Some(&serde_json::Value::Bool(true)),
-        }))
+        serde_json::from_str(&printed)
+            .map(Some)
+            .map_err(|_| Refused::Other("kubectl get did not answer JSON".into()))
     }
 
     /// Deletes the Claim `namespace`/`name`, and with it its runner; nothing where it is gone
@@ -1582,6 +1688,90 @@ pub fn pair(
     })
 }
 
+/// How many times a Claim's repos are written, where another write came first.
+const CLAIM_WRITES: u32 = 3;
+
+/// How many times, a second apart, a Claim's status is read for where to ask, where its Pool opts in.
+const MINT_READS: u32 = 5;
+
+/// The most repos a Claim's `spec.forge.repos` holds: what its definition allows.
+pub const MOST_CLAIM_REPOS: usize = 256;
+
+/// `named` with `adding`, in order and each once, ignoring case as GitHub does; `None` where that
+/// adds nothing.
+pub fn repos_with(named: &[String], adding: &[String]) -> Option<Vec<String>> {
+    let mut all = named.to_vec();
+    for repo in adding {
+        if !all.iter().any(|held| held.eq_ignore_ascii_case(repo)) {
+            all.push(repo.clone());
+        }
+    }
+    (all.len() > named.len()).then(|| {
+        all.sort();
+        all
+    })
+}
+
+/// **What a runner is told of the port** (#4207): the address a Claim's status says, and the key
+/// this desktop pinned, whatever key that status says. A status is nobody's signed word, so it can
+/// only send a runner to an address that then fails its handshake. During a roll this desktop has
+/// followed already, the runner's mints go to its desktop until the port shows that key.
+pub fn told_of_the_port(
+    claimed: &Claimed,
+    pin: &PoolPin,
+    address: String,
+) -> crate::forge::mintport::Told {
+    crate::forge::mintport::Told {
+        namespace: claimed.namespace.clone(),
+        claim: claimed.name.clone(),
+        cluster: pin.cluster.clone(),
+        address,
+        keys: vec![pin.key.spelled()],
+    }
+}
+
+/// **Tells the runner of `paired` where the mint port is** (#4207), where the Claim's status says
+/// ([`told_of_the_port`]), waiting a little where its Pool opts in and the status is yet to say. It
+/// decides nothing: the runner goes on asking this desktop, with the person's Ask, wherever it was
+/// not told.
+pub fn tell_the_mint_port(
+    kubectl: &Kubectl,
+    pin: &PoolPin,
+    pool: &str,
+    paired: &Paired,
+    every: std::time::Duration,
+) -> Result<(), Refused> {
+    let Claimed {
+        namespace, name, ..
+    } = &paired.claimed;
+    let seen = kubectl.pool(pool)?;
+    if !seen.mints_in_cluster {
+        return Ok(());
+    }
+    let mut reads = MINT_READS;
+    let (address, _says_of_its_key) = loop {
+        reads -= 1;
+        match kubectl.claim_mint(namespace, name)? {
+            Some(said) => break said,
+            None if reads == 0 => {
+                return Err(Refused::Other(
+                    "the claim's status does not say where to ask for a token".to_owned(),
+                ));
+            }
+            None => std::thread::sleep(every),
+        }
+    };
+    let told = told_of_the_port(&paired.claimed, pin, address);
+    let line = serde_json::to_string(&told).map_err(|why| Refused::Other(why.to_string()))?;
+    kubectl
+        .run(
+            &kubectl.tell_mint_port_args(&paired.vouched.runner_namespace, &paired.vouched.pod),
+            Some(&format!("{line}\n")),
+            crate::runnerlink::MOST_LINE,
+        )
+        .map(|_| ())
+}
+
 /// **Before every link**: the operator still vouches for the pod and key `paired` was paired
 /// with. Another pod or key is refused as a changed key; no statement at all is refused too. A
 /// kept claim's pod made again under its name, answering the key it was paired with, is the
@@ -1709,6 +1899,19 @@ pub fn claim_and_pair(
     };
     let paired = vouched_within(kubectl, pin, &claimed, patience, every)
         .and_then(|vouched| pair(kubectl, &claimed, &vouched, desktop));
+    if let Ok(paired) = &paired
+        && let Err(why) = tell_the_mint_port(
+            kubectl,
+            pin,
+            pool,
+            paired,
+            std::time::Duration::from_secs(1),
+        )
+    {
+        tracing::warn!(
+            "purlis: the runner of pool {pool} will ask this desktop for its tokens: {why}"
+        );
+    }
     paired.map_err(|why| match kubectl.delete_claim(namespace, name) {
         Ok(()) => why,
         Err(left) => Refused::Other(format!(

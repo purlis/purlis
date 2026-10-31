@@ -304,16 +304,17 @@ export async function removeProfileFromPool(
   return said.status === "error" ? said.error : (said.data ?? undefined);
 }
 
-/** **Signs profile `profile` out on pool `name`'s runner** (#4043): its harness's own sign-out,
- *  run there, then the pool's profiles are asked again. Why it did not, in the core's words. */
+/** **Signs profile `profile` out on pool `name`'s runner and its draining runners** (#4043,
+ *  #4121): the harness's own sign-out, run there, then the pool's profiles are asked again. Why it
+ *  did not, in the core's words, or what it did on the draining runners. */
 export async function signProfileOutOfPool(
   name: string,
   profile: string,
   plane?: string,
-): Promise<string | undefined> {
+): Promise<{ failed: string } | { draining: string | undefined }> {
   const said = await caught(commands.poolSignOut(name, profile));
   await askProfiles(name, plane);
-  return said.status === "error" ? said.error : undefined;
+  return said.status === "error" ? { failed: said.error } : { draining: said.data ?? undefined };
 }
 
 /** Closes what adding a pool ended with: its profiles to sign in there. */
@@ -384,6 +385,11 @@ export function removedSaid(name: string, homeKept: boolean): string {
   return homeKept
     ? `Pool ${name}'s runner was removed outside purlis: Docker has no container of its id, so purlis no longer links to it. If Docker now points at another engine, point it back instead. Its home is still there: Make the runner again makes a runner from the pool's image and limits, with the sign-ins kept there.`
     : `Pool ${name}'s runner was removed outside purlis: Docker has no container of its id, so purlis no longer links to it. If Docker now points at another engine, point it back instead. Its home went too, and with it the sign-ins kept there: Make the runner again makes a runner from the pool's image and limits, whose profiles you sign in again.`;
+}
+
+/** What a row says of a runner made on another engine than Docker reaches now (#4166). */
+export function anotherEngineSaid(name: string): string {
+  return `Docker points at another engine than the one pool ${name}'s runner was made on. Point Docker back at that engine and its chats come back. If that engine is gone for good, remove the pool and add it again; anything still on that engine stays there.`;
 }
 
 /** What a row says once its runner was made again, by whether its sign-ins were carried. */

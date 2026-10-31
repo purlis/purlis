@@ -59,7 +59,7 @@ fn the_plan_says_the_library_its_tested_skills_and_the_chats_before_anything_run
         models: Vec::new(),
         model: None,
     };
-    let plan = RouterGradePlan::of(&planned, None, on, None);
+    let plan = RouterGradePlan::of(&planned, None, on, None, PromptReading::None);
     assert_eq!(plan.router, "relevance");
     assert_eq!(plan.library, 1);
     assert_eq!(plan.skills.len(), 1);
@@ -179,7 +179,8 @@ fn a_router_s_plan_consents_to_its_profile_model_and_limits_3618() {
     )
     .unwrap();
     let planned = routers::planned(root, None, None, "relevance").unwrap();
-    let consent = |on: &crate::skillgrade::On| consent_shown(&planned, on).unwrap();
+    let consent =
+        |on: &crate::skillgrade::On| consent_shown(&planned, on, PromptReading::None).unwrap();
     let first = consent(&on("work", None));
     assert_eq!(first, consent(&on("work", None)), "the same plan");
     assert_ne!(first, consent(&on("home", None)), "another profile");
@@ -188,10 +189,30 @@ fn a_router_s_plan_consents_to_its_profile_model_and_limits_3618() {
     capped.cap.tokens += 1;
     assert_ne!(
         first,
-        consent_shown(&capped, &on("work", None)).unwrap(),
+        consent_shown(&capped, &on("work", None), PromptReading::None).unwrap(),
         "another cap"
     );
-    let plan = RouterGradePlan::of(&planned, None, on("work", Some("opus")), None);
+    let reading = |reading| RouterGradePlan::of(&planned, None, on("work", None), None, reading);
+    assert_eq!(reading(PromptReading::None).pointer, None);
+    assert_eq!(reading(PromptReading::Off).pointer, Some(false));
+    assert_eq!(reading(PromptReading::On).pointer, Some(true));
+    assert_eq!(
+        reading(PromptReading::None).consent,
+        reading(PromptReading::Off).consent,
+        "the same chats run"
+    );
+    assert_ne!(
+        reading(PromptReading::Off).consent,
+        reading(PromptReading::On).consent,
+        "a switch turned since the plan was shown is a plan that no longer holds (#3619)"
+    );
+    let plan = RouterGradePlan::of(
+        &planned,
+        None,
+        on("work", Some("opus")),
+        None,
+        PromptReading::None,
+    );
     assert_eq!(plan.models, ["sonnet", "opus"]);
     assert_eq!(plan.model.as_deref(), Some("opus"));
     assert_eq!(
@@ -200,4 +221,59 @@ fn a_router_s_plan_consents_to_its_profile_model_and_limits_3618() {
     );
     assert!(plan.estimate.is_none(), "never graded: none known");
     assert!(plan.estimate_same_library.is_none());
+}
+
+#[test]
+fn a_router_grade_s_page_finds_its_latest_step_while_it_runs_and_none_after() {
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!("plane-of-a-router-step")).unwrap();
+    let other: PlaneId = serde_json::from_value(serde_json::json!("another-plane")).unwrap();
+    let step = RouterGradeStep {
+        plane: plane.clone(),
+        router: "relevance".into(),
+        workspace: Some("ops".into()),
+        persona: None,
+        grade: "router-step".into(),
+        ran: 3,
+        of: 8,
+        tokens: Some(1200.0),
+        cost_usd: Some(0.04),
+        limit_usd: Some(1.5),
+        cap: 200_000.0,
+        ended: None,
+        said: None,
+        recorded: false,
+    };
+    running().insert(
+        "router-step".to_owned(),
+        Running {
+            plane: plane.clone(),
+            skill: String::new(),
+            level: None,
+            stop: Arc::new(AtomicBool::new(false)),
+            after_edit: None,
+            step: None,
+            router_step: Some(step.clone()),
+        },
+    );
+    assert_eq!(step_of_running(&plane, "router-step"), Some(step.clone()));
+    // Another project's page never reads it, and an id nothing runs is no step.
+    assert_eq!(step_of_running(&other, "router-step"), None);
+    assert_eq!(step_of_running(&plane, "not-running"), None);
+    running().remove("router-step");
+    assert_eq!(step_of_running(&plane, "router-step"), None);
+    // An end told before its page listened is still read, until the project's next end.
+    let ended = RouterGradeStep {
+        ended: Some(GradeEnded::ChatsDidNotStart),
+        said: Some("no profile".into()),
+        ..step
+    };
+    keep_end(&ended);
+    assert_eq!(step_of_running(&plane, "router-step"), Some(ended.clone()));
+    assert_eq!(step_of_running(&other, "router-step"), None);
+    keep_end(&RouterGradeStep {
+        grade: "router-next".into(),
+        ..ended
+    });
+    assert_eq!(step_of_running(&plane, "router-step"), None);
 }

@@ -207,9 +207,10 @@ pub fn built_in_names(dir: Option<&Path>) -> Vec<String> {
 /// **The skills purlis ships**, by name: the bundle's `plugin/skills/<name>/SKILL.md`, each
 /// folder named as its skill (held to that folder by a test). Compiled in, so a name stays
 /// reserved ([`name_reserved`]) where this binary finds no bundle beside it.
-pub const SHIPPED: [&str; 11] = [
+pub const SHIPPED: [&str; 12] = [
     "add-curation-action",
     "browser",
+    "building-purlis-ui",
     "compact",
     "handoff",
     "persona",
@@ -488,6 +489,13 @@ fn touched(folder: &Path) -> bool {
 /// environment again by [`take_hold`] where its terminal is started, so its program never sees
 /// it and the terminal notes, while the program runs, that it uses the folder.
 pub const SET_ENV: &str = "PURLIS_SKILL_SET";
+
+/// **The variable a chat whose router reads prompts is started with** (SK-15c): `1`, where
+/// its start asked a router extension whose approval said it reads prompts and its list leaves
+/// skills out ([`router::Routed::points`]). Only then does its prompt hook hand the prompt to
+/// the app, which asks the router which of those skills suit it: no other chat's prompt leaves
+/// its hook.
+pub const PROMPT_ROUTER_ENV: &str = "PURLIS_PROMPT_ROUTER";
 
 /// The folder of a set's folder's notes, beside the sets: `<sets>/.held/<digest>/<pid>`, one
 /// file for each running program that was handed it ([`crate::session::Spec::holds`]).
@@ -1073,7 +1081,7 @@ impl Running<'_> {
             plane: start.map_or(self.plane, |start| start.root.as_path()),
             workspace: self.workspace.filter(|_| !tried),
             repo: start.map_or(&[], |start| start.repo.as_slice()),
-            routed: start.and_then(|start| start.routed.as_ref()),
+            routed: start.and_then(|start| start.routed.as_deref()),
         });
         routed(
             self.built_in,
@@ -2187,16 +2195,16 @@ fn harnesses_in_the_studio(
 }
 
 /// **The repo skills the harness of a chat started in `cwd` reads** (SK-6, #2769): those of the
-/// clone `cwd` is in ([`clones_of_chat`]), in `workspace` of the plane at `plane`, each turned off
-/// where the project's choices say so. Nothing for a chat in no clone. The host's half: it reads
-/// the clone, and an adapter is handed the answer ([`PlaneSkills::repo`]).
+/// checkout `cwd` is in ([`checkouts_of_chat`]), in `workspace` of the plane at `plane`, each
+/// turned off where the project's choices say so. Nothing for a chat in no clone. The host's half:
+/// it reads the checkout, and an adapter is handed the answer ([`PlaneSkills::repo`]).
 pub fn repo_skills_of_chat(
     harness: Harness,
     plane: &Path,
     workspace: &str,
     cwd: &Path,
 ) -> Vec<OutsideSkill> {
-    let mine = clones_of_chat(plane, workspace, cwd);
+    let mine = checkouts_of_chat(plane, workspace, cwd);
     if mine.is_empty() {
         return Vec::new();
     }
@@ -2205,24 +2213,66 @@ pub fn repo_skills_of_chat(
 }
 
 /// **The clones of `workspace` in the plane at `plane` a chat started in `cwd` works in**: each
-/// whose folder `cwd` is in, whose repo skills its harness reads ([`repo_skills_of_chat`]), and
-/// what the Skills view narrows a chat's repo skills to (#3462). None for a chat in no clone.
+/// whose own folder `cwd` is in, which the Skills view narrows a chat's repo skills to (#3462),
+/// since its rows are read from those folders. None for a chat in no clone, and none for a chat in
+/// a branch folder, whose skills are that branch's ([`checkouts_of_chat`]).
 pub fn clones_of_chat(plane: &Path, workspace: &str, cwd: &Path) -> Vec<crate::repos::Repo> {
     let Ok(clones) = crate::repos::clones(plane, workspace) else {
         return Vec::new();
     };
-    let here = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    let here = resolved(cwd);
     clones
         .repos
         .into_iter()
-        .filter(|repo| {
-            let at = repo
-                .path
-                .canonicalize()
-                .unwrap_or_else(|_| repo.path.clone());
-            here.starts_with(at)
+        .filter(|repo| here.starts_with(resolved(&repo.path)))
+        .collect()
+}
+
+/// **The checkouts a chat started in `cwd` has its harness read repo skills from**
+/// ([`repo_skills_of_chat`]): each clone of `workspace` whose own folder `cwd` is in, or one of
+/// whose branch folders it is in. A branch folder comes under its clone's name with its own path
+/// (#4238): the harness reads the checkout it started in, whose skills are that branch's and not
+/// the clone's.
+pub fn checkouts_of_chat(plane: &Path, workspace: &str, cwd: &Path) -> Vec<crate::repos::Repo> {
+    let Ok(clones) = crate::repos::clones(plane, workspace) else {
+        return Vec::new();
+    };
+    let here = resolved(cwd);
+    clones
+        .repos
+        .into_iter()
+        .filter_map(|repo| {
+            let at = resolved(&repo.path);
+            if here.starts_with(&at) {
+                return Some(repo);
+            }
+            let path = branch_folder_of(&at, &repo.name, &here)?;
+            Some(crate::repos::Repo {
+                name: repo.name,
+                path,
+            })
         })
         .collect()
+}
+
+/// `path` with its links resolved, or as it is where it cannot be.
+fn resolved(path: &Path) -> std::path::PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// **The branch folder of the clone `name` at `clone` that `here` is in**
+/// (`workspaces/<ws>/.worktrees/<repo>/<piece>`), or `None`. Both paths are resolved already, so
+/// a link anywhere in the layout, `.worktrees` included, has `here` somewhere else and answers
+/// `None`. Worked out from the path and the one `.git` beside it, as [`crate::repos::clones`]
+/// looks at each clone's: no git is asked, for this runs on a chat's open. A linked worktree's
+/// `.git` is a file; a folder without one is not where a harness stops looking for its repo.
+fn branch_folder_of(clone: &Path, name: &str, here: &Path) -> Option<std::path::PathBuf> {
+    let pieces = clone.parent()?.join(crate::worktree::DIR_NAME).join(name);
+    let piece = here.strip_prefix(&pieces).ok()?.components().next()?;
+    let folder = pieces.join(piece);
+    std::fs::symlink_metadata(folder.join(".git"))
+        .is_ok_and(|git| git.is_file())
+        .then_some(folder)
 }
 
 /// One skill as the Skill studio and `purlis skill list` and `show` show it: every copy of a name,
@@ -2685,8 +2735,15 @@ fn badges(
             compat: match &text {
                 Ok(text) => {
                     let badge = compat(text, origin, &harness.skill_frontmatter());
-                    if kept_manual_beside(*harness, (root, path), origin) {
+                    let badge = if kept_manual_beside(*harness, (root, path), origin) {
                         badge.kept_manual()
+                    } else {
+                        badge
+                    };
+                    // A plane skill a router may leave out of a chat's list is pointed at
+                    // only through a prompt hook (SK-15c).
+                    if origin.of_the_plane() && !harness.prompt_hook() {
+                        badge.without_a_pointer()
                     } else {
                         badge
                     }

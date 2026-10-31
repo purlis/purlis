@@ -50,8 +50,9 @@ mod confining;
 #[cfg(unix)]
 mod connector;
 #[cfg(unix)]
-mod hearing;
+mod grading;
 #[cfg(unix)]
+mod hearing;
 mod hosting;
 #[cfg(unix)]
 mod hostrecord;
@@ -95,8 +96,9 @@ pub use connector::{
 pub use hearing::{Channel, HandOn, Hear, HearsNothing};
 #[cfg(unix)]
 pub use hosting::{
-    ASK_WITHIN, AskTheWindow, Beside, Compose, ComposesNothing, ENDS_WITHIN, Hosting, Looked, Poke,
-    ReachOf, Run, Running, Save, SavesNothing, Saving, Terminals, ToCompose, ToSave, Working,
+    ASK_WITHIN, AskTheWindow, Beside, Compose, ComposesNothing, ENDS_WITHIN, HeldToForget, Hosting,
+    Looked, Poke, ReachOf, Run, Running, Save, SavesNothing, Saving, Terminals, ToCompose, ToSave,
+    Working,
 };
 #[cfg(unix)]
 pub use hostrecord::{HOST_RECORD, Started, this_boot};
@@ -117,8 +119,8 @@ pub use relay::{Dial, Keep, Relay};
 pub use routing::{DrainsTo, RelaysTo, Routed};
 #[cfg(unix)]
 pub use serving::{
-    Answering, Delivering, Forgetting, Holding, HostError, Keeping, LOCK, Listing, Pairing, Place,
-    Unpairing, Window, serve, serve_answering,
+    Answering, DeletingOwnFolders, Delivering, Forgetting, Holding, HostError, Keeping, LOCK,
+    Listing, Pairing, Place, Unpairing, Window, serve, serve_answering,
 };
 #[cfg(unix)]
 pub use unattended::UNLINKED_FOR;

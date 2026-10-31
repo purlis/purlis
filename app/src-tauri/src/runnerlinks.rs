@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use purlis_core::clusterpool::Kubectl;
-use purlis_core::dockerpool::Docker;
+use purlis_core::dockerpool::{Docker, Missing};
 use purlis_core::profilestore::sign_in::callback::CARRIED_WITHIN;
 use purlis_core::runners::{ClusterKept, ClusterPool, Kept};
 use purlis_host::{CommandConnector, NotChecked};
@@ -153,8 +153,13 @@ impl ToARunner {
                 };
                 // A refusal of a container Docker no longer lists is a runner removed outside
                 // purlis, never linked to again on its own (#4149).
-                checked.map_err(|why| match checking.gone(&made) {
-                    Ok(Some(gone)) => NotChecked::Gone(gone_said(&of, gone)),
+                // On another engine it may be there still: the link keeps trying, so it comes
+                // back once Docker points back (#4166).
+                checked.map_err(|why| match checking.missing(&made, of.engine.as_deref()) {
+                    Ok(Some(Missing::Removed(gone))) => NotChecked::Gone(gone_said(&of, gone)),
+                    Ok(Some(Missing::OnAnotherEngine)) => {
+                        NotChecked::Refused(on_another_engine_said(&of))
+                    }
                     _ => NotChecked::Refused(why.0),
                 })
             }),
@@ -255,6 +260,16 @@ pub fn gone_said(kept: &Kept, gone: purlis_core::dockerpool::Gone) -> String {
         kept.pool(),
         kept.name(),
         kept.made.container.short()
+    )
+}
+
+/// **A runner made on another engine than Docker reaches now, in words a person reads** (#4166).
+pub fn on_another_engine_said(kept: &Kept) -> String {
+    format!(
+        "Docker points at another engine than the one pool {}'s runner {} was made on; point \
+         Docker back at that engine",
+        kept.pool(),
+        kept.name()
     )
 }
 
@@ -528,6 +543,9 @@ pub fn count_of(
         ),
         Err(PoolLink::Suspended) => Err("the runner is suspended".to_owned()),
         Err(PoolLink::Removed { .. }) => Err("the runner was removed outside purlis".to_owned()),
+        Err(PoolLink::OnAnotherEngine) => {
+            Err("Docker points at another engine than the one the runner was made on".to_owned())
+        }
         Err(PoolLink::Linked) => Err("the runner did not list".to_owned()),
     }
 }

@@ -4,8 +4,8 @@
 //! The wrap itself: the supervisor's start, and the chat's.
 //!
 //! `purlis _sandbox --profile <piece>… -- <program> <args>…` is the supervisor. It reads the
-//! profile, holds itself to it with Landlock, and starts `purlis _sandbox --chat <socket> --
-//! <program> <args>…`: the chat's side, which applies its own Landlock layer and the seccomp
+//! profile, holds itself to it with Landlock, and starts `purlis _sandbox --chat <socket>
+//! <where programs start from>… -- <program> <args>…`: the chat's side, which applies its own Landlock layer and the seccomp
 //! filters to itself, hands the supervisor the filter's listener over `<socket>`, and becomes
 //! the program. The supervisor then serves the chat's calls until the chat ends, and ends with
 //! its status.
@@ -161,6 +161,7 @@ fn supervise(
         .arg(crate::COMMAND)
         .arg(CHAT)
         .arg(theirs.as_raw_fd().to_string())
+        .args(profile.starts_from())
         .arg(crate::END)
         .args(program)
         .env_clear()
@@ -292,14 +293,23 @@ fn adopt(fd: std::os::fd::RawFd) -> Option<OwnedFd> {
 /// The chat's side: its own layer and filters, the listener to the supervisor, then the
 /// program.
 fn chat_side(words: &[String], env: Env) -> i32 {
-    let (Some(socket), Some(end)) = (words.first(), words.get(1)) else {
+    let Some(socket) = words.first() else {
         return refuse("the sandbox's chat side was started without its socket");
     };
-    if end != crate::END || words.len() < 3 {
+    let Some(end) = words
+        .iter()
+        .skip(1)
+        .position(|word| word == crate::END)
+        .map(|at| at + 1)
+    else {
+        return refuse("the sandbox's chat side was started without a program");
+    };
+    let program = &words[end + 1..];
+    if program.is_empty() {
         return refuse("the sandbox's chat side was started without a program");
     }
-    let program = &words[2..];
-    match restrict_and_hand_over(socket) {
+    let starts: Vec<std::path::PathBuf> = words[1..end].iter().map(Into::into).collect();
+    match restrict_and_hand_over(socket, &starts) {
         Ok(()) => {
             let why = Command::new(&program[0])
                 .args(&program[1..])
@@ -313,19 +323,24 @@ fn chat_side(words: &[String], env: Env) -> i32 {
     }
 }
 
-fn restrict_and_hand_over(socket: &str) -> Result<(), String> {
+fn restrict_and_hand_over(socket: &str, starts: &[std::path::PathBuf]) -> Result<(), String> {
     let socket: std::os::fd::RawFd = socket.parse().map_err(|_| "a socket number".to_owned())?;
     let socket = notify::adopt(socket).map_err(|why| why.to_string())?;
     // Ended with the supervisor, so the chat never outlives what serves its calls.
     nix::sys::prctl::set_pdeathsig(Signal::SIGKILL)
         .map_err(|why| format!("the chat could not be tied to the wrap: {why}"))?;
-    layers::chat().map_err(|why| format!("Landlock could not be applied to the chat: {why}"))?;
+    layers::chat(starts)
+        .map_err(|why| format!("Landlock could not be applied to the chat: {why}"))?;
     // The supervised filter first: the refusing ones refuse a listener, the chat's own among
     // them. A refusal outranks a notification whichever filter says it.
     let listener = notify::install(&filter::supervised()?)
         .map_err(|why| format!("the chat's supervised filter could not be applied: {why}"))?;
     for program in filter::refused()? {
         seccompiler::apply_filter(&program)
+            .map_err(|why| format!("the chat's seccomp filter could not be applied: {why}"))?;
+    }
+    if !starts.iter().any(|root| root.as_os_str() == "/") {
+        seccompiler::apply_filter(&filter::memory_files_refused()?)
             .map_err(|why| format!("the chat's seccomp filter could not be applied: {why}"))?;
     }
     let fds = [listener.as_raw_fd()];

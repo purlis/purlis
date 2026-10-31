@@ -77,6 +77,14 @@ pub fn with_studio<T>(
 }
 
 impl<'a> Studio<'a> {
+    /// **The routers the person turned on to read prompts on this machine** (ADR 0102 as amended
+    /// 2026-10-31), by id: none where the record cannot be read.
+    pub fn reading_prompts(&self) -> std::collections::BTreeSet<String> {
+        crate::extension::read(self.config_root, self.executor.built_in())
+            .registry
+            .reads_prompts
+    }
+
     /// **Each extension this machine approved, the project has on, and that declares
     /// `capability`**, in id order, by its manifest as it is on disk now. The fingerprint is
     /// re-taken by the executor before any program starts, as for every question.
@@ -113,6 +121,38 @@ impl<'a> Studio<'a> {
     ) -> Result<serde_json::Map<String, serde_json::Value>, String> {
         self.executor
             .studio(self.config_root, self.project, extension, ask)
+    }
+
+    /// **Each Grader the project can grade with besides purlis's own** (#3236): each extension
+    /// that declares `grader`, by its id and the title its shape gives it, for a grade's plan to
+    /// list beside purlis's.
+    pub fn graders(&self) -> Vec<(String, String)> {
+        self.declaring(Capability::Grader)
+            .into_iter()
+            .map(|asked| {
+                let title = asked.declared.grader.clone().unwrap_or(asked.name);
+                (asked.id, title)
+            })
+            .collect()
+    }
+
+    /// **Grade `request` with the Grader extension `extension`** (protocol 4, #3236): its chats
+    /// run by `chats`, held to the plan and to `limits` ([`Executor::grade`]).
+    pub fn grade(
+        &self,
+        extension: &str,
+        request: &purlis_skills::grade::GradeRequest,
+        chats: &mut dyn purlis_skills::grade::Chats,
+        limits: Option<purlis_skills::grade::Limits>,
+    ) -> purlis_skills::grade::GradeReport {
+        self.executor.grade(
+            self.config_root,
+            self.project,
+            extension,
+            request,
+            chats,
+            limits,
+        )
     }
 
     /// **The lints of each extension that declares `skill-lint`**, to ask beside purlis's own.

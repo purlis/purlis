@@ -72,6 +72,19 @@ pub struct PlanRow {
     pub title: String,
 }
 
+impl PlanRow {
+    /// The plans harness `kind` signs in to, where it serves several.
+    pub(crate) fn of_harness(kind: &str) -> Vec<Self> {
+        sign_in::providers(kind)
+            .iter()
+            .map(|plan| Self {
+                id: plan.provider.clone(),
+                title: plan.title.clone(),
+            })
+            .collect()
+    }
+}
+
 impl From<&profilestore::MachineProfile> for MachineProfileRow {
     fn from(record: &profilestore::MachineProfile) -> Self {
         Self {
@@ -96,13 +109,7 @@ impl From<&profilestore::MachineProfile> for MachineProfileRow {
                 .map(|i| i.from.display().to_string()),
             signs_in: signs_in(record),
             standing: None,
-            plans: sign_in::providers(&record.harness)
-                .iter()
-                .map(|plan| PlanRow {
-                    id: plan.provider.clone(),
-                    title: plan.title.clone(),
-                })
-                .collect(),
+            plans: PlanRow::of_harness(&record.harness),
             pinned: record.pinned.as_ref().map(|p| p.version.clone()),
             installed: None,
             offered: None,
@@ -484,6 +491,36 @@ pub fn type_profile_sign_in(
             watched_project(app.clone(), &held),
         );
     }
+    Ok(())
+}
+
+/// **Types the sign-out of `name` on pool `pool`'s runner into shell tab `session`** (#4124), for
+/// a harness whose sign-out asks which sign-in goes: the person answers there. Only into a shell
+/// at the project root, as a sign-in is.
+#[tauri::command]
+#[specta::specta]
+pub async fn type_profile_sign_out(
+    app: tauri::AppHandle,
+    plane: PlaneId,
+    session: u32,
+    name: String,
+    pool: String,
+) -> Result<(), String> {
+    let held = tauri::Manager::state::<Planes>(&app).held(&plane)?;
+    if !held.chats().is_shell_at(session, held.root()) {
+        return Err(
+            "that tab is not a shell at the project root, so no sign-out was typed.".to_owned(),
+        );
+    }
+    // Off the window's thread: it waits on the runners' lock, which a carry holds for minutes.
+    let line = blocking(move || crate::poolprofiles::sign_out_line(&pool, &name)).await?;
+    // It may have waited minutes: the line runs as it is typed, so only into a shell still.
+    if !held.chats().is_shell_at(session, held.root()) {
+        return Err(
+            "that tab is not a shell at the project root, so no sign-out was typed.".to_owned(),
+        );
+    }
+    held.operator_input(session, line.as_bytes())?;
     Ok(())
 }
 

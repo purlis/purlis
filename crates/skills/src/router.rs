@@ -168,6 +168,26 @@ pub struct Index {
     pub text: String,
 }
 
+impl Index {
+    /// **The skills an index skill's `text` names**, each with its one line, as
+    /// [`SkillSet::index`] wrote them (SK-15c): what a chat's prompt hook asks a router that
+    /// reads prompts about, read back from the index the chat was handed, so the hook reads no
+    /// skill folder. A line that is not one of its entries is skipped, and so is a name that is
+    /// not a skill's name by the open format's grammar. At most [`crate::tree::MOST_SKILLS`].
+    pub fn named_in(text: &str) -> Vec<(String, String)> {
+        text.lines()
+            .filter_map(|line| {
+                let rest = line.strip_prefix("- `")?;
+                let (name, said) = rest.split_once("`: ")?;
+                crate::change::name_problem(name)
+                    .is_none()
+                    .then(|| (name.to_owned(), said.trim().to_owned()))
+            })
+            .take(crate::tree::MOST_SKILLS)
+            .collect()
+    }
+}
+
 impl SkillSet {
     /// **The set, routed by the built-in router** for a chat whose budget is `budget` and whose
     /// pins are `pins` (its persona's and its workspace's, ADR 0102 §4). Nothing leaves the set:

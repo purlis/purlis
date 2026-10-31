@@ -29,9 +29,10 @@ use specta::Type;
 use tauri::Emitter as _;
 
 use purlis_core::skills::grade::routers::{self as engine, LibraryChats};
-use purlis_core::skills::grade::{self as grading, Arm};
+use purlis_core::skills::grade::{self as grading, Arm, GradeEnd};
 use purlis_core::skills::grades::routers::{self, RecordedCopy, RouterGraded, RouterPlanned};
 use purlis_core::skills::grades::{self, Spent};
+use purlis_core::skills::router::PromptReading;
 
 use crate::planes::{PlaneId, Planes};
 use crate::skillchange::flag_on;
@@ -89,6 +90,10 @@ pub struct RouterGradePlan {
     pub estimate_same_library: Option<bool>,
     /// A grade running in this project now, where one is: a skill's or a router's.
     pub running: Option<String>,
+    /// **Whether its router's arm runs with its pointer** (SK-15k, #3619): true where the router
+    /// reads prompts here, false where it could and the person has not turned that on, null
+    /// where it reads none.
+    pub pointer: Option<bool>,
     /// What pressing Grade consents to: what it grades, and the profile, model, cap and dollar
     /// limit this plan shows (`grades::consent_on`).
     pub consent: Option<String>,
@@ -96,11 +101,22 @@ pub struct RouterGradePlan {
 
 /// **What pressing Grade on `planned`, its chats `on`, consents to**: what it grades, and the
 /// profile, model, token cap and dollar limit the plan shows, as a skill's plan's (#3618).
-fn consent_shown(planned: &RouterPlanned, on: &On) -> Option<String> {
-    planned
-        .consent
-        .as_deref()
-        .map(|consent| grades::consent_on(consent, &terms(&planned.cap, on)))
+fn consent_shown(planned: &RouterPlanned, on: &On, reading: PromptReading) -> Option<String> {
+    planned.consent.as_deref().map(|consent| {
+        // Whether each test's prompt is handed to the router is part of what the plan showed.
+        let terms = terms(&planned.cap, on);
+        if reading == PromptReading::On {
+            grades::consent_on(&format!("{consent} with its pointer"), &terms)
+        } else {
+            grades::consent_on(consent, &terms)
+        }
+    })
+}
+
+/// **Whether the router `router` reads prompts in the project at `root`**, by this machine's
+/// record, as a chat of its arm's start will find it.
+fn reading_of(root: &std::path::Path, router: &str) -> PromptReading {
+    purlis_core::skills::router::OnThisMachine::with_this_programs(root).prompt_reading(router)
 }
 
 impl RouterGradePlan {
@@ -109,8 +125,9 @@ impl RouterGradePlan {
         running: Option<String>,
         on: On,
         estimate: Option<routers::RouterEstimate>,
+        reading: PromptReading,
     ) -> Self {
-        let consent = consent_shown(planned, &on);
+        let consent = consent_shown(planned, &on, reading);
         let On {
             profile,
             checked,
@@ -154,6 +171,11 @@ impl RouterGradePlan {
             estimate: estimate.as_ref().map(|one| (&one.estimate).into()),
             estimate_same_library: estimate.map(|one| one.same_library),
             running,
+            pointer: match reading {
+                PromptReading::None => None,
+                PromptReading::Off => Some(false),
+                PromptReading::On => Some(true),
+            },
             consent,
         }
     }
@@ -182,6 +204,7 @@ fn plan_of(
         running_in(plane),
         on,
         estimate,
+        reading_of(root, &router),
     ))
 }
 
@@ -190,14 +213,71 @@ fn plan_of(
 pub struct RouterGradeStep {
     pub plane: PlaneId,
     pub router: String,
+    /// The scope that chose it, as its grades are read: only that scope's page shows it (#4222).
+    pub workspace: Option<String>,
+    pub persona: Option<String>,
     pub grade: String,
     pub ran: u32,
     pub of: u32,
     pub tokens: Option<f64>,
+    /// What its chats have cost so far, in dollars, where they said, and the dollar limit it is
+    /// held to: the running page's spend (#4222), as a skill's grade's.
+    pub cost_usd: Option<f64>,
+    pub limit_usd: Option<f64>,
     pub cap: f64,
     pub ended: Option<GradeEnded>,
-    /// What the window says of its end, where it says more than how it ended.
+    /// What the window says of its end, where its scorecard cannot say it: why its chats did not
+    /// start, that it was not recorded or could not be held to its cap, or a fault. `None` for
+    /// an end its scorecard says, which the window then opens (#4222), as a skill's grade's.
     pub said: Option<String>,
+    /// Whether its end is in the record, so a scorecard is there to open (#4222).
+    pub recorded: bool,
+}
+
+/// **Each project's router grade that ended last, as it was told** (#4222): a page opens only
+/// once `router_grade_start` has answered, and a grade can end before that, so its end is read
+/// here and never lost. At most one per project, held in memory alone.
+static LAST_ENDED: std::sync::Mutex<Vec<RouterGradeStep>> = std::sync::Mutex::new(Vec::new());
+
+fn last_ended() -> std::sync::MutexGuard<'static, Vec<RouterGradeStep>> {
+    LAST_ENDED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Keeps `step`, an end, as its project's last.
+fn keep_end(step: &RouterGradeStep) {
+    let mut all = last_ended();
+    all.retain(|one| one.plane != step.plane);
+    all.push(step.clone());
+}
+
+/// **The latest step of the router's grade `grade` in `plane`** (#4222): what its page starts
+/// from when it opens, as a skill's grade's page starts from `skill_grades`: where it runs, or
+/// its end where it is the project's last. `None` for any other.
+pub(crate) fn step_of_running(plane: &PlaneId, grade: &str) -> Option<RouterGradeStep> {
+    let running_now = running()
+        .get(grade)
+        .filter(|one| one.plane == *plane)
+        .and_then(|one| one.router_step.clone());
+    running_now.or_else(|| {
+        last_ended()
+            .iter()
+            .find(|one| one.plane == *plane && one.grade == grade)
+            .cloned()
+    })
+}
+
+/// **Where the router's grade `grade` is now** (#4222): its latest step while it runs, its end
+/// where it is the project's last, else `None` (its scorecard then says how it ended). Read only,
+/// from this app's own memory of its grades, as Stop is.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn router_grade_running(
+    plane: PlaneId,
+    grade: String,
+) -> Result<Option<RouterGradeStep>, String> {
+    Ok(step_of_running(&plane, &grade))
 }
 
 /// The grade running in `plane` now, a skill's or a router's, by id.
@@ -332,11 +412,12 @@ pub(crate) async fn router_grade_start(
         // What runs is what the plan showed: its library and tests, on the profile, model and
         // limits it showed (#3618).
         let on = chats_on(&root, profile, model);
-        if consent_shown(&planned, &on).as_deref() != Some(consent.as_str()) {
+        let reading = reading_of(&root, &router);
+        if consent_shown(&planned, &on, reading).as_deref() != Some(consent.as_str()) {
             return Err(
                 "The router's plan changed since it was shown (its library or trigger tests, the \
-                 profile or model its chats run on, or its limits), so nothing was started: read \
-                 the plan again."
+                 profile or model its chats run on, its limits, or whether it reads prompts), so \
+                 nothing was started: read the plan again."
                     .to_owned(),
             );
         }
@@ -358,6 +439,40 @@ pub(crate) async fn router_grade_start(
         let profile = profile.ok_or("The grade did not start: no profile was found.")?;
         let id = purlis_core::reopen::mint();
         let stop = Arc::new(AtomicBool::new(false));
+        let of = engine::plan(&request).chats;
+        let cap = planned.cap.tokens;
+        let limits = grading::Limits {
+            tokens: cap,
+            cost_usd: Some(planned.cap.cost_usd(&priced)),
+            priced: Some(priced),
+            unpriced_usd_per_million: Some(grades::price::DEAREST_USD_PER_MILLION),
+        };
+        // **One step of it**, as the window is told it and as its page reads it when it opens while
+        // the grade runs (`router_grade_running`, #4222).
+        let step_of = {
+            let (plane, router, grade) = (plane.clone(), router.clone(), id.clone());
+            let (workspace, persona) = (planned.workspace.clone(), planned.persona.clone());
+            let limit_usd = limits.cost_usd;
+            move |spent: Spent,
+                  ended: Option<GradeEnded>,
+                  said: Option<String>,
+                  recorded: bool| RouterGradeStep {
+                plane: plane.clone(),
+                router: router.clone(),
+                workspace: workspace.clone(),
+                persona: persona.clone(),
+                grade: grade.clone(),
+                ran: spent.chats,
+                of,
+                tokens: spent.tokens.map(|tokens| tokens as f64),
+                cost_usd: spent.cost_usd,
+                limit_usd,
+                cap: cap as f64,
+                ended,
+                said,
+                recorded,
+            }
+        };
         {
             let mut all = running();
             if all.values().any(|one| one.plane == plane) {
@@ -377,17 +492,11 @@ pub(crate) async fn router_grade_start(
                     stop: Arc::clone(&stop),
                     after_edit: None,
                     step: None,
+                    // Held from the start: a page opened before its first chat ends finds it.
+                    router_step: Some(step_of(Spent::default(), None, None, false)),
                 },
             );
         }
-        let of = engine::plan(&request).chats;
-        let cap = planned.cap.tokens;
-        let limits = grading::Limits {
-            tokens: cap,
-            cost_usd: Some(planned.cap.cost_usd(&priced)),
-            priced: Some(priced),
-            unpriced_usd_per_million: Some(grades::price::DEAREST_USD_PER_MILLION),
-        };
         let grade = id.clone();
         // Held as under way while it runs (#3616): what it would be recorded as were purlis to
         // stop under it now. Its lock is held while the grade runs (#3466).
@@ -411,6 +520,7 @@ pub(crate) async fn router_grade_start(
             ),
             spent: Spent::default(),
             model: None,
+            pointer: reading == PromptReading::On,
         };
         let local = routers::library_is_local(&root, &planned.copies);
         let marker = match grades::underway::began_router(&root, local, &under_way) {
@@ -428,26 +538,21 @@ pub(crate) async fn router_grade_start(
             .name("purlis-router-grade".to_owned())
             .spawn(move || {
                 let marker = std::cell::RefCell::new(marker);
-                let tell = |ran: u32,
-                            tokens: Option<u64>,
+                let tell = |spent: Spent,
                             ended: Option<GradeEnded>,
-                            said: Option<String>| {
-                    let _ = app.emit(
-                        EVENT,
-                        RouterGradeStep {
-                            plane: plane.clone(),
-                            router: router.clone(),
-                            grade: grade.clone(),
-                            ran,
-                            of,
-                            tokens: tokens.map(|tokens| tokens as f64),
-                            cap: cap as f64,
-                            ended,
-                            said,
-                        },
-                    );
+                            said: Option<String>,
+                            recorded: bool| {
+                    let step = step_of(spent, ended, said, recorded);
+                    // Kept while it runs, so a page opened later starts from it; an end is told
+                    // once it runs no more, and kept as the project's last.
+                    if step.ended.is_some() {
+                        keep_end(&step);
+                    } else if let Some(one) = running().get_mut(&grade) {
+                        one.router_step = Some(step.clone());
+                    }
+                    let _ = app.emit(EVENT, step);
                 };
-                tell(0, None, None, None);
+                tell(Spent::default(), None, None, false);
                 let run = || {
                     let snapshots: Vec<_> = planned
                         .copies
@@ -479,7 +584,7 @@ pub(crate) async fn router_grade_start(
                         profile: &profile,
                         stop: &stop,
                         spent: Spent::default(),
-                        tell: &|spent, _asked| tell(spent.chats, spent.tokens, None, None),
+                        tell: &|spent, _asked| tell(spent, None, None, false),
                         // Said in its marker as each chat ends (#3582, #3616).
                         on_spent: &|spent| {
                             if let Some(marker) = marker.borrow_mut().as_mut()
@@ -523,6 +628,7 @@ pub(crate) async fn router_grade_start(
                     grades::kept::sweep_of(&root, &kept_of(&planned));
                     drop(marker.borrow_mut().take());
                     running().remove(&grade);
+                    let in_record = recorded.is_some();
                     let said = match (&graded.report.not_started, recorded) {
                         (Some(why), _) => Some(why.clone()),
                         (None, None) => Some(
@@ -530,26 +636,42 @@ pub(crate) async fn router_grade_start(
                              recorded."
                                 .to_owned(),
                         ),
-                        (None, Some(_)) => Some(graded.said()),
+                        (None, Some(_)) if graded.report.ended == GradeEnd::SpendNotReported => Some(
+                            "This profile's chats do not say what they spend, so a grade on it \
+                             cannot be held to its cap."
+                                .to_owned(),
+                        ),
+                        // Recorded: its scorecard says how it went, and the window opens it
+                        // (#4222).
+                        (None, Some(_)) => None,
                     };
                     tell(
-                        graded.spent.chats,
-                        graded.report.spent_tokens,
+                        Spent {
+                            tokens: graded.report.spent_tokens,
+                            ..graded.spent
+                        },
                         Some(graded.report.ended.into()),
                         said,
+                        in_record,
                     );
                 };
                 held_to_its_end(&grade, run, || {
                     // Recorded as interrupted, unless the fault came once it was recorded whole.
                     // Its lock let go of first: a start reads a held lock as a grade that runs.
                     drop(marker.borrow_mut().take());
+                    // Either way below, it is in the record.
                     let said = if record_interrupted(&root).contains(&grade) {
                         "A fault in purlis ended the router's grade before it was scored, so it \
                          is recorded as interrupted: grade it again."
                     } else {
                         "A fault in purlis ended the router's grade once it was recorded."
                     };
-                    tell(0, None, Some(GradeEnded::Failed), Some(said.to_owned()));
+                    tell(
+                        Spent::default(),
+                        Some(GradeEnded::Failed),
+                        Some(said.to_owned()),
+                        true,
+                    );
                 });
             })
             .map_err(|why| {

@@ -50,6 +50,19 @@ on:
 # every file of `app/src/`, run on every change (`recorded`). A merge group, a push to main and a
 # nightly run every scope. When `changes` itself fails, every scope's output is empty and every job
 # runs (`!= 'false'`), so a fault there runs more, never less.
+#
+# **A change to Rust alone runs no web check or story (2026-10-31, #3596).** Runner waits came back
+# on 2026-10-29: about 1 job in 10 waited over 5 minutes, at some 336 pull request runs a day. Of the
+# last 199 merged pull requests, 52 changed Rust and nothing the web checks or stories need: each
+# spent about 70 minutes on them, in 10 jobs. `web`'s part 2 runs the vitest files that read Rust
+# (`RUST_READERS`) in their place, about 3 minutes, and the other three parts are not started
+# (`web-parts`). A job that only asks whether it is needed is not started on a pull request (`GATES`
+# in `tools/ci-scope.mjs`): those were 18 of a pull request's 38 jobs, for 3 of its 281 minutes.
+#
+# **macOS's scenarios stay on the pull request**, though they are the largest cost: 75 of those 281
+# minutes. In the 2.5 days to 2026-10-31, 24 pull request runs failed them with Linux's passing,
+# about 10 a day. In the queue each would fail a 275-minute run and every group behind it, where
+# about 8 groups a day failed in those days, 14 of those 19 on macOS's scenarios alone.
 
 concurrency:
   # The nightly run keeps a group of its own, so it never displaces a merge's pending run on main.
@@ -81,6 +94,12 @@ jobs:
       web: ${{ steps.scope.outputs.web }}
       app: ${{ steps.scope.outputs.app }}
       scenario: ${{ steps.scope.outputs.scenario }}
+      web-parts: ${{ steps.scope.outputs.web-parts }}
+      listen-shim: ${{ steps.scope.outputs.listen-shim }}
+      browser-engine: ${{ steps.scope.outputs.browser-engine }}
+      confinement: ${{ steps.scope.outputs.confinement }}
+      parity: ${{ steps.scope.outputs.parity }}
+      bench: ${{ steps.scope.outputs.bench }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -95,9 +114,8 @@ jobs:
   # of them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
   # request waits on (2026-10-10), and each of two took 15 to 16 minutes by 2026-10-27. Runners
   # start at once (no queue on 2026-10-14..27), so a part costs runner minutes, not wait. Part 2
-  # also runs the doctests and the schema check (fmt and clippy are `lint`'s): `hash:` places a
-  # test by its name, and part 2 held the least (7.3 minutes of tests against 11.5 for part 1 on
-  # #3572's run), so the 3 minutes those take wait on no one. Each part builds
+  # also runs the schema check, a few seconds (fmt and clippy are `lint`'s; the doctests are
+  # `rust-doctests`'s). Each part builds
   # for itself: a build handed from one job to the next saves runner minutes, not the wait, since
   # no test can start before the build ends. An optimised test build was tried and dropped
   # (#3553: 21 to 32 minutes to build cold, then the runners stopped). `rust-checks` below
@@ -190,10 +208,14 @@ jobs:
         if: ${{ !cancelled() }}
         continue-on-error: true
         run: node tools/slowest-tests.mjs target/nextest/ci/junit.xml
-      # nextest does not run doctests, so cargo does.
-      - name: Run the doctests
-        if: matrix.part == 2
-        run: tools/no-orphans.sh --reap -- cargo test --workspace --locked --doc
+      # **What a chat on a runner reaches of its link key, tried under the real wrap** (#4207): the
+      # step above skips the live half where it finds no wrap, and naming it here makes that a failure.
+      - name: A runner's chat and its link key
+        if: matrix.part == 1
+        run: |
+          cargo build --locked -p purlis-linux-sandbox --bin sandbox-probe
+          PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
+            -E 'package(purlis-core) & binary(it) & test(/a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it::/)'
       # **Claude Code's own sandbox on Linux, on the settings purlis writes** (#2211): the macOS
       # step in `scenario`'s, here on bubblewrap. The version purlis supports, this runner's build
       # of it from npm with no install scripts run, against a stand-in model on a loopback port;
@@ -284,22 +306,50 @@ jobs:
       # The app's `e2e` feature, so what only the scenario build compiles (`ipc_commands.rs`'s
       # `e2e_only` and what it calls, #2836) is linted too.
       - run: cargo clippy -p purlis-app --lib --features e2e --locked -- -D warnings
-  # The required check `rust (fmt, clippy, test)`: green only when the lint and every part of
-  # `rust` are. `!cancelled()` so a red one still reports here as red, not as skipped, which a
+  # nextest does not run doctests, so cargo does, in a job of its own (#4255). In `rust`'s part 2
+  # this step was 3 of the 5 minutes that made that part the slowest (22.8 against 17.6 to 18.4,
+  # 2026-10-31), and no part needs it: the workspace has no doctest yet, so the 3 minutes are
+  # `--doc` recompiling `purlis-core`, `purlis-app` and Tauri for its own set of features. Kept so
+  # that a doctest written later runs. `shared-key: rust` restores `rust`'s cache: a key of its own
+  # would be cold on every pull request, since only `main` saves one.
+  rust-doctests:
+    name: rust doctests
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tauri's Linux build dependencies
+        timeout-minutes: 9
+        uses: ./.github/actions/linux-packages
+        with:
+          tauri: true
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: rust
+          save-if: false
+      # tauri::generate_context! reads the built frontend, so it has to exist before a build.
+      - run: mkdir -p app/dist
+      - name: Run the doctests
+        run: tools/no-orphans.sh --reap -- cargo test --workspace --locked --doc
+  # The required check `rust (fmt, clippy, test)`: green only when the lint, the doctests and every
+  # part of `rust` are. `!cancelled()` so a red one still reports here as red, not as skipped, which a
   # required check would count as passing.
   # Skipped is green only when the change touched nothing Rust reads (`changes`).
   rust-checks:
     name: rust (fmt, clippy, test)
-    needs: [changes, lint, rust]
+    needs: [changes, lint, rust, rust-doctests]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: The lint and every part passed
+      - name: The lint, the doctests and every part passed
         env:
           SCOPE: ${{ needs.changes.outputs.rust }}
-          RESULTS: ${{ needs.lint.result }} ${{ needs.rust.result }}
+          RESULTS: ${{ needs.lint.result }} ${{ needs.rust.result }} ${{ needs.rust-doctests.result }}
         run: |
-          if [ "$SCOPE" = false ]; then want="skipped skipped"; else want="success success"; fi
+          if [ "$SCOPE" = false ]; then want="skipped skipped skipped"; else want="success success success"; fi
           echo "scope: ${SCOPE:-unknown}, results: $RESULTS"
           test "$RESULTS" = "$want"
   # **The parity suite against a Docker pool** (#2045, spec #2041): the behaviour suite
@@ -318,6 +368,10 @@ jobs:
   # image by digest alone.
   parity:
     name: parity against a Docker pool (host, protocol, sandbox, browsers)
+    needs: changes
+    # Not started on a pull request that touches none of it (`GATES`); the step below decides for
+    # a merge group and a push.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.parity != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -519,7 +573,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2, 3, 4]
+        # Part 2 alone when `web` is out of scope: it has the tools' tests, and the others would
+        # each take a runner to say so. An empty output (`changes` failed) runs every part.
+        part: ${{ fromJSON(needs.changes.outputs.web-parts || '[1,2,3,4]') }}
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -535,7 +591,7 @@ jobs:
         if: needs.changes.outputs.web == 'false'
         run: echo "::notice::nothing the web checks read has changed; only the tools' tests run"
       - run: npm ci
-        if: needs.changes.outputs.web != 'false'
+        if: needs.changes.outputs.web != 'false' || (matrix.part == 2 && needs.changes.outputs.rust != 'false')
       # Every npm package the app ships, and every vendored asset (app/icons/vendored.json), is
       # under a licence deny.toml allows (FM-3, #1106). It reads the lockfile and nothing else,
       # under a second, so it gates as part of this job rather than as evidence.
@@ -549,6 +605,20 @@ jobs:
         if: matrix.part == 1 && needs.changes.outputs.web != 'false'
       - run: npm test -- --shard=${{ matrix.part }}/4
         if: needs.changes.outputs.web != 'false'
+      # Vitest's files that read Rust (`RUST_READERS` in `tools/ci-scope.mjs`), when a change to
+      # Rust leaves the rest of vitest out: `copy.rust.test.ts` holds the window's copy written in
+      # every Rust file, and the others a constant or a theme. Vitest fails on a name it cannot find.
+      - name: Vitest's files that read Rust
+        if: matrix.part == 2 && needs.changes.outputs.web == 'false' && needs.changes.outputs.rust != 'false'
+        run: |
+          npm test -- \
+            e2e/dialogs.test.ts e2e/fence.test.ts e2e/gitAnswer.test.ts e2e/recordedForge.test.ts \
+            e2e/standInForge.test.ts e2e/upgrade.test.ts src/PersonaMark.test.tsx src/StripMarks.test.tsx \
+            src/allowLabels.test.ts src/copy.rust.test.ts src/layoutProjects.test.ts src/settings/linkedGroups.test.ts \
+            src/specimen/Specimen.test.tsx src/theme/consentToggles.test.ts src/theme/contrast.test.ts src/theme/core.test.ts \
+            src/theme/forced-colors.test.ts src/theme/grounds.test.ts src/theme/railIcons.vendor.test.ts src/theme/registry.test.ts \
+            src/theme/theme.test.ts src/theme/themeIds.test.ts src/theme/tint.test.ts src/ui/buildingSkill.test.ts src/ui/field/refusingFields.guard.test.ts \
+            src/ui/menu/submenuRows.guard.test.ts src/ui/notice/noticeCardFill.test.ts src/windowprefs.test.ts
       # The tools' own tests (node:test), such as the cold-start gate's decision.
       - run: node --test "../tools/*.test.mjs"
         if: matrix.part == 2
@@ -588,7 +658,8 @@ jobs:
   bench:
     name: latency against main (session layer)
     # A pull request's measurement and a push's record; a nightly has nothing to measure.
-    if: github.event_name != 'schedule'
+    needs: changes
+    if: ${{ !cancelled() && github.event_name != 'schedule' && (github.event_name != 'pull_request' || needs.changes.outputs.bench != 'false') }}
     # A pull request is gated; main's own record is evidence (ADR 0086 §1), so a record that
     # fails to be made never turns main red or holds back the dev release this run starts.
     continue-on-error: ${{ github.event_name == 'push' }}
@@ -1121,7 +1192,8 @@ jobs:
   # check of a few seconds and nothing else. The nightly `macos-tests` runs them on `main`.
   browser-engine-macos:
     name: browser engine on macos (real Chrome, when the engine changes)
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && (github.event_name != 'pull_request' || needs.changes.outputs.browser-engine != 'false') }}
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -1163,7 +1235,8 @@ jobs:
   # touch the confinement runs a check of a few seconds and nothing else.
   studio-confinement-macos:
     name: studio confinement on macos (Seatbelt, when the confinement changes)
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && (github.event_name != 'pull_request' || needs.changes.outputs.confinement != 'false') }}
     runs-on: macos-latest
     timeout-minutes: 40
     steps:
@@ -1179,7 +1252,7 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
@@ -1225,7 +1298,8 @@ jobs:
   # not touch the shim runs a check of a few seconds.
   listen-shim:
     name: listen shim (Node ${{ matrix.node }}, ${{ matrix.kind }})
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'schedule'
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'schedule') && (github.event_name != 'pull_request' || needs.changes.outputs.listen-shim != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:

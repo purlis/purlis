@@ -437,6 +437,50 @@ describe("the Routing page (#3692)", () => {
     );
   });
 
+  it("offers a router that reads prompts a switch, off by default, with the line beside it", async () => {
+    let prompts_on = false;
+    const asked = core(() => studio([], { router: { ...RELEVANCE } }), {
+      skill_routers: () => [
+        { id: "relevance", name: "Relevance router", reads_prompts: true, prompts_on },
+      ],
+      skill_router_reads_prompts: () => {
+        prompts_on = true;
+        return { notes: [] };
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(inWorkspace("ops"), "routing");
+
+    const reading = await screen.findByRole("switch", { name: "Let it read prompts" });
+    expect(reading).not.toBeChecked();
+    expect(screen.getByTestId("skill-routing-reads-every-prompt")).toHaveTextContent(
+      "reads every prompt of every chat it routes",
+    );
+
+    await user.click(reading);
+
+    await waitFor(() =>
+      expect(screen.getByRole("switch", { name: "Let it read prompts" })).toBeChecked(),
+    );
+    expect(
+      asked.filter((one) => one.cmd === "skill_router_reads_prompts").map((one) => one.args),
+    ).toEqual([{ plane: "p", router: "relevance", on: true }]);
+    expect(screen.getByTestId("skill-routing-reads-every-prompt")).toBeInTheDocument();
+  });
+
+  it("offers no switch to a router that reads no prompts", async () => {
+    core(() => studio([], { router: { ...RELEVANCE } }), {
+      skill_routers: () => [
+        { id: "relevance", name: "Relevance router", reads_prompts: false, prompts_on: false },
+      ],
+    });
+    renderStudio(inWorkspace("ops"), "routing");
+
+    await screen.findByTestId("skill-routing-router");
+    await waitFor(() => expect(screen.queryByRole("switch")).toBeNull());
+    expect(screen.queryByTestId("skill-routing-reads-every-prompt")).toBeNull();
+  });
+
   it("offers a persona its workspace's router, and takes its own choice out with it", async () => {
     const asked = core(
       () => studio([], { router: { ...BUILT_IN, written: "built-in" }, persona: "reviewer" }),
@@ -498,6 +542,67 @@ describe("the Routing page (#3692)", () => {
     expect(
       asked.filter((one) => one.cmd === "router_grade_scorecard").map((one) => one.args),
     ).toEqual([{ plane: PLANE, workspace: "ops", persona: null, grade: "01GRADE" }]);
+  });
+
+  it("opens the router's grade plan beside the list, then its grade running (#4222)", async () => {
+    const plan = {
+      router: "relevance",
+      library: 2,
+      skills: [{ skill: "deploy", tests: 2, left_out: [], refused: null }],
+      chats: 12,
+      runs: 3,
+      chat_minutes: 5,
+      commit: "a".repeat(40),
+      token_cap: 200000,
+      cap_set_here: false,
+      cost_cap_usd: 15,
+      priced: { usd_per_million: 75, of_the_model: false, model: null },
+      profile: "work",
+      sandbox: null,
+      refused: null,
+      models: [],
+      model: null,
+      estimate: null,
+      estimate_same_library: null,
+      running: null,
+      consent: "c0ffee",
+    };
+    const step = {
+      plane: PLANE,
+      router: "relevance",
+      workspace: "ops",
+      persona: null,
+      grade: "01GRADE",
+      ran: 0,
+      of: 12,
+      tokens: null,
+      cost_usd: null,
+      limit_usd: 15,
+      cap: 200000,
+      ended: null,
+      said: null,
+      recorded: false,
+    };
+    const asked = core(() => studio([], { router: RELEVANCE }), {
+      router_grade_plan: () => plan,
+      start_options: () => ({ profiles: [] }),
+      router_grade_start: () => "01GRADE",
+      router_grade_running: () => step,
+    });
+    const user = userEvent.setup();
+    renderStudio(inWorkspace("ops"), "routing");
+
+    await user.click(await screen.findByRole("button", { name: "Grade the router…" }));
+    expect(await screen.findByTestId("router-grade-plan")).toBeInTheDocument();
+    expect(asked.some((one) => one.cmd === "router_grade_start")).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: "Start grading · 12 chats" }));
+    expect(await screen.findByTestId("router-grade-running")).toBeInTheDocument();
+    expect(screen.queryByTestId("router-grade-plan")).toBeNull();
+    expect(asked.find((one) => one.cmd === "router_grade_running")?.args).toEqual({
+      plane: PLANE,
+      grade: "01GRADE",
+    });
   });
 
   it("lets a router written as no router's name be replaced by the built-in one", async () => {

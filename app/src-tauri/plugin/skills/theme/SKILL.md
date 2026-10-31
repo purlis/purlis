@@ -137,21 +137,21 @@ values and what it reaches. Read it before you set one this table leaves out. Th
 text size is the person's text-size setting, which no theme sets: point them at it when they
 ask for bigger words.
 
-Sizes are px at the default text size and grow with it; corners and the focus ring do not. The
-project strip sits in the title bar, whose height no token reaches yet.
+Sizes are px at the default text size and grow with it; corners and the focus ring do not. No
+token reaches the title bar's height yet.
 
 A line must fit its box, in both densities: `font-size.base` × `line-height.body` within
 `size.control`, and `font-size.md` × `line-height.body` within `size.chrome`. Compact is
 tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and fails compact
 (14 × 1.3 = 18.2, over 18). The check reports each line that does not fit, with its density.
 
-**Still square, whatever `radius.*` says:** the project and workspace strip tabs, the settings
-gear on a strip, and the Explorer's and the Chats list's tree rows. Tell the person when they ask
-for rounder ones: the theme cannot round those yet. The session tabs (chats, views, files) and
-their `×` are rounded through their parts (`tabs.*`, below), a list's rows by `radius.control`
-and the `list` family's parts, and the Changes view's tree rows by `radius.control` and the
-`tree` family's. The
-focus ring tokens reach every focus ring, the strip tabs', the closer's and the gear's among them.
+**Corners are a family's parts.** The rail's project buttons (`rail.*`), the title bar's
+workspace chips (`titlebar.*`) and the session tabs (chats, views, files) and their `×`
+(`tabs.*`, below) are rounded through their parts, a list's rows by `radius.control` and the
+`list` family's parts, and the Changes view's tree rows by `radius.control` and the `tree`
+family's. The Explorer's and the Chats list's tree rows join when they move to the tree family
+(#2911): until then no key reaches their corners, so tell the person that when they ask for
+rounder ones. The focus ring tokens reach every focus ring, the closer's among them.
 
 **One part of one control** is a component part, in a top-level `parts` object:
 `"button.root.corner-radius": "full"` rounds every button to a pill, and
@@ -183,8 +183,8 @@ menu's surface and rows; and the choices, `checkbox`, `radio`, `switch`, `segmen
 `segment`, `slider` and `option-card`, each chosen in `selected` (`switch.track.selected.fill`,
 `option-card.root.card.selected.border-colour`), none taking a height; and `table` (`table.frame.corner-radius`, `table.root.selected.fill`,
 `table.head.text`, …), a table's card, its rows, its column names and its cells, which has no
-variants and whose rows are as tall as what they hold. The note above still holds for the strip
-tabs and tree rows.
+variants and whose rows are as tall as what they hold. The note above still holds for the tree
+rows still drawn by hand.
 
 **The session tabs** are the `tabs` family. Purlis docks them on the content panel: the chosen
 tab takes the panel's fill and flares into it, an unchosen tab's hover is a pill inset from its

@@ -635,6 +635,8 @@ describe("the menu a chip opens", () => {
     expect(line("sweep").querySelector(".since")).toBeNull();
     expect(line("probe").querySelector(".since")).toBeNull();
     // One clock: the Chats list's own row's card says the same time of the same chat (#1675).
+    // `press` is a screen reader's press: the menu's hand-on of the keyboard, a frame later, first.
+    pass(50);
     act(() => treeRow(tree, "talk").focus());
     pass(CARD_DELAY_MS);
     expect(facts(screen.getByRole("tooltip"))["In this state"]).toBe("2m");
@@ -1020,6 +1022,14 @@ describe("opening and closing the menu", () => {
 });
 
 describe("the keys for the chats inside a tab", () => {
+  // #4304: a screen reader's press lands where the keyboard's own open does, not on the list.
+  it("lands a screen reader's press of the counts on the chat the tab shows", async () => {
+    await drawn(withTasks());
+    press(theChip("steward 1"));
+    await waitFor(() => expect(menu()).not.toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(line("steward 1")));
+  });
+
   it("opens the tab's menu from the keyboard, on the chat it shows, and every row is reached", async () => {
     await drawn(withTasks());
     pane(1).focus();

@@ -41,7 +41,7 @@ use std::path::Path;
 
 use purlis_session_protocol::hostlink::Pinned;
 
-use crate::dockerpool::{Docker, Runner};
+use crate::dockerpool::{Docker, Missing, Runner};
 use crate::runners::{self, Kept, Pool, Refused, Removed, Unpair};
 
 /// **Adds `pool` on this machine**, with `docker`: records it, makes and checks its runner,
@@ -81,7 +81,8 @@ pub fn add(
         .map_err(|why| Refused::Other(why.0))
         .and_then(|answered| {
             runners::keep_for_its_pool(config_root, &made, &answered, desktop, &locked)
-        });
+        })
+        .map(|kept| noted_where_made(config_root, docker, kept, &locked));
     match kept {
         Ok(kept) => Ok(kept),
         Err(why) => {
@@ -251,6 +252,10 @@ pub fn follow(
             pool.image().as_str()
         )));
     }
+    // Made on another engine, the new runner would take the pool from the one it runs on (#4166).
+    if let Ok(kept) = runners::runner_for(config_root, name) {
+        on_its_engine(docker, &kept)?;
+    }
     let successor = crate::dockerpool::successor_name(name, image);
     // What a follow that stopped short of keeping its runner left goes first (#2869).
     clear_leftovers_locked(config_root, docker, &successor, &locked)?;
@@ -269,7 +274,8 @@ pub fn follow(
         .map_err(|why| Refused::Other(why.0))
         .and_then(|answered| {
             runners::succeed_locked(config_root, name, &made, &answered, desktop, &locked)
-        });
+        })
+        .map(|kept| noted_where_made(config_root, docker, kept, &locked));
     match kept {
         Ok(kept) => Ok(Some(kept)),
         Err(why) => Err(match docker.remove(&made) {
@@ -282,6 +288,61 @@ pub fn follow(
             )),
         }),
     }
+}
+
+/// **Refuses unless Docker reaches the engine that made `kept`** (#4166): nothing is made in its
+/// place or removed on another's word. A runner kept before its engine was kept passes.
+fn on_its_engine(docker: &Docker, kept: &Kept) -> Result<(), Refused> {
+    let Some(made_on) = &kept.engine else {
+        return Ok(());
+    };
+    if docker.engine_id().ok().flatten().as_ref() == Some(made_on) {
+        return Ok(());
+    }
+    Err(Refused::Other(format!(
+        "Docker does not reach the engine runner {} was made on, so it stays as it is until it \
+         does",
+        kept.name()
+    )))
+}
+
+/// **Keeps with `kept`, a runner just made, the engine that made it and its home's `CreatedAt`**
+/// (#4166, #4167). What cannot be read or kept is left out, and that runner is then treated as
+/// one made before these were kept: it is said in the log and costs no runner.
+fn noted_where_made(
+    config_root: &Path,
+    docker: &Docker,
+    mut kept: Kept,
+    locked: &runners::Locked,
+) -> Kept {
+    let read = |what: &str, answer: Result<Option<String>, crate::dockerpool::Refused>| {
+        answer.unwrap_or_else(|why| {
+            tracing::warn!("purlis: runner {}'s {what} is not kept: {why}", kept.name());
+            None
+        })
+    };
+    let engine = read("engine", docker.engine_id());
+    let home_created = read("home's making", docker.home_created(&kept.made));
+    let noted = runners::note_locked(
+        config_root,
+        kept.name(),
+        |row| {
+            row.engine.clone_from(&engine);
+            row.home_created.clone_from(&home_created);
+        },
+        locked,
+    );
+    match noted {
+        Ok(()) => {
+            kept.engine = engine;
+            kept.home_created = home_created;
+        }
+        Err(why) => tracing::warn!(
+            "purlis: where runner {} was made is not kept: {why}",
+            kept.name()
+        ),
+    }
+    kept
 }
 
 /// **A runner made again** (#4149, [`make_again`]): the runner kept, and whether the sign-ins
@@ -332,15 +393,26 @@ fn make_again_as(
         .find(|pool| pool.name() == name)
         .ok_or_else(|| Refused::Other(format!("no pool named {name} is on this machine")))?;
     let old = runners::runner_for(config_root, name)?;
-    let Some(gone) = docker
-        .gone(&old.made)
+    let gone = match docker
+        .missing(&old.made, old.engine.as_deref())
         .map_err(|why| Refused::Other(why.0))?
-    else {
-        return Err(Refused::Other(format!(
-            "runner {}'s container is still there, so purlis does not make it again; it is \
-             linked to as it is",
-            old.name()
-        )));
+    {
+        Some(Missing::Removed(gone)) => gone,
+        // Made here, it would be a second runner on the wrong engine (#4166).
+        Some(Missing::OnAnotherEngine) => {
+            return Err(Refused::Other(format!(
+                "Docker points at another engine than the one runner {} was made on, so purlis \
+                 does not make it again; point Docker back at that engine",
+                old.name()
+            )));
+        }
+        None => {
+            return Err(Refused::Other(format!(
+                "runner {}'s container is still there, so purlis does not make it again; it is \
+                 linked to as it is",
+                old.name()
+            )));
+        }
     };
     clear_leftovers_locked(config_root, docker, again, &locked)?;
     let made = docker
@@ -360,7 +432,8 @@ fn make_again_as(
         .map_err(|why| Refused::Other(why.0))
         .and_then(|answered| {
             runners::succeed_locked(config_root, name, &made, &answered, desktop, &locked)
-        });
+        })
+        .map(|kept| noted_where_made(config_root, docker, kept, &locked));
     let kept = match kept {
         Ok(kept) => kept,
         Err(why) => {
@@ -398,15 +471,27 @@ fn make_again_as(
     })
 }
 
-/// How far the Docker host's clock may run ahead of this machine's when a home's making is held
-/// to its runner's pairing (#4149): a Docker Desktop VM drifts after a sleep. A home made under
-/// the runner's name within this of its pairing is an accident this does not guard against.
+/// How far the Docker host's clock may run ahead of this machine's when the home of a runner
+/// kept before #4167, which has no `CreatedAt` noted, is held to its pairing (#4149): a Docker
+/// Desktop VM drifts after a sleep.
 const CLOCKS_APART: u64 = 10 * 60;
 
+/// **Whether the home volume under `old`'s name is the one purlis made for it**: it still prints
+/// the `CreatedAt` kept when it was made (#4167), whatever the clocks say. A runner kept before
+/// that is held to its pairing, give or take [`CLOCKS_APART`] (#4149).
+fn is_its_own_home(docker: &Docker, old: &Kept) -> Result<bool, crate::dockerpool::Refused> {
+    match &old.home_created {
+        Some(kept) => Ok(docker.home_created(&old.made)?.as_ref() == Some(kept)),
+        None => Ok(docker
+            .home_made_at(&old.made)?
+            .is_some_and(|at| at <= old.paired.saturating_add(CLOCKS_APART))),
+    }
+}
+
 /// **Carries the sign-ins of `old`'s home to `made`** (#4149), only where that home is the one
-/// purlis made for it: made no later than `old` was paired (give or take [`CLOCKS_APART`]), so
-/// not one made of its name since its container went, and its runner's user the same. What is not carried is said in the log,
-/// and the profiles are signed in again.
+/// purlis made for it ([`is_its_own_home`]), so not one made of its name since its container
+/// went, and its runner's user the same. What is not carried is said in the log, and the
+/// profiles are signed in again.
 fn carried_from_its_own_home(
     config_root: &Path,
     docker: &Docker,
@@ -414,9 +499,8 @@ fn carried_from_its_own_home(
     made: &crate::dockerpool::Made,
     pool: &str,
 ) -> bool {
-    let its_own = match docker.home_made_at(&old.made) {
-        Ok(Some(at)) => at <= old.paired.saturating_add(CLOCKS_APART),
-        Ok(None) => false,
+    let its_own = match is_its_own_home(docker, old) {
+        Ok(its_own) => its_own,
         Err(why) => {
             tracing::warn!(
                 "purlis: runner {}'s home could not be read: {why}",
@@ -427,8 +511,16 @@ fn carried_from_its_own_home(
     };
     if !its_own {
         tracing::warn!(
-            "purlis: the home of runner {} was made after it was paired, or says not when, so \
-             its sign-ins were not carried; sign the profiles in again on pool {pool}",
+            "purlis: the home of runner {} is not the one made for it, or says not when it was \
+             made, so its sign-ins were not carried; sign the profiles in again on pool {pool}",
+            old.name()
+        );
+        return false;
+    }
+    if crate::runnertaint::ran_unsandboxed(config_root, &old.made.container) {
+        tracing::warn!(
+            "purlis: a chat ran on runner {} without the sandbox, or may have, so its sign-ins \
+             were not carried; sign the profiles in again on pool {pool}",
             old.name()
         );
         return false;
@@ -443,7 +535,7 @@ fn carried_from_its_own_home(
         );
         return false;
     }
-    match docker.copy_profiles(&old.made, made, &runners::desktop_label(config_root)) {
+    match docker.copy_profiles(&old.made, made, &runners::desktop_label(config_root), &[]) {
         Ok(()) => true,
         Err(why) => {
             tracing::warn!(
@@ -495,12 +587,17 @@ fn clear_leftovers_locked(
 /// **Removes the draining runner `name`** (#2749), once its last chat has ended, as a runner is
 /// removed ([`runners::remove`]). Refused for a runner that is not draining.
 ///
-/// First its sign-ins are carried to its pool's runner, on the Docker host
-/// ([`Docker::copy_profiles`], #4011), and only then is it removed with its home's volume, so a
-/// profile signed in on the pool stays signed in and no sign-in is ever held by two runners at
-/// once (#4055, ruled 2026-10-30). One the pool's runner signed in on its own is kept over the
-/// carried one. A sign-in that cannot be carried is said in the log, and the runner is removed
-/// all the same: that profile is signed in again on the pool.
+/// First this desktop is taken out of its peers, so nothing links to it while its sign-ins are
+/// carried (#4146). A runner that runs and was not taken out stays until the next look; one that
+/// is stopped cannot be asked, and the drain goes on. Then its
+/// sign-ins are carried to its pool's runner, on the Docker host ([`Docker::copy_profiles`],
+/// #4011), once, however many looks its removal takes, and only then is it removed with its
+/// home's volume, so a profile signed in on the pool stays signed in and no sign-in is ever held
+/// by two runners at once (#4055, ruled 2026-10-30). One the pool's runner signed in on its own
+/// is kept over the carried one, and one signed out of the pool is not carried (#4145). A sign-in
+/// that cannot be carried is said in the log, and the runner is removed all the same: that
+/// profile is signed in again on the pool. None is carried to or from a runner a chat ran on
+/// without the sandbox ([`crate::runnertaint`]).
 pub fn drain(
     config_root: &Path,
     docker: &Docker,
@@ -510,8 +607,35 @@ pub fn drain(
     let locked = runners::lock(config_root);
     match runners::named(config_root, name)? {
         Some(kept) if kept.draining => {
-            carry_sign_ins(config_root, docker, &kept);
-            runners::remove_locked(config_root, docker, name, unpair, &locked)
+            // Another engine knows nothing of its container or its home (#4166).
+            on_its_engine(docker, &kept)?;
+            let peer = if kept.unpaired {
+                None
+            } else {
+                unpair.map(|unpair| unpair(&kept))
+            };
+            if matches!(peer, Some(Err(_))) && docker.ran(&kept.made).is_ok_and(|ran| ran.running) {
+                return Err(Refused::Other(format!(
+                    "runner {name} runs and was not unpaired, so it stays until the next look"
+                )));
+            }
+            if matches!(peer, Some(Ok(())))
+                && let Err(why) =
+                    runners::note_locked(config_root, name, |kept| kept.unpaired = true, &locked)
+            {
+                tracing::warn!("purlis: runner {name} may be asked again: {why}");
+            }
+            if !kept.carried {
+                carry_sign_ins(config_root, docker, &kept);
+                if let Err(why) =
+                    runners::note_locked(config_root, name, |kept| kept.carried = true, &locked)
+                {
+                    tracing::warn!("purlis: runner {name} may be carried from again: {why}");
+                }
+            }
+            let mut removed = runners::remove_locked(config_root, docker, name, None, &locked)?;
+            removed.peer = peer;
+            Ok(removed)
         }
         Some(_) => Err(Refused::Other(format!(
             "runner {name} is its pool's runner, not one draining, so it was not removed"
@@ -532,6 +656,19 @@ fn carry_sign_ins(config_root: &Path, docker: &Docker, drained: &Kept) {
     if to.name() == drained.name() {
         return;
     }
+    if [&drained.made, &to.made]
+        .iter()
+        .any(|made| crate::runnertaint::ran_unsandboxed(config_root, &made.container))
+    {
+        tracing::warn!(
+            "purlis: a chat ran on runner {} or on pool {pool}'s runner {} without the sandbox, \
+             or may have, so its profiles' sign-ins were not carried; sign them in again on pool \
+             {pool}",
+            drained.name(),
+            to.name()
+        );
+        return;
+    }
     if drained.made.runner.user() != to.made.runner.user() {
         tracing::warn!(
             "purlis: runner {} runs as {} and pool {pool}'s runner {} as {}, so its profiles' \
@@ -547,6 +684,7 @@ fn carry_sign_ins(config_root: &Path, docker: &Docker, drained: &Kept) {
         &drained.made,
         &to.made,
         &runners::desktop_label(config_root),
+        &drained.signed_out,
     ) {
         tracing::warn!(
             "purlis: the sign-ins of runner {} were not carried to pool {pool}'s runner {}, so \
@@ -555,6 +693,28 @@ fn carry_sign_ins(config_root: &Path, docker: &Docker, drained: &Kept) {
             to.name()
         );
     }
+}
+
+/// A draining runner's name, and whether a sign-out ran there or why not.
+pub type DrainingSignOut = (String, Result<(), String>);
+
+/// **What signing `profile` out of pool `pool` did on its draining runners** (#4121, #4145): each
+/// one's name and whether its harness's sign-out ran. Whatever it did, no drain carries that
+/// sign-in ([`runners::hold_from_carrying`]), so a runner it did not reach holds the sign-in only
+/// until it is removed with its home.
+pub fn sign_out_draining(
+    config_root: &Path,
+    docker: &Docker,
+    pool: &str,
+    profile: &str,
+) -> Result<Vec<DrainingSignOut>, Refused> {
+    Ok(runners::hold_from_carrying(config_root, pool, profile)?
+        .into_iter()
+        .map(|kept| {
+            let did = docker.sign_out(&kept.made, profile);
+            (kept.name().to_owned(), did)
+        })
+        .collect())
 }
 
 /// **The claim a cluster pool's runner is made by on this desktop** (#3292): the pool's name and
@@ -874,6 +1034,32 @@ pub fn before_cluster_link_to(
     before_cluster_link(config_root, kubectl, name, now)
 }
 
+/// **Puts a workspace's repos on the Claim of the cluster pool `name`'s runner** (#4207), as a chat
+/// is sent there. Only for a pool that opted in, which says so as it is added; the cluster's policy
+/// and the operator decide from the Claim and the Pool as they are now.
+pub fn add_repos_to_claim(
+    config_root: &Path,
+    name: &str,
+    repos: impl FnOnce() -> Vec<String>,
+) -> Result<(), String> {
+    let Some((pool, kept)) =
+        runners::cluster_runner_for(config_root, name).map_err(|why| why.to_string())?
+    else {
+        return Ok(());
+    };
+    if !pool.mints_in_cluster() {
+        return Ok(());
+    }
+    let repos = repos();
+    if repos.is_empty() {
+        return Ok(());
+    }
+    let kubectl = kubectl_here(config_root)?.within(VOUCHED_NOW_WITHIN);
+    pool.kubectl(&kubectl)
+        .add_claim_repos(&kept.claimed.namespace, &kept.claimed.name, &repos)
+        .map_err(|why| why.to_string())
+}
+
 /// How long each kubectl run of the check before a value is sent waits (#4071).
 pub const VOUCHED_NOW_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
 
@@ -923,6 +1109,97 @@ pub fn vouched_now_with(
         &crate::clusterpool::runner_namespace(&kept.claimed.requester),
         &kept.pod,
     )
+}
+
+/// **Whether the cluster pool `name`, kept as `cluster` with its runner `kept`, is shown to be
+/// the person's own now** (#3819, #4164), for a profile to reach its runner or sign in there: the
+/// gate a vault value or a token passes ([`crate::poollogins::Bound::of_a_cluster_pool`], #4071),
+/// the person's mark, no chat run there without the sandbox, and its operator vouching for its
+/// claim now, read again after. Answers the runner it judged, the only one anything then reaches
+/// ([`cluster_runner_still_yours`]). Its cluster is asked only for a marked pool. The gate's own
+/// reason goes to the log, so no word of the cluster's reaches the person.
+pub fn cluster_runner_yours(
+    config_root: &Path,
+    name: &str,
+    cluster: &runners::ClusterPool,
+    kept: &runners::ClusterKept,
+    vouch: &dyn Fn(&Path, &str) -> Result<String, crate::clusterpool::Refused>,
+) -> Result<runners::ClusterKept, String> {
+    if !cluster.owned() {
+        return Err(format!(
+            "pool {name} is not marked as your own, so purlis keeps no profile of yours on its \
+             runner and signs none in there. Only you can mark it: turn on This is my own on its \
+             row"
+        ));
+    }
+    match crate::poollogins::Bound::of_a_cluster_pool(
+        config_root,
+        name,
+        Some(&kept.reached()),
+        vouch,
+    ) {
+        Ok(Some(_)) => Ok(kept.clone()),
+        Ok(None) => Err(format!("no cluster pool named {name} is on this machine")),
+        Err(why) => {
+            tracing::info!("purlis: pool {name}'s runner keeps no profile now: {why}");
+            Err(format!(
+                "purlis could not confirm pool {name}'s runner as yours just now, so it kept no \
+                 profile there and signed none in. Try again; if it stays so, look at the pool's \
+                 row"
+            ))
+        }
+    }
+}
+
+/// **The cluster pool `name` and its runner, still as the gate judged them** (#3819, #4164), read
+/// again right before a link, a sign-in or a pasted code reaches it: the same runner `judged`,
+/// still marked, and no chat run there without the sandbox since. The cluster is not asked again
+/// here: a link's own check vouches for it before every connection, and a sign-in's before it
+/// runs.
+pub fn cluster_runner_still_yours(
+    config_root: &Path,
+    name: &str,
+    judged: &runners::ClusterKept,
+) -> Result<(runners::ClusterPool, runners::ClusterKept), String> {
+    let changed = || {
+        format!(
+            "pool {name} or its runner changed since purlis confirmed it as yours, so nothing \
+             of your profiles went there. Try again"
+        )
+    };
+    let (cluster, kept) = runners::cluster_runner_for(config_root, name)
+        .map_err(|why| why.to_string())?
+        .ok_or_else(changed)?;
+    if kept != *judged || !cluster.owned() {
+        return Err(changed());
+    }
+    if crate::runnertaint::pool_ran_unsandboxed(config_root, name) {
+        return Err(crate::runnertaint::sent_nothing_on(name));
+    }
+    Ok((cluster, kept))
+}
+
+/// **Whether the cluster pool `name`'s runner says `profile` is signed in** (#4164), by its own
+/// `purlis profile sign-in --check` in the vouched pod ([`cluster_sign_in`]), for a sign-in with
+/// no link to the runner to ask over. Refused where the check every link makes fails, or the
+/// runner says neither, as for a profile it does not keep.
+pub fn cluster_standing(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    judged: &runners::ClusterKept,
+    profile: &str,
+) -> Result<crate::profilestore::sign_in::Standing, String> {
+    let login = cluster_sign_in(
+        config_root,
+        kubectl,
+        name,
+        judged,
+        profile,
+        None,
+        crate::dockerpool::Typed::Driven,
+    )?;
+    crate::dockerpool::standing_by_login(&login, profile)
 }
 
 /// **The runner's own sign-in of its profile `profile` on the cluster pool `name`'s runner**

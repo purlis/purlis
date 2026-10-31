@@ -1642,6 +1642,12 @@ export const commands = {
 	 */
 	typeProfileSignIn: (plane: PlaneId, session: number, name: string, provider: string | null, pool: string | null, device: boolean) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_in", { plane, session, name, provider, pool, device })),
 	/**
+	 *  **Types the sign-out of `name` on pool `pool`'s runner into shell tab `session`** (#4124), for
+	 *  a harness whose sign-out asks which sign-in goes: the person answers there. Only into a shell
+	 *  at the project root, as a sign-in is.
+	 */
+	typeProfileSignOut: (plane: PlaneId, session: number, name: string, pool: string) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_out", { plane, session, name, pool })),
+	/**
 	 *  Puts away project `plane`'s Ask to sign the profile `profile` in (#2035): Dismiss. A chat's
 	 *  next start on it asks again while its harness says it is signed out.
 	 */
@@ -2029,6 +2035,12 @@ export const commands = {
 	 */
 	skillRouterChoose: (plane: PlaneId, by: SkillPinner, router: string | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_router_choose", { plane, by, router })),
 	/**
+	 *  **Lets a router read every prompt of the chats it routes, or stops it**, from the Routing page
+	 *  (ADR 0102 as amended 2026-10-31): this machine's record, and the person's own press in their
+	 *  window. Nothing else turns it on.
+	 */
+	skillRouterReadsPrompts: (plane: PlaneId, router: string, on: boolean) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_router_reads_prompts", { plane, router, on })),
+	/**
 	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
 	 *  owners, and the skills it names and that name it. Nothing while the flag is off.
 	 */
@@ -2162,6 +2174,38 @@ export const commands = {
 	 *  scrollback as the escape sequences that draw them, for a page that shows it read-only.
 	 */
 	routerGradeChat: (plane: PlaneId, workspace: string | null, persona: string | null, grade: string, chat: string) => typedError<string, string>(__TAURI_INVOKE("router_grade_chat", { plane, workspace, persona, grade, chat })),
+	/**
+	 *  **Where the router's grade `grade` is now** (#4222): its latest step while it runs, its end
+	 *  where it is the project's last, else `None` (its scorecard then says how it ended). Read only,
+	 *  from this app's own memory of its grades, as Stop is.
+	 */
+	routerGradeRunning: (plane: PlaneId, grade: string) => typedError<{
+	plane: PlaneId,
+	router: string,
+	/**  The scope that chose it, as its grades are read: only that scope's page shows it (#4222). */
+	workspace: string | null,
+	persona: string | null,
+	grade: string,
+	ran: number,
+	of: number,
+	tokens: number | null,
+	/**
+	 *  What its chats have cost so far, in dollars, where they said, and the dollar limit it is
+	 *  held to: the running page's spend (#4222), as a skill's grade's.
+	 */
+	cost_usd: number | null,
+	limit_usd: number | null,
+	cap: number | null,
+	ended: GradeEnded | null,
+	/**
+	 *  What the window says of its end, where its scorecard cannot say it: why its chats did not
+	 *  start, that it was not recorded or could not be held to its cap, or a fault. `None` for
+	 *  an end its scorecard says, which the window then opens (#4222), as a skill's grade's.
+	 */
+	said: string | null,
+	/**  Whether its end is in the record, so a scorecard is there to open (#4222). */
+	recorded: boolean,
+} | null, string>(__TAURI_INVOKE("router_grade_running", { plane, grade })),
 	/**  **The opt-in of the copy of `skill` at `level`**, where it is on. */
 	skillGradeAfterEdit: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<{
 	profile: string,
@@ -2815,6 +2859,11 @@ export const commands = {
 	 */
 	startChat: (plane: PlaneId, profile: string, persona: string | null, cwd: string | null, name: string, label: string | null, boxes: Boxes, columns: number, rows: number) => typedError<Started, string>(__TAURI_INVOKE("start_chat", { plane, profile, persona, cwd, name, label, boxes, columns, rows })),
 	/**
+	 *  **The person pressed Cancel while a chat started in this project** (#4264): it stops waiting
+	 *  for the session host, and a chat that comes up after is closed.
+	 */
+	cancelChatStart: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("cancel_chat_start", { plane })),
+	/**
 	 *  The piece a chat's working directory sits in, or `None`.
 	 * 
 	 *  Called for every chat the sidebar draws. `worktree::locate` is path arithmetic and spawns
@@ -3078,7 +3127,7 @@ export const commands = {
 	 *  long as it runs: the redirect, and only that, is carried to the runner over a link of its own
 	 *  (`sign_in_redirect`, #4044). A sign-in of the same profile on the same pool already running is
 	 *  cancelled. Answers the sign-in's number. With `terminal`, where purlis could not follow the
-	 *  login, it runs in a terminal the runner makes, for the person to drive in the strip (#4043):
+	 *  login or the person asked for a device code (#4106), it runs in a terminal the runner makes, for the person to drive in the strip (#4043):
 	 *  what it prints is [`PoolSignInStep::Printed`], and what is typed goes back by
 	 *  [`pool_sign_in_type`]. A login that waits for the browser runs there by its harness's
 	 *  device-code flow, since nothing carries the browser's answer to that terminal (#4044).
@@ -3138,8 +3187,12 @@ export const commands = {
 	 *  cluster pool, only while its runner is still as the gate judged it ([`still_driving`]).
 	 */
 	poolSignInType: (flow: number, text: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_type", { flow, text })),
-	/**  **Signs `name` out on pool `pool`'s runner** (#4043): the harness's own sign-out, run there. */
-	poolSignOut: (pool: string, name: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_out", { pool, name })),
+	/**
+	 *  **Signs `name` out on pool `pool`'s runner** (#4043): the harness's own sign-out, run there,
+	 *  and on each runner of the pool still draining (#4121, #4145), whose chats then sign in again.
+	 *  `Some` words naming the draining runners, where there are any.
+	 */
+	poolSignOut: (pool: string, name: string) => typedError<string | null, string>(__TAURI_INVOKE("pool_sign_out", { pool, name })),
 	/**
 	 *  **Every device and what runs on it** (#2052): this machine and every runner it keeps, each
 	 *  with the chats and browsers the window has open there, and each pool's limits.
@@ -8787,6 +8840,11 @@ export type MoveSignIn = {
 	kind: string,
 	/**  Its harness as people call it: `Claude Code`. */
 	harness: string,
+	/**
+	 *  The plans to choose from, where its harness serves several (#4181): a profile keeps none
+	 *  of its own, and a login approved in the browser is told by its plan.
+	 */
+	plans: PlanRow[],
 };
 
 /**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */
@@ -10391,7 +10449,12 @@ export type PoolLink =
  *  it comes back, and the window offers Make the runner again. Whether its home volume, with
  *  its sign-ins, is still there for the runner made again to take them from.
  */
-{ state: "removed"; home_kept: boolean };
+{ state: "removed"; home_kept: boolean } | 
+/**
+ *  Docker points at another engine than the one that made it (#4166): its container may be
+ *  there still, so it is not said to be removed and Make the runner again is not offered.
+ */
+{ state: "on_another_engine" };
 
 /**  One of this machine's profiles, as a pool's runner stands with it. */
 export type PoolProfileRow = {
@@ -11669,6 +11732,12 @@ export type RouterGradePlan = {
 	/**  A grade running in this project now, where one is: a skill's or a router's. */
 	running: string | null,
 	/**
+	 *  **Whether its router's arm runs with its pointer** (SK-15k, #3619): true where the router
+	 *  reads prompts here, false where it could and the person has not turned that on, null
+	 *  where it reads none.
+	 */
+	pointer: boolean | null,
+	/**
 	 *  What pressing Grade consents to: what it grades, and the profile, model, cap and dollar
 	 *  limit this plan shows (`grades::consent_on`).
 	 */
@@ -11713,14 +11782,29 @@ export type RouterGradeSkill = {
 export type RouterGradeStep = {
 	plane: PlaneId,
 	router: string,
+	/**  The scope that chose it, as its grades are read: only that scope's page shows it (#4222). */
+	workspace: string | null,
+	persona: string | null,
 	grade: string,
 	ran: number,
 	of: number,
 	tokens: number | null,
+	/**
+	 *  What its chats have cost so far, in dollars, where they said, and the dollar limit it is
+	 *  held to: the running page's spend (#4222), as a skill's grade's.
+	 */
+	cost_usd: number | null,
+	limit_usd: number | null,
 	cap: number | null,
 	ended: GradeEnded | null,
-	/**  What the window says of its end, where it says more than how it ended. */
+	/**
+	 *  What the window says of its end, where its scorecard cannot say it: why its chats did not
+	 *  start, that it was not recorded or could not be held to its cap, or a fault. `None` for
+	 *  an end its scorecard says, which the window then opens (#4222), as a skill's grade's.
+	 */
 	said: string | null,
+	/**  Whether its end is in the record, so a scorecard is there to open (#4222). */
+	recorded: boolean,
 };
 
 /**
@@ -12516,6 +12600,11 @@ export type SettingsEntry = {
 	keys: SettingsStep[],
 	/**  The Add form's values that would write it again, by the entry's key. */
 	values: EntryValue[],
+	/**
+	 *  Why a profile's icon fell back to its monogram (#3137), a sentence purlis wrote, never
+	 *  anything from the file. Optional in the window's type, as only a profile has one.
+	 */
+	icon_fell_back?: string | null,
 };
 
 /**  One value in a file, and where it is. */
@@ -13298,6 +13387,10 @@ export type SkillRouterOffer = {
 	id: string,
 	/**  Its name, as its manifest gives it. */
 	name: string,
+	/**  Whether its approval said it reads prompts, which only offers the person the switch. */
+	reads_prompts: boolean,
+	/**  Whether the person turned that on for it on this machine (ADR 0102 as amended 2026-10-31). */
+	prompts_on: boolean,
 };
 
 /**

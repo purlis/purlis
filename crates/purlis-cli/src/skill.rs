@@ -28,7 +28,9 @@ use serde_json::{Value, json};
 
 use purlis_core::counts::counted;
 use purlis_core::tui::Markup;
+use purlis_session_protocol::session::GradeLevel;
 
+use crate::gradelink;
 use crate::memory::Code;
 use crate::voice;
 
@@ -348,15 +350,34 @@ pub enum SkillCommand {
     /// chats a grade runs (each test three times with the skill and three without it, one turn
     /// each) and what its last grade spent per chat; then each grade the project's eval record
     /// holds, newest first, with each arm's pass rate and the difference the skill made. A
-    /// grade runs from the skill's tab in the Skill studio, which shows this plan first.
+    /// grade runs from the skill's tab in the Skill studio, which shows this plan first, or with
+    /// `--run` from a terminal, on the same plan and caps, once you answer yes.
     Grade {
         /// The skill's name, as `purlis skill list` prints it.
         name: String,
         #[command(flatten)]
         at: LevelArgs,
         /// Answer as JSON, for a chat or a script.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "run")]
         json: bool,
+        /// Run the grade: in the purlis window that has this project open, which spends your
+        /// account on real chats. Asks first. Refused inside a chat.
+        #[arg(long)]
+        run: bool,
+        /// The profile its chats run on (default: the project's).
+        #[arg(long, requires = "run")]
+        profile: Option<String>,
+        /// The model its chats run on (default: the profile's own).
+        #[arg(long, requires = "run")]
+        model: Option<String>,
+        /// An outcome eval to run too, by its id; repeat for each. None run unless named, and a
+        /// named one is refused until outcome evals run from a terminal (#3235).
+        #[arg(long = "eval", value_name = "ID", requires = "run")]
+        evals: Vec<String>,
+        /// Do not ask: for a script that has read the plan. It still runs only what the plan
+        /// printed.
+        #[arg(long, requires = "run")]
+        yes: bool,
     },
 }
 
@@ -382,6 +403,22 @@ impl LevelArgs {
             (None, None) => Level::project(),
         }
         .local(self.local)
+    }
+
+    /// The level as a terminal names it to the window.
+    fn wire_level(&self) -> GradeLevel {
+        let local = self.local;
+        match (&self.workspace, &self.persona) {
+            (Some(name), _) => GradeLevel::Workspace {
+                name: name.clone(),
+                local,
+            },
+            (None, Some(name)) => GradeLevel::Persona {
+                name: name.clone(),
+                local,
+            },
+            (None, None) => GradeLevel::Project { local },
+        }
     }
 }
 
@@ -979,7 +1016,28 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 Ok(1)
             }
         },
-        SkillCommand::Grade { name, at, json } => {
+        SkillCommand::Grade {
+            name,
+            at,
+            run: true,
+            profile,
+            model,
+            evals,
+            yes,
+            ..
+        } => Ok(gradelink::run(
+            root,
+            &gradelink::Asked {
+                wire: at.wire_level(),
+                level: at.level(),
+                name,
+                profile,
+                model,
+                evals,
+                yes,
+            },
+        )),
+        SkillCommand::Grade { name, at, json, .. } => {
             let level = at.level();
             // The terminal knows no profile: the estimate is the newest grade's whose chats ran.
             match purlis_core::skills::grades::planned(root, &level, &name, None) {
@@ -1323,123 +1381,22 @@ fn estimate_said(estimate: Option<&purlis_core::skills::grades::Estimate>) -> St
     )
 }
 
+/// **What grading runs, cost first**: the part of [`grade_said`] above the grades, which
+/// `purlis skill grade --run` prints before it asks.
+pub(crate) fn plan_said(planned: &purlis_core::skills::grades::Planned, root: &Path) -> String {
+    let local_file = purlis_core::settings::Which::Local.file_at(root);
+    grade_plan_said(planned, local_file, false)
+}
+
 /// **`purlis skill grade`'s text**: the plan, cost first, then each grade, newest first.
 fn grade_said(
     planned: &purlis_core::skills::grades::Planned,
     graded: &[purlis_core::skills::grades::Graded],
     local_file: &str,
 ) -> String {
-    use purlis_core::skills::grade::{Arm, Read};
+    use purlis_core::skills::grade::Arm;
     let name = &planned.skill;
-    let mut text = String::new();
-    if let Read::Refused(why) = &planned.fixtures.triggers {
-        text.push_str(&format!(
-            "Its trigger tests could not be read: {}\n",
-            why.terminal()
-        ));
-    }
-    match (&planned.request, planned.plan) {
-        (Some(request), Some(plan)) => {
-            let times = counted(u32::from(request.runs), "time", "times");
-            // The version it compares with too, where the skill has one (SK-57).
-            let previous = match &planned.previous {
-                Some(previous) => format!(
-                    ", and {times} with its previous version, {} ({})",
-                    history::short(&previous.commit),
-                    previous.subject
-                ),
-                None => String::new(),
-            };
-            // Its trigger tests and its outcome evals (SK-55), each counted.
-            let fixtures = match (plan.trigger_tests, plan.outcome_evals) {
-                (tests, 0) => counted(tests, "trigger test", "trigger tests"),
-                (0, evals) => counted(evals, "outcome eval", "outcome evals"),
-                (tests, evals) => format!(
-                    "{} and {}",
-                    counted(tests, "trigger test", "trigger tests"),
-                    counted(evals, "outcome eval", "outcome evals")
-                ),
-            };
-            let judges = match plan.judge_chats {
-                0 => String::new(),
-                judges => format!(
-                    "; and a judge chat for each outcome eval's chat, {} in all, which reads what \
-                     that chat left and changes nothing",
-                    counted(judges, "judge chat", "judge chats")
-                ),
-            };
-            text.push_str(&format!(
-                "Grading {name} runs {}, one turn each: each of {fixtures} {times} with the skill \
-                 and {times} without it{previous}{judges}.\n",
-                counted(plan.chats, "chat", "chats"),
-            ));
-            if let Some(why) = &planned.previous_refused {
-                text.push_str(&format!("Its previous version is not compared: {why}.\n"));
-            }
-            text.push_str(&estimate_said(planned.estimate.as_ref()));
-            for (at, test) in request.triggers.iter().enumerate() {
-                text.push_str(&format!(
-                    "  {}. {}  ({})\n",
-                    at + 1,
-                    purlis_core::skills::review::escaped_line(&test.query),
-                    if test.should_trigger {
-                        "should start it"
-                    } else {
-                        "should leave it alone"
-                    }
-                ));
-            }
-            for left in &planned.left_out {
-                text.push_str(&format!("Test {} is left out: {}\n", left.at + 1, left.why));
-            }
-            // The terminal knows no profile, so its limit is at the dearest known price: the
-            // Skill studio's plan prices it from the model its profile's chats run on (#3469).
-            let dearest = purlis_core::skills::grades::price::of_model(None);
-            text.push_str(&format!(
-                "A grade stops once its chats have spent {} ({}; [skill_grades] token_cap in {} \
-                 sets it), or once they cost ${:.2}, its tokens at the dearest known price of \
-                 ${:.2} a million; the Skill studio's plan prices it from the model the chats \
-                 run on.\n",
-                counted(planned.cap.tokens, "token", "tokens"),
-                match planned.cap.from {
-                    purlis_core::skills::grades::cap::From::Default => "the default",
-                    purlis_core::skills::grades::cap::From::Yours => "this machine's cap",
-                },
-                local_file,
-                planned.cap.cost_usd(&dearest),
-                dearest.usd_per_million,
-            ));
-            text.push_str("Grade it from its tab in the Skill studio, which shows this first.\n");
-        }
-        _ => text.push_str(&format!(
-            "{name} has no trigger tests or outcome evals to grade: the queries it should start \
-             on and the near misses it should leave alone, in its evals/triggers.json, and tasks \
-             with what a judge checks, in its evals/evals.json.\n"
-        )),
-    }
-    if let Read::Refused(why) = &planned.fixtures.outcomes {
-        text.push_str(&format!(
-            "Its outcome evals could not be read: {}\n",
-            why.terminal()
-        ));
-    }
-    // Off until the person ticks them in the Skill studio's plan (the ruling of 2026-10-31).
-    for eval in &planned.offered {
-        text.push_str(&format!(
-            "  Outcome eval {}. {}  (off: {} a judge checks, {} more if ticked in the Skill \
-             studio's plan)\n",
-            eval.id,
-            purlis_core::skills::review::escaped_line(&eval.prompt),
-            counted(eval.expectations.len(), "expectation", "expectations"),
-            counted(planned.eval_chats, "chat", "chats"),
-        ));
-    }
-    for left in &planned.outcomes_left_out {
-        text.push_str(&format!(
-            "Outcome eval {} is left out: {}.\n",
-            left.id, left.why
-        ));
-    }
+    let mut text = grade_plan_said(planned, local_file, true);
     if graded.is_empty() {
         text.push_str(&format!("No grades of {name} yet.\n"));
         return text;
@@ -1522,6 +1479,131 @@ fn grade_said(
             } else {
                 ""
             },
+        ));
+    }
+    text
+}
+
+/// The plan's part of [`grade_said`]. `with_limits` says the limits as this terminal can work them
+/// out, and where to grade from: `--run` prints the window's own instead, the ones that bind.
+fn grade_plan_said(
+    planned: &purlis_core::skills::grades::Planned,
+    local_file: &str,
+    with_limits: bool,
+) -> String {
+    use purlis_core::skills::grade::Read;
+    let name = &planned.skill;
+    let mut text = String::new();
+    if let Read::Refused(why) = &planned.fixtures.triggers {
+        text.push_str(&format!(
+            "Its trigger tests could not be read: {}\n",
+            why.terminal()
+        ));
+    }
+    match (&planned.request, planned.plan) {
+        (Some(request), Some(plan)) => {
+            let times = counted(u32::from(request.runs), "time", "times");
+            // The version it compares with too, where the skill has one (SK-57).
+            let previous = match &planned.previous {
+                Some(previous) => format!(
+                    ", and {times} with its previous version, {} ({})",
+                    history::short(&previous.commit),
+                    previous.subject
+                ),
+                None => String::new(),
+            };
+            // Its trigger tests and its outcome evals (SK-55), each counted.
+            let fixtures = match (plan.trigger_tests, plan.outcome_evals) {
+                (tests, 0) => counted(tests, "trigger test", "trigger tests"),
+                (0, evals) => counted(evals, "outcome eval", "outcome evals"),
+                (tests, evals) => format!(
+                    "{} and {}",
+                    counted(tests, "trigger test", "trigger tests"),
+                    counted(evals, "outcome eval", "outcome evals")
+                ),
+            };
+            let judges = match plan.judge_chats {
+                0 => String::new(),
+                judges => format!(
+                    "; and a judge chat for each outcome eval's chat, {} in all, which reads what \
+                     that chat left and changes nothing",
+                    counted(judges, "judge chat", "judge chats")
+                ),
+            };
+            text.push_str(&format!(
+                "Grading {name} runs {}, one turn each: each of {fixtures} {times} with the skill \
+                 and {times} without it{previous}{judges}.\n",
+                counted(plan.chats, "chat", "chats"),
+            ));
+            if let Some(why) = &planned.previous_refused {
+                text.push_str(&format!("Its previous version is not compared: {why}.\n"));
+            }
+            text.push_str(&estimate_said(planned.estimate.as_ref()));
+            for (at, test) in request.triggers.iter().enumerate() {
+                text.push_str(&format!(
+                    "  {}. {}  ({})\n",
+                    at + 1,
+                    purlis_core::skills::review::escaped_line(&test.query),
+                    if test.should_trigger {
+                        "should start it"
+                    } else {
+                        "should leave it alone"
+                    }
+                ));
+            }
+            for left in &planned.left_out {
+                text.push_str(&format!("Test {} is left out: {}\n", left.at + 1, left.why));
+            }
+            if with_limits {
+                // The terminal knows no profile, so its limit is at the dearest known price: the
+                // Skill studio's plan prices it from the model its profile's chats run on (#3469).
+                let dearest = purlis_core::skills::grades::price::of_model(None);
+                text.push_str(&format!(
+                "A grade stops once its chats have spent {} ({}; [skill_grades] token_cap in {} \
+                 sets it), or once they cost ${:.2}, its tokens at the dearest known price of \
+                 ${:.2} a million; the Skill studio's plan prices it from the model the chats \
+                 run on.\n",
+                counted(planned.cap.tokens, "token", "tokens"),
+                match planned.cap.from {
+                    purlis_core::skills::grades::cap::From::Default => "the default",
+                    purlis_core::skills::grades::cap::From::Yours => "this machine's cap",
+                },
+                local_file,
+                planned.cap.cost_usd(&dearest),
+                dearest.usd_per_million,
+            ));
+                text.push_str(
+                    "Grade it from its tab in the Skill studio, which shows this first.\n",
+                );
+            }
+        }
+        _ => text.push_str(&format!(
+            "{name} has no trigger tests or ticked outcome evals to grade: the queries it should \
+             start on and the near misses it should leave alone, in its evals/triggers.json, and \
+             tasks with what a judge checks, in its evals/evals.json.\n"
+        )),
+    }
+    if let Read::Refused(why) = &planned.fixtures.outcomes {
+        text.push_str(&format!(
+            "Its outcome evals could not be read: {}\n",
+            why.terminal()
+        ));
+    }
+    // Off until the person ticks them in the Skill studio's plan (the ruling of 2026-10-31).
+    for eval in &planned.offered {
+        text.push_str(&format!(
+            "  Outcome eval {}. {}  (off: {} a judge checks, {} more if ticked in the Skill \
+             studio's plan)\n",
+            eval.id,
+            purlis_core::skills::review::escaped_line(&eval.prompt),
+            counted(eval.expectations.len(), "expectation", "expectations"),
+            counted(planned.eval_chats, "chat", "chats"),
+        ));
+    }
+    for left in &planned.outcomes_left_out {
+        text.push_str(&format!(
+            "Outcome eval {} is left out: {}.\n",
+            left.id, left.why
         ));
     }
     text

@@ -87,15 +87,15 @@ pub struct PoolSpec {
 #[serde(rename_all = "camelCase")]
 pub struct PoolForge {
     /// The Secret in the operator's own namespace holding the App's client id (`app`) and its
-    /// private key (`key`). The chart's `forge.keySecretNames` must name it too.
+    /// private key (`key`). The chart's `forge.keySecretNames` must name it too, and whoever
+    /// writes this needs `use` on it (`forgekeys`).
     pub app_key_secret_ref: SecretRef,
     /// The most a token may cover: `owner/name` or `owner/*`. A token covers only these and the
     /// repos of the Claim.
     #[schemars(length(min = 1, max = 256), inner(length(max = 140), regex(pattern = crate::forge::POOL_REPO)))]
     pub repos: Vec<String>,
-    /// Whether the pool opts in to the operator minting tokens for its runners. Nothing is minted
-    /// yet (#4206). Once it is, anyone who may use the Pool can use these repos through it. False
-    /// unless set.
+    /// Whether the pool opts in to the operator minting tokens for its runners. Anyone who may use
+    /// the Pool can use these repos through it. False unless set.
     #[serde(default)]
     pub mint_in_cluster: bool,
 }
@@ -311,6 +311,22 @@ pub struct ClaimStatus {
     /// signature (#2056).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link_key: Option<LinkKey>,
+    /// Where the Claim's runner asks for a GitHub App token and the key it holds that port to
+    /// (#4207): written only for a Claim whose runner the operator vouches for, on a Pool that
+    /// opts in to minting. A desktop tells its runner these once, as it pairs it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mint: Option<ClaimMint>,
+}
+
+/// Where a Claim's runner asks for a token (#4207).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimMint {
+    /// The mint port's address, `<ip>:<port>`, by the Service's cluster IP, since a runner's pod
+    /// is given public name servers.
+    pub address: String,
+    /// The operator's key the port's TLS is held to, spelled as a Pool's `signingKey`.
+    pub operator_key: String,
 }
 
 /// A runner's link key, as the operator vouches for it.

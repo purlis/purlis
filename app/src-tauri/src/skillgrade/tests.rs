@@ -245,6 +245,7 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
                 step: None,
+                router_step: None,
             },
         );
         let failed = std::cell::Cell::new(false);
@@ -337,6 +338,7 @@ fn a_scorecard_has_each_test_once_with_each_arms_chats_one_click_away() {
             priced: None,
             outcomes: Vec::new(),
             outcome_delta: None,
+            failed: None,
         },
         spent: Spent::default(),
         plugins_off: None,
@@ -484,6 +486,7 @@ fn a_scorecard_against_the_previous_version_shows_three_arms_and_both_difference
             priced: None,
             outcomes: Vec::new(),
             outcome_delta: None,
+            failed: None,
         },
         spent: Spent::default(),
         plugins_off: None,
@@ -716,6 +719,7 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
                 step: Some(step(at, skill, grade)),
+                router_step: None,
             },
         );
     }

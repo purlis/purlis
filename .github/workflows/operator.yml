@@ -27,6 +27,11 @@ on:
       # The desktop's side of a cluster runner, which the kind run checks too (#2056).
       - crates/purlis-core/src/clusterpool*
       - crates/purlis-core/src/runnerlink*
+      - crates/purlis-core/src/pools*
+      - crates/purlis-core/src/poollogins*
+      - crates/purlis-core/src/dockerpool*
+      - crates/purlis-core/src/profilestore/sign_in*
+      - crates/purlis-cli/src/main.rs
       - crates/purlis-core/tests/it/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs
       - crates/purlis-cli/src/bridge.rs
       - fixtures/runner-link-key/**
@@ -44,6 +49,11 @@ on:
       # The desktop's side of a cluster runner, which the kind run checks too (#2056).
       - crates/purlis-core/src/clusterpool*
       - crates/purlis-core/src/runnerlink*
+      - crates/purlis-core/src/pools*
+      - crates/purlis-core/src/poollogins*
+      - crates/purlis-core/src/dockerpool*
+      - crates/purlis-core/src/profilestore/sign_in*
+      - crates/purlis-cli/src/main.rs
       - crates/purlis-core/tests/it/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs
       - crates/purlis-cli/src/bridge.rs
       - fixtures/runner-link-key/**

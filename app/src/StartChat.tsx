@@ -50,6 +50,8 @@ const PERSONAS: Noun = { one: "persona", many: "personas" };
 
 /** The fixed height of the dialog, list beside details: whatever the list holds (R4). */
 const HEIGHT = 620;
+/** How long a start runs before the dialog says what it waits for. */
+const SAYS_THE_HOST_AFTER_MS = 3000;
 
 /**
  * What a new chat asks before anything runs.
@@ -315,6 +317,16 @@ export function StartChat({
   // Whether it was left with nothing started — Escape or Cancel. Only then does the keyboard go
   // back to what had it: a start hands it to the new chat, and Settings or the install shell
   // take it where they open.
+  // A start that takes a moment says what it waits for, for as long as it waits (#4264).
+  const [hostSlow, setHostSlow] = useState(false);
+  useEffect(() => {
+    if (!starting) return;
+    const after = window.setTimeout(() => setHostSlow(true), SAYS_THE_HOST_AFTER_MS);
+    return () => {
+      window.clearTimeout(after);
+      setHostSlow(false);
+    };
+  }, [starting]);
   const cancelled = useRef(false);
   const leave = () => {
     cancelled.current = true;
@@ -482,7 +494,11 @@ export function StartChat({
       // What Start will do: the persona on the harness (R33). No profile icon beside an
       // approval (#2922): it is the grant's own look, and a mark there could pass for purlis's.
       summary={
-        picked === undefined ? undefined : (
+        hostSlow ? (
+          <span className="start-chat-summary" role="status" data-testid="start-chat-host">
+            Starting the session host…
+          </span>
+        ) : picked === undefined ? undefined : (
           <span className="start-chat-summary" data-testid="start-chat-summary">
             {who} on{" "}
             {!approves && (
