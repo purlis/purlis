@@ -1328,3 +1328,35 @@ fn claude_code_s_reports_are_read_and_the_other_harnesses_are_not() {
         );
     }
 }
+
+/// SK-55: a judge's chat is started with its two tools alone, and no other chat is.
+#[test]
+fn a_judges_chat_starts_with_the_tools_that_read_and_no_other() {
+    let empty = tempfile::tempdir().expect("a directory");
+    let armed = |judging: bool| {
+        let StateHooks::ThisSessionOnly { args, env, .. } = adapter().arm(
+            Kit {
+                skills: None,
+                laid_out: None,
+                binary: std::path::Path::new("/bin/charter"),
+                plugin: Some(std::path::Path::new("/app/plugin")),
+                persona: None,
+                graded: true,
+                judging,
+            },
+            Some(empty.path()),
+            &crate::harness_plugin::Chosen::new(),
+            None,
+        ) else {
+            panic!("armed per session");
+        };
+        (args, env)
+    };
+    let (args, env) = armed(true);
+    let at = args.iter().position(|arg| arg == "--tools").expect("--tools");
+    assert_eq!(args[at + 1], "Read,Grep");
+    assert!(env.iter().any(|(name, _)| name == crate::toolhooks::JUDGE_FOLDER_ENV));
+    let (args, env) = armed(false);
+    assert!(!args.contains(&"--tools".to_owned()));
+    assert!(!env.iter().any(|(name, _)| name == crate::toolhooks::JUDGE_FOLDER_ENV));
+}

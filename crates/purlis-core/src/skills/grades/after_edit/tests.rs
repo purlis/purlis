@@ -16,6 +16,7 @@ fn accepted() -> Accepted {
         token_cap: 200_000,
         limit_usd: 3.0,
         tests: TESTS.into(),
+        outcomes: None,
         previous: None,
         runs_on: Some("sonnet".into()),
         at: "2026-10-28T10:00:00+00:00".into(),
@@ -35,6 +36,7 @@ fn now(chats: u32, token_cap: u64, limit_usd: f64) -> Now {
         token_cap,
         limit_usd,
         tests: TESTS.into(),
+        outcomes: None,
         consent: CONSENT.into(),
         previous: false,
     }
@@ -274,6 +276,22 @@ fn a_change_of_a_skill_never_graded_after_each_edit_keeps_no_state() {
         "nothing written"
     );
     assert_eq!(of(root, &Level::project(), "ship"), None);
+}
+
+/// SK-55: an eval a chat or a pull changed or added runs nothing the person did not see, even
+/// where the chats it would run are within what was accepted.
+#[test]
+fn other_outcome_evals_wait_for_the_person() {
+    let added = Now {
+        outcomes: Some(CONSENT.into()),
+        ..now(12, 200_000, 3.0)
+    };
+    assert!(matches!(next(&accepted(), &added), Next::Waits(why) if why.contains("outcome evals")));
+    let pinned = Accepted {
+        outcomes: Some(TESTS.into()),
+        ..accepted()
+    };
+    assert!(matches!(next(&pinned, &added), Next::Waits(why) if why.contains("outcome evals")));
 }
 
 #[test]

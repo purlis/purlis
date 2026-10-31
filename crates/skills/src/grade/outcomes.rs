@@ -58,12 +58,14 @@ pub fn judge_prompt() -> String {
          holds everything to read, and nothing outside it is to be read: {JUDGE_TASK_FILE} has \
          the task it was given, what success looks like, and the expectations to check; \
          {JUDGE_ANSWER_FILE} has the chat's final answer, where it gave one; {JUDGE_OUTCOME_DIR}/ \
-         has its folder as it ended, each file of it listed in {JUDGE_FILES_FILE}. Check each expectation, in the order given. The burden of \
-         proof is on the expectation: mark it passed only where you found clear evidence, and \
-         fail a surface match, such as the right file name with the wrong content. Answer with \
-         only one JSON object and nothing before or after it: {{\"expectations\": [{{\"text\": \
-         \"the expectation exactly as given\", \"passed\": true or false, \"evidence\": \"what \
-         you found, quoted or cited\"}}]}}"
+         has its folder as it ended, each file of it listed in {JUDGE_FILES_FILE}: only its plain \
+         text files are copied here, at most 32, so a file not listed may not have been copied. \
+         Check each expectation, in the order given. The burden of proof is on the expectation: \
+         mark it passed only where you found clear evidence, and fail a surface match, such as \
+         the right file name with the wrong content. Answer with only one JSON object and nothing \
+         before or after it: {{\"expectations\": [{{\"text\": \"the expectation exactly as \
+         given\", \"passed\": true or false, \"evidence\": \"one short sentence of what you \
+         found\"}}]}}"
     )
 }
 
@@ -101,8 +103,10 @@ pub fn judged(answer: &str, expectations: &[String]) -> Result<Vec<Check>, Strin
         ));
     }
     let not_json = || "The judge's answer is not one JSON object.".to_owned();
-    let doc: serde_json::Value =
-        serde_json::from_str(unfenced(answer.trim())).map_err(|_| not_json())?;
+    let text = unfenced(answer.trim());
+    // Each key once in its object: a verdict said twice is no verdict.
+    serde_json::from_str::<super::fixtures::OnceEach>(text).map_err(|_| not_json())?;
+    let doc: serde_json::Value = serde_json::from_str(text).map_err(|_| not_json())?;
     let list = doc
         .as_object()
         .ok_or_else(not_json)?
@@ -139,6 +143,7 @@ pub fn judged(answer: &str, expectations: &[String]) -> Result<Vec<Check>, Strin
             let evidence = one
                 .get("evidence")
                 .and_then(serde_json::Value::as_str)
+                .filter(|evidence| !evidence.trim().is_empty())
                 .ok_or_else(|| format!("The judge gave no evidence for expectation {n}."))?;
             Ok(Check {
                 passed,
@@ -166,6 +171,7 @@ pub fn kept_evidence(evidence: &str) -> String {
     let plain: String = evidence
         .trim()
         .chars()
+        .filter(|ch| !purlis_unicode::invisible(*ch))
         .map(|ch| if ch.is_control() { ' ' } else { ch })
         .collect();
     let mut end = plain.len().min(MOST_EVIDENCE_BYTES);
@@ -194,6 +200,10 @@ pub struct OutcomeRun {
     /// it asked the person something, or it gave no answer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failed: Option<String>,
+    /// **Its chat asked the person something and was ended there** (ADR 0105 §3): no run, never
+    /// judged, and said in the grade, as a trigger test's `asked` is.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub asked: bool,
 }
 
 impl OutcomeRun {

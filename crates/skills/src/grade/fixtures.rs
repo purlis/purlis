@@ -479,7 +479,7 @@ fn json_of(text: &str, file: FixtureFile) -> Result<serde_json::Value, Refused> 
 
 /// **A JSON text whose every object names each key once**: what [`json_of`] checks before it
 /// reads the value. Nothing is built: a number, however serde_json hands it over, is passed by.
-struct OnceEach;
+pub(super) struct OnceEach;
 
 impl<'de> serde::Deserialize<'de> for OnceEach {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {

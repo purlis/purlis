@@ -110,6 +110,12 @@ impl HarnessAdapter for ClaudeCode {
                 } else {
                     Vec::new()
                 },
+                // A judge's chat has these tools and no other, whatever a release adds (SK-55).
+                if kit.judging {
+                    words(["--tools", JUDGE_TOOLS])
+                } else {
+                    Vec::new()
+                },
                 words([
                     // charter's MCP server (HP-7), before `--settings`: `--mcp-config` takes every
                     // word up to the next flag, and the chat's own words end the line.
@@ -869,7 +875,10 @@ fn denied_tools(kit: Kit<'_>) -> Vec<String> {
     denied
 }
 
-/// **Claude Code's tools a judge's chat is denied** (SK-55, #3235): every one that writes a file,
+/// **The only tools a judge's chat has** (SK-55): the two the read guard holds to its folder.
+const JUDGE_TOOLS: &str = "Read,Grep";
+
+/// **Claude Code's tools a judge's chat is denied**, beside [`JUDGE_TOOLS`] (SK-55, #3235): every one that writes a file,
 /// runs a command or reaches the network, every way to read past the read guard that holds `Read`
 /// and `Grep` to its folder (`toolhooks::JUDGE_FOLDER_ENV`), and purlis's own read tools, which
 /// answer from the plane. It keeps `Read` and `Grep`.

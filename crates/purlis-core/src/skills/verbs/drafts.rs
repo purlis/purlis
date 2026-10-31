@@ -725,6 +725,15 @@ pub fn lay_out_judge(
             (JUDGE_TASK_FILE.to_owned(), task),
             (JUDGE_FILES_FILE.to_owned(), &listed),
         ];
+        // The hook cuts a last message at its bound: the judge is told, not left to take it whole.
+        let cut;
+        let answer = match answer {
+            Some(answer) if answer.len() + 4 >= crate::hookwire::Output::MOST_BYTES => {
+                cut = format!("{answer}\n\n[purlis: this answer was cut here]");
+                Some(cut.as_str())
+            }
+            other => other,
+        };
         files.extend(answer.map(|answer| (JUDGE_ANSWER_FILE.to_owned(), answer)));
         files.extend(
             outcome

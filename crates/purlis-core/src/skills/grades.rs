@@ -407,6 +407,7 @@ fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
         && report.cap.is_none_or(|cap| cap <= cap::MOST)
         && report.spent_tokens.is_none_or(tokens)
         && report.outcomes.len() <= grade::MOST_OUTCOME_EVALS * ARMS_THERE_ARE
+        && outcome_rates_hold(report)
         && [report.delta, report.outcome_delta]
             .into_iter()
             .flatten()
@@ -472,6 +473,69 @@ fn outcome_holds(
         && eval.runs as usize == judged
         && eval.pass_rate.is_some() == (judged > 0)
         && eval.pass_rate.as_ref().is_none_or(|one| stat(one, share))
+        && stat_is(eval.pass_rate.as_ref(), &shares_of(eval))
+}
+
+/// Each judged run's share of the expectations of `eval` that passed.
+fn shares_of(eval: &grade::OutcomeScore) -> Vec<f64> {
+    eval.results
+        .iter()
+        .filter_map(|run| run.share(eval.expectations.len()))
+        .collect()
+}
+
+/// Whether `said` is the statistic of `values`, within a rounding.
+fn stat_is(said: Option<&grade::Stat>, values: &[f64]) -> bool {
+    match (said, grade::Stat::of(values)) {
+        (None, None) => true,
+        (Some(said), Some(is)) => [
+            (said.mean, is.mean),
+            (said.stddev, is.stddev),
+            (said.min, is.min),
+            (said.max, is.max),
+        ]
+        .iter()
+        .all(|(one, other)| (one - other).abs() < 1e-9),
+        _ => false,
+    }
+}
+
+/// **Whether a report's outcome rates are what its outcome evals' runs make** (SK-55): each eval
+/// in each arm once, each arm's pool of their runs, and the difference of the arm with the skill
+/// against the baseline. A teammate's row can say anything, and the window draws these.
+fn outcome_rates_hold(report: &GradeReport) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    let once = report
+        .outcomes
+        .iter()
+        .all(|eval| seen.insert((eval.eval, eval.arm)));
+    let pools = report.arms.iter().all(|arm| {
+        let pool: Vec<f64> = report
+            .outcomes
+            .iter()
+            .filter(|eval| eval.arm == arm.arm)
+            .flat_map(shares_of)
+            .collect();
+        stat_is(arm.outcome_pass_rate.as_ref(), &pool)
+    });
+    let mean = |arm: Arm| {
+        report
+            .arm(arm)
+            .and_then(|one| one.outcome_pass_rate)
+            .map(|one| one.mean)
+    };
+    let baseline = if report.arm(Arm::Previous).is_some() {
+        mean(Arm::Previous)
+    } else {
+        mean(Arm::Without)
+    };
+    let delta = mean(Arm::With).zip(baseline).map(|(with, base)| with - base);
+    let delta_holds = match (report.outcome_delta, delta) {
+        (None, None) => true,
+        (Some(said), Some(is)) => (said - is).abs() < 1e-9,
+        _ => false,
+    };
+    once && pools && delta_holds
 }
 
 /// **Whether `arm`'s outcome chats are what its outcome evals say** (SK-55): at least a chat for
@@ -493,6 +557,23 @@ fn outcome_chats_hold(report: &GradeReport, arm: &grade::ArmScore) -> bool {
 /// was refused.
 pub fn record(root: &Path, level: &Level, graded: &Graded, device: &str) -> Option<PathBuf> {
     record_to(root, is_local(root, level), graded, || device.to_owned())
+}
+
+/// `graded` with the credentials in its judges' evidence masked (SK-55): evidence quotes what a
+/// chat left, and the record is committed.
+fn masked(graded: &Graded) -> Graded {
+    let mut graded = graded.clone();
+    for check in graded
+        .report
+        .outcomes
+        .iter_mut()
+        .flat_map(|eval| eval.results.iter_mut())
+        .flat_map(|run| run.checks.iter_mut())
+    {
+        check.evidence =
+            grade::outcomes::kept_evidence(&crate::secrets::mcpstart::masked(&check.evidence));
+    }
+    graded
 }
 
 /// **`graded` as a row of the record, within [`MOST_LINE_BYTES`]** (SK-55): an outcome eval's
@@ -530,7 +611,11 @@ fn fitted(graded: &Graded) -> Option<serde_json::Value> {
     {
         run.checks.clear();
     }
-    Some(serde_json::to_value(&cut).ok()?).filter(fits)
+    let row = serde_json::to_value(&cut).ok().filter(fits);
+    if row.is_none() {
+        tracing::warn!(target: "purlis::skills", "a grade's row is too long for the record");
+    }
+    row
 }
 
 /// [`record`], to this machine's state where `local`, else to the committed record of the
@@ -541,7 +626,7 @@ fn record_to(
     graded: &Graded,
     device: impl FnOnce() -> String,
 ) -> Option<PathBuf> {
-    let row = fitted(graded)?;
+    let row = fitted(&masked(graded))?;
     if local {
         crate::appstate::made(root).ok()?;
         return append_local(&local_path_for(root, chrono::Utc::now())?, &row).ok();
@@ -1166,14 +1251,46 @@ pub fn eval_left_out_why(eval: &grade::OutcomeEval) -> Option<String> {
     if eval.expectations.is_empty() {
         return Some("it has no expectations, so a judge would have nothing to check".to_owned());
     }
+    // A judge's answer repeats each expectation with a line of evidence, and has to fit the last
+    // message a harness's hook hands back whole.
+    let answer: usize = eval
+        .expectations
+        .iter()
+        .map(|text| text.len() + ANSWER_BYTES_AN_EXPECTATION)
+        .sum();
+    if answer > crate::hookwire::Output::MOST_BYTES {
+        return Some(
+            "its expectations are too long for a judge's answer to hold them whole".to_owned(),
+        );
+    }
+    // Under the skill's fixtures folder and nowhere else: a file of the skill would hand the arm
+    // without it the skill, and a fixture file, in any case on a folder that folds it, or a file
+    // a chat loads as its instructions would hand it what it is graded by.
     let fixture = [grade::triggers_path(), grade::outcomes_path()];
-    if let Some(path) = eval.files.iter().find(|path| fixture.contains(path)) {
+    let instructions = ["claude.md", "claude.local.md", "agents.md", "skill.md"];
+    if let Some(path) = eval.files.iter().find(|path| {
+        let folded = path.to_lowercase();
+        let leaf = folded.rsplit('/').next().unwrap_or_default();
+        fixture.iter().any(|one| one.to_lowercase() == folded)
+            || instructions.contains(&leaf)
+            || !folded.starts_with(&format!("{}/", grade::EVALS_DIR))
+    }) {
         return Some(format!(
-            "it names {path} as its file, which would hand its chat what it is graded by"
+            "it names {} as its file, and an eval's files are its own inputs under {}/, never the \
+             skill's files, its fixtures or a chat's instructions",
+            crate::shown::short(path),
+            grade::EVALS_DIR
         ));
     }
     left_out_why(&grade::outcomes::outcome_prompt(eval))
 }
+
+/// What a judge's answer takes for one expectation beside its text: its keys and its evidence.
+const ANSWER_BYTES_AN_EXPECTATION: usize = 256;
+
+/// The most bytes of expectations a grade runs in all: each is kept once per arm in the row of
+/// the record, which is at most [`MOST_LINE_BYTES`] whatever else it drops ([`fitted`]).
+const MOST_EXPECTATIONS_BYTES: usize = 200 * 1024;
 
 /// **A trigger test a grade leaves out**: its place in the file, from 0, and why
 /// ([`left_out_why`]).
@@ -1362,6 +1479,19 @@ pub fn planned(
             }
         });
     }
+    let mut held = 0usize;
+    evals.retain(|eval| {
+        held += eval.expectations.iter().map(String::len).sum::<usize>();
+        if held <= MOST_EXPECTATIONS_BYTES {
+            return true;
+        }
+        outcomes_left_out.push(LeftOutEval {
+            id: eval.id,
+            why: "the evals before it hold as many expectations as a grade's record can keep"
+                .to_owned(),
+        });
+        false
+    });
     let copy = copy.filter(|_| !sendable.is_empty() || !evals.is_empty());
     // A skill with a previous version is compared with it too, and it is the baseline (SK-57).
     let arms = match copy.as_ref().and_then(|copy| copy.previous.as_ref()) {

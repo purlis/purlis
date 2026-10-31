@@ -170,6 +170,7 @@ fn accepted_of(
         token_cap: planned.cap.tokens,
         limit_usd: planned.cap.cost_usd(&on.priced),
         tests: after_edit::tests_of(request),
+        outcomes: after_edit::outcomes_of(planned),
         previous: planned.previous.as_ref().map(|one| one.commit.clone()),
         runs_on,
         at: purlis_core::dispatch::stamp(chrono::Utc::now()),

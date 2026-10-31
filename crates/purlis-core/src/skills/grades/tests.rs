@@ -1396,7 +1396,17 @@ fn a_row_whose_outcome_evals_do_not_hold_together_is_skipped() {
     assert_eq!(row.report.outcome_delta, Some(0.0));
     assert!(row.sound(now), "a row purlis writes is kept: {row:?}");
     type Breaks = fn(&mut Graded);
-    let broken: [(&str, Breaks); 8] = [
+    let broken: [(&str, Breaks); 10] = [
+        ("an eval's rate that is not what its runs make", |row| {
+            let rate = row.report.outcomes[0].pass_rate.as_mut().unwrap();
+            rate.mean = 1.0;
+            rate.min = 1.0;
+            rate.max = 1.0;
+        }),
+        ("an eval twice in an arm", |row| {
+            let one = row.report.outcomes[0].clone();
+            row.report.outcomes.push(one);
+        }),
         ("more passed than expectations", |row| {
             row.report.outcomes[0].results[0].passed = Some(3);
             row.report.outcomes[0].results[0].checks.clear();
@@ -1490,6 +1500,20 @@ fn an_eval_with_nothing_to_judge_or_that_hands_its_chat_its_fixtures_is_left_out
         files: files.into_iter().map(str::to_owned).collect(),
         expectations: expectations.into_iter().map(str::to_owned).collect(),
     };
+    for outside in [
+        "SKILL.md",
+        "references/x.md",
+        "evals/EVALS.JSON",
+        "evals/files/CLAUDE.md",
+    ] {
+        assert!(
+            eval_left_out_why(&eval(vec!["It ships"], vec![outside])).is_some(),
+            "{outside}"
+        );
+    }
+    let long = "x".repeat(2 * 1024);
+    let many: Vec<&str> = (0..16).map(|_| long.as_str()).collect();
+    assert!(eval_left_out_why(&eval(many, Vec::new())).unwrap().contains("too long"));
     assert_eq!(
         eval_left_out_why(&eval(vec!["It ships"], vec!["evals/files/a.txt"])),
         None
@@ -1503,7 +1527,7 @@ fn an_eval_with_nothing_to_judge_or_that_hands_its_chat_its_fixtures_is_left_out
         assert!(
             eval_left_out_why(&eval(vec!["It ships"], vec![fixture]))
                 .unwrap()
-                .contains("what it is graded by"),
+                .contains("never the skill's files, its fixtures"),
             "{fixture}"
         );
     }

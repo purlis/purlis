@@ -57,6 +57,11 @@ pub struct Accepted {
     /// **The trigger tests the plan ran, by digest** (the review of #3238): a grade after an edit
     /// runs only these tests, so a test a chat could add changes nothing the person did not see.
     pub tests: String,
+    /// **The outcome evals the plan ran and the files they stage, by digest** (SK-55): `None`
+    /// where it ran none, as an opt-in kept before them says. A grade after an edit runs only
+    /// these, so an eval a chat or a pull changes, or adds, runs nothing the person did not see.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcomes: Option<String>,
     /// **The version the plan compared with when it was turned on.** A grade after an edit
     /// compares with the version before that edit (#4016): each saved edit is committed, so that
     /// version moves with every edit and is not held to this one. A previous version's arm that
@@ -94,6 +99,7 @@ impl Accepted {
             && self.limit_usd
                 <= cap::MOST as f64 * super::price::MOST_READ_USD_PER_MILLION / 1_000_000.0
             && hex64(&self.tests)
+            && self.outcomes.as_deref().is_none_or(hex64)
             && self.previous.as_deref().is_none_or(|commit| {
                 matches!(commit.len(), 40 | 64) && commit.bytes().all(|b| b.is_ascii_hexdigit())
             })
@@ -120,6 +126,28 @@ pub fn tests_of(request: &purlis_skills::grade::GradeRequest) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+/// **The digest of a grade's outcome evals and of the input files they stage**, as an opt-in pins
+/// them (SK-55): `None` where it runs none.
+pub fn outcomes_of(planned: &super::Planned) -> Option<String> {
+    use sha2::Digest as _;
+    let request = planned.request.as_ref()?;
+    if request.outcomes.is_empty() {
+        return None;
+    }
+    let mut digest = sha2::Sha256::new();
+    digest.update(serde_json::to_vec(&request.outcomes).unwrap_or_default());
+    if let Some(copy) = &planned.copy {
+        digest.update(serde_json::to_vec(&copy.inputs).unwrap_or_default());
+    }
+    Some(
+        digest
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+    )
 }
 
 /// **The chats the plan that turns grading after each edit on shows and keeps** (#4035): the
@@ -351,6 +379,7 @@ pub struct Now {
     pub token_cap: u64,
     pub limit_usd: f64,
     pub tests: String,
+    pub outcomes: Option<String>,
     pub consent: String,
     /// Whether it compares with a previous version (#4035): what a grade of a skill with one
     /// version gains at its first saved edit.
@@ -371,6 +400,7 @@ impl Now {
             token_cap: planned.cap.tokens,
             limit_usd,
             tests: tests_of(request),
+            outcomes: outcomes_of(planned),
             consent: planned.consent.clone()?,
             previous: planned.previous.is_some(),
         })
@@ -411,6 +441,13 @@ pub fn next(accepted: &Accepted, now: &Now) -> Next {
     if now.tests != accepted.tests {
         return Next::Waits(
             "Its trigger tests changed since you turned grading after each edit on, so no grade \
+             was started after your edit: see the plan again and turn it on again."
+                .to_owned(),
+        );
+    }
+    if now.outcomes != accepted.outcomes {
+        return Next::Waits(
+            "Its outcome evals changed since you turned grading after each edit on, so no grade \
              was started after your edit: see the plan again and turn it on again."
                 .to_owned(),
         );

@@ -445,9 +445,17 @@ impl GradeReport {
 
     /// How many of its chats asked the person something and were ended there (SK-59, #3239).
     pub fn asked(&self) -> u32 {
+        let evals = self
+            .outcomes
+            .iter()
+            .flat_map(|eval| &eval.results)
+            .filter(|run| run.asked)
+            .count();
         self.triggers
             .iter()
-            .fold(0u32, |all, score| all.saturating_add(score.asked))
+            .fold(u32::try_from(evals).unwrap_or(u32::MAX), |all, score| {
+                all.saturating_add(score.asked)
+            })
     }
 
     /// How many trigger tests passed with the skill, of those that ran: the grade a skill's
@@ -539,6 +547,7 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
                     passed: None,
                     checks: Vec::new(),
                     failed: None,
+                    asked: done.end == ChatEnd::Asked,
                 };
                 if let Some(end) = end {
                     judged[e][a].push(run);
