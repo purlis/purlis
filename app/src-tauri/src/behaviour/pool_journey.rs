@@ -542,12 +542,13 @@ fn in_the_journey(
         ))
     };
     let before = conversations_on_the_old();
-    let (during, _during_pane) = a_chat_runs(
+    let (during, during_pane) = a_chat_runs(
         target,
         machine,
         pool,
         &a_chat(Some("While it drains."), None),
     );
+    during_pane.shows_within("While it drains.", LONG);
     a_conversation_on(&followed);
     assert_eq!(
         conversations_on_the_old(),
