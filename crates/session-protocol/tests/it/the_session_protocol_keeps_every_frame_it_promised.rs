@@ -37,8 +37,9 @@
 //! 1.54's clones with where each came from (#3985, id 176), 1.56's settings staged in batches
 //! and kept (#4081, ids 177 and 178), 1.57's profiles a runner keeps for its desktop (#4060,
 //! id 179), 1.58's runner removed outside purlis (#4149, the last `link_down`), 1.59's sign-in
-//! redirect (#4044, id 180), and 1.60's prompt key a chat's launch carries and its host answers
-//! back (#3369, ids 181 and 182).
+//! redirect (#4044, id 180), 1.60's prompt key a chat's launch carries and its host answers
+//! back (#3369, ids 181 and 182), and 1.61's settings a runner holds and a keep of what changed
+//! (#4088, ids 183 and 184).
 //! 1.35 adds no frame of the
 //! control lane: its origin frame is a browser view's bytes, held by
 //! `a_browser_views_bytes_are_whole_frames_however_they_are_cut.rs` (#2300). Each must read back
