@@ -489,6 +489,7 @@ jobs:
           # test of a person's whole way through a pool (`behaviour::pool_journey`).
           docker tag purlis-runner:parity localhost:5000/purlis-runner:shipped
           docker push localhost:5000/purlis-runner:shipped
+          echo "PURLIS_MEASURE_LIMITS=1" >> "$GITHUB_ENV"
           echo "DOCKER_POOL_JOURNEY_IMAGE=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner:shipped | sed 's/.*@//')" >> "$GITHUB_ENV"
           printf 'FROM purlis-runner:parity\nLABEL dev.purlis.parity.next=true\n' \
             | docker build --tag localhost:5000/purlis-runner:next -

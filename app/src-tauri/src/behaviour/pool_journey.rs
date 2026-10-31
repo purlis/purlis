@@ -337,6 +337,128 @@ fn a_chat_runs(target: &Target, machine: &Machine, pool: &str, chat: &Named) -> 
     (id, pane)
 }
 
+/// **PROBE, not to land** (#4282, #4283, #4314): near the top of what a profile and code may be.
+fn measure_limits(target: &Target, machine: &Machine, pool: &str, settings: &Path, clone: &Path) {
+    use purlis_core::poollimits::LimitId;
+    use std::io::Write as _;
+    if std::env::var_os("PURLIS_MEASURE_LIMITS").is_none() {
+        return;
+    }
+    let say = |what: String| {
+        let _ = writeln!(std::io::stderr(), "MEASURED {what}");
+    };
+    let container = the_runner(machine, pool).container;
+    let watching = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let peak = {
+        let (watching, container) = (std::sync::Arc::clone(&watching), container.clone());
+        std::thread::spawn(move || {
+            let mut samples = Vec::new();
+            while watching.load(std::sync::atomic::Ordering::SeqCst) {
+                let out = std::process::Command::new("docker")
+                    .args([
+                        "stats",
+                        "--no-stream",
+                        "--format",
+                        "{{.MemUsage}}",
+                        &container,
+                    ])
+                    .output();
+                if let Ok(out) = out {
+                    samples.push(String::from_utf8_lossy(&out.stdout).trim().to_owned());
+                }
+            }
+            samples
+        })
+    };
+    // What goes in code: 1000 MiB that does not compress.
+    for mib in [128_usize, 512, 1000] {
+        let large = clone.join("measure.bin");
+        let mut file = std::fs::File::create(&large).expect("its file");
+        for one in 0..mib {
+            file.write_all(&data(one, 1 << 20)).expect("written");
+        }
+        drop(file);
+        purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, Some(4096))
+            .expect("raised");
+        let began = Instant::now();
+        let opened = target.sessions.open_named(
+            None,
+            &a_chat(Some("Measuring."), None),
+            Hearing::default(),
+            &|_| {},
+        );
+        say(format!(
+            "code {mib} MiB: start with its send took {:?}, ok={}",
+            began.elapsed(),
+            opened.is_ok()
+        ));
+        if let Ok(opened) = opened {
+            let _ = target.sessions.close(opened.number);
+        }
+        std::fs::remove_file(&large).expect("it goes");
+    }
+    // What a profile sends, in files of 1 MiB.
+    let folder = settings.join("skills/measure");
+    std::fs::create_dir_all(&folder).expect("its folder");
+    let mut sent = 0;
+    for mib in [128_usize, 512, 1000] {
+        for one in sent..mib {
+            std::fs::write(folder.join(format!("{one}.bin")), data(one, 1 << 20)).expect("written");
+        }
+        sent = mib;
+        purlis_core::runners::set_pool_limit(
+            &machine.config,
+            pool,
+            LimitId::ProfileSize,
+            Some(1024),
+        )
+        .expect("raised");
+        let began = Instant::now();
+        let ready = ready_to_start(machine, &target.root, pool);
+        say(format!(
+            "profile {mib} MiB: keep took {:?}, ok={:?}",
+            began.elapsed(),
+            ready
+                .as_ref()
+                .map_err(|why| why.chars().take(200).collect::<String>())
+        ));
+        say(format!(
+            "runner memory peak file: {}",
+            the_runner(machine, pool)
+                .prints("cat /sys/fs/cgroup/memory.peak 2>/dev/null || echo none")
+                .trim()
+        ));
+    }
+    watching.store(false, std::sync::atomic::Ordering::SeqCst);
+    let samples = peak.join().unwrap_or_default();
+    say(format!(
+        "docker stats samples: {} last 5 {:?}",
+        samples.len(),
+        samples.iter().rev().take(5).collect::<Vec<_>>()
+    ));
+    let high = samples
+        .iter()
+        .filter_map(|one| {
+            let used = one.split('/').next()?.trim();
+            let number: f64 = used
+                .trim_end_matches(|c: char| c.is_alphabetic())
+                .parse()
+                .ok()?;
+            Some(if used.ends_with("GiB") {
+                number * 1024.0
+            } else {
+                number
+            })
+        })
+        .fold(0.0_f64, f64::max);
+    say(format!("docker stats highest: {high} MiB"));
+    std::fs::remove_dir_all(&folder).expect("it goes");
+    for id in [LimitId::CodeSize, LimitId::ProfileSize] {
+        purlis_core::runners::set_pool_limit(&machine.config, pool, id, None).expect("back");
+    }
+    let _ = ready_to_start(machine, &target.root, pool);
+}
+
 fn in_the_journey(
     target: &Target,
     machine: &Machine,
@@ -452,6 +574,42 @@ fn in_the_journey(
     std::fs::remove_dir_all(&many).expect("the extra files go");
     purlis_core::runners::set_pool_limit(&machine.config, pool, hit.limit, None)
         .expect("back to the default");
+
+    step("code over its pool's limit");
+    // Over the limit on code nothing goes, and the suggestion, applied, starts the chat.
+    use purlis_core::poollimits::{self, LimitId};
+    let clone = target.root.join("workspaces").join(WORKSPACE).join("web");
+    std::fs::write(clone.join("large.bin"), data(7, 3 << 20)).expect("its file");
+    purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, Some(1))
+        .expect("the limit is lowered");
+    let refused = target
+        .sessions
+        .open_named(
+            None,
+            &a_chat(Some("Past the code limit."), None),
+            Hearing::default(),
+            &|_| {},
+        )
+        .map(|_| ())
+        .expect_err("the code is over the limit");
+    let (held_by, hits) = poollimits::hits_said_in(&refused).expect("a limit said it");
+    assert_eq!(held_by, pool);
+    let raised = hits[0].suggested.expect("a value to raise it to");
+    assert_eq!(hits[0].limit, LimitId::CodeSize, "{refused}");
+    purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, Some(raised))
+        .expect("it is saved to the pool");
+    let (id, pane) = a_chat_runs(
+        target,
+        machine,
+        pool,
+        &a_chat(Some("Past the code limit."), None),
+    );
+    pane.shows_within("Past the code limit.", LONG);
+    target.sessions.close(id).expect("it closes");
+    std::fs::remove_file(clone.join("large.bin")).expect("the file goes");
+    purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, None)
+        .expect("back to the default");
+    measure_limits(target, machine, pool, &settings, &clone);
 
     step("the chat moves back");
     // Move it back here: its conversation and the work done there come with it.
