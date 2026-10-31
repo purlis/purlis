@@ -98,6 +98,9 @@ pub struct ToCompose<'a> {
     /// none where the host hears no channel for the project (#2000). A window's launch carries
     /// the same.
     pub reporting: Option<&'a session::Reporting>,
+    /// The chat's prompt key, which the host minted for a start it composes (1.60, #3369): set
+    /// in its environment for its hooks. A window's launch carries its own.
+    pub prompt_key: Option<&'a session::PromptKey>,
     /// The scope of the link the start came on: what its run says started it (#2171).
     pub started_by: Scope,
     /// What the host does beside a start its binary composes itself (#2171).
@@ -872,6 +875,10 @@ struct Hosted {
     /// the last went without a quit, it is ended at once rather than kept for the grace period.
     /// Taken from this machine's window alone.
     ends_with_its_window: bool,
+    /// Its prompt key (1.60, #3369): its window's launch's, or the one minted here for a start
+    /// composed here. Kept in memory alone, for the window that takes it back, and written to
+    /// no record.
+    prompt_key: Option<session::PromptKey>,
 }
 
 /// **Who opened a hosted program** (#2050): a link of this host's own (its window), or a link
@@ -1886,6 +1893,25 @@ impl Hosting {
                 channel.forget(number);
             }
         };
+        // Its prompt key (#3369): the window's launch's, or one minted here for a chat's harness
+        // this host composes, as its token is issued here.
+        let prompt_key = match &start.launch {
+            Some(launch) => launch.prompt_key.clone(),
+            None if start.kind == ProgramKind::Harness => match session::PromptKey::mint() {
+                Ok(key) => Some(key),
+                Err(why) => {
+                    forget(&channel);
+                    self.end_confinements_of(&program);
+                    return Err(not_started(format!(
+                        "chat {number} could not be given its prompt key: {why}"
+                    )));
+                }
+            },
+            None => None,
+        };
+        // Answered only to a link that may compose a start or take one back: the window's, or
+        // its host's relaying it (#3369).
+        let answers_prompt_key = peer.scope().may(Power::Launch);
         // Composed off the runtime: a start the host composes itself reads the project's files
         // and starts its confinement (#2171).
         let composed = {
@@ -1895,6 +1921,7 @@ impl Hosting {
             let window = relayed_for(&self.state(), peer);
             let at = at.clone();
             let program = program.clone();
+            let prompt_key = prompt_key.clone();
             tokio::task::spawn_blocking(move || {
                 let beside = ForTheProgram {
                     hosting: hosting.clone(),
@@ -1914,6 +1941,7 @@ impl Hosting {
                     size,
                     start: &start,
                     reporting: reporting.as_ref(),
+                    prompt_key: prompt_key.as_ref(),
                     started_by,
                     beside: &beside,
                 })
@@ -2003,6 +2031,7 @@ impl Hosting {
                     opened_by: OpenedBy::ThisHost,
                     profile: start.profile.clone(),
                     ends_with_its_window,
+                    prompt_key: prompt_key.clone(),
                 },
             );
             windowless
@@ -2097,6 +2126,7 @@ impl Hosting {
             process,
             confined,
             sandbox: Some(sandbox),
+            prompt_key: prompt_key.filter(|_| answers_prompt_key),
         })
     }
 
@@ -2230,6 +2260,8 @@ impl Hosting {
                 profile: None,
                 // A browser lives as its chat's window keeps it (#2025), never by this word.
                 ends_with_its_window: false,
+                // A browser has no prompts of a chat's to digest.
+                prompt_key: None,
             },
         );
         drop(state);
@@ -2255,6 +2287,7 @@ impl Hosting {
             process,
             confined: None,
             sandbox: Some(session::RunSandbox::Off),
+            prompt_key: None,
         })
     }
 
@@ -2462,6 +2495,7 @@ impl Hosting {
                 } else {
                     Vec::new()
                 },
+                prompt_key: hosted.prompt_key.clone(),
             })
             .collect();
         programs.sort_by(|a, b| (a.number, &a.program).cmp(&(b.number, &b.program)));

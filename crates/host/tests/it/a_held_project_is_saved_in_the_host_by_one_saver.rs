@@ -152,6 +152,7 @@ fn a_launch() -> Launch {
         git_hooks: None,
         reporting: None,
         confinement: None,
+        prompt_key: None,
     }
 }
 
@@ -463,6 +464,7 @@ async fn a_program_that_ends_in_the_project_tells_its_saver_and_the_saver_sees_w
         git_hooks: None,
         reporting: None,
         confinement: None,
+        prompt_key: None,
     };
     let program = client
         .start_program_told(StartProgram {

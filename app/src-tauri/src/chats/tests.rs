@@ -2626,6 +2626,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             plane_skills: true,
             skills_read: Default::default(),
             clones_at_start: None,
+            prompt_key: None,
         },
     );
 
@@ -2702,6 +2703,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 plane_skills: true,
                 skills_read: Default::default(),
                 clones_at_start: None,
+                prompt_key: None,
             },
         );
     };
@@ -3142,6 +3144,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                 plane_skills: true,
                 skills_read: Default::default(),
                 clones_at_start: None,
+                prompt_key: None,
             },
         );
     };
@@ -7462,6 +7465,7 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 plane_skills: true,
                 skills_read: Default::default(),
                 clones_at_start: None,
+                prompt_key: None,
             },
         );
         let case = format!("compiled {}, recorded {ran:?}", confines.is_some());
@@ -7905,6 +7909,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 plane_skills: true,
                 skills_read: Default::default(),
                 clones_at_start: None,
+                prompt_key: None,
             },
         );
     };
@@ -7960,6 +7965,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 plane_skills: true,
                 skills_read: Default::default(),
                 clones_at_start: None,
+                prompt_key: None,
             },
         );
     };
@@ -8164,6 +8170,7 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 plane_skills: true,
                 skills_read: Default::default(),
                 clones_at_start: None,
+                prompt_key: None,
             },
         );
     }
@@ -8439,6 +8446,7 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
                 plane_skills,
                 skills_read: Default::default(),
                 clones_at_start: None,
+                prompt_key: None,
             },
         );
     }
@@ -8733,4 +8741,112 @@ fn a_new_chat_on_goose_without_mcp_says_skills_are_not_supported_on_its_tab_3585
     assert!(chats.start_notes(without).is_empty(), "said once");
     assert!(chats.start_notes(with).is_empty());
     assert!(chats.start_notes(shell).is_empty());
+}
+
+/// #3369: a harness chat this window composes is started with a prompt key of its own, handed
+/// to its host with the start, and Use skill… digests under that key, never under the chat's id.
+/// A shell gets none.
+#[test]
+fn a_harness_chat_this_window_composes_is_given_its_own_prompt_key_and_a_shell_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = Pretend::default();
+    let chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(host.clone()),
+        dir.path().to_path_buf(),
+    );
+    let start = |harness: Option<Harness>| {
+        chats
+            .start_ready(
+                &chat("/bin/sh", "a chat", None),
+                &purlis_core::start::Ready {
+                    harness,
+                    ..a_shell_ready()
+                },
+                SIZE,
+            )
+            .expect("it starts")
+    };
+
+    let one = start(Some(Harness::Codex));
+    let two = start(Some(Harness::Codex));
+    let shell = start(None);
+
+    let openings = host.openings();
+    let key = openings[0]
+        .prompt_key
+        .clone()
+        .expect("a harness chat's key");
+    assert_eq!(
+        chats.skills_of(one).and_then(|chat| chat.salt),
+        Some(key.clone())
+    );
+    assert_ne!(
+        openings[1].prompt_key,
+        Some(key.clone()),
+        "one key per chat"
+    );
+    assert_eq!(openings[2].prompt_key, None);
+    assert_eq!(chats.skills_of(shell).and_then(|chat| chat.salt), None);
+    let id = chats.record().chats[0].identity.id.clone().expect("an id");
+    assert_ne!(key.expose(), id, "never the chat's id");
+    assert!(
+        !openings[0]
+            .args
+            .iter()
+            .any(|word| word.contains(key.expose()))
+    );
+    // Not in the record the window keeps of its chats.
+    let record = format!("{:?}", chats.record());
+    assert!(!record.contains(key.expose()));
+    let _ = two;
+}
+
+/// #3369: a chat its runner composes is digested under the key the runner answered.
+#[test]
+fn a_runner_chats_prompt_key_is_the_one_its_runner_answered() {
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    host.on_a_runner();
+    let chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(host.clone()),
+        plane.path().to_path_buf(),
+    );
+    let session = chats
+        .start_ready(
+            &on_the_profile_work(),
+            &purlis_core::start::Ready {
+                sandbox: Some(a_claude_sandbox(plane.path())),
+                ..a_harness_ready(None)
+            },
+            SIZE,
+        )
+        .expect("it starts on the runner");
+
+    assert_eq!(
+        chats.skills_of(session).and_then(|chat| chat.salt),
+        purlis_core::skillspan::PromptSalt::of_key(&format!("composed-{session}"))
+    );
+}
+
+/// #3369: a chat reattached after the window restarts is digested under the key its host kept.
+#[test]
+fn a_reattached_chats_prompt_key_is_the_one_its_host_kept() {
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    host.leaves_running(3, None);
+    let chats = restartable_chats_of(plane.path(), host.clone());
+
+    let open = chats.put_back(
+        &left_running_in(plane.path(), a_resumable_chat_in(plane.path())),
+        SIZE,
+    );
+
+    assert_eq!(host.reattached(), [3]);
+    assert_eq!(open[0].session, 3);
+    assert_eq!(
+        chats.skills_of(3).and_then(|chat| chat.salt),
+        purlis_core::skillspan::PromptSalt::of_key("left-3")
+    );
 }

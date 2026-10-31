@@ -6811,14 +6811,19 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   line that reads the same, and a copy is passed over only where it is the same chat's, under
   the same id, and says the same thing.
   A `UserPromptSubmit` report carries `prompt_marks` (#2775): a 256-bit Bloom filter of the
-  HMAC-SHA256 digests, keyed by the chat's own id (`PURLIS_CHAT_ULID`, #3029), of the stretches
+  HMAC-SHA256 digests, keyed by the chat's prompt key (`PURLIS_PROMPT_KEY`, #3369), of the stretches
   of each line of the prompt (from any word, up to 6 words; at most 36), and never the prompt's
   words, so the app knows a skill Use skill… typed was in the prompt sent. Only a Codex or
   opencode chat marks every stretch; a Claude Code chat, which names the skill instead, marks
   the prompt's lead alone (the first 6 words of its first line, so a first line that short is
-  digested whole), what a curation action's prompt is known by, and a hook with no chat id marks
-  nothing. The key separates chats and hides nothing: the chat's id is no secret (#3369). It is heard
-  live alone: never spooled, never in the event log. A `userpromptexpansion` tool line (Claude
+  digested whole), what a curation action's prompt is known by, and a hook with no prompt key
+  marks nothing. The prompt key is 32 random bytes in hex, one per chat, minted where the chat is
+  composed: by the window for a chat it composes, by the session host for one it composes (a
+  runner's). It is set in the chat's environment alone, never on its command line, and the
+  window and the host keep it in memory alone, beside the running chat; the host answers it to
+  the window that started the chat or takes it back after a restart (session protocol 1.60). It
+  is written to no file here, no log and no record. The marks are heard live alone: never
+  spooled, never in the event log. A `userpromptexpansion` tool line (Claude
   Code) names the skill a `/<skill>` the person sent expanded into, as its `skill`, started by
   `use-skill`: the app opens a run only for a skill Use skill… typed and still holds.
   Another, `doing`, says what a chat's tool hook saw, for the one line a working chat's row

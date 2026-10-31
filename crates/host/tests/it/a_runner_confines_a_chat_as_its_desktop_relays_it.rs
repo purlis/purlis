@@ -215,6 +215,7 @@ fn a_launch(harness: Option<&str>, confinement: Option<&str>) -> StartProgram {
             git_hooks: None,
             reporting: None,
             confinement: confinement.map(str::to_owned),
+            prompt_key: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }

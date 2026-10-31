@@ -57,6 +57,13 @@ pub const TOKEN_ENV: &str = "PURLIS_CHAT_TOKEN";
 /// inherited ([`NOT_INHERITED`]): an app started from a chat's shell does not hand it on.
 pub const CHAT_ID_ENV: &str = "PURLIS_CHAT_ULID";
 
+/// The chat's prompt key (#3369), in the environment of a chat purlis started and of no other:
+/// the secret its hooks key the digests of its prompts by ([`crate::skillspan::PromptSalt`]).
+/// Minted where the chat is composed, by the window or by the session host, and set there, after
+/// anything a profile set. Never on a command line, and never inherited ([`NOT_INHERITED`]): a
+/// chat another chat's shell starts gets its own.
+pub const PROMPT_KEY_ENV: &str = "PURLIS_PROMPT_KEY";
+
 /// Set to `1` in the environment of a chat the app actually started under a sandbox, and in no
 /// other (#1338, #1345). Read through [`crate::sandbox::chat_is_sandboxed`]. The app sets it at
 /// the launch, so a chat's own shell cannot claim it for the harness the hooks run under.
@@ -122,6 +129,7 @@ pub const NOT_INHERITED: &[&str] = &[
     WRAPPED_ENV,
     crate::sandboxblock::CHAT_DIR_ENV,
     CHAT_ID_ENV,
+    PROMPT_KEY_ENV,
 ];
 
 /// Which conversation a report is of, and how well that is known.
@@ -293,13 +301,13 @@ impl Report {
     }
 }
 
-/// **What a hook marks of the prompt the person sent** (SK-38, #3029), under the chat's salt
-/// ([`crate::skillspan::PromptSalt`]): every stretch of its lines where the chat's harness
+/// **What a hook marks of the prompt the person sent** (SK-38, #3029), under the chat's prompt
+/// key ([`crate::skillspan::PromptSalt`], #3369): every stretch of its lines where the chat's harness
 /// confirms a typed skill by the prompt (Codex, opencode), and only its lead where the harness
 /// names the skill a prompt started (Claude Code), as a curation action's prompt is known by its
 /// lead on every harness; a first line of six words or fewer is its own lead, and so is
-/// digested whole ([`crate::skillspan::PromptMarks::lead_of`]). Nothing outside a chat that has an id, or on a
-/// harness purlis does not know. The salt separates chats and hides nothing (#3369).
+/// digested whole ([`crate::skillspan::PromptMarks::lead_of`]). Nothing outside a chat that has
+/// a prompt key, or on a harness purlis does not know.
 fn prompt_marks(
     prompt: &str,
     env: &dyn Fn(&str) -> Option<String>,

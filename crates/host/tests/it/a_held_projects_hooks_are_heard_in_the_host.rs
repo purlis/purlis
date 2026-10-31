@@ -217,6 +217,7 @@ fn the_windows_start(number: Option<u32>) -> StartProgram {
                 token: "the-window-s-token".into(),
             }),
             confinement: None,
+            prompt_key: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }

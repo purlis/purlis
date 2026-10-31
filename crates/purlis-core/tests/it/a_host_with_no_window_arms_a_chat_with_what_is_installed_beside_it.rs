@@ -180,6 +180,7 @@ fn composed(project: &Project, kit: &Kit, host: &Host) -> Result<Launch, String>
                 token: "token-3".into(),
             }),
             started_by: "local-ui",
+            prompt_key: None,
         },
         project.sandboxed_start(),
         kit,

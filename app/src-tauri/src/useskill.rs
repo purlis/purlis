@@ -359,7 +359,8 @@ pub(crate) fn use_skill(
 }
 
 /// What Use skill… types to start `skill` of `skills` with `values`, its text digested under
-/// the chat's `salt`; refused for a chat that has no id yet, whose prompts nothing could match.
+/// the chat's `salt`; refused for a chat that has no prompt key, whose prompts nothing could
+/// match.
 fn typing_of(
     skills: &purlis_core::skills::ChatSkills,
     salt: Option<&purlis_core::skillspan::PromptSalt>,
