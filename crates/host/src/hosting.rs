@@ -2425,6 +2425,7 @@ impl Hosting {
                 )),
                 opened_by,
                 profile: None,
+                harness: None,
                 // A browser lives as its chat's window keeps it (#2025), never by this word.
                 ends_with_its_window: false,
                 // A browser has no prompts of a chat's to digest.
