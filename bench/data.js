@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793475927568,
+  "lastUpdate": 1793477102781,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33978,6 +33978,48 @@ window.BENCHMARK_DATA = {
             "value": 102.19706500000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.786, 102.012, 102.197, 102.264, 103.198 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f8cdcd837b98d2bc52ecd4884e9306c9e45ae9e8",
+          "message": "Parity: the hook line's test counts it after the drain; opencode's terminal sign-out says what it reaches (#4334)\n\n* The hook line's behaviour counts it after the drain, and tries a host too slow for its hook\n\nThe parity job on the merge group of #4272 failed on the assertion that no copy of a hook's line\nwaits in its spool. A hook that hears nothing in a quarter of a second spools the line as well, by\ndesign (ADR 0075 §7, #952), so on a busy machine that assertion read a timing, not a fault. And it\nran before the drain, the only moment a line written twice could show.\n\nSo the count now comes after the drain. A new Docker test stops the runner's host while the hook\nruns: the copy has to be there, and the log has to hold one line after the host starts again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69E71RMCKZFH7D3A65YCGYJ\nPurlis-Persona: steward\n\n* opencode's terminal sign-out says what it reaches, and its line is asked again when its tab closes (#4274)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69E71RMCKZFH7D3A65YCGYJ\nPurlis-Persona: steward\n\n* Review: the hook line is counted after its chat's end, whose drain holds on every path\n\nA host that reads the line once its hook has gone refuses it, and nothing then sets off a drain\nuntil the chat ends, so the count comes after that. A failed copy of a spool still there now fails\nthe test rather than reading as empty; starting the host again cannot panic inside a panic; and a\nsign-out's tab counts as closed only once it has been shown.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69E71RMCKZFH7D3A65YCGYJ\nPurlis-Persona: steward\n\n* Review: the sign-out terminals' test makes its tabs\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69E71RMCKZFH7D3A65YCGYJ\nPurlis-Persona: steward\n\n* The slow-host test finds the project once its chat has started\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69E71RMCKZFH7D3A65YCGYJ\nPurlis-Persona: steward\n\n* The slow-host test signals through the container's tmp folder, seen from outside first\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69E71RMCKZFH7D3A65YCGYJ\nPurlis-Persona: steward\n\n* Review: the hook line's test ends its chat as the window does, drain and all\n\nClosing a session on the window's target only removes the chat; the window drains its spool with\nchat_ended. The sign-out terminals' test pins that a tab not drawn yet has not closed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69E71RMCKZFH7D3A65YCGYJ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T19:33:16Z",
+          "tree_id": "3a65ca9826b1f53334622b73b9dcd62f3d80287c",
+          "url": "https://github.com/purlis/purlis/commit/f8cdcd837b98d2bc52ecd4884e9306c9e45ae9e8"
+        },
+        "date": 1793477097018,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6672245,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.662, 0.663, 0.667, 0.676, 0.689 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4943035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.434, 16.472, 16.494, 16.688, 16.857 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.1795065,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.133, 102.849, 103.180, 103.202, 103.778 ms"
           }
         ]
       }
