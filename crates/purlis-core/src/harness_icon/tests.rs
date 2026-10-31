@@ -364,7 +364,7 @@ fn an_icon_that_fell_back_says_why() {
     assert_eq!(fell_back(Some("dir.svg"), root), Some(UNREAD));
     assert_eq!(
         fell_back(Some("refused.svg"), root),
-        Some("the file is not well-formed SVG")
+        Some("the SVG has no view box")
     );
     assert_eq!(fell_back(Some("no-such-glyph"), root), Some(NO_SUCH_ICON));
     assert_eq!(fell_back(Some("mine.svg"), None), Some(NO_CONFIG_HOME));

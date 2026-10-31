@@ -336,6 +336,7 @@ function profilesCollection(
         name: nameOf(one),
         settings: only === undefined ? [] : only.settings.map((setting) => setting.id),
         page: only === undefined ? profilePage(nameOf(one)) : undefined,
+        says: one.icon_fell_back ? `Its icon is its monogram: ${one.icon_fell_back}.` : undefined,
       })),
     adds: only === undefined,
     home: "project.harness",

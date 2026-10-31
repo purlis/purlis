@@ -69,6 +69,7 @@ export function CollectionView({
   const [sure, setSure] = useState<{ entry: string; running: number }>();
   const addButton = useRef<HTMLButtonElement>(null);
   const whole = useRef<HTMLDivElement>(null);
+  const described = useId();
   const sureButton = useRef<HTMLButtonElement>(null);
   // The question's Remove takes the focus as it is drawn, so Enter and Escape answer it.
   useEffect(() => {
@@ -168,8 +169,14 @@ export function CollectionView({
           )}
         </div>
       )}
-      {collection.entries.map((entry) => (
-        <div key={entry.id} className="ui-collection-entry" role="group" aria-label={entry.label}>
+      {collection.entries.map((entry, at) => (
+        <div
+          key={entry.id}
+          className="ui-collection-entry"
+          role="group"
+          aria-label={entry.label}
+          aria-describedby={entry.says === undefined ? undefined : `${described}-${at}`}
+        >
           <div className="ui-collection-head">
             <h3>{entry.label}</h3>
             {entry.status !== undefined && <HostStatus waiting={entry.status === "waiting"} />}
@@ -211,6 +218,11 @@ export function CollectionView({
               Remove
             </Button>
           </div>
+          {entry.says !== undefined && (
+            <p className="ui-setting-help" id={`${described}-${at}`}>
+              {entry.says}
+            </p>
+          )}
           {sure?.entry === entry.id && (
             <div
               className="ui-collection-form"

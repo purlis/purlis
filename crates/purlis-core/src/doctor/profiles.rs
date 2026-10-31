@@ -236,8 +236,42 @@ pub(super) fn profile_rows(d: &Doctor) -> Vec<Row> {
 
 /// **`profile icons`** (#3137): each profile whose icon fell back to its monogram, with why. No row
 /// where none did.
-fn icon_row(_named: &[(&str, &str)], _config_root: Option<&Path>) -> Option<Row> {
-    None
+fn icon_row(named: &[(&str, &str)], config_root: Option<&Path>) -> Option<Row> {
+    let fell: Vec<String> = named
+        .iter()
+        .filter_map(|(name, icon)| {
+            let why = crate::harness_icon::fell_back(Some(icon), config_root)?;
+            Some(format!("{}: {why}", shown::short(name)))
+        })
+        .collect();
+    (!fell.is_empty()).then(|| {
+        Row::warn(
+            "profile icons",
+            counted(&fell.join("; "), DISPLAY_LIMIT),
+            "each draws its harness's monogram until then: mend the file in purlis's icons folder, \
+             or change the profile's icon",
+        )
+        .in_settings(SettingsGroup::Harness)
+    })
+}
+
+/// [`icon_row`] for the profiles this machine declares now. Reads each file a profile names, so
+/// it is left out of `--preflight` as the probes are.
+pub(super) fn profile_icons(d: &Doctor) -> Option<Row> {
+    if d.preflight {
+        return None;
+    }
+    let set = profiles::current(&d.root);
+    let named: Vec<(&str, &str)> = set
+        .profiles()
+        .iter()
+        .filter_map(|p| Some((p.name.as_str(), set.icon_of(&p.name)?)))
+        .collect();
+    if named.is_empty() {
+        return None;
+    }
+    let root = crate::machine::config_root_if_there();
+    icon_row(&named, root.as_deref())
 }
 
 /// The row a finished probe answers: green when wired, and otherwise a warning whose hint is
