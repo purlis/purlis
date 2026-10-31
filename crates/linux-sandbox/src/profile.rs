@@ -266,7 +266,7 @@ impl Profile {
             }
             let filters = rest.iter().map(filter).collect::<Result<Vec<_>, _>>()?;
             if allow
-                && ops.iter().any(|op| op == "process-exec")
+                && ops.iter().any(|op| names(op, "process-exec"))
                 && !filters
                     .iter()
                     .all(|it| matches!(it, Filter::Subpath(_) | Filter::Literal(_)))

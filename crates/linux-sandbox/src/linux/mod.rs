@@ -296,7 +296,12 @@ fn chat_side(words: &[String], env: Env) -> i32 {
     let Some(socket) = words.first() else {
         return refuse("the sandbox's chat side was started without its socket");
     };
-    let Some(end) = words.iter().position(|word| word == crate::END) else {
+    let Some(end) = words
+        .iter()
+        .skip(1)
+        .position(|word| word == crate::END)
+        .map(|at| at + 1)
+    else {
         return refuse("the sandbox's chat side was started without a program");
     };
     let program = &words[end + 1..];

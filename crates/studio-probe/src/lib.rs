@@ -233,25 +233,32 @@ pub fn tried(words: &[String]) -> String {
         [verb, pid] if verb == "environ" => environ(pid),
         [verb, program, args @ ..] if verb == "start" => started(program, args),
         #[cfg(unix)]
-        [verb, program, at] if verb == "start-linked" => std::os::unix::fs::symlink(program, at)
-            .map_err(|why| why.kind().to_string())
-            .and_then(|()| {
-                let said = started(at, &[]);
-                let _ = std::fs::remove_file(at);
-                said
-            }),
+        [verb, program, at] if verb == "start-linked" => {
+            match std::os::unix::fs::symlink(program, at) {
+                Ok(()) => {
+                    let said = started(at, &[]);
+                    let _ = std::fs::remove_file(at);
+                    said
+                }
+                // Never a refusal of the start: nothing was started.
+                Err(why) => Ok(format!("no link was made: {}", why.kind())),
+            }
+        }
         #[cfg(target_os = "linux")]
         [verb, program] if verb == "start-held" => {
             use std::os::unix::fs::OpenOptionsExt as _;
             use std::os::unix::io::AsRawFd as _;
             /// `O_PATH`, the same number on every architecture purlis runs on.
             const PATH_ONLY: i32 = 0o10000000;
-            std::fs::OpenOptions::new()
+            match std::fs::OpenOptions::new()
                 .read(true)
                 .custom_flags(PATH_ONLY)
                 .open(program)
-                .map_err(|why| why.kind().to_string())
-                .and_then(|held| started(&format!("/proc/self/fd/{}", held.as_raw_fd()), &[]))
+            {
+                Ok(held) => started(&format!("/proc/self/fd/{}", held.as_raw_fd()), &[]),
+                // Never a refusal of the start: nothing was started.
+                Err(why) => Ok(format!("no descriptor was held: {}", why.kind())),
+            }
         }
         _ => Err(format!("nothing to try in {words:?}")),
     };
