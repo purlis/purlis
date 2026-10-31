@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PoolLimitOffer } from "./bindings";
 import { StartChatLimit } from "./StartChatLimit";
 
@@ -17,6 +17,8 @@ const hit = {
 const offer = (hits = [hit]): PoolLimitOffer => ({ pool: "builds", hits });
 const box = () => screen.getByRole("textbox", { name: /Most a profile may send: files/ });
 const apply = () => screen.getByRole("button", { name: "Save to the pool and start" });
+
+afterEach(cleanup);
 
 describe("a start over a pool's limit", () => {
   it("offers the suggested value, and applies it", () => {
