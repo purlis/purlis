@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793425332986,
+  "lastUpdate": 1793427375682,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32634,6 +32634,48 @@ window.BENCHMARK_DATA = {
             "value": 102.48866799999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.516, 102.372, 102.489, 102.661, 103.255 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "eaef764025c941856440c204ca33d815e50b112b",
+          "message": "Notice card: mark and title as theme parts; secondary button visible on the card (#3478) (#4169)\n\n* theme: a notice card's mark and title are parts; its secondary ways look like buttons (#3478)\n\nnotice.mark (text) and notice.title (text, font size, font weight) join\nthe notice family's parts, since NEXT. The mark is held as a mark (3:1)\nand the title's words are read on the card's ground by the theme check.\nA card's under, the room its Details open in, stays no part: it paints\nnothing and its words are the notice's own.\n\nOn a notice card, a secondary button is drawn in a control's hover fill\nat rest and its aimed fill under the pointer. In Purlis its own fill is\nthe overlay the card stands on, so Add a vision read as words with no\nbox. A theme's button.root fill, in the parts layer above, still wins.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme: a card's mark names no default colour (#3478)\n\nIts colour is its variant's, which one default cannot say; as\nstate.success it was measured on the trouble and attention grounds,\nwhere the card never draws it. A theme's own mark colour is held as a\nmark, at 3:1.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: a secondary way on a notice card stands apart from it (#3478)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* fix: a notice card's secondary way stands farther from every card ground, more so pointed at (#3478)\n\n#4169's review: control.hover and control.aimed brought the button nearer\nthe card under the pointer, and in Purlis nearer the trouble and\nattention grounds than before. On a card's row of ways (not what it\nopens under them), a secondary button is now drawn a step from its own\nfill toward the words, mixed in OKLab (14%), and a further step under the\npointer (22%).\n\nnoticeCardFill.test.ts reads every built-in appearance: on the overlay,\ntrouble's and attention's grounds the fill is farther than the family's\nwas, at least SEEN from it, farther still pointed at, and its words stay\nat 4.5:1. The story measures all three tones in the browser by OKLab\ndistance.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-31T05:51:13Z",
+          "tree_id": "23634b6873d4003cca81ede46c0b178f3fb0d580",
+          "url": "https://github.com/purlis/purlis/commit/eaef764025c941856440c204ca33d815e50b112b"
+        },
+        "date": 1793427369582,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.530505,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.528, 0.529, 0.531, 0.539, 0.542 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3398415,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.270, 16.331, 16.340, 16.349, 16.536 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.572352,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.506, 101.499, 102.572, 102.900, 103.372 ms"
           }
         ]
       }
