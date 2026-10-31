@@ -51,11 +51,7 @@ type RouterScope = {
 };
 
 /** Why the plan's Start can't be pressed now, or nothing where it can. */
-function startRefused(
-  router: string,
-  plan: RouterGradePlan,
-  newer: boolean,
-): string | undefined {
+function startRefused(router: string, plan: RouterGradePlan, newer: boolean): string | undefined {
   if (newer) return "The plan changed: read the new one first.";
   if (plan.chats === 0) return "No skill of this library has trigger tests to run yet.";
   if (plan.refused !== null) return `No grade can run on ${plan.profile ?? "this profile"}.`;
@@ -306,8 +302,8 @@ export function RouterGradePlanPage({
               Grading runs {counted(plan.chats, "chat", "chats")}, one turn each: each of the{" "}
               {counted(tests, "trigger test", "trigger tests")} of{" "}
               {counted(plan.skills.length, "skill", "skills")} {counted(plan.runs, "time", "times")}{" "}
-              with the router {plan.router} in place and {counted(plan.runs, "time", "times")}{" "}
-              with the built-in router, each chat handed the library of{" "}
+              with the router {plan.router} in place and {counted(plan.runs, "time", "times")} with
+              the built-in router, each chat handed the library of{" "}
               {counted(plan.library, "skill", "skills")}, up to{" "}
               {counted(plan.chats, "chat", "chats")} × {plan.chat_minutes} min.{" "}
               {routerCostSaid(plan)} It stops once its chats have spent{" "}
@@ -316,9 +312,9 @@ export function RouterGradePlanPage({
               cost {limitSaid(plan)}. The chats run on{" "}
               {plan.profile ?? "the project's default profile"}
               {plan.model === null ? "" : `, on ${plan.model}`}
-              {plan.sandbox === null ? "" : `, in the project's ${plan.sandbox}`}, with none of
-              your own Allows and no tools but purlis's that only read, and its account pays for
-              them as for any chat. It is recorded{" "}
+              {plan.sandbox === null ? "" : `, in the project's ${plan.sandbox}`}, with none of your
+              own Allows and no tools but purlis's that only read, and its account pays for them as
+              for any chat. It is recorded{" "}
               {plan.commit === null
                 ? "on a library with changes not committed"
                 : `on the library at ${plan.commit.slice(0, 12)}`}

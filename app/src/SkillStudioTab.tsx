@@ -918,18 +918,18 @@ export function SkillStudioTab({
     : routerGrading !== undefined
       ? gradingPath({ at: "running", grade: routerGrading })[0].label
       : routerGrade !== undefined
-      ? routerGrade.chat === undefined
-        ? "Grade"
-        : "Grade's chat"
-      : harnessRow !== undefined
-        ? harnessRow.kind === "not-supported"
-          ? harnessRow.one.title
-          : harnessRow.kind === "none"
-            ? harnessRow.title
-            : harnessRow.skill.name
-        : routedChat === undefined
-          ? undefined
-          : `Chat ${routedChat.session}`;
+        ? routerGrade.chat === undefined
+          ? "Grade"
+          : "Grade's chat"
+        : harnessRow !== undefined
+          ? harnessRow.kind === "not-supported"
+            ? harnessRow.one.title
+            : harnessRow.kind === "none"
+              ? harnessRow.title
+              : harnessRow.skill.name
+          : routedChat === undefined
+            ? undefined
+            : `Chat ${routedChat.session}`;
   const inSources = page === "sources" ? at.sources : undefined;
   const path: Crumb[] = [
     { id: page, label: STUDIO_PAGE_NAMES[page] },

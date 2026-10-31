@@ -485,9 +485,9 @@ describe("A router's grade running, a page on Routing (#4222)", () => {
     expect(endSaid(step({ ran: 4, cap: 1000, ended: "over-cap" }))).toBe(
       "Stopped at its cap of 1,000 tokens after 4 chats. What ran is scored.",
     );
-    expect(
-      endSaid(step({ ended: "chats-did-not-start", said: "the router did not answer" })),
-    ).toBe("The grade stopped: its chats did not start. the router did not answer");
+    expect(endSaid(step({ ended: "chats-did-not-start", said: "the router did not answer" }))).toBe(
+      "The grade stopped: its chats did not start. the router did not answer",
+    );
   });
 });
 
