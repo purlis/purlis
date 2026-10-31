@@ -730,8 +730,8 @@ pub fn standing_for_the_wire(
 /// here. The settings `sent` carries (1.50, #3448) are kept in place of the ones kept before;
 /// none sent leaves them as they are. Those of a keep that sent only what changed (#4088) are
 /// what it holds with those in place, read off its disk now, checked whole as any others and kept
-/// only where they come to the digest the keep names, so nothing it said of them decides it;
-/// where they are already there and nothing else is, nothing is written.
+/// as any others, only where they come to the digest the keep names, so nothing it said of them
+/// decides it.
 pub fn kept_for_the_desktop(
     homes: &Homes,
     home: &Path,
@@ -786,11 +786,7 @@ pub fn kept_for_the_desktop(
     };
     let record = keep(homes, home, &Kept::from(sent), desktop, now)?;
     if let Some(files) = &checked {
-        let there =
-            sent.settings_changed.is_some() && super::made::settings_exactly_there(&record, files);
-        if !there {
-            super::made::settings_kept(homes, &record, files)?;
-        }
+        super::made::settings_kept(homes, &record, files)?;
     }
     Ok(standing_for_the_wire(standing(&record, look)))
 }

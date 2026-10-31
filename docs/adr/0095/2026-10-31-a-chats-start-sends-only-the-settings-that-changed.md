@@ -3,7 +3,7 @@
 **Built by #4088**, under spec #2041, after the person asked that a profile's settings stop
 crossing whole at every chat's start. It extends the 2026-10-30 amendment, whose checks, limits and
 all-or-none stand. Everything here is **decided in implementation, to be confirmed** (D-4088-1 to
-D-4088-7 in the pull request).
+D-4088-6 in the pull request).
 
 1. **A runner says what it holds** (session protocol 1.60, `settings_held`, the paired desktop's
    alone, on its own link, as `keep_profile` is): the path and SHA-256 of each settings file of a
@@ -24,12 +24,11 @@ D-4088-7 in the pull request).
    list that could not be a runner's: a path an import would not write, one twice, a digest that
    looks like none, pages that do not go forward, more than a runner holds, or one with no file in
    common. A runner that stops answering is asked nothing more.
-5. **Nothing is written where nothing differs.** Where the result is what the settings folder
-   already holds and it holds nothing else, the keep moves nothing. Under each listed name only
-   private folders leading to those files, and each file private, of its size, with one name, may
-   be there, reached through no link. Anything else, such as a hidden file, a skill's
-   `node_modules`, a link or a second name for a file, which a read of the settings passes over, has
-   the keep replace them all from what it just checked.
+5. **Every keep still writes what it checked.** The result is written to a stage and swapped in as
+   any keep is, even where nothing differs, so whatever a read of the settings passes over goes,
+   every file gets a new name and no earlier writer holds it, and a link above the settings refuses
+   the keep. Skipping the write was tried and removed: it saved under a quarter of a second, and it
+   made what is on the disk something that had to be proved equal to what was checked.
 6. **A runner before 1.60 is sent them all**, as it was.
 
 **What this does not defend against:** a runner whose own program is changed can ignore any keep,

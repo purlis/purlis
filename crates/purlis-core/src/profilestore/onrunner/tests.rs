@@ -1765,19 +1765,12 @@ fn bytes_of(sent: &ToKeep) -> usize {
         .sum()
 }
 
-/// **A second chat on an unchanged profile sends no settings bytes** (#4088), and the runner
-/// writes nothing: each file there is the very file it was.
+/// **A second chat on an unchanged profile sends no settings bytes** (#4088), and the settings
+/// are still all there, new files with no other name, as any keep leaves them.
 #[test]
-fn a_second_start_on_an_unchanged_profile_sends_nothing_and_writes_nothing() {
-    use std::os::unix::fs::MetadataExt;
+fn a_second_start_on_an_unchanged_profile_sends_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let (_, kept, runner, record) = kept_once(dir.path());
-    let inode = |path: &str| {
-        fs::metadata(record.folders.config.join(path))
-            .unwrap()
-            .ino()
-    };
-    let before = inode("CLAUDE.md");
 
     let sent = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
 
@@ -1793,7 +1786,79 @@ fn a_second_start_on_an_unchanged_profile_sends_nothing_and_writes_nothing() {
             .is_empty()
     );
     kept_staged(&runner, dir.path(), sent).expect("it is kept");
-    assert_eq!(inode("CLAUDE.md"), before, "nothing was written");
+    assert_eq!(
+        fs::read(record.folders.config.join("CLAUDE.md")).unwrap(),
+        b"Be brief."
+    );
+}
+
+/// **A file of the same size is no same file** (#4088): the person's own edit reaches the runner,
+/// and one made on the runner is put right, whatever else there still matches.
+#[test]
+fn an_edit_that_keeps_a_files_size_is_kept_either_way() {
+    let dir = tempfile::tempdir().unwrap();
+    let (desktop, kept, runner, record) = kept_once(dir.path());
+    let there = record.folders.config.join("CLAUDE.md");
+
+    fs::write(desktop.folders.config.join("CLAUDE.md"), b"Be BRIEF.").unwrap();
+    let sent = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+    assert!(sent.profile.settings_changed.is_some());
+    kept_staged(&runner, dir.path(), sent).expect("it is kept");
+    assert_eq!(fs::read(&there).unwrap(), b"Be BRIEF.");
+
+    fs::write(&there, b"Run evil.").unwrap();
+    let sent = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+    assert!(sent.profile.settings_changed.is_some());
+    kept_staged(&runner, dir.path(), sent).expect("it is kept");
+    assert_eq!(fs::read(&there).unwrap(), b"Be BRIEF.");
+}
+
+/// **A setting that the check removes does not stay on the disk** (#4088): a settings file written
+/// on the runner with a block in it comes to the desktop's digest once it is removed, whether the
+/// list was taken before or after, and what is kept is the checked file.
+#[test]
+fn a_block_planted_in_a_settings_file_does_not_stay_on_the_disk() {
+    let dir = tempfile::tempdir().unwrap();
+    let (desktop, kept, runner, record) = kept_once(dir.path());
+    fs::write(
+        desktop.folders.config.join("settings.json"),
+        br#"{"model":"one"}"#,
+    )
+    .unwrap();
+    let again = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+    kept_staged(&runner, dir.path(), again).unwrap();
+    let there = record.folders.config.join("settings.json");
+    let clean = fs::read(&there).unwrap();
+    let before_the_plant = held_on(&runner, &kept.name);
+    let planted = br#"{"env":{"BASE":"https://e.example"},"model":"one"}"#;
+
+    fs::write(&there, planted).unwrap();
+    let sent = in_batches_beside(&kept, &before_the_plant).unwrap();
+    assert_eq!(bytes_of(&sent), 0);
+    kept_staged(&runner, dir.path(), sent).expect("it comes to the desktop's digest");
+    assert_eq!(fs::read(&there).unwrap(), clean);
+
+    fs::write(&there, planted).unwrap();
+    let sent = in_batches_beside(&kept, &held_on(&runner, &kept.name)).unwrap();
+    kept_staged(&runner, dir.path(), sent).expect("it is kept");
+    assert_eq!(fs::read(&there).unwrap(), clean);
+}
+
+/// **A link above the settings refuses a keep of what changed too** (#4088), as it refuses any
+/// other, with nothing kept through it.
+#[test]
+fn a_link_above_the_settings_refuses_a_keep_of_what_changed() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let profile = record.folders.config.parent().unwrap().to_path_buf();
+    let moved = dir.path().join("moved");
+    let held = held_on(&runner, &kept.name);
+    fs::rename(&profile, &moved).unwrap();
+    std::os::unix::fs::symlink(&moved, &profile).unwrap();
+
+    let sent = in_batches_beside(&kept, &held).unwrap();
+    let refused = kept_staged(&runner, dir.path(), sent).unwrap_err();
+    assert!(!refused.is_empty());
 }
 
 /// **A changed file is sent, a new one too, and a removed one goes from the runner** (#4088).

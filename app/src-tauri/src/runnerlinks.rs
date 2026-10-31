@@ -673,6 +673,9 @@ async fn held_by(
         }
         after = page.last().map(|last| last.path.clone()).or(after);
         held.extend(page);
+        if held.len() > purlis_session_protocol::session::MOST_PROFILE_SETTINGS_FILES {
+            return Ok(Vec::new());
+        }
         if !more {
             return Ok(held);
         }
