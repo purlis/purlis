@@ -3096,3 +3096,11 @@ fn a_carry_takes_nothing_through_a_link_out_of_the_old_home() {
     let stage = the_stage(to.path());
     assert_eq!(std::fs::read_dir(&stage).unwrap().count(), 0);
 }
+
+/// **A sign-out that asks has a terminal, on the engine shown to be the person's** (#4124).
+#[test]
+fn a_sign_out_in_a_terminal_is_typed_with_a_terminal() {
+    let args = made().sign_out_in_a_terminal_args("work");
+    assert_eq!(args[..2], ["exec", "-it"]);
+    assert_eq!(args[args.len() - 3..], ["profile", "sign-out", "work"]);
+}

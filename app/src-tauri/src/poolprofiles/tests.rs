@@ -386,14 +386,14 @@ fn nothing_is_forgotten_with_no_default_to_judge_by_or_on_a_runner_before_1_57()
 /// where there is none.
 #[test]
 fn the_pools_whose_runner_keeps_a_removed_profile_are_named_in_one_sentence() {
-    assert_eq!(purlis_core::pools::older_note(&[], "work"), None);
+    assert_eq!(older_note(&[], "work"), None);
     assert_eq!(
-        purlis_core::pools::older_note(&names(&["builds"]), "work").unwrap(),
+        older_note(&names(&["builds"]), "work").unwrap(),
         "Pool builds keeps the profile 'work' and its sign-in on its runner, which runs a \
          purlis before 1.52, until the runner is made again."
     );
     assert!(
-        purlis_core::pools::older_note(&names(&["builds", "tests", "gpu"]), "work")
+        older_note(&names(&["builds", "tests", "gpu"]), "work")
             .unwrap()
             .starts_with("Pools builds, tests and gpu keep the profile 'work'")
     );
@@ -499,8 +499,6 @@ fn a_cluster_pools_profiles_are_the_ones_chosen_for_it() {
     assert!(kept_on(config.path(), "nowhere", None).is_err());
 }
 
-/// **A sign-out is done only once the runner's status check says signed out**: every other
-/// answer keeps the person from relying on it.
 /// **A sign-out says which draining runners it reached** (#4121).
 #[test]
 fn a_sign_out_names_the_draining_runners_it_reached_and_the_ones_it_did_not() {
@@ -518,6 +516,8 @@ fn a_sign_out_names_the_draining_runners_it_reached_and_the_ones_it_did_not() {
     );
 }
 
+/// **A sign-out is done only once the runner's status check says signed out**: every other
+/// answer keeps the person from relying on it.
 #[test]
 fn a_sign_out_is_done_only_where_the_harness_says_signed_out() {
     let said = |asked| signed_out_by_its_harness("work", "builds", asked);
@@ -566,6 +566,7 @@ fn a_runner_in(container: char, device: &str) -> purlis_core::runners::Kept {
         of: None,
         draining: false,
         carried: false,
+        unpaired: false,
         signed_out: Vec::new(),
     }
 }

@@ -492,7 +492,7 @@ pub fn type_profile_sign_in(
 /// at the project root, as a sign-in is.
 #[tauri::command]
 #[specta::specta]
-pub fn type_profile_sign_out(
+pub async fn type_profile_sign_out(
     app: tauri::AppHandle,
     plane: PlaneId,
     session: u32,
@@ -505,7 +505,8 @@ pub fn type_profile_sign_out(
             "that tab is not a shell at the project root, so no sign-out was typed.".to_owned(),
         );
     }
-    let line = crate::poolprofiles::sign_out_line(&pool, &name)?;
+    // Off the window's thread: it waits on the runners' lock, which a carry holds for minutes.
+    let line = blocking(move || crate::poolprofiles::sign_out_line(&pool, &name)).await?;
     held.operator_input(session, line.as_bytes())?;
     Ok(())
 }

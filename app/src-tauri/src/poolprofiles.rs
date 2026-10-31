@@ -397,12 +397,10 @@ fn untidied(pool: &str) {
 /// in words, naming the pools that kept it whose runner runs a purlis before 1.52, which keeps
 /// it.
 pub fn forget_off_the_pools(name: &str) -> Option<String> {
-    let yours = Yours::Docker(owned().ok()?);
-    let yours = &yours;
     let config = config_root().ok()?;
     let config = config.as_path();
     let pools = purlis_core::runners::pools(config).ok()?;
-    // Its sign-in is carried off no draining runner (#4145).
+    // First: its sign-in is carried off no draining runner (#4145), whatever else answers.
     for pool in &pools {
         if let Err(why) = purlis_core::runners::hold_from_carrying(config, pool.name(), name) {
             tracing::warn!(
@@ -411,6 +409,8 @@ pub fn forget_off_the_pools(name: &str) -> Option<String> {
             );
         }
     }
+    let yours = Yours::Docker(owned().ok()?);
+    let yours = &yours;
     let said: Vec<_> = std::thread::scope(|scope| {
         let asked: Vec<_> = pools
             .iter()
@@ -463,7 +463,24 @@ pub fn forget_off_the_pools(name: &str) -> Option<String> {
             tracing::warn!("purlis: pool {pool_name} still names {name}: {why}");
         }
     }
-    purlis_core::pools::older_note(&older, &purlis_core::shown::short(name))
+    older_note(&older, &purlis_core::shown::short(name))
+}
+
+/// What the person is told of the pools in `older`, whose runner keeps the removed profile
+/// `name` as it runs a purlis before 1.52; none where there is none.
+fn older_note(older: &[String], name: &str) -> Option<String> {
+    match older {
+        [] => None,
+        [one] => Some(format!(
+            "Pool {one} keeps the profile '{name}' and its sign-in on its runner, which runs a \
+             purlis before 1.52, until the runner is made again."
+        )),
+        [rest @ .., last] => Some(format!(
+            "Pools {} and {last} keep the profile '{name}' and its sign-in on their runners, \
+             which run a purlis before 1.52, until each runner is made again.",
+            rest.join(", ")
+        )),
+    }
 }
 
 /// **Whether this machine's Docker pools' runners are shown to be the person's own** (#2049, by
@@ -1045,9 +1062,9 @@ pub fn sign_in_line(
 
 /// **The line a shell here runs to sign `name` out on pool `pool`'s Docker runner** (#4124), for a
 /// harness whose sign-out asks which sign-in goes: the runner's own `purlis profile sign-out`, in
-/// the terminal the person answers in. No drain carries its sign-in from here on (#4145): what
-/// the person answers there ends a sign-in on the pool's runner, and a draining runner's ends
-/// with it. A cluster pool's is refused in words.
+/// the terminal the person answers in. Once the line is ready, no drain carries its sign-in
+/// (#4145), and a draining runner keeps its own until it is removed. A cluster pool's is refused
+/// in words.
 pub fn sign_out_line(pool: &str, name: &str) -> Result<String, String> {
     let config = config_root()?;
     let engine = match yours(&config, pool)? {
@@ -1061,9 +1078,10 @@ pub fn sign_out_line(pool: &str, name: &str) -> Result<String, String> {
     };
     let record = record_named(&config, name)?;
     onrunner::Kept::of(&record)?;
-    purlis_core::runners::hold_from_carrying(&config, pool, name).map_err(|why| why.to_string())?;
     let runner = this_desktops_runner(&config, pool)?;
-    crate::runnerlinks::docker()?.sign_out_line(&runner.made, &engine, name)
+    let line = crate::runnerlinks::docker()?.sign_out_line(&runner.made, &engine, name)?;
+    purlis_core::runners::hold_from_carrying(&config, pool, name).map_err(|why| why.to_string())?;
+    Ok(line)
 }
 
 /// **The runner's own sign-in of `name` on pool `pool`'s runner, by `typed`**: through this
@@ -1439,10 +1457,19 @@ pub async fn pool_sign_out(pool: String, name: String) -> Result<Option<String>,
                 // First, so that no drain carries it even if the rest stops short.
                 draining = purlis_core::pools::sign_out_draining(&config, &docker, &pool, &name)
                     .map_err(|why| why.to_string())?;
-                let runner = this_desktops_runner(&config, &pool)?;
+                let runner = this_desktops_runner(&config, &pool)
+                    .map_err(|why| with_draining_said(why, &name, &draining))?;
                 docker
                     .sign_out(&runner.made, &name)
                     .map_err(|why| with_draining_said(why, &name, &draining))?;
+                // A follow since the first look leaves a runner draining that was not reached.
+                for late in purlis_core::pools::sign_out_draining(&config, &docker, &pool, &name)
+                    .map_err(|why| with_draining_said(why.to_string(), &name, &draining))?
+                {
+                    if !draining.iter().any(|(runner, _)| *runner == late.0) {
+                        draining.push(late);
+                    }
+                }
             }
             // Over this machine's kubectl, to the runner the gate judged, still so (#3819). A
             // cluster pool's one runner never drains.
@@ -1472,7 +1499,7 @@ pub async fn pool_sign_out(pool: String, name: String) -> Result<Option<String>,
 fn with_draining_said(
     why: String,
     name: &str,
-    draining: &[(String, Result<(), String>)],
+    draining: &[purlis_core::pools::DrainingSignOut],
 ) -> String {
     match draining_said(name, draining) {
         Some(said) => format!("{why} {said}"),
@@ -1483,7 +1510,7 @@ fn with_draining_said(
 /// **What the person is told of a sign-out on a pool's draining runners** (#4121): the ones it
 /// reached, and the ones it did not, whose sign-in ends with them and is not carried. None where
 /// the pool has no draining runner.
-fn draining_said(name: &str, draining: &[(String, Result<(), String>)]) -> Option<String> {
+fn draining_said(name: &str, draining: &[purlis_core::pools::DrainingSignOut]) -> Option<String> {
     let name = purlis_core::shown::short(name);
     let reached: Vec<&str> = draining
         .iter()

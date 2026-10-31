@@ -48,7 +48,6 @@ mod mcp;
 mod memory;
 mod permission;
 mod piece;
-mod poolreach;
 mod report;
 mod scan;
 mod secret;
@@ -4161,7 +4160,7 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                 return ExitCode::FAILURE;
             }
             Ok(removal) => profilestore::remove(&store, name, &removal).map(|gone| {
-                let here = if gone.adopted {
+                if gone.adopted {
                     format!(
                         "forgot the profile '{}'; {} stays\n",
                         gone.name,
@@ -4173,9 +4172,7 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                         gone.name,
                         gone.folder.display()
                     )
-                };
-                // Each pool's runner forgets it too, as the window's removal has it (#4141).
-                here + &poolreach::forget_off_the_pools(store.config_root(), name)
+                }
             }),
         },
         ProfileCommand::Authenticate {
@@ -4594,7 +4591,10 @@ fn profile_sign_out(store: &purlis_core::profilestore::Homes, name: &str) -> Exi
         Err(why) => return refused(&format!("{why}. Nothing was signed out.")),
     };
     // One that asks which sign-in goes runs only where the person can answer (#4124).
-    let in_a_terminal = std::io::IsTerminal::is_terminal(&std::io::stdin());
+    let in_a_terminal =
+        std::io::IsTerminal::is_terminal(&std::io::stdin()) && !crate::memory::in_a_chat();
+    // What a drain carried for it would sign it in again at its next keep (#4145).
+    profilestore::forget_carried(store, name);
     let logout = match sign_in::logout_of(&record, pinned.as_deref(), in_a_terminal) {
         Ok(logout) => logout,
         Err(why) => return refused(&why),

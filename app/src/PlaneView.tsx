@@ -597,9 +597,22 @@ type Typed =
       installer?: undefined;
       sandboxInstall?: undefined;
       signIn?: undefined;
+      signOut?: undefined;
     }
-  | { installer: string; line?: undefined; sandboxInstall?: undefined; signIn?: undefined }
-  | { sandboxInstall: true; line?: undefined; installer?: undefined; signIn?: undefined }
+  | {
+      installer: string;
+      line?: undefined;
+      sandboxInstall?: undefined;
+      signIn?: undefined;
+      signOut?: undefined;
+    }
+  | {
+      sandboxInstall: true;
+      line?: undefined;
+      installer?: undefined;
+      signIn?: undefined;
+      signOut?: undefined;
+    }
   | {
       /** A sign-out that asks in its terminal, on this pool's runner (#4124). */
       signOut: string;
@@ -616,6 +629,7 @@ type Typed =
       pool?: string;
       /** By the harness's device-code flow (#4044). */
       device?: boolean;
+      signOut?: undefined;
       line?: undefined;
       installer?: undefined;
       sandboxInstall?: undefined;

@@ -39,7 +39,7 @@ clap.workspace = true
 rmcp = { version = "3.5", default-features = false, features = ["server", "transport-io", "elicitation"] }
 serde_json.workspace = true
 # The runtime `rmcp` serves on: one thread, for one chat's server.
-tokio = { version = "1", default-features = false, features = ["rt", "time"] }
+tokio = { version = "1", default-features = false, features = ["rt"] }
 
 [dev-dependencies]
 # Fenced, so the `charter` binary these tests spawn cannot act on a plane the run did not

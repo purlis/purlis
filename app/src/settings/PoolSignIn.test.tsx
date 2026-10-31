@@ -1,7 +1,6 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { PROFILE_SIGN_OUT } from "./links";
 import { useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
@@ -10,7 +9,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { PoolProfileRow, PoolSignInStep } from "../bindings";
 import { askProfiles } from "../pools";
 import { PoolProfiles } from "./PoolProfiles";
-import { PROFILE_SIGN_IN, type ProfileSignInAsk } from "./links";
+import { PROFILE_SIGN_IN, PROFILE_SIGN_OUT, type ProfileSignInAsk } from "./links";
 import type { Printer } from "./SignInTerminal";
 
 /** xterm draws on a page; here the strip's terminal is what it prints and one key typed. */
@@ -412,16 +411,27 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
       await waitFor(() => expect(profilesAsked).toBe(before + 1));
       // Codex's own sign-out runs too; opencode's asks in a terminal (#4124).
       expect(screen.getByRole("button", { name: "Sign out fast on pool builds" })).toBeVisible();
-      const typed: unknown[] = [];
-      const heard = (event: Event) => typed.push((event as CustomEvent).detail);
-      window.addEventListener(PROFILE_SIGN_OUT, heard);
-      await userEvent.click(
-        screen.getByRole("button", { name: "Sign out open on pool builds in a terminal" }),
-      );
-      window.removeEventListener(PROFILE_SIGN_OUT, heard);
-      expect(typed).toEqual([{ plane: "/home/op/project", profile: "open", pool: "builds" }]);
       expect(screen.getByText("Gemini signs out only in its own terminal.")).toBeVisible();
     } finally {
+      signedIn = false;
+      await act(() => askProfiles("builds"));
+    }
+  });
+
+  it("opens opencode's sign-out in a terminal, with a project open (#4124)", async () => {
+    signedIn = true;
+    await act(() => askProfiles("builds"));
+    const typed: unknown[] = [];
+    const heard = (event: Event) => typed.push((event as CustomEvent).detail);
+    window.addEventListener(PROFILE_SIGN_OUT, heard);
+    try {
+      render(<PoolProfiles pool="builds" plane="/home/op/project" />);
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Sign out open on pool builds in a terminal" }),
+      );
+      expect(typed).toEqual([{ plane: "/home/op/project", profile: "open", pool: "builds" }]);
+    } finally {
+      window.removeEventListener(PROFILE_SIGN_OUT, heard);
       signedIn = false;
       await act(() => askProfiles("builds"));
     }

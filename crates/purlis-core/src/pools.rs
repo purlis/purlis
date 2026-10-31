@@ -496,8 +496,8 @@ fn clear_leftovers_locked(
 /// removed ([`runners::remove`]). Refused for a runner that is not draining.
 ///
 /// First this desktop is taken out of its peers, so nothing links to it while its sign-ins are
-/// carried (#4146). Where that fails, it may be that it is stopped, and this desktop still
-/// starts no new chat on a draining runner ([`Kept::draining`]), so the drain goes on. Then its
+/// carried (#4146). A runner that runs and was not taken out stays until the next look; one that
+/// is stopped cannot be asked, and the drain goes on. Then its
 /// sign-ins are carried to its pool's runner, on the Docker host ([`Docker::copy_profiles`],
 /// #4011), once, however many looks its removal takes, and only then is it removed with its
 /// home's volume, so a profile signed in on the pool stays signed in and no sign-in is ever held
@@ -514,13 +514,29 @@ pub fn drain(
     let locked = runners::lock(config_root);
     match runners::named(config_root, name)? {
         Some(kept) if kept.draining => {
-            if kept.carried {
-                return runners::remove_locked(config_root, docker, name, None, &locked);
+            let peer = if kept.unpaired {
+                None
+            } else {
+                unpair.map(|unpair| unpair(&kept))
+            };
+            if matches!(peer, Some(Err(_))) && docker.ran(&kept.made).is_ok_and(|ran| ran.running) {
+                return Err(Refused::Other(format!(
+                    "runner {name} runs and was not unpaired, so it stays until the next look"
+                )));
             }
-            let peer = unpair.map(|unpair| unpair(&kept));
-            carry_sign_ins(config_root, docker, &kept);
-            if let Err(why) = runners::carried_locked(config_root, name, &locked) {
-                tracing::warn!("purlis: runner {name} may be carried from again: {why}");
+            if matches!(peer, Some(Ok(())))
+                && let Err(why) =
+                    runners::note_locked(config_root, name, |kept| kept.unpaired = true, &locked)
+            {
+                tracing::warn!("purlis: runner {name} may be asked again: {why}");
+            }
+            if !kept.carried {
+                carry_sign_ins(config_root, docker, &kept);
+                if let Err(why) =
+                    runners::note_locked(config_root, name, |kept| kept.carried = true, &locked)
+                {
+                    tracing::warn!("purlis: runner {name} may be carried from again: {why}");
+                }
             }
             let mut removed = runners::remove_locked(config_root, docker, name, None, &locked)?;
             removed.peer = peer;
@@ -571,6 +587,9 @@ fn carry_sign_ins(config_root: &Path, docker: &Docker, drained: &Kept) {
     }
 }
 
+/// A draining runner's name, and whether a sign-out ran there or why not.
+pub type DrainingSignOut = (String, Result<(), String>);
+
 /// **What signing `profile` out of pool `pool` did on its draining runners** (#4121, #4145): each
 /// one's name and whether its harness's sign-out ran. Whatever it did, no drain carries that
 /// sign-in ([`runners::hold_from_carrying`]), so a runner it did not reach holds the sign-in only
@@ -580,7 +599,7 @@ pub fn sign_out_draining(
     docker: &Docker,
     pool: &str,
     profile: &str,
-) -> Result<Vec<(String, Result<(), String>)>, Refused> {
+) -> Result<Vec<DrainingSignOut>, Refused> {
     Ok(runners::hold_from_carrying(config_root, pool, profile)?
         .into_iter()
         .map(|kept| {
@@ -588,23 +607,6 @@ pub fn sign_out_draining(
             (kept.name().to_owned(), did)
         })
         .collect())
-}
-
-/// What the person is told of the pools in `older`, whose runner keeps the removed profile
-/// `name` as it runs a purlis before 1.52 (#3849); none where there is none.
-pub fn older_note(older: &[String], name: &str) -> Option<String> {
-    match older {
-        [] => None,
-        [one] => Some(format!(
-            "Pool {one} keeps the profile '{name}' and its sign-in on its runner, which runs a \
-             purlis before 1.52, until the runner is made again."
-        )),
-        [rest @ .., last] => Some(format!(
-            "Pools {} and {last} keep the profile '{name}' and its sign-in on their runners, \
-             which run a purlis before 1.52, until each runner is made again.",
-            rest.join(", ")
-        )),
-    }
 }
 
 /// **The claim a cluster pool's runner is made by on this desktop** (#3292): the pool's name and

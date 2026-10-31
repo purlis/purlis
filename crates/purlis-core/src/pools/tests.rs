@@ -512,17 +512,20 @@ fn a_drain_whose_removal_failed_does_not_carry_again_at_the_next_look() {
     fake.set("rm-fails-volume", "1");
     fake.set("volumes", "purlis-runner-first-home\n");
 
-    let first = drain(config.path(), &fake.docker(), "first", None).unwrap();
-    assert!(!first.forgotten, "{first:?}");
-    let kept = runners::named(config.path(), "first").unwrap().unwrap();
-    assert!(kept.carried, "the mark is kept across a read of the file");
-
-    std::fs::write(fake.file_path("log"), "").unwrap();
-    let unpaired = std::cell::Cell::new(false);
+    let unpaired = std::cell::Cell::new(0);
     let unpair = |_: &runners::Kept| {
-        unpaired.set(true);
+        unpaired.set(unpaired.get() + 1);
         Ok(())
     };
+    let first = drain(config.path(), &fake.docker(), "first", Some(&unpair)).unwrap();
+    assert!(!first.forgotten, "{first:?}");
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(
+        kept.carried && kept.unpaired,
+        "marks kept across a read of the file"
+    );
+
+    std::fs::write(fake.file_path("log"), "").unwrap();
     drain(config.path(), &fake.docker(), "first", Some(&unpair)).unwrap();
 
     let log = fake.file("log");
@@ -531,7 +534,43 @@ fn a_drain_whose_removal_failed_does_not_carry_again_at_the_next_look() {
         log.contains("volume rm --force purlis-runner-first-home"),
         "{log}"
     );
-    assert!(!unpaired.get());
+    assert_eq!(unpaired.get(), 1);
+}
+
+/// **A running runner that was not unpaired stays, and nothing is carried from it** (#4146).
+#[test]
+fn a_running_runner_that_was_not_unpaired_stays_and_carries_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    let unpair = |_: &runners::Kept| Err("it did not answer".to_owned());
+
+    drain(config.path(), &fake.docker(), "first", Some(&unpair)).unwrap_err();
+
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(!kept.carried && !kept.unpaired);
+    let log = fake.file("log");
+    assert!(
+        !log.contains("-copy ") && !log.contains("volume rm"),
+        "{log}"
+    );
+}
+
+/// **A stopped runner cannot be unpaired, and is still drained** (#4146).
+#[test]
+fn a_stopped_runner_that_could_not_be_unpaired_is_drained() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    let mut stopped = inspected();
+    stopped[0]["State"]["Running"] = false.into();
+    fake.set("inspect", &stopped.to_string());
+    let unpair = |_: &runners::Kept| Err("it is stopped".to_owned());
+
+    let removed = drain(config.path(), &fake.docker(), "first", Some(&unpair)).unwrap();
+
+    assert!(removed.forgotten, "{removed:?}");
+    assert!(fake.file("log").contains("-copy "));
 }
 
 /// **A profile signed out of the pool is signed out on its draining runners too, and no drain

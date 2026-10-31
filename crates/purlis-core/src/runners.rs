@@ -308,9 +308,11 @@ pub struct Kept {
     /// It was replaced by a runner of the desktop's version (#2749): it starts no new chat,
     /// and is removed once its last chat has ended.
     pub draining: bool,
-    /// Its sign-ins were carried to its pool's runner, and only its removal is left (#4146): it
-    /// is not carried from again, nor asked how many chats it has, having been unpaired.
+    /// Its sign-ins were carried to its pool's runner (#4146): it is not carried from again.
     pub carried: bool,
+    /// It answered that this desktop is out of its peers (#4146): it cannot be linked to, so it
+    /// is not asked how many chats it has, nor unpaired again.
+    pub unpaired: bool,
     /// The profiles signed out of its pool while it drains (#4145): their sign-ins here are
     /// never carried, even where the sign-out could not reach it.
     pub signed_out: Vec<String>,
@@ -858,6 +860,7 @@ fn keep_in(
         of: of.filter(|pool| *pool != name).map(str::to_owned),
         draining: false,
         carried: false,
+        unpaired: false,
         signed_out: Vec::new(),
     };
     kept.push(new.clone());
@@ -967,12 +970,17 @@ pub fn remove_locked(
     })
 }
 
-/// **Notes that the draining runner `name`'s sign-ins were carried** (#4146), under `locked`, so
-/// a removal that fails does not carry them again at the next look.
-pub fn carried_locked(config_root: &Path, name: &str, _locked: &Locked) -> Result<(), Refused> {
+/// **Notes `note` on the runner kept as `name`** (#4146), under `locked`, so the next look knows
+/// how far its drain got.
+pub fn note_locked(
+    config_root: &Path,
+    name: &str,
+    note: impl FnOnce(&mut Kept),
+    _locked: &Locked,
+) -> Result<(), Refused> {
     let mut held = load(config_root)?;
     if let Some(kept) = held.runners.iter_mut().find(|kept| kept.name() == name) {
-        kept.carried = true;
+        note(kept);
         write(config_root, &held)?;
     }
     Ok(())
@@ -1078,6 +1086,9 @@ fn to_row(kept: &Kept) -> serde_json::Value {
     if kept.carried {
         row["carried"] = true.into();
     }
+    if kept.unpaired {
+        row["unpaired"] = true.into();
+    }
     if !kept.signed_out.is_empty() {
         row["signed_out"] = kept.signed_out.clone().into();
     }
@@ -1099,6 +1110,7 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         "of",
         "draining",
         "carried",
+        "unpaired",
         "signed_out",
     ];
     if fields.keys().any(|key| !known.contains(&key.as_str())) {
@@ -1120,6 +1132,11 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         Some(_) => return None,
     };
     let carried = match fields.get("carried") {
+        None => false,
+        Some(serde_json::Value::Bool(true)) => true,
+        Some(_) => return None,
+    };
+    let unpaired = match fields.get("unpaired") {
         None => false,
         Some(serde_json::Value::Bool(true)) => true,
         Some(_) => return None,
@@ -1163,6 +1180,7 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         of,
         draining,
         carried,
+        unpaired,
         signed_out,
     })
 }
