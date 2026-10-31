@@ -62,7 +62,7 @@ on:
 # **macOS's scenarios stay on the pull request**, though they are the largest cost: 75 of those 281
 # minutes. In the 2.5 days to 2026-10-31, 24 pull request runs failed them with Linux's passing,
 # about 10 a day. In the queue each would fail a 275-minute run and every group behind it, where
-# only about 6 groups a day failed by then, 14 of the last 19 on macOS's scenarios alone.
+# about 8 groups a day failed in those days, 14 of those 19 on macOS's scenarios alone.
 
 concurrency:
   # The nightly run keeps a group of its own, so it never displaces a merge's pending run on main.
