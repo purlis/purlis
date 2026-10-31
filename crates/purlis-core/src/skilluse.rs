@@ -27,6 +27,8 @@ use std::path::{Path, PathBuf};
 
 use purlis_skills::runs::{Closed, Ended, Level, Open, StartedBy};
 
+pub mod relayed;
+
 /// The directory under `personas/` — `skilluse.DIR_NAME`.
 pub const DIR_NAME: &str = "_skills";
 
@@ -269,25 +271,62 @@ pub fn ended(
     when: chrono::DateTime<chrono::Utc>,
     device: &str,
 ) -> Option<PathBuf> {
+    ended_as(
+        root,
+        &Ending {
+            id: &run.open.id,
+            ended: run.ended,
+            ms: run.ms,
+            signals: run.open.signals,
+            tokens,
+            parent: run.open.parent.as_deref(),
+        },
+        when,
+        device,
+    )
+}
+
+/// A skill run's end, as [`ended_as`] logs it: the run the event log's writer closed
+/// ([`ended`]), or one a runner's event log says ended ([`relayed`], #3084).
+#[derive(Debug, Clone, Copy)]
+pub struct Ending<'a> {
+    pub id: &'a str,
+    pub ended: Ended,
+    /// How long it was open, in milliseconds.
+    pub ms: u64,
+    pub signals: purlis_skills::runs::Signals,
+    /// The tokens spent inside it, where the harness said them.
+    pub tokens: Option<u64>,
+    /// The run it started inside, where it is a child.
+    pub parent: Option<&'a str>,
+}
+
+/// **Logs the end `run`**, the one row every end is written as ([`ended`]).
+pub fn ended_as(
+    root: &Path,
+    run: &Ending<'_>,
+    when: chrono::DateTime<chrono::Utc>,
+    device: &str,
+) -> Option<PathBuf> {
     if !writable(root) {
         return None;
     }
-    let signals = run.open.signals;
+    let signals = run.signals;
     let mut row = serde_json::json!({
         "asks": signals.asks,
         "ended": run.ended,
         "ms": run.ms,
         "refusals": signals.refusals,
-        "run": run.open.id,
+        "run": run.id,
         "tool_calls": signals.tool_calls,
         "tool_errors": signals.tool_errors,
         "ts": crate::dispatch::stamp(when),
     });
-    if let Some(tokens) = tokens {
+    if let Some(tokens) = run.tokens {
         row["tokens"] = tokens.into();
     }
-    if let Some(parent) = &run.open.parent {
-        row["parent"] = parent.as_str().into();
+    if let Some(parent) = run.parent {
+        row["parent"] = parent.into();
     }
     crate::dispatch::append(&path_for(root, when, device), root, &row)
 }

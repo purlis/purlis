@@ -139,6 +139,9 @@ pub struct Named {
     /// What the person allowed of its persona here, as its digest: what arms its tools on a
     /// runner (1.55, #4071).
     pub tools_allowed: Option<String>,
+    /// Whether the plane's skills reach it, as this window read the Skill studio's flag: what a
+    /// runner arms it by (1.62, SK-20b #3084).
+    pub plane_skills: bool,
     pub alone: Vec<u16>,
     pub size: Size,
 }
@@ -206,6 +209,11 @@ pub type Ends = Arc<dyn Fn(u32, Exit) + Send + Sync>;
 /// Told which sessions are reconnecting while the link to the session host they run on is
 /// down, and which are reconnected (#2496).
 pub type Reconnecting = Arc<dyn Fn(Vec<u32>, crate::reconnecting::Reconnection) + Send + Sync>;
+
+/// Told each skill run a runner's event log says started or ended, with the pool whose runner it
+/// is where the host knows it ([`SessionHost::when_skill_runs_heard`], #3084).
+pub type SkillRunsHeard =
+    Arc<dyn Fn(Option<&str>, &purlis_core::skilluse::relayed::Relayed) + Send + Sync>;
 
 /// A view the UI has open, and the size the screen it opened on was drawn for.
 #[derive(Debug, Clone, Copy)]
@@ -292,6 +300,16 @@ pub trait SessionHost: Send + Sync {
     /// host answers as [`Self::composes_its_harness_chats`] does.
     fn composes_its_harness_chats_in(&self, workspace: Option<&str>) -> bool {
         let _ = workspace;
+        self.composes_its_harness_chats()
+    }
+
+    /// **Whether the host chat `id` runs on composes its harness chats** (SK-15g, #3604): asked
+    /// of a chat this window reattaches, whose start it did not see. Where the window routes
+    /// chats by workspace, that host is the one the chat was found running on, never the one its
+    /// workspace names now. Every other host answers as [`Self::composes_its_harness_chats`]
+    /// does.
+    fn composes_the_harness_chat(&self, id: u32) -> bool {
+        let _ = id;
         self.composes_its_harness_chats()
     }
 
@@ -418,6 +436,15 @@ pub trait SessionHost: Send + Sync {
     /// down, and when it is back (#2496): a host that relays to a runner says so. Never, where
     /// chats run in the window's own process.
     fn when_reconnecting(&self, tell: Reconnecting) {
+        let _ = tell;
+    }
+
+    /// **Tell `tell` each skill run a runner that keeps the project in its own checkout logs**
+    /// (SK-20b, #3084): each start and end of one, as the runner's event log says it, with the
+    /// pool whose runner it is, so the window logs it in this machine's plane. Called off the
+    /// runtime. Never, where the project's chats run on this machine's disk: their runs are
+    /// logged in it already.
+    fn when_skill_runs_heard(&self, tell: SkillRunsHeard) {
         let _ = tell;
     }
 
