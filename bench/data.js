@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793479674432,
+  "lastUpdate": 1793481036831,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34104,6 +34104,48 @@ window.BENCHMARK_DATA = {
             "value": 102.117115,
             "unit": "ms",
             "extra": "median of 5 runs: 100.855, 101.543, 102.117, 102.547, 103.535 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "104aeca0b52b775db2a93dc70f804bba81e4049a",
+          "message": "Runners: a signed-out start says the pool's words; a gone runner's chats end (#4348)\n\n* Runners: a start refused by a runner for a signed-out profile says the pool's words (#4233)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69DAWZ14SPGC4SZ4PPDK3T1\nPurlis-Persona: steward\n\n* Runners: a draining runner removed outside purlis goes, and chats of a gone runner say they ended (#4168)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69DAWZ14SPGC4SZ4PPDK3T1\nPurlis-Persona: steward\n\n* Runners: a removed draining runner carries once and needs its engine kept; say what is left\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69DAWZ14SPGC4SZ4PPDK3T1\nPurlis-Persona: steward\n\n* Runners: test setup for a removed draining runner's home; bindings doc\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69DAWZ14SPGC4SZ4PPDK3T1\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T20:44:10Z",
+          "tree_id": "29fdf1bad1c2c944f7e9c0f62329007339003037",
+          "url": "https://github.com/purlis/purlis/commit/104aeca0b52b775db2a93dc70f804bba81e4049a"
+        },
+        "date": 1793481030384,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4625315,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.452, 0.462, 0.463, 0.466, 0.481 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.368841500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.253, 16.280, 16.369, 16.614, 16.655 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.837854,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.078, 101.353, 101.838, 102.071, 102.313 ms"
           }
         ]
       }
