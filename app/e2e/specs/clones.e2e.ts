@@ -452,6 +452,7 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     );
     aWholeClone(landed);
     expect(Date.now() - started).toBeGreaterThan(120_000);
+    await untilSays('[data-testid="repos-view"]', "long-repo");
     expect(pictured).toBe(true);
     for (const seen of [onCard, onRow]) {
       expect(seen).toEqual([...seen].sort((a, b) => a - b));

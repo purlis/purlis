@@ -26,7 +26,7 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 import { catalogueMenu, Menued } from "./Menus";
 import type { Catalogued, Offer } from "./actions";
 import type { WorkspaceState } from "./workspaceState";
-import { CloneBar, type Cloning } from "./NotCloned";
+import { CloneBar, notClonedRows, type Cloning } from "./NotCloned";
 import { cloningWords, type CloneState } from "./repoClones";
 import { useArrived } from "./lib/arrived";
 import { Tree, TreeRow } from "./ui/tree/Tree";
@@ -130,7 +130,7 @@ export function ChangesView({
 }) {
   const { panels, repos, pieces, piecesRefused, reading, trouble } = state;
   const names = panels?.repos ?? [];
-  const absent = panels?.absent ?? [];
+  const absent = notClonedRows(panels?.absent ?? [], names, cloning);
   if (workspace === undefined) {
     return (
       <section className="state-bar" aria-label="Repository state" data-testid="changes-view">

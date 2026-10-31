@@ -41,7 +41,7 @@ import {
 } from "./branchStatus";
 import { PLANE_ROOT, isPlaneRoot, type Place } from "./pieceViews";
 import { catalogueMenu } from "./Menus";
-import { NotClonedHere, type Cloning } from "./NotCloned";
+import { NotClonedHere, notClonedRows, type Cloning } from "./NotCloned";
 import { stopRepoClones } from "./repoClones";
 import { WorktreeMark } from "./Worktree";
 import { OUTSIDE_TITLE } from "./actions";
@@ -1411,6 +1411,9 @@ function ReposSection({
 }) {
   const { panels, pieces, piecesRefused } = state;
   const clones = panels?.repos ?? [];
+  const absent = notClonedRows(panels?.absent ?? [], clones, cloning);
+  /** A repo is cloning that the workspace does not name yet: it has one, on its way. */
+  const coming = absent.length > (panels?.absent ?? []).length;
   const open = (repo: string) => !folded.has(foldKey(workspace, repo));
   return (
     <Section
@@ -1503,13 +1506,14 @@ function ReposSection({
       {panels === undefined ? (
         <Pending>Reading the project…</Pending>
       ) : (
-        clones.length === 0 && <p className="none ui-text-secondary">No repos in this workspace</p>
+        clones.length === 0 &&
+        !coming && <p className="none ui-text-secondary">No repos in this workspace</p>
       )}
 
       {/* Membership without a clone. There is nothing to explore in it and nothing to start
             a chat in, so it is named and not made a heading — and it can be cloned (#1215). */}
       <NotClonedHere
-        absent={panels?.absent ?? []}
+        absent={absent}
         cloning={cloning}
         offers={offers}
         onPress={onPress}
