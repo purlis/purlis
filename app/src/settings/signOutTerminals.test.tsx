@@ -31,8 +31,13 @@ it("asks the pool's profiles again when the sign-out's tab closes, and only then
   const { result, rerender } = renderHook(({ tabs }) => useSignOutTerminals(tabs, PLANE), {
     initialProps: { tabs: open as Tabs },
   });
+  // One not drawn yet has not closed.
+  result.current(9, "other");
+  rerender({ tabs: { ...open } });
+  expect(asked).toEqual([]);
+
   result.current(7, "builds");
-  rerender({ tabs: open });
+  rerender({ tabs: { ...open } });
   expect(asked).toEqual([]);
 
   const tabOf = (session: number) =>

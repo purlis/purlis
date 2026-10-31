@@ -3280,6 +3280,8 @@ fn a_host_killed_outright_brings_twenty_chats_back_within_thirty_seconds() {
 /// `a_line_the_host_takes_is_answered_only_once_its_hearer_has_recorded_it`.
 fn its_hook_lines_once_it_is_closed(target: &Target, id: u32) -> usize {
     target.sessions.close(id).expect("it closes");
+    // What the window does at a chat's end; where the host holds the log, the host has done it.
+    target.hooks.chat_ended(id);
     let stops = || {
         target
             .events_where_its_chats_run()
