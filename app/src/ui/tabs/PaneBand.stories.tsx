@@ -649,6 +649,15 @@ export const NarrowScrolled: Story = {
     const last = canvas.getByRole("status", { name: "Sandbox block" }).parentElement;
     expect(boxOf(stack).bottom - boxOf(last).bottom).toBeLessThanOrEqual(1);
 
+    // The keyboard landing on a way out from below stops clear of the fade (WCAG 2.4.11).
+    within(vault).getByRole("button", { name: "Allow steward to use this vault" }).focus();
+    await shows(true, true);
+    const allow = within(vault).getByRole("button", { name: "Allow steward to use this vault" });
+    expect(boxOf(allow).top - boxOf(stack).top).toBeGreaterThanOrEqual(
+      parseFloat(fade("::before").height) - 1,
+    );
+    atRest();
+
     scrollTo(Math.round((stack.scrollHeight - stack.clientHeight) / 2));
     await shows(true, true);
     atRest();
