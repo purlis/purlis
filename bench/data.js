@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793470482982,
+  "lastUpdate": 1793472127099,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33810,6 +33810,48 @@ window.BENCHMARK_DATA = {
             "value": 102.28736549999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.941, 102.059, 102.287, 102.620, 102.931 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5898bab0403c089221e8757f3da7a28ea94a2f0b",
+          "message": "Skills: a router that reads prompts points each prompt at skills its list leaves out (#3231) (#3586)\n\n* Skills: a workspace or persona chooses its router; an extension router answers within 100 ms, with a routing record (#3230)\n\nA chat whose workspace (settings.skills.router) or persona (skill-router:) chose an\nextension router asks it once at its start which skills to hide, each with its own line,\nwithin 100 ms counted from before its confined start. Past that, on an error, or on an\nanswer that hides a pin, names a skill it may not hide or leaves the list over the budget,\nthe chat is routed by the built-in router. The answer is kept with the start and applied\nwherever its set is routed again. skill.routed goes in the event log under the run, and\nevery skill.started names it. Use skill... and the studio show its timing and fallback.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: a router answer keeps what still applies, a clear and a reattach keep the routing (#3230)\n\nReview fixes: Routed::apply drops entries pinned or gone since the start instead of\nfalling back whole; a /clear carries its run's routing to the next run; a reattached\nchat records the routing its start asked again; the routing map lets go of the oldest run,\nnever all; a start taken back writes no routing; the index says a router left skills out\nrather than that the list ran out of room. Adds the changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: the routing amendment says what a reattach, a clear and a drifted answer do (#3230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: a router that reads prompts points each prompt at skills its list leaves out (#3231)\n\nA chat whose chosen router extension declares reads-prompts, and whose list leaves skills\nout, is started with PURLIS_PROMPT_ROUTER=1. Its prompt hook hands the prompt to the app\nover its own hook line (Ask::Prompt); the app asks the router confined, within 100 ms,\nwhich of those skills suit the prompt, writes a skill.routed record (prompt: true,\npointed), and answers a pointer naming each in purlis's own index line, which the hook\nadds to the turn's context. A harness with no prompt hook says so on its badges.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: the router's fallback line in Use skill… is listed among the live regions; the studio's router line is none (#3230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: a routing record keeps the router's id as chosen, never a shown copy (#3230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: a prompt's routing is named beside its start's; a slow start still routes prompts; the prompt is cut in the hook (#3231)\n\nReview fixes: prompt records go in a slot of their own (prompt_routing), so a slow\nprompt never says the chat's list fell back; whether a router reads prompts is read once\nafter the start's question, never inside a prompt's 100 ms; the hook cuts the prompt to\n16 KiB before it crosses; a runner-composed chat is never routed here; the chat's routing\nis held behind an Arc.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: a router that reads prompts points each prompt at skills its list leaves out (#3231)\n\nReapplied on main after its base landed squashed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: a prompt's routing is named beside its start's; a slow start still routes prompts; the prompt is cut in the hook (#3231)\n\nReapplied on main after its base landed squashed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: a router reads prompts only once the person turns that on for it (#3231)\n\nOperator ruling of 2026-10-31, an ADR 0102 amendment. Off by default, one switch per router on the\nRouting page beside a line saying it reads every prompt, kept in this machine's extension record.\nThe executor refuses a prompt to a router not turned on, each prompt reads the record again, and a\nrouting record holds purlis's own reason, never what a router said back. A reattached chat keeps\nwhat its list left out.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: a start's reopen record reads its shared routing (#3231)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: a router that reads prompts is graded with its pointer (#3619)\n\nIts arm's chat is armed as a real chat is, where the person turned reading on. The plan says\nwhether it runs so, the consent holds to it, and the record and the router's line say it did.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: review of the prompt router: a kept long line reads, another folder clears the switch, a turn names only its own prompt's routing (#3231)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: the generated client, a test's lint, and the Routing page's pictures (#3231)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T17:58:52Z",
+          "tree_id": "ccb9d73acfab462d570493f8f1a6d972a29c3c2d",
+          "url": "https://github.com/purlis/purlis/commit/5898bab0403c089221e8757f3da7a28ea94a2f0b"
+        },
+        "date": 1793472123814,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5297685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.519, 0.519, 0.530, 0.537, 0.542 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.369329999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.172, 16.308, 16.369, 16.514, 16.703 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.071685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 98.890, 100.282, 103.072, 103.315, 103.359 ms"
           }
         ]
       }
