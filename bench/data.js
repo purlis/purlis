@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793468895415,
+  "lastUpdate": 1793470482982,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33768,6 +33768,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0602245,
             "unit": "ms",
             "extra": "median of 5 runs: 101.681, 101.861, 102.060, 102.089, 102.179 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a69ff1ce30e9004c480133d1a2560098cd8b612b",
+          "message": "Menu owners: a screen reader's press lands on a row (#4304) (#4309)\n\n* test: the menu owners that chose no row land a screen reader on one (#4304)\n\nRed first: a part of the away summary and a tab's counts land on the\nlist. Also pins what a press on a list's padding does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* fix: a screen reader's press of these menus lands on a row (#4304)\n\nA part of the away summary opens on its first row, as StripMarks' list\ndoes, and a tab's counts open where the keyboard's own open lands.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T17:13:13Z",
+          "tree_id": "182c10d2ba9507e8e4d33ccecf56359863900c7b",
+          "url": "https://github.com/purlis/purlis/commit/a69ff1ce30e9004c480133d1a2560098cd8b612b"
+        },
+        "date": 1793470478062,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6539729999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.642, 0.644, 0.654, 0.654, 0.658 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6003945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.372, 16.407, 16.600, 16.723, 16.934 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.28736549999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.941, 102.059, 102.287, 102.620, 102.931 ms"
           }
         ]
       }
