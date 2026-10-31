@@ -1,7 +1,7 @@
 ### Changed
 
-- **`purlis profile remove` reaches the pools' runners.** With the window running, each Docker
-  pool's runner forgets the profile and its sign-in, as Remove in Settings does, and the command
+- **`purlis profile remove` reaches the pools' runners.** With the window running, each
+  pool's runner shown to be yours forgets the profile and its sign-in, as Remove in Settings does, and the command
   names any pool whose runner is too old to forget it. With no window, it says each runner
   forgets it at its next tidy, and no drain carries its sign-in.
 

@@ -87,26 +87,25 @@ pub fn answer(
 
 /// **What `purlis profile remove` does of the pools once the profile is gone**: first no drain
 /// carries its sign-in, then `ask` has the window ask the runners. The lines that say how it
-/// went, none where this machine has no Docker pool.
+/// went, none where this machine has no pool.
 pub fn reach_the_pools(config: &Path, name: &str, ask: impl FnOnce(&Asked) -> Answered) -> String {
-    let Ok(pools) = crate::runners::pools(config) else {
+    let Ok(pools) = crate::runners::pool_names(config) else {
         return "this machine's pools could not be read, so its runners were not asked to forget \
                 it, and a drain may carry its sign-in\n"
             .to_owned();
     };
     let mut out = String::new();
     for pool in &pools {
-        if crate::runners::hold_from_carrying(config, pool.name(), name).is_err() {
+        if crate::runners::hold_from_carrying(config, pool, name).is_err() {
             out.push_str(&format!(
-                "pool {}'s runners could not be marked, so a drain may carry its sign-in\n",
-                pool.name()
+                "pool {pool}'s runners could not be marked, so a drain may carry its sign-in\n"
             ));
         }
     }
     if pools.is_empty() {
         return out;
     }
-    let at_the_next_tidy = "each Docker pool's runner forgets it at its next tidy: a chat's start \
+    let at_the_next_tidy = "each pool's runner forgets it at its next tidy: a chat's start \
                             there, or its pool's profiles being shown. A runner of a purlis \
                             before 1.57 does not tidy, and one before 1.52 keeps it until it is \
                             made again.";
@@ -133,8 +132,8 @@ pub fn reach_the_pools(config: &Path, name: &str, ask: impl FnOnce(&Asked) -> An
         }
         Answered::Said(Said::Asked { note }) => {
             out.push_str(
-                "each Docker pool's runner was asked to forget it, its sign-in there with it; \
-                 one that is away, or that could not, is asked again at its next tidy\n",
+                "each pool's runner shown to be yours was asked to forget it, its sign-in there with \
+                 it; one that is away, or that could not, is asked again at its next tidy\n",
             );
             if let Some(note) = note {
                 out.push_str(&format!("{}\n", shown(&note)));
