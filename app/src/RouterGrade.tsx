@@ -257,20 +257,22 @@ export function RouterGradePlanPage({
           {said}
         </Notice>
       )}
-      {plan.running !== null && (
-        <Notice
-          cause={`router-grade-running:${router}`}
-          tone="news"
-          label="A grade is running"
-          fixes={
-            ours === undefined ? undefined : [{ label: "Show it", onPress: () => onRunning(ours) }]
-          }
-        >
-          {ours === undefined
-            ? "A grade is running in this project: one runs at a time."
-            : `A grade of the router ${router} is running: one runs at a time.`}
-        </Notice>
-      )}
+      {plan.running !== null &&
+        (ours === undefined ? (
+          // Another's grade, a skill's: its page is under that skill, so none is offered here.
+          <p className="honest" role="note" data-testid="router-grade-another-running">
+            A grade is running in this project: one runs at a time.
+          </p>
+        ) : (
+          <Notice
+            cause={`router-grade-running:${router}`}
+            tone="news"
+            label="A grade is running"
+            fixes={[{ label: "Show it", onPress: () => onRunning(ours) }]}
+          >
+            {`A grade of the router ${router} is running: one runs at a time.`}
+          </Notice>
+        ))}
       {!nothing && (
         <Totals aria-label={`What a grade of the router ${router} runs and spends`}>
           <Tile
