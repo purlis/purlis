@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793472127099,
+  "lastUpdate": 1793473419487,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33852,6 +33852,48 @@ window.BENCHMARK_DATA = {
             "value": 103.071685,
             "unit": "ms",
             "extra": "median of 5 runs: 98.890, 100.282, 103.072, 103.315, 103.359 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b108c525d465ec87eee842e8950ce96ec73ae541",
+          "message": "Profiles: say why an icon fell back to its monogram (#3137) (#4319)\n\n* Profiles: say why an icon fell back to its monogram (red, #3137)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Profiles: say why an icon fell back to its monogram (#3137)\n\nSettings describes a profile's row with why, and purlis doctor lists each one, in fixed sentences:\nan Unfit holds only sentences purlis wrote, so nothing from the file is repeated. A file past the\ncap now says so apart from one that is not a plain file.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Profiles: the UI RPC's client carries why an icon fell back (#3137)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T18:16:56Z",
+          "tree_id": "ec3b1ce235ab8a3884e3ae05ef7fba89883294fd",
+          "url": "https://github.com/purlis/purlis/commit/b108c525d465ec87eee842e8950ce96ec73ae541"
+        },
+        "date": 1793473415759,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6652945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.650, 0.654, 0.665, 0.688, 0.708 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.514999000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.370, 16.375, 16.515, 16.523, 16.565 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.039181,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.500, 101.804, 102.039, 102.539, 103.483 ms"
           }
         ]
       }
