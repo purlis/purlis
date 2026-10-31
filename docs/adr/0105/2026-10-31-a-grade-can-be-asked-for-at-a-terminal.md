@@ -1,7 +1,7 @@
 # Amended 2026-10-31: a grade can be asked for at a terminal
 
-Ticket #3241 (SK-61), on the operator's ruling of 2026-10-31. It adds to §3 and §4, and to ADR 0068
-§5's table of what each scope may do.
+Ticket #3241 (SK-61), on the operator's ruling of 2026-10-31. It adds to §3 and §4. The new power is
+recorded in ADR 0068's amendment of the same date.
 
 **`purlis skill grade <name> --run` runs a grade from a terminal, with the plan and the caps of the
 window.** It prints the plan, asks y/N (`--yes` is kept for a script that read the plan), follows
@@ -18,11 +18,13 @@ host carries any of it.
 **The yes consents to what a press consents to.** The window answers the plan with the digest a
 press of Grade would be checked against, and the start goes through that same check (`plan_holds`).
 The terminal prints its own read of the skill and asks only if the window's digest of what it grades
-is the same. Outcome evals stay off unless named (`--eval`).
+is the same. Outcome evals stay off unless named. `--eval` names them, and the window refuses a
+named one until outcome evals run from a terminal (#3235).
 
 **A grade with nobody following it stops.** When the asking link ends, Ctrl-C and a closed terminal
-included, the host pushes `stop_grade` to the window. When the window goes, the terminal is told the
-grade ended.
+included, the host pushes `stop_grade` to the window. A push can be lost to a full queue, so the host
+also refuses the next step of a grade nobody follows, and the window stops it on that refusal. When
+the window goes, the terminal is told the grade ended.
 
 ## Rejected
 

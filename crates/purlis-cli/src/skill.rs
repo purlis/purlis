@@ -370,7 +370,8 @@ pub enum SkillCommand {
         /// The model its chats run on (default: the profile's own).
         #[arg(long, requires = "run")]
         model: Option<String>,
-        /// An outcome eval to run too, by its id; repeat for each. None run unless named.
+        /// An outcome eval to run too, by its id; repeat for each. None run unless named, and a
+        /// named one is refused until outcome evals run from a terminal (#3235).
         #[arg(long = "eval", value_name = "ID", requires = "run")]
         evals: Vec<String>,
         /// Do not ask: for a script that has read the plan. It still runs only what the plan
@@ -1384,7 +1385,7 @@ fn estimate_said(estimate: Option<&purlis_core::skills::grades::Estimate>) -> St
 /// `purlis skill grade --run` prints before it asks.
 pub(crate) fn plan_said(planned: &purlis_core::skills::grades::Planned, root: &Path) -> String {
     let local_file = purlis_core::settings::Which::Local.file_at(root);
-    grade_plan_said(planned, local_file)
+    grade_plan_said(planned, local_file, false)
 }
 
 /// **`purlis skill grade`'s text**: the plan, cost first, then each grade, newest first.
@@ -1395,7 +1396,7 @@ fn grade_said(
 ) -> String {
     use purlis_core::skills::grade::Arm;
     let name = &planned.skill;
-    let mut text = grade_plan_said(planned, local_file);
+    let mut text = grade_plan_said(planned, local_file, true);
     if graded.is_empty() {
         text.push_str(&format!("No grades of {name} yet.\n"));
         return text;
@@ -1457,8 +1458,13 @@ fn grade_said(
     text
 }
 
-/// The plan's part of [`grade_said`].
-fn grade_plan_said(planned: &purlis_core::skills::grades::Planned, local_file: &str) -> String {
+/// The plan's part of [`grade_said`]. `with_limits` says the limits as this terminal can work them
+/// out, and where to grade from: `--run` prints the window's own instead, the ones that bind.
+fn grade_plan_said(
+    planned: &purlis_core::skills::grades::Planned,
+    local_file: &str,
+    with_limits: bool,
+) -> String {
     use purlis_core::skills::grade::Read;
     let name = &planned.skill;
     let mut text = String::new();
@@ -1505,10 +1511,11 @@ fn grade_plan_said(planned: &purlis_core::skills::grades::Planned, local_file: &
             for left in &planned.left_out {
                 text.push_str(&format!("Test {} is left out: {}\n", left.at + 1, left.why));
             }
-            // The terminal knows no profile, so its limit is at the dearest known price: the
-            // Skill studio's plan prices it from the model its profile's chats run on (#3469).
-            let dearest = purlis_core::skills::grades::price::of_model(None);
-            text.push_str(&format!(
+            if with_limits {
+                // The terminal knows no profile, so its limit is at the dearest known price: the
+                // Skill studio's plan prices it from the model its profile's chats run on (#3469).
+                let dearest = purlis_core::skills::grades::price::of_model(None);
+                text.push_str(&format!(
                 "A grade stops once its chats have spent {} ({}; [skill_grades] token_cap in {} \
                  sets it), or once they cost ${:.2}, its tokens at the dearest known price of \
                  ${:.2} a million; the Skill studio's plan prices it from the model the chats \
@@ -1522,7 +1529,10 @@ fn grade_plan_said(planned: &purlis_core::skills::grades::Planned, local_file: &
                 planned.cap.cost_usd(&dearest),
                 dearest.usd_per_million,
             ));
-            text.push_str("Grade it from its tab in the Skill studio, which shows this first.\n");
+                text.push_str(
+                    "Grade it from its tab in the Skill studio, which shows this first.\n",
+                );
+            }
         }
         _ => text.push_str(&format!(
             "{name} has no trigger tests to grade: the queries it should start on and the near \

@@ -15,8 +15,8 @@ use purlis_host::{Compose, Hosting, ToCompose};
 use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::link;
 use purlis_session_protocol::session::{
-    self, Client, Command, Events, GradeAnswer, GradeAsk, GradeLevel, GradeOf, GradeStepTold,
-    Pushed, Since, Told,
+    self, Client, Command, Events, GradeAnswer, GradeAsk, GradeEndTold, GradeLevel, GradeOf,
+    GradeStepTold, Pushed, Since, Told,
 };
 use purlis_terminal::session::Spec;
 use tokio::io::duplex;
@@ -49,7 +49,7 @@ fn of() -> GradeOf {
     }
 }
 
-fn step(ended: Option<&str>) -> GradeStepTold {
+fn step(ended: Option<GradeEndTold>) -> GradeStepTold {
     GradeStepTold {
         grade: "g".into(),
         ran: 1,
@@ -57,7 +57,7 @@ fn step(ended: Option<&str>) -> GradeStepTold {
         tokens: None,
         cost_micro_usd: None,
         asked: 0,
-        ended: ended.map(str::to_owned),
+        ended,
         said: None,
     }
 }
@@ -230,6 +230,39 @@ async fn a_terminal_going_stops_its_grade() {
 }
 
 #[tokio::test]
+async fn a_step_of_a_grade_nobody_follows_is_refused_so_the_window_stops_it() {
+    let project = tempfile::tempdir().unwrap();
+    let path = project.path().to_str().unwrap();
+    let host = host();
+    let (window, mut told) = linked(&host, Scope::LocalUi).await;
+    window.hold_project(PROJECT, path).await.unwrap();
+    let (terminal, _heard) = linked(&host, Scope::Terminal).await;
+    let (_, question) = asked_and_answered(
+        &terminal,
+        &window,
+        &mut told,
+        path,
+        GradeAsk::Start {
+            of: of(),
+            consent: "digest".into(),
+        },
+        GradeAnswer::Started { grade: "g".into() },
+    )
+    .await;
+    terminal.end_link();
+    next_of_a_grade(&mut told).await;
+
+    let said = window
+        .call(Command::GradeStep {
+            question,
+            step: step(None),
+        })
+        .await;
+
+    assert!(said.is_err(), "{said:?}");
+}
+
+#[tokio::test]
 async fn a_window_going_tells_the_terminal_its_grade_ended() {
     let project = tempfile::tempdir().unwrap();
     let path = project.path().to_str().unwrap();
@@ -255,5 +288,5 @@ async fn a_window_going_tells_the_terminal_its_grade_ended() {
     let Pushed::GradeStep { step } = next_of_a_grade(&mut heard).await else {
         panic!("the terminal was not told");
     };
-    assert_eq!(step.ended.as_deref(), Some("window_gone"));
+    assert_eq!(step.ended, Some(GradeEndTold::WindowGone));
 }

@@ -1077,7 +1077,9 @@ pub enum Command {
     /// link that was asked.
     AnswerGrade { question: u64, answer: GradeAnswer },
     /// **One step of the grade started by [`Pushed::GradeAsked`] `question`** (1.63), which the
-    /// link that asked is pushed ([`Pushed::GradeStep`]). Taken only from the link that was asked.
+    /// link that asked is pushed ([`Pushed::GradeStep`]). Refused where nobody follows it any
+    /// more, and the window stops the grade on that: the floor under [`Pushed::StopGrade`], which
+    /// a full queue can lose.
     GradeStep { question: u64, step: GradeStepTold },
 }
 
@@ -2250,6 +2252,8 @@ pub enum Pushed {
     GradeAsked {
         question: u64,
         project: String,
+        /// Where the host holds it: two clones of one project are two places.
+        project_path: String,
         ask: GradeAsk,
     },
     /// **Stop this grade** (1.63): the link that asked for it has gone. Pushed to the link it was
@@ -2348,6 +2352,21 @@ pub enum GradeAnswer {
     },
 }
 
+/// **How a grade a terminal asked for ended** (1.63).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GradeEndTold {
+    Whole,
+    Stopped,
+    ChatsDidNotStart,
+    OverCap,
+    OverLimit,
+    SpendNotReported,
+    Failed,
+    /// The window running it went: the host's own word, never the window's.
+    WindowGone,
+}
+
 /// **One step of a grade a terminal asked for** (1.63), as the window tells its own page.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GradeStepTold {
@@ -2362,9 +2381,9 @@ pub struct GradeStepTold {
     /// How many of its chats asked the person something and were ended there.
     #[serde(default)]
     pub asked: u32,
-    /// How it ended, once it has: `whole`, or the word of what stopped it. Absent while it runs.
+    /// How it ended, once it has. Absent while it runs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ended: Option<String>,
+    pub ended: Option<GradeEndTold>,
     /// What the window says of its end.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub said: Option<String>,

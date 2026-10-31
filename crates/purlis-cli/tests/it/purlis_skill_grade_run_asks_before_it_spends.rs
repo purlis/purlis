@@ -20,8 +20,8 @@ use purlis_core::skills::verbs::Level;
 use purlis_session_protocol::auth::{Credential, Scope};
 use purlis_session_protocol::link;
 use purlis_session_protocol::session::{
-    self, Client, Command, Events, GradeAnswer, GradeAsk, GradePlanTold, GradeStepTold, Pushed,
-    Told,
+    self, Client, Command, Events, GradeAnswer, GradeAsk, GradeEndTold, GradePlanTold,
+    GradeStepTold, Pushed, Told,
 };
 
 const PATIENCE: Duration = Duration::from_secs(30);
@@ -85,7 +85,12 @@ fn a_place() -> Place {
     BufReader::new(host.0.stdout.take().unwrap())
         .read_line(&mut line)
         .unwrap();
-    assert_eq!(line.trim_end(), "ready");
+    if line.trim_end() != "ready" {
+        let _ = host.0.kill();
+        let mut said = String::new();
+        let _ = host.0.stderr.take().unwrap().read_to_string(&mut said);
+        panic!("the host did not say it was ready: {line:?}\n{said}");
+    }
     Place {
         _dir: dir,
         at,
@@ -129,11 +134,14 @@ fn the_terminal(place: &Place, args: &[&str], stdin: &str) -> tokio::task::JoinH
         .env("CHARTER_ROOT", &place.root)
         .env("PURLIS_SKILL_STUDIO", "1")
         .env("NO_COLOR", "1")
-        .env_remove("PURLIS_CHAT")
-        .env_remove("PURLIS_SOCKET")
+        .env_remove(purlis_core::hookwire::CHAT_ENV)
+        .env_remove(purlis_core::hookwire::SOCKET_ENV)
+        .env_remove(purlis_core::hookwire::SANDBOXED_ENV)
+        .env_remove(purlis_core::active::SESSION_ID_ENV)
         .env_remove("CHARTER_CHAT")
-        .env_remove("CHARTER_SOCKET")
-        .env_remove("PURLIS_SANDBOXED")
+        .env_remove("CHARTER_HOOK_SOCKET")
+        .env_remove("CHARTER_SANDBOXED")
+        .env_remove("CHARTER_SESSION_ID")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -161,8 +169,8 @@ fn the_terminal(place: &Place, args: &[&str], stdin: &str) -> tokio::task::JoinH
             .unwrap()
             .read_to_string(&mut err)
             .unwrap();
-        child.wait().unwrap();
-        said + &err
+        let code = child.wait().unwrap();
+        format!("{said}{err}exit {}", code.code().unwrap_or(-1))
     })
 }
 
@@ -263,14 +271,14 @@ async fn a_yes_starts_the_plan_by_its_digest_and_follows_it_to_its_end() {
         panic!("not a start: {ask:?}");
     };
     assert_eq!(consent, "the-windows-digest");
-    let step = |ran, ended: Option<&str>| GradeStepTold {
+    let step = |ran, ended: Option<GradeEndTold>| GradeStepTold {
         grade: "g".into(),
         ran,
         of: 6,
         tokens: None,
         cost_micro_usd: Some(100_000),
         asked: 0,
-        ended: ended.map(str::to_owned),
+        ended,
         said: None,
     };
     answers(
@@ -289,10 +297,11 @@ async fn a_yes_starts_the_plan_by_its_digest_and_follows_it_to_its_end() {
     window
         .call(Command::GradeStep {
             question,
-            step: step(6, Some("whole")),
+            step: step(6, Some(GradeEndTold::Whole)),
         })
         .await
         .unwrap();
     let said = terminal.await.unwrap();
     assert!(said.contains("3 of 6 chats, $0.10 so far"), "{said}");
+    assert!(said.ends_with("exit 0"), "a whole grade succeeds: {said}");
 }

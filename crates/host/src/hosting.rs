@@ -581,7 +581,7 @@ struct State {
     questions: HashMap<u64, std::sync::mpsc::Sender<Option<Vec<String>>>>,
     /// The grades terminals asked of a window that it has not answered yet, and the grades it
     /// runs for one, by the question (SK-61, #3241).
-    grades: crate::grading::Asked,
+    grades: crate::grading::GradeAsks,
     /// The last question's number.
     asked: u64,
     /// The window that started this host, if one did.
@@ -778,11 +778,14 @@ struct HeldAt {
     path: PathBuf,
 }
 
-/// Tells `pushed` to the subscriber on `link` alone, where it has one with room.
-fn tell_link(state: &mut State, link: u64, pushed: Pushed) {
-    if let Some(one) = state.subscribers.iter().find(|one| one.link == link) {
-        let _ = one.told.try_send(pushed);
+/// Tells `pushed` to `link` alone, on each subscription it has, a stale one among them: whether
+/// one had room.
+fn tell_link(state: &mut State, link: u64, pushed: Pushed) -> bool {
+    let mut told = false;
+    for one in state.subscribers.iter().filter(|one| one.link == link) {
+        told |= one.told.try_send(pushed.clone()).is_ok();
     }
+    told
 }
 
 /// The place `link` holds `project` at, if it holds it.
@@ -1509,6 +1512,11 @@ impl Hosting {
         let starts = matches!(ask, session::GradeAsk::Start { .. });
         let (question, answered) = {
             let mut state = self.state();
+            // Under the hold its going takes too: a link that went before this is refused, and one
+            // that goes after it finds this ask to let go of.
+            if peer.has_ended() {
+                return Err(not_open());
+            }
             let at = HeldAt {
                 project: project.clone(),
                 path,
@@ -1533,6 +1541,7 @@ impl Hosting {
             let pushed = Pushed::GradeAsked {
                 question,
                 project,
+                project_path: at.path.display().to_string(),
                 ask,
             };
             let window = state.subscribers[index].link;
@@ -1579,13 +1588,20 @@ impl Hosting {
         peer: &Peer,
     ) -> Result<Answer, Refusal> {
         let mut state = self.state();
-        if let Some(asker) = state
+        let asker = state
             .grades
-            .step(question, link_of(peer), step.ended.is_some())
-        {
-            tell_link(&mut state, asker, Pushed::GradeStep { step });
+            .step(question, link_of(peer), step.ended.is_some());
+        let told =
+            asker.is_some_and(|asker| tell_link(&mut state, asker, Pushed::GradeStep { step }));
+        if told {
+            return Ok(Answer::Done);
         }
-        Ok(Answer::Done)
+        // The window stops the grade on this: nothing spends with nobody following it.
+        state.grades.not_answered(question);
+        Err(Refusal {
+            code: session::NO_SUCH_PROJECT.into(),
+            why: "nobody follows this grade any more".to_owned(),
+        })
     }
 
     /// `link` has gone: each grade it asked for stops, so nothing spends with nobody following
@@ -1604,7 +1620,7 @@ impl Hosting {
                 tokens: None,
                 cost_micro_usd: None,
                 asked: 0,
-                ended: Some("window_gone".to_owned()),
+                ended: Some(session::GradeEndTold::WindowGone),
                 said: Some("The purlis window running this grade closed, so it ended.".to_owned()),
             };
             tell_link(&mut state, asker, Pushed::GradeStep { step });

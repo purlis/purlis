@@ -22,6 +22,7 @@
 //! Behind the `skill-studio` flag until its finish line (#2786).
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -640,16 +641,17 @@ fn micro_usd(usd: f64) -> u64 {
     (usd * 1_000_000.0).round() as u64
 }
 
-/// How a grade's end is said on the session protocol.
-fn ended_word(ended: GradeEnded) -> &'static str {
-    match ended {
-        GradeEnded::Whole => "whole",
-        GradeEnded::Stopped => "stopped",
-        GradeEnded::ChatsDidNotStart => "chats_did_not_start",
-        GradeEnded::OverCap => "over_cap",
-        GradeEnded::OverLimit => "over_limit",
-        GradeEnded::SpendNotReported => "spend_not_reported",
-        GradeEnded::Failed => "failed",
+impl From<GradeEnded> for session::GradeEndTold {
+    fn from(ended: GradeEnded) -> Self {
+        match ended {
+            GradeEnded::Whole => session::GradeEndTold::Whole,
+            GradeEnded::Stopped => session::GradeEndTold::Stopped,
+            GradeEnded::ChatsDidNotStart => session::GradeEndTold::ChatsDidNotStart,
+            GradeEnded::OverCap => session::GradeEndTold::OverCap,
+            GradeEnded::OverLimit => session::GradeEndTold::OverLimit,
+            GradeEnded::SpendNotReported => session::GradeEndTold::SpendNotReported,
+            GradeEnded::Failed => session::GradeEndTold::Failed,
+        }
     }
 }
 
@@ -662,7 +664,7 @@ impl From<&SkillGradeStep> for session::GradeStepTold {
             tokens: step.tokens.map(|tokens| tokens as u64),
             cost_micro_usd: step.cost_usd.map(micro_usd),
             asked: step.asked,
-            ended: step.ended.map(|ended| ended_word(ended).to_owned()),
+            ended: step.ended.map(Into::into),
             said: step.said.clone(),
         }
     }
@@ -687,18 +689,20 @@ fn plan_told(planned: &Planned, on: &On, running: Option<String>) -> session::Gr
 
 /// **The window's answer to a grade a person asked for at a terminal** (SK-61, #3241): `project`'s
 /// plan, or its start through the one check a press of Grade takes ([`plan_holds`]), on the plan's
-/// cap and limit. `follower` hears each step. Named outcome evals wait for the window to run them.
+/// cap and limit. `follower` hears each step. Named outcome evals are refused until #3235 runs them.
 pub(crate) fn asked_at_a_terminal(
     project: &str,
+    path: &str,
     ask: session::GradeAsk,
     follower: Follower,
 ) -> session::GradeAnswer {
-    answering_a_terminal(project, ask, follower)
+    answering_a_terminal(project, path, ask, follower)
         .unwrap_or_else(|why| session::GradeAnswer::Refused { why })
 }
 
 fn answering_a_terminal(
     project: &str,
+    path: &str,
     ask: session::GradeAsk,
     follower: Follower,
 ) -> Result<session::GradeAnswer, String> {
@@ -711,6 +715,7 @@ fn answering_a_terminal(
         .find(|plane| {
             purlis_core::scaffold::planefile::id_to_hold_by(plane.root())
                 .is_ok_and(|id| id == project)
+                && std::fs::canonicalize(plane.root()).is_ok_and(|root| root == Path::new(path))
         })
         .ok_or("This project is not open in the purlis window.")?;
     let held = planes.held(&plane)?;
@@ -718,7 +723,9 @@ fn answering_a_terminal(
         session::GradeAsk::Plan { of } | session::GradeAsk::Start { of, .. } => of.clone(),
     };
     if !of.evals.is_empty() {
-        return Err("This purlis does not run outcome evals yet, so nothing was started.".into());
+        return Err(
+            "Outcome evals do not run from a terminal yet (#3235), so nothing was started.".into(),
+        );
     }
     let level: SkillLevel = level_named(of.level);
     let level: Level = (&level).into();

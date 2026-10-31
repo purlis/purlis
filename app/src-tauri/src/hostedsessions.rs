@@ -1998,6 +1998,7 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
             Told::Pushed(Pushed::GradeAsked {
                 question,
                 project,
+                project_path,
                 ask,
             }) => {
                 let client = Arc::clone(&client);
@@ -2005,15 +2006,30 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                 tokio::spawn(async move {
                     let steps = {
                         let client = Arc::clone(&client);
-                        move |step| {
+                        move |step: purlis_session_protocol::session::GradeStepTold| {
                             let client = Arc::clone(&client);
-                            // Told in the order the grade's thread goes through them.
-                            let _ = runtime
-                                .block_on(client.call(Command::GradeStep { question, step }));
+                            let grade = step.grade.clone();
+                            // Told in the order the grade's thread goes through them. Nobody to
+                            // tell, or a host that does not answer, stops the grade.
+                            let told = runtime.block_on(async move {
+                                tokio::time::timeout(
+                                    Duration::from_secs(10),
+                                    client.call(Command::GradeStep { question, step }),
+                                )
+                                .await
+                            });
+                            if !matches!(told, Ok(Ok(_))) {
+                                crate::skillgrade::stop_for_a_terminal(&grade);
+                            }
                         }
                     };
                     let answer = tokio::task::spawn_blocking(move || {
-                        crate::skillgrade::asked_at_a_terminal(&project, ask, Box::new(steps))
+                        crate::skillgrade::asked_at_a_terminal(
+                            &project,
+                            &project_path,
+                            ask,
+                            Box::new(steps),
+                        )
                     })
                     .await
                     .unwrap_or_else(|why| {

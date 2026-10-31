@@ -210,6 +210,6 @@
 {"reply":{"re":186,"ok":{"grade_answered":{"started":{"grade":"01JBGRADE00000000000000001"}}}}}
 {"call":{"id":187,"command":"answer_grade","question":1,"answer":{"refused":{"why":"The plan changed."}}}}
 {"call":{"id":188,"command":"grade_step","question":1,"step":{"grade":"01JBGRADE00000000000000001","ran":6,"of":6,"tokens":30000,"cost_micro_usd":300000,"asked":1,"ended":"whole","said":"recorded"}}}
-{"pushed":{"grade_asked":{"question":1,"project":"01J9PRJCT00000000000000000","ask":{"plan":{"of":{"level":{"at":"project","local":false},"skill":"deploy","profile":"work","model":"claude-opus-4-1","evals":["1"]}}}}}}
+{"pushed":{"grade_asked":{"question":1,"project":"01J9PRJCT00000000000000000","project_path":"/work/project","ask":{"plan":{"of":{"level":{"at":"project","local":false},"skill":"deploy","profile":"work","model":"claude-opus-4-1","evals":["1"]}}}}}}
 {"pushed":{"stop_grade":{"grade":"01JBGRADE00000000000000001"}}}
 {"pushed":{"grade_step":{"step":{"grade":"01JBGRADE00000000000000001","ran":6,"of":6,"tokens":30000,"cost_micro_usd":300000,"asked":1,"ended":"whole","said":"recorded"}}}}

@@ -188,14 +188,17 @@ fn runs(p: &Project, env: &[(&str, &str)]) -> (bool, String) {
         .env("HOME", p.at.join("home"))
         .env("PURLIS_CONFIG_HOME", p.at.join("home/config"))
         .env("XDG_RUNTIME_DIR", p.at.join("home"))
-        .env("TMPDIR", p.at.join("home"))
+        .env("TMPDIR", &p.at)
         .env("PURLIS_SKILL_STUDIO", "1")
         .env("NO_COLOR", "1")
-        .env_remove("PURLIS_CHAT")
-        .env_remove("PURLIS_SOCKET")
+        .env_remove(purlis_core::hookwire::CHAT_ENV)
+        .env_remove(purlis_core::hookwire::SOCKET_ENV)
+        .env_remove(purlis_core::hookwire::SANDBOXED_ENV)
+        .env_remove(purlis_core::active::SESSION_ID_ENV)
         .env_remove("CHARTER_CHAT")
-        .env_remove("CHARTER_SOCKET")
-        .env_remove("PURLIS_SANDBOXED");
+        .env_remove("CHARTER_HOOK_SOCKET")
+        .env_remove("CHARTER_SANDBOXED")
+        .env_remove("CHARTER_SESSION_ID");
     for (name, value) in env {
         command.env(name, value);
     }

@@ -57,6 +57,7 @@ fn in_a_chat(env: &dyn Fn(&str) -> Option<String>) -> bool {
     let set = |name: &str| env(name).is_some_and(|value| !value.is_empty());
     set(purlis_core::hookwire::CHAT_ENV)
         || set(SOCKET_ENV)
+        || set(purlis_core::active::SESSION_ID_ENV)
         || purlis_core::sandbox::chat_is_sandboxed_in(env)
 }
 
@@ -85,28 +86,33 @@ async fn asking(_root: &Path, _asked: &Asked) -> Code {
     1
 }
 
-/// A link to this user's session host, as `terminal`, or `None` where none answers.
+/// A link to this user's session host, as `terminal`, or what to say: that none answers, or why
+/// the one that answers refused this terminal.
 #[cfg(unix)]
-async fn linked() -> Option<purlis_session_protocol::link::Link> {
+async fn linked() -> Result<purlis_session_protocol::link::Link, String> {
     use purlis_session_protocol::auth::{Credential, Scope};
     use purlis_session_protocol::{link, session};
-    let config = purlis_core::machine::config_root()?;
-    let credential =
-        Credential::read(&purlis_core::machine::charterd(&config), Scope::Terminal).ok()?;
+    let no_host = || NO_HOST.to_owned();
+    let config = purlis_core::machine::config_root().ok_or_else(no_host)?;
+    let credential = Credential::read(&purlis_core::machine::charterd(&config), Scope::Terminal)
+        .map_err(|_| no_host())?;
     let stream = tokio::net::UnixStream::connect(purlis_core::hostsocket::here())
         .await
-        .ok()?;
+        .map_err(|_| no_host())?;
     link::connect(stream, session::speaks(), Scope::Terminal, &credential)
         .await
-        .ok()
+        .map_err(|why| format!("The session host refused this terminal ({why}). Nothing was run."))
 }
 
 #[cfg(unix)]
 async fn asking(root: &Path, asked: &Asked) -> Code {
     use purlis_session_protocol::session::{self, Client};
-    let Some(link) = linked().await else {
-        voice::err(NO_HOST);
-        return 1;
+    let link = match linked().await {
+        Ok(link) => link,
+        Err(why) => {
+            voice::err(why);
+            return 1;
+        }
     };
     let (client, _views, mut events) = Client::new(link);
     let refused = |why: &str| {
@@ -124,10 +130,6 @@ async fn asking(root: &Path, asked: &Asked) -> Code {
         model: asked.model.clone(),
         evals: asked.evals.clone(),
     };
-    // Before the start, so no step of it is missed.
-    if let Err(why) = client.subscribe(session::Since::new()).await {
-        return refused(&format!("The session host refused this terminal: {why}."));
-    }
     let answer = client
         .ask_grade(&project, &path, GradeAsk::Plan { of: of.clone() })
         .await;
@@ -159,6 +161,11 @@ async fn asking(root: &Path, asked: &Asked) -> Code {
         voice::info("Nothing was run.");
         return 1;
     }
+    // Only now: nothing reads what it is pushed while the question waits. Before the start, so no
+    // step of it is missed.
+    if let Err(why) = client.subscribe(session::Since::new()).await {
+        return refused(&format!("The session host refused this terminal: {why}."));
+    }
     let started = client
         .ask_grade(&project, &path, GradeAsk::Start { of, consent })
         .await;
@@ -179,6 +186,13 @@ async fn asking(root: &Path, asked: &Asked) -> Code {
                 }
                 println!("{}", step_said(&step));
             }
+            // Steps may have gone unread. Leaving ends the link, which stops the grade.
+            Some(session::Told::FellBehind { .. }) => {
+                return refused(
+                    "This terminal fell behind the session host and lost track of the grade, so \
+                     the grade was stopped.",
+                );
+            }
             Some(_) => {}
             None => break None,
         }
@@ -193,14 +207,14 @@ async fn asking(root: &Path, asked: &Asked) -> Code {
     if let Some(graded) = record.iter().find(|one| one.grade == grade) {
         print!("{}", scorecard_said(graded));
     }
-    Code::from(last.ended.as_deref() != Some("whole"))
+    Code::from(last.ended != Some(session::GradeEndTold::Whole))
 }
 
 /// A refusal in the host's words, or that the host is older than this command.
 #[cfg(unix)]
 fn refused_words(why: &purlis_session_protocol::session::CallError) -> String {
     match why.refusal() {
-        Some(refusal) if refusal.code == "unknown_command" => {
+        Some(refusal) if refusal.code == purlis_session_protocol::session::UNKNOWN_COMMAND => {
             "The running purlis is older than this command and cannot run a grade from a \
              terminal: update it, or press Grade in the Skill studio. Nothing was run."
                 .to_owned()
@@ -307,73 +321,4 @@ fn scorecard_said(graded: &grades::Graded) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn plan() -> GradePlanTold {
-        GradePlanTold {
-            profile: Some("work".into()),
-            model: None,
-            sandbox: Some("Full".into()),
-            refused: None,
-            chats: 6,
-            token_cap: 200_000,
-            limit_micro_usd: 5_000_000,
-            running: None,
-            graded: Some("a".into()),
-            consent: Some("b".into()),
-        }
-    }
-
-    #[test]
-    fn a_command_in_a_chat_is_known_by_its_number_its_socket_or_its_sandbox() {
-        let with = |name: &'static str, value: &'static str| {
-            move |asked: &str| (asked == name).then(|| value.to_owned())
-        };
-        assert!(in_a_chat(&with(purlis_core::hookwire::CHAT_ENV, "7")));
-        assert!(in_a_chat(&with(SOCKET_ENV, "/tmp/hooks.sock")));
-        assert!(in_a_chat(&with(purlis_core::hookwire::SANDBOXED_ENV, "1")));
-        assert!(!in_a_chat(&|_: &str| None));
-        assert!(!in_a_chat(&with(SOCKET_ENV, "")), "an empty one names none");
-    }
-
-    #[test]
-    fn only_a_yes_is_a_yes() {
-        for yes in ["y\n", "Y\n", "yes\n", " YES \n"] {
-            assert!(is_yes(yes), "{yes}");
-        }
-        for no in ["", "\n", "n\n", "yeah\n", "y y\n"] {
-            assert!(!is_yes(no), "{no}");
-        }
-    }
-
-    #[test]
-    fn the_terms_a_yes_covers_are_printed_with_their_limits() {
-        let said = terms_said(&plan());
-        for word in [
-            "6 chats",
-            "work",
-            "the profile's own",
-            "Full",
-            "200000",
-            "$5.00",
-        ] {
-            assert!(said.contains(word), "{said}");
-        }
-    }
-
-    #[test]
-    fn a_plan_that_cannot_start_says_why_before_a_yes_is_asked() {
-        assert_eq!(can_start(&plan()), Ok(()));
-        let no_sandbox = GradePlanTold {
-            refused: Some("No profile.".into()),
-            ..plan()
-        };
-        assert!(can_start(&no_sandbox).unwrap_err().contains("No profile."));
-        let running = GradePlanTold {
-            running: Some("g".into()),
-            ..plan()
-        };
-        assert!(can_start(&running).unwrap_err().contains("running"));
-    }
-}
+mod tests;
