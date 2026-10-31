@@ -1825,7 +1825,7 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 // Where the runner's own environment moves them.
                 ["GH_CONFIG_DIR", "GLAB_CONFIG_DIR"]
                     .iter()
-                    .filter_map(|var| machine.env.get(*var))
+                    .filter_map(|var| machine.env.get(var))
                     .map(PathBuf::from)
                     .filter(|dir| dir.is_absolute()),
             ) {
