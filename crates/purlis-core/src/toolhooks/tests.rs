@@ -1285,3 +1285,49 @@ fn another_chat_s_theme_draft_is_never_spoken_of() {
     };
     assert!(!told);
 }
+
+/// SK-55 (#3235): a judge's chat reads only its own folder: a path outside it, a link out of it
+/// and a path that does not resolve are refused; another chat is not held so.
+#[test]
+fn a_judge_reads_only_the_folder_laid_out_for_it() {
+    let plane = Plane::new();
+    let folder = plane.root.join("judge");
+    std::fs::create_dir_all(folder.join("outcome")).unwrap();
+    std::fs::write(folder.join("outcome/out.md"), "done").unwrap();
+    std::fs::write(plane.root.join("secret.md"), "no").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(plane.root.join("secret.md"), folder.join("link.md")).unwrap();
+    let judge = plane.with_env(JUDGE_FOLDER_ENV, folder.to_str().unwrap());
+    let read = |tool: &str, input: Value| {
+        judge.ask(
+            serde_json::json!({"tool_name": tool, "tool_input": input, "cwd": folder.to_str().unwrap()}),
+            pretooluse_read,
+        )
+    };
+    assert!(matches!(
+        read("Read", serde_json::json!({"file_path": "outcome/out.md"})),
+        Answer::Nothing
+    ));
+    assert!(matches!(
+        read("Grep", serde_json::json!({"pattern": "x"})),
+        Answer::Nothing
+    ));
+    for outside in ["../secret.md", "missing.md", "/etc/hosts"] {
+        assert!(
+            matches!(
+                read("Read", serde_json::json!({"file_path": outside})),
+                Answer::Deny(_)
+            ),
+            "{outside}"
+        );
+    }
+    assert!(matches!(
+        read("Grep", serde_json::json!({"pattern": "x", "path": ".."})),
+        Answer::Deny(_)
+    ));
+    #[cfg(unix)]
+    assert!(matches!(
+        read("Read", serde_json::json!({"file_path": "link.md"})),
+        Answer::Deny(_)
+    ));
+}

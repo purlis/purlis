@@ -130,10 +130,18 @@ impl HarnessAdapter for ClaudeCode {
                 ]),
             ]
             .concat(),
-            env: vec![(
+            env: std::iter::once((
                 crate::plugin::BINARY_ENV.to_owned(),
                 kit.binary.display().to_string(),
-            )],
+            ))
+            // A judge's reads are held to its folder by the read guard (SK-55).
+            .chain(cwd.filter(|_| kit.judging).map(|cwd| {
+                (
+                    crate::toolhooks::JUDGE_FOLDER_ENV.to_owned(),
+                    cwd.display().to_string(),
+                )
+            }))
+            .collect(),
             cannot_report: Vec::new(),
         }
     }
@@ -862,8 +870,14 @@ fn denied_tools(kit: Kit<'_>) -> Vec<String> {
 }
 
 /// **Claude Code's tools a judge's chat is denied** (SK-55, #3235): every one that writes a file,
-/// runs a command or reaches the network. It keeps the tools that read (`Read`, `Glob`, `Grep`).
-const JUDGE_DENIED: [&str; 8] = [
+/// runs a command or reaches the network, every way to read past the read guard that holds `Read`
+/// and `Grep` to its folder (`toolhooks::JUDGE_FOLDER_ENV`), and purlis's own read tools, which
+/// answer from the plane. It keeps `Read` and `Grep`.
+const JUDGE_DENIED: [&str; 12] = [
+    "Glob",
+    "LS",
+    "Skill",
+    "mcp__purlis",
     "Bash",
     "Edit",
     "MultiEdit",

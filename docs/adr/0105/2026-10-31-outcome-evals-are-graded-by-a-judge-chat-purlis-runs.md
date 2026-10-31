@@ -30,10 +30,13 @@ and its piece goes, purlis reads its plain text files as it ended (at most 32, 8
 dot-name, each read pinned) and keeps them, with its answer, for its judge alone. The judge's
 piece is a grade's arm with no skill, marked as a judge's in this machine's state, which no chat
 writes, holding `task.json` (the eval's prompt, what success looks like and its expectations),
-`answer.md` and `outcome/`, and nothing else. A judge's chat is a grade's chat, held to every
+`answer.md`, `outcome/` and `files.txt`, which lists it, and nothing else. A judge's chat is a grade's chat, held to every
 limit of §3, and is denied besides every tool that writes a file, runs a command or reaches the
 network (on Claude Code `Bash`, `Edit`, `MultiEdit`, `Write`, `NotebookEdit`, `WebFetch`,
-`WebSearch`); it keeps the tools that read.
+`WebSearch`), every other way to read (`Glob`, `LS`, `Skill`, and purlis's own MCP tools, which
+answer from the plane). It keeps `Read` and `Grep`, and the read guard refuses either on a path that
+does not resolve inside its folder, links followed, so it reads nothing else even where its harness
+would let it.
 
 **One judge chat grades every expectation of one run** (the other open choice): skill-creator's
 grader grades a run whole, and a judge per expectation, which Anthropic's "Demystifying evals for AI agents" recommends, would multiply

@@ -508,13 +508,12 @@ fn fitted(graded: &Graded) -> Option<serde_json::Value> {
         return Some(row);
     }
     let mut cut = graded.clone();
-    let runs = || {
-        cut.report
-            .outcomes
-            .iter_mut()
-            .flat_map(|eval| eval.results.iter_mut())
-    };
-    for run in runs() {
+    for run in cut
+        .report
+        .outcomes
+        .iter_mut()
+        .flat_map(|eval| eval.results.iter_mut())
+    {
         for check in &mut run.checks {
             check.evidence.clear();
         }

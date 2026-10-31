@@ -964,6 +964,11 @@ fn an_evals_files_are_staged_and_what_its_chat_left_reaches_its_judge_alone() {
     assert!(graded_piece(root, &judge.piece) && judge_piece(root, &judge.piece));
     let read = |path: &str| std::fs::read_to_string(judge.piece.join(path)).unwrap();
     assert_eq!(read("outcome/out.md"), "done\n");
+    assert!(
+        read("files.txt")
+            .lines()
+            .any(|line| line == "outcome/out.md")
+    );
     assert_eq!(read("answer.md"), "All done.");
     assert_eq!(read("task.json"), "{\"prompt\": \"p\"}\n");
     let from = tried(root, &judge.piece).expect("the piece is a try's");

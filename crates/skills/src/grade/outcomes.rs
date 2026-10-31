@@ -25,6 +25,8 @@ use super::{Arm, OutcomeEval};
 pub const JUDGE_TASK_FILE: &str = "task.json";
 pub const JUDGE_ANSWER_FILE: &str = "answer.md";
 pub const JUDGE_OUTCOME_DIR: &str = "outcome";
+/// The list of what `outcome/` holds: a judge has no tool that lists a folder.
+pub const JUDGE_FILES_FILE: &str = "files.txt";
 
 /// The most bytes of a judge's answer read: past skill-creator's largest `grading.json` for 32
 /// expectations with their evidence, and past what a harness hands back of a turn.
@@ -56,7 +58,7 @@ pub fn judge_prompt() -> String {
          holds everything to read, and nothing outside it is to be read: {JUDGE_TASK_FILE} has \
          the task it was given, what success looks like, and the expectations to check; \
          {JUDGE_ANSWER_FILE} has the chat's final answer, where it gave one; {JUDGE_OUTCOME_DIR}/ \
-         has its folder as it ended. Check each expectation, in the order given. The burden of \
+         has its folder as it ended, each file of it listed in {JUDGE_FILES_FILE}. Check each expectation, in the order given. The burden of \
          proof is on the expectation: mark it passed only where you found clear evidence, and \
          fail a surface match, such as the right file name with the wrong content. Answer with \
          only one JSON object and nothing before or after it: {{\"expectations\": [{{\"text\": \

@@ -704,7 +704,9 @@ pub fn lay_out_judge(
     answer: Option<&str>,
     task: &str,
 ) -> Result<Try, String> {
-    use purlis_skills::grade::outcomes::{JUDGE_ANSWER_FILE, JUDGE_OUTCOME_DIR, JUDGE_TASK_FILE};
+    use purlis_skills::grade::outcomes::{
+        JUDGE_ANSWER_FILE, JUDGE_FILES_FILE, JUDGE_OUTCOME_DIR, JUDGE_TASK_FILE,
+    };
     let laid = lay_out_graded(root, &[], None, None)?;
     let written = (|| {
         write_at(
@@ -715,7 +717,14 @@ pub fn lay_out_judge(
             usize::MAX,
         )
         .map_err(|why| super::not_written("the grade's record of its folder", why))?;
-        let mut files: Vec<(String, &str)> = vec![(JUDGE_TASK_FILE.to_owned(), task)];
+        let listed: String = outcome
+            .iter()
+            .map(|(path, _)| format!("{JUDGE_OUTCOME_DIR}/{path}\n"))
+            .collect();
+        let mut files: Vec<(String, &str)> = vec![
+            (JUDGE_TASK_FILE.to_owned(), task),
+            (JUDGE_FILES_FILE.to_owned(), &listed),
+        ];
         files.extend(answer.map(|answer| (JUDGE_ANSWER_FILE.to_owned(), answer)));
         files.extend(
             outcome

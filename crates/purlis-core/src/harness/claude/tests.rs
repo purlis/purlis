@@ -216,7 +216,13 @@ fn a_judges_chat_is_denied_every_tool_but_those_that_read() {
             "{tool}: {judge:?}"
         );
     }
-    for tool in ["Read", "Glob", "Grep"] {
+    for tool in ["Glob", "LS", "Skill", "mcp__purlis"] {
+        assert!(
+            judge.contains(&serde_json::json!(tool)),
+            "{tool}: {judge:?}"
+        );
+    }
+    for tool in ["Read", "Grep"] {
         assert!(
             !judge.contains(&serde_json::json!(tool)),
             "{tool}: {judge:?}"

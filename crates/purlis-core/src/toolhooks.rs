@@ -297,6 +297,9 @@ pub fn pretooluse_read(hook: &Hook) -> Answer {
     }
     let input = hook.tool_input();
     let named = targets(input);
+    if let Some(why) = judge_reads_outside(hook, &named) {
+        return deny(why);
+    }
     // `_names_a_vault_path` and nothing else — the Bash route's predicate, with no private
     // half of the answer here (#462).
     if named.iter().any(|t| leakguard::names_a_vault_path(t)) {
@@ -336,6 +339,40 @@ pub fn pretooluse_read(hook: &Hook) -> Answer {
          would be printed into the transcript, and none of them is named on this call. {}",
         leakguard::walk_fix_for(&walked)
     ))
+}
+
+/// **Set on a judge's chat alone** (SK-55, #3235): the folder it may read, its own piece. Its
+/// adapter sets it, and a judge has no tool that could change it.
+pub const JUDGE_FOLDER_ENV: &str = "PURLIS_JUDGE_FOLDER";
+
+/// **Why a judge's chat may not make this read**, or `None`: it reads only what purlis laid out
+/// for it. Each path is resolved, links followed, and has to be inside its folder; one that does
+/// not resolve is refused, and a search that names none stands where the harness says it does.
+fn judge_reads_outside(hook: &Hook, named: &[String]) -> Option<String> {
+    let folder = (hook.env)(JUDGE_FOLDER_ENV)?;
+    let refused = || {
+        Some(
+            "a judge reads only the folder purlis laid out for it: nothing outside it is part \
+             of what it grades"
+                .to_owned(),
+        )
+    };
+    let Ok(folder) = std::fs::canonicalize(&folder) else {
+        return refused();
+    };
+    let base = match hook.text("cwd") {
+        "" => folder.clone(),
+        cwd => Path::new(cwd).to_path_buf(),
+    };
+    let here = [".".to_owned()];
+    let paths = if named.is_empty() { &here[..] } else { named };
+    paths
+        .iter()
+        .any(|path| {
+            std::fs::canonicalize(base.join(path)).map_or(true, |real| !real.starts_with(&folder))
+        })
+        .then(refused)
+        .flatten()
 }
 
 /// `_state_write_reason`'s sentence.
