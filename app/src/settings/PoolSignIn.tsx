@@ -112,6 +112,8 @@ export function PoolSignIn({
   // Whether this try runs in the strip's terminal: purlis could not follow the one before.
   const [inTerminal, setInTerminal] = useState(false);
   const flow = useRef<number>(undefined);
+  // What is typed goes on one call at a time, per sign-in, so it reaches the login in order (#4123).
+  const typing = useRef<Promise<void>>(Promise.resolve());
   const signedIn = useRef(onSignedIn);
   useEffect(() => {
     signedIn.current = onSignedIn;
@@ -184,6 +186,7 @@ export function PoolSignIn({
           return;
         }
         flow.current = started.data;
+        typing.current = Promise.resolve();
         return follow(started.data);
       });
     return () => {
@@ -219,13 +222,17 @@ export function PoolSignIn({
   };
 
   const type = (text: string) => {
-    if (flow.current === undefined) return;
-    void commands
-      .poolSignInType(flow.current, text)
-      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
-      .then((typed) => {
-        if (typed.status === "error") setPasteRefused(typed.error);
-      });
+    const which = flow.current;
+    if (which === undefined) return;
+    typing.current = typing.current.then(() =>
+      commands
+        .poolSignInType(which, text)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+        .then((typed) => {
+          // Refused once that sign-in is over, it is nothing to say.
+          if (typed.status === "error" && flow.current === which) setPasteRefused(typed.error);
+        }),
+    );
   };
 
   return (
