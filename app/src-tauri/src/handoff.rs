@@ -150,7 +150,12 @@ fn task_dispatched(
         }
         Ok(Dispatched::Held {
             from, to, waiting, ..
-        }) => Answer::NeedsGrant { from, to, waiting },
+        }) => Answer::NeedsGrant {
+            from,
+            to,
+            waiting,
+            held_by: None,
+        },
         Ok(Dispatched::WaitsOnMemory { to }) => match waits_on_memory(held, wanted) {
             Ok(()) => Answer::WaitingOnMemory { to },
             Err(why) => no(why),
@@ -220,7 +225,12 @@ pub fn answer(
                 }
                 Ok(Dispatched::Held {
                     from, to, waiting, ..
-                }) => Answer::NeedsGrant { from, to, waiting },
+                }) => Answer::NeedsGrant {
+                    from,
+                    to,
+                    waiting,
+                    held_by: None,
+                },
                 // Waits on memory, as a task does (#1467): opened once memory frees.
                 Ok(Dispatched::WaitsOnMemory { to }) => match waits_on_memory(held, &wanted) {
                     Ok(()) => Answer::WaitingOnMemory { to },
