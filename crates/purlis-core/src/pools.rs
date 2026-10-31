@@ -1153,7 +1153,7 @@ fn tells_the_mint_port_again(
             }
         });
     if let Err(why) = spawned {
-        tracing::info!("purlis: pool {name}'s runner was not told of its mint port: {why}");
+        tracing::info!("purlis: a pool's runner was not told of its mint port: {why}");
     }
 }
 
