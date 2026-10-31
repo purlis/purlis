@@ -1354,21 +1354,44 @@ fn ask(
             harness: HarnessSkills { route },
         },
     );
-    let set = match plane.map(|at| at.repo) {
-        Some(repo) if !repo.is_empty() => set.with_outside(route, repo.iter().cloned()),
-        _ => set,
-    };
-    match budget {
-        Some(budget) => {
-            let pins = plane
+    as_a_start_routes(
+        set,
+        route,
+        plane.map(|at| at.repo).unwrap_or_default(),
+        budget,
+        || {
+            plane
                 .map(|at| pins_or_none(at.plane, at.workspace, persona))
-                .unwrap_or_default();
-            match plane.and_then(|at| at.routed) {
-                Some(routed) => routed.apply(set, budget, &pins),
-                None => set.routed(budget, &pins),
-            }
-        }
-        None => set,
+                .unwrap_or_default()
+        },
+        plane.and_then(|at| at.routed),
+    )
+}
+
+/// **A chat's set as its start routes it** (SK-15; #4192): the skills from outside the plane its
+/// harness reads (`outside`) beside `set` on `route`, then, where its listing is routed, routed
+/// within `budget` with the `pins` it reads, by the router its start chose (`routed`) or else the
+/// built-in one. At a start `outside` is the repo skills of the clone it works in; the studio's
+/// preview of a harness ([`harnesses_in_the_studio`]) holds the harness's own skills too, which
+/// count against nothing ([`SkillSet::routed`], ADR 0102 as amended 2026-10-31), so they hide
+/// none of what a chat's start lists. The one routing [`ask`] and the studio go through. The
+/// studio still routes with every clone's repo skills and the built-in router (#4215).
+fn as_a_start_routes(
+    set: SkillSet,
+    route: Route,
+    outside: &[OutsideSkill],
+    budget: Option<Budget>,
+    pins: impl FnOnce() -> Vec<String>,
+    routed: Option<&router::Routed>,
+) -> SkillSet {
+    let set = set.with_outside(route, outside.iter().cloned());
+    let Some(budget) = budget else {
+        return set;
+    };
+    let pins = pins();
+    match routed {
+        Some(routed) => routed.apply(set, budget, &pins),
+        None => set.routed(budget, &pins),
     }
 }
 
@@ -2118,7 +2141,16 @@ fn harnesses_in_the_studio(
             } else {
                 set.clone()
             };
-            let set = set.with_outside(route, outside.clone());
+            // Routed as a chat's start routes it, by this harness's own budget (SK-15): what it
+            // finds itself is beside the set for its clashes and rows, and counted in nothing.
+            let set = as_a_start_routes(
+                set,
+                route,
+                &outside,
+                Some(harness.skill_budget()),
+                || pins.to_vec(),
+                None,
+            );
             let by_a_repo = SkillSet {
                 left_out: set.left_out_by_a_repo().cloned().collect(),
                 ..SkillSet::default()
@@ -2126,8 +2158,7 @@ fn harnesses_in_the_studio(
             let mut one = HarnessInTheStudio {
                 harness,
                 repo_left_out: rows_of(&by_a_repo, plane, names, reading),
-                // Routed by this harness's own budget, with what it finds itself counted (SK-15).
-                set: set.routed(harness.skill_budget(), pins),
+                set,
                 own: (reading == Reading::Whole).then(|| own_catalogue(harness, &outside)),
                 outside,
                 rows: Vec::new(),
