@@ -43,3 +43,4 @@ What the table does not promise:
   as passed, saying nothing it covers has changed. A push to `main` runs every scope.
 - **Windows** is not supported until the port lands. Until then the `windows` job reports what
   breaks, and its result blocks nothing ([ADR 0031](adr/0031-windows-gets-charters-guards-or-it-gets-no-charter.md)).
+<!-- demo for #3596 -->
