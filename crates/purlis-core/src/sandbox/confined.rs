@@ -105,7 +105,6 @@ const LINKS_MACOS: [&str; 3] = ["/var", "/tmp", "/etc"];
 /// each reads what a person keeps without a file read.
 const BASE: &str = "(version 1)
 (deny default)
-(allow process-exec)
 (allow process-fork)
 (allow signal (target same-sandbox))
 (allow process-info* (target same-sandbox))
@@ -152,10 +151,12 @@ pub fn profile(
     let mut read_roots = system.clone();
     read_roots.extend(own.iter().cloned());
     // On macOS a program's libraries are mapped executable from where it reads them, an
-    // operation of its own that Linux's sandbox has no word for.
+    // operation of its own that Linux's sandbox has no word for, and it runs programs only from
+    // there too.
     let ops = if os == Os::MacOs {
-        "file-read* file-map-executable"
+        "file-read* file-map-executable process-exec"
     } else {
+        line("(allow process-exec)".to_owned());
         "file-read*"
     };
     line(format!("(allow {ops}"));

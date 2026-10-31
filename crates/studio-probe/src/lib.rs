@@ -198,10 +198,12 @@ fn try_past_the_grade() {
     if let Ok(harness) = std::fs::read_to_string(HARNESS) {
         let started = std::process::Command::new(harness.trim())
             .arg("--version")
+            .stdin(std::process::Stdio::null())
             .output()
             .map(|out| {
                 format!(
-                    "ok, it said {}",
+                    "ok, it ended {} and said {}",
+                    out.status,
                     String::from_utf8_lossy(&out.stdout).trim()
                 )
             })

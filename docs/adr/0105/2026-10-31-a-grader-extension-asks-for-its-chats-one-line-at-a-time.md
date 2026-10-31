@@ -60,7 +60,7 @@ is none.
 - **A grade the person stopped**: what ran, scored, `cancelled`.
 
 **A Grader never reaches a harness or a model itself.** It is confined (ADR 0101 §2 and §3): it
-reads its own folder alone, so no harness's program, and its proxy carries no model's host. The
+reads and runs programs from its own folder and the system's alone, so no harness's program, and its proxy carries no model's host. The
 studio probe's Grader tries both from inside its grade, and its test asserts each is refused,
 beside a grade whose every chat was one purlis ran.
 
