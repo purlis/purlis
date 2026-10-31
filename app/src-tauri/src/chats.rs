@@ -5622,12 +5622,11 @@ impl Chats {
         );
     }
 
-    /// **Runner chat `session`'s workspace clones as its session started here** (#2053): `None`
-    /// for a chat not open, of this machine, or reattached.
     /// **Puts the repos of the workspace chat `session` is sent with on its runner's Claim** (#4207):
-    /// off the chat's start, since a mint asked before they arrive only finds the operator refuses
-    /// and asks the person, and only for a pool that opted in. A chat on any other pool, or one this
-    /// machine does not keep, sends nothing.
+    /// off the chat's start, and only for a pool that opted in: a chat on any other pool, or one
+    /// this machine does not keep, sends nothing and reads no clone for it. A mint asked before they
+    /// arrive goes to the person, or covers what the Claim named by then, till its token is minted
+    /// again.
     #[cfg(unix)]
     fn puts_its_repos_on_its_claim(
         &self,
@@ -5642,24 +5641,32 @@ impl Chats {
         let Ok(Some(pool)) = purlis_core::pools::runs_on(config, &self.project, workspace) else {
             return;
         };
-        let record = purlis_core::forge::apptoken::record_root();
-        let repos =
-            purlis_core::forge::apptoken::repos_of_workspace(&purlis_core::forge::apptoken::For {
-                root: &self.project,
-                chat: session,
-                folder,
-                here: None,
-                writes: &[],
-                started: Some(clones),
-                on_a_runner: true,
-                config_root: record.as_deref(),
-                ends_seen: None,
-            });
-        let config = config.clone();
+        let (config, root, folder, clones) = (
+            config.clone(),
+            self.project.clone(),
+            folder.map(std::path::Path::to_path_buf),
+            clones.to_vec(),
+        );
         let sent = std::thread::Builder::new()
             .name("purlis-claim-repos".to_owned())
             .spawn(move || {
-                if let Err(why) = purlis_core::pools::add_repos_to_claim(&config, &pool, &repos) {
+                let record = purlis_core::forge::apptoken::record_root();
+                let repos = || {
+                    purlis_core::forge::apptoken::repos_of_workspace(
+                        &purlis_core::forge::apptoken::For {
+                            root: &root,
+                            chat: session,
+                            folder: folder.as_deref(),
+                            here: None,
+                            writes: &[],
+                            started: Some(&clones),
+                            on_a_runner: true,
+                            config_root: record.as_deref(),
+                            ends_seen: None,
+                        },
+                    )
+                };
+                if let Err(why) = purlis_core::pools::add_repos_to_claim(&config, &pool, repos) {
                     tracing::warn!(
                         "purlis: the repos of a chat on pool {pool} did not reach its claim: {why}"
                     );
@@ -5670,6 +5677,8 @@ impl Chats {
         }
     }
 
+    /// **Runner chat `session`'s workspace clones as its session started here** (#2053): `None`
+    /// for a chat not open, of this machine, or reattached.
     pub fn clones_at_start(
         &self,
         session: u32,

@@ -18,3 +18,7 @@ to the amendment of 2026-10-31 on the mint port, and keeps everything else in it
    and takes none away while the runner lives, since the runner's other chats use them. A token
    covers the Claim's repos, not one chat's.
 6. **A runner keeps its token in memory and revokes it as the chat ends**, as a desktop does (#3808).
+7. **The operator may `get` its own mint Service, by name**, for the address, in the Role that
+   otherwise reads the keys the chart names, and only where it names one.
+8. **A runner told of a mint port starts nothing outside the sandbox but a shell** (ruled
+   2026-10-31), saying why, and no chat reads the folder its pod hands its link key over in.

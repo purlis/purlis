@@ -922,8 +922,8 @@ async fn serve_one(
     stream.shutdown().await
 }
 
-/// **Serves the mint port** until the process ends. A pod with no Pool opted in answers every
-/// request with a refusal, and where the cluster enforces NetworkPolicies only runner namespaces
+/// **Serves the mint port** until the process ends. A pod with no Pool opted in refuses every
+/// token, and where the cluster enforces NetworkPolicies only runner namespaces
 /// reach it. Never returns, so a port that cannot be served never stops the rest of the operator.
 pub async fn serve(client: Client, keys: Arc<MountedKeys>, cluster: String) {
     if let Err(why) = serve_until_broken(client, keys, cluster).await {

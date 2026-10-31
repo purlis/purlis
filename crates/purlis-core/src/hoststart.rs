@@ -491,7 +491,13 @@ pub fn spec(
     beside: &dyn Beside,
 ) -> Result<Spec, String> {
     match &starting.start.launch {
-        Some(launch) => crate::chatspec::from_launch_here(launch, starting.number, size),
+        Some(launch) => {
+            // A launch by its words is in no sandbox of this host's making: a shell alone, then.
+            if starting.start.kind != ProgramKind::Shell {
+                refused_where_a_token_is_near(starting.start.kind)?;
+            }
+            crate::chatspec::from_launch_here(launch, starting.number, size)
+        }
         None => {
             let mut launch = compose(starting, kit, beside)?;
             launch.reporting = starting.reporting.cloned();
@@ -551,6 +557,9 @@ pub fn compose(starting: &Starting<'_>, kit: &Kit, beside: &dyn Beside) -> Resul
         },
         root,
     )?;
+    if ready.sandbox.is_none() {
+        refused_where_a_token_is_near(start.kind)?;
+    }
     // Credentials are read where the window starts its program, and never pass in a launch.
     if ready
         .sign_in
@@ -560,6 +569,36 @@ pub fn compose(starting: &Starting<'_>, kit: &Kit, beside: &dyn Beside) -> Resul
         return Err(NOT_HANDED.into());
     }
     compose_ready(starting, ready, kit, beside)
+}
+
+/// What a start with no sandbox is told on a runner told of the operator's mint port.
+pub const NO_SANDBOX_WHERE_A_TOKEN_IS_NEAR: &str = "this runner's pool mints GitHub tokens in the \
+     cluster, so a chat here runs only inside purlis's sandbox, and this one would not, so nothing \
+     was started. Start it sandboxed; a terminal shell you open yourself is still allowed.";
+
+/// **Refuses a start outside the sandbox on a runner told of a mint port** (#4207, the person's
+/// ruling of 2026-10-31), a shell alone being allowed. What this runner keeps of the port and cannot
+/// read refuses too.
+#[cfg(unix)]
+fn refused_where_a_token_is_near(kind: ProgramKind) -> Result<(), String> {
+    let told = crate::machine::config_root().map_or(Ok(false), |config| {
+        crate::forge::mintport::told(&config).map(|told| told.is_some())
+    });
+    no_sandbox_refused(kind, told)
+}
+
+#[cfg(not(unix))]
+fn refused_where_a_token_is_near(_kind: ProgramKind) -> Result<(), String> {
+    Ok(())
+}
+
+/// [`refused_where_a_token_is_near`], from whether this runner was told of a port.
+pub fn no_sandbox_refused(kind: ProgramKind, told: Result<bool, String>) -> Result<(), String> {
+    match told {
+        _ if kind == ProgramKind::Shell => Ok(()),
+        Ok(false) => Ok(()),
+        Ok(true) | Err(_) => Err(NO_SANDBOX_WHERE_A_TOKEN_IS_NEAR.to_owned()),
+    }
 }
 
 /// **What a start from this runner's desktop says its person allowed of the chat's persona**

@@ -838,7 +838,8 @@ no token and no key in it.
 
 ### What the opt-in means
 
-**Anyone who may use the Pool can use its listed repos through it, with no one asked each time.** On a
+**Anyone who may use the Pool, by name, can use its listed repos through it, with no one asked each
+time.** On a
 Pool that opts in, a chat's GitHub App tool (`mint = "github-app"`, whose App is the Secret's) gets
 its token from the operator, not the desktop, and the person is not asked about that run: the admin's
 opt-in stands as consent (ruled on #3807), and the operator's log is the record of each mint. This
@@ -848,6 +849,13 @@ holds for such tools alone. Any other tool's vault value still comes from the de
 - **A refused mint is not the end of the run, and never a token by itself.** The chat is told the
   operator's words, and the run goes to the desktop, which gates it and asks the person as on any
   other pool. With the desktop away, it waits as such a run does.
+- **What a run is held to on the runner is what its chat's start was armed with.** The desktop's
+  gate is not asked: a tool line or vault tag taken away reaches a chat as it starts again. A token
+  is kept about 50 minutes for a chat's next runs, so a right revoked stops the next mint, not one
+  already out.
+- **A chat here runs only inside purlis's sandbox.** Once a runner has been told of the port, its
+  host refuses any start outside the sandbox, saying why. A terminal shell the person opens is still
+  allowed.
 - **The token stays in the runner's memory**, and goes when its chat ends: the runner revokes it
   with GitHub. A revoke that fails, or a runner stopped first, leaves it to expire within its hour.
 
@@ -855,8 +863,8 @@ holds for such tools alone. Any other tool's vault value still comes from the de
 
 **`Claim.status.mint`** holds `address` (the port as `<cluster IP>:8443`) and `operatorKey` (spelled
 as a Pool's `signingKey`), only for a runner the operator vouches for on a Pool that opts in. As the
-desktop pairs its runner it reads these, and tells the runner only a key that is the one it pinned
-when it added the pool: a status naming another tells it nothing. The runner keeps them in
+desktop pairs its runner it reads these, and tells the runner only the key it pinned when it added the
+pool, or during a roll that key and the current one: a status naming another tells it nothing. The runner keeps them in
 [`mint-port.json`](plane-format.md) in its session host's folder, so it needs no way to the
 Kubernetes API.
 

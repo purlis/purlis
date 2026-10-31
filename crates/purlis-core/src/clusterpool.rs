@@ -1300,25 +1300,9 @@ impl Kubectl {
     /// it, the desktop it is marked as ([`DESKTOP_ANNOTATION`]) and whether it is kept (#3819);
     /// `None` where there is none.
     pub fn claim_seen(&self, namespace: &str, name: &str) -> Result<Option<ClaimSeen>, Refused> {
-        let printed = self.run(
-            &self.args(&[
-                "get",
-                "claims.runners.purlis.dev",
-                name,
-                "--namespace",
-                namespace,
-                "--ignore-not-found",
-                "--output",
-                "json",
-            ]),
-            None,
-            MOST_PRINTED,
-        )?;
-        if printed.trim().is_empty() {
+        let Some(held) = self.claim_json(namespace, name)? else {
             return Ok(None);
-        }
-        let held: serde_json::Value = serde_json::from_str(&printed)
-            .map_err(|_| Refused::Other("kubectl get did not answer JSON".into()))?;
+        };
         let text = |path: &str| {
             held.pointer(path)
                 .and_then(serde_json::Value::as_str)
@@ -1355,17 +1339,35 @@ impl Kubectl {
 
     /// **Adds `repos` to `Claim.spec.forge.repos`** (#4207), as the Claim's requester, whose word the
     /// cluster's policy holds it to; what the Claim names already stays, for the runner's other
-    /// chats. Written only where it adds something. Refused past [`MOST_CLAIM_REPOS`].
+    /// chats. Written only where it adds something, and only over the Claim as it was read, so two
+    /// chats starting at once both arrive. Refused past [`MOST_CLAIM_REPOS`].
     pub fn add_claim_repos(
         &self,
         namespace: &str,
         name: &str,
         repos: &[String],
     ) -> Result<(), Refused> {
-        let held = self.claim_json(namespace, name)?;
+        let mut tries = CLAIM_WRITES;
+        loop {
+            tries -= 1;
+            match self.add_claim_repos_once(namespace, name, repos) {
+                Err(_) if tries > 0 => {}
+                done => return done,
+            }
+        }
+    }
+
+    fn add_claim_repos_once(
+        &self,
+        namespace: &str,
+        name: &str,
+        repos: &[String],
+    ) -> Result<(), Refused> {
+        let Some(held) = self.claim_json(namespace, name)? else {
+            return Ok(());
+        };
         let named: Vec<String> = held
-            .as_ref()
-            .and_then(|held| held.pointer("/spec/forge/repos"))
+            .pointer("/spec/forge/repos")
             .and_then(serde_json::Value::as_array)
             .into_iter()
             .flatten()
@@ -1379,7 +1381,15 @@ impl Kubectl {
                 "a claim names at most {MOST_CLAIM_REPOS} repos, so this workspace's were not added"
             )));
         }
-        let patch = serde_json::json!({ "spec": { "forge": { "repos": all } } }).to_string();
+        let version = held
+            .pointer("/metadata/resourceVersion")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| Refused::Other("the claim holds no resource version".into()))?;
+        let patch = serde_json::json!({
+            "metadata": { "resourceVersion": version },
+            "spec": { "forge": { "repos": all } },
+        })
+        .to_string();
         self.run(
             &self.args(&[
                 "patch",
@@ -1678,6 +1688,12 @@ pub fn pair(
     })
 }
 
+/// How many times a Claim's repos are written, where another write came first.
+const CLAIM_WRITES: u32 = 3;
+
+/// How many times, a second apart, a Claim's status is read for where to ask, where its Pool opts in.
+const MINT_READS: u32 = 5;
+
 /// The most repos a Claim's `spec.forge.repos` holds: what its definition allows.
 pub const MOST_CLAIM_REPOS: usize = 256;
 
@@ -1696,34 +1712,64 @@ pub fn repos_with(named: &[String], adding: &[String]) -> Option<Vec<String>> {
     })
 }
 
-/// **Tells the runner of `paired` where the mint port is** (#4207), where the Claim's status says,
-/// and only with the key this desktop pinned: a status naming any other key tells it nothing, so
-/// who may write a status can never move what a runner holds its port to. It decides nothing: the
-/// runner goes on asking this desktop, with the person's Ask, wherever it was not told.
+/// **The keys a runner is told to hold its port to** (#4207), from the key a Claim's status names:
+/// the one this desktop pinned, or, during a roll this desktop has followed, the one the Pool names
+/// as rolling to the pinned key, with the pinned key. Any other refuses, so who may write a status
+/// can never move what a runner holds its port to.
+pub fn keys_to_tell(said: &str, pin: &PoolPin, seen: &PoolSeen) -> Result<Vec<String>, Refused> {
+    let pinned = pin.key.spelled();
+    if said == pinned {
+        return Ok(vec![pinned]);
+    }
+    if seen.signing_key.as_deref() == Some(said)
+        && seen.next_signing_key.as_deref() == Some(pinned.as_str())
+    {
+        return Ok(vec![said.to_owned(), pinned]);
+    }
+    Err(Refused::Other(
+        "the claim's status names another key than the one this desktop pinned, so its runner \
+         was not told where to ask for a token"
+            .to_owned(),
+    ))
+}
+
+/// **Tells the runner of `paired` where the mint port is** (#4207), where the Claim's status says
+/// ([`keys_to_tell`]), waiting a little where its Pool opts in and the status is yet to say. It
+/// decides nothing: the runner goes on asking this desktop, with the person's Ask, wherever it was
+/// not told.
 pub fn tell_the_mint_port(
     kubectl: &Kubectl,
     pin: &PoolPin,
+    pool: &str,
     paired: &Paired,
+    every: std::time::Duration,
 ) -> Result<(), Refused> {
     let Claimed {
         namespace, name, ..
     } = &paired.claimed;
-    let Some((address, key)) = kubectl.claim_mint(namespace, name)? else {
+    let seen = kubectl.pool(pool)?;
+    if !seen.mints_in_cluster {
         return Ok(());
-    };
-    if key != pin.key.spelled() {
-        return Err(Refused::Other(
-            "the claim's status names another key than the one this desktop pinned, so its runner \
-             was not told where to ask for a token"
-                .to_owned(),
-        ));
     }
+    let mut reads = MINT_READS;
+    let (address, key) = loop {
+        reads -= 1;
+        match kubectl.claim_mint(namespace, name)? {
+            Some(said) => break said,
+            None if reads == 0 => {
+                return Err(Refused::Other(
+                    "the claim's status does not say where to ask for a token".to_owned(),
+                ));
+            }
+            None => std::thread::sleep(every),
+        }
+    };
     let told = crate::forge::mintport::Told {
         namespace: namespace.clone(),
         claim: name.clone(),
         cluster: pin.cluster.clone(),
         address,
-        keys: vec![key],
+        keys: keys_to_tell(&key, pin, &seen)?,
     };
     let line = serde_json::to_string(&told).map_err(|why| Refused::Other(why.to_string()))?;
     kubectl
@@ -1863,7 +1909,13 @@ pub fn claim_and_pair(
     let paired = vouched_within(kubectl, pin, &claimed, patience, every)
         .and_then(|vouched| pair(kubectl, &claimed, &vouched, desktop));
     if let Ok(paired) = &paired
-        && let Err(why) = tell_the_mint_port(kubectl, pin, paired)
+        && let Err(why) = tell_the_mint_port(
+            kubectl,
+            pin,
+            pool,
+            paired,
+            std::time::Duration::from_secs(1),
+        )
     {
         tracing::warn!(
             "purlis: the runner of pool {pool} will ask this desktop for its tokens: {why}"

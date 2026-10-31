@@ -65,6 +65,7 @@ pub type InCluster = Arc<
 >;
 
 /// The real [`InCluster`]: this host's config home's port ([`crate::forge::mintport`]).
+#[cfg(unix)]
 pub fn in_cluster(
     asker: &Asker,
     tool: &str,
@@ -79,13 +80,22 @@ pub fn in_cluster(
     let config_root = crate::machine::config_root()?;
     let minted =
         crate::forge::apptoken::token_in_cluster(&asker.root, asker.chat, &ready.tool, &|app| {
-            crate::forge::mintport::mint(&config_root, app)
+            crate::forge::mintport::mint_in_time(&config_root, app)
         });
     match minted {
         Ok(Some(token)) => Some(Ok((key, token))),
         Ok(None) => None,
         Err(why) => Some(Err(why)),
     }
+}
+
+/// A host away from unix has no runner to serve.
+#[cfg(not(unix))]
+pub fn in_cluster(
+    _asker: &Asker,
+    _tool: &str,
+) -> Option<Result<(String, zeroize::Zeroizing<String>), String>> {
+    None
 }
 
 /// What the asker of `tool` is told where the cluster refused it a token.
@@ -254,17 +264,20 @@ impl Relaying {
                 if input.gone() {
                     return;
                 }
+                // Held to the chat as this host keeps it now (#3407): a mint takes time.
+                let Some(now) = self
+                    .at()
+                    .and_then(|root| crate::hostedchats::asker(&root, ask.chat))
+                    .filter(|now| {
+                        brokered::armed_as(now, &ask.secret_exec).as_deref() == Ok(tool.as_str())
+                    })
+                else {
+                    // Its end may have come before this mint looked: nothing is left kept.
+                    crate::forge::apptoken::chat_ended(&asker.root, ask.chat);
+                    return brokered::refused(writer, chat_gone_said(&tool));
+                };
                 let handed = brokered::Handed::of(ask.chat, &tool, &run, [(key, token)]);
-                let relaying = Arc::clone(self);
-                let told: brokered::Told = Arc::new(move |run: brokered::RunBlocked| {
-                    relaying.tell(&Heard::Blocked(run.block));
-                });
-                let reader = Box::new(std::io::BufReader::new(Lines {
-                    lines: input.lines,
-                    pending: Vec::new(),
-                    at: 0,
-                }));
-                return (self.runs_handed)(&asker, ask.secret_exec, handed, reader, writer, told);
+                return self.runs_on(&now, ask.secret_exec, handed, input, writer);
             }
             Some(Err(why)) => {
                 tracing::info!(
@@ -341,16 +354,7 @@ impl Relaying {
                     if brokered::armed_as(&now, &ask.secret_exec).as_deref() != Ok(tool.as_str()) {
                         return brokered::refused(writer, chat_gone_said(&tool));
                     }
-                    let relaying = Arc::clone(self);
-                    let told: brokered::Told = Arc::new(move |run: brokered::RunBlocked| {
-                        relaying.tell(&Heard::Blocked(run.block));
-                    });
-                    let reader = Box::new(std::io::BufReader::new(Lines {
-                        lines: input.lines,
-                        pending: Vec::new(),
-                        at: 0,
-                    }));
-                    return (self.runs_handed)(&now, ask.secret_exec, handed, reader, writer, told);
+                    return self.runs_on(&now, ask.secret_exec, handed, input, writer);
                 }
                 // The window's own words: a refusal, said as it said it.
                 Replied::Wrote { text } => {
@@ -372,6 +376,27 @@ impl Relaying {
             }
         }
         self.done(id);
+    }
+
+    /// Runs `wanted` here on `handed`, its asker's input as read so far.
+    fn runs_on(
+        self: &Arc<Self>,
+        asker: &Asker,
+        wanted: brokered::Wanted,
+        handed: brokered::Handed,
+        input: Input,
+        writer: Box<dyn Write + Send>,
+    ) {
+        let relaying = Arc::clone(self);
+        let told: brokered::Told = Arc::new(move |run: brokered::RunBlocked| {
+            relaying.tell(&Heard::Blocked(run.block));
+        });
+        let reader = Box::new(std::io::BufReader::new(Lines {
+            lines: input.lines,
+            pending: Vec::new(),
+            at: 0,
+        }));
+        (self.runs_handed)(asker, wanted, handed, reader, writer, told)
     }
 
     /// **Holds `ask` until a window hears this host again** (#2047), at most

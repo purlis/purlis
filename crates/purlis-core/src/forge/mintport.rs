@@ -52,6 +52,9 @@ const CONNECTED_WITHIN: Duration = Duration::from_secs(5);
 /// How long the port's answer is waited for: past the operator's own minute on a connection.
 const ANSWERED_WITHIN: Duration = Duration::from_secs(70);
 
+/// How long one mint is waited for in all.
+const MINTED_WITHIN: Duration = Duration::from_secs(120);
+
 /// How often a host looks for a roll of the operator's key.
 const FOLLOWED_EVERY: Duration = Duration::from_secs(3600);
 
@@ -385,6 +388,22 @@ fn refused_in_words(status: u16, body: &[u8]) -> String {
         .collect()
 }
 
+/// [`mint`], for at most [`MINTED_WITHIN`] in all, however slowly the port answers: past it, a run
+/// goes to its desktop.
+pub fn mint_in_time(config_root: &Path, app: &str) -> Result<Option<Minted>, String> {
+    let (config_root, app) = (config_root.to_path_buf(), app.to_owned());
+    let (done, finished) = std::sync::mpsc::channel();
+    std::thread::Builder::new()
+        .name("purlisd-mint".into())
+        .spawn(move || {
+            let _ = done.send(mint(&config_root, &app));
+        })
+        .map_err(|why| why.to_string())?;
+    finished
+        .recv_timeout(MINTED_WITHIN)
+        .map_err(|_| "the mint port did not answer in time".to_owned())?
+}
+
 /// **Asks the port for a token of the GitHub App `app`** (module docs), following a roll first
 /// where one is under way. `Ok(None)` where this runner was told of no port.
 pub fn mint(config_root: &Path, app: &str) -> Result<Option<Minted>, String> {
@@ -438,8 +457,11 @@ pub fn mint(config_root: &Path, app: &str) -> Result<Option<Minted>, String> {
     }
     let operator = asking.shown;
     let moved = settled_on(told, &operator);
-    if let Some(moved) = moved {
-        tell(config_root, moved)?;
+    if let Some(moved) = moved
+        && let Err(why) = tell(config_root, moved)
+    {
+        // The token is live, and the next look at the port settles this again.
+        tracing::warn!("purlis: the mint port's old key is still held: {why}");
     }
     Ok(Some(Minted {
         token: Zeroizing::new(answered.token),
@@ -482,7 +504,7 @@ fn following(
     let Some(next) = answered.next else {
         return Ok(None);
     };
-    if told.keys.iter().any(|key| *key == next) {
+    if told.keys.contains(&next) {
         return Ok(None);
     }
     let pin = PoolPin {
