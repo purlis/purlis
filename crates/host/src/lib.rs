@@ -262,3 +262,4 @@ pub(crate) fn say(line: &str) {
     use std::io::Write;
     let _ = writeln!(std::io::stderr(), "purlisd: {line}");
 }
+// demo for #3596
