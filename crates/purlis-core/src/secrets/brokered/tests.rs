@@ -4917,6 +4917,46 @@ fn traced(project: &Path, chat: &str) -> Vec<serde_json::Value> {
         .collect()
 }
 
+/// A token from the cluster's operator is no desktop's (#4332): the record says where it came from
+/// and names no request, which no `secret.forwarded` would answer.
+#[test]
+fn a_runners_record_of_a_run_on_a_cluster_token_says_it_came_from_the_cluster() {
+    let project = a_runners_project();
+    let mut want = wanted(project.path(), "team", sh("true"));
+    want.file = vec!["KUBECONFIG=KUBECONFIG".into()];
+    let handed = Handed::from_the_cluster(
+        7,
+        "sh",
+        "a-run",
+        [("KUBECONFIG".to_owned(), KUBECONFIG.to_owned())],
+    );
+
+    served_handed(&asker(project.path(), Some("devops")), want, handed);
+
+    let ran = traced(project.path(), "7");
+    let ran = ran
+        .iter()
+        .find(|line| line["event"] == "secret-exec")
+        .expect("the run is recorded");
+    assert_eq!(ran["from"], "cluster", "{ran}");
+    assert!(ran["request"].is_null(), "{ran}");
+}
+
+/// What crosses the link says nothing of the cluster, so a desktop's values cannot be recorded so.
+#[test]
+fn nothing_read_off_the_link_is_recorded_as_the_clusters() {
+    let line = serde_json::to_value(Handed::from_the_cluster(
+        7,
+        "kubectl",
+        "a-run",
+        [("KUBECONFIG".to_owned(), "v".to_owned())],
+    ))
+    .unwrap();
+    assert_eq!(line.as_object().unwrap().len(), 4, "{line}");
+    let read: Handed = serde_json::from_value(line).unwrap();
+    assert!(!read.from_the_cluster);
+}
+
 #[test]
 fn a_runners_record_of_a_run_says_its_values_came_from_its_desktop() {
     let project = a_runners_project();
