@@ -328,7 +328,8 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
     });
 
     it("gives a one-line reason for every state, in the Skills view", async () => {
-      await startAChat();
+      // The chat the first test used, whose set the view reads afresh. On a slow runner its restart
+      // can still be replacing it, which a second start would count as its own chat.
       await theSkillsViewUnfolded();
       const problems: string[] = [];
       // Every row of Left out, and any marked elsewhere: a row of Left out with no reason drawn
