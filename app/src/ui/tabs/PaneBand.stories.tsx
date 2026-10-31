@@ -652,7 +652,7 @@ export const NarrowScrolled: Story = {
     // The keyboard landing on a way out from below stops clear of the fade (WCAG 2.4.11).
     const allow = within(vault).getByRole("button", { name: "Allow steward to use this vault" });
     allow.focus();
-    await waitFor(() => expect(allow).toHaveFocus());
+    await untilFocused(() => allow, "the vault's Allow, from below");
     // Wherever the band came to rest, no fade lies over the way out.
     if (stack.hasAttribute("data-more-above"))
       expect(boxOf(allow).top - boxOf(stack).top).toBeGreaterThanOrEqual(
