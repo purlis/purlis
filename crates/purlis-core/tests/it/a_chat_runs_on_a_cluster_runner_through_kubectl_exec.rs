@@ -564,7 +564,7 @@ fn an_idle_kept_runner_is_suspended_and_its_desktop_runs_it_again() {
         ran(
             &client,
             &mut views,
-            "echo 'kept' > \"$HOME/idle-kept\" && echo written; exec sleep 600",
+            "echo 'kept' > \"$HOME/idle-kept\" && echo written; exec sleep 130",
             "written",
         )
         .await;
@@ -572,14 +572,7 @@ fn an_idle_kept_runner_is_suspended_and_its_desktop_runs_it_again() {
         assert_eq!(idle(), None, "a chat runs on it, so it is not idle");
     });
     runtime.shutdown_timeout(Duration::from_secs(5));
-    // Its chat ended, nothing runs on it. The link is gone with the runtime, and the chat's end
-    // is the host's: a program left is ended by asking for it.
-    in_the_pod(
-        &kubectl,
-        &runner,
-        "ada-idle",
-        "pkill -f 'sleep 600' || true",
-    );
+    // Its chat ends by itself and its link went with the runtime: nothing runs on it now.
     within(
         Duration::from_secs(420),
         "the claim says its runner is idle",
