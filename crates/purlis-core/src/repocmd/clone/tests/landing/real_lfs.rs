@@ -332,19 +332,38 @@ fn real_git_lfs_lands_each_file_as_its_content_signed_by_the_clones_helper() {
     assert_eq!(server.asked.downloads.load(Ordering::SeqCst), 2);
     assert!(!world.hidden("widget").exists());
     // Nothing reads as changed: the files are what git expects of a checkout.
-    let status = git::run(&dest, &["status", "--porcelain"], git::READ).unwrap();
-    if !status.out.trim().is_empty() {
+    // In the person's own git, with nothing of purlis's between.
+    let plain = |args: &[&str]| {
+        let mut command = std::process::Command::new("git");
+        command.args(args).current_dir(&dest);
+        let out = crate::forklock::output(&mut command).unwrap();
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
+    };
+    let status = plain(&["status", "--porcelain"]);
+    if !status.trim().is_empty() {
         for args in [
-            &["config", "--show-origin", "--get-regexp", "^filter\\.lfs"][..],
-            &["ls-files", "-s"][..],
             &["diff", "--stat"][..],
-            &["lfs", "ls-files", "--long"][..],
-            &["check-attr", "filter", "--", "file0.bin"][..],
+            &["hash-object", "--path=file0.bin", "file0.bin"][..],
+            &["ls-files", "-s", "file0.bin"][..],
+            &["lfs", "status"][..],
+            &["config", "--list", "--show-origin"][..],
         ] {
-            eprintln!("{args:?}: {:?}", git::run(&dest, args, git::READ));
+            eprintln!("{args:?}: {}", plain(args));
         }
+        eprintln!(
+            "the product's git: {:?}",
+            git::run(
+                &dest,
+                &["hash-object", "--path=file0.bin", "file0.bin"],
+                git::READ
+            )
+        );
     }
-    assert!(status.ok() && status.out.trim().is_empty(), "{status:?}");
+    assert!(status.trim().is_empty(), "{status}");
     // The percent never goes back, across git's stages and git-lfs's own, and the window says it.
     let percents: Vec<u8> = seen.iter().map(|(_, percent)| *percent).collect();
     assert!(percents.is_sorted(), "{seen:?}");
