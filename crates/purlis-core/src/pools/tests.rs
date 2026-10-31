@@ -2366,6 +2366,8 @@ fn a_draining_runner_removed_outside_purlis_goes_with_its_own_homes_sign_ins_car
     fake.set("engine", "engine-a\n");
     home_prints(&fake, HOME_CREATED);
     a_pool_draining(config.path(), &fake);
+    // The fake has one volume, and making the successor printed over it.
+    home_prints(&fake, HOME_CREATED);
     fake.set("volumes", "purlis-runner-first-home\n");
     fake.set("containers", "");
 
@@ -2391,6 +2393,8 @@ fn a_draining_runner_removed_outside_purlis_takes_nothing_from_a_home_made_since
     fake.set("engine", "engine-a\n");
     home_prints(&fake, HOME_CREATED);
     a_pool_draining(config.path(), &fake);
+    // The fake has one volume, and making the successor printed over it.
+    home_prints(&fake, HOME_CREATED);
     fake.set("volumes", "purlis-runner-first-home\n");
     fake.set("containers", "");
     home_prints(&fake, "2026-01-01T00:00:00Z");
@@ -2413,11 +2417,18 @@ fn a_draining_runner_removed_outside_purlis_carries_once() {
     fake.set("engine", "engine-a\n");
     home_prints(&fake, HOME_CREATED);
     a_pool_draining(config.path(), &fake);
+    // The fake has one volume, and making the successor printed over it.
+    home_prints(&fake, HOME_CREATED);
     fake.set("volumes", "purlis-runner-first-home\n");
     fake.set("containers", "");
     fake.set("rm-fails-volume", "1");
 
     drain_removed(config.path(), &fake.docker(), "first").unwrap();
+    assert!(
+        fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
     assert!(
         runners::named(config.path(), "first")
             .unwrap()
