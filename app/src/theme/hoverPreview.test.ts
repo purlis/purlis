@@ -33,6 +33,15 @@ describe("the hover preview", () => {
     expect(showing()).toBe(false);
   });
 
+  it("puts the person's theme back when the pointer leaves the window (#3095)", () => {
+    drawIn(DEFAULT_THEME);
+    showWhileOn(LIGHT, ask());
+    document.dispatchEvent(new MouseEvent("pointermove"));
+    document.dispatchEvent(new MouseEvent("pointerout", { relatedTarget: null }));
+    expect(inForce()).toBe(DEFAULT_THEME);
+    expect(showing()).toBe(false);
+  });
+
   it("goes from one card to the next without drawing the person's theme between", () => {
     vi.useFakeTimers();
     drawIn(DEFAULT_THEME);

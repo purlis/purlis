@@ -8,7 +8,7 @@
  * measures, which a test sets; the look itself is the stories' (`Table.stories.tsx`).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./Table";
 import {
@@ -264,6 +264,21 @@ describe("a table of controls whose columns chose (#3671)", () => {
         resolve();
       }, 600),
     );
+  });
+
+  it("takes its tooltip away when the pointer leaves the window with no leave on it (#3095)", async () => {
+    cutWords(true);
+    render(<StudioSkills />);
+    const table = screen.getByRole("table", { name: "Studio skills" });
+    const chat = wordsOf(within(table).getAllByRole("cell")[2]) as HTMLElement;
+    act(() => {
+      fireEvent.pointerEnter(chat, { pointerType: "mouse" });
+    });
+    await waitFor(() => expect(shownTip()).not.toBeNull(), { timeout: 1000 });
+    act(() => {
+      fireEvent.pointerOut(document, { relatedTarget: null });
+    });
+    expect(shownTip()).toBeNull();
   });
 });
 

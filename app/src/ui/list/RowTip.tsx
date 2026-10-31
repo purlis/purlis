@@ -31,6 +31,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { AnchoredTooltip, onTooltipEscape, TOOLTIP_DELAY, type Tip } from "../tooltip/Tooltip";
+import { useWindowLeft } from "../windowLeft";
 import { RowScope } from "./Row";
 
 /** What a row with a tooltip hands its element, and draws inside it. */
@@ -72,7 +73,12 @@ export function useRowTip(
     setPointed(null);
     setDismissed(false);
   }, []);
-  if (tip === undefined || tip === null || tip === "") return { hover: {}, drawn: () => null };
+  const has = tip !== undefined && tip !== null && tip !== "";
+  // Gone from the window, which an engine may not say on the row (#3095).
+  useWindowLeft((why) => {
+    if (why === "pointer") onPointerLeave();
+  }, has);
+  if (!has) return { hover: {}, drawn: () => null };
   return {
     hover: { onPointerEnter, onPointerMove, onPointerLeave },
     drawn: (keyboardOn) =>

@@ -13,6 +13,7 @@ import {
   type KeyboardEventHandler,
   type RefObject,
 } from "react";
+import { watchWindowLeft } from "./ui/windowLeft";
 
 /**
  * Whether the element that took the focus took it from the keyboard. A pointer's press focuses
@@ -140,12 +141,14 @@ export function useHeldStill<E extends HTMLElement>(
       if (seen.current !== event) leave();
       seen.current = null;
     };
-    window.addEventListener("blur", away);
+    // The window from the front lets all go; the pointer gone from it (which WebKit may not say
+    // on the list) is the pointer's hold alone: the keyboard's is still here (#3095).
+    const unwatch = watchWindowLeft((why) => (why === "focus" ? away() : leave()));
     window.addEventListener("focusin", landed);
     window.addEventListener("pointerover", pointedAt);
     return () => {
       stay();
-      window.removeEventListener("blur", away);
+      unwatch();
       window.removeEventListener("focusin", landed);
       window.removeEventListener("pointerover", pointedAt);
     };

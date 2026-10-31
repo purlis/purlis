@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { drawIn, inForce, onDrawn, sameTheme, type Theme } from "./theme";
+import { watchWindowLeft } from "../ui/windowLeft";
 
 /**
  * **A theme drawn live while the pointer or the keyboard is on its card** (Settings › Theme,
@@ -112,7 +113,7 @@ function restore(): void {
 }
 
 /** While a card is shown: the window's own draws become what goes back, and the window
- *  hidden, unfocused, Escape or the cards gone put the person's theme back. */
+ *  hidden, unfocused, the pointer gone from it (#3095), Escape or the cards gone put the person's theme back. */
 function watch(): void {
   const stopDrawn = onDrawn((drawn) => {
     if (shown === null || drawn === shown) return;
@@ -136,13 +137,13 @@ function watch(): void {
     if (within !== null && !within.isConnected) putBack();
   }, LOOK_MS);
   document.addEventListener("visibilitychange", hidden);
-  window.addEventListener("blur", putBack);
+  const unwatchLeft = watchWindowLeft(putBack);
   document.addEventListener("keydown", escape, true);
   unwatch = () => {
     stopDrawn();
     clearInterval(gone);
     document.removeEventListener("visibilitychange", hidden);
-    window.removeEventListener("blur", putBack);
+    unwatchLeft();
     document.removeEventListener("keydown", escape, true);
   };
 }
