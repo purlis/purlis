@@ -1141,6 +1141,8 @@ pub(crate) fn begin(
 /// it before Grade is pressed. The answer is the plan of `skill` at `level` again, with it.
 #[tauri::command]
 #[specta::specta]
+// A command's arguments are the window's call, named one by one, as the other commands' are.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn skill_grade_set_cap(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,

@@ -1481,7 +1481,7 @@ fn a_row_too_long_for_the_record_drops_the_evidence_first() {
 fn a_plan_with_outcome_evals_is_estimated_only_from_a_grade_that_ran_some() {
     let triggers_only = uncommitted_row();
     assert_eq!(
-        estimate_of(&[triggers_only.clone()], 12, Some("work"), true),
+        estimate_of(std::slice::from_ref(&triggers_only), 12, Some("work"), true),
         None
     );
     let both = outcome_row();

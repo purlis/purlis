@@ -106,6 +106,8 @@ pub(crate) async fn skill_grade_after_edit(
 /// holds (`consent`). What it keeps as accepted is that plan's chats, cap and dollar limit.
 #[tauri::command]
 #[specta::specta]
+// A command's arguments are the window's call, named one by one, as the other commands' are.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn skill_grade_after_edit_on(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
