@@ -3712,10 +3712,9 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
     let program = stand_in::program(
         bin.path(),
         "codex",
-        &format!(
-            "#!/bin/sh\n\
+        "#!/bin/sh\n\
              [ \"$1\" = login ] && [ \"$2\" = status ] && exit 0\n\
-             for word in \"$@\"; do [ \"$word\" = --version ] && {{ echo 'codex-cli 0.147.0'; exit 0; }}; done\n\
+             for word in \"$@\"; do [ \"$word\" = --version ] && { echo 'codex-cli 0.147.0'; exit 0; }; done\n\
              gh --version | head -1 | sed 's/ version.*/ ANSWERED./'\n\
              glab --version | head -1 | cut -c1-4 | sed 's/$/ ANSWERED./'\n\
              if gh auth token >/dev/null 2>&1; then echo 'TOKEN some.'; else echo 'TOKEN none.'; fi\n\
@@ -3727,7 +3726,6 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
              case \"$said\" in *\"image, \"*@sha256:*\" has no kubectl\"*) echo \"KUBECTL named the image, ended $code.\" ;; *) echo \"KUBECTL ended $code.\" ;; esac\n\
              printf 'TRIED.\\n'\n\
              read line\n",
-        ),
     );
     a_profile_of(target, "codex", "work", &program);
     let chat_says = |tools_allowed: Option<String>| {
