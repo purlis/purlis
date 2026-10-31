@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793442417737,
+  "lastUpdate": 1793444350395,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33138,6 +33138,48 @@ window.BENCHMARK_DATA = {
             "value": 101.31119050000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.782, 100.814, 101.311, 102.283, 102.747 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b50189f58c835972394f62cbef2260ca93666b0d",
+          "message": "skills: the studio previews a chat at the workspace's root, by the built-in router (#4215) (#4229)\n\n* skills: the studio previews a chat at the workspace's root, by the built-in router (#4215)\n\nThe harness page routed its preview with every clone's repo skills, which no\nchat's start counts. It now routes as a chat at the workspace's root starts:\nbeside the harness's own skills only, through as_a_start_routes, while every\nclone's repo skills stay in the set for rows, clashes and what a repo leaves\nout. The Routing page's new Preview line names the place previewed and says\nthe marks are the built-in router's choice where an extension is chosen.\nADR 0102 amendment records it; a per-clone preview is #4227.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: the studio's preview is a whole set of its own; review fixes (#4215)\n\nHarnessInTheStudio::at_the_root holds the root chat's routed set, and the\nunion set with every clone's repo skills carries no routing, so neither set\nnames a hidden skill it does not hold. The harness's own and the repo skills\nare two vectors. The Preview line names the persona and adds the clone\nsentence only where a clone holds repo skills; the extension's said drops\nthe clause Preview now owns. Changelog fragment added; the test covers a\nrepo copy that wins.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* stories: the Routing page's pictures with its Preview line (#4215)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T10:27:37Z",
+          "tree_id": "e238ab413bfa34443ca38c751e7ae46a586a04bb",
+          "url": "https://github.com/purlis/purlis/commit/b50189f58c835972394f62cbef2260ca93666b0d"
+        },
+        "date": 1793444346029,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5342035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.518, 0.531, 0.534, 0.545, 0.551 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.380318,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.086, 16.210, 16.380, 16.388, 16.441 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.24505500000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.132, 100.492, 101.245, 102.160, 102.861 ms"
           }
         ]
       }
