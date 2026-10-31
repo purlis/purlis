@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793418417751,
+  "lastUpdate": 1793448204598,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8402,6 +8402,42 @@ window.BENCHMARK_DATA = {
             "value": 466.5,
             "unit": "MB",
             "extra": "median of 6 samples: 460.5, 464.8, 465.4, 467.7, 469, 631.5 MB; window 256.6 MB, session host 210 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9faf81fee874c2f5c6bbee39e4a52168dff741ca",
+          "message": "Bump the site group in /site with 3 updates (#3907)\n\nBumps the site group in /site with 3 updates: [@astrojs/markdown-remark](https://github.com/withastro/astro/tree/HEAD/packages/markdown/remark), [@astrojs/starlight](https://github.com/withastro/starlight/tree/HEAD/packages/starlight) and [astro](https://github.com/withastro/astro/tree/HEAD/packages/astro).\n\n\nUpdates `@astrojs/markdown-remark` from 7.3.3 to 7.3.4\n- [Release notes](https://github.com/withastro/astro/releases)\n- [Changelog](https://github.com/withastro/astro/blob/main/packages/markdown/remark/CHANGELOG.md)\n- [Commits](https://github.com/withastro/astro/commits/@astrojs/markdown-remark@7.3.4/packages/markdown/remark)\n\nUpdates `@astrojs/starlight` from 0.42.6 to 0.42.7\n- [Release notes](https://github.com/withastro/starlight/releases)\n- [Changelog](https://github.com/withastro/starlight/blob/main/packages/starlight/CHANGELOG.md)\n- [Commits](https://github.com/withastro/starlight/commits/@astrojs/starlight@0.42.7/packages/starlight)\n\nUpdates `astro` from 7.4.1 to 7.4.2\n- [Release notes](https://github.com/withastro/astro/releases)\n- [Changelog](https://github.com/withastro/astro/blob/main/packages/astro/CHANGELOG.md)\n- [Commits](https://github.com/withastro/astro/commits/astro@7.4.2/packages/astro)\n\n---\nupdated-dependencies:\n- dependency-name: \"@astrojs/markdown-remark\"\n  dependency-version: 7.3.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: site\n- dependency-name: \"@astrojs/starlight\"\n  dependency-version: 0.42.7\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: site\n- dependency-name: astro\n  dependency-version: 7.4.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: site\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-31T10:33:10Z",
+          "tree_id": "30bf3f5016def9244b984c43fd4270ddc45db673",
+          "url": "https://github.com/purlis/purlis/commit/9faf81fee874c2f5c6bbee39e4a52168dff741ca"
+        },
+        "date": 1793448197970,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 765,
+            "unit": "MB",
+            "extra": "median of 3 samples: 659, 765, 765 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 463.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 456.3, 461.5, 462, 464.3, 465.5, 652 MB; window 257.4 MB, session host 205.8 MB"
           }
         ]
       }
