@@ -4184,11 +4184,14 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                 };
                 // Its pools' runners hear of it through the running window, which holds their
                 // links (#4141).
+                #[cfg(unix)]
                 let reached = purlis_core::windowline::reach_the_pools(
                     store.config_root(),
                     &gone.name,
                     purlis_core::windowline::ask,
                 );
+                #[cfg(not(unix))]
+                let reached = "";
                 format!("{said}{reached}")
             }),
         },

@@ -283,11 +283,12 @@ async fn a_start_with_no_launch_runs_with_its_token_in_a_confinement_of_its_own(
     .await;
 }
 
-/// **A chat on no profile holds its harness's own folders** (#4142), and a chat that named no
-/// harness holds each harness's, since it runs on the project's default. A chat on a profile, or
-/// on another harness, holds none.
+/// **A harness's own folders are held only with nothing on them** (#4142): a chat on no profile
+/// keeps them from being held, one that named no harness keeps each harness's, and one on a
+/// profile or another harness keeps none. While they are held, no start on no profile begins
+/// on them.
 #[tokio::test]
-async fn a_chat_on_no_profile_holds_its_harnesss_own_folders() {
+async fn a_harnesss_own_folders_are_held_only_with_no_chat_on_them() {
     let linked = linked().await;
     let named = |profile: Option<&str>, harness: Option<&str>| StartProgram {
         profile: profile.map(str::to_owned),
@@ -295,33 +296,34 @@ async fn a_chat_on_no_profile_holds_its_harnesss_own_folders() {
         ..composed(None)
     };
 
+    let held = linked.hosting.hold_own_folders("claude").expect("held");
+    for refused in [named(None, Some("claude")), named(None, None)] {
+        linked.client.start_program(refused).await.unwrap_err();
+    }
     linked
         .client
         .start_program(named(Some("work"), Some("claude")))
         .await
-        .expect("started");
-    assert!(
-        !linked.hosting.runs_with_no_profile("claude"),
-        "on a profile"
-    );
-
+        .expect("on a profile, it does not use them");
     linked
         .client
         .start_program(named(None, Some("codex")))
         .await
-        .expect("started");
-    assert!(linked.hosting.runs_with_no_profile("codex"));
-    assert!(
-        !linked.hosting.runs_with_no_profile("claude"),
-        "another harness"
-    );
+        .expect("another harness");
+    drop(held);
+
+    assert!(linked.hosting.hold_own_folders("codex").is_none());
+    assert!(linked.hosting.hold_own_folders("claude").is_some());
 
     linked
         .client
         .start_program(named(None, None))
         .await
         .expect("started");
-    assert!(linked.hosting.runs_with_no_profile("claude"), "the default");
+    assert!(
+        linked.hosting.hold_own_folders("claude").is_none(),
+        "the project's default may be it"
+    );
 }
 
 #[tokio::test]

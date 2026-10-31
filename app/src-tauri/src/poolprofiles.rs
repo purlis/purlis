@@ -430,10 +430,21 @@ fn untidied(pool: &str) {
 /// does, so its row offers Remove. `Some` note, in words, naming the pools that kept it whose
 /// runner runs a purlis before 1.52, which keeps it.
 pub fn forget_off_the_pools(name: &str) -> Option<String> {
-    let config = config_root().ok()?;
+    asking_the_runners_to_forget(name).unwrap_or_else(|why| {
+        tracing::warn!("purlis: no pool's runner was asked to forget a profile: {why}");
+        None
+    })
+}
+
+/// [`forget_off_the_pools`], or why no runner could be asked at all: what the command line is
+/// told, so it never says they were.
+fn asking_the_runners_to_forget(name: &str) -> Result<Option<String>, String> {
+    let config = config_root()?;
     let config = config.as_path();
-    let pools = purlis_core::runners::pool_names(config).ok()?;
-    forget_off(config, &pools, name, &|pool| forget_on(config, pool, name))
+    let pools = purlis_core::runners::pool_names(config).map_err(|why| why.to_string())?;
+    Ok(forget_off(config, &pools, name, &|pool| {
+        forget_on(config, pool, name)
+    }))
 }
 
 /// Has pool `pool`'s runner forget profile `name`, once it is shown to be the person's own now:
@@ -508,22 +519,28 @@ fn forget_off(
     older_note(&older, &purlis_core::shown::short(name))
 }
 
-/// **Listens for `purlis profile remove` in the person's own terminal** (#4141), and has the
-/// runners told as Remove in the window has them told. Said and left at that where it cannot
-/// listen: the command says the runners forget it at their next tidy.
-#[cfg(unix)]
-pub fn listen_for_the_command_line(app: tauri::AppHandle) {
+/// Has [`let_go_everywhere`] tell the windows of `app` from here on (#4228).
+pub fn tells_through(app: tauri::AppHandle) {
     let _ = APP.set(app);
-    let Some(config) = purlis_core::machine::config_root() else {
-        return;
-    };
-    let socket = purlis_core::windowline::socket();
-    let listening = purlis_core::windowline::serve_on(&socket, move |asked| {
-        purlis_core::windowline::answer(&config, asked, forget_off_the_pools)
+}
+
+/// **Listens for `purlis profile remove` in the person's own terminal** (#4141), off the launch's
+/// path, and has the runners told as Remove in the window has them told. Said and left at that
+/// where it cannot listen: the command says the runners forget it at their next tidy.
+#[cfg(unix)]
+pub fn listen_for_the_command_line() {
+    std::thread::spawn(|| {
+        let Ok(config) = config_root() else {
+            return;
+        };
+        let socket = purlis_core::windowline::socket();
+        let listening = purlis_core::windowline::serve_on(&socket, move |asked| {
+            purlis_core::windowline::answer(&config, asked, asking_the_runners_to_forget)
+        });
+        if let Err(why) = listening {
+            tracing::warn!("purlis: `purlis profile remove` will not reach this window: {why}");
+        }
     });
-    if let Err(why) = listening {
-        tracing::warn!("purlis: `purlis profile remove` will not reach this window: {why}");
-    }
 }
 
 /// What the person is told of the pools in `older`, whose runner keeps the removed profile

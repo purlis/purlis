@@ -35,7 +35,7 @@ fn the_window_forgets_only_a_name_this_machine_no_longer_has() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("config");
     a_profile_on(&config, dir.path(), "work");
-    let never = |_: &str| -> Option<String> { panic!("no runner is asked") };
+    let never = |_: &str| -> Result<Option<String>, String> { panic!("no runner is asked") };
 
     assert!(matches!(
         answer(&config, forget("work"), never),
@@ -46,9 +46,23 @@ fn the_window_forgets_only_a_name_this_machine_no_longer_has() {
         Said::Refused { .. }
     ));
     assert_eq!(
-        answer(&config, forget("gone"), |name| Some(format!("{name} kept"))),
+        answer(&config, forget("gone"), |name| Ok(Some(format!(
+            "{name} kept"
+        )))),
         Said::Asked {
             note: Some("gone kept".to_owned())
+        }
+    );
+}
+
+/// What stopped the window asking at all is a refusal, never "they were asked".
+#[test]
+fn a_window_that_could_not_ask_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(
+        answer(dir.path(), forget("gone"), |_| Err("no engine".to_owned())),
+        Said::Refused {
+            why: "no engine".to_owned()
         }
     );
 }
@@ -61,7 +75,6 @@ fn a_machine_with_no_pool_says_nothing_and_asks_nothing() {
     assert_eq!(said, "");
 }
 
-#[cfg(unix)]
 mod on_a_socket {
     use super::*;
 
@@ -144,4 +157,19 @@ mod on_a_socket {
             Path::new("/run/purlis/purlisd-abc-window.sock")
         );
     }
+}
+
+/// A peer that dribbles is cut off at its whole line's deadline, however often it writes.
+#[test]
+fn a_line_has_one_deadline_however_often_its_peer_writes() {
+    let (mut near, far) = UnixStream::pair().unwrap();
+    let writing = std::thread::spawn(move || {
+        while near.write_all(b"x").is_ok() {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    });
+
+    assert_eq!(line_of(&far, Duration::from_millis(100)), None);
+    drop(far);
+    writing.join().unwrap();
 }

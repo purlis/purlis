@@ -3645,10 +3645,6 @@ pub fn run() {
             // The local project out of the config home a chat's sandbox denies (#1670), after
             // rename-local named the folders and before any project opens.
             firstrun::move_the_local_project();
-            // `purlis profile remove` in the person's own terminal reaches the pools' runners
-            // through this window (#4141), which also tells the windows of waits let go (#4228).
-            #[cfg(unix)]
-            poolprofiles::listen_for_the_command_line(app.handle().clone());
             // The copies of Docker's settings that runs which ended outright left behind
             // (#2893): off the launch's path, and only those older than a day.
             #[cfg(unix)]
@@ -3672,6 +3668,12 @@ pub fn run() {
                 }
                 Err(why) => tracing::warn!("purlis: no harness folder was adopted: {why}"),
             }
+            // Waits let go on a pool are told to the windows (#4228), and `purlis profile
+            // remove` in the person's own terminal reaches the pools' runners through this
+            // window (#4141): after the adoption, so a folder adopted now counts as a profile.
+            poolprofiles::tells_through(app.handle().clone());
+            #[cfg(unix)]
+            poolprofiles::listen_for_the_command_line();
             // From here on this app holds the config home: no rename-local of a later launch,
             // or of a terminal, moves it while the app runs.
             let mut holds_the_config_home = false;

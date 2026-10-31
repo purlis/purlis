@@ -409,7 +409,7 @@ impl PairedLink {
                     .into(),
             });
         }
-        self.no_chat_uses_its_own_folders(&name).await?;
+        let _held = self.own_folders_held(&name).await?;
         let (forgetting, desktop) = (Arc::clone(&self.forgetting), self.desktop.clone());
         tokio::task::spawn_blocking(move || forgetting(&desktop, &name))
             .await
@@ -421,10 +421,14 @@ impl PairedLink {
             })
     }
 
-    /// A chat here on no profile uses its harness's own folders, which forgetting the desktop's
-    /// adopted folder deletes (#4142): refused until it has ended. What cannot be told is
-    /// refused too, since a folder deleted under a chat does not come back.
-    async fn no_chat_uses_its_own_folders(&self, name: &str) -> Result<(), session::Refusal> {
+    /// A program here on no profile uses its harness's own folders, which forgetting the
+    /// desktop's adopted folder deletes (#4142): refused until it has ended, and what starts on
+    /// them waits for the hold returned. What cannot be told is refused too, since a folder
+    /// deleted under a chat does not come back.
+    async fn own_folders_held(
+        &self,
+        name: &str,
+    ) -> Result<Option<crate::hosting::OwnFoldersHeld>, session::Refusal> {
         let (deleting, desktop, asked) = (
             Arc::clone(&self.deleting_own_folders),
             self.desktop.clone(),
@@ -437,16 +441,18 @@ impl PairedLink {
                 code: session::NOT_STARTED.into(),
                 why,
             })?;
-        match harness {
-            Some(harness) if self.hosting.runs_with_no_profile(&harness) => Err(session::Refusal {
+        let Some(harness) = harness else {
+            return Ok(None);
+        };
+        self.hosting
+            .hold_own_folders(&harness)
+            .map(Some)
+            .ok_or_else(|| session::Refusal {
                 code: session::NOT_STARTED.into(),
-                why: "a chat with no profile runs on this runner and uses the folders \
-                          forgetting this profile deletes, so it was not forgotten; end the chat \
-                          first"
+                why: "a chat with no profile runs on this runner and uses the folders forgetting \
+                      this profile deletes, so it was not forgotten; end the chat first"
                     .into(),
-            }),
-            _ => Ok(()),
-        }
+            })
     }
 
     /// `kept_profiles` (1.57, #4060): the desktop's profiles kept here, by name, read off the
