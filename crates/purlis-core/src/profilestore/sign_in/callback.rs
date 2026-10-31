@@ -276,7 +276,8 @@ fn state_in(target: &str) -> Option<&str> {
     states.next().is_none().then_some(state)
 }
 
-/// Whether `a` and `b` are the same, in the same time however much of them is.
+/// Whether `a` and `b` are the same. Of two the same length, it takes the same time wherever they
+/// differ; two of different lengths answer at once, which tells only the length.
 fn same(a: &str, b: &str) -> bool {
     a.len() == b.len()
         && a.bytes()
