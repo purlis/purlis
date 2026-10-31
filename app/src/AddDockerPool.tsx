@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import type { ClusterPoolKey, PoolAdding, PoolLimitsShown } from "./bindings";
+import {
+  commands,
+  type ClusterPoolKey,
+  type PoolAdding,
+  type PoolLimitOffer,
+  type PoolLimitsShown,
+} from "./bindings";
 import { Choice, Field, SettingRow } from "./settings/components";
 import {
   addClusterPool,
@@ -18,6 +24,7 @@ import {
   type ReleaseImage,
 } from "./pools";
 import { ChooseProfiles } from "./settings/PoolChooseProfiles";
+import { StartChatLimit } from "./StartChatLimit";
 import { Dialog } from "./ui/dialog/Dialog";
 
 /**
@@ -394,6 +401,7 @@ function AddClusterPool() {
   const [checked, setChecked] = useState<ClusterPoolKey | undefined>();
   const [trouble, setTrouble] = useState<string | undefined>();
   const [busy, setBusy] = useState<"checking" | "adding" | undefined>();
+  const [limitOffer, setLimitOffer] = useState<PoolLimitOffer | undefined>();
 
   useEffect(() => {
     const typed = kubeconfig.trim();
@@ -449,9 +457,10 @@ function AddClusterPool() {
     else setChecked(read);
   };
 
-  const add = async () => {
+  const add = async (vouchWait: number | null = null) => {
     if (busy !== undefined || checked === undefined || context === undefined) return;
     setTrouble(undefined);
+    setLimitOffer(undefined);
     setBusy("adding");
     const refused = await addClusterPool({
       name,
@@ -459,9 +468,14 @@ function AddClusterPool() {
       context,
       pool,
       key: checked.key,
+      vouch_wait: vouchWait,
     });
     setBusy(undefined);
-    if (refused !== undefined) setTrouble(refused);
+    if (refused === undefined) return;
+    setTrouble(refused);
+    // Out of the wait for its runner, what to raise it to: asked of the core (spec #4275).
+    const offer = await commands.poolLimitOffer(name, refused).catch(() => null);
+    setLimitOffer(offer ?? undefined);
   };
 
   const main =
@@ -567,6 +581,15 @@ function AddClusterPool() {
         <p className="trouble" role="alert">
           {trouble}
         </p>
+      )}
+      {limitOffer !== undefined && (
+        <StartChatLimit
+          offer={limitOffer}
+          applying={busy === "adding"}
+          action="Save to the pool and add it"
+          doing="Claiming its runner…"
+          onApply={(values) => void add(values[0]?.[1] ?? null)}
+        />
       )}
     </Dialog>
   );

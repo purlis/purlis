@@ -642,10 +642,11 @@ fn refused_by_the_runner(why: &purlis_session_protocol::session::CallError) -> S
 async fn keep_one(
     client: &purlis_session_protocol::session::Client,
     sending: purlis_core::profilestore::onrunner::ToKeep,
+    answer: std::time::Duration,
 ) -> Result<ProfileKept, String> {
     let late = |_| LATE.to_owned();
     for batch in sending.batches {
-        tokio::time::timeout(ANSWER_WITHIN, client.stage_profile_settings(batch))
+        tokio::time::timeout(answer, client.stage_profile_settings(batch))
             .await
             .map_err(late)?
             .map_err(|why| refused_by_the_runner(&why))?;
@@ -654,7 +655,7 @@ async fn keep_one(
     let within = if sending.profile.settings_staged.is_some() {
         KEPT_WITHIN
     } else {
-        ANSWER_WITHIN
+        answer
     };
     let standing = tokio::time::timeout(within, client.keep_profile(sending.profile))
         .await
@@ -728,11 +729,16 @@ async fn sent_what_differs(
         )?
     };
     let only_changed = sending.profile.settings_changed.is_some();
-    let answer = keep_one(client, sending).await;
+    // The pool's limit, as this attempt read it (spec #4275): only the wait changes.
+    let wait = std::time::Duration::from_secs(
+        kept.limits
+            .in_force(purlis_core::poollimits::LimitId::AnswerWait),
+    );
+    let answer = keep_one(client, sending, wait).await;
     match answer {
         Err(why) if only_changed && why != LATE => {
             tracing::info!("purlis: a runner's keep of what changed was refused: {why}");
-            keep_one(client, for_a_runner_of(version, kept)?).await
+            keep_one(client, for_a_runner_of(version, kept)?, wait).await
         }
         answer => answer,
     }
@@ -981,7 +987,7 @@ pub fn listed(
 const ANSWER_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
 
 /// What a call a runner did not answer in time says.
-const LATE: &str = "the runner did not answer in time";
+pub(crate) const LATE: &str = "the runner did not answer in time";
 
 /// How long a runner has to keep a profile's staged settings: it writes each of them.
 const KEPT_WITHIN: std::time::Duration = std::time::Duration::from_secs(120);

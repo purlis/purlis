@@ -745,6 +745,12 @@ pub fn set_pool_limit(
     let _locked = lock(config_root);
     let mut held = load(config_root)?;
     if let Some(pool) = held.pools.iter_mut().find(|pool| pool.name == name) {
+        if id.limit().clusters_only {
+            return Err(Refused::Other(format!(
+                "{} is a cluster pool's, and {name} is a Docker pool",
+                id.limit().plain
+            )));
+        }
         pool.set.chosen = pool.set.chosen.with(id, value);
     } else if let Some(pool) = held.clusters.iter_mut().find(|pool| pool.name == name) {
         *pool.chosen = pool.chosen.with(id, value);
@@ -1521,6 +1527,13 @@ pub struct ClusterPool {
 }
 
 impl ClusterPool {
+    /// This pool with its limit `id` set to `value`: what its add was retried with (spec #4275).
+    #[must_use]
+    pub fn with_limit(mut self, id: crate::poollimits::LimitId, value: u64) -> ClusterPool {
+        *self.chosen = self.chosen.with(id, Some(value));
+        self
+    }
+
     /// A cluster pool called `name` (as a Docker pool is named), its kubeconfig an absolute
     /// path, its context a name kubectl knows, its cluster `pool` and `namespace` named as
     /// Kubernetes names them, pinning `pin`.

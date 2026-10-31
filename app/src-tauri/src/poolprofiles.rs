@@ -47,6 +47,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use purlis_core::dockerpool::Typed;
+use purlis_core::poollimits::LimitId;
 use purlis_core::profilestore::sign_in::{Standing, callback, driven};
 use purlis_core::profilestore::{self, onrunner};
 
@@ -692,6 +693,15 @@ fn keep_on_as(
         .next()
         .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
         .map(|kept| Some(onrunner::standing_on_the_wire(kept.standing)))
+        .map_err(|why| {
+            if why == crate::runnerlinks::LATE {
+                let secs = kept.limits.in_force(LimitId::AnswerWait);
+                let hit = LimitId::AnswerWait.limit().waited(secs, None);
+                format!("{why}: {}", purlis_core::poollimits::hit_on(pool, hit))
+            } else {
+                why
+            }
+        })
 }
 
 /// **A limit a start was refused on**, as Start a chat offers to raise it (spec #4275).
@@ -744,7 +754,17 @@ fn offer_of(over: onrunner::OverLimit) -> Option<PoolLimitOffer> {
 #[tauri::command]
 #[specta::specta]
 pub async fn pool_limit_offer(profile: String, refused: String) -> Option<PoolLimitOffer> {
-    onrunner::over_limit(&profile, &refused).and_then(offer_of)
+    onrunner::over_limit(&profile, &refused)
+        .and_then(offer_of)
+        .or_else(|| {
+            let (pool, hits) = purlis_core::poollimits::hits_said_in(&refused)?;
+            offer_of(onrunner::OverLimit {
+                profile,
+                pool: Some(pool),
+                hits,
+                said: refused,
+            })
+        })
 }
 
 /// **The limits that refused a move to pool `pool` in the words `refused`** (#4313): what the
@@ -1194,7 +1214,7 @@ fn row(record: &profilestore::MachineProfile, kept: Result<Standing, String>) ->
     }
 }
 
-fn config_root() -> Result<PathBuf, String> {
+pub(crate) fn config_root() -> Result<PathBuf, String> {
     purlis_core::machine::config_root()
         .ok_or_else(|| "There is no config home on this machine to keep a pool in.".to_owned())
 }
@@ -1367,6 +1387,8 @@ struct SignIn {
     flow: u32,
     pool: String,
     name: String,
+    /// The pool's limit it was started under, in minutes (spec #4275).
+    wait: u64,
     driving: Arc<driven::Driving>,
     /// On a cluster pool, the runner the gate judged (#3819): each code passed on checks it
     /// is still so.
@@ -1470,13 +1492,19 @@ pub async fn pool_sign_in_start(
                 _ => Standing::CannotTell,
             }
         };
+        // The pool's limit as it stands: only the wait changes, and every check above stands.
+        let wait = purlis_core::runners::chosen_limits_of(&config, &pool)
+            .unwrap_or_default()
+            .in_force(LimitId::SignInWait);
+        let longest = Duration::from_secs(wait.saturating_mul(60));
         let driving = Arc::new(match terminal {
-            Some(_) => driven::in_a_terminal(&login, check)?,
+            Some(_) => driven::in_a_terminal(&login, longest, check)?,
             None => driven::drive_with(
                 &login,
                 &record.harness,
                 provider.as_deref(),
                 Some(carry),
+                longest,
                 check,
             )?,
         });
@@ -1494,6 +1522,7 @@ pub async fn pool_sign_in_start(
                     flow,
                     pool,
                     name,
+                    wait,
                     driving,
                     judged,
                 });
@@ -1531,6 +1560,7 @@ pub async fn pool_sign_in_next(
     })
     .await
     .map_err(|why| format!("the sign-in did not answer: {why}"))??;
+    let mut said_over = None;
     if let Some(event) = event.as_ref().filter(|event| event.is_last()) {
         let over = {
             let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -1538,15 +1568,34 @@ pub async fn pool_sign_in_next(
                 .position(|one| one.flow == flow)
                 .map(|at| held.remove(at))
         };
-        if let Some(over) = over
+        if let Some(over) = over.as_ref()
             && *event == driven::Event::SignedIn
         {
             // Told with no lock held; every project whose wait went has an Ask to stop drawing.
             let went = onrunner::let_go(None, &over.pool, &over.name);
             crate::machineprofiles::tell_asks_at(&app, &went);
         }
+        if let Some(over) = over
+            && matches!(event, driven::Event::Failed { why } if why == driven::TOOK_TOO_LONG)
+        {
+            said_over = Some(sign_in_ran_out(&over.pool, over.wait));
+        }
     }
-    Ok(event.map(PoolSignInStep::from))
+    Ok(event.map(|event| match said_over {
+        Some(why) => PoolSignInStep::from(driven::Event::Failed { why }),
+        None => PoolSignInStep::from(event),
+    }))
+}
+
+/// A sign-in on `pool` ended at the pool's limit of `wait` minutes, in words the window can ask
+/// of for what to raise it to (spec #4275).
+fn sign_in_ran_out(pool: &str, wait: u64) -> String {
+    let hit = LimitId::SignInWait.limit().waited(wait, None);
+    format!(
+        "{}: {}",
+        driven::TOOK_TOO_LONG,
+        purlis_core::poollimits::hit_on(pool, hit)
+    )
 }
 
 /// **Passes the code the person pasted to sign-in `flow`**, as one line: on a cluster pool, only

@@ -1329,3 +1329,28 @@ fn a_pools_limit_is_saved_marked_as_the_persons_and_makes_no_new_runner() {
     set_pool_limit(config.path(), "builds", ProfileFiles, None).unwrap();
     assert_eq!(chosen(config.path()).get(ProfileFiles), None, "a reset");
 }
+
+/// **Only a cluster pool waits to be vouched for** (spec #4275): a Docker pool refuses a value,
+/// and keeps what it had.
+#[test]
+fn a_docker_pool_refuses_the_wait_only_a_cluster_pool_has() {
+    use crate::poollimits::LimitId::{CodeSendTime, VouchWait};
+    let dir = tempfile::tempdir().unwrap();
+    let pool = pool("builds", Set::default());
+    record_pool(dir.path(), &pool).unwrap();
+    let refused = set_pool_limit(dir.path(), pool.name(), VouchWait, Some(10)).unwrap_err();
+    assert!(refused.to_string().contains("cluster pool's"), "{refused}");
+    assert_eq!(
+        chosen_limits_of(dir.path(), pool.name())
+            .unwrap()
+            .get(VouchWait),
+        None
+    );
+    set_pool_limit(dir.path(), pool.name(), CodeSendTime, Some(20)).unwrap();
+    assert_eq!(
+        chosen_limits_of(dir.path(), pool.name())
+            .unwrap()
+            .get(CodeSendTime),
+        Some(20)
+    );
+}

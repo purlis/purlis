@@ -6079,6 +6079,11 @@ export type ClusterPoolAdding = {
 	pool: string,
 	/**  The cluster operator key Check its key showed, spelled as it showed it. */
 	key: string,
+	/**
+	 *  The longest wait for its runner to be vouched for, in minutes, where the person raised it
+	 *  after an add that ran out (spec #4275): saved to the pool. None is purlis's default.
+	 */
+	vouch_wait: number | null,
 };
 
 /**  What Check its key read of a cluster's Pool. */
