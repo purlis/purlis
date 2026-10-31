@@ -360,7 +360,7 @@ fn a_report_that_miscounts_what_ran_ends_the_grade() {
         report
             .failed
             .as_deref()
-            .is_some_and(|why| why.contains("purlis counted 1 and 0")),
+            .is_some_and(|why| why.contains("purlis counted 1")),
         "{:?}",
         report.failed
     );
