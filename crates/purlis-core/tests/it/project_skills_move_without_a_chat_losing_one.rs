@@ -666,7 +666,6 @@ fn an_unmigrated_projects_chats_keep_every_skill_once_the_reading_is_on() {
     let f = project();
     let at = head(&f.plane);
 
-    assert!(skills::reach_chats(&f.plane, true));
     guest::wire(&f.plane, &f.clone);
 
     for (harness, place, set) in every_chat(&f) {
@@ -699,7 +698,6 @@ fn an_unmigrated_plane_moves_with_the_flag_off_and_every_chat_keeps_its_skills()
     let before = every_chat(&f);
     let was = commits(&f.plane);
 
-    assert!(!skills::studio_on_here(), "this test's machine has it off");
     let report = said(&apply(&f.plane));
 
     assert_eq!(commits(&f.plane), was + 1, "{report}");
@@ -743,27 +741,29 @@ fn a_skill_in_both_places_stays_with_every_chat_and_the_move_is_refused() {
     assert!(f.plane.join(".claude/skills/deploy/SKILL.md").is_file());
 }
 
-/// A persona that names a skill still in `.claude/skills`, read with the flag gone. Its entry is
-/// not a loss, since the program reads the folder itself, so no chat is told it is missing.
+/// A persona that names a skill still in `.claude/skills`, at a chat's start, which looks on the
+/// machine. A program that reads the folder itself has the skill, so its chat is not told it
+/// starts without it. Codex does not read that folder, so its chat is told, truly.
 #[test]
-fn a_persona_naming_an_unmoved_skill_is_not_told_it_is_missing() {
+fn a_persona_naming_an_unmoved_skill_is_told_missing_only_where_its_program_reads_no_copy() {
     purlis_core::unsteered!();
     let f = project();
-
-    for harness in Harness::ALL {
-        let set = skills::of_a_chat(
-            Some(&built_in()),
+    let env = purlis_core::harness_plugin::Env::of(&[]);
+    let missing = |harness: Harness| {
+        skills::not_here_beside(
             &f.plane,
             None,
             Some("ops"),
-            harness.skills(),
-        );
-        let left: Vec<String> = set
-            .left_out
-            .iter()
-            .filter(|left| left.name == "deploy")
-            .map(|left| left.reason.to_string())
-            .collect();
-        assert!(left.is_empty(), "{harness:?}: {left:?}");
-    }
+            Some(&built_in()),
+            harness,
+            &env,
+            &[],
+        )
+        .map(|not| not.missing)
+        .unwrap_or_default()
+    };
+
+    assert!(!missing(Harness::ClaudeCode).contains(&"deploy".to_owned()));
+    assert!(!missing(Harness::Opencode).contains(&"deploy".to_owned()));
+    assert!(missing(Harness::Codex).contains(&"deploy".to_owned()));
 }

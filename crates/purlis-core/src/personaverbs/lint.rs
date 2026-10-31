@@ -461,7 +461,7 @@ impl<'a> Linter<'a> {
     /// with the old `charter:` prefix, and one its chats start without
     /// ([`crate::skills::persona::unresolved`]), each with its fix. Read through
     /// [`Reference`](crate::skills::Reference), as a chat's start reads the list. With the
-    /// Skill studio's flag off no chat reads the list, and that is what is said of it.
+    /// project's skills reaching no chat, nothing reads the list, and that is what is said of it.
     fn skills_list_issues(&self, name: &str) -> Vec<Issue> {
         use crate::skills::{Reason, Reference};
         let written = super::declared_skills(self.root, name);

@@ -106,6 +106,25 @@ fn the_old_table_is_refused_nothing_so_a_file_that_holds_it_saves_as_it_did() {
     );
 }
 
+/// #4344: a moved project's chats get its skills with the flag off, so they take its choices too.
+#[test]
+fn a_moved_projects_turned_off_skills_reach_its_chats_with_the_flag_off() {
+    let toml = "[harness_skills.codex]\nlangfuse = false\n";
+    let unmoved = plane_with(&[("charter.toml", toml)]);
+    assert!(
+        for_start_as(false, "codex", unmoved.path(), None, &unread())
+            .skills_off
+            .is_empty()
+    );
+    let moved = format!("requires = [{{ feature = \"project-skills\" }}]\n{toml}");
+    let moved = plane_with(&[("charter.toml", moved.as_str())]);
+    assert!(
+        !for_start_as(false, "codex", moved.path(), None, &unread())
+            .skills_off
+            .is_empty()
+    );
+}
+
 #[test]
 fn a_chat_on_no_known_harness_is_handed_nothing() {
     let plane = plane_with(&[]);

@@ -408,8 +408,9 @@ use crate::view::{Limits, Views};
 ///
 /// 1.62 added the Skill studio's flag to a chat's start on a runner (SK-20b, #3084): `start_program`
 /// may carry `plane_skills`, whether the plane's skills reach the chat as the desktop read the
-/// flag, which a runner arms the chat by in place of its own machine's flag. Taken only from the
-/// window or its host's relay. A host before 1.62 ignores the field and reads its own flag, as
+/// flag, which a runner arms the chat by in place of its own machine's flag, unless the project requires
+/// its skills, which reach the chat whatever this says (#4344). Taken only from the window or its
+/// host's relay. A host before 1.62 ignores the field and reads its own flag, as
 /// before.
 ///
 /// 1.63 added a grade asked for from a terminal (SK-61, #3241): `ask_grade`, `terminal`'s alone,

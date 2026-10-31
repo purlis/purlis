@@ -46,8 +46,8 @@
 //! # Refused, with nothing written
 //!
 //! From inside a chat; anywhere but a project's root (a folder inside a project, a workspace's
-//! clone); on a project this purlis may
-//! not write; outside a git repository whose top is the project; with tracked changes not
+//! clone); on a project this purlis may not write; outside a git repository whose top is the
+//! project; with tracked changes not
 //! committed; on a detached HEAD or in the middle of a merge, a rebase or a cherry-pick
 //! ([`super::commit::committable`]); and where `.claude/skills` holds what a move cannot carry
 //! honestly: a file git does not track, a link, a submodule, or a file beside the skill folders.

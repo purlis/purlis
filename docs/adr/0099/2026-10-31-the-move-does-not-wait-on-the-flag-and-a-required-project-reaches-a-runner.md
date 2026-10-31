@@ -16,9 +16,15 @@ A runner's chat is reached by the project's skills where its desktop said so, or
 - A start that says nothing takes the host's own reading, `reach_chats_here`, so #2786 changes that one question and this follows.
 - A chat reattached keeps its start's word (#3445, #3466): its program is still the one armed at that start. A restart reads anew.
 
+A sandboxed chat on such a runner is now held to the checks of a chat that gets skills: a runner with no app data home refuses to start it rather than starting it without them. The variable that decides the flag inside that chat says the same word its arming took.
+
+## What stays by the flag until #2786
+
+On a machine with the flag off, a moved project's chats have their skills, but the studio's own surfaces stay hidden, as the 2026-10-22 ruling has it: `Use skill…`, `purlis skill`, the chat's Skills view, and Accept for a workspace or persona folder a sandboxed chat holds back. A desktop whose record says `false` for a chat its runner armed keeps that word until the chat restarts. These last only until the flag goes, and running the move with the flag off makes them reachable by the person who ran it, not only by a teammate.
+
 ## What an unmigrated project's chats get with the reading on
 
-Nothing is lost, and nothing is written or committed. Claude Code and opencode keep reading `.claude/skills` at the root and through the copy in a clone, which goes on being made until the project moves. Codex never read that folder. A skill in both places stays with every chat that had it, and the move refuses rather than choosing a copy. `project_skills_move_without_a_chat_losing_one.rs` holds this through the skill sets purlis works out, not through a real harness's own listing.
+Nothing is lost, and nothing is written or committed. Claude Code and opencode keep reading `.claude/skills` at the root and through the copy in a clone, which goes on being made until the project moves. Codex never read that folder. A skill in both places stays with every chat that had it, and the move refuses rather than choosing a copy. A persona that names an unmoved skill is told it is missing only on a program that reads no copy, as Codex does not. `project_skills_move_without_a_chat_losing_one.rs` holds this through the skill sets purlis works out, not through a real harness's own listing.
 
 ## What was rejected
 

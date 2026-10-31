@@ -151,7 +151,8 @@ pub enum FixId {
     /// every change, each persona reference that names no skill a chat can get, and how to
     /// `git revert` it. Applied only by name ([`FixId::by_name_only`]): it is a commit every
     /// teammate pulls. It refuses, writing nothing, from inside a chat, on a project with
-    /// uncommitted changes or outside git, and where the move would leave any chat without one of its skills ([`project_skills`]).
+    /// uncommitted changes or outside git, and where the move would leave any chat without one
+    /// of its skills ([`project_skills`]).
     ProjectSkills,
     /// **`live-skills`** (SK-28, #2875): adds to the project's `.gitignore` the skills lines an
     /// older one lacks, and nothing else. Inside the LIVE block, after each LIVE workspace's
