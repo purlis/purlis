@@ -906,6 +906,11 @@ fn the_studio_routes_a_harness_as_a_chat_at_the_workspace_root_starts_whatever_i
             );
         }
     }
+    // A copy of a plane skill in api, which Codex's chats there take in its place (decision 51).
+    write(
+        &root.join("workspaces/smart-ide/api/.agents/skills/skill-00"),
+        "---\nname: skill-00\ndescription: The repo's copy.\n---\n",
+    );
 
     let list = studio(root, &bundle);
 
@@ -950,5 +955,35 @@ fn the_studio_routes_a_harness_as_a_chat_at_the_workspace_root_starts_whatever_i
         repo,
         ["api-0", "api-1", "web-0", "web-1"],
         "every clone's listed"
+    );
+    for one in &list.harnesses {
+        assert!(
+            one.at_the_root
+                .effective
+                .iter()
+                .all(|got| got.origin != Origin::Repo),
+            "{:?}: a chat at the root holds no repo skill",
+            one.harness
+        );
+    }
+    // What a repo leaves out of a chat in that clone is still said, and its clash.
+    let codex = list
+        .harnesses
+        .iter()
+        .find(|one| one.harness == Harness::Codex)
+        .expect("Codex in the studio");
+    assert!(
+        codex.repo_left_out.iter().any(|row| row.name == "skill-00"),
+        "{:?}",
+        codex.repo_left_out
+    );
+    assert!(
+        codex
+            .set
+            .clashes
+            .iter()
+            .any(|clash| clash.name == "skill-00" && clash.outcome == Outcome::RepoWins),
+        "{:?}",
+        codex.set.clashes
     );
 }

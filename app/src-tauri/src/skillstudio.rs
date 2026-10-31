@@ -744,11 +744,13 @@ impl StudioRouted {
     }
 }
 
-/// The router chats in `workspace` as `persona` of the project at `root` are routed by.
+/// The router chats in `workspace` as `persona` of the project at `root` are routed by, where
+/// `in_a_clone` says whether a clone of it holds repo skills a chat there counts (#4215).
 fn router_of(
     root: &std::path::Path,
     workspace: Option<&str>,
     persona: Option<&str>,
+    in_a_clone: bool,
 ) -> StudioRouter {
     use purlis_core::skills::router::{Chosen, chosen};
     let (said, problem, extension) = match chosen(root, workspace, persona) {
@@ -759,8 +761,7 @@ fn router_of(
         ),
         Ok(Chosen::Extension(id)) => (
             format!(
-                "Chats here are routed by {}, asked at each chat's start; the rows show what \
-                 the built-in router would hide.",
+                "Chats here are routed by {}, asked at each chat's start.",
                 purlis_core::skills::Router::Extension(id.clone()).shown()
             ),
             false,
@@ -777,7 +778,7 @@ fn router_of(
         .map(|p| purlis_core::skills::PinnedBy::Persona(p.to_owned()))
         .or_else(|| workspace.map(|ws| purlis_core::skills::PinnedBy::Workspace(ws.to_owned())));
     StudioRouter {
-        preview: preview_of(workspace, extension.as_deref()),
+        preview: preview_of(workspace, persona, extension.as_deref(), in_a_clone),
         said,
         problem,
         extension,
@@ -789,28 +790,39 @@ fn router_of(
 }
 
 /// **What the studio's hidden marks preview** (#4215; ADR 0102 as amended 2026-10-31): the
-/// start of a chat at the root of `workspace` (or of the project), which is in no clone, so no
-/// repo skill counts against its budget, routed by the built-in router, which asks nothing. An
-/// extension's router (`extension`) is asked only at a chat's real start, never by a read of the
-/// studio, so where one is chosen the marks are the built-in router's choice and say so.
-fn preview_of(workspace: Option<&str>, extension: Option<&str>) -> String {
+/// start of a chat at the root of `workspace` (or of the project), as `persona` where the studio
+/// is filtered to one, which is in no clone, so no repo skill counts against its budget, routed
+/// by the built-in router, which asks nothing. An extension's router (`extension`) is asked only
+/// at a chat's real start, never by a read of the studio, so where one is chosen the marks are
+/// the built-in router's choice and say so. Where a clone holds repo skills (`in_a_clone`), a
+/// chat started there counts them too, which the line says.
+fn preview_of(
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    extension: Option<&str>,
+    in_a_clone: bool,
+) -> String {
     let at = match workspace {
         Some(_) => "a chat at the workspace's root",
         None => "a chat at the project's root",
     };
+    let as_persona = persona.map_or_else(String::new, |persona| format!(" as {persona}"));
     let since = extension.map_or_else(String::new, |id| {
         format!(
             ", since {} is asked only at each chat's start",
             purlis_core::skills::Router::Extension(id.to_owned()).shown()
         )
     });
-    let clones = if workspace.is_some() {
-        " A chat in a clone counts that clone's repo skills too, and its own Skills view says \
-         what it hides."
+    let clones = if in_a_clone {
+        " A chat started in a clone counts that clone's repo skills too, and its own Skills view \
+         says what it hides."
     } else {
         ""
     };
-    format!("The rows' hidden marks are what the built-in router hides for {at}{since}.{clones}")
+    format!(
+        "The rows' hidden marks are what the built-in router hides for {at}{as_persona}{since}.\
+         {clones}"
+    )
 }
 
 /// **What the studio offers when it opens** (SK-22, #2785; decision 42), as the core works it
@@ -948,6 +960,12 @@ fn studio_read(
             plane_shown(root, workspace.as_deref(), &off, by, row)
         })
         .collect();
+    // Whether a chat started in a clone counts repo skills a chat at the root does not (#4215).
+    let in_a_clone = all.iter().any(|one| {
+        one.outside
+            .iter()
+            .any(|found| found.origin == purlis_core::skills::Origin::Repo && !found.off)
+    });
     let (harnesses, clashes) = harnesses(&all);
     let workspaces = if whole {
         purlis_core::workspaces::Plane::open(root)
@@ -956,7 +974,8 @@ fn studio_read(
     } else {
         Vec::new()
     };
-    let router = whole.then(|| router_of(root, workspace.as_deref(), persona.as_deref()));
+    let router =
+        whole.then(|| router_of(root, workspace.as_deref(), persona.as_deref(), in_a_clone));
     let mut studio = Studio {
         on,
         workspace,

@@ -90,7 +90,7 @@ const BUILT_IN: StudioRouter = {
   written: null,
   budget: { skills: 30, chars: 6000 },
   preview:
-    "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root. A chat in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
+    "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root. A chat started in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
 };
 
 /** A core answering `answer` for the studio, `more` for each other command, and keeping every
@@ -288,7 +288,7 @@ const RELEVANCE: StudioRouter = {
   written: "relevance",
   budget: { skills: 30, chars: 6000 },
   preview:
-    "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root, since the router relevance is asked only at each chat's start. A chat in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
+    "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root, since the router relevance is asked only at each chat's start. A chat started in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
   grade: null,
   chats: [
     {

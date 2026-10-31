@@ -94,7 +94,7 @@ const ROUTER: StudioRouter = {
   written: "relevance",
   budget: { skills: 30, chars: 6000 },
   preview:
-    "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root, since the router relevance is asked only at each chat's start. A chat in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
+    "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root, since the router relevance is asked only at each chat's start. A chat started in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
   grade:
     "Graded on the library at 3f9a2c1d7e40, 2026-10-27: 9 of 10 trigger tests pass with the router relevance, and 8 of 10 with the built-in router.",
   chats: [
@@ -239,7 +239,7 @@ export const RoutingBuiltIn: Story = {
         ...ROUTER,
         said: "Chats here are routed by the built-in router.",
         preview:
-          "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root. A chat in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
+          "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root. A chat started in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
         extension: null,
         written: null,
         grade: null,
