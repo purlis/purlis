@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793486432305,
+  "lastUpdate": 1793488857874,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34272,6 +34272,48 @@ window.BENCHMARK_DATA = {
             "value": 102.104063,
             "unit": "ms",
             "extra": "median of 5 runs: 100.801, 102.079, 102.104, 102.976, 103.077 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ac851a5acd8bfa0d72b4b17fef21d7c7815c33d0",
+          "message": "Runners: notices say why; the keyboard stays in the notice (#4360)\n\n* Runners: a sign-in that had to stop says why in the strip (#4277)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X69TKXH7PSXT4SVQA5DQG\nPurlis-Persona: steward\n\n* Runners: the keyboard stays in the notice after Choose another plan (#4278)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X69TKXH7PSXT4SVQA5DQG\nPurlis-Persona: steward\n\n* Runners: a held dispatch from a pool says why it waits in its own words (#4148)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X69TKXH7PSXT4SVQA5DQG\nPurlis-Persona: steward\n\n* Runners: review fixes: focus by a ref, input closes at a stop, Approve is said as a decision (#4277 #4278 #4148)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X69TKXH7PSXT4SVQA5DQG\nPurlis-Persona: steward\n\n* Runners: the generated bindings say a replaced sign-in is stopped (#4277)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X69TKXH7PSXT4SVQA5DQG\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T22:36:08Z",
+          "tree_id": "a5bf85caa2b37303ce875540b9104a5699585b91",
+          "url": "https://github.com/purlis/purlis/commit/ac851a5acd8bfa0d72b4b17fef21d7c7815c33d0"
+        },
+        "date": 1793488851198,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.649918,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.645, 0.648, 0.650, 0.669, 0.673 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.651215,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.364, 16.451, 16.651, 16.702, 17.012 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.710612,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.549, 102.707, 102.711, 103.409, 104.270 ms"
           }
         ]
       }
