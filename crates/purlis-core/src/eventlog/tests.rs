@@ -4007,8 +4007,7 @@ fn a_prompt_s_routing_is_named_beside_the_start_s_and_never_in_its_place() {
     let next = read(dir.path())
         .unwrap()
         .into_iter()
-        .filter(|event| event.kind == "skill.started")
-        .last()
+        .rfind(|event| event.kind == "skill.started")
         .expect("a second run started");
     assert!(next.body.get("prompt_routing").is_none(), "{:?}", next.body);
     assert_eq!(next.body["routing"], start.routing.as_str());
