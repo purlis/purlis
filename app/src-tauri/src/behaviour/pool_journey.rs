@@ -305,10 +305,31 @@ fn a_chat_runs(target: &Target, machine: &Machine, pool: &str, chat: &Named) -> 
         .unwrap_or_else(|why| {
             let runner = the_runner(machine, pool);
             let held = runner.prints(&format!(
-                "cd {}/{}/* && pwd && ls -A && git log --oneline -3 2>&1; git status --short 2>&1 | head -20",
+                "for at in {}/{}/*; do echo \"$at\"; find \"$at\" -maxdepth 3 -not -path '*/.git/*' | head -30; done",
                 purlis_core::datahome::IN_A_RUNNER_CONTAINER,
                 purlis_core::datahome::PROJECTS,
             ));
+            let git = |args: &[&str]| {
+                purlis_core::forklock::output(
+                    std::process::Command::new("git").arg("-C").arg(&target.root).args(args),
+                )
+                .map(|out| {
+                    format!(
+                        "{}{}",
+                        String::from_utf8_lossy(&out.stdout),
+                        String::from_utf8_lossy(&out.stderr)
+                    )
+                })
+            };
+            eprintln!(
+                "here: {:?} {:?} {:?}",
+                git(&["status", "--porcelain", "--untracked-files=all"]),
+                git(&["log", "--oneline", "-3"]),
+                std::fs::read_dir(&target.root).map(|dir| dir
+                    .filter_map(Result::ok)
+                    .map(|entry| entry.file_name())
+                    .collect::<Vec<_>>()),
+            );
             panic!("the chat starts on the runner: {why}\nthe runner holds: {held}")
         })
         .number;
