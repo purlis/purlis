@@ -318,6 +318,8 @@ pub struct Kept {
     pub draining: bool,
     /// Its sign-ins were carried to its pool's runner (#4146): it is not carried from again.
     pub carried: bool,
+    /// Docker failed its carry (#4298): the next look tries once more, then it is `carried`.
+    pub carry_failed: bool,
     /// It answered that this desktop is out of its peers (#4146): it cannot be linked to, so it
     /// is not asked how many chats it has, nor unpaired again.
     pub unpaired: bool,
@@ -916,6 +918,7 @@ fn keep_in(
         of: of.filter(|pool| *pool != name).map(str::to_owned),
         draining: false,
         carried: false,
+        carry_failed: false,
         unpaired: false,
         signed_out: Vec::new(),
         engine: None,
@@ -1144,6 +1147,9 @@ fn to_row(kept: &Kept) -> serde_json::Value {
     if kept.carried {
         row["carried"] = true.into();
     }
+    if kept.carry_failed {
+        row["carry_failed"] = true.into();
+    }
     if kept.unpaired {
         row["unpaired"] = true.into();
     }
@@ -1182,6 +1188,7 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         "of",
         "draining",
         "carried",
+        "carry_failed",
         "unpaired",
         "signed_out",
         "engine",
@@ -1206,6 +1213,11 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         Some(_) => return None,
     };
     let carried = match fields.get("carried") {
+        None => false,
+        Some(serde_json::Value::Bool(true)) => true,
+        Some(_) => return None,
+    };
+    let carry_failed = match fields.get("carry_failed") {
         None => false,
         Some(serde_json::Value::Bool(true)) => true,
         Some(_) => return None,
@@ -1264,6 +1276,7 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         of,
         draining,
         carried,
+        carry_failed,
         unpaired,
         signed_out,
         engine,

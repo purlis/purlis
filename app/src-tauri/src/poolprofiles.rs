@@ -1517,21 +1517,20 @@ pub async fn pool_sign_out(pool: String, name: String) -> Result<Option<String>,
             Yours::Docker(_) => {
                 let docker = crate::runnerlinks::docker()?;
                 // First, so that no drain carries it even if the rest stops short.
-                draining = purlis_core::pools::sign_out_draining(&config, &docker, &pool, &name)
-                    .map_err(|why| why.to_string())?;
+                draining =
+                    purlis_core::pools::sign_out_draining(&config, &docker, &pool, &name, &[])
+                        .map_err(|why| why.to_string())?;
                 let runner = this_desktops_runner(&config, &pool)
                     .map_err(|why| with_draining_said(why, &name, &draining))?;
                 docker
                     .sign_out(&runner.made, &name)
                     .map_err(|why| with_draining_said(why, &name, &draining))?;
                 // A follow since the first look leaves a runner draining that was not reached.
-                for late in purlis_core::pools::sign_out_draining(&config, &docker, &pool, &name)
-                    .map_err(|why| with_draining_said(why.to_string(), &name, &draining))?
-                {
-                    if !draining.iter().any(|(runner, _)| *runner == late.0) {
-                        draining.push(late);
-                    }
-                }
+                let late = purlis_core::pools::sign_out_draining(
+                    &config, &docker, &pool, &name, &draining,
+                )
+                .map_err(|why| with_draining_said(why.to_string(), &name, &draining))?;
+                draining.extend(late);
             }
             // Over this machine's kubectl, to the runner the gate judged, still so (#3819). A
             // cluster pool's one runner never drains.
