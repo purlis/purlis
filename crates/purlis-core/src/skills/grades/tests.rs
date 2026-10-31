@@ -1126,8 +1126,7 @@ fn an_interrupted_row_says_what_its_chats_spent_and_no_more_than_it_could_3582()
         interrupted(spent).sound(now),
         "what its chats spent is kept"
     );
-    let most = u32::from(uncommitted_row().runs)
-        * u32::try_from(purlis_skills::grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE).unwrap();
+    let most = u32::try_from(most_chats_asked(uncommitted_row().runs)).unwrap();
     let past = Spent {
         chats: most + 1,
         ..spent
@@ -1166,8 +1165,7 @@ fn an_interrupted_rows_chats_asked_for_are_held_to_what_it_could_ask_3602() {
     assert!(interrupted(Some(4)).sound(now), "as many as ran");
     assert!(interrupted(None).sound(now), "a row from before #3602");
     assert!(!interrupted(Some(3)).sound(now), "fewer than ran");
-    let most = u32::from(uncommitted_row().runs)
-        * u32::try_from(purlis_skills::grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE).unwrap();
+    let most = u32::try_from(most_chats_asked(uncommitted_row().runs)).unwrap();
     assert!(interrupted(Some(most)).sound(now));
     assert!(
         !interrupted(Some(most + 1)).sound(now),
@@ -1547,7 +1545,6 @@ fn outcome_evals_are_off_until_ticked_and_the_consent_covers_what_was() {
     let plane = plane();
     let root = plane.path();
     let level = Level::project();
-    let before = planned(root, &level, "deploy", None).unwrap();
     std::fs::create_dir_all(root.join("skills/deploy/evals/files")).unwrap();
     std::fs::write(root.join("skills/deploy/evals/files/a.txt"), "one").unwrap();
     std::fs::write(
@@ -1560,11 +1557,10 @@ fn outcome_evals_are_off_until_ticked_and_the_consent_covers_what_was() {
     .unwrap();
     let off = planned(root, &level, "deploy", None).unwrap();
     assert_eq!(off.offered.len(), 2);
-    assert_eq!(
-        off.plan.unwrap().chats,
-        before.plan.unwrap().chats,
-        "nothing more runs"
-    );
+    let plan = off.plan.unwrap();
+    let arms = off.request.as_ref().unwrap().arms.len() as u32;
+    assert_eq!(plan.chats, 2 * 3 * arms, "its two trigger tests alone");
+    assert_eq!((plan.outcome_evals, plan.judge_chats), (0, 0));
     assert!(off.request.as_ref().unwrap().outcomes.is_empty());
     let one = planned_with(root, &level, "deploy", None, &[1]).unwrap();
     assert_eq!(

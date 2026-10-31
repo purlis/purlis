@@ -171,8 +171,8 @@ pub fn kept_evidence(evidence: &str) -> String {
     let plain: String = evidence
         .trim()
         .chars()
-        .filter(|ch| !purlis_unicode::invisible(*ch))
         .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .filter(|ch| !purlis_unicode::invisible(*ch))
         .collect();
     let mut end = plain.len().min(MOST_EVIDENCE_BYTES);
     while !plain.is_char_boundary(end) {

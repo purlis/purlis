@@ -692,6 +692,12 @@ pub fn stage(
     files: &[String],
     inputs: &BTreeMap<String, String>,
 ) -> Result<(), String> {
+    if let Some(path) = files.iter().find(|path| !inputs.contains_key(*path)) {
+        return Err(format!(
+            "the eval's file {} was not read for the grade",
+            crate::shown::short(path)
+        ));
+    }
     write_at(
         &app_state(root)?,
         &format!("{TRIES_DIR}/{}/{OUTCOME}", laid.id),

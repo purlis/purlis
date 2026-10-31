@@ -280,8 +280,7 @@ fn dollars(value: f64) -> bool {
 fn spent_is_the_reports(spent: &Spent, report: &GradeReport, runs: u8) -> bool {
     let chats = if stopped_unscored(report) {
         // Every trigger test's chat, and every outcome eval's and its judge's (SK-55).
-        let most = u64::from(runs)
-            * ((grade::MOST_TRIGGER_TESTS + 2 * grade::MOST_OUTCOME_EVALS) * ARMS_THERE_ARE) as u64;
+        let most = most_chats_asked(runs);
         u64::from(spent.chats) <= most
             && spent.asked_for.is_none_or(|asked_for| {
                 (u64::from(spent.chats)..=most).contains(&u64::from(asked_for))
@@ -301,6 +300,13 @@ fn spent_is_the_reports(spent: &Spent, report: &GradeReport, runs: u8) -> bool {
                 .cost_usd
                 .is_some_and(|cost| (cost - said).abs() <= 1e-9 * said.max(1.0))
         })
+}
+
+/// The most chats a grade of `runs` runs could ask for: every trigger test's, and every outcome
+/// eval's and its judge's (SK-55).
+fn most_chats_asked(runs: u8) -> u64 {
+    u64::from(runs)
+        * ((grade::MOST_TRIGGER_TESTS + 2 * grade::MOST_OUTCOME_EVALS) * ARMS_THERE_ARE) as u64
 }
 
 /// Whether `report` is of a grade purlis stopped under before it was scored: interrupted, with
