@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793447305824,
+  "lastUpdate": 1793449484274,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33264,6 +33264,48 @@ window.BENCHMARK_DATA = {
             "value": 102.3378765,
             "unit": "ms",
             "extra": "median of 5 runs: 101.307, 101.937, 102.338, 102.589, 102.682 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9cb65168554cb7fbb9e10a97f4e429a019954d72",
+          "message": "Title bar: an unpinned or dormant chip's edge is drawn in its muted words, 3:1 in every theme (#3999) (#4004)\n\n* Title bar: an unpinned or dormant chip's edge is drawn in its muted words, 3:1 in every theme (#3999)\n\nThe unpinned chip, and a dormant one, draw no fill of their own (the\nunpinned one none even while current), so their dashed or dotted line is\nthe boundary that shows them. It was border.subtle, the window's\nhairline, which measured 1.18 to 2.44:1 on the bar across the built-ins\nand 1.38:1 in Purlis dark: under the 3:1 a non-text boundary needs\n(WCAG 1.4.11). border.strong and border.control fail too in some.\n\nThe line is now text.muted, the chip's own words, which check.rs holds\nto 4.5 on surface.deep and surface.overlay in every theme, so it holds\non the bar and on the hovered chip's fill in every appearance a theme\npasses, not only in the built-ins. titlebar.css and the engine's\ntitlebar_look move together.\n\nTests: every built-in, both variants, at rest, hovered, selected,\nselected and hovered, and focused, edge on bar and on its own fill at\n3:1; and a theme that colours the chip leaves neither edged chip fallen\n(it fell at 1.38 in Purlis dark before, D-3949-3).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* stories: baselines drawn on current main, the edged chips' line in its muted words (#3999)\n\nTaken from this pull request's own stories run with\ntools/story-baselines-pull.mjs. Reviewed: the dormant chip's dotted line\nand the dashed chip's line show on the bar, and only those 16 pictures\nchanged.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-31T11:58:43Z",
+          "tree_id": "b26df7459274b7f616db621307af04375b938640",
+          "url": "https://github.com/purlis/purlis/commit/9cb65168554cb7fbb9e10a97f4e429a019954d72"
+        },
+        "date": 1793449478972,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.669594,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.657, 0.668, 0.670, 0.674, 0.690 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4960425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.369, 16.431, 16.496, 16.525, 16.649 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.25885149999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.517, 102.146, 102.259, 102.774, 103.156 ms"
           }
         ]
       }
