@@ -17,6 +17,7 @@ import {
   useVerdict,
 } from "../outcomeBars.js";
 import { closeTheViewTabsOpenedSince, focusWorkspace, tabNames } from "../reach.js";
+import { runningIn } from "../running.js";
 import { paneInFront, startAChat } from "../started.js";
 
 /**
@@ -250,6 +251,18 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       );
     });
 
+    // The Notice goes as the restart begins. The chat is back once the pane in front is a chat the
+    // core runs, and has stayed so: a pick before that types into the program being replaced.
+    let steady = 0;
+    await browser.waitUntil(
+      async () => {
+        const front = await paneInFront();
+        steady = (await runningIn(chat.plane)).includes(front) ? steady + 1 : 0;
+        return steady >= 3;
+      },
+      { timeout: 40_000, interval: 500, timeoutMsg: "the restarted chat never came back" },
+    );
+
     await fromThePalette("Use skill", "palette-row-tab.useskill:", effort);
     await $('[data-testid="use-skill"]').waitForDisplayed({ timeout: 20_000 });
     await browser.waitUntil(
@@ -269,17 +282,26 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
     // The skill takes nothing, so its pick types it; the window says the line, in this harness's
     // syntax, with the chat named.
     const line = harness.typed(MADE);
-    await browser.waitUntil(
-      async () =>
-        browser.execute(
-          (typed: string) =>
-            [...document.querySelectorAll('[role="status"]')].some((one) =>
-              (one.textContent ?? "").includes(typed),
-            ),
-          line,
-        ),
-      { timeout: 20_000, timeoutMsg: `the window never said it typed ${line}` },
-    );
+    await browser
+      .waitUntil(
+        async () =>
+          browser.execute(
+            (typed: string) =>
+              [...document.querySelectorAll('[role="status"]')].some((one) =>
+                (one.textContent ?? "").includes(typed),
+              ),
+            line,
+          ),
+        { timeout: 20_000, interval: 250 },
+      )
+      .catch(async () => {
+        const said = await browser.execute(() =>
+          [...document.querySelectorAll('[role="status"], [role="alert"], [role="dialog"]')]
+            .map((one) => (one.textContent ?? "").slice(0, 200))
+            .filter((one) => one !== ""),
+        );
+        throw new Error(`the window never said it typed ${line}: ${JSON.stringify(said)}`);
+      });
 
     const verdict = useVerdict(Date.now() - started, effort);
     report(verdict.said);
