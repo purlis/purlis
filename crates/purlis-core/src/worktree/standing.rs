@@ -371,6 +371,147 @@ pub fn landed(plane: &Path, ws: &str, repo: &str, piece: &str, branch: &str) -> 
     }
 }
 
+/// **Whether the change of `branch`, the branch `piece` is on, is in history** (#4237): one
+/// commit of the branch it was cut from, of that branch's upstream or of `origin`'s default
+/// branch makes all of it ([`patch_landed`]). For a removal someone asked for, which keeps the
+/// branch: [`landed`] stays stricter, since on its word a folder goes with nobody asking. It
+/// asks even where the recorded base is gone, as a stacked branch's is once its stack landed.
+pub fn change_in_history(plane: &Path, ws: &str, repo: &str, piece: &str, branch: &str) -> bool {
+    if relocation_refusal(plane).is_err() || name::branch_name_ok(branch).is_err() {
+        return false;
+    }
+    let Ok(path) = path_for(plane, ws, repo, piece)
+        .and_then(|path| within_workspace(plane, ws, &path).map_err(Refusal::from))
+    else {
+        return false;
+    };
+    let Ok(clone) = clone_dir(plane, ws, repo) else {
+        return false;
+    };
+    if !matches!(head_of(&path), Ok(Base::Branch(on)) if on == branch) {
+        return false;
+    }
+    let recorded = answered(&clone, &["config", "--get-all", &base_key(branch)]);
+    let recorded: Vec<&str> = recorded
+        .iter()
+        .flat_map(|out| out.lines())
+        .map(str::trim)
+        .collect();
+    let base = match recorded.as_slice() {
+        [base] if !base.starts_with(DETACHED_PREFIX) && name::branch_name_ok(base).is_ok() => {
+            Some(*base)
+        }
+        _ => None,
+    };
+    landed_in_history(&clone, branch, base).is_some()
+}
+
+/// The branch `branch`'s whole change landed in, by [`patch_landed`]: `base` as the clone has
+/// it, its upstream, or the default branch of `origin`. `None` where it is in none of them.
+fn landed_in_history(clone: &Path, branch: &str, base: Option<&str>) -> Option<String> {
+    let mut into: Vec<String> = Vec::new();
+    if let Some(base) = base {
+        into.push(name::as_ref(base));
+        if let Ok(Some(upstream)) = super::fresh::upstream_of(clone, base, &name::as_ref(base)) {
+            into.push(upstream);
+        }
+    }
+    if let Some(default) = answered(
+        clone,
+        &["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"],
+    ) {
+        into.push(default.trim().to_owned());
+    }
+    into.dedup();
+    let branch = name::as_ref(branch);
+    into.into_iter()
+        .find(|target| patch_landed(clone, &branch, target) == Some(true))
+}
+
+/// The flags of every diff [`patch_landed`] reads: no filter, no external program, no rename
+/// guess, and no setting that hides a submodule's commit.
+const PLAIN_DIFF: [&str; 4] = [
+    "--no-renames",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--ignore-submodules=none",
+];
+
+/// **Whether one commit in `target`'s history since `branch` parted from it makes `branch`'s
+/// whole change, line for line** (#4237): what a squash merge leaves, and still there after
+/// `target` changes those files again, where [`carried_in`] stops finding it. `None` where git
+/// did not answer, and every doubt is not landed:
+///
+/// - The ids are `git patch-id --verbatim`'s: `--stable` ignores whitespace, so a later commit
+///   that only reformats would read as already landed. A commit made after the merge changes
+///   the whole change, so it is not found.
+/// - A change holding a binary file or bytes that are not text is never found: its diff does
+///   not say what it holds.
+/// - A branch whose commits come to no change has no id, and is not found.
+fn patch_landed(clone: &Path, branch: &str, target: &str) -> Option<bool> {
+    let read = |args: &[&str]| answered(clone, args);
+    let parted = read(&["merge-base", branch, target])?;
+    let parted = parted.trim();
+    let diff = |how: &[&str]| {
+        let mut args = vec!["diff"];
+        args.extend(how);
+        args.extend(PLAIN_DIFF);
+        args.extend([parted, branch, "--"]);
+        read(&args)
+    };
+    if diff(&["--numstat"])?
+        .lines()
+        .any(|line| line.starts_with("-\t-\t"))
+    {
+        return Some(false);
+    }
+    let own = diff(&["--no-color"])?;
+    if own.contains(char::REPLACEMENT_CHARACTER) {
+        return Some(false);
+    }
+    let names = diff(&["--name-only", "-z"])?;
+    let Some(first) = names.split('\0').find(|name| !name.is_empty()) else {
+        return Some(false);
+    };
+    let ids_of = |patches: String| -> Option<Vec<String>> {
+        let seen = git::run_with_input(
+            clone,
+            &["patch-id", "--verbatim"],
+            patches.into_bytes(),
+            git::READ,
+        )
+        .ok()
+        .filter(|run| run.code == Some(0))?;
+        Some(
+            String::from_utf8_lossy(&seen.out)
+                .lines()
+                .filter_map(|line| line.split(' ').next())
+                .map(str::to_owned)
+                .collect(),
+        )
+    };
+    let own = ids_of(own)?;
+    let [own] = own.as_slice() else {
+        return Some(false);
+    };
+    // Only the commits touching one file of the change: any commit making all of it does, and
+    // a long history is not read whole. `--full-diff` still gives each commit's whole change.
+    let range = format!("{parted}..{target}");
+    let path = format!(":(literal){first}");
+    let mut args = vec![
+        "log",
+        "--no-merges",
+        "--format=commit %H",
+        "-p",
+        "--full-diff",
+        "--no-color",
+    ];
+    args.extend(PLAIN_DIFF);
+    args.extend([range.as_str(), "--", path.as_str()]);
+    let candidates = read(&args)?;
+    Some(ids_of(candidates)?.iter().any(|id| id == own))
+}
+
 /// **Whether `base` holds, file by file, everything `branch` changed**, though not its commits:
 /// what a squash merge, a rebase or a picked commit leaves. `None` where git did not answer.
 ///

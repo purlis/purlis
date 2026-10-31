@@ -539,7 +539,8 @@ pub fn ignored_would_go(plane: &Path, ws: &str, repo: &str, piece: &str) -> Opti
 
 /// Whether the branch `piece` is on landed in the branch it was cut from by its files and not
 /// its commits ([`worktree::standing::Landed::Carried`]): a squash merge, there or on its
-/// remote branch.
+/// remote branch, whether or not those files have changed again since
+/// ([`worktree::standing::change_in_history`]).
 fn carried_branch(plane: &Path, ws: &str, repo: &str, piece: &str) -> bool {
     let Some(branch) = worktree::list(plane, ws, repo).ok().and_then(|found| {
         found
@@ -552,7 +553,7 @@ fn carried_branch(plane: &Path, ws: &str, repo: &str, piece: &str) -> bool {
     matches!(
         worktree::standing::landed(plane, ws, repo, piece, &branch),
         worktree::standing::Landed::Carried { .. }
-    )
+    ) || worktree::standing::change_in_history(plane, ws, repo, piece, &branch)
 }
 
 /// Rows of five cells, the first four sized to their widest value in terminal cells, the last
