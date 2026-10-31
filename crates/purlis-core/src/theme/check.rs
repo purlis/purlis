@@ -48,6 +48,10 @@ mod tiers_tests;
 #[path = "card_ground_tests.rs"]
 mod card_ground_tests;
 
+#[cfg(test)]
+#[path = "notice_ways_tests.rs"]
+mod notice_ways_tests;
+
 /// What a token of [`super::vocabulary::PLATFORM_DRAWN`] left to the platform is measured as
 /// when it is drawn on something: selected text the theme leaves alone keeps the words' own
 /// colour. One with no stand-in is the platform's, and a pair with it in is not measured.
@@ -882,6 +886,12 @@ impl Report {
     }
 }
 
+/// **How far a notice card's secondary way steps from the button's own fill toward the words**
+/// (#3478, #4210), at rest and under the pointer, mixed in OKLab: what `notice.css` draws, which
+/// a test holds to the stylesheet.
+pub const NOTICE_WAY_REST: f64 = 0.14;
+pub const NOTICE_WAY_POINTED: f64 = 0.22;
+
 /// One floor a theme does not clear, and where: `tint` is the workspace colour it was tinted by,
 /// `None` for the theme as it is.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -913,6 +923,17 @@ pub enum Finding {
         card: &'static str,
         ground: &'static str,
         ratio: f64,
+        floor: f64,
+    },
+    /// A notice card's secondary way that does not stand apart from the card it is on (#4210):
+    /// its fill, at rest or `pointed` at, is `distance` from the `variant` card's `ground` in
+    /// OKLab, under [`super::parts::SEEN`], so the button reads as words with no box.
+    NoticeWayNotApart {
+        tint: Option<&'static str>,
+        variant: &'static str,
+        ground: &'static str,
+        pointed: bool,
+        distance: f64,
         floor: f64,
     },
     /// A colour for selected text with the selection left to the platform (#2327): the window
@@ -962,8 +983,10 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
     // The parts are the theme's in every tint: which tokens a card row and its panel draw is
     // read once, and measured in each.
     let card = super::parts::card_on_side(theme);
+    let ways = super::parts::notice_ways(theme);
     check_one(theme, None, &mut findings);
     card_apart(theme, None, card, &mut findings);
+    notice_ways_apart(theme, None, ways, &mut findings);
     let platform = |token: &str| is_platform(token, theme.value(token));
     if platform("selection.background") && !platform("selection.text") {
         findings.push(Finding::SelectionTextAlone);
@@ -1011,9 +1034,70 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
             let tinted = tint::tinted(theme, one.name);
             check_one(&tinted, Some(one.name), &mut findings);
             card_apart(&tinted, Some(one.name), card, &mut findings);
+            notice_ways_apart(&tinted, Some(one.name), ways, &mut findings);
         }
     }
     Report { findings }
+}
+
+/// **Whether a notice card's secondary way stands apart from each card ground** (#4210): the
+/// fill a theme's own button rules give it, else `notice.css`'s mix of the button's fill and the
+/// words ([`NOTICE_WAY_REST`], [`NOTICE_WAY_POINTED`]), each at least
+/// [`super::parts::SEEN`] from the ground in OKLab. A see-through fill is laid on the ground; a
+/// ground the window does not draw is skipped.
+fn notice_ways_apart(
+    theme: &ResolvedTheme,
+    tint: Option<&'static str>,
+    ways: super::parts::NoticeWays,
+    findings: &mut Vec<Finding>,
+) {
+    let drawn = |token: &str| {
+        let value = theme.value(token);
+        (token != "transparent" && !value.is_empty() && !is_platform(token, value))
+            .then(|| value.to_owned())
+    };
+    let words = drawn("text.primary").and_then(|one| tint::oklab_of(&solid(&one)));
+    for (variant, ground) in ways.grounds {
+        let Some(under) = drawn(ground) else {
+            continue;
+        };
+        let under = solid(&under);
+        let Some(on) = tint::oklab_of(&under) else {
+            continue;
+        };
+        for (pointed, set, share) in [
+            (false, ways.rest, NOTICE_WAY_REST),
+            (true, ways.pointed, NOTICE_WAY_POINTED),
+        ] {
+            let fill = match set {
+                // A theme's own fill for the button, laid on the ground.
+                Some(token) => {
+                    drawn(token).and_then(|one| tint::oklab_of(&solid(&onto(&one, &under))))
+                }
+                // The card's own mix of the button's fill, laid on the ground, and the words.
+                None => drawn("control.base")
+                    .and_then(|one| tint::oklab_of(&solid(&onto(&one, &under))))
+                    .zip(words)
+                    .map(|(base, words)| {
+                        [0, 1, 2].map(|at| base[at] * (1.0 - share) + words[at] * share)
+                    }),
+            };
+            let Some(fill) = fill else {
+                continue;
+            };
+            let distance = tint::distance(fill, on);
+            if distance < super::parts::SEEN {
+                findings.push(Finding::NoticeWayNotApart {
+                    tint,
+                    variant,
+                    ground,
+                    pointed,
+                    distance: (distance * 1000.0).round() / 1000.0,
+                    floor: super::parts::SEEN,
+                });
+            }
+        }
+    }
 }
 
 /// **Whether a side view's card row stands apart from its panel** (#3774): its fill a step from

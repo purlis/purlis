@@ -750,6 +750,10 @@ drawn exactly as `other`), `card-not-apart` (a side view's card row whose fill, 
 only `ratio` from the side panel's, `ground`, under the `floor` of 1.05, with no edge that
 clears a hairline's 1.2 there, in a theme whose parts, its own or inherited, choose a card
 row's look or a side panel's fill; the check only reports it and redraws nothing),
+`notice-way-not-apart` (a notice card's secondary way whose fill, at rest or `pointed` at, is
+only `distance` from the `variant` card's `ground` in OKLab, under the `floor` of 0.02: the
+fill a theme's button parts give it, or else the card's own mix of `control.base` toward
+`text.primary`, 14% at rest and 22% under the pointer; the check only reports it),
 `selection-text-alone` (a colour for selected text on a selection left to the platform),
 `line-does-not-fit` (a line of words taller than the box it is drawn in:
 its `density`, the `fit` it breaks, a `size`, a `line_height` and a `height` token, and the
