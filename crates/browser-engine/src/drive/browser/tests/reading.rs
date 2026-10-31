@@ -356,7 +356,6 @@ fn a_read_left_by_a_call_is_not_joined_by_another_while_it_runs() {
         Err(Refusal::PageReadTooLong)
     );
     // The click leaves that read for no later call; the engine still reads it.
-    super::super::lock(&engine.model).ax_takes = None;
     browser.call(&id(3), Call::Click { target: pay }).unwrap();
     let clicked = tree_reads(&engine);
 
