@@ -8,7 +8,8 @@ operator's token, and keeps everything else in it.
    pin only once the port shows that, so a roll it followed is not undone. The desktop also reads
    `mintInCluster` again at each link.
 2. **A chat's first start waits at most 5 seconds for its repos to reach the Claim** (amends its item
-   5), on a pool that opts in alone, so a first mint covers them.
+   5), on a pool that opts in alone, so a first mint covers them. A start refused later on leaves them
+   there: the list only grows, and the Pool's list bounds it.
 3. **A chat's refused mints are paced per chat and tool** (adds to its item 4): the port from 5 seconds,
    doubling to 5 minutes. A refused run still reaches the desktop's gate and Ask. Once that refused
    it too, the next runs are refused on the runner on the same pace. A run's record says `"from":

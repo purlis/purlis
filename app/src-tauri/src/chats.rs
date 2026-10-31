@@ -4331,7 +4331,10 @@ impl Chats {
         self.puts_its_repos_on_its_claim(
             workspace_at_start(Some(&self.project), chat.cwd.as_deref()).as_deref(),
             chat.cwd.as_deref(),
-            clones_at_start.as_deref(),
+            // A start its runner is sure to refuse adds nothing to the Claim.
+            clones_at_start
+                .as_deref()
+                .filter(|_| !runner_without_sandbox),
         );
         let opened = match (reattaching, chat.number) {
             (true, Some(number)) => self.sessions.reattach(number, &announce),

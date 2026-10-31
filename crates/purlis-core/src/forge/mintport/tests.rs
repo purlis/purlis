@@ -554,3 +554,36 @@ fn a_word_for_another_claim_or_cluster_is_refused_and_moves_nothing() {
     assert!(tell_again(home.path(), another).is_err());
     assert_eq!(held_now(&home), before);
 }
+
+/// Woken past one roll into the next, what it held before is still a key it moved on from.
+#[test]
+fn a_key_let_go_of_while_following_the_next_roll_is_kept_as_left() {
+    let earlier = format!("ed25519:{}", "11".repeat(32));
+    let mut told = told_for_a_roll();
+    let shown = told.keys[0].clone();
+    told.keys.insert(0, earlier.clone());
+    let moved = following(&told, &shown, the_word(), while_it_holds())
+        .unwrap()
+        .expect("it moves");
+    assert_eq!(moved.left, [earlier]);
+    assert!(!moved.keys.contains(&moved.left[0]));
+}
+
+/// A word naming a key moved on from takes nothing of it back, beside another or not.
+#[test]
+fn a_word_naming_a_key_moved_on_from_beside_another_moves_nothing() {
+    let (address, _) = a_port("test-only-signing-key.pkcs8.hex", |_, _| "{}".to_owned());
+    let (old, next) = (
+        roll_fixture("operator-key.txt"),
+        roll_fixture("next-operator-key.txt"),
+    );
+    let (home, _) = a_runner(&nobody_at(), std::slice::from_ref(&next));
+    let mut held = held_now(&home);
+    held.left = vec![old.clone()];
+    tell(home.path(), held).unwrap();
+    let another = format!("ed25519:{}", "22".repeat(32));
+    let mut word = a_desktops_word(&address, &old);
+    word.keys.push(another);
+    tell_again(home.path(), word).unwrap();
+    assert_eq!(held_now(&home).keys, [next]);
+}

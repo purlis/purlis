@@ -349,6 +349,8 @@ fn a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it() {
         handoff.display().to_string(),
     );
     let told = format!("{folder}/{}", purlis_core::forge::mintport::FILE);
+    let lock = format!("{folder}/{}", purlis_core::forge::mintport::LOCK);
+    fs::write(&lock, "").expect("the lock's file, as a write leaves it");
     for (name, cwd, tmp, profile) in chats {
         let chat = Chat {
             wrap: &wrap,
@@ -377,6 +379,8 @@ fn a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it() {
         // Where the runner keeps what it was told of the mint port is not written.
         assert_eq!(chat.tried(&["write", &told]), "EACCES", "{name}");
         assert!(!Path::new(&told).exists(), "{name}");
+        // Nor is what holds it opened: one holding that lock would stop the runner following.
+        assert_eq!(chat.tried(&["read", &lock]), "EACCES", "{name}");
 
         // Nothing is left of the pod's copy to read.
         match &left_there {

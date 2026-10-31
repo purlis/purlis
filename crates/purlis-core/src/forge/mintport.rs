@@ -55,8 +55,9 @@ const MOST_KEYS: usize = 2;
 /// The most keys kept of those moved on from.
 const MOST_LEFT: usize = 8;
 
-/// Held while [`FILE`] is read and written back, so a roll followed is not written over.
-const LOCK: &str = "mint-port.lock";
+/// Held while [`FILE`] is read and written back, so a roll followed is not written over. In the
+/// session host's own folder, which no chat opens: one holding it would stop this runner following.
+pub const LOCK: &str = "mint-port.lock";
 
 /// How often a word at a link is decided again where [`FILE`] moved while it was.
 const TOLD_TRIES: usize = 3;
@@ -143,7 +144,10 @@ pub fn tell(config_root: &Path, told: Told) -> Result<(), String> {
 /// a desktop's word each decide over the network and then write: false, and nothing written, where
 /// what is kept moved meanwhile.
 fn replaced_if_still(config_root: &Path, was: Option<&Told>, next: Told) -> Result<bool, String> {
-    let _locked = crate::machine::Lock::named(config_root, LOCK);
+    let folder = crate::machine::charterd(config_root);
+    purlis_same_user::PrivateDirectory::open(&folder)
+        .map_err(|why| format!("the session host's folder could not be opened: {why}"))?;
+    let _locked = crate::machine::Lock::at(&folder.join(LOCK));
     if told(config_root)?.as_ref() != was {
         return Ok(false);
     }
@@ -207,7 +211,7 @@ pub fn tell_again(config_root: &Path, told: Told) -> Result<bool, String> {
         let known = told
             .keys
             .iter()
-            .all(|key| held.keys.contains(key) || held.left.contains(key));
+            .any(|key| held.keys.contains(key) || held.left.contains(key));
         let (next, settled) = if known || connected(&keeping).is_ok() {
             (keeping, true)
         } else if connected(&told).is_ok() {
@@ -646,10 +650,14 @@ fn following(
         mints_in_cluster: true,
     };
     match pin.followed(&seen, now).map_err(|why| why.to_string())? {
-        Following::Moves(moved) => Ok(Some(Told {
-            keys: vec![shown.to_owned(), moved.key.spelled()],
-            ..told.clone()
-        })),
+        Following::Moves(moved) => {
+            let keys = vec![shown.to_owned(), moved.key.spelled()];
+            Ok(Some(Told {
+                left: moved_to(told, keys.clone()),
+                keys,
+                ..told.clone()
+            }))
+        }
         Following::Stays => Ok(None),
         Following::NotFollowed(why) => Err(why),
     }
