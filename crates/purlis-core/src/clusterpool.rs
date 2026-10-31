@@ -881,6 +881,50 @@ impl Kubectl {
         ])
     }
 
+    /// **The words that run `pod`'s runner's own `purlis profile sign-in` of its profile `name`**
+    /// in `namespace` (#3819), to `provider`'s plan where one is named, by `typed`: the same
+    /// sign-in a Docker runner runs ([`crate::dockerpool::sign_in_words`]), as the pod's own
+    /// user, in the runner's container.
+    pub fn sign_in_args(
+        &self,
+        namespace: &str,
+        pod: &str,
+        typed: crate::dockerpool::Typed,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Vec<String> {
+        let mut args = self.args(&[
+            "exec",
+            typed.exec_flag(),
+            "--namespace",
+            namespace,
+            "--container",
+            RUNNER_CONTAINER,
+            &format!("pod/{pod}"),
+            "--",
+        ]);
+        args.extend(crate::dockerpool::sign_in_words(typed, name, provider));
+        args
+    }
+
+    /// **The words that run `pod`'s runner's own `purlis` with `words`** in `namespace`, with
+    /// pipes (#3819): its version, a profile's sign-out.
+    pub fn purlis_args(&self, namespace: &str, pod: &str, words: &[&str]) -> Vec<String> {
+        let mut args = self.args(&[
+            "exec",
+            "-i",
+            "--namespace",
+            namespace,
+            "--container",
+            RUNNER_CONTAINER,
+            &format!("pod/{pod}"),
+            "--",
+            PURLIS,
+        ]);
+        args.extend(words.iter().map(|word| (*word).to_owned()));
+        args
+    }
+
     /// The pairing's words: the bridge's pairing, taking the key the pod made as it started.
     pub fn pair_args(&self, namespace: &str, pod: &str) -> Vec<String> {
         let mut args = self.connect_args(namespace, pod);
@@ -1153,7 +1197,8 @@ impl Kubectl {
     }
 
     /// **The Claim `namespace`/`name` as the cluster holds it** (#3292): its uid, who asked for
-    /// it and the desktop it is marked as ([`DESKTOP_ANNOTATION`]); `None` where there is none.
+    /// it, the desktop it is marked as ([`DESKTOP_ANNOTATION`]) and whether it is kept (#3819);
+    /// `None` where there is none.
     pub fn claim_seen(&self, namespace: &str, name: &str) -> Result<Option<ClaimSeen>, Refused> {
         let printed = self.run(
             &self.args(&[
@@ -1187,6 +1232,7 @@ impl Kubectl {
                 .and_then(|marks| marks.get(DESKTOP_ANNOTATION))
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_owned),
+            kept: held.pointer("/spec/kept") == Some(&serde_json::Value::Bool(true)),
         }))
     }
 
@@ -1228,6 +1274,8 @@ pub struct ClaimSeen {
     pub uid: String,
     pub requester: Option<String>,
     pub desktop: Option<String>,
+    /// Whether it is a kept claim (`spec.kept`, #2057): its runner's home outlives its pod.
+    pub kept: bool,
 }
 
 /// **Whether a kubeconfig's context can be named to kubectl** (#3292): plain text, at most 253

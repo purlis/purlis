@@ -1233,6 +1233,19 @@ fn made_since(machine: &Machine<'_>, owner: &Path) -> Option<String> {
     machine.made_since.and_then(|asked| asked(owner))
 }
 
+/// **Whether the project skill `name` in `folder` reaches a chat in `workspace`** that turned
+/// off the names in `turned_off`: its grant reaches the workspace, and the workspace has not
+/// turned it off. The rule [`skill_set`] hands a chat its project skills by, for whatever must
+/// agree with it, such as which skills an install brings along (#4154).
+pub fn reaches_workspace(
+    folder: &Path,
+    workspace: &str,
+    turned_off: &[String],
+    name: &str,
+) -> bool {
+    reach(folder, workspace, turned_off, name).is_none()
+}
+
 /// Why a project skill in `folder`, named `name`, does not reach a chat in `workspace`, which
 /// turned `off` off, or `None` where it does.
 fn reach(folder: &Path, workspace: &str, off: &[String], name: &str) -> Option<Reason> {

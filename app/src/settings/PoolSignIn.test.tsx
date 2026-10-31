@@ -47,6 +47,7 @@ vi.mock("./SignInTerminal", () => ({
  */
 
 const PAGE = "https://claude.ai/oauth/authorize?code=true&state=recorded";
+const OPENAI = "https://auth.openai.com/oauth/authorize?state=recorded";
 
 const a_profile = (name: string, kind = "claude"): PoolProfileRow => ({
   name,
@@ -88,6 +89,7 @@ beforeEach(() => {
         kept: [
           a_profile("work"),
           a_profile("fast", "codex"),
+          { ...a_profile("gem", "gemini"), harness: "Gemini" },
           {
             ...a_profile("open", "opencode"),
             harness: "opencode",
@@ -373,20 +375,6 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     ).toBeVisible();
   });
 
-  it("keeps opencode's other plan in a shell tab", async () => {
-    const asks: ProfileSignInAsk[] = [];
-    const hear = (event: Event) => asks.push((event as CustomEvent<ProfileSignInAsk>).detail);
-    window.addEventListener(PROFILE_SIGN_IN, hear);
-    render(<PoolProfiles pool="builds" plane="plane-1" />);
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Sign open in to ChatGPT on pool builds" }),
-    );
-    window.removeEventListener(PROFILE_SIGN_IN, hear);
-
-    expect(calls("pool_sign_in_start")).toEqual([]);
-    expect(asks).toEqual([expect.objectContaining({ profile: "open", provider: "openai" })]);
-  });
-
   it("offers Try again where no page was opened, and the line stays failed (#4043)", async () => {
     const opened = await strip();
     says({ at: "failed", why: "the runner stopped answering" });
@@ -429,7 +417,44 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     }
   });
 
-  it("keeps another harness's sign-in in a shell tab", async () => {
+  it("signs Codex in by approving in the browser, with nothing to paste (#4044)", async () => {
+    render(<PoolProfiles pool="builds" plane="/home/op/project" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Sign fast in on pool builds" }),
+    );
+    const opened = await screen.findByRole("group", { name: "Signing fast in on builds" });
+    expect(calls("pool_sign_in_start")).toEqual([
+      { pool: "builds", name: "fast", provider: null, terminal: null },
+    ]);
+    expect(within(opened).getByText(/Step 1 of 2/)).toBeInTheDocument();
+
+    says({ at: "approve", url: OPENAI });
+
+    expect(await within(opened).findByText("Step 1 of 2: Approve in your browser")).toBeVisible();
+    // The CLI's --pool sign-in cannot carry the browser's answer, so it is not offered.
+    expect(within(opened).queryByText(/From a terminal/)).toBeNull();
+    expect(calls("plugin:opener|open_url")).toEqual([expect.objectContaining({ url: OPENAI })]);
+    expect(within(opened).queryByRole("textbox")).not.toBeInTheDocument();
+
+    says({ at: "checking" });
+    expect(await within(opened).findByText(/Step 2 of 2/)).toBeInTheDocument();
+    says({ at: "signed-in" });
+    expect(await within(opened).findByText("Signed in")).toBeInTheDocument();
+  });
+
+  it("signs opencode in to ChatGPT in place too (#4044)", async () => {
+    render(<PoolProfiles pool="builds" plane="/home/op/project" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Sign open in to ChatGPT on pool builds" }),
+    );
+    await screen.findByRole("group", { name: "Signing open in on builds" });
+
+    expect(calls("pool_sign_in_start")).toEqual([
+      { pool: "builds", name: "open", provider: "openai", terminal: null },
+    ]);
+  });
+
+  it("says a taken port, and offers a device code (#4044)", async () => {
     const heard: ProfileSignInAsk[] = [];
     const hear = (event: Event) => heard.push((event as CustomEvent<ProfileSignInAsk>).detail);
     window.addEventListener(PROFILE_SIGN_IN, hear);
@@ -437,6 +462,42 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
       render(<PoolProfiles pool="builds" plane="/home/op/project" />);
       await userEvent.click(
         await screen.findByRole("button", { name: "Sign fast in on pool builds" }),
+      );
+      const opened = await screen.findByRole("group", { name: "Signing fast in on builds" });
+
+      says({ at: "port-taken", port: 1455 });
+
+      expect(await within(opened).findByRole("alert")).toHaveTextContent(
+        "Port 1455 is in use on this Mac",
+      );
+      expect(within(opened).getByText("codex login --device-auth")).toBeVisible();
+      expect(calls("plugin:opener|open_url")).toEqual([]);
+      // The line says the sign-in failed: the person acts on the port (#4044).
+      expect(await screen.findByText("Sign-in failed")).toBeVisible();
+      await userEvent.click(within(opened).getByRole("button", { name: "Use a device code" }));
+
+      expect(heard).toEqual([
+        {
+          plane: "/home/op/project",
+          profile: "fast",
+          provider: undefined,
+          pool: "builds",
+          device: true,
+        },
+      ]);
+    } finally {
+      window.removeEventListener(PROFILE_SIGN_IN, hear);
+    }
+  });
+
+  it("keeps another harness's sign-in in a shell tab", async () => {
+    const heard: ProfileSignInAsk[] = [];
+    const hear = (event: Event) => heard.push((event as CustomEvent<ProfileSignInAsk>).detail);
+    window.addEventListener(PROFILE_SIGN_IN, hear);
+    try {
+      render(<PoolProfiles pool="builds" plane="/home/op/project" />);
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Sign gem in on pool builds" }),
       );
 
       expect(heard).toHaveLength(1);

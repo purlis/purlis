@@ -280,6 +280,7 @@ pub async fn set_cluster_pool_owned(
             for project in held {
                 project.browsers().forget_pool_logins(&name);
             }
+            crate::poolprofiles::cancel_sign_ins_on(&name);
         }
         Ok(())
     })
@@ -352,4 +353,4 @@ pub fn link_through(
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

@@ -45,6 +45,7 @@
 //! | a kept login: a browser's start from one, and a `log_in` that keeps one (1.27) | yes | | | | | |
 //! | `unpair`, the desktop taken out of a runner's peers (1.25) | | | | | | yes |
 //! | `keep_profile`, a desktop's profile kept on its runner (1.43), `forget_profile`, taken off it (1.52), `stage_profile_settings`, its settings in batches (1.56), and `kept_profiles`, the ones it keeps (1.57) | | | | | | yes |
+//! | `sign_in_redirect`, a sign-in's redirect handed to a login on the runner (1.59) | | | | | | yes |
 //! | `name_window`, the window naming itself on a link to its own host (1.31) | yes | | | | | |
 //! | `relay_to`, the window's link relayed by its host to a runner it keeps (1.33) | yes | | | | | |
 //! | `take_code`, `give_code`, a repository's history moved over the link as a git bundle (1.34) | yes | | | | | relayed |
@@ -199,6 +200,10 @@
 //!   `forget_profile` (1.52, #4047), which takes one of the desktop's profiles off the runner, is
 //!   granted and refused exactly as it is, and so is `kept_profiles` (1.57, #4060), which asks
 //!   the names of the ones the runner keeps for that desktop.
+//! - **`sign_in_redirect` is the paired desktop's, on its own link to the runner** (1.59, #4044),
+//!   as `keep_profile` is, for the sign-in that desktop started there. It reaches one login's own
+//!   port and path on the runner's loopback, and nothing else there, and crosses no answer back.
+//!   No other scope is granted it, the window's included, and a relaying host refuses it.
 //! - **`name_window` is the window's, on a link to its own host** (1.31, #2623). It names the
 //!   window by the name it keeps for that link across its restarts, so its host's relay names it
 //!   to a runner the same way after a restart, and the window takes back its runner chats. Only
@@ -311,6 +316,8 @@ pub enum Power {
     /// #4081): the batches of its settings, and `kept_profiles` (1.57, #4060): the ones kept
     /// there.
     KeepProfile,
+    /// `sign_in_redirect` (1.59, #4044): a sign-in's redirect handed to a login on the runner.
+    SignInRedirect,
     /// `name_window` (1.31, #2623): the window names itself on a link to its own host, by the
     /// name it keeps for that link. The window's alone.
     NameWindow,
@@ -336,7 +343,10 @@ impl Scope {
         use Power as P;
         use Scope as S;
         match self {
-            S::LocalUi => !matches!(power, P::TakeBack | P::Unpair | P::KeepProfile),
+            S::LocalUi => !matches!(
+                power,
+                P::TakeBack | P::Unpair | P::KeepProfile | P::SignInRedirect
+            ),
             S::Terminal => matches!(
                 power,
                 P::List | P::View | P::Write | P::Resize | P::Stop | P::Start | P::Subscribe
@@ -361,6 +371,7 @@ impl Scope {
                     | P::TakeBack
                     | P::Unpair
                     | P::KeepProfile
+                    | P::SignInRedirect
                     | P::Code
                     | P::Rearm
                     | P::EventLog

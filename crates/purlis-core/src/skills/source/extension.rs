@@ -12,6 +12,8 @@
 //! within one skill's limits ([`crate::extension::studio::files_of`]). It never writes the
 //! project: it hands purlis files, and purlis alone copies what the person accepted.
 
+use std::path::Path;
+
 use purlis_skills::tree::LeftOut;
 
 use super::fetch::{Found, NotASkill, SourceFile};
@@ -121,10 +123,18 @@ pub fn browse(studio: Studio<'_>, id: &str) -> Result<Browse, String> {
 }
 
 /// **The review of installing `names` from the extension `id`'s source**, and every skill they
-/// refer to that it holds: the same review the git source's install shows.
-pub fn review(studio: Studio<'_>, id: &str, names: &[String]) -> Result<Review, String> {
+/// refer to that it holds and is not met already: the same review the git source's install
+/// shows. No level is chosen for it yet, so only a built-in skill's name (with the built-in
+/// skills in `built_in`) meets a reference (#4155).
+pub fn review(
+    studio: Studio<'_>,
+    built_in: Option<&Path>,
+    id: &str,
+    names: &[String],
+) -> Result<Review, String> {
     let asked = Asked::of(studio, id)?;
-    let skills = reviews_of(&asked, names, &|_| false)?;
+    let reserved = crate::skills::Reserved::of(built_in);
+    let skills = reviews_of(&asked, names, &|name| reserved.holds(name))?;
     Ok(Review {
         extension: id.to_owned(),
         revision: asked.offered.revision.clone(),

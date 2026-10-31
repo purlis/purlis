@@ -23,8 +23,10 @@
 //!   commit` would not commit there (the review of #3841);
 //! - and the line can be placed: a `cd` to a literal folder is followed only on a line whose
 //!   commands all run in one shell, one after another (`&&`, `;`). A `cd` in a subshell, a
-//!   pipeline or a substitution, or any move it cannot place (an expansion, `cd -`, `popd`, a
-//!   wrapper's own chdir), leaves the line to the sandbox.
+//!   pipeline or a substitution, or any move it cannot place (an expansion, `cd -`, `popd`),
+//!   leaves the line to the sandbox. A wrapper's own move to a literal folder
+//!   (`env -C <folder> git …`, #3931) places that one command; one it cannot place leaves that
+//!   command to the sandbox.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -56,10 +58,72 @@ pub fn said(sub: &str) -> String {
 /// The refusal for `cmd`, run in `cwd` by a chat the app gave a sandbox, in the project at
 /// `root`: `(subcommand, sentence)`, or `None`.
 pub fn refusal(cmd: &str, cwd: &str, root: &str) -> Option<(String, String)> {
-    if !shellwrap::prefilter_text(cmd).contains("git") {
-        return None;
+    let first = found(cmd, cwd, root, |sub, post| {
+        writes_the_index(sub, post).then_some(())
+    })
+    .into_iter()
+    .next()?;
+    let why = said(&first.sub);
+    Some((first.sub, why))
+}
+
+/// One `git` on a line, in a branch folder purlis made: what [`found`] reads a line into.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InAFolder<T> {
+    /// The git subcommand, as the line spells it.
+    pub sub: String,
+    /// What the reader asking made of it: for [`branch_write`], what it does to the branch.
+    pub what: T,
+    /// The branch folder's top.
+    pub folder: PathBuf,
+}
+
+/// **Plain git that writes a branch folder's branch** (#3931): every `git commit`, `merge`,
+/// `cherry-pick`, `revert` or `am` (a commit), `pull` or `rebase` (an update) or `push` on the
+/// line `cmd`, run in `cwd`, whose repository is a branch folder purlis made in the project at
+/// `root`, in the line's order, read and placed as [`refusal`] reads and places a line. What an
+/// unsandboxed chat's guard holds to each folder's one live writer ([`crate::piececlaim`]). A
+/// dry run, and a rebase, merge, cherry-pick, revert or am that only stops or shows one under
+/// way (`--abort`, `--quit`, `--show-current-patch`), writes nothing of its own and is let
+/// through.
+pub fn branch_write(cmd: &str, cwd: &str, root: &str) -> Vec<InAFolder<crate::piececlaim::Act>> {
+    found(cmd, cwd, root, writes_the_branch)
+}
+
+/// What `git <sub> <post…>` does to the branch it runs on, as a branch folder's claim names it
+/// ([`branch_write`]), or `None` for git that makes no commit and moves no branch.
+fn writes_the_branch(sub: &str, post: &[String]) -> Option<crate::piececlaim::Act> {
+    use crate::piececlaim::Act;
+    let has = |flag: &str| post.iter().any(|arg| arg == flag);
+    let only_stops = has("--abort") || has("--quit") || has("--show-current-patch");
+    match sub {
+        "commit" if !has("--dry-run") => Some(Act::Commit),
+        "merge" | "cherry-pick" | "revert" | "am" if !only_stops => Some(Act::Commit),
+        "rebase" if !only_stops => Some(Act::Update),
+        "pull" if !has("--dry-run") => Some(Act::Update),
+        "push" if !(has("-n") || has("--dry-run")) => Some(Act::Push),
+        _ => None,
     }
-    let segments = shellseg::joined_argv(cmd)?;
+}
+
+/// Every `git` on the line `cmd`, run in `cwd`, that `wanted` names a `T` for and whose
+/// repository is the record of a branch folder purlis made in the project at `root`, in the
+/// line's order. A wrapper's own move (`env -C <folder> git …`) places that one command where
+/// it is literal. Reading stops at a move the line makes that cannot be placed: what it found
+/// before that move is kept.
+fn found<T>(
+    cmd: &str,
+    cwd: &str,
+    root: &str,
+    wanted: impl Fn(&str, &[String]) -> Option<T>,
+) -> Vec<InAFolder<T>> {
+    let mut seen = Vec::new();
+    if !shellwrap::prefilter_text(cmd).contains("git") {
+        return seen;
+    }
+    let Some(segments) = shellseg::joined_argv(cmd) else {
+        return seen;
+    };
     // A `cd` carries over to the next command only where both run in this shell, in turn.
     let in_turn = |op: &Option<String>| {
         op.as_deref()
@@ -87,30 +151,42 @@ pub fn refusal(cmd: &str, cwd: &str, root: &str) -> Option<(String, String)> {
                     here = here.join(to);
                     continue;
                 }
-                _ => return None,
+                _ => return seen,
             },
-            "popd" => return None,
+            "popd" => return seen,
             _ => {}
         }
-        if program != "git" || !call.chdir.is_empty() {
+        if program != "git" {
             continue;
         }
+        // `env -C <folder>` moves this one command, never the shell.
+        let at = if call.chdir.is_empty() {
+            here.clone()
+        } else if projectgit::unplaceable(&call.chdir) {
+            continue;
+        } else {
+            here.join(&call.chdir)
+        };
         let (pre, rest) = shellwrap::git_globals(&call.argv);
         let Some((sub, post)) = rest.split_first() else {
             continue;
         };
-        if !writes_the_index(sub, post) {
+        let Some(what) = wanted(sub, post) else {
             continue;
-        }
+        };
         let mut env = before.clone();
         env.extend(call.env.iter().cloned());
-        if projectgit::repository(&here, &pre, &env)
-            .is_some_and(|repo| purlis_made(&repo, Path::new(root)))
+        if let Some(folder) = projectgit::repository(&at, &pre, &env)
+            .and_then(|repo| purlis_made(&repo, Path::new(root)))
         {
-            return Some((sub.clone(), said(sub)));
+            seen.push(InAFolder {
+                sub: sub.clone(),
+                what,
+                folder,
+            });
         }
     }
-    None
+    seen
 }
 
 /// Whether `git <sub> <post…>` writes the index: `add` and `commit`, but for their dry runs
@@ -128,32 +204,22 @@ fn writes_the_index(sub: &str, post: &[String]) -> bool {
 /// Whether the git directory `repo` is the record of a branch folder purlis made in the
 /// project at `root`: a linked worktree's record (`.git/worktrees/<name>`), whose `gitdir`
 /// file (git's own pointer back to the folder's `.git`) names a folder at
-/// `workspaces/<ws>/.worktrees/<repo>/<piece>`.
-fn purlis_made(repo: &Path, root: &Path) -> bool {
+/// `workspaces/<ws>/.worktrees/<repo>/<piece>`: that folder, or `None`.
+fn purlis_made(repo: &Path, root: &Path) -> Option<PathBuf> {
     if !a_worktree_record(repo) {
-        return false;
+        return None;
     }
-    let Ok(pointer) = std::fs::read_to_string(repo.join("gitdir")) else {
-        return false;
-    };
-    let Some(folder) = Path::new(pointer.trim()).parent() else {
-        return false;
-    };
-    let (Ok(folder), Ok(workspaces)) = (
-        std::fs::canonicalize(folder),
-        std::fs::canonicalize(root.join("workspaces")),
-    ) else {
-        return false;
-    };
-    let Ok(within) = folder.strip_prefix(&workspaces) else {
-        return false;
-    };
+    let pointer = std::fs::read_to_string(repo.join("gitdir")).ok()?;
+    let folder = std::fs::canonicalize(Path::new(pointer.trim()).parent()?).ok()?;
+    let workspaces = std::fs::canonicalize(root.join("workspaces")).ok()?;
+    let within = folder.strip_prefix(&workspaces).ok()?;
     let parts: Vec<Component<'_>> = within.components().collect();
     matches!(
         parts.as_slice(),
         [Component::Normal(_), Component::Normal(worktrees), Component::Normal(_), Component::Normal(_)]
             if *worktrees == WORKTREES
     )
+    .then_some(folder)
 }
 
 /// Whether the git directory `repo` is a linked worktree's record in its clone's git directory
@@ -172,147 +238,4 @@ fn a_worktree_record(repo: &Path) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A project with a clone in a workspace and two linked worktrees of it: a branch folder
-    /// purlis made (`workspaces/ide/.worktrees/purlis/guard-port`) and one the person made with
-    /// `git worktree add` somewhere else. Each folder's `.git` is a file naming its record in
-    /// the clone's `.git/worktrees`, and each record's `gitdir` names the folder's `.git` back.
-    struct Layout {
-        _dir: tempfile::TempDir,
-        root: PathBuf,
-        clone: PathBuf,
-        folder: PathBuf,
-        theirs: PathBuf,
-    }
-
-    impl Layout {
-        fn new() -> Self {
-            let dir = tempfile::tempdir().unwrap();
-            let root = std::fs::canonicalize(dir.path()).unwrap();
-            let clone = root.join("workspaces/ide/purlis");
-            let folder = root.join("workspaces/ide/.worktrees/purlis/guard-port");
-            let theirs = root.join("workspaces/ide/scratch/side");
-            for (name, at) in [("guard-port", &folder), ("side", &theirs)] {
-                let record = clone.join(".git/worktrees").join(name);
-                std::fs::create_dir_all(&record).unwrap();
-                std::fs::create_dir_all(at.join("src")).unwrap();
-                std::fs::write(at.join(".git"), format!("gitdir: {}\n", record.display())).unwrap();
-                std::fs::write(
-                    record.join("gitdir"),
-                    format!("{}\n", at.join(".git").display()),
-                )
-                .unwrap();
-            }
-            Self {
-                _dir: dir,
-                root,
-                clone,
-                folder,
-                theirs,
-            }
-        }
-
-        fn ask(&self, cmd: &str, cwd: &Path) -> Option<(String, String)> {
-            refusal(
-                cmd,
-                &cwd.display().to_string(),
-                &self.root.display().to_string(),
-            )
-        }
-    }
-
-    #[test]
-    fn git_add_and_commit_in_a_branch_folder_are_refused_with_the_command_that_commits_there() {
-        let l = Layout::new();
-        for (cmd, sub) in [
-            ("git add src/a.rs", "add"),
-            ("git add -A", "add"),
-            ("git commit -m 'port the guard'", "commit"),
-            ("git add . && git commit -m x", "add"),
-            ("git -C src commit -am x", "commit"),
-            ("GIT_PAGER=cat git commit -m x", "commit"),
-            ("git commit -n -m x", "commit"),
-        ] {
-            let (said_sub, why) = l
-                .ask(cmd, &l.folder)
-                .unwrap_or_else(|| panic!("{cmd:?} was let through"));
-            assert_eq!(said_sub, sub, "{cmd:?}");
-            assert!(why.contains(&format!("`git {sub}`")), "{why}");
-            assert!(
-                why.contains("`purlis worktree commit -m \"<message>\" <path>…`"),
-                "{why}"
-            );
-            assert!(why.contains("--all"), "{why}");
-            assert!(why.contains("in a call of its own"), "{why}");
-        }
-    }
-
-    #[test]
-    fn a_literal_cd_into_the_branch_folder_is_followed() {
-        let l = Layout::new();
-        let cmd = format!("cd {} && git commit -m x", l.folder.display());
-        assert!(l.ask(&cmd, &l.clone).is_some(), "{cmd}");
-        let named = format!("git -C {} add src/a.rs", l.folder.display());
-        assert!(l.ask(&named, Path::new("/")).is_some(), "{named}");
-        // And out of it again: the clone's own index is not a branch folder's record.
-        let back = format!("cd {} && git commit -m x", l.clone.display());
-        assert_eq!(l.ask(&back, &l.folder), None, "{back}");
-    }
-
-    /// The review of #3841: a `cd` in a subshell or a pipeline does not move the shell the next
-    /// command runs in, so it is never carried over to it.
-    #[test]
-    fn a_cd_in_a_subshell_or_a_pipeline_is_not_carried_over() {
-        let l = Layout::new();
-        let folder = l.folder.display();
-        for cmd in [
-            format!("(cd {folder} && ls); git commit -m x"),
-            format!("cd {folder} | cat; git commit -m x"),
-            format!("echo $(cd {folder}); git commit -m x"),
-        ] {
-            assert_eq!(l.ask(&cmd, &l.clone), None, "{cmd}");
-        }
-    }
-
-    #[test]
-    fn read_only_git_dry_runs_and_git_in_the_clone_itself_are_let_through() {
-        let l = Layout::new();
-        for cmd in [
-            "git status",
-            "git diff",
-            "git log -1",
-            "git commit --dry-run -m x",
-            "git add -n .",
-            "git add --dry-run src/a.rs",
-            "ls",
-            "purlis worktree commit -m x --all",
-        ] {
-            assert_eq!(l.ask(cmd, &l.folder), None, "{cmd}");
-        }
-        assert_eq!(l.ask("git commit -m x", &l.clone), None);
-    }
-
-    /// The review of #3841: a worktree the person made with `git worktree add` is not a branch
-    /// folder purlis made, and `purlis worktree commit` would not commit there.
-    #[test]
-    fn a_worktree_the_person_made_is_left_to_the_sandbox() {
-        let l = Layout::new();
-        assert_eq!(l.ask("git commit -m x", &l.theirs), None);
-        assert_eq!(l.ask("git add src/a.rs", &l.theirs), None);
-    }
-
-    #[test]
-    fn a_move_it_cannot_place_is_left_to_the_sandbox() {
-        let l = Layout::new();
-        for cmd in [
-            "cd $PIECE && git commit -m x",
-            "cd - && git commit -m x",
-            "popd && git commit -m x",
-            "git -C $PIECE commit -m x",
-        ] {
-            assert_eq!(l.ask(cmd, &l.clone), None, "{cmd}");
-        }
-    }
-}
+mod tests;

@@ -176,8 +176,6 @@ const UPDATE = {
   local_edits: [{ path: "SKILL.md", change: "changed", diff: "+mine\n" }],
   skill: NOTIFY,
   brought: [],
-  reserved: [],
-  refused: null,
   accepted: { commit: "c".repeat(40), skills: [{ name: "notify", digest: "sha256:n1" }] },
 };
 
@@ -666,7 +664,7 @@ describe("the install review", () => {
     await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
     const review = await screen.findByTestId("install-review");
     expect(await within(review).findByTestId("already-deploy-notify")).toHaveTextContent(
-      "It refers to notify, which is installed there already: it is left as it is.",
+      "It refers to notify, which its chats there have already: it is left as it is.",
     );
     expect(within(review).queryByTestId("reviewed-notify")).toBeNull();
     expect(within(review).getByTestId("install-commit")).toHaveTextContent("1 skill");
@@ -773,8 +771,9 @@ describe("the install review", () => {
 });
 
 /** The one review of `names` as the core answers it (#4024): each named, notify brought along by
- *  deploy, and what accepting says of exactly those. */
-function setReview(names: readonly string[]) {
+ *  deploy, and what accepting says of exactly those; those of `there` the level holds already,
+ *  left out (#4153). */
+function setReview(names: readonly string[], there: readonly string[] = []) {
   const HUGE = {
     ...NOTIFY,
     name: "huge",
@@ -782,12 +781,14 @@ function setReview(names: readonly string[]) {
     folder: "skills/huge",
     brought_by: null,
   };
+  const reviewed = names.filter((name) => !there.includes(name));
   const skills = [
-    ...(names.includes("deploy") ? [REVIEW.skills[0], NOTIFY] : []),
-    ...(names.includes("huge") ? [HUGE] : []),
+    ...(reviewed.includes("deploy") ? [REVIEW.skills[0], NOTIFY] : []),
+    ...(reviewed.includes("huge") ? [HUGE] : []),
   ];
   return {
     kind: "review",
+    there: names.filter((name) => there.includes(name)),
     review: {
       commit: commit("a"),
       skills,
@@ -874,6 +875,95 @@ describe("Install all… (#4024)", () => {
     expect(await screen.findByTestId("skill-source-page")).toBeInTheDocument();
   });
 
+  it("shows a ticked skill the level holds already as there, unticked, and installs the rest (#4153)", async () => {
+    const asked = core({
+      answers: {
+        // The project holds huge already, made there by hand.
+        skill_install_set_review: (args) => setReview(args.names as string[], ["huge"]),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    await user.click(await within(choose).findByRole("button", { name: "Review 2 skills" }));
+    const review = await screen.findByTestId("install-all-review");
+    const huge = await within(review).findByTestId("there-huge");
+    expect(within(huge).getByRole("checkbox")).not.toBeChecked();
+    expect(within(huge).getByRole("checkbox")).toBeDisabled();
+    expect(within(review).getByText(/so it is left as it is/)).toBeInTheDocument();
+    expect(within(review).queryByTestId("keep-huge")).toBeNull();
+    expect(within(review).queryByTestId("left-out-huge")).toBeNull();
+
+    await user.click(within(review).getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(did(asked, "skill_install")).toBe(true));
+    const install = asked.find((one) => one.cmd === "skill_install");
+    expect(install?.args.reviewed).toEqual(setReview(["deploy", "huge"], ["huge"]).review.accepted);
+  });
+
+  it("keeps a skill there already named when it reviews the first part (#4153)", async () => {
+    let first = true;
+    const asked = core({
+      answers: {
+        // A third skill, lint, to leave for the second part.
+        skill_source_browse: () => ({
+          ...BROWSE,
+          skills: [
+            ...BROWSE.skills,
+            {
+              name: "lint",
+              description: "Lints.",
+              folder: "skills/lint",
+              installed: [],
+              marks: [],
+            },
+          ],
+        }),
+        // The first review is past one read: deploy fits, lint is the rest, and the level holds
+        // huge already.
+        skill_install_set_review: (args) => {
+          if (!first) return setReview(args.names as string[], ["huge"]);
+          first = false;
+          return {
+            kind: "too-much",
+            fits: ["deploy"],
+            rest: ["lint"],
+            why: "example skills holds more than 64 MiB of skills to read, the most purlis reads of one skill source at once",
+            there: ["huge"],
+          };
+        },
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    await user.click(await within(choose).findByRole("button", { name: "Review 3 skills" }));
+    const review = await screen.findByTestId("install-all-review");
+    await user.click(await within(review).findByRole("button", { name: "Review the first skill" }));
+    expect(await within(review).findByTestId("there-huge")).toBeInTheDocument();
+    expect(within(review).queryByTestId("left-out-huge")).toBeNull();
+    const reviews = asked.filter((one) => one.cmd === "skill_install_set_review");
+    expect(reviews.at(-1)?.args.names).toEqual(["deploy", "huge"]);
+  });
+
+  it("holds Install where every ticked skill is there already (#4153)", async () => {
+    core({
+      answers: {
+        skill_install_set_review: (args) =>
+          setReview(args.names as string[], args.names as string[]),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    await user.click(await within(choose).findByRole("button", { name: "Review 2 skills" }));
+    const review = await screen.findByTestId("install-all-review");
+    await within(review).findByTestId("there-deploy");
+    expect(within(review).getByRole("button", { name: "Install" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
   it("keeps the list as it was ticked when the person comes back from the review", async () => {
     core({
       answers: {
@@ -941,6 +1031,7 @@ describe("Install all… (#4024)", () => {
                 fits: ["deploy"],
                 rest: ["huge"],
                 why: "example skills holds more than 64 MiB of skills to read, the most purlis reads of one skill source at once",
+                there: [],
               }
             : setReview(args.names as string[]),
       },
@@ -1009,33 +1100,6 @@ describe("the update review", () => {
       skills: [{ name: "notify", digest: "sha256:n1" }],
     });
     expect(await screen.findByTestId("skill-sources")).toBeInTheDocument();
-  });
-
-  it("says up front that a skill it brings along has a built-in skill's name, and holds Accept update", async () => {
-    // #3728: accepting it would be refused, so the review says so before.
-    const refused =
-      "This update brings along secrets, whose name belongs to a built-in skill, so it can't be taken until the source renames it.";
-    const asked = core({
-      offers: [OFFER],
-      answers: {
-        skill_update_review: () => ({
-          ...UPDATE,
-          brought: [{ ...NOTIFY, name: "secrets", brought_by: "notify" }],
-          reserved: ["secrets"],
-          refused,
-        }),
-      },
-    });
-    const user = userEvent.setup();
-    renderStudio(AT_THE_ROOT, "sources");
-    await screen.findByTestId("skill-updates");
-    await user.click(screen.getByRole("button", { name: "Review update" }));
-    const review = await screen.findByTestId("update-review");
-    expect(await within(review).findByTestId("update-refused")).toHaveTextContent(refused);
-    const accept = within(review).getByRole("button", { name: "Accept update" });
-    expect(accept).toHaveAttribute("aria-disabled", "true");
-    await user.click(accept);
-    expect(did(asked, "skill_update")).toBe(false);
   });
 
   it("Not now leaves it as it is, and back walks the pages again", async () => {
