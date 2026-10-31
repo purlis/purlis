@@ -735,6 +735,17 @@ pub fn workspace_folder_rules(planes: &[PathBuf]) -> Result<Vec<String>, &'stati
 /// under every spelling of a state folder, wherever it is and however it is spelled. The
 /// chat's own project's are denied by path besides ([`super::Denied::of`]).
 pub fn vaults_everywhere_rules() -> Result<Vec<String>, &'static str> {
+    vault_rules("file-read* file-write* file-link")
+}
+
+/// **Nothing is started from a project's vault folder or fingerprint key, at any depth**: the
+/// same paths as [`vaults_everywhere_rules`], for a profile that gives process starts by folder.
+pub fn vaults_start_nothing_rules() -> Result<Vec<String>, &'static str> {
+    vault_rules("process-exec")
+}
+
+/// A `deny` of `ops` on every project's vault folder and fingerprint key.
+fn vault_rules(ops: &str) -> Result<Vec<String>, &'static str> {
     let mut rules = Vec::new();
     for state in crate::names::STATE_DIR.spellings() {
         for (kept, tail) in [
@@ -745,10 +756,7 @@ pub fn vaults_everywhere_rules() -> Result<Vec<String>, &'static str> {
                 "^/(.*/)?{}{tail}",
                 either_case(&format!("{}/{}", escaped(state), escaped(kept)))
             );
-            rules.push(format!(
-                "(deny file-read* file-write* file-link (regex {}))",
-                string(&regex)?
-            ));
+            rules.push(format!("(deny {ops} (regex {}))", string(&regex)?));
         }
     }
     Ok(rules)

@@ -84,6 +84,7 @@ mod inboxupdates;
 mod machineprofiles;
 mod personaskills;
 mod routergrade;
+mod signinwatch;
 mod skillchange;
 mod skilldrafts;
 mod skillgrade;

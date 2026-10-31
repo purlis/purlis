@@ -118,8 +118,9 @@ const LINES: [&str; 9] = [
 ];
 
 /// The furthest ahead a statement's `until` may be: an operator signs one for ten minutes, and
-/// purlis reads none that claims to hold past an hour from now, whatever signed it.
-pub const MOST_AHEAD: u64 = 3600;
+/// purlis allows five more for this machine's clock running behind the cluster's, and reads none
+/// that claims to hold past that, whatever signed it.
+pub const MOST_AHEAD: u64 = 15 * 60;
 
 /// The longest value a statement's line holds.
 const MOST_VALUE: usize = 512;
@@ -356,6 +357,24 @@ pub struct PoolSeen {
     pub next_signing_key: Option<String>,
     /// `status.nextSigningKeyVouch`, its statement and signature, during a roll.
     pub next_signing_key_vouch: Option<(String, String)>,
+    /// Whether its spec opts the pool in to minting GitHub App tokens in the cluster (#4204):
+    /// [`mints_in_cluster`].
+    pub mints_in_cluster: bool,
+}
+
+/// **Whether a Pool's `spec` opts it in to minting in the cluster** (#4204), read from the admin's
+/// Pool, never chosen by the person. `true` alone, with the key and the allow-list that go with
+/// it: anything else is not opted in.
+pub fn mints_in_cluster(spec: &serde_json::Value) -> bool {
+    spec.pointer("/forge/mintInCluster") == Some(&serde_json::Value::Bool(true))
+        && spec
+            .pointer("/forge/appKeySecretRef/name")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|name| !name.is_empty())
+        && spec
+            .pointer("/forge/repos")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|repos| !repos.is_empty())
 }
 
 impl PoolSeen {
@@ -373,6 +392,7 @@ impl PoolSeen {
             next_signing_key: text("/nextSigningKey"),
             next_signing_key_vouch: text("/nextSigningKeyVouch/statement")
                 .zip(text("/nextSigningKeyVouch/signature")),
+            mints_in_cluster: false,
         }
     }
 }
@@ -382,7 +402,7 @@ pub const ROLL_HEADER: &str = "purlis cluster operator key roll v1";
 
 /// The longest a key roll's word holds from now: the operator signs one for seven days, and
 /// purlis reads none that claims to hold an hour past that, whatever signed it.
-pub const ROLL_MOST_AHEAD: u64 = 7 * 24 * 3600 + MOST_AHEAD;
+pub const ROLL_MOST_AHEAD: u64 = 7 * 24 * 3600 + 3600;
 
 /// **The current operator key's word for the next one** (#3305): in the cluster `cluster`, the
 /// key `from` rolls to the key `to`, until `until` (seconds since the epoch). Signed as its text,
@@ -1109,9 +1129,10 @@ impl Kubectl {
             &["get", "pools.runners.purlis.dev", pool, "--output", "json"],
             None,
         )?;
-        Ok(PoolSeen::from_status(
-            held.get("status").unwrap_or(&serde_json::Value::Null),
-        ))
+        Ok(PoolSeen {
+            mints_in_cluster: held.get("spec").is_some_and(mints_in_cluster),
+            ..PoolSeen::from_status(held.get("status").unwrap_or(&serde_json::Value::Null))
+        })
     }
 
     /// **The pin of a pool being added** ([`PoolPin::first`]): the operator's key and the
@@ -1194,6 +1215,78 @@ impl Kubectl {
                 signature,
                 next_signature: field("nextSignature"),
             }))
+    }
+
+    /// **Whether the runner of the Claim `namespace`/`name` of the Pool `pool` is still serving**,
+    /// before a value goes to it: neither is stopped and the Claim's `KeyPublished` condition says
+    /// `Vouched`. None of this is signed, so it only ever refuses: the signed statement is what
+    /// vouches ([`vouched_for`]).
+    pub fn serving(&self, namespace: &str, name: &str, pool: &str) -> Result<(), Refused> {
+        let claim = self.json(
+            &[
+                "get",
+                "claims.runners.purlis.dev",
+                name,
+                "--namespace",
+                namespace,
+                "--output",
+                "json",
+            ],
+            None,
+        )?;
+        let of_the_pool = self.json(
+            &["get", "pools.runners.purlis.dev", pool, "--output", "json"],
+            None,
+        )?;
+        let stopped = |held: &serde_json::Value| {
+            held.pointer("/spec/stopped") == Some(&serde_json::Value::Bool(true))
+        };
+        let vouched = claim
+            .pointer("/status/conditions")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|conditions| {
+                conditions.iter().find(|one| {
+                    one.get("type").and_then(serde_json::Value::as_str) == Some("KeyPublished")
+                })
+            })
+            .is_some_and(|published| {
+                let field = |name: &str| published.get(name).and_then(serde_json::Value::as_str);
+                field("status") == Some("True") && field("reason") == Some("Vouched")
+            });
+        if stopped(&claim) || stopped(&of_the_pool) || !vouched {
+            return Err(Refused::NotVouched(format!(
+                "the runner of claim {namespace}/{name} is stopped, or the cluster operator's word \
+                 on it is no longer that it vouches for it"
+            )));
+        }
+        Ok(())
+    }
+
+    /// **The uid of the pod `namespace`/`pod`** as the cluster says now: a pod made again under
+    /// its name has another. Refused where it is being deleted or names none.
+    pub fn pod_uid(&self, namespace: &str, pod: &str) -> Result<String, Refused> {
+        let held = self.json(
+            &[
+                "get",
+                "pods",
+                pod,
+                "--namespace",
+                namespace,
+                "--output",
+                "json",
+            ],
+            None,
+        )?;
+        let deleting = held
+            .pointer("/metadata/deletionTimestamp")
+            .is_some_and(|since| !since.is_null());
+        held.pointer("/metadata/uid")
+            .and_then(serde_json::Value::as_str)
+            .filter(|uid| !deleting && plain(uid))
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                Refused::NotVouched(format!("the pod {namespace}/{pod} is not there as it was"))
+            })
     }
 
     /// **The Claim `namespace`/`name` as the cluster holds it** (#3292): its uid, who asked for
@@ -1433,8 +1526,8 @@ pub fn checked_at(
     if vouched.until > now.saturating_add(MOST_AHEAD) {
         return Err(Refused::NotVouched(format!(
             "the cluster operator's statement about the runner of claim {}/{} says it holds for \
-             more than an hour, which no statement does, so purlis refused it; check this \
-             machine's clock",
+             more than fifteen minutes, which no statement does, so purlis refused it. This \
+             machine's clock is probably behind the cluster's: set it right and try again",
             claimed.namespace, claimed.name
         )));
     }

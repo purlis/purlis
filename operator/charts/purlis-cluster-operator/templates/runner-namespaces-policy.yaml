@@ -3,7 +3,7 @@
 {{/*
 Each person's runner namespace, purlis-runners-<hash> (#2055): only the cluster operator makes
 one, or changes who it is for; and the operator binds purlis-runner-owner, and caps a person
-with purlis-person, only there, for the one person the namespace is for. Kept when the release is uninstalled, as the
+with purlis-person, and opens the way to its mint port with purlis-forge-mint, only there, for the one person the namespace is for. Kept when the release is uninstalled, as the
 policy on Claims is.
 */ -}}
 apiVersion: admissionregistration.k8s.io/v1
@@ -26,6 +26,10 @@ spec:
         apiVersions: ["*"]
         operations: [CREATE, UPDATE]
         resources: [rolebindings]
+      - apiGroups: [networking.k8s.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [networkpolicies]
   variables:
     - name: operator
       expression: >-
@@ -66,6 +70,14 @@ spec:
       messageExpression: >-
         'Only the purlis cluster operator makes a runner namespace (purlis-runners-*), or changes who it is for.'
       reason: Forbidden
+    # The operator's mark on a namespace opens its mint port to it (#4206), so no one else puts
+    # it on a namespace that is not a runner namespace.
+    - expression: >-
+        request.resource.resource != 'namespaces' || variables.operator || variables.runners ||
+        variables.marks[0] != 'purlis-cluster-operator'
+      messageExpression: >-
+        'Only the purlis cluster operator marks a namespace as its own, and only a runner namespace.'
+      reason: Forbidden
     # The operator makes no other namespace.
     - expression: >-
         request.resource.resource != 'namespaces' || !variables.operator || variables.runners
@@ -95,6 +107,19 @@ spec:
         variables.runners && object.metadata.name == 'purlis-person'
       messageExpression: >-
         'The purlis cluster operator makes the quota purlis-person, in a runner namespace alone.'
+      reason: Forbidden
+    # The operator makes one NetworkPolicy, in a runner namespace alone, and what it says is its
+    # way to the mint port (#4206): a way out, to its own pods, on that port, and nothing else.
+    - expression: >-
+        request.resource.resource != 'networkpolicies' || !variables.operator ||
+        variables.runners && object.metadata.name == 'purlis-forge-mint' &&
+        object.spec.policyTypes == ['Egress'] && !has(object.spec.ingress) &&
+        size(object.spec.egress) == 1 && size(object.spec.egress[0].to) == 1 &&
+        object.spec.egress[0].to[0].namespaceSelector.matchLabels['kubernetes.io/metadata.name'] == '{{ .Release.Namespace }}' &&
+        object.spec.egress[0].to[0].podSelector.matchLabels['app.kubernetes.io/name'] == 'purlis-cluster-operator' &&
+        size(object.spec.egress[0].ports) == 1 && object.spec.egress[0].ports[0].port == 8443
+      messageExpression: >-
+        'The purlis cluster operator makes the NetworkPolicy purlis-forge-mint, in a runner namespace alone, to its own mint port alone.'
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

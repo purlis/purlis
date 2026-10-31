@@ -9,7 +9,9 @@ use std::path::{Path, PathBuf};
 
 use super::*;
 use crate::harness::Harness;
-use crate::skills::{ChatSkills, DIR_IN_BUNDLE, INDEX, Running, for_use_skill, of_a_chat};
+use crate::skills::{
+    ChatSkills, DIR_IN_BUNDLE, INDEX, Origin, Outcome, Running, for_use_skill, of_a_chat,
+};
 
 /// The most skills a chat lists on every harness (ADR 0102 as amended 2026-10-21).
 const MOST: usize = 30;
@@ -368,6 +370,76 @@ fn the_studio_routes_each_harness_by_its_own_budget() {
         .expect("long-00");
     let on: Vec<Harness> = row.hidden.iter().map(|one| one.harness).collect();
     assert_eq!(on, [Harness::Codex]);
+}
+
+#[test]
+fn the_studio_routes_a_harness_as_a_chat_s_start_does_and_never_counts_its_own_skills_4192() {
+    // #4192 (ADR 0102 as amended 2026-10-31): a harness's own catalogue counts against nothing.
+    // A chat's start routes only what purlis hands it, so the studio's harness page routes the
+    // same set: the person's own skills put no plane skill behind the index skill.
+    let (tmp, bundle) = a_plane_of(MOST - 2);
+    let root = tmp.path();
+    let own = root.join("claude-config/skills");
+    for at in 0..12 {
+        let name = format!("mine-{at:02}");
+        write(
+            &own.join(&name),
+            &format!("---\nname: {name}\ndescription: My own {at}.\n---\n"),
+        );
+    }
+    // One with a plane skill's name: its clash is still said.
+    write(
+        &own.join("skill-00"),
+        "---\nname: skill-00\ndescription: My own copy.\n---\n",
+    );
+    let chat = [(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        root.join("claude-config").display().to_string(),
+    )];
+    let env = crate::harness_plugin::Env {
+        chat: &chat,
+        home: Some(root.join("home")),
+        process: false,
+    };
+
+    let list = crate::skills::studio_list(Some(&bundle), root, Some("smart-ide"), None, &env);
+
+    let claude = list
+        .harnesses
+        .iter()
+        .find(|one| one.harness == Harness::ClaudeCode)
+        .expect("Claude Code in the studio");
+    assert_eq!(
+        claude
+            .outside
+            .iter()
+            .filter(|one| one.origin == Origin::Harness)
+            .count(),
+        13,
+        "the person's own skills are read"
+    );
+    let start = for_use_skill(&running(root, &bundle, None));
+    assert!(hidden(&start).is_empty(), "a chat's start hides none");
+    for row in list.rows.iter().filter(|row| row.origin.of_the_plane()) {
+        assert!(
+            row.hidden
+                .iter()
+                .all(|one| one.harness != Harness::ClaudeCode),
+            "{}: listed on Claude Code, as a chat's start lists it",
+            row.name
+        );
+    }
+    assert!(
+        claude
+            .set
+            .clashes
+            .iter()
+            .any(|clash| clash.name == "skill-00"
+                && clash.outside == Origin::Harness
+                && clash.outcome == Outcome::BothLoad),
+        "{:?}",
+        claude.set.clashes
+    );
 }
 
 #[test]
@@ -813,4 +885,105 @@ fn a_chat_whose_workspace_and_persona_pins_pass_64_together_says_so_3391() {
         assert!(pin(root, &persona, &format!("skill-{at:02}"), true).unwrap());
     }
     assert_eq!(chat(Some("reviewer")).pins_together, None);
+}
+
+#[test]
+fn the_studio_routes_a_harness_as_a_chat_at_the_workspace_root_starts_whatever_its_clones_hold_4215()
+ {
+    // #4215 (ADR 0102 as amended 2026-10-31): the studio previews a chat at the workspace's
+    // root, which counts no clone's repo skills, as that chat's start counts none. Each clone's
+    // repo skills are still listed under the harness, and a chat in a clone still has its own.
+    let (tmp, bundle) = a_plane_of(MOST - 2);
+    let root = tmp.path();
+    for repo in ["api", "web"] {
+        let clone = root.join("workspaces/smart-ide").join(repo);
+        std::fs::create_dir_all(clone.join(".git")).unwrap();
+        for at in 0..2 {
+            let name = format!("{repo}-{at}");
+            write(
+                &clone.join(".claude/skills").join(&name),
+                &format!("---\nname: {name}\ndescription: The repo's {at}.\n---\n"),
+            );
+        }
+    }
+    // A copy of a plane skill in api, which Codex's chats there take in its place (decision 51).
+    write(
+        &root.join("workspaces/smart-ide/api/.agents/skills/skill-00"),
+        "---\nname: skill-00\ndescription: The repo's copy.\n---\n",
+    );
+
+    let list = studio(root, &bundle);
+
+    let at_the_root = for_use_skill(&running(root, &bundle, None));
+    assert!(
+        hidden(&at_the_root).is_empty(),
+        "a chat at the root hides none"
+    );
+    let api = root.join("workspaces/smart-ide/api");
+    let in_api =
+        crate::hoststart::ChatSkills::read(true, root, Some(Harness::ClaudeCode), Some(&api), None);
+    let in_api = for_use_skill(&Running {
+        start: Some(&in_api),
+        ..running(root, &bundle, None)
+    });
+    assert!(
+        !hidden(&in_api).is_empty(),
+        "a chat in api counts api's two repo skills, and is over"
+    );
+    for row in list.rows.iter().filter(|row| row.origin.of_the_plane()) {
+        assert!(
+            row.hidden
+                .iter()
+                .all(|one| one.harness != Harness::ClaudeCode),
+            "{}: listed on Claude Code, as a chat at the workspace's root lists it",
+            row.name
+        );
+    }
+    let claude = list
+        .harnesses
+        .iter()
+        .find(|one| one.harness == Harness::ClaudeCode)
+        .expect("Claude Code in the studio");
+    let mut repo: Vec<&str> = claude
+        .rows
+        .iter()
+        .filter(|row| row.origin == Origin::Repo)
+        .map(|row| row.name.as_str())
+        .collect();
+    repo.sort_unstable();
+    assert_eq!(
+        repo,
+        ["api-0", "api-1", "web-0", "web-1"],
+        "every clone's listed"
+    );
+    for one in &list.harnesses {
+        assert!(
+            one.at_the_root
+                .effective
+                .iter()
+                .all(|got| got.origin != Origin::Repo),
+            "{:?}: a chat at the root holds no repo skill",
+            one.harness
+        );
+    }
+    // What a repo leaves out of a chat in that clone is still said, and its clash.
+    let codex = list
+        .harnesses
+        .iter()
+        .find(|one| one.harness == Harness::Codex)
+        .expect("Codex in the studio");
+    assert!(
+        codex.repo_left_out.iter().any(|row| row.name == "skill-00"),
+        "{:?}",
+        codex.repo_left_out
+    );
+    assert!(
+        codex
+            .set
+            .clashes
+            .iter()
+            .any(|clash| clash.name == "skill-00" && clash.outcome == Outcome::RepoWins),
+        "{:?}",
+        codex.set.clashes
+    );
 }

@@ -727,8 +727,11 @@ pub fn add_cluster(
     let _adding = adding(config_root, pool.name());
     let taken_from = pool.kubectl(kubectl);
     let pin = pool.pin()?;
-    let named = taken_from
-        .pool_pin(pool.pool())
+    // One read of the Pool, so the pin checked and the opt-in recorded are of one version of it.
+    let seen = taken_from
+        .pool(pool.pool())
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    let named = crate::clusterpool::PoolPin::first(pool.pool(), &seen)
         .map_err(|why| Refused::Other(why.to_string()))?;
     if named != pin {
         return Err(Refused::Other(format!(
@@ -750,7 +753,8 @@ pub fn add_cluster(
     // Recorded pointing at its own copy, which is kept only once its name is the pool's.
     let pool = &pool
         .kept_at(&runners::kubeconfig_kept_at(config_root, pool.name()))
-        .holding(held)?;
+        .holding(held)?
+        .minting_in_cluster(seen.mints_in_cluster);
     runners::record_cluster_pool_locked(config_root, pool, &runners::lock(config_root))?;
     if let Err(why) = runners::keep_kubeconfig(config_root, pool.name(), &context) {
         return Err(forgotten_cluster(config_root, pool.name(), why));
@@ -848,6 +852,28 @@ pub fn before_cluster_link(
     checked
 }
 
+/// [`before_cluster_link`], for a link built for the runner `reached` names
+/// ([`runners::ClusterKept::reached`]): refused unless that is the runner kept under `name` now.
+pub fn before_cluster_link_to(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    reached: &str,
+    now: u64,
+) -> Result<(), crate::clusterpool::Refused> {
+    use crate::clusterpool::Refused as Not;
+    let kept = runners::cluster_runner_for(config_root, name)
+        .map_err(|why| Not::Other(why.to_string()))?
+        .ok_or_else(|| Not::Other(format!("no cluster pool named {name} is on this machine")))?
+        .1;
+    if kept.reached() != reached {
+        return Err(Not::Other(format!(
+            "this link was made for a runner pool {name} no longer keeps"
+        )));
+    }
+    before_cluster_link(config_root, kubectl, name, now)
+}
+
 /// How long each kubectl run of the check before a value is sent waits (#4071).
 pub const VOUCHED_NOW_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
 
@@ -867,12 +893,36 @@ pub fn kubectl_here(config_root: &Path) -> Result<crate::clusterpool::Kubectl, S
 /// **[`before_cluster_link`], now, on this machine's `kubectl`, held to a time** (#4071): what a
 /// cluster runner must pass, at the gate and again after Allow, before a value or a token goes
 /// to it. A kubectl that is missing, or a cluster that does not answer within
-/// [`VOUCHED_NOW_WITHIN`], is a refusal.
-pub fn vouched_now(config_root: &Path, name: &str) -> Result<(), crate::clusterpool::Refused> {
+/// [`VOUCHED_NOW_WITHIN`], is a refusal. Answers the uid of the runner's pod
+/// ([`vouched_now_with`]).
+pub fn vouched_now(config_root: &Path, name: &str) -> Result<String, crate::clusterpool::Refused> {
     let kubectl = kubectl_here(config_root)
         .map_err(crate::clusterpool::Refused::Other)?
         .within(VOUCHED_NOW_WITHIN);
-    before_cluster_link(config_root, &kubectl, name, runners::now())
+    vouched_now_with(config_root, &kubectl, name, runners::now())
+}
+
+/// [`vouched_now`], at `now`, through `kubectl`: [`before_cluster_link`], then what the cluster
+/// says of the runner beside the statement, for a value alone: a claim or pool stopped, or an
+/// operator no longer saying it vouches, is refused ([`crate::clusterpool::Kubectl::serving`]).
+/// Answers the uid of the runner's pod, which binds what the person allowed to that pod.
+pub fn vouched_now_with(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    now: u64,
+) -> Result<String, crate::clusterpool::Refused> {
+    use crate::clusterpool::Refused as Not;
+    before_cluster_link(config_root, kubectl, name, now)?;
+    let (pool, kept) = runners::cluster_runner_for(config_root, name)
+        .map_err(|why| Not::Other(why.to_string()))?
+        .ok_or_else(|| Not::Other(format!("no cluster pool named {name} is on this machine")))?;
+    let kubectl = pool.kubectl(kubectl);
+    kubectl.serving(&kept.claimed.namespace, &kept.claimed.name, pool.pool())?;
+    kubectl.pod_uid(
+        &crate::clusterpool::runner_namespace(&kept.claimed.requester),
+        &kept.pod,
+    )
 }
 
 /// **The runner's own sign-in of its profile `profile` on the cluster pool `name`'s runner**

@@ -271,11 +271,36 @@ fn consent_shown(planned: &Planned, on: &On) -> Option<String> {
 /// run on (their line's, the price's, where it names one, so a change of the profile's own model
 /// is a change too; else the one picked), the cap and the dollar limit at that model's price.
 fn terms_of<'a>(planned: &Planned, on: &'a On) -> grades::Terms<'a> {
+    terms(&planned.cap, on)
+}
+
+/// **The terms a grade held to `cap` would start on, on `on`** ([`terms_of`]): a skill's grade's
+/// or a router's (#3618).
+pub(crate) fn terms<'a>(cap: &grades::cap::Cap, on: &'a On) -> grades::Terms<'a> {
     grades::Terms {
         profile: on.profile.as_deref(),
         model: on.priced.model.as_deref().or(on.model.as_deref()),
-        token_cap: planned.cap.tokens,
-        limit_usd: planned.cap.cost_usd(&on.priced),
+        token_cap: cap.tokens,
+        limit_usd: cap.cost_usd(&on.priced),
+    }
+}
+
+impl From<&grades::Estimate> for GradeEstimate {
+    fn from(estimate: &grades::Estimate) -> Self {
+        GradeEstimate {
+            tokens: estimate.tokens.map(|tokens| tokens as f64),
+            cost_usd: estimate.cost_usd,
+            chats_then: estimate.chats_then,
+            ts: estimate.ts.clone(),
+            profile: estimate.profile.clone(),
+            harness: estimate
+                .harness
+                .as_deref()
+                .map(purlis_core::skilluse::harness_title),
+            model: estimate.model.clone(),
+            same_profile: estimate.same_profile,
+            interrupted: estimate.interrupted,
+        }
     }
 }
 
@@ -355,20 +380,7 @@ impl SkillGradePlan {
                 .outcomes
                 .refused()
                 .map(purlis_core::skills::grade::Refused::in_window),
-            estimate: planned.estimate.as_ref().map(|estimate| GradeEstimate {
-                tokens: estimate.tokens.map(|tokens| tokens as f64),
-                cost_usd: estimate.cost_usd,
-                chats_then: estimate.chats_then,
-                ts: estimate.ts.clone(),
-                profile: estimate.profile.clone(),
-                harness: estimate
-                    .harness
-                    .as_deref()
-                    .map(purlis_core::skilluse::harness_title),
-                model: estimate.model.clone(),
-                same_profile: estimate.same_profile,
-                interrupted: estimate.interrupted,
-            }),
+            estimate: planned.estimate.as_ref().map(GradeEstimate::from),
             record_said: planned.record_said.clone(),
             running,
             token_cap: planned.cap.tokens as f64,
@@ -469,6 +481,9 @@ pub(crate) struct Running {
     /// Its latest step told to the window, where it is a skill's grade: what a page that opens
     /// while it runs starts from (#3928). `None` for a router's grade.
     pub(crate) step: Option<SkillGradeStep>,
+    /// Its latest step told to the window, where it is a router's grade (#4222): what its page
+    /// starts from when it opens while the grade runs. `None` for a skill's grade.
+    pub(crate) router_step: Option<crate::routergrade::RouterGradeStep>,
 }
 
 /// **The grades running in this app**, by id: one per project at a time.
@@ -697,6 +712,7 @@ pub(crate) fn begin(
                     .then(|| grades::after_edit::key(&level, &skill))
                     .flatten(),
                 step: Some(step_of(Spent::default(), 0, None, None)),
+                router_step: None,
             },
         );
     }
@@ -775,7 +791,7 @@ pub(crate) fn begin(
                     unpriced_at: limits.unpriced_usd_per_million,
                     skill: skill.clone(),
                     label: format!("Grade {skill}"),
-                    keeps_screens: true,
+                    keeps: Some(grades::kept::Of::Skill(skill.clone())),
                     profile: &profile,
                     stop: &stop,
                     spent: Spent::default(),
@@ -889,18 +905,22 @@ pub(crate) async fn skill_grade_set_cap(
     let held = planes.held(&plane)?;
     crate::off_the_window("setting a grade's cap", move || {
         flag_on()?;
-        if !tokens.is_finite() || tokens.fract() != 0.0 || tokens < 0.0 {
-            return Err(
-                "A grade's cap is a whole number of tokens, so nothing was changed.".into(),
-            );
-        }
-        grades::cap::set_token_cap(held.root(), tokens as u64)?;
+        set_cap(held.root(), tokens)?;
         let on = chats_on(held.root(), profile, model);
         let planned =
             grades::planned(held.root(), &(&level).into(), &skill, on.profile.as_deref())?;
         Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill), on))
     })
     .await
+}
+
+/// **Sets the token cap every grade in the project at `root` is held to, on this machine**: a
+/// skill's and a router's (#3618), refused for what is not a whole number of tokens.
+pub(crate) fn set_cap(root: &std::path::Path, tokens: f64) -> Result<(), String> {
+    if !tokens.is_finite() || tokens.fract() != 0.0 || tokens < 0.0 {
+        return Err("A grade's cap is a whole number of tokens, so nothing was changed.".into());
+    }
+    grades::cap::set_token_cap(root, tokens as u64).map(|_| ())
 }
 
 /// **Stops the grade `grade`**: the chat it runs now is ended, no other starts, and what ran is
@@ -1191,43 +1211,53 @@ pub(crate) async fn skill_grades(
     .await
 }
 
+/// **Each trigger test of a grade's report, in each arm** (SK-59): what a skill's scorecard and
+/// each skill of a router's (#3617) show, each chat `kept` says whether this machine kept.
+pub(crate) fn scored_tests(
+    triggers: &[purlis_core::skills::grade::TriggerScore],
+    kept: impl Fn(&str) -> bool,
+) -> Vec<ScoredTest> {
+    let mut tests: Vec<ScoredTest> = Vec::new();
+    for score in triggers {
+        let runs = ScoredRuns {
+            arm: score.arm.into(),
+            runs: score.runs,
+            triggered: score.triggered,
+            pass: score.pass,
+            asked: score.asked,
+            chats: score
+                .chats
+                .iter()
+                .zip(1u32..)
+                .filter_map(|(id, run)| {
+                    id.as_ref().map(|id| ScoredChat {
+                        id: id.clone(),
+                        run,
+                        kept: kept(id),
+                    })
+                })
+                .collect(),
+        };
+        match tests
+            .iter_mut()
+            .find(|test| test_is(test, &score.query, score.should_trigger))
+        {
+            Some(test) => test.arms.push(runs),
+            None => tests.push(ScoredTest {
+                query: purlis_unicode::marked(&score.query, purlis_unicode::Breaks::Marked),
+                should_trigger: score.should_trigger,
+                arms: vec![runs],
+            }),
+        }
+    }
+    tests
+}
+
 impl GradeScorecard {
     /// `graded`'s scorecard, each chat `kept` says whether this machine kept.
     fn of(graded: &Graded, kept: impl Fn(&str) -> bool) -> GradeScorecard {
         use purlis_core::skills::studio;
-        let mut tests: Vec<ScoredTest> = Vec::new();
-        for score in &graded.report.triggers {
-            let runs = ScoredRuns {
-                arm: score.arm.into(),
-                runs: score.runs,
-                triggered: score.triggered,
-                pass: score.pass,
-                asked: score.asked,
-                chats: score
-                    .chats
-                    .iter()
-                    .zip(1u32..)
-                    .filter_map(|(id, run)| {
-                        id.as_ref().map(|id| ScoredChat {
-                            id: id.clone(),
-                            run,
-                            kept: kept(id),
-                        })
-                    })
-                    .collect(),
-            };
-            match tests
-                .iter_mut()
-                .find(|test| test_is(test, &score.query, score.should_trigger))
-            {
-                Some(test) => test.arms.push(runs),
-                None => tests.push(ScoredTest {
-                    query: purlis_unicode::marked(&score.query, purlis_unicode::Breaks::Marked),
-                    should_trigger: score.should_trigger,
-                    arms: vec![runs],
-                }),
-            }
-        }
+        let tests = scored_tests(&graded.report.triggers, kept);
         GradeScorecard {
             grade: graded.grade.clone(),
             skill: graded.skill.clone(),
@@ -1297,11 +1327,12 @@ pub(crate) async fn skill_grade_scorecard(
 }
 
 /// What a scorecard says of a chat this machine does not keep: one a teammate's purlis ran, one
-/// past the skill's newest grades, or one whose screen could not be read as it ended.
-fn not_kept() -> String {
+/// past the newest grades `whose` ("the skill's", "the router's"), or one whose screen could not
+/// be read as it ended.
+pub(crate) fn not_kept(whose: &str) -> String {
     format!(
         "This chat is not kept on this machine. purlis keeps a grade's chats where the grade ran, \
-         for the skill's {} newest grades, where their screen could be read as they ended.",
+         for {whose} {} newest grades, where their screen could be read as they ended.",
         grades::kept::KEPT_GRADES
     )
 }
@@ -1320,7 +1351,8 @@ pub(crate) async fn skill_grade_chat(
     let held = planes.held(&plane)?;
     crate::off_the_window("reading a grade's chat", move || {
         flag_on()?;
-        grades::kept::kept(held.root(), &skill, &grade, &chat).ok_or_else(not_kept)
+        grades::kept::kept(held.root(), &skill, &grade, &chat)
+            .ok_or_else(|| not_kept("the skill's"))
     })
     .await
 }
@@ -1342,8 +1374,9 @@ pub(crate) struct InChats<'a> {
     pub(crate) skill: String,
     /// What each chat is labelled, in the session host's list.
     pub(crate) label: String,
-    /// Whether what each chat showed is kept for the skill's scorecard (SK-59).
-    pub(crate) keeps_screens: bool,
+    /// Whose scorecard what each chat showed is kept for (SK-59): the skill's, or a router's
+    /// (#3617).
+    pub(crate) keeps: Option<grades::kept::Of>,
     pub(crate) profile: &'a str,
     pub(crate) stop: &'a AtomicBool,
     /// What the chats that ran so far spent, and who is told each, with how many asked.
@@ -1591,12 +1624,10 @@ impl InChats<'_> {
             self.reported.push(model);
         }
         // What its terminal showed as it ended, kept to open from the scorecard (SK-59).
-        if let Some(chat) = id.as_deref().filter(|_| self.keeps_screens) {
+        if let (Some(chat), Some(of)) = (id.as_deref(), self.keeps.as_ref()) {
             match screen_of(self.held.chats().sessions(), session) {
                 Some(screen) => {
-                    if let Err(why) =
-                        grades::kept::keep(&root, &self.skill, self.grade, chat, &screen)
-                    {
+                    if let Err(why) = grades::kept::keep_of(&root, of, self.grade, chat, &screen) {
                         tracing::warn!("purlis: a grade's chat {session} was not kept ({why})");
                     }
                 }

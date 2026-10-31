@@ -20,6 +20,13 @@ import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { HarnessItem, HarnessList, harnessGroups, harnessRowAt } from "./SkillStudioHarnesses";
 import { RoutedChatItem, RoutedChats, RoutingFacts } from "./SkillStudioRouting";
+import {
+  RouterGradeChatPage,
+  RouterGradePlanPage,
+  RouterGradeRunningPage,
+  RouterGradeScorecardPage,
+  useRouterGradeRunning,
+} from "./RouterGrade";
 import { Button } from "./ui/button/Button";
 import { Badge } from "./ui/badge/Badge";
 import { TextField } from "./ui/field/Field";
@@ -65,6 +72,11 @@ import {
   harnessSkillNamed,
   pinnerOf,
   routedChatId,
+  ROUTER_GRADE_PLAN,
+  routerGradeItem,
+  routerGradeOfItem,
+  routerGradingItem,
+  routerGradingOfItem,
   sameScope,
   scopeChat,
   scopeKey,
@@ -293,6 +305,10 @@ export function SkillStudioTab({
   // core did not make the last one asked for.
   const [copying, setCopying] = useState<{ from?: string; refused?: string }>();
   const { workspace, persona } = whoseChats(scope);
+  // A router's grade told as it goes, from whichever page: its end reads the router's line again.
+  const gradeRunning = useRouterGradeRunning(plane, workspace, persona, () =>
+    setDone((was) => was + 1),
+  );
   const key = scopeKey(scope);
   // What was read for another scope is not this one's: placeholders until this one's is.
   const studio = read?.key === key ? read.studio : undefined;
@@ -897,16 +913,28 @@ export function SkillStudioTab({
     page === "routing"
       ? studio?.router?.chats.find((one) => routedChatId(one.session) === at.skill)
       : undefined;
-  const itemName =
-    harnessRow !== undefined
-      ? harnessRow.kind === "not-supported"
-        ? harnessRow.one.title
-        : harnessRow.kind === "none"
-          ? harnessRow.title
-          : harnessRow.skill.name
-      : routedChat === undefined
-        ? undefined
-        : `Chat ${routedChat.session}`;
+  // Or a router's grade's scorecard, or one of its chats (#3617).
+  const routerGrade = page === "routing" ? routerGradeOfItem(at.item) : undefined;
+  // Or its grade plan, or a grade of it running (#4222), as a skill's grading pages are named.
+  const routerPlan = page === "routing" && at.item === ROUTER_GRADE_PLAN;
+  const routerGrading = page === "routing" ? routerGradingOfItem(at.item) : undefined;
+  const itemName = routerPlan
+    ? gradingPath({ at: "plan" })[0].label
+    : routerGrading !== undefined
+      ? gradingPath({ at: "running", grade: routerGrading })[0].label
+      : routerGrade !== undefined
+        ? routerGrade.chat === undefined
+          ? "Grade"
+          : "Grade's chat"
+        : harnessRow !== undefined
+          ? harnessRow.kind === "not-supported"
+            ? harnessRow.one.title
+            : harnessRow.kind === "none"
+              ? harnessRow.title
+              : harnessRow.skill.name
+          : routedChat === undefined
+            ? undefined
+            : `Chat ${routedChat.session}`;
   const inSources = page === "sources" ? at.sources : undefined;
   const path: Crumb[] = [
     { id: page, label: STUDIO_PAGE_NAMES[page] },
@@ -1349,6 +1377,7 @@ export function SkillStudioTab({
         stillAt={(sources) => edits.isAt({ page: "sources", scope, ...(sources && { sources }) })}
         onOpenSkill={(name) => go({ page: "library", scope, skill: skillRowNamed(name) })}
         levels={levels}
+        workspaces={studio?.workspaces ?? []}
         start={start}
         busy={busy}
         change={change}
@@ -1431,7 +1460,6 @@ export function SkillStudioTab({
               plane={plane}
               router={router}
               by={by}
-              workspace={workspace}
               persona={persona}
               busy={busy}
               onChoose={(whose, chosen, text) =>
@@ -1441,7 +1469,14 @@ export function SkillStudioTab({
                   () => Promise.resolve({ tone: "news", label: "Router changed", text }),
                 )
               }
-              onGraded={() => setDone((was) => was + 1)}
+              gradeRunning={gradeRunning}
+              onGradeRunning={(grade) =>
+                go({ page: "routing", scope, item: routerGradingItem(grade) })
+              }
+              onGradePlan={() => go({ page: "routing", scope, item: ROUTER_GRADE_PLAN })}
+              onScorecard={(grade) =>
+                go({ page: "routing", scope, item: routerGradeItem({ grade }) })
+              }
             />
             <ViewListHead title="How it did at each chat's start" />
             <RoutedChats
@@ -1453,7 +1488,87 @@ export function SkillStudioTab({
         ),
       ),
     );
-    item = studio === undefined || chats.length === 0 ? undefined : <RoutedChatItem chat={chat} />;
+    const graded = router?.extension ?? null;
+    /** Back to Routing's list from a grading page beside it: a step back where that is it. */
+    const toRouting = () => {
+      const list: StudioPlace = { page: "routing", scope };
+      if (backIsTo(history.behind, list)) history.back();
+      else history.replace(list);
+    };
+    item =
+      studio === undefined ? undefined : routerPlan && graded !== null ? (
+        <RouterGradePlanPage
+          plane={plane}
+          router={graded}
+          workspace={workspace}
+          persona={persona}
+          changed={changed + done}
+          onStarted={(grade) =>
+            history.replace({ page: "routing", scope, item: routerGradingItem(grade) })
+          }
+          onRunning={(grade) => go({ page: "routing", scope, item: routerGradingItem(grade) })}
+          onCancel={toRouting}
+        />
+      ) : routerGrading !== undefined ? (
+        <RouterGradeRunningPage
+          plane={plane}
+          router={graded}
+          grade={routerGrading}
+          onEnded={() =>
+            history.replace({
+              page: "routing",
+              scope,
+              item: routerGradeItem({ grade: routerGrading }),
+            })
+          }
+          onBack={toRouting}
+        />
+      ) : routerGrade !== undefined && graded !== null ? (
+        routerGrade.chat === undefined ? (
+          <RouterGradeScorecardPage
+            plane={plane}
+            router={graded}
+            workspace={workspace}
+            persona={persona}
+            grade={routerGrade.grade}
+            onChat={(chat) =>
+              go({
+                page: "routing",
+                scope,
+                item: routerGradeItem({ grade: routerGrade.grade, chat }),
+              })
+            }
+          />
+        ) : (
+          <RouterGradeChatPage
+            plane={plane}
+            router={graded}
+            workspace={workspace}
+            persona={persona}
+            grade={routerGrade.grade}
+            chat={routerGrade.chat}
+            // The previous and next chat stand in for this one, as a skill's grade's do.
+            onChat={(chat) =>
+              history.replace({
+                page: "routing",
+                scope,
+                item: routerGradeItem({ grade: routerGrade.grade, chat }),
+              })
+            }
+            onScorecard={() => {
+              const card: StudioPlace = {
+                page: "routing",
+                scope,
+                item: routerGradeItem({ grade: routerGrade.grade }),
+              };
+              if (backIsTo(history.behind, card)) history.back();
+              else history.replace(card);
+            }}
+          />
+        )
+      ) : chats.length === 0 ? undefined : (
+        <RoutedChatItem chat={chat} />
+      );
   }
 
   const builtInNames = [

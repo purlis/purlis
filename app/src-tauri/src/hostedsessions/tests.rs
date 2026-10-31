@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use purlis_core::engine::Size;
-use purlis_host::Hosting;
 use purlis_host::standin::{Savers, StandIns};
+use purlis_host::{ComposesNothing, Hosting};
 use purlis_session_protocol::session::{self, Exit};
 
 use super::*;
@@ -65,6 +65,150 @@ pub(crate) fn in_memory_with_a_runner<H: session::Host + Clone, R: session::Host
     let connection = Arc::new(Connection::default());
     connection.ready_relaying(link, dial, relayed);
     connection
+}
+
+/// **Removing a pool ends the window's links to its runner**: each chat on them is told, the host
+/// sees the link close, a pool of another name keeps its own, and the next link is dialled anew.
+#[test]
+fn removing_a_pool_ends_its_links_and_the_next_is_dialled_anew() {
+    let runtime = a_runtime();
+    let hosting = Hosting::running_with(ComposesNothing, StandIns::default());
+    let window = Arc::new(
+        runtime
+            .block_on(a_link_to(hosting.clone(), || {}))
+            .expect("the window speaks to the host"),
+    );
+    let handle = runtime.handle().clone();
+    let dial: Dial = Arc::new({
+        let (handle, hosting) = (handle.clone(), hosting.clone());
+        move |within, naming| open_within(&handle, within, a_named_link_to(hosting.clone(), naming))
+    });
+    let dials = Arc::new(Mutex::new(Vec::<String>::new()));
+    let closed = Arc::new(Mutex::new(Vec::<String>::new()));
+    let relayed: RelayedDial = Arc::new({
+        let (dials, closed) = (Arc::clone(&dials), Arc::clone(&closed));
+        move |within, _naming, pool: &str| {
+            dials.lock().unwrap().push(pool.to_owned());
+            let (hosting, closed, pool) = (hosting.clone(), Arc::clone(&closed), pool.to_owned());
+            open_within(&handle, within, async move {
+                let link =
+                    a_bare_link_to(hosting, move || closed.lock().unwrap().push(pool)).await?;
+                HostLink::over(link, tokio::runtime::Handle::current(), || {}).await
+            })
+        }
+    });
+    let connection = Arc::new(Connection::default());
+    connection.ready_relaying(window, dial, relayed);
+    let (builds, other) = (
+        connection.to_a_pool("builds"),
+        connection.to_a_pool("other"),
+    );
+    let root = Path::new("/planes/a");
+    let link = builds.of_project(root, Duration::from_secs(5)).unwrap();
+    let kept = other.of_project(root, Duration::from_secs(5)).unwrap();
+    let (told, heard) = std::sync::mpsc::channel();
+    link.when_it_ends(
+        "chat",
+        Box::new(move |ending| {
+            let _ = told.send(matches!(ending, Ending::WithTheHost));
+        }),
+    );
+
+    connection.pool_removed("builds");
+
+    assert_eq!(
+        heard.recv_timeout(Duration::from_secs(5)),
+        Ok(true),
+        "the chat is told it ended with its host"
+    );
+    assert!(
+        builds.of_project(root, Duration::ZERO).is_err(),
+        "the window holds no link to its runner"
+    );
+    // What a chat's tab holds does not keep it open: the host sees it close while `link` is held.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while closed.lock().unwrap().is_empty() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(*closed.lock().unwrap(), ["builds"], "the host saw it close");
+    assert!(
+        link.call(session::Command::List).is_err(),
+        "nothing more goes"
+    );
+    assert!(
+        Arc::ptr_eq(&kept, &other.of_project(root, Duration::ZERO).unwrap()),
+        "another pool's stays"
+    );
+    builds.of_project(root, Duration::from_secs(5)).unwrap();
+    assert_eq!(*dials.lock().unwrap(), ["builds", "other", "builds"]);
+}
+
+/// **A link only the window's connection holds is told too**: its end is not undone as it is let
+/// go of.
+#[test]
+fn a_chat_on_a_link_nothing_else_holds_is_told_as_its_pool_is_removed() {
+    let runtime = a_runtime();
+    let connection = in_memory_with_a_runner(
+        Hosting::running_with(ComposesNothing, StandIns::default()),
+        Hosting::running_with(ComposesNothing, StandIns::default()),
+        &runtime,
+    );
+    let builds = connection.to_a_pool("builds");
+    let root = Path::new("/planes/a");
+    let (told, heard) = std::sync::mpsc::channel();
+    let link = builds.of_project(root, Duration::from_secs(5)).unwrap();
+    link.when_it_ends(
+        "chat",
+        Box::new(move |ending| {
+            let _ = told.send(matches!(ending, Ending::WithTheHost));
+        }),
+    );
+    drop(link);
+    connection.pool_removed("builds");
+    assert_eq!(heard.recv_timeout(Duration::from_secs(5)), Ok(true));
+}
+
+/// **A pool removed takes what the window held against its name**: one added under it is new.
+#[test]
+fn a_pool_removed_is_no_longer_held_untrusted_by_its_name() {
+    let window = Arc::new(Connection::default());
+    let pool = window.to_a_pool("builds");
+    let _ = pool.ran_unsandboxed();
+    assert!(window.untrusts("builds"));
+    window.pool_removed("builds");
+    assert!(!window.untrusts("builds"));
+}
+
+/// **A link dialled across its pool's removal is not kept.**
+#[test]
+fn a_link_dialled_while_its_pool_is_removed_is_not_kept() {
+    let runtime = a_runtime();
+    let hosting = Hosting::running_with(ComposesNothing, StandIns::default());
+    let window = Arc::new(
+        runtime
+            .block_on(a_link_to(hosting.clone(), || {}))
+            .expect("the window speaks to the host"),
+    );
+    let handle = runtime.handle().clone();
+    let dial: Dial = Arc::new({
+        let (handle, hosting) = (handle.clone(), hosting.clone());
+        move |within, naming| open_within(&handle, within, a_named_link_to(hosting.clone(), naming))
+    });
+    let connection = Arc::new(Connection::default());
+    let removing = Arc::downgrade(&connection);
+    let relayed: RelayedDial = Arc::new(move |within, naming, pool: &str| {
+        removing.upgrade().unwrap().pool_removed(pool);
+        open_within(&handle, within, a_named_link_to(hosting.clone(), naming))
+    });
+    connection.ready_relaying(window, dial, relayed);
+    let builds = connection.to_a_pool("builds");
+    let root = Path::new("/planes/a");
+    let refused = builds
+        .of_project(root, Duration::from_secs(5))
+        .err()
+        .unwrap();
+    assert!(refused.contains("was removed"), "{refused}");
+    assert!(builds.of_project(root, Duration::ZERO).is_err());
 }
 
 /// A `local-ui` link to `hosting` over an in-memory stream; `closed` is called once the host's
@@ -1851,6 +1995,7 @@ impl purlis_host::Compose for ComposesConfined {
 pub(crate) fn by_its_names() -> Named {
     Named {
         tools_allowed: None,
+        plane_skills: false,
         chat: None,
         run: None,
         profile: Some("work".to_owned()),
@@ -3283,4 +3428,144 @@ fn a_pool_a_chat_ran_on_without_the_sandbox_is_untrusted_though_its_record_canno
     assert!(window.untrusts("builds") && pool.untrusts("builds"));
     assert!(!window.untrusts("other"));
     assert_eq!(*ended.lock().unwrap(), ["builds"]);
+}
+
+/// A runner's event log, as a stand-in keeps it: the lines a test writes into it (#3084).
+#[derive(Clone, Default)]
+struct RunnersLog(Arc<Mutex<Vec<session::Event>>>);
+
+const RUNNERS_DEVICE: &str = "01JB0RUNNER0000000000000000";
+
+impl RunnersLog {
+    fn write(&self, kind: &str, body: serde_json::Value) {
+        let mut lines = self.0.lock().unwrap();
+        let seq = lines.len() as u64 + 1;
+        lines.push(session::Event {
+            v: 1,
+            device_id: RUNNERS_DEVICE.into(),
+            seq,
+            ulid: purlis_core::reopen::mint(),
+            chat: Some("01K6W0RKER000000000000000B".into()),
+            run: Some("01K6CHATRUN000000000000000".into()),
+            parent_run: None,
+            kind: kind.into(),
+            body,
+        });
+    }
+}
+
+/// Reads a [`RunnersLog`] on from its cursor.
+struct RunnersLogFrom {
+    log: RunnersLog,
+    after: u64,
+}
+
+impl purlis_host::ReadsLog for RunnersLogFrom {
+    fn read(&mut self) -> Result<Vec<session::Pushed>, String> {
+        let lines: Vec<session::Event> = self
+            .log
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|line| line.seq > self.after)
+            .cloned()
+            .collect();
+        if let Some(last) = lines.last() {
+            self.after = last.seq;
+        }
+        Ok(lines.into_iter().map(session::Pushed::Event).collect())
+    }
+}
+
+impl purlis_host::Record for RunnersLog {
+    fn record(&self, _entry: serde_json::Value) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn ended(&self, _ended: &purlis_host::Ended<'_>) {}
+
+    fn log_end(&self) -> Result<(String, u64), String> {
+        Ok((RUNNERS_DEVICE.into(), self.0.lock().unwrap().len() as u64))
+    }
+
+    fn read_log(&self, after: u64) -> Result<Box<dyn purlis_host::ReadsLog>, String> {
+        Ok(Box::new(RunnersLogFrom {
+            log: self.clone(),
+            after,
+        }))
+    }
+}
+
+/// **A pool runner's chats' skill runs reach the window from the runner's own log** (SK-20b,
+/// #3084): through the desktop's host, which relays the window's link to the runner, each
+/// `skill.started` and `skill.ended` the runner writes is told once to whoever logs the runs of
+/// the project held there, and no other line is. Seen red: the window read only a run's end.
+#[test]
+fn a_runners_skill_runs_are_told_once_each_from_its_log_over_the_relayed_link() {
+    use purlis_core::skilluse::relayed::{Line, Relayed};
+    let runtime = a_runtime();
+    let log = RunnersLog::default();
+    let runner = Hosting::running_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        StandIns::default(),
+    )
+    .recording_with(log.clone());
+    let desktop = runtime.block_on(async move { a_desktop_relaying_to(runner) });
+    let link = runtime
+        .block_on(async move {
+            let link = a_bare_link_to(purlis_host::Routed::new(desktop), || {}).await?;
+            HostLink::over_relayed(
+                link,
+                tokio::runtime::Handle::current(),
+                || {},
+                None,
+                Some("builds"),
+            )
+            .await
+        })
+        .expect("the window's link is relayed");
+    let told: Arc<Mutex<Vec<Relayed>>> = Arc::default();
+    link.hear_skill_runs("01J9PRJCT00000000000000000", {
+        let told = Arc::clone(&told);
+        Arc::new(move |pool, run| {
+            assert_eq!(pool, None, "a link knows no pool: its router says which");
+            told.lock().unwrap().push(run.clone());
+        })
+    });
+
+    let run = "01K6SKILLRUN00000000000000";
+    log.write(
+        "skill.started",
+        serde_json::json!({ "started_by": "skill-tool", "skill": "review", "skill_run": run }),
+    );
+    log.write(
+        "hook.stop",
+        serde_json::json!({ "skill": "review", "skill_run": run }),
+    );
+    log.write(
+        "skill.ended",
+        serde_json::json!({ "skill": "review", "skill_run": run, "ended": "turn", "ms": 5 }),
+    );
+
+    until("the run's start and end are told", || {
+        told.lock().unwrap().len() >= 2
+    });
+    std::thread::sleep(Duration::from_millis(200));
+    let told = told.lock().unwrap().clone();
+    assert_eq!(told.len(), 2, "each once, and no other line: {told:?}");
+    // Each is logged off the runtime as it comes, in whichever order: the log reads a run's
+    // rows by its id.
+    assert!(
+        told.iter()
+            .any(|one| matches!(one.line, Line::Started { .. })),
+        "{told:?}"
+    );
+    assert!(
+        told.iter()
+            .any(|one| matches!(one.line, Line::Ended { .. })),
+        "{told:?}"
+    );
+    assert!(told.iter().all(|one| one.run == run));
+    drop(link);
 }

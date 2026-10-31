@@ -686,6 +686,38 @@ export function routedChatId(session: number): string {
   return `chat-${session}`;
 }
 
+/** **A router's grade's scorecard, or one of its chats, as a place on Routing names it** (#3617):
+ *  the page beside Routing's list, by the grade's id, and the chat's. */
+export type RouterGradeAt = { grade: string; chat?: string };
+
+/** The item a {@link RouterGradeAt} is on Routing. */
+export function routerGradeItem(at: RouterGradeAt): string {
+  return at.chat === undefined ? `grade:${at.grade}` : `grade:${at.grade}:chat:${at.chat}`;
+}
+
+/** **The router's grade plan, as a place on Routing names it** (#4222): a review page beside
+ *  Routing's list, as a skill's plan is under its Grades tab (S6). */
+export const ROUTER_GRADE_PLAN = "grade-plan";
+
+/** **A router's grade running, as a place on Routing names it** (#4222): by the grade's id. */
+export function routerGradingItem(grade: string): string {
+  return `grading:${grade}`;
+}
+
+/** The router's grade running an item on Routing names, by its id, or `undefined`. */
+export function routerGradingOfItem(item: string | undefined): string | undefined {
+  const named = item === undefined ? null : /^grading:(.+)$/.exec(item);
+  return named === null ? undefined : named[1];
+}
+
+/** The router's grade an item on Routing names, or `undefined` for one that names none. */
+export function routerGradeOfItem(item: string | undefined): RouterGradeAt | undefined {
+  const named = item === undefined ? null : /^grade:([^:]+)(?::chat:(.+))?$/.exec(item);
+  if (named === null) return undefined;
+  const [, grade, chat] = named;
+  return chat === undefined ? { grade } : { grade, chat };
+}
+
 /**
  * **The chat a skill's page uses a skill in** (#3682): the chat last in front in this project's
  * window, by its session and the name its tab shows, which keeps its pane while the studio is

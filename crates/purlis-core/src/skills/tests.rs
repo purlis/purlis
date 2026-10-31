@@ -2698,8 +2698,17 @@ fn a_list_read_for_needs_you_has_every_row_lint_and_clash_of_the_whole_and_no_ba
             })
             .collect()
     };
-    let read =
-        |reading| studio_list_for(reading, Some(&built_in), &plane, Some("alpha"), None, &env);
+    let read = |reading| {
+        studio_list_for(
+            reading,
+            Some(&built_in),
+            &plane,
+            Some("alpha"),
+            None,
+            &env,
+            &[],
+        )
+    };
 
     let whole = read(Reading::Whole);
     let needs = read(Reading::Needs);
@@ -2729,6 +2738,81 @@ fn a_list_read_for_needs_you_has_every_row_lint_and_clash_of_the_whole_and_no_ba
             .flat_map(|one| &one.rows)
             .all(|row| row.compat.is_empty())
     );
+}
+
+/// A lint that answers many skills at once, recording each question: one finding per skill.
+#[derive(Default)]
+struct AtOnce {
+    asked: std::cell::RefCell<Vec<Vec<String>>>,
+}
+
+impl purlis_skills::SkillLint for AtOnce {
+    fn findings(&self, skill: &purlis_skills::SkillFiles<'_>) -> Vec<Finding> {
+        self.findings_of_each(std::slice::from_ref(skill))
+            .pop()
+            .unwrap_or_default()
+    }
+
+    fn findings_of_each(&self, skills: &[purlis_skills::SkillFiles<'_>]) -> Vec<Vec<Finding>> {
+        self.asked
+            .borrow_mut()
+            .push(skills.iter().map(|it| it.name.to_owned()).collect());
+        skills
+            .iter()
+            .map(|skill| {
+                vec![Finding {
+                    severity: purlis_skills::Severity::Warns,
+                    lint: purlis_skills::Lint::Said {
+                        by: "House style".to_owned(),
+                        says: format!("{} was asked with the others", skill.name),
+                    },
+                }]
+            })
+            .collect()
+    }
+}
+
+#[test]
+fn a_studio_list_hands_each_extension_lint_every_plane_skill_at_once_4195() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    for name in ["deploy", "review"] {
+        std::fs::create_dir_all(plane.join("skills").join(name)).unwrap();
+        std::fs::write(
+            plane.join("skills").join(name).join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Does the {name} work when asked to.\n---\n"),
+        )
+        .unwrap();
+    }
+    std::fs::write(plane.join("skills/deploy/notes.md"), "Some notes.\n").unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    let env = crate::harness_plugin::Env {
+        chat: &[],
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+    let lint = AtOnce::default();
+
+    let list = studio_list_for(Reading::Whole, None, &plane, None, None, &env, &[&lint]);
+
+    let mut asked = lint.asked.borrow().clone();
+    assert_eq!(asked.len(), 1, "one question for the list: {asked:?}");
+    asked[0].sort();
+    assert_eq!(asked[0], ["deploy", "review"]);
+    for name in ["deploy", "review"] {
+        let row = list
+            .rows
+            .iter()
+            .find(|row| row.name == name)
+            .expect("its row");
+        assert!(
+            row.lint
+                .iter()
+                .any(|line| line.contains(&format!("{name} was asked with the others"))),
+            "{name}: {:?}",
+            row.lint
+        );
+    }
 }
 
 #[test]
@@ -2815,7 +2899,7 @@ fn each_harness_s_own_catalogue_is_measured_beside_purlis_s_budget_3324() {
         "Codex: review and quiet listed, mine manual-only by its sidecar, notes turned off"
     );
     // A read for a count of needs measures nothing.
-    let needs = studio_list_for(Reading::Needs, None, &plane, None, None, &env);
+    let needs = studio_list_for(Reading::Needs, None, &plane, None, None, &env, &[]);
     assert!(needs.harnesses.iter().all(|one| one.own.is_none()));
 }
 
@@ -2858,3 +2942,5 @@ fn purlis_s_own_plugin_is_no_part_of_a_harness_s_own_catalogue_3324() {
     }
     assert!(!crate::harness_plugin::purlis_s_own_named(claude, "figma"));
 }
+
+mod read_budget;

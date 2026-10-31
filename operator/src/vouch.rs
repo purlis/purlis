@@ -35,7 +35,7 @@ pub const STATEMENT_HEADER: &str = "purlis runner link key v3";
 
 /// Where the operator's pod holds its signing keys: the whole Secret, which the kubelet mounts
 /// there (`deploy/operator.yaml`) and refreshes when it changes, so the operator itself holds no
-/// right to read any Secret and a key roll needs no restart (#3305).
+/// right to read this Secret and a key roll needs no restart (#3305).
 pub const SIGNING_KEY_DIR: &str = "/var/run/purlis-cluster-operator/signing-key";
 
 /// The key the operator signs with now: `key.pem` in the Secret.
@@ -175,7 +175,7 @@ pub const PEM_END: &str = concat!("-----END ", "PRIVATE", " KEY-----");
 
 /// The operator's Ed25519 signing key. Its private half never leaves this process and is
 /// never printed.
-pub struct SigningKey(Ed25519KeyPair);
+pub struct SigningKey(Ed25519KeyPair, Vec<u8>);
 
 impl std::fmt::Debug for SigningKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -204,13 +204,29 @@ impl SigningKey {
     /// The key PKCS#8 DER `der` holds.
     pub fn from_pkcs8(der: &[u8]) -> Result<SigningKey, String> {
         Ed25519KeyPair::from_pkcs8_maybe_unchecked(der)
-            .map(SigningKey)
+            .map(|pair| SigningKey(pair, der.to_vec()))
             .map_err(|_| "the signing key is not an Ed25519 key in PKCS#8".to_owned())
     }
 
     /// Its public half, as a Pool's status spells it: `ed25519:` and 64 lower-case hex.
     pub fn public(&self) -> String {
         format!("ed25519:{}", hex(self.0.public_key().as_ref()))
+    }
+
+    /// Its public half, as bytes.
+    pub fn public_bytes(&self) -> &[u8] {
+        self.0.public_key().as_ref()
+    }
+
+    /// The key as the PKCS#8 DER it was read from: for the mint port's TLS alone
+    /// ([`crate::mint`]), never printed.
+    pub(crate) fn pkcs8(&self) -> &[u8] {
+        &self.1
+    }
+
+    /// Its signature over `bytes`.
+    pub(crate) fn sign_bytes(&self, bytes: &[u8]) -> Vec<u8> {
+        self.0.sign(bytes).as_ref().to_vec()
     }
 
     /// Its signature over `text`, 128 lower-case hex.

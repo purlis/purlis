@@ -457,3 +457,63 @@ fn install_with_a_grant_widens_the_grant_of_a_project_skill_it_refers_to() {
             .contains("Made here."),
     );
 }
+
+/// #4186: an update of a project skill granted to a workspace relies on the project skills it
+/// refers to as an install with that grant does. The review says which grant it widens, and a
+/// skill it brings along lands with the updated skill's grant.
+#[test]
+fn an_update_with_a_grant_widens_what_it_relies_on_and_grants_what_it_brings() {
+    let project = Project::new();
+    let root = project.root();
+    let url = project.url();
+    let installed = project.run(
+        &[
+            "skill", "install", &url, "notify", "--folder", "skills", "--grant", "alpha", "--yes",
+        ],
+        "",
+    );
+    assert!(installed.status.success(), "{}", text(&installed));
+    std::fs::create_dir_all(root.join("skills/lint")).unwrap();
+    std::fs::write(
+        root.join("skills/lint/SKILL.md"),
+        "---\nname: lint\ndescription: Made here.\n---\n",
+    )
+    .unwrap();
+    project.publish(&[
+        (
+            "skills/notify/SKILL.md",
+            "---\nname: notify\ndescription: Tells the team.\n---\n\nThen skills:format and skills:lint.\n",
+        ),
+        (
+            "skills/format/SKILL.md",
+            "---\nname: format\ndescription: Formats.\n---\n",
+        ),
+        (
+            "skills/lint/SKILL.md",
+            "---\nname: lint\ndescription: Checks it.\n---\n",
+        ),
+    ]);
+
+    let updated = project.run(&["skill", "update", "notify", "--yes"], "");
+
+    let said = text(&updated);
+    assert!(updated.status.success(), "{said}");
+    assert!(
+        said.contains(
+            "refers to lint, which is granted to root: it is left as it is, and the update grants \
+             it to alpha too"
+        ),
+        "{said}"
+    );
+    assert!(said.contains("granted to alpha, as notify is"), "{said}");
+    assert!(said.contains("lint is granted to alpha too"), "{said}");
+    for name in ["format", "lint"] {
+        let beside = std::fs::read_to_string(root.join(format!("skills/{name}.toml"))).unwrap();
+        assert!(beside.contains("alpha"), "{name}: {beside}");
+    }
+    assert!(
+        std::fs::read_to_string(root.join("skills/lint/SKILL.md"))
+            .unwrap()
+            .contains("Made here."),
+    );
+}

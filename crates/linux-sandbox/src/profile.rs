@@ -17,6 +17,12 @@
 //! on something Linux has no counterpart of (a Mach service, an Apple event) is set aside. Any
 //! other construct refuses the whole profile, so a rule purlis starts writing is never ignored
 //! here unseen.
+//!
+//! `process-exec` is read for the kernel's own rule ([`Profile::starts_from`]), which names what
+//! is beneath a path: an `allow` of it says folders or files by `subpath` or `literal`, or
+//! everything, and any other filter refuses the profile. The kernel's rule takes nothing back, so
+//! a `deny` of it with a filter has no effect here (the floor's, of programs that start something
+//! outside the sandbox on macOS).
 
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
@@ -176,8 +182,9 @@ enum Filter {
 /// Operations Linux has a counterpart of, and which this module judges. `file-link` is read
 /// and names no operation asked here: the supervisor judges a link as a write of the file it
 /// names and a create of the new name, so the write rules beside it already decide it.
-const JUDGED: [&str; 13] = [
+const JUDGED: [&str; 14] = [
     "default",
+    "process-exec",
     "file*",
     "file-link",
     "file-read*",
@@ -193,8 +200,7 @@ const JUDGED: [&str; 13] = [
 ];
 
 /// Operations purlis writes rules for that this module does not judge.
-const SET_ASIDE: [&str; 18] = [
-    "process-exec",
+const SET_ASIDE: [&str; 17] = [
     "process-fork",
     "process-info*",
     "signal",
@@ -259,6 +265,16 @@ impl Profile {
                 return Err(Unread(format!("a rule mixing operations: {ops:?}")));
             }
             let filters = rest.iter().map(filter).collect::<Result<Vec<_>, _>>()?;
+            if allow
+                && ops.iter().any(|op| names(op, "process-exec"))
+                && !filters
+                    .iter()
+                    .all(|it| matches!(it, Filter::Subpath(_) | Filter::Literal(_)))
+            {
+                return Err(Unread(format!(
+                    "a start of a program allowed by what the kernel cannot name: {filters:?}"
+                )));
+            }
             rules.push(Rule {
                 allow,
                 ops,
@@ -301,6 +317,36 @@ impl Profile {
             && self.allows(&Op::BindUnix(path))
             && self.allows(&file(FileOp::Create))
             && self.allows(&file(FileOp::Unlink))
+    }
+
+    /// **Where a program may be started from**, for the kernel's own rule: each folder or file
+    /// the profile's rules allow it beneath, `/` where they allow it everywhere, and nothing
+    /// where none does. A `deny` with no filter takes back what came before it; one with a filter
+    /// is the kernel's to leave (see the module's text).
+    pub fn starts_from(&self) -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = Vec::new();
+        for rule in &self.rules {
+            if !rule.ops.iter().any(|it| names(it, "process-exec")) {
+                continue;
+            }
+            if !rule.allow {
+                if rule.filters.is_empty() {
+                    out.clear();
+                }
+                continue;
+            }
+            let roots = if rule.filters.is_empty() {
+                vec![PathBuf::from("/")]
+            } else {
+                rule.filters.iter().map(Filter::root).collect()
+            };
+            for root in roots {
+                if !out.contains(&root) {
+                    out.push(root);
+                }
+            }
+        }
+        out
     }
 
     /// What the profile writes and reaches ([`Reach`]).

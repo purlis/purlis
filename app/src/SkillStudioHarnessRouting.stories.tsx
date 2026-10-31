@@ -13,11 +13,25 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.testkit";
-import { inWorkspace, type StudioPage, type StudioScope } from "./skillStudio";
+import {
+  inWorkspace,
+  ROUTER_GRADE_PLAN,
+  routerGradeItem,
+  routerGradingItem,
+  type StudioPage,
+  type StudioScope,
+} from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
-import type { Studio, StudioRouter } from "./bindings";
+import type {
+  RouterGradePlan,
+  RouterGradeScorecard,
+  RouterGradeStep,
+  ScoredTest,
+  Studio,
+  StudioRouter,
+} from "./bindings";
 
 /** The prototype's programs: Claude Code's own, a plugin's and a repo's; Codex none; opencode's
  *  one, off here. */
@@ -93,8 +107,11 @@ const ROUTER: StudioRouter = {
   extension: "relevance",
   written: "relevance",
   budget: { skills: 30, chars: 6000 },
+  preview:
+    "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root, since the router relevance is asked only at each chat's start. A chat started in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
   grade:
     "Graded on the library at 3f9a2c1d7e40, 2026-10-27: 9 of 10 trigger tests pass with the router relevance, and 8 of 10 with the built-in router.",
+  graded: "01JBGRADE0000000000000000",
   chats: [
     {
       session: 5,
@@ -119,7 +136,109 @@ const ROUTER: StudioRouter = {
   ],
 };
 
-/** The studio tab as a view tab draws it, `width` by 520 px, opened at `page` on `scope`. */
+/** One trigger test of a router's grade, three runs in each arm, each chat kept. */
+function scored(query: string, routerTriggered: number, builtIn: number): ScoredTest {
+  const runs = (arm: "router" | "built-in-router", triggered: number) => ({
+    arm,
+    runs: 3,
+    triggered,
+    pass: triggered >= 2,
+    asked: 0,
+    chats: [1, 2, 3].map((run) => ({ id: `${arm}-${query.length}-${run}`, run, kept: true })),
+  });
+  return {
+    query,
+    should_trigger: true,
+    arms: [runs("router", routerTriggered), runs("built-in-router", builtIn)],
+  };
+}
+
+/** The router's newest grade's scorecard (#3617): two skills, both arms. */
+const SCORECARD: RouterGradeScorecard = {
+  grade: "01JBGRADE0000000000000000",
+  router: "relevance",
+  graded: "2026-10-27 09:12 UTC",
+  library: "the library at 3f9a2c1d7e40",
+  ran_on: "Claude Code · claude-sonnet-4-5",
+  ended: "Finished",
+  outcome: "graded",
+  arms: { router: 90, built_in: 80 },
+  spent: { chats: 60, tokens: 240000, cost_usd: 1.84, limit_usd: 15 },
+  asked: 0,
+  skills: [
+    {
+      skill: "figma-handoff",
+      tests: [
+        scored("turn this frame into a react component", 3, 3),
+        scored("export the figma tokens", 2, 1),
+      ],
+    },
+    { skill: "lint-rs", tests: [scored("why does clippy fail here", 3, 2)] },
+  ],
+};
+
+/** **What grading the router relevance runs** (#4222): its plan, as the core answers it. */
+const PLAN: RouterGradePlan = {
+  router: "relevance",
+  library: 3,
+  skills: [
+    { skill: "figma-handoff", tests: 2, left_out: [], refused: null },
+    {
+      skill: "lint-rs",
+      tests: 1,
+      left_out: [{ at: 1, why: "its query is empty" }],
+      refused: null,
+    },
+  ],
+  chats: 18,
+  runs: 3,
+  chat_minutes: 5,
+  commit: "3f9a2c1d7e40b8a6c5d4e3f2a1b0c9d8e7f6a5b4",
+  token_cap: 200000,
+  cap_set_here: false,
+  cost_cap_usd: 15,
+  priced: { usd_per_million: 75, of_the_model: false, model: null },
+  profile: "work",
+  sandbox: "full sandbox",
+  refused: null,
+  models: ["opus", "sonnet"],
+  model: null,
+  estimate: {
+    ts: "2026-10-27T09:12:00+00:00",
+    profile: "work",
+    harness: "Claude Code",
+    model: "sonnet",
+    same_profile: true,
+    interrupted: false,
+    tokens: 240000,
+    cost_usd: 1.84,
+    chats_then: 60,
+  },
+  estimate_same_library: true,
+  running: null,
+  consent: "c0ffee",
+};
+
+/** **A grade of the router running** (#4222), seven chats in. */
+const STEP: RouterGradeStep = {
+  plane: "p",
+  router: "relevance",
+  workspace: "smart-ide",
+  persona: null,
+  grade: "01GRADING",
+  ran: 7,
+  of: 18,
+  tokens: 28000,
+  cost_usd: 0.21,
+  limit_usd: 15,
+  cap: 200000,
+  ended: null,
+  said: null,
+  recorded: false,
+};
+
+/** The studio tab as a view tab draws it, `width` by 520 px, opened at `page` on `scope`, at
+ *  `item` on it where one is named. */
 function Tab({
   width,
   narrow,
@@ -129,6 +248,7 @@ function Tab({
   page: StudioPage;
   scope: StudioScope;
   answer: Studio;
+  item?: string;
 }) {
   return <StudioInPanel width={width} height={520} narrow={narrow} />;
 }
@@ -151,9 +271,17 @@ const meta = {
       if (cmd === "skill_studio") return args.answer;
       if (cmd === "skill_routers") return [{ id: "relevance", name: "Relevance router" }];
       if (cmd === "skill_deletes_cut_short") return { settled: [], unsettled: [] };
+      if (cmd === "router_grade_scorecard") return SCORECARD;
+      if (cmd === "router_grade_plan") return PLAN;
+      if (cmd === "router_grade_running") return STEP;
+      if (cmd === "start_options") return { profiles: [{ name: "work" }, { name: "home" }] };
       return [];
     });
-    openViewAt(HISTORY, { page: args.page, scope: args.scope });
+    openViewAt(HISTORY, {
+      page: args.page,
+      scope: args.scope,
+      ...(args.item === undefined ? {} : { item: args.item }),
+    });
     return () => {
       clearMocks();
       forgetViewHistory(HISTORY);
@@ -226,6 +354,51 @@ export const Routing: Story = {
   },
 };
 
+/**
+ * **A router's grade's scorecard** (#3617): opened from the router's Scorecard, beside the list:
+ * its end, its totals, then each skill's trigger tests in both arms with each chat.
+ */
+export const RouterScorecard: Story = {
+  args: { page: "routing", item: routerGradeItem({ grade: SCORECARD.grade }) },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("router-grade-scorecard-about")).toHaveTextContent(
+      "Graded 2026-10-27 09:12 UTC, on the library at 3f9a2c1d7e40",
+    );
+    await expect(canvas.getByRole("heading", { name: "lint-rs" })).toBeInTheDocument();
+    await tabInto(() => canvas.getByTestId("router-grade-scorecard"));
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **A router's grade plan** (#4222): a review page beside the list, as a skill's is (S6): its
+ * totals first, then what it runs, where and what it may spend, with Start fixed at its foot.
+ */
+export const RouterGradePlanPage: Story = {
+  args: { page: "routing", item: ROUTER_GRADE_PLAN },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("router-grade-cost")).toHaveTextContent(
+      "18 chats, one turn each",
+    );
+    await expect(
+      canvas.getByRole("button", { name: "Start grading · 18 chats" }),
+    ).toBeInTheDocument();
+    await tabInto(() => canvas.getByTestId("router-grade-plan"));
+    expectFocusInSight();
+  },
+};
+
+/** **A router's grade running** (#4222): its chats done and what it spent, with Stop. */
+export const RouterGrading: Story = {
+  args: { page: "routing", item: routerGradingItem(STEP.grade) },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("group", { name: "How far the grade of the router relevance is" }),
+    ).toHaveTextContent("7 of 18");
+    await expect(canvas.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+  },
+};
+
 /** **Routing where the built-in router routes every chat**: nothing asked, nothing listed. */
 export const RoutingBuiltIn: Story = {
   args: {
@@ -236,6 +409,8 @@ export const RoutingBuiltIn: Story = {
       router: {
         ...ROUTER,
         said: "Chats here are routed by the built-in router.",
+        preview:
+          "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root. A chat started in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
         extension: null,
         written: null,
         grade: null,

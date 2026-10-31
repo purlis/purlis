@@ -675,7 +675,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's profile and records the grade in the project. Stopped by `skill_grade_stop`.
     "router_grade_start",
     // A grade's token cap (#2779): what this machine's grades may spend, in its own settings
-    // file. The person's own press in their window.
+    // file, set from a skill's plan or a router's (#3618). The person's own press in their
+    // window.
+    "router_grade_set_cap",
     "skill_grade_set_cap",
     // Grading after each edit turned on or off (SK-58, #3238): on, it spends the person's
     // account at each edit they save, within what the plan showed. The person's own press in
@@ -698,6 +700,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_source_browse",
     "skill_install_review",
     "skill_install_set_review",
+    "skill_install_widenings",
     "skill_install",
     "skill_updates",
     "skill_update_review",
@@ -1154,8 +1157,12 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_deleted_text",
     "skill_details",
     "skill_diff",
-    // What a router's grade runs (SK-15e, #3233): read only.
+    // What a router's grade runs (SK-15e, #3233), a grade's scorecard and kept chat (#3617),
+    // and how far the one running is (#4222): read only.
+    "router_grade_chat",
     "router_grade_plan",
+    "router_grade_running",
+    "router_grade_scorecard",
     // A grade's kept chat and its scorecard (SK-59, #3239), and a skill's grading after each
     // edit (SK-58, #3238): read only.
     "skill_grade_after_edit",

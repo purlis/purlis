@@ -11,8 +11,9 @@
 //! asked as `purlis studio-probe try …` asks it, attempts each thing the confinement forbids from
 //! inside the sandbox and prints what happened: reading the project, the config home and a folder
 //! beside its own; writing anywhere but its state folder, its own program included; reaching an
-//! undeclared host or a model provider's through its proxy, and any address past the proxy. Each
-//! is refused; what it may do (read its own folder, write its state, reach its declared host)
+//! undeclared host or a model provider's through its proxy, and any address past the proxy;
+//! starting a program outside what it reads, by its path, a link, a shell or as an interpreter.
+//! Each is refused; what it may do (read its own folder, write its state, reach its declared host)
 //! is done, so a refusal is the sandbox's and not a broken probe.
 //!
 //! **Its own runner**: on Linux the executor applies the sandbox with the program it runs in
@@ -27,7 +28,7 @@ use std::path::{Path, PathBuf};
 
 use purlis_core::executor::Executor;
 use purlis_core::extension::{self, project::Choices};
-use purlis_core::skills::studio::{PanelKey, Studio, Templates};
+use purlis_core::skills::studio::{Kept, ListLints, ListTime, PanelKey, Studio, Templates};
 use purlis_core::skills::{Template, TemplateId};
 use purlis_skills::change::SkillTemplate as _;
 use purlis_skills::{Lint, SkillLint as _};
@@ -64,7 +65,27 @@ impl Probe {
     /// Assembled, installed and approved, the project a git repository as a project is: what
     /// purlis watches while the probe answers is what git sees.
     fn approved() -> Self {
+        Self::assembled().installed()
+    }
+
+    /// Assembled with its program the file `script`, as an author writes one, then approved.
+    fn approved_running(script: &str) -> Self {
+        use std::os::unix::fs::PermissionsExt as _;
         let probe = Self::assembled();
+        let at = probe.ext().join("bin/answers");
+        std::fs::write(&at, script).expect("a program");
+        std::fs::set_permissions(&at, std::fs::Permissions::from_mode(0o755)).expect("its mode");
+        let manifest = probe.ext().join(extension::MANIFEST);
+        let mut doc: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&manifest).expect("the manifest"))
+                .expect("JSON");
+        doc["contributes"]["runs"] = "bin/answers".into();
+        std::fs::write(&manifest, doc.to_string()).expect("written");
+        probe.installed()
+    }
+
+    fn installed(self) -> Self {
+        let probe = self;
         let init = std::process::Command::new("git")
             .args(["init", "-q"])
             .current_dir(probe.plane())
@@ -214,6 +235,66 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
             by: "Probe lint".to_owned(),
             says: "the probe was handed 2 files of deploy".to_owned(),
         }
+    );
+
+    // The same lint as a studio list asks it (#3940), by a deadline, and kept for the next list.
+    // It declares that it answers many skills at once, so a list asks it one question for all
+    // of them (#4195). A test's machine may take long to start the program the first time.
+    let kept: &'static std::sync::Mutex<Kept> =
+        Box::leak(Box::new(std::sync::Mutex::new(Kept::new())));
+    let time = ListTime {
+        time: std::time::Duration::from_secs(30),
+        deadline: std::time::Duration::from_secs(30),
+        now: std::time::Instant::now,
+    };
+    let skill = |name: &'static str| purlis_skills::SkillFiles {
+        name,
+        text: "---\nname: deploy\ndescription: Deploys the service when asked to.\n---\n",
+        others: &others,
+        origin: purlis_skills::Origin::Project,
+        plugin: None,
+        listed: None,
+    };
+    let in_one = |name: &str| {
+        vec![Lint::Said {
+            by: "Probe lint".to_owned(),
+            says: format!("the probe was handed 2 files of {name} in one question of 3"),
+        }]
+    };
+    let skills = [skill("deploy"), skill("review"), skill("deploy")];
+    for _ in 0..2 {
+        let listed: Vec<Vec<Lint>> = ListLints::new(studio.lints(), kept, time)
+            .findings_of_each(&skills)
+            .into_iter()
+            .map(|found| found.into_iter().map(|it| it.lint).collect())
+            .collect();
+        assert_eq!(
+            listed,
+            [in_one("deploy"), in_one("review"), in_one("deploy")],
+            "one question for the three, and the second list asks nothing"
+        );
+    }
+    // Nothing more to ask in a list that has no time left: what was kept is still said.
+    let none_left = ListTime {
+        time: std::time::Duration::ZERO,
+        ..time
+    };
+    assert_eq!(
+        ListLints::new(studio.lints(), kept, none_left)
+            .findings(&skill("review"))
+            .into_iter()
+            .map(|it| it.lint)
+            .collect::<Vec<_>>(),
+        in_one("review")
+    );
+    // Warm, as a list's question is timed: one start of the confined program for the list.
+    let fresh: &'static std::sync::Mutex<Kept> =
+        Box::leak(Box::new(std::sync::Mutex::new(Kept::new())));
+    let began = std::time::Instant::now();
+    ListLints::new(studio.lints(), fresh, time).findings_of_each(&skills);
+    eprintln!(
+        "a confined lint answered three skills in one question in {} ms, its start included",
+        began.elapsed().as_millis()
     );
 
     // A panel on a skill's tab, after purlis's own Runs panel.
@@ -384,6 +465,148 @@ fn it_writes_its_state_folder_and_nothing_else() {
         !probe.plane().join("planted.txt").exists(),
         "nothing was written in the project"
     );
+}
+
+/// A program that says it ran, in `dir`, and a copy of the probe beside it: a script and a
+/// compiled program, each of which runs where nothing holds it.
+fn runnable_in(dir: &Path) -> (String, String) {
+    use std::os::unix::fs::PermissionsExt as _;
+    let script = dir.join("script.sh");
+    std::fs::write(&script, "#!/bin/sh\necho it ran\n").expect("a script");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("its mode");
+    let compiled = dir.join("compiled");
+    std::fs::copy(env!("CARGO_BIN_EXE_studio-probe"), &compiled).expect("a program");
+    let (script, compiled) = (shown(&script), shown(&compiled));
+    for program in [&script, &compiled] {
+        let said = studio_probe::tried(&["start".to_owned(), program.clone()]);
+        assert!(
+            said.contains("exit status: 0"),
+            "{program} does not run where nothing holds it: {said}"
+        );
+    }
+    (script, compiled)
+}
+
+/// `text` as a program in the probe's own folder, which purlis fingerprints.
+fn own_script(probe: &Probe, name: &str, text: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+    let at = probe.ext().join("bin").join(name);
+    std::fs::write(&at, text).expect("a script");
+    std::fs::set_permissions(&at, std::fs::Permissions::from_mode(0o755)).expect("its mode");
+    at
+}
+
+fn it_starts_programs_from_what_it_reads() {
+    let probe = Probe::assembled();
+    let script = own_script(&probe, "own.sh", "#!/bin/sh\necho its own\n");
+    let probe = probe.installed();
+    let said = probe.tried(&["start", "/bin/sh", "-c", "echo from the shell"]);
+    assert!(said.contains("exit status: 0"), "the shell started: {said}");
+    assert!(said.ends_with("from the shell"), "{said}");
+    // A program of the system's, started by a program it started.
+    let said = probe.tried(&["start", "/usr/bin/env", "/bin/sh", "-c", "/bin/echo twice"]);
+    assert!(said.ends_with("twice"), "{said}");
+    // Its own program, compiled and linked against the system's libraries, by its own path.
+    let own = shown(&probe.ext().join("bin/studio-probe"));
+    let said = probe.tried(&["start", &own]);
+    assert!(said.contains("exit status: 0"), "{own} started: {said}");
+    // A script of its own, run by the system's shell.
+    let said = probe.tried(&["start", &shown(&script)]);
+    assert!(said.ends_with("its own"), "{said}");
+}
+
+fn it_starts_no_program_outside_what_it_reads() {
+    let probe = Probe::assembled();
+    let beside = probe.dir.path().join("beside");
+    let (script, compiled) = runnable_in(&beside);
+    let by = own_script(&probe, "by.sh", &format!("#!{compiled}\n"));
+    let probe = probe.installed();
+    for program in [&script, &compiled] {
+        refused(&probe.tried(&["read", program]), "reading it first");
+        refused(&probe.tried(&["start", program]), program);
+        // Through a link it makes in the folder it writes: the file is what is judged.
+        let at = shown(&probe.ext().join("state/pointed"));
+        refused(&probe.tried(&["start-linked", program, &at]), program);
+        // By a shell it may start.
+        let said = probe.tried(&["start", "/bin/sh", "-c", program]);
+        assert!(
+            said.contains("ok, it ended") && !said.contains("exit status: 0"),
+            "the shell started {program}: {said}"
+        );
+    }
+    // As the interpreter of a script it may start.
+    let said = studio_probe::tried(&["start".to_owned(), shown(&by)]);
+    assert!(said.contains("exit status: 0"), "unheld: {said}");
+    refused(&probe.tried(&["start", &shown(&by)]), "its interpreter");
+    if cfg!(target_os = "linux") {
+        refused(
+            &probe.tried(&["start-held", &compiled]),
+            "a path-only descriptor of it",
+        );
+        // Handed to the system's loader as a file to run.
+        for loader in ["/lib64/ld-linux-x86-64.so.2", "/lib/ld-linux-aarch64.so.1"] {
+            if Path::new(loader).exists() {
+                let said = probe.tried(&["start", loader, &compiled]);
+                assert!(
+                    said.contains("ok, it ended") && !said.contains("exit status: 0"),
+                    "the loader ran it: {said}"
+                );
+            }
+        }
+    }
+}
+
+/// The probe's template, asked through the studio's own interface: the program answered.
+fn it_answers_a_question(probe: &Probe) {
+    let executor = Executor::default().with_deadline(PATIENT);
+    let choices = Choices::read(&probe.plane());
+    let templates = Templates {
+        studio: Some(Studio {
+            executor: &executor,
+            config_root: &probe.config(),
+            project: &choices,
+        }),
+    };
+    let text = templates
+        .text(
+            &TemplateId::Extension {
+                extension: ID.to_owned(),
+                template: "probe".to_owned(),
+            },
+            "made-here",
+            "Made from the probe's template, for a test.",
+        )
+        .expect("its template answers");
+    assert!(text.contains("name: made-here"), "{text}");
+}
+
+/// A program an author writes as a script: by the shell, by `env`, and by an interpreter of a
+/// package manager's or the system's, each answering as a compiled program does.
+fn a_program_that_is_a_script_answers() {
+    for script in [
+        "#!/bin/sh\nexec \"$(dirname \"$0\")/studio-probe\"\n",
+        "#!/usr/bin/env sh\nexec \"$(dirname \"$0\")/studio-probe\"\n",
+    ] {
+        it_answers_a_question(&Probe::approved_running(script));
+    }
+    let python = [
+        "/opt/homebrew/bin/python3",
+        "/usr/local/bin/python3",
+        "/usr/bin/python3",
+    ]
+    .into_iter()
+    .find(|it| {
+        Path::new(it).exists() && (cfg!(target_os = "linux") || !it.starts_with("/usr/bin"))
+    });
+    let Some(python) = python else {
+        may_skip("no Python is in a program folder here");
+        return;
+    };
+    it_answers_a_question(&Probe::approved_running(&format!(
+        "#!{python}\nimport json, sys\nask = json.loads(sys.stdin.readline())[\"ask\"]\n\
+         print(json.dumps({{\"charter\": 3, \"text\": \"---\\nname: %s\\ndescription: %s\\n---\\n\" \
+         % (ask[\"name\"], ask[\"description\"])}}))\n"
+    )));
 }
 
 fn it_reaches_its_declared_host_and_no_other() {
@@ -680,6 +903,18 @@ const TESTS: &[(&str, fn())] = &[
     (
         "it_writes_its_state_folder_and_nothing_else",
         it_writes_its_state_folder_and_nothing_else,
+    ),
+    (
+        "it_starts_programs_from_what_it_reads",
+        it_starts_programs_from_what_it_reads,
+    ),
+    (
+        "it_starts_no_program_outside_what_it_reads",
+        it_starts_no_program_outside_what_it_reads,
+    ),
+    (
+        "a_program_that_is_a_script_answers",
+        a_program_that_is_a_script_answers,
     ),
     (
         "it_reaches_its_declared_host_and_no_other",

@@ -77,6 +77,11 @@
   overflow-y: auto;
 }
 
+/* The band's fade goes to what the warnings stand on here: the terminal's fill (#3168). */
+.pane-frame.pane-headed [data-scope="notice-row"][data-part="stack"] {
+  --notice-row-ground: var(--terminal-background);
+}
+
 /* **"+N more" on a row of its own, at its start, its width reserved** (rule 5) for the longer
    of what it says: both are drawn in one cell, the one not said hidden (`NoticePaneRow`), so
    "+1 more", "+12 more" and "Show fewer" move nothing beside it. */

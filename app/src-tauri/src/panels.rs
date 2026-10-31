@@ -1339,9 +1339,12 @@ fn memory_rows_of(
 /// whose source has gone, not as a failure. A definition charter will not read is a trouble
 /// note, and the memories are still drawn under it.
 ///
-/// `state` is the plane's state directory: the vault registry's local half is there. `waiting`
+/// `executor` asks the extensions' lints its Skills line counts, as the studio does (#3940):
+/// `None` counts purlis's own alone. `state` is the plane's state directory: the vault
+/// registry's local half is there. `waiting`
 /// is the files purlis's own proposed changes wait on, which its Skills line counts no more.
 pub(crate) fn persona_view(
+    executor: Option<&purlis_core::executor::Executor>,
     root: &Path,
     state: &Path,
     waiting: &[String],
@@ -1421,7 +1424,7 @@ pub(crate) fn persona_view(
     // Its skills (SK-5, #2768), behind the Skill studio's flag: a count of what it brings into
     // every workspace, which opens the studio on it, and what needs the person (#3695).
     if purlis_core::skills::studio_on_here() {
-        let needing = crate::skillstudio::needing_here(root, waiting, None, Some(name));
+        let needing = crate::skillstudio::needing_here(executor, root, waiting, None, Some(name));
         blocks.extend(crate::personaskills::blocks(root, name, needing));
     }
     match memory_rows(root, name) {

@@ -143,14 +143,15 @@ impl RunnerLog {
     }
 
     /// A line of the runner's log came. One of another device, or one held already, is not
-    /// read; one the window does not draw moves the cursor and is not kept.
-    pub fn heard(&mut self, event: &Event) {
+    /// read; one the window does not draw moves the cursor and is not kept. Answers whether it
+    /// was read, so each line the runner wrote is read once (a skill run's is logged, #3084).
+    pub fn heard(&mut self, event: &Event) -> bool {
         if self.device.as_deref() != Some(event.device_id.as_str()) || event.seq <= self.cursor {
-            return;
+            return false;
         }
         self.cursor = event.seq;
         let Some(line) = RunEndLine::of(event) else {
-            return;
+            return true;
         };
         self.bytes += line.bytes();
         self.lines.push_back(line);
@@ -160,6 +161,7 @@ impl RunnerLog {
             }
             self.missed = true;
         }
+        true
     }
 
     /// The runner's lines after `after` up to `resumes_at` are not there to read.
@@ -228,10 +230,12 @@ mod tests {
     fn lines_are_kept_after_the_cursor_once_each_and_the_cursor_follows_them() {
         let mut log = RunnerLog::default();
         log.starts_at(RUNNER.into(), 4);
-        for seq in [3, 5, 5, 6] {
-            log.heard(&line(RUNNER, seq));
-        }
-        log.heard(&line("01JA0DESKT0P00000000000000", 7));
+        let read: Vec<bool> = [3, 5, 5, 6]
+            .into_iter()
+            .map(|seq| log.heard(&line(RUNNER, seq)))
+            .collect();
+        assert_eq!(read, [false, true, false, true], "each line read once");
+        assert!(!log.heard(&line("01JA0DESKT0P00000000000000", 7)));
         assert_eq!(seqs(&log), vec![line(RUNNER, 5).ulid, line(RUNNER, 6).ulid]);
         assert_eq!(log.since(), Since::from([(RUNNER.to_owned(), 6)]));
     }

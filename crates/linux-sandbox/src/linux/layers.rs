@@ -5,7 +5,7 @@
 //! it. Each is required whole ([`CompatLevel::HardRequirement`]): a kernel that cannot apply
 //! one starts nothing.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use landlock::{
     ABI, Access, AccessFs, AccessNet, CompatLevel, Compatible, NetPort, PathBeneath, PathFd,
@@ -133,11 +133,12 @@ pub(super) fn supervisor(reach: &Reach, picked: &[u16]) -> Result<(), String> {
     )
 }
 
-/// The chat's layer: it starts programs and nothing else by itself. Every file it opens and
-/// every connection it makes is the supervisor's; it binds no port, signals no process
-/// outside the sandbox and reaches no abstract socket made outside it.
-pub(super) fn chat() -> Result<(), String> {
-    let created = Ruleset::default()
+/// The chat's layer: it starts programs from beneath `starts` (those there now) and does nothing
+/// else by itself. Every file it opens and every connection it makes is the supervisor's; it
+/// binds no port, signals no process outside the sandbox and reaches no abstract socket made
+/// outside it.
+pub(super) fn chat(starts: &[PathBuf]) -> Result<(), String> {
+    let mut created = Ruleset::default()
         .set_compatibility(CompatLevel::HardRequirement)
         .handle_access(AccessFs::from_all(AT))
         .map_err(|why| why.to_string())?
@@ -147,12 +148,15 @@ pub(super) fn chat() -> Result<(), String> {
         .map_err(|why| why.to_string())?
         .create()
         .map_err(|why| why.to_string())?
-        // What starting a program needs.
-        .add_rule(PathBeneath::new(
-            open("/")?,
-            AccessFs::Execute | AccessFs::ReadFile,
-        ))
+        // The kernel reads a program it starts, an interpreter too, under this layer's rule for
+        // reading; every other read is the supervisor's.
+        .add_rule(PathBeneath::new(open("/")?, AccessFs::ReadFile))
         .map_err(|why| why.to_string())?;
+    for path in starts.iter().filter(|path| path.exists()) {
+        created = created
+            .add_rule(PathBeneath::new(open(path)?, AccessFs::Execute))
+            .map_err(|why| why.to_string())?;
+    }
     fully(
         created
             .restrict_self()

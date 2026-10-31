@@ -461,7 +461,7 @@ fn a_kept_claim_says_so_and_a_fresh_one_reads_as_every_claim_did() {
 }
 
 #[test]
-fn a_statement_holds_only_until_the_time_it_names_and_never_past_an_hour() {
+fn a_statement_holds_only_until_the_time_it_names_and_never_past_fifteen_minutes() {
     let operator = Operator::new();
     let key = LinkKey::generate().unwrap().public();
     let text = vouched(key).text();
@@ -483,9 +483,14 @@ fn a_statement_holds_only_until_the_time_it_names_and_never_past_an_hour() {
             "{refused:?}"
         );
     }
+    assert!(
+        at(until - MOST_AHEAD).is_ok(),
+        "ten minutes as signed, and five of clock"
+    );
+    assert_eq!(MOST_AHEAD, 900);
     let refused = at(until - MOST_AHEAD - 1).unwrap_err();
     assert!(
-        matches!(&refused, Refused::NotVouched(why) if why.contains("more than an hour")),
+        matches!(&refused, Refused::NotVouched(why) if why.contains("more than fifteen minutes")),
         "{refused:?}"
     );
     // The operator's worked example, long past.
@@ -534,6 +539,7 @@ fn rolling() -> PoolSeen {
             fixture("key-roll.txt"),
             fixture("key-roll-signature.txt").trim().to_owned(),
         )),
+        mints_in_cluster: false,
     }
 }
 
@@ -601,6 +607,7 @@ fn a_pools_pin_is_its_operators_key_and_its_cluster() {
             cluster: Some("c".into()),
             next_signing_key: Some("ed25519:11".into()),
             next_signing_key_vouch: Some(("s".into(), "g".into())),
+            mints_in_cluster: false,
         }
     );
 }
@@ -832,6 +839,7 @@ impl FakeCluster {
              *'get pools.runners.purlis.dev'*) cat \"$d/pool.json\";;\n\
              *'create --filename'*) cat \"$d/created.json\";;\n\
              *'get claims.runners.purlis.dev'*) cat \"$d/claim.json\";;\n\
+             *'get pods'*) cat \"$d/pod.json\";;\n\
              *'exec -i'*) cat \"$d/paired.txt\";;\n\
              *'delete claims'*) echo deleted;;\n\
              *'--raw'*) cat \"$d/context.yaml\";;\n\
@@ -859,6 +867,7 @@ impl FakeCluster {
             &serde_json::json!({"metadata": {"uid": CLAIM_UID}}).to_string(),
         );
         cluster.write("claim.json", "{}");
+        cluster.write("pod.json", r#"{"metadata": {"uid": "pod-uid-1"}}"#);
         cluster.write("context.yaml", CONTEXT_KEPT);
         cluster.write("paired.txt", &crate::runnerlink::to_line(&cluster.runner));
         cluster.write(
@@ -887,6 +896,18 @@ impl FakeCluster {
             "pool.json",
             &serde_json::json!({"status": {"signingKey": key.spelled(), "cluster": CLUSTER}})
                 .to_string(),
+        );
+    }
+
+    /// The Pool's spec says `forge`, its status as the pin says (#4204).
+    pub(crate) fn pool_says_forge(&self, forge: serde_json::Value) {
+        self.write(
+            "pool.json",
+            &serde_json::json!({
+                "spec": {"forge": forge},
+                "status": {"signingKey": self.operator.key().spelled(), "cluster": CLUSTER},
+            })
+            .to_string(),
         );
     }
 
@@ -957,7 +978,10 @@ impl FakeCluster {
                     "annotations": {DESKTOP_ANNOTATION: desktop_label(OURS_DEVICE)},
                 },
                 "spec": {"requester": REQUESTER},
-                "status": {"linkKey": link_key},
+                "status": {
+                    "linkKey": link_key,
+                    "conditions": [{"type": "KeyPublished", "status": "True", "reason": "Vouched"}],
+                },
             })
             .to_string(),
         );
@@ -1202,5 +1226,27 @@ fn a_context_is_named_as_its_kubeconfig_names_it_but_never_as_a_flag() {
     }
     for refused in ["", "--server=https://elsewhere", "-n", "a\nb"] {
         assert!(!is_context(refused), "{refused:?}");
+    }
+}
+
+#[test]
+fn only_a_pool_whose_spec_says_so_whole_mints_in_the_cluster() {
+    use serde_json::json;
+    let key = json!({"name": "org-app"});
+    let opted =
+        json!({"forge": {"appKeySecretRef": key, "repos": ["acme/*"], "mintInCluster": true}});
+    assert!(mints_in_cluster(&opted));
+    for not in [
+        json!({}),
+        json!({"forge": null}),
+        json!({"forge": {"appKeySecretRef": key, "repos": ["acme/*"]}}),
+        json!({"forge": {"appKeySecretRef": key, "repos": ["acme/*"], "mintInCluster": false}}),
+        // Spelled any other way is no opt-in.
+        json!({"forge": {"appKeySecretRef": key, "repos": ["acme/*"], "mintInCluster": "true"}}),
+        json!({"forge": {"repos": ["acme/*"], "mintInCluster": true}}),
+        json!({"forge": {"appKeySecretRef": key, "mintInCluster": true}}),
+        json!({"forge": {"appKeySecretRef": key, "repos": [], "mintInCluster": true}}),
+    ] {
+        assert!(!mints_in_cluster(&not), "{not}");
     }
 }

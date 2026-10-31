@@ -44,7 +44,6 @@ import {
 } from "react";
 import {
   Cell as AriaCell,
-  Checkbox as AriaCheckbox,
   Column as AriaColumn,
   Row as AriaRow,
   Table as AriaTable,
@@ -62,7 +61,8 @@ import {
   type TableProps as AriaTableProps,
 } from "react-aria-components";
 import { mergeProps, mergeRefs, VisuallyHidden } from "react-aria";
-import { ArrowDown, ArrowUp, Check, Ellipsis, Minus } from "lucide-react";
+import { ArrowDown, ArrowUp, Ellipsis } from "lucide-react";
+import { Checkbox } from "../choice/Checkbox";
 import { IconButton } from "../button/Button";
 import { MenuTrigger } from "../menu/Menu";
 import { askForAMenu } from "../menu/ContextMenu";
@@ -160,16 +160,16 @@ export function Table({
   );
 }
 
-/** **The check that chooses a row**, or every row from over them (React Aria's `selection`). */
+/**
+ * **The check that chooses a row**, or every row from over them (React Aria's `selection`): the
+ * choice family's box (#3362), so its look, its states and its theme keys are that family's. The
+ * `select` part only places it in the middle of its 24px square, which it takes a press across.
+ */
 function Choose() {
   return (
-    <AriaCheckbox slot="selection" data-scope="table" data-part="select">
-      {({ isSelected, isIndeterminate }) => (
-        <span data-part="box" aria-hidden="true">
-          {isIndeterminate ? <Minus /> : isSelected ? <Check /> : null}
-        </span>
-      )}
-    </AriaCheckbox>
+    <span data-scope="table" data-part="select">
+      <Checkbox slot="selection" />
+    </span>
   );
 }
 

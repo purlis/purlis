@@ -1075,8 +1075,51 @@ export const commands = {
 	 *  **What grading the router the studio's workspace or persona chose would run**, before
 	 *  anything runs.
 	 */
-	routerGradePlan: (plane: PlaneId, workspace: string | null, persona: string | null) => typedError<RouterGradePlan, string>(__TAURI_INVOKE("router_grade_plan", { plane, workspace, persona })),
+	routerGradePlan: (plane: PlaneId, workspace: string | null, persona: string | null, profile: string | null, model: string | null) => typedError<RouterGradePlan, string>(__TAURI_INVOKE("router_grade_plan", { plane, workspace, persona, profile, model })),
 	routerGradeStart: __WINDOW_ONLY_RESULT,
+	routerGradeSetCap: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **The scorecard of the grade `grade` of the router the studio's workspace or persona chose**
+	 *  (#3617), as the routers' record holds it.
+	 */
+	routerGradeScorecard: (plane: PlaneId, workspace: string | null, persona: string | null, grade: string) => typedError<RouterGradeScorecard, string>(__TAURI_INVOKE("router_grade_scorecard", { plane, workspace, persona, grade })),
+	/**
+	 *  **What chat `chat` of the router's grade `grade` showed as it ended** (#3617): its screen and
+	 *  scrollback as the escape sequences that draw them, for a page that shows it read-only.
+	 */
+	routerGradeChat: (plane: PlaneId, workspace: string | null, persona: string | null, grade: string, chat: string) => typedError<string, string>(__TAURI_INVOKE("router_grade_chat", { plane, workspace, persona, grade, chat })),
+	/**
+	 *  **Where the router's grade `grade` is now** (#4222): its latest step while it runs, its end
+	 *  where it is the project's last, else `None` (its scorecard then says how it ended). Read only,
+	 *  from this app's own memory of its grades, as Stop is.
+	 */
+	routerGradeRunning: (plane: PlaneId, grade: string) => typedError<{
+	plane: PlaneId,
+	router: string,
+	/**  The scope that chose it, as its grades are read: only that scope's page shows it (#4222). */
+	workspace: string | null,
+	persona: string | null,
+	grade: string,
+	ran: number,
+	of: number,
+	tokens: number | null,
+	/**
+	 *  What its chats have cost so far, in dollars, where they said, and the dollar limit it is
+	 *  held to: the running page's spend (#4222), as a skill's grade's.
+	 */
+	cost_usd: number | null,
+	limit_usd: number | null,
+	cap: number | null,
+	ended: GradeEnded | null,
+	/**
+	 *  What the window says of its end, where its scorecard cannot say it: why its chats did not
+	 *  start, that it was not recorded or could not be held to its cap, or a fault. `None` for
+	 *  an end its scorecard says, which the window then opens (#4222), as a skill's grade's.
+	 */
+	said: string | null,
+	/**  Whether its end is in the record, so a scorecard is there to open (#4222). */
+	recorded: boolean,
+} | null, string>(__TAURI_INVOKE("router_grade_running", { plane, grade })),
 	/**  **The opt-in of the copy of `skill` at `level`**, where it is on. */
 	skillGradeAfterEdit: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<{
 	profile: string,
@@ -1100,6 +1143,7 @@ export const commands = {
 	skillSourceBrowse: __WINDOW_ONLY_RESULT,
 	skillInstallReview: __WINDOW_ONLY_RESULT,
 	skillInstallSetReview: __WINDOW_ONLY_RESULT,
+	skillInstallWidenings: __WINDOW_ONLY_RESULT,
 	skillInstall: __WINDOW_ONLY_RESULT,
 	skillUpdates: __WINDOW_ONLY_RESULT,
 	skillUpdateReview: __WINDOW_ONLY_RESULT,
@@ -2361,6 +2405,12 @@ export type AlertRow = {
 	subject: string,
 	/**  What is wrong. */
 	detail: string,
+	/**
+	 *  **The workspaces it is about, by name**, where it is about some (#3650): the `reinit`
+	 *  alert's, every workspace behind the current layout, so the title bar hangs it from each
+	 *  one's chip. Empty for an alert about the project as a whole.
+	 */
+	workspaces: string[],
 	/**
 	 *  **What fixes it, in the window** (NO-6, #1238): the Inbox draws it as the Notice's button,
 	 *  in place of the command the terminal status line names.
@@ -9388,6 +9438,15 @@ export type RiskMark = {
 	said: string,
 };
 
+/**
+ *  **Each arm's pass rate over every skill of a router's grade**, in points from 0 to 100, where
+ *  the arm ran: the scorecard's totals.
+ */
+export type RouterGradeArms = {
+	router: number | null,
+	built_in: number | null,
+};
+
 /**  **What grading a router would run, before anything runs** (decision 22). */
 export type RouterGradePlan = {
 	router: string,
@@ -9405,15 +9464,57 @@ export type RouterGradePlan = {
 	cost_cap_usd: number | null,
 	priced: GradePrice,
 	/**
-	 *  The profile its chats run on (the project's default), the sandbox they run in there, or
-	 *  why no grade can run on it.
+	 *  The profile its chats run on (the one picked, else the project's default), the sandbox
+	 *  they run in there, or why no grade can run on it.
 	 */
 	profile: string | null,
 	sandbox: string | null,
 	refused: string | null,
+	/**  The models its harness offers for a grade, and the one picked (#3618, as SK-60's). */
+	models: string[],
+	model: string | null,
+	/**
+	 *  **What it should spend, from the router's last grade in this scope** (#3618), as a skill's
+	 *  plan works it out (#3273): null where it has none.
+	 */
+	estimate: GradeEstimate | null,
+	/**
+	 *  Whether that grade ran on the library this one runs on: a chat is handed the whole
+	 *  library, so one of another may spend otherwise, and the plan says so. Null where there
+	 *  is no estimate.
+	 */
+	estimate_same_library: boolean | null,
 	/**  A grade running in this project now, where one is: a skill's or a router's. */
 	running: string | null,
+	/**
+	 *  What pressing Grade consents to: what it grades, and the profile, model, cap and dollar
+	 *  limit this plan shows (`grades::consent_on`).
+	 */
 	consent: string | null,
+};
+
+/**
+ *  **A router's grade's scorecard** (#3617), as a skill's is (SK-59): how it ended, its totals,
+ *  then each skill's trigger tests in both arms.
+ */
+export type RouterGradeScorecard = {
+	grade: string,
+	router: string,
+	/**
+	 *  When it ran, and the library it ran on: its commit, or that it held changes not
+	 *  committed.
+	 */
+	graded: string,
+	library: string,
+	/**  What its chats ran on, and how it ended, in the record's words. */
+	ran_on: string,
+	ended: string,
+	outcome: GradeOutcome,
+	arms: RouterGradeArms,
+	spent: GradeSpent,
+	/**  How many of its chats asked the person something and were ended there. */
+	asked: number,
+	skills: RouterScoredSkill[],
 };
 
 /**  **One skill of the library a router's grade grades**, as its plan shows it. */
@@ -9430,14 +9531,38 @@ export type RouterGradeSkill = {
 export type RouterGradeStep = {
 	plane: PlaneId,
 	router: string,
+	/**  The scope that chose it, as its grades are read: only that scope's page shows it (#4222). */
+	workspace: string | null,
+	persona: string | null,
 	grade: string,
 	ran: number,
 	of: number,
 	tokens: number | null,
+	/**
+	 *  What its chats have cost so far, in dollars, where they said, and the dollar limit it is
+	 *  held to: the running page's spend (#4222), as a skill's grade's.
+	 */
+	cost_usd: number | null,
+	limit_usd: number | null,
 	cap: number | null,
 	ended: GradeEnded | null,
-	/**  What the window says of its end, where it says more than how it ended. */
+	/**
+	 *  What the window says of its end, where its scorecard cannot say it: why its chats did not
+	 *  start, that it was not recorded or could not be held to its cap, or a fault. `None` for
+	 *  an end its scorecard says, which the window then opens (#4222), as a skill's grade's.
+	 */
 	said: string | null,
+	/**  Whether its end is in the record, so a scorecard is there to open (#4222). */
+	recorded: boolean,
+};
+
+/**
+ *  **One skill of a router's grade, on its scorecard** (#3617): each of its trigger tests in both
+ *  arms, with each chat one press away where this machine kept it.
+ */
+export type RouterScoredSkill = {
+	skill: string,
+	tests: ScoredTest[],
 };
 
 /**  One action an extension's row offers, as the window draws its button (charter-app#341). */
@@ -11143,6 +11268,26 @@ export type SkillVersionBefore = {
 export type SkillWhose = { at: "project" } | { at: "workspace"; name: string } | { at: "persona"; name: string };
 
 /**
+ *  **A project skill an install or an update relies on** whose grant it widens, or which a
+ *  workspace it reaches turned off (#4172, #4185, #4186): what its review says before the change.
+ */
+export type SkillWidening = {
+	name: string,
+	/**  Its grant now, as a person reads it: `root`, `all`, or the workspaces' names. */
+	granted: string,
+	/**
+	 *  What the change grants it to besides, as a person reads it; `None` where its grant
+	 *  reaches every workspace the change does already.
+	 */
+	added: string | null,
+	/**
+	 *  The workspaces the change reaches that turned it off, whose chats get the skill that
+	 *  refers to it without it: no grant turns it back on.
+	 */
+	turned_off: string[],
+};
+
+/**
  *  The skills a chat started without (SK-5, #2768; SK-8, #2771, decision 41): the ones its
  *  persona names, each as the persona's `skills:` list writes it, and the ones that could not be
  *  loaded. What its tab's Notice says.
@@ -11630,6 +11775,8 @@ export type StudioRouter = {
 	 *  graded on. Null where it has none, and for the built-in router.
 	 */
 	grade: string | null,
+	/**  **That grade's id** (#3617): what opens its scorecard. Null where `grade` is. */
+	graded: string | null,
 	/**
 	 *  **What the scope's own choice writes** (#3692): the persona's `skill-router:` line, or
 	 *  else the workspace's `settings.skills.router`, as written. Null where it writes none,
@@ -11641,6 +11788,12 @@ export type StudioRouter = {
 	 *  list shows. The same on every harness.
 	 */
 	budget: StudioBudget,
+	/**
+	 *  **What the rows' "hidden by the router" marks preview** (#4215), in a sentence: a chat at
+	 *  the workspace's root (or the project's), in no clone, routed by the built-in router. Where
+	 *  an extension's router is chosen, it says that the marks are the built-in router's choice.
+	 */
+	preview: string,
 };
 
 /**
@@ -12345,6 +12498,16 @@ export type UpdateReview = {
 	local_edits: UpdateFile[],
 	skill: ReviewSkill,
 	brought: ReviewSkill[],
+	/**
+	 *  The updated skill's own grant, where it reaches past the root (#4186): each skill it
+	 *  brings along lands with it.
+	 */
+	grant: SkillGrant | null,
+	/**
+	 *  Each project skill it and those it brings along rely on whose grant the update widens, or
+	 *  which a workspace it reaches turned off (#4186).
+	 */
+	widenings: SkillWidening[],
 	accepted: Reviewed,
 };
 

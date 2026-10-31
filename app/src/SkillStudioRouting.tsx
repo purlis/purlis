@@ -4,13 +4,13 @@
 import { useEffect, useState } from "react";
 import {
   commands,
+  type RouterGradeStep,
   type SkillPinner,
   type SkillRouterOffer,
   type StudioRouted,
   type StudioRouter,
 } from "./bindings";
 import { counted } from "./dispatches";
-import { RouterGrade } from "./RouterGrade";
 import { Badge } from "./ui/badge/Badge";
 import { Button } from "./ui/button/Button";
 import { Fact, Facts } from "./ui/card/Facts";
@@ -70,29 +70,36 @@ function markOf(chat: StudioRouted) {
 /**
  * **The Routing page's facts** (#3692, S9, `prototype/studio-secondary-pages` variant A): the
  * router these chats are routed by, with Change… (a dialog), the budget past which it decides
- * what a chat's list shows, and an extension's newest grade with Grade (SK-15e). At the project's
- * root, which chooses no router, Change… is out of reach and says why.
+ * what a chat's list shows, and an extension's newest grade with its Scorecard (#3617) and Grade
+ * the router…, which opens its plan beside the list (SK-15e, #4222). At the project's root, which chooses no router, Change… is out of reach and says why.
  */
 export function RoutingFacts({
   plane,
   router,
   by,
-  workspace,
   persona,
   busy,
   onChoose,
-  onGraded,
+  gradeRunning,
+  onGradeRunning,
+  onGradePlan,
+  onScorecard,
 }: {
   plane: string;
   router: StudioRouter;
   /** Whose router a change writes: the scope's workspace or persona, none at the root. */
   by: SkillPinner | null;
-  workspace: string | null;
   persona: string | null;
   busy: boolean;
   /** Chooses `router` for `by`'s chats (null takes the choice out), and says `said` once it is. */
   onChoose: (by: SkillPinner, router: string | null, said: string) => void;
-  onGraded: () => void;
+  /** The router's grade running in this scope, and the way to its page and its Stop (#4222). */
+  gradeRunning?: RouterGradeStep;
+  onGradeRunning: (grade: string) => void;
+  /** Opens the router's grade plan beside the list, a review page (#4222). */
+  onGradePlan: () => void;
+  /** Opens the scorecard of the router's grade `grade` beside the list (#3617). */
+  onScorecard: (grade: string) => void;
 }) {
   const [changing, setChanging] = useState(false);
   const { budget } = router;
@@ -132,6 +139,9 @@ export function RoutingFacts({
             </span>
           )}
         </Fact>
+        <Fact label="Preview">
+          <span data-testid="skill-routing-preview">{router.preview}</span>
+        </Fact>
         <Fact label="Budget">
           {`${counted(budget.skills, "skill", "skills")}, ${budget.chars.toLocaleString("en-US")} characters of descriptions, on every program.`}
           <span className="honest" data-testid="skill-routing-budget-counts">
@@ -144,13 +154,25 @@ export function RoutingFacts({
               {router.grade ??
                 "Not graded on this library yet: a grade runs the library's trigger tests with it and with the built-in router."}
             </span>{" "}
-            <RouterGrade
-              plane={plane}
-              router={router.extension}
-              workspace={workspace}
-              persona={persona}
-              onGraded={onGraded}
-            />
+            {router.graded !== null && (
+              <Button size="sm" onPress={() => onScorecard(router.graded ?? "")}>
+                Scorecard
+              </Button>
+            )}{" "}
+            <Button size="sm" onPress={onGradePlan}>
+              Grade the router…
+            </Button>
+          </Fact>
+        )}
+        {gradeRunning !== undefined && (
+          // Whichever router is chosen now: the grade spends until it is stopped.
+          <Fact label="Grading">
+            <span data-testid="skill-routing-grading">
+              {`The router ${gradeRunning.router}: ${gradeRunning.ran} of ${counted(gradeRunning.of, "chat", "chats")} done.`}
+            </span>{" "}
+            <Button size="sm" onPress={() => onGradeRunning(gradeRunning.grade)}>
+              Show the grade
+            </Button>
           </Fact>
         )}
       </Facts>

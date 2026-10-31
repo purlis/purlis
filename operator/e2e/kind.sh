@@ -178,8 +178,9 @@ openssl genpkey -algorithm ed25519 |
   kubectl --context "$context" -n purlis-system create secret generic purlis-cluster-operator-signing-key \
     --from-file=key.pem=/dev/stdin >/dev/null
 # The chart's own default names the image, as in the install a person downloads.
+# It names the one GitHub App key tests/on_a_kind_cluster.rs makes, and no other (#4204).
 helm install purlis-cluster-operator "$install/charts/purlis-cluster-operator" --kube-context "$context" --namespace purlis-system \
-  --wait --timeout 180s
+  --set 'forge.keySecretNames[0]=e2e-forge-app-key' --wait --timeout 180s
 kubectl --context "$context" wait --for=condition=Established --timeout=60s crd/pools.runners.purlis.dev crd/claims.runners.purlis.dev
 kubectl --context "$context" -n purlis-system rollout status deployment/purlis-cluster-operator --timeout=120s
 
@@ -195,6 +196,23 @@ if ! diff=$(kubectl --context "$context" diff --server-side --force-conflicts \
   exit 1
 fi
 
+step "the operator's image trusts the public certificate authorities"
+docker run --rm --entrypoint /bin/sh "$operator_local" -c 'test -s /etc/ssl/certs/ca-certificates.crt'
+
+step "the operator asks a stand-in for GitHub"
+# The cluster's gateway on kind's network, where tests/minting_on_a_kind_cluster.rs listens: no App
+# of ours is on real GitHub for a pull request's run. Set after the diff above, since no install
+# sets this.
+fake_github_port=${FAKE_GITHUB_PORT:-18080}
+gateway=$(docker exec "$cluster-control-plane" ip -4 route show default | sed -n 's/^default via \([0-9.]*\).*/\1/p' | head -n 1)
+if [ -z "$gateway" ]; then
+  echo "kind's node has no IPv4 default route" >&2
+  exit 1
+fi
+kubectl --context "$context" -n purlis-system set env deployment/purlis-cluster-operator \
+  "PURLIS_FORGE_API_URL=http://$gateway:$fake_github_port" >/dev/null
+kubectl --context "$context" -n purlis-system rollout status deployment/purlis-cluster-operator --timeout=120s
+
 step "the policy settles"
 # The operator acts only on Claims made more than 30 seconds after the policy's binding
 # (SETTLE in src/admission.rs); the tests make theirs at once.
@@ -204,6 +222,10 @@ step "the tests"
 kubectl config use-context "$context" >/dev/null
 PURLIS_RUNNER_IMAGE=$runner cargo test --manifest-path "$here/Cargo.toml" --locked \
   --test on_a_kind_cluster -- --ignored --test-threads=1
+
+step "a vouched runner gets a token, and everyone else a refusal"
+FAKE_GITHUB_PORT=$fake_github_port PURLIS_RUNNER_IMAGE=$runner cargo test --manifest-path "$here/Cargo.toml" --locked \
+  --test minting_on_a_kind_cluster -- --ignored --test-threads=1
 
 step "a chat runs on a cluster runner, through the link"
 # The desktop's side (#2056), from the root workspace: a Claim made as this kubeconfig's user,
@@ -218,5 +240,7 @@ helm uninstall purlis-cluster-operator --kube-context "$context" --namespace pur
 kubectl --context "$context" get crd/pools.runners.purlis.dev crd/claims.runners.purlis.dev \
   validatingadmissionpolicy/purlis-claims-use-their-pool \
   validatingadmissionpolicybinding/purlis-claims-use-their-pool \
+  validatingadmissionpolicy/purlis-forge \
+  validatingadmissionpolicybinding/purlis-forge \
   validatingadmissionpolicy/purlis-operator-changes-only-a-sandboxs-mode \
   validatingadmissionpolicybinding/purlis-operator-changes-only-a-sandboxs-mode >/dev/null

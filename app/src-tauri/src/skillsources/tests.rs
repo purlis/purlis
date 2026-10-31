@@ -58,3 +58,48 @@ fn each_source_says_when_it_was_last_checked_and_its_counts_without_asking_it() 
     assert_eq!(shown[1].remote.branch.as_deref(), Some("main"));
     assert_eq!((shown[1].at, shown[1].skills), (None, None));
 }
+
+#[test]
+fn the_install_reviews_widenings_follow_the_grant_picked() {
+    // #4185: a project skill the review left as it is, granted to the root alone, is widened to
+    // the workspace the install's grant names; the root's grant and a local install widen none.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
+    std::fs::create_dir_all(root.join("skills/notify")).unwrap();
+    std::fs::write(
+        root.join("skills/notify/SKILL.md"),
+        "---\nname: notify\ndescription: Tells the team.\n---\n",
+    )
+    .unwrap();
+    let shared = SkillLevel::Project { local: false };
+    let already = ["notify".to_owned()];
+    let ops = SkillGrant::Only {
+        workspaces: vec!["ops".to_owned()],
+    };
+
+    assert_eq!(
+        widenings_shown(root, &shared, Some(ops.clone()), &already),
+        [SkillWidening {
+            name: "notify".to_owned(),
+            granted: "root".to_owned(),
+            added: Some("ops".to_owned()),
+            turned_off: Vec::new(),
+        }]
+    );
+    assert_eq!(
+        widenings_shown(root, &shared, Some(SkillGrant::Root), &already),
+        []
+    );
+    assert_eq!(widenings_shown(root, &shared, None, &already), []);
+    assert_eq!(
+        widenings_shown(
+            root,
+            &SkillLevel::Project { local: true },
+            Some(ops),
+            &already
+        ),
+        []
+    );
+}

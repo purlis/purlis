@@ -38,6 +38,7 @@ fn claim(stopped: bool) -> Claim {
             requester: "ada@example.com".into(),
             kept: true,
             stopped,
+            forge: None,
         },
     );
     claim.metadata.namespace = Some("ada".into());

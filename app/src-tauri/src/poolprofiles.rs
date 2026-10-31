@@ -38,7 +38,6 @@
 //! Sign in on pool <pool> signs it in there.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -435,7 +434,9 @@ pub fn forget_off_the_pools(name: &str) -> Option<String> {
                 }
                 continue;
             }
-            Ok(Some(())) => onrunner::let_go(None, pool_name, name),
+            Ok(Some(())) => {
+                onrunner::let_go(None, pool_name, name);
+            }
             Err(why) => {
                 // Still named, so its row offers Remove until a tidy finds it gone there.
                 untidied(pool_name);
@@ -520,7 +521,7 @@ fn yours_on_a_cluster(
     pool: &str,
     cluster: &purlis_core::runners::ClusterPool,
     kept: &purlis_core::runners::ClusterKept,
-    vouch: &dyn Fn(&Path, &str) -> Result<(), purlis_core::clusterpool::Refused>,
+    vouch: &dyn Fn(&Path, &str) -> Result<String, purlis_core::clusterpool::Refused>,
 ) -> Result<Yours, String> {
     if !cluster.owned() {
         return Err(format!(
@@ -1316,18 +1317,27 @@ pub async fn pool_sign_in_start(
 /// After its last step, the sign-in is let go; signed in, its waits on the pool are too.
 #[tauri::command]
 #[specta::specta]
-pub async fn pool_sign_in_next(flow: u32) -> Result<Option<PoolSignInStep>, String> {
+pub async fn pool_sign_in_next(
+    app: tauri::AppHandle,
+    flow: u32,
+) -> Result<Option<PoolSignInStep>, String> {
     let driving = driving(flow)?;
     let event = tauri::async_runtime::spawn_blocking(move || driving.next(STEP_WITHIN))
         .await
         .map_err(|why| format!("the sign-in did not answer: {why}"))?;
     if let Some(event) = event.as_ref().filter(|event| event.is_last()) {
-        let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(at) = held.iter().position(|one| one.flow == flow) {
-            let over = held.remove(at);
-            if *event == driven::Event::SignedIn {
-                onrunner::let_go(None, &over.pool, &over.name);
-            }
+        let over = {
+            let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
+            held.iter()
+                .position(|one| one.flow == flow)
+                .map(|at| held.remove(at))
+        };
+        if let Some(over) = over
+            && *event == driven::Event::SignedIn
+        {
+            // Told with no lock held; every project whose wait went has an Ask to stop drawing.
+            let went = onrunner::let_go(None, &over.pool, &over.name);
+            crate::machineprofiles::tell_asks_at(&app, &went);
         }
     }
     Ok(event.map(PoolSignInStep::from))
@@ -1534,210 +1544,61 @@ fn record_named(config: &Path, name: &str) -> Result<profilestore::MachineProfil
         })
 }
 
-/// How often a profile's standing on a pool is asked again after its Sign in, so its Ask leaves
-/// the Inbox once it is signed in; how long at that pace; and how often after that, for a shell
-/// left open.
-const WATCHED_EVERY: Duration = Duration::from_secs(5);
-const WATCHED_FOR: Duration = Duration::from_secs(15 * 60);
-const WATCHED_LATER_EVERY: Duration = Duration::from_secs(60);
-
-/// What a watcher watches: the open project that pressed Sign in, by the address of its `Held`
-/// (which the watcher's own `Weak` keeps from being dealt again, so a reopened project has a
-/// watcher of its own), the pool and the profile.
-type Watched = (usize, String, String);
-
-/// The watchers asking now, each with the shell tabs its Sign ins typed into: one each, however
-/// often Sign in is pressed.
-static WATCHED: Mutex<Option<HashMap<Watched, Vec<u32>>>> = Mutex::new(None);
-
-/// The project a watcher was started for, as the watcher needs it.
-pub struct Watcher {
-    /// [`Watched`]'s first part.
-    pub project: usize,
-    /// Its root.
-    pub root: PathBuf,
-    /// Whether shell tab `session` is still open in it.
-    pub shell_open: Box<dyn Fn(u32) -> bool + Send>,
-    /// Whether that project is still open: one closed is not the person leaving a sign-in.
-    pub project_open: Box<dyn Fn() -> bool + Send>,
-    /// Tells its window its Asks changed.
-    pub told: Box<dyn FnOnce() + Send>,
+/// Whether a runner's answer says the profile is signed in: what a watcher asks. A runner that
+/// cannot tell, or is still fetching the harness, says nothing of a sign-in the person may still
+/// be finishing (#4009).
+fn says_signed_in(said: &Result<Option<Standing>, String>) -> bool {
+    matches!(said, Ok(Some(Standing::SignedIn)))
 }
 
-/// What ended a watcher's asking.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Watch {
-    /// The runner says the profile is signed in.
-    SignedIn,
-    /// The person closed every shell it was signing in from, and it is not signed in.
-    ShellsClosed,
+/// Whether a watched profile is still there to sign in on a pool: this machine has it, the pool
+/// exists (`named`'s outer `None` where it does not), and the pool names it, or names none and so
+/// keeps every profile. What cannot be read is not gone.
+fn still_on_the_pool<E, F>(
+    records: Result<Vec<profilestore::MachineProfile>, E>,
+    named: Result<Option<Option<Vec<String>>>, F>,
+    name: &str,
+) -> bool {
+    records.map_or(true, |records| records.iter().any(|p| p.name == name))
+        && named.map_or(true, |pool| {
+            pool.is_some_and(|named| named.is_none_or(|named| named.iter().any(|one| one == name)))
+        })
 }
 
-/// Whose Asks an ended watch lets go.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AsksGo {
-    /// Every project's: the profile is signed in on the runner, whoever asked.
-    Everywhere,
-    /// The project's that pressed Sign in: only its person left.
-    InTheProject,
-    /// None: a project closing leaves its Ask for when it opens again.
-    None,
-}
-
-fn asks_go(ended: Watch, project_open: bool) -> AsksGo {
-    match ended {
-        Watch::SignedIn => AsksGo::Everywhere,
-        Watch::ShellsClosed if project_open => AsksGo::InTheProject,
-        Watch::ShellsClosed => AsksGo::None,
-    }
-}
-
-/// **Asks pool `pool`'s runner again every few seconds whether `name` is signed in there**, after
-/// its Sign in in shell tab `session`, until it says so or the person closes the shell, when its
-/// Ask goes ([`asks_go`]). A runner that cannot tell, or is still fetching the harness, says
-/// nothing of a sign-in the person may still be finishing, so its Ask stays (#4009). On a thread
-/// of its own, one per open project, pool and profile: a second Sign in while one asks starts
-/// none, and adds its shell.
-pub fn watch(pool: String, name: String, session: u32, project: Watcher) {
-    let key = (project.project, pool.clone(), name.clone());
-    if !claimed(
-        WATCHED
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get_or_insert_with(HashMap::new),
-        &key,
-        session,
-    ) {
-        return;
-    }
-    std::thread::spawn(move || {
-        let Watcher {
-            root,
-            shell_open,
-            project_open,
-            told,
-            ..
-        } = project;
-        let ended = watching(&pool, &name, || {
-            // Asked with no lock held: the answer reads the project, and may be the last to hold it.
-            let shells = watched_now(|watched| watched.get(&key).cloned().unwrap_or_default());
-            let closed: Vec<u32> = shells.into_iter().filter(|s| !shell_open(*s)).collect();
-            watched_now(|watched| shells_left(watched, &key, &closed))
-        });
-        // A watcher whose shells closed gave up its claim as it found them closed, so a Sign in
-        // after that has a watcher of its own, which this one must not take away.
-        if ended != Some(Watch::ShellsClosed) {
-            watched_now(|watched| watched.remove(&key));
-        }
-        let Some(ended) = ended else {
-            return;
-        };
-        let open = project_open();
-        match asks_go(ended, open) {
-            AsksGo::Everywhere => onrunner::let_go(None, &pool, &name),
-            AsksGo::InTheProject => onrunner::let_go(Some(&root), &pool, &name),
-            AsksGo::None => {}
-        }
-        // A closed project's teller would say its old, empty list of the project reopened.
-        if open {
-            told();
-        }
-    });
-}
-
-fn watched_now<T>(with: impl FnOnce(&mut HashMap<Watched, Vec<u32>>) -> T) -> T {
-    with(
-        WATCHED
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get_or_insert_with(HashMap::new),
-    )
-}
-
-/// Whether `key` is claimed for a watcher now, in `watched`: only where none watches it. Where
-/// one does, `session` is one more shell it watches.
-fn claimed(watched: &mut HashMap<Watched, Vec<u32>>, key: &Watched, session: u32) -> bool {
-    match watched.get_mut(key) {
-        Some(shells) => {
-            shells.push(session);
-            false
-        }
-        None => {
-            watched.insert(key.clone(), vec![session]);
-            true
-        }
-    }
-}
-
-/// Whether any of `key`'s shells is still open, with those in `closed` dropped. With none left
-/// its claim goes in the same step, so a Sign in now starts a watcher rather than joining this
-/// one.
-fn shells_left(watched: &mut HashMap<Watched, Vec<u32>>, key: &Watched, closed: &[u32]) -> bool {
-    let Some(shells) = watched.get_mut(key) else {
-        return false;
-    };
-    shells.retain(|session| !closed.contains(session));
-    if shells.is_empty() {
-        watched.remove(key);
-        return false;
-    }
-    true
-}
-
-fn watching(pool: &str, name: &str, shells_open: impl FnMut() -> bool) -> Option<Watch> {
+/// **What a watcher asks and lets go for `name` on pool `pool`** ([`crate::signinwatch`]), or
+/// `None` where this machine no longer has the profile, or it cannot go on a runner.
+pub fn watched_sign_in(pool: String, name: String) -> Option<crate::signinwatch::SignIn> {
     let config = config_root().ok()?;
     let kept = profilestore::list(&config)
         .ok()
         .and_then(|records| records.into_iter().find(|p| p.name == name))
         .and_then(|record| onrunner::Kept::of(&record).ok())?;
-    Some(watched_until(
-        Pace {
-            every: WATCHED_EVERY,
-            for_: WATCHED_FOR,
-            later_every: WATCHED_LATER_EVERY,
-        },
-        || keep_on(&config, pool, &kept),
-        shells_open,
-    ))
-}
-
-/// How a watcher paces its asking.
-#[derive(Debug, Clone, Copy)]
-struct Pace {
-    /// How often it looks at the shells, and asks the runner at first.
-    every: Duration,
-    /// How long it asks at that pace.
-    for_: Duration,
-    /// How often it asks the runner after that.
-    later_every: Duration,
-}
-
-/// Asks until the runner says signed in or `shells_open` says the person has left. The runner is
-/// asked first, so a sign-in finished just before the shell closed counts as one. No time ends
-/// it, only slows the asking: a shell is closed sooner or later, and an Ask left with nothing
-/// watching could no longer go by itself.
-fn watched_until(
-    pace: Pace,
-    mut ask: impl FnMut() -> Result<Option<Standing>, String>,
-    mut shells_open: impl FnMut() -> bool,
-) -> Watch {
-    let started = std::time::Instant::now();
-    let mut next_ask = started;
-    loop {
-        std::thread::sleep(pace.every);
-        let now = std::time::Instant::now();
-        if now >= next_ask {
-            if matches!(ask(), Ok(Some(Standing::SignedIn))) {
-                return Watch::SignedIn;
+    let asked = pool.clone();
+    let (config_there, pool_there, name_there) = (config.clone(), pool.clone(), name.clone());
+    Some(crate::signinwatch::SignIn {
+        pool: Some(pool.clone()),
+        name: name.clone(),
+        there: Box::new(move || {
+            still_on_the_pool(
+                profilestore::list(&config_there),
+                purlis_core::runners::pools(&config_there).map(|pools| {
+                    pools
+                        .iter()
+                        .find(|one| one.name() == pool_there)
+                        .map(|one| one.profiles().map(<[String]>::to_vec))
+                }),
+                &name_there,
+            )
+        }),
+        signed_in: Box::new(move || says_signed_in(&keep_on(&config, &asked, &kept))),
+        let_go: Box::new(move |whose| match whose {
+            crate::signinwatch::Whose::Everywhere => onrunner::let_go(None, &pool, &name),
+            crate::signinwatch::Whose::InTheProject(root, seen) => {
+                onrunner::let_go_older(root, &pool, &name, seen);
+                Vec::new()
             }
-            if now.duration_since(started) >= pace.for_ {
-                next_ask = now + pace.later_every;
-            }
-        }
-        if !shells_open() {
-            return Watch::ShellsClosed;
-        }
-    }
+        }),
+    })
 }
 
 #[cfg(test)]

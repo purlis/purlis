@@ -198,14 +198,15 @@ Purlis Classic's compact value. The window's own text size is the person's text-
 not a token: words with no size of their own (a list row's, a paragraph's) follow it, and every
 *px at 14px* length grows with it.
 
-The project strip sits in the title bar, whose height no token reaches yet. **Still square,
-whatever `radius.*` says:** the project and workspace strip tabs, the settings gear on a strip,
-and the tree rows still drawn by hand (the Explorer's and the Chats list's). The session tabs and
-their `×` are rounded through their parts ([Session tabs](#session-tabs)), a list's rows by
-`radius.control` (the list family, since manifest version 11; `radius.md` before #3177), and the
-tree family's rows by `radius.control` too (the Changes view's, since the next release's manifest
-version). **The focus ring tokens reach every focus ring**, the strip tabs', a tab's `×` closer's and
-the strip gear's among them; a ring that sits half as far out or in draws half the offset. Under
+No token reaches the title bar's height yet. **Corners are a family's parts.** The rail's
+project buttons, the title bar's workspace chips, the session tabs and their `×` are rounded
+through their parts ([Session tabs](#session-tabs)), a list's rows by `radius.control` (the list
+family, since manifest version 11; `radius.md` before #3177), and the tree family's rows by
+`radius.control` too (the Changes view's, since the next release's manifest version). The tree
+rows still drawn by hand (the Explorer's and the Chats list's) join when they move to the tree
+family (#2911); until then no key reaches their corners. **The focus ring tokens reach every
+focus ring**, a tab's `×` closer's among them; a ring that sits half as far out or in draws half
+the offset. Under
 forced colours the ring is drawn in the system's `Highlight` at the theme's width and offset:
 forced colours replace colour, not geometry.
 
@@ -582,8 +583,8 @@ every property but `padding`, which is its indentation (each level one step in) 
 family's; `body` is the tree that holds the rows; `twist` the chevron that opens and closes a
 row's rows, a mark; `lead` and `trail` its marks and its end; and `header` a group's name.
 
-The strip tabs, a tab's `×` closer, the gear on a strip and the tree rows still drawn by hand are
-not families with parts today: they are drawn as the note under [Geometry](#geometry) says.
+The tree rows still drawn by hand are not a family with parts today: they are drawn as the note
+under [Geometry](#geometry) says.
 
 ### Session tabs
 
@@ -750,13 +751,17 @@ drawn exactly as `other`), `card-not-apart` (a side view's card row whose fill, 
 only `ratio` from the side panel's, `ground`, under the `floor` of 1.05, with no edge that
 clears a hairline's 1.2 there, in a theme whose parts, its own or inherited, choose a card
 row's look or a side panel's fill; the check only reports it and redraws nothing),
+`notice-way-not-apart` (a notice card's secondary way whose fill, at rest or `pointed` at, is
+only `distance` from the `variant` card's `ground` in OKLab, under the `floor` of 0.02: the
+fill a theme's button parts give it, or else the card's own mix of `control.base` toward
+`text.primary`, 14% at rest and 22% under the pointer; the check only reports it),
 `selection-text-alone` (a colour for selected text on a selection left to the platform),
 `line-does-not-fit` (a line of words taller than the box it is drawn in:
 its `density`, the `fit` it breaks, a `size`, a `line_height` and a `height` token, and the
 `line` and the `room` it has, in px at the default text size), or `style-without-a-face` (a
 style the theme draws in a font it brings with no face for it, so the browser makes it from
 another face: the font's `slot`, `ui`, `mono` or `terminal`, the `weight` and the `style`,
-`normal` or `italic`). A field (`.ui-input`, `size.control` tall) holds the window's words
+`normal` or `italic`). A field (the field family's text input, `[data-scope="text-input"]`, `size.control` tall) holds the window's words
 (`font-size.base`) and a strip a tab's title (`font-size.md`), each on the body line
 (`line-height.body`), in both densities. A button's label sits on a line of 1, so it fits
 wherever a field's text does. `tint` is the workspace colour it was found in, or `null` for the

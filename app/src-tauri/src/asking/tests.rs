@@ -1220,6 +1220,7 @@ fn waits_to_sign_in(kind: &str, harness: &str) -> purlis_core::profilestore::sig
         },
         harness: harness.to_owned(),
         since: 7,
+        raised: std::time::Instant::now(),
     }
 }
 
@@ -1274,6 +1275,7 @@ fn a_profile_not_signed_in_on_a_pool_is_one_ask_to_sign_it_in_on_that_pool() {
         kind: "claude".to_owned(),
         harness: "Claude Code".to_owned(),
         since: 9,
+        raised: std::time::Instant::now(),
     }];
     world.since = vec![("sign-in:work:on:builds", 9)];
 
@@ -1885,6 +1887,7 @@ fn a_runner_chats_browser_login_asks_whether_its_persona_may_log_in_on_the_pool(
             runner: "01JB0RUNNER0000000000000000".into(),
             runner_key: "ab".repeat(32),
             runner_image: "a".repeat(64),
+            pod: String::new(),
             engine: "this machine's Docker".into(),
         },
         login: "shop-login".into(),
@@ -1929,6 +1932,7 @@ fn each_run_of_a_runner_chats_tool_asks_whether_its_values_may_be_sent_for_that_
             runner: "01JB0RUNNER0000000000000000".into(),
             runner_key: "ab".repeat(32),
             runner_image: "a".repeat(64),
+            pod: String::new(),
             engine: "this machine's Docker".into(),
         },
         tool: "kubectl".into(),

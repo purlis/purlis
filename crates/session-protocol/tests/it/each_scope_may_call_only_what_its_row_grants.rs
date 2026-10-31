@@ -315,6 +315,7 @@ fn every_command() -> Vec<Command> {
             pinned: None,
             settings: None,
             settings_staged: None,
+            settings_changed: None,
         }),
         // A desktop's profile taken off its runner (1.52, #4047).
         Command::ForgetProfile {
@@ -325,6 +326,11 @@ fn every_command() -> Vec<Command> {
             profile: "work".into(),
             pieces: Vec::new(),
         }),
+        // What a runner holds of a profile's settings (1.61, #4088).
+        Command::SettingsHeld {
+            profile: "work".into(),
+            after: None,
+        },
         // The profiles a runner keeps for its desktop (1.57, #4060).
         Command::KeptProfiles,
         // A sign-in's redirect handed to a login on the runner (1.59, #4044).
@@ -620,6 +626,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "keep_profile",
             "forget_profile",
             "stage_profile_settings",
+            "settings_held",
             "kept_profiles",
             "sign_in_redirect",
             "take_over",
@@ -747,6 +754,32 @@ async fn only_the_window_or_its_hosts_relay_names_what_the_person_allowed_of_a_p
             .err()
             .and_then(|why| why.refusal().map(|refusal| refusal.why.clone()))
             .is_some_and(|why| why.contains("persona's tools"));
+        let windows = matches!(scope, Scope::LocalUi | Scope::RemoteLink);
+        assert_eq!(refused, !windows, "{scope}");
+    }
+}
+
+#[tokio::test]
+async fn only_the_window_or_its_hosts_relay_names_whether_the_planes_skills_reach_a_chat() {
+    // #3084: a runner arms a chat by this word, so no other client may name it.
+    for scope in Scope::ALL
+        .into_iter()
+        .filter(|scope| scope.may(purlis_session_protocol::grants::Power::Start))
+    {
+        let client = linked(scope, Board::new(false)).await;
+        let said = client
+            .call(Command::StartProgram(Box::new(session::StartProgram {
+                plane_skills: Some(true),
+                ..session::StartProgram::of(
+                    "01J9PRJCT00000000000000000",
+                    session::ProgramKind::Harness,
+                )
+            })))
+            .await;
+        let refused = said
+            .err()
+            .and_then(|why| why.refusal().map(|refusal| refusal.why.clone()))
+            .is_some_and(|why| why.contains("plane's skills"));
         let windows = matches!(scope, Scope::LocalUi | Scope::RemoteLink);
         assert_eq!(refused, !windows, "{scope}");
     }

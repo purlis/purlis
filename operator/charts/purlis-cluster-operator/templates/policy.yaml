@@ -16,6 +16,7 @@ spec:
     resourceRules:
       - apiGroups: [runners.purlis.dev]
         apiVersions: ["*"]
+        # Who may change the repos a claim names is the policy purlis-forge's (#4206).
         operations: [CREATE]
         resources: [claims]
       # Upstream's objects, so that a runner from a purlis pool is had only through a Claim
@@ -26,7 +27,7 @@ spec:
         resources: [sandboxclaims, sandboxwarmpools]
   validations:
     - expression: >-
-        request.resource.group != 'runners.purlis.dev' ||
+        request.resource.group != 'runners.purlis.dev' || request.operation != 'CREATE' ||
         authorizer.group('runners.purlis.dev').resource('pools')
         .name(object.spec.pool).check('use').allowed()
       messageExpression: >-
@@ -35,7 +36,7 @@ spec:
     # Who asked for a claim is stamped on it, as the cluster signed them in, and never changes
     # (crds.yaml): the operator vouches for it with the runner's link key (#2056).
     - expression: >-
-        request.resource.group != 'runners.purlis.dev' ||
+        request.resource.group != 'runners.purlis.dev' || request.operation != 'CREATE' ||
         object.spec.requester == request.userInfo.username
       messageExpression: >-
         'A claim names who makes it: set spec.requester to ' + request.userInfo.username + '.'

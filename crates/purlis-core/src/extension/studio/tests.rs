@@ -393,6 +393,60 @@ fn a_confined_program_reads_its_own_folder_and_the_system_and_nothing_a_person_k
 }
 
 #[test]
+fn a_confined_program_starts_programs_from_what_it_reads_on_linux() {
+    let profile = held(Path::new(EXT), Path::new(STATE), Path::new(TMP));
+    let roots = profile.starts_from();
+    for root in [EXT, STATE, TMP, "/usr/bin", "/usr/lib"] {
+        assert!(roots.contains(&PathBuf::from(root)), "{root}: {roots:?}");
+    }
+    assert!(!roots.contains(&PathBuf::from("/")), "{roots:?}");
+    // Every root is one it reads, and nothing a person keeps is beneath one.
+    for root in &roots {
+        assert!(
+            reads(&profile, &root.join("program").display().to_string())
+                || reads(&profile, &root.display().to_string()),
+            "{}",
+            root.display()
+        );
+    }
+    for kept in [
+        "/home",
+        "/root",
+        "/opt/ext/other",
+        "/opt/ext/studio-x-twin",
+        "/etc/shadow",
+    ] {
+        assert!(
+            !roots.iter().any(|root| Path::new(kept).starts_with(root)),
+            "{kept}: {roots:?}"
+        );
+    }
+}
+
+#[test]
+fn a_confined_program_starts_programs_from_what_it_reads_on_macos() {
+    let text = crate::sandbox::confined::profile(
+        Os::MacOs,
+        &[PathBuf::from("/Users/ada/ext/studio-x")],
+        &[PathBuf::from("/private/var/folders/x/T/purlis-extension-1")],
+        &[40_001],
+    )
+    .expect("a profile");
+    assert!(!text.contains("(allow process-exec)"), "{text}");
+    assert!(
+        text.contains("(allow file-read* file-map-executable process-exec\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains(
+            "(deny file-read* file-map-executable process-exec (subpath \"/System/Volumes/Data\"))"
+        ),
+        "{text}"
+    );
+    assert!(text.contains("(deny process-exec (regex "), "{text}");
+}
+
+#[test]
 fn a_confined_program_lists_no_folder_above_its_own() {
     use purlis_linux_sandbox::profile::{FileOp, Kind, Op};
     let profile = held(Path::new(EXT), Path::new(STATE), Path::new(TMP));
@@ -1319,4 +1373,138 @@ fn a_routers_answer_is_read_failing_closed() {
         refused.contains("more skills than it was asked about"),
         "{refused}"
     );
+}
+
+// ---- a lint that answers many skills at once (#4195) ----------------------------------------
+
+#[test]
+fn a_lint_says_whether_it_answers_many_skills_at_once() {
+    let reads = |lint: serde_json::Value| {
+        let text = manifest(
+            &["skill-lint"],
+            serde_json::json!({}),
+            serde_json::json!({ "skill-lint": lint }),
+        );
+        read(&text, true).map(|manifest| {
+            let studio = manifest.studio.expect("a studio extension");
+            (studio.lint, studio.lint_many_at_once)
+        })
+    };
+    assert_eq!(
+        reads(serde_json::json!({ "title": "House style" })),
+        Ok((Some("House style".to_owned()), false)),
+        "a lint that says nothing is asked one skill at a time, as before"
+    );
+    assert_eq!(
+        reads(serde_json::json!({ "title": "House style", "many-at-once": true })),
+        Ok((Some("House style".to_owned()), true))
+    );
+    for bad in [
+        serde_json::json!({ "title": "H", "many-at-once": "yes" }),
+        serde_json::json!({ "title": "H", "batch": true }),
+    ] {
+        assert!(reads(bad.clone()).is_err(), "{bad} was taken");
+    }
+}
+
+#[test]
+fn a_question_of_many_hands_each_skill_by_name_with_its_files() {
+    let skills = [LintedSkill {
+        skill: "deploy".to_owned(),
+        files: vec![HandedFile {
+            path: "SKILL.md".to_owned(),
+            text: "---\n".to_owned(),
+            executable: false,
+        }],
+    }];
+    let ask = Ask::FindingsOfEach { skills: &skills };
+    assert_eq!(
+        ask.line(),
+        serde_json::json!({
+            "ask": "findings-of-each",
+            "skills": [{
+                "skill": "deploy",
+                "files": [{ "path": "SKILL.md", "text": "---\n", "executable": false }],
+            }],
+        })
+    );
+    assert_eq!(ask.capability(), Capability::SkillLint);
+    let one_at_a_time = Declared {
+        lint: Some("House style".to_owned()),
+        ..Declared::default()
+    };
+    let refused = ask.unoffered("x", &one_at_a_time).expect("refused");
+    assert!(refused.contains("one skill at a time"), "{refused}");
+    let many = Declared {
+        lint_many_at_once: true,
+        ..one_at_a_time
+    };
+    assert_eq!(ask.unoffered("x", &many), None);
+}
+
+#[test]
+fn findings_of_many_are_one_per_skill_asked_in_order_failing_closed() {
+    let said = findings_of_each(
+        "x",
+        &["deploy", "review", "deploy"],
+        &doc(serde_json::json!({ "skills": [
+            { "skill": "deploy", "findings": [{ "says": " too long " }] },
+            { "skill": "review", "findings": [] },
+            { "skill": "deploy", "findings": [] },
+        ] })),
+    )
+    .expect("read");
+    assert_eq!(
+        said,
+        [
+            Ok(vec!["too long".to_owned()]),
+            Ok(Vec::new()),
+            Ok(Vec::new())
+        ]
+    );
+    // Refused whole: one left out, one more, another skill, the wrong order, a key no answer
+    // has, another shape.
+    for bad in [
+        serde_json::json!({ "skills": [{ "skill": "deploy", "findings": [] }] }),
+        serde_json::json!({ "skills": [
+            { "skill": "deploy", "findings": [] },
+            { "skill": "review", "findings": [] },
+            { "skill": "other", "findings": [] },
+        ] }),
+        serde_json::json!({ "skills": [
+            { "skill": "review", "findings": [] },
+            { "skill": "deploy", "findings": [] },
+        ] }),
+        serde_json::json!({ "skills": [
+            { "skill": "deploy", "findings": [], "level": "blocks" },
+            { "skill": "review", "findings": [] },
+        ] }),
+        serde_json::json!({ "findings": [] }),
+    ] {
+        assert!(
+            findings_of_each("x", &["deploy", "review"], &doc(bad.clone())).is_err(),
+            "{bad} was taken"
+        );
+    }
+    // Refused for one skill alone: findings no single answer may hold.
+    let too_many: Vec<serde_json::Value> = (0..=MOST_FINDINGS)
+        .map(|_| serde_json::json!({ "says": "ok" }))
+        .collect();
+    for bad in [
+        serde_json::json!([{ "says": "a\u{202e}b" }]),
+        serde_json::json!([{ "says": "" }]),
+        serde_json::json!(too_many),
+    ] {
+        let said = findings_of_each(
+            "x",
+            &["deploy", "review"],
+            &doc(serde_json::json!({ "skills": [
+                { "skill": "deploy", "findings": bad },
+                { "skill": "review", "findings": [{ "says": "fine" }] },
+            ] })),
+        )
+        .expect("read");
+        assert!(said[0].is_err(), "{bad} was taken");
+        assert_eq!(said[1], Ok(vec!["fine".to_owned()]));
+    }
 }

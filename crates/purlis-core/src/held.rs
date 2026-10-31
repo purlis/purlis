@@ -473,6 +473,13 @@ impl Store {
         Ok(Some((std::fs::File::from(fd), entry)))
     }
 
+    /// Where the symbolic link `name` in the store points, read through the store's own
+    /// descriptor: the link's bytes, never the file they name. The filesystem's refusal as it
+    /// gave it where `name` is not a link (`INVAL`) or not there (`NOENT`).
+    pub(crate) fn read_link(&self, name: &str) -> rustix::io::Result<Vec<u8>> {
+        Ok(rustix::fs::readlinkat(&self.fd, name, Vec::new())?.into_bytes())
+    }
+
     /// The name of every entry directly in the store, whatever it is, sorted.
     pub(crate) fn names(&self) -> Result<Vec<String>, String> {
         let mut names: Vec<String> = entries(self.fd.as_fd())

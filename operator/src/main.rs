@@ -42,8 +42,8 @@ async fn operate() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    // Mounted from its Secret by the kubelet: the operator reads no Secret itself (#2056), and
-    // reads the mounted keys again as they are rolled (#3305).
+    // Mounted from its Secret by the kubelet: the operator reads no signing key through the API
+    // (#2056), and reads the mounted keys again as they are rolled (#3305).
     let path = purlis_cluster_operator::vouch::SIGNING_KEY_DIR;
     let keys = match purlis_cluster_operator::vouch::MountedKeys::read(path) {
         Ok(keys) => keys,

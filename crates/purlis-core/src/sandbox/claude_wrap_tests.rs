@@ -514,3 +514,24 @@ fn a_wrapped_chat_is_told_as_one() {
         super::Started::ByTheHarness
     ));
 }
+
+/// #3084: a runner's chat reaches the project's skills by its desktop's word, which the runner's
+/// own flag does not say, so a runner holds the project's skill folders from every chat (SK-9):
+/// a chat's write of one is never the file itself. A machine that is no runner holds them by its
+/// own flag. Seen red: the runner held them by its own flag alone.
+#[test]
+fn a_runner_holds_the_projects_skill_folders_whatever_its_own_flag_says() {
+    let held = |place: &Place| {
+        let root = super::real(place.plane.path());
+        let skills = super::skills_held(&root);
+        assert!(!skills.is_empty(), "the project has skill folders to hold");
+        let denied = super::Denied::of(&root, &place.machine);
+        skills
+            .iter()
+            .all(|one| denied.paths.iter().any(|denial| denial.path == one.path))
+    };
+    assert!(held(&place(FLOOR, true)), "a runner holds them");
+    if !crate::skills::reach_chats_here(&super::real(place(FLOOR, false).plane.path())) {
+        assert!(!held(&place(FLOOR, false)), "by its own flag, which is off");
+    }
+}

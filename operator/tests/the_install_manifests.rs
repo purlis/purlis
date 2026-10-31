@@ -164,11 +164,18 @@ fn the_operator_may_do_exactly_what_it_needs() {
             ("", "resourcequotas", "purlis-person", "get,patch"),
             (
                 "admissionregistration.k8s.io",
+                "validatingadmissionpolicies",
+                "purlis-forge",
+                "get",
+            ),
+            (
+                "admissionregistration.k8s.io",
                 "validatingadmissionpolicybindings",
-                "purlis-claims-use-their-pool,purlis-runner-namespaces",
+                "purlis-claims-use-their-pool,purlis-runner-namespaces,purlis-forge",
                 "get,list,watch",
             ),
             ("agents.x-k8s.io", "sandboxes", "", "get,patch"),
+            ("authorization.k8s.io", "subjectaccessreviews", "", "create"),
             (
                 "extensions.agents.x-k8s.io",
                 "sandboxclaims",
@@ -187,6 +194,13 @@ fn the_operator_may_do_exactly_what_it_needs() {
                 "",
                 "create,delete,get,list,patch,watch",
             ),
+            ("networking.k8s.io", "networkpolicies", "", "create"),
+            (
+                "networking.k8s.io",
+                "networkpolicies",
+                "purlis-forge-mint",
+                "get,patch"
+            ),
             (
                 "rbac.authorization.k8s.io",
                 "clusterroles",
@@ -200,7 +214,7 @@ fn the_operator_may_do_exactly_what_it_needs() {
                 "purlis-runner-owner",
                 "get,patch"
             ),
-            ("runners.purlis.dev", "claims", "", "list,patch,watch"),
+            ("runners.purlis.dev", "claims", "", "get,list,patch,watch"),
             ("runners.purlis.dev", "claims/status", "", "patch"),
             ("runners.purlis.dev", "pools", "", "get,list,watch"),
             ("runners.purlis.dev", "pools/status", "", "patch"),
@@ -249,7 +263,7 @@ fn the_operator_reads_only_its_own_policys_binding() {
         .into_iter()
         .filter(|rule| strings(&rule["apiGroups"]) == ["admissionregistration.k8s.io"])
         .collect();
-    assert_eq!(rules.len(), 1, "{rules:?}");
+    assert_eq!(rules.len(), 2, "{rules:?}");
     assert_eq!(
         strings(&rules[0]["resources"]),
         ["validatingadmissionpolicybindings"]
@@ -258,8 +272,18 @@ fn the_operator_reads_only_its_own_policys_binding() {
         strings(&rules[0]["resourceNames"]),
         [
             purlis_cluster_operator::POLICY,
-            purlis_cluster_operator::RUNNER_NAMESPACES_POLICY
+            purlis_cluster_operator::RUNNER_NAMESPACES_POLICY,
+            purlis_cluster_operator::FORGE_POLICY,
         ]
+    );
+    assert_eq!(
+        strings(&rules[1]["resources"]),
+        ["validatingadmissionpolicies"]
+    );
+    assert_eq!(strings(&rules[1]["verbs"]), ["get"]);
+    assert_eq!(
+        strings(&rules[1]["resourceNames"]),
+        [purlis_cluster_operator::FORGE_POLICY]
     );
 }
 
@@ -342,6 +366,7 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     assert_eq!(rules.len(), 2, "{spec}");
     assert_eq!(strings(&rules[0]["apiGroups"]), ["runners.purlis.dev"]);
     assert_eq!(strings(&rules[0]["resources"]), ["claims"]);
+    // CREATE alone: who may change the repos it names is the policy on App keys' (#4206).
     assert_eq!(strings(&rules[0]["operations"]), ["CREATE"]);
     let validations = spec["validations"].as_array().expect("validations");
     assert_eq!(validations.len(), 4, "{spec}");
@@ -354,12 +379,12 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     };
     assert_eq!(
         expression(0),
-        "request.resource.group!='runners.purlis.dev'||authorizer.group('runners.purlis.dev').resource('pools').name(object.spec.pool).check('use').allowed()"
+        "request.resource.group!='runners.purlis.dev'||request.operation!='CREATE'||authorizer.group('runners.purlis.dev').resource('pools').name(object.spec.pool).check('use').allowed()"
     );
     // Who asked is stamped as the cluster signed them in (#2056).
     assert_eq!(
         expression(1),
-        "request.resource.group!='runners.purlis.dev'||object.spec.requester==request.userInfo.username"
+        "request.resource.group!='runners.purlis.dev'||request.operation!='CREATE'||object.spec.requester==request.userInfo.username"
     );
 
     let binding = documents
@@ -569,6 +594,7 @@ fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_
             ("", "namespaces/finalize"),
             ("", "namespaces/status"),
             ("", "resourcequotas"),
+            ("networking.k8s.io", "networkpolicies"),
             ("rbac.authorization.k8s.io", "rolebindings"),
         ]
         .map(|(g, r)| (g.to_owned(), r.to_owned()))
@@ -630,7 +656,32 @@ fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_
         .iter()
         .map(|v| flat(&v["expression"]))
         .collect();
-    assert_eq!(validations.len(), 4, "{validations:?}");
+    assert_eq!(validations.len(), 6, "{validations:?}");
+    // Its mark opens the mint port, so no one else marks another namespace (#4206).
+    assert_eq!(
+        validations[1],
+        "request.resource.resource!='namespaces'||variables.operator||variables.runners||\
+         variables.marks[0]!='purlis-cluster-operator'"
+    );
+    let validations: Vec<String> = validations
+        .iter()
+        .enumerate()
+        .filter(|(at, _)| *at != 1)
+        .map(|(_, held)| held.clone())
+        .collect();
+    // Its one NetworkPolicy, to its own mint port alone (#4206).
+    for words in [
+        "request.resource.resource!='networkpolicies'||!variables.operator||variables.runners&&",
+        "object.metadata.name=='purlis-forge-mint'",
+        "object.spec.policyTypes==['Egress']&&!has(object.spec.ingress)",
+        "object.spec.egress[0].ports[0].port==8443",
+    ] {
+        assert!(
+            validations[4].contains(words),
+            "{words}: {}",
+            validations[4]
+        );
+    }
     // Made by the operator alone; who it is for changed by no one else.
     assert_eq!(
         validations[0],
@@ -662,4 +713,52 @@ fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_
             purlis_cluster_operator::person::QUOTA
         )
     );
+}
+
+/// A plain install, made without the chart's values, names no Secret: no Role reads one (#4204).
+#[test]
+fn the_plain_install_holds_no_role_on_a_secret() {
+    for document in documents("operator.yaml") {
+        assert_ne!(document["kind"], "Role", "{document}");
+    }
+}
+
+/// The policy on App keys (#4206): spending a key takes `use` on it, and only a Claim's requester
+/// changes the repos it names. Its own binding, so its time says when these rules came into force.
+#[test]
+fn spending_an_app_key_takes_use_on_it() {
+    let documents = documents("policy.yaml");
+    let policy = policy_named(&documents, purlis_cluster_operator::FORGE_POLICY);
+    let spec = &policy["spec"];
+    assert_eq!(spec["failurePolicy"], "Fail");
+    let flat = |value: &Value| {
+        value
+            .as_str()
+            .expect("an expression")
+            .split_whitespace()
+            .collect::<String>()
+    };
+    let validations = spec["validations"].as_array().expect("validations");
+    assert_eq!(validations.len(), 3, "{spec}");
+    assert_eq!(
+        flat(&validations[0]["expression"]),
+        "request.resource.resource!='pools'||!has(object.spec.forge)||(request.operation=='UPDATE'&&has(oldObject.spec.forge)&&object.spec.forge==oldObject.spec.forge)||authorizer.group('runners.purlis.dev').resource('forgekeys').name(object.spec.forge.appKeySecretRef.name).check('use').allowed()"
+    );
+    // On a Pool that mints, the image holds the link keys, so it takes `use` on the key too.
+    assert_eq!(
+        flat(&validations[1]["expression"]),
+        "request.resource.resource!='pools'||request.operation!='UPDATE'||object.spec.image==oldObject.spec.image||!has(oldObject.spec.forge)||!oldObject.spec.forge.mintInCluster||authorizer.group('runners.purlis.dev').resource('forgekeys').name(oldObject.spec.forge.appKeySecretRef.name).check('use').allowed()"
+    );
+    assert_eq!(
+        flat(&validations[2]["expression"]),
+        "request.resource.resource!='claims'||(has(object.spec.forge)?has(oldObject.spec.forge)&&object.spec.forge==oldObject.spec.forge:!has(oldObject.spec.forge))||(request.userInfo.username==object.spec.requester&&authorizer.group('runners.purlis.dev').resource('pools').name(object.spec.pool).check('use').allowed())"
+    );
+    let binding = documents
+        .iter()
+        .find(|d| {
+            d["kind"] == "ValidatingAdmissionPolicyBinding"
+                && d["spec"]["policyName"] == "purlis-forge"
+        })
+        .expect("its binding");
+    assert_eq!(strings(&binding["spec"]["validationActions"]), ["Deny"]);
 }

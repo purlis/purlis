@@ -1088,8 +1088,9 @@ Two members, by what a cell holds:
 - **The keyboard of a table of data is the APG grid's**: one Tab stop, the row last focused; ↑
   and ↓ move a row and stop at the ends, ← and → a cell and into the button a cell holds, Home and
   End to the first and last row from a row and to a row's ends from a cell, Ctrl+Home and Ctrl+End to the table's, Page Up and Page Down a page; typing
-  finds a row by its `textValue`. A table that chooses (`selectionMode="multiple"`) draws a check
-  at each row's start and one over them for every row (React Aria's `selection` slot, "Select"
+  finds a row by its `textValue`. A table that chooses (`selectionMode="multiple"`) draws the
+  choice family's `Checkbox` at each row's start and one over them for every row, a bar when only
+  some are chosen (React Aria's `selection` slot, "Select"
   and "Select All" to a reader); Space chooses the row the keyboard is on. A column with
   `allowsSorting` sorts by a press on its name (`sortDescriptor`, `onSortChange`, `aria-sort`),
   its arrow keeping its room while another column sorts, so sorting moves no name. `onRowAction`
@@ -1147,7 +1148,7 @@ Two members, by what a cell holds:
   The rule is its own part (`table.rule`, a line at each cell's top and under each column's
   name), which the family draws as none and Purlis Classic fills with `border.subtle`. A
   number's column is at the end in figures of one width (`align="end"`); a column of checks or
-  of menus is as narrow as what it holds; the check's target is 24 px with its 16 px box in it.
+  of menus is as narrow as what it holds; the check's target is 24 px with its box in the middle of it.
 - **A table of controls stacks into a form where its frame is narrow** (`stacks`, #1859): under
   32rem the columns' names are put away, each row's heading takes a line, and each cell sits under
   its column's whole words (`heading` on `ControlCell`, drawn from `data-heading`), as many side
@@ -1470,9 +1471,10 @@ their rows are tabs and sentences with no part that gives way, so `.more-menu` h
 **What the window draws over itself is one surface** (#1845). A dialog, a popover, a menu and a
 tooltip share one ground (`surface.overlay`), one border, one corner (`--radius-lg`) and one lift
 (`--elevation-overlay`), so they read as related; a dialog and a popover share one padding
-(`--space-6`). The classes are in `app/src/primitives/overlays.css`, after the control families in
-the same `components` layer, and the popover and menu families' surface is this one, a select's
-list's included.
+(`--space-6`). Each family draws it in its own sheet, in the `components` layer (`ui/dialog`,
+`ui/popover`, `ui/tooltip`), and the popover and menu families' surface is this one, a select's
+list's included. The Radix-era classes (`.ui-menu`, `.ui-menu-item`, `.ui-popover`,
+`.ui-overlay-arrow`) and `primitives/overlays.css`, which drew them, are retired (#3365).
 
 | Overlay | Class                                         | On                                                         |
 | ------- | --------------------------------------------- | ---------------------------------------------------------- |
@@ -1481,14 +1483,14 @@ list's included.
 | Popover | the popover family's surface ([above](#the-menu-and-popover-families)) | `AnchoredPopover`, `HeldPopover`, `PopoverDialog` |
 
 (`--elevation-overlay`), so they read as related. A dialog is [the dialog
-family's](#the-dialog-family), drawn on that surface by `app/src/ui/dialog/dialog.css`; the other
-classes are in `app/src/primitives/overlays.css`, after the control families in the same
-`components` layer, and the menu's surface is this one.
+family's](#the-dialog-family), drawn on that surface by `app/src/ui/dialog/dialog.css`; a popover
+and a menu are the popover family's (`app/src/ui/popover/popover.css`), and a tooltip the tooltip
+family's, each in the same `components` layer.
 
 | Overlay | Class                                         | On                                                         |
 | ------- | --------------------------------------------- | ---------------------------------------------------------- |
 | Dialog  | the dialog family's parts (`data-scope="dialog"`) | `Dialog`, `AlertDialog`, `DialogSurface`               |
-| Popover | `.ui-popover`; its arrow `.ui-overlay-arrow`  | Radix Popover's `Content` and `Arrow`                      |
+| Popover | the popover family's surface ([above](#the-menu-and-popover-families)) | `AnchoredPopover`, `HeldPopover`, `PopoverDialog` |
 | Tooltip | the tooltip family's `root` part ([the tooltip family](#the-tooltip-family)) | React Aria's `Tooltip`, wrapped in `app/src/ui/tooltip` |
 | Menu    | the popover family's surface, its `menu` variant | `Menu`, a context menu's too                      |
 

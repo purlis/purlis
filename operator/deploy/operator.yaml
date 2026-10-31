@@ -20,7 +20,8 @@
 # It makes each person's runner namespace and binds purlis-runner-owner, only to that person,
 # only in runner namespaces, as the policy purlis-runner-namespaces (policy.yaml) holds at
 # admission (#2055). Its own signing key is a Secret the kubelet mounts in its pod, made before
-# it is installed (docs/cluster-operator.md).
+# it is installed (docs/cluster-operator.md). The chart's forge.keySecretNames alone adds a Role
+# that reads the GitHub App keys it names (#4204); this default install names none.
 # operator/tests/the_install_manifests.rs holds every rule.
 ---
 # The namespace the chart is installed in, which Helm leaves to the person: only pods that meet
@@ -82,7 +83,7 @@ rules:
     verbs: [get, list, watch]
   - apiGroups: [runners.purlis.dev]
     resources: [claims]
-    verbs: [list, patch, watch]
+    verbs: [get, list, patch, watch]
   - apiGroups: [runners.purlis.dev]
     resources: [claims/status]
     verbs: [patch]
@@ -105,11 +106,30 @@ rules:
     resources: [sandboxes]
     verbs: [get, patch]
   # The policies' bindings, by name only: the operator acts only on Claims admitted under the
-  # policy on Claims, and in runner namespaces made under the policy on runner namespaces.
+  # policy on Claims, in runner namespaces made under the policy on runner namespaces, and mints
+  # only under the policy on App keys, which it reads too (#4206).
   - apiGroups: [admissionregistration.k8s.io]
     resources: [validatingadmissionpolicybindings]
-    resourceNames: [purlis-claims-use-their-pool, purlis-runner-namespaces]
+    resourceNames: [purlis-claims-use-their-pool, purlis-runner-namespaces, purlis-forge]
     verbs: [get, list, watch]
+  - apiGroups: [admissionregistration.k8s.io]
+    resources: [validatingadmissionpolicies]
+    resourceNames: [purlis-forge]
+    verbs: [get]
+  # Asked before each mint: may this Claim's requester still use its Pool (#4206)? It answers
+  # questions and grants nothing.
+  - apiGroups: [authorization.k8s.io]
+    resources: [subjectaccessreviews]
+    verbs: [create]
+  # A runner namespace's way to the mint port (#4206), for a Claim on an opted-in Pool, as the
+  # policy on runner namespaces holds it: made, then read and brought back, by name only.
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [create]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    resourceNames: [purlis-forge-mint]
+    verbs: [get, patch]
   # Upstream's objects a claim becomes, in its requester's runner namespace: watched, so a
   # claim is looked at again when one of them changes or goes; each read by name first, since
   # the operator changes only objects it made, then made or applied server-side, and deleted
@@ -240,7 +260,7 @@ spec:
           type: RuntimeDefault
       # The key the operator signs runners' link keys with (#2056), made once by whoever
       # installs it (docs/cluster-operator.md) and mounted by the kubelet: the operator holds no
-      # right to read a Secret. The whole Secret is mounted, key.pem and, while a team admin
+      # right to read it. The whole Secret is mounted, key.pem and, while a team admin
       # rolls the key, next.pem (#3305), and the kubelet refreshes it, so a roll needs no restart.
       volumes:
         - name: signing-key
@@ -256,6 +276,10 @@ spec:
           ports:
             - name: metrics
               containerPort: 8080
+              protocol: TCP
+            # Where a vouched runner asks for a GitHub App token (#4206).
+            - name: mint
+              containerPort: 8443
               protocol: TCP
           env:
             # What each person's runners may hold at once (#2055), as JSON.
@@ -279,3 +303,7 @@ spec:
             - name: signing-key
               mountPath: /var/run/purlis-cluster-operator/signing-key
               readOnly: true
+---
+# Source: purlis-cluster-operator/templates/forge-key-reader.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0

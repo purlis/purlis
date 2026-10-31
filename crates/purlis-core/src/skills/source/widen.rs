@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **What a project install's grant asks of the project skills it relies on** (#4172, ADR 0100
-//! as amended 2026-10-31).
+//! as amended 2026-10-31), and an update's (#4186), whose grant is the updated skill's own.
 //!
 //! A skill installed at the project level with a grant reaches the chats at the root and those
 //! in each workspace the grant reaches. A skill it refers to that the project holds already is left as
@@ -14,7 +14,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::skills::verbs::{Level, Whose};
+use crate::skills::verbs::{Ctx, Level, Whose};
 use crate::skills::{Grant, grant_of};
 
 /// **A project skill an install refers to whose grant does not reach every workspace the
@@ -142,6 +142,20 @@ pub fn added(from: &Grant, to: &Grant) -> String {
 }
 
 impl Widening {
+    /// What a review says of a skill that refers to it, `by` naming the change that widens its
+    /// grant (`install`, `update`); `None` where its grant reaches every workspace already.
+    pub fn said(&self, by: &str) -> Option<String> {
+        self.widened.as_ref().map(|to| {
+            format!(
+                "refers to {}, which is granted to {}: it is left as it is, and the {by} grants \
+                 it to {} too",
+                self.name,
+                self.granted,
+                added(&self.granted, to)
+            )
+        })
+    }
+
     /// What each workspace that turned it off is told of a skill `installed` that refers to it.
     pub fn turned_off_said(&self, installed: &str) -> Vec<String> {
         self.turned_off
@@ -153,5 +167,22 @@ impl Widening {
                 )
             })
             .collect()
+    }
+}
+
+/// Says what a change that wrote `widenings` did: each grant widened, and each workspace that
+/// turned a held skill off, whose chats get `changed` (`what was installed`) without it.
+pub(super) fn said_done(cx: &mut Ctx<'_>, widenings: &[Widening], changed: &str) {
+    for one in widenings {
+        if let Some(to) = &one.widened {
+            cx.done(format!(
+                "{} is granted to {} too, as {changed} refers to it",
+                one.name,
+                added(&one.granted, to)
+            ));
+        }
+        for line in one.turned_off_said(changed) {
+            cx.warn(line);
+        }
     }
 }
