@@ -338,8 +338,8 @@ export const PlanByAGrader: Story = {
     grading: { at: "plan" },
     plan: {
       ...PLAN,
-      graders: [{ id: "acme.grader", title: "Acme evals" }],
-      grader: { id: "acme.grader", title: "Acme evals" },
+      graders: [{ id: "acme.grader", title: "Acme evals", hosts: ["evals.acme.example"] }],
+      grader: { id: "acme.grader", title: "Acme evals", hosts: ["evals.acme.example"] },
     },
   },
   play: async ({ canvas }) => {

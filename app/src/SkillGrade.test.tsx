@@ -323,7 +323,7 @@ describe("Grade, cost first", () => {
   });
 
   describe("a Grader extension (#3236)", () => {
-    const ACME = { id: "acme.grader", title: "Acme" };
+    const ACME = { id: "acme.grader", title: "Acme", hosts: ["acme.example"] };
 
     it("lists each Grader, names the one picked plainly, and starts on it", async () => {
       const asked: Array<{ cmd: string; args: Record<string, unknown> }> = [];
@@ -349,6 +349,7 @@ describe("Grade, cost first", () => {
       expect(named).toHaveTextContent("Acme (acme.grader) is an extension you installed");
       expect(named).toHaveTextContent("not part of purlis");
       expect(named).toHaveTextContent("up to 12 chats");
+      expect(named).toHaveTextContent("It can send what it is handed to acme.example");
       fireEvent.click(start());
       await waitFor(() => expect(asked.some((one) => one.cmd === "skill_grade_start")).toBe(true));
       expect(asked.find((one) => one.cmd === "skill_grade_start")?.args).toMatchObject({

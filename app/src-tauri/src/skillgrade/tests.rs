@@ -683,6 +683,7 @@ fn acme() -> GradeGrader {
     GradeGrader {
         id: "acme.grader".into(),
         title: "Acme".into(),
+        hosts: vec!["acme.example".into()],
     }
 }
 
@@ -725,6 +726,7 @@ fn a_press_on_a_plan_of_another_grader_starts_nothing() {
     let other = GradeGrader {
         id: "other.grader".into(),
         title: "Acme".into(),
+        hosts: vec!["acme.example".into()],
     };
     for grader in [None, Some(&other)] {
         let refused = plan_holds(
@@ -800,4 +802,30 @@ fn a_graders_failure_is_in_its_scorecard() {
         "{}",
         card.ran_on
     );
+}
+
+#[test]
+fn a_grader_is_handed_the_trigger_tests_alone() {
+    let request = GradeRequest {
+        skill: "deploy".into(),
+        triggers: vec![TriggerTest {
+            query: "ship it".into(),
+            should_trigger: true,
+        }],
+        outcomes: vec![purlis_core::skills::grade::OutcomeEval {
+            id: 1,
+            prompt: "an eval it is not shown".into(),
+            expected_output: None,
+            files: Vec::new(),
+            expectations: vec!["it holds".into()],
+        }],
+        arms: grades::ARMS.to_vec(),
+        runs: grading::RUNS,
+    };
+    assert_eq!(request.outcomes.len(), 1);
+    let handed = handed_to_a_grader(&request);
+    assert!(handed.outcomes.is_empty());
+    assert_eq!(handed.triggers, request.triggers);
+    assert_eq!(handed.arms, request.arms);
+    assert_eq!(handed.runs, request.runs);
 }

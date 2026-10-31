@@ -278,7 +278,7 @@ fn consent_by(planned: &Planned, on: &On, grader: Option<&GradeGrader>) -> Optio
         grades::consent_on(
             consent,
             &grades::Terms {
-                grader: grader.map(|one| (one.id.as_str(), one.title.as_str())),
+                grader: grader.map(|one| (one.id.as_str(), one.title.as_str(), &*one.hosts)),
                 ..terms_of(planned, on)
             },
         )
@@ -310,6 +310,8 @@ pub(crate) fn terms<'a>(cap: &grades::cap::Cap, on: &'a On) -> grades::Terms<'a>
 pub struct GradeGrader {
     pub id: String,
     pub title: String,
+    /// The hosts its program can send what it is handed to: the plan says each.
+    pub hosts: Vec<String>,
 }
 
 /// **The Grader extensions the project at `root` can grade with now**: each this machine approved
@@ -320,7 +322,11 @@ fn graders_here(executor: &Executor, root: &std::path::Path) -> Vec<GradeGrader>
             studio
                 .graders()
                 .into_iter()
-                .map(|(id, title)| GradeGrader { id, title })
+                .map(|one| GradeGrader {
+                    id: one.id,
+                    title: one.title,
+                    hosts: one.hosts,
+                })
                 .collect()
         })
     })
@@ -751,6 +757,15 @@ pub(crate) struct ByGrader {
     pub executor: Arc<Executor>,
 }
 
+/// **`request` as a Grader extension is handed it**: what the plan shows it is handed, the trigger
+/// tests. It can run no chat but theirs, so it has no use for the outcome evals.
+fn handed_to_a_grader(request: &grading::GradeRequest) -> grading::GradeRequest {
+    grading::GradeRequest {
+        outcomes: Vec::new(),
+        ..request.clone()
+    }
+}
+
 /// **The report of `request`, graded by `by`** (purlis's own runner where none), its chats run by
 /// `chats` and held to `limits`: the same host and the same limits either way.
 fn graded_by(
@@ -763,6 +778,7 @@ fn graded_by(
     let Some(by) = by else {
         return grading::grade(request, chats, Some(limits));
     };
+    let request = &handed_to_a_grader(request);
     purlis_core::skills::studio::with_studio(&by.executor, root, |studio| match studio {
         Some(studio) => studio.grade(&by.id, request, chats, Some(limits)),
         // Its plan listed it, so this machine's config home went since: still a report.
@@ -1001,7 +1017,14 @@ pub(crate) fn begin(
                 running().remove(&grade);
                 let said = match (&graded.report.not_started, recorded) {
                     // A Grader that ended its grade: the window says why, in its sentence.
-                    _ if graded.report.failed.is_some() => graded.report.failed.clone(),
+                    (_, None) if graded.report.failed.is_some() => {
+                        graded.report.failed.as_ref().map(|why| {
+                            format!(
+                                "{why} This project could not be written, so it was not recorded."
+                            )
+                        })
+                    }
+                    (_, Some(_)) if graded.report.failed.is_some() => graded.report.failed.clone(),
                     (Some(why), _) => Some(why.clone()),
                     (None, Some(_)) if graded.report.ended == GradeEnd::SpendNotReported => Some(
                         "This profile's chats do not say what they spend, so a grade on it cannot \

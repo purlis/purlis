@@ -1300,9 +1300,9 @@ pub struct Terms<'a> {
     pub model: Option<&'a str>,
     pub token_cap: u64,
     pub limit_usd: f64,
-    /// The Grader extension the plan names, by its id and its title (#3236); `None` is purlis's
-    /// own runner.
-    pub grader: Option<(&'a str, &'a str)>,
+    /// The Grader extension the plan names, by its id, its title and the hosts it can reach
+    /// (#3236); `None` is purlis's own runner.
+    pub grader: Option<(&'a str, &'a str, &'a [String])>,
 }
 
 /// **The consent of a plan that shows `terms`**: `consent` (what it grades, [`consent_of`]) and
@@ -1329,11 +1329,15 @@ pub fn consent_on(consent: &str, terms: &Terms<'_>) -> String {
     digest.update(terms.limit_usd.to_bits().to_be_bytes());
     // Only a plan that names a Grader says more, so a plan of purlis's own runner consents to
     // what it did before this was added, and a kept opt-in still holds.
-    if let Some((id, title)) = terms.grader {
+    if let Some((id, title, hosts)) = terms.grader {
         digest.update(b"\0by=");
-        digest.update(id.as_bytes());
-        digest.update(b"\0");
-        digest.update(title.as_bytes());
+        for word in [id, title]
+            .into_iter()
+            .chain(hosts.iter().map(String::as_str))
+        {
+            digest.update(word.as_bytes());
+            digest.update(b"\0");
+        }
     }
     hex_of(digest)
 }

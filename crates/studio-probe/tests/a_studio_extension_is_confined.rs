@@ -969,9 +969,13 @@ fn graded_by_the_probe(
         project: &choices,
     };
     // Listed beside purlis's own, by the title its manifest gives it.
+    let listed = studio.graders();
     assert_eq!(
-        studio.graders(),
-        [(ID.to_owned(), "Probe grader".to_owned())]
+        listed
+            .iter()
+            .map(|one| (one.id.as_str(), one.title.as_str()))
+            .collect::<Vec<_>>(),
+        [(ID, "Probe grader")]
     );
     let report = studio.grade(ID, request, chats, limits);
     (report, executor)

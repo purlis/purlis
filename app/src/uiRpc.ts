@@ -5598,6 +5598,8 @@ export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" |
 export type GradeGrader = {
 	id: string,
 	title: string,
+	/**  The hosts its program can send what it is handed to: the plan says each. */
+	hosts: string[],
 };
 
 /**
