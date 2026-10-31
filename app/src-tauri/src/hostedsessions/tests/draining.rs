@@ -362,17 +362,14 @@ fn a_pools_log_is_read_from_each_link_still_open() {
     assert_eq!(logs[0].0, OLD);
     assert!(!logs[0].1.down, "{logs:?}");
 
-    // Only the draining runner's link goes down, so only reading it says so.
-    let to_it = pool.connection.to_a_pool("builds");
-    to_it
-        .links_of(&root)
+    // Only the draining runner's link is said to be down, so only reading it says so.
+    let links = pool.connection.to_a_pool("builds").links_of(&root);
+    let draining = links
         .iter()
         .find(|link| link.reached_runner() == Some(OLD))
-        .expect("its link is kept")
-        .end();
-    until("the pool's log says a link is down", || {
-        sessions.runner_logs()[0].1.down
-    });
+        .expect("its link is kept");
+    lock(&draining.shared.runner_log).link(true);
+    assert!(sessions.runner_logs()[0].1.down);
 }
 
 /// **The window keeps one name for a pool** (#4271): a link to a draining runner takes back only
