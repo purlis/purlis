@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793484519909,
+  "lastUpdate": 1793486432305,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34230,6 +34230,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5060755,
             "unit": "ms",
             "extra": "median of 5 runs: 101.321, 101.402, 101.506, 102.318, 102.487 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6123eae41431eb725ddab9ed5379537826215794",
+          "message": "Sandbox: a chat keeps out of other harnesses' default folders (#4356)\n\n* Sandbox: a chat keeps out of other harnesses' default folders, and a pool's default profiles stay signed in\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QJT60GB1CNZJEAJVZ9T8\nPurlis-Persona: steward\n\n* Sandbox: a chat inside another harness's default folder is denied its sign-in alone\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QJT60GB1CNZJEAJVZ9T8\nPurlis-Persona: steward\n\n* Runners: default-folder sign-ins are carried only from a runner that keeps chats out of them\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QJT60GB1CNZJEAJVZ9T8\nPurlis-Persona: steward\n\n* The live sandbox test checks another harness's sign-in is unchanged after the run\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QJT60GB1CNZJEAJVZ9T8\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T21:44:57Z",
+          "tree_id": "8a663a188e560a11ec807eae098d0ec927e7c62e",
+          "url": "https://github.com/purlis/purlis/commit/6123eae41431eb725ddab9ed5379537826215794"
+        },
+        "date": 1793486428859,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5310874999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.515, 0.516, 0.531, 0.535, 0.540 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.410089999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.940, 16.256, 16.410, 16.413, 16.472 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.104063,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.801, 102.079, 102.104, 102.976, 103.077 ms"
           }
         ]
       }
