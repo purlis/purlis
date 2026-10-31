@@ -354,8 +354,9 @@ fn in_the_journey(
         use std::io::Write as _;
         let _ = writeln!(
             std::io::stderr(),
-            "[{:>4}s] {what}",
-            began.elapsed().as_secs()
+            "[{:>4}s] {what} (marked: {})",
+            began.elapsed().as_secs(),
+            purlis_core::runnertaint::pool_ran_unsandboxed(&machine.config, pool)
         );
     };
     step("the pool is added");
