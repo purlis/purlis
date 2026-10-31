@@ -106,7 +106,8 @@ add about 90 MB to the `amd64` image and about 85 MB to the `arm64` one, of abou
 image's SBOM lists both.
 
 No credential comes with them, and what they keep in a runner's home (`.config/gh`,
-`.config/glab-cli`, `.local/share/gh`) is out of every chat's reach. Without a tool declared for
+`.config/glab-cli`, `.local/share/gh`) is out of every chat's reach: a sandboxed chat's settings
+for them are in a folder of its own, in the temporary folder. Without a tool declared for
 the chat's persona, `gh` on a runner is simply not signed in. A persona's tool named `gh` or `glab` runs as any declared tool does
 ([ADR 0077](adr/0077-a-forge-sign-in-is-the-humans-through-one-registration-per-forge-host-and-it-mints-nothing-for-an-agent.md)). On an image without the program, an allowed tool is refused with a sentence naming
 the program and the pool's image, which a pool gives its runner as `PURLIS_POOL_IMAGE`. Only the

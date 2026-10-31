@@ -3696,7 +3696,8 @@ fn a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(target: &Targe
 /// **`gh` and `glab` run in a chat on a runner, and a declared tool of them is what its persona
 /// says** (#4354): a Codex chat the runner's own host composes, inside purlis's wrap, on the runner
 /// image as it ships but for the test's own files. With no tool `gh` answers and is not signed in
-/// (ADR 0077), and what the programs keep in the runner's home is out of its reach. Declared, `gh`
+/// (ADR 0077), and what the programs keep in the runner's home is out of its reach, with settings
+/// of its own for them. Declared, `gh`
 /// runs through its shim on the value its desktop sent for that run, which stands in for the
 /// person's Allow and vault. A declared program the image does not have says so, naming the image.
 fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Target) {
