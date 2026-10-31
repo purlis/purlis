@@ -14,8 +14,8 @@
 //! as Claude Code's own login writes it, and Claude Code itself says it is signed in there. No
 //! model answers. **The image's name**: an update is followed only between images of purlis's
 //! own name, and this build's is in the job's registry, so the `docker` this test's pool uses
-//! is the real one, told the job's registry wherever a command names purlis's. The digests are
-//! real.
+//! is the real one, told the job's registry wherever a command names purlis's, and naming
+//! purlis's again in what it answers. The digests are real.
 
 use std::cell::RefCell;
 
@@ -59,11 +59,23 @@ fn a_docker_of_the_jobs_registry(folder: &Path) -> purlis_core::dockerpool::Dock
     let script = folder.join("docker");
     let own = purlis_core::dockerpool::PURLIS_RUNNER_IMAGE.replace('/', "\\/");
     let registry = REGISTRY_NAME.replace('/', "\\/");
+    let (sed_own, sed_registry) = (own.replace('.', "\\."), registry.replace('.', "\\."));
+    // What it answers names purlis's image again, as a pool checks the image its container runs.
+    // Never a stream: `exec` and `attach` carry the link between hosts as they are.
     std::fs::write(
         &script,
         format!(
-            "#!/bin/bash\nargs=()\nfor word in \"$@\"; do args+=(\"${{word//{own}/{registry}}}\"); done\nexec '{}' \"${{args[@]}}\"\n",
-            real.program().display()
+            "#!/bin/bash\n\
+             args=()\n\
+             stream=\n\
+             for word in \"$@\"; do\n  \
+               case \"$word\" in exec|attach) stream=yes ;; esac\n  \
+               args+=(\"${{word//{own}/{registry}}}\")\n\
+             done\n\
+             [ -n \"$stream\" ] && exec '{real}' \"${{args[@]}}\"\n\
+             '{real}' \"${{args[@]}}\" | sed 's/{sed_registry}/{sed_own}/g'\n\
+             exit \"${{PIPESTATUS[0]}}\"\n",
+            real = real.program().display(),
         ),
     )
     .expect("its script");
