@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793477102781,
+  "lastUpdate": 1793478415710,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34020,6 +34020,48 @@ window.BENCHMARK_DATA = {
             "value": 103.1795065,
             "unit": "ms",
             "extra": "median of 5 runs: 102.133, 102.849, 103.180, 103.202, 103.778 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "df5d7f96b44f2b005166f51354df31040cb4ba1e",
+          "message": "Runners: profile remove reaches the runners; a harness's folder waits for its chat; Asks clear everywhere (#4317)\n\n* Runners: forgetting a harness's own folder waits for a chat with no profile (#4142)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69CAZQXEXXCNEEQCCV7MWWM\nPurlis-Persona: steward\n\n* Runners: purlis profile remove reaches the pools' runners through the window; a wait let go tells every project (#4141, #4228)\n\nThe command asks the running window on a socket of its own beside the session host's, which every chat's sandbox is denied. The window refuses a name this machine still has. With no window the command holds the sign-in from every drain and says the runners forget it at their next tidy. A profile taken off a pool, or a tidy, now tells each project whose wait went.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69CAZQXEXXCNEEQCCV7MWWM\nPurlis-Persona: steward\n\n* Runners: a browser names no harness; host exports formatted (#4142)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69CAZQXEXXCNEEQCCV7MWWM\nPurlis-Persona: steward\n\n* Runners: review of the profile reach: folders held across their delete, both sides check the peer (#4141, #4142)\n\nA harness's own folders are held under the host's state lock across the delete, starts on no profile are counted from their entry and refused during the hold, and shells count. The socket's client checks its peer too, marks what the window says, and a peer has one deadline for its whole line. A window that could not ask says so. The listener starts after adoption, off the launch's path, and the module is unix-only like the pools. Documented in plane-format.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69CAZQXEXXCNEEQCCV7MWWM\nPurlis-Persona: steward\n\n* Runners: a profile is held from check to delete, every start counted (#4142)\n\nEvery start counts from its entry, a start on what is being forgotten is refused, and the hold lives on the blocking thread through the delete. The catch_unwind goes: release builds abort on panic.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69CAZQXEXXCNEEQCCV7MWWM\nPurlis-Persona: steward\n\n* Runners: the command speaks of every pool's runner, as the window now asks them (#4141)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69CAZQXEXXCNEEQCCV7MWWM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T19:47:57Z",
+          "tree_id": "974fd135b00372d7261c23c4fc734e8e34c9051e",
+          "url": "https://github.com/purlis/purlis/commit/df5d7f96b44f2b005166f51354df31040cb4ba1e"
+        },
+        "date": 1793478409706,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3562465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.331, 0.350, 0.356, 0.373, 0.388 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.531846,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.159, 16.466, 16.532, 16.572, 16.589 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9339055,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.130, 101.142, 101.934, 102.222, 103.585 ms"
           }
         ]
       }
