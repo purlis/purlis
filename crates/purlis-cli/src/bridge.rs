@@ -105,7 +105,9 @@ pub fn run(asked: Asked) -> Result<u8, String> {
         let told = serde_json::from_str(line.trim())
             .map_err(|_| "what the desktop said of the mint port is not one purlis reads")?;
         if *again {
-            purlis_core::forge::mintport::tell_again(&config, told)?;
+            if purlis_core::forge::mintport::tell_again(&config, told)? {
+                println!("{}", purlis_core::clusterpool::TOLD_SETTLED);
+            }
         } else {
             purlis_core::forge::mintport::tell(&config, told)?;
         }

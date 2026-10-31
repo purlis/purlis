@@ -866,9 +866,9 @@ holds for such tools alone. Any other tool's vault value still comes from the de
   than 5 seconds later, doubling each time up to 5 minutes, and until then each run goes straight to
   the desktop. Once the desktop has refused such a run too, the chat's next runs of that tool are
   refused on the runner on the same pace, saying so, so a loop does not keep asking the person. A
-  token or values sent clear the pace.
+  token or values sent clear it.
 - **A chat's start waits for its repos, at most 5 seconds.** The desktop adds the workspace's repos to
-  the Claim before the chat starts, so its first mint covers them. A cluster slower than that lets
+  the Claim before the chat starts, so its first mint covers them, the chat's first message included. A cluster slower than that lets
   the chat start: an early mint is refused and goes to the person, or covers what the Claim names by
   then, and that token is kept as any is.
 - **A run on such a token is recorded as from the cluster:** its `secret-exec` says `"from":
@@ -891,7 +891,7 @@ holds for such tools alone. Any other tool's vault value still comes from the de
 as a Pool's `signingKey`), only for a runner the operator vouches for on a Pool that opts in. As the
 desktop pairs its runner it takes the address, and tells the runner the key it pinned when it added the
 pool, whatever key the status names. **It tells it again at each link**, once each for what it says,
-so a runner whose Pool opted in later or whose status said nothing in time comes to use the port. A status naming another address only fails the runner's handshake. The runner keeps them in
+so a runner whose Pool opted in later (having named its key when the runner was made) or whose status said nothing in time comes to use the port. A status naming another address only fails the runner's handshake. The runner keeps them in
 [`mint-port.json`](plane-format.md) in its session host's folder, so it needs no way to the
 Kubernetes API.
 
@@ -902,7 +902,8 @@ does, then holds both till the port shows the next. It looks about hourly and be
 runner that was stopped through the whole roll, past the old key's removal, does not follow it:** its
 mints are refused and go to its desktop until its desktop's next link, which tells it the key the
 desktop followed, taken only once the port shows that key. Told at a link, a runner keeps any key the
-port still shows, so a desktop behind it undoes nothing it followed.
+port still shows and takes back no key it moved on from, so a desktop behind it undoes nothing it
+followed.
 
 ## Tests
 

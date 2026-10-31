@@ -384,8 +384,10 @@ fn a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it() {
             // Mounted, the row stands whatever is there (#4329), and the folder itself is refused.
             Some(left) => {
                 assert!(fs::read_to_string(left).is_ok(), "outside it is read");
+                assert_eq!(chat.tried(&["list", "/run"]), "ok", "{name}: only the row");
                 assert_eq!(chat.tried(&["read", left]), "EACCES", "{name}");
-                assert_eq!(chat.tried(&["read", &handoff]), "EACCES", "{name}");
+                // Missing is answered before any rule: nothing of the pod's copy is there.
+                assert_eq!(chat.tried(&["read", &handoff]), "ENOENT", "{name}");
                 assert_eq!(chat.tried(&["list", HANDOVER_IN_A_POD]), "EACCES", "{name}");
                 assert_eq!(chat.tried(&["write", left]), "EACCES", "{name}");
             }

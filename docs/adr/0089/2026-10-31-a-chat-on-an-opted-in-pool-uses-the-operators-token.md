@@ -26,15 +26,3 @@ to the amendment of 2026-10-31 on the mint port, and keeps everything else in it
 9. **The operator mints only for a pod made with the mark** `PURLIS_MINTING_POOL`, set from its birth
    where the Pool names a key (ruled 2026-10-31: every runner it would mint for refuses). A pod's
    containers never change, so this reads what has held since its first moment.
-
-## Added by #4330, #4331 and #4332
-
-10. **A runner is told again at each link** (amends 2): the same words, `--mint-port --again`. It
-    keeps any key the port still shows, and takes its desktop's pin only once the port shows that,
-    so a roll it followed is not undone. The desktop also reads `mintInCluster` again at each link.
-11. **A chat's start waits at most 5 seconds for its repos to reach the Claim** (amends 5), on a pool
-    that opts in alone, so a first mint covers them.
-12. **A chat's refused mints are paced per chat and tool** (adds to 4): the port from 5 seconds,
-    doubling to 5 minutes. A refused run still reaches the desktop's gate and Ask. Once that refused
-    it too, the next runs are refused on the runner on the same pace. A run's record says `"from":
-    "cluster"` for a token from the operator.

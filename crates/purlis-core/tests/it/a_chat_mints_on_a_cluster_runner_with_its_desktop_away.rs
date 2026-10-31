@@ -281,15 +281,22 @@ fn a_paired_runner(
             "mintInCluster": true,
         });
     }
-    applied(
-        kubectl,
-        &serde_json::json!({
-            "apiVersion": "runners.purlis.dev/v1alpha1",
-            "kind": "Pool",
-            "metadata": { "name": name },
-            "spec": spec,
-        }),
-    );
+    // Retried: use on the key takes a moment to reach the policy.
+    let pool = serde_json::json!({
+        "apiVersion": "runners.purlis.dev/v1alpha1",
+        "kind": "Pool",
+        "metadata": { "name": name },
+        "spec": spec,
+    });
+    eventually("the Pool to be taken", || {
+        kubectl
+            .run(
+                &kubectl.args(&["apply", "--filename", "-"]),
+                Some(&pool.to_string()),
+                64 * 1024,
+            )
+            .ok()
+    });
     let pin = eventually("the pool names the operator's key", || {
         kubectl.pool_pin(name).ok()
     });
@@ -495,8 +502,12 @@ fn a_chat_runs_its_minting_tool_in_its_sandbox_with_its_desktop_away() {
     let told = eventually("the Claim's status says where to ask", || {
         clusterpool::to_tell_at_a_link(&seen, &kubectl, &pin, &paired.claimed).expect("it reads")
     });
-    clusterpool::tell_again(&kubectl, &runners, &pod, &told).expect("told at a link");
-    clusterpool::tell_again(&kubectl, &runners, &pod, &told).expect("told again changes nothing");
+    for _ in 0..2 {
+        assert!(
+            clusterpool::tell_again(&kubectl, &runners, &pod, &told).expect("told at a link"),
+            "the port shows the key it is told"
+        );
+    }
 
     // The stand-in harness, in a folder no chat writes.
     in_the_pod(
@@ -517,7 +528,11 @@ fn a_chat_runs_its_minting_tool_in_its_sandbox_with_its_desktop_away() {
         .build()
         .unwrap();
     let root = runtime.block_on(async {
-        let client = linked(&kubectl, &pin, &paired, ours.clone()).await;
+        let ours = Identity {
+            device: ours.device.clone(),
+            key: ours.key.clone(),
+        };
+        let client = linked(&kubectl, &pin, &paired, ours).await;
         client
             .hold_project(PROJECT, "")
             .await
@@ -546,7 +561,7 @@ fn a_chat_runs_its_minting_tool_in_its_sandbox_with_its_desktop_away() {
             &kubectl,
             &runners,
             &pod,
-            &format!("find \"$HOME\" -type d -name {PROJECT} | head -n 1"),
+            &format!("find \"$HOME\" -type d -path '*/projects/{PROJECT}' | head -n 1"),
             None,
         )
         .trim()
@@ -582,7 +597,7 @@ fn a_chat_runs_its_minting_tool_in_its_sandbox_with_its_desktop_away() {
         client
             .start_program(StartProgram {
                 program: Some("01J9CHAT000000000000000000".into()),
-                run: Some("01J9RUN0000000000000000000".into()),
+                run: Some("01J9RVN0000000000000000000".into()),
                 persona: Some("steward".into()),
                 profile: Some("work".into()),
                 tools_allowed: Some(digest),

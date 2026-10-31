@@ -111,10 +111,21 @@ pub fn in_cluster(
 /// ago.
 fn asked_too_soon_said(tool: &str, left: Duration) -> String {
     format!(
-        "the person's desktop refused {tool} moments ago, and the cluster minted it no token, so \
-         purlis does not ask them again for {} seconds: run it again after that",
+        "the person's desktop did not let {tool} run moments ago, and the cluster minted it no \
+         token, so purlis does not ask again for {} seconds: run it again after that",
         left.as_secs().max(1)
     )
+}
+
+/// Whether what the window wrote ends its run in a refusal: not its note that the person is being
+/// asked, which comes first.
+fn is_a_refusal(text: &str) -> bool {
+    text.lines().any(|line| {
+        matches!(
+            serde_json::from_str::<brokered::Frame>(line),
+            Ok(brokered::Frame::Refused { .. })
+        )
+    })
 }
 
 /// What the asker of `tool` is told where the cluster refused it a token.
@@ -285,7 +296,10 @@ impl Relaying {
             None => {
                 let asked = (self.in_cluster)(&asker, &tool);
                 match &asked {
-                    Some(Ok(_)) => self.port_paced.cleared(&paced),
+                    Some(Ok(_)) => {
+                        self.port_paced.cleared(&paced);
+                        self.asks_paced.cleared(&paced);
+                    }
                     Some(Err(why)) => self.port_paced.refused(&paced, why),
                     None => {}
                 }
@@ -367,9 +381,6 @@ impl Relaying {
             match reply {
                 Replied::Handed(handed) => {
                     self.done(id);
-                    if cluster_refused {
-                        self.asks_paced.cleared(&paced);
-                    }
                     // Only the values sent for this chat's run of this tool, and only while its
                     // asker is there.
                     if !handed.is_for(ask.chat, &tool, &run) {
@@ -379,6 +390,10 @@ impl Relaying {
                             ask.chat
                         );
                         return brokered::refused(writer, not_for_this_run_said(&tool));
+                    }
+                    if cluster_refused {
+                        self.port_paced.cleared(&paced);
+                        self.asks_paced.cleared(&paced);
                     }
                     if input.gone() {
                         return;
@@ -399,7 +414,7 @@ impl Relaying {
                 }
                 // The window's own words: a refusal, said as it said it.
                 Replied::Wrote { text } => {
-                    if cluster_refused {
+                    if cluster_refused && is_a_refusal(&text) {
                         self.asks_paced.refused(&paced, &text);
                     }
                     if writer

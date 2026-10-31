@@ -1130,8 +1130,8 @@ pub fn before_cluster_link_to(
     Ok(())
 }
 
-/// What this desktop told each runner at a link since it started (#4330): told once, a runner is
-/// asked again only once its address or this desktop's pin moves.
+/// What settled each runner at a link since this desktop started (#4330): settled, a runner is told
+/// again only once its address or this desktop's pin moves.
 static TOLD_AT_A_LINK: std::sync::Mutex<std::collections::BTreeSet<String>> =
     std::sync::Mutex::new(std::collections::BTreeSet::new());
 
@@ -1188,17 +1188,19 @@ fn told_at_a_link(
     if told_already(&TOLD_AT_A_LINK.lock().unwrap_or_else(|e| e.into_inner())) {
         return Ok(());
     }
-    crate::clusterpool::tell_again(
+    let settled = crate::clusterpool::tell_again(
         &reached,
         &crate::clusterpool::runner_namespace(&kept.claimed.requester),
         &kept.pod,
         &told,
     )
     .map_err(|why| why.to_string())?;
-    TOLD_AT_A_LINK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(line);
+    if settled {
+        TOLD_AT_A_LINK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(line);
+    }
     Ok(())
 }
 
@@ -1219,10 +1221,7 @@ pub fn waited_at_most(
             let _ = finished.send(());
         })
         .map_err(|why| why.to_string())?;
-    Ok(!matches!(
-        waited.recv_timeout(within),
-        Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-    ))
+    Ok(waited.recv_timeout(within).is_ok())
 }
 
 /// **Puts a workspace's repos on the Claim of the cluster pool `name`'s runner** (#4207), as a chat

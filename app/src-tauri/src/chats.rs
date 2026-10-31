@@ -4323,6 +4323,16 @@ impl Chats {
                 )
             })?),
         };
+        // A runner chat's workspace clones as it starts (#2053), read before any lock is taken.
+        let mut clones_at_start = (on_the_runner && !reattaching)
+            .then(|| purlis_core::forge::apptoken::clones_now(&self.project));
+        // Before the program is started, so its first mint covers them (#4331).
+        #[cfg(unix)]
+        self.puts_its_repos_on_its_claim(
+            workspace_at_start(Some(&self.project), chat.cwd.as_deref()).as_deref(),
+            chat.cwd.as_deref(),
+            clones_at_start.as_deref(),
+        );
         let opened = match (reattaching, chat.number) {
             (true, Some(number)) => self.sessions.reattach(number, &announce),
             _ if on_the_runner => self
@@ -4488,16 +4498,6 @@ impl Chats {
                 start: Some(&skills),
             })
         });
-        // A runner chat's workspace clones as it starts (#2053), read before any lock is taken.
-        let mut clones_at_start = (on_the_runner && !reattaching)
-            .then(|| purlis_core::forge::apptoken::clones_now(&self.project));
-        #[cfg(unix)]
-        self.puts_its_repos_on_its_claim(
-            session,
-            workspace.as_deref(),
-            under.cwd.as_deref(),
-            clones_at_start.as_deref(),
-        );
         // A start under this number has been told nothing yet (#1450).
         lock(&self.told).remove(&session);
         lock(&self.starting_as).remove(&session);
@@ -5681,7 +5681,6 @@ impl Chats {
     #[cfg(unix)]
     fn puts_its_repos_on_its_claim(
         &self,
-        session: u32,
         workspace: Option<&str>,
         folder: Option<&std::path::Path>,
         clones: Option<&[purlis_core::forge::apptoken::Started]>,
@@ -5698,15 +5697,15 @@ impl Chats {
             folder.map(std::path::Path::to_path_buf),
             clones.to_vec(),
         );
-        let sent = purlis_core::pools::waited_at_most(
-            purlis_core::pools::REPOS_WAITED_FOR,
-            move || {
+        let sent =
+            purlis_core::pools::waited_at_most(purlis_core::pools::REPOS_WAITED_FOR, move || {
                 let record = purlis_core::forge::apptoken::record_root();
                 let repos = || {
                     purlis_core::forge::apptoken::repos_of_workspace(
                         &purlis_core::forge::apptoken::For {
                             root: &root,
-                            chat: session,
+                            // Not started yet: a workspace's repos are no chat's own.
+                            chat: 0,
                             folder: folder.as_deref(),
                             here: None,
                             writes: &[],
@@ -5722,8 +5721,7 @@ impl Chats {
                         "purlis: the repos of a chat on pool {pool} did not reach its claim: {why}"
                     );
                 }
-            },
-        );
+            });
         match sent {
             Ok(true) => {}
             Ok(false) => tracing::info!(

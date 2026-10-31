@@ -1774,6 +1774,7 @@ pub fn told_of_the_port(
         cluster: pin.cluster.clone(),
         address,
         keys: vec![pin.key.spelled()],
+        left: Vec::new(),
     }
 }
 
@@ -1835,13 +1836,17 @@ pub fn to_tell_at_a_link(
         .map(|(address, _says_of_its_key)| told_of_the_port(claimed, pin, address)))
 }
 
-/// **Tells the runner in `pod` again** (#4330, [`crate::forge::mintport::tell_again`]).
+/// What a runner prints once a word at a link settled it (#4330).
+pub const TOLD_SETTLED: &str = "settled";
+
+/// **Tells the runner in `pod` again** (#4330, [`crate::forge::mintport::tell_again`]): true where it
+/// says that settled it, so this desktop need not say it again.
 pub fn tell_again(
     kubectl: &Kubectl,
     runner_namespace: &str,
     pod: &str,
     told: &crate::forge::mintport::Told,
-) -> Result<(), Refused> {
+) -> Result<bool, Refused> {
     let line = serde_json::to_string(told).map_err(|why| Refused::Other(why.to_string()))?;
     kubectl
         .run(
@@ -1849,7 +1854,7 @@ pub fn tell_again(
             Some(&format!("{line}\n")),
             crate::runnerlink::MOST_LINE,
         )
-        .map(|_| ())
+        .map(|said| said.trim() == TOLD_SETTLED)
 }
 
 /// **Before every link**: the operator still vouches for the pod and key `paired` was paired

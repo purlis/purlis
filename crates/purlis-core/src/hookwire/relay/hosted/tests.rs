@@ -845,3 +845,18 @@ fn a_run_the_window_refused_is_not_asked_of_the_person_again_at_once() {
     assert!(desktop.heard.lock().unwrap().is_empty(), "nobody is asked");
     assert!(desktop.ran.lock().unwrap().is_empty());
 }
+
+/// The window says the person is being asked before they answer: only its refusal paces.
+#[test]
+fn the_windows_note_that_it_asks_is_no_refusal() {
+    let line = |frame: &brokered::Frame| serde_json::to_string(frame).unwrap();
+    let note = line(&brokered::Frame::Note("asked".to_owned()));
+    let refusal = line(&brokered::Frame::Refused {
+        why: "no".to_owned(),
+        code: 1,
+    });
+    assert!(!is_a_refusal(&note));
+    assert!(is_a_refusal(&refusal));
+    assert!(is_a_refusal(&format!("{note}\n{refusal}\n")));
+    assert!(!is_a_refusal("not a frame"));
+}

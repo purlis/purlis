@@ -52,6 +52,15 @@ pub const MARK_VAR: &str = "PURLIS_MINTING_POOL";
 /// The most keys held at once: the one the port shows and the next.
 const MOST_KEYS: usize = 2;
 
+/// The most keys kept of those moved on from.
+const MOST_LEFT: usize = 8;
+
+/// Held while [`FILE`] is read and written back, so a roll followed is not written over.
+const LOCK: &str = "mint-port.lock";
+
+/// How often a word at a link is decided again where [`FILE`] moved while it was.
+const TOLD_TRIES: usize = 3;
+
 /// The most of [`FILE`] and of the port's answer read.
 const MOST_READ: u64 = 64 * 1024;
 
@@ -85,6 +94,10 @@ pub struct Told {
     pub address: String,
     /// The operator's keys the port is held to, each `ed25519:<64 hex>`: one, or two during a roll.
     pub keys: Vec<String>,
+    /// The keys this runner has moved on from, newest last, at most [`MOST_LEFT`] (#4330): never
+    /// taken back at a link, whoever says them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub left: Vec<String>,
 }
 
 impl Told {
@@ -96,7 +109,13 @@ impl Told {
                 .keys
                 .iter()
                 .all(|key| OperatorKey::from_spelled(key).is_ok());
+        let left_read = self.left.len() <= MOST_LEFT
+            && self
+                .left
+                .iter()
+                .all(|key| OperatorKey::from_spelled(key).is_ok());
         if !keys_read
+            || !left_read
             || !is_label(&self.namespace)
             || !is_subdomain(&self.claim)
             || !crate::clusterpool::is_uid(&self.cluster)
@@ -120,44 +139,94 @@ pub fn tell(config_root: &Path, told: Told) -> Result<(), String> {
         .map_err(|why| format!("what this runner was told of the mint port was not kept: {why}"))
 }
 
+/// **Writes `next` where this runner still keeps `was`** (#4330), under [`LOCK`], since the host and
+/// a desktop's word each decide over the network and then write: false, and nothing written, where
+/// what is kept moved meanwhile.
+fn replaced_if_still(config_root: &Path, was: Option<&Told>, next: Told) -> Result<bool, String> {
+    let _locked = crate::machine::Lock::named(config_root, LOCK);
+    if told(config_root)?.as_ref() != was {
+        return Ok(false);
+    }
+    tell(config_root, next)?;
+    Ok(true)
+}
+
+/// `held` moved on to `keys`: what it let go of is kept as left.
+fn moved_to(held: &Told, keys: Vec<String>) -> Vec<String> {
+    let mut left = held.left.clone();
+    for key in &held.keys {
+        if !keys.contains(key) && !left.contains(key) {
+            left.push(key.clone());
+        }
+    }
+    let over = left.len().saturating_sub(MOST_LEFT);
+    left.drain(..over);
+    left
+}
+
 /// **What a desktop tells a runner at a link** (#4330), kept where it moves this runner on and
 /// never where it would undo a roll this runner followed:
 ///
 /// - Told nothing yet, it takes what it is told, as at pairing.
-/// - Holding the key it is told, or a key the port at that address still shows, it keeps its keys:
-///   a desktop may be behind a runner that followed by itself, or ahead of one in mid-roll, whose
-///   next look follows.
+/// - Told a key it holds, a key it moved on from, or holding a key the port at that address still
+///   shows, it keeps its keys: a desktop may be behind a runner that followed by itself, or ahead
+///   of one in mid-roll, whose next look follows.
 /// - Otherwise it missed a whole roll, and takes the desktop's pin only once the port shows it.
 ///   A port showing neither moves no key, so nothing here can send a proof to a key it did not hold
 ///   or was told.
 ///
 /// The address is always the one told: it decides nothing, since a wrong one fails the handshake.
 /// Another Claim's or another cluster's word is refused: a runner is paired once.
-pub fn tell_again(config_root: &Path, told: Told) -> Result<(), String> {
-    let told = told.checked()?;
-    let Some(held) = self::told(config_root)? else {
-        return tell(config_root, told);
+///
+/// True where this settled it. False where the port showed neither, so its desktop tells it again
+/// at its next link.
+pub fn tell_again(config_root: &Path, told: Told) -> Result<bool, String> {
+    let told = Told {
+        left: Vec::new(),
+        ..told.checked()?
     };
-    if held.namespace != told.namespace || held.claim != told.claim || held.cluster != told.cluster
-    {
-        return Err("this runner was told of the mint port for another claim".to_owned());
+    for _ in 0..TOLD_TRIES {
+        let held = self::told(config_root)?;
+        let Some(held) = held else {
+            if replaced_if_still(config_root, None, told.clone())? {
+                return Ok(true);
+            }
+            continue;
+        };
+        if held.namespace != told.namespace
+            || held.claim != told.claim
+            || held.cluster != told.cluster
+        {
+            return Err("this runner was told of the mint port for another claim".to_owned());
+        }
+        let keeping = Told {
+            keys: held.keys.clone(),
+            left: held.left.clone(),
+            ..told.clone()
+        };
+        let known = told
+            .keys
+            .iter()
+            .all(|key| held.keys.contains(key) || held.left.contains(key));
+        let (next, settled) = if known || connected(&keeping).is_ok() {
+            (keeping, true)
+        } else if connected(&told).is_ok() {
+            let left = moved_to(&held, told.keys.clone());
+            (
+                Told {
+                    left,
+                    ..told.clone()
+                },
+                true,
+            )
+        } else {
+            (keeping, false)
+        };
+        if next == held || replaced_if_still(config_root, Some(&held), next)? {
+            return Ok(settled);
+        }
     }
-    let at_the_address = Told {
-        keys: held.keys.clone(),
-        ..told.clone()
-    };
-    let next = if told.keys.iter().all(|key| held.keys.contains(key))
-        || connected(&at_the_address).is_ok()
-        || connected(&told).is_err()
-    {
-        at_the_address
-    } else {
-        told
-    };
-    if next == held {
-        return Ok(());
-    }
-    tell(config_root, next)
+    Err("what this runner keeps of the mint port kept moving as it was told".to_owned())
 }
 
 /// What this runner was told of the port. `None` where nothing was, as on a pool not opted in.
@@ -510,9 +579,9 @@ pub fn mint(config_root: &Path, app: &str) -> Result<Option<Minted>, String> {
         return Err("the mint port's answer holds no token".to_owned());
     }
     let operator = asking.shown;
-    let moved = settled_on(told, &operator);
+    let moved = settled_on(&told, &operator);
     if let Some(moved) = moved
-        && let Err(why) = tell(config_root, moved)
+        && let Err(why) = replaced_if_still(config_root, Some(&told), moved)
     {
         // The token is live, and the next look at the port settles this again.
         tracing::warn!("purlis: the mint port's old key is still held: {why}");
@@ -528,10 +597,14 @@ pub fn mint(config_root: &Path, app: &str) -> Result<Option<Minted>, String> {
 
 /// Where the port showed the later of two held keys, the earlier one has gone: `told` holding
 /// `shown` alone, so a port showing the old key again is refused.
-fn settled_on(told: Told, shown: &str) -> Option<Told> {
-    (told.keys.len() > 1 && told.keys.last().is_some_and(|last| last == shown)).then(|| Told {
-        keys: vec![shown.to_owned()],
-        ..told
+fn settled_on(told: &Told, shown: &str) -> Option<Told> {
+    (told.keys.len() > 1 && told.keys.last().is_some_and(|last| last == shown)).then(|| {
+        let keys = vec![shown.to_owned()];
+        Told {
+            left: moved_to(told, keys.clone()),
+            keys,
+            ..told.clone()
+        }
     })
 }
 
@@ -596,9 +669,10 @@ pub fn follow(config_root: &Path, now: u64) -> Result<(), String> {
     }
     let answered = serde_json::from_slice(&body)
         .map_err(|_| "the mint port's word for its next key is not one purlis reads".to_owned())?;
-    let moved = following(&told, &shown, answered, now)?.or_else(|| settled_on(told, &shown));
+    let moved = following(&told, &shown, answered, now)?.or_else(|| settled_on(&told, &shown));
     match moved {
-        Some(moved) => tell(config_root, moved),
+        // Moved meanwhile, the next look decides again.
+        Some(moved) => replaced_if_still(config_root, Some(&told), moved).map(|_| ()),
         None => Ok(()),
     }
 }
