@@ -46,9 +46,11 @@
 //!
 //! A commit holds itself to the plane's save's rule of one file, one name
 //! (`planegit::ondisk`): a named file with a second name (a hard link) is refused before
-//! anything is staged, and once staged, a row that is not the file on disk now, with one name,
-//! refuses the commit, is unstaged, and its blob is taken out of the object store where it is
-//! a loose object nothing else reaches.
+//! anything is staged, and each file is staged from one open descriptor, asked that it is a
+//! regular file with one name, so the bytes stored are the bytes of the file that was checked
+//! and nothing is read again by its name. Once staged, a row that is not the file on disk now,
+//! with one name, refuses the commit, is unstaged, and its blob is taken out of the object
+//! store where it is a loose object nothing else reaches.
 //!
 //! # One at a time, and never left half done
 //!
@@ -970,36 +972,107 @@ fn ran_out(what: &str, within: std::time::Duration) -> String {
     )
 }
 
-/// Stages what `stage` names. Paths reach git on its standard input, NUL-separated and
-/// literal, so none is read as an option or as pathspec magic.
+/// **Stages what `stage` names, each regular file from one open descriptor**
+/// (`planegit::ondisk`): what `git add` of it would stage, its bytes read from the descriptor
+/// that was asked it is a regular file with one name, and asked again just before they are
+/// hashed, so a file with a second name never reaches the object store, and nothing is read
+/// again by its name. A link is staged as the bytes it holds, a deletion as its row taken out;
+/// another repository inside the folder is refused before anything is staged. Paths are read
+/// letter for letter, so none is read as an option or as pathspec magic.
 fn stage(here: &Here, stage: &Stage) -> Result<(), String> {
-    let (code, err) = match stage {
-        Stage::Tracked => {
-            let run = git::run(&here.top, &["add", "--update", "--", "."], STAGING)
-                .map_err(|e| e.to_string())?;
-            (run.code, run.err)
-        }
+    let refused = |why: String| format!("git did not stage that: {}", first_line(&why));
+    let found = match stage {
+        Stage::Tracked => ondisk::looked_at(&here.top, &[], ondisk::Listing::Tracked),
         Stage::Paths(paths) => {
-            let run = git::run_with_input(
-                &here.cwd,
-                &[
-                    "--literal-pathspecs",
-                    "add",
-                    "--pathspec-from-file=-",
-                    "--pathspec-file-nul",
-                ],
-                paths.join("\0").into_bytes(),
-                STAGING,
-            )
-            .map_err(|e| e.to_string())?;
-            (run.code, String::from_utf8_lossy(&run.err).into_owned())
+            let below = said(&here.cwd, &["rev-parse", "--show-prefix"])?.unwrap_or_default();
+            let named: Vec<String> = paths.iter().map(|path| format!("{below}{path}")).collect();
+            each_named(&here.top, &named).map_err(refused)?;
+            let specs: Vec<String> = named.iter().map(|path| literally(path)).collect();
+            let specs: Vec<&str> = specs.iter().map(String::as_str).collect();
+            ondisk::looked_at(&here.top, &specs, ondisk::Listing::All)
         }
-    };
-    match code {
-        Some(0) => Ok(()),
-        None => Err(ran_out("finish staging", STAGING)),
-        Some(_) => Err(format!("git did not stage that: {}", first_line(&err))),
     }
+    .map_err(refused)?;
+    let mut rows = Vec::new();
+    let mut held = Vec::new();
+    for (path, found) in found {
+        match found {
+            ondisk::OnDisk::SecondName => held.push(ondisk::Held {
+                path,
+                why: ondisk::Why::SecondName,
+            }),
+            ondisk::OnDisk::Folder { nested: true } => {
+                return Err(another_repository(&path));
+            }
+            found => rows.extend(ondisk::Row::of(path, found).map_err(refused)?),
+        }
+    }
+    if let Some(refusal) = ondisk::refused_unstaged(&held, ondisk::PutBack::AsHead) {
+        return Err(not_the_file(&refusal));
+    }
+    let held = ondisk::stage_rows(&here.top, rows).map_err(refused)?;
+    if let Some(refusal) = ondisk::refused_unstaged(&held, ondisk::PutBack::AsHead) {
+        return Err(not_the_file(&refusal));
+    }
+    ondisk::refresh(&here.top, false).map_err(refused)
+}
+
+/// `path` as a pathspec git reads letter for letter.
+fn literally(path: &str) -> String {
+    format!(":(literal){path}")
+}
+
+/// Why `git add` of `named` (relative to `top`) would have refused, in git's words, or
+/// nothing: a path reached through a link, one that names nothing on disk or in the index, or
+/// an untracked one the repository ignores.
+fn each_named(top: &Path, named: &[String]) -> Result<(), String> {
+    for path in named {
+        match ondisk::opened(top, path.trim_end_matches('/')) {
+            ondisk::OnDisk::Beyond => {
+                return Err(format!(
+                    "pathspec {} is beyond a symbolic link",
+                    shown(path)
+                ));
+            }
+            ondisk::OnDisk::Gone => {
+                let run = git::run(top, &["ls-files", "-z", "--", &literally(path)], git::READ)
+                    .map_err(|e| e.to_string())?;
+                if !run.ok() || run.out.is_empty() {
+                    return Err(format!("pathspec {} did not match any files", shown(path)));
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut args = vec![
+        "ls-files".to_owned(),
+        "-z".to_owned(),
+        "--others".to_owned(),
+        "--ignored".to_owned(),
+        "--exclude-standard".to_owned(),
+        "--".to_owned(),
+    ];
+    args.extend(named.iter().map(|path| literally(path)));
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let run = git::run(top, &args, git::READ).map_err(|e| e.to_string())?;
+    if !run.ok() {
+        return Err(run.err);
+    }
+    let asked: std::collections::HashSet<&str> = named
+        .iter()
+        .map(|path| path.trim_end_matches('/'))
+        .collect();
+    if let Some(ignored) = run
+        .out
+        .split('\0')
+        .find(|path| asked.contains(path.trim_end_matches('/')))
+    {
+        return Err(format!(
+            "{} is ignored by one of the repository's .gitignore files",
+            shown(ignored)
+        ));
+    }
+    Ok(())
 }
 
 /// Puts the index back to the branch's last commit: what the ask staged is unstaged, and the
@@ -1079,11 +1152,7 @@ const GITLINK: &str = "160000";
 pub fn records_another_repository(staged: &[Staged]) -> Option<String> {
     for change in staged {
         if change.mode == GITLINK || change.was == GITLINK {
-            return Some(format!(
-                "{} is a repository of its own (it holds a `.git`), and purlis does not \
-                 commit one inside another for a chat. Remove its `.git`, or leave it out",
-                shown(&change.path)
-            ));
+            return Some(another_repository(&change.path));
         }
         let name = change.path.rsplit('/').next().unwrap_or(&change.path);
         if name.eq_ignore_ascii_case(".gitmodules") {
@@ -1095,6 +1164,15 @@ pub fn records_another_repository(staged: &[Staged]) -> Option<String> {
         }
     }
     None
+}
+
+/// What a commit that would record the repository at `path` inside this one is refused with.
+fn another_repository(path: &str) -> String {
+    format!(
+        "{} is a repository of its own (it holds a `.git`), and purlis does not commit one \
+         inside another for a chat. Remove its `.git`, or leave it out",
+        shown(path)
+    )
 }
 
 /// Why a path `staged` adds differs from another tracked path only by case, or nothing. On a

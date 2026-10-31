@@ -1090,6 +1090,55 @@ fn a_file_swapped_after_it_was_staged_is_refused_unstaged_and_its_blob_taken_out
     );
 }
 
+/// A named file given a second name after the commit looked at it and before its bytes are
+/// hashed: its descriptor is asked again, so its bytes never reach the object store.
+#[cfg(unix)]
+#[test]
+fn a_second_name_made_as_the_commit_stages_never_reaches_the_object_store() {
+    let t = tree();
+    let top = t.here.top.clone();
+    std::fs::write(
+        top.join("plain.txt"),
+        "one name when looked at: canary-7f3e19\n",
+    )
+    .unwrap();
+    let second = t.root.join("second-name");
+    let before = t.git(&["rev-parse", "HEAD"]);
+
+    let refused = crate::planegit::ondisk::before_hashing_doing(
+        {
+            let second = second.clone();
+            move |top: &Path| std::fs::hard_link(top.join("plain.txt"), &second).unwrap()
+        },
+        || t.asked(staging(&["plain.txt"])),
+    )
+    .expect_err("refused");
+
+    assert!(refused.contains("plain.txt"), "{refused}");
+    assert!(refused.contains("has a second name"), "{refused}");
+    assert!(refused.contains("Nothing was staged"), "{refused}");
+    assert_eq!(t.git(&["rev-parse", "HEAD"]), before);
+    assert!(t.nothing_staged());
+    assert!(!crate::testgit::stores_file(&top, &second));
+}
+
+#[test]
+fn a_named_path_git_would_not_stage_is_refused_with_nothing_staged() {
+    let t = tree();
+    let top = &t.here.top;
+    std::fs::write(top.join(".gitignore"), "ignored.txt\n").unwrap();
+    std::fs::write(top.join("ignored.txt"), "ignored\n").unwrap();
+    std::fs::write(top.join("plain.txt"), "plain\n").unwrap();
+
+    let missing = stage(&t.here, &staging(&["plain.txt", "missing.txt"])).expect_err("refused");
+    assert!(missing.contains("git did not stage that"), "{missing}");
+    assert!(missing.contains("did not match any files"), "{missing}");
+    let ignored = stage(&t.here, &staging(&["plain.txt", "ignored.txt"])).expect_err("refused");
+    assert!(ignored.contains("git did not stage that"), "{ignored}");
+    assert!(ignored.contains("is ignored"), "{ignored}");
+    assert!(t.nothing_staged());
+}
+
 fn named(workspace: &str, repo: &str, piece: &str) -> FolderName {
     FolderName {
         workspace: workspace.to_owned(),

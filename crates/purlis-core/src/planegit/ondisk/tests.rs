@@ -99,8 +99,16 @@ fn a_named_file_is_staged_from_the_descriptor_that_was_checked() {
     std::fs::write(root.join("c.next"), "swapped in\n").unwrap();
     std::fs::rename(root.join("c.next"), root.join("c.md")).unwrap();
 
-    stage_opened(&root, vec![("c.md".to_owned(), file, runs)]).unwrap();
-    run_ok(&root, &["update-index", "-q", "--refresh"]).unwrap();
+    let row = Row {
+        path: "c.md".to_owned(),
+        from: Source::File {
+            file,
+            runs,
+            checked: None,
+        },
+    };
+    assert_eq!(stage_rows(&root, vec![row]).unwrap(), []);
+    refresh(&root, false).unwrap();
 
     assert_eq!(run(&root, &["show", ":c.md"]), "checked\n");
     // What is on disk now is not what was staged, and the save refuses it.
@@ -310,4 +318,161 @@ fn a_second_name_made_as_a_checked_add_stages_never_reaches_the_object_store() {
     );
     assert!(!crate::testgit::stores_file(&root, &second));
     assert_eq!(run(&root, &["diff", "--cached", "--name-only"]), "");
+}
+
+/// Each regular file as [`stage_rows`] takes it: looked at and opened once.
+fn rows_of(root: &Path, paths: &[&str]) -> Vec<Row> {
+    paths
+        .iter()
+        .map(|path| {
+            Row::of((*path).to_owned(), opened(root, path))
+                .unwrap()
+                .expect("a row")
+        })
+        .collect()
+}
+
+/// The mode and the bytes the index holds for `path`.
+fn staged_as(root: &Path, path: &str) -> (String, String) {
+    let row = run(root, &["ls-files", "-s", "--", path]);
+    let mode = row.split(' ').next().unwrap_or_default().to_owned();
+    (mode, run(root, &["cat-file", "-p", &format!(":{path}")]))
+}
+
+/// A file given a second name after it was opened and before its bytes are hashed: its
+/// descriptor is asked again, so its bytes never reach the object store, and no row is written.
+#[cfg(unix)]
+#[test]
+fn a_second_name_made_before_the_hashing_never_reaches_the_object_store_and_nothing_is_staged() {
+    let (_dir, root) = staged();
+    run(&root, &["commit", "-q", "-m", "two"]);
+    std::fs::write(root.join("c.md"), "two names by now: canary-41d07e\n").unwrap();
+    std::fs::write(root.join("d.md"), "one name\n").unwrap();
+    let second = root.parent().unwrap().join("second-name");
+    let rows = rows_of(&root, &["c.md", "d.md"]);
+
+    let held = before_hashing_doing(
+        {
+            let second = second.clone();
+            move |root: &Path| std::fs::hard_link(root.join("c.md"), &second).unwrap()
+        },
+        || stage_rows(&root, rows),
+    )
+    .unwrap();
+
+    assert_eq!(
+        held,
+        [Held {
+            path: "c.md".to_owned(),
+            why: Why::SecondName
+        }]
+    );
+    assert!(!crate::testgit::stores_file(&root, &second));
+    assert_eq!(run(&root, &["diff", "--cached", "--name-only"]), "");
+}
+
+/// The bytes a caller read from the descriptor and looked at are what is staged, whatever the
+/// file holds a moment later.
+#[test]
+fn the_bytes_that_were_checked_are_what_is_staged() {
+    use std::io::Read;
+
+    let (_dir, root) = staged();
+    std::fs::write(root.join("c.md"), "checked\n").unwrap();
+    let OnDisk::File(file, runs) = opened(&root, "c.md") else {
+        panic!("c.md is a regular file of one name");
+    };
+    let mut checked = Vec::new();
+    (&file).read_to_end(&mut checked).unwrap();
+    // Written over in place once it was read: the same file, other bytes.
+    std::fs::write(root.join("c.md"), "written after the check\n").unwrap();
+
+    let row = Row {
+        path: "c.md".to_owned(),
+        from: Source::File {
+            file,
+            runs,
+            checked: Some(checked),
+        },
+    };
+    assert_eq!(stage_rows(&root, vec![row]).unwrap(), []);
+    refresh(&root, false).unwrap();
+
+    assert_eq!(run(&root, &["show", ":c.md"]), "checked\n");
+    assert!(whys(&root).contains(&("c.md".to_owned(), Why::Changed)));
+}
+
+/// A link, a deletion and a nested repository are staged by hand from what was looked at: what
+/// the names hold by the time the rows are written is never read.
+#[cfg(unix)]
+#[test]
+fn a_link_a_deletion_and_a_nested_repository_are_staged_as_they_were_looked_at() {
+    let (_dir, root) = staged();
+    run(&root, &["commit", "-q", "-m", "two"]);
+    std::os::unix::fs::symlink("first-target", root.join("link")).unwrap();
+    std::fs::remove_file(root.join("b.md")).unwrap();
+    let inner = root.join("inner");
+    std::fs::create_dir_all(&inner).unwrap();
+    run(&inner, &["init", "-q", "-b", "main", "."]);
+    run(&inner, &["config", "user.name", "Fixture"]);
+    run(&inner, &["config", "user.email", "fixture@example.invalid"]);
+    std::fs::write(inner.join("x"), "x\n").unwrap();
+    run(&inner, &["add", "x"]);
+    run(&inner, &["commit", "-q", "-m", "inner"]);
+    let inner_head = run(&inner, &["rev-parse", "HEAD"]).trim().to_owned();
+
+    let held = before_hashing_doing(
+        |root: &Path| {
+            std::fs::remove_file(root.join("link")).unwrap();
+            std::os::unix::fs::symlink("second-target", root.join("link")).unwrap();
+            std::fs::write(root.join("b.md"), "back after the look\n").unwrap();
+        },
+        || stage_named(&root, &[], |_| false),
+    )
+    .unwrap();
+
+    assert_eq!(held, []);
+    assert_eq!(
+        staged_as(&root, "link"),
+        ("120000".to_owned(), "first-target".to_owned())
+    );
+    assert_eq!(run(&root, &["ls-files", "--", "b.md"]), "");
+    let nested = run(&root, &["ls-files", "-s", "--", "inner"]);
+    assert!(
+        nested.starts_with(&format!("160000 {inner_head} 0\tinner")),
+        "{nested}"
+    );
+}
+
+/// Many files are hashed on threads of their own, each row staged with its own bytes and mode.
+#[cfg(unix)]
+#[test]
+fn many_files_are_each_staged_with_their_own_bytes_and_mode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (_dir, root) = staged();
+    run(&root, &["commit", "-q", "-m", "two"]);
+    let names: Vec<String> = (0..3 * HASHERS + 1)
+        .map(|n| format!("many/{n}.md"))
+        .collect();
+    std::fs::create_dir_all(root.join("many")).unwrap();
+    for (n, name) in names.iter().enumerate() {
+        std::fs::write(root.join(name), format!("file {n}\n")).unwrap();
+        if n % 2 == 1 {
+            std::fs::set_permissions(root.join(name), std::fs::Permissions::from_mode(0o755))
+                .unwrap();
+        }
+    }
+
+    assert_eq!(stage_named(&root, &[], |_| false).unwrap(), []);
+
+    for (n, name) in names.iter().enumerate() {
+        let mode = if n % 2 == 1 { "100755" } else { "100644" };
+        assert_eq!(
+            staged_as(&root, name),
+            (mode.to_owned(), format!("file {n}\n")),
+            "{name}"
+        );
+    }
+    assert_eq!(whys(&root), []);
 }

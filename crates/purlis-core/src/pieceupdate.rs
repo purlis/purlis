@@ -751,30 +751,31 @@ fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
     })?;
     let files = stopped.unmerged;
     if !files.is_empty() {
-        resolved(&here.folder, &files)?;
+        // Each resolved file is staged as the bytes looked at for a marker, read through its
+        // one open descriptor, so nothing is read again by its name.
+        let rows = resolved(&here.folder, &files)?;
         // As a save: a resolved file with a second name is refused before it is staged, so its
         // bytes never reach the clone's object store (`planegit::ondisk`).
         if let Some(refusal) = ondisk::refused_ahead(&ondisk::second_names_of(&here.folder, &files))
         {
             return Err(not_the_file(&refusal));
         }
-        let staged = git::run_with_input(
-            &here.folder,
-            &[
-                "--literal-pathspecs",
-                "add",
-                "--pathspec-from-file=-",
-                "--pathspec-file-nul",
-            ],
-            files.join("\0").into_bytes(),
-            broker::STAGING,
-        )
-        .map_err(|e| e.to_string())?;
-        if staged.code != Some(0) {
-            return Err(format!(
-                "git did not stage the resolved files: {}",
-                first_line(&String::from_utf8_lossy(&staged.err))
-            ));
+        let held = ondisk::stage_rows(&here.folder, rows)
+            .and_then(|held| {
+                if held.is_empty() {
+                    ondisk::refresh(&here.folder, false)?;
+                }
+                Ok(held)
+            })
+            .map_err(|said| {
+                format!(
+                    "git did not stage the resolved files: {}",
+                    first_line(&said)
+                )
+            })?;
+        if let Some(refusal) = ondisk::refused_unstaged(&held, ondisk::PutBack::Conflicted(&files))
+        {
+            return Err(not_the_file(&refusal));
         }
         // And once staged: a resolved file that is not the file on disk now, with one name, is
         // marked as conflicted again, and its blob taken out of the object store where nothing
@@ -1057,12 +1058,16 @@ fn finish(here: &Here, record: &Record) -> Result<(), String> {
     .map_err(|why| format!("purlis could not note the update it made: {why}"))
 }
 
-/// Why the files git named as conflicted may not be staged for a chat, or nothing: each a
-/// name inside the folder reached through no link, not another repository nor the file that
-/// declares them, not marked for a content filter the person's own git would run, and with no
-/// conflict marker left in it.
-fn resolved(folder: &Path, files: &[String]) -> Result<(), String> {
+/// The files git named as conflicted, each as it is staged, or why they may not be staged for
+/// a chat: each a name inside the folder reached through no link, not another repository nor
+/// the file that declares them, not marked for a content filter the person's own git would
+/// run, and with no conflict marker left in it. A file is read through its one open
+/// descriptor, never through a link, and the bytes looked at for a marker are the bytes it is
+/// staged as ([`ondisk::stage_rows`]).
+fn resolved(folder: &Path, files: &[String]) -> Result<Vec<ondisk::Row>, String> {
+    use std::io::Read;
     broker::paths_ok(files)?;
+    let mut rows = Vec::with_capacity(files.len());
     for file in files {
         broker::through_no_link(folder, file)?;
         let name = file.rsplit('/').next().unwrap_or(file);
@@ -1072,27 +1077,60 @@ fn resolved(folder: &Path, files: &[String]) -> Result<(), String> {
                  the rebase from your own terminal"
             ));
         }
-        let at = folder.join(file);
-        if let Ok(meta) = std::fs::symlink_metadata(&at) {
-            if meta.is_dir() {
+        let from = match ondisk::opened(folder, file) {
+            ondisk::OnDisk::File(opened, runs) => {
+                let mut text = Vec::new();
+                (&opened)
+                    .read_to_end(&mut text)
+                    .map_err(|why| format!("{file} cannot be read: {why}"))?;
+                if text.starts_with(MARKER)
+                    || text
+                        .windows(MARKER.len() + 1)
+                        .any(|w| w[0] == b'\n' && &w[1..] == MARKER)
+                {
+                    return Err(format!(
+                        "{file} still holds a conflict marker (`<<<<<<<`): resolve it, then \
+                         `purlis worktree update --continue`"
+                    ));
+                }
+                ondisk::Source::File {
+                    file: opened,
+                    runs,
+                    checked: Some(text),
+                }
+            }
+            ondisk::OnDisk::SecondName => {
+                let held = Ok(vec![ondisk::Held {
+                    path: file.clone(),
+                    why: ondisk::Why::SecondName,
+                }]);
+                return Err(ondisk::refused_ahead(&held)
+                    .map(|refusal| not_the_file(&refusal))
+                    .unwrap_or_default());
+            }
+            ondisk::OnDisk::Folder { .. } => {
                 return Err(format!(
                     "{file} is a folder where git left a conflict (another repository, most \
                      often): finish the rebase from your own terminal"
                 ));
             }
-            if meta.is_file()
-                && let Ok(text) = std::fs::read(&at)
-                && (text.starts_with(MARKER)
-                    || text
-                        .windows(MARKER.len() + 1)
-                        .any(|w| w[0] == b'\n' && &w[1..] == MARKER))
-            {
+            ondisk::OnDisk::Link(target) => ondisk::Source::Link(target),
+            ondisk::OnDisk::Gone | ondisk::OnDisk::Beyond => ondisk::Source::Gone,
+            ondisk::OnDisk::ByGit => ondisk::Source::ByGit,
+            ondisk::OnDisk::Odd => {
                 return Err(format!(
-                    "{file} still holds a conflict marker (`<<<<<<<`): resolve it, then \
-                     `purlis worktree update --continue`"
+                    "{file} is neither a file, a link nor a folder, so purlis does not stage it \
+                     for a chat: finish the rebase from your own terminal"
                 ));
             }
-        }
+            ondisk::OnDisk::Unread(why) => {
+                return Err(format!("{file} cannot be read: {why}"));
+            }
+        };
+        rows.push(ondisk::Row {
+            path: file.clone(),
+            from,
+        });
     }
     let attrs = git::run_with_input(
         folder,
@@ -1110,7 +1148,7 @@ fn resolved(folder: &Path, files: &[String]) -> Result<(), String> {
              does not apply: finish the rebase from your own terminal"
         ));
     }
-    Ok(())
+    Ok(rows)
 }
 
 fn abort(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {

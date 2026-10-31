@@ -229,19 +229,18 @@ pub fn carry_on(root: &Path, shown: &[String], say: Sink) -> Settled {
             return Settled::Refused(said_markers(path, "is staged with"));
         }
     }
-    let mut checked: Vec<(&String, Vec<u8>)> = Vec::new();
+    let mut checked: Vec<(&String, Plain)> = Vec::new();
     for path in &left.marked {
         match read_plain(root, path) {
-            Ok(bytes) if markers_in(&bytes) => {
+            Ok(plain) if markers_in(&plain.bytes) => {
                 return Settled::Refused(said_markers(path, "still has"));
             }
-            Ok(bytes) => checked.push((path, bytes)),
+            Ok(plain) => checked.push((path, plain)),
             Err(why) => return Settled::Refused(why),
         }
     }
     if !checked.is_empty() {
-        let paths: Vec<&str> = checked.iter().map(|(path, _)| path.as_str()).collect();
-        let named: Vec<String> = paths.iter().map(|path| (*path).to_owned()).collect();
+        let named: Vec<String> = checked.iter().map(|(path, _)| (*path).clone()).collect();
         // As a save: a settled file with a second name is refused before it is staged, so its
         // bytes never reach the project's object store ([`ondisk`]).
         if let Some(refusal) = ondisk::refused_ahead(&ondisk::second_names_of(root, &named)) {
@@ -249,28 +248,65 @@ pub fn carry_on(root: &Path, shown: &[String], say: Sink) -> Settled {
         }
         #[cfg(test)]
         super::tests::before_the_add(root);
-        let mut add: Vec<&str> = vec!["--literal-pathspecs", "add", "-A", "--"];
-        add.extend(&paths);
-        match git::run(root, &add, WRITE) {
-            Ok(run) if run.ok() => {}
-            Ok(run) => {
-                return Settled::Refused(format!(
-                    "git would not stage them: {}",
-                    one_line(&tail(&run))
-                ));
+        // Each file staged as the bytes that were checked, from the descriptor they were read
+        // through, which is asked again just before that it has one name: nothing is read
+        // again by its name ([`ondisk::stage_rows`]).
+        let mut rows = Vec::new();
+        let mut bytes_of: Vec<(&String, Vec<u8>)> = Vec::new();
+        for (path, plain) in checked {
+            bytes_of.push((path, plain.bytes.clone()));
+            rows.push(ondisk::Row {
+                path: path.clone(),
+                from: ondisk::Source::File {
+                    file: plain.file,
+                    runs: plain.runs,
+                    checked: Some(plain.bytes),
+                },
+            });
+        }
+        let checked = bytes_of;
+        let held = ondisk::stage_rows(root, rows).and_then(|held| {
+            if held.is_empty() {
+                ondisk::refresh(root, false)?;
             }
-            Err(unavailable) => return Settled::Refused(unavailable.to_string()),
+            Ok(held)
+        });
+        let held = match held {
+            Ok(held) => held,
+            Err(said) => {
+                return Settled::Refused(format!("git would not stage them: {}", one_line(&said)));
+            }
+        };
+        if let Some(refusal) = ondisk::refused_unstaged(&held, ondisk::PutBack::Conflicted(&named))
+        {
+            return Settled::Refused(not_the_file(&refusal));
         }
         // And once staged: a settled file that is not the file on disk now, with one name, is
         // marked as conflicted again, and its blob taken out of the object store where nothing
         // else reaches it. Only the files staged here are asked about: the rest of the index
         // is the paused commit as git left it.
-        let ours: HashSet<&str> = paths.iter().copied().collect();
-        let found = ondisk::not_as_staged(root).map(|held| {
+        let ours: HashSet<&str> = named.iter().map(String::as_str).collect();
+        let found: Result<Vec<ondisk::Held>, String> = ondisk::not_as_staged(root).map(|held| {
             held.into_iter()
                 .filter(|one| ours.contains(one.path.as_str()))
                 .collect()
         });
+        // Written while purlis was checking it: what was staged is the bytes checked, and the
+        // file is now something else, so it is settled again before anything goes on.
+        let written: Vec<&String> = match &found {
+            Ok(held)
+                if !held.is_empty() && held.iter().all(|one| one.why == ondisk::Why::Changed) =>
+            {
+                named
+                    .iter()
+                    .filter(|path| held.iter().any(|one| one.path == **path))
+                    .collect()
+            }
+            _ => Vec::new(),
+        };
+        if !written.is_empty() {
+            return Settled::Refused(put_back_all(root, &named, &written));
+        }
         if let Some(refusal) =
             ondisk::refused_into(root, &found, ondisk::PutBack::Conflicted(&named))
         {
@@ -284,22 +320,7 @@ pub fn carry_on(root: &Path, shown: &[String], say: Sink) -> Settled {
             .map(|(path, _)| *path)
             .collect();
         if !moved.is_empty() {
-            // Every file staged here goes back in conflict, and the blobs staged for them out
-            // of the object store where nothing else reaches them.
-            let all: Vec<ondisk::Held> = named
-                .iter()
-                .map(|path| ondisk::Held {
-                    path: path.clone(),
-                    why: ondisk::Why::Changed,
-                })
-                .collect();
-            let _ = ondisk::refused_into(root, &Ok(all), ondisk::PutBack::Conflicted(&named));
-            return Settled::Refused(format!(
-                "{} changed while purlis was checking {}, so nothing was carried on. Continue \
-                 again once it is settled.",
-                join(&moved),
-                if moved.len() == 1 { "it" } else { "them" },
-            ));
+            return Settled::Refused(put_back_all(root, &named, &moved));
         }
     }
     say(Say::Info("Continuing the replay …".into()));
@@ -409,7 +430,7 @@ fn sorted(root: &Path, by_hand: Option<&BTreeSet<String>>) -> Conflicts {
         let hand = marks_nothing(root, &path, &stages)
             || match by_hand {
                 Some(held) => held.contains(&path),
-                None => !read_plain(root, &path).is_ok_and(|bytes| markers_in(&bytes)),
+                None => !read_plain(root, &path).is_ok_and(|plain| markers_in(&plain.bytes)),
             };
         if hand {
             out.by_hand.push(path);
@@ -661,6 +682,26 @@ fn marks_nothing(root: &Path, path: &str, stages: &[(u8, String, String)]) -> bo
     std::fs::symlink_metadata(root.join(path)).is_err()
 }
 
+/// Every one of `named`, staged by Continue, put back in conflict, and the blobs staged for them
+/// taken out of the object store where nothing else reaches them, where `moved` changed while
+/// purlis was checking them: what Continue says.
+fn put_back_all(root: &Path, named: &[String], moved: &[&String]) -> String {
+    let all: Vec<ondisk::Held> = named
+        .iter()
+        .map(|path| ondisk::Held {
+            path: path.clone(),
+            why: ondisk::Why::Changed,
+        })
+        .collect();
+    let _ = ondisk::refused_into(root, &Ok(all), ondisk::PutBack::Conflicted(named));
+    format!(
+        "{} changed while purlis was checking {}, so nothing was carried on. Continue again \
+         once it is settled.",
+        join(moved),
+        if moved.len() == 1 { "it" } else { "them" },
+    )
+}
+
 /// Whether what is staged at `path` is `bytes`, as git would store them for that path: its
 /// clean filter and line endings applied (`hash-object --path`).
 pub(super) fn staged_as_checked(root: &Path, path: &str, bytes: &[u8]) -> bool {
@@ -701,12 +742,20 @@ fn staged_text(root: &Path, path: &str) -> Option<String> {
     .map(|run| run.out)
 }
 
-/// The bytes of a plain file, or why it is not one purlis stages: opened without following a
-/// link, and asked of that descriptor that it is a regular file with one name, so what is
-/// checked is the file the save's rule allows ([`ondisk`]).
-fn read_plain(root: &Path, path: &str) -> Result<Vec<u8>, String> {
+/// A plain file as Continue reads it: its one open descriptor, whether its owner may run it,
+/// and the bytes read from that descriptor, which are what is checked and what is staged.
+struct Plain {
+    file: std::fs::File,
+    runs: bool,
+    bytes: Vec<u8>,
+}
+
+/// A plain file read, or why it is not one purlis stages: opened without following a link, and
+/// asked of that descriptor that it is a regular file with one name, so what is checked is the
+/// file the save's rule allows ([`ondisk`]).
+fn read_plain(root: &Path, path: &str) -> Result<Plain, String> {
     use std::io::Read;
-    let file = opened_plain(root, path)?;
+    let (file, runs) = opened_plain(root, path)?;
     let too_large =
         || format!("`{path}` is too large for purlis to check. Settle it in a terminal, or Abort.");
     let size = file
@@ -717,31 +766,36 @@ fn read_plain(root: &Path, path: &str) -> Result<Vec<u8>, String> {
         return Err(too_large());
     }
     let mut bytes = Vec::new();
-    file.take(MOST_READ + 1)
+    (&file)
+        .take(MOST_READ + 1)
         .read_to_end(&mut bytes)
         .map_err(|why| format!("`{path}` cannot be read: {why}."))?;
     if bytes.len() as u64 > MOST_READ {
         return Err(too_large());
     }
-    Ok(bytes)
+    Ok(Plain { file, runs, bytes })
 }
 
 /// `path` opened as a regular file with one name, one folder at a time and never through a
-/// link ([`ondisk::opened`]), or why it is not one purlis stages.
+/// link ([`ondisk::opened`]), and whether its owner may run it, or why it is not one purlis
+/// stages.
 #[cfg(unix)]
-fn opened_plain(root: &Path, path: &str) -> Result<std::fs::File, String> {
+fn opened_plain(root: &Path, path: &str) -> Result<(std::fs::File, bool), String> {
     match ondisk::opened(root, path) {
-        ondisk::OnDisk::File(file, _) => Ok(file),
+        ondisk::OnDisk::File(file, runs) => Ok((file, runs)),
         ondisk::OnDisk::SecondName => Err(second_name(path)),
-        ondisk::OnDisk::Other => Err(not_plain(root, path)),
+        _ => Err(not_plain(root, path)),
     }
 }
 
 /// Where a folder cannot be held open: the name looked at, never through a link, then opened.
+/// The run bit is not read here, so the file keeps the mode git has for it where git does not
+/// trust the file system's.
 #[cfg(not(unix))]
-fn opened_plain(root: &Path, path: &str) -> Result<std::fs::File, String> {
+fn opened_plain(root: &Path, path: &str) -> Result<(std::fs::File, bool), String> {
     match std::fs::symlink_metadata(root.join(path)) {
         Ok(meta) if meta.is_file() => std::fs::File::open(root.join(path))
+            .map(|file| (file, false))
             .map_err(|why| format!("`{path}` cannot be read: {why}.")),
         _ => Err(not_plain(root, path)),
     }
