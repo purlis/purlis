@@ -28,11 +28,3 @@ jobs:
             cargo test --locked -p purlis-browser-engine --lib reading -- --test-threads=2 2>&1 | grep -E "FAILED|panicked|test result: F" || true
           done
           echo rounds done
-      - name: The job's own command, 4 times
-        continue-on-error: true
-        run: |
-          for i in 1 2 3 4; do
-            echo "### suite round $i"
-            cargo test --locked --no-fail-fast -p purlis-browser-engine -- --test-threads=2 > suite.txt 2>&1 || true
-            grep -E "FAILED|panicked at|PageInfo|test result: " suite.txt | cut -c1-300 || true
-          done

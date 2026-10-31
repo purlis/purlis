@@ -312,23 +312,24 @@ fn a_wait_uses_no_read_that_began_before_it() {
 #[test]
 fn a_read_still_under_way_long_after_it_began_is_not_used() {
     // A read under way is used for as long as a call waits for one and a read is kept for after
-    // it: here 600 ms and 400 ms. This one takes 1.6 s.
+    // it: here 1.2 s and 800 ms. This one takes 3 s, over two frames: it ends well after the
+    // second call and well before the third gives up, on a slow machine too.
     let (browser, engine) = a_large_page_kept_for(
+        Duration::from_millis(1500),
+        Duration::from_millis(1200),
         Duration::from_millis(800),
-        Duration::from_millis(600),
-        Duration::from_millis(400),
     );
     assert_eq!(
         browser.call(&id(1), snapshot_call()),
         Err(Refusal::PageReadTooLong)
     );
-    // Still under way, begun 600 ms ago: used.
+    // Still under way, begun 1.2 s ago: used.
     assert_eq!(
         browser.call(&id(2), snapshot_call()),
         Err(Refusal::PageReadTooLong)
     );
 
-    // Still under way, begun 1.2 s ago: past what a read is used for.
+    // Still under way, begun 2.4 s ago: past what a read is used for.
     let next = browser.call(&id(3), snapshot_call());
 
     assert_eq!(next, Err(Refusal::PageReadTooLong));
