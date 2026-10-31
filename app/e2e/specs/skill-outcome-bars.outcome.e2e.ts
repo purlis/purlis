@@ -228,7 +228,24 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
     });
     await notice.$("button=Restart").click();
     effort.presses += 1;
-    await notice.waitForExist({ timeout: 40_000, reverse: true });
+    await notice.waitForExist({ timeout: 40_000, reverse: true }).catch(async () => {
+      // Said with what the pane says then, so a red run says why the restart did not land.
+      const said = await browser.execute(
+        (session: number) =>
+          document
+            .querySelector(`[data-testid="pane"][data-session="${session}"]`)
+            ?.closest('[data-part="root"], section, main')?.textContent ?? "",
+        chat.session,
+      );
+      const statuses = await browser.execute(() =>
+        [...document.querySelectorAll('[role="status"], [role="alert"], [role="dialog"]')].map(
+          (one) => one.textContent ?? "",
+        ),
+      );
+      throw new Error(
+        `the restart never landed. Statuses: ${JSON.stringify(statuses)}. Around the pane: ${said.slice(0, 500)}`,
+      );
+    });
 
     await fromThePalette("Use skill", "palette-row-tab.useskill:", effort);
     await $('[data-testid="use-skill"]').waitForDisplayed({ timeout: 20_000 });
