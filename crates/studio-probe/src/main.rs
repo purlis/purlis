@@ -39,6 +39,18 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // A grade is a question of many lines: its answers and purlis's go on until its report.
+    if studio_probe::is_a_grade(&request) {
+        let mut lines = std::io::stdin().lock().lines();
+        let mut out = std::io::stdout().lock();
+        return match studio_probe::grade(&request, &mut lines, &mut out) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(why) => {
+                eprintln!("studio-probe: the grade could not go on: {why}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let (said, status) = studio_probe::answer(&request);
     let mut out = std::io::stdout().lock();
     let written = match status {

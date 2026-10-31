@@ -429,8 +429,9 @@ impl From<GradeEnd> for GradeEnded {
             GradeEnd::OverCap => GradeEnded::OverCap,
             GradeEnd::OverLimit => GradeEnded::OverLimit,
             GradeEnd::SpendNotReported => GradeEnded::SpendNotReported,
-            // Recorded at a start for a grade purlis stopped under, never told as one ends.
-            GradeEnd::Interrupted => GradeEnded::Failed,
+            // Recorded at a start for a grade purlis stopped under, never told as one ends; and a
+            // Grader extension's question that ended its grade (#3236), told with its sentence.
+            GradeEnd::Interrupted | GradeEnd::GraderFailed => GradeEnded::Failed,
         }
     }
 }
@@ -1051,7 +1052,11 @@ impl From<GradeEnd> for GradeOutcome {
             GradeEnd::OverCap | GradeEnd::OverLimit | GradeEnd::SpendNotReported => {
                 GradeOutcome::AtLimit
             }
-            GradeEnd::ChatsDidNotStart | GradeEnd::Interrupted => GradeOutcome::Interrupted,
+            // A Grader that failed its question (#3236) left its grade with no scores of its own:
+            // what ran is purlis's, and its row says why.
+            GradeEnd::ChatsDidNotStart | GradeEnd::Interrupted | GradeEnd::GraderFailed => {
+                GradeOutcome::Interrupted
+            }
         }
     }
 }

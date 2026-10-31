@@ -187,9 +187,10 @@ impl Capability {
             // in charter-app#343 and #342, beside #341's run-action request: 2 was not yet
             // released, so it holds all four.
             Self::Actions | Self::Writes | Self::Events | Self::Briefing | Self::Cli => 2,
-            // The studio questions are protocol 3's (ADR 0101, #2777).
+            // The studio questions are protocol 3's (ADR 0101, #2777), but for the Grader's, a
+            // question of many lines, which is protocol 4's (#3236).
+            Self::Grader => 4,
             Self::SkillSource
-            | Self::Grader
             | Self::SkillLint
             | Self::SkillTemplate
             | Self::StudioPanel

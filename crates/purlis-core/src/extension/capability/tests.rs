@@ -92,7 +92,9 @@ fn the_studio_words_are_unknown_while_the_flag_is_off_and_known_where_it_is_on()
 fn a_studio_capability_is_said_to_be_experimental_and_needs_protocol_three() {
     for studio in Capability::STUDIO {
         assert!(studio.is_studio());
-        assert_eq!(studio.since(), 3);
+        // The Grader's question is one of many lines, protocol 4's (#3236).
+        let since = if studio == Capability::Grader { 4 } else { 3 };
+        assert_eq!(studio.since(), since, "{}", studio.as_str());
         assert!(studio.has_shape());
         assert!(
             studio.asks().contains(", experimental — "),

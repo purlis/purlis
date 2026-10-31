@@ -92,6 +92,7 @@ fn report(passed_with: bool) -> GradeReport {
         spent_usd: None,
         counted_usd: None,
         priced: None,
+        failed: None,
     }
 }
 
