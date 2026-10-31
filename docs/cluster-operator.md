@@ -589,8 +589,8 @@ runners (#3980) and deletes long-suspended Claims (#3981).
 **Nothing may scrape them until you say who may.** The metrics name every namespace that holds
 a Claim and every runner namespace (`purlis-runners-<hash>`, one per person), with their
 Claims' states, so they are not for everyone in the cluster. They say nothing about what a
-runner does. The NetworkPolicy `purlis-cluster-operator` lets nothing reach the operator's pod
-but the scrapers you name, on the metrics port. With the chart, name them as a NetworkPolicy's
+runner does. The NetworkPolicy `purlis-cluster-operator` lets nothing reach the metrics port
+but the scrapers you name. With the chart, name them as a NetworkPolicy's
 `from` peers:
 
 ```sh
@@ -771,7 +771,10 @@ spec:
     verbs: [use]
   ```
 
-  Taking `spec.forge` off a Pool asks nothing, and nor does any other change to it.
+  On a Pool that mints, changing `spec.image` takes the same right, since the image holds the link
+  keys the operator vouches for. Taking `spec.forge` off a Pool asks nothing. A wildcard RBAC rule
+  on `runners.purlis.dev` holds every key. The right is asked as a Pool is written: revoking it stops
+  further writes, and to stop a Pool already written, change or delete the Pool.
 - **`Claim.spec.forge.repos`** will name the repos of the workspace the desktop sends (#4207), each
   exactly `owner/name`: a wildcard is refused at admission. Only the Claim's `requester` may change
   it, while they may `use` its Pool, as the policy holds. Someone else who may patch claims in the
@@ -788,8 +791,9 @@ spec:
 The chart adds the Service `purlis-cluster-operator-mint` (port 8443, TLS 1.3) only where
 `forge.keySecretNames` names a key, and the NetworkPolicy `purlis-cluster-operator` then lets the
 namespaces the operator made for runners reach that port. In a runner namespace with a Claim on an
-opted-in Pool, the operator makes the NetworkPolicy `purlis-forge-mint`, whose one rule is the way
-out to that port: NetworkPolicies add up, so upstream's own policy keeps every other limit on the
+opted-in Pool, the operator makes the NetworkPolicy `purlis-forge-mint`, for every pod of that
+namespace and for as long as it stands, whose one rule is the way out to that port. Reaching the
+port gets nothing without a proof and an opted-in Pool: NetworkPolicies add up, so upstream's own policy keeps every other limit on the
 runner. Upstream gives a runner public name servers, so a runner reaches the port by the Service's
 address, not its name. A plain install applies the Service and the NetworkPolicy as
 `helm template --set 'forge.keySecretNames[0]=<name>'` renders them.
@@ -797,8 +801,10 @@ address, not its name. A plain install applies the Service and the NetworkPolicy
 The port's certificate is self-signed by the operator's signing key, the key every Pool's status
 names. No authority stands behind it, so a client holds its public key to that key.
 
+Only the operator may put its `managed-by` label on a namespace, and only on a runner namespace.
+
 A runner asks in two steps. `POST /forge/challenge` answers a challenge good for 60 seconds and one
-use. `POST /forge/token` takes `namespace`, `claim`, `app`, `challenge` and a `proof`: a MAC only the
+use. A proof also names the operator's key the runner holds the port to. `POST /forge/token` takes `namespace`, `claim`, `app`, `challenge` and a `proof`: a MAC only the
 holder of the runner's link key can make (`operator/src/mint.rs`). The operator then requires, each
 read at that moment:
 
@@ -815,8 +821,10 @@ read at that moment:
   Pool that mints;
 - the Secret's key parsed, its `app` the one asked for.
 
-The token is limited to those repos by name and to the permissions GitHub says the installation
-holds, also by name, and a token GitHub says covers anything else is revoked and not handed over.
+The token is limited to those repos by name and, also by name, to what the installation holds of
+the repo-level permissions that administer nothing: `actions`, `checks`, `contents`, `deployments`,
+`discussions`, `issues`, `metadata`, `packages`, `pull_requests`, `repository_projects` and
+`statuses`. So a minted token cannot change administration, secrets or workflow files. A token GitHub says covers anything else is revoked and not handed over.
 It is not stored, and nothing about it is written to the API server. The operator's log has every
 mint (who, which pool and App, the repos, the permission names, the expiry) and every refusal, with
 no token and no key in it.

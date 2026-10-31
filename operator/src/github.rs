@@ -36,6 +36,31 @@ const ANSWER_WITHIN: Duration = Duration::from_secs(15);
 /// The most of an answer that is read.
 const MOST_ANSWER: usize = 1024 * 1024;
 
+/// **The permissions a token may ask for, whatever the installation holds**: repo-level ones that
+/// administer nothing. Anything else, an organisation's above all, which a list of repos does not
+/// narrow, is never asked for.
+pub const MINTABLE: [&str; 11] = [
+    "actions",
+    "checks",
+    "contents",
+    "deployments",
+    "discussions",
+    "issues",
+    "metadata",
+    "packages",
+    "pull_requests",
+    "repository_projects",
+    "statuses",
+];
+
+/// What of the installation's `held` permissions a token asks for, by name.
+pub fn mintable(held: &Map<String, Value>) -> Map<String, Value> {
+    held.iter()
+        .filter(|(name, _)| MINTABLE.contains(&name.as_str()))
+        .map(|(name, level)| (name.clone(), level.clone()))
+        .collect()
+}
+
 /// The installation holding a repo, as GitHub answers.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Installation {
@@ -132,11 +157,17 @@ impl GitHub {
             .https_or_http()
             .enable_http1()
             .build();
+        let api = std::env::var(API_VAR)
+            .ok()
+            .filter(|api| !api.is_empty())
+            .unwrap_or_else(|| API.to_owned());
+        if api == API {
+            tracing::info!(%api, "minting against GitHub");
+        } else {
+            tracing::warn!(%api, "minting against another API than GitHub's: {API_VAR} is set");
+        }
         Ok(GitHub {
-            api: std::env::var(API_VAR)
-                .ok()
-                .filter(|api| !api.is_empty())
-                .unwrap_or_else(|| API.to_owned()),
+            api,
             http: Client::builder(TokioExecutor::new()).build(connector),
         })
     }
@@ -201,9 +232,6 @@ impl GitHub {
             return Err(format!(
                 "{owner}/{repo} is on an installation of another account"
             ));
-        }
-        if held.permissions.is_empty() {
-            return Err("GitHub names no permissions for the installation".to_owned());
         }
         Ok(held)
     }

@@ -171,7 +171,7 @@ fn the_operator_may_do_exactly_what_it_needs() {
             (
                 "admissionregistration.k8s.io",
                 "validatingadmissionpolicybindings",
-                "purlis-claims-use-their-pool,purlis-forge,purlis-runner-namespaces",
+                "purlis-claims-use-their-pool,purlis-runner-namespaces,purlis-forge",
                 "get,list,watch",
             ),
             ("agents.x-k8s.io", "sandboxes", "", "get,patch"),
@@ -594,6 +594,7 @@ fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_
             ("", "namespaces/finalize"),
             ("", "namespaces/status"),
             ("", "resourcequotas"),
+            ("networking.k8s.io", "networkpolicies"),
             ("rbac.authorization.k8s.io", "rolebindings"),
         ]
         .map(|(g, r)| (g.to_owned(), r.to_owned()))
@@ -655,7 +656,32 @@ fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_
         .iter()
         .map(|v| flat(&v["expression"]))
         .collect();
-    assert_eq!(validations.len(), 4, "{validations:?}");
+    assert_eq!(validations.len(), 6, "{validations:?}");
+    // Its mark opens the mint port, so no one else marks another namespace (#4206).
+    assert_eq!(
+        validations[1],
+        "request.resource.resource!='namespaces'||variables.operator||variables.runners||\
+         variables.marks[0]!='purlis-cluster-operator'"
+    );
+    let validations: Vec<String> = validations
+        .iter()
+        .enumerate()
+        .filter(|(at, _)| *at != 1)
+        .map(|(_, held)| held.clone())
+        .collect();
+    // Its one NetworkPolicy, to its own mint port alone (#4206).
+    for words in [
+        "request.resource.resource!='networkpolicies'||!variables.operator||variables.runners&&",
+        "object.metadata.name=='purlis-forge-mint'",
+        "object.spec.policyTypes==['Egress']&&!has(object.spec.ingress)",
+        "object.spec.egress[0].ports[0].port==8443",
+    ] {
+        assert!(
+            validations[4].contains(words),
+            "{words}: {}",
+            validations[4]
+        );
+    }
     // Made by the operator alone; who it is for changed by no one else.
     assert_eq!(
         validations[0],
@@ -713,13 +739,18 @@ fn spending_an_app_key_takes_use_on_it() {
             .collect::<String>()
     };
     let validations = spec["validations"].as_array().expect("validations");
-    assert_eq!(validations.len(), 2, "{spec}");
+    assert_eq!(validations.len(), 3, "{spec}");
     assert_eq!(
         flat(&validations[0]["expression"]),
         "request.resource.resource!='pools'||!has(object.spec.forge)||(request.operation=='UPDATE'&&has(oldObject.spec.forge)&&object.spec.forge==oldObject.spec.forge)||authorizer.group('runners.purlis.dev').resource('forgekeys').name(object.spec.forge.appKeySecretRef.name).check('use').allowed()"
     );
+    // On a Pool that mints, the image holds the link keys, so it takes `use` on the key too.
     assert_eq!(
         flat(&validations[1]["expression"]),
+        "request.resource.resource!='pools'||request.operation!='UPDATE'||object.spec.image==oldObject.spec.image||!has(oldObject.spec.forge)||!oldObject.spec.forge.mintInCluster||authorizer.group('runners.purlis.dev').resource('forgekeys').name(oldObject.spec.forge.appKeySecretRef.name).check('use').allowed()"
+    );
+    assert_eq!(
+        flat(&validations[2]["expression"]),
         "request.resource.resource!='claims'||(has(object.spec.forge)?has(oldObject.spec.forge)&&object.spec.forge==oldObject.spec.forge:!has(oldObject.spec.forge))||(request.userInfo.username==object.spec.requester&&authorizer.group('runners.purlis.dev').resource('pools').name(object.spec.pool).check('use').allowed())"
     );
     let binding = documents

@@ -17,7 +17,7 @@
 //! made under the policy on App keys, the Pool is opted in, neither is stopped or going, and a
 //! token would cover something; and the cluster is asked, before each mint, whether the requester
 //! may still `use` the Pool. Only then is the App's Secret read, held to the `app` asked for, and
-//! the token asked of GitHub ([`crate::github`]). Each mint and refusal is in the log, with no
+//! the token asked of GitHub ([`crate::github`]), limited to [`crate::github::MINTABLE`]. Each mint and refusal is in the log, with no
 //! token; nothing about a token is written to the API server.
 //!
 //! **The port's certificate is self-signed by the operator's signing key** ([`certificate`]), the
@@ -80,10 +80,17 @@ const MOST_REQUEST: usize = 16 * 1024;
 /// which claims there are. The log holds the reason.
 pub const NOT_VOUCHED: &str = "the operator vouches for no such key on that claim";
 
-/// What the proof is a MAC of, each value one line.
-pub fn proof_text(namespace: &str, claim: &str, app: &str, challenge: &str) -> String {
+/// What the proof is a MAC of, each value one line. `operator` is the signing key the runner holds
+/// the port to, as a Pool's status spells it, so a proof made for another key is good for nothing.
+pub fn proof_text(
+    operator: &str,
+    namespace: &str,
+    claim: &str,
+    app: &str,
+    challenge: &str,
+) -> String {
     format!(
-        "purlis forge token request v1\nnamespace: {namespace}\nclaim: {claim}\napp: {app}\nchallenge: {challenge}\n"
+        "purlis forge token request v1\noperator: {operator}\nnamespace: {namespace}\nclaim: {claim}\napp: {app}\nchallenge: {challenge}\n"
     )
 }
 
@@ -163,17 +170,17 @@ impl Challenges {
         (now.duration_since(made) < CHALLENGE_LIVES).then_some(private)
     }
 
-    /// Whether `proof` over `text` was made by the holder of the link key `key`, for `challenge`,
+    /// Whether `proof` over one of `texts` was made by the holder of the link key `key`, for `challenge`,
     /// which is used up by asking.
-    pub fn proved(&self, challenge: &str, key: &[u8], text: &str, proof: &str) -> bool {
-        self.proved_at(challenge, key, text, proof, Instant::now())
+    pub fn proved(&self, challenge: &str, key: &[u8], texts: &[String], proof: &str) -> bool {
+        self.proved_at(challenge, key, texts, proof, Instant::now())
     }
 
     fn proved_at(
         &self,
         challenge: &str,
         key: &[u8],
-        text: &str,
+        texts: &[String],
         proof: &str,
         now: Instant,
     ) -> bool {
@@ -186,7 +193,11 @@ impl Challenges {
         // A low-order key agrees on nothing, which ring refuses.
         agreement::agree_ephemeral(private, &peer, |shared| {
             mac_key(shared, &challenge_bytes)
-                .map(|mac| hmac::verify(&mac, text.as_bytes(), &tag).is_ok())
+                .map(|mac| {
+                    texts
+                        .iter()
+                        .any(|text| hmac::verify(&mac, text.as_bytes(), &tag).is_ok())
+                })
                 .unwrap_or(false)
         })
         .unwrap_or(false)
@@ -288,6 +299,11 @@ pub fn vouched(claim: &Claim, keys: &SigningKeys, now: u64) -> Result<Vouched, S
 /// pod by minutes, and a stopped runner mints nothing.
 pub fn pod_holds(pod: &Pod, key_hex: &str) -> bool {
     pod.metadata.deletion_timestamp.is_none()
+        && pod
+            .status
+            .as_ref()
+            .and_then(|status| status.phase.as_deref())
+            == Some("Running")
         && pod
             .status
             .as_ref()
@@ -645,11 +661,24 @@ impl Serving {
             .await
             .map_err(|_| "the claim could not be read".to_owned())?
             .ok_or("no such claim")?;
-        let runner = vouched(&claim, &self.keys.now(), seconds_now())?;
-        let text = proof_text(&asked.namespace, &asked.claim, &asked.app, &asked.challenge);
+        let keys = self.keys.now();
+        let runner = vouched(&claim, &keys, seconds_now())?;
+        // Either key during a roll: the runner holds the port to the one its desktop pinned.
+        let texts: Vec<String> = std::iter::once(&keys.current)
+            .chain(keys.next.as_ref())
+            .map(|key| {
+                proof_text(
+                    &key.public(),
+                    &asked.namespace,
+                    &asked.claim,
+                    &asked.app,
+                    &asked.challenge,
+                )
+            })
+            .collect();
         if !self
             .challenges
-            .proved(&asked.challenge, &runner.key, &text, &asked.proof)
+            .proved(&asked.challenge, &runner.key, &texts, &asked.proof)
         {
             return Err("the proof is not of the claim's vouched key".to_owned());
         }
@@ -714,14 +743,18 @@ impl Serving {
         let Covered { owner, names } = &grant.covered;
         let first = names.first().ok_or("nothing to cover")?;
         let installation = github.installation(&jwt, owner, first).await?;
+        let permissions = crate::github::mintable(&installation.permissions);
+        if permissions.is_empty() {
+            return Err("the installation holds no permission a token may ask for".to_owned());
+        }
         let token = github
-            .token(&jwt, installation.id, names, &installation.permissions)
+            .token(&jwt, installation.id, names, &permissions)
             .await?;
         tracing::info!(
             namespace = %asked.namespace, claim = %asked.claim, pool = %claim.spec.pool,
             requester = %claim.spec.requester, app = %asked.app, secret = %grant.secret,
             installation = installation.id, %owner, repos = ?names,
-            permissions = ?installation.permissions.keys().collect::<Vec<_>>(),
+            permissions = ?permissions.keys().collect::<Vec<_>>(),
             expires_at = ?token.expires_at,
             "minted a token"
         );
@@ -732,7 +765,7 @@ impl Serving {
                 "expires_at": token.expires_at,
                 "owner": owner,
                 "repos": names,
-                "permissions": installation.permissions,
+                "permissions": permissions,
             }),
         ))
     }
@@ -784,7 +817,10 @@ async fn serve_one(
     let answered = match read {
         Ok(Ok(Some((method, target, body)))) => serving.respond(&method, &target, &body).await,
         Ok(Err(why)) => return Err(why),
-        _ => answer("400 Bad Request", &json!({ "refused": "no request read" })),
+        _ => {
+            tracing::warn!(why = "no request could be read", "refused a token");
+            answer("400 Bad Request", &json!({ "refused": "no request read" }))
+        }
     };
     stream.write_all(answered.as_bytes()).await?;
     stream.shutdown().await
@@ -819,6 +855,7 @@ async fn serve_until_broken(client: Client, keys: Arc<MountedKeys>) -> Result<()
     });
     tracing::info!(port = PORT, "serving the mint port");
     let open = Arc::new(Semaphore::new(CONNECTIONS));
+    let mut said_full = None;
     loop {
         let stream = match listener.accept().await {
             Ok((stream, _)) => stream,
@@ -829,13 +866,23 @@ async fn serve_until_broken(client: Client, keys: Arc<MountedKeys>) -> Result<()
             }
         };
         let Ok(permit) = open.clone().try_acquire_owned() else {
+            // Said at most once a minute, so a flood of connections is not a flood of log.
+            if said_full.is_none_or(|said: Instant| said.elapsed() >= Duration::from_secs(60)) {
+                said_full = Some(Instant::now());
+                tracing::warn!(
+                    most = CONNECTIONS,
+                    "the mint port is full: connections are being dropped"
+                );
+            }
             continue;
         };
         let (acceptor, serving) = (acceptor.clone(), serving.clone());
         tokio::spawn(async move {
             let _permit = permit;
             let served = tokio::time::timeout(CONNECTION_WITHIN, async {
-                let mut stream = acceptor.accept(stream).await?;
+                let mut stream = tokio::time::timeout(REQUEST_WITHIN, acceptor.accept(stream))
+                    .await
+                    .map_err(std::io::Error::other)??;
                 serve_one(&mut stream, &serving).await
             })
             .await;

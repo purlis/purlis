@@ -70,6 +70,14 @@ spec:
       messageExpression: >-
         'Only the purlis cluster operator makes a runner namespace (purlis-runners-*), or changes who it is for.'
       reason: Forbidden
+    # The operator's mark on a namespace opens its mint port to it (#4206), so no one else puts
+    # it on a namespace that is not a runner namespace.
+    - expression: >-
+        request.resource.resource != 'namespaces' || variables.operator || variables.runners ||
+        variables.marks[0] != 'purlis-cluster-operator'
+      messageExpression: >-
+        'Only the purlis cluster operator marks a namespace as its own, and only a runner namespace.'
+      reason: Forbidden
     # The operator makes no other namespace.
     - expression: >-
         request.resource.resource != 'namespaces' || !variables.operator || variables.runners

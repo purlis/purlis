@@ -254,12 +254,23 @@ pub fn covered(allow_list: &[String], claim: &[String]) -> Result<Covered, Strin
 }
 
 /// How a Secret read came out, in words that hold nothing of it.
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum Read {
     Found(Box<Secret>),
     Forbidden,
     Missing,
     Failed(String),
+}
+
+impl std::fmt::Debug for Read {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Read::Found(_) => f.write_str("Found"),
+            Read::Forbidden => f.write_str("Forbidden"),
+            Read::Missing => f.write_str("Missing"),
+            Read::Failed(why) => write!(f, "Failed({why})"),
+        }
+    }
 }
 
 /// `text`, the body the API server answered a read of a Secret with, as a Secret. A body that does

@@ -509,7 +509,9 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     };
     let (runner, quota) = match runner_namespace_ready(client, requester, &context.quota).await? {
         Ok(ready) => {
-            // Only runners of an opted-in Pool get a way to the mint port (#4206).
+            // A person's namespace with a Claim on an opted-in Pool gets a way to the mint port
+            // (#4206), for all their runners there and until the namespace goes: reaching the
+            // port gets nothing without a proof and an opted-in Pool.
             if crate::forge::key_to_read(&pool.spec).is_some() {
                 let wanted =
                     crate::mint::egress_policy(&ready.0.name_any(), client.default_namespace());

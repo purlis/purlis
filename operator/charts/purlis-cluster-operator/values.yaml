@@ -40,7 +40,7 @@ metrics:
   # -- Who may scrape the operator's metrics (#3737) on its Service
   # purlis-cluster-operator-metrics, as a NetworkPolicy's `from` peers, such as
   # `[{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}}]`. The
-  # NetworkPolicy purlis-cluster-operator lets nothing else reach the operator's pod: left empty,
+  # NetworkPolicy purlis-cluster-operator lets nothing else reach its metrics port: left empty,
   # nothing may scrape it.
   allowFrom: []
 

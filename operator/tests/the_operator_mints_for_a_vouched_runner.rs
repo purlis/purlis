@@ -202,44 +202,55 @@ impl Runner {
 #[test]
 fn the_holder_of_the_link_key_proves_it_and_no_one_else_can() {
     let challenges = Challenges::default();
-    let text = |challenge: &str| mint::proof_text("team-ns", "work", "Iv23", challenge);
+    let text =
+        |challenge: &str| mint::proof_text("ed25519:op", "team-ns", "work", "Iv23", challenge);
 
     let holder = runner();
     let key = holder.public.clone();
     let challenge = challenges.make().expect("a challenge");
     let proof = holder.prove(&challenge, &text(&challenge));
-    assert!(challenges.proved(&challenge, &key, &text(&challenge), &proof));
+    assert!(challenges.proved(&challenge, &key, &[text(&challenge)], &proof));
 
     // Another key's proof does not hold for this one.
     let challenge = challenges.make().expect("a challenge");
     let proof = runner().prove(&challenge, &text(&challenge));
-    assert!(!challenges.proved(&challenge, &key, &text(&challenge), &proof));
+    assert!(!challenges.proved(&challenge, &key, &[text(&challenge)], &proof));
 
     // A proof is of what was asked: another app is another text.
     let holder = runner();
     let key = holder.public.clone();
     let challenge = challenges.make().expect("a challenge");
     let proof = holder.prove(&challenge, &text(&challenge));
-    let other = mint::proof_text("team-ns", "work", "Iv23other", &challenge);
-    assert!(!challenges.proved(&challenge, &key, &other, &proof));
+    let other = mint::proof_text("ed25519:op", "team-ns", "work", "Iv23other", &challenge);
+    assert!(!challenges.proved(&challenge, &key, &[other], &proof));
 }
 
 #[test]
 fn a_challenge_answers_once_and_only_if_it_was_made_here() {
     let challenges = Challenges::default();
+
+    // A proof made for another operator's key is no proof to this one.
     let holder = runner();
     let key = holder.public.clone();
     let challenge = challenges.make().expect("a challenge");
-    let text = mint::proof_text("team-ns", "work", "Iv23", &challenge);
+    let theirs = mint::proof_text("ed25519:other", "team-ns", "work", "Iv23", &challenge);
+    let proof = holder.prove(&challenge, &theirs);
+    let ours = mint::proof_text("ed25519:op", "team-ns", "work", "Iv23", &challenge);
+    assert!(!challenges.proved(&challenge, &key, &[ours], &proof));
+
+    let holder = runner();
+    let key = holder.public.clone();
+    let challenge = challenges.make().expect("a challenge");
+    let text = mint::proof_text("ed25519:op", "team-ns", "work", "Iv23", &challenge);
     let proof = holder.prove(&challenge, &text);
-    assert!(challenges.proved(&challenge, &key, &text, &proof));
+    assert!(challenges.proved(&challenge, &key, std::slice::from_ref(&text), &proof));
     assert!(
-        !challenges.proved(&challenge, &key, &text, &proof),
+        !challenges.proved(&challenge, &key, std::slice::from_ref(&text), &proof),
         "a proof was taken twice"
     );
 
     let unknown = hex(&[7u8; 32]);
-    assert!(!challenges.proved(&unknown, &key, &text, &proof));
+    assert!(!challenges.proved(&unknown, &key, std::slice::from_ref(&text), &proof));
 }
 
 /// A low-order public key would make the agreement the same whoever computes it.
@@ -247,9 +258,9 @@ fn a_challenge_answers_once_and_only_if_it_was_made_here() {
 fn a_key_of_low_order_proves_nothing() {
     let challenges = Challenges::default();
     let challenge = challenges.make().expect("a challenge");
-    let text = mint::proof_text("team-ns", "work", "Iv23", &challenge);
+    let text = mint::proof_text("ed25519:op", "team-ns", "work", "Iv23", &challenge);
     let proof = mint::proof_for(&[0u8; 32], &unhex(&challenge), &text).expect("a proof");
-    assert!(!challenges.proved(&challenge, &[0u8; 32], &text, &proof));
+    assert!(!challenges.proved(&challenge, &[0u8; 32], std::slice::from_ref(&text), &proof));
 }
 
 #[test]
@@ -441,6 +452,55 @@ fn token() -> Token {
         repositories: vec![NamedRepo { name: "App".into() }],
         permissions: permissions(),
     }
+}
+
+/// Whatever the installation holds, a token never asks for what administers anything.
+#[test]
+fn a_token_asks_only_for_repo_level_permissions_that_administer_nothing() {
+    let held = json!({
+        "contents": "write",
+        "administration": "write",
+        "secrets": "write",
+        "workflows": "write",
+        "members": "read",
+        "organization_administration": "write",
+    });
+    let asked = github::mintable(held.as_object().expect("an object"));
+    assert_eq!(Value::Object(asked), json!({ "contents": "write" }));
+}
+
+fn pod_with(phase: &str, key: &str) -> k8s_openapi::api::core::v1::Pod {
+    serde_json::from_value(json!({
+        "metadata": { "name": "work-pod" },
+        "status": {
+            "phase": phase,
+            "initContainerStatuses": [{
+                "name": "link-key",
+                "image": "i", "imageID": "i", "ready": true, "restartCount": 0,
+                "state": { "terminated": { "exitCode": 0, "message": key } },
+            }],
+        },
+    }))
+    .expect("a pod")
+}
+
+#[test]
+fn only_a_running_pod_still_publishing_the_key_holds_it() {
+    let key = "ab".repeat(32);
+    assert!(mint::pod_holds(&pod_with("Running", &key), &key));
+    assert!(!mint::pod_holds(
+        &pod_with("Running", &"cd".repeat(32)),
+        &key
+    ));
+    assert!(!mint::pod_holds(&pod_with("Failed", &key), &key));
+    assert!(!mint::pod_holds(&pod_with("Succeeded", &key), &key));
+    let mut going = pod_with("Running", &key);
+    going.metadata.deletion_timestamp = made_at(2000);
+    assert!(!mint::pod_holds(&going, &key));
+    assert!(!mint::pod_holds(
+        &k8s_openapi::api::core::v1::Pod::default(),
+        &key
+    ));
 }
 
 #[test]

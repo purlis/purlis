@@ -99,7 +99,9 @@ fn github_answer(head: &str, body: &[u8], asked: &Mutex<Asked>) -> String {
             &json!({
                 "id": 42,
                 "account": { "login": "acme", "type": "Organization" },
-                "permissions": { "contents": "write", "pull_requests": "read" },
+                "permissions": {
+                    "contents": "write", "pull_requests": "read", "administration": "write",
+                },
             }),
         );
     }
@@ -303,13 +305,17 @@ fn agreed(private: &[u8], public: &[u8]) -> Vec<u8> {
     out.stdout
 }
 
+/// The signing key the Pool names, which each proof is made for.
+static OPERATOR: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 /// Asks for a token, as the holder of `link_key` (32 raw bytes).
 fn ask(pin: &str, link_key: &[u8], claim: &str, app: &str) -> (u16, Value) {
     let (status, said) = post(pin, CHALLENGE_PATH, &json!({}));
     assert_eq!(status, 200, "{said}");
     let challenge = said["challenge"].as_str().expect("a challenge").to_owned();
     let bytes = unhex(&challenge);
-    let text = mint::proof_text(NAMESPACE, claim, app, &challenge);
+    let operator = OPERATOR.get().expect("the signing key");
+    let text = mint::proof_text(operator, NAMESPACE, claim, app, &challenge);
     let proof = mint::proof_for(&agreed(link_key, &bytes), &bytes, &text).expect("a proof");
     post(
         pin,
@@ -632,17 +638,20 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
             .to_owned()
     };
     let (runner_ns, pod) = (line("runner namespace"), line("pod"));
-    let out = exec(
-        &runner_ns,
-        &pod,
-        "runner",
-        &["cat", "/run/purlis-link/link-key"],
-    );
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    // A statement needs only the pod's first step ended: the runner may yet be starting.
+    let out = eventually("the runner to run", Duration::from_secs(120), || {
+        let (runner_ns, pod) = (runner_ns.clone(), pod.clone());
+        async move {
+            let out = exec(
+                &runner_ns,
+                &pod,
+                "runner",
+                &["cat", "/run/purlis-link/link-key"],
+            );
+            out.status.success().then_some(out)
+        }
+    })
+    .await;
     let link_key = unhex(String::from_utf8_lossy(&out.stdout).trim());
     assert_eq!(link_key.len(), 32);
 
@@ -676,7 +685,16 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
         "a runner could not reach the port: {}",
         String::from_utf8_lossy(&from_runner.stderr)
     );
-    let metrics = format!("exec 3<>/dev/tcp/{address}/8080");
+    let operators = Api::<Pod>::namespaced(admin.clone(), OPERATOR_NS)
+        .list(&ListParams::default().labels("app.kubernetes.io/name=purlis-cluster-operator"))
+        .await
+        .expect("the operator's pod");
+    let operator_ip = operators.items[0]
+        .status
+        .as_ref()
+        .and_then(|status| status.pod_ip.clone())
+        .expect("its address");
+    let metrics = format!("exec 3<>/dev/tcp/{operator_ip}/8080");
     let not_metrics = exec(
         &runner_ns,
         &pod,
@@ -697,6 +715,7 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
         .and_then(|status| status.signing_key)
         .expect("the key the Pool names");
     let pin = pin_of(&signing_key);
+    OPERATOR.set(signing_key).expect("set once");
     let _forward = Forward::start();
     eventually("the port to answer", Duration::from_secs(30), || {
         let pin = pin.clone();
@@ -780,7 +799,6 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
     patched(&[]).await;
     refused_saying(&ask(&pin, &link_key, CLAIM, APP), "no repos");
     patched(&["acme/app"]).await;
-    let tokens_before = asked.lock().expect("the record").tokens.len();
 
     // A revoked `use` stops new tokens: the operator asks before each mint.
     revoke(&admin, "e2e-mint-use").await;
@@ -793,6 +811,7 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
     })
     .await;
     refused_saying(&refused, "may not use the pool");
+    let tokens_before = asked.lock().expect("the record").tokens.len();
     grant(
         &admin,
         "e2e-mint-use",
@@ -822,6 +841,43 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
         )
         .await
         .expect("the Pool");
+
+    // On a Pool that mints, changing the image is spending the key too.
+    revoke(&admin, "e2e-mint-key").await;
+    let image_refused = eventually("the key's right to go", Duration::from_secs(30), || {
+        let as_writer = as_writer.clone();
+        async move {
+            let patch = Patch::Merge(json!({ "spec": { "image":
+                "example.test/other@sha256:1111111111111111111111111111111111111111111111111111111111111111" } }));
+            match as_writer.patch(POOL, &PatchParams::default(), &patch).await {
+                Err(kube::Error::Api(status)) if status.message.contains("forgekeys") => {
+                    Some(status.message)
+                }
+                _ => None,
+            }
+        }
+    })
+    .await;
+    assert!(image_refused.contains("image"), "{image_refused}");
+
+    // The operator's mark opens the port, so no one else puts it on another namespace.
+    let marked = namespaces
+        .create(
+            &PostParams::default(),
+            &k8s_openapi::api::core::v1::Namespace {
+                metadata: ObjectMeta {
+                    name: Some("e2e-mint-marked".to_owned()),
+                    labels: Some(BTreeMap::from([(
+                        "app.kubernetes.io/managed-by".to_owned(),
+                        "purlis-cluster-operator".to_owned(),
+                    )])),
+                    ..ObjectMeta::default()
+                },
+                ..Default::default()
+            },
+        )
+        .await;
+    assert!(marked.is_err(), "{marked:?}");
 
     // A Pool and Claim from before the policy on App keys was in force mint nothing: its binding
     // made again counts as the policy made again.

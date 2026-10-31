@@ -205,6 +205,10 @@ step "the operator asks a stand-in for GitHub"
 # sets this.
 fake_github_port=${FAKE_GITHUB_PORT:-18080}
 gateway=$(docker network inspect kind --format '{{range .IPAM.Config}}{{.Gateway}}{{"\n"}}{{end}}' | grep -v : | head -n 1)
+if [ -z "$gateway" ]; then
+  echo "kind's network names no IPv4 gateway" >&2
+  exit 1
+fi
 kubectl --context "$context" -n purlis-system set env deployment/purlis-cluster-operator \
   "PURLIS_FORGE_API_URL=http://$gateway:$fake_github_port" >/dev/null
 kubectl --context "$context" -n purlis-system rollout status deployment/purlis-cluster-operator --timeout=120s
@@ -236,5 +240,7 @@ helm uninstall purlis-cluster-operator --kube-context "$context" --namespace pur
 kubectl --context "$context" get crd/pools.runners.purlis.dev crd/claims.runners.purlis.dev \
   validatingadmissionpolicy/purlis-claims-use-their-pool \
   validatingadmissionpolicybinding/purlis-claims-use-their-pool \
+  validatingadmissionpolicy/purlis-forge \
+  validatingadmissionpolicybinding/purlis-forge \
   validatingadmissionpolicy/purlis-operator-changes-only-a-sandboxs-mode \
   validatingadmissionpolicybinding/purlis-operator-changes-only-a-sandboxs-mode >/dev/null
