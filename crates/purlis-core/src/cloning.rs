@@ -24,6 +24,16 @@ use crate::worktree::git;
 /// about once a second while anything arrives, so this long of silence is a dead clone.
 pub const STALL: Duration = Duration::from_secs(5 * 60);
 
+/// A scenario run's shorter [`STALL`], from the file `PURLIS_E2E_CLONE_STALL` names, while it holds
+/// a number of seconds: a spec of the real window cannot wait out five minutes. Only a test build
+/// has it.
+#[cfg(feature = "fenced")]
+pub(crate) fn stall_of_a_scenario() -> Option<Duration> {
+    let file = crate::envvar::var("PURLIS_E2E_CLONE_STALL")?;
+    let seconds = std::fs::read_to_string(file).ok()?.trim().parse().ok()?;
+    Some(Duration::from_secs(seconds))
+}
+
 /// The `-c` settings that let curl end a dead transfer itself: less than a byte a second for
 /// [`STALL`]. So low because a forge preparing a large pack sends only a keep-alive every few
 /// seconds, which is slow and is not dead.

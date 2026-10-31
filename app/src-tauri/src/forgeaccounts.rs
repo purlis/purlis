@@ -122,9 +122,15 @@ pub(crate) fn kind_of(word: &str) -> Result<Kind, String> {
 /// runs as it is, and the CLI's helper stays.
 ///
 /// A test build (every one is fenced) runs `then` as it is too: the config home a test's window
-/// would read is outside its fence. The core's tests cover the helper itself.
+/// would read is outside its fence. The core's tests cover the helper itself. The exception is a
+/// scenario run with a fake forge named: its config home is the run's own, so its window's git
+/// is the shipped one, helper and all (`e2eforge::browser_forge`).
 pub(crate) fn window_git<T>(then: impl FnOnce() -> T) -> T {
-    if purlis_core::fence::FENCED {
+    #[cfg(feature = "e2e")]
+    let on_a_fake_forge = crate::e2eforge::browser_forge().is_some();
+    #[cfg(not(feature = "e2e"))]
+    let on_a_fake_forge = false;
+    if purlis_core::fence::FENCED && !on_a_fake_forge {
         return then();
     }
     let (Some(scope), Ok(exe), Some(root)) = (
