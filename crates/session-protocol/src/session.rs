@@ -390,9 +390,15 @@ use crate::view::{Limits, Views};
 /// login took it. Its target is that login's own path alone, so nothing else on the runner's
 /// loopback is reached. The paired desktop's, on its own link. A host before 1.59 refuses it
 /// `unknown_command`, and the sign-in says so.
+///
+/// 1.61 added the Skill studio's flag to a chat's start on a runner (SK-20b, #3084): `start_program`
+/// may carry `plane_skills`, whether the plane's skills reach the chat as the desktop read the
+/// flag, which a runner arms the chat by in place of its own machine's flag. Taken only from the
+/// window or its host's relay. A host before 1.61 ignores the field and reads its own flag, as
+/// before. 60 is passed over while #4193 holds it.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 59,
+    minor: 61,
 };
 
 /// The version that first hands a sign-in's redirect to a login on a runner (#4044).
@@ -1452,6 +1458,12 @@ pub struct StartProgram {
     /// of the persona as it reads it. None where nothing is allowed there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools_allowed: Option<String>,
+    /// Whether the plane's skills reach it, as the desktop that starts it on a runner read the
+    /// Skill studio's flag (1.61, SK-20b #3084): the runner arms it with the project's skills by
+    /// this word, not its own machine's. None where the starter does not say, and the host reads
+    /// its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plane_skills: Option<bool>,
     /// The profile it runs on, or none (1.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
@@ -1540,6 +1552,7 @@ impl StartProgram {
             first_message: None,
             without_sandbox: false,
             tools_allowed: None,
+            plane_skills: None,
             launch: None,
             reach: None,
             confinement: None,

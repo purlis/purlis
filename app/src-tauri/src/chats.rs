@@ -443,6 +443,9 @@ struct Running {
     /// chat of this machine, whose sandbox records its own, and for one reattached, whose start
     /// this window did not see.
     clones_at_start: Option<Vec<purlis_core::forge::apptoken::Started>>,
+    /// **The persona it runs as, as its start named it**: its run's `persona` (ADR 0066), what a
+    /// runner's skill run of it is logged by here (SK-20b, #3084). `None` on no persona.
+    runs_as: Option<String>,
 }
 
 /// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
@@ -4288,6 +4291,9 @@ impl Chats {
                                 )
                             },
                         ),
+                        // The Skill studio's flag this start read (#3445): a runner arms it by
+                        // this, not by its own machine's (SK-20b, #3084).
+                        plane_skills,
                         alone,
                         size,
                     },
@@ -4441,6 +4447,7 @@ impl Chats {
                 skills_read: (*skills).clone(),
                 plane_skills,
                 clones_at_start: clones_at_start.take(),
+                runs_as: runs_as.clone(),
             },
         );
         // Its routing record, after its run began (SK-15b), where its router was asked now. A chat
@@ -5518,6 +5525,49 @@ impl Chats {
             running.composed_by_its_host
                 && running.ran != Some(purlis_session_protocol::session::RunSandbox::Off)
         })
+    }
+
+    /// **Logs a skill run of a chat a pool's runner runs** (SK-20b, #3084): `run`, as the log of
+    /// `pool`'s runner says it started or ended, logged in this project's skill log as a local
+    /// run is, with this window's own word for where the chat ran: the persona it runs as, its
+    /// harness and its workspace. Only for a chat open here that runs on that pool's runner, by
+    /// its id; any other line names no chat of this window's, and nothing is logged.
+    pub fn skill_run_heard(
+        &self,
+        pool: Option<&str>,
+        run: &purlis_core::skilluse::relayed::Relayed,
+    ) {
+        let Some(pool) = pool else {
+            return;
+        };
+        let ran_as = {
+            let open = lock(&self.open);
+            open.iter()
+                .find(|(_, running)| running.chat.identity.id.as_deref() == Some(run.chat.as_str()))
+                .map(|(number, running)| {
+                    (
+                        *number,
+                        running.runs_as.clone(),
+                        running.harness.map(Harness::name),
+                        running.workspace.clone(),
+                    )
+                })
+        };
+        let Some((number, persona, harness, workspace)) = ran_as else {
+            return;
+        };
+        if self.sessions.pool_of(number).as_deref() != Some(pool) {
+            return;
+        }
+        purlis_core::skilluse::relayed::logged(
+            &self.project,
+            run,
+            &purlis_core::skilluse::relayed::RanAs {
+                persona: persona.as_deref(),
+                harness,
+                workspace: workspace.as_deref(),
+            },
+        );
     }
 
     /// **Runner chat `session`'s workspace clones as its session started here** (#2053): `None`

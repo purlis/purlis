@@ -179,6 +179,46 @@ fn a_start_with_no_data_folder_for_its_long_settings_is_refused() {
     );
 }
 
+/// SK-20b (#3084): a runner arms a chat with the plane's skills by its desktop's reading of the
+/// Skill studio's flag, where the start says it, never by its own machine's, which has nobody to
+/// turn it on. Only a link's start says so. Seen red: the runner read its own machine's alone.
+#[test]
+fn only_a_links_start_says_whether_its_desktop_reaches_the_chat_with_the_planes_skills() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = plane_in(&tmp);
+    // The project requires its skills, so this machine's own reading is on, whatever its flag.
+    std::fs::write(
+        root.join(crate::plane::MANIFEST),
+        "requires = [{ feature = \"project-skills\" }]\n",
+    )
+    .unwrap();
+    let reach = |by: &str, said: Option<bool>| {
+        let start = purlis_session_protocol::session::StartProgram {
+            plane_skills: said,
+            ..purlis_session_protocol::session::StartProgram::of(
+                "01J9PRJCT00000000000000000",
+                purlis_session_protocol::session::ProgramKind::Harness,
+            )
+        };
+        plane_skills_of(&Starting {
+            root: &root,
+            number: 1,
+            start: &start,
+            reporting: None,
+            started_by: by,
+        })
+    };
+    assert!(!reach("remote-link", Some(false)), "its desktop's word");
+    assert!(reach("remote-link", Some(true)));
+    assert!(
+        reach("remote-link", None),
+        "a desktop before 1.61: its own reading"
+    );
+    for own in ["local-ui", "terminal", "fleet-mcp", "approval", "editor"] {
+        assert!(reach(own, Some(false)), "{own}: its own reading");
+    }
+}
+
 #[test]
 fn only_a_links_start_says_what_its_desktop_allowed() {
     let tmp = tempfile::tempdir().unwrap();

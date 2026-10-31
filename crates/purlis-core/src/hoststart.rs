@@ -568,6 +568,17 @@ fn what_its_desktop_allowed(starting: &Starting<'_>) -> Option<String> {
         .flatten()
 }
 
+/// **Whether the plane's skills reach a chat this host composes** (SK-20b, #3084): the Skill
+/// studio's flag as the desktop that starts it on this runner read it, where its start says
+/// (1.61); a runner has no person to turn the preview on. A start that does not say, and one of
+/// this machine's, takes this machine's own reading ([`crate::skills::reach_chats_here`]).
+fn plane_skills_of(starting: &Starting<'_>) -> bool {
+    (starting.started_by == purlis_session_protocol::auth::Scope::RemoteLink.word())
+        .then_some(starting.start.plane_skills)
+        .flatten()
+        .unwrap_or_else(|| crate::skills::reach_chats_here(starting.root))
+}
+
 /// [`compose`] from what [`crate::start::ready`] decided for it: the seam a test hands a sandbox
 /// compiled for another machine through.
 pub fn compose_ready(
@@ -587,10 +598,12 @@ pub fn compose_ready(
     }
     let persona = persona_of(&ready.env, root);
     let sandbox = ready.sandbox.as_ref();
+    // Whether the plane's skills reach it, read once: its desktop's word, where it says (SK-20b).
+    let plane_skills = plane_skills_of(starting);
     // No app state, no record of the folders there at a sandboxed chat's start (#3718): such a
     // chat is not started, and nothing about its start is written.
     if sandbox.is_some()
-        && crate::skills::reach_chats_here(root)
+        && plane_skills
         && start.program.is_some()
         && let Some(refused) = crate::skills::levels::refusal_for_a_sandboxed_start(root)
     {
@@ -600,7 +613,7 @@ pub fn compose_ready(
     // now are noted as not its own (SK-9), before it is armed, and before anything about its start is
     // written, so a start refused here records nothing.
     if sandbox.is_some()
-        && crate::skills::reach_chats_here(root)
+        && plane_skills
         && let Some(id) = start.program.as_deref()
     {
         let name = start
@@ -626,7 +639,7 @@ pub fn compose_ready(
     let skills = std::cell::LazyCell::new(|| {
         let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
         ChatSkills::read(
-            crate::skills::reach_chats_here(root),
+            plane_skills,
             root,
             ready.harness,
             Some(&cwd),

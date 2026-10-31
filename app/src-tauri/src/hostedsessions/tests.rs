@@ -1850,6 +1850,7 @@ impl purlis_host::Compose for ComposesConfined {
 pub(crate) fn by_its_names() -> Named {
     Named {
         tools_allowed: None,
+        plane_skills: false,
         chat: None,
         run: None,
         profile: Some("work".to_owned()),
@@ -3282,4 +3283,147 @@ fn a_pool_a_chat_ran_on_without_the_sandbox_is_untrusted_though_its_record_canno
     assert!(window.untrusts("builds") && pool.untrusts("builds"));
     assert!(!window.untrusts("other"));
     assert_eq!(*ended.lock().unwrap(), ["builds"]);
+}
+
+/// A runner's event log, as a stand-in keeps it: the lines a test writes into it (#3084).
+#[derive(Clone, Default)]
+struct RunnersLog(Arc<Mutex<Vec<session::Event>>>);
+
+const RUNNERS_DEVICE: &str = "01JB0RUNNER0000000000000000";
+
+impl RunnersLog {
+    fn write(&self, kind: &str, body: serde_json::Value) {
+        let mut lines = self.0.lock().unwrap();
+        let seq = lines.len() as u64 + 1;
+        lines.push(session::Event {
+            v: 1,
+            device_id: RUNNERS_DEVICE.into(),
+            seq,
+            ulid: purlis_core::reopen::mint(),
+            chat: Some("01K6W0RKER000000000000000B".into()),
+            run: Some("01K6CHATRUN000000000000000".into()),
+            parent_run: None,
+            kind: kind.into(),
+            body,
+        });
+    }
+}
+
+/// Reads a [`RunnersLog`] on from its cursor.
+struct RunnersLogFrom {
+    log: RunnersLog,
+    after: u64,
+}
+
+impl purlis_host::ReadsLog for RunnersLogFrom {
+    fn read(&mut self) -> Result<Vec<session::Pushed>, String> {
+        let lines: Vec<session::Event> = self
+            .log
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|line| line.seq > self.after)
+            .cloned()
+            .collect();
+        if let Some(last) = lines.last() {
+            self.after = last.seq;
+        }
+        Ok(lines.into_iter().map(session::Pushed::Event).collect())
+    }
+}
+
+impl purlis_host::Record for RunnersLog {
+    fn record(&self, _entry: serde_json::Value) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn ended(&self, _ended: &purlis_host::Ended<'_>) {}
+
+    fn log_end(&self) -> Result<(String, u64), String> {
+        Ok((RUNNERS_DEVICE.into(), self.0.lock().unwrap().len() as u64))
+    }
+
+    fn read_log(&self, after: u64) -> Result<Box<dyn purlis_host::ReadsLog>, String> {
+        Ok(Box::new(RunnersLogFrom {
+            log: self.clone(),
+            after,
+        }))
+    }
+}
+
+/// **A pool runner's chats' skill runs reach the window from the runner's own log** (SK-20b,
+/// #3084): through the desktop's host, which relays the window's link to the runner, each
+/// `skill.started` and `skill.ended` the runner writes is told once to whoever logs the runs of
+/// the project held there, and no other line is. Seen red: the window read only a run's end.
+#[test]
+fn a_runners_skill_runs_are_told_once_each_from_its_log_over_the_relayed_link() {
+    use purlis_core::skilluse::relayed::{Line, Relayed};
+    let runtime = a_runtime();
+    let log = RunnersLog::default();
+    let runner = Hosting::running_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        StandIns::default(),
+    )
+    .recording_with(log.clone());
+    let desktop = runtime.block_on(async move { a_desktop_relaying_to(runner) });
+    let link = runtime
+        .block_on(async move {
+            let link = a_bare_link_to(purlis_host::Routed::new(desktop), || {}).await?;
+            HostLink::over_relayed(
+                link,
+                tokio::runtime::Handle::current(),
+                || {},
+                None,
+                Some("builds"),
+            )
+            .await
+        })
+        .expect("the window's link is relayed");
+    let told: Arc<Mutex<Vec<Relayed>>> = Arc::default();
+    link.hear_skill_runs("01J9PRJCT00000000000000000", {
+        let told = Arc::clone(&told);
+        Arc::new(move |pool, run| {
+            assert_eq!(pool, None, "a link knows no pool: its router says which");
+            told.lock().unwrap().push(run.clone());
+        })
+    });
+
+    let run = "01K6SKILLRUN00000000000000";
+    log.write(
+        "skill.started",
+        serde_json::json!({ "started_by": "skill-tool", "skill": "review", "skill_run": run }),
+    );
+    log.write(
+        "hook.stop",
+        serde_json::json!({ "skill": "review", "skill_run": run }),
+    );
+    log.write(
+        "skill.ended",
+        serde_json::json!({ "skill": "review", "skill_run": run, "ended": "turn", "ms": 5 }),
+    );
+
+    until("the run's start and end are told", || {
+        told.lock().unwrap().len() >= 2
+    });
+    std::thread::sleep(Duration::from_millis(200));
+    let told = told.lock().unwrap().clone();
+    assert_eq!(told.len(), 2, "each once, and no other line: {told:?}");
+    // Each is logged off the runtime as it comes, in whichever order: the log reads a run's
+    // rows by its id.
+    assert!(
+        told.iter()
+            .any(|one| matches!(one.line, Line::Started { .. })),
+        "{told:?}"
+    );
+    assert!(
+        told.iter()
+            .any(|one| matches!(one.line, Line::Ended { .. })),
+        "{told:?}"
+    );
+    assert!(
+        told.iter()
+            .all(|one| one.run == run && one.device == RUNNERS_DEVICE)
+    );
+    drop(link);
 }

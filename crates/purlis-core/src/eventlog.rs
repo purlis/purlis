@@ -2692,6 +2692,11 @@ impl Recorder {
             if let Some(spent) = spent {
                 body["tokens"] = spent.into();
             }
+            // The run it started inside, as its start said: what a desktop that logs a runner's
+            // runs from this line nests it under (SK-20b, #3084).
+            if let Some(parent) = &run.open.parent {
+                body["parent_skill_run"] = parent.as_str().into();
+            }
             self.append(under, "skill.ended", body)?;
             crate::skilluse::ended(plane, &run, spent, chrono::Utc::now(), &self.log.device);
         }
