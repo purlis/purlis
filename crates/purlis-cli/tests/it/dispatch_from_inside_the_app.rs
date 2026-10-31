@@ -401,7 +401,7 @@ fn a_dispatch_the_person_is_asked_about_is_held_and_says_what_happens_next() {
 }
 
 #[test]
-fn a_dispatch_held_because_the_chat_runs_on_a_pool_says_so_and_asks_no_grant() {
+fn a_dispatch_held_because_the_chat_runs_on_a_pool_says_so() {
     let tmp = daily();
     let (app, _reading, _asked) = an_app(&tmp, |tickets, connection, ask| {
         on_a_ticket(tickets, connection, ask, |_| Answer::NeedsGrant {
@@ -420,9 +420,9 @@ fn a_dispatch_held_because_the_chat_runs_on_a_pool_says_so_and_asks_no_grant() {
         text(&out.stdout),
         "purlis dispatch: held for the person. This chat runs on pool 'builds', so the person \
          approves what it dispatches in the window, with this brief in front of them. Nothing \
-         has started. If they approve it, 'check the queue' starts then and its report reaches \
-         this chat as context on a later turn; if they refuse it, this chat is told on its next \
-         turn. Carry on with other work, and do not dispatch it again.\n"
+         has started. If they approve it, 'check the queue' is decided then, and this chat is told \
+         what became of it; if they refuse it, this chat is told on its next turn. Carry on with \
+         other work, and do not dispatch it again.\n"
     );
 }
 

@@ -466,16 +466,16 @@ fn held_for_the_person(from: Option<&str>, to: &str, ws: &str, creates: bool) ->
 /// What a chat on pool `pool` is told where its handoff waits for the person's Approve (#4148).
 fn held_on_a_pool(pool: &str, ws: &str, creates: bool) -> String {
     let created = if creates {
-        format!(" '{ws}' is created then too, and not before.")
+        format!(" '{ws}' is created only if it opens.")
     } else {
         String::new()
     };
     format!(
         "{HANDOFF_SAYS} held for the person. This chat runs on pool '{}', so the person approves \
          what it hands off in the window, with this brief in front of them. Nothing has been \
-         opened. If they approve it, the chat opens in workspace '{ws}' then, started on the \
-         brief;{created} if they refuse it, this chat is told on its next turn. Carry on with \
-         other work, and do not hand it off again.",
+         opened. If they approve it, the handoff into workspace '{ws}' is decided then, and this \
+         chat is told what became of it;{created} if they refuse it, this chat is told on its \
+         next turn. Carry on with other work, and do not hand it off again.",
         purlis_core::personas::one_line(pool)
     )
 }

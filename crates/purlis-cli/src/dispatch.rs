@@ -426,7 +426,7 @@ pub fn send(
         }
         // Held, not refused: the dispatch is accepted and waits on the person, so this is not
         // a failure and is not said as one.
-        // Held because this chat runs on a pool, whatever the persona (#4148): no grant is asked.
+        // Held because this chat runs on a pool, whatever the persona (#4148).
         Ok(Answer::NeedsGrant {
             waiting: None,
             held_by: Some(pool),
@@ -538,9 +538,9 @@ fn held_on_a_pool(pool: &str, task: &str) -> String {
     format!(
         "{SAYS} held for the person. This chat runs on pool '{}', so the person approves what it \
          dispatches in the window, with this brief in front of them. Nothing has started. If \
-         they approve it, '{}' starts then and its report reaches this chat as context on a \
-         later turn; if they refuse it, this chat is told on its next turn. Carry on with other \
-         work, and do not dispatch it again.",
+         they approve it, '{}' is decided then, and this chat is told what became of it; if \
+         they refuse it, this chat is told on its next turn. Carry on with other work, and do \
+         not dispatch it again.",
         one(pool),
         one(task)
     )

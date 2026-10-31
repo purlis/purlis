@@ -1251,7 +1251,7 @@ pub struct PoolSignInTerminal {
 /// 0095). A login that waits for the browser is answered through this machine's port, for as
 /// long as it runs: the redirect, and only that, is carried to the runner over a link of its own
 /// (`sign_in_redirect`, #4044). A sign-in of the same profile on the same pool already running is
-/// cancelled. Answers the sign-in's number. With `terminal`, where purlis could not follow the
+/// stopped. Answers the sign-in's number. With `terminal`, where purlis could not follow the
 /// login or the person asked for a device code (#4106), it runs in a terminal the runner makes, for the person to drive in the strip (#4043):
 /// what it prints is [`PoolSignInStep::Printed`], and what is typed goes back by
 /// [`pool_sign_in_type`]. A login that waits for the browser runs there by its harness's
@@ -1415,7 +1415,7 @@ pub async fn pool_sign_in_next(
 
 /// **Passes the code the person pasted to sign-in `flow`**, as one line: on a cluster pool, only
 /// while its runner is still as the gate judged it ([`still_driving`]); else the sign-in is
-/// cancelled and the code goes nowhere.
+/// stopped and the code goes nowhere.
 #[tauri::command]
 #[specta::specta]
 pub async fn pool_sign_in_paste(flow: u32, code: String) -> Result<(), String> {

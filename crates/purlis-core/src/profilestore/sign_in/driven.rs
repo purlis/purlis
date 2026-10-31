@@ -1337,6 +1337,11 @@ impl Driving {
     /// `docker exec` does, the login ends with its input, on the runner ([`super::held`]).
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
+        // At once, so nothing more is passed on while the login ends. A write under way holds
+        // the lock, and is never waited for: the login's end ends it.
+        if let Ok(mut input) = self.input.try_lock() {
+            input.take();
+        }
     }
 
     /// **Ends the login because it had to stop, not because the person asked** (#4277): as

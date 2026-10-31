@@ -788,6 +788,7 @@ fn a_sign_in_that_had_to_stop_fails_with_its_reason() {
 
     driving.stop("its pool changed");
 
+    assert!(driving.paste("a code").is_err(), "it takes no more input");
     assert_eq!(
         next(&driving),
         Event::Failed {

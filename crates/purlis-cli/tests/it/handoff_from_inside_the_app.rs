@@ -325,9 +325,9 @@ fn a_chat_the_app_started_is_opened_in_the_app_on_one_ticket() {
     assert!(message.ends_with(&format!("\n\n{BRIEF}")), "{message:?}");
 }
 
-/// **A handoff held because its chat runs on a pool says so, and asks no grant** (#4148).
+/// **A handoff held because its chat runs on a pool says so** (#4148).
 #[test]
-fn a_handoff_held_because_the_chat_runs_on_a_pool_says_so_and_asks_no_grant() {
+fn a_handoff_held_because_the_chat_runs_on_a_pool_says_so() {
     let tmp = daily();
     let (app, _reading, _asked) = an_app(&tmp, |tickets: &Tickets, connection, ask| match ask {
         Ask::Open(open) => {
@@ -352,9 +352,9 @@ fn a_handoff_held_because_the_chat_runs_on_a_pool_says_so_and_asks_no_grant() {
         text(&out.stdout),
         "purlis handoff: held for the person. This chat runs on pool 'builds', so the person \
          approves what it hands off in the window, with this brief in front of them. Nothing \
-         has been opened. If they approve it, the chat opens in workspace 'alpha' then, started \
-         on the brief; if they refuse it, this chat is told on its next turn. Carry on with \
-         other work, and do not hand it off again.\n"
+         has been opened. If they approve it, the handoff into workspace 'alpha' is decided then, \
+         and this chat is told what became of it; if they refuse it, this chat is told on its \
+         next turn. Carry on with other work, and do not hand it off again.\n"
     );
 }
 
