@@ -204,9 +204,9 @@ step "the operator asks a stand-in for GitHub"
 # of ours is on real GitHub for a pull request's run. Set after the diff above, since no install
 # sets this.
 fake_github_port=${FAKE_GITHUB_PORT:-18080}
-gateway=$(docker network inspect kind --format '{{range .IPAM.Config}}{{.Gateway}}{{"\n"}}{{end}}' | grep -v : | head -n 1)
+gateway=$(docker exec "$cluster-control-plane" ip -4 route show default | sed -n 's/^default via \([0-9.]*\).*/\1/p' | head -n 1)
 if [ -z "$gateway" ]; then
-  echo "kind's network names no IPv4 gateway" >&2
+  echo "kind's node has no IPv4 default route" >&2
   exit 1
 fi
 kubectl --context "$context" -n purlis-system set env deployment/purlis-cluster-operator \
