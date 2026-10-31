@@ -196,6 +196,19 @@ if ! diff=$(kubectl --context "$context" diff --server-side --force-conflicts \
   exit 1
 fi
 
+step "the operator's image trusts the public certificate authorities"
+docker run --rm --entrypoint /bin/sh "$operator_local" -c 'test -s /etc/ssl/certs/ca-certificates.crt'
+
+step "the operator asks a stand-in for GitHub"
+# The cluster's gateway on kind's network, where tests/minting_on_a_kind_cluster.rs listens: no App
+# of ours is on real GitHub for a pull request's run. Set after the diff above, since no install
+# sets this.
+fake_github_port=${FAKE_GITHUB_PORT:-18080}
+gateway=$(docker network inspect kind --format '{{range .IPAM.Config}}{{.Gateway}}{{"\n"}}{{end}}' | grep -v : | head -n 1)
+kubectl --context "$context" -n purlis-system set env deployment/purlis-cluster-operator \
+  "PURLIS_FORGE_API_URL=http://$gateway:$fake_github_port" >/dev/null
+kubectl --context "$context" -n purlis-system rollout status deployment/purlis-cluster-operator --timeout=120s
+
 step "the policy settles"
 # The operator acts only on Claims made more than 30 seconds after the policy's binding
 # (SETTLE in src/admission.rs); the tests make theirs at once.
@@ -205,6 +218,10 @@ step "the tests"
 kubectl config use-context "$context" >/dev/null
 PURLIS_RUNNER_IMAGE=$runner cargo test --manifest-path "$here/Cargo.toml" --locked \
   --test on_a_kind_cluster -- --ignored --test-threads=1
+
+step "a vouched runner gets a token, and everyone else a refusal"
+FAKE_GITHUB_PORT=$fake_github_port PURLIS_RUNNER_IMAGE=$runner cargo test --manifest-path "$here/Cargo.toml" --locked \
+  --test minting_on_a_kind_cluster -- --ignored --test-threads=1
 
 step "a chat runs on a cluster runner, through the link"
 # The desktop's side (#2056), from the root workspace: a Claim made as this kubeconfig's user,

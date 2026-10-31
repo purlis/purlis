@@ -33,6 +33,62 @@
 # `patch` on upstream's sandboxes (#2058), which RBAC cannot scope to a field or an owner: the
 # operator may change only a Sandbox's spec.operatingMode, and only on a Sandbox a SandboxClaim
 # controls.
+#
+# The fourth policy, purlis-forge (#4206): whoever writes a Pool's spec.forge needs `use` on the
+# key it names (forgekeys), and only a Claim's requester changes the repos it names. The operator
+# mints only for a Claim and a Pool made once its binding has settled.
+---
+# Source: purlis-cluster-operator/templates/forge-policy.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-forge
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [runners.purlis.dev]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [pools]
+      - apiGroups: [runners.purlis.dev]
+        apiVersions: ["*"]
+        operations: [UPDATE]
+        resources: [claims]
+  validations:
+    # Writing a Pool's spec.forge is spending the key it names, so the writer needs `use` on that
+    # key. Any other change to a Pool, and taking its forge off, asks nothing.
+    - expression: >-
+        request.resource.resource != 'pools' || !has(object.spec.forge) ||
+        (request.operation == 'UPDATE' && has(oldObject.spec.forge) &&
+        object.spec.forge == oldObject.spec.forge) ||
+        authorizer.group('runners.purlis.dev').resource('forgekeys')
+        .name(object.spec.forge.appKeySecretRef.name).check('use').allowed()
+      messageExpression: >-
+        'You may not use the GitHub App key ' + object.spec.forge.appKeySecretRef.name + '. A cluster admin can grant use on it (forgekeys).'
+      reason: Forbidden
+    # The repos a claim names say what its runner's token may cover, within its Pool's allow-list.
+    # Someone else who may patch claims in the namespace has no say in that, and nor has its
+    # requester once they may no longer use the pool. Any other patch is left alone, so a
+    # finalizer's removal never depends on the authorizer.
+    - expression: >-
+        request.resource.resource != 'claims' ||
+        (has(object.spec.forge) ?
+        has(oldObject.spec.forge) && object.spec.forge == oldObject.spec.forge :
+        !has(oldObject.spec.forge)) ||
+        (request.userInfo.username == object.spec.requester &&
+        authorizer.group('runners.purlis.dev').resource('pools')
+        .name(object.spec.pool).check('use').allowed())
+      messageExpression: >-
+        'Only ' + object.spec.requester + ', who asked for this claim, while they may use its pool, may change the repos it names.'
+      reason: Forbidden
 ---
 # Source: purlis-cluster-operator/templates/policy.yaml
 # Copyright 2026 Purlis
@@ -54,8 +110,8 @@ spec:
     resourceRules:
       - apiGroups: [runners.purlis.dev]
         apiVersions: ["*"]
-        # UPDATE only for who may change the repos a claim names, the last rule below (#4204).
-        operations: [CREATE, UPDATE]
+        # Who may change the repos a claim names is the policy purlis-forge's (#4206).
+        operations: [CREATE]
         resources: [claims]
       # Upstream's objects, so that a runner from a purlis pool is had only through a Claim
       # (#2055): its warm pools and claims, on purlis's templates and warm pools.
@@ -107,21 +163,6 @@ spec:
         'Runners from a purlis pool are claimed with a Claim (runners.purlis.dev): only the purlis
         cluster operator puts a warm pool on the template of a purlis pool, or takes one off it.'
       reason: Forbidden
-    # The repos a claim names say what its runner's token may cover, within its Pool's allow-list
-    # (#4204). Someone else who may patch claims in the namespace has no say in that, and nor has
-    # its requester once they may no longer use the pool. Any other patch is left alone, so a
-    # finalizer's removal never depends on the authorizer.
-    - expression: >-
-        request.resource.group != 'runners.purlis.dev' || request.operation != 'UPDATE' ||
-        (has(object.spec.forge) ?
-        has(oldObject.spec.forge) && object.spec.forge == oldObject.spec.forge :
-        !has(oldObject.spec.forge)) ||
-        (request.userInfo.username == object.spec.requester &&
-        authorizer.group('runners.purlis.dev').resource('pools')
-        .name(object.spec.pool).check('use').allowed())
-      messageExpression: >-
-        'Only ' + object.spec.requester + ', who asked for this claim, while they may use its pool, may change the repos it names.'
-      reason: Forbidden
 ---
 # Source: purlis-cluster-operator/templates/runner-namespaces-policy.yaml
 # Copyright 2026 Purlis
@@ -147,6 +188,10 @@ spec:
         apiVersions: ["*"]
         operations: [CREATE, UPDATE]
         resources: [rolebindings]
+      - apiGroups: [networking.k8s.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [networkpolicies]
   variables:
     - name: operator
       expression: >-
@@ -217,6 +262,19 @@ spec:
       messageExpression: >-
         'The purlis cluster operator makes the quota purlis-person, in a runner namespace alone.'
       reason: Forbidden
+    # The operator makes one NetworkPolicy, in a runner namespace alone, and what it says is its
+    # way to the mint port (#4206): a way out, to its own pods, on that port, and nothing else.
+    - expression: >-
+        request.resource.resource != 'networkpolicies' || !variables.operator ||
+        variables.runners && object.metadata.name == 'purlis-forge-mint' &&
+        object.spec.policyTypes == ['Egress'] && !has(object.spec.ingress) &&
+        size(object.spec.egress) == 1 && size(object.spec.egress[0].to) == 1 &&
+        object.spec.egress[0].to[0].namespaceSelector.matchLabels['kubernetes.io/metadata.name'] == 'purlis-system' &&
+        object.spec.egress[0].to[0].podSelector.matchLabels['app.kubernetes.io/name'] == 'purlis-cluster-operator' &&
+        size(object.spec.egress[0].ports) == 1 && object.spec.egress[0].ports[0].port == 8443
+      messageExpression: >-
+        'The purlis cluster operator makes the NetworkPolicy purlis-forge-mint, in a runner namespace alone, to its own mint port alone.'
+      reason: Forbidden
 ---
 # Source: purlis-cluster-operator/templates/sandbox-policy.yaml
 # Copyright 2026 Purlis
@@ -281,6 +339,20 @@ spec:
         (!has(object.metadata.finalizers) || object.metadata.finalizers == oldObject.metadata.finalizers)
       message: purlis's cluster operator changes no label, annotation, owner or finalizer of a Sandbox.
       reason: Forbidden
+---
+# Source: purlis-cluster-operator/templates/forge-policy.yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-forge
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: purlis-forge
+  validationActions: [Deny]
 ---
 # Source: purlis-cluster-operator/templates/policy.yaml
 apiVersion: admissionregistration.k8s.io/v1

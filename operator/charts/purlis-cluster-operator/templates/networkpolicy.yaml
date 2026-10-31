@@ -1,9 +1,10 @@
 # Copyright 2026 Purlis
 # SPDX-License-Identifier: Apache-2.0
 {{/*
-What may reach the operator's pod (#3737): only the scrapers .Values.metrics.allowFrom names,
-on its metrics port. The operator serves nothing else, so with none named the policy has no
-ingress rule and nothing reaches it.
+What may reach the operator's pod (#3737): the scrapers .Values.metrics.allowFrom names, on its
+metrics port, and where the chart names a GitHub App key, the namespaces the operator made for
+runners, on its mint port (#4206). With neither, the policy has no ingress rule and nothing
+reaches it.
 */ -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -18,11 +19,22 @@ spec:
       app.kubernetes.io/name: purlis-cluster-operator
   policyTypes:
     - Ingress
-  {{- with .Values.metrics.allowFrom }}
+  {{- if or .Values.metrics.allowFrom (.Values.forge).keySecretNames }}
   ingress:
+    {{- with .Values.metrics.allowFrom }}
     - from:
         {{- toYaml . | nindent 8 }}
       ports:
         - port: metrics
           protocol: TCP
+    {{- end }}
+    {{- if (.Values.forge).keySecretNames }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/managed-by: purlis-cluster-operator
+      ports:
+        - port: mint
+          protocol: TCP
+    {{- end }}
   {{- end }}

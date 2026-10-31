@@ -20,3 +20,25 @@ spec:
       port: 8080
       targetPort: metrics
       protocol: TCP
+{{- if (.Values.forge).keySecretNames }}
+---
+{{- /*
+Where a vouched runner asks for a GitHub App token (#4206), only where the chart names a key.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: purlis-cluster-operator-mint
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: purlis-cluster-operator
+  ports:
+    - name: mint
+      port: 8443
+      targetPort: mint
+      protocol: TCP
+{{- end }}

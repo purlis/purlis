@@ -8,6 +8,8 @@
 //!
 //! `PURLIS_RUNNER_IMAGE` names the runner image by digest, as a Pool does.
 
+mod app_key;
+
 use k8s_openapi::api::authorization::v1::{
     ResourceAttributes, SubjectAccessReview, SubjectAccessReviewSpec,
 };
@@ -1579,8 +1581,6 @@ async fn a_persons_runners_run_in_their_own_namespace_within_their_quota_and_go_
 const APP_KEY_SECRET: &str = "e2e-forge-app-key";
 /// One it does not name.
 const OTHER_SECRET: &str = "e2e-forge-other-key";
-const NOT_A_REAL_KEY: &str =
-    "-----BEGIN TEST KEY-----\nnot a real key, e2e\n-----END TEST KEY-----\n";
 
 fn app_key_secret(name: &str) -> Secret {
     Secret {
@@ -1591,7 +1591,7 @@ fn app_key_secret(name: &str) -> Secret {
         string_data: Some(
             [
                 ("app".to_owned(), "Iv23liE2e".to_owned()),
-                ("key".to_owned(), NOT_A_REAL_KEY.to_owned()),
+                ("key".to_owned(), app_key::pem()),
             ]
             .into(),
         ),
