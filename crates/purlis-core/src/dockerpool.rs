@@ -1840,6 +1840,42 @@ const DOCKER_IN_HOME: &[&str] = &[
     ".rd/bin/docker",
 ];
 
+/// **Whether the runner `login` reaches says `name` is signed in** (#4046, #4164): that login's
+/// own words, with `--check`. Bounded, in time and in what is kept of it: the runner's answer is
+/// its own. A runner that fetches the harness first (#4007) is given the time a fetch takes.
+/// `Err` where it says neither, as for a profile it does not keep. A check is no login, so it
+/// is not held to its input: the runner refuses the two together.
+pub fn standing_by_login(
+    login: &crate::profilestore::sign_in::Login,
+    name: &str,
+) -> Result<crate::profilestore::sign_in::Standing, String> {
+    let mut command = std::process::Command::new(&login.program);
+    command
+        .args(login.args.iter().filter(|arg| *arg != "--until-input-ends"))
+        .arg("--check")
+        .envs(login.env.iter().map(|(n, v)| (n, v)));
+    for name in &login.cleared {
+        command.env_remove(name);
+    }
+    let ran = crate::boundedrun::run_within(
+        &mut command,
+        None,
+        STANDING_MOST,
+        STANDING_MOST,
+        Some(STANDING_WITHIN),
+    )
+    .map_err(|why| match why {
+        crate::boundedrun::Unanswered::NotStarted(e) => {
+            format!("{} could not be run: {e}", login.program)
+        }
+        crate::boundedrun::Unanswered::PrintedTooMuch => {
+            "it printed more than a status check does".to_owned()
+        }
+        crate::boundedrun::Unanswered::NotFinished(_) => "it did not answer in time".to_owned(),
+    })?;
+    standing_said(name, &String::from_utf8_lossy(&ran.said))
+}
+
 impl Docker {
     /// The `docker` command at `program`.
     pub fn at(program: impl Into<std::path::PathBuf>) -> Docker {
@@ -2427,33 +2463,7 @@ impl Docker {
         name: &str,
     ) -> Result<crate::profilestore::sign_in::Standing, String> {
         let login = self.driven_sign_in(made, engine, name, None)?;
-        let mut command = std::process::Command::new(&login.program);
-        command
-            .args(&login.args)
-            .arg("--check")
-            .envs(login.env.iter().map(|(n, v)| (n, v)));
-        for name in &login.cleared {
-            command.env_remove(name);
-        }
-        // Bounded, in time and in what is kept of it: the runner's answer is its own. A runner
-        // that fetches the harness first (#4007) is given the time a fetch takes.
-        let ran = crate::boundedrun::run_within(
-            &mut command,
-            None,
-            STANDING_MOST,
-            STANDING_MOST,
-            Some(STANDING_WITHIN),
-        )
-        .map_err(|why| match why {
-            crate::boundedrun::Unanswered::NotStarted(e) => {
-                format!("{} could not be run: {e}", login.program)
-            }
-            crate::boundedrun::Unanswered::PrintedTooMuch => {
-                "it printed more than a status check does".to_owned()
-            }
-            crate::boundedrun::Unanswered::NotFinished(_) => "it did not answer in time".to_owned(),
-        })?;
-        standing_said(name, &String::from_utf8_lossy(&ran.said))
+        standing_by_login(&login, name)
     }
 
     /// **The runner's own sign-in of the profile `name`, in a terminal of `size` carried over
