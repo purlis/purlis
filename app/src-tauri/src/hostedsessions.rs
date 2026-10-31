@@ -2557,8 +2557,29 @@ impl HostedSessions {
     /// The next number the host deals in this project.
     fn dealt_by_the_host(&self) -> Result<u32, String> {
         let (link, project) = self.link()?;
-        match link.call_of_a_start(Command::Deal { project })? {
+        let deal = || {
+            link.call_of_a_start(Command::Deal {
+                project: project.clone(),
+            })
+        };
+        match deal()? {
             Answer::Dealt { number } => {
+                // A number went out here that the host had not heard of, as `deal` deals while a
+                // hold waits: it is told, and deals past it.
+                let went_out = self.opened.load(Ordering::Relaxed);
+                if number <= went_out {
+                    link.call_of_a_start(Command::DealtAlready {
+                        project: project.clone(),
+                        dealt: went_out,
+                    })?;
+                    return match deal()? {
+                        Answer::Dealt { number } => {
+                            self.opened.fetch_max(number, Ordering::Relaxed);
+                            Ok(number)
+                        }
+                        other => Err(format!("the session host answered a deal with {other:?}")),
+                    };
+                }
                 self.opened.fetch_max(number, Ordering::Relaxed);
                 Ok(number)
             }
@@ -3757,7 +3778,10 @@ impl SessionHost for HostedSessions {
     fn deal(&self) -> u32 {
         // A hold another start waits on may take as long as its host does, and a deal runs under
         // the lock the window's own commands wait on: this number is dealt here then.
-        if self.held.try_lock().is_err() {
+        if matches!(
+            self.held.try_lock(),
+            Err(std::sync::TryLockError::WouldBlock)
+        ) {
             return self
                 .opened
                 .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
@@ -3861,12 +3885,14 @@ impl SessionHost for HostedSessions {
         if !self.kept_on_the_runner {
             return Vec::new();
         }
-        let beside =
-            self.connection.links_of(&self.root).len() > 1 || lock(&self.stays_on).is_some();
         match self.link() {
-            Ok((link, project)) => crate::runnercode::fetch_workspace(
-                &link, &project, &self.root, workspace, pool, beside,
-            ),
+            Ok((link, project)) => {
+                let beside = self.connection.links_of(&self.root).len() > 1
+                    || lock(&self.stays_on).is_some();
+                crate::runnercode::fetch_workspace(
+                    &link, &project, &self.root, workspace, pool, beside,
+                )
+            }
             Err(why) => vec![why],
         }
     }

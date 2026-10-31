@@ -346,6 +346,7 @@ fn in_the_journey(
     machine: &Machine,
     pool: &str,
     next: &purlis_core::dockerpool::Image,
+    first: &purlis_core::dockerpool::Image,
 ) {
     // How far it got and how long each step took, read where it fails or runs out of time.
     let began = Instant::now();
@@ -623,6 +624,34 @@ fn in_the_journey(
     );
     a_conversation_on(&followed);
     target.sessions.close(id).expect("it closes");
+
+    step("an update with no chat running");
+    // The plain way (#4248): nothing runs, and the project's link is still on the old runner. The
+    // update replaces it at once, its sign-ins follow, and a new chat just starts on the new one.
+    let said = crate::poolfollow::follow_and_drain(machine, Some(first), &chats_on);
+    assert!(
+        said.iter().any(|line| line.contains("had no chat left")),
+        "{said:?}"
+    );
+    assert_eq!(crate::poolfollow::waiting_on(&machine.config, pool), 0);
+    let updated = the_runner(machine, pool);
+    assert_ne!(updated.container, followed.container, "a runner of its own");
+    the_row_says(machine, pool, &Standing::SignedIn);
+    let (id, pane) = a_chat_runs(
+        target,
+        machine,
+        pool,
+        &a_chat(Some("After a plain update."), None),
+    );
+    pane.shows_within("After a plain update.", LONG);
+    let on_it = purlis_core::runners::runner_for(&machine.config, pool).expect("its runner");
+    assert_eq!(
+        crate::runnerlinks::chats_on(&ToARunner::of_kept(machine, &on_it).expect("a link to it"))
+            .expect("it lists its chats"),
+        1,
+        "the chat runs on the new runner"
+    );
+    target.sessions.close(id).expect("it closes");
 }
 
 /// Whether `file` is anywhere under `folder`.
@@ -652,5 +681,6 @@ fn in_a_docker_pool() {
     let (target, machine, pool) =
         a_window_on_a_pool_of(&format!("{PURLIS_RUNNER_IMAGE}@{image}"), docker);
     let next = Image::pinned(&format!("{PURLIS_RUNNER_IMAGE}@{next}")).expect("named by digest");
-    in_the_journey(&target, &machine, &pool, &next);
+    let first = Image::pinned(&format!("{PURLIS_RUNNER_IMAGE}@{image}")).expect("named by digest");
+    in_the_journey(&target, &machine, &pool, &next, &first);
 }

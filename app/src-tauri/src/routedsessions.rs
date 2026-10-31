@@ -770,20 +770,23 @@ impl SessionHost for RoutedSessions {
         if left.is_empty() {
             return current.move_out(pool, chats);
         }
-        // During a drain each chat comes back from the runner that has it, asked of the pool's
-        // runner first: a chat moved there has left an older copy on the draining one (#4248).
-        let mut back = crate::host::CameBack::default();
-        for chat in chats {
-            let one = std::slice::from_ref(chat);
-            let came = left
-                .iter()
-                .fold(current.move_out(pool, one), |came, host| {
-                    came.or_else(|_| host.move_out(pool, one))
-                })?;
-            back.watch.extend(came.watch);
-            back.made.extend(came.made);
+        // During a drain they come back whole from the one runner that has them all, the pool's
+        // first: a chat moved there has left an older copy on the draining one (#4248). Chats on
+        // two runners are not mixed into one work tree.
+        let mut asked = current.move_out(pool, chats);
+        for host in &left {
+            if asked.is_ok() {
+                break;
+            }
+            asked = host.move_out(pool, chats);
         }
-        Ok(back)
+        asked.map_err(|why| {
+            format!(
+                "pool {pool}'s runner is being replaced, and no one runner has all of these chats, \
+                 so nothing moved. Close the chats on the older runner, or move them once it has \
+                 gone: {why}"
+            )
+        })
     }
 
     fn pool_of(&self, id: u32) -> Option<String> {
