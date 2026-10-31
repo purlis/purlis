@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793482578634,
+  "lastUpdate": 1793484519909,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34188,6 +34188,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0054995,
             "unit": "ms",
             "extra": "median of 5 runs: 101.501, 101.684, 102.005, 102.211, 102.438 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "35af053d0d6602766849b8be5fd30e09f778a51a",
+          "message": "A pool's limits: a profile over its limit offers to raise it, and starts (#4315)\n\n* A pool's limits: a profile over its limit offers to raise it, and starts (#4279)\n\nThe core's single list of a pool's limits, first with what a profile may send by size and files.\nOver a limit nothing is sent; the refusal is typed and Start a chat offers to raise it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69BF3P68912DF4RE5R7X3C1\nPurlis-Persona: steward\n\n* A pool's limits: saving one is the window's alone (#4279)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69BF3P68912DF4RE5R7X3C1\nPurlis-Persona: steward\n\n* A pool's limits: review fixes (#4279)\n\nThe offer also on a start with nothing to pick and past a refused value; a refusal is only its\nattempt's; a runner past what it tells says it holds nothing; the journey starts a chat past the\nlimit; ADR 0095's amendment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69BF3P68912DF4RE5R7X3C1\nPurlis-Persona: steward\n\n* A pool's limits: clippy on the over-limit record and a cluster pool's values (#4279)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69BF3P68912DF4RE5R7X3C1\nPurlis-Persona: steward\n\n* A pool's limits: the app and CLI tests follow the new shapes (#4279)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69BF3P68912DF4RE5R7X3C1\nPurlis-Persona: steward\n\n* A pool's limits: session protocol 1.64 (#4279)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69BF3P68912DF4RE5R7X3C1\nPurlis-Persona: steward\n\n* A pool's limits: the window's missing type import (#4279)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69BF3P68912DF4RE5R7X3C1\nPurlis-Persona: steward\n\n* A pool's limits: list the limit's field among those that can refuse (#4279)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69BF3P68912DF4RE5R7X3C1\nPurlis-Persona: steward\n\n* A pool's limits: the form's tests clean up after each (#4279)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69BF3P68912DF4RE5R7X3C1\nPurlis-Persona: steward\n\n* A pool's limits: the older runner's test holds a raised limit to what it stages (#4279)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69BF3P68912DF4RE5R7X3C1\nPurlis-Persona: steward\n\n* A pool's limits: the offer answers off the window's thread; the client as generated (#4279)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69BF3P68912DF4RE5R7X3C1\nPurlis-Persona: steward\n\n* A pool's limits: bindings as generated (#4279)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69BF3P68912DF4RE5R7X3C1\nPurlis-Persona: steward\n\n* A pool's limits: bindings exactly as generated (#4279)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69BF3P68912DF4RE5R7X3C1\nPurlis-Persona: steward\n\n* A pool's limits: a test beside them keeps its own RefCell (#4279)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69BF3P68912DF4RE5R7X3C1\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T21:35:52Z",
+          "tree_id": "34fb63a58c6a64c323cef1fa87ab53c17864ee96",
+          "url": "https://github.com/purlis/purlis/commit/35af053d0d6602766849b8be5fd30e09f778a51a"
+        },
+        "date": 1793484515889,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.711571,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.706, 0.711, 0.712, 0.725, 0.731 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5644515,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.462, 16.478, 16.564, 16.610, 16.654 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5060755,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.321, 101.402, 101.506, 102.318, 102.487 ms"
           }
         ]
       }
