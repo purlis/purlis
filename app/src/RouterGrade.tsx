@@ -262,7 +262,9 @@ export function RouterGradePlanPage({
           cause={`router-grade-running:${router}`}
           tone="news"
           label="A grade is running"
-          fixes={ours === undefined ? [] : [{ label: "Show it", onPress: () => onRunning(ours) }]}
+          fixes={
+            ours === undefined ? undefined : [{ label: "Show it", onPress: () => onRunning(ours) }]
+          }
         >
           {ours === undefined
             ? "A grade is running in this project: one runs at a time."

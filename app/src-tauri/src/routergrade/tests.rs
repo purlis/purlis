@@ -204,7 +204,8 @@ fn a_router_s_plan_consents_to_its_profile_model_and_limits_3618() {
 
 #[test]
 fn a_router_grade_s_page_finds_its_latest_step_while_it_runs_and_none_after() {
-    let plane: PlaneId = serde_json::from_value(serde_json::json!("plane-of-a-router-step")).unwrap();
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!("plane-of-a-router-step")).unwrap();
     let other: PlaneId = serde_json::from_value(serde_json::json!("another-plane")).unwrap();
     let step = RouterGradeStep {
         plane: plane.clone(),
