@@ -559,6 +559,11 @@ mod hosted {
     struct Held {
         project: String,
         browsers: Vec<String>,
+        /// The link the project is held on now.
+        link: u64,
+        /// The link each browser was started over: a project's link moves on from a draining
+        /// runner, and a browser stays where it runs, beside its chat (#4248).
+        on: HashMap<String, u64>,
     }
 
     /// **Where the window holds a project for its browsers** (#2050): its root, on this
@@ -654,6 +659,7 @@ mod hosted {
                 && !held.browsers.iter().any(|one| one == program)
             {
                 held.browsers.push(program.to_owned());
+                held.on.insert(program.to_owned(), link.id());
             }
             // Who drives it, as the host holds the lease: kept, not said again.
             self.seed_from_the_host(&link, program);
@@ -767,9 +773,24 @@ mod hosted {
         /// there, which the window's host relays to the runner.
         fn link_for(&self, program: &str) -> Result<Arc<HostLink>, String> {
             match self.at_of(program) {
-                Some(at) if at.pool.is_some() => self.link_at(&at, LINK_WITHIN),
+                Some(at) if at.pool.is_some() => match self.link_it_started_over(&at, program) {
+                    Some(link) => Ok(link),
+                    None => self.link_at(&at, LINK_WITHIN),
+                },
                 _ => self.link(),
             }
+        }
+
+        /// The link browser `program` of the project at `at` on a pool was started over, while it
+        /// is open (#4248).
+        fn link_it_started_over(&self, at: &At, program: &str) -> Option<Arc<HostLink>> {
+            let pool = at.pool.as_deref()?;
+            let on = *self.projects().get(at)?.on.get(program)?;
+            self.connection
+                .to_a_pool(pool)
+                .links_of(&at.root)
+                .into_iter()
+                .find(|link| link.id() == on)
         }
 
         /// The link the project at `at` is held on, waiting at most `within`: its root's own on
@@ -792,7 +813,8 @@ mod hosted {
                 .collect();
             pools
                 .iter()
-                .filter_map(|at| self.link_at(at, Duration::ZERO).ok())
+                .filter_map(|at| at.pool.as_deref().map(|pool| (at, pool)))
+                .flat_map(|(at, pool)| self.connection.to_a_pool(pool).links_of(&at.root))
                 .collect()
         }
 
@@ -916,7 +938,10 @@ mod hosted {
         fn held(&self, at: &At) -> Result<(Arc<HostLink>, String), String> {
             let link = self.link_at(at, LINK_WITHIN)?;
             let mut projects = self.projects();
-            if let Some(held) = projects.get(at) {
+            // A project on a pool is held again on the link it moved on to (#4248).
+            if let Some(held) = projects.get(at)
+                && (at.pool.is_none() || held.link == link.id())
+            {
                 return Ok((link, held.project.clone()));
             }
             let project =
@@ -930,13 +955,13 @@ mod hosted {
                     None => at.root.display().to_string(),
                 },
             })?;
-            projects.insert(
-                at.clone(),
-                Held {
-                    project: project.clone(),
-                    browsers: Vec::new(),
-                },
-            );
+            let held = projects.entry(at.clone()).or_insert_with(|| Held {
+                project: project.clone(),
+                browsers: Vec::new(),
+                link: link.id(),
+                on: HashMap::new(),
+            });
+            held.link = link.id();
             Ok((link, project))
         }
 
@@ -1058,6 +1083,7 @@ mod hosted {
                     self.follow_its_end(&link, root, &program);
                     if let Some(held) = self.projects().get_mut(&at) {
                         held.browsers.push(program.clone());
+                        held.on.insert(program.clone(), link.id());
                     }
                     Ok(program)
                 }
@@ -1487,13 +1513,22 @@ mod hosted {
                 let Ok(link) = self.link_at(&at, Duration::ZERO) else {
                     continue;
                 };
+                let links = match &at.pool {
+                    Some(pool) => self.connection.to_a_pool(pool).links_of(&at.root),
+                    None => Vec::new(),
+                };
                 ended += held
                     .browsers
                     .into_iter()
                     .filter(|program| {
                         // The person let go of the project it was in (#2842).
                         self.closed_by(program, Closer::Person);
-                        link.call(Command::Close {
+                        let over = held
+                            .on
+                            .get(program)
+                            .and_then(|on| links.iter().find(|one| one.id() == *on))
+                            .unwrap_or(&link);
+                        over.call(Command::Close {
                             program: program.clone(),
                         })
                         .is_ok()
