@@ -80,23 +80,135 @@ fn on_an_owned_pool_it_goes_on_to_the_pool() {
     assert!(said.is_err(), "{said:?}");
 }
 
-/// **One watcher per pool and profile** (#2049): a second Sign in while one asks claims none,
-/// and another profile or pool claims its own.
+/// **One watcher per open project, pool and profile** (#2049): a second Sign in while one asks
+/// claims none and adds its shell, and another profile, pool or project claims its own.
 #[test]
-fn a_watcher_is_claimed_once_per_pool_and_profile() {
-    let mut watched = HashSet::new();
-    let key = ("builds".to_owned(), "work".to_owned());
+fn a_watcher_is_claimed_once_per_project_pool_and_profile() {
+    let mut watched = HashMap::new();
+    let key = |project: usize, pool: &str, name: &str| (project, pool.to_owned(), name.to_owned());
 
-    assert!(claimed(&mut watched, &key));
-    assert!(!claimed(&mut watched, &key), "a second Sign in starts none");
-    assert!(claimed(
-        &mut watched,
-        &("builds".to_owned(), "home".to_owned())
-    ));
-    assert!(claimed(
-        &mut watched,
-        &("other".to_owned(), "work".to_owned())
-    ));
+    assert!(claimed(&mut watched, &key(1, "builds", "work"), 1));
+    assert!(
+        !claimed(&mut watched, &key(1, "builds", "work"), 2),
+        "a second Sign in starts none"
+    );
+    assert_eq!(watched[&key(1, "builds", "work")], vec![1, 2]);
+    assert!(claimed(&mut watched, &key(1, "builds", "home"), 3));
+    assert!(claimed(&mut watched, &key(1, "other", "work"), 4));
+    assert!(claimed(&mut watched, &key(2, "builds", "work"), 5));
+}
+
+/// **The watch goes on while any shell of it is open** (#4009), and its claim goes with the last,
+/// so a Sign in after that claims a watcher of its own. A shell added meanwhile is not dropped.
+#[test]
+fn closing_the_last_shell_gives_up_the_claim() {
+    let mut watched = HashMap::new();
+    let key = (1, "builds".to_owned(), "work".to_owned());
+    claimed(&mut watched, &key, 1);
+    claimed(&mut watched, &key, 2);
+
+    assert!(shells_left(&mut watched, &key, &[1]));
+    assert_eq!(watched[&key], vec![2]);
+    assert!(!shells_left(&mut watched, &key, &[2]));
+    assert!(claimed(&mut watched, &key, 3), "a new Sign in claims anew");
+}
+
+/// **Signed in lets every project's Ask go, the person leaving only their project's, and a
+/// project closing none**: it opens again with its Ask, and a watcher of its own at its next
+/// Sign in (#4009).
+#[test]
+fn an_ended_watch_lets_go_only_the_asks_it_speaks_for() {
+    assert_eq!(asks_go(Watch::SignedIn, true), AsksGo::Everywhere);
+    assert_eq!(asks_go(Watch::SignedIn, false), AsksGo::Everywhere);
+    assert_eq!(asks_go(Watch::ShellsClosed, true), AsksGo::InTheProject);
+    assert_eq!(asks_go(Watch::ShellsClosed, false), AsksGo::None);
+}
+
+const NO_WAIT: Pace = Pace {
+    every: Duration::ZERO,
+    for_: Duration::from_secs(60),
+    later_every: Duration::ZERO,
+};
+
+/// A watch over `said`, the runner's answers in order, the last repeated, with the shell closed
+/// from the answer numbered `closes_at` on. How it ended, and how many times it asked.
+fn watched_over(said: &[Result<Option<Standing>, String>], closes_at: usize) -> (Watch, usize) {
+    let asked = std::cell::Cell::new(0);
+    let ended = watched_until(
+        NO_WAIT,
+        || {
+            asked.set(asked.get() + 1);
+            said[(asked.get() - 1).min(said.len() - 1)].clone()
+        },
+        || asked.get() < closes_at,
+    );
+    (ended, asked.get())
+}
+
+/// **A runner that cannot tell, or is still fetching, keeps the Ask** (#4009): on a fresh runner
+/// those come before the person has finished in the browser. Only signed in ends it.
+#[test]
+fn only_signed_in_ends_the_watch_while_the_shell_is_open() {
+    let (ended, asked) = watched_over(
+        &[
+            Ok(Some(Standing::CannotTell)),
+            Ok(Some(Standing::Fetching)),
+            Ok(Some(Standing::SignedOut)),
+            Ok(None),
+            Err("the runner did not answer".to_owned()),
+            Ok(Some(Standing::CannotTell)),
+            Ok(Some(Standing::SignedIn)),
+        ],
+        usize::MAX,
+    );
+
+    assert_eq!(ended, Watch::SignedIn);
+    assert_eq!(asked, 7);
+}
+
+/// **Closing the shell ends it**, signed in or not: the person has left that sign-in.
+#[test]
+fn closing_the_shell_ends_the_watch() {
+    let (ended, asked) = watched_over(&[Ok(Some(Standing::CannotTell))], 3);
+
+    assert_eq!(ended, Watch::ShellsClosed);
+    assert_eq!(asked, 3);
+}
+
+/// A sign-in that finished just before the shell closed counts as signed in, not as the person
+/// leaving.
+#[test]
+fn signed_in_as_the_shell_closes_is_signed_in() {
+    let (ended, _) = watched_over(&[Ok(Some(Standing::SignedIn))], 1);
+
+    assert_eq!(ended, Watch::SignedIn);
+}
+
+/// **Time only slows the asking**: past it the runner is asked rarely, closing the shell is still
+/// seen at once, and nothing but those two ends the watch.
+#[test]
+fn past_its_time_a_watch_asks_rarely_and_still_sees_the_shell_close() {
+    let (asked, looked) = (std::cell::Cell::new(0), std::cell::Cell::new(0));
+
+    let ended = watched_until(
+        Pace {
+            every: Duration::ZERO,
+            for_: Duration::ZERO,
+            later_every: Duration::from_secs(3600),
+        },
+        || {
+            asked.set(asked.get() + 1);
+            Ok(Some(Standing::CannotTell))
+        },
+        || {
+            looked.set(looked.get() + 1);
+            looked.get() < 5
+        },
+    );
+
+    assert_eq!(ended, Watch::ShellsClosed);
+    assert_eq!(asked.get(), 1);
+    assert_eq!(looked.get(), 5);
 }
 
 /// One of this machine's made profiles, `name`, of `harness`.

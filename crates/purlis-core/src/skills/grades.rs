@@ -110,6 +110,13 @@ pub struct Spent {
     pub chats: u32,
     pub tokens: Option<u64>,
     pub cost_usd: Option<f64>,
+    /// **The chats a grade purlis stopped under asked for before it stopped** (#3602), ran or
+    /// not: what an estimate shares its tokens and cost over, as they hold the spend of a chat
+    /// ended at an ask, at a cap or on Stop too. Said by its marker
+    /// ([`underway::Marker::spent`]) alone: a scored row's arms count them (`chats` +
+    /// `not_run`), so it is `None` there, and in an interrupted row written before #3602.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asked_for: Option<u32>,
 }
 
 /// **One grade, as the eval record holds it.**
@@ -268,14 +275,18 @@ fn dollars(value: f64) -> bool {
 /// chats that ran, as the arms count them, and the tokens, as the report adds them up; and the
 /// cost, where the report adds it up (a row before #3469 does not). A grade purlis stopped under
 /// before it was scored has no arms, and says what its chats spent all the same (#3582): as many
-/// chats as a grade of `runs` runs could have run, at most.
+/// chats as a grade of `runs` runs could have run, at most, and as many asked for (#3602), at
+/// least those that ran. A scored row's arms count what it asked for, so it says no more.
 fn spent_is_the_reports(spent: &Spent, report: &GradeReport, runs: u8) -> bool {
-    let chats = if report.ended == grade::GradeEnd::Interrupted && report.arms.is_empty() {
-        let most = (grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE) as u64;
-        u64::from(spent.chats) <= u64::from(runs) * most
+    let chats = if stopped_unscored(report) {
+        let most = u64::from(runs) * (grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE) as u64;
+        u64::from(spent.chats) <= most
+            && spent.asked_for.is_none_or(|asked_for| {
+                (u64::from(spent.chats)..=most).contains(&u64::from(asked_for))
+            })
     } else {
         let ran: u64 = report.arms.iter().map(|arm| u64::from(arm.chats)).sum();
-        u64::from(spent.chats) == ran
+        u64::from(spent.chats) == ran && spent.asked_for.is_none()
     };
     chats
         && spent.tokens == report.spent_tokens
@@ -284,6 +295,12 @@ fn spent_is_the_reports(spent: &Spent, report: &GradeReport, runs: u8) -> bool {
                 .cost_usd
                 .is_some_and(|cost| (cost - said).abs() <= 1e-9 * said.max(1.0))
         })
+}
+
+/// Whether `report` is of a grade purlis stopped under before it was scored: interrupted, with
+/// no arm to count its chats.
+fn stopped_unscored(report: &GradeReport) -> bool {
+    report.ended == grade::GradeEnd::Interrupted && report.arms.is_empty()
 }
 
 /// The most plugin ids a row read back names as off: far past any machine's installs.
@@ -810,8 +827,8 @@ pub fn grade_of(root: &Path, name: &str, grade: &str) -> Option<Graded> {
 pub struct Estimate {
     pub tokens: Option<u64>,
     pub cost_usd: Option<f64>,
-    /// The chats the grade it is worked out from asked for: none where none ran, as in one
-    /// purlis stopped under.
+    /// The chats the grade it is worked out from asked for, ran or not: none where none ran,
+    /// and in one purlis stopped under before its marker counted them (#3602).
     pub chats_then: u32,
     /// That grade: when it ran, and the profile and the harness its chats ran on.
     pub ts: String,
@@ -823,6 +840,10 @@ pub struct Estimate {
     /// Whether it ran on the profile this grade runs on (a grade on another one may have spent
     /// otherwise), or `None` where this grade's profile is not known.
     pub same_profile: Option<bool>,
+    /// **Whether that grade was interrupted before it was scored** (#3602): its spend is what
+    /// its marker said of the chats it asked for before purlis stopped under it, so the plan
+    /// says so. `false` where it asked for none to go by.
+    pub interrupted: bool,
 }
 
 /// **What a grade of `chats` chats on `profile` would cost, from `grades`** (newest first), and
@@ -831,19 +852,42 @@ pub struct Estimate {
 /// cost and no chat. `None` where there is none. What it spent is shared over every chat it
 /// asked for, a chat stopped, ended at a limit or never started among them, as what a chat
 /// stopped spent is counted too.
+///
+/// **A grade purlis stopped under before it was scored** (#3602) counts the chats its marker
+/// said it asked for, once those took a turn of each of its arms: arms take turns, so fewer
+/// would be one arm's chats alone (the skill's dearer, the bare one's cheaper) shared over every
+/// arm. It is gone by only where no scored grade on the same profile is, as its chats are fewer
+/// and stopped where they were; one from before its marker counted them says none.
 fn estimate_of(grades: &[Graded], chats: u32, profile: Option<&str>) -> Option<Estimate> {
     let asked = |row: &Graded| -> u64 {
+        if stopped_unscored(&row.report) {
+            let arms = if row.previous.is_some() {
+                ARMS_WITH_PREVIOUS.len()
+            } else {
+                ARMS.len()
+            } as u64;
+            return row
+                .spent
+                .asked_for
+                .map(u64::from)
+                .filter(|asked_for| *asked_for >= arms)
+                .unwrap_or(0);
+        }
         row.report
             .arms
             .iter()
             .map(|arm| u64::from(arm.chats) + u64::from(arm.not_run))
             .sum()
     };
+    let on_profile = |row: &&Graded| profile.is_some() && row.profile.as_deref() == profile;
+    let scored = |row: &&Graded| asked(row) > 0 && !stopped_unscored(&row.report);
     let any = |row: &&Graded| asked(row) > 0;
     let last = grades
         .iter()
-        .filter(any)
-        .find(|row| profile.is_some() && row.profile.as_deref() == profile)
+        .filter(scored)
+        .find(on_profile)
+        .or_else(|| grades.iter().filter(any).find(on_profile))
+        .or_else(|| grades.iter().find(scored))
         .or_else(|| grades.iter().find(any))
         .or_else(|| grades.first())?;
     let then = asked(last);
@@ -861,6 +905,7 @@ fn estimate_of(grades: &[Graded], chats: u32, profile: Option<&str>) -> Option<E
         harness: last.harness.clone(),
         model: last.model.clone(),
         same_profile: profile.map(|profile| last.profile.as_deref() == Some(profile)),
+        interrupted: then > 0 && stopped_unscored(&last.report),
     })
 }
 

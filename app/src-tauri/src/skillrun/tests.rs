@@ -131,7 +131,7 @@ fn a_refused_skill_call_or_a_sub_agents_stop_changes_nothing() {
 fn a_skill_use_skill_typed_is_on_the_chats_tab_from_the_prompt_it_was_typed_into() {
     let (runs, told) = listening();
     use purlis_core::skillspan::{Confirmed, PromptMarks, PromptSalt, Typed};
-    let salt = PromptSalt::of_chat("01JB00000000000000000000C4").unwrap();
+    let salt = PromptSalt::of_key("01JB00000000000000000000C4").unwrap();
     runs.typed(
         4,
         Typed {

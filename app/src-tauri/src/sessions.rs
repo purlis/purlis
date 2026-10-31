@@ -217,6 +217,10 @@ impl SessionHost for Sessions {
                             token: token.expose(),
                         },
                     ),
+                    prompt_key: opening
+                        .prompt_key
+                        .as_ref()
+                        .map(purlis_core::skillspan::PromptSalt::expose),
                 },
             );
         // What the chat's profile hands its program, set last (#2036).

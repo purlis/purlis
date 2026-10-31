@@ -1853,6 +1853,7 @@ fn a_chat_starts_with_the_path_and_variables_the_window_gives_it(target: &Target
             },
             number: 1,
             reporting: None,
+            prompt_key: None,
         },
     );
     let value = |name: &str| {

@@ -216,6 +216,7 @@ fn running_in(id: &str) -> StartProgram {
             git_hooks: None,
             reporting: None,
             confinement: Some(id.into()),
+            prompt_key: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }

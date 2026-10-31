@@ -3525,7 +3525,7 @@ fn a_load_through_mcp_opens_a_run_recorded_as_one_and_ends_with_the_turn() {
 
 /// Chat 3's salt, its hook's and the window's alike.
 fn salt_of_3() -> crate::skillspan::PromptSalt {
-    crate::skillspan::PromptSalt::of_chat("01JB00000000000000000000C3").unwrap()
+    crate::skillspan::PromptSalt::of_key("01JB00000000000000000000C3").unwrap()
 }
 
 /// What Use skill… holds for chat 3 as it types `text` for `skill`.

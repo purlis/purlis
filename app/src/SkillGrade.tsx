@@ -106,7 +106,10 @@ export function costSaid(plan: SkillGradePlan): string {
   const parts: string[] = [];
   if (estimate.tokens !== null) parts.push(`about ${tokensSaid(estimate.tokens)}`);
   if (estimate.cost_usd !== null) parts.push(`about $${estimate.cost_usd.toFixed(2)}`);
-  return `From its grade${ran}, of ${counted(estimate.chats_then, "chat", "chats")}, this one should spend ${parts.join(", ")}.`;
+  // A grade purlis stopped under is worked out from what its chats spent before it stopped
+  // (#3602), and the plan says it was interrupted.
+  const which = estimate.interrupted ? "interrupted grade" : "grade";
+  return `From its ${which}${ran}, of ${counted(estimate.chats_then, "chat", "chats")}, this one should spend ${parts.join(", ")}.`;
 }
 
 /** The dollar limit a grade is held to, and the price it was worked out at (#3469): the model's,
@@ -405,7 +408,13 @@ export function GradePlanPage({
                   ? tokensSaid(Math.round(plan.estimate.tokens * scale))
                   : "Not known"
             }
-            line={plan.estimate === null ? "not graded here before" : "from its last grade"}
+            line={
+              plan.estimate === null
+                ? "not graded here before"
+                : plan.estimate.interrupted
+                  ? "from its interrupted grade"
+                  : "from its last grade"
+            }
           />
           <Tile
             label="Runs on"

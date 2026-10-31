@@ -267,6 +267,7 @@ fn only_a_links_start_says_what_its_desktop_allowed() {
             start: &start,
             reporting: None,
             started_by: by,
+            prompt_key: None,
         })
     };
     for own in ["local-ui", "terminal", "fleet-mcp", "approval", "editor"] {

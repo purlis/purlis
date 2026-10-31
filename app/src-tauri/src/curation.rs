@@ -592,7 +592,7 @@ pub fn start_typed_where_it_can_be(
         .start_ready(&record, &ready, size)
         .inspect_err(|_| held.typed().forget(number))?;
     // The skill runs the turn it is sent in opens are the action's (SK-20): held as the chat
-    // starts, under the salt of the id its start gave it (SK-38), before the person can have sent
+    // starts, under the prompt key its start gave it (SK-38, #3369), before the person can have sent
     // the paste that is its first prompt.
     if let (Some(by), true) = (chat.starts_runs, when.is_some()) {
         match held.chats().skills_of(session).and_then(|chat| chat.salt) {
@@ -727,8 +727,8 @@ fn sent(
     before(number);
     let session = held.chats().start_ready(&record, &ready, size)?;
     // The skill runs its turn opens are the grade's, where it is one (SK-16): held under the
-    // salt of the id its start gave it (SK-38), as a curation action's are. The id is minted by
-    // the start, so this is the first moment it can be; the harness is still booting, well before
+    // prompt key its start gave it (SK-38, #3369), as a curation action's are. The key is minted
+    // by the start, so this is the first moment it can be; the harness is still booting, well before
     // its first prompt's hook.
     if let Some(by) = chat.starts_runs {
         match held.chats().skills_of(session).and_then(|chat| chat.salt) {
@@ -1959,7 +1959,7 @@ mod tests {
         let curating = open(&held, "workspace:alpha", "ops/tidy", SIZE).expect("it opens");
         let socket = held.hooks().socket().expect("listening").to_path_buf();
         let token = held.hooks().token_for(curating.session);
-        // Its hook's salt: the id its start gave it. Claude Code marks the prompt's lead alone.
+        // Its hook's key: the one its start gave it. Claude Code marks the prompt's lead alone.
         let salt = held
             .chats()
             .skills_of(curating.session)

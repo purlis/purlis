@@ -14,8 +14,7 @@ const SOURCE: &str = include_str!("../../src/session.rs");
 
 /// Minors no change added: their numbers were passed over. 47 was held for #3677, which landed
 /// after 1.48 as 1.49: a build of 1.48 says it knows every frame up to 1.48, so 47 stays unfilled.
-/// 60 is held for #4193, which lands after 1.61 (#3084) or renumbers.
-const PASSED_OVER: &[u16] = &[12, 19, 20, 47, 60];
+const PASSED_OVER: &[u16] = &[12, 19, 20, 47];
 
 /// Each `pub const KNOWS_…: Version` in the source, with its minor.
 fn knows() -> Vec<(String, u16)> {

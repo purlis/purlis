@@ -475,6 +475,8 @@ pub struct Starting<'a> {
     pub start: &'a StartProgram,
     /// Where its hooks report, and its token, as its project's channel issued them.
     pub reporting: Option<&'a session::Reporting>,
+    /// The chat's prompt key, as the host minted it for a start it composes (#3369).
+    pub prompt_key: Option<&'a session::PromptKey>,
     /// The scope of the link the start came on, by its word: what its run says started it.
     pub started_by: &'a str,
 }
@@ -493,6 +495,7 @@ pub fn spec(
         None => {
             let mut launch = compose(starting, kit, beside)?;
             launch.reporting = starting.reporting.cloned();
+            launch.prompt_key = starting.prompt_key.cloned();
             crate::chatspec::from_launch_here(&launch, starting.number, size)
         }
     }
@@ -795,6 +798,8 @@ pub fn compose_ready(
             .as_ref()
             .and_then(crate::sandbox::Confinement::held_as)
             .map(str::to_owned),
+        // Given with its token, by the host that starts it ([`spec`]).
+        prompt_key: None,
     })
 }
 
