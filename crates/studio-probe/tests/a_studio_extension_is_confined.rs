@@ -487,10 +487,16 @@ fn runnable_in(dir: &Path) -> (String, String) {
     (script, compiled)
 }
 
-/// `text` as a program in the probe's own folder, which purlis fingerprints.
+/// `text` as a program in the probe's own `bin` folder, which purlis fingerprints.
 fn own_script(probe: &Probe, name: &str, text: &str) -> PathBuf {
+    own_script_at(probe, &format!("bin/{name}"), text)
+}
+
+/// `text` as a program at `path` in the probe's own folder.
+fn own_script_at(probe: &Probe, path: &str, text: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt as _;
-    let at = probe.ext().join("bin").join(name);
+    let at = probe.ext().join(path);
+    std::fs::create_dir_all(at.parent().expect("a folder")).expect("its folder");
     std::fs::write(&at, text).expect("a script");
     std::fs::set_permissions(&at, std::fs::Permissions::from_mode(0o755)).expect("its mode");
     at
@@ -499,6 +505,9 @@ fn own_script(probe: &Probe, name: &str, text: &str) -> PathBuf {
 fn it_starts_programs_from_what_it_reads() {
     let probe = Probe::assembled();
     let script = own_script(&probe, "own.sh", "#!/bin/sh\necho its own\n");
+    let top = own_script_at(&probe, "top.sh", "#!/bin/sh\necho at the top\n");
+    let deep = own_script_at(&probe, "tools/a/b/deep.sh", "#!/bin/sh\necho deep\n");
+    let beside = own_script_at(&probe, ".purlis/beside.sh", "#!/bin/sh\necho beside\n");
     let probe = probe.installed();
     let said = probe.tried(&["start", "/bin/sh", "-c", "echo from the shell"]);
     assert!(said.contains("exit status: 0"), "the shell started: {said}");
@@ -513,6 +522,59 @@ fn it_starts_programs_from_what_it_reads() {
     // A script of its own, run by the system's shell.
     let said = probe.tried(&["start", &shown(&script)]);
     assert!(said.ends_with("its own"), "{said}");
+    // Beside its manifest, deep in a folder, and beside a project's state folder of its own.
+    for (at, said_by) in [(&top, "at the top"), (&deep, "deep"), (&beside, "beside")] {
+        let said = probe.tried(&["start", &shown(at)]);
+        assert!(said.ends_with(said_by), "{}: {said}", at.display());
+    }
+    // Through a link in the folder it writes: the file is what is judged.
+    let at = shown(&probe.ext().join("state/to-own"));
+    let said = probe.tried(&["start-linked", &shown(&script), &at]);
+    assert!(said.ends_with("its own"), "{said}");
+}
+
+fn it_starts_nothing_from_what_it_writes() {
+    let probe = Probe::approved();
+    let own = shown(&probe.ext().join("bin/studio-probe"));
+    let state = shown(&probe.ext().join("state/written"));
+    assert_eq!(probe.tried(&["write", &state]), "ok", "it writes there");
+    refused(
+        &probe.tried(&["start-written", &own, &state]),
+        "its state folder",
+    );
+    let said = probe.tried(&["start", "/bin/sh", "-c", "echo \"$TMPDIR\""]);
+    let tmp = said.rsplit(' ').next().expect("its temporary folder");
+    assert!(tmp.contains("purlis-extension-"), "{said}");
+    let written = format!("{tmp}/written");
+    refused(
+        &probe.tried(&["start-written", &own, &written]),
+        "its temporary folder",
+    );
+}
+
+fn it_starts_nothing_kept_in_a_vault_in_its_own_folder() {
+    let probe = Probe::assembled();
+    let vault = own_script_at(&probe, ".purlis/vaults/kept.sh", "#!/bin/sh\necho kept\n");
+    let key = own_script_at(&probe, ".purlis/fingerprint.key", "#!/bin/sh\necho kept\n");
+    let probe = probe.installed();
+    for at in [&vault, &key] {
+        refused(&probe.tried(&["start", &shown(at)]), "a vault");
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn it_makes_no_file_in_memory() {
+    let Some(python) = ["/usr/bin/python3", "/bin/python3"]
+        .into_iter()
+        .find(|it| Path::new(it).exists())
+    else {
+        panic!("python3 is needed to try this from inside the sandbox");
+    };
+    let probe = Probe::approved();
+    let script = "import os\ntry:\n    os.memfd_create('m')\n    print('made')\n\
+                  except OSError as why:\n    print(why.strerror)\n";
+    let said = probe.tried(&["start", python, "-c", script]);
+    assert!(said.ends_with("Function not implemented"), "{said}");
 }
 
 fn it_starts_no_program_outside_what_it_reads() {
@@ -912,6 +974,16 @@ const TESTS: &[(&str, fn())] = &[
         "it_starts_no_program_outside_what_it_reads",
         it_starts_no_program_outside_what_it_reads,
     ),
+    (
+        "it_starts_nothing_from_what_it_writes",
+        it_starts_nothing_from_what_it_writes,
+    ),
+    (
+        "it_starts_nothing_kept_in_a_vault_in_its_own_folder",
+        it_starts_nothing_kept_in_a_vault_in_its_own_folder,
+    ),
+    #[cfg(target_os = "linux")]
+    ("it_makes_no_file_in_memory", it_makes_no_file_in_memory),
     (
         "a_program_that_is_a_script_answers",
         a_program_that_is_a_script_answers,

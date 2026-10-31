@@ -198,6 +198,8 @@ fn routed(ask: &serde_json::Value) -> serde_json::Value {
 /// - `start <program> <args>…`: start a program, and say how it ended and what it printed.
 /// - `start-linked <program> <at>`: the same through a symbolic link made at `<at>`, which it
 ///   takes away again.
+/// - `start-written <program> <at>`: the same from a copy of it written at `<at>`, which it takes
+///   away again.
 /// - `start-held <program>` on Linux: the same through a path-only descriptor of it.
 pub fn tried(words: &[String]) -> String {
     let said = match words {
@@ -242,6 +244,21 @@ pub fn tried(words: &[String]) -> String {
                 }
                 // Never a refusal of the start: nothing was started.
                 Err(why) => Ok(format!("no link was made: {}", why.kind())),
+            }
+        }
+        #[cfg(unix)]
+        [verb, program, at] if verb == "start-written" => {
+            use std::os::unix::fs::PermissionsExt as _;
+            let written = std::fs::copy(program, at)
+                .and_then(|_| std::fs::set_permissions(at, std::fs::Permissions::from_mode(0o755)));
+            match written {
+                Ok(()) => {
+                    let said = started(at, &[]);
+                    let _ = std::fs::remove_file(at);
+                    said
+                }
+                // Never a refusal of the start: nothing was started.
+                Err(why) => Ok(format!("no copy was written: {}", why.kind())),
             }
         }
         #[cfg(target_os = "linux")]

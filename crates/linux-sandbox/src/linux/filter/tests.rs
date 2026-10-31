@@ -226,3 +226,22 @@ fn the_wraps_own_filters_leave_namespaces_to_the_machine() {
     );
     assert_eq!(verdict(libc::SYS_clone3, [0; 6]), libc::SECCOMP_RET_ALLOW);
 }
+
+#[test]
+fn a_program_held_to_named_folders_makes_no_file_in_memory() {
+    let args = [0; 6];
+    let call = data(
+        u32::try_from(libc::SYS_memfd_create).expect("a call number"),
+        args,
+    );
+    let held = memory_files_refused().expect("compiled");
+    assert_eq!(run(&held, &call), errno(libc::ENOSYS));
+    // The wrap's filters for every chat leave it to the program.
+    assert_eq!(
+        verdict(libc::SYS_memfd_create, args),
+        libc::SECCOMP_RET_ALLOW
+    );
+    // And it is the one call this filter names.
+    let other = data(u32::try_from(libc::SYS_read).expect("a call number"), args);
+    assert_eq!(run(&held, &other), libc::SECCOMP_RET_ALLOW);
+}

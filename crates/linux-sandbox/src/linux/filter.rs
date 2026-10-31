@@ -187,6 +187,18 @@ pub(super) fn namespaces_refused() -> Result<Vec<BpfProgram>, String> {
     Ok(out)
 }
 
+/// **The filter for a program whose starts are held to named folders** ([`crate::profile::Profile::starts_from`]):
+/// no file that lives only in memory, which is beneath no folder. Answered as a kernel without
+/// the call (`ENOSYS`), so a program that wants one for its data falls back to a temporary file.
+pub(super) fn memory_files_refused() -> Result<BpfProgram, String> {
+    let mut nosys = BTreeMap::new();
+    nosys.insert(libc::SYS_memfd_create, Vec::new());
+    compiled(
+        nosys,
+        SeccompAction::Errno(u32::try_from(libc::ENOSYS).unwrap_or(38)),
+    )
+}
+
 /// `BPF_RET | BPF_K`: the instruction that returns a constant action.
 const RET_K: u16 = 0x06;
 

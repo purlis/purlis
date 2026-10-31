@@ -393,22 +393,56 @@ fn a_confined_program_reads_its_own_folder_and_the_system_and_nothing_a_person_k
 }
 
 #[test]
-fn a_confined_program_starts_programs_from_what_it_reads_on_linux() {
-    let profile = held(Path::new(EXT), Path::new(STATE), Path::new(TMP));
+fn a_confined_program_starts_programs_only_from_what_it_cannot_write_on_linux() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let base = crate::sandbox::real(dir.path());
+    let ext = base.join("studio-x");
+    let (state, tmp) = (ext.join("state"), base.join("purlis-extension-1"));
+    for folder in [
+        ext.join("bin"),
+        state.clone(),
+        tmp.clone(),
+        ext.join("tools/.purlis/vaults"),
+        ext.join("tools/.PURLIS/Vaults"),
+        ext.join("tools/inner"),
+    ] {
+        std::fs::create_dir_all(folder).expect("a folder");
+    }
+    std::fs::write(ext.join("purlis-extension.json"), "{}").expect("a file");
+    std::fs::write(ext.join("tools/.purlis/fingerprint.key"), "k").expect("a file");
+    std::fs::write(ext.join("tools/.purlis/other"), "o").expect("a file");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&state, ext.join("pointed")).expect("a link");
+    let profile = held(&ext, &state, &tmp);
     let roots = profile.starts_from();
-    for root in [EXT, STATE, TMP, "/usr/bin", "/usr/lib"] {
-        assert!(roots.contains(&PathBuf::from(root)), "{root}: {roots:?}");
+    for root in [
+        ext.join("bin"),
+        ext.join("purlis-extension.json"),
+        ext.join("tools/inner"),
+        ext.join("tools/.purlis/other"),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/usr/lib"),
+    ] {
+        assert!(roots.contains(&root), "{}: {roots:?}", root.display());
     }
     assert!(!roots.contains(&PathBuf::from("/")), "{roots:?}");
-    // Every root is one it reads, and nothing a person keeps is beneath one.
-    for root in &roots {
+    for held in [
+        state.join("program"),
+        tmp.join("program"),
+        ext.join("tools/.purlis/vaults/program"),
+        ext.join("tools/.PURLIS/Vaults/program"),
+        ext.join("tools/.purlis/fingerprint.key"),
+        ext.join("pointed"),
+    ] {
         assert!(
-            reads(&profile, &root.join("program").display().to_string())
-                || reads(&profile, &root.display().to_string()),
-            "{}",
-            root.display()
+            !roots.iter().any(|root| held.starts_with(root)),
+            "{}: {roots:?}",
+            held.display()
         );
     }
+    // What it may not start, it still reads and writes where it did.
+    assert!(reads(&profile, &state.join("data").display().to_string()));
+    assert!(writes(&profile, &tmp.join("data").display().to_string()));
     for kept in [
         "/home",
         "/root",
@@ -424,7 +458,17 @@ fn a_confined_program_starts_programs_from_what_it_reads_on_linux() {
 }
 
 #[test]
-fn a_confined_program_starts_programs_from_what_it_reads_on_macos() {
+fn a_folder_that_holds_nothing_held_is_named_whole_on_linux() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let base = crate::sandbox::real(dir.path());
+    let (ext, tmp) = (base.join("studio-x"), base.join("purlis-extension-1"));
+    std::fs::create_dir_all(ext.join("bin")).expect("a folder");
+    let roots = held(&ext, &tmp.join("state"), &tmp).starts_from();
+    assert!(roots.contains(&ext), "{roots:?}");
+}
+
+#[test]
+fn a_confined_program_starts_programs_only_from_what_it_cannot_write_on_macos() {
     let text = crate::sandbox::confined::profile(
         Os::MacOs,
         &[PathBuf::from("/Users/ada/ext/studio-x")],
@@ -444,6 +488,11 @@ fn a_confined_program_starts_programs_from_what_it_reads_on_macos() {
         "{text}"
     );
     assert!(text.contains("(deny process-exec (regex "), "{text}");
+    let tmp = "(subpath \"/private/var/folders/x/T/purlis-extension-1\")";
+    assert!(
+        text.contains(&format!("(deny file-map-executable process-exec {tmp})")),
+        "{text}"
+    );
 }
 
 #[test]

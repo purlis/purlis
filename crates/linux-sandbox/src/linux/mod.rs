@@ -339,6 +339,10 @@ fn restrict_and_hand_over(socket: &str, starts: &[std::path::PathBuf]) -> Result
         seccompiler::apply_filter(&program)
             .map_err(|why| format!("the chat's seccomp filter could not be applied: {why}"))?;
     }
+    if !starts.iter().any(|root| root.as_os_str() == "/") {
+        seccompiler::apply_filter(&filter::memory_files_refused()?)
+            .map_err(|why| format!("the chat's seccomp filter could not be applied: {why}"))?;
+    }
     let fds = [listener.as_raw_fd()];
     sendmsg::<()>(
         socket.as_raw_fd(),
