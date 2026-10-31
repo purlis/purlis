@@ -478,19 +478,17 @@ pub async fn docker_pool_link(name: String) -> Result<PoolLink, String> {
                 Ok(false) => return Ok(PoolLink::Suspended),
                 Ok(true) => {}
                 // Docker has no container of its id: removed outside purlis (#4149).
-                Err(_) => {
-                    match machine.docker.missing(&kept.made, kept.engine.as_deref()) {
-                        Ok(Some(Missing::Removed(gone))) => {
-                            return Ok(PoolLink::Removed {
-                                home_kept: gone.home_kept,
-                            });
-                        }
-                        Ok(Some(Missing::OnAnotherEngine)) => {
-                            return Ok(PoolLink::OnAnotherEngine);
-                        }
-                        Ok(None) | Err(_) => {}
+                Err(_) => match machine.docker.missing(&kept.made, kept.engine.as_deref()) {
+                    Ok(Some(Missing::Removed(gone))) => {
+                        return Ok(PoolLink::Removed {
+                            home_kept: gone.home_kept,
+                        });
                     }
-                }
+                    Ok(Some(Missing::OnAnotherEngine)) => {
+                        return Ok(PoolLink::OnAnotherEngine);
+                    }
+                    Ok(None) | Err(_) => {}
+                },
             }
             crate::runnerlinks::link_state(&ToARunner::of_kept(&machine, &kept)?)
         })
