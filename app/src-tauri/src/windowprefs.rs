@@ -35,7 +35,7 @@ struct AtCreation {
     /// The person's own theme, resolved by the core: what the first frame is drawn in when it
     /// is in force.
     theme: TheirTheme,
-    /// The built-in appearances a pick names, by the pick ([`handed_built_ins`]): what a pick of
+    /// The built-in appearances a pick names, by the pick ([`Handed`]): what a pick of
     /// one draws without asking the core.
     built_in: std::collections::BTreeMap<String, WindowTheme>,
     /// What the person's colours left out of each of [`Self::built_in`], where any was (#3023):
@@ -413,16 +413,17 @@ pub(crate) const HANDED_AT_LOAD: [&str; 2] = ["built_in", "default_theme"];
 /// tint before they are drawn (`theme::parts`), which is a pass a launch should not make for a
 /// pick that is not there, so a pick of `purlis-light` asks the core as any other theme's does
 /// (ADR 0026).
+#[cfg(test)]
 pub(crate) fn handed_built_ins(
     layer: &theme::Layer,
 ) -> std::collections::BTreeMap<String, WindowTheme> {
     Handed::under(layer).built_in
 }
 
-/// The picks [`handed_built_ins`] hands the appearance of.
+/// The picks a window is handed the appearance of ([`Handed`]).
 pub(crate) const HANDED_PICKS: [&str; 2] = [purlis_core::names::THEME_DARK.write, theme::CLASSIC];
 
-/// [`handed_built_ins`] and the default's appearance, `default_theme`.
+/// The built-ins a window is handed ([`Handed`]) and the default's appearance, `default_theme`.
 pub(crate) fn handed_with_default(
     layer: &theme::Layer,
 ) -> (std::collections::BTreeMap<String, WindowTheme>, WindowTheme) {
