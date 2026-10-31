@@ -18,6 +18,7 @@ fn builds(image: &str) -> Bound {
         runner: "01JB0RUNNER0000000000000000".into(),
         runner_key: "ab".repeat(32),
         runner_image: "a".repeat(64),
+        pod: String::new(),
         engine: "this machine's Docker".into(),
     }
 }

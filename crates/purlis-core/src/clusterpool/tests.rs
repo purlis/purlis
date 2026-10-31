@@ -483,9 +483,14 @@ fn a_statement_holds_only_until_the_time_it_names_and_never_past_an_hour() {
             "{refused:?}"
         );
     }
+    assert!(
+        at(until - MOST_AHEAD).is_ok(),
+        "ten minutes as signed, and five of clock"
+    );
+    assert_eq!(MOST_AHEAD, 900);
     let refused = at(until - MOST_AHEAD - 1).unwrap_err();
     assert!(
-        matches!(&refused, Refused::NotVouched(why) if why.contains("more than an hour")),
+        matches!(&refused, Refused::NotVouched(why) if why.contains("more than fifteen minutes")),
         "{refused:?}"
     );
     // The operator's worked example, long past.
@@ -832,6 +837,7 @@ impl FakeCluster {
              *'get pools.runners.purlis.dev'*) cat \"$d/pool.json\";;\n\
              *'create --filename'*) cat \"$d/created.json\";;\n\
              *'get claims.runners.purlis.dev'*) cat \"$d/claim.json\";;\n\
+             *'get pods'*) cat \"$d/pod.json\";;\n\
              *'exec -i'*) cat \"$d/paired.txt\";;\n\
              *'delete claims'*) echo deleted;;\n\
              *'--raw'*) cat \"$d/context.yaml\";;\n\
@@ -859,6 +865,7 @@ impl FakeCluster {
             &serde_json::json!({"metadata": {"uid": CLAIM_UID}}).to_string(),
         );
         cluster.write("claim.json", "{}");
+        cluster.write("pod.json", r#"{"metadata": {"uid": "pod-uid-1"}}"#);
         cluster.write("context.yaml", CONTEXT_KEPT);
         cluster.write("paired.txt", &crate::runnerlink::to_line(&cluster.runner));
         cluster.write(
@@ -957,7 +964,10 @@ impl FakeCluster {
                     "annotations": {DESKTOP_ANNOTATION: desktop_label(OURS_DEVICE)},
                 },
                 "spec": {"requester": REQUESTER},
-                "status": {"linkKey": link_key},
+                "status": {
+                    "linkKey": link_key,
+                    "conditions": [{"type": "KeyPublished", "status": "True", "reason": "Vouched"}],
+                },
             })
             .to_string(),
         );

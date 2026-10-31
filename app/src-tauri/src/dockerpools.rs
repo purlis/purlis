@@ -383,22 +383,39 @@ pub fn add_on(machine: &Machine, pool: &Pool) -> Result<PoolRow, String> {
 /// all of it is gone.
 #[tauri::command]
 #[specta::specta]
-pub async fn remove_docker_pool(name: String) -> Result<Option<String>, String> {
+pub async fn remove_docker_pool(
+    app: tauri::AppHandle,
+    name: String,
+) -> Result<Option<String>, String> {
     #[cfg(unix)]
     {
         crate::off_the_window("removing a pool", move || {
             let config = config_root()?;
             // A cluster pool's runner is its claim, deleted through kubectl (#3292).
-            if is_a_cluster_pool(&config, &name)? {
-                return crate::clusterpools::remove_on(&config, &name);
+            let removed = if is_a_cluster_pool(&config, &name)? {
+                crate::clusterpools::remove_on(&config, &name)
+            } else {
+                remove_on(&Machine::here(&config)?, &name)
+            };
+            // Gone from this machine: no link stays on the runner it had. One whose runner could
+            // not be removed is kept, and its chats with it.
+            let kept = purlis_core::runners::pools(&config)
+                .map(|pools| pools.iter().any(|pool| pool.name() == name))
+                .unwrap_or(true)
+                || is_a_cluster_pool(&config, &name).unwrap_or(true);
+            if !kept
+                && let Some(host) =
+                    tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app)
+            {
+                host.connection().pool_removed(&name);
             }
-            let machine = Machine::here(&config)?;
-            remove_on(&machine, &name)
+            removed
         })
         .await
     }
     #[cfg(not(unix))]
     {
+        let _ = (app, name);
         Err(NOT_HERE.to_owned())
     }
 }

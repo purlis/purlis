@@ -57,7 +57,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -247,6 +247,9 @@ pub struct Connection {
     /// The window's connection to each pool's runner, made the first time it is asked for
     /// ([`Connection::to_a_pool`]): what a pool's chats and their browsers share (#2050).
     pools: Mutex<HashMap<String, Arc<Connection>>>,
+    /// How many times this connection's pool was removed ([`Connection::pool_removed`]): a link
+    /// dialled before the last of them is not kept.
+    removals: AtomicU64,
     /// The config home this machine keeps its pools' runners in (`runners.json`): where a runner
     /// a chat ran on without the sandbox is kept as one (D-2050-27). Set on the window's own.
     runners_in: Mutex<Option<PathBuf>>,
@@ -337,6 +340,24 @@ impl Connection {
                 .entry(pool.to_owned())
                 .or_insert_with(|| self.relaying_to(pool)),
         )
+    }
+
+    /// **The pool `pool` was removed from this machine**: every link the window holds to its
+    /// runner ends, each chat on it told it ended with its host, and whatever comes next is
+    /// dialled anew, by the name, to the runner kept under it now. Nothing of the pool's runner
+    /// stays in use however its removal went in its cluster or engine.
+    pub fn pool_removed(&self, pool: &str) {
+        let Some(of_it) = lock(&self.pools).get(pool).cloned() else {
+            return;
+        };
+        of_it.removals.fetch_add(1, Ordering::SeqCst);
+        let links: Vec<Arc<HostLink>> = lock(&of_it.projects)
+            .drain()
+            .map(|(_, link)| link)
+            .collect();
+        for link in links {
+            link.end();
+        }
     }
 
     /// Keep this machine's pools' runners, as `runners.json` is read, in `config` (D-2050-27).
@@ -445,6 +466,7 @@ impl Connection {
         if let Some(link) = lock(&self.projects).get(root) {
             return Ok(Arc::clone(link));
         }
+        let removals = self.removals.load(Ordering::SeqCst);
         // Named on the link as its first command, before it subscribes (#2623).
         let naming = self.name_for(root);
         let link = Arc::new(match &self.to_a_pool {
@@ -473,7 +495,16 @@ impl Connection {
                 root.display()
             );
         }
-        lock(&self.projects).insert(root.to_path_buf(), Arc::clone(&link));
+        let mut projects = lock(&self.projects);
+        // Its pool was removed while this was dialled: the link may reach the runner removed.
+        if self.removals.load(Ordering::SeqCst) != removals {
+            return Err(format!(
+                "pool {} was removed as its runner was being reached, so nothing was sent",
+                self.pool().unwrap_or_default()
+            ));
+        }
+        projects.insert(root.to_path_buf(), Arc::clone(&link));
+        drop(projects);
         Ok(link)
     }
 
@@ -779,6 +810,8 @@ pub struct HostLink {
     shared: Arc<Shared>,
     /// What hears the host on it, which keeps it open: the link closes once this ends.
     hearing: tokio::task::AbortHandle,
+    /// Ends what hears the host as a link that went does ([`HostLink::end`]).
+    ending: Arc<tokio::sync::Notify>,
     /// Why the host did not take the window's name on it, where it was named and did not
     /// (#2623): said by whoever opened it, never with the name.
     unnamed: Option<String>,
@@ -995,9 +1028,14 @@ impl HostLink {
             },
         );
         let lost = Arc::clone(&shared);
+        let ending = Arc::new(tokio::sync::Notify::new());
+        let ended_here = Arc::clone(&ending);
         let hearing = runtime
             .spawn(async move {
-                hearing.await;
+                tokio::select! {
+                    () = hearing => {}
+                    () = ended_here.notified() => {}
+                }
                 reconnect(&lost, Reconnect::Over);
                 // Off the runtime: each end told reads and moves the window's board.
                 let _ =
@@ -1012,6 +1050,7 @@ impl HostLink {
             runtime,
             shared,
             hearing,
+            ending,
             unnamed,
             most_bundle_bytes: purlis_session_protocol::code::MOST_BUNDLE_BYTES,
         })
@@ -1022,6 +1061,12 @@ impl HostLink {
     pub(crate) fn holding_bundles_to(mut self, most: u64) -> HostLink {
         self.most_bundle_bytes = most;
         self
+    }
+
+    /// **Ends this link from the window's side**: each program on it is told it ended with its
+    /// host and each pane is told, as when the link goes; the link closes once nobody holds it.
+    pub(crate) fn end(&self) {
+        self.ending.notify_one();
     }
 
     /// Send `command` and wait for the host's answer, from any thread.

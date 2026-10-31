@@ -20,8 +20,8 @@
 //!   runner the chat's link reaches (its device id, pinned link key and its own image), the
 //!   engine it runs on, and the login's identity as declared and allowed. Any change asks again
 //!   ([`Standing::Changed`]). A cluster runner has no image digest bound: its opt-in is bound to
-//!   its pool's name, context, cluster, operator key, claim uid and pod, its device and link key,
-//!   and the engine the Ask names ([`Bound::of_cluster`]).
+//!   its pool's name, context, cluster, operator key, claim uid and pod, the pod's uid, its device
+//!   and link key, and the engine the Ask names ([`Bound::of_cluster`]).
 //! - **It is kept in memory, for this run of the app**: a restart asks again. Nothing of it is
 //!   written, so no new store is made, and nothing of it reaches a runner. A lasting answer is
 //!   #3299.
@@ -47,6 +47,10 @@ pub struct Bound {
     pub runner: String,
     pub runner_key: String,
     pub runner_image: String,
+    /// The uid of a cluster runner's pod as its cluster says now: a pod made again under its
+    /// name, with its key, asks again. Unsigned, so it only ever asks again or refuses. Empty for
+    /// a Docker runner.
+    pub pod: String,
     /// The engine the pool runs on, as the Ask names it.
     pub engine: String,
 }
@@ -61,6 +65,7 @@ impl Bound {
             runner: runner.pinned.device.clone(),
             runner_key: crate::runnerlink::hex_of(runner.pinned.key.as_bytes()),
             runner_image: runner.made.runner.image().digest().to_owned(),
+            pod: String::new(),
             engine: engine.to_owned(),
         }
     }
@@ -114,10 +119,11 @@ impl Bound {
         Ok(Bound::of(&kept, &runner, &engine))
     }
 
-    /// `pool`, its runner `kept`, as they are now (#4071): `definition` covers its context,
-    /// cluster, operator key, claim uid and pod ([`ClusterPool::bound_digest`]), its device and
-    /// key are bound as a Docker runner's are, and it has no image digest.
-    pub fn of_cluster(pool: &ClusterPool, kept: &ClusterKept) -> Bound {
+    /// `pool`, its runner `kept` in the pod of uid `pod`, as they are now (#4071): `definition`
+    /// covers its context, cluster, operator key, claim uid and pod's name
+    /// ([`ClusterPool::bound_digest`]), its device and key are bound as a Docker runner's are, and
+    /// it has no image digest.
+    pub fn of_cluster(pool: &ClusterPool, kept: &ClusterKept, pod: &str) -> Bound {
         Bound {
             pool: pool.name().to_owned(),
             definition: pool.bound_digest(kept),
@@ -125,6 +131,7 @@ impl Bound {
             runner: kept.pinned.device.clone(),
             runner_key: crate::runnerlink::hex_of(kept.pinned.key.as_bytes()),
             runner_image: String::new(),
+            pod: pod.to_owned(),
             engine: format!(
                 "cluster {}, context \"{}\"",
                 pool.pin()
@@ -146,9 +153,9 @@ impl Bound {
     /// must hold, else it is refused in words:
     ///
     /// - **the person's mark**, read from this machine's own row and nothing else;
-    /// - **`vouch`**, the operator vouching for its claim now, which asks the cluster, and is
-    ///   asked only of a marked pool. Its reasons stay in the log: a chat is told none of the
-    ///   cluster's words.
+    /// - **`vouch`**, the operator vouching for its claim now, which asks the cluster, is asked
+    ///   only of a marked pool, and answers the uid of the runner's pod. Its reasons stay in the
+    ///   log: a chat is told none of the cluster's words.
     ///
     /// Both are read again once `vouch` has answered: the runner must be the one it vouched
     /// for and the mark must stand, and a pin `vouch` moved through a roll is what is bound.
@@ -156,7 +163,7 @@ impl Bound {
         config_root: &Path,
         pool: &str,
         reached: Option<&str>,
-        vouch: &dyn Fn(&Path, &str) -> Result<(), crate::clusterpool::Refused>,
+        vouch: &dyn Fn(&Path, &str) -> Result<String, crate::clusterpool::Refused>,
     ) -> Result<Option<Bound>, String> {
         let read = || crate::runners::cluster_runner_for(config_root, pool);
         let Some((held, kept)) = read().map_err(|why| why.to_string())? else {
@@ -175,10 +182,10 @@ impl Bound {
         if crate::runnertaint::pool_ran_unsandboxed(config_root, pool) {
             return Err(crate::runnertaint::sent_nothing_on(pool));
         }
-        if let Err(why) = vouch(config_root, pool) {
+        let pod = vouch(config_root, pool).map_err(|why| {
             tracing::info!("purlis: pool {pool}'s runner was not vouched for now: {why}");
-            return Err(not_vouched_said(pool));
-        }
+            not_vouched_said(pool)
+        })?;
         let (now, runner) = read()
             .map_err(|why| why.to_string())?
             .ok_or_else(|| not_vouched_said(pool))?;
@@ -188,7 +195,7 @@ impl Bound {
         if !now.owned() {
             return Err(not_marked_said(pool));
         }
-        Ok(Some(Bound::of_cluster(&now, &runner)))
+        Ok(Some(Bound::of_cluster(&now, &runner, &pod)))
     }
 
     /// **The pool and runner a runner chat's link reached, as this machine keeps them now**
@@ -227,6 +234,10 @@ impl Bound {
         reached: Option<&str>,
     ) -> Result<Bound, String> {
         let engine = owned(engine)?;
+        // Tools and tokens as browser logins: nothing goes to a pool a chat ran on unconfined.
+        if crate::runnertaint::pool_ran_unsandboxed(config_root, pool) {
+            return Err(crate::runnertaint::sent_nothing_on(pool));
+        }
         let kept = crate::runners::pools(config_root)
             .map_err(|why| why.to_string())?
             .into_iter()

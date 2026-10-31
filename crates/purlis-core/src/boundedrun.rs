@@ -50,7 +50,8 @@ const LOOKED_AT_EVERY: std::time::Duration = std::time::Duration::from_millis(20
 
 /// [`run`], and **ended once `within` is up** where it is given one: a command still running
 /// then is killed and answered [`Unanswered::NotFinished`], its error of kind `TimedOut`. A
-/// command that answers in time is read exactly as [`run`] reads it.
+/// command that answers in time is read exactly as [`run`] reads it. It leads a group of its own,
+/// so what it started, such as a credential plugin that hangs, is ended with it.
 pub fn run_within(
     command: &mut Command,
     input: Option<&str>,
@@ -66,6 +67,11 @@ pub fn run_within(
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    #[cfg(unix)]
+    if within.is_some() {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
     let mut child = crate::forklock::spawn(command).map_err(Unanswered::NotStarted)?;
     // Its input is written beside the reading, so a command that never reads it holds up
     // neither the reading nor the clock; the writing ends as the command does.
@@ -119,15 +125,13 @@ pub fn run_within(
                     Ok(None) => {}
                     // One that cannot be looked at is ended and reaped, not left behind.
                     Err(why) => {
-                        let _ = child.kill();
-                        let _ = child.wait();
+                        ended_with_its_group(&mut child);
                         return Err(Unanswered::NotFinished(why));
                     }
                 }
             }
             if std::time::Instant::now() >= deadline {
-                let _ = child.kill();
-                let _ = child.wait();
+                ended_with_its_group(&mut child);
                 return Err(Unanswered::NotFinished(std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
                     format!(
@@ -142,8 +146,12 @@ pub fn run_within(
         let _ = stdout.take(most + 1).read_to_end(&mut printed);
     }
     if printed.len() as u64 > most {
-        let _ = child.kill();
-        let _ = child.wait();
+        if within.is_some() {
+            ended_with_its_group(&mut child);
+        } else {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
         return Err(Unanswered::PrintedTooMuch);
     }
     let status = child.wait().map_err(Unanswered::NotFinished)?;
@@ -167,6 +175,18 @@ pub fn run_within(
         printed,
         said,
     })
+}
+
+/// `child`, a run given a time, ended and reaped, with the group it leads ([`run_within`]).
+fn ended_with_its_group(child: &mut std::process::Child) {
+    // The group first, while the unreaped child still holds its id.
+    #[cfg(unix)]
+    {
+        use rustix::process::{Pid, Signal, kill_process_group};
+        let _ = kill_process_group(Pid::from_child(child), Signal::KILL);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 #[cfg(test)]

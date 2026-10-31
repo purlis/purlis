@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use purlis_core::engine::Size;
-use purlis_host::Hosting;
 use purlis_host::standin::{Savers, StandIns};
+use purlis_host::{ComposesNothing, Hosting};
 use purlis_session_protocol::session::{self, Exit};
 
 use super::*;
@@ -65,6 +65,110 @@ pub(crate) fn in_memory_with_a_runner<H: session::Host + Clone, R: session::Host
     let connection = Arc::new(Connection::default());
     connection.ready_relaying(link, dial, relayed);
     connection
+}
+
+/// **Removing a pool ends the window's links to its runner**: each chat on them is told, the host
+/// sees the link close, a pool of another name keeps its own, and the next link is dialled anew.
+#[test]
+fn removing_a_pool_ends_its_links_and_the_next_is_dialled_anew() {
+    let runtime = a_runtime();
+    let hosting = Hosting::running_with(ComposesNothing, StandIns::default());
+    let window = Arc::new(
+        runtime
+            .block_on(a_link_to(hosting.clone(), || {}))
+            .expect("the window speaks to the host"),
+    );
+    let handle = runtime.handle().clone();
+    let dial: Dial = Arc::new({
+        let (handle, hosting) = (handle.clone(), hosting.clone());
+        move |within, naming| open_within(&handle, within, a_named_link_to(hosting.clone(), naming))
+    });
+    let dials = Arc::new(Mutex::new(Vec::<String>::new()));
+    let closed = Arc::new(Mutex::new(Vec::<String>::new()));
+    let relayed: RelayedDial = Arc::new({
+        let (dials, closed) = (Arc::clone(&dials), Arc::clone(&closed));
+        move |within, _naming, pool: &str| {
+            dials.lock().unwrap().push(pool.to_owned());
+            let (hosting, closed, pool) = (hosting.clone(), Arc::clone(&closed), pool.to_owned());
+            open_within(&handle, within, async move {
+                let link =
+                    a_bare_link_to(hosting, move || closed.lock().unwrap().push(pool)).await?;
+                HostLink::over(link, tokio::runtime::Handle::current(), || {}).await
+            })
+        }
+    });
+    let connection = Arc::new(Connection::default());
+    connection.ready_relaying(window, dial, relayed);
+    let (builds, other) = (
+        connection.to_a_pool("builds"),
+        connection.to_a_pool("other"),
+    );
+    let root = Path::new("/planes/a");
+    let link = builds.of_project(root, Duration::from_secs(5)).unwrap();
+    let kept = other.of_project(root, Duration::from_secs(5)).unwrap();
+    let (told, heard) = std::sync::mpsc::channel();
+    link.when_it_ends(
+        "chat",
+        Box::new(move |ending| {
+            let _ = told.send(matches!(ending, Ending::WithTheHost));
+        }),
+    );
+
+    connection.pool_removed("builds");
+
+    assert_eq!(
+        heard.recv_timeout(Duration::from_secs(5)),
+        Ok(true),
+        "the chat is told it ended with its host"
+    );
+    assert!(
+        builds.of_project(root, Duration::ZERO).is_err(),
+        "the window holds no link to its runner"
+    );
+    drop(link);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while closed.lock().unwrap().is_empty() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(*closed.lock().unwrap(), ["builds"], "the host saw it close");
+    assert!(
+        Arc::ptr_eq(&kept, &other.of_project(root, Duration::ZERO).unwrap()),
+        "another pool's stays"
+    );
+    builds.of_project(root, Duration::from_secs(5)).unwrap();
+    assert_eq!(*dials.lock().unwrap(), ["builds", "other", "builds"]);
+}
+
+/// **A link dialled as its pool is removed is not kept**: it may reach the runner removed.
+#[test]
+fn a_link_dialled_while_its_pool_is_removed_is_not_kept() {
+    let runtime = a_runtime();
+    let hosting = Hosting::running_with(ComposesNothing, StandIns::default());
+    let window = Arc::new(
+        runtime
+            .block_on(a_link_to(hosting.clone(), || {}))
+            .expect("the window speaks to the host"),
+    );
+    let handle = runtime.handle().clone();
+    let dial: Dial = Arc::new({
+        let (handle, hosting) = (handle.clone(), hosting.clone());
+        move |within, naming| open_within(&handle, within, a_named_link_to(hosting.clone(), naming))
+    });
+    let connection = Arc::new(Connection::default());
+    let removing = Arc::downgrade(&connection);
+    let relayed: RelayedDial = Arc::new(move |within, naming, pool: &str| {
+        removing.upgrade().unwrap().pool_removed(pool);
+        open_within(&handle, within, a_named_link_to(hosting.clone(), naming))
+    });
+    connection.ready_relaying(window, dial, relayed);
+    let builds = connection.to_a_pool("builds");
+    let root = Path::new("/planes/a");
+    let refused = builds
+        .of_project(root, Duration::from_secs(5))
+        .err()
+        .unwrap();
+    assert!(refused.contains("was removed"), "{refused}");
+    assert!(builds.of_project(root, Duration::ZERO).is_err());
 }
 
 /// A `local-ui` link to `hosting` over an in-memory stream; `closed` is called once the host's

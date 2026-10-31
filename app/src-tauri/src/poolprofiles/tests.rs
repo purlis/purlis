@@ -405,7 +405,7 @@ fn a_cluster_pool_keeps_a_profile_only_marked_and_vouched_for_now() {
     let asked = std::cell::Cell::new(0);
     let vouches = |_: &Path, _: &str| {
         asked.set(asked.get() + 1);
-        Ok(())
+        Ok("pod-uid-1".to_owned())
     };
 
     let unmarked = yours_on_a_cluster(config.path(), "team", &cluster, &kept, &vouches);
@@ -446,7 +446,7 @@ fn a_cluster_pool_keeps_a_profile_only_marked_and_vouched_for_now() {
     // The mark taken back while its cluster was asked: nothing is kept there.
     let taken_back = yours_on_a_cluster(config.path(), "team", &cluster, &kept, &|config, pool| {
         purlis_core::runners::set_cluster_owned(config, pool, false).unwrap();
-        Ok(())
+        Ok("pod-uid-1".to_owned())
     });
     assert!(taken_back.is_err(), "{taken_back:?}");
     // Taken back after the gate: nothing reaches the runner it judged, by link or sign-in.
