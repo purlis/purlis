@@ -79,8 +79,8 @@ const given = (tint: string | null): Given => ({
 describe("the specimen's page", () => {
   it("is tinted with the colour it was handed, as the window is tinted there", async () => {
     const root = document.createElement("div");
-    await prepare(given("pink"), root);
-    const tint = tinted(typed, "pink");
+    await prepare(given("teal"), root);
+    const tint = tinted(typed, "teal");
     expect(typed.tint.window.length).toBeGreaterThan(0);
     for (const token of typed.tint.window as readonly Token[])
       expect(root.style.getPropertyValue(property(token)), token).toBe(tint.values[token]);
