@@ -149,18 +149,9 @@ fn start_roots(
     for root in reads {
         vaults_beneath(root, writes, &mut held)?;
     }
-    let touches = |root: &Path| {
-        held.iter()
-            .any(|it| it.starts_with(root) || root.starts_with(it))
-    };
     let mut out = Vec::new();
     for root in system {
-        let resolved = super::real(root);
-        if touches(&resolved) {
-            carved(&resolved, &held, &mut out)?;
-        } else {
-            out.push(root.clone());
-        }
+        carved(&super::real(root), &held, &mut out)?;
     }
     for root in reads {
         carved(root, &held, &mut out)?;
@@ -196,7 +187,13 @@ fn carved(root: &Path, held: &[PathBuf], out: &mut Vec<PathBuf>) -> std::io::Res
         return Ok(());
     }
     for entry in entries(root)? {
-        if !entry.file_type()?.is_symlink() {
+        // A name no profile can spell is left out with the links: nothing starts from it, and the
+        // rest of the folder still does.
+        let spelled = entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| !name.chars().any(char::is_control));
+        if spelled && !entry.file_type()?.is_symlink() {
             carved(&entry.path(), held, out)?;
         }
     }
@@ -213,6 +210,15 @@ fn entries(folder: &Path) -> std::io::Result<Vec<std::fs::DirEntry>> {
     };
     let mut out = listed.collect::<std::io::Result<Vec<_>>>()?;
     out.sort_by_key(std::fs::DirEntry::file_name);
+    Ok(out)
+}
+
+/// Every name the kernel may give each of `roots`, as SBPL strings.
+fn spelled(roots: &[PathBuf]) -> Result<Vec<String>, &'static str> {
+    let mut out = Vec::new();
+    for root in roots {
+        out.extend(kernel_strings(root)?);
+    }
     Ok(out)
 }
 
@@ -264,30 +270,26 @@ pub fn profile(
     if os == Os::MacOs {
         line(format!("(deny {ops} (subpath {}))", string(DATA_VOLUME)?));
     }
-    line("(allow file-read*".to_owned());
-    for root in writes {
-        for name in kernel_strings(root)? {
-            line(format!("  (subpath {name})"));
+    // A rule with no filter would allow everything, so each is written only with what it names.
+    let mut subpaths = |ops: &str, names: Vec<String>| {
+        if !names.is_empty() {
+            line(format!("(allow {ops}"));
+            for name in names {
+                line(format!("  (subpath {name})"));
+            }
+            line(")".to_owned());
         }
-    }
-    line(")".to_owned());
-    line(format!("(allow {ops}"));
-    for root in reads {
-        for name in kernel_strings(root)? {
-            line(format!("  (subpath {name})"));
-        }
-    }
+    };
+    subpaths("file-read*", spelled(writes)?);
+    let mut own_names = spelled(reads)?;
     for root in system.iter().filter(|root| !root.starts_with("/System")) {
         for name in super::kernel_names(root) {
             if name.starts_with(DATA_VOLUME) {
-                line(format!(
-                    "  (subpath {})",
-                    string(&name.display().to_string())?
-                ));
+                own_names.push(string(&name.display().to_string())?);
             }
         }
     }
-    line(")".to_owned());
+    subpaths(ops, own_names);
     // Linux holds this with the kernel's own rule, which names folders and files by what they
     // are beneath.
     if os == Os::Linux {

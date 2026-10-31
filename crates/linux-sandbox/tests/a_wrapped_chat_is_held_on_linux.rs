@@ -899,8 +899,13 @@ fn a_program_starts_only_from_where_the_profile_says() {
 #[test]
 fn a_program_held_to_named_folders_makes_no_file_in_memory() {
     let mut p = project();
-    let Ok(python) = which("python3") else {
-        panic!("python3 is needed for this test's raw system calls");
+    // The system's own, which a profile held to the system's folders starts.
+    let Some(python) = ["/usr/bin/python3", "/bin/python3"]
+        .into_iter()
+        .find(|it| Path::new(it).exists())
+        .map(str::to_owned)
+    else {
+        panic!("the system's python3 is needed for this test");
     };
     let script = "import os\ntry:\n    os.memfd_create('m')\n    print('made')\n\
                   except OSError as why:\n    print(why.strerror)\n";

@@ -59,9 +59,8 @@ studio capability runs its program **confined**, in the same sandbox profile a c
 - **It reads only its own folder and what purlis hands it**: the files and paths a request
   names, and its own state folder. It does not read the plane, the person's home or another
   extension.
-- **It starts programs only from folders it cannot write**: the system's program folders and its
-  own folder, less its state folder, its temporary folder and any vault. On macOS Seatbelt holds
-  this; on Linux the kernel's Landlock does, and such a program makes no file in memory.
+- **It starts programs only from what it reads**: the system's program folders and its own
+  folders. On macOS Seatbelt holds this, on Linux the kernel's Landlock.
 - **It writes only to its own state folder and the paths a request hands it.** Its write scope
   (ADR 0053) is held, not only detected.
 - **Its network goes only to the hosts its manifest declares**, each named in the approval

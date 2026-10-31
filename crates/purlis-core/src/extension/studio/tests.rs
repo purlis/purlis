@@ -458,6 +458,31 @@ fn a_confined_program_starts_programs_only_from_what_it_cannot_write_on_linux() 
 }
 
 #[test]
+fn a_confined_program_with_nothing_to_write_reads_no_more_for_it() {
+    for os in [Os::MacOs, Os::Linux] {
+        let text = crate::sandbox::confined::profile(os, &[PathBuf::from(EXT)], &[], &[])
+            .expect("a profile");
+        assert!(!text.contains("(allow file-read*\n)"), "{text}");
+    }
+    let text = crate::sandbox::confined::profile(Os::Linux, &[], &[PathBuf::from(TMP)], &[])
+        .expect("a profile");
+    assert!(!text.contains("(allow file-read*\n)"), "{text}");
+}
+
+#[test]
+fn a_name_no_profile_can_spell_leaves_the_rest_of_the_folder_startable_on_linux() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let base = crate::sandbox::real(dir.path());
+    let (ext, tmp) = (base.join("studio-x"), base.join("purlis-extension-1"));
+    let state = ext.join("state");
+    std::fs::create_dir_all(ext.join("bin")).expect("a folder");
+    std::fs::write(ext.join("Icon\r"), "").expect("a file");
+    let roots = held(&ext, &state, &tmp).starts_from();
+    assert!(roots.contains(&ext.join("bin")), "{roots:?}");
+    assert!(!roots.contains(&ext.join("Icon\r")), "{roots:?}");
+}
+
+#[test]
 fn a_folder_that_holds_nothing_held_is_named_whole_on_linux() {
     let dir = tempfile::tempdir().expect("a folder");
     let base = crate::sandbox::real(dir.path());
