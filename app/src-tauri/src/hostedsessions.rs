@@ -3476,7 +3476,7 @@ impl SessionHost for HostedSessions {
             return;
         }
         let held = lock(&self.held).clone();
-        if let Some(Held { project, on }) = held
+        if let Some(Held { project, on, .. }) = held
             && let Ok(link) = self.connection.of_project(&self.root, Duration::ZERO)
             && link.id == on
         {
