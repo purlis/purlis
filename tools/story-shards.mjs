@@ -7,7 +7,7 @@
 // on the next run, as many as bring the slowest part back under it, so the job's time stays
 // bounded as the stories and the pictures grow.
 //
-//   node tools/story-shards.mjs      (in CI) appends `shards=[1,2,...]` and `of=N` to
+//   node tools/story-shards.mjs      (in CI) appends `shards=[1,2,...]` and `of=[N]` to
 //                                    `$GITHUB_OUTPUT`
 //
 // A measurement that cannot be had, such as an API that does not answer, leaves `FLOOR` parts: the
@@ -53,10 +53,11 @@ export function measured(jobs) {
   return of === undefined ? undefined : { of, slowest };
 }
 
-/** The lines the workflow reads, for `of` parts. */
+/** The lines the workflow reads, for `of` parts: each a list, as a matrix's every key must be, or
+ *  the job silently starts nothing. */
 export function outputs(of) {
   const shards = Array.from({ length: of }, (_, at) => at + 1);
-  return `shards=${JSON.stringify(shards)}\nof=${of}\n`;
+  return `shards=${JSON.stringify(shards)}\nof=[${of}]\n`;
 }
 
 /** Main's last good stories run's jobs, from the API. */

@@ -64,7 +64,7 @@ test("only a shard's own finished stories step is measured", () => {
 });
 
 test("the outputs are the parts the workflow's matrix reads", () => {
-  assert.equal(outputs(4), "shards=[1,2,3,4]\nof=4\n");
+  assert.equal(outputs(4), "shards=[1,2,3,4]\nof=[4]\n");
 });
 
 test("the workflow's step is the one measured, and its matrix falls back to the floor", () => {
@@ -75,5 +75,5 @@ test("the workflow's step is the one measured, and its matrix falls back to the 
   assert.ok(workflow.includes(`- name: ${STEP}\n`));
   const floor = JSON.stringify(Array.from({ length: FLOOR }, (_, at) => at + 1));
   assert.ok(workflow.includes(`fromJson(needs.changes.outputs.shards || '${floor}')`));
-  assert.ok(workflow.includes(`fromJson(needs.changes.outputs.of || '${FLOOR}')`));
+  assert.ok(workflow.includes(`fromJson(needs.changes.outputs.of || '[${FLOOR}]')`));
 });

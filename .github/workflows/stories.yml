@@ -103,7 +103,7 @@ jobs:
         # its pictures again and for the stories to grow. Three when `changes` could not say
         # (#4038).
         shard: ${{ fromJson(needs.changes.outputs.shards || '[1,2,3]') }}
-        of: ${{ fromJson(needs.changes.outputs.of || '3') }}
+        of: ${{ fromJson(needs.changes.outputs.of || '[3]') }}
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
       # An init that reaps, and the host's IPC namespace, which Chromium wants for its shared
