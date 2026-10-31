@@ -934,7 +934,7 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
                     std::path::Path::new(idle::TERMINATION_LOG),
                     std::path::Path::new(idle::MARK),
                 ) {
-                    voice::err(&format!("this runner could not say it is idle: {why}"));
+                    voice::err(format!("this runner could not say it is idle: {why}"));
                 }
             }),
         }

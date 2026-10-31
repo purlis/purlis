@@ -110,11 +110,13 @@ fn only_a_word_for_this_suspension_runs_it_again() {
 
 #[test]
 fn an_idle_runner_is_suspended_once() {
-    let sandbox = |mode: Option<&str>| Sandbox {
-        spec: SandboxSpec {
-            operating_mode: mode.map(str::to_owned),
-        },
-        ..Sandbox::default()
+    let sandbox = |mode: Option<&str>| {
+        Sandbox::new(
+            "ada-1",
+            SandboxSpec {
+                operating_mode: mode.map(str::to_owned),
+            },
+        )
     };
     assert_eq!(operating_mode_while_idle(&sandbox(None)), Some(SUSPENDED));
     assert_eq!(
