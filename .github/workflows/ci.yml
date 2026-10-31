@@ -53,10 +53,16 @@ on:
 #
 # **A change to Rust alone runs no web check or story (2026-10-31, #3596).** Runner waits came back
 # on 2026-10-29: about 1 job in 10 waited over 5 minutes, at some 336 pull request runs a day. Of the
-# last 199 merged pull requests, the numbers are in the ticket. `web`'s part 2 runs the vitest files
-# that read Rust (`RUST_READERS`) in their place, and the other three parts are not started
-# (`web-parts`). And a job that only asks whether it is needed is not started on a pull request
-# (`GATES` in `tools/ci-scope.mjs`): those were 18 of a pull request's 38 jobs.
+# last 199 merged pull requests, 52 changed Rust and nothing the web checks or stories need: each
+# spent about 70 minutes on them, in 10 jobs. `web`'s part 2 runs the vitest files that read Rust
+# (`RUST_READERS`) in their place, about 3 minutes, and the other three parts are not started
+# (`web-parts`). A job that only asks whether it is needed is not started on a pull request (`GATES`
+# in `tools/ci-scope.mjs`): those were 18 of a pull request's 38 jobs, for 3 of its 281 minutes.
+#
+# **macOS's scenarios stay on the pull request**, though they are the largest cost: 75 of those 281
+# minutes. In the 2.5 days to 2026-10-31, 24 pull request runs failed them with Linux's passing,
+# about 10 a day. In the queue each would fail a 275-minute run and every group behind it, where
+# only about 6 groups a day failed by then, 14 of the last 19 on macOS's scenarios alone.
 
 concurrency:
   # The nightly run keeps a group of its own, so it never displaces a merge's pending run on main.
