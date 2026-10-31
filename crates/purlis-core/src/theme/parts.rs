@@ -770,26 +770,6 @@ fn apart_sets(carried: &[State]) -> Vec<Vec<State>> {
     sets
 }
 
-/// **The parts held to their reading floor in every tint** (#4250), by family and part: the title
-/// bar's waiting count is a wash the bar's own ground shows through, and a tint keeps a ground's
-/// luminance but not what it shows through a wash. A recipe of a theme's own may turn that ground.
-const HELD_IN_TINTS: &[(&str, &str)] = &[("titlebar", "count")];
-
-fn held_in_tints(family: &Family, part: &str) -> bool {
-    HELD_IN_TINTS.contains(&(family.name, part))
-}
-
-/// Whether a rule colours a part of [`HELD_IN_TINTS`], so the tints are worth building for it.
-fn colours_a_part_held_in_tints(rules: &[Rule]) -> bool {
-    rules.iter().any(|rule| {
-        rule.family
-            .parts
-            .get(rule.part)
-            .is_some_and(|part| held_in_tints(rule.family, part.name))
-            && (rule.values.contains_key(&Prop::Fill) || rule.values.contains_key(&Prop::Text))
-    })
-}
-
 /// **The grounds a part's words are read on, where they are fewer than its family's** (#3254), by
 /// family and part: what the window draws the part on, not every ground the family stands on.
 #[cfg(test)]
@@ -948,6 +928,9 @@ mod rest_kept_tests;
 #[path = "part_fills_tests.rs"]
 mod part_fills_tests;
 
+#[cfg(test)]
+#[path = "see_through_tints_tests.rs"]
+mod see_through_tints_tests;
 #[cfg(test)]
 #[path = "surface_grounds_tests.rs"]
 mod surface_grounds_tests;
@@ -2886,18 +2869,14 @@ fn held_from(
             // needs none.
             && (colours(theme, &rules, family) || every_tint())
     });
-    if (consents || colours_a_part_held_in_tints(&rules)) && !theme.tint.tabs().is_empty() {
-        drawn_in.extend(
-            theme
-                .tint
-                .hues
-                .iter()
-                .map(|one| tint::tinted(theme, one.name)),
-        );
-        drawn_in.extend((0..360).map(|degree| tint::tinted_at(theme, f64::from(degree))));
+    if consents && !theme.tint.tabs().is_empty() {
+        drawn_in.extend(every_tinted(theme));
     }
     #[cfg(test)]
     DRAWN_IN.with(|it| it.set(drawn_in.len()));
+    // Built once, for the first family that shows a tint through a see-through colour (#4257).
+    let tints = std::cell::OnceCell::new();
+    let tints = || -> &[ResolvedTheme] { tints.get_or_init(|| every_tinted(theme)) };
     for family in MANIFEST {
         if !rules.iter().any(|rule| std::ptr::eq(rule.family, family)) {
             continue;
@@ -2924,7 +2903,6 @@ fn held_from(
                 });
             }
         }
-        let tints: &[ResolvedTheme] = &drawn_in;
         // **A family whose rules set no colour is measured as written alone** (#2912): its
         // consent variants are drawn in the family's own colours in every tint, which the
         // token-level floors hold in each tint (`floors.rs`, #2526), and what the theme sets (an
@@ -2952,9 +2930,20 @@ fn held_from(
             let written = held.rules.len();
             for states in &singles {
                 held.readable(theme, states);
-                held.readable_in_tints(tints, states);
             }
             held.apart(theme);
+            // What shows a tint through it is read in each tint too (#4257).
+            let shown: &[ResolvedTheme] = if shows_through(theme, held.rules, family, &singles) {
+                tints()
+            } else {
+                &[]
+            };
+            for one in shown {
+                for states in &singles {
+                    held.readable(one, states);
+                }
+                held.apart(one);
+            }
             for states in &singles {
                 held.consented(drawn_in, states);
             }
@@ -2982,7 +2971,9 @@ fn held_from(
                 }
                 for states in &next {
                     held.readable(theme, states);
-                    held.readable_in_tints(tints, states);
+                    for one in shown {
+                        held.readable(one, states);
+                    }
                     held.consented(drawn_in, states);
                 }
             }
@@ -2997,6 +2988,73 @@ fn held_from(
     #[cfg(test)]
     DRAWN_IN.with(|it| it.set(drawn_in.len()));
     (rules, fell)
+}
+
+/// **`theme` in every tint a workspace can give it**: each of its own colours and every whole
+/// degree (#2526). None for a theme that is not tinted.
+fn every_tinted(theme: &ResolvedTheme) -> Vec<ResolvedTheme> {
+    if theme.tint.tabs().is_empty() {
+        return Vec::new();
+    }
+    theme
+        .tint
+        .hues
+        .iter()
+        .map(|one| tint::tinted(theme, one.name))
+        .chain((0..360).map(|degree| tint::tinted_at(theme, f64::from(degree))))
+        .collect()
+}
+
+/// **Whether a look of `family` the theme changed draws a see-through colour** (#4257). A tint
+/// keeps each token's luminance, so opaque colours read the same in every tint; what is under a
+/// see-through one comes through turned, and the contrast moves.
+fn shows_through(
+    theme: &ResolvedTheme,
+    rules: &[Rule],
+    family: &Family,
+    singles: &[Vec<State>],
+) -> bool {
+    let see_through = |token: &str| hex(theme, token).is_some_and(|one| !is_opaque(one));
+    if !rules
+        .iter()
+        .any(|rule| std::ptr::eq(rule.family, family) && !rule.fallback)
+    {
+        return false;
+    }
+    // A part drawn apart from the root that a rule colours, on its own default where the rule
+    // leaves one of its colours alone.
+    let apart_shows = family.parts.iter().enumerate().any(|(at, part)| {
+        let colours_it = rules.iter().any(|rule| {
+            std::ptr::eq(rule.family, family)
+                && !rule.fallback
+                && rule.part == at
+                && (rule.values.contains_key(&Prop::Fill) || rule.values.contains_key(&Prop::Text))
+        });
+        colours_it
+            && drawn_apart(family, part.name).is_some_and(|carried| {
+                apart_sets(carried).iter().any(|states| {
+                    let own = apart_look_in(family.name, part.name, states);
+                    see_through(own.fill) || see_through(own.words)
+                })
+            })
+    });
+    apart_shows
+        || rules.iter().any(|rule| {
+            std::ptr::eq(rule.family, family)
+                && !rule.fallback
+                && [Prop::Fill, Prop::Text].iter().any(|property| {
+                    matches!(rule.values.get(property), Some(PartValue::Colour(token)) if see_through(token))
+                })
+        })
+        || family.looks().into_iter().any(|variant| {
+            singles.iter().any(|states| {
+                let look = drawn(rules, family, variant, states);
+                look != drawn(&[], family, variant, states)
+                    && (see_through(look.fill)
+                        || look.grounds.iter().any(|one| see_through(one))
+                        || look.words.iter().any(|one| see_through(one)))
+            })
+        })
 }
 
 #[cfg(test)]
@@ -3466,36 +3524,6 @@ impl Held<'_> {
             };
             if let Some((floor, ratio)) = broken {
                 self.fall(variant, states, floor, ratio);
-            }
-        }
-    }
-
-    /// **Each part of [`HELD_IN_TINTS`] the theme colours, held to its reading floor in every
-    /// drawn theme** (#4250).
-    fn readable_in_tints(&mut self, drawn_in: &[ResolvedTheme], states: &[State]) {
-        let family = self.family;
-        for (at, part) in family.parts.iter().enumerate() {
-            if !held_in_tints(family, part.name) {
-                continue;
-            }
-            for variant in family.looks() {
-                let look = drawn(self.rules, family, variant, states);
-                let own = drawn(&[], family, variant, states);
-                if look.grounds[at] == own.grounds[at] && look.words[at] == own.words[at] {
-                    continue;
-                }
-                for one in drawn_in {
-                    let floor = one.least.floor(floor_of(family, part));
-                    let on = grounds(one, family);
-                    if let Some(ratio) = lowest(one, &on, look.grounds[at], look.words[at])
-                        && ratio < floor
-                    {
-                        let said =
-                            format!("the {}'s words contrast {floor}:1 with its fill", part.name);
-                        self.fall(variant, states, said, Some(ratio));
-                        break;
-                    }
-                }
             }
         }
     }
