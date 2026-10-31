@@ -402,3 +402,382 @@ fn a_set_of_three_states_a_part_drawn_apart_falls_in_is_keyed_on_all_three() {
     assert_eq!(rules[0].state, Some(State::Hover));
     assert_eq!(rules[0].also, [State::Selected, State::Focused]);
 }
+
+// ---------------------------------------------------------------------------------------
+// A single state that falls (#4174)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn every_family_s_failing_state_falls_only_where_it_holds() {
+    // In every family and look, a theme's words in one state vanish on that state's own fill:
+    // the state falls. Where it holds, alone or with others, the family's default is drawn
+    // (by the parts layer, or by the family's own stylesheet where the layer writes nothing);
+    // where it does not hold, nothing of the fall is drawn.
+    let mut wrong = Vec::new();
+    let mut read = Vec::new();
+    for family in MANIFEST {
+        if NOT_READ.iter().any(|(name, _)| *name == family.name) {
+            continue;
+        }
+        if !family.parts[0].properties.contains(&Prop::Text) {
+            continue;
+        }
+        let root = family.parts[0].name;
+        for variant in family.looks() {
+            for state in family.states.iter().copied().filter(|one| {
+                !matches!(one, State::Disabled | State::Invalid) && family.draws(variant, &[*one])
+            }) {
+                let look = (family.defaults)(variant, &[state]);
+                let words = if look.fill == TRANSPARENT {
+                    family.grounds.first().copied().unwrap_or("surface.base")
+                } else {
+                    look.fill
+                };
+                let key = if variant.is_empty() {
+                    format!("{}.{root}.{}.text", family.name, state.name())
+                } else {
+                    format!("{}.{root}.{variant}.{}.text", family.name, state.name())
+                };
+                let loaded = load(&json!({
+                    "name": "Shaped",
+                    "extends": "purlis",
+                    "parts": { key.clone(): words },
+                    "tint": { "on": false },
+                }));
+                if !loaded.complaints.is_empty() {
+                    continue;
+                }
+                let theme = loaded.theme.first();
+                if !fallen(theme)
+                    .iter()
+                    .any(|one| one.part == named(family, variant, &[state]))
+                {
+                    continue;
+                }
+                read.push(format!("{}.{variant}.{}", family.name, state.name()));
+                let sheet = stylesheet(theme);
+                for set in sets_of(family)
+                    .into_iter()
+                    .filter(|set| family.draws(variant, set))
+                {
+                    let drawn_in: Vec<State> = if set.contains(&State::Disabled) {
+                        set.iter()
+                            .copied()
+                            .filter(|one| !matches!(one, State::Hover | State::Pressed))
+                            .collect()
+                    } else {
+                        set.clone()
+                    };
+                    let holds = drawn_in.contains(&state);
+                    let marks = marks_of(family, variant, &set);
+                    let drawn = resolved(&sheet, &marks, None);
+                    let colours = root_colours(family, variant, &drawn_in);
+                    for (property, token) in &colours {
+                        // A colour the theme draws itself, built in (Purlis's card rows), is
+                        // the theme's, wherever it is drawn.
+                        let theirs = theme.parts.keys().any(|one| {
+                            one.family == family.name
+                                && one.part == root
+                                && one.property == *property
+                                && one.variant.is_none_or(|v| v == variant)
+                                && one.state != Some(state)
+                        });
+                        if theirs {
+                            continue;
+                        }
+                        let got = drawn.get(css_of(*property));
+                        let ok = if holds {
+                            got.is_none_or(|one| *one == written(token))
+                        } else {
+                            got.is_none()
+                        };
+                        if !ok {
+                            wrong.push(format!(
+                                "{key} {set:?} {}: {got:?} where the family draws {}",
+                                css_of(*property),
+                                written(token)
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    assert!(read.len() >= 20, "{read:?}");
+}
+
+#[test]
+fn a_theme_s_colour_in_another_state_survives_a_state_s_fall() {
+    // A quiet ghost button the theme fills under the pointer, whose words while on vanish: the
+    // toggle that is on falls, and a toggle that is on and under the pointer keeps the theme's
+    // fill, where the family's own colour fills only the words.
+    let button = family("button").expect("the button");
+    let selected = (button.defaults)("ghost", &[State::Selected]);
+    let loaded = load(&json!({
+        "name": "Shaped",
+        "extends": "purlis",
+        "parts": {
+            "button.root.ghost.hover.fill": "control.base",
+            "button.root.ghost.selected.text": selected.fill,
+        },
+        "tint": { "on": false },
+    }));
+    let theme = loaded.theme.first();
+    let fell: Vec<String> = fallen(theme).into_iter().map(|one| one.part).collect();
+    assert!(
+        fell.contains(&"button.root.ghost.selected".to_owned()),
+        "{fell:?}"
+    );
+    let sheet = stylesheet(theme);
+    let drawn = |states: &[State]| resolved(&sheet, &marks_of(button, "ghost", states), None);
+    assert_eq!(
+        drawn(&[State::Hover])
+            .get("background-color")
+            .map(String::as_str),
+        Some("var(--control-base)"),
+        "{sheet}"
+    );
+    assert_eq!(
+        drawn(&[State::Hover, State::Selected])
+            .get("background-color")
+            .map(String::as_str),
+        Some("var(--control-base)"),
+        "{sheet}"
+    );
+    assert_eq!(
+        drawn(&[State::Selected]).get("color").map(String::as_str),
+        Some(written(selected.text).as_str()),
+        "{sheet}"
+    );
+}
+
+#[test]
+fn a_state_that_falls_after_the_rest_never_covers_another_state_s_look() {
+    // #4180's review, finding 5: a row whose rest falls keeps its pill under the pointer, and
+    // when its focus falls after it, a row under the pointer and focused still draws that pill.
+    let list = family("list").expect("the list");
+    let rest = (list.defaults)("row", &[]);
+    let focused = (list.defaults)("row", &[State::Focused]);
+    let ground = list.grounds[0];
+    let words = |look_fill: &'static str| {
+        if look_fill == TRANSPARENT {
+            ground
+        } else {
+            look_fill
+        }
+    };
+    let loaded = load(&json!({
+        "name": "Shaped",
+        "extends": "purlis",
+        "parts": {
+            "list.root.row.text": words(rest.fill),
+            "list.root.row.focused.text": words(focused.fill),
+        },
+        "tint": { "on": false },
+    }));
+    let theme = loaded.theme.first();
+    let fell: Vec<String> = fallen(theme).into_iter().map(|one| one.part).collect();
+    assert!(fell.contains(&"list.root.row".to_owned()), "{fell:?}");
+    assert!(
+        fell.contains(&"list.root.row.focused".to_owned()),
+        "{fell:?}"
+    );
+    let sheet = stylesheet(theme);
+    let both = resolved(
+        &sheet,
+        &marks_of(list, "row", &[State::Hover, State::Focused]),
+        None,
+    );
+    assert_eq!(
+        both.get("background-color").cloned(),
+        Some(written(
+            (list.defaults)("row", &[State::Hover, State::Focused]).fill
+        )),
+        "{sheet}"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// What falls is readable as it is drawn (#4196's review)
+// ---------------------------------------------------------------------------------------
+
+/// Every look of `theme` that fell, measured again on the rules the hold ended with: a look
+/// said to be drawn back whose words still break their floor.
+fn fell_unreadable(theme: &ResolvedTheme) -> Vec<String> {
+    let (rules, fell) = (*held_once(theme)).clone();
+    let mut wrong = Vec::new();
+    for family in MANIFEST {
+        let sets: Vec<Vec<State>> = std::iter::once(Vec::new())
+            .chain(family.states.iter().map(|one| vec![*one]))
+            .chain(combined(family))
+            .collect();
+        for variant in family.looks() {
+            for states in &sets {
+                if states.contains(&State::Disabled) || !family.draws(variant, states) {
+                    continue;
+                }
+                let name = named(family, variant, states);
+                if !fell.iter().any(|one| one.part == name) {
+                    continue;
+                }
+                let look = drawn(&rules, family, variant, states);
+                // A look drawn as the family's own default is held by the token floors, as the
+                // hold itself takes it.
+                if look == drawn(&[], family, variant, states) {
+                    continue;
+                }
+                let on = grounds(theme, family);
+                if let Some((floor, ratio)) =
+                    unreadable(theme, &on, &rules, family, variant, states, &look)
+                {
+                    wrong.push(format!("{name}: {floor} ({ratio:?})"));
+                }
+            }
+        }
+    }
+    wrong
+}
+
+#[test]
+fn every_look_that_falls_is_readable_as_it_is_drawn() {
+    // A theme's rest colour that reaches a state it does not read in, a part's own words that
+    // vanish in a state, a part's own fill, and a set of states: each look that falls is
+    // readable on the rules the hold ends with.
+    for parts in [
+        json!({ "button.root.text": "accent.base" }),
+        json!({ "list.root.text": "text.quiet" }),
+        json!({ "list.label.text": "surface.hover" }),
+        json!({ "list.description.hover.text": "surface.hover" }),
+        json!({ "checkbox.label.text": "accent.surface" }),
+        json!({ "tabs.count.hover.text": "surface.overlay" }),
+        json!({ "button.root.secondary.text": "tab.active" }),
+        json!({ "menu.description.hover.text": "list.selected" }),
+        // A part's rest words that reach a state they do not read in (#4196's review, 1 and 2).
+        json!({ "button.label.text": "surface.raised" }),
+        json!({ "button.icon.text": "accent.text" }),
+        json!({ "button.icon.text": "accent.fill-hover" }),
+        // A part's own words in a state (finding 2).
+        json!({ "button.label.hover.text": "surface.base" }),
+        json!({ "button.icon.pressed.text": "surface.base" }),
+    ] {
+        for base in ["purlis", "purlis-classic"] {
+            let loaded = load(&json!({
+                "name": "Shaped",
+                "extends": base,
+                "parts": parts.clone(),
+                "tint": { "on": false },
+            }));
+            assert!(
+                loaded.complaints.is_empty(),
+                "{parts}: {:?}",
+                loaded.complaints
+            );
+            for appearance in &loaded.theme.appearances {
+                let wrong = fell_unreadable(appearance);
+                assert!(
+                    wrong.is_empty(),
+                    "{base} {} {parts}: {wrong:?}",
+                    appearance.id
+                );
+            }
+        }
+    }
+}
+
+/// The rules a theme's `parts` give over Purlis, as read, and the family named.
+fn theme_rules(parts: serde_json::Value) -> Vec<Rule> {
+    let loaded = load(&json!({
+        "name": "Shaped",
+        "extends": "purlis",
+        "parts": parts,
+        "tint": { "on": false },
+    }));
+    assert!(loaded.complaints.is_empty(), "{:?}", loaded.complaints);
+    super::rules(&loaded.theme.first().parts)
+}
+
+/// `family`'s `variant` falling while `states` hold, on `rules`: what the rules then draw
+/// `property` of part `at` in, while `seen` hold.
+fn after_fall(
+    mut rules: Vec<Rule>,
+    family: &'static Family,
+    variant: &'static str,
+    states: &[State],
+    at: usize,
+    seen: &[State],
+    property: Prop,
+) -> Option<&'static str> {
+    let mut fell = Vec::new();
+    Held {
+        family,
+        rules: &mut rules,
+        fell: &mut fell,
+    }
+    .fall(variant, states, "a floor".to_owned(), None);
+    drawn_now(&rules, family, at, variant, seen, property)
+}
+
+#[test]
+fn a_state_that_falls_draws_back_what_the_theme_s_rest_colour_drew_there() {
+    // #4196's review, 1: the theme's rest words reach a toggle that is on; when it falls, its
+    // default words are drawn back there, though they are the rest's default too.
+    let button = family("button").expect("the button");
+    let rules = theme_rules(json!({ "button.root.text": "accent.base" }));
+    let selected = (button.defaults)("secondary", &[State::Selected]).text;
+    assert_eq!(
+        after_fall(
+            rules,
+            button,
+            "secondary",
+            &[State::Selected],
+            0,
+            &[State::Selected],
+            Prop::Text
+        ),
+        Some(selected)
+    );
+}
+
+#[test]
+fn a_state_that_falls_draws_back_a_part_s_own_words() {
+    // #4196's review, 2: a list row's description has words of its own; its theme words in the
+    // row under the pointer are drawn back when that state falls.
+    let list = family("list").expect("the list");
+    let at = list
+        .parts
+        .iter()
+        .position(|one| one.name == "description")
+        .expect("a description");
+    let rules = theme_rules(json!({ "list.description.hover.text": "surface.hover" }));
+    assert_eq!(
+        after_fall(
+            rules,
+            list,
+            "row",
+            &[State::Hover],
+            at,
+            &[State::Hover],
+            Prop::Text
+        ),
+        list.own_words_of(at)
+    );
+}
+
+#[test]
+fn a_set_that_falls_draws_its_parts_words_as_the_family_draws_the_set() {
+    // #4196's review, 3: a chip checkbox under the pointer and on draws its label in the set's
+    // words, not the first state's.
+    let checkbox = family("checkbox").expect("the checkbox");
+    let at = checkbox
+        .parts
+        .iter()
+        .position(|one| one.name == "label")
+        .expect("a label");
+    let set = [State::Hover, State::Selected];
+    let rules = theme_rules(json!({ "checkbox.root.chip.hover.fill": "accent.surface" }));
+    assert_eq!(
+        after_fall(rules, checkbox, "chip", &set, at, &set, Prop::Text),
+        Some((checkbox.defaults)("chip", &set).text)
+    );
+}

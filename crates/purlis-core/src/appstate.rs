@@ -661,10 +661,14 @@ pub fn move_from(root: &Path, states: &[PathBuf], into: &Path) -> Moved {
 /// The stores a move of the project carries to its new clone key ([`follow_arrival`]): the person's
 /// own work and records. Nothing that holds the person's word is carried: the grade-after-edit
 /// opt-ins are turned on again from a plan, and the levels records are asked about again.
-pub const CARRIED_ON_A_MOVE: [(&str, Carried); 3] = [
+pub const CARRIED_ON_A_MOVE: [(&str, Carried); 4] = [
     (crate::skills::verbs::drafts::DRAFTS_DIR, Carried::Moved),
     (crate::skills::grades::LOCAL_DIR, Carried::Appended),
     (crate::skills::grades::kept::DIR_NAME, Carried::Moved),
+    (
+        crate::skills::grades::kept::ROUTERS_DIR_NAME,
+        Carried::Moved,
+    ),
 ];
 
 /// What a project's open found about where its record of open chats came from, for

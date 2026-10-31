@@ -86,10 +86,20 @@ function endSaid(step: SkillGradeStep): string {
 /** What a grade should spend, from a grade before, in one sentence: never a figure that was not
  *  measured, and always which grade it is worked out from (#3273). A grade whose chats said
  *  nothing of what they spent was a grade still: its cost is not known. */
-export function costSaid(plan: SkillGradePlan): string {
+export function costSaid(
+  plan: Pick<SkillGradePlan, "estimate">,
+  /** Whose grade it is: a skill's, or a router's on its library (#3618). */
+  of: "skill" | "router" = "skill",
+): string {
   const estimate = plan.estimate;
+  const turn =
+    of === "skill"
+      ? "Each chat is one turn, and ends once the skill starts."
+      : "Each chat is one turn, and ends once the skill it tests starts.";
   if (estimate === null)
-    return "This skill has not been graded here before, so purlis cannot say yet what a grade spends. Each chat is one turn, and ends once the skill starts.";
+    return of === "skill"
+      ? `This skill has not been graded here before, so purlis cannot say yet what a grade spends. ${turn}`
+      : `purlis knows no grade of this router here to go by (one purlis stopped under before it scored a test says nothing of what a grade spends), so it cannot say yet what this one spends. ${turn}`;
   const on =
     estimate.profile === null
       ? ""
@@ -100,9 +110,9 @@ export function costSaid(plan: SkillGradePlan): string {
   const ranOn = [estimate.harness, estimate.model].filter((one) => one !== null).join(", ");
   const ran = `${on}${ranOn === "" ? "" : ` (${ranOn})`}, ${estimate.ts.slice(0, 10)}`;
   if (estimate.chats_then === 0)
-    return `Its last grade${ran}, ran no chat, so purlis cannot say yet what a grade spends. Each chat is one turn, and ends once the skill starts.`;
+    return `Its last grade${ran}, ran no chat, so purlis cannot say yet what a grade spends. ${turn}`;
   if (estimate.tokens === null && estimate.cost_usd === null)
-    return `Its last grade${ran}, did not say what its chats spent, so purlis cannot say what this one spends. Each chat is one turn, and ends once the skill starts.`;
+    return `Its last grade${ran}, did not say what its chats spent, so purlis cannot say what this one spends. ${turn}`;
   const parts: string[] = [];
   if (estimate.tokens !== null) parts.push(`about ${tokensSaid(estimate.tokens)}`);
   if (estimate.cost_usd !== null) parts.push(`about $${estimate.cost_usd.toFixed(2)}`);
@@ -114,7 +124,7 @@ export function costSaid(plan: SkillGradePlan): string {
 
 /** The dollar limit a grade is held to, and the price it was worked out at (#3469): the model's,
  *  or the dearest known where the model or its price is not. */
-export function limitSaid(plan: SkillGradePlan): string {
+export function limitSaid(plan: Pick<SkillGradePlan, "cost_cap_usd" | "priced">): string {
   const limit = `$${(plan.cost_cap_usd ?? 0).toFixed(2)}`;
   const price = `$${(plan.priced.usd_per_million ?? 0).toFixed(2)} a million tokens`;
   if (plan.priced.of_the_model)
@@ -567,8 +577,9 @@ export function GradePlanPage({
   );
 }
 
-/** The token cap a grade is held to, set on this machine before anything runs. */
-function TokenCap({ cap, onCap }: { cap: number; onCap: (tokens: number) => void }) {
+/** The token cap a grade is held to, set on this machine before anything runs: a skill's grade's
+ *  and a router's (#3618). */
+export function TokenCap({ cap, onCap }: { cap: number; onCap: (tokens: number) => void }) {
   const [typed, setTyped] = useState(String(cap));
   const tokens = Number(typed.replace(/[,\s]/g, ""));
   return (

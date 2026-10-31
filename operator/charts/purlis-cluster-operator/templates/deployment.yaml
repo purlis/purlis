@@ -38,7 +38,7 @@ spec:
           type: RuntimeDefault
       # The key the operator signs runners' link keys with (#2056), made once by whoever
       # installs it (docs/cluster-operator.md) and mounted by the kubelet: the operator holds no
-      # right to read a Secret. The whole Secret is mounted, key.pem and, while a team admin
+      # right to read it. The whole Secret is mounted, key.pem and, while a team admin
       # rolls the key, next.pem (#3305), and the kubelet refreshes it, so a roll needs no restart.
       volumes:
         - name: signing-key

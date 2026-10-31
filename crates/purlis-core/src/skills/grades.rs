@@ -859,29 +859,85 @@ pub struct Estimate {
 /// arm. It is gone by only where no scored grade on the same profile is, as its chats are fewer
 /// and stopped where they were; one from before its marker counted them says none.
 fn estimate_of(grades: &[Graded], chats: u32, profile: Option<&str>) -> Option<Estimate> {
-    let asked = |row: &Graded| -> u64 {
-        if stopped_unscored(&row.report) {
-            let arms = if row.previous.is_some() {
+    estimate_from(grades, chats, profile).map(|(estimate, _)| estimate)
+}
+
+/// **A grade's row an estimate is worked out from** ([`estimate_from`]): a skill's, or a
+/// router's (#3618).
+pub(crate) trait Spends {
+    /// The chats it asked for, ran or not, which what it spent is shared over: none where it
+    /// says none to go by.
+    fn asked(&self) -> u64;
+    /// Whether purlis stopped under it before it was scored.
+    fn stopped_unscored(&self) -> bool;
+    /// What its chats spent, and when, on which profile, harness and model it ran.
+    fn spent(&self) -> &Spent;
+    fn ts(&self) -> &str;
+    fn profile(&self) -> Option<&str>;
+    fn harness(&self) -> Option<&str>;
+    fn model(&self) -> Option<&str>;
+}
+
+impl Spends for Graded {
+    fn asked(&self) -> u64 {
+        if stopped_unscored(&self.report) {
+            let arms = if self.previous.is_some() {
                 ARMS_WITH_PREVIOUS.len()
             } else {
                 ARMS.len()
             } as u64;
-            return row
+            return self
                 .spent
                 .asked_for
                 .map(u64::from)
                 .filter(|asked_for| *asked_for >= arms)
                 .unwrap_or(0);
         }
-        row.report
-            .arms
-            .iter()
-            .map(|arm| u64::from(arm.chats) + u64::from(arm.not_run))
-            .sum()
-    };
-    let on_profile = |row: &&Graded| profile.is_some() && row.profile.as_deref() == profile;
-    let scored = |row: &&Graded| asked(row) > 0 && !stopped_unscored(&row.report);
-    let any = |row: &&Graded| asked(row) > 0;
+        asked_in(&self.report.arms)
+    }
+
+    fn stopped_unscored(&self) -> bool {
+        stopped_unscored(&self.report)
+    }
+
+    fn spent(&self) -> &Spent {
+        &self.spent
+    }
+
+    fn ts(&self) -> &str {
+        &self.ts
+    }
+
+    fn profile(&self) -> Option<&str> {
+        self.profile.as_deref()
+    }
+
+    fn harness(&self) -> Option<&str> {
+        self.harness.as_deref()
+    }
+
+    fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+}
+
+/// The chats `arms` asked for, ran or not.
+pub(crate) fn asked_in(arms: &[grade::ArmScore]) -> u64 {
+    arms.iter()
+        .map(|arm| u64::from(arm.chats) + u64::from(arm.not_run))
+        .sum()
+}
+
+/// [`estimate_of`], of any grade's rows ([`Spends`]), with the row it was worked out from.
+pub(crate) fn estimate_from<'a, R: Spends>(
+    grades: &'a [R],
+    chats: u32,
+    profile: Option<&str>,
+) -> Option<(Estimate, &'a R)> {
+    let asked = |row: &R| row.asked();
+    let on_profile = |row: &&R| profile.is_some() && row.profile() == profile;
+    let scored = |row: &&R| asked(row) > 0 && !row.stopped_unscored();
+    let any = |row: &&R| asked(row) > 0;
     let last = grades
         .iter()
         .filter(scored)
@@ -892,21 +948,22 @@ fn estimate_of(grades: &[Graded], chats: u32, profile: Option<&str>) -> Option<E
         .or_else(|| grades.first())?;
     let then = asked(last);
     let per = |of: u64| (then > 0).then(|| of.div_ceil(then).saturating_mul(u64::from(chats)));
-    Some(Estimate {
-        tokens: last.spent.tokens.and_then(per),
+    let estimate = Estimate {
+        tokens: last.spent().tokens.and_then(per),
         cost_usd: last
-            .spent
+            .spent()
             .cost_usd
             .filter(|_| then > 0)
             .map(|cost| cost / then as f64 * f64::from(chats)),
         chats_then: u32::try_from(then).unwrap_or(u32::MAX),
-        ts: last.ts.clone(),
-        profile: last.profile.clone(),
-        harness: last.harness.clone(),
-        model: last.model.clone(),
-        same_profile: profile.map(|profile| last.profile.as_deref() == Some(profile)),
-        interrupted: then > 0 && stopped_unscored(&last.report),
-    })
+        ts: last.ts().to_owned(),
+        profile: last.profile().map(str::to_owned),
+        harness: last.harness().map(str::to_owned),
+        model: last.model().map(str::to_owned),
+        same_profile: profile.map(|profile| last.profile() == Some(profile)),
+        interrupted: then > 0 && last.stopped_unscored(),
+    };
+    Some((estimate, last))
 }
 
 /// **What grading a copy would run, before anything runs** (decision 22): its fixtures, the

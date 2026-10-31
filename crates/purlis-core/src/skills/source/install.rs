@@ -45,19 +45,57 @@ pub(super) fn paths_fit(
     }
 }
 
-/// What one install wrote so far, to take back where a later step fails.
-struct Written<'a> {
-    plane: &'a std::path::Path,
-    level: Vec<String>,
-    skills: Vec<(String, write::Made)>,
-    grants: Vec<String>,
-    /// Each project skill whose grant this install widened, and the grant it had (#4172).
-    widened: Vec<(PathBuf, Grant)>,
+/// What one install or update wrote so far, to take back where a later step fails.
+pub(super) struct Written<'a> {
+    pub(super) plane: &'a std::path::Path,
+    pub(super) level: Vec<String>,
+    pub(super) skills: Vec<(String, write::Made)>,
+    /// Each skill this change granted, by name: its `<name>.toml` is new.
+    pub(super) grants: Vec<String>,
+    /// Each project skill whose grant this change widened, and the grant it had (#4172).
+    pub(super) widened: Vec<(PathBuf, Grant)>,
 }
 
-impl Written<'_> {
-    /// Takes back every skill and grant file this install made, and every grant it widened.
-    fn take_back(&self) {
+impl<'a> Written<'a> {
+    /// Nothing written yet into the level folder `level` of `plane`.
+    pub(super) fn none(plane: &'a std::path::Path, level: Vec<String>) -> Self {
+        Written {
+            plane,
+            level,
+            skills: Vec::new(),
+            grants: Vec::new(),
+            widened: Vec::new(),
+        }
+    }
+
+    /// Widens the grant of each of `widenings` that asks it (#4172, #4186), each file written
+    /// added to `paths`; where one cannot be, why, and the rest are left to [`Self::take_back`].
+    /// Written straight, past `skills::grant`'s checks: the grant widened to is the change's own,
+    /// whose workspaces were checked when it was granted, and the plane's being writable before
+    /// anything.
+    pub(super) fn widen(
+        &mut self,
+        widenings: &[widen::Widening],
+        paths: &mut Vec<String>,
+    ) -> Result<(), String> {
+        for one in widenings {
+            let Some(to) = &one.widened else {
+                continue;
+            };
+            crate::skills::set_grant(&one.folder, to).map_err(|why| {
+                format!(
+                    "the grant of {} could not be widened to {to} ({why})",
+                    one.name
+                )
+            })?;
+            self.widened.push((one.folder.clone(), one.granted.clone()));
+            paths.push(verbs::rel(self.plane, &crate::skills::beside(&one.folder)));
+        }
+        Ok(())
+    }
+
+    /// Takes back every skill and grant file this change made, and every grant it widened.
+    pub(super) fn take_back(&self) {
         for (folder, had) in &self.widened {
             let _ = crate::skills::set_grant(folder, had);
         }
@@ -143,13 +181,7 @@ pub fn install(
         paths_fit(&parts, &skill.name, files)?;
         copies.push((skill, files));
     }
-    let mut written = Written {
-        plane,
-        level: parts.clone(),
-        skills: Vec::new(),
-        grants: Vec::new(),
-        widened: Vec::new(),
-    };
+    let mut written = Written::none(plane, parts.clone());
     let mut lock = held.lock.clone();
     let mut made: Vec<PathBuf> = Vec::new();
     for (skill, files) in &copies {
@@ -203,8 +235,6 @@ pub fn install(
         }
     }
     // A project skill they rely on reaches the workspaces they are granted to as well (#4172).
-    // Written straight, past `skills::grant`'s checks: the grant's workspaces were checked by
-    // granting the installed skills above, and the plane's being writable before anything.
     let widenings = widen::widenings(
         plane,
         level,
@@ -213,26 +243,9 @@ pub fn install(
             .iter()
             .flat_map(|one| one.review.already.iter().map(String::as_str)),
     );
-    for one in &widenings {
-        let Some(to) = &one.widened else {
-            continue;
-        };
-        match crate::skills::set_grant(&one.folder, to) {
-            Ok(()) => {
-                written
-                    .widened
-                    .push((one.folder.clone(), one.granted.clone()));
-                paths.push(verbs::rel(plane, &crate::skills::beside(&one.folder)));
-            }
-            Err(why) => {
-                written.take_back();
-                return Err(format!(
-                    "the grant of {} could not be widened to {to} ({why}), so nothing was \
-                     installed",
-                    one.name
-                ));
-            }
-        }
+    if let Err(why) = written.widen(&widenings, &mut paths) {
+        written.take_back();
+        return Err(format!("{why}, so nothing was installed"));
     }
     if let Err(why) = lock::write(plane, kept, held.was.as_deref(), &lock) {
         written.take_back();
@@ -256,18 +269,7 @@ pub fn install(
         shown.join(", "),
         fetched.commit.short()
     ));
-    for one in &widenings {
-        if let Some(to) = &one.widened {
-            cx.done(format!(
-                "{} is granted to {} too, as what was installed refers to it",
-                one.name,
-                widen::added(&one.granted, to)
-            ));
-        }
-        for line in one.turned_off_said("what was installed") {
-            cx.warn(line);
-        }
-    }
+    widen::said_done(cx, &widenings, "what was installed");
     if kept == Kept::Shared {
         paths.push(lock::FILE.to_owned());
         cx.commit(&paths, &format!("skill install {}", shown.join(" ")));

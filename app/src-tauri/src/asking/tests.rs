@@ -1220,6 +1220,7 @@ fn waits_to_sign_in(kind: &str, harness: &str) -> purlis_core::profilestore::sig
         },
         harness: harness.to_owned(),
         since: 7,
+        raised: std::time::Instant::now(),
     }
 }
 
@@ -1274,6 +1275,7 @@ fn a_profile_not_signed_in_on_a_pool_is_one_ask_to_sign_it_in_on_that_pool() {
         kind: "claude".to_owned(),
         harness: "Claude Code".to_owned(),
         since: 9,
+        raised: std::time::Instant::now(),
     }];
     world.since = vec![("sign-in:work:on:builds", 9)];
 

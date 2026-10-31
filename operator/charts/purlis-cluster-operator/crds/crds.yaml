@@ -44,6 +44,51 @@ spec:
                 maxLength: 12
                 pattern: ^[1-9][0-9]*[smh]$
                 type: string
+              forge:
+                description: |-
+                  A team's GitHub App, for runners' forge tools (#4204). Left out, the operator reads no
+                  Secret for this pool.
+                nullable: true
+                properties:
+                  appKeySecretRef:
+                    description: |-
+                      The Secret in the operator's own namespace holding the App's client id (`app`) and its
+                      private key (`key`). The chart's `forge.keySecretNames` must name it too.
+                    properties:
+                      name:
+                        description: The Secret's name, never the operator's own signing key's.
+                        maxLength: 253
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                        type: string
+                        x-kubernetes-validations:
+                        - message: A pool cannot name the operator's own signing key.
+                          rule: self != 'purlis-cluster-operator-signing-key'
+                    required:
+                    - name
+                    type: object
+                  mintInCluster:
+                    default: false
+                    description: |-
+                      Whether the pool opts in to the operator minting tokens for its runners. Nothing is minted
+                      yet (#4206). Once it is, anyone who may use the Pool can use these repos through it. False
+                      unless set.
+                    type: boolean
+                  repos:
+                    description: |-
+                      The most a token may cover: `owner/name` or `owner/*`. A token covers only these and the
+                      repos of the Claim.
+                    items:
+                      maxLength: 140
+                      pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,38}/(\*|[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)$
+                      type: string
+                    maxItems: 256
+                    minItems: 1
+                    type: array
+                required:
+                - appKeySecretRef
+                - repos
+                type: object
               idleAfter:
                 default: 30m
                 description: |-
@@ -210,6 +255,23 @@ spec:
           spec:
             description: One person's request for a runner from a pool, and the runner it is given.
             properties:
+              forge:
+                description: |-
+                  The repos the runner works on (#4204). Changed only by who asked for the claim, while they
+                  may use its pool (deploy/policy.yaml). A token covers only these and the Pool's allow-list.
+                nullable: true
+                properties:
+                  repos:
+                    description: 'Each repo, `owner/name`: never a wildcard, which only a Pool''s allow-list may hold.'
+                    items:
+                      maxLength: 140
+                      pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,38}/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*$
+                      type: string
+                    maxItems: 256
+                    type: array
+                required:
+                - repos
+                type: object
               kept:
                 default: false
                 description: |-

@@ -18,6 +18,12 @@
 //!   (never a link), each file at most [`MOST_SCREEN_BYTES`] and opened following no link, so a
 //!   file put there by anything else is never shown.
 //!
+//! - **A router's grade keeps its chats the same way** (#3617), in a store of its own,
+//!   `<data>/app-state/<clone key>/router-grade-chats/<router>/<workspace>/<persona>/<grade>/<chat>.screen`
+//!   (`_` for no workspace or no persona, a name neither can take), kept for the
+//!   [`KEPT_GRADES`] newest grades of the router chosen in that scope, as a router's grades are
+//!   read by their scope ([`Of::Router`]).
+//!
 //! **Tier:** Machine, device-bound, transient, never committed: what this machine's chats showed.
 
 use std::io::{Read as _, Write as _};
@@ -32,6 +38,46 @@ fn named(word: &str) -> bool {
 /// The folder of this machine's app state of the project the kept chats are in.
 pub const DIR_NAME: &str = "skill-grade-chats";
 
+/// The folder of this machine's app state of the project a router's grades' chats are in (#3617).
+pub const ROUTERS_DIR_NAME: &str = "router-grade-chats";
+
+/// What a folder name of [`ROUTERS_DIR_NAME`] says where a router was chosen by no workspace, or
+/// by no persona: a name neither can take, as each starts with a letter or a digit.
+const NONE: &str = "_";
+
+/// **Whose grades' chats are kept** (#3617): a skill's, or a router's chosen in one scope, whose
+/// grades are read by that scope (`super::routers::grades_of`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Of {
+    Skill(String),
+    Router {
+        router: String,
+        workspace: Option<String>,
+        persona: Option<String>,
+    },
+}
+
+impl Of {
+    /// The folders, from this machine's app state of the project down, its grades' folders are
+    /// in, each a plain name, or `None` where one is not.
+    fn folders(&self) -> Option<Vec<&str>> {
+        let folders = match self {
+            Of::Skill(skill) => vec![DIR_NAME, skill.as_str()],
+            Of::Router {
+                router,
+                workspace,
+                persona,
+            } => vec![
+                ROUTERS_DIR_NAME,
+                router.as_str(),
+                workspace.as_deref().unwrap_or(NONE),
+                persona.as_deref().unwrap_or(NONE),
+            ],
+        };
+        folders.iter().all(|one| named(one)).then_some(folders)
+    }
+}
+
 /// How many of a skill's grades keep their chats: the newest.
 pub const KEPT_GRADES: usize = 3;
 
@@ -45,21 +91,34 @@ const MOST_GRADE_FOLDERS: usize = 600;
 /// The file a kept chat's screen is in.
 const SCREEN: &str = "screen";
 
-/// The folder of `skill`'s kept chats in the project at `root`, or `None` for a name that is not
-/// a plain one, or where this machine has no data home.
-fn skill_dir(root: &Path, skill: &str) -> Option<PathBuf> {
-    if !named(skill) {
-        return None;
+/// The folder of `of`'s kept chats in the project at `root`, and each folder on the way to it
+/// from this machine's app state, or `None` for a name that is not a plain one, or where this
+/// machine has no data home.
+fn owner_dirs(root: &Path, of: &Of) -> Option<Vec<PathBuf>> {
+    let mut at = crate::appstate::dir(root)?;
+    let mut dirs = Vec::new();
+    for folder in of.folders()? {
+        at = at.join(folder);
+        dirs.push(at.clone());
     }
-    Some(crate::appstate::dir(root)?.join(DIR_NAME).join(skill))
+    Some(dirs)
 }
 
-/// The file of `chat`'s screen in `skill`'s grade `grade`, or `None` where a name is not plain.
-fn screen_path(root: &Path, skill: &str, grade: &str, chat: &str) -> Option<PathBuf> {
-    (named(grade) && named(chat))
-        .then(|| skill_dir(root, skill))
-        .flatten()
-        .map(|dir| dir.join(grade).join(format!("{chat}.{SCREEN}")))
+/// The folder of `of`'s kept chats in the project at `root` ([`owner_dirs`]).
+fn owner_dir(root: &Path, of: &Of) -> Option<PathBuf> {
+    owner_dirs(root, of)?.pop()
+}
+
+/// The file of `chat`'s screen in `of`'s grade `grade`, and each folder on the way to it from
+/// this machine's app state, or `None` where a name is not plain.
+fn screen_path(root: &Path, of: &Of, grade: &str, chat: &str) -> Option<(PathBuf, Vec<PathBuf>)> {
+    if !(named(grade) && named(chat)) {
+        return None;
+    }
+    let mut dirs = owner_dirs(root, of)?;
+    let grade_dir = dirs.last()?.join(grade);
+    dirs.push(grade_dir.clone());
+    Some((grade_dir.join(format!("{chat}.{SCREEN}")), dirs))
 }
 
 /// `dir` made where it is not, private, and refused where it is not a folder of its own.
@@ -86,20 +145,20 @@ pub fn keep(
     chat: &str,
     screen: &str,
 ) -> std::io::Result<()> {
+    keep_of(root, &Of::Skill(skill.to_owned()), grade, chat, screen)
+}
+
+/// [`keep`], of `of`'s grade `grade`: a skill's, or a router's (#3617).
+pub fn keep_of(root: &Path, of: &Of, grade: &str, chat: &str, screen: &str) -> std::io::Result<()> {
     crate::appstate::made(root).map_err(std::io::Error::other)?;
-    let path = screen_path(root, skill, grade, chat)
+    let (path, on_the_way) = screen_path(root, of, grade, chat)
         .ok_or_else(|| std::io::Error::other("a name is not a plain one"))?;
     if screen.len() > MOST_SCREEN_BYTES {
         return Err(std::io::Error::other("the screen is too big to keep"));
     }
-    // The record's folder, the skill's and the grade's, each made private and checked to be no
-    // link before the next is made inside it.
-    let grade_dir = path
-        .parent()
-        .ok_or_else(|| std::io::Error::other("the screen has no folder"))?;
-    let mut on_the_way: Vec<&Path> = grade_dir.ancestors().take(3).collect();
-    on_the_way.reverse();
-    for dir in on_the_way {
+    // The record's folder, the skill's (or the router's and its scope's) and the grade's, each
+    // made private and checked to be no link before the next is made inside it.
+    for dir in &on_the_way {
         made_private(dir)?;
     }
     let mut options = std::fs::OpenOptions::new();
@@ -116,12 +175,12 @@ pub fn keep(
 /// **What chat `chat` of `skill`'s grade `grade` showed as it ended**, where this machine kept
 /// it: read through no link, at most [`MOST_SCREEN_BYTES`].
 pub fn kept(root: &Path, skill: &str, grade: &str, chat: &str) -> Option<String> {
-    let path = screen_path(root, skill, grade, chat)?;
-    let folders = [
-        crate::appstate::dir(root)?.join(DIR_NAME),
-        skill_dir(root, skill)?,
-        path.parent()?.to_path_buf(),
-    ];
+    kept_of(root, &Of::Skill(skill.to_owned()), grade, chat)
+}
+
+/// [`kept`], of `of`'s grade `grade`: a skill's, or a router's (#3617).
+pub fn kept_of(root: &Path, of: &Of, grade: &str, chat: &str) -> Option<String> {
+    let (path, folders) = screen_path(root, of, grade, chat)?;
     if !folders
         .iter()
         .all(|dir| std::fs::symlink_metadata(dir).is_ok_and(|meta| meta.is_dir()))
@@ -142,9 +201,9 @@ pub fn kept(root: &Path, skill: &str, grade: &str, chat: &str) -> Option<String>
     Some(text)
 }
 
-/// **The grades of `skill` whose chats this machine keeps**, newest first.
-fn grades_kept(root: &Path, skill: &str) -> Vec<String> {
-    let Some(dir) = skill_dir(root, skill) else {
+/// **The grades of `of` whose chats this machine keeps**, newest first.
+fn grades_kept(root: &Path, of: &Of) -> Vec<String> {
+    let Some(dir) = owner_dir(root, of) else {
         return Vec::new();
     };
     if !std::fs::symlink_metadata(&dir).is_ok_and(|meta| meta.is_dir()) {
@@ -172,11 +231,16 @@ fn grades_kept(root: &Path, skill: &str) -> Vec<String> {
 /// project at `root`: what a grade's end does. Only folders this module names, never through a
 /// link. Answers the grades whose chats went.
 pub fn sweep(root: &Path, skill: &str) -> Vec<String> {
-    let Some(dir) = skill_dir(root, skill) else {
+    sweep_of(root, &Of::Skill(skill.to_owned()))
+}
+
+/// [`sweep`], of `of`'s grades: a skill's, or a router's chosen in one scope (#3617).
+pub fn sweep_of(root: &Path, of: &Of) -> Vec<String> {
+    let Some(dir) = owner_dir(root, of) else {
         return Vec::new();
     };
     let mut gone = Vec::new();
-    for grade in grades_kept(root, skill).into_iter().skip(KEPT_GRADES) {
+    for grade in grades_kept(root, of).into_iter().skip(KEPT_GRADES) {
         let folder = dir.join(&grade);
         if std::fs::symlink_metadata(&folder).is_ok_and(|meta| meta.is_dir())
             && std::fs::remove_dir_all(&folder).is_ok()
@@ -195,7 +259,8 @@ pub fn sweep(root: &Path, skill: &str) -> Vec<String> {
 /// folders this module names, never through a link; nothing where either name is not plain or
 /// `old` keeps none.
 pub fn renamed(root: &Path, old: &str, new: &str) {
-    let (Some(from), Some(to)) = (skill_dir(root, old), skill_dir(root, new)) else {
+    let (old, new) = (Of::Skill(old.to_owned()), Of::Skill(new.to_owned()));
+    let (Some(from), Some(to)) = (owner_dir(root, &old), owner_dir(root, &new)) else {
         return;
     };
     if old == new || !std::fs::symlink_metadata(&from).is_ok_and(|meta| meta.is_dir()) {
@@ -204,7 +269,7 @@ pub fn renamed(root: &Path, old: &str, new: &str) {
     if made_private(&to).is_err() {
         return;
     }
-    for grade in grades_kept(root, old) {
+    for grade in grades_kept(root, &old) {
         let there = to.join(&grade);
         if std::fs::symlink_metadata(&there).is_err() {
             let _ = std::fs::rename(from.join(&grade), there);
@@ -212,7 +277,7 @@ pub fn renamed(root: &Path, old: &str, new: &str) {
     }
     // Only an empty folder goes: what was not moved is still kept under the old name.
     let _ = std::fs::remove_dir(&from);
-    sweep(root, new);
+    sweep_of(root, &new);
 }
 
 #[cfg(test)]

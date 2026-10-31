@@ -387,6 +387,8 @@ pub struct Wait {
     pub harness: String,
     /// When the first start was refused, in seconds since 1970.
     pub since: u64,
+    /// When a start was last refused, to the instant: what a watcher compares (#4203).
+    pub raised: Instant,
 }
 
 static WAITS: Mutex<Vec<Wait>> = Mutex::new(Vec::new());
@@ -397,10 +399,11 @@ pub fn waits_on(root: &Path, profile: &Profile) {
     let harness = crate::harness_declaration::builtin(&profile.kind)
         .map_or_else(|| profile.kind.clone(), |d| d.title.clone());
     let mut all = WAITS.lock().unwrap_or_else(PoisonError::into_inner);
-    if all
-        .iter()
-        .any(|w| w.root == root && w.profile.name == profile.name)
+    if let Some(wait) = all
+        .iter_mut()
+        .find(|w| w.root == root && w.profile.name == profile.name)
     {
+        wait.raised = Instant::now();
         return;
     }
     all.push(Wait {
@@ -410,6 +413,7 @@ pub fn waits_on(root: &Path, profile: &Profile) {
         since: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs()),
+        raised: Instant::now(),
     });
 }
 
@@ -425,44 +429,43 @@ fn remembered_at(profile: &Profile, now: Instant) -> Option<Standing> {
 
 /// **The profiles the project at `root` waits on to be signed in**, oldest first, as their
 /// harnesses last said, with no program run: what the window lists, on its own thread. A wait
-/// whose harness has since said anything but signed out is let go; one it has not been asked
-/// about lately still waits.
+/// whose harness has since said signed in is let go. One it has not been asked about lately still
+/// waits, and so does one that cannot tell, whose person may still be signing in (#4223).
 pub fn waiting(root: &Path) -> Vec<Wait> {
     let now = Instant::now();
     let mut all = WAITS.lock().unwrap_or_else(PoisonError::into_inner);
-    all.retain(|w| {
-        w.root != root
-            || remembered_at(&w.profile, now).is_none_or(|said| said == Standing::SignedOut)
-    });
+    all.retain(|w| w.root != root || remembered_at(&w.profile, now) != Some(Standing::SignedIn));
     all.iter().filter(|w| w.root == root).cloned().collect()
 }
 
-/// **Asks `profile`'s harness again every `every`, for at most `until`, until it says anything
-/// but signed out**, then lets its waits go and calls `told`: what Sign in starts, so its Ask
-/// leaves the Inbox once the person has signed in, in the shell tab or anywhere else. Runs on a
-/// thread of its own.
-pub fn watch(
-    profile: Profile,
-    look: impl Look + Send + 'static,
-    every: Duration,
-    until: Duration,
-    told: impl FnOnce() + Send + 'static,
-) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || {
-        let ends = Instant::now() + until;
-        while Instant::now() < ends {
-            std::thread::sleep(every);
-            forget(&profile);
-            if standing_remembered(&profile, &look) != Standing::SignedOut {
-                WAITS
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .retain(|w| w.profile.name != profile.name || w.profile.env != profile.env);
-                told();
-                return;
+/// **What `profile`'s harness says now**, asked whatever it said a moment ago: what a watcher
+/// does after Sign in.
+pub fn look_again(profile: &Profile, look: &dyn Look) -> Standing {
+    forget(profile);
+    standing_remembered(profile, look)
+}
+
+/// **Whether `profile`'s harness says now that it is signed in**: what a watcher asks. Cannot tell
+/// is not signed in, as the person may still be signing in (#4223).
+pub fn signed_in_now(profile: &Profile, look: &dyn Look) -> bool {
+    look_again(profile, look) == Standing::SignedIn
+}
+
+/// `profile` is signed in on this device: its waits go, in every project. The projects whose
+/// wait went, whose windows have an Ask to stop drawing (#4205).
+pub fn let_go_everywhere(profile: &Profile) -> Vec<PathBuf> {
+    let mut went = Vec::new();
+    WAITS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .retain(|w| {
+            let goes = w.profile.name == profile.name && w.profile.env == profile.env;
+            if goes {
+                went.push(w.root.clone());
             }
-        }
-    })
+            !goes
+        });
+    went
 }
 
 /// The person put the wait for `name` in the project at `root` away.
@@ -471,6 +474,16 @@ pub fn dismiss(root: &Path, name: &str) {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .retain(|w| !(w.root == root && w.profile.name == name));
+}
+
+/// The person left the sign-in of `name` in the project at `root`: its wait goes, if it was
+/// raised before `seen`, when the shell was last seen open. One raised since is a start refused
+/// after they left, which says the profile waits in the Inbox (#4203).
+pub fn let_go_older(root: &Path, name: &str, seen: Instant) {
+    WAITS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .retain(|w| !(w.root == root && w.profile.name == name && w.raised < seen));
 }
 
 /// A harness's own sign-in, ready to run in a terminal the person drives.

@@ -613,6 +613,7 @@ fn claim() -> Claim {
             requester: "ada@example.com".into(),
             kept: false,
             stopped: false,
+            forge: None,
         },
     );
     claim.metadata.namespace = Some("ada".into());

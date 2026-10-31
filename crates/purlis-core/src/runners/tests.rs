@@ -573,6 +573,7 @@ fn a_file_of_an_unknown_shape_is_refused_whole_and_never_replaced() {
         serde_json::json!({ "version": 1, "runners": [], "pools": [row, row] }).to_string(),
         with(&|row| row["kind"] = "podman".into()),
         with(&|row| row["owned"] = true.into()),
+        with(&|row| row["mintInCluster"] = true.into()),
         with(&|row| row["image"] = "ghcr.io/purlis/purlis-runner:latest".into()),
         with(&|row| row["name"] = "Builds".into()),
         with(&|row| row["cpus"] = "2".into()),
