@@ -503,3 +503,51 @@ fn a_sign_out_is_done_only_where_the_harness_says_signed_out() {
         assert!(why.contains("could not confirm"), "{asked:?}: {why}");
     }
 }
+
+/// A Docker runner of pool `builds`, in container `container`, answering as `device`.
+fn a_runner_in(container: char, device: &str) -> purlis_core::runners::Kept {
+    purlis_core::runners::Kept {
+        made: purlis_core::dockerpool::Made {
+            container: purlis_core::dockerpool::ContainerId::new(&container.to_string().repeat(64))
+                .unwrap(),
+            runner: purlis_core::dockerpool::Runner::new(
+                "builds",
+                purlis_core::dockerpool::Image::pinned(&format!(
+                    "ghcr.io/purlis/purlis-runner@sha256:{}",
+                    "a".repeat(64)
+                ))
+                .unwrap(),
+                purlis_core::dockerpool::User::new(10001, 10001).unwrap(),
+                "/home/purlis",
+            )
+            .unwrap(),
+        },
+        pinned: purlis_session_protocol::hostlink::Pinned {
+            device: device.into(),
+            key: purlis_session_protocol::hostlink::PublicKey::from_bytes([7; 32]),
+        },
+        paired: 0,
+        of: None,
+        draining: false,
+    }
+}
+
+/// **A sign-in's redirect goes only to the Docker runner it started on**: one made again since,
+/// or answering as another device, holds no login of it.
+#[test]
+fn a_runner_made_again_is_not_the_one_a_sign_in_started_on() {
+    let started = a_runner_in('a', "01JB0RUNNER0000000000000000");
+
+    let mut paired_again = started.clone();
+    paired_again.paired = 9;
+    assert!(the_same_runner(&paired_again, &started));
+
+    assert!(!the_same_runner(
+        &a_runner_in('b', "01JB0RUNNER0000000000000000"),
+        &started
+    ));
+    assert!(!the_same_runner(
+        &a_runner_in('a', "01JB0RUNNER0000000000000001"),
+        &started
+    ));
+}

@@ -630,6 +630,29 @@ fn to_a_runner(
     }
 }
 
+/// **The Docker runner of pool `pool`, still the one a sign-in started on**: a runner made again
+/// since holds no login of this sign-in, so nothing goes to it.
+fn still_the_runner(
+    config: &Path,
+    pool: &str,
+    started: &purlis_core::runners::Kept,
+) -> Result<purlis_core::runners::Kept, String> {
+    let now = purlis_core::runners::runner_for(config, pool).map_err(|why| why.to_string())?;
+    if the_same_runner(&now, started) {
+        Ok(now)
+    } else {
+        Err(format!(
+            "pool {pool}'s runner was made again since this sign-in started, so nothing went to \
+             it. Try again"
+        ))
+    }
+}
+
+/// Whether `a` and `b` are one runner: the same container, answering as the same device.
+fn the_same_runner(a: &purlis_core::runners::Kept, b: &purlis_core::runners::Kept) -> bool {
+    a.made == b.made && a.pinned == b.pinned
+}
+
 /// [`keep_on`], with `yours` what [`yours`] said of pool `pool`: nothing is read or sent where
 /// it said no. `behind` is told what of its settings stayed behind (#4081).
 fn keep_on_as(
@@ -1214,11 +1237,24 @@ pub async fn pool_sign_in_start(
             }
             None => Typed::Driven,
         };
+        // A cluster pool's is held to the runner its gate judged; a Docker pool's to this one.
+        let started = match &yours {
+            Yours::Docker(_) => Some(
+                purlis_core::runners::runner_for(&config, &pool).map_err(|why| why.to_string())?,
+            ),
+            Yours::Cluster(_) => None,
+        };
         let login = login_on(&yours, &config, &pool, &name, provider.as_deref(), typed)?;
         let carry: callback::Carry = {
             let (config, pool, yours) = (config.clone(), pool.clone(), yours.clone());
             Arc::new(move |target: &str| {
-                let to = to_a_runner(&config, &pool, Waking::No, &yours)?;
+                let to = match &started {
+                    Some(started) => ToARunner::of_kept(
+                        &Machine::here(&config)?,
+                        &still_the_runner(&config, &pool, started)?,
+                    )?,
+                    None => to_a_runner(&config, &pool, Waking::No, &yours)?,
+                };
                 crate::runnerlinks::sign_in_redirect(&to, target)
             })
         };
