@@ -80,6 +80,42 @@ fn on_an_owned_pool_it_goes_on_to_the_pool() {
     assert!(said.is_err(), "{said:?}");
 }
 
+/// **Only signed in counts for a watcher** (#4009): every other answer keeps the Ask.
+#[test]
+fn only_a_signed_in_answer_says_signed_in() {
+    assert!(says_signed_in(&Ok(Some(Standing::SignedIn))));
+    for said in [
+        Ok(Some(Standing::SignedOut)),
+        Ok(Some(Standing::CannotTell)),
+        Ok(Some(Standing::Fetching)),
+        Ok(None),
+        Err("the runner did not answer".to_owned()),
+    ] {
+        assert!(!says_signed_in(&said), "{said:?}");
+    }
+}
+
+/// **A profile off this machine or off the pool is gone for a watcher**; a pool naming none keeps
+/// every profile, and what cannot be read is not gone.
+#[test]
+fn a_watched_profile_is_there_until_it_is_taken_away() {
+    let ours = || -> Result<Vec<profilestore::MachineProfile>, String> { Ok(Vec::new()) };
+    let unread = || -> Result<Vec<profilestore::MachineProfile>, String> { Err("no".to_owned()) };
+    let named = |names: &[&str]| -> Result<Option<Vec<String>>, String> {
+        Ok(Some(names.iter().map(|one| (*one).to_owned()).collect()))
+    };
+
+    assert!(!still_on_the_pool(ours(), Ok::<_, String>(None), "work"));
+    assert!(still_on_the_pool(unread(), Ok::<_, String>(None), "work"));
+    assert!(still_on_the_pool(unread(), named(&["work"]), "work"));
+    assert!(!still_on_the_pool(unread(), named(&["home"]), "work"));
+    assert!(still_on_the_pool(
+        unread(),
+        Err::<Option<Vec<String>>, _>("no"),
+        "work"
+    ));
+}
+
 /// One of this machine's made profiles, `name`, of `harness`.
 fn record(name: &str, harness: &str) -> profilestore::MachineProfile {
     profilestore::MachineProfile {

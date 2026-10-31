@@ -48,6 +48,9 @@ pub struct SignIn {
     pub pool: Option<String>,
     /// The profile's name.
     pub name: String,
+    /// Whether the profile is still there to sign in: on this machine, and on the pool. One taken
+    /// away ends the watch, so no look keeps it on a runner again.
+    pub there: Box<dyn Fn() -> bool + Send>,
     /// Whether the harness says the profile is signed in now. Asked on the watcher's thread.
     pub signed_in: Box<dyn FnMut() -> bool + Send>,
     /// Lets the waits for it go: the projects whose wait went, as far as it can say.
@@ -110,7 +113,10 @@ pub fn watch(sign_in: SignIn, session: u32, project: Project) {
             ..
         } = project;
         let SignIn {
-            signed_in, let_go, ..
+            there,
+            mut signed_in,
+            let_go,
+            ..
         } = sign_in;
         let (ended, last_open) = watched_until(
             Pace {
@@ -118,12 +124,12 @@ pub fn watch(sign_in: SignIn, session: u32, project: Project) {
                 for_: WATCHED_FOR,
                 later_every: WATCHED_LATER_EVERY,
             },
-            signed_in,
+            || there() && signed_in(),
             || {
                 // Asked with no lock held: the answer reads the project, and may be the last to
                 // hold it.
                 let shells = watched_now(|watched| watched.get(&key).cloned().unwrap_or_default());
-                let closed: Vec<u32> = shells.into_iter().filter(|s| !shell_open(*s)).collect();
+                let closed = closed_of(shells, there(), &shell_open);
                 watched_now(|watched| shells_left(watched, &key, &closed))
             },
         );
@@ -140,6 +146,14 @@ pub fn watch(sign_in: SignIn, session: u32, project: Project) {
         };
         told(&to_tell(went, &root, open));
     });
+}
+
+/// Which of `shells` count as closed: all, with the profile no longer `there`.
+fn closed_of(shells: Vec<u32>, there: bool, shell_open: impl Fn(u32) -> bool) -> Vec<u32> {
+    shells
+        .into_iter()
+        .filter(|shell| !there || !shell_open(*shell))
+        .collect()
 }
 
 /// Whose windows an ended watch tells: every project whose wait `went` (#4205), and its own while

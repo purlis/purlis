@@ -387,7 +387,7 @@ pub struct Wait {
     pub harness: String,
     /// When the first start was refused, in seconds since 1970.
     pub since: u64,
-    /// That moment, to the instant: what a watcher compares (#4203).
+    /// When a start was last refused, to the instant: what a watcher compares (#4203).
     pub raised: Instant,
 }
 
@@ -399,10 +399,11 @@ pub fn waits_on(root: &Path, profile: &Profile) {
     let harness = crate::harness_declaration::builtin(&profile.kind)
         .map_or_else(|| profile.kind.clone(), |d| d.title.clone());
     let mut all = WAITS.lock().unwrap_or_else(PoisonError::into_inner);
-    if all
-        .iter()
-        .any(|w| w.root == root && w.profile.name == profile.name)
+    if let Some(wait) = all
+        .iter_mut()
+        .find(|w| w.root == root && w.profile.name == profile.name)
     {
+        wait.raised = Instant::now();
         return;
     }
     all.push(Wait {
@@ -442,6 +443,12 @@ pub fn waiting(root: &Path) -> Vec<Wait> {
 pub fn look_again(profile: &Profile, look: &dyn Look) -> Standing {
     forget(profile);
     standing_remembered(profile, look)
+}
+
+/// **Whether `profile`'s harness says now that it is signed in**: what a watcher asks. Cannot tell
+/// is not signed in, as the person may still be signing in (#4223).
+pub fn signed_in_now(profile: &Profile, look: &dyn Look) -> bool {
+    look_again(profile, look) == Standing::SignedIn
 }
 
 /// `profile` is signed in on this device: its waits go, in every project. The projects whose

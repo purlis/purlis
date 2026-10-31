@@ -434,6 +434,33 @@ fn letting_a_pool_s_waits_go_says_whose_went() {
     assert!(let_go(None, "told", "work").is_empty(), "none left to go");
 }
 
+/// **A second refusal counts as raised then** (#4203): the usual case, a project whose Ask is why
+/// Sign in was pressed. How long it has waited does not change.
+#[test]
+fn a_start_on_a_pool_refused_again_after_the_shell_was_last_seen_keeps_the_wait() {
+    let dir = tempfile::tempdir().unwrap();
+    a_signed_in_desktop_profile(dir.path());
+    let desktop = homes(dir.path(), "desktop");
+    let project = dir.path().join("refused-again");
+    let refuse = || {
+        ready_on(desktop.config_root(), &project, "again", "work", &|_| {
+            Ok(Some(Standing::SignedOut))
+        })
+        .unwrap_err();
+    };
+    refuse();
+    let since = waiting_on_pools(&project)[0].since;
+    let last_seen = std::time::Instant::now();
+
+    refuse();
+    let_go_older(&project, "again", "work", last_seen);
+
+    let waits = waiting_on_pools(&project);
+    assert_eq!(waits.len(), 1);
+    assert_eq!(waits[0].since, since);
+    let_go(None, "again", "work");
+}
+
 /// **Leaving a sign-in on a pool lets go only waits older than the moment the shell was last
 /// seen open, and only in its project** (#4203).
 #[test]

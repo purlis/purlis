@@ -861,7 +861,7 @@ pub struct PoolWait {
     pub harness: String,
     /// When the first start was refused, in seconds since 1970.
     pub since: u64,
-    /// That moment, to the instant: what a watcher compares (#4203).
+    /// When a start was last refused, to the instant: what a watcher compares (#4203).
     pub raised: std::time::Instant,
 }
 
@@ -871,10 +871,11 @@ static POOL_WAITS: Mutex<Vec<PoolWait>> = Mutex::new(Vec::new());
 /// not signed in there.
 fn waits_on_pool(root: &Path, pool: &str, record: &MachineProfile) {
     let mut all = POOL_WAITS.lock().unwrap_or_else(PoisonError::into_inner);
-    if all
-        .iter()
-        .any(|w| w.root == root && w.pool == pool && w.profile == record.name)
+    if let Some(wait) = all
+        .iter_mut()
+        .find(|w| w.root == root && w.pool == pool && w.profile == record.name)
     {
+        wait.raised = std::time::Instant::now();
         return;
     }
     all.push(PoolWait {

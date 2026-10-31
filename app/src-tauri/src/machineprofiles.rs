@@ -385,7 +385,7 @@ fn watched_project(
 
 /// Tells the windows of the open projects at `roots` that their Asks changed (#4205). A project
 /// going away is passed over: its teller would say its old list of the project reopened.
-fn tell_asks_at(app: &tauri::AppHandle, roots: &[std::path::PathBuf]) {
+pub(crate) fn tell_asks_at(app: &tauri::AppHandle, roots: &[std::path::PathBuf]) {
     let Some(planes) = tauri::Manager::try_state::<Planes>(app) else {
         return;
     };
@@ -399,12 +399,17 @@ fn tell_asks_at(app: &tauri::AppHandle, roots: &[std::path::PathBuf]) {
 /// What a watcher asks and lets go for `profile` on this machine.
 fn signing_in_here(profile: purlis_core::profiles::Profile) -> crate::signinwatch::SignIn {
     let asked = profile.clone();
+    let named = profile.name.clone();
     crate::signinwatch::SignIn {
         pool: None,
         name: profile.name.clone(),
-        signed_in: Box::new(move || {
-            sign_in::look_again(&asked, &sign_in::ThisMachine) == sign_in::Standing::SignedIn
+        there: Box::new(move || {
+            // Unread is not gone: the watch goes on, as a shell left open does.
+            store()
+                .and_then(|store| profilestore::list(store.config_root()))
+                .map_or(true, |records| records.iter().any(|p| p.name == named))
         }),
+        signed_in: Box::new(move || sign_in::signed_in_now(&asked, &sign_in::ThisMachine)),
         let_go: Box::new(move |whose| match whose {
             crate::signinwatch::Whose::Everywhere => sign_in::let_go_everywhere(&profile),
             crate::signinwatch::Whose::InTheProject(root, seen) => {

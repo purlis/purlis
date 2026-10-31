@@ -1317,18 +1317,27 @@ pub async fn pool_sign_in_start(
 /// After its last step, the sign-in is let go; signed in, its waits on the pool are too.
 #[tauri::command]
 #[specta::specta]
-pub async fn pool_sign_in_next(flow: u32) -> Result<Option<PoolSignInStep>, String> {
+pub async fn pool_sign_in_next(
+    app: tauri::AppHandle,
+    flow: u32,
+) -> Result<Option<PoolSignInStep>, String> {
     let driving = driving(flow)?;
     let event = tauri::async_runtime::spawn_blocking(move || driving.next(STEP_WITHIN))
         .await
         .map_err(|why| format!("the sign-in did not answer: {why}"))?;
     if let Some(event) = event.as_ref().filter(|event| event.is_last()) {
-        let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(at) = held.iter().position(|one| one.flow == flow) {
-            let over = held.remove(at);
-            if *event == driven::Event::SignedIn {
-                onrunner::let_go(None, &over.pool, &over.name);
-            }
+        let over = {
+            let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
+            held.iter()
+                .position(|one| one.flow == flow)
+                .map(|at| held.remove(at))
+        };
+        if let Some(over) = over
+            && *event == driven::Event::SignedIn
+        {
+            // Told with no lock held; every project whose wait went has an Ask to stop drawing.
+            let went = onrunner::let_go(None, &over.pool, &over.name);
+            crate::machineprofiles::tell_asks_at(&app, &went);
         }
     }
     Ok(event.map(PoolSignInStep::from))
@@ -1535,10 +1544,28 @@ fn record_named(config: &Path, name: &str) -> Result<profilestore::MachineProfil
         })
 }
 
+/// Whether a runner's answer says the profile is signed in: what a watcher asks. A runner that
+/// cannot tell, or is still fetching the harness, says nothing of a sign-in the person may still
+/// be finishing (#4009).
+fn says_signed_in(said: &Result<Option<Standing>, String>) -> bool {
+    matches!(said, Ok(Some(Standing::SignedIn)))
+}
+
+/// Whether a watched profile is still there to sign in on a pool: this machine has it, and the
+/// pool names it, or names none and so keeps every profile. What cannot be read is not gone.
+fn still_on_the_pool<E, F>(
+    records: Result<Vec<profilestore::MachineProfile>, E>,
+    named: Result<Option<Vec<String>>, F>,
+    name: &str,
+) -> bool {
+    records.map_or(true, |records| records.iter().any(|p| p.name == name))
+        && named.map_or(true, |named| {
+            named.is_none_or(|named| named.iter().any(|one| one == name))
+        })
+}
+
 /// **What a watcher asks and lets go for `name` on pool `pool`** ([`crate::signinwatch`]), or
-/// `None` where this machine no longer has the profile, or it cannot go on a runner. A runner
-/// that cannot tell, or is still fetching the harness, says nothing of a sign-in the person may
-/// still be finishing, so only signed in counts (#4009).
+/// `None` where this machine no longer has the profile, or it cannot go on a runner.
 pub fn watched_sign_in(pool: String, name: String) -> Option<crate::signinwatch::SignIn> {
     let config = config_root().ok()?;
     let kept = profilestore::list(&config)
@@ -1546,15 +1573,18 @@ pub fn watched_sign_in(pool: String, name: String) -> Option<crate::signinwatch:
         .and_then(|records| records.into_iter().find(|p| p.name == name))
         .and_then(|record| onrunner::Kept::of(&record).ok())?;
     let asked = pool.clone();
+    let (config_there, pool_there, name_there) = (config.clone(), pool.clone(), name.clone());
     Some(crate::signinwatch::SignIn {
         pool: Some(pool.clone()),
         name: name.clone(),
-        signed_in: Box::new(move || {
-            matches!(
-                keep_on(&config, &asked, &kept),
-                Ok(Some(Standing::SignedIn))
+        there: Box::new(move || {
+            still_on_the_pool(
+                profilestore::list(&config_there),
+                purlis_core::runners::profiles_of(&config_there, &pool_there),
+                &name_there,
             )
         }),
+        signed_in: Box::new(move || says_signed_in(&keep_on(&config, &asked, &kept))),
         let_go: Box::new(move |whose| match whose {
             crate::signinwatch::Whose::Everywhere => onrunner::let_go(None, &pool, &name),
             crate::signinwatch::Whose::InTheProject(root, seen) => {

@@ -182,3 +182,13 @@ fn every_project_whose_wait_went_is_told() {
     );
     assert!(to_tell(Vec::new(), &root("/one"), false).is_empty());
 }
+
+/// **A profile taken away closes every shell, for the watch**, so it ends and no look asks after
+/// it again. A shell that is gone is closed either way.
+#[test]
+fn a_profile_taken_away_closes_every_shell_for_the_watch() {
+    let open = |tab: u32| tab != 2;
+
+    assert_eq!(closed_of(vec![1, 2, 3], true, open), [2]);
+    assert_eq!(closed_of(vec![1, 2, 3], false, open), [1, 2, 3]);
+}

@@ -550,6 +550,43 @@ fn leaving_a_sign_in_keeps_a_wait_raised_after_the_shell_was_last_seen() {
     dismiss(root, "work");
 }
 
+/// **A second refusal counts as raised then** (#4203): the usual case, a project whose Ask is why
+/// Sign in was pressed. How long it has waited, as the Inbox says, does not change.
+#[test]
+fn a_start_refused_again_after_the_shell_was_last_seen_keeps_the_wait() {
+    let root = Path::new("/projects/refused-again");
+    let profile = profile_in("codex", "refused-again");
+    waits_on(root, &profile);
+    let since = waiting(root)[0].since;
+    let last_seen = Instant::now();
+
+    waits_on(root, &profile);
+    let_go_older(root, "work", last_seen);
+
+    let waits = waiting(root);
+    assert_eq!(waits.len(), 1);
+    assert_eq!(waits[0].since, since);
+    dismiss(root, "work");
+}
+
+/// **Only a harness that says signed in counts**, for a watcher (#4223).
+#[test]
+fn only_signed_in_counts_as_signed_in_now() {
+    let profile = profile_in("codex", "signed-in-now");
+    for (status, signed_in) in [
+        (Some(0), true),
+        (Some(1), false),
+        (Some(7), false),
+        (None, false),
+    ] {
+        assert_eq!(
+            signed_in_now(&profile, &Recorded::answering(status)),
+            signed_in,
+            "{status:?}"
+        );
+    }
+}
+
 #[test]
 fn a_dismissed_wait_is_gone() {
     let root = Path::new("/projects/dismissed");
