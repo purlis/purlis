@@ -555,17 +555,16 @@ fn in_the_journey(
         crate::runnerlinks::chats_on(&ToARunner::of_kept(machine, kept).expect("a link to it"))
             .expect("it lists its chats")
     };
-    assert_eq!(
-        chats_there(&on_the_new),
-        1,
-        "the new chat runs on the pool's runner"
-    );
     let draining = purlis_core::runners::draining(&machine.config).expect("read");
-    assert_eq!(draining.len(), 1);
+    let (there_new, there_old) = (chats_there(&on_the_new), chats_there(&draining[0]));
     assert_eq!(
-        chats_there(&draining[0]),
-        1,
-        "the draining runner keeps its one chat"
+        (there_new, there_old),
+        (1, 1),
+        "the new chat runs on the pool's runner, and the draining one keeps its one chat.\n\
+         on the new, processes: {}\non the old, processes: {}\nits pane: {:?}",
+        followed.prints("ps -eo pid,etime,args | grep -v ' ps ' | tail -n 30"),
+        runner.prints("ps -eo pid,etime,args | grep -v ' ps ' | tail -n 30"),
+        during_pane.seen.lock().expect("the pane").sent,
     );
     assert_eq!(
         conversations_on_the_old(),
