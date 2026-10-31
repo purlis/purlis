@@ -74,7 +74,7 @@ pub const PURLIS: &str = "/usr/local/bin/purlis";
 /// profile named in the colon-separated list after the two folders is not carried at all (#4145).
 pub const COPY_PROFILES: &str = r#"set -u
 umask 077
-[ -z "${PURLIS_DATA_HOME:-}${CHARTER_DATA_HOME:-}${XDG_DATA_HOME:-}" ] || exit 1
+[ -z "${PURLIS_DATA_HOME:-}${XDG_DATA_HOME:-}" ] || exit 1
 from=$1 to=$2 stage=$3 old_stage=$4 skip=$5
 shift 5
 from=$(cd -P "$from" && pwd -P) || exit 1

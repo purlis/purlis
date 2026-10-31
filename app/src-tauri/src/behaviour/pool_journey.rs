@@ -489,11 +489,12 @@ fn in_the_journey(
         ready_to_start(machine, &target.root, pool).expect_err("nothing starts on it now");
     assert!(refused.contains("removed outside purlis"), "{refused}");
 
+    let marked = purlis_core::runnertaint::pool_ran_unsandboxed(&machine.config, pool);
     let again = crate::dockerpools::make_again_on(machine, pool)
         .unwrap_or_else(|why| panic!("the runner is made again: {why}"));
     assert!(
         again.sign_ins_kept,
-        "its home was there, so its sign-ins came"
+        "its home was there, so its sign-ins came (marked before the make: {marked})"
     );
     assert!(
         crate::dockerpools::removed_on(machine)

@@ -2848,7 +2848,7 @@ fn carried_under(
     env: &[(&str, &str)],
 ) -> std::process::Output {
     let mut command = std::process::Command::new("/bin/sh");
-    for name in ["PURLIS_DATA_HOME", "CHARTER_DATA_HOME", "XDG_DATA_HOME"] {
+    for name in ["PURLIS_DATA_HOME", "XDG_DATA_HOME"] {
         command.env_remove(name);
     }
     command
@@ -2936,7 +2936,7 @@ fn a_carry_goes_under_the_data_home_the_runner_has() {
 #[cfg(unix)]
 #[test]
 fn an_image_naming_its_data_home_carries_nothing() {
-    for name in ["PURLIS_DATA_HOME", "CHARTER_DATA_HOME", "XDG_DATA_HOME"] {
+    for name in ["PURLIS_DATA_HOME", "XDG_DATA_HOME"] {
         let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         let signed_in = from.path().join(".claude/.credentials.json");
         std::fs::create_dir_all(signed_in.parent().unwrap()).unwrap();
