@@ -393,8 +393,8 @@ export const ChoicesBesideASmallButton: Story = {
 /**
  * **A choice with no words is a 24px target across too** (#4197, WCAG 2.5.8): a row's selection
  * box, a radio or a switch named by `aria-label` is drawn its mark's size (a 14px box), and its
- * press reaches a 24 by 24 square around it, which changes nothing it draws. Each is hit-tested
- * at that square's corners.
+ * press reaches a 24 by 24 square centred on the mark (#4303), which changes nothing it draws.
+ * Each is hit-tested at that square's corners, measured from the mark.
  */
 function Unlabelled() {
   // Far enough apart that one's square is not another's, and in from the page's edge, so each
@@ -420,15 +420,19 @@ function Unlabelled() {
 export const ChoicesWithNoWords: Story = {
   render: () => <Unlabelled />,
   play: async ({ canvas }) => {
-    const roots = [
+    for (const control of [
       canvas.getByRole("checkbox", { name: "Choose the row" }),
       canvas.getByRole("radio", { name: "Compact" }),
       canvas.getByRole("switch", { name: "Auto-save" }),
-    ].map((control) => control.closest('[data-part="root"]') as HTMLElement);
-    for (const root of roots) {
-      const box = root.getBoundingClientRect();
-      const [x, y] = [box.left + box.width / 2, box.top + box.height / 2];
-      // The corners of the 24 by 24 square around its centre, half a px in.
+    ]) {
+      const root = control.closest('[data-part="root"]') as HTMLElement;
+      const mark = root.querySelector(
+        '[data-part="box"], [data-part="mark"], [data-part="track"]',
+      ) as HTMLElement;
+      // Measured from the mark, not its root, which may keep room for words it has none of (#4303).
+      const drawn = mark.getBoundingClientRect();
+      const [x, y] = [drawn.left + drawn.width / 2, drawn.top + drawn.height / 2];
+      // The corners of the 24 by 24 square around the mark's centre, half a px in.
       for (const [dx, dy] of [
         [-11.5, -11.5],
         [11.5, -11.5],

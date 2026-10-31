@@ -487,6 +487,36 @@ pub fn type_profile_sign_in(
     Ok(())
 }
 
+/// **Types the sign-out of `name` on pool `pool`'s runner into shell tab `session`** (#4124), for
+/// a harness whose sign-out asks which sign-in goes: the person answers there. Only into a shell
+/// at the project root, as a sign-in is.
+#[tauri::command]
+#[specta::specta]
+pub async fn type_profile_sign_out(
+    app: tauri::AppHandle,
+    plane: PlaneId,
+    session: u32,
+    name: String,
+    pool: String,
+) -> Result<(), String> {
+    let held = tauri::Manager::state::<Planes>(&app).held(&plane)?;
+    if !held.chats().is_shell_at(session, held.root()) {
+        return Err(
+            "that tab is not a shell at the project root, so no sign-out was typed.".to_owned(),
+        );
+    }
+    // Off the window's thread: it waits on the runners' lock, which a carry holds for minutes.
+    let line = blocking(move || crate::poolprofiles::sign_out_line(&pool, &name)).await?;
+    // It may have waited minutes: the line runs as it is typed, so only into a shell still.
+    if !held.chats().is_shell_at(session, held.root()) {
+        return Err(
+            "that tab is not a shell at the project root, so no sign-out was typed.".to_owned(),
+        );
+    }
+    held.operator_input(session, line.as_bytes())?;
+    Ok(())
+}
+
 /// Puts away project `plane`'s Ask to sign the profile `profile` in (#2035): Dismiss. A chat's
 /// next start on it asks again while its harness says it is signed out.
 #[tauri::command]

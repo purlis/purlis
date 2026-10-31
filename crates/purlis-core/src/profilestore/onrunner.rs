@@ -815,6 +815,7 @@ pub fn forget(homes: &Homes, home: &Path, name: &str, desktop: &str) -> Result<(
         .into_iter()
         .find(|p| p.name == name)
     else {
+        super::forget_carried(homes, name);
         return Ok(());
     };
     let shown = crate::shown::short(name);
@@ -853,6 +854,7 @@ pub fn forget(homes: &Homes, home: &Path, name: &str, desktop: &str) -> Result<(
         }
     };
     sign_in::forget_of(&record);
+    super::forget_carried(homes, name);
     // Its folders go before its record, so one that could not be deleted leaves the record to
     // ask the removal again by.
     for folder in own_folders {

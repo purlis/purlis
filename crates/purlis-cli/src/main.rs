@@ -4590,14 +4590,23 @@ fn profile_sign_out(store: &purlis_core::profilestore::Homes, name: &str) -> Exi
         Ok(pinned) => pinned,
         Err(why) => return refused(&format!("{why}. Nothing was signed out.")),
     };
-    let logout = match sign_in::logout_of(&record, pinned.as_deref()) {
+    // One that asks which sign-in goes runs only where the person can answer (#4124).
+    let in_a_terminal =
+        std::io::IsTerminal::is_terminal(&std::io::stdin()) && !crate::memory::in_a_chat();
+    // What a drain carried for it would sign it in again at its next keep (#4145).
+    profilestore::forget_carried(store, name);
+    let logout = match sign_in::logout_of(&record, pinned.as_deref(), in_a_terminal) {
         Ok(logout) => logout,
         Err(why) => return refused(&why),
     };
     let ran = std::process::Command::new(&logout.program)
         .args(&logout.args)
         .envs(logout.env.iter().map(|(n, v)| (n, v)))
-        .stdin(std::process::Stdio::null())
+        .stdin(if in_a_terminal {
+            std::process::Stdio::inherit()
+        } else {
+            std::process::Stdio::null()
+        })
         .status();
     match ran {
         Ok(status) if status.success() => ExitCode::SUCCESS,

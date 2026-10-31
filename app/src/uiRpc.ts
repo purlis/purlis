@@ -737,6 +737,7 @@ export const commands = {
 	machineProfileRemoval: __WINDOW_ONLY_RESULT,
 	machineProfileRemove: __WINDOW_ONLY_RESULT,
 	typeProfileSignIn: __WINDOW_ONLY_RESULT,
+	typeProfileSignOut: __WINDOW_ONLY_RESULT,
 	dismissSignIn: __WINDOW_ONLY_RESULT,
 	machineProfilePin: __WINDOW_ONLY_RESULT,
 	makeSandboxOnlyProfile: __WINDOW_ONLY_RESULT,

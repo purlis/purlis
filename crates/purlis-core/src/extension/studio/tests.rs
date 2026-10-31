@@ -13,7 +13,7 @@ fn manifest(
     contributes: serde_json::Value,
 ) -> String {
     let mut doc = serde_json::json!({
-        "version": 3,
+        "version": 4,
         "id": "studio-x",
         "name": "Studio X",
         "capabilities": capabilities,
@@ -39,6 +39,27 @@ fn host(name: &str) -> Host {
 
 fn lint_only() -> serde_json::Value {
     serde_json::json!({ "skill-lint": { "title": "House style" } })
+}
+
+#[test]
+fn a_grader_is_asked_in_protocol_four_and_refused_at_three() {
+    let text = manifest(
+        &["grader"],
+        serde_json::json!({ "version": 3 }),
+        serde_json::json!({ "grader": { "title": "House grader" } }),
+    );
+    let refused = read(&text, true).expect_err("a Grader at version 3");
+    assert!(refused.contains("needs protocol 4"), "{refused}");
+    let text = manifest(
+        &["grader"],
+        serde_json::json!({}),
+        serde_json::json!({ "grader": { "title": "House grader" } }),
+    );
+    let read = read(&text, true).expect("a Grader at version 4");
+    assert_eq!(
+        read.studio.and_then(|studio| studio.grader).as_deref(),
+        Some("House grader")
+    );
 }
 
 #[test]

@@ -28,10 +28,13 @@
  * - **A row a screen reader (or `element.click()`) presses takes the keyboard** (#3074), in a
  *   menu that takes the keyboard, so a submenu its row opened stays open when its menu's own
  *   hand-on of the keyboard comes after the press.
+ * - **A menu a screen reader opened lands on its first row** (#3105), a submenu too, as the APG
+ *   menu pattern asks: see {@link onToItsRow}.
  */
 import {
   createContext,
   useContext,
+  useMemo,
   useState,
   type ComponentPropsWithRef,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -62,6 +65,7 @@ import {
   type Selection,
   useSlottedContext,
 } from "react-aria-components";
+import { mergeRefs } from "react-aria";
 import { useMenuTriggerState } from "react-stately/useMenuTriggerState";
 import { Check, ChevronRight } from "lucide-react";
 import {
@@ -247,6 +251,27 @@ export function OpenMenu({
  */
 const STOPS_AT_THE_ENDS: object = { shouldFocusWrap: false };
 
+/**
+ * **The list handing the keyboard on to the row React Aria chose** (#3105). React Aria hands a
+ * menu a screen reader opened to its first row, and two calls race for it, each waiting for the
+ * page's transitions (`focusSafely`). The rows are built after the first render, so the list is
+ * asked for first, for want of a row; it takes the keyboard, and the row's own call then finds
+ * the keyboard has moved and leaves it. React Aria has no option for this. The row it chose is
+ * marked by then. A pointer's open chooses no row, so it stays on the list; and a press on the
+ * list's own padding, with a row chosen, leaves the keyboard on that row.
+ */
+function onToItsRow(event: FocusEvent) {
+  const list = event.currentTarget;
+  if (event.target !== list || !(list instanceof HTMLElement)) return;
+  list
+    .querySelector<HTMLElement>('[data-scope="menu"][data-part="root"][data-focused]')
+    ?.focus({ preventScroll: true });
+}
+
+/** One listener however often the list's ref runs, and it goes with the list. */
+const handsOnToItsRow = (list: HTMLDivElement | null) =>
+  list?.addEventListener("focusin", onToItsRow);
+
 /** Whether the menu being drawn is placed by what opened it: a submenu, beside its row, or a
  *  context menu, at the pointer. */
 const PlacedByItsOpener = createContext(false);
@@ -304,6 +329,7 @@ export function Menu<T extends object = object>({
     rest["aria-labelledby"] ?? (rest["aria-label"] === undefined ? undefined : null);
   const opener = (useSlottedContext(PopoverContext) as { triggerRef?: RefObject<Element | null> })
     ?.triggerRef;
+  const theList = useMemo(() => mergeRefs(handsOnToItsRow, listRef ?? null), [listRef]);
   const data: Record<string, unknown> = {};
   const menu: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(rest))
@@ -346,7 +372,7 @@ export function Menu<T extends object = object>({
                 {...(menu as AriaMenuProps<T>)}
                 {...(takesNoKeyboard ? { autoFocus: false } : {})}
                 {...(labelledBy === null ? (NOT_BY_ITS_TRIGGER as object) : {})}
-                ref={listRef}
+                ref={theList}
                 data-scope="popover"
                 data-part="list"
               >

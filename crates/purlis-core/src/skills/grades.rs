@@ -326,7 +326,7 @@ fn share(value: f64) -> bool {
 }
 
 /// The longest reason a report gives why its chats stopped starting, as read back.
-const MOST_REASON_BYTES: usize = 2 * 1024;
+pub(crate) const MOST_REASON_BYTES: usize = 2 * 1024;
 
 /// **Whether the report `report` of a grade of `runs` runs holds together** (#3353): what the
 /// built-in runner could have written. Its grader is a plain name; each trigger test's query is
@@ -335,7 +335,7 @@ const MOST_REASON_BYTES: usize = 2 * 1024;
 /// a plain id; each arm once, its pass rate a share and its other figures amounts, every spread
 /// in order; the difference between two shares; and every cost an amount. Its reason is one
 /// line a reader sees whole.
-fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
+pub(crate) fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
     let stat = |stat: &grade::Stat, fits: fn(f64) -> bool| {
         [stat.mean, stat.min, stat.max].into_iter().all(fits)
             && amount(stat.stddev)
@@ -404,10 +404,12 @@ fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
                 && priced.model.as_deref().is_none_or(price::model_id)
         })
         && (report.ended != grade::GradeEnd::OverLimit || report.cost_cap_usd.is_some())
-        && report
-            .not_started
-            .as_deref()
-            .is_none_or(|why| why.len() <= MOST_REASON_BYTES && !why.chars().any(char::is_control))
+        && [report.not_started.as_deref(), report.failed.as_deref()]
+            .into_iter()
+            .flatten()
+            .all(|why| why.len() <= MOST_REASON_BYTES && !why.chars().any(char::is_control))
+        // A Grader's failure says why, and only a Grader's failure does (#3236).
+        && report.failed.is_some() == (report.ended == grade::GradeEnd::GraderFailed)
 }
 
 /// Every arm a grade can compare: the skill, no skill and its previous version.
@@ -788,6 +790,7 @@ pub fn ended_said(end: grade::GradeEnd) -> &'static str {
         GradeEnd::OverLimit => "Stopped at its dollar limit",
         GradeEnd::SpendNotReported => "Stopped: spend not reported",
         GradeEnd::Interrupted => "Interrupted: not scored",
+        GradeEnd::GraderFailed => "Stopped: its Grader failed",
     }
 }
 

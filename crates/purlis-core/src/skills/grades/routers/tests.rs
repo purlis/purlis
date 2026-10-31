@@ -151,6 +151,7 @@ fn part(skill: &str, router_passes: bool) -> SkillPart {
             spent_usd: None,
             counted_usd: None,
             priced: None,
+            failed: None,
         },
     }
 }

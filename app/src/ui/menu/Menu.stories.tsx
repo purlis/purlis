@@ -355,6 +355,31 @@ export const ASubmenuPressedAtOnce: Story = {
   parameters: { screenshot: false },
 };
 
+/**
+ * **A menu a screen reader opened lands on its first row** (#3105): a press that is not the
+ * pointer's opens the menu, and then its submenu, and the keyboard is on the first row of each
+ * and never left on the list. Read in the real engines, whose frames and transitions the race
+ * runs on; the regression guard is `Menu.test.tsx`'s. The picture is `ASubmenu`'s.
+ */
+export const OpenedByAScreenReader: Story = {
+  render: () => <WithASubmenu />,
+  play: async ({ canvas }) => {
+    canvas.getByRole("button", { name: "Chat steward 4" }).click();
+    const menu = await waitFor(() => screen.getByRole("menu", { name: "Chat steward 4" }));
+    await untilFocused(
+      () => within(menu).getAllByRole("menuitem")[0],
+      "Menu: the first row of a menu a screen reader opened",
+    );
+    within(menu).getByRole("menuitem", { name: /Ask/ }).click();
+    const sub = await waitFor(() => screen.getByRole("menu", { name: "Ask" }));
+    await untilFocused(
+      () => within(sub).getAllByRole("menuitem")[0],
+      "Menu: the first row of a submenu a screen reader opened",
+    );
+  },
+  parameters: { screenshot: false },
+};
+
 /** **A context menu on a row**: Shift+F10 opens it on its first row, Escape closes it. */
 function OnARow() {
   const [said, setSaid] = useState("Nothing chosen");

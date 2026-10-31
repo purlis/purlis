@@ -29,6 +29,7 @@ use crate::vouch::{self, MountedKeys, Vouching};
 use futures::StreamExt;
 use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
 use k8s_openapi::api::core::v1::{Namespace, Pod, ResourceQuota};
+use k8s_openapi::api::networking::v1::NetworkPolicy;
 use k8s_openapi::api::rbac::v1::RoleBinding;
 use kube::api::{
     Api, DeleteParams, ObjectMeta, PartialObjectMeta, Patch, PatchParams, PostParams, Preconditions,
@@ -507,7 +508,22 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
         return Ok(Action::await_change());
     };
     let (runner, quota) = match runner_namespace_ready(client, requester, &context.quota).await? {
-        Ok(ready) => ready,
+        Ok(ready) => {
+            // A person's namespace with a Claim on an opted-in Pool gets a way to the mint port
+            // (#4206), for all their runners there and until the namespace goes: reaching the
+            // port gets nothing without a proof and an opted-in Pool.
+            if crate::forge::key_to_read(&pool.spec).is_some() {
+                let wanted =
+                    crate::mint::egress_policy(&ready.0.name_any(), client.default_namespace());
+                made_or_applied(
+                    &Api::<NetworkPolicy>::namespaced(client.clone(), &ready.0.name_any()),
+                    wanted.clone(),
+                    |held| held.spec == wanted.spec,
+                )
+                .await?;
+            }
+            ready
+        }
         // The policy's binding is settling: nothing is made, and the claim is looked at again
         // once it is in force.
         Err(RunnerNamespace::Settling { until }) => {
@@ -1165,11 +1181,13 @@ pub async fn cluster_of(client: &Client) -> Result<String, String> {
 /// Run the operator until the process is asked to stop (SIGTERM or Ctrl-C).
 pub async fn run(client: Client, keys: MountedKeys, cluster: String, quota: Quota) {
     let keys = Arc::new(keys);
+    let mint_keys = keys.clone();
     let metrics = Arc::new(Metrics::default());
     tokio::select! {
         () = run_claims(client.clone(), keys.clone(), cluster.clone(), quota, metrics) => {}
         () = publish_pool_status(client.clone(), keys, cluster) => {}
-        () = crate::forge::check_keys(client, vouch::RECHECK) => {}
+        () = crate::forge::check_keys(client.clone(), vouch::RECHECK) => {}
+        () = crate::mint::serve(client, mint_keys) => {}
     }
     tracing::info!("stopped; upstream {} is pinned", upstream::VERSION);
 }

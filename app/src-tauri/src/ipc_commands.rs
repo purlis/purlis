@@ -271,6 +271,7 @@ macro_rules! app_commands {
                 machineprofiles::machine_profile_removal,
                 machineprofiles::machine_profile_remove,
                 machineprofiles::type_profile_sign_in,
+                machineprofiles::type_profile_sign_out,
                 machineprofiles::dismiss_sign_in,
                 machineprofiles::machine_profile_pin,
                 machineprofiles::make_sandbox_only_profile,

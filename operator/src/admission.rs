@@ -10,7 +10,9 @@
 //! good. With no binding in force, no Claim is acted on until there is one.
 
 use crate::resources::{Claim, ClaimStatus, condition};
-use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
+use k8s_openapi::api::admissionregistration::v1::{
+    ValidatingAdmissionPolicy, ValidatingAdmissionPolicyBinding,
+};
 use k8s_openapi::jiff::SignedDuration;
 
 /// The name of purlis's policy on Claims, and of its binding.
@@ -38,6 +40,11 @@ pub enum Admission {
 /// only there.
 pub const RUNNER_NAMESPACES_POLICY: &str = "purlis-runner-namespaces";
 
+/// The name of purlis's policy on who may spend an App key and name a Claim's repos, and of its
+/// binding (#4206): a policy of its own, so its binding's time says when these rules came into
+/// force, whatever an earlier binding said ([`in_force_since`]).
+pub const FORGE_POLICY: &str = "purlis-forge";
+
 /// Whether `binding` puts the policy `policy` in force: it binds that policy, and denies.
 fn in_force(binding: &ValidatingAdmissionPolicyBinding, policy: &str) -> bool {
     let spec = &binding.spec;
@@ -60,6 +67,22 @@ pub fn in_force_since(
             .checked_add(SETTLE)
             .unwrap_or(k8s_openapi::jiff::Timestamp::MAX),
     )
+}
+
+/// **When the policy on App keys is in force from**: [`SETTLE`] after both it and its binding were
+/// stored, since a binding with no policy enforces nothing. `None` while either is missing or the
+/// binding does not deny. Whatever was written no later than this was not admitted under it.
+pub fn forge_in_force_since(
+    policy: Option<&ValidatingAdmissionPolicy>,
+    binding: Option<&ValidatingAdmissionPolicyBinding>,
+) -> Option<k8s_openapi::jiff::Timestamp> {
+    let bound = in_force_since(binding, FORGE_POLICY)?;
+    let stored = policy?.metadata.creation_timestamp.as_ref()?;
+    let held = stored
+        .0
+        .checked_add(SETTLE)
+        .unwrap_or(k8s_openapi::jiff::Timestamp::MAX);
+    Some(bound.max(held))
 }
 
 /// Whether `claim` was admitted under the policy, given its binding as the cluster holds it.

@@ -524,11 +524,13 @@ import {
   landing,
   linkToGroup,
   PROFILE_SIGN_IN,
+  PROFILE_SIGN_OUT,
   SETTINGS_ACTION,
   SETTINGS_LINK,
   THEME_CHAT,
   askThemeChat,
   type ProfileSignInAsk,
+  type ProfileSignOutAsk,
   type SettingsActionAsk,
   type SettingsLink,
   type SettingsLinkAsk,
@@ -595,9 +597,31 @@ type Typed =
       installer?: undefined;
       sandboxInstall?: undefined;
       signIn?: undefined;
+      signOut?: undefined;
     }
-  | { installer: string; line?: undefined; sandboxInstall?: undefined; signIn?: undefined }
-  | { sandboxInstall: true; line?: undefined; installer?: undefined; signIn?: undefined }
+  | {
+      installer: string;
+      line?: undefined;
+      sandboxInstall?: undefined;
+      signIn?: undefined;
+      signOut?: undefined;
+    }
+  | {
+      sandboxInstall: true;
+      line?: undefined;
+      installer?: undefined;
+      signIn?: undefined;
+      signOut?: undefined;
+    }
+  | {
+      /** A sign-out that asks in its terminal, on this pool's runner (#4124). */
+      signOut: string;
+      pool: string;
+      signIn?: undefined;
+      line?: undefined;
+      installer?: undefined;
+      sandboxInstall?: undefined;
+    }
   | {
       signIn: string;
       provider?: string;
@@ -605,6 +629,7 @@ type Typed =
       pool?: string;
       /** By the harness's device-code flow (#4044). */
       device?: boolean;
+      signOut?: undefined;
       line?: undefined;
       installer?: undefined;
       sandboxInstall?: undefined;
@@ -3107,6 +3132,14 @@ export const PlaneView = memo(function PlaneView({
                 if (said.status === "error") refusedBy("shell", said.error);
               })
               .catch((err: unknown) => refusedBy("shell", String(err)));
+          // A sign-out that asks in its terminal (#4124): named, never spelled, as a sign-in.
+          else if (typed?.signOut !== undefined)
+            void commands
+              .typeProfileSignOut(plane, session, typed.signOut, typed.pool)
+              .then((said) => {
+                if (said.status === "error") refusedBy("shell", said.error);
+              })
+              .catch((err: unknown) => refusedBy("shell", String(err)));
           // Typed and not run: installing needs sudo, so the person presses Return (V78 c).
           else if (typed?.sandboxInstall)
             void commands
@@ -3333,6 +3366,15 @@ export const PlaneView = memo(function PlaneView({
     window.addEventListener(PROFILE_SIGN_IN, asked);
     return () => window.removeEventListener(PROFILE_SIGN_IN, asked);
   }, [plane, signIn]);
+  useEffect(() => {
+    const asked = (event: Event) => {
+      const wanted = (event as CustomEvent<ProfileSignOutAsk>).detail;
+      if (wanted.plane === plane && root !== undefined)
+        openShell(root, OUTSIDE, { signOut: wanted.profile, pool: wanted.pool });
+    };
+    window.addEventListener(PROFILE_SIGN_OUT, asked);
+    return () => window.removeEventListener(PROFILE_SIGN_OUT, asked);
+  }, [plane, root, openShell]);
 
   /**
    * A harness started by hand in one of this project's shell tabs (ADR 0062): the core says so,

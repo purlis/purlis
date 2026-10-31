@@ -583,3 +583,292 @@ fn a_stopped_chats_spend_is_counted_though_it_is_no_run() {
     let runs: u32 = report.arms.iter().map(|arm| arm.chats).sum();
     assert_eq!(runs, 1, "the stopped chat is no run");
 }
+
+// ---------------------------------------------------------------------------------------
+// A grade held to its plan and limits, as a Grader's chats are (#3236)
+// ---------------------------------------------------------------------------------------
+
+fn chat(arm: Arm, prompt: &str) -> RunChat {
+    RunChat {
+        arm,
+        prompt: prompt.into(),
+    }
+}
+
+#[test]
+fn a_chat_past_the_plan_is_refused_and_never_run() {
+    let request = request();
+    let mut host = Scripted::of(a_good_skill);
+    let mut held = Held::new(&request, &mut host, None);
+    let arm = held
+        .ask(&chat(Arm::Previous, "make me a pdf"))
+        .expect_err("an arm the grade does not compare");
+    assert!(arm.contains("arm this grade does not compare"), "{arm}");
+    let prompt = held
+        .ask(&chat(Arm::With, "write me a poem"))
+        .expect_err("a prompt no test has");
+    assert!(
+        prompt.contains("none of this grade's trigger tests"),
+        "{prompt}"
+    );
+    for _ in 0..RUNS {
+        assert!(matches!(
+            held.ask(&chat(Arm::With, "make me a pdf")),
+            Ok(Asked::Ran(_))
+        ));
+    }
+    let more = held
+        .ask(&chat(Arm::With, "make me a pdf"))
+        .expect_err("a fourth run of a test in one arm");
+    assert!(more.contains("more runs"), "{more}");
+    // The other arm still has its runs.
+    assert!(matches!(
+        held.ask(&chat(Arm::Without, "make me a pdf")),
+        Ok(Asked::Ran(_))
+    ));
+    drop(held);
+    assert_eq!(
+        host.asked.len(),
+        usize::from(RUNS) + 1,
+        "only chats in the plan ran"
+    );
+}
+
+#[test]
+fn a_test_written_twice_runs_its_runs_once_for_each() {
+    let mut request = request();
+    request.triggers.push(request.triggers[0].clone());
+    let mut host = Scripted::of(a_good_skill);
+    let mut held = Held::new(&request, &mut host, None);
+    for _ in 0..2 * RUNS {
+        assert!(matches!(
+            held.ask(&chat(Arm::With, "make me a pdf")),
+            Ok(Asked::Ran(_))
+        ));
+    }
+    assert!(held.ask(&chat(Arm::With, "make me a pdf")).is_err());
+}
+
+#[test]
+fn once_the_cap_is_reached_no_chat_runs_and_the_end_is_said() {
+    let request = request();
+    let mut host = Scripted::of(a_good_skill);
+    let mut held = Held::new(&request, &mut host, Some(tokens(1500)));
+    assert!(matches!(
+        held.ask(&chat(Arm::With, "make me a pdf")),
+        Ok(Asked::Ran(_))
+    ));
+    assert_eq!(held.ended(), None);
+    // The second takes it past the cap: it ran, and the grade ended with it.
+    assert!(matches!(
+        held.ask(&chat(Arm::Without, "make me a pdf")),
+        Ok(Asked::Ran(_))
+    ));
+    assert_eq!(held.ended(), Some(GradeEnd::OverCap));
+    assert_eq!(
+        held.ask(&chat(Arm::With, "what is a pdf")),
+        Ok(Asked::Ended(GradeEnd::OverCap))
+    );
+    let report = held.scored("probe", None);
+    assert_eq!(report.ended, GradeEnd::OverCap);
+    assert_eq!(report.spent_tokens, Some(2000));
+    drop(held);
+    assert_eq!(host.asked.len(), 2, "no chat ran past the cap");
+}
+
+#[test]
+fn the_dollar_limit_holds_a_framework_s_chats_too() {
+    let request = request();
+    let mut host = Scripted::of(a_good_skill);
+    // 1000 tokens a chat, said with no cost, count at the dearest price: 0.075 dollars each.
+    let mut held = Held::new(
+        &request,
+        &mut host,
+        Some(limited(1_000_000, 0.1, None, DEAREST)),
+    );
+    assert!(matches!(
+        held.ask(&chat(Arm::With, "make me a pdf")),
+        Ok(Asked::Ran(_))
+    ));
+    assert!(matches!(
+        held.ask(&chat(Arm::With, "make me a pdf")),
+        Ok(Asked::Ran(_))
+    ));
+    assert_eq!(held.ended(), Some(GradeEnd::OverLimit));
+    assert_eq!(
+        held.ask(&chat(Arm::With, "make me a pdf")),
+        Ok(Asked::Ended(GradeEnd::OverLimit))
+    );
+}
+
+#[test]
+fn a_stop_ends_the_grade_before_another_chat() {
+    let request = request();
+    let mut host = Scripted::of(a_good_skill);
+    host.cancel_after = Some(1);
+    let mut held = Held::new(&request, &mut host, None);
+    assert!(matches!(
+        held.ask(&chat(Arm::With, "make me a pdf")),
+        Ok(Asked::Ran(_))
+    ));
+    assert!(held.cancelled());
+    assert_eq!(
+        held.ask(&chat(Arm::With, "make me a pdf")),
+        Ok(Asked::Ended(GradeEnd::Cancelled))
+    );
+    assert_eq!(held.scored("probe", None).ended, GradeEnd::Cancelled);
+}
+
+#[test]
+fn chats_that_do_not_start_end_a_framework_s_grade_with_their_sentence() {
+    let request = request();
+    let mut host = Scripted::of(a_good_skill);
+    host.not_starting = true;
+    let mut held = Held::new(&request, &mut host, None);
+    for _ in 0..NOT_STARTED_IN_A_ROW {
+        assert!(matches!(
+            held.ask(&chat(Arm::With, "make me a pdf")),
+            Ok(Asked::Ran(_))
+        ));
+    }
+    assert_eq!(held.ended(), Some(GradeEnd::ChatsDidNotStart));
+    assert_eq!(held.not_started(), Some("the profile is signed out"));
+    let report = held.scored("probe", None);
+    assert_eq!(
+        report.not_started.as_deref(),
+        Some("the profile is signed out")
+    );
+}
+
+#[test]
+fn a_failed_grader_s_grade_is_scored_from_what_ran_and_says_why() {
+    let request = request();
+    let mut host = Scripted::of(a_good_skill);
+    let mut held = Held::new(&request, &mut host, Some(tokens(100_000)));
+    let _ = held.ask(&chat(Arm::With, "make me a pdf"));
+    let report = held.scored("probe", Some("it answered out of shape".into()));
+    assert_eq!(report.ended, GradeEnd::GraderFailed);
+    assert_eq!(report.failed.as_deref(), Some("it answered out of shape"));
+    assert_eq!(report.grader, "probe");
+    assert_eq!(report.spent_tokens, Some(1000));
+    let with = report
+        .triggers
+        .iter()
+        .find(|test| test.arm == Arm::With && test.should_trigger)
+        .expect("scored");
+    assert_eq!((with.runs, with.triggered), (1, 1));
+}
+
+/// A Grader's report of `doc`, read as its answer is.
+fn reported(doc: serde_json::Value) -> Result<Reported, serde_json::Error> {
+    serde_json::from_value(doc)
+}
+
+#[test]
+fn a_grader_s_report_is_read_against_a_closed_shape() {
+    let fine = serde_json::json!({ "triggers": [], "arms": [], "delta": null });
+    assert!(reported(fine).is_ok());
+    // What a grade spent, how it ended and who graded it are purlis's to say.
+    for key in ["spent_tokens", "cap", "ended", "grader", "spent_usd"] {
+        let mut doc = serde_json::json!({ "triggers": [], "arms": [], "delta": null });
+        doc[key] = serde_json::json!(1);
+        assert!(reported(doc).is_err(), "{key} was read");
+    }
+    // And each part is closed too.
+    let nested = serde_json::json!({
+        "triggers": [],
+        "arms": [{
+            "arm": "with", "pass_rate": { "mean": 1, "stddev": 0, "min": 1, "max": 1, "n": 3 },
+            "tokens": null, "seconds": null, "chats": 0, "not_run": 0
+        }],
+        "delta": null,
+    });
+    assert!(reported(nested).is_err());
+}
+
+#[test]
+fn a_grader_s_report_is_held_to_what_ran_and_carries_purlis_s_spend() {
+    let request = request();
+    let mut host = Scripted::of(a_good_skill);
+    let mut held = Held::new(&request, &mut host, Some(tokens(100_000)));
+    let _ = held.ask(&chat(Arm::With, "make me a pdf"));
+    let test = |chat: &str, query: &str, arm: &str| {
+        serde_json::json!({
+            "query": query, "should_trigger": true, "arm": arm, "runs": 1, "triggered": 1,
+            "rate": 1.0, "pass": true, "chats": [chat],
+        })
+    };
+    let arm = serde_json::json!({
+        "arm": "with", "pass_rate": null, "tokens": null, "seconds": null, "chats": 1, "not_run": 0,
+    });
+    let of = |triggers: serde_json::Value, arms: serde_json::Value| {
+        reported(serde_json::json!({ "triggers": triggers, "arms": arms, "delta": 0.5 }))
+            .expect("in shape")
+    };
+
+    let report = held
+        .reported(
+            "probe",
+            of(
+                serde_json::json!([test("chat-0", "make me a pdf", "with")]),
+                serde_json::json!([arm.clone()]),
+            ),
+        )
+        .expect("held to what ran");
+    assert_eq!(report.grader, "probe");
+    assert_eq!(report.ended, GradeEnd::Whole);
+    assert_eq!(report.cap, Some(100_000));
+    assert_eq!(
+        report.spent_tokens,
+        Some(1000),
+        "purlis's count, not the Grader's"
+    );
+    assert_eq!(report.delta, Some(0.5));
+
+    for (triggers, arms, says) in [
+        (
+            serde_json::json!([test("chat-9", "make me a pdf", "with")]),
+            serde_json::json!([]),
+            "did not run",
+        ),
+        (
+            serde_json::json!([test("chat-0", "write me a poem", "with")]),
+            serde_json::json!([]),
+            "trigger test this grade does not have",
+        ),
+        (
+            serde_json::json!([test("chat-0", "make me a pdf", "previous")]),
+            serde_json::json!([]),
+            "arm this grade does not compare",
+        ),
+        (
+            serde_json::json!([
+                test("chat-0", "make me a pdf", "with"),
+                test("chat-0", "make me a pdf", "with")
+            ]),
+            serde_json::json!([]),
+            "twice",
+        ),
+        (
+            serde_json::json!([]),
+            serde_json::json!([arm.clone(), arm.clone()]),
+            "twice",
+        ),
+    ] {
+        let refused = held
+            .reported("probe", of(triggers, arms))
+            .expect_err("not held to what ran");
+        assert!(refused.contains(says), "{refused}");
+    }
+}
+
+#[test]
+fn the_built_in_runner_asks_through_the_same_hold() {
+    // Its plan, every chat of it, and no more: what `Held` allows is what it asks.
+    let request = request();
+    let mut host = Scripted::of(a_good_skill);
+    let report = grade(&request, &mut host, None);
+    assert_eq!(host.asked.len(), 2 * 2 * usize::from(RUNS));
+    assert_eq!(report.ended, GradeEnd::Whole);
+    assert_eq!(report.failed, None);
+}

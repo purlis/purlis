@@ -264,6 +264,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Typing a profile's sign-in into the person's own shell tab (#2035): the harness's own
     // sign-in, run as the person, never a chat's to start.
     "type_profile_sign_in",
+    "type_profile_sign_out",
     "dismiss_sign_in",
     "machine_profile_pin",
     // A sandbox-only Codex profile made from its Ask (#2037): the person's own profile.
