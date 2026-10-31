@@ -344,6 +344,10 @@ fn in_the_journey(
     pool: &str,
     next: &purlis_core::dockerpool::Image,
 ) {
+    // How far it got and how long each step took, read where it fails or runs out of time.
+    let began = Instant::now();
+    let step = |what: &str| eprintln!("[{:>4}s] {what}", began.elapsed().as_secs());
+    step("the pool is added");
     // Add a pool from the runner image: its row is there, and nothing says it was removed.
     let shown = crate::dockerpools::pools_on(&machine.config).expect("the pools read");
     assert_eq!(
@@ -362,6 +366,7 @@ fn in_the_journey(
         "the runner image ships no harness"
     );
 
+    step("a profile with a large settings folder");
     // Keep a profile with a large settings folder: all of it travels, and nothing is left behind.
     let settings = tempfile::tempdir().expect("the profile's folder");
     let settings = settings.path().canonicalize().expect("its folder");
@@ -372,18 +377,21 @@ fn in_the_journey(
     std::fs::write(clone.join("README.md"), "# web\n").expect("its file");
     a_repository(&clone);
 
+    step("the runner fetches the harness");
     // Fetch the harness: asked of its row, the runner fetches it from the vendor's release, and
     // Claude Code itself then says it is signed out there.
     let behind = the_row_says(machine, pool, &Standing::SignedOut);
     assert_eq!(behind, Vec::new(), "nothing of the settings stays behind");
     the_settings_went_whole_to(&runner, &settings);
 
+    step("a start while signed out");
     // A start while signed out starts nothing, and says what to do.
     let refused = ready_to_start(machine, &target.root, pool)
         .expect_err("a signed-out profile starts nothing");
     assert!(refused.contains("is not signed in on pool"), "{refused}");
     assert!(refused.contains("Sign in on pool"), "{refused}");
 
+    step("a real Claude Code chat");
     // Start a real Claude Code chat.
     signed_in_on(&runner);
     the_row_says(machine, pool, &Standing::SignedIn);
@@ -405,6 +413,7 @@ fn in_the_journey(
     };
     target.sessions.close(id).expect("it closes");
 
+    step("the chat moves back");
     // Move it back here: its conversation and the work done there come with it.
     let on_the_runner = format!(
         "{}/workspaces/{WORKSPACE}/web",
@@ -435,6 +444,7 @@ fn in_the_journey(
         here.display()
     );
 
+    step("the chat moves there again");
     // And there again: what was done here goes with it, and the chat goes on where it was.
     std::fs::write(clone.join("here.txt"), "made here\n").expect("its file");
     onrunner::ready_to_move_on(&machine.config, pool, PROFILE, &|kept| {
@@ -457,6 +467,7 @@ fn in_the_journey(
     );
     target.sessions.close(id).expect("it closes");
 
+    step("the container is removed outside purlis");
     // Delete the container outside purlis: the pool's row says so, a start says what to do,
     // and it is made again with its sign-ins and its settings.
     let out =
@@ -495,6 +506,7 @@ fn in_the_journey(
     the_settings_went_whole_to(&runner, &settings);
     let (old_chat, old_pane) = a_chat_runs(target, machine, pool, &a_chat(None, None));
 
+    step("an update is followed");
     // Follow an update: new chats start on a runner of the new image, the old one keeps its
     // chat until it ends, and then it is removed and its sign-ins follow.
     let chats_on = |to: &ToARunner| crate::runnerlinks::chats_on(to);
@@ -567,74 +579,4 @@ fn in_a_docker_pool() {
         a_window_on_a_pool_of(&format!("{PURLIS_RUNNER_IMAGE}@{image}"), docker);
     let next = Image::pinned(&format!("{PURLIS_RUNNER_IMAGE}@{next}")).expect("named by digest");
     in_the_journey(&target, &machine, &pool, &next);
-}
-
-/// TEMPORARY: a signed-in start with a first message, in the workspace or not, with a clone or
-/// not.
-fn probe(with_clone: bool, workspace: Option<&str>) {
-    use purlis_core::dockerpool::PURLIS_RUNNER_IMAGE;
-    let Ok(image) = std::env::var(IMAGE) else {
-        return;
-    };
-    let scripts = tempfile::tempdir().expect("a folder for its docker");
-    let docker = a_docker_of_the_jobs_registry(scripts.path());
-    let (target, machine, pool) =
-        a_window_on_a_pool_of(&format!("{PURLIS_RUNNER_IMAGE}@{image}"), docker);
-    let settings = tempfile::tempdir().expect("the profile's folder");
-    a_large_settings_folder(settings.path());
-    the_desktops_profile(&machine, &target.root, settings.path());
-    if with_clone {
-        let clone = target.root.join("workspaces/app/web");
-        std::fs::create_dir_all(&clone).expect("its clone");
-        std::fs::write(clone.join("README.md"), "# web\n").expect("its file");
-        a_repository(&clone);
-    }
-    the_row_says(&machine, &pool, &Standing::SignedOut);
-    let runner = the_runner(&machine, &pool);
-    signed_in_on(&runner);
-    the_row_says(&machine, &pool, &Standing::SignedIn);
-    let started = target.sessions.open_named(
-        None,
-        &Named {
-            workspace: workspace.map(str::to_owned),
-            first_message: Some("Say hello.".to_owned()),
-            ..named("", false)
-        },
-        Hearing::default(),
-        &|_| {},
-    );
-    let held = runner.prints(&format!(
-        "cd {}/{}/* && ls -A",
-        purlis_core::datahome::IN_A_RUNNER_CONTAINER,
-        purlis_core::datahome::PROJECTS,
-    ));
-    panic!(
-        "PROBE3 clone={with_clone} workspace={workspace:?}: {:?}, the runner holds {held:?}",
-        started.map(|started| started.number)
-    );
-}
-
-mod probe_a {
-    #[test]
-    fn in_a_docker_pool() {
-        super::probe(false, None);
-    }
-}
-mod probe_b {
-    #[test]
-    fn in_a_docker_pool() {
-        super::probe(true, None);
-    }
-}
-mod probe_c {
-    #[test]
-    fn in_a_docker_pool() {
-        super::probe(false, Some("app"));
-    }
-}
-mod probe_d {
-    #[test]
-    fn in_a_docker_pool() {
-        super::probe(true, Some("app"));
-    }
 }
