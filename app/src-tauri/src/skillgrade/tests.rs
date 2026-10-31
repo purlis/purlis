@@ -552,6 +552,7 @@ fn a_press_on_a_plan_that_changed_is_refused() {
         plan_holds(
             &planned,
             &on(Ok("full sandbox".into()), dearest.clone()),
+            None,
             &shown,
             "deploy",
             "nothing was started"
@@ -580,7 +581,7 @@ fn a_press_on_a_plan_that_changed_is_refused() {
         (&another_cap, on(Ok("full sandbox".into()), dearest.clone())),
     ] {
         let refused =
-            plan_holds(planned, &on, &shown, "deploy", "nothing was started").unwrap_err();
+            plan_holds(planned, &on, None, &shown, "deploy", "nothing was started").unwrap_err();
         assert!(refused.contains("changed since it was shown"), "{refused}");
         assert!(refused.contains("nothing was started"), "{refused}");
     }
