@@ -568,7 +568,7 @@ fn an_ignored_file_a_person_might_want_still_keeps_a_folder_beside_regenerated_o
     purlis_core::unsteered!();
     let (world, lane) = holding(
         ".env\nnode_modules/\n",
-        &[],
+        &["package.json"],
         &[".env", "node_modules/a/index.js"],
     );
     let (answer, said) = world.removed(&world.workspace(), "lane", false);
@@ -587,6 +587,11 @@ fn a_folder_merely_named_like_a_regenerated_one_still_keeps_a_folder() {
     // No build manifest beside it, not under `.claude`, not the generated path, or not a folder.
     for (rules, file, named) in [
         ("target/\n", "target/results.csv", "`target/`"),
+        (
+            "node_modules/\n",
+            "results/node_modules/mine",
+            "`results/node_modules/`",
+        ),
         ("dist/\n", "dist/release.tgz", "`dist/`"),
         (
             ".cc-writes/\n",
@@ -605,4 +610,66 @@ fn a_folder_merely_named_like_a_regenerated_one_still_keeps_a_folder() {
         assert!(said.contains(named), "{file}: {said}");
         assert!(lane.join(file).is_file(), "{file}");
     }
+}
+
+#[test]
+fn a_repository_inside_a_regenerated_folder_keeps_the_folder() {
+    purlis_core::unsteered!();
+    // git status prints only `node_modules/`, and a nested clone's commits may be nowhere else.
+    let (world, lane) = holding(
+        "node_modules/\n",
+        &["package.json"],
+        &["node_modules/mine/index.js"],
+    );
+    git(&lane.join("node_modules/mine"), &["init", "-q"]);
+
+    let (answer, said) = world.removed(&world.workspace(), "lane", false);
+
+    assert!(matches!(answer, Answer::Said { code: 1, .. }), "{said}");
+    assert!(said.contains("`node_modules/`"), "{said}");
+    assert!(lane.join("node_modules/mine/index.js").is_file());
+}
+
+#[test]
+fn a_squash_reverted_since_goes_and_is_not_said_to_be_in_the_base_as_it_stands() {
+    purlis_core::unsteered!();
+    // The branch is kept, so nothing is lost, but main no longer reads as it does.
+    let (world, theirs) = World::with_a_forge();
+    let (lane, clone) = squash_merged(&world, &theirs);
+    git(&theirs, &["revert", "--no-edit", "HEAD"]);
+    git(&theirs, &["push", "-q", "origin", "HEAD:main"]);
+    git(&clone, &["fetch", "-q", "--prune", "origin"]);
+
+    let (answer, said) = world.removed(&world.workspace(), "lane", false);
+
+    assert!(matches!(answer, Answer::Said { code: 0, .. }), "{said}");
+    assert!(!said.contains("landed by its files"), "{said}");
+    assert!(said.contains("may have changed it since"), "{said}");
+    assert!(!lane.exists());
+}
+
+#[test]
+fn a_change_differing_only_past_a_nul_byte_is_not_found_in_history() {
+    purlis_core::unsteered!();
+    // Past git's binary sniff a NUL diffs as text, and patch-id hashes a line only up to it.
+    let (world, theirs) = World::with_a_forge();
+    let clone = world.workspace().join(REPO);
+    let padding = "x\n".repeat(5000);
+    std::fs::write(theirs.join("data"), format!("{padding}keep\n")).unwrap();
+    git(&theirs, &["add", "data"]);
+    git(&theirs, &["commit", "-q", "-m", "data"]);
+    git(&theirs, &["push", "-q", "origin", "HEAD:main"]);
+    git(&clone, &["pull", "-q", "--ff-only", "origin", "main"]);
+    let lane = cut_from(&world, "main");
+    std::fs::write(lane.join("data"), format!("{padding}keep\0MINE\n")).unwrap();
+    git(&lane, &["commit", "-q", "-am", "lane: mine"]);
+    std::fs::write(theirs.join("data"), format!("{padding}keep\0THEIRS\n")).unwrap();
+    git(&theirs, &["commit", "-q", "-am", "theirs"]);
+    git(&theirs, &["push", "-q", "origin", "HEAD:main"]);
+    git(&clone, &["fetch", "-q", "--prune", "origin"]);
+
+    let (answer, said) = world.removed(&world.workspace(), "lane", false);
+
+    assert!(matches!(answer, Answer::Said { code: 1, .. }), "{said}");
+    assert!(lane.is_dir());
 }

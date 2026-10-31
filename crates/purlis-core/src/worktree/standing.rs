@@ -430,11 +430,13 @@ fn landed_in_history(clone: &Path, branch: &str, base: Option<&str>) -> Option<S
 
 /// The flags of every diff [`patch_landed`] reads: no filter, no external program, no rename
 /// guess, and no setting that hides a submodule's commit.
-const PLAIN_DIFF: [&str; 4] = [
+const PLAIN_DIFF: [&str; 5] = [
     "--no-renames",
     "--no-ext-diff",
     "--no-textconv",
     "--ignore-submodules=none",
+    // `diff.submodule=log` prints a line at which `git patch-id` stops reading.
+    "--submodule=short",
 ];
 
 /// **Whether one commit in `target`'s history since `branch` parted from it makes `branch`'s
@@ -446,7 +448,10 @@ const PLAIN_DIFF: [&str; 4] = [
 ///   that only reformats would read as already landed. A commit made after the merge changes
 ///   the whole change, so it is not found.
 /// - A change holding a binary file or bytes that are not text is never found: its diff does
-///   not say what it holds.
+///   not say what it holds, and `git patch-id` reads a line only up to a NUL.
+/// - It says the change was once made there, not that it still reads so: a squash reverted
+///   since is found. The branch stays wherever this lets a folder go, and what is said of it
+///   says as much.
 /// - A branch whose commits come to no change has no id, and is not found.
 fn patch_landed(clone: &Path, branch: &str, target: &str) -> Option<bool> {
     let read = |args: &[&str]| answered(clone, args);
@@ -466,7 +471,7 @@ fn patch_landed(clone: &Path, branch: &str, target: &str) -> Option<bool> {
         return Some(false);
     }
     let own = diff(&["--no-color"])?;
-    if own.contains(char::REPLACEMENT_CHARACTER) {
+    if own.contains(['\0', char::REPLACEMENT_CHARACTER]) {
         return Some(false);
     }
     let names = diff(&["--name-only", "-z"])?;
