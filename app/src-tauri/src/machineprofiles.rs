@@ -378,8 +378,9 @@ const WATCHED_FOR: std::time::Duration = std::time::Duration::from_secs(15 * 60)
 /// **With `pool`, it is signed in on that pool's runner** (#2049): the line is the runner's own
 /// `purlis profile sign-in`, run there through this machine's `docker`, in the runner's folder
 /// for the profile ([`crate::poolprofiles::sign_in_line`]); nothing of this machine's sign-in
-/// goes there. The runner is asked again every few seconds until it says the profile is signed
-/// in there. With `device`, by the harness's device-code flow there (#4044).
+/// goes there. The runner is asked again until it says the profile is signed in there or the
+/// person closes the shell (#4009). With `device`, by the harness's device-code flow there
+/// (#4044).
 #[tauri::command]
 #[specta::specta]
 pub fn type_profile_sign_in(
@@ -400,20 +401,29 @@ pub fn type_profile_sign_in(
     if let Some(pool) = pool {
         let line = crate::poolprofiles::sign_in_line(&pool, &name, provider.as_deref(), device)?;
         held.operator_input(session, line.as_bytes())?;
-        let teller = held.hooks().asks_teller();
-        let (root, watched) = (held.root().to_path_buf(), std::sync::Arc::downgrade(&held));
+        let (shell, open) = (
+            std::sync::Arc::downgrade(&held),
+            std::sync::Arc::downgrade(&held),
+        );
+        let root = held.root().to_path_buf();
         let shell_root = root.clone();
         crate::poolprofiles::watch(
-            root,
             pool,
             name,
             session,
-            move |shell| {
-                watched
-                    .upgrade()
-                    .is_some_and(|held| held.chats().is_shell_at(shell, &shell_root))
+            crate::poolprofiles::Watcher {
+                project: std::sync::Arc::as_ptr(&held) as usize,
+                root,
+                shell_open: Box::new(move |tab| {
+                    shell
+                        .upgrade()
+                        .is_some_and(|held| held.chats().is_shell_at(tab, &shell_root))
+                }),
+                project_open: Box::new(move || {
+                    open.upgrade().is_some_and(|held| !held.chats().ending())
+                }),
+                told: Box::new(held.hooks().asks_teller()),
             },
-            teller,
         );
         return Ok(());
     }
