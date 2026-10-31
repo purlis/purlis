@@ -1338,7 +1338,11 @@ impl Kubectl {
 
     /// **`status.mint` of the Claim `namespace`/`name`** (#4207), `(address, operatorKey)`, where
     /// the operator wrote it.
-    pub fn claim_mint(&self, namespace: &str, name: &str) -> Result<Option<(String, String)>, Refused> {
+    pub fn claim_mint(
+        &self,
+        namespace: &str,
+        name: &str,
+    ) -> Result<Option<(String, String)>, Refused> {
         let held = self.claim_json(namespace, name)?;
         let text = |path: &str| {
             held.as_ref()?
@@ -1352,7 +1356,12 @@ impl Kubectl {
     /// **Adds `repos` to `Claim.spec.forge.repos`** (#4207), as the Claim's requester, whose word the
     /// cluster's policy holds it to; what the Claim names already stays, for the runner's other
     /// chats. Written only where it adds something. Refused past [`MOST_CLAIM_REPOS`].
-    pub fn add_claim_repos(&self, namespace: &str, name: &str, repos: &[String]) -> Result<(), Refused> {
+    pub fn add_claim_repos(
+        &self,
+        namespace: &str,
+        name: &str,
+        repos: &[String],
+    ) -> Result<(), Refused> {
         let held = self.claim_json(namespace, name)?;
         let named: Vec<String> = held
             .as_ref()
@@ -1389,7 +1398,11 @@ impl Kubectl {
     }
 
     /// The Claim `namespace`/`name` as the cluster has it, where it does.
-    fn claim_json(&self, namespace: &str, name: &str) -> Result<Option<serde_json::Value>, Refused> {
+    fn claim_json(
+        &self,
+        namespace: &str,
+        name: &str,
+    ) -> Result<Option<serde_json::Value>, Refused> {
         let printed = self.run(
             &self.args(&[
                 "get",
@@ -1687,7 +1700,11 @@ pub fn repos_with(named: &[String], adding: &[String]) -> Option<Vec<String>> {
 /// and only with the key this desktop pinned: a status naming any other key tells it nothing, so
 /// who may write a status can never move what a runner holds its port to. It decides nothing: the
 /// runner goes on asking this desktop, with the person's Ask, wherever it was not told.
-pub fn tell_the_mint_port(kubectl: &Kubectl, pin: &PoolPin, paired: &Paired) -> Result<(), Refused> {
+pub fn tell_the_mint_port(
+    kubectl: &Kubectl,
+    pin: &PoolPin,
+    paired: &Paired,
+) -> Result<(), Refused> {
     let Claimed {
         namespace, name, ..
     } = &paired.claimed;

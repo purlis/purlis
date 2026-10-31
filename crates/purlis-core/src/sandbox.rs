@@ -749,6 +749,9 @@ fn keyed_of(text: &str, file: &str, known: Option<&[String]>) -> Vec<crate::sett
         .collect()
 }
 
+/// The folder a cluster runner's pod hands its link key over in (`operator/src/upstream.rs`).
+const LINK_HANDOVER: &str = "/run/purlis-link";
+
 /// What a chat's sandbox always denies (ADR 0067 §5). Classes, not a list of paths: each is
 /// turned into rules by [`Denied::of`], and no plane, persona or preset can remove one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1971,6 +1974,15 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         machine.env.get("XDG_CONFIG_HOME").map(Into::into),
         machine.home.clone(),
     );
+    // A cluster runner's folder its pod's first step hands the link key over in (#4207): no chat
+    // touches it, whatever a pairing left there. A runner with no such folder has nothing to deny.
+    if machine.is_a_runner() && Path::new(LINK_HANDOVER).exists() {
+        deny(
+            Class::HumanPowers,
+            PathBuf::from(LINK_HANDOVER),
+            Access::ReadWrite,
+        );
+    }
     // Under EVERY spelling of the config home, there or not (RN-5): which one is the home
     // is decided by which is there, so a chat that could make `purlis/` beside `charter/`
     // would be writing the approvals charter reads next.
