@@ -965,8 +965,7 @@ pub(crate) async fn skill_router_choose(
 }
 
 /// **Turns `router`'s reading of prompts on or off** in the record at `config` (ADR 0102 as amended
-/// 2026-10-31). On only for a router `offered` here that says it reads them; off for any, so a
-/// router since turned off in the project can still be stopped.
+/// 2026-10-31). On only for a router `offered` here that says it reads them; off for any.
 pub(crate) fn reading_prompts(
     config: &std::path::Path,
     router: &str,

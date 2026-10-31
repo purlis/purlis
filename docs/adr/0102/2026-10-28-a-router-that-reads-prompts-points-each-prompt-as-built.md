@@ -45,7 +45,7 @@ A skill loaded so is loaded with `skill_load`, so its run has an exact start.
 
 Each prompt routed is a `skill.routed` record under the chat's run, written before the prompt's own event. It has `prompt: true`, `pointed` (the names), and `fell_back` with `error` where it fell back. Every skill run the turn opens names it as `prompt_routing`, with `prompt_routing_fell_back` where it fell back, beside the start's `routing`. A slow prompt does not say the chat's list fell back: the start's routing is what the list was made by.
 
-**A router slow at a chat's start still routes its prompts**: what it is asked about is what the built-in router left out in its place. Whether it reads prompts is read once its start's question is over, so that read is never inside its 100 ms, and never again on a prompt; the executor still refuses a prompt to a router whose approval says it reads none.
+**A router slow at a chat's start still routes its prompts**: what it is asked about is what the built-in router left out in its place. Whether it reads prompts is read once its start's question is over, so that read is never inside its 100 ms; [the 2026-10-31 amendment](2026-10-31-a-router-reads-prompts-only-once-the-person-turns-that-on.md) reads it again before each prompt's clock starts; the executor still refuses a prompt to a router whose approval says it reads none.
 
 ## A harness without a prompt hook
 

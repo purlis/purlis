@@ -172,6 +172,7 @@ fn graded(id: &str, ts: &str) -> RouterGraded {
         harness: Some("claude-code".to_owned()),
         profile: Some("claude".to_owned()),
         ts: ts.to_owned(),
+        pointer: false,
         runs: 3,
         report: RouterGradeReport {
             grader: grade::BUILT_IN.to_owned(),

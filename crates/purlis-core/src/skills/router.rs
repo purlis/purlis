@@ -596,7 +596,11 @@ impl TryFrom<KeptOnDisk> for Kept {
             error: record.error.as_deref().map(clipped),
             ..record
         };
-        if let Some((bad, _)) = left_out.iter().find(|(_, line)| Line::new(line).is_err()) {
+        // The index's own line, which may run longer than a router's reason: only its shape is
+        // held. A prompt's pointer takes it as data.
+        if let Some((bad, _)) = left_out.iter().find(|(_, line)| {
+            line.chars().count() > MOST_INDEX_LINE_CHARS || line.chars().any(char::is_control)
+        }) {
             return Err(format!("a line for {bad:?} that is not one line"));
         }
         Ok(Self::Asked(Routed {
@@ -616,6 +620,9 @@ fn a_skill_name(name: &str) -> bool {
         && !name.chars().any(char::is_control)
         && !purlis_unicode::hides(name, purlis_unicode::Breaks::Marked)
 }
+
+/// The most characters a kept index line has: well above what the index writes.
+const MOST_INDEX_LINE_CHARS: usize = 2000;
 
 /// The most characters a kept skill name has: well above the open format's 64, for a plugin's
 /// prefix.
@@ -684,8 +691,15 @@ pub fn at_start(
     // of this machine's record is never inside the router's 100 ms; whatever came of the
     // question, its prompts are routed (SK-15c).
     let routed = asked_at_start(set, &id, budget, pins, asker, deadline, began);
+    let reads_prompts = asker.reads_prompts(&id);
+    // What its list left out is kept only for a router that may be asked about it.
     Some(Routed {
-        reads_prompts: asker.reads_prompts(&id),
+        reads_prompts,
+        left_out: if reads_prompts {
+            routed.left_out
+        } else {
+            Vec::new()
+        },
         ..routed
     })
 }

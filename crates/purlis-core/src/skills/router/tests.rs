@@ -1197,6 +1197,23 @@ fn a_reattached_chat_keeps_what_its_list_leaves_out_for_its_prompts() {
     let back = back.routed().expect("asked");
     assert!(back.points());
     assert_eq!(back.left_out, routed.left_out);
+
+    // An index line may run past a router's reason's 120 characters, and the record still reads.
+    let Kept::Asked(mut long) = Kept::of(Some(&routed)) else {
+        panic!("asked");
+    };
+    long.left_out[0].1 = "x".repeat(121) + "…";
+    let text = serde_json::to_string(&Kept::Asked(long)).unwrap();
+    assert!(serde_json::from_str::<Kept>(&text).is_ok(), "{text}");
+    // A line of two lines does not.
+    let bad = text.replace(&("x".repeat(121)), "a\\nb");
+    assert!(serde_json::from_str::<Kept>(&bad).is_err(), "{bad}");
+
+    // A router that may not read prompts keeps none of it.
+    let plain = started(root, &bundle, None, &as_asker(&fake))
+        .routed
+        .expect("routed");
+    assert!(plain.left_out.is_empty());
 }
 
 // ---------------------------------------------------------------------------------------

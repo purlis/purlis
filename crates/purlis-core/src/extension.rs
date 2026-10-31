@@ -2636,6 +2636,7 @@ pub fn install(config_root: &Path, built_in: &BuiltIn, dir: &Path) -> io::Result
     let id = found.id().to_owned();
     let path = found.path.clone();
     update(config_root, |registry| {
+        moved_clears_reading(registry, &id, &path);
         registry
             .entries
             .insert(id, Entry::installed(path, approved));
@@ -2667,8 +2668,21 @@ pub fn approve(config_root: &Path, id: &str, at: &Path, fingerprint: &str) -> io
     }
     let entry = Entry::installed(at.to_path_buf(), Some(fingerprint.to_owned()));
     update(config_root, |registry| {
+        moved_clears_reading(registry, id, at);
         registry.entries.insert(id.to_owned(), entry);
     })
+}
+
+/// **An extension under `id` from another folder is another program**: the person's switch for
+/// reading prompts was pressed for the one it replaces, so it goes off.
+fn moved_clears_reading(registry: &mut Registry, id: &str, path: &Path) {
+    if registry
+        .entries
+        .get(id)
+        .is_some_and(|entry| entry.path != path)
+    {
+        registry.reads_prompts.remove(id);
+    }
 }
 
 /// Turn a built-in extension on or off on this machine.

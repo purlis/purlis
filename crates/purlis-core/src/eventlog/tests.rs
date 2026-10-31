@@ -3994,6 +3994,24 @@ fn a_prompt_s_routing_is_named_beside_the_start_s_and_never_in_its_place() {
     );
     assert_eq!(started.body["prompt_routing"], prompt.routing.as_str());
     assert_eq!(started.body["prompt_routing_fell_back"], true);
+
+    // The next turn's prompt was routed by nothing: its runs name no earlier prompt's routing.
+    host.report(plane.path(), &report(3, UserPromptSubmit), Followed::No)
+        .unwrap();
+    host.tool(
+        plane.path(),
+        &starting(3, "posttooluse-skill", "toolu_b", "deploy"),
+        Instant::now(),
+    )
+    .unwrap();
+    let next = read(dir.path())
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.kind == "skill.started")
+        .last()
+        .expect("a second run started");
+    assert!(next.body.get("prompt_routing").is_none(), "{:?}", next.body);
+    assert_eq!(next.body["routing"], start.routing.as_str());
 }
 
 #[test]

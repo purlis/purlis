@@ -307,7 +307,7 @@ export function RouterChange({
       onClose={onClose}
       title="Change the router"
       subtitle={`For ${whose}`}
-      description="The router decides which skills a chat sees when its list is over the budget. It is asked once, at a chat's start."
+      description="The router decides which skills a chat sees when its list is over the budget. It is asked at a chat's start."
       summary={
         picked === UNREADABLE
           ? `What is chosen for ${whose} now names no router, so they are routed by the built-in router.`
@@ -342,9 +342,11 @@ export function RouterChange({
             key={one.id}
             value={one.id}
             description={
-              one.reads_prompts
-                ? `The extension ${one.name}. It can read prompts too, once you turn that on for it.`
-                : `The extension ${one.name}.`
+              !one.reads_prompts
+                ? `The extension ${one.name}.`
+                : one.prompts_on
+                  ? `The extension ${one.name}. You turned on its reading of prompts, so it reads every prompt of the chats it routes.`
+                  : `The extension ${one.name}. It can read prompts too, once you turn that on for it.`
             }
           >
             <code>{one.id}</code>

@@ -3602,6 +3602,11 @@ fn a_router_reads_no_prompt_until_it_is_turned_on_and_an_approval_leaves_the_cho
     let fingerprint = "a".repeat(64);
     approve(&config, "relevance", &made.at(), &fingerprint).expect("approved");
     assert!(reads("relevance"), "an approval's row is not the choice");
+    approve(&config, "relevance", &made.at(), &"b".repeat(64)).expect("an update approved");
+    assert!(reads("relevance"), "the same folder's update keeps it");
+    approve(&config, "relevance", &made.config(), &fingerprint).expect("elsewhere");
+    assert!(!reads("relevance"), "another folder is another program");
+    set_reads_prompts(&config, "relevance", true).expect("on");
 
     set_reads_prompts(&config, "relevance", false).expect("off");
     assert!(!reads("relevance"));

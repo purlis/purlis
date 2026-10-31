@@ -1643,6 +1643,9 @@ const PROMPTED_HELD: usize = 256;
 struct Routings {
     start: Option<(String, bool)>,
     prompt: Option<(String, bool)>,
+    /// Whether `prompt` is for the prompt about to be reported: a turn whose prompt was routed by
+    /// nothing names no earlier prompt's routing.
+    prompt_is_new: bool,
 }
 
 /// The kind of a chat's routing record (SK-15b).
@@ -1860,6 +1863,14 @@ impl Recorder {
         }
         let who = Who::of(&top.attributes);
         let under = self.under(top, report.agent.as_deref())?;
+        if report.event == crate::state::Event::UserPromptSubmit
+            && let Some(held) = self.routings.get_mut(span_of(&under))
+        {
+            if !held.prompt_is_new {
+                held.prompt = None;
+            }
+            held.prompt_is_new = false;
+        }
         self.skills_heard_of_a_report(plane, &under, &who, report)?;
         let mut body = serde_json::json!({});
         if report.event == crate::state::Event::SessionStart {
@@ -2666,6 +2677,7 @@ impl Recorder {
         let held = self.routings.entry(run.to_owned()).or_default();
         if prompt {
             held.prompt = Some(routing);
+            held.prompt_is_new = true;
         } else {
             held.start = Some(routing);
         }
