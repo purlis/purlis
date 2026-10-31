@@ -28,7 +28,9 @@ use serde_json::{Value, json};
 
 use purlis_core::counts::counted;
 use purlis_core::tui::Markup;
+use purlis_session_protocol::session::GradeLevel;
 
+use crate::gradelink;
 use crate::memory::Code;
 use crate::voice;
 
@@ -348,15 +350,33 @@ pub enum SkillCommand {
     /// chats a grade runs (each test three times with the skill and three without it, one turn
     /// each) and what its last grade spent per chat; then each grade the project's eval record
     /// holds, newest first, with each arm's pass rate and the difference the skill made. A
-    /// grade runs from the skill's tab in the Skill studio, which shows this plan first.
+    /// grade runs from the skill's tab in the Skill studio, which shows this plan first, or with
+    /// `--run` from a terminal, on the same plan and caps, once you answer yes.
     Grade {
         /// The skill's name, as `purlis skill list` prints it.
         name: String,
         #[command(flatten)]
         at: LevelArgs,
         /// Answer as JSON, for a chat or a script.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "run")]
         json: bool,
+        /// Run the grade: in the purlis window that has this project open, which spends your
+        /// account on real chats. Asks first. Refused inside a chat.
+        #[arg(long)]
+        run: bool,
+        /// The profile its chats run on (default: the project's).
+        #[arg(long, requires = "run")]
+        profile: Option<String>,
+        /// The model its chats run on (default: the profile's own).
+        #[arg(long, requires = "run")]
+        model: Option<String>,
+        /// An outcome eval to run too, by its id; repeat for each. None run unless named.
+        #[arg(long = "eval", value_name = "ID", requires = "run")]
+        evals: Vec<String>,
+        /// Do not ask: for a script that has read the plan. It still runs only what the plan
+        /// printed.
+        #[arg(long, requires = "run")]
+        yes: bool,
     },
 }
 
@@ -382,6 +402,22 @@ impl LevelArgs {
             (None, None) => Level::project(),
         }
         .local(self.local)
+    }
+
+    /// The level as a terminal names it to the window.
+    fn wire_level(&self) -> GradeLevel {
+        let local = self.local;
+        match (&self.workspace, &self.persona) {
+            (Some(name), _) => GradeLevel::Workspace {
+                name: name.clone(),
+                local,
+            },
+            (None, Some(name)) => GradeLevel::Persona {
+                name: name.clone(),
+                local,
+            },
+            (None, None) => GradeLevel::Project { local },
+        }
     }
 }
 
@@ -979,7 +1015,28 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 Ok(1)
             }
         },
-        SkillCommand::Grade { name, at, json } => {
+        SkillCommand::Grade {
+            name,
+            at,
+            run: true,
+            profile,
+            model,
+            evals,
+            yes,
+            ..
+        } => Ok(gradelink::run(
+            root,
+            &gradelink::Asked {
+                wire: at.wire_level(),
+                level: at.level(),
+                name,
+                profile,
+                model,
+                evals,
+                yes,
+            },
+        )),
+        SkillCommand::Grade { name, at, json, .. } => {
             let level = at.level();
             // The terminal knows no profile: the estimate is the newest grade's whose chats ran.
             match purlis_core::skills::grades::planned(root, &level, &name, None) {
@@ -1323,13 +1380,86 @@ fn estimate_said(estimate: Option<&purlis_core::skills::grades::Estimate>) -> St
     )
 }
 
+/// **What grading runs, cost first**: the part of [`grade_said`] above the grades, which
+/// `purlis skill grade --run` prints before it asks.
+pub(crate) fn plan_said(planned: &purlis_core::skills::grades::Planned, root: &Path) -> String {
+    let local_file = purlis_core::settings::Which::Local.file_at(root);
+    grade_plan_said(planned, local_file)
+}
+
 /// **`purlis skill grade`'s text**: the plan, cost first, then each grade, newest first.
 fn grade_said(
     planned: &purlis_core::skills::grades::Planned,
     graded: &[purlis_core::skills::grades::Graded],
     local_file: &str,
 ) -> String {
-    use purlis_core::skills::grade::{Arm, Read};
+    use purlis_core::skills::grade::Arm;
+    let name = &planned.skill;
+    let mut text = grade_plan_said(planned, local_file);
+    if graded.is_empty() {
+        text.push_str(&format!("No grades of {name} yet.\n"));
+        return text;
+    }
+    text.push_str("\nGrades, newest first:\n");
+    for one in graded {
+        let rate = |arm: Arm| {
+            one.report
+                .arm(arm)
+                .and_then(|score| score.pass_rate)
+                .map_or_else(
+                    || "not run".to_owned(),
+                    |stat| format!("{:.0}%", stat.mean * 100.0),
+                )
+        };
+        let (passed, of) = one.report.passed_with();
+        // The chats that asked the person something (SK-59): ended there, and said here.
+        let asked = match one.report.asked() {
+            0 => String::new(),
+            asked => format!(
+                "  {} asked you something, and purlis ended {them} there without counting {them}",
+                counted(asked, "chat", "chats"),
+                them = if asked == 1 { "it" } else { "them" }
+            ),
+        };
+        // The version it compared with, where it compared one (SK-57).
+        let previous = one.compared_with().map(history::short);
+        text.push_str(&format!(
+            "  {}  {}  {passed} of {} passed  with {}  without {}{}{}{asked}  ({}){}\n",
+            purlis_core::skills::review::escaped_line(&one.ts),
+            one.commit.as_deref().map_or("uncommitted", history::short),
+            counted(of, "test", "tests"),
+            rate(Arm::With),
+            rate(Arm::Without),
+            previous
+                .map(|commit| format!("  previous {commit} {}", rate(Arm::Previous)))
+                .unwrap_or_default(),
+            one.report
+                .delta
+                .map(|delta| match previous {
+                    Some(commit) =>
+                        format!("  difference {:+.0} points against {commit}", delta * 100.0),
+                    None => format!("  difference {:+.0} points", delta * 100.0),
+                })
+                .unwrap_or_default(),
+            match &one.model {
+                // The model its chats reported (SK-60): a model's id, which the record checks.
+                Some(model) => format!("{} on {model}", counted(one.spent.chats, "chat", "chats")),
+                None => counted(one.spent.chats, "chat", "chats"),
+            },
+            // A grade a saved edit started says so (SK-58).
+            if one.after_edit {
+                "  after an edit"
+            } else {
+                ""
+            },
+        ));
+    }
+    text
+}
+
+/// The plan's part of [`grade_said`].
+fn grade_plan_said(planned: &purlis_core::skills::grades::Planned, local_file: &str) -> String {
+    use purlis_core::skills::grade::Read;
     let name = &planned.skill;
     let mut text = String::new();
     if let Read::Refused(why) = &planned.fixtures.triggers {
@@ -1408,64 +1538,6 @@ fn grade_said(
         text.push_str(&format!(
             "{} for a later purlis: grades run the trigger tests alone.\n",
             counted(evals.len(), "outcome eval waits", "outcome evals wait"),
-        ));
-    }
-    if graded.is_empty() {
-        text.push_str(&format!("No grades of {name} yet.\n"));
-        return text;
-    }
-    text.push_str("\nGrades, newest first:\n");
-    for one in graded {
-        let rate = |arm: Arm| {
-            one.report
-                .arm(arm)
-                .and_then(|score| score.pass_rate)
-                .map_or_else(
-                    || "not run".to_owned(),
-                    |stat| format!("{:.0}%", stat.mean * 100.0),
-                )
-        };
-        let (passed, of) = one.report.passed_with();
-        // The chats that asked the person something (SK-59): ended there, and said here.
-        let asked = match one.report.asked() {
-            0 => String::new(),
-            asked => format!(
-                "  {} asked you something, and purlis ended {them} there without counting {them}",
-                counted(asked, "chat", "chats"),
-                them = if asked == 1 { "it" } else { "them" }
-            ),
-        };
-        // The version it compared with, where it compared one (SK-57).
-        let previous = one.compared_with().map(history::short);
-        text.push_str(&format!(
-            "  {}  {}  {passed} of {} passed  with {}  without {}{}{}{asked}  ({}){}\n",
-            purlis_core::skills::review::escaped_line(&one.ts),
-            one.commit.as_deref().map_or("uncommitted", history::short),
-            counted(of, "test", "tests"),
-            rate(Arm::With),
-            rate(Arm::Without),
-            previous
-                .map(|commit| format!("  previous {commit} {}", rate(Arm::Previous)))
-                .unwrap_or_default(),
-            one.report
-                .delta
-                .map(|delta| match previous {
-                    Some(commit) =>
-                        format!("  difference {:+.0} points against {commit}", delta * 100.0),
-                    None => format!("  difference {:+.0} points", delta * 100.0),
-                })
-                .unwrap_or_default(),
-            match &one.model {
-                // The model its chats reported (SK-60): a model's id, which the record checks.
-                Some(model) => format!("{} on {model}", counted(one.spent.chats, "chat", "chats")),
-                None => counted(one.spent.chats, "chat", "chats"),
-            },
-            // A grade a saved edit started says so (SK-58).
-            if one.after_edit {
-                "  after an edit"
-            } else {
-                ""
-            },
         ));
     }
     text

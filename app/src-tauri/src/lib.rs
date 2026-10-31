@@ -3746,6 +3746,8 @@ pub fn run() {
             // No session host to fail where none runs.
             #[cfg(not(unix))]
             app.manage(std::sync::Arc::new(hostfailing::HostFailing::default()));
+            // A grade a person asks for at a terminal runs here (SK-61, #3241).
+            skillgrade::hears_terminals(app.handle().clone());
             // The person's forge sign-ins, for the window's own forge calls (#1816).
             forgeaccounts::hand_over_sign_ins();
             // And the window is told when a forge ends one of them (#729).

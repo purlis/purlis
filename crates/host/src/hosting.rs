@@ -579,6 +579,9 @@ struct State {
     relayed_for: HashMap<u64, String>,
     /// Each question to the window waiting for its answer, by its number.
     questions: HashMap<u64, std::sync::mpsc::Sender<Option<Vec<String>>>>,
+    /// The grades terminals asked of a window that it has not answered yet, and the grades it
+    /// runs for one, by the question (SK-61, #3241).
+    grades: crate::grading::Asked,
     /// The last question's number.
     asked: u64,
     /// The window that started this host, if one did.
@@ -613,6 +616,8 @@ struct Subscriber {
     told: mpsc::Sender<Pushed>,
     confines: bool,
     saves: bool,
+    /// Whether its link may run a grade a terminal asks for: the window, of 1.63 or later.
+    runs_grades: bool,
     /// Whether its link knows a browser engine's download (1.37, #2207) and may start a
     /// browser ([`Power::Browser`]): only such a link is pushed one.
     downloads: bool,
@@ -771,6 +776,13 @@ fn hand_on(state: &mut State, link: u64) {
 struct HeldAt {
     project: String,
     path: PathBuf,
+}
+
+/// Tells `pushed` to the subscriber on `link` alone, where it has one with room.
+fn tell_link(state: &mut State, link: u64, pushed: Pushed) {
+    if let Some(one) = state.subscribers.iter().find(|one| one.link == link) {
+        let _ = one.told.try_send(pushed);
+    }
 }
 
 /// The place `link` holds `project` at, if it holds it.
@@ -1474,6 +1486,129 @@ impl Hosting {
         let said = answer.recv_timeout(within).ok().flatten();
         self.state().questions.remove(&question);
         said
+    }
+
+    /// **Asks the window that holds `project` at `project_path` for a grade, for a terminal**
+    /// (SK-61, #3241), and waits for its answer. One window is asked, however many hold it: the
+    /// first that linked and hears, on this host. A hold relayed over a link never is: only
+    /// `local-ui` runs a grade.
+    async fn ask_grade(
+        &self,
+        project: String,
+        project_path: String,
+        ask: session::GradeAsk,
+        peer: &Peer,
+    ) -> Result<Answer, Refusal> {
+        let not_open = || Refusal {
+            code: session::NO_SUCH_PROJECT.into(),
+            why: "no purlis window has this project open, and a grade runs in the window: open \
+                  the project in purlis, then run this again"
+                .to_owned(),
+        };
+        let path = std::fs::canonicalize(&project_path).map_err(|_| not_open())?;
+        let starts = matches!(ask, session::GradeAsk::Start { .. });
+        let (question, answered) = {
+            let mut state = self.state();
+            let at = HeldAt {
+                project: project.clone(),
+                path,
+            };
+            let holders: Vec<u64> = state
+                .projects
+                .get(&at)
+                .map(|held| held.links.keys().copied().collect())
+                .unwrap_or_default();
+            let Some(index) = state
+                .subscribers
+                .iter()
+                .enumerate()
+                .filter(|(_, one)| one.runs_grades && holders.contains(&one.link))
+                .min_by_key(|(_, one)| one.link)
+                .map(|(index, _)| index)
+            else {
+                return Err(not_open());
+            };
+            state.asked += 1;
+            let question = state.asked;
+            let pushed = Pushed::GradeAsked {
+                question,
+                project,
+                ask,
+            };
+            let window = state.subscribers[index].link;
+            if state.subscribers[index].told.try_send(pushed).is_err() {
+                return Err(not_open());
+            }
+            let answered = state.grades.asked(question, link_of(peer), window, starts);
+            (question, answered)
+        };
+        let answer = tokio::time::timeout(crate::grading::ANSWERED_WITHIN, answered).await;
+        match answer {
+            Ok(Ok(answer)) => Ok(Answer::GradeAnswered(answer)),
+            Ok(Err(_)) | Err(_) => {
+                self.state().grades.not_answered(question);
+                Err(Refusal {
+                    code: session::NOT_STARTED.into(),
+                    why: "the purlis window did not answer, so nothing was started".to_owned(),
+                })
+            }
+        }
+    }
+
+    /// The window's answer to a grade it was asked for, from the link that was asked. A grade
+    /// that started for a terminal gone by now is stopped at once.
+    fn answer_grade(
+        &self,
+        question: u64,
+        answer: session::GradeAnswer,
+        peer: &Peer,
+    ) -> Result<Answer, Refusal> {
+        let mut state = self.state();
+        let stop = state.grades.answered(question, link_of(peer), answer);
+        if let Some(grade) = stop {
+            tell_link(&mut state, link_of(peer), Pushed::StopGrade { grade });
+        }
+        Ok(Answer::Done)
+    }
+
+    /// One step of a grade the window runs for a terminal, pushed to that terminal's link alone.
+    fn grade_step(
+        &self,
+        question: u64,
+        step: session::GradeStepTold,
+        peer: &Peer,
+    ) -> Result<Answer, Refusal> {
+        let mut state = self.state();
+        if let Some(asker) = state
+            .grades
+            .step(question, link_of(peer), step.ended.is_some())
+        {
+            tell_link(&mut state, asker, Pushed::GradeStep { step });
+        }
+        Ok(Answer::Done)
+    }
+
+    /// `link` has gone: each grade it asked for stops, so nothing spends with nobody following
+    /// it, and each terminal following a grade it ran is told it ended there.
+    fn grades_of_a_link_gone(&self, link: u64) {
+        let mut state = self.state();
+        let gone = state.grades.link_gone(link);
+        for (window, grade) in gone.to_stop {
+            tell_link(&mut state, window, Pushed::StopGrade { grade });
+        }
+        for (asker, grade) in gone.to_tell {
+            let step = session::GradeStepTold {
+                grade,
+                ran: 0,
+                of: 0,
+                tokens: None,
+                cost_micro_usd: None,
+                asked: 0,
+                ended: Some("window_gone".to_owned()),
+                said: Some("The purlis window running this grade closed, so it ended.".to_owned()),
+            };
+            tell_link(&mut state, asker, Pushed::GradeStep { step });
+        }
     }
 
     /// Push line `id` that the hooks of the project held `at` wrote to every subscriber whose
@@ -3486,6 +3621,13 @@ impl session::Host for Hosting {
             Command::StartSaving { project } => self.start_saving(&project, peer).await,
             Command::StopSaving { project } => self.stop_saving(&project, peer).await,
             Command::FetchProject { project } => self.fetch(&project, peer),
+            Command::AskGrade {
+                project,
+                project_path,
+                ask,
+            } => self.ask_grade(project, project_path, ask, peer).await,
+            Command::AnswerGrade { question, answer } => self.answer_grade(question, answer, peer),
+            Command::GradeStep { question, step } => self.grade_step(question, step, peer),
             Command::MidTurn { question, chats } => {
                 // An answer nobody waits for any more (it came late) is done all the same.
                 if let Some(waiting) = self.state().questions.remove(&question) {
@@ -3695,6 +3837,7 @@ impl session::Host for Hosting {
 
     async fn link_ended(&self, peer: &Peer) {
         self.inner.unattended.ended(peer);
+        self.grades_of_a_link_gone(link_of(peer));
         // The last window going: what ends with its window ends first, and is gone before its
         // holds are let go of, so a project it alone kept is let go of as any other.
         // Under the one hold a start's check takes too: a program started as this goes is
@@ -3748,6 +3891,8 @@ impl session::Host for Hosting {
                 told,
                 confines: peer.scope().may(Power::Confine),
                 saves: peer.scope().may(Power::Save),
+                runs_grades: peer.scope().may(Power::RunGrade)
+                    && peer.version() >= session::KNOWS_GRADE_ASKS,
                 downloads: peer.version() >= session::KNOWS_ENGINE_DOWNLOADS
                     && peer.scope().may(Power::Browser),
             });

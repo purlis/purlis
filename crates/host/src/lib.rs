@@ -50,8 +50,9 @@ mod confining;
 #[cfg(unix)]
 mod connector;
 #[cfg(unix)]
-mod hearing;
+mod grading;
 #[cfg(unix)]
+mod hearing;
 mod hosting;
 #[cfg(unix)]
 mod hostrecord;

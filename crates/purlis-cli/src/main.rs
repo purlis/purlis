@@ -39,6 +39,7 @@ mod extcmd;
 mod extensions;
 mod gitask;
 mod githook;
+mod gradelink;
 mod guard;
 mod handoff;
 mod hooks;
