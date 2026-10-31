@@ -9,7 +9,7 @@
  *
  * - **The header**: the skill's name, its skill level and its state, what it does, and its
  *   actions: Use in this chat, Edit and Grade, then a "…" menu of Rename, Move to another level,
- *   Deprecate, Archive, Open the file and Delete. A built-in skill's page says it can't be
+ *   Deprecate, Archive, Improve from runs, Open the file and Delete. A built-in skill's page says it can't be
  *   edited, moved or turned off, and offers only what it can do.
  * - **The banner**: where the skill isn't plainly on (off, left out, a change to review, an update
  *   waiting, hidden by the router, a clash, deprecated or archived), why in one sentence, and the
@@ -629,18 +629,6 @@ export function SkillPage({
           }
         }}
       >
-        <MenuItem id="improve" textValue="Improve from runs…">
-          <MenuWords
-            said="Improve from runs…"
-            under={
-              level === null
-                ? cannotChange
-                : "reason" in file
-                  ? file.reason
-                  : "A chat reads its runs and grades and drafts an edit for you to accept."
-            }
-          />
-        </MenuItem>
         <MenuItem id="rename" textValue="Rename…">
           <MenuWords said="Rename…" under={level === null ? cannotChange : undefined} />
         </MenuItem>
@@ -664,6 +652,18 @@ export function SkillPage({
         </MenuItem>
         <MenuItem id="archive" textValue={archiveSaid}>
           <MenuWords said={archiveSaid} under={level === null ? cannotChange : undefined} />
+        </MenuItem>
+        <MenuItem id="improve" textValue="Improve from runs…">
+          <MenuWords
+            said="Improve from runs…"
+            under={
+              level === null
+                ? cannotChange
+                : "reason" in file
+                  ? file.reason
+                  : "A chat reads its runs and grades and drafts an edit for you to accept."
+            }
+          />
         </MenuItem>
         <MenuItem id="file" textValue="Open the file">
           <MenuWords said="Open the file" under={"reason" in file ? file.reason : undefined} />
