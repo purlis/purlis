@@ -645,12 +645,14 @@ impl Connection {
                 let relayed = lock(&window.relayed).clone().ok_or_else(|| {
                     no_host("there is no way to reach a pool's runner through it")
                 })?;
-                relayed(within, naming, pool).map_err(|why| {
-                    format!(
-                        "This workspace's chats run on pool {pool}, and its runner was not \
-                         reached, so nothing was sent: {why}"
-                    )
-                })?
+                relayed(within, naming, pool)
+                    .map_err(|why| {
+                        format!(
+                            "This workspace's chats run on pool {pool}, and its runner was not \
+                             reached, so nothing was sent: {why}"
+                        )
+                    })?
+                    .with_pools_in(self.runners_config())
             }
             None => {
                 let dial = lock(&self.dial)
@@ -1065,6 +1067,9 @@ pub struct HostLink {
     most_bundle_bytes: u64,
     /// The pool whose runner this link reaches, whose limits it follows (spec #4275).
     pool: Option<String>,
+    /// Where this machine keeps that pool ([`Connection::runners_config`]): none reads purlis's
+    /// defaults, as a test's host does.
+    pools_in: Option<PathBuf>,
     /// The runner this link reached, as `<pool>/<runner>`, as its host said it (1.48, #3417).
     reached: Option<String>,
 }
@@ -1311,6 +1316,7 @@ impl HostLink {
             unnamed,
             most_bundle_bytes: purlis_session_protocol::code::MOST_BUNDLE_BYTES,
             pool: relaying.map(str::to_owned),
+            pools_in: None,
             reached,
         })
     }
@@ -1330,16 +1336,20 @@ impl HostLink {
         self.client.end_link();
     }
 
+    /// This link, reading its pool's limits from `config`.
+    fn with_pools_in(mut self, config: Option<PathBuf>) -> HostLink {
+        self.pools_in = config;
+        self
+    }
+
     /// **This link's pool's limits, as they stand now** (spec #4275): read at each attempt, so a
     /// changed value applies with nothing restarted. Purlis's defaults on a link to no pool, or
     /// where they can't be read.
     fn limits(&self) -> purlis_core::poollimits::Chosen {
         self.pool
             .as_deref()
-            .and_then(|pool| {
-                let config = crate::poolprofiles::config_root().ok()?;
-                purlis_core::runners::chosen_limits_of(&config, pool).ok()
-            })
+            .zip(self.pools_in.as_deref())
+            .and_then(|(pool, config)| purlis_core::runners::chosen_limits_of(config, pool).ok())
             .unwrap_or_default()
     }
 

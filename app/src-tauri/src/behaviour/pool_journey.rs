@@ -354,15 +354,14 @@ fn measure_limits(target: &Target, machine: &Machine, pool: &str, settings: &Pat
         std::thread::spawn(move || {
             let mut samples = Vec::new();
             while watching.load(std::sync::atomic::Ordering::SeqCst) {
-                let out = std::process::Command::new("docker")
-                    .args([
+                let out =
+                    purlis_core::forklock::output(std::process::Command::new("docker").args([
                         "stats",
                         "--no-stream",
                         "--format",
                         "{{.MemUsage}}",
                         &container,
-                    ])
-                    .output();
+                    ]));
                 if let Ok(out) = out {
                     samples.push(String::from_utf8_lossy(&out.stdout).trim().to_owned());
                 }

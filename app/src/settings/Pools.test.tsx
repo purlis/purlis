@@ -869,7 +869,14 @@ describe("A cluster pool (#3292)", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Add pool" }));
     await waitFor(() =>
       expect(clustersAdded).toEqual([
-        { name: "team", kubeconfig: null, context: "team", pool: "default", key: OPERATOR_KEY },
+        {
+          name: "team",
+          kubeconfig: null,
+          context: "team",
+          pool: "default",
+          key: OPERATOR_KEY,
+          vouch_wait: null,
+        },
       ]),
     );
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add a pool" })).toBeNull());

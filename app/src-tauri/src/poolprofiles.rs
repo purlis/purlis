@@ -1214,7 +1214,7 @@ fn row(record: &profilestore::MachineProfile, kept: Result<Standing, String>) ->
     }
 }
 
-pub(crate) fn config_root() -> Result<PathBuf, String> {
+fn config_root() -> Result<PathBuf, String> {
     purlis_core::machine::config_root()
         .ok_or_else(|| "There is no config home on this machine to keep a pool in.".to_owned())
 }
