@@ -372,6 +372,7 @@ describe("Grade, cost first", () => {
       harness: "Claude Code",
       model: null as string | null,
       same_profile: true as boolean | null,
+      interrupted: false,
     };
     expect(
       costSaid(plan({ estimate: { tokens: 120000, cost_usd: 1.2, chats_then: 6, ...from } })),
@@ -413,6 +414,16 @@ describe("Grade, cost first", () => {
         }),
       ),
     ).toContain("Its last grade on work (Claude Code)");
+    // #3602: a grade purlis stopped under is gone by, as far as its chats went, and says so.
+    expect(
+      costSaid(
+        plan({
+          estimate: { tokens: 12000, cost_usd: null, chats_then: 4, ...from, interrupted: true },
+        }),
+      ),
+    ).toBe(
+      "From its interrupted grade on work (Claude Code), 2026-10-25, of 4 chats, this one should spend about 12,000 tokens.",
+    );
     // A grade purlis stopped under before any chat ran: graded, and no chat to go by.
     expect(
       costSaid(plan({ estimate: { tokens: null, cost_usd: null, chats_then: 0, ...from } })),
