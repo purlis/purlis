@@ -2168,6 +2168,9 @@ struct Dimmed {
 struct Held {
     project: String,
     on: u64,
+    /// The runners of the pool it may be held on, by name, where this machine keeps any: the
+    /// pool's, and each one draining, which a link already on it stays on.
+    runners: Vec<String>,
 }
 
 impl HostedSessions {
@@ -2435,11 +2438,27 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     } = holding;
     let link = connection.of_project(root, LINK_WITHIN)?;
     let mut held = lock(held);
-    if let Some(Held { project, on }) = &*held
+    if let Some(Held {
+        project,
+        on,
+        runners,
+    }) = &*held
         && *on == link.id
     {
-        return Ok((link, project.clone()));
+        // A runner this was held on is kept no more (Make the runner again, a drain's end): the
+        // relay holds the project on the one after it, which answers yes and holds none of its
+        // code, so no word comes back that it does not hold it.
+        if !(*kept_on_the_runner && a_runner_is_gone(connection, runners)) {
+            return Ok((link, project.clone()));
+        }
+        crate::runnercode::forget(sent);
     }
+    // Read before the hold and the send, so a runner removed during them is seen as gone next.
+    let runners = if *kept_on_the_runner {
+        runners_of_the_pool(connection)
+    } else {
+        Vec::new()
+    };
     let project = purlis_core::scaffold::planefile::id_to_hold_by(root)
         .map_err(|why| format!("this project has no id the session host can name it by: {why}"))?;
     // Before the hold, so the host's first line for the project is heard.
@@ -2556,10 +2575,36 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     *held = Some(Held {
         project: project.clone(),
         on: link.id,
+        runners,
     });
     // Held: a mark that a runner would not hold it goes (#2846).
     crate::notheld::held(root);
     Ok((link, project))
+}
+
+/// The names of the runners `connection`'s pool has now: its own and each one draining. None
+/// where this machine keeps none, or they cannot be read.
+fn runners_of_the_pool(connection: &Connection) -> Vec<String> {
+    let (Some(config), Some(pool)) = (connection.runners_config(), connection.pool()) else {
+        return Vec::new();
+    };
+    let draining = purlis_core::runners::draining(&config).unwrap_or_default();
+    purlis_core::runners::runner_for(&config, pool)
+        .into_iter()
+        .chain(draining.into_iter().filter(|kept| kept.pool() == pool))
+        .map(|kept| kept.name().to_owned())
+        .collect()
+}
+
+/// Whether this machine no longer keeps one of `runners`. A list that cannot be read says nothing
+/// is gone: a resend of the whole project waits for an answer.
+fn a_runner_is_gone(connection: &Connection, runners: &[String]) -> bool {
+    let Some(config) = connection.runners_config() else {
+        return false;
+    };
+    runners
+        .iter()
+        .any(|name| matches!(purlis_core::runners::named(&config, name), Ok(None)))
 }
 
 /// **A chat the window takes back on a pool's runner ran, or may have run, without the sandbox**
@@ -3407,7 +3452,7 @@ impl SessionHost for HostedSessions {
     fn already_dealt(&self, dealt: u32) {
         self.opened.fetch_max(dealt, Ordering::Relaxed);
         let held = lock(&self.held).clone();
-        if let (Some(Held { project, on }), Ok(link)) = (held, self.own_link(Duration::ZERO))
+        if let (Some(Held { project, on, .. }), Ok(link)) = (held, self.own_link(Duration::ZERO))
             && on == link.id
         {
             link.send(Command::DealtAlready { project, dealt });
@@ -3431,7 +3476,7 @@ impl SessionHost for HostedSessions {
             return;
         }
         let held = lock(&self.held).clone();
-        if let Some(Held { project, on }) = held
+        if let Some(Held { project, on, .. }) = held
             && let Ok(link) = self.connection.of_project(&self.root, Duration::ZERO)
             && link.id == on
         {

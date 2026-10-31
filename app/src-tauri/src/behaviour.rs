@@ -384,6 +384,8 @@ const DOCKER_POOL_IMAGE: &str = "DOCKER_POOL_TEST_IMAGE";
 /// so an image that went missing never passes as nothing run.
 const PARITY: &str = "PURLIS_PARITY";
 
+mod pool_journey;
+
 /// **A chat on a Docker pool's runner** (#2045, spec #2041): a pool added on this machine as
 /// the window adds one ([`a_pool_on`]). The window speaks to its own host, which relays to the
 /// runner's `purlis serve` over the link between hosts, through `docker exec` and the key pinned
@@ -405,11 +407,20 @@ pub(crate) fn in_a_docker_pool() -> Option<Target> {
         );
         return None;
     };
-    let config = tempfile::tempdir().expect("the desktop's config home");
     let docker = purlis_core::dockerpool::Docker::at(
         std::env::var_os("DOCKER_POOL_TEST_DOCKER").unwrap_or("docker".into()),
-    )
-    .with_settings_in(config.path().join("docker-settings"));
+    );
+    Some(a_window_on_a_pool_of(&image, docker).0)
+}
+
+/// A window on a pool of `image` it adds on a machine of its own through `docker`: the target,
+/// that machine, and the pool's name.
+fn a_window_on_a_pool_of(
+    image: &str,
+    docker: purlis_core::dockerpool::Docker,
+) -> (Target, crate::runnerlinks::Machine, String) {
+    let config = tempfile::tempdir().expect("the desktop's config home");
+    let docker = docker.with_settings_in(config.path().join("docker-settings"));
     let machine = crate::runnerlinks::Machine {
         config: config.path().to_path_buf(),
         docker: docker.clone(),
@@ -417,7 +428,7 @@ pub(crate) fn in_a_docker_pool() -> Option<Target> {
             config.path().join("keyring.json"),
         )),
     };
-    let (name, removes) = a_pool_on(&machine, &image);
+    let (name, removes) = a_pool_on(&machine, image);
     let made = purlis_core::runners::runner_for(config.path(), &name)
         .expect("its runner is kept")
         .made;
@@ -490,7 +501,7 @@ pub(crate) fn in_a_docker_pool() -> Option<Target> {
     target._keeps.push(Box::new(data));
     target._keeps.push(Box::new(removes));
     target._keeps.push(Box::new(config));
-    Some(target)
+    (target, machine, name)
 }
 
 /// A `local-ui` link to `host` over an in-memory stream, served as the window's host serves
@@ -1312,7 +1323,12 @@ impl Pane {
     /// reach it with the rest of the screen and a cursor move between them (#2375): a
     /// terminal draws that as the line, and so does the pane's.
     fn shows(&self, text: &str) {
-        let deadline = Instant::now() + PATIENCE;
+        self.shows_within(text, PATIENCE);
+    }
+
+    /// [`Self::shows`], for as long as `patience`.
+    fn shows_within(&self, text: &str, patience: Duration) {
+        let deadline = Instant::now() + patience;
         let wanted = drawn(text);
         loop {
             // The lock is let go before a failed wait panics: the view's sink takes it on the
