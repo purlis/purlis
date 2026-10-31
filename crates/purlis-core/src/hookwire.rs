@@ -1889,6 +1889,66 @@ pub enum GitWork {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         delete_branch: bool,
     },
+    /// **The guard's question before plain git writes a branch folder** (#3931): may this chat
+    /// `act` in the folder `<repo>/<piece>` of the ask's workspace? The app runs no git: it
+    /// judges the folder's claim against the chats it has, and takes the folder for the chat
+    /// where no live chat holds it, as a brokered write does ([`crate::piececlaim::take`]). It
+    /// answers an empty `Said` with exit 0 where the chat may write, and a `Said` with exit
+    /// [`CLAIM_HELD`] and the refusal as its one line where another live chat holds the folder:
+    /// the one answer the asking guard refuses on. Any `No` (a chat the app does not have open,
+    /// a name that cannot be a branch folder, a claim it could not judge) lets the git run, as
+    /// no answer does. Asked with [`GitAsk::alive`] off: the guard's wait is bounded, and a
+    /// liveness line would only spend it. A kind of its own, so an app that does not know it
+    /// answers nothing.
+    WorktreeClaim {
+        repo: String,
+        piece: String,
+        act: ClaimAct,
+    },
+}
+
+/// The exit status a [`GitWork::WorktreeClaim`] is answered with where another live chat holds
+/// the folder: the one answer the guard on a chat's own git refuses on (#3931, the review of
+/// #4129). Not 1, which any failure could say.
+pub const CLAIM_HELD: u8 = 3;
+
+/// What plain git would do in a branch folder, as a [`GitWork::WorktreeClaim`] names it.
+///
+/// **A wire enum of its own, not [`crate::piececlaim::Act`]**: that one also names a removal
+/// and a dispatch's warning, which no claim ask may carry, and its words are prose for a
+/// refusal. This holds the three a chat's git can ask about, in the stable snake-case spelling
+/// the socket's lines keep across app and command-line versions; [`ClaimAct::act`] and
+/// [`ClaimAct::of`] map between the two.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimAct {
+    /// A commit: `git commit`, `merge`, `cherry-pick`, `revert`, `am`.
+    Commit,
+    /// The branch rebased or pulled.
+    Update,
+    /// The branch pushed.
+    Push,
+}
+
+impl ClaimAct {
+    /// The act a branch folder's claim judges and its refusal names.
+    pub fn act(self) -> crate::piececlaim::Act {
+        match self {
+            Self::Commit => crate::piececlaim::Act::Commit,
+            Self::Update => crate::piececlaim::Act::Update,
+            Self::Push => crate::piececlaim::Act::Push,
+        }
+    }
+
+    /// The wire's word for `act`, or `None` for an act no plain git asks about.
+    pub fn of(act: crate::piececlaim::Act) -> Option<Self> {
+        match act {
+            crate::piececlaim::Act::Commit => Some(Self::Commit),
+            crate::piececlaim::Act::Update => Some(Self::Update),
+            crate::piececlaim::Act::Push => Some(Self::Push),
+            crate::piececlaim::Act::Remove | crate::piececlaim::Act::Write => None,
+        }
+    }
 }
 
 /// What a [`GitWork::WorktreeUpdate`] does.

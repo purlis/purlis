@@ -81,6 +81,164 @@ fn a_refused_workspace_is_answered_no_and_nothing_runs() {
     assert!(!root.join("workspaces/beta/pieces").exists());
 }
 
+/// #3931: the Bash guard of a chat that runs git itself asks before plain git writes a branch
+/// folder. The first live chat takes the folder, a second is refused in the brokered refusal's
+/// words, and a shell tab (the person's own terminal) is never held to it.
+#[test]
+fn plain_git_s_claim_is_taken_by_the_first_live_chat_and_refused_to_a_second() {
+    use crate::hookwire::ClaimAct;
+    let (_dir, root) = tree();
+    let live = vec![
+        crate::piececlaim::Live {
+            id: "01A".to_owned(),
+            chat: Some(4),
+            back: true,
+        },
+        crate::piececlaim::Live {
+            id: "01B".to_owned(),
+            chat: Some(9),
+            back: true,
+        },
+    ];
+    let chat = |number: u32, id: &str, harnessed: bool| Asker {
+        chat: number,
+        id: Some(id.to_owned()),
+        live: Some(live.clone()),
+        harnessed,
+        unsandboxed: true,
+        // Anywhere: the claim runs no git, so where the chat stands is not asked.
+        cwd: None,
+        ..asker(None)
+    };
+    let ask = |act| GitAsk {
+        chat: 0,
+        workspace: "alpha".to_owned(),
+        // A claim is answered at once: it reads no liveness lines (#4080).
+        alive: false,
+        work: GitWork::WorktreeClaim {
+            repo: "widget".to_owned(),
+            piece: "p1".to_owned(),
+            act,
+        },
+    };
+    let asked = |asker: &Asker, act| {
+        answer(
+            &root,
+            asker,
+            &ask(act),
+            &git::Isolated::default(),
+            chrono::Utc::now(),
+        )
+    };
+    let may = Answer::Said {
+        lines: Vec::new(),
+        code: 0,
+    };
+    assert_eq!(asked(&chat(4, "01A", true), ClaimAct::Commit), may);
+    assert_eq!(asked(&chat(4, "01A", true), ClaimAct::Push), may);
+    // Held by another live chat: the one answer the guard refuses on.
+    let Answer::Said { lines, code } = asked(&chat(9, "01B", true), ClaimAct::Push) else {
+        panic!("a second live chat's push was let through");
+    };
+    assert_eq!(code, crate::hookwire::CLAIM_HELD);
+    let [Say::Fail(why)] = lines.as_slice() else {
+        panic!("{lines:?}");
+    };
+    assert!(
+        why.contains("widget's branch folder 'p1' is claimed by chat 4"),
+        "{why}"
+    );
+    assert!(why.contains("will not push in it"), "{why}");
+    assert!(why.contains("purlis worktree done"), "{why}");
+    // A shell tab is the person's own: never refused, and it takes nothing.
+    assert_eq!(asked(&chat(9, "01B", false), ClaimAct::Commit), may);
+    assert!(matches!(
+        asked(&chat(9, "01B", true), ClaimAct::Commit),
+        Answer::Said {
+            code: crate::hookwire::CLAIM_HELD,
+            ..
+        }
+    ));
+    // The holder still writes.
+    assert_eq!(asked(&chat(4, "01A", true), ClaimAct::Update), may);
+    // A name that cannot be a branch folder is refused before anything is read.
+    let odd = GitAsk {
+        chat: 0,
+        workspace: "../alpha".to_owned(),
+        // A claim is answered at once: it reads no liveness lines (#4080).
+        alive: false,
+        work: GitWork::WorktreeClaim {
+            repo: "widget".to_owned(),
+            piece: "p1".to_owned(),
+            act: ClaimAct::Commit,
+        },
+    };
+    let odd = answer(
+        &root,
+        &chat(4, "01A", true),
+        &odd,
+        &git::Isolated::default(),
+        chrono::Utc::now(),
+    );
+    assert!(matches!(odd, Answer::No { .. }), "{odd:?}");
+}
+
+/// The review of #4129: only a folder another LIVE chat holds is `CLAIM_HELD`. A holder that
+/// has not come back since a restart is a refusal the guard lets through, so it is a `No`.
+#[test]
+fn a_holder_not_back_since_a_restart_is_answered_no_and_not_held() {
+    use crate::hookwire::ClaimAct;
+    let (_dir, root) = tree();
+    let chat = |number: u32, id: &str, holder_back: bool| Asker {
+        chat: number,
+        id: Some(id.to_owned()),
+        live: Some(vec![
+            crate::piececlaim::Live {
+                id: "01A".to_owned(),
+                chat: Some(4),
+                back: holder_back,
+            },
+            crate::piececlaim::Live {
+                id: "01B".to_owned(),
+                chat: Some(9),
+                back: true,
+            },
+        ]),
+        unsandboxed: true,
+        ..asker(None)
+    };
+    let asked = |asker: &Asker| {
+        answer(
+            &root,
+            asker,
+            &GitAsk {
+                chat: 0,
+                workspace: "alpha".to_owned(),
+                // A claim is answered at once: it reads no liveness lines (#4080).
+                alive: false,
+                work: GitWork::WorktreeClaim {
+                    repo: "widget".to_owned(),
+                    piece: "p1".to_owned(),
+                    act: ClaimAct::Push,
+                },
+            },
+            &git::Isolated::default(),
+            chrono::Utc::now(),
+        )
+    };
+    // Chat 4 takes the folder while it runs.
+    assert!(matches!(
+        asked(&chat(4, "01A", true)),
+        Answer::Said { code: 0, .. }
+    ));
+    // Restarted, and not back yet: chat 9 is told no, not that a live chat holds it.
+    let answer = asked(&chat(9, "01B", false));
+    let Answer::No { why } = &answer else {
+        panic!("{answer:?}");
+    };
+    assert!(why.contains("has not come back"), "{why}");
+}
+
 #[test]
 fn a_shell_tab_or_a_chat_started_without_the_sandbox_has_no_host_limit() {
     // Neither reads the manifest: a shell is the operator's own, and the opt-out is a person's.
