@@ -95,8 +95,7 @@ pub fn grade(
         .as_array()
         .map(|arms| arms.iter().filter_map(serde_json::Value::as_str).collect())
         .unwrap_or_default();
-    let runs = grade["runs"].as_u64().unwrap_or(1)
-        + u64::from(skill == PAST_THE_PLAN);
+    let runs = grade["runs"].as_u64().unwrap_or(1) + u64::from(skill == PAST_THE_PLAN);
     let mut ran: Vec<(usize, &str, serde_json::Value)> = Vec::new();
     'runs: for _ in 0..runs {
         for (t, (query, _)) in tests.iter().enumerate() {
@@ -139,11 +138,15 @@ pub fn grade(
             let n = ends(&["turn", "timed-out"]);
             let triggered = of
                 .iter()
-                .filter(|one| ["turn", "timed-out"].contains(&one["end"].as_str().unwrap_or_default()))
                 .filter(|one| {
-                    one["started"]
-                        .as_array()
-                        .is_some_and(|started| started.iter().any(|it| it.as_str().map(leaf).as_deref() == Some(skill)))
+                    ["turn", "timed-out"].contains(&one["end"].as_str().unwrap_or_default())
+                })
+                .filter(|one| {
+                    one["started"].as_array().is_some_and(|started| {
+                        started
+                            .iter()
+                            .any(|it| it.as_str().map(leaf).as_deref() == Some(skill))
+                    })
                 })
                 .count() as u64;
             let rate = (n > 0).then(|| triggered as f64 / n as f64);
@@ -183,7 +186,10 @@ pub fn grade(
 /// the harness its own folder names ([`HARNESS`]), where a test named one.
 fn try_past_the_grade() {
     let mut said = vec![
-        format!("model host: {}", tried(&["proxy".into(), "api.anthropic.com".into()])),
+        format!(
+            "model host: {}",
+            tried(&["proxy".into(), "api.anthropic.com".into()])
+        ),
         format!(
             "model address: {}",
             tried(&["connect".into(), "160.79.104.10:443".into()])
@@ -193,7 +199,12 @@ fn try_past_the_grade() {
         let started = std::process::Command::new(harness.trim())
             .arg("--version")
             .output()
-            .map(|out| format!("ok, it said {}", String::from_utf8_lossy(&out.stdout).trim()))
+            .map(|out| {
+                format!(
+                    "ok, it said {}",
+                    String::from_utf8_lossy(&out.stdout).trim()
+                )
+            })
             .unwrap_or_else(|why| format!("refused: {}", why.kind()));
         said.push(format!("harness: {started}"));
     }

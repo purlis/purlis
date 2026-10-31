@@ -607,7 +607,10 @@ fn a_chat_past_the_plan_is_refused_and_never_run() {
     let prompt = held
         .ask(&chat(Arm::With, "write me a poem"))
         .expect_err("a prompt no test has");
-    assert!(prompt.contains("none of this grade's trigger tests"), "{prompt}");
+    assert!(
+        prompt.contains("none of this grade's trigger tests"),
+        "{prompt}"
+    );
     for _ in 0..RUNS {
         assert!(matches!(
             held.ask(&chat(Arm::With, "make me a pdf")),
@@ -624,7 +627,11 @@ fn a_chat_past_the_plan_is_refused_and_never_run() {
         Ok(Asked::Ran(_))
     ));
     drop(held);
-    assert_eq!(host.asked.len(), usize::from(RUNS) + 1, "only chats in the plan ran");
+    assert_eq!(
+        host.asked.len(),
+        usize::from(RUNS) + 1,
+        "only chats in the plan ran"
+    );
 }
 
 #[test]
@@ -727,7 +734,10 @@ fn chats_that_do_not_start_end_a_framework_s_grade_with_their_sentence() {
     assert_eq!(held.ended(), Some(GradeEnd::ChatsDidNotStart));
     assert_eq!(held.not_started(), Some("the profile is signed out"));
     let report = held.scored("probe", None);
-    assert_eq!(report.not_started.as_deref(), Some("the profile is signed out"));
+    assert_eq!(
+        report.not_started.as_deref(),
+        Some("the profile is signed out")
+    );
 }
 
 #[test]
@@ -808,7 +818,11 @@ fn a_grader_s_report_is_held_to_what_ran_and_carries_purlis_s_spend() {
     assert_eq!(report.grader, "probe");
     assert_eq!(report.ended, GradeEnd::Whole);
     assert_eq!(report.cap, Some(100_000));
-    assert_eq!(report.spent_tokens, Some(1000), "purlis's count, not the Grader's");
+    assert_eq!(
+        report.spent_tokens,
+        Some(1000),
+        "purlis's count, not the Grader's"
+    );
     assert_eq!(report.delta, Some(0.5));
 
     for (triggers, arms, says) in [

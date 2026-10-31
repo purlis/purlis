@@ -112,8 +112,8 @@ use std::sync::{Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use crate::extension::{self, Extension, Standing};
-use crate::skills::grade;
 use crate::panel::{self, Subject};
+use crate::skills::grade;
 
 /// The newest protocol a request and an answer are written in — what this charter speaks.
 ///
@@ -755,7 +755,8 @@ impl Executor {
         chats: &mut dyn grade::Chats,
         limits: Option<grade::Limits>,
     ) -> grade::GradeReport {
-        let mut grading = extension::studio::grading::Grading::new(extension, request, chats, limits);
+        let mut grading =
+            extension::studio::grading::Grading::new(extension, request, chats, limits);
         let ask = extension::studio::Ask::Grade { request };
         let talked = self
             .put_talking(

@@ -137,8 +137,14 @@ impl<'a> Studio<'a> {
         chats: &mut dyn purlis_skills::grade::Chats,
         limits: Option<purlis_skills::grade::Limits>,
     ) -> purlis_skills::grade::GradeReport {
-        self.executor
-            .grade(self.config_root, self.project, extension, request, chats, limits)
+        self.executor.grade(
+            self.config_root,
+            self.project,
+            extension,
+            request,
+            chats,
+            limits,
+        )
     }
 
     /// **The lints of each extension that declares `skill-lint`**, to ask beside purlis's own.

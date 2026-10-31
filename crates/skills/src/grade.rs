@@ -496,7 +496,11 @@ pub enum Asked {
 
 impl<'a> Held<'a> {
     /// `request`'s grade, its chats asked of `chats` and held to `limits` where they are given.
-    pub fn new(request: &'a GradeRequest, chats: &'a mut dyn Chats, limits: Option<Limits>) -> Self {
+    pub fn new(
+        request: &'a GradeRequest,
+        chats: &'a mut dyn Chats,
+        limits: Option<Limits>,
+    ) -> Self {
         Self {
             ran: vec![vec![Vec::new(); request.arms.len()]; request.triggers.len()],
             not_started_in_its_arm: vec![0; request.arms.len()],
@@ -646,14 +650,13 @@ impl<'a> Held<'a> {
             Some(GradeEnd::SpendNotReported)
         } else if stop.is_some() {
             stop
-        } else if self
-            .cap
-            .is_some_and(|cap| self.spent.unwrap_or(0) >= cap)
-        {
+        } else if self.cap.is_some_and(|cap| self.spent.unwrap_or(0) >= cap) {
             Some(GradeEnd::OverCap)
         } else if self.over_the_limit() {
             Some(GradeEnd::OverLimit)
-        } else if self.not_started_in_a_row.max(self.not_started_in_its_arm[a])
+        } else if self
+            .not_started_in_a_row
+            .max(self.not_started_in_its_arm[a])
             >= NOT_STARTED_IN_A_ROW
         {
             Some(GradeEnd::ChatsDidNotStart)
@@ -727,8 +730,7 @@ impl<'a> Held<'a> {
                         })
                     })
                     .collect();
-                let all: Vec<&ChatRan> =
-                    ran.iter().flat_map(|of_test| of_test[a].iter()).collect();
+                let all: Vec<&ChatRan> = ran.iter().flat_map(|of_test| of_test[a].iter()).collect();
                 let tokens: Vec<f64> = all
                     .iter()
                     .filter_map(|one| one.tokens)

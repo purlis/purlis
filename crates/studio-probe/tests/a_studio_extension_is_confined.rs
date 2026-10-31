@@ -718,7 +718,6 @@ fn a_router_answers_confined_and_is_stopped_at_its_deadline() {
     assert!(real.running().is_empty(), "its program was stopped");
 }
 
-
 // ---------------------------------------------------------------------------------------
 // The Grader: its chats run through purlis, never a harness or a model's host (#3236)
 // ---------------------------------------------------------------------------------------
@@ -741,7 +740,8 @@ impl purlis_skills::grade::Chats for Chats {
         self.asked.push(chat.clone());
         purlis_skills::grade::ChatRan {
             chat: Some(format!("purlis-chat-{n}")),
-            started: if chat.arm == purlis_skills::grade::Arm::With && chat.prompt.starts_with("probe")
+            started: if chat.arm == purlis_skills::grade::Arm::With
+                && chat.prompt.starts_with("probe")
             {
                 vec!["purlis-project:probe-skill".into()]
             } else {
@@ -755,7 +755,8 @@ impl purlis_skills::grade::Chats for Chats {
     }
 
     fn cancelled(&self) -> bool {
-        self.stop_after.is_some_and(|after| self.asked.len() >= after)
+        self.stop_after
+            .is_some_and(|after| self.asked.len() >= after)
     }
 }
 
@@ -804,7 +805,10 @@ fn graded_by_the_probe(
         project: &choices,
     };
     // Listed beside purlis's own, by the title its manifest gives it.
-    assert_eq!(studio.graders(), [(ID.to_owned(), "Probe grader".to_owned())]);
+    assert_eq!(
+        studio.graders(),
+        [(ID.to_owned(), "Probe grader".to_owned())]
+    );
     let report = studio.grade(ID, request, chats, limits);
     (report, executor)
 }
@@ -838,7 +842,10 @@ fn a_grader_runs_its_chats_through_purlis_and_never_a_harness_or_a_model() {
     assert_eq!(report.ended, GradeEnd::Whole);
     assert_eq!(report.grader, ID, "the Grader's own report");
     // Every chat it asked for was one purlis ran: the plan's, each test in each arm, each run.
-    assert_eq!(chats.asked.len(), 2 * 2 * usize::from(purlis_skills::grade::RUNS));
+    assert_eq!(
+        chats.asked.len(),
+        2 * 2 * usize::from(purlis_skills::grade::RUNS)
+    );
     assert_eq!(report.spent_tokens, Some(100 * chats.asked.len() as u64));
     let with = report
         .triggers
@@ -847,9 +854,9 @@ fn a_grader_runs_its_chats_through_purlis_and_never_a_harness_or_a_model() {
         .expect("scored");
     assert_eq!((with.runs, with.triggered, with.pass), (3, 3, Some(true)));
     assert!(
-        with.chats
-            .iter()
-            .all(|chat| chat.as_deref().is_some_and(|chat| chat.starts_with("purlis-chat-"))),
+        with.chats.iter().all(|chat| chat
+            .as_deref()
+            .is_some_and(|chat| chat.starts_with("purlis-chat-"))),
         "each chat is one purlis ran: {:?}",
         with.chats
     );
@@ -922,7 +929,10 @@ fn a_stopped_grade_stops_its_grader() {
     let began = std::time::Instant::now();
     let (report, executor) = graded_by_the_probe(&probe, &request, &mut chats, capped(100_000));
     assert!(executor.running().is_empty(), "its program was stopped");
-    assert!(began.elapsed() < PATIENT, "the Stop did not wait for the Grader");
+    assert!(
+        began.elapsed() < PATIENT,
+        "the Stop did not wait for the Grader"
+    );
     assert_eq!(report.ended, GradeEnd::Cancelled);
     assert_eq!(chats.asked.len(), 1);
 }
@@ -940,7 +950,10 @@ const TESTS: &[(&str, fn())] = &[
         "a_grader_is_held_to_the_cap_and_answers_its_report_at_it",
         a_grader_is_held_to_the_cap_and_answers_its_report_at_it,
     ),
-    ("a_stopped_grade_stops_its_grader", a_stopped_grade_stops_its_grader),
+    (
+        "a_stopped_grade_stops_its_grader",
+        a_stopped_grade_stops_its_grader,
+    ),
     (
         "a_router_answers_confined_and_is_stopped_at_its_deadline",
         a_router_answers_confined_and_is_stopped_at_its_deadline,

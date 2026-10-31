@@ -108,7 +108,11 @@ fn each_chat_asked_for_is_run_and_written_back_until_the_report() {
             "delta": null,
         },
     }));
-    assert_eq!(grading.heard(PROTOCOL, &report), None, "the question is over");
+    assert_eq!(
+        grading.heard(PROTOCOL, &report),
+        None,
+        "the question is over"
+    );
     let report = grading.finished(Ok(()));
     assert_eq!(report.grader, "probe");
     assert_eq!(report.ended, GradeEnd::Whole);
@@ -141,7 +145,9 @@ fn an_answer_out_of_shape_ends_the_grade_with_a_sentence() {
             "protocol 3",
         ),
         (
-            line(serde_json::json!({ "charter": PROTOCOL, "run_chat": { "arm": "with", "prompt": "make me a pdf", "harness": "claude" } })),
+            line(
+                serde_json::json!({ "charter": PROTOCOL, "run_chat": { "arm": "with", "prompt": "make me a pdf", "harness": "claude" } }),
+            ),
             "cannot read",
         ),
         (
@@ -157,7 +163,9 @@ fn an_answer_out_of_shape_ends_the_grade_with_a_sentence() {
             "could not: no grading today",
         ),
         (
-            line(serde_json::json!({ "charter": PROTOCOL, "report": { "triggers": [], "arms": [], "delta": null, "spent_tokens": 1 } })),
+            line(
+                serde_json::json!({ "charter": PROTOCOL, "report": { "triggers": [], "arms": [], "delta": null, "spent_tokens": 1 } }),
+            ),
             "report purlis cannot read",
         ),
     ] {
@@ -178,15 +186,26 @@ fn an_answer_out_of_shape_ends_the_grade_with_a_sentence() {
 
 #[test]
 fn a_chat_past_the_plan_is_never_run_and_ends_the_grade() {
-    let lines: Vec<Vec<u8>> = std::iter::repeat_n(run_chat("with"), usize::from(RUNS) + 1).collect();
+    let lines: Vec<Vec<u8>> =
+        std::iter::repeat_n(run_chat("with"), usize::from(RUNS) + 1).collect();
     let (report, chats) = ended_by(&lines, Ok(()));
     assert_eq!(chats, usize::from(RUNS), "the plan's runs, and no more");
     assert_eq!(report.ended, GradeEnd::GraderFailed);
-    assert!(report.failed.as_deref().is_some_and(|why| why.contains("more runs")));
+    assert!(
+        report
+            .failed
+            .as_deref()
+            .is_some_and(|why| why.contains("more runs"))
+    );
 
     let (report, chats) = ended_by(&[run_chat("previous")], Ok(()));
     assert_eq!(chats, 0);
-    assert!(report.failed.as_deref().is_some_and(|why| why.contains("arm")));
+    assert!(
+        report
+            .failed
+            .as_deref()
+            .is_some_and(|why| why.contains("arm"))
+    );
 }
 
 #[test]
@@ -226,7 +245,11 @@ fn a_report_after_the_cap_is_the_grader_s_and_ends_at_the_cap() {
     }));
     assert_eq!(grading.heard(PROTOCOL, &report), None);
     let report = grading.finished(Ok(()));
-    assert_eq!(report.ended, GradeEnd::OverCap, "purlis's end, whatever the Grader thought");
+    assert_eq!(
+        report.ended,
+        GradeEnd::OverCap,
+        "purlis's end, whatever the Grader thought"
+    );
     assert_eq!(report.spent_tokens, Some(1000));
 }
 
@@ -245,14 +268,22 @@ fn a_report_that_would_not_be_read_back_ends_the_grade() {
     }));
     let (report, _) = ended_by(&[run_chat("with"), report], Ok(()));
     assert_eq!(report.ended, GradeEnd::GraderFailed);
-    assert!(report.failed.as_deref().is_some_and(|why| why.contains("hold together")));
+    assert!(
+        report
+            .failed
+            .as_deref()
+            .is_some_and(|why| why.contains("hold together"))
+    );
 }
 
 #[test]
 fn a_question_that_fails_on_the_way_says_so() {
     let (report, _) = ended_by(
         &[run_chat("with")],
-        Err("'probe' did not answer within 5 seconds of purlis's last line, so purlis stopped it".into()),
+        Err(
+            "'probe' did not answer within 5 seconds of purlis's last line, so purlis stopped it"
+                .into(),
+        ),
     );
     assert_eq!(report.ended, GradeEnd::GraderFailed);
     assert_eq!(
@@ -263,7 +294,12 @@ fn a_question_that_fails_on_the_way_says_so() {
         )
     );
     let (report, _) = ended_by(&[run_chat("with")], Ok(()));
-    assert!(report.failed.as_deref().is_some_and(|why| why.contains("without its report")));
+    assert!(
+        report
+            .failed
+            .as_deref()
+            .is_some_and(|why| why.contains("without its report"))
+    );
     // One refused at the gate, before it was asked anything, says it was never asked.
     let (report, chats) = ended_by(
         &[],
