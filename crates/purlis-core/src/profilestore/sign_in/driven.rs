@@ -982,7 +982,13 @@ pub fn in_a_terminal(
     longest: Duration,
     check: impl FnOnce() -> Standing + Send + 'static,
 ) -> Result<Driving, String> {
-    run(login, Driven::in_a_terminal(Instant::now()), None, longest, check)
+    run(
+        login,
+        Driven::in_a_terminal(Instant::now()),
+        None,
+        longest,
+        check,
+    )
 }
 
 fn run(

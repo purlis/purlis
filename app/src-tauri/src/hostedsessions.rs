@@ -1363,7 +1363,10 @@ impl HostLink {
             .map_err(|refused| {
                 if refused.code.is_empty() && refused.why == NOT_IN_TIME {
                     let hit = AnswerWait.limit().waited(secs, None);
-                    format!("the runner did not answer in time: {}", self.limit_said(hit))
+                    format!(
+                        "the runner did not answer in time: {}",
+                        self.limit_said(hit)
+                    )
                 } else {
                     refused.why
                 }
@@ -1704,7 +1707,8 @@ impl HostLink {
         let older = self.version() < session::KNOWS_CODE_HELD;
         let size_highest = older.then_some(MOST_BUNDLE_BYTES / MIB);
         let time_highest = older.then_some(purlis_host::TRANSFER_WITHIN.as_secs() / 60);
-        let held_to = |value: u64, highest: Option<u64>| highest.map_or(value, |top| top.min(value));
+        let held_to =
+            |value: u64, highest: Option<u64>| highest.map_or(value, |top| top.min(value));
         let mib = held_to(limits.in_force(CodeSize), size_highest);
         let minutes = held_to(limits.in_force(CodeSendTime), time_highest);
         let most = mib.saturating_mul(MIB);

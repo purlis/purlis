@@ -4554,7 +4554,7 @@ fn not_asked(pool: &str, name: &str, why: &str) -> String {
 /// purlis's default.
 fn sign_in_wait_of(config: &std::path::Path, pool: &str) -> std::time::Duration {
     use purlis_core::poollimits::LimitId::SignInWait;
-    let chosen = runners::chosen_limits_of(config, pool).unwrap_or_default();
+    let chosen = purlis_core::runners::chosen_limits_of(config, pool).unwrap_or_default();
     std::time::Duration::from_secs(chosen.in_force(SignInWait).saturating_mul(60))
 }
 
