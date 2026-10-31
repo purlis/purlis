@@ -475,35 +475,54 @@ fn a_refused_start_leaves_one_wait_until_the_harness_says_it_is_signed_in() {
     assert!(waiting(root).is_empty(), "gone for good");
 }
 
+/// **A harness that cannot tell keeps the Ask** (#4223): the same rule as a pool's. Only signed
+/// in lets a wait go by itself, while the person may still be signing in.
 #[test]
-fn a_watch_after_sign_in_lets_the_wait_go_once_the_harness_says_signed_in() {
-    struct Then(std::sync::atomic::AtomicU32);
-    impl Look for Then {
-        fn status(&self, _: &str, _: &[&str], _: &[(String, String)]) -> Option<i32> {
-            let asked = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Some(if asked < 2 { 1 } else { 0 })
-        }
-        fn is_there(&self, _: &Path) -> bool {
-            false
-        }
-    }
-    let root = Path::new("/projects/watched");
-    let profile = profile_in("codex", "watched");
+fn a_harness_that_cannot_tell_keeps_the_wait() {
+    let root = Path::new("/projects/cannot-tell");
+    let profile = profile_in("codex", "cannot-tell");
     waits_on(root, &profile);
-    let (tell, told) = std::sync::mpsc::channel();
 
-    watch(
-        profile,
-        Then(std::sync::atomic::AtomicU32::new(0)),
-        Duration::from_millis(1),
-        Duration::from_secs(5),
-        move || tell.send(()).unwrap(),
-    )
-    .join()
-    .unwrap();
+    assert_eq!(
+        look_again(&profile, &Recorded::answering(None)),
+        Standing::CannotTell
+    );
+    assert_eq!(waiting(root).len(), 1, "it cannot tell: it still waits");
 
-    told.try_recv().expect("the window was told");
-    assert!(waiting(root).is_empty());
+    assert_eq!(
+        look_again(&profile, &Recorded::answering(Some(0))),
+        Standing::SignedIn
+    );
+    assert!(waiting(root).is_empty(), "signed in, and let go");
+}
+
+/// **Looking again asks the harness**, whatever it said a moment ago: what a watcher does.
+#[test]
+fn looking_again_asks_the_harness_every_time() {
+    let profile = profile_in("codex", "looked-again");
+
+    assert_eq!(
+        look_again(&profile, &Recorded::answering(Some(1))),
+        Standing::SignedOut
+    );
+    assert_eq!(
+        look_again(&profile, &Recorded::answering(Some(0))),
+        Standing::SignedIn
+    );
+}
+
+/// Signed in lets go that profile's waits in every project.
+#[test]
+fn signed_in_lets_go_every_project_s_wait() {
+    let (one, two) = (Path::new("/projects/one"), Path::new("/projects/two"));
+    let profile = profile_in("codex", "everywhere");
+    waits_on(one, &profile);
+    waits_on(two, &profile);
+
+    let_go_everywhere(&profile);
+
+    assert!(waiting(one).is_empty());
+    assert!(waiting(two).is_empty());
 }
 
 #[test]
