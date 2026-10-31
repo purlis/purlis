@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793445806773,
+  "lastUpdate": 1793447305824,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33222,6 +33222,48 @@ window.BENCHMARK_DATA = {
             "value": 101.704037,
             "unit": "ms",
             "extra": "median of 5 runs: 101.187, 101.391, 101.704, 102.070, 102.238 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "690b856a889fc0ec33256c96a571b149b6ad7571",
+          "message": "Bump @tauri-apps/cli from 2.12.3 to 2.12.4 in /app in the tauri group (#3908)\n\nBumps the tauri group in /app with 1 update: [@tauri-apps/cli](https://github.com/tauri-apps/tauri).\n\n\nUpdates `@tauri-apps/cli` from 2.12.3 to 2.12.4\n- [Release notes](https://github.com/tauri-apps/tauri/releases)\n- [Commits](https://github.com/tauri-apps/tauri/compare/@tauri-apps/cli-v2.12.3...@tauri-apps/cli-v2.12.4)\nBump the tauri group with 4 updates\n\nBumps the tauri group with 4 updates: [tauri](https://github.com/tauri-apps/tauri), [tauri-plugin-wdio](https://github.com/webdriverio/desktop-mobile), [tauri-plugin-wdio-webdriver](https://github.com/webdriverio/desktop-mobile) and [tauri-build](https://github.com/tauri-apps/tauri).\n\n\nUpdates `tauri` from 2.12.2 to 2.12.5\n- [Release notes](https://github.com/tauri-apps/tauri/releases)\n- [Commits](https://github.com/tauri-apps/tauri/compare/tauri-v2.12.2...tauri-v2.12.5)\n\nUpdates `tauri-plugin-wdio` from 1.5.0 to 1.5.1\n- [Release notes](https://github.com/webdriverio/desktop-mobile/releases)\n- [Changelog](https://github.com/webdriverio/desktop-mobile/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/webdriverio/desktop-mobile/compare/tauri-plugin-wdio-webdriver@v1.5.0...tauri-plugin-wdio-webdriver@v1.5.1)\n\nUpdates `tauri-plugin-wdio-webdriver` from 1.5.0 to 1.5.1\n- [Release notes](https://github.com/webdriverio/desktop-mobile/releases)\n- [Changelog](https://github.com/webdriverio/desktop-mobile/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/webdriverio/desktop-mobile/compare/tauri-plugin-wdio-webdriver@v1.5.0...tauri-plugin-wdio-webdriver@v1.5.1)\n\nUpdates `tauri-build` from 2.7.3 to 2.7.4\n- [Release notes](https://github.com/tauri-apps/tauri/releases)\n- [Commits](https://github.com/tauri-apps/tauri/compare/tauri-build-v2.7.3...tauri-build-v2.7.4)\n\n---\nupdated-dependencies:\n- dependency-name: \"@tauri-apps/cli\"\n  dependency-version: 2.12.4\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: tauri\n- dependency-name: tauri\n  dependency-version: 2.12.5\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: tauri\n- dependency-name: tauri-plugin-wdio\n  dependency-version: 1.5.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: tauri\n- dependency-name: tauri-plugin-wdio-webdriver\n  dependency-version: 1.5.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: tauri\n- dependency-name: tauri-build\n  dependency-version: 2.7.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: tauri\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-31T11:10:13Z",
+          "tree_id": "0560232d2b131d2b57bfbff393b74288dbebe8b3",
+          "url": "https://github.com/purlis/purlis/commit/690b856a889fc0ec33256c96a571b149b6ad7571"
+        },
+        "date": 1793447299431,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6754915,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.659, 0.674, 0.675, 0.677, 0.694 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.465195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.394, 16.396, 16.465, 16.730, 16.899 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.3378765,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.307, 101.937, 102.338, 102.589, 102.682 ms"
           }
         ]
       }
