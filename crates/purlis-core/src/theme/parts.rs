@@ -3619,6 +3619,93 @@ impl Held<'_> {
         }
     }
 
+    /// **A single state that falls, drawn back only where it holds** (#4174): what its own
+    /// default changes from the rest and whatever the theme set in it, on the root and on the
+    /// words of each part that follows the root's; then each set of states that holds it, where
+    /// the state's rule alone would cover the set's own look, as the family draws the set, or as
+    /// the theme does in the set's other states. Where the state does not hold, nothing of it is
+    /// drawn: a state that changes no colour (a focus ring) writes nothing over another, and a
+    /// change an earlier fall wrote back is never covered by the rest's colours (#4180's
+    /// review, finding 5).
+    fn fall_state(&mut self, variant: &'static str, reached: Option<&'static str>, one: State) {
+        let family = self.family;
+        let theme_sets = |rules: &[Rule], at: usize, property: Prop| {
+            rules.iter().any(|rule| {
+                std::ptr::eq(rule.family, family)
+                    && !rule.fallback
+                    && rule.part == at
+                    && rule.variant.is_none_or(|v| Some(v) == reached)
+                    && rule.state == Some(one)
+                    && rule.values.contains_key(&property)
+            })
+        };
+        let rule = |at: usize, set: &[State], values: BTreeMap<Prop, &'static str>| Rule {
+            family,
+            part: at,
+            variant: reached,
+            state: Some(set[0]),
+            also: set[1..].to_vec(),
+            values: colour_values(values),
+            fallback: true,
+        };
+        let rest = root_colours(family, variant, &[]);
+        let back: BTreeMap<Prop, &'static str> = root_colours(family, variant, &[one])
+            .into_iter()
+            .filter(|(property, token)| {
+                rest.get(property) != Some(token) || theme_sets(self.rules, 0, *property)
+            })
+            .collect();
+        if !back.is_empty() {
+            self.rules.push(rule(0, &[one], back.clone()));
+        }
+        let rest_words = (family.defaults)(variant, &[]).text;
+        let own_words = (family.defaults)(variant, &[one]).text;
+        let words_back: Vec<usize> = followers(family)
+            .into_iter()
+            .filter(|at| own_words != rest_words || theme_sets(self.rules, *at, Prop::Text))
+            .collect();
+        for at in &words_back {
+            self.rules
+                .push(rule(*at, &[one], BTreeMap::from([(Prop::Text, own_words)])));
+        }
+        for set in kept_sets(family)
+            .into_iter()
+            .filter(|set| set.len() > 1 && set.contains(&one))
+        {
+            let look = root_colours(family, variant, &set);
+            let want: BTreeMap<Prop, &'static str> = back
+                .iter()
+                .filter_map(|(property, token)| {
+                    let wanted =
+                        theme_colour(self.rules, family, reached, 0, &set, *property, Some(one))
+                            .or_else(|| look.get(property).copied())?;
+                    (wanted != *token).then_some((*property, wanted))
+                })
+                .collect();
+            if !want.is_empty() {
+                self.rules.push(rule(0, &set, want));
+            }
+            let words = theme_colour(self.rules, family, reached, 0, &set, Prop::Text, Some(one))
+                .unwrap_or((family.defaults)(variant, &set).text);
+            for at in &words_back {
+                let wanted = theme_colour(
+                    self.rules,
+                    family,
+                    reached,
+                    *at,
+                    &set,
+                    Prop::Text,
+                    Some(one),
+                )
+                .unwrap_or(words);
+                if wanted != own_words {
+                    self.rules
+                        .push(rule(*at, &set, BTreeMap::from([(Prop::Text, wanted)])));
+                }
+            }
+        }
+    }
+
     /// **After `variant`'s fall at rest, each of its states keeps its own look** (#4040): the
     /// rest fallback has no state, and is drawn over every state the family's stylesheet draws.
     /// For each state, each set of states that draws a look of its own, and each of them while
@@ -3629,66 +3716,13 @@ impl Held<'_> {
     /// theme draws it there, and the family default fills only what the theme leaves unset.
     fn keep_states(&mut self, variant: &'static str, reached: Option<&'static str>) {
         let family = self.family;
-        // The colour the theme's own rules give `property` of part `at` while every state of
-        // `set` holds: the last of them in the stylesheet's order.
         let theme_value = |rules: &[Rule], at: usize, set: &[State], property: Prop| {
-            let mut own: Vec<&Rule> = rules
-                .iter()
-                .filter(|rule| {
-                    std::ptr::eq(rule.family, family)
-                        && !rule.fallback
-                        && rule.part == at
-                        && rule.variant.is_none_or(|v| Some(v) == reached)
-                        && rule.state.is_some_and(|one| set.contains(&one))
-                        && rule.also.iter().all(|one| set.contains(one))
-                        && rule.values.contains_key(&property)
-                })
-                .collect();
-            own.sort_by_key(|rule| rule.order());
-            own.last()
-                .and_then(|rule| match rule.values.get(&property) {
-                    Some(PartValue::Colour(token)) => Some(*token),
-                    _ => None,
-                })
+            theme_colour(rules, family, reached, at, set, property, None)
         };
-        // The parts whose words follow the root's: no words of their own, not drawn apart.
-        let followers: Vec<usize> = (1..family.parts.len())
-            .filter(|at| {
-                family.parts[*at].properties.contains(&Prop::Text)
-                    && family.own_words(*at).is_none()
-                    && drawn_apart(family, family.parts[*at].name).is_none()
-            })
-            .collect();
+        let followers = followers(family);
         let rest = root_colours(family, variant, &[]);
         let rest_words = (family.defaults)(variant, &[]).text;
-        // The states and their sets, and each of them while unavailable, smaller first.
-        let enabled: Vec<Vec<State>> = family
-            .states
-            .iter()
-            .filter(|one| **one != State::Disabled)
-            .map(|one| vec![*one])
-            .chain(combined(family))
-            .collect();
-        let mut sets = enabled.clone();
-        if family.states.contains(&State::Disabled) {
-            sets.push(vec![State::Disabled]);
-            // An unavailable control is never drawn under the pointer or pressed: those states
-            // are keyed `:not([data-disabled])`.
-            sets.extend(
-                enabled
-                    .iter()
-                    .filter(|set| {
-                        !set.iter()
-                            .any(|one| matches!(one, State::Hover | State::Pressed))
-                    })
-                    .map(|set| {
-                        let mut with = set.clone();
-                        with.push(State::Disabled);
-                        with
-                    }),
-            );
-        }
-        sets.sort_by_key(Vec::len);
+        let sets = kept_sets(family);
         // What is written, by part and the states it keys, in the order it is written.
         let mut kept: Vec<(usize, Vec<State>, BTreeMap<Prop, &'static str>)> = Vec::new();
         let write = |rules: &mut Vec<Rule>,
@@ -3764,11 +3798,12 @@ impl Held<'_> {
     }
 
     /// `variant` draws its family default while `states` hold, said once in a [`Fell`] that names
-    /// them. The default is written for one state: in a set, the last of them any of the
-    /// family's rules names. A fallback is written after every theme rule, so the set draws that
-    /// state's default, which the floors already hold. A title-bar chip ([`REST_KEEPS_STATES`])
-    /// draws a pair that falls back as the pair, keyed on both its states (#4049), and a state
-    /// that falls alone back as only what its default changes from the rest.
+    /// them, written after every theme rule, so it draws a default the floors already hold. A set
+    /// of states falls back as the set, keyed on all of them (#4049, #4086); a single state as
+    /// only what it changes from the rest, where it holds ([`Self::fall_state`], #4174); the rest
+    /// keeping each state's look ([`Self::keep_states`], #4040). A refused box, and a family drawn
+    /// in marks or read on its track, write the whole default for one state: in a set, the last
+    /// of them any of the family's rules names, and a refused one's last of all (#3110).
     fn fall(&mut self, variant: &'static str, states: &[State], floor: String, ratio: Option<f64>) {
         let family = self.family;
         let part = named(family, variant, states);
@@ -3812,16 +3847,15 @@ impl Held<'_> {
                     && rule.values == want.values
             })
         });
-        // A title-bar chip's state draws back only what its default changes from the rest, and
-        // what the theme set in it, and each pair that holds it draws its own look after it: a
-        // focus ring changes no colour, and a current chip under the pointer keeps the stronger
-        // wash (#4039's second review).
-        let keeps_states = REST_KEEPS_STATES.contains(&family.name)
-            && state.is_some_and(|one| one != State::Invalid);
-        // A pair, or three states, that fall draw their own look back where they all hold, and
-        // nowhere else: a chip under the pointer alone, or current alone, or reached from the
-        // keyboard alone, keeps the theme's (#4049, #4086).
-        if keeps_states
+        // A state, or a set of states, that falls draws back only where it holds (#4049,
+        // #4086, #4174), in every family but those drawn in marks or read on their track. A
+        // refused box keeps its own path: its refused default is written last (#3110).
+        let general = marked(family).is_none()
+            && tracked(family).is_none()
+            && !states.contains(&State::Invalid);
+        // A set of states draws its own look back where all of them hold, and nowhere else: a
+        // chip under the pointer alone, or current alone, keeps the theme's.
+        if general
             && let [first, others @ ..] = states
             && !others.is_empty()
         {
@@ -3835,7 +3869,7 @@ impl Held<'_> {
                 fallback: true,
             });
             // And the words and fills of the parts in it, a chip's count among them, keyed on
-            // the pair too (#4084's review).
+            // the set too (#4084's review).
             self.rules.extend(
                 fallback(family, variant, Some(*first))
                     .into_iter()
@@ -3847,52 +3881,11 @@ impl Held<'_> {
             );
             return;
         }
-        if !written && keeps_states {
-            let one = state.unwrap_or(State::Hover);
-            self.rules
-                .extend(drawn_back.into_iter().filter(|rule| rule.part != 0));
-            let rest = root_colours(family, variant, &[]);
-            let values = colour_values(
-                root_colours(family, variant, &[one])
-                    .into_iter()
-                    .filter(|(property, token)| {
-                        rest.get(property) != Some(token)
-                            || self.rules.iter().any(|rule| {
-                                std::ptr::eq(rule.family, family)
-                                    && !rule.fallback
-                                    && rule.part == 0
-                                    && rule.variant.is_none_or(|v| Some(v) == reached)
-                                    && rule.state == Some(one)
-                                    && rule.values.contains_key(property)
-                            })
-                    })
-                    .collect(),
-            );
-            if !values.is_empty() {
-                self.rules.push(Rule {
-                    family,
-                    part: 0,
-                    variant: reached,
-                    state: Some(one),
-                    also: Vec::new(),
-                    values,
-                    fallback: true,
-                });
-            }
-            for pair in combined(family)
-                .into_iter()
-                .filter(|pair| pair.len() == 2 && pair.contains(&one))
-            {
-                self.rules.push(Rule {
-                    family,
-                    part: 0,
-                    variant: reached,
-                    state: Some(pair[0]),
-                    also: vec![pair[1]],
-                    values: colour_values(root_colours(family, variant, &pair)),
-                    fallback: true,
-                });
-            }
+        if !written
+            && general
+            && let [one] = states
+        {
+            self.fall_state(variant, reached, *one);
         } else if !written {
             self.rules.extend(drawn_back);
         }
@@ -3922,6 +3915,82 @@ fn root_colours(family: &Family, variant: &str, states: &[State]) -> BTreeMap<Pr
     .collect()
 }
 
+/// **The colour the theme's own rules give `property` of part `at` of `family`** while every
+/// state of `set` holds, in `reached` or every variant: the last of them in the stylesheet's
+/// order, but a rule keyed on `without`, a state whose colours gave way.
+fn theme_colour(
+    rules: &[Rule],
+    family: &Family,
+    reached: Option<&'static str>,
+    at: usize,
+    set: &[State],
+    property: Prop,
+    without: Option<State>,
+) -> Option<&'static str> {
+    let mut own: Vec<&Rule> = rules
+        .iter()
+        .filter(|rule| {
+            std::ptr::eq(rule.family, family)
+                && !rule.fallback
+                && rule.part == at
+                && rule.variant.is_none_or(|v| Some(v) == reached)
+                && rule.state.is_some_and(|one| set.contains(&one))
+                && rule.also.iter().all(|one| set.contains(one))
+                && without.is_none_or(|one| rule.state != Some(one) && !rule.also.contains(&one))
+                && rule.values.contains_key(&property)
+        })
+        .collect();
+    own.sort_by_key(|rule| rule.order());
+    own.last()
+        .and_then(|rule| match rule.values.get(&property) {
+            Some(PartValue::Colour(token)) => Some(*token),
+            _ => None,
+        })
+}
+
+/// The parts of `family` whose words follow the root's: no words of their own, not drawn apart.
+fn followers(family: &Family) -> Vec<usize> {
+    (1..family.parts.len())
+        .filter(|at| {
+            family.parts[*at].properties.contains(&Prop::Text)
+                && family.own_words(*at).is_none()
+                && drawn_apart(family, family.parts[*at].name).is_none()
+        })
+        .collect()
+}
+
+/// **The sets of states a fallback keeps `family`'s looks in**, smaller first: each state, each
+/// set the hold measures, and each of them while unavailable, which is never under the pointer
+/// or pressed (those states are keyed `:not([data-disabled])`).
+fn kept_sets(family: &Family) -> Vec<Vec<State>> {
+    let enabled: Vec<Vec<State>> = family
+        .states
+        .iter()
+        .filter(|one| **one != State::Disabled)
+        .map(|one| vec![*one])
+        .chain(combined(family))
+        .collect();
+    let mut sets = enabled.clone();
+    if family.states.contains(&State::Disabled) {
+        sets.push(vec![State::Disabled]);
+        sets.extend(
+            enabled
+                .iter()
+                .filter(|set| {
+                    !set.iter()
+                        .any(|one| matches!(one, State::Hover | State::Pressed))
+                })
+                .map(|set| {
+                    let mut with = set.clone();
+                    with.push(State::Disabled);
+                    with
+                }),
+        );
+    }
+    sets.sort_by_key(Vec::len);
+    sets
+}
+
 /// Colour tokens as the values a rule writes.
 fn colour_values(colours: BTreeMap<Prop, &'static str>) -> BTreeMap<Prop, PartValue> {
     colours
@@ -3929,12 +3998,6 @@ fn colour_values(colours: BTreeMap<Prop, &'static str>) -> BTreeMap<Prop, PartVa
         .map(|(property, token)| (property, PartValue::Colour(token)))
         .collect()
 }
-
-/// **The families whose state that falls draws back only its change from the rest**, and a set
-/// of states that falls only where all of them hold (#4039, #4049, #4086): a title-bar chip.
-/// Every family's rest that falls keeps its states' looks (#4040); a single state's fall in every
-/// family is #4174.
-const REST_KEEPS_STATES: &[&str] = &["titlebar"];
 
 /// `<family>.<root>[.<variant>]`, with the states that hold joined by `+` (`hover+pressed`).
 fn named(family: &Family, variant: &str, states: &[State]) -> String {

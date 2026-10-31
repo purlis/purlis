@@ -2476,16 +2476,29 @@ fn a_set_of_states_that_falls_back_draws_a_default_its_floors_hold() {
     })));
     let theme = loaded.theme.first();
     let sheet = parts::stylesheet(theme);
-    // The fallback is written once, for the state the stylesheet writes last.
-    let focused = "[data-variant=\"primary\"][data-focus-visible])";
-    let written: Vec<&str> = sheet
+    // The fallback is written once, keyed on both states, as the pair's own default (#4174):
+    // the stylesheet's rule for focus alone stays the theme's. It used to be the focused default
+    // keyed on the focus alone, which took the theme's focus edge from every focused button.
+    let both =
+        "[data-variant=\"primary\"][data-hovered]:not([data-disabled])[data-focus-visible]) {";
+    let written: Vec<&str> = sheet.lines().filter(|line| line.contains(both)).collect();
+    assert_eq!(written.len(), 1, "{sheet}");
+    assert!(written[0].contains("var(--accent-fill-hover)"), "{sheet}");
+    assert!(
+        written[0].contains("border-color: var(--accent-fill-edge)"),
+        "{sheet}"
+    );
+    let focused = "[data-variant=\"primary\"][data-focus-visible]) {";
+    let alone: Vec<&str> = sheet
         .lines()
+        .map(str::trim)
         .filter(|line| line.contains(focused))
         .collect();
-    assert_eq!(written.len(), 2, "{sheet}");
-    assert!(written[1].contains("var(--accent-fill)"), "{sheet}");
-    assert!(
-        written[1].contains("border-color: var(--accent-fill-edge)"),
+    assert_eq!(
+        alone,
+        [
+            ":where([data-scope=\"button\"][data-part=\"root\"][data-variant=\"primary\"][data-focus-visible]) { border-color: var(--accent-base); }"
+        ],
         "{sheet}"
     );
 }

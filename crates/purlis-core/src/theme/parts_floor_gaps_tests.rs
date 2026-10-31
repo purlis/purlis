@@ -438,7 +438,12 @@ fn a_current_chip_reached_from_the_keyboard_keeps_its_wash_after_its_focus_falls
         "workspace",
         &["data-variant=pinned", "data-focus-visible", "data-selected"],
     );
-    assert_eq!(fill_of(&current), Some("var(--accent-wash)"), "{sheet}");
+    // Its fill is the family's own (`titlebar.css`'s wash): a focus that falls writes back only
+    // what it changes from the rest, which is no fill (#4174).
+    assert!(
+        fill_of(&current).is_none_or(|fill| fill == "var(--accent-wash)"),
+        "{sheet}"
+    );
     assert_eq!(words_of(&current), Some("var(--text-primary)"), "{sheet}");
     // A chip at rest reached from the keyboard draws no fill of its own.
     let other = drawn_on(&sheet, "workspace", &["data-variant=pinned", "data-focus-visible"]);
