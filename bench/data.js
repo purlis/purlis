@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793481036831,
+  "lastUpdate": 1793482578634,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34146,6 +34146,48 @@ window.BENCHMARK_DATA = {
             "value": 101.837854,
             "unit": "ms",
             "extra": "median of 5 runs: 101.078, 101.353, 101.838, 102.071, 102.313 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e2b905140d2ef59660e77e278390a6e14c6db884",
+          "message": "Unmigrated projects keep their skills at the flag's flip (#4349)\n\n* Unmigrated projects keep their skills at the flag's flip (#4344)\n\nThe project-skills move runs with the studio flag off, still only by\nname. A project that requires project-skills reaches a runner's chat\nwhatever its desktop said. Lint checks a moved project's skills line\nwith the flag off. Tests take an unmigrated plane through the upgrade.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69M2D71TWPNDEW3FRA2C2JR\nPurlis-Persona: steward\n\n* Review of #4344: the word a chat runs under, and a persona's unmoved skill\n\nA chat armed by a project's requirement is started with the word its\narming took. A moved project's turned-off skills reach its chats with\nthe flag off. The persona test now asks the path a chat's start asks;\nit is red until the next commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69M2D71TWPNDEW3FRA2C2JR\nPurlis-Persona: steward\n\n* A persona's unmoved skill is no missing skill where its program reads it (#4344)\n\nA chat's start and persona lint look for a bare name on the machine,\nwhich holds no project folder, so an unmoved project's skill read as\nmissing once the reading was on. Codex reads no such folder and is still told.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69M2D71TWPNDEW3FRA2C2JR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T21:11:14Z",
+          "tree_id": "2d90d443e66292e0d9515b6beee0caef95e472d2",
+          "url": "https://github.com/purlis/purlis/commit/e2b905140d2ef59660e77e278390a6e14c6db884"
+        },
+        "date": 1793482575151,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6876935,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.673, 0.684, 0.688, 0.691, 0.701 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.552053,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.455, 16.519, 16.552, 16.567, 16.710 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0054995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.501, 101.684, 102.005, 102.211, 102.438 ms"
           }
         ]
       }
