@@ -6,9 +6,6 @@
  * a theme's parts are keyed on (ADR 0103). The look itself is held by the stories, in a real
  * browser (`Choice.stories.tsx`).
  */
-/// <reference types="node" />
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -402,18 +399,36 @@ describe("a choice's target size (#4173)", () => {
     expect(drawnWith(screen.getByRole("radiogroup", { name: "Level" }), "block-size")).toBe(FLOOR);
   });
 
-  // A segment sits inside the control's padding (space-1 above and below), so at any size it is
-  // drawn 4px under the control: 20px in a 24px control. Its press reaches the control's whole
-  // height, through the padding, so its target is the control's height, never under 24px.
-  it("takes a segment's press through the control's padding, the control's whole height", () => {
-    const sheet = readFileSync(join(process.cwd(), "src", "ui", "choice", "choice.css"), "utf8");
-    const reach = /\[data-scope="segment"\]\[data-part="root"\]::after\s*\{([^}]*)\}/.exec(sheet);
-    expect(reach, "a segment's ::after reaches through the padding").not.toBeNull();
-    const rule = (reach as RegExpExecArray)[1];
-    expect(rule).toMatch(/position:\s*absolute/);
-    expect(rule).toMatch(/inset-block:\s*calc\(-1 \* var\(--space-1\)\)/);
-    expect(sheet).toMatch(
-      /\[data-scope="segmented-control"\]\[data-part="root"\] \{[^}]*padding: var\(--space-1\);/,
+  // A segment sits inside the control's padding, so it is drawn under the control (20px in a 24px
+  // control). Its press reaches through that padding by the same length the padding is, one
+  // custom property both read, so a theme's padding (`segmented-control.root.padding`, which the
+  // engine writes into it too) moves the reach with it. The story hit-tests it in the browser.
+  it("pads the control and reaches a segment's press by one length, the control's padding", () => {
+    render(
+      <SegmentedControl size="sm" aria-label="Level" value="you" onChange={() => {}}>
+        <Segment value="you">You</Segment>
+      </SegmentedControl>,
     );
+    const group = screen.getByRole("radiogroup", { name: "Level" });
+    expect(drawnWith(group, "--segment-reach")).toBe("var(--space-1)");
+    expect(drawnWith(group, "padding")).toBe("var(--segment-reach)");
+  });
+
+  // The slider's press lands on its area, not its row (#4173): the area is the 24px target, its
+  // track and thumb centred in it, so nothing it draws moves.
+  it("never draws the slider's press area under the 24px target", () => {
+    render(
+      <Slider
+        label="Window text size"
+        minValue={10}
+        maxValue={24}
+        value={14}
+        onChange={() => {}}
+        shown={(px) => `${px}px`}
+        spoken={(px) => `${px} pixels`}
+      />,
+    );
+    const area = document.querySelector('[data-scope="slider"][data-part="area"]') as Element;
+    expect(drawnWith(area, "block-size")).toBe(FLOOR);
   });
 });

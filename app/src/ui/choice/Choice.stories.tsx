@@ -308,8 +308,10 @@ export const SegmentedControlSm: Story = {
 /**
  * **Every choice beside a small button** (#4173, WCAG 2.5.8): the compact density draws the
  * chrome at 18px, so a choice's row and a small segmented control take the sm button's floor, 24
- * CSS px. Each is a 24px target by itself in every cell, so axe's `target-size` passes with no
- * spacing to lean on.
+ * CSS px. Each is a 24px target by itself in every cell: a box's, a chip's, a radio's and a
+ * switch's row is its label, which takes the press; a slider's press lands on its area, which is
+ * 24px tall around the track; and a segment's reaches through the control's padding. Each is
+ * hit-tested at its edges, so axe's `target-size` passes with no spacing to lean on.
  */
 function BesideASmallButton() {
   const [level, setLevel] = useState("you");
@@ -358,6 +360,17 @@ export const ChoicesBesideASmallButton: Story = {
     await expect(rows).toHaveLength(5);
     for (const one of [...rows, ...canvas.getAllByRole("button")])
       await expect(one.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
+    // The slider's press lands on its area, which is the target, not its row: a press at the
+    // area's top and bottom edges is the area's.
+    const area = canvasElement.querySelector<HTMLElement>(
+      '[data-scope="slider"][data-part="area"]',
+    ) as HTMLElement;
+    const pressed = area.getBoundingClientRect();
+    await expect(pressed.height).toBeGreaterThanOrEqual(24);
+    for (const y of [pressed.top + 0.5, pressed.bottom - 0.5]) {
+      const hit = document.elementFromPoint(pressed.left + pressed.width / 2, y);
+      await expect(hit?.closest('[data-scope="slider"][data-part="area"]')).toBe(area);
+    }
     // A segment is drawn inside the control's padding; a press lands on it through the padding,
     // so its target is the control's whole height, at least 24px.
     const control = canvas.getByRole("radiogroup", { name: "Level" });
