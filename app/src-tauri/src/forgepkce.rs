@@ -149,7 +149,6 @@ pub async fn forge_pkce_sign_in(
     let cancelled = tries(|all| all.begin(&attempt))?;
     let done = blocking(move || {
         let scope = host_scope()?;
-        let root = config_root()?;
         // A scenario run's fake forge plays the browser and the OAuth side (#4090's proof): the
         // shipped flow, listener and exchange, against the host the run names.
         #[cfg(feature = "e2e")]
@@ -158,7 +157,7 @@ pub async fn forge_pkce_sign_in(
             let open = |page: &str| forge.open(page);
             return through_the_browser(
                 &scope,
-                &root,
+                &config_root()?,
                 kind,
                 registration,
                 &endpoints,
@@ -181,6 +180,7 @@ pub async fn forge_pkce_sign_in(
                     .to_string(),
             );
         }
+        let root = config_root()?;
         let open = |page: &str| {
             use tauri_plugin_opener::OpenerExt as _;
             // The opener's own words could repeat the address, which holds the `state`.

@@ -20,6 +20,11 @@ describe("the repos drawn as not cloned here", () => {
     expect(notClonedRows([], [], cloning({ state: "waiting" }))).toEqual(["coming"]);
   });
 
+  it("keep a repo that landed until the panels read it among the clones", () => {
+    expect(notClonedRows([], [], cloning({ state: "cloned" }))).toEqual(["coming"]);
+    expect(notClonedRows([], ["coming"], cloning({ state: "cloned" }))).toEqual([]);
+  });
+
   it("never draw a repo twice, or one that has already landed", () => {
     const now = cloning({ state: "cloning" });
     expect(notClonedRows(["coming"], [], now)).toEqual(["coming"]);

@@ -33,7 +33,13 @@ export function notClonedRows(
   cloning: Cloning = NOTHING_CLONING,
 ): readonly string[] {
   const coming = [...cloning]
-    .filter(([repo, state]) => underWay(state) && !absent.includes(repo) && !here.includes(repo))
+    .filter(
+      ([repo, state]) =>
+        // Cloned stays until the panels read it among the clones: no gap between the two.
+        (underWay(state) || state.state === "cloned") &&
+        !absent.includes(repo) &&
+        !here.includes(repo),
+    )
     .map(([repo]) => repo);
   return coming.length === 0 ? absent : [...absent, ...coming];
 }
