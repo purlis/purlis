@@ -702,14 +702,14 @@ fn a_pick_that_cannot_be_drawn_draws_the_default_for_the_contrast_asked() {
 #[test]
 fn purlis_draws_each_workspace_colour_as_these_numbers_and_every_strip_keeps_its_hue() {
     let want: &[(&str, &str, Option<f64>, &str, &str)] = &[
-        ("dark", "red", Some(0.015), "#b1a4a2", "#251212"),
-        ("dark", "orange", Some(0.02), "#b1a59b", "#22140b"),
+        ("dark", "red", None, "#a99cf0", "#251212"),
+        ("dark", "orange", None, "#a99cf0", "#22140b"),
         ("dark", "yellow", Some(f64::INFINITY), "#bea643", "#1c1706"),
         ("dark", "green", Some(f64::INFINITY), "#70b773", "#0e1a0f"),
         ("dark", "teal", Some(f64::INFINITY), "#17bab2", "#031b19"),
         ("dark", "blue", Some(f64::INFINITY), "#71aaf1", "#0e1824"),
         ("dark", "purple", Some(f64::INFINITY), "#bc97e7", "#1c1423"),
-        ("dark", "pink", Some(0.015), "#afa4a9", "#23121b"),
+        ("dark", "pink", None, "#a99cf0", "#23121b"),
         ("light", "red", None, "#554691", "#fef6f4"),
         ("light", "orange", None, "#554691", "#fff6f0"),
         ("light", "yellow", Some(f64::INFINITY), "#554691", "#fdf8e1"),
@@ -782,6 +782,31 @@ fn purlis_draws_each_workspace_colour_as_these_numbers_and_every_strip_keeps_its
         .iter()
         .map(|(id, name, most, accent, strip)| (*id, *name, *most, accent.as_str(), strip.as_str()))
         .collect();
+    assert_eq!(got, want);
+}
+
+/// **A red workspace's link, in every Purlis appearance** (#3049): held apart from the pastel
+/// danger as the accent is, so it never reads as danger. The strip keeps its red.
+#[test]
+fn a_red_workspace_s_link_is_these() {
+    let got: Vec<(&str, String, String)> = purlis()
+        .appearances
+        .iter()
+        .map(|one| {
+            let red = tint::tinted(one, "red");
+            (
+                one.id.as_str(),
+                red.value("markdown.link").to_owned(),
+                red.value("chart.1").to_owned(),
+            )
+        })
+        .collect();
+    let want = [
+        ("dark", "#b3a8f2", "#a99cf0"),
+        ("light", "#4d3f80", "#554691"),
+        ("dark-high-contrast", "#c3baf5", "#c3baf5"),
+    ]
+    .map(|(id, link, chart)| (id, link.to_owned(), chart.to_owned()));
     assert_eq!(got, want);
 }
 
