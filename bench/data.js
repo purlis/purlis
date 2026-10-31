@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793466393385,
+  "lastUpdate": 1793468895415,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33726,6 +33726,48 @@ window.BENCHMARK_DATA = {
             "value": 101.463145,
             "unit": "ms",
             "extra": "median of 5 runs: 100.170, 100.552, 101.463, 102.100, 103.362 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "19855502db0a472b058429792e0f56fd8483ecdf",
+          "message": "Skills: purlis skill grade --run grades from a terminal (SK-61, #3241) (#4280)\n\n* Skills: purlis skill grade --run grades from a terminal (SK-61, #3241)\n\nA new session-protocol power (1.63), granted to terminal alone, relayed\nto the one window that holds the project. The window takes the start\nthrough the check a press of Grade takes, on the same caps. A chat is\nrefused, a no or a changed plan runs nothing, and a terminal that goes\nstops its grade.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Terminal grade: what the review found (#3241)\n\nA grade no longer spends with nobody following: an ask from a link\nalready gone is refused, and a refused step stops the grade, as the\nfloor under a lost stop. The terminal subscribes only after the yes and\nstops on falling behind. It prints the window's limit alone, and the\nwindow matches the project's path as well as its id. Typed grade ends,\na changelog fragment, tests in their own files, and ADR 0068's record.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Terminal grade: the protocol's version doc and the window's row (#3241)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T16:48:28Z",
+          "tree_id": "022b344efe101f1a5827d1b9b2d76033a918ef2a",
+          "url": "https://github.com/purlis/purlis/commit/19855502db0a472b058429792e0f56fd8483ecdf"
+        },
+        "date": 1793468889552,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6691535,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.646, 0.654, 0.669, 0.684, 0.689 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.428964,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.316, 16.387, 16.429, 16.443, 16.546 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0602245,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.681, 101.861, 102.060, 102.089, 102.179 ms"
           }
         ]
       }
