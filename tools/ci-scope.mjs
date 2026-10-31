@@ -185,6 +185,7 @@ export const RUST_READERS = [
   "src/theme/theme.test.ts",
   "src/theme/themeIds.test.ts",
   "src/theme/tint.test.ts",
+  "src/ui/buildingSkill.test.ts",
   "src/ui/field/refusingFields.guard.test.ts",
   "src/ui/menu/submenuRows.guard.test.ts",
   "src/ui/notice/noticeCardFill.test.ts",
@@ -202,7 +203,7 @@ export const GATES = {
   "browser-engine":
     "^(crates/browser-engine/|Cargo\\.lock$|rust-toolchain\\.toml$)",
   "confinement":
-    "^(crates/studio-probe/|\\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts|localport|door)(\\.rs|/)|crates/purlis-core/src/hookwire/serve(\\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\\.rs|Cargo\\.lock$|rust-toolchain\\.toml$)",
+    "^(crates/studio-probe/|\\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door)(\\.rs|/)|crates/purlis-core/src/hookwire/serve(\\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\\.rs|Cargo\\.lock$|rust-toolchain\\.toml$)",
   "parity":
     "^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|pools|codelink|session)[^/]*(\\.rs$|/)|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|sandboxing|poolfollow)[^/]*(\\.rs$|/)|runner-image/|tests/parity/|Cargo\\.lock$|rust-toolchain\\.toml$|\\.github/workflows/ci\\.yml$)",
   "bench":

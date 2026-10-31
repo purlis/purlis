@@ -580,7 +580,7 @@ jobs:
             src/allowLabels.test.ts src/copy.rust.test.ts src/layoutProjects.test.ts src/settings/linkedGroups.test.ts \
             src/specimen/Specimen.test.tsx src/theme/consentToggles.test.ts src/theme/contrast.test.ts src/theme/core.test.ts \
             src/theme/forced-colors.test.ts src/theme/grounds.test.ts src/theme/railIcons.vendor.test.ts src/theme/registry.test.ts \
-            src/theme/theme.test.ts src/theme/themeIds.test.ts src/theme/tint.test.ts src/ui/field/refusingFields.guard.test.ts \
+            src/theme/theme.test.ts src/theme/themeIds.test.ts src/theme/tint.test.ts src/ui/buildingSkill.test.ts src/ui/field/refusingFields.guard.test.ts \
             src/ui/menu/submenuRows.guard.test.ts src/ui/notice/noticeCardFill.test.ts src/windowprefs.test.ts
       # The tools' own tests (node:test), such as the cold-start gate's decision.
       - run: node --test "../tools/*.test.mjs"
