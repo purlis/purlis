@@ -266,6 +266,44 @@
   overflow-y: auto;
 }
 
+/* **A fade at the edge the stack has more past** (#3168): in a narrow pane its warnings can be
+   taller than its room, and at rest nothing said the ways out below were there. Its marks are its
+   own (`useScrollEdges`); the fade is the theme's shadow going to nothing, held at the stack's
+   edge as it scrolls (sticky), taking none of its room (a margin as tall as it and the gap after
+   it, given back), drawn over the warnings and never what a press lands on. */
+[data-scope="notice-row"][data-part="stack"] {
+  --notice-row-fade: var(--space-4);
+}
+
+[data-scope="notice-row"][data-part="stack"]::before,
+[data-scope="notice-row"][data-part="stack"]::after {
+  content: "";
+  position: sticky;
+  z-index: 1;
+  flex: none;
+  align-self: stretch;
+  block-size: var(--notice-row-fade);
+  pointer-events: none;
+  opacity: 0;
+}
+
+[data-scope="notice-row"][data-part="stack"]::before {
+  inset-block-start: 0;
+  margin-block-end: calc(-1 * (var(--notice-row-fade) + var(--space-2)));
+  background-image: linear-gradient(to bottom, var(--overlay-shadow), transparent);
+}
+
+[data-scope="notice-row"][data-part="stack"]::after {
+  inset-block-end: 0;
+  margin-block-start: calc(-1 * (var(--notice-row-fade) + var(--space-2)));
+  background-image: linear-gradient(to top, var(--overlay-shadow), transparent);
+}
+
+[data-scope="notice-row"][data-part="stack"][data-more-above]::before,
+[data-scope="notice-row"][data-part="stack"][data-more-below]::after {
+  opacity: 1;
+}
+
 /* `hidden` hides a Notice the row keeps behind "+N more": its box's own `display` would otherwise
    win over the browser's rule for the attribute. */
 [data-scope="notice-row"][data-part="stack"] > [hidden] {
