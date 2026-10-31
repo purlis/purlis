@@ -3703,6 +3703,8 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
     let Some(runner) = &target.runner else {
         return;
     };
+    // A Codex profile's folder is under the runner's data home, in use once a browser has started.
+    let (browsers, browser, _past) = a_browser_and_what_lies_past_a_chat(target, runner);
     runner.runs(
         false,
         "mkdir -p \"$HOME/.config/gh\" && echo stand-in > \"$HOME/.config/gh/hosts.yml\"",
@@ -3810,6 +3812,7 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
         "the `gh --version` a shim ran asked its desktop once; `auth` never reached it"
     );
     target.sessions.close(id).expect("it closes");
+    browsers.close(&browser).expect("the browser ends");
 }
 
 /// Where the parity image keeps the program Claude Code ships (`tests/parity/runner.Dockerfile`).
