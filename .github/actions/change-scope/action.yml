@@ -59,4 +59,4 @@ runs:
       env:
         EVENT: ${{ github.event_name }}
         BASE: ${{ steps.base.outputs.sha }}
-      run: node tools/ci-scope.mjs "$EVENT" "$BASE"
+      run: exit 1
