@@ -374,6 +374,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`index/<clone-key>/` — the project's search index](#indexclone-key--the-projects-search-index)
   - [`index/<clone-key>/writer.lock`](#indexclone-keywriterlock)
   - [State purlis keeps **outside** the plane](#state-purlis-keeps-outside-the-plane)
+  - [`<data>/sign-ins-waiting/<digest>`](#datasign-ins-waitingdigest)
   - [`<data>/app-state/<clone key>/` — the app's own state of a project](#dataapp-stateclone-key--the-apps-own-state-of-a-project)
   - [`<data>/app-state/<clone key>/skill-drafts/<id>/`](#dataapp-stateclone-keyskill-draftsid)
   - [`<data>/app-state/<clone key>/skill-grades/<YYYY-MM>.jsonl`](#dataapp-stateclone-keyskill-gradesyyyy-mmjsonl)
@@ -3271,7 +3272,7 @@ is a string; "type" below is how purlis interprets it.
 | `tools` | CSV of program names | absent = none | Programs auto-approved by the PreToolUse gate while active; unioned along `extends`. **purlis:** only as approved on this machine, since the grant is part of the plane-trust fingerprint (ADR 0035, *Grants*) with a digest of any `bin/` script a tool names; a grant that changed since prompts until the plane is approved again | stable | `charter/persona.py:1580`, `charter/toolgate.py:896` |
 | `agent-tools` | CSV of harness tool names | absent | **Retired in purlis (#1451): read by nothing.** It was the generated sub-agent's `tools:` allow-list, and a persona chat has every tool of its harness: a persona that listed no editing tool could not edit files as a sub-agent and can as a chat. `persona lint` and the `persona-agents` fix say what widened and leave the line. To deny a persona's chats a tool, name it in `disallowed-tools`. An allow-list for one persona's chats: #1460 | retired |
 | `disallowed-tools` | CSV of the harness's own tool rules (`Write`, `Bash(git push:*)`) | absent | **Honoured for a persona chat on Claude Code** (#1451, D-1451-18): each entry is a deny rule of the chat's own `--settings`, which outranks every allow. Inherited along `extends`, child wins. **Fail closed elsewhere**: on Codex and opencode purlis cannot deny a chat a tool, so a chat as a persona that declares the key is not started there and a dispatch to it is refused, each with a sentence (`personaverbs::chatstart::unenforced`, asked by `start::ready` and `personaprofile::for_dispatch`). It was the generated sub-agent's `disallowedTools:` | stable | `crates/purlis-core/src/personaverbs/chatstart.rs`, `harness/claude.rs` `settings` |
-| `skills` | CSV of `[plugin:]skill` | absent | **The skills a chat as the persona loads** beside its own (`personas/<name>/skills/`), in any workspace, whatever the workspace was granted (ADR 0099 as amended 2026-10-21, #2768; **experimental** behind the `skill-studio` flag, and before it, or with the flag off, read only by `persona stats`). Each entry is `purlis:<name>` (a built-in skill; `charter:<name>` still means the same one until the migration, #2784), `<plugin>:<name>` (a skill of a harness plugin, which the harness loads), or `<name>` (the plane skill of that name the chat can reach, a project skill whatever its grant, else the harness's own skill of that name). A workspace's `settings.skills.off` does not reach a project skill the persona names. A named harness skill the chat's harness does not have on this machine, or a built-in skill purlis has none of, is left out, and the chat's tab raises a Notice naming it. Written by Add and Remove in the Skill studio filtered to the persona (`purlis_core::skills::persona::change`), which writes the one line, `purlis:` for a built-in skill, and drops it when it empties. `persona stats` compares the names, and the persona's own skills, with the skills it used. | experimental | `purlis_core::skills::names_of`, `purlis_skills::Reference`; `charter/persona.py:1957`, `charter/commands_persona.py:908` |
+| `skills` | CSV of `[plugin:]skill` | absent | **The skills a chat as the persona loads** beside its own (`personas/<name>/skills/`), in any workspace, whatever the workspace was granted (ADR 0099 as amended 2026-10-21, #2768; **experimental** behind the `skill-studio` flag, and before it, or with the flag off, read only by `persona stats`). Each entry is `purlis:<name>` (a built-in skill; `charter:<name>` still means the same one until the migration, #2784), `<plugin>:<name>` (a skill of a harness plugin, which the harness loads), or `<name>` (the plane skill of that name the chat can reach, a project skill whatever its grant, else the harness's own skill of that name). A workspace's `settings.skills.off` does not reach a project skill the persona names. A named harness skill the chat's harness does not have on this machine, or a built-in skill purlis has none of, is left out, and the chat's tab raises a Notice naming it. Written by Add and Remove in the Skill studio filtered to the persona (`purlis_core::skills::persona::change`), which writes the one line, `purlis:` for a built-in skill, and drops it when it empties. `persona lint` checks each entry as a chat's start reads it (#2934): one that names nothing (`:x`, `plugin:`), one written `charter:` (named `purlis:` until `purlis doctor --fix project-skills` rewrites it), a built-in skill purlis has none of, a harness skill no harness the project's profiles run has on this machine, and a bare name no skill the persona's chats can reach (its own, a workspace's or the project's) nor any such harness has, each a warning with its fix; with the flag off it says only that the line is read with the flag on. `persona stats` compares the names, and the persona's own skills, with the skills it used. | experimental | `purlis_core::skills::names_of`, `purlis_skills::Reference`, `purlis_core::skills::persona::unresolved`; `charter/persona.py:1957`, `charter/commands_persona.py:908` |
 | `pinned-skills` | CSV of skill names | absent | **purlis only** (ADR 0102 §4, #2778; **experimental** behind the `skill-studio` flag). **The skills a chat as the persona always lists**, which the router never hides behind the index skill when the chat's set is past its skill budget, in any workspace, beside the workspace's own `settings.skills.pinned`. A pin only keeps a skill of the chat's set listed: it brings none into the set (`skills:` does). The persona's own line, not inherited along `extends`. Written by `purlis skill pin <name> -p <persona>` and `--off`, and by the Skill studio's Pinned switch (#3232), which refuse a name no skill has and a pin past the 64 a chat reads, and drop the line when it empties. | experimental | `purlis_core::personaverbs::pinned_skills`, `purlis_core::skills::pins_of` |
 | `skill-router` | str | absent | **purlis only** (ADR 0102 §5, #3230; **experimental** behind the `skill-studio` flag). **The router a chat as the persona is routed by**, in any workspace, over its workspace's `settings.skills.router`: `built-in`, or the id of an approved extension that declares `skill-router`. The persona's own line, not inherited along `extends`. Read as the workspace's would be where it is no router's name, and the chat's routing record says why. Written by the Skill studio's Routing page (Change…, #3692), one commit: `built-in` is written, and "Its workspace's router" takes the line out. | experimental | `purlis_core::skills::router::chosen`; written by `purlis_core::skills::verbs::route` |
 | `draft` | `true/yes/1/on` (case-insensitive) truthy set | absent = not a draft | While set, the charter is unfinished: `persona lint`, `persona stats` and the doctor say so, and no chat is dispatched to the persona. (Until #1451 it also meant no sub-agent was generated) | stable | `charter/persona.py:1843`, `:1846`, `charter/commands_persona.py:1150` |
@@ -3863,15 +3864,20 @@ An end row, never a pass or a fail:
   dollars past ten times its dearest limit, a stamp more than an hour ahead of this machine's
   clock, a `spent` that is not what the report adds up to (its chats the arms' runs, its tokens
   `spent_tokens`, its cost `spent_usd` where the report has one; for an `interrupted` row with no
-  arms, its chats at most what its runs could have asked for, #3582), or an arm whose chats are not
+  arms, its chats at most what its runs could have asked for, #3582, and its `asked_for`, where it
+  says one, from its chats to that most, #3602; a `spent.asked_for` in a scored row, whose arms
+  count it, #3602), or an arm whose chats are not
   what its tests ran and asked for) is skipped. **What was left out is said** (#3273): the
   Grades tab, the plan and `purlis skill grade` say how many rows of the skill were skipped
   (a row of it no purlis parses among them) and name each file not read (a link, or one past
   16 MiB), never dropping them unseen; a byte that is not text spoils only its own row. At most 200 grades of a skill are answered, newest first
   (`purlis_core::skills::grades::read`). The plan's estimate is worked out from the newest grade
   on the profile the grade runs on that asked for a chat, else the newest that asked for one, its
-  spend shared over every chat it asked for, and says which grade it is, that it ran no chat, or
-  that its cost is not known where its chats said nothing of it.
+  spend shared over every chat it asked for, and says which grade it is, that it was interrupted,
+  that it ran no chat, or that its cost is not known where its chats said nothing of it. An
+  `interrupted` row with no arms counts its `spent.asked_for` once that is a turn of each of its
+  arms, and is gone by only where no scored grade on the same profile is (#3602); one from before
+  that counts none.
 - **Git:** committed. Nothing commits it by itself: the next save does.
 - **Encoding details:** path `personas/_grades/{%Y-%m}.{device}.jsonl`, `<device>` named as the
   skill log's is; keys sorted, `\n`, `O_APPEND` through no link, `0o644` (`dispatch::append`).
@@ -6806,14 +6812,19 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   line that reads the same, and a copy is passed over only where it is the same chat's, under
   the same id, and says the same thing.
   A `UserPromptSubmit` report carries `prompt_marks` (#2775): a 256-bit Bloom filter of the
-  HMAC-SHA256 digests, keyed by the chat's own id (`PURLIS_CHAT_ULID`, #3029), of the stretches
+  HMAC-SHA256 digests, keyed by the chat's prompt key (`PURLIS_PROMPT_KEY`, #3369), of the stretches
   of each line of the prompt (from any word, up to 6 words; at most 36), and never the prompt's
   words, so the app knows a skill Use skill… typed was in the prompt sent. Only a Codex or
   opencode chat marks every stretch; a Claude Code chat, which names the skill instead, marks
   the prompt's lead alone (the first 6 words of its first line, so a first line that short is
-  digested whole), what a curation action's prompt is known by, and a hook with no chat id marks
-  nothing. The key separates chats and hides nothing: the chat's id is no secret (#3369). It is heard
-  live alone: never spooled, never in the event log. A `userpromptexpansion` tool line (Claude
+  digested whole), what a curation action's prompt is known by, and a hook with no prompt key
+  marks nothing. The prompt key is 32 random bytes in hex, one per chat, minted where the chat is
+  composed: by the window for a chat it composes, by the session host for one it composes (a
+  runner's). It is set in the chat's environment alone, never on its command line, and the
+  window and the host keep it in memory alone, beside the running chat; the host answers it to
+  the window that started the chat or takes it back after a restart (session protocol 1.60). It
+  is written to no file here, no log and no record. The marks are heard live alone: never
+  spooled, never in the event log. A `userpromptexpansion` tool line (Claude
   Code) names the skill a `/<skill>` the person sent expanded into, as its `skill`, started by
   `use-skill`: the app opens a run only for a skill Use skill… typed and still holds.
   Another, `doing`, says what a chat's tool hook saw, for the one line a working chat's row
@@ -7879,6 +7890,14 @@ refuses a `<data>` under a project or inside any git work tree.
 | `<config>/telemetry.json` | Machine, device-bound | **decided, not yet written** (ADR 0083). Whether telemetry is collected, its retention and cap, each project's open content gates, and the export destinations: each one's name, OTLP/HTTP URL, signals and a pointer to its auth header in the keyring. No project file opens a gate or names a destination. Device-bound because of those pointers and consents. Denied to chats (ADR 0067 §5 class 2). Backed up by FR-10 | a `local-ui` caller only (the window, or `purlis` on that scope), through `purlisd` (OB-2, OB-9) |
 | keyring item for a telemetry export destination's auth header | Keyring | **decided, not yet written** (ADR 0083). The header value an export destination sends, such as a backend's API key. Denied to chats | OB-9 |
 
+### `<data>/sign-ins-waiting/<digest>`
+- **Format:** an empty file on a runner, named by the lowercase hex SHA-256 of the `state` a login's
+  page printed (#4044), in a folder made `0700`. Its holder, the runner's `purlis profile sign-in`,
+  keeps it locked for as long as the login runs and removes it as the login ends. The runner's host
+  removes it as it hands that sign-in's redirect on. One no one holds locked counts for nothing. No
+  chat's sandbox reads or writes the folder.
+- **Tier:** Machine, device-bound, transient — it lasts as long as one login on a runner.
+
 ### `<data>/app-state/<clone key>/` — the app's own state of a project
 - **Format:** one folder per project clone (#3718; ADR 0067 as amended 2026-10-28), named by its
   clone key (`plane::CloneKey`), in the data home `<data>`, `0700`, as `<data>/app-state` is. It holds
@@ -8030,7 +8049,8 @@ refuses a `<data>` under a project or inside any git work tree.
   it would be recorded were it interrupted now (`report.ended` `interrupted`, no chat scored,
   and what its chats spent so far: nothing as it starts, then, as each chat ends, its chats that
   ran, its tokens and its cost as the chats said them, in `spent` and in the report's
-  `spent_tokens` and `spent_usd`, #3582). Written `0600` through no link when a grade starts
+  `spent_tokens` and `spent_usd`, #3582, and the chats it asked for so far, ran or not, in
+  `spent.asked_for`, #3602). Written `0600` through no link when a grade starts
   (`grades::underway::began`), written again as each chat ends (`grades::underway::Marker::spent`),
   and removed when it ends (`grades::underway::ended`). Each write goes to
   `.<grade>.json.partial` beside it, locked, and is renamed over it, so a reader finds the whole

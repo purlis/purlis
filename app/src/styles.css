@@ -98,7 +98,7 @@
  * vocabulary is the defect this whole layer exists to remove.
  */
 
-@layer theme, base, vendor, charter, components, parts, utilities, forced;
+@layer theme, base, vendor, charter, components, parts, cues, utilities, forced;
 
 @import "tailwindcss/theme.css" layer(theme);
 @import "./theme/geometry.css" layer(theme);
@@ -135,6 +135,8 @@
 @import "./paneFrame.css" layer(components);
 @import "./ui/tree/tree.css" layer(components);
 @import "./primitives/text.css" layer(components);
+/* Cues no theme can erase, after the theme's parts (#3295). */
+@import "./cues.css" layer(cues);
 /* @forced: every src/ui/<family>/forced-colors.css, by name */
 @import "./theme/forced-colors.css" layer(forced);
 

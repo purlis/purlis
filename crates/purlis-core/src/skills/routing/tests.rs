@@ -380,7 +380,7 @@ fn use_skill_asks_a_chat_to_load_a_hidden_skill_and_holds_no_run_for_it() {
             ..running(root, &bundle, None)
         });
 
-        let salt = crate::skillspan::PromptSalt::of_chat("01JB00000000000000000000C4").unwrap();
+        let salt = crate::skillspan::PromptSalt::of_key("01JB00000000000000000000C4").unwrap();
         let typing = chat.typed("skill-07", &[], &salt).unwrap();
 
         assert_eq!(

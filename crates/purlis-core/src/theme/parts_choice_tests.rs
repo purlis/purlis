@@ -368,3 +368,28 @@ fn a_choice_s_quieter_words_are_the_tiers_choice_css_draws() {
         );
     }
 }
+
+/// **A segment's press reaches through the control's padding, whatever the theme sets** (#4173,
+/// WCAG 2.5.8): a segment is drawn inside the control's padding, and its press reaches the
+/// control's edge by `--segment-reach` (`choice.css`). A theme that sets the control's padding
+/// writes the reach with it, so the target is the control's whole height at any padding: none
+/// past the control at 0, all of it at 12.
+#[test]
+fn a_theme_s_segmented_padding_moves_the_segment_s_reach_with_it() {
+    for padding in [0, 12] {
+        let sheet = sheet_of(json!({ "segmented-control.root.padding": padding }));
+        let rule = sheet
+            .lines()
+            .find(|line| line.contains("[data-scope=\"segmented-control\"][data-part=\"root\"]") && line.contains("padding-block"))
+            .unwrap_or_else(|| panic!("no padding for the control at {padding}: {sheet}"));
+        let block = rule
+            .split("padding-block: ")
+            .nth(1)
+            .and_then(|rest| rest.split(';').next())
+            .expect("the control's block padding");
+        assert!(
+            rule.contains(&format!("--segment-reach: {block};")),
+            "the reach is not the padding at {padding}: {rule}"
+        );
+    }
+}

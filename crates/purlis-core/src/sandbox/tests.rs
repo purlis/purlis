@@ -1681,6 +1681,10 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             Homes::charter_data(&machine(Os::Linux))
                 .expect("a data home")
                 .join(crate::dockerpool::settings::DIR),
+            // Which sign-ins a runner's logins wait for (#4044).
+            crate::profilestore::sign_in::waiting::in_data_home(
+                &Homes::charter_data(&machine(Os::Linux)).expect("a data home"),
+            ),
             // The browser logins this device keeps (#2021).
             Homes::charter_data(&machine(Os::Linux))
                 .expect("a data home")
@@ -1777,6 +1781,19 @@ fn no_chat_writes_the_browser_engines_purlis_downloads_under_either_name_of_the_
             denied.paths
         );
     }
+}
+
+#[test]
+fn no_chat_reads_or_writes_which_sign_ins_a_runner_waits_for() {
+    let linux = machine(Os::Linux);
+    let data = Homes::charter_data(&linux).expect("a data home");
+    let (_plane, denied) = denied_with(None, Os::Linux);
+    let records = crate::profilestore::sign_in::waiting::in_data_home(&data);
+    assert!(
+        paths(&denied, Class::HumanPowers, Access::ReadWrite).contains(&records),
+        "{:?}",
+        denied.paths
+    );
 }
 
 #[test]

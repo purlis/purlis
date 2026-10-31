@@ -26,6 +26,7 @@ const HARNESSES: Studio["harnesses"] = [
     harness: "claude",
     title: "Claude Code",
     repo_left_out: [],
+    own: null,
     skills: [
       skill("my-notes", {
         level: "installed",
@@ -62,11 +63,12 @@ const HARNESSES: Studio["harnesses"] = [
       }),
     ],
   },
-  { harness: "codex", title: "Codex", repo_left_out: [], skills: [] },
+  { harness: "codex", title: "Codex", repo_left_out: [], own: null, skills: [] },
   {
     harness: "opencode",
     title: "opencode",
     repo_left_out: [],
+    own: null,
     skills: [
       skill("scratch", {
         level: "installed",

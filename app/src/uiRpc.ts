@@ -5547,7 +5547,7 @@ export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" |
 export type GradeEstimate = {
 	tokens: number | null,
 	cost_usd: number | null,
-	/**  The chats the grade it is worked out from asked for: none where none ran. */
+	/**  The chats the grade it is worked out from asked for, ran or not: none where none ran. */
 	chats_then: number,
 	/**  That grade: when it ran, and the profile and the harness its chats ran on. */
 	ts: string,
@@ -5557,6 +5557,8 @@ export type GradeEstimate = {
 	model: string | null,
 	/**  Whether it ran on the profile this grade runs on, or `None` where that is not known. */
 	same_profile: boolean | null,
+	/**  Whether that grade was interrupted before it was scored (#3602): the plan says so. */
+	interrupted: boolean,
 };
 
 /**
@@ -11557,6 +11559,14 @@ export type StudioHarness = {
 	 *  with why (SK-53): the core's `HarnessInTheStudio::repo_left_out`.
 	 */
 	repo_left_out: StudioSkill[],
+	/**
+	 *  **What its own catalogue holds** (#3324), in the core's words (`OwnCatalogue::said`),
+	 *  which `purlis skill list` says too: the skills it finds itself in the person's own
+	 *  folders and its plugins, listed against its own limit and never counted in purlis's
+	 *  budget. Null for a harness that finds none of its own, and where the studio was read only
+	 *  for a count of its needs.
+	 */
+	own: string | null,
 };
 
 /**  A level a skill can be moved to or made at, and its words. */

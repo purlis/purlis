@@ -44,6 +44,7 @@ fn a_chat<'a>(set: &'a [(String, String)], reporting: Option<Reporting<'a>>) -> 
         },
         number: 7,
         reporting,
+        prompt_key: None,
     }
 }
 
@@ -111,6 +112,7 @@ fn a_launch<'a>(harness: Option<&'a str>, set: &'a [(String, String)]) -> Launch
         harness,
         git_hooks: None,
         reporting: None,
+        prompt_key: None,
     }
 }
 
@@ -137,6 +139,7 @@ fn a_launch_the_window_composed_is_started_as_the_window_would_start_it() {
             },
             number: 7,
             reporting: None,
+            prompt_key: None,
         },
     );
 
@@ -179,6 +182,7 @@ fn a_launch_as_the_session_protocol_carries_it_is_started_by_its_words() {
             token: "the-chats-own".to_owned(),
         }),
         confinement: None,
+        prompt_key: session::PromptKey::of("the-chats-prompt-key"),
     };
 
     let started = from_launch(app(), &wired, 7, SIZE).expect("it composes");
@@ -201,6 +205,7 @@ fn a_launch_as_the_session_protocol_carries_it_is_started_by_its_words() {
                 socket: std::path::Path::new("/home/me/project/.purlis/app/hooks.sock"),
                 token: "the-chats-own",
             }),
+            prompt_key: Some("the-chats-prompt-key"),
         },
         7,
         SIZE,
@@ -214,6 +219,17 @@ fn a_launch_as_the_session_protocol_carries_it_is_started_by_its_words() {
     assert_eq!(
         value(&started, "PURLIS_CHAT_TOKEN").as_deref(),
         Some("the-chats-own")
+    );
+    // #3369: the chat's prompt key is in its environment, and never on its line.
+    assert_eq!(
+        value(&started, "PURLIS_PROMPT_KEY").as_deref(),
+        Some("the-chats-prompt-key")
+    );
+    assert!(
+        !started
+            .args
+            .iter()
+            .any(|word| word.to_string_lossy().contains("the-chats-prompt-key"))
     );
 }
 

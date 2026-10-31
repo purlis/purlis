@@ -171,3 +171,133 @@ fn a_login_in_its_own_terminal_ends_when_its_input_closes() {
     assert_eq!(ran.join().expect("ended"), Ok(None));
     assert!(pids.iter().all(|pid| !runs(*pid)), "still runs: {pids:?}");
 }
+
+/// Codex 0.163.0's page, as its login prints it, with the `state` it waits with.
+const PAGE: &str = "https://auth.openai.com/oauth/authorize?response_type=code&\
+    client_id=app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=http%3A%2F%2F127.0.0.1%3A1455%2Fauth%2F\
+    callback&code_challenge=c&code_challenge_method=S256&state=Zm9yLXRoaXMtc2lnbi1pbi1hbG9uZQ";
+const STATE: &str = "Zm9yLXRoaXMtc2lnbi1pbi1hbG9uZQ";
+
+/// A login that prints its page and waits.
+fn a_login_showing_its_page() -> Login {
+    stand_in(&format!(
+        "echo 'navigate to this URL to authenticate:'; echo '{PAGE}'; sleep 60"
+    ))
+}
+
+fn codex() -> Driven {
+    Driven::of("codex", Instant::now()).expect("Codex's sign-in is driven")
+}
+
+/// Hears what passes through, asking `see` of it at that moment.
+struct Passes<F>(F);
+
+impl<F: FnMut(&[u8]) + Send> Write for Passes<F> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        (self.0)(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// **The login is recorded as waiting with its page's `state` before that page leaves the runner**,
+/// and no longer once it ended.
+#[test]
+fn a_login_waits_with_its_pages_state_only_while_it_runs() {
+    let kept = tempfile::tempdir().unwrap();
+    let kept_in = kept.path().to_path_buf();
+    let (reader, input) = std::io::pipe().expect("a pipe");
+    let (shown, page) = mpsc::channel();
+    let ran = {
+        let (kept_in, seen) = (kept_in.clone(), kept_in.clone());
+        std::thread::spawn(move || {
+            until_answered_or_input_ends(
+                &a_login_showing_its_page(),
+                codex(),
+                &kept_in,
+                reader,
+                Passes(move |bytes: &[u8]| {
+                    if String::from_utf8_lossy(bytes).contains(STATE) {
+                        let records = std::fs::read_dir(&seen).map_or(0, Iterator::count);
+                        let _ = shown.send(records);
+                    }
+                }),
+                std::io::sink(),
+            )
+        })
+    };
+
+    let records = page
+        .recv_timeout(Duration::from_secs(10))
+        .expect("its page passed on");
+    assert_eq!(records, 1, "recorded before its page passed on");
+
+    drop(input);
+    assert_eq!(ran.join().expect("ended"), Ok(None));
+    assert!(
+        !crate::profilestore::sign_in::waiting::take(&kept_in, STATE),
+        "not waiting once it ended"
+    );
+}
+
+/// **A login that cannot be recorded is ended, and its page goes nowhere**: nothing could be
+/// handed to it.
+#[test]
+fn a_login_that_cannot_be_recorded_shows_no_page_and_is_ended() {
+    let kept = tempfile::tempdir().unwrap();
+    let not_a_folder = kept.path().join("a-file");
+    std::fs::write(&not_a_folder, "").unwrap();
+    let (reader, _input) = std::io::pipe().expect("a pipe");
+    let passed = Arc::new(Mutex::new(String::new()));
+
+    let said = {
+        let passed = Arc::clone(&passed);
+        until_answered_or_input_ends(
+            &a_login_showing_its_page(),
+            codex(),
+            &not_a_folder,
+            reader,
+            Passes(move |bytes: &[u8]| {
+                passed
+                    .lock()
+                    .unwrap()
+                    .push_str(&String::from_utf8_lossy(bytes));
+            }),
+            std::io::sink(),
+        )
+    };
+
+    assert!(said.expect_err("refused").contains("could not note"));
+    assert!(!passed.lock().unwrap().contains(STATE));
+}
+
+/// **A login cancelled before it starts is seen to be**: while its harness is fetched, what drives
+/// it may go away, and then nothing starts.
+#[test]
+fn an_input_closed_before_the_login_starts_is_seen() {
+    let (reader, writer) = std::io::pipe().expect("a pipe");
+    let input = Input::of(reader);
+    assert!(!input.closed_by_now());
+
+    drop(writer);
+
+    assert!(input.closed_by_now());
+}
+
+/// **What came in before the login started reaches it**, and then its end does.
+#[test]
+fn what_comes_in_while_a_login_is_not_started_yet_reaches_it() {
+    let (reader, mut writer) = std::io::pipe().expect("a pipe");
+    let mut input = Input::of(reader);
+    writer.write_all(b"typed").unwrap();
+    drop(writer);
+    assert!(input.closed_by_now());
+
+    let mut read = String::new();
+    input.read_to_string(&mut read).unwrap();
+
+    assert_eq!(read, "typed");
+}

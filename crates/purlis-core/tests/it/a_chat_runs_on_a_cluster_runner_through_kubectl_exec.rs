@@ -243,6 +243,7 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
                     git_hooks: None,
                     reporting: None,
                     confinement: None,
+                    prompt_key: None,
                 }),
                 ..StartProgram::of(PROJECT, ProgramKind::Shell)
             })
@@ -339,6 +340,7 @@ async fn ran(client: &Client, views: &mut Acceptor, command: &str, until: &str) 
                 git_hooks: None,
                 reporting: None,
                 confinement: None,
+                prompt_key: None,
             }),
             ..StartProgram::of(PROJECT, ProgramKind::Shell)
         })

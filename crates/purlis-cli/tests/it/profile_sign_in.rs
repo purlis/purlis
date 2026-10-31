@@ -54,11 +54,17 @@ impl Machine {
 
     /// [`Self::purlis`], with `env` set too.
     fn purlis_with(&self, env: &[(&str, &str)], args: &[&str]) -> Output {
+        self.command(env, args).output().expect("the binary runs")
+    }
+
+    /// The command [`Self::purlis_with`] runs.
+    fn command(&self, env: &[(&str, &str)], args: &[&str]) -> std::process::Command {
         let path = std::env::join_paths(std::iter::once(self.path("bin")).chain(
             std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
         ))
         .unwrap();
-        support::purlis()
+        let mut command = support::purlis();
+        command
             .args(args)
             .current_dir(self.path("project"))
             .env("CHARTER_ROOT", self.path("project"))
@@ -72,9 +78,31 @@ impl Machine {
             .env_remove("XDG_CONFIG_HOME")
             .env_remove("PURLIS_CHAT")
             .env_remove("CHARTER_CHAT")
-            .envs(env.iter().copied())
-            .output()
-            .expect("the binary runs")
+            .envs(env.iter().copied());
+        command
+    }
+
+    /// `name`, a profile of `harness` this machine keeps for a desktop, as a runner does.
+    fn keeps_for_a_desktop(&self, name: &str, harness: &str) {
+        purlis_core::profilestore::onrunner::keep(
+            &purlis_core::profilestore::Homes::at(&self.path("config-home"), &self.path("data")),
+            &self.path("home"),
+            &purlis_core::profilestore::onrunner::Kept {
+                name: name.to_owned(),
+                harness: harness.to_owned(),
+                sandbox_only: false,
+                pinned: None,
+                settings_in: None,
+            },
+            "01JA0DESKT0P00000000000000",
+            7,
+        )
+        .expect("kept");
+    }
+
+    /// The records of what this machine's logins wait for.
+    fn waiting(&self) -> usize {
+        fs::read_dir(self.path("data/sign-ins-waiting")).map_or(0, Iterator::count)
     }
 
     fn said(&self, args: &[&str]) -> String {
@@ -342,4 +370,72 @@ fn signing_out_and_a_held_sign_in_are_only_for_a_profile_kept_for_a_desktop() {
         );
     }
     assert_eq!(machine.ran(), None);
+}
+
+/// **A sign-in cancelled before its login starts starts none**: while a runner fetches its
+/// harness, what drives it may go away. One still driven starts.
+#[test]
+fn a_held_sign_in_whose_input_closed_starts_no_login() {
+    let machine = Machine::new(0);
+    machine.keeps_for_a_desktop("work", "claude");
+    let args = ["profile", "sign-in", "work", "--until-input-ends"];
+
+    let closed = machine
+        .command(&[], &args)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("the binary runs");
+    assert!(!closed.status.success(), "{closed:?}");
+    assert_eq!(machine.ran(), None);
+
+    let mut driven = machine
+        .command(&[], &args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("the binary runs");
+    let input = driven.stdin.take();
+    assert!(driven.wait().expect("it ended").success());
+    drop(input);
+    assert!(machine.ran().is_some());
+}
+
+/// **A login that waits for the browser is noted on the runner as it shows its page**, and no
+/// longer once it ended: nothing else is handed a browser's answer there.
+#[test]
+fn a_held_login_that_waits_for_the_browser_is_noted_while_it_runs() {
+    use std::io::BufRead;
+
+    let machine = Machine::new(0);
+    machine.keeps_for_a_desktop("work", "codex");
+    let page = "https://auth.openai.com/oauth/authorize?response_type=code&client_id=\
+                app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=http%3A%2F%2F127.0.0.1%3A1455%2Fauth%2F\
+                callback&code_challenge=c&code_challenge_method=S256&state=\
+                Zm9yLXRoaXMtc2lnbi1pbi1hbG9uZQ";
+    stand_in::program(
+        &machine.path("bin"),
+        "codex",
+        &format!("#!/bin/sh\necho '{page}'\nexec sleep 60\n"),
+    );
+
+    let mut held = machine
+        .command(&[], &["profile", "sign-in", "work", "--until-input-ends"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("the binary runs");
+    let input = held.stdin.take();
+    let mut line = String::new();
+    std::io::BufReader::new(held.stdout.take().expect("its output"))
+        .read_line(&mut line)
+        .unwrap();
+
+    assert_eq!(line.trim_end(), page, "its page passes on");
+    assert_eq!(machine.waiting(), 1);
+
+    drop(input);
+    held.wait().expect("it ended");
+    assert_eq!(machine.waiting(), 0);
 }

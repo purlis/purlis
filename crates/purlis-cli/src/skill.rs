@@ -222,7 +222,8 @@ pub enum SkillCommand {
         /// The entry in that vault that holds the token.
         #[arg(long, requires = "vault")]
         key: Option<String>,
-        /// Where a project skill reaches: `root`, `all`, or workspace names (default: root).
+        /// Where a project skill reaches: `root`, `all`, or workspace names (default: root). A
+        /// project skill they refer to reaches those workspaces too: its grant is widened.
         #[arg(long, num_args = 1..)]
         grant: Vec<String>,
         /// Install without asking: for a script that printed and read the review itself.
@@ -489,6 +490,13 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             "repo_left_out": one.repo_left_out.iter()
                                 .map(|row| left_out_json(one, row, row_json(row)))
                                 .collect::<Vec<_>>(),
+                            // Its own catalogue, which purlis's budget never counts (#3324).
+                            "own": one.own.map(|own| json!({
+                                "skills": own.skills,
+                                "chars": own.chars,
+                                "manual": own.manual,
+                                "said": own.said(one.harness.title()),
+                            })),
                         })).collect::<Vec<_>>(),
                         // A declared harness skills are not supported on, with why (SK-30).
                         "not_supported": list.not_supported.iter().map(|one| json!({
@@ -508,6 +516,10 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             outside_table(&one.rows)
                         );
                     }
+                    // What its own catalogue costs, beside purlis's budget (#3324).
+                    if let Some(said) = one.own.and_then(|own| own.said(one.harness.title())) {
+                        println!("{}", harness_line(&said));
+                    }
                     // What a repo takes from its chats, never a silent drop (SK-53).
                     if !one.repo_left_out.is_empty() {
                         print!(
@@ -519,7 +531,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
                 // Never a silent drop (SK-30): a declared harness's chats get no skills, and why.
                 for one in &list.not_supported {
-                    println!("\n{}", not_supported_line(&one.said));
+                    println!("\n{}", harness_line(&one.said));
                 }
             }
             Ok(0)
@@ -1137,9 +1149,10 @@ fn already_in(name: &str, lifecycle: &Lifecycle) -> Markup {
         .own(".")
 }
 
-/// A declared harness's line that skills are not supported on it (SK-30): its title is the
-/// project's words, so the line is escaped.
-fn not_supported_line(said: &str) -> Markup {
+/// A line of the core's about a harness, whose title is the project's words, so the line is
+/// escaped: that skills are not supported on a declared harness (SK-30), and what a harness's
+/// own catalogue holds beside purlis's budget (#3324).
+fn harness_line(said: &str) -> Markup {
     Markup::new().text(said)
 }
 
@@ -1291,8 +1304,14 @@ fn estimate_said(estimate: Option<&purlis_core::skills::grades::Estimate>) -> St
              is not known.\n"
         );
     }
+    // A grade purlis stopped under is gone by as far as its chats went, and says so (#3602).
+    let which = if estimate.interrupted {
+        "interrupted grade"
+    } else {
+        "grade"
+    };
     format!(
-        "From its grade{on}, {when}, of {}, a grade spends {}.\n",
+        "From its {which}{on}, {when}, of {}, a grade spends {}.\n",
         counted(estimate.chats_then, "chat", "chats"),
         parts.join(", ")
     )
@@ -1638,7 +1657,17 @@ fn install(
             return Ok(1);
         }
     };
-    print!("{}", review_text(&review));
+    // A project skill it relies on reaches the workspaces the grant names too (#4172).
+    let widenings = source::widenings(
+        root,
+        level,
+        grant.as_ref(),
+        review
+            .skills
+            .iter()
+            .flat_map(|skill| skill.already.iter().map(String::as_str)),
+    );
+    print!("{}", review_text(&review, &widenings));
     let question = format!(
         "Install {} at {level}, pinned to {}?",
         counted(review.skills.len(), "skill", "skills"),
@@ -1763,7 +1792,8 @@ fn summary_text(summary: &purlis_core::skills::review::Summary, pad: &str) -> St
 }
 
 /// An install review as the terminal prints it: each skill's summary first, then its files.
-fn review_text(review: &source::Review) -> String {
+/// `widenings` says what the install's grant asks of the project skills they refer to (#4172).
+fn review_text(review: &source::Review, widenings: &[source::Widening]) -> String {
     let mut out = format!(
         "Review of {} from {} at {}\n",
         counted(review.skills.len(), "skill", "skills"),
@@ -1784,10 +1814,26 @@ fn review_text(review: &source::Review) -> String {
         ));
         out.push_str(&summary_text(&skill.summary, "  "));
         for name in &skill.already {
-            out.push_str(&format!(
-                "  refers to {}, which its chats there have already: it is left as it is\n",
-                esc(name)
-            ));
+            let one = widenings.iter().find(|one| &one.name == name);
+            match one.and_then(|one| one.widened.as_ref().map(|to| (one, to))) {
+                Some((one, to)) => out.push_str(&format!(
+                    "  refers to {}, which is granted to {}: it is left as it is, and the install \
+                     grants it to {} too\n",
+                    esc(name),
+                    esc(&one.granted.to_string()),
+                    esc(&source::added(&one.granted, to))
+                )),
+                None => out.push_str(&format!(
+                    "  refers to {}, which its chats there have already: it is left as it is\n",
+                    esc(name)
+                )),
+            }
+            for line in one
+                .map(|one| one.turned_off_said(&skill.name))
+                .unwrap_or_default()
+            {
+                out.push_str(&format!("  {}\n", esc(&line)));
+            }
         }
         for line in &skill.lint {
             out.push_str(&format!("  lint: {}\n", esc(line)));

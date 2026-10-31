@@ -214,6 +214,7 @@ fn a_grade() -> super::super::grades::Graded {
             chats: 6,
             tokens: None,
             cost_usd: None,
+            asked_for: None,
         },
         plugins_off: None,
         model: None,

@@ -187,7 +187,8 @@ pub struct ChatForSkills {
     /// Where its plane skills came from, as its start read them (#3234): what its set is routed
     /// from again (#3245).
     pub start: purlis_core::hoststart::ChatSkills,
-    /// What its prompts are digested under (SK-38): its own id, which its hooks read too.
+    /// What its prompts are digested under (SK-38, #3369): its prompt key, which its hooks read
+    /// too. None for a chat whose host gave it none.
     pub salt: Option<purlis_core::skillspan::PromptSalt>,
     /// The folder it was started in: which of its workspace's clones it works in (#3462).
     pub cwd: Option<PathBuf>,
@@ -443,6 +444,12 @@ struct Running {
     /// chat of this machine, whose sandbox records its own, and for one reattached, whose start
     /// this window did not see.
     clones_at_start: Option<Vec<purlis_core::forge::apptoken::Started>>,
+    /// **Its prompt key** (#3369): what its hooks key the digests of its prompts by, and Use
+    /// skill… and a curation action the digests of what they type into it. Minted here for a
+    /// harness chat this window composes; answered by the host for one the host composed or
+    /// reattached. Held in memory alone: no record of the chat's keeps it. None for a shell, and
+    /// for a chat whose host gave it none.
+    prompt_key: Option<purlis_core::skillspan::PromptSalt>,
 }
 
 /// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
@@ -458,6 +465,29 @@ fn plane_skills_at_start(
     } else {
         read()
     }
+}
+
+/// **What a chat starting now is told of a harness no skill reaches** (SK-30, #3585): the one
+/// line [`purlis_core::skills::not_supported_on`] says of its `declared` harness, which has no
+/// adapter (`harness` is `None`), so no SessionStart briefing, and takes no MCP servers, so no
+/// MCP instructions either. Its tab is the one place left to say it. Said at the chat's first
+/// start alone (`why` is [`Why::New`]): a relaunch or a start again is the same chat, told
+/// already, and Use skill… and the studio keep saying it. And only where the plane's skills
+/// would reach a chat here (`plane_skills`): with the Skill studio off no chat gets them, and
+/// there is nothing to miss. Read from the declaration the start already holds: nothing new is
+/// read on a chat's open.
+fn not_supported_at_start(
+    why: Why,
+    plane_skills: bool,
+    harness: Option<Harness>,
+    declared: Option<&purlis_core::harness_declaration::Declaration>,
+) -> Option<String> {
+    if why != Why::New || !plane_skills || harness.is_some() {
+        return None;
+    }
+    declared
+        .and_then(purlis_core::skills::not_supported_on)
+        .map(|one| one.said)
 }
 
 /// **The routing a chat starting now keeps from its first start** (SK-15f, #3578): a chat
@@ -3719,6 +3749,8 @@ impl Chats {
         let plane_skills = plane_skills_at_start(reattaching, chat.plane_skills, || {
             purlis_core::skills::reach_chats_here(&self.project)
         });
+        // A declared harness no skill reaches says so on the chat's tab, once (#3585).
+        late.extend(not_supported_at_start(why, plane_skills, harness, declared));
         // Where its plane skills come from, and its clone's repo skills, read once (#3234): what
         // arms it below and what its tab's Notice says are both worked out from this. Read once
         // its arming has checked the start is not refused (#3461).
@@ -4214,6 +4246,18 @@ impl Chats {
                 purlis_core::sandbox::By::Person | purlis_core::sandbox::By::YourLevel(_)
             )
         });
+        // **Its prompt key** (#3369): the one its host kept, for a chat reattached; the one the
+        // runner mints, for a chat it composes (answered below); a fresh one for a harness chat
+        // this window composes. Never on its line and never in a record.
+        let mut prompt_key = match (reattaching, chat.number) {
+            (true, Some(number)) => self.sessions.prompt_key_left(number),
+            _ if on_the_runner || harness.is_none() => None,
+            _ => Some(purlis_core::skillspan::PromptSalt::mint().map_err(|why| {
+                format!(
+                    "purlis could not make this chat's prompt key ({why}), so it was not started"
+                )
+            })?),
+        };
         let opened = match (reattaching, chat.number) {
             (true, Some(number)) => self.sessions.reattach(number, &announce),
             _ if on_the_runner => self
@@ -4257,6 +4301,7 @@ impl Chats {
                         *ran != purlis_session_protocol::session::RunSandbox::Off || !compiled_here
                     });
                     confinement = composed.confinement;
+                    prompt_key = composed.prompt_key;
                     composed.number
                 }),
             _ => self.sessions.open(
@@ -4292,6 +4337,7 @@ impl Chats {
                     run: identity.run.clone(),
                     // A grade's chat ends with this window (#3274): only it watches the chat.
                     ends_with_its_window: chat.graded,
+                    prompt_key: prompt_key.clone(),
                 },
                 &announce,
             ),
@@ -4309,6 +4355,11 @@ impl Chats {
                 gone(announced);
             }
         })?;
+        // The key its host set in its environment, where the window launched it: a host that
+        // answers none set none, and its prompts are marked under none (#3369).
+        if !reattaching && !on_the_runner {
+            prompt_key = self.sessions.prompt_key_started(session, prompt_key);
+        }
         // Under the id it was actually given, not the one it was recorded with: a chat
         // started fresh is under an id the app just chose, and that is what has to be
         // written down for the next launch to resume it.
@@ -4393,6 +4444,7 @@ impl Chats {
                 skills_read: (*skills).clone(),
                 plane_skills,
                 clones_at_start: clones_at_start.take(),
+                prompt_key,
             },
         );
         // Its routing record, after its run began (SK-15b), where its router was asked now. A chat
@@ -5334,12 +5386,7 @@ impl Chats {
             harness: running.harness,
             start: running.skills_read.clone(),
             plane_skills: running.plane_skills,
-            salt: running
-                .chat
-                .identity
-                .id
-                .as_deref()
-                .and_then(purlis_core::skillspan::PromptSalt::of_chat),
+            salt: running.prompt_key.clone(),
             cwd: running.chat.cwd.clone(),
             // As its start read its declaration: what a running chat started with (decision 15).
             not_supported: running

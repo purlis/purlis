@@ -2416,6 +2416,7 @@ const MARK_WORDS: &[(&str, &str)] = &[
     ("titlebar", "dot-needs"),
     ("status-item", "dot"),
     ("status-item", "dot-warning"),
+    ("notice", "mark"),
 ];
 
 /// Whether `part` of `family` draws a mark rather than words: an icon, the chevron of a select
@@ -4330,6 +4331,22 @@ fn declarations(rule: &Rule, property: Prop, value: PartValue) -> String {
     {
         let fill = colour_css(token);
         return format!("background-color: {fill}; --panel-fill: {fill};");
+    }
+    // **A segment's press reaches through the control's padding** (#4173): its `::after` reaches
+    // back by `--segment-reach` (`choice.css`), so a theme's padding writes the reach with it and
+    // the target stays the control's whole height.
+    if (
+        rule.family.name,
+        rule.family.parts[rule.part].name,
+        property,
+    ) == ("segmented-control", "root", Prop::Padding)
+        && let PartValue::Padding(block, inline) = value
+    {
+        let block = written_length(block, geometry::Unit::Text);
+        return format!(
+            "padding-block: {block}; padding-inline: {}; --segment-reach: {block};",
+            written_length(inline, geometry::Unit::Text)
+        );
     }
     // A strip's line is under it, never around it.
     if (rule.family.name, rule.family.parts[rule.part].name) == ("tabs", "strip") {

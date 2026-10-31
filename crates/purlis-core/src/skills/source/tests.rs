@@ -2409,3 +2409,103 @@ fn a_project_skill_the_persona_names_meets_a_reference_at_the_persona() {
         (vec!["deploy".to_owned()], vec!["notify".to_owned()])
     );
 }
+
+/// #4172: a project install granted to workspaces relies on a project skill it refers to only
+/// where that skill reaches them. The review names each such skill and the grant the install
+/// widens it to, and each workspace that turned it off; the install widens it with the rest.
+#[test]
+fn a_project_install_with_a_grant_widens_the_grant_of_a_project_skill_it_refers_to() {
+    use super::widen::{Widening, widenings};
+    let remote = three_skills();
+    let tmp = plane();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("workspaces/web")).unwrap();
+    let source = remote.source();
+    let project = Level::project();
+    let only = |names: &[&str]| Grant::Only(names.iter().map(|n| (*n).to_owned()).collect());
+    notify_at(root, "skills");
+    let review = review(root, None, &source, &["deploy".to_owned()], &project).unwrap();
+    assert_eq!(review.skills[0].already, ["notify"]);
+    let widen = |grant: Option<&Grant>, level: &Level| {
+        widenings(
+            root,
+            level,
+            grant,
+            review.skills[0].already.iter().map(String::as_str),
+        )
+    };
+    let one = |granted: Grant, widened: Option<Grant>, turned_off: &[&str]| {
+        vec![Widening {
+            name: "notify".to_owned(),
+            folder: root.join("skills/notify"),
+            granted,
+            widened,
+            turned_off: turned_off.iter().map(|n| (*n).to_owned()).collect(),
+        }]
+    };
+
+    // The root's grant reaches the root alone, where notify is already; a local install is
+    // granted nothing.
+    assert_eq!(widen(None, &project), []);
+    assert_eq!(widen(Some(&Grant::Root), &project), []);
+    assert_eq!(
+        widen(Some(&only(&["ops"])), &project.clone().local(true)),
+        []
+    );
+
+    // notify reaches the root alone: its grant takes in each workspace the install's reaches.
+    assert_eq!(
+        widen(Some(&only(&["ops"])), &project),
+        one(Grant::Root, Some(only(&["ops"])), &[])
+    );
+    assert_eq!(
+        widen(Some(&only(&["ops", "ops"])), &project),
+        one(Grant::Root, Some(only(&["ops"])), &[])
+    );
+    crate::skills::grant(root, "notify", &only(&["web"])).unwrap();
+    assert_eq!(
+        widen(Some(&only(&["ops", "web"])), &project),
+        one(only(&["web"]), Some(only(&["web", "ops"])), &[])
+    );
+    assert_eq!(widen(Some(&only(&["web"])), &project), []);
+    assert_eq!(
+        widen(Some(&Grant::All), &project),
+        one(only(&["web"]), Some(Grant::All), &[])
+    );
+
+    // Granted everywhere already, and turned off in ops: no grant brings it back there.
+    crate::skills::grant(root, "notify", &Grant::All).unwrap();
+    assert_eq!(widen(Some(&Grant::All), &project), []);
+    crate::skills::switch(root, "ops", "notify", false).unwrap();
+    assert_eq!(
+        widen(Some(&Grant::All), &project),
+        one(Grant::All, None, &["ops"])
+    );
+    assert_eq!(widen(Some(&only(&["web"])), &project), []);
+    crate::skills::switch(root, "ops", "notify", true).unwrap();
+
+    // The install widens it with the rest, and says so; notify is left where it is.
+    crate::skills::grant(root, "notify", &Grant::Root).unwrap();
+    let (made, said) = on(root, |cx| {
+        install(
+            cx,
+            &source,
+            &project,
+            &review.accepted(),
+            Some(&only(&["ops"])),
+        )
+    });
+    assert_eq!(made.unwrap().len(), 1);
+    let grant_of = |name: &str| crate::skills::grant_of(&root.join("skills").join(name)).unwrap();
+    assert_eq!(grant_of("deploy"), only(&["ops"]));
+    assert_eq!(grant_of("notify"), only(&["ops"]));
+    assert_eq!(
+        std::fs::read(root.join("skills/notify/SKILL.md")).unwrap(),
+        NOTIFY
+    );
+    assert!(
+        said.iter()
+            .any(|line| line.to_string().contains("notify is granted to ops too")),
+        "{said:?}"
+    );
+}
