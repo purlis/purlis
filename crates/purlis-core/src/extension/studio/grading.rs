@@ -70,10 +70,11 @@ impl<'a> Grading<'a> {
     /// **The grade's report, now its question is over**, however `talked` says it ended: the
     /// Grader's own report where it answered one that holds; what ran, stopped, where the person
     /// stopped it; else what ran, ended by the Grader's failure, with its sentence.
-    pub fn finished(self, talked: Result<(), String>) -> GradeReport {
+    pub fn finished(mut self, talked: Result<(), String>) -> GradeReport {
         if let Some(report) = self.report {
             return report;
         }
+        self.held.stop_if_cancelled();
         let why = match (self.failed, talked) {
             (Some(why), _) => why,
             (None, _) if self.held.cancelled() => return self.held.scored(self.extension, None),
@@ -121,9 +122,10 @@ impl<'a> Grading<'a> {
                     }
                     Ok(Asked::Ended(ended)) => {
                         self.told_it_ended = true;
-                        not_run(ended, self.held.not_started())
+                        not_run(ended)
                     }
                 };
+                let ran = told_to_the_grader(ran);
                 let mut doc = serde_json::Map::new();
                 doc.insert("charter".into(), protocol.into());
                 doc.insert(
@@ -143,6 +145,7 @@ impl<'a> Grading<'a> {
                             crate::shown::readable(&why.to_string(), 300)
                         ))
                     })?;
+                self.held.stop_if_cancelled();
                 let report = self
                     .held
                     .reported(extension, reported)
@@ -183,7 +186,7 @@ impl Talk for Grading<'_> {
 
 /// **The run-chat result of a chat not run because the grade had `ended`**: no chat, nothing
 /// spent, and its end the grade's, or why the chats did not start, in a sentence.
-fn not_run(ended: GradeEnd, not_started: Option<&str>) -> ChatRan {
+fn not_run(ended: GradeEnd) -> ChatRan {
     let why = |said: &str| ChatEnd::NotStarted {
         why: said.to_owned(),
     };
@@ -191,7 +194,7 @@ fn not_run(ended: GradeEnd, not_started: Option<&str>) -> ChatRan {
         GradeEnd::Cancelled => ChatEnd::Cancelled,
         GradeEnd::OverCap => ChatEnd::OverCap,
         GradeEnd::OverLimit => ChatEnd::OverLimit,
-        GradeEnd::ChatsDidNotStart => why(not_started.unwrap_or("the grade's chats did not start")),
+        GradeEnd::ChatsDidNotStart => why(DID_NOT_START),
         GradeEnd::SpendNotReported => why(
             "a chat of this grade did not say what it spent, so the grade cannot be held to its \
              cap and has ended",
@@ -207,6 +210,23 @@ fn not_run(ended: GradeEnd, not_started: Option<&str>) -> ChatRan {
         cost_usd: None,
         ms: 0,
         end,
+    }
+}
+
+/// What a Grader is told of a chat that did not start.
+const DID_NOT_START: &str = "the chat did not start";
+
+/// **`ran` as a Grader is told it**: why a chat did not start is purlis's own sentence about this
+/// machine, kept in the grade's end for the person, so the Grader is told only that it did not.
+fn told_to_the_grader(ran: ChatRan) -> ChatRan {
+    match ran.end {
+        ChatEnd::NotStarted { .. } => ChatRan {
+            end: ChatEnd::NotStarted {
+                why: DID_NOT_START.to_owned(),
+            },
+            ..ran
+        },
+        _ => ran,
     }
 }
 

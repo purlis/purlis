@@ -932,7 +932,12 @@ impl Executor {
             settings,
             writes,
         )?;
-        let before = project.plane().and_then(watch::Before::take);
+        // Not over a question of many lines: a grade runs long, and what the person changes in the
+        // plane meanwhile is no doing of its confined program's.
+        let before = project
+            .plane()
+            .filter(|_| !talking)
+            .and_then(watch::Before::take);
         let handed_in = handing.elapsed();
 
         // **The gate, re-taken now over the whole tree**, and held to the manifest the question
@@ -2498,7 +2503,8 @@ fn talk_through(
             }
             Some(Heard::Broken(why)) => {
                 return Err(format!(
-                    "purlis lost its connection to '{extension}''s program: {why}"
+                    "'{extension}' could no longer be reached, as purlis lost its connection to its \
+                     program: {why}"
                 ));
             }
         };

@@ -18,6 +18,9 @@ than one line. purlis writes the grade request (`studio` `grader`, `ask` `grade`
 An `error`, or any other line, ends the grade. A manifest that declares `grader` is version 4 at
 least: a Grader's question is protocol 4's, and none was ever asked in 3.
 
+**A Grader is told that a chat did not start, not why.** The `why` of §1 is a sentence about this
+machine, so it stays in the grade's end for the person, and the Grader reads a fixed one.
+
 **Each answer has the executor's five seconds from the line before it**; while purlis runs a
 chat the Grader has no deadline, as each chat is held to its own time (§3). The question stops
 when the person stops the grade: its program is stopped at once, whether a chat runs or the
@@ -34,7 +37,7 @@ Grader is between lines.
   dollar limit, after two chats that did not start, or after a chat that did not say what it
   spent, exactly as a grade of the built-in runner does (§4 and its amendments). Once it has
   ended, the next chat the Grader asks for is not run: it is written back as a result that says
-  why (`over-cap`, `over-limit`, or `not-started` with the sentence), so the Grader can answer its
+  why (`over-cap`, `over-limit` or `not-started`), so the Grader can answer its
   report. A Grader that asks again has asked past its limits, and that ends the grade.
 
 **Every message is read against a closed shape, failing closed.** A line is at most 512 KiB. A

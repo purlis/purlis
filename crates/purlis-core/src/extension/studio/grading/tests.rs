@@ -365,3 +365,55 @@ fn a_report_that_miscounts_what_ran_ends_the_grade() {
         report.failed
     );
 }
+
+/// A host that the person stops once it has run `after` chats.
+struct StoppedAfter {
+    host: Host,
+    after: usize,
+}
+
+impl grade::Chats for StoppedAfter {
+    fn run(&mut self, chat: &RunChat, left: Option<u64>) -> ChatRan {
+        self.host.run(chat, left)
+    }
+
+    fn cancelled(&self) -> bool {
+        self.host.asked.len() >= self.after
+    }
+}
+
+#[test]
+fn a_stop_between_chats_is_recorded_as_stopped_never_as_whole() {
+    let request = request();
+    let mut host = StoppedAfter {
+        host: Host::default(),
+        after: 1,
+    };
+    let mut grading = Grading::new("probe", &request, &mut host, capped(100_000));
+    // The chat ended its turn, and the person stopped the grade as it did.
+    assert_eq!(grading.heard(PROTOCOL, &run_chat("with")), None);
+    let report = grading.finished(Ok(()));
+    assert_eq!(report.ended, GradeEnd::Cancelled);
+    assert_eq!(report.failed, None);
+    assert_eq!(report.spent_tokens, Some(1000));
+}
+
+#[test]
+fn a_grader_is_not_told_why_a_chat_did_not_start() {
+    let told = told_to_the_grader(ChatRan {
+        chat: None,
+        started: Vec::new(),
+        tokens: None,
+        cost_usd: None,
+        ms: 0,
+        end: ChatEnd::NotStarted {
+            why: "could not write /Users/someone/project".into(),
+        },
+    });
+    assert_eq!(
+        told.end,
+        ChatEnd::NotStarted {
+            why: DID_NOT_START.to_owned()
+        }
+    );
+}

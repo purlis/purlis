@@ -532,6 +532,14 @@ impl<'a> Held<'a> {
         self.chats.cancelled()
     }
 
+    /// **Ends the grade as stopped, where the person stopped it and nothing else ended it**: for
+    /// a Grader's question, which a Stop ends between chats, with no further chat to find it.
+    pub fn stop_if_cancelled(&mut self) {
+        if self.ended.is_none() && self.chats.cancelled() {
+            self.ended = Some(GradeEnd::Cancelled);
+        }
+    }
+
     /// Why the chats stopped starting, where they did: the last one's sentence.
     pub fn not_started(&self) -> Option<&str> {
         self.not_started.as_deref()
