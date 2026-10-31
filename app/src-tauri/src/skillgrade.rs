@@ -31,7 +31,7 @@ use specta::Type;
 use tauri::Emitter as _;
 
 use purlis_core::skills::grade::{
-    self as grading, Arm, ChatEnd, ChatRan, Chats, GradeEnd, RunChat,
+    self as grading, Arm, ChatEnd, ChatKind, ChatRan, Chats, GradeEnd, RunChat,
 };
 use purlis_core::skills::grades::{self, Graded, Planned, Spent};
 use purlis_core::skills::runs::StartedBy;
@@ -50,6 +50,11 @@ pub const CHAT_TIME: Duration = Duration::from_secs(5 * 60);
 
 /// How often a chat being watched is asked whether the person stopped the grade.
 const LOOK_EVERY: Duration = Duration::from_millis(500);
+
+/// **How long an outcome eval's or a judge's chat is waited on for what its turn ended saying**
+/// once its turn ended (SK-55): its hook tells it on a line of its own, just before the turn's
+/// end, and the two lines may be heard in either order.
+const ANSWER_COMES_WITHIN: Duration = Duration::from_secs(2);
 
 /// The size a grade's chat runs at: it is drawn nowhere.
 const SIZE: purlis_core::engine::Size = purlis_core::engine::Size {
@@ -72,6 +77,28 @@ pub struct GradeQuery {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct GradeLeftOut {
     pub at: u32,
+    pub why: String,
+}
+
+/// **One outcome eval, as the plan shows it before anything runs** (SK-55): its id, its first
+/// message as the chat will read it, each character no reader would see marked, its input files,
+/// and how many expectations its judge checks.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct GradeEval {
+    pub id: String,
+    pub prompt: String,
+    pub hides: bool,
+    pub files: Vec<String>,
+    pub expectations: u32,
+    /// Whether the person ticked it (off until they do), and the chats ticking it adds.
+    pub on: bool,
+    pub chats: u32,
+}
+
+/// **An outcome eval a grade leaves out** (`grades::LeftOutEval`): its id, and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct GradeEvalLeftOut {
+    pub id: String,
     pub why: String,
 }
 
@@ -131,8 +158,13 @@ pub struct SkillGradePlan {
     pub tests_refused: Option<String>,
     /// The trigger tests left out, each with why: a query no chat can be started on.
     pub left_out: Vec<GradeLeftOut>,
-    /// The outcome evals the skill has, shown and not run (#3235 grades them).
+    /// **The outcome evals it runs** (SK-55), each in each arm and run, and the judge chats that
+    /// grade them, counted in [`Self::chats`]; the ones it leaves out, each with why; and why the
+    /// file could not be read, where it was not.
+    pub evals: Vec<GradeEval>,
     pub outcome_evals: u32,
+    pub judge_chats: u32,
+    pub outcomes_left_out: Vec<GradeEvalLeftOut>,
     pub outcomes_refused: Option<String>,
     pub estimate: Option<GradeEstimate>,
     /// What the grade record left out as it was read: rows skipped, files not read.
@@ -369,12 +401,52 @@ impl SkillGradePlan {
                     why: left.why.clone(),
                 })
                 .collect(),
+            evals: planned
+                .offered
+                .iter()
+                .map(|eval| {
+                    let prompt = grading::outcomes::outcome_prompt(eval);
+                    GradeEval {
+                        id: eval.id.to_string(),
+                        hides: purlis_unicode::hides(&prompt, purlis_unicode::Breaks::Kept)
+                            || eval
+                                .expectations
+                                .iter()
+                                .chain(&eval.expected_output)
+                                .chain(
+                                    eval.files
+                                        .iter()
+                                        .filter_map(|path| planned.copy.as_ref()?.inputs.get(path)),
+                                )
+                                .any(|text| {
+                                    purlis_unicode::hides(text, purlis_unicode::Breaks::Kept)
+                                }),
+                        prompt: purlis_unicode::marked(&prompt, purlis_unicode::Breaks::Marked),
+                        files: eval.files.clone(),
+                        expectations: u32::try_from(eval.expectations.len()).unwrap_or(u32::MAX),
+                        on: planned.request.as_ref().is_some_and(|request| {
+                            request.outcomes.iter().any(|one| one.id == eval.id)
+                        }),
+                        chats: planned.eval_chats,
+                    }
+                })
+                .collect(),
             outcome_evals: planned
-                .fixtures
-                .outcomes
-                .read()
-                .map(|evals| u32::try_from(evals.len()).unwrap_or(u32::MAX))
+                .plan
+                .map(|plan| plan.outcome_evals)
                 .unwrap_or_default(),
+            judge_chats: planned
+                .plan
+                .map(|plan| plan.judge_chats)
+                .unwrap_or_default(),
+            outcomes_left_out: planned
+                .outcomes_left_out
+                .iter()
+                .map(|left| GradeEvalLeftOut {
+                    id: left.id.to_string(),
+                    why: left.why.clone(),
+                })
+                .collect(),
             outcomes_refused: planned
                 .fixtures
                 .outcomes
@@ -542,6 +614,11 @@ fn running_of(plane: &PlaneId, skill: &str) -> Option<String> {
         .map(|(id, _)| id.clone())
 }
 
+/// **The outcome evals the window says were ticked**, by id: none are, until the person ticks them.
+pub(crate) fn ticked(evals: &[String]) -> Vec<u64> {
+    evals.iter().filter_map(|id| id.parse().ok()).collect()
+}
+
 /// **What grading the copy of `skill` at `level` would run**, before anything runs.
 #[tauri::command]
 #[specta::specta]
@@ -552,13 +629,19 @@ pub(crate) async fn skill_grade_plan(
     skill: String,
     profile: Option<String>,
     model: Option<String>,
+    evals: Vec<String>,
 ) -> Result<SkillGradePlan, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading what a grade runs", move || {
         flag_on()?;
         let on = chats_on(held.root(), profile, model);
-        let planned =
-            grades::planned(held.root(), &(&level).into(), &skill, on.profile.as_deref())?;
+        let planned = grades::planned_with(
+            held.root(),
+            &(&level).into(),
+            &skill,
+            on.profile.as_deref(),
+            &ticked(&evals),
+        )?;
         Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill), on))
     })
     .await
@@ -580,6 +663,7 @@ pub(crate) async fn skill_grade_start(
     skill: String,
     profile: Option<String>,
     model: Option<String>,
+    evals: Vec<String>,
     consent: String,
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
@@ -588,7 +672,7 @@ pub(crate) async fn skill_grade_start(
         let level: Level = (&level).into();
         let on = chats_on(held.root(), profile.clone(), model.clone());
         // The estimate is the plan's to show: a start needs none of it.
-        let planned = grades::planned(held.root(), &level, &skill, None)?;
+        let planned = grades::planned_with(held.root(), &level, &skill, None, &ticked(&evals))?;
         // What runs is what the plan showed (the review of #3229): the tests, the skill's files
         // and what its folder holds, read once here and laid out from this one copy, on the
         // profile, model and limits it showed.
@@ -642,7 +726,7 @@ pub(crate) fn begin(
     // The one read of the copy the consent was taken from: laid out and recorded as is.
     let (Some(copy), Some(request)) = (planned.copy, planned.request) else {
         return Err(format!(
-            "{skill} has no trigger tests to grade, so nothing was started."
+            "{skill} has no trigger tests or outcome evals to grade, so nothing was started."
         ));
     };
     let On {
@@ -809,6 +893,8 @@ pub(crate) fn begin(
                     plugins_off: None,
                     model: model.as_deref(),
                     reported: Vec::new(),
+                    inputs: &copy.inputs,
+                    left: None,
                 };
                 let report = grading::grade(&request, &mut chats, Some(limits.clone()));
                 let harness = chats.harness.take();
@@ -896,6 +982,7 @@ pub(crate) async fn skill_grade_set_cap(
     skill: String,
     profile: Option<String>,
     model: Option<String>,
+    evals: Vec<String>,
     tokens: f64,
 ) -> Result<SkillGradePlan, String> {
     let held = planes.held(&plane)?;
@@ -903,8 +990,13 @@ pub(crate) async fn skill_grade_set_cap(
         flag_on()?;
         set_cap(held.root(), tokens)?;
         let on = chats_on(held.root(), profile, model);
-        let planned =
-            grades::planned(held.root(), &(&level).into(), &skill, on.profile.as_deref())?;
+        let planned = grades::planned_with(
+            held.root(),
+            &(&level).into(),
+            &skill,
+            on.profile.as_deref(),
+            &ticked(&evals),
+        )?;
         Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill), on))
     })
     .await
@@ -1140,6 +1232,8 @@ pub struct SkillGrades {
     pub grades: Vec<GradeRow>,
     pub said: Option<String>,
     pub tests: u32,
+    /// The outcome evals a grade would run too (SK-55): a skill with these alone is graded.
+    pub evals: u32,
     pub tests_refused: Option<String>,
     pub running: Option<SkillGradeStep>,
 }
@@ -1155,20 +1249,22 @@ impl SkillGrades {
         skill: &str,
     ) -> Self {
         // A copy that cannot be found keeps its grades: only its tests are not counted.
-        let (tests, tests_refused) = match tests {
+        let (tests, evals, tests_refused) = match tests {
             Ok(tests) => (
                 u32::try_from(tests.runs).unwrap_or(u32::MAX),
+                u32::try_from(tests.evals).unwrap_or(u32::MAX),
                 tests
                     .refused
                     .as_ref()
                     .map(purlis_core::skills::grade::Refused::in_window),
             ),
-            Err(why) => (0, Some(why)),
+            Err(why) => (0, 0, Some(why)),
         };
         SkillGrades {
             grades: read.grades.iter().map(GradeRow::of).collect(),
             said: read.said(),
             tests,
+            evals,
             tests_refused,
             running: step_of_running(plane, level, skill),
         }
@@ -1398,6 +1494,20 @@ pub(crate) struct InChats<'a> {
     /// The model each chat's harness said it ran on, in the order they ran (SK-60): what the
     /// record keeps (`grades::reported_model`).
     pub(crate) reported: Vec<String>,
+    /// **The input files the grade's outcome evals stage** (SK-55), as the grade read them once
+    /// (`grades::SkillCopy::inputs`): none in a router's grade.
+    pub(crate) inputs: &'a std::collections::BTreeMap<String, String>,
+    /// **What the last outcome eval's chat left**, kept for its judge alone (SK-55): its id, its
+    /// files as it ended and its final answer. Taken by the judge of that chat, and by no other.
+    pub(crate) left: Option<Left>,
+}
+
+/// **What an outcome eval's chat left** (SK-55): its id, its piece's files as it ended
+/// (`drafts::outcome_of`), and what its turn ended saying, where its harness said.
+pub(crate) struct Left {
+    chat: String,
+    files: Vec<(String, String)>,
+    answer: Option<String>,
 }
 
 impl Chats for InChats<'_> {
@@ -1476,12 +1586,52 @@ impl InChats<'_> {
             cost_usd: None,
             ms: 0,
             end: ChatEnd::NotStarted { why },
+            answer: None,
         };
         let root = self.held.root().to_path_buf();
-        let laid = match (self.lay_out)(chat.arm) {
+        let laid = match &chat.kind {
+            // A judge's piece holds what the chat it judges left, as purlis kept it, and its
+            // task: nothing of the skill, and nothing else (SK-55).
+            ChatKind::Judge { of, task } => {
+                let Some(left) = self.left.take().filter(|left| left.chat == *of) else {
+                    return not_started(
+                        "purlis kept nothing of the chat it was to judge, so no judge could read                          it"
+                        .to_owned(),
+                    );
+                };
+                purlis_core::skills::verbs::drafts::lay_out_judge(
+                    &root,
+                    &left.files,
+                    left.answer.as_deref(),
+                    task,
+                )
+            }
+            ChatKind::Outcome { files } => (self.lay_out)(chat.arm).and_then(|laid| {
+                match purlis_core::skills::verbs::drafts::stage(&root, &laid, files, self.inputs) {
+                    Ok(()) => Ok(laid),
+                    Err(why) => {
+                        let _ = purlis_core::skills::verbs::drafts::end_try(&root, &laid.id);
+                        Err(why)
+                    }
+                }
+            }),
+            ChatKind::Trigger => (self.lay_out)(chat.arm),
+        };
+        let laid = match laid {
             Ok(laid) => laid,
             Err(why) => return not_started(why),
         };
+        if matches!(chat.kind, ChatKind::Judge { .. })
+            && !self.held.chats().binary().is_some_and(|binary| {
+                purlis_core::toolhooks::judge_guard_answers(binary, &laid.piece)
+            })
+        {
+            let _ = purlis_core::skills::verbs::drafts::end_try(&root, &laid.id);
+            return not_started("purlis could not start a judge within its limits".to_owned());
+        }
+        // An outcome eval's chat and a judge's run their turn whole: only a trigger test's ends
+        // once the skill under test starts.
+        let whole_turn = !chat.kind.is_trigger();
         let watching = self.held.hooks().skill_runs();
         let mut told = None;
         let started = crate::curation::start_graded(
@@ -1574,6 +1724,7 @@ impl InChats<'_> {
                 .and_then(|spent| spent.cost_usd)
         };
         let mut skills: Vec<String> = Vec::new();
+        let mut answer: Option<String> = None;
         let end = match &told {
             None => ChatEnd::TimedOut,
             Some((_, heard)) => loop {
@@ -1598,13 +1749,23 @@ impl InChats<'_> {
                         let this = purlis_core::skills::leaf_name(&name) == self.skill;
                         skills.push(name);
                         // A trigger test learns nothing more once the skill under test started.
-                        if this {
+                        if this && !whole_turn {
                             break ChatEnd::Turn;
                         }
                     }
+                    Ok(Watched::Said(text)) => answer = Some(text),
                     Ok(Watched::TurnEnded) => break ChatEnd::Turn,
                     // A grade's chat waits on nobody: ended at its first ask, with that end.
                     Ok(Watched::Asked) => break ChatEnd::Asked,
+                    // A whole turn that closed before it ended left nothing to judge or be read:
+                    // no run, never a score, so a crash is no verdict on the skill (SK-55).
+                    Ok(Watched::Closed) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected)
+                        if whole_turn =>
+                    {
+                        break ChatEnd::NotStarted {
+                            why: "its chat closed before its turn ended".to_owned(),
+                        };
+                    }
                     Ok(Watched::Closed) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                         break ChatEnd::Turn;
                     }
@@ -1612,6 +1773,35 @@ impl InChats<'_> {
                 }
             },
         };
+        // What the turn ended saying, where it is heard just after the turn's end.
+        if whole_turn
+            && answer.is_none()
+            && matches!(end, ChatEnd::Turn)
+            && let Some((_, heard)) = &told
+        {
+            let until = Instant::now() + ANSWER_COMES_WITHIN;
+            while let Some(left) = until.checked_duration_since(Instant::now()) {
+                match heard.recv_timeout(left) {
+                    Ok(Watched::Said(text)) => {
+                        answer = Some(text);
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+            }
+        }
+        // What an outcome eval's chat left, kept for its judge, read before its close takes
+        // its piece (SK-55).
+        if matches!(chat.kind, ChatKind::Outcome { .. })
+            && matches!(end, ChatEnd::Turn | ChatEnd::TimedOut)
+        {
+            self.left = id.clone().map(|chat| Left {
+                chat,
+                files: purlis_core::skills::verbs::drafts::outcome_of(&root, &laid.piece),
+                answer: answer.clone(),
+            });
+        }
         let spent = id
             .as_deref()
             .and_then(|id| purlis_core::usage::spent(&root, id));
@@ -1646,6 +1836,7 @@ impl InChats<'_> {
             cost_usd: spent.and_then(|spent| spent.cost_usd),
             ms: u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX),
             end,
+            answer,
         }
     }
 }

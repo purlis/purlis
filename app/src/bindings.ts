@@ -2101,14 +2101,14 @@ export const commands = {
 	 */
 	skillLevelsConfirm: (plane: PlaneId, folders: string[]) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_levels_confirm", { plane, folders })),
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
-	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model })),
+	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, evals: string[]) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model, evals })),
 	/**
 	 *  **Grades the copy of `skill` at `level`**, on `profile` (the project's default where none
 	 *  is picked) and `model` (the profile's own where none is, SK-60): its chats run one at a time
 	 *  behind the window, which is told each step ([`EVENT`]). The answer is the grade's id.
 	 *  Refused while a grade runs in the project.
 	 */
-	skillGradeStart: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, consent: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_start", { plane, level, skill, profile, model, consent })),
+	skillGradeStart: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, evals: string[], consent: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_start", { plane, level, skill, profile, model, evals, consent })),
 	/**
 	 *  **Stops the grade `grade`**: the chat it runs now is ended, no other starts, and what ran is
 	 *  scored and recorded.
@@ -2132,7 +2132,7 @@ export const commands = {
 	 *  operator's ruling of 2026-10-26): the person who pays for the chats sets it, and the plan shows
 	 *  it before Grade is pressed. The answer is the plan of `skill` at `level` again, with it.
 	 */
-	skillGradeSetCap: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, tokens: number | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_set_cap", { plane, level, skill, profile, model, tokens })),
+	skillGradeSetCap: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, evals: string[], tokens: number | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_set_cap", { plane, level, skill, profile, model, evals, tokens })),
 	/**
 	 *  **What grading the router the studio's workspace or persona chose would run**, before
 	 *  anything runs.
@@ -2179,7 +2179,7 @@ export const commands = {
 	 *  person read: on `profile` and `model`, as Grade would run, and only while that plan still
 	 *  holds (`consent`). What it keeps as accepted is that plan's chats, cap and dollar limit.
 	 */
-	skillGradeAfterEditOn: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, consent: string) => typedError<SkillGradeAfterEdit, string>(__TAURI_INVOKE("skill_grade_after_edit_on", { plane, level, skill, profile, model, consent })),
+	skillGradeAfterEditOn: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, evals: string[], consent: string) => typedError<SkillGradeAfterEdit, string>(__TAURI_INVOKE("skill_grade_after_edit_on", { plane, level, skill, profile, model, evals, consent })),
 	/**
 	 *  **Turns grading after each edit off for the copy of `skill` at `level`**, and stops a grade an
 	 *  edit of it started.
@@ -7772,6 +7772,28 @@ export type GradeEstimate = {
 };
 
 /**
+ *  **One outcome eval, as the plan shows it before anything runs** (SK-55): its id, its first
+ *  message as the chat will read it, each character no reader would see marked, its input files,
+ *  and how many expectations its judge checks.
+ */
+export type GradeEval = {
+	id: string,
+	prompt: string,
+	hides: boolean,
+	files: string[],
+	expectations: number,
+	/**  Whether the person ticked it (off until they do), and the chats ticking it adds. */
+	on: boolean,
+	chats: number,
+};
+
+/**  **An outcome eval a grade leaves out** (`grades::LeftOutEval`): its id, and why. */
+export type GradeEvalLeftOut = {
+	id: string,
+	why: string,
+};
+
+/**
  *  **A trigger test a grade leaves out** (`grades::LeftOut`): its place in the file, from 0, and
  *  why, as a sentence.
  */
@@ -13032,8 +13054,15 @@ export type SkillGradePlan = {
 	tests_refused: string | null,
 	/**  The trigger tests left out, each with why: a query no chat can be started on. */
 	left_out: GradeLeftOut[],
-	/**  The outcome evals the skill has, shown and not run (#3235 grades them). */
+	/**
+	 *  **The outcome evals it runs** (SK-55), each in each arm and run, and the judge chats that
+	 *  grade them, counted in [`Self::chats`]; the ones it leaves out, each with why; and why the
+	 *  file could not be read, where it was not.
+	 */
+	evals: GradeEval[],
 	outcome_evals: number,
+	judge_chats: number,
+	outcomes_left_out: GradeEvalLeftOut[],
 	outcomes_refused: string | null,
 	estimate: GradeEstimate | null,
 	/**  What the grade record left out as it was read: rows skipped, files not read. */
@@ -13125,6 +13154,8 @@ export type SkillGrades = {
 	grades: GradeRow[],
 	said: string | null,
 	tests: number,
+	/**  The outcome evals a grade would run too (SK-55): a skill with these alone is graded. */
+	evals: number,
 	tests_refused: string | null,
 	running: SkillGradeStep | null,
 };

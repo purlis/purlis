@@ -30,6 +30,7 @@ import { counted } from "./dispatches";
 import { NotRead, ReadingRows } from "./SkillPanels";
 import { Notice } from "./Notice";
 import { Button, ButtonRow } from "./ui/button/Button";
+import { Checkbox } from "./ui/choice/Checkbox";
 import { Tile, Totals } from "./ui/card/Totals";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { TextField } from "./ui/field/Field";
@@ -83,11 +84,26 @@ function endSaid(step: SkillGradeStep): string {
   }
 }
 
+/** **What a grade runs, by its fixtures** (SK-55): its trigger tests and its outcome evals, each
+ *  counted, the words named in full where `full`. */
+export function fixturesSaid(plan: SkillGradePlan, full = false): string {
+  const tests = counted(
+    plan.tests.length,
+    full ? "trigger test" : "test",
+    full ? "trigger tests" : "tests",
+  );
+  const on = plan.evals.filter((one) => one.on).length;
+  const evals = counted(on, "outcome eval", "outcome evals");
+  if (on === 0) return tests;
+  if (plan.tests.length === 0) return evals;
+  return `${tests} and ${evals}`;
+}
+
 /** What a grade should spend, from a grade before, in one sentence: never a figure that was not
  *  measured, and always which grade it is worked out from (#3273). A grade whose chats said
  *  nothing of what they spent was a grade still: its cost is not known. */
 export function costSaid(
-  plan: Pick<SkillGradePlan, "estimate">,
+  plan: Pick<SkillGradePlan, "estimate"> & Partial<Pick<SkillGradePlan, "outcome_evals">>,
   /** Whose grade it is: a skill's, or a router's on its library (#3618). */
   of: "skill" | "router" = "skill",
 ): string {
@@ -97,9 +113,11 @@ export function costSaid(
       ? "Each chat is one turn, and ends once the skill starts."
       : "Each chat is one turn, and ends once the skill it tests starts.";
   if (estimate === null)
-    return of === "skill"
-      ? `This skill has not been graded here before, so purlis cannot say yet what a grade spends. ${turn}`
-      : `purlis knows no grade of this router here to go by (one purlis stopped under before it scored a test says nothing of what a grade spends), so it cannot say yet what this one spends. ${turn}`;
+    return plan.outcome_evals !== undefined && plan.outcome_evals > 0
+      ? "This skill's outcome evals have not been graded here before, so purlis cannot say yet what a grade spends. An outcome eval's chat runs its whole turn, and a judge chat reads what it left."
+      : of === "skill"
+        ? `This skill has not been graded here before, so purlis cannot say yet what a grade spends. ${turn}`
+        : `purlis knows no grade of this router here to go by (one purlis stopped under before it scored a test says nothing of what a grade spends), so it cannot say yet what this one spends. ${turn}`;
   const on =
     estimate.profile === null
       ? ""
@@ -237,6 +255,8 @@ export function GradePlanPage({
   // The model the chats run on (SK-60): the profile's own where none is picked.
   const [model, setModel] = useState(DEFAULT);
   const [again, setAgain] = useState(0);
+  // The outcome evals the person ticked: none until they do, and the consent covers these.
+  const [ticked, setTicked] = useState<string[]>([]);
   const picked = profile === DEFAULT ? null : profile;
   const pickedModel = model === DEFAULT ? null : model;
   // The level as a value: a page drawn again with an equal level reads nothing anew.
@@ -247,9 +267,14 @@ export function GradePlanPage({
   });
 
   /** Reads the plan: drawn, or (`check`) held as newer where it consents to something else. */
-  const read = (on: string | null, onModel: string | null, check = false) =>
+  const read = (
+    on: string | null,
+    onModel: string | null,
+    check = false,
+    evals: string[] = ticked,
+  ) =>
     void commands
-      .skillGradePlan(plane, level, name, on, onModel)
+      .skillGradePlan(plane, level, name, on, onModel, evals)
       .then((answer) => {
         if (answer.status !== "ok") {
           if (!check) setRefused(answer.error);
@@ -306,7 +331,7 @@ export function GradePlanPage({
   const consent = plan.consent ?? "";
   const start = () =>
     void commands
-      .skillGradeStart(plane, level, name, picked, pickedModel, consent)
+      .skillGradeStart(plane, level, name, picked, pickedModel, ticked, consent)
       .then((answer) => {
         if (answer.status === "ok") onStarted(answer.data);
         else {
@@ -318,7 +343,7 @@ export function GradePlanPage({
       });
   const turnOn = () =>
     void commands
-      .skillGradeAfterEditOn(plane, level, name, picked, pickedModel, consent)
+      .skillGradeAfterEditOn(plane, level, name, picked, pickedModel, ticked, consent)
       .then((answer) => {
         if (answer.status === "ok") onAfterEdit(answer.data);
         else {
@@ -329,7 +354,7 @@ export function GradePlanPage({
   const why = startRefused(name, plan, newer !== undefined, afterEdit);
   const limit = dollarsSaid(plan.cost_cap_usd ?? 0);
   const whose = plan.profile ?? "the profile";
-  const nothing = plan.tests.length === 0;
+  const nothing = plan.tests.length === 0 && plan.evals.length === 0;
   // Grading after each edit counts the arm a first saved edit brings (#4035): its chats, and
   // its estimate at the last grade's spend per chat.
   const chats = afterEdit ? plan.after_edit_chats : plan.chats;
@@ -406,7 +431,7 @@ export function GradePlanPage({
           <Tile
             label="Chats"
             value={String(chats)}
-            line={`${counted(plan.tests.length, "test", "tests")} × ${plan.runs} × ${arms} arms`}
+            line={`${fixturesSaid(plan)} × ${plan.runs} × ${arms} arms${plan.judge_chats > 0 ? `, judges among them` : ""}`}
           />
           <Tile label="At most" value={limit} line={`or ${tokensSaid(plan.token_cap ?? 0)}`} />
           <Tile
@@ -448,20 +473,22 @@ export function GradePlanPage({
         {nothing ? (
           <EmptyState
             variant="panel"
-            headline={`No trigger tests for ${name} yet`}
-            body="Trigger tests are the queries a skill should start on and the near misses it should leave alone, kept with the skill. Add some to its files, and Grade runs them."
+            headline={`No trigger tests or outcome evals for ${name} yet`}
+            body="Trigger tests are the queries a skill should start on and the near misses it should leave alone; outcome evals are tasks it should do well, with what a judge checks. Both are kept with the skill. Add some to its files, and Grade runs them."
             testid="skill-grade-none"
           />
         ) : (
           <>
             <p data-testid="skill-grade-cost">
               Grading runs {counted(plan.chats, "chat", "chats")}, one turn each: each of the{" "}
-              {counted(plan.tests.length, "trigger test", "trigger tests")}{" "}
-              {counted(plan.runs, "time", "times")} with the skill and{" "}
+              {fixturesSaid(plan, true)} {counted(plan.runs, "time", "times")} with the skill and{" "}
               {counted(plan.runs, "time", "times")} without it
               {plan.previous === null
                 ? ""
                 : `, and ${counted(plan.runs, "time", "times")} with its previous version, ${plan.previous.commit} (${plan.previous.subject}), which it is compared with`}
+              {plan.judge_chats > 0
+                ? `; and a judge chat for each outcome eval's chat, ${counted(plan.judge_chats, "judge chat", "judge chats")} in all, which reads what that chat left and changes nothing`
+                : ""}
               , up to {counted(plan.chats, "chat", "chats")} × {plan.chat_minutes} min.{" "}
               {costSaid(plan)} It stops once its chats have spent {tokensSaid(plan.token_cap ?? 0)}
               {plan.cap_set_here ? ", the cap you set on this machine" : ", the default cap"}, or
@@ -499,10 +526,36 @@ export function GradePlanPage({
             )}
           </>
         )}
-        {plan.outcome_evals > 0 && (
-          <p className="honest">
-            {counted(plan.outcome_evals, "outcome eval waits", "outcome evals wait")} for a later
-            version of purlis: this grade runs the trigger tests alone.
+        {plan.evals.length > 0 && (
+          <ul aria-label={`Outcome evals of ${name}`} className="skill-grade-evals">
+            {plan.evals.map((one) => (
+              <li key={one.id} data-testid="skill-grade-eval">
+                <Checkbox
+                  isSelected={one.on}
+                  onChange={(on) => {
+                    const evals = on ? [...ticked, one.id] : ticked.filter((id) => id !== one.id);
+                    setTicked(evals);
+                    read(picked, pickedModel, false, evals);
+                  }}
+                >
+                  <code>{one.prompt}</code>
+                </Checkbox>{" "}
+                · {counted(one.chats, "more chat", "more chats")} ·{" "}
+                {counted(one.expectations, "expectation", "expectations")} a judge checks
+                {one.files.length > 0 && ` · with ${one.files.join(", ")}`}
+                {one.hides && (
+                  <span className="honest"> · holds a character no reader would see</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {plan.outcomes_left_out.length > 0 && (
+          <p className="honest" data-testid="skill-grade-evals-left-out">
+            Left out:{" "}
+            {plan.outcomes_left_out
+              .map((left) => `Outcome eval ${left.id}: ${left.why}.`)
+              .join(" ")}
           </p>
         )}
         {plan.outcomes_refused !== null && <p className="honest">{plan.outcomes_refused}</p>}
@@ -560,7 +613,7 @@ export function GradePlanPage({
               cap={plan.token_cap ?? 0}
               onCap={(tokens) =>
                 void commands
-                  .skillGradeSetCap(plane, level, name, picked, pickedModel, tokens)
+                  .skillGradeSetCap(plane, level, name, picked, pickedModel, ticked, tokens)
                   .then((answer) => {
                     if (answer.status === "ok") {
                       setPlan(answer.data);

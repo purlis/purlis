@@ -662,6 +662,139 @@ fn lay_out_graded(
 /// A try's file that marks it as a grade's arm.
 const GRADED: &str = "graded";
 
+/// A grade's arm's file that marks its chat as a judge's (SK-55): held to reading.
+const JUDGE: &str = "judge";
+
+/// A grade's arm's file that marks its chat as an outcome eval's (SK-55): it may write here.
+const OUTCOME: &str = "outcome";
+
+/// **Whether `cwd` is an outcome eval's chat's piece** in the project at `root` ([`stage`]): a
+/// grade's arm marked so. Only this machine's state says so, and no chat writes it.
+pub fn outcome_piece(root: &Path, cwd: &Path) -> bool {
+    graded_piece(root, cwd)
+        && try_of(root, cwd).is_some_and(|id| {
+            crate::appstate::dir(root).is_some_and(|state| {
+                read_at(&state, &format!("{TRIES_DIR}/{id}/{OUTCOME}"))
+                    .ok()
+                    .flatten()
+                    .is_some()
+            })
+        })
+}
+
+/// **Stages an outcome eval's input files into the throwaway piece of `laid`** (SK-55, #3235):
+/// each of `files` (paths in the skill's folder, as the eval names them) at the same path in the
+/// piece, from `inputs`, what the grade read of them once. A file it did not read refuses the
+/// chat, as the eval would not be the one the plan showed.
+pub fn stage(
+    root: &Path,
+    laid: &Try,
+    files: &[String],
+    inputs: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    write_at(
+        &app_state(root)?,
+        &format!("{TRIES_DIR}/{}/{OUTCOME}", laid.id),
+        None,
+        "",
+        usize::MAX,
+    )
+    .map_err(|why| super::not_written("the grade's record of its folder", why))?;
+    for path in files {
+        let text = inputs.get(path).ok_or_else(|| {
+            format!(
+                "the eval's file {} was not read for the grade",
+                crate::shown::short(path)
+            )
+        })?;
+        write_at(&laid.piece, path, None, text, 1)
+            .map_err(|why| super::not_written(&format!("the eval's file {path}"), why))?;
+    }
+    Ok(())
+}
+
+/// **What a grade's chat left in its throwaway piece `piece`** in the project at `root`, as it
+/// ended (SK-55): its plain text files, each read pinned, up to [`MOST_FILES`], [`DEEPEST`]
+/// folders deep, no dot-name, as Try it reads a skill. What its judge's piece is laid out from.
+pub fn outcome_of(root: &Path, piece: &Path) -> Vec<(String, String)> {
+    files_below(root, piece)
+}
+
+/// **Lays out a judge's piece** (SK-55, #3235): a grade's arm with no skill, marked as a judge's
+/// ([`judge_piece`]), holding `task` (the task it grades), the judged chat's final answer
+/// `answer` where it handed one, and `outcome`, what that chat left, under its own folder; and
+/// nothing else.
+pub fn lay_out_judge(
+    root: &Path,
+    outcome: &[(String, String)],
+    answer: Option<&str>,
+    task: &str,
+) -> Result<Try, String> {
+    use purlis_skills::grade::outcomes::{
+        JUDGE_ANSWER_FILE, JUDGE_FILES_FILE, JUDGE_OUTCOME_DIR, JUDGE_TASK_FILE,
+    };
+    let laid = lay_out_graded(root, &[], None, None)?;
+    let written = (|| {
+        write_at(
+            &app_state(root)?,
+            &format!("{TRIES_DIR}/{}/{JUDGE}", laid.id),
+            None,
+            "",
+            usize::MAX,
+        )
+        .map_err(|why| super::not_written("the grade's record of its folder", why))?;
+        let listed: String = outcome
+            .iter()
+            .map(|(path, _)| format!("{JUDGE_OUTCOME_DIR}/{path}\n"))
+            .collect();
+        let mut files: Vec<(String, &str)> = vec![
+            (JUDGE_TASK_FILE.to_owned(), task),
+            (JUDGE_FILES_FILE.to_owned(), &listed),
+        ];
+        // The hook cuts a last message at its bound: the judge is told, not left to take it whole.
+        let cut;
+        let answer = match answer {
+            Some(answer) if answer.len() + 4 >= crate::hookwire::Output::MOST_BYTES => {
+                cut = format!("{answer}\n\n[purlis: this answer was cut here]");
+                Some(cut.as_str())
+            }
+            other => other,
+        };
+        files.extend(answer.map(|answer| (JUDGE_ANSWER_FILE.to_owned(), answer)));
+        files.extend(
+            outcome
+                .iter()
+                .map(|(path, text)| (format!("{JUDGE_OUTCOME_DIR}/{path}"), text.as_str())),
+        );
+        for (path, text) in files {
+            write_at(&laid.piece, &path, None, text, 1)
+                .map_err(|why| super::not_written(&format!("the judge's {path}"), why))?;
+        }
+        Ok::<_, String>(())
+    })();
+    match written {
+        Ok(()) => Ok(laid),
+        Err(why) => {
+            let _ = end_try(root, &laid.id);
+            Err(why)
+        }
+    }
+}
+
+/// **Whether `cwd` is a judge's piece** in the project at `root` ([`lay_out_judge`]): a grade's
+/// arm marked so. Only this machine's state says so, and no chat writes it.
+pub fn judge_piece(root: &Path, cwd: &Path) -> bool {
+    graded_piece(root, cwd)
+        && try_of(root, cwd).is_some_and(|id| {
+            crate::appstate::dir(root).is_some_and(|state| {
+                read_at(&state, &format!("{TRIES_DIR}/{id}/{JUDGE}"))
+                    .ok()
+                    .flatten()
+                    .is_some()
+            })
+        })
+}
+
 /// A grade's arm's file that names the router its chat is routed by (SK-15e).
 const ROUTER: &str = "router";
 

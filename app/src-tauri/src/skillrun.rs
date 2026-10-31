@@ -71,6 +71,10 @@ pub enum Watched {
     Asked,
     /// It closed, or its session ended.
     Closed,
+    /// **What its turn ended saying** (SK-55): the harness's last message, as its `Stop` hook
+    /// handed it (#1981), heard just before the turn's end. What an outcome eval's judge reads,
+    /// and what a judge answers with.
+    Said(String),
 }
 
 /// The open skill runs of one project's chats.
@@ -126,6 +130,12 @@ impl SkillRuns {
         if let Some(tell) = self.watched().get(&chat) {
             let _ = tell.send(what);
         }
+    }
+
+    /// **What chat `chat`'s turn ended saying, `text`** (SK-55), told to the grade watching it,
+    /// where one does: no other chat's last message goes anywhere from here.
+    pub fn said(&self, chat: u32, text: String) {
+        self.tell_watching(chat, Watched::Said(text));
     }
 
     /// Who is told each change from now on.

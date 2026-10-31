@@ -498,6 +498,9 @@ pub(crate) async fn router_grade_start(
                         plugins_off: None,
                         model: model.as_deref(),
                         reported: Vec::new(),
+                        // A router's grade runs trigger tests alone (SK-15e).
+                        inputs: &std::collections::BTreeMap::new(),
+                        left: None,
                     };
                     let report = engine::grade(&request, &mut chats, Some(limits.clone()));
                     let graded = RouterGraded {

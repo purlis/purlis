@@ -1285,3 +1285,80 @@ fn another_chat_s_theme_draft_is_never_spoken_of() {
     };
     assert!(!told);
 }
+
+/// SK-55 (#3235): a judge's chat reads only its own folder: a path outside it, a link out of it
+/// and a path that does not resolve are refused; another chat is not held so.
+#[test]
+fn a_judge_reads_only_the_folder_laid_out_for_it() {
+    let plane = Plane::new();
+    let folder = plane.root.join("judge");
+    std::fs::create_dir_all(folder.join("outcome")).unwrap();
+    std::fs::write(folder.join("outcome/out.md"), "done").unwrap();
+    std::fs::write(plane.root.join("secret.md"), "no").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(plane.root.join("secret.md"), folder.join("link.md")).unwrap();
+    let judge = plane.with_env(JUDGE_FOLDER_ENV, folder.to_str().unwrap());
+    let read = |tool: &str, input: Value| {
+        judge.ask(
+            serde_json::json!({"tool_name": tool, "tool_input": input, "cwd": folder.to_str().unwrap()}),
+            pretooluse_read,
+        )
+    };
+    assert!(matches!(
+        read("Read", serde_json::json!({"file_path": "outcome/out.md"})),
+        Answer::Nothing
+    ));
+    assert!(matches!(
+        read("Grep", serde_json::json!({"pattern": "x"})),
+        Answer::Nothing
+    ));
+    for outside in ["../secret.md", "missing.md", "/etc/hosts"] {
+        assert!(
+            matches!(
+                read("Read", serde_json::json!({"file_path": outside})),
+                Answer::Deny(_)
+            ),
+            "{outside}"
+        );
+    }
+    assert!(matches!(
+        read("Grep", serde_json::json!({"pattern": "x", "path": ".."})),
+        Answer::Deny(_)
+    ));
+    #[cfg(unix)]
+    assert!(matches!(
+        read("Read", serde_json::json!({"file_path": "link.md"})),
+        Answer::Deny(_)
+    ));
+}
+
+/// SK-55: a judge's answer is taken only where all it did was read its own folder.
+#[test]
+fn a_judges_answer_is_taken_only_from_a_turn_that_read_its_folder_alone() {
+    let plane = Plane::new();
+    let folder = plane.root.join("judge");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("task.json"), "{}").unwrap();
+    let cwd = folder.to_str().unwrap().to_owned();
+    let lookup = |name: &str| (name == JUDGE_FOLDER_ENV).then(|| cwd.clone());
+    let transcript = plane.root.join("t.jsonl");
+    let stop = serde_json::json!({"transcript_path": transcript, "cwd": cwd}).to_string();
+    let call = |name: &str, input: Value| {
+        serde_json::json!({"type": "assistant", "message": {"content": [
+            {"type": "text", "text": "x"},
+            {"type": "tool_use", "name": name, "input": input},
+        ]}})
+        .to_string()
+    };
+    assert!(!judge_may_answer(&stop, &lookup), "no transcript");
+    let wrote = |text: String| std::fs::write(&transcript, text).unwrap();
+    wrote(call("Read", serde_json::json!({"file_path": "task.json"})));
+    assert!(judge_may_answer(&stop, &lookup));
+    wrote(call("Read", serde_json::json!({"file_path": "../t.jsonl"})));
+    assert!(!judge_may_answer(&stop, &lookup));
+    wrote(call("Bash", serde_json::json!({"command": "ls"})));
+    assert!(!judge_may_answer(&stop, &lookup));
+    wrote("not json".to_owned());
+    assert!(!judge_may_answer(&stop, &lookup));
+    assert!(judge_may_answer("nothing", &|_| None), "any other chat");
+}

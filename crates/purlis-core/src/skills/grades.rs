@@ -279,13 +279,19 @@ fn dollars(value: f64) -> bool {
 /// least those that ran. A scored row's arms count what it asked for, so it says no more.
 fn spent_is_the_reports(spent: &Spent, report: &GradeReport, runs: u8) -> bool {
     let chats = if stopped_unscored(report) {
-        let most = u64::from(runs) * (grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE) as u64;
+        // Every trigger test's chat, and every outcome eval's and its judge's (SK-55).
+        let most = u64::from(runs)
+            * ((grade::MOST_TRIGGER_TESTS + 2 * grade::MOST_OUTCOME_EVALS) * ARMS_THERE_ARE) as u64;
         u64::from(spent.chats) <= most
             && spent.asked_for.is_none_or(|asked_for| {
                 (u64::from(spent.chats)..=most).contains(&u64::from(asked_for))
             })
     } else {
-        let ran: u64 = report.arms.iter().map(|arm| u64::from(arm.chats)).sum();
+        let ran: u64 = report
+            .arms
+            .iter()
+            .map(|arm| u64::from(arm.chats) + u64::from(arm.outcome_chats))
+            .sum();
         u64::from(spent.chats) == ran && spent.asked_for.is_none()
     };
     chats
@@ -378,12 +384,21 @@ fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
                 .is_none_or(|one| stat(one, |value| amount(value) && value <= MOST_SECONDS))
             && u64::from(arm.chats) == ran
             && u64::from(arm.chats) + u64::from(arm.not_run) == asked
+            && arm
+                .outcome_pass_rate
+                .as_ref()
+                .is_none_or(|one| stat(one, share))
+            && outcome_chats_hold(report, arm)
     });
-    // Every test is of an arm the report scores.
+    // Every test is of an arm the report scores, and so is every outcome eval.
     let tests_of_its_arms = report
         .triggers
         .iter()
-        .all(|test| report.arm(test.arm).is_some());
+        .all(|test| report.arm(test.arm).is_some())
+        && report
+            .outcomes
+            .iter()
+            .all(|eval| report.arm(eval.arm).is_some() && outcome_holds(eval, runs, &stat));
     plain(&report.grader)
         && report.triggers.len() <= grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE
         && tests
@@ -391,9 +406,12 @@ fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
         && tests_of_its_arms
         && report.cap.is_none_or(|cap| cap <= cap::MOST)
         && report.spent_tokens.is_none_or(tokens)
-        && report
-            .delta
-            .is_none_or(|delta| (-1.0..=1.0).contains(&delta))
+        && report.outcomes.len() <= grade::MOST_OUTCOME_EVALS * ARMS_THERE_ARE
+        && outcome_rates_hold(report)
+        && [report.delta, report.outcome_delta]
+            .into_iter()
+            .flatten()
+            .all(|delta| (-1.0..=1.0).contains(&delta))
         && [report.cost_cap_usd, report.spent_usd, report.counted_usd]
             .into_iter()
             .flatten()
@@ -413,12 +431,193 @@ fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
 /// Every arm a grade can compare: the skill, no skill and its previous version.
 const ARMS_THERE_ARE: usize = 3;
 
+/// **Whether the outcome eval `eval` of a report of `runs` runs holds together** (SK-55): its
+/// expectations ones a fixture could hold; each run's verdicts one per expectation, its passed at
+/// most them and what its verdicts make, its reasons one line each of bounded length, its
+/// evidence within what is kept, and each chat a plain id; its judged runs those that say a
+/// passed, and its pass rate a share.
+fn outcome_holds(
+    eval: &grade::OutcomeScore,
+    runs: u8,
+    stat: &impl Fn(&grade::Stat, fn(f64) -> bool) -> bool,
+) -> bool {
+    let of = eval.expectations.len();
+    let line = |why: &str| why.len() <= MOST_REASON_BYTES && !why.chars().any(char::is_control);
+    let results = eval.results.iter().all(|run| {
+        let checks = run.checks.is_empty()
+            || (run.checks.len() == of
+                && run.passed
+                    == u32::try_from(run.checks.iter().filter(|check| check.passed).count()).ok()
+                && run.checks.iter().all(|check| {
+                    check.evidence.len() <= grade::outcomes::MOST_EVIDENCE_BYTES
+                        && !check.evidence.chars().any(char::is_control)
+                }));
+        run.passed.is_none_or(|passed| passed as usize <= of)
+            && (run.failed.is_none() || (run.passed == Some(0) && run.checks.is_empty()))
+            && run.failed.as_deref().is_none_or(line)
+            && checks
+            && run.chat.iter().chain(&run.judge).all(|chat| plain(chat))
+    });
+    let judged = eval
+        .results
+        .iter()
+        .filter(|run| run.passed.is_some())
+        .count();
+    (1..=grade::MOST_EXPECTATIONS).contains(&of)
+        && eval
+            .expectations
+            .iter()
+            .all(|text| !text.trim().is_empty() && text.len() <= grade::MOST_EXPECTATION_BYTES)
+        && eval.results.len() <= usize::from(runs)
+        && results
+        && eval.runs as usize == judged
+        && eval.pass_rate.is_some() == (judged > 0)
+        && eval.pass_rate.as_ref().is_none_or(|one| stat(one, share))
+        && stat_is(eval.pass_rate.as_ref(), &shares_of(eval))
+}
+
+/// Each judged run's share of the expectations of `eval` that passed.
+fn shares_of(eval: &grade::OutcomeScore) -> Vec<f64> {
+    eval.results
+        .iter()
+        .filter_map(|run| run.share(eval.expectations.len()))
+        .collect()
+}
+
+/// Whether `said` is the statistic of `values`, within a rounding.
+fn stat_is(said: Option<&grade::Stat>, values: &[f64]) -> bool {
+    match (said, grade::Stat::of(values)) {
+        (None, None) => true,
+        (Some(said), Some(is)) => [
+            (said.mean, is.mean),
+            (said.stddev, is.stddev),
+            (said.min, is.min),
+            (said.max, is.max),
+        ]
+        .iter()
+        .all(|(one, other)| (one - other).abs() < 1e-9),
+        _ => false,
+    }
+}
+
+/// **Whether a report's outcome rates are what its outcome evals' runs make** (SK-55): each eval
+/// in each arm once, each arm's pool of their runs, and the difference of the arm with the skill
+/// against the baseline. A teammate's row can say anything, and the window draws these.
+fn outcome_rates_hold(report: &GradeReport) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    let once = report
+        .outcomes
+        .iter()
+        .all(|eval| seen.insert((eval.eval, eval.arm)));
+    let pools = report.arms.iter().all(|arm| {
+        let pool: Vec<f64> = report
+            .outcomes
+            .iter()
+            .filter(|eval| eval.arm == arm.arm)
+            .flat_map(shares_of)
+            .collect();
+        stat_is(arm.outcome_pass_rate.as_ref(), &pool)
+    });
+    let mean = |arm: Arm| {
+        report
+            .arm(arm)
+            .and_then(|one| one.outcome_pass_rate)
+            .map(|one| one.mean)
+    };
+    let baseline = if report.arm(Arm::Previous).is_some() {
+        mean(Arm::Previous)
+    } else {
+        mean(Arm::Without)
+    };
+    let delta = mean(Arm::With)
+        .zip(baseline)
+        .map(|(with, base)| with - base);
+    let delta_holds = match (report.outcome_delta, delta) {
+        (None, None) => true,
+        (Some(said), Some(is)) => (said - is).abs() < 1e-9,
+        _ => false,
+    };
+    once && pools && delta_holds
+}
+
+/// **Whether `arm`'s outcome chats are what its outcome evals say** (SK-55): at least a chat for
+/// each run asked for, and at most a chat and its judge's.
+fn outcome_chats_hold(report: &GradeReport, arm: &grade::ArmScore) -> bool {
+    let asked: u64 = report
+        .outcomes
+        .iter()
+        .filter(|eval| eval.arm == arm.arm)
+        .map(|eval| eval.results.len() as u64)
+        .sum();
+    let all = u64::from(arm.outcome_chats) + u64::from(arm.outcome_not_run);
+    (asked..=2 * asked).contains(&all)
+}
+
 /// **Appends `graded`, a grade of the copy at `level`, to this month's file of the project at
 /// `root`**: the committed record, or, for a copy that is this machine's alone ([`is_local`]),
 /// this machine's state. `None` where the project is one this purlis may not write, or the write
 /// was refused.
 pub fn record(root: &Path, level: &Level, graded: &Graded, device: &str) -> Option<PathBuf> {
     record_to(root, is_local(root, level), graded, || device.to_owned())
+}
+
+/// `graded` with the credentials in its judges' evidence masked (SK-55): evidence quotes what a
+/// chat left, and the record is committed.
+fn masked(graded: &Graded) -> Graded {
+    let mut graded = graded.clone();
+    for check in graded
+        .report
+        .outcomes
+        .iter_mut()
+        .flat_map(|eval| eval.results.iter_mut())
+        .flat_map(|run| run.checks.iter_mut())
+    {
+        check.evidence =
+            grade::outcomes::kept_evidence(&crate::secrets::mcpstart::masked(&check.evidence));
+    }
+    graded
+}
+
+/// **`graded` as a row of the record, within [`MOST_LINE_BYTES`]** (SK-55): an outcome eval's
+/// verdicts carry the judge's evidence, so a row too long to be read back keeps its verdicts and
+/// drops the evidence, and one too long still keeps each run's count and drops the verdicts. A
+/// row is never written that no reader would read.
+fn fitted(graded: &Graded) -> Option<serde_json::Value> {
+    let fits = |row: &serde_json::Value| {
+        serde_json::to_vec(row).is_ok_and(|line| line.len() < MOST_LINE_BYTES)
+    };
+    let row = serde_json::to_value(graded).ok()?;
+    if fits(&row) {
+        return Some(row);
+    }
+    let mut cut = graded.clone();
+    for run in cut
+        .report
+        .outcomes
+        .iter_mut()
+        .flat_map(|eval| eval.results.iter_mut())
+    {
+        for check in &mut run.checks {
+            check.evidence.clear();
+        }
+    }
+    let row = serde_json::to_value(&cut).ok()?;
+    if fits(&row) {
+        return Some(row);
+    }
+    for run in cut
+        .report
+        .outcomes
+        .iter_mut()
+        .flat_map(|eval| eval.results.iter_mut())
+    {
+        run.checks.clear();
+    }
+    let row = serde_json::to_value(&cut).ok().filter(fits);
+    if row.is_none() {
+        tracing::warn!(target: "purlis::skills", "a grade's row is too long for the record");
+    }
+    row
 }
 
 /// [`record`], to this machine's state where `local`, else to the committed record of the
@@ -429,7 +628,7 @@ fn record_to(
     graded: &Graded,
     device: impl FnOnce() -> String,
 ) -> Option<PathBuf> {
-    let row = serde_json::to_value(graded).ok()?;
+    let row = fitted(&masked(graded))?;
     if local {
         crate::appstate::made(root).ok()?;
         return append_local(&local_path_for(root, chrono::Utc::now())?, &row).ok();
@@ -858,7 +1057,24 @@ pub struct Estimate {
 /// would be one arm's chats alone (the skill's dearer, the bare one's cheaper) shared over every
 /// arm. It is gone by only where no scored grade on the same profile is, as its chats are fewer
 /// and stopped where they were; one from before its marker counted them says none.
-fn estimate_of(grades: &[Graded], chats: u32, profile: Option<&str>) -> Option<Estimate> {
+///
+/// **A plan that runs outcome evals is estimated only from a grade that ran some** (SK-55): an
+/// outcome eval's chat runs its whole turn and a judge reads what it left, so a trigger test's
+/// chat, which ends once the skill starts, says nothing of what they spend.
+fn estimate_of(
+    grades: &[Graded],
+    chats: u32,
+    profile: Option<&str>,
+    with_outcomes: bool,
+) -> Option<Estimate> {
+    if with_outcomes {
+        let ran: Vec<Graded> = grades
+            .iter()
+            .filter(|row| !row.report.outcomes.is_empty())
+            .cloned()
+            .collect();
+        return estimate_from(&ran, chats, profile).map(|(estimate, _)| estimate);
+    }
     estimate_from(grades, chats, profile).map(|(estimate, _)| estimate)
 }
 
@@ -924,7 +1140,12 @@ impl Spends for Graded {
 /// The chats `arms` asked for, ran or not.
 pub(crate) fn asked_in(arms: &[grade::ArmScore]) -> u64 {
     arms.iter()
-        .map(|arm| u64::from(arm.chats) + u64::from(arm.not_run))
+        .map(|arm| {
+            u64::from(arm.chats)
+                + u64::from(arm.not_run)
+                + u64::from(arm.outcome_chats)
+                + u64::from(arm.outcome_not_run)
+        })
         .sum()
 }
 
@@ -988,6 +1209,14 @@ pub struct Planned {
     /// The trigger tests left out, each with why: a query a chat cannot be started on
     /// ([`left_out_why`]).
     pub left_out: Vec<LeftOut>,
+    /// The outcome evals left out, each with why (SK-55, [`eval_left_out_why`]): one with no
+    /// expectations, a prompt no chat can be started on, or an input file that did not read.
+    pub outcomes_left_out: Vec<LeftOutEval>,
+    /// **Every outcome eval the plan can run, each off until the person ticks it** (the
+    /// operator's ruling of 2026-10-31), and the chats ticking one adds. Those ticked are in
+    /// [`Self::request`].
+    pub offered: Vec<grade::OutcomeEval>,
+    pub eval_chats: u32,
     /// The token cap the grade is held to ([`cap::token_cap`]).
     pub cap: cap::Cap,
     /// What the person consents to by pressing Grade on this plan ([`consent_of`]): a grade
@@ -1014,6 +1243,62 @@ pub struct ComparedWith {
     pub subject: String,
 }
 
+/// **An outcome eval a grade leaves out** (SK-55): its id, and why, as a sentence's end.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct LeftOutEval {
+    pub id: u64,
+    pub why: String,
+}
+
+/// **Why the outcome eval `eval` is left out of a grade before its copy is read**, or `None`
+/// for one it runs (SK-55): it has no expectation for a judge to check; its first message is one
+/// no chat can be started on ([`left_out_why`]); or it names a fixture file as its input, which
+/// would hand its chat what it is graded by.
+pub fn eval_left_out_why(eval: &grade::OutcomeEval) -> Option<String> {
+    if eval.expectations.is_empty() {
+        return Some("it has no expectations, so a judge would have nothing to check".to_owned());
+    }
+    // A judge's answer repeats each expectation with a line of evidence, and has to fit the last
+    // message a harness's hook hands back whole.
+    let answer: usize = eval
+        .expectations
+        .iter()
+        .map(|text| text.len() + ANSWER_BYTES_AN_EXPECTATION)
+        .sum();
+    if answer > crate::hookwire::Output::MOST_BYTES {
+        return Some(
+            "its expectations are too long for a judge's answer to hold them whole".to_owned(),
+        );
+    }
+    // Under the skill's fixtures folder and nowhere else: a file of the skill would hand the arm
+    // without it the skill, and a fixture file, in any case on a folder that folds it, or a file
+    // a chat loads as its instructions would hand it what it is graded by.
+    let fixture = [grade::triggers_path(), grade::outcomes_path()];
+    let instructions = ["claude.md", "claude.local.md", "agents.md", "skill.md"];
+    if let Some(path) = eval.files.iter().find(|path| {
+        let folded = path.to_lowercase();
+        let leaf = folded.rsplit('/').next().unwrap_or_default();
+        fixture.iter().any(|one| one.to_lowercase() == folded)
+            || instructions.contains(&leaf)
+            || !folded.starts_with(&format!("{}/", grade::EVALS_DIR))
+    }) {
+        return Some(format!(
+            "it names {} as its file, and an eval's files are its own inputs under {}/, never the \
+             skill's files, its fixtures or a chat's instructions",
+            crate::shown::short(path),
+            grade::EVALS_DIR
+        ));
+    }
+    left_out_why(&grade::outcomes::outcome_prompt(eval))
+}
+
+/// What a judge's answer takes for one expectation beside its text: its keys and its evidence.
+const ANSWER_BYTES_AN_EXPECTATION: usize = 256;
+
+/// The most bytes of expectations a grade runs in all: each is kept once per arm in the row of
+/// the record, which is at most [`MOST_LINE_BYTES`] whatever else it drops ([`fitted`]).
+const MOST_EXPECTATIONS_BYTES: usize = 200 * 1024;
+
 /// **A trigger test a grade leaves out**: its place in the file, from 0, and why
 /// ([`left_out_why`]).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -1035,6 +1320,10 @@ pub struct SkillCopy {
     /// skill has one and it reads; else why not, where it has one that does not read.
     pub previous: Option<Previous>,
     pub previous_refused: Option<String>,
+    /// **The input files its outcome evals name** (SK-55, #3235), by their path in the skill's
+    /// folder, each read pinned as text, in the same read: what each eval's chat is staged with.
+    /// A file that did not read is not here, and its eval is left out of the plan.
+    pub inputs: std::collections::BTreeMap<String, String>,
 }
 
 /// **A skill's previous version, as a grade compares with it** (SK-57, #3237): the commit, what
@@ -1051,12 +1340,23 @@ pub struct Previous {
 /// **The copy of `name` at `level`, read once** ([`SkillCopy`]). Its content is what git says the
 /// folder holds both before and after its files are read: a folder that changed while they were
 /// read is `uncommitted`, so a recorded tree is never one the files laid out are not. Its
-/// history is read once too, for the commit its content is and the version before it.
-fn copy_of(root: &Path, level: &Level, name: &str) -> Result<SkillCopy, String> {
+/// history is read once too, for the commit its content is and the version before it. The input
+/// files `inputs` names (its outcome evals', SK-55) are read inside the same read.
+fn copy_of(root: &Path, level: &Level, name: &str, inputs: &[String]) -> Result<SkillCopy, String> {
     let folder = find(root, level, name)?;
     let content_now = || crate::skilluse::content_at(root, &folder).unwrap_or(Content::Uncommitted);
     let before = content_now();
     let snapshot = super::verbs::drafts::snapshot(root, level, name)?;
+    let base = rel(root, &folder);
+    let inputs: std::collections::BTreeMap<String, String> = inputs
+        .iter()
+        .filter_map(|path| {
+            let bytes = crate::proposed::read_pinned(root, Path::new(&format!("{base}/{path}")))
+                .ok()
+                .flatten()?;
+            Some((path.clone(), String::from_utf8(bytes).ok()?))
+        })
+        .collect();
     let content = if content_now() == before {
         before
     } else {
@@ -1103,6 +1403,7 @@ fn copy_of(root: &Path, level: &Level, name: &str) -> Result<SkillCopy, String> 
         commit,
         previous,
         previous_refused,
+        inputs,
     })
 }
 
@@ -1113,6 +1414,20 @@ pub fn planned(
     level: &Level,
     name: &str,
     profile: Option<&str>,
+) -> Result<Planned, String> {
+    planned_with(root, level, name, profile, &[])
+}
+
+/// **[`planned`], with the outcome evals `ticked` on** (SK-55, the operator's ruling of
+/// 2026-10-31): they are off until the person ticks them. The plan offers every eval it can run,
+/// and only those ticked reach its request, its chats and its consent, so a skill gaining an
+/// evals file never spends more by surprise.
+pub fn planned_with(
+    root: &Path,
+    level: &Level,
+    name: &str,
+    profile: Option<&str>,
+    ticked: &[u64],
 ) -> Result<Planned, String> {
     let folder = find(root, level, name)?;
     let fixtures = grade::fixtures_of(root, Path::new(&rel(root, &folder)), name);
@@ -1135,26 +1450,94 @@ pub fn planned(
                 .collect()
         })
         .unwrap_or_default();
-    let copy = if sendable.is_empty() {
+    // The outcome evals a chat can be started on and a judge can grade (SK-55), each other one
+    // named with why; and then, once the copy is read, each whose input file did not read.
+    let mut outcomes_left_out: Vec<LeftOutEval> = Vec::new();
+    let mut evals: Vec<grade::OutcomeEval> = fixtures
+        .outcomes
+        .read()
+        .map(|evals| {
+            evals
+                .iter()
+                .filter(|eval| match eval_left_out_why(eval) {
+                    Some(why) => {
+                        outcomes_left_out.push(LeftOutEval { id: eval.id, why });
+                        false
+                    }
+                    None => true,
+                })
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    let wanted: Vec<String> = evals
+        .iter()
+        .flat_map(|eval| eval.files.iter().cloned())
+        .collect();
+    let copy = if sendable.is_empty() && evals.is_empty() {
         None
     } else {
-        Some(copy_of(root, level, name)?)
+        Some(copy_of(root, level, name, &wanted)?)
     };
+    if let Some(copy) = &copy {
+        evals.retain(|eval| {
+            match eval
+                .files
+                .iter()
+                .find(|path| !copy.inputs.contains_key(*path))
+            {
+                Some(path) => {
+                    outcomes_left_out.push(LeftOutEval {
+                        id: eval.id,
+                        why: format!(
+                            "its file {} is not a plain text file of the skill of at most 1 MiB",
+                            crate::shown::short(path)
+                        ),
+                    });
+                    false
+                }
+                None => true,
+            }
+        });
+    }
+    let mut held = 0usize;
+    evals.retain(|eval| {
+        held += eval.expectations.iter().map(String::len).sum::<usize>();
+        if held <= MOST_EXPECTATIONS_BYTES {
+            return true;
+        }
+        outcomes_left_out.push(LeftOutEval {
+            id: eval.id,
+            why: "the evals before it hold as many expectations as a grade's record can keep"
+                .to_owned(),
+        });
+        false
+    });
+    let offered = evals;
+    let evals: Vec<grade::OutcomeEval> = offered
+        .iter()
+        .filter(|eval| ticked.contains(&eval.id))
+        .cloned()
+        .collect();
+    let copy = copy.filter(|_| !sendable.is_empty() || !offered.is_empty());
     // A skill with a previous version is compared with it too, and it is the baseline (SK-57).
     let arms = match copy.as_ref().and_then(|copy| copy.previous.as_ref()) {
         Some(_) => ARMS_WITH_PREVIOUS.to_vec(),
         None => ARMS.to_vec(),
     };
-    let request = (!sendable.is_empty()).then(|| GradeRequest {
+    // What ticking one adds: its chat and its judge's, in each arm and run.
+    let eval_chats = u32::from(RUNS) * u32::try_from(arms.len()).unwrap_or(u32::MAX) * 2;
+    let request = (!sendable.is_empty() || !evals.is_empty()).then(|| GradeRequest {
         skill: name.to_owned(),
         triggers: sendable,
-        outcomes: fixtures.outcomes.read().cloned().unwrap_or_default(),
+        outcomes: evals,
         arms,
         runs: RUNS,
     });
     let plan = request.as_ref().map(grade::plan);
     let record = read(root, name, Some(level));
-    let estimate = plan.and_then(|plan| estimate_of(&record.grades, plan.chats, profile));
+    let estimate = plan
+        .and_then(|plan| estimate_of(&record.grades, plan.chats, profile, plan.outcome_evals > 0));
     let record_said = record.said();
     let unseen = request
         .as_ref()
@@ -1192,6 +1575,9 @@ pub fn planned(
         record,
         unseen,
         left_out,
+        outcomes_left_out,
+        offered,
+        eval_chats,
         cap: cap::token_cap(root),
         consent,
         previous,
@@ -1215,8 +1601,15 @@ pub fn trigger_tests(root: &Path, level: &Level, name: &str) -> Result<TriggerTe
             .filter(|test| left_out_why(&test.query).is_none())
             .count()
     });
+    let evals = fixtures.outcomes.read().map_or(0, |evals| {
+        evals
+            .iter()
+            .filter(|eval| eval_left_out_why(eval).is_none())
+            .count()
+    });
     Ok(TriggerTests {
         runs,
+        evals,
         refused: fixtures.triggers.refused().cloned(),
     })
 }
@@ -1226,6 +1619,9 @@ pub fn trigger_tests(root: &Path, level: &Level, name: &str) -> Result<TriggerTe
 pub struct TriggerTests {
     /// How many a grade runs.
     pub runs: usize,
+    /// **How many outcome evals it runs too** (SK-55), as far as the file says: one whose input
+    /// file does not read is found out by the plan, which names it.
+    pub evals: usize,
     /// Why the file could not be read, where it could not.
     pub refused: Option<grade::Refused>,
 }
@@ -1260,6 +1656,25 @@ pub fn consent_of(request: &GradeRequest, copy: &SkillCopy) -> String {
     digest.update(serde_json::to_vec(&request.triggers).unwrap_or_default());
     digest.update(b"\0");
     digest.update(serde_json::to_vec(&request.arms).unwrap_or_default());
+    // Its outcome evals and the input files they stage, where it has any (SK-55): a grade with
+    // none digests as it did before.
+    if !request.outcomes.is_empty() {
+        digest.update(b"\0outcomes\0");
+        digest.update(serde_json::to_vec(&request.outcomes).unwrap_or_default());
+        // The files of what was ticked alone: an eval left off changes nothing it consents to.
+        let staged = |path: &&String| {
+            request
+                .outcomes
+                .iter()
+                .any(|eval| eval.files.contains(*path))
+        };
+        for (path, text) in copy.inputs.iter().filter(|(path, _)| staged(path)) {
+            digest.update(b"\0");
+            digest.update(path.as_bytes());
+            digest.update(b"\0");
+            digest.update(text.as_bytes());
+        }
+    }
     digest.update(b"\0");
     digest.update(copy.content.word().as_bytes());
     let files = |digest: &mut sha2::Sha256, snapshot: &Snapshot| {

@@ -82,6 +82,7 @@ const grades = (rows: GradeRow[] = GRADES, tests = 2, running: string | null = n
   grades: rows,
   said: null,
   tests,
+  evals: 0,
   tests_refused: null,
   running: running === null ? null : step(running),
 });

@@ -110,6 +110,12 @@ impl HarnessAdapter for ClaudeCode {
                 } else {
                     Vec::new()
                 },
+                // A judge's chat has these tools and no other, whatever a release adds (SK-55).
+                if kit.judging {
+                    words(["--tools", JUDGE_TOOLS])
+                } else {
+                    Vec::new()
+                },
                 words([
                     // charter's MCP server (HP-7), before `--settings`: `--mcp-config` takes every
                     // word up to the next flag, and the chat's own words end the line.
@@ -125,15 +131,24 @@ impl HarnessAdapter for ClaudeCode {
                         &denied_tools(kit),
                         screened.as_ref(),
                         kit.graded,
+                        cwd.filter(|_| kit.writes_its_piece),
                         &own_of(kit, cwd),
                     ),
                 ]),
             ]
             .concat(),
-            env: vec![(
+            env: std::iter::once((
                 crate::plugin::BINARY_ENV.to_owned(),
                 kit.binary.display().to_string(),
-            )],
+            ))
+            // A judge's reads are held to its folder by the read guard (SK-55).
+            .chain(cwd.filter(|_| kit.judging).map(|cwd| {
+                (
+                    crate::toolhooks::JUDGE_FOLDER_ENV.to_owned(),
+                    cwd.display().to_string(),
+                )
+            }))
+            .collect(),
             cannot_report: Vec::new(),
         }
     }
@@ -591,6 +606,7 @@ fn settings(
     denied_tools: &[String],
     screened: Option<&project::Screened>,
     graded: bool,
+    writes_in: Option<&std::path::Path>,
     own: &(Option<String>, Option<String>),
 ) -> String {
     let mut settings = serde_json::Map::new();
@@ -735,6 +751,14 @@ fn settings(
     if sandbox.is_some_and(crate::sandbox::claude::Settings::is_off) {
         allow.push("Bash".to_owned());
     }
+    // **An outcome eval's chat writes in its own piece, and nowhere else** (SK-55, the operator's
+    // ruling of 2026-10-31): `//` starts an absolute path in a permission rule. Any other write
+    // still asks, and a grade's chat is ended at its first ask.
+    if let Some(piece) = writes_in {
+        for tool in ["Edit", "Write", "MultiEdit"] {
+            allow.push(format!("{tool}(/{}/**)", piece.display()));
+        }
+    }
     let mut permissions = serde_json::json!({ "allow": allow });
     // **The sandbox, where the plane turned it on** (ADR 0067), and the deny rules that keep
     // Claude Code's own Read and Edit tools out of what its sandbox denies a command
@@ -815,6 +839,7 @@ pub(super) fn armed_settings_for_tests(sandbox: &crate::sandbox::claude::Setting
         &[],
         None,
         false,
+        None,
         &(None, None),
     )
 }
@@ -853,8 +878,35 @@ fn denied_tools(kit: Kit<'_>) -> Vec<String> {
     if kit.graded {
         denied.extend(SUB_AGENT_TOOLS.map(str::to_owned));
     }
+    // A judge's chat reads what the chat it judges left, and changes nothing (SK-55): no tool
+    // that writes a file, runs a command or reaches past its folder.
+    if kit.judging {
+        denied.extend(JUDGE_DENIED.map(str::to_owned));
+    }
     denied
 }
+
+/// **The only tools a judge's chat has** (SK-55): the two the read guard holds to its folder.
+const JUDGE_TOOLS: &str = "Read,Grep";
+
+/// **Claude Code's tools a judge's chat is denied**, beside [`JUDGE_TOOLS`] (SK-55, #3235): every one that writes a file,
+/// runs a command or reaches the network, every way to read past the read guard that holds `Read`
+/// and `Grep` to its folder (`toolhooks::JUDGE_FOLDER_ENV`), and purlis's own read tools, which
+/// answer from the plane. It keeps `Read` and `Grep`.
+const JUDGE_DENIED: [&str; 12] = [
+    "Glob",
+    "LS",
+    "Skill",
+    "mcp__purlis",
+    "Bash",
+    "Edit",
+    "MultiEdit",
+    "Write",
+    "NotebookEdit",
+    "WebFetch",
+    "WebSearch",
+    "BashOutput",
+];
 
 /// Claude Code's permission mode that asks before each tool its rules do not allow.
 const DEFAULT_MODE: &str = "default";
