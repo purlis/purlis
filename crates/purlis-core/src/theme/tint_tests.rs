@@ -1144,7 +1144,7 @@ fn purlis_classic_s_tints_are_these() {
             "red",
             [
                 "#5e5d5e", "#fde8e5", "#fde8e5", "#f9dbd6", "#5e5d5e", "#5e5d5e", "#f9dbd6",
-                "#fde1df", "#5e5d5e", "#8b4b47", "#8b4b47", "#feeae7", "#fef4f2", "#ffffff",
+                "#fde1df", "#5e5d5e", "#7b5350", "#7b5350", "#feeae7", "#fef4f2", "#ffffff",
             ],
         ),
         (
@@ -1152,7 +1152,7 @@ fn purlis_classic_s_tints_are_these() {
             "orange",
             [
                 "#5e5d5e", "#fbe9df", "#fbe9df", "#f5ddcc", "#5e5d5e", "#5e5d5e", "#f5ddcc",
-                "#f8e4d5", "#5e5d5e", "#86502b", "#86502b", "#feebdd", "#fff4ee", "#ffffff",
+                "#f8e4d5", "#5e5d5e", "#7d5438", "#7d5438", "#feebdd", "#fff4ee", "#ffffff",
             ],
         ),
         (
@@ -1200,7 +1200,7 @@ fn purlis_classic_s_tints_are_these() {
             "pink",
             [
                 "#804e67", "#fae8ef", "#fae8ef", "#f6dae6", "#804e67", "#804e67", "#f6dae6",
-                "#f9e1ec", "#804e67", "#854b68", "#854b68", "#fee9f1", "#fff3f8", "#ffffff",
+                "#f9e1ec", "#804e67", "#804e67", "#804e67", "#fee9f1", "#fff3f8", "#ffffff",
             ],
         ),
     ];
@@ -1351,4 +1351,37 @@ fn a_see_through_front_on_a_tinted_ground_keeps_its_floor_at_every_whole_degree(
         assert!(floors_hold(&tint));
     }
     assert_eq!(draw(&veil(false)).held, None);
+}
+
+// ---------------------------------------------------------------------------------------
+// What a person reads as the accent, held as the accent is (#3049)
+// ---------------------------------------------------------------------------------------
+
+/// **A link and the first chart colour never look like danger**: a person reads both as the accent,
+/// so a red, orange or pink workspace holds them apart from the danger colour as it holds the
+/// accent.
+#[test]
+fn a_link_and_the_first_chart_colour_stay_apart_from_danger_at_every_hue() {
+    for token in ["markdown.link", "chart.1"] {
+        assert!(tint::held_apart(token), "{token} is not held");
+        assert!(
+            tint::APART
+                .iter()
+                .any(|rule| rule.token == token && rule.from == "danger.base"),
+            "{token} is not held from danger"
+        );
+    }
+    for theme in built_ins() {
+        for colour in every_colour() {
+            let tint = tinted(theme, &colour);
+            for token in ["markdown.link", "chart.1"] {
+                let apart = oklab_apart(tint.value(token), tint.value("danger.base"));
+                assert!(
+                    apart >= DANGER_APART,
+                    "{} {colour} {token}: {apart}",
+                    theme.name
+                );
+            }
+        }
+    }
 }
