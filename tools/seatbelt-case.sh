@@ -148,14 +148,16 @@ $exchange" "$s/swap" "$s/.git" || :
   rm -f "$p/config-link" 2>/dev/null || :
 }
 
-# The default sign-ins of the other harnesses, for a Claude Code chat: neither read nor written,
-# and their folders not moved. The test puts them in `$HOME`.
+# The default sign-ins of the other harnesses, for a Claude Code chat: not read, and their folders
+# not moved. Each is written to as well, and the test holds the file unchanged after the run: a
+# sandbox may mask a denied path, so that a write here succeeds and reaches nothing. The test puts
+# them in `$HOME`.
 others_held() {
   expect "$(here "cat '$HOME/.codex/auth.json'")" no "$1: Codex's sign-in read"
-  expect "$(here "echo x >> '$HOME/.codex/auth.json'")" no "$1: Codex's sign-in written"
+  here "echo x >> '$HOME/.codex/auth.json'" >/dev/null
   expect "$(here "mv '$HOME/.codex' '$HOME/.codex.moved'")" no "$1: Codex's folder moved"
   expect "$(here "cat '$HOME/.local/share/opencode/auth.json'")" no "$1: opencode's sign-in read"
-  expect "$(here "echo x >> '$HOME/.local/share/opencode/auth.json'")" no "$1: opencode's sign-in written"
+  here "echo x >> '$HOME/.local/share/opencode/auth.json'" >/dev/null
   expect "$(here "mv '$HOME/.local/share/opencode' '$HOME/.local/share/opencode.moved'")" no "$1: opencode's folder moved"
 }
 
