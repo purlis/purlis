@@ -90,7 +90,7 @@ fn github_answer(head: &str, body: &[u8], asked: &Mutex<Asked>) -> String {
         .find_map(|line| {
             line.to_ascii_lowercase()
                 .starts_with("authorization:")
-                .then(|| line)
+                .then_some(line)
         })
         .and_then(|line| line.split_once("Bearer "))
         .map(|(_, bearer)| bearer.trim().to_owned())
