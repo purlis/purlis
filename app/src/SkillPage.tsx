@@ -61,6 +61,7 @@ import {
   UNREAD,
 } from "./SkillDetails";
 import { GradesTab, TRIGGER_TESTS_FILE, type GradingGo } from "./SkillGrades";
+import { askSkillChat } from "./skillDraftAsks";
 import { SkillPinSwitch, SkillPinnedBy } from "./SkillPins";
 import { GrantPicker } from "./SkillLevelPickers";
 import {
@@ -598,7 +599,9 @@ export function SkillPage({
         align="end"
         aria-label={`More for ${name}`}
         disabledKeys={[
-          ...(level === null ? ["rename", "move", "deprecate", "archive", "delete"] : []),
+          ...(level === null
+            ? ["improve", "rename", "move", "deprecate", "archive", "delete"]
+            : []),
           ...(state === "archived" ? ["deprecate"] : []),
           ...("reason" in file || onOpenView === undefined ? ["file"] : []),
         ]}
@@ -609,7 +612,8 @@ export function SkillPage({
               pieceFileTitle(file.place, file.path),
             );
           if (level === null) return;
-          if (key === "rename") onRename(level);
+          if (key === "improve") askSkillChat({ plane, kind: "improve", level, name });
+          else if (key === "rename") onRename(level);
           else if (key === "move") onMove(level);
           else if (key === "delete") onDelete(level);
           else if (key === "deprecate") {
@@ -623,6 +627,16 @@ export function SkillPage({
           }
         }}
       >
+        <MenuItem id="improve" textValue="Improve from runs…">
+          <MenuWords
+            said="Improve from runs…"
+            under={
+              level === null
+                ? cannotChange
+                : "A chat reads its runs and grades and drafts an edit for you to accept."
+            }
+          />
+        </MenuItem>
         <MenuItem id="rename" textValue="Rename…">
           <MenuWords said="Rename…" under={level === null ? cannotChange : undefined} />
         </MenuItem>
