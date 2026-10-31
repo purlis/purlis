@@ -4572,6 +4572,12 @@ export type AlertRow = {
 	/**  What is wrong. */
 	detail: string,
 	/**
+	 *  **The workspaces it is about, by name**, where it is about some (#3650): the `reinit`
+	 *  alert's, every workspace behind the current layout, so the title bar hangs it from each
+	 *  one's chip. Empty for an alert about the project as a whole.
+	 */
+	workspaces: string[],
+	/**
 	 *  **What fixes it, in the window** (NO-6, #1238): the Inbox draws it as the Notice's button,
 	 *  in place of the command the terminal status line names.
 	 */
