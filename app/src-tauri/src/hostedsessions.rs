@@ -881,6 +881,9 @@ struct Shared {
         Mutex<HashMap<u64, tokio::sync::oneshot::Sender<purlis_session_protocol::link::Stream>>>,
     /// What this link holds of the event log of the runner its host relays it to (#3393).
     runner_log: Mutex<crate::runnerlog::RunnerLog>,
+    /// Who logs each skill run that runner's log says started or ended, by the project's id: each
+    /// project held on it in the runner's own checkout (SK-20b, #3084).
+    skill_runs: Mutex<HashMap<String, crate::host::SkillRunsHeard>>,
 }
 
 /// What a link hears of the runner its host relays it to (#2496).
@@ -1578,6 +1581,12 @@ impl HostLink {
         })
     }
 
+    /// Tell `tell` each skill run the log of the runner this link is relayed to says started or
+    /// ended, for `project`, held there in the runner's own checkout (SK-20b, #3084), from now on.
+    pub(crate) fn hear_skill_runs(&self, project: &str, tell: crate::host::SkillRunsHeard) {
+        lock(&self.shared.skill_runs).insert(project.to_owned(), tell);
+    }
+
     /// Hear the lines `project`'s hooks write with `relayed`, from now on.
     fn hear_project(&self, project: &str, relayed: Arc<Relayed>) {
         relayed.linked(self.id);
@@ -1991,7 +2000,22 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                 }
             }
             // A line of the runner's own event log, or a gap in it (#3393).
-            Told::Pushed(Pushed::Event(event)) => lock(&shared.runner_log).heard(&event),
+            Told::Pushed(Pushed::Event(event)) => {
+                let taken = lock(&shared.runner_log).heard(&event);
+                // A runner chat's skill run, logged in this machine's plane (SK-20b, #3084):
+                // once, as its line is first taken, and off the runtime, as it writes a file.
+                if taken && let Some(run) = purlis_core::skilluse::relayed::Relayed::of(&event) {
+                    let told: Vec<crate::host::SkillRunsHeard> =
+                        lock(&shared.skill_runs).values().cloned().collect();
+                    if !told.is_empty() {
+                        tokio::task::spawn_blocking(move || {
+                            for tell in told {
+                                tell(None, &run);
+                            }
+                        });
+                    }
+                }
+            }
             Told::Pushed(Pushed::Missed {
                 device, resumes_at, ..
             }) => lock(&shared.runner_log).missed(&device, resumes_at),
@@ -2126,6 +2150,9 @@ pub struct HostedSessions {
     kept_on_the_runner: bool,
     /// What the runner held of each repository after the window last sent it (#2046).
     sent: Arc<crate::runnercode::Sent>,
+    /// Who logs the skill runs of the project's chats a runner keeps in its own checkout
+    /// (SK-20b, #3084), told to each link the project is held on there.
+    skill_runs: Arc<Mutex<Option<crate::host::SkillRunsHeard>>>,
 }
 
 /// The chats the window was told are reconnecting, until each is reconnected, and who is told
@@ -2166,6 +2193,7 @@ impl HostedSessions {
             on_a_runner: false,
             kept_on_the_runner: false,
             sent: Arc::default(),
+            skill_runs: Arc::default(),
         }
     }
 
@@ -2250,6 +2278,7 @@ impl HostedSessions {
             reconnects: Arc::clone(&self.reconnects),
             kept_on_the_runner: self.kept_on_the_runner,
             sent: Arc::clone(&self.sent),
+            skill_runs: Arc::clone(&self.skill_runs),
         }
     }
 
@@ -2402,6 +2431,7 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
         reconnects,
         kept_on_the_runner,
         sent,
+        skill_runs,
     } = holding;
     let link = connection.of_project(root, LINK_WITHIN)?;
     let mut held = lock(held);
@@ -2415,6 +2445,11 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     // Before the hold, so the host's first line for the project is heard.
     if let Some(relayed) = lock(relayed).clone() {
         link.hear_project(&project, relayed);
+    }
+    // A runner that keeps the project in its own checkout logs its chats' skill runs there: the
+    // window logs them here from its log (#3084). One on this machine's disk logs them here.
+    if *kept_on_the_runner && let Some(tell) = lock(skill_runs).clone() {
+        link.hear_skill_runs(&project, tell);
     }
     link.when_reconnecting(Arc::clone(reconnects));
     // A runner holds it where it keeps its projects, `<data>/projects/<project id>`, and is
@@ -2577,6 +2612,7 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
         reconnects,
         kept_on_the_runner,
         sent,
+        skill_runs,
         ..
     } = holding;
     let project = project.to_owned();
@@ -2612,6 +2648,7 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
             reconnects: Arc::clone(&reconnects),
             kept_on_the_runner,
             sent: Arc::clone(&sent),
+            skill_runs: Arc::clone(&skill_runs),
         };
         if let Err(again) = held_on(&holding) {
             tracing::warn!("purlis: project {project} is not held where its chats run: {again}");
@@ -2662,6 +2699,8 @@ struct Holding {
     kept_on_the_runner: bool,
     /// What the runner held of each repository after the window last sent it.
     sent: Arc<crate::runnercode::Sent>,
+    /// Who logs the skill runs of the project's chats there (#3084).
+    skill_runs: Arc<Mutex<Option<crate::host::SkillRunsHeard>>>,
 }
 
 /// A project the session host saves for the window (#2002): asked for once the link is ready,
@@ -3131,6 +3170,7 @@ impl SessionHost for HostedSessions {
             first_message: named.first_message.clone(),
             without_sandbox: named.without_sandbox,
             tools_allowed: named.tools_allowed.clone(),
+            plane_skills: Some(named.plane_skills),
             // Asked about where the host leaves it out, so said only where it asks this window.
             alone: if confinement.is_some() {
                 named.alone.clone()
@@ -3380,6 +3420,23 @@ impl SessionHost for HostedSessions {
 
     fn hear_through(&self, relayed: Arc<Relayed>) {
         *lock(&self.relayed) = Some(relayed);
+    }
+
+    /// Told to each link the project is held on in a runner's own checkout from its next hold
+    /// ([`held_on`]): a pool's runner is told this as it is made, before its first chat.
+    fn when_skill_runs_heard(&self, tell: crate::host::SkillRunsHeard) {
+        *lock(&self.skill_runs) = Some(Arc::clone(&tell));
+        // And to the link it is held on now, where it is held already: no hold comes for it.
+        if !self.kept_on_the_runner {
+            return;
+        }
+        let held = lock(&self.held).clone();
+        if let Some(Held { project, on }) = held
+            && let Ok(link) = self.connection.of_project(&self.root, Duration::ZERO)
+            && link.id == on
+        {
+            link.hear_skill_runs(&project, tell);
+        }
     }
 
     fn hold_here(&self) {
