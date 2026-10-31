@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793438552161,
+  "lastUpdate": 1793439846056,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33012,6 +33012,48 @@ window.BENCHMARK_DATA = {
             "value": 101.55606499999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.172, 101.332, 101.556, 101.873, 102.001 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1f31a4b596b9626b6ffbd9b93fd082b499ed1f40",
+          "message": "Runners: a cluster Pool opts in to minting GitHub App tokens in the cluster (#4225)\n\n* Runners: a cluster Pool opts in to minting GitHub App tokens in the cluster (#4204)\n\nPool.spec.forge and Claim.spec.forge, validated at admission; the Role purlis-forge-key-reader, limited to the names in the chart's values; the desktop records mintInCluster as a pool is added; ADR 0089 amended. Nothing is minted yet.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M68ET8CVJ2RPEZFRSM2Q70XW\nPurlis-Persona: steward\n\n* Runners: review fixes for the mint opt-in (#4204)\n\nA requester who may no longer use the pool changes its repos no more; the key check is a task of its own with a timeout; false sentences corrected; the kind tests made to prove what they say.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M68ET8CVJ2RPEZFRSM2Q70XW\nPurlis-Persona: steward\n\n* Runners: a claim's bad repos are refused by the schema, not the policy (#4204)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M68ET8CVJ2RPEZFRSM2Q70XW\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T09:17:24Z",
+          "tree_id": "b30c96281c2dbea7ed84449819b7880c531f4fc6",
+          "url": "https://github.com/purlis/purlis/commit/1f31a4b596b9626b6ffbd9b93fd082b499ed1f40"
+        },
+        "date": 1793439839420,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6521269999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.628, 0.642, 0.652, 0.667, 0.675 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.618388,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.591, 16.614, 16.618, 16.620, 16.633 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.74042,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.352, 101.484, 101.740, 102.375, 102.421 ms"
           }
         ]
       }
