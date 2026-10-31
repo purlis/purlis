@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793432883697,
+  "lastUpdate": 1793434514801,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32844,6 +32844,48 @@ window.BENCHMARK_DATA = {
             "value": 101.888249,
             "unit": "ms",
             "extra": "median of 5 runs: 101.135, 101.236, 101.888, 102.724, 103.681 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f23873e75d6c307dcc1eebd1cf79f34757fd3824",
+          "message": "skills: the studio's harness preview routes as a chat's start does (#4192) (#4214)\n\n* skills: the studio's harness preview routes as a chat's start does (#4192)\n\nharnesses_in_the_studio routed each harness's preview set with the\nharness's own skills in it, so they counted against purlis's budget and\ncould mark plane skills hidden that a real chat lists. The start's\nrouting is now one function, as_a_start_routes, which ask and the\nstudio both call: the repo skills are counted, and the harness's own\nskills are added after routing, for clashes and rows alone (ADR 0102 as\namended 2026-10-31).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: the router never counts a harness's own skills (#4192)\n\nReview of the first cut: routing before adding the harness's own skills\nchanged the order of with_outside, so a repo copy that won could drop a\nharness clash. The invariant now sits in the router itself: Parts leaves\nevery Origin::Harness skill out of what a listing spends, so the studio\nadds every outside skill in its old order and routes through\nas_a_start_routes as a start does. ADR 0102 gains an amendment file;\nthe remaining differences (every clone's repo skills, the built-in\nrouter) are #4215.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T07:51:55Z",
+          "tree_id": "9655d74976a465c4bf65d3dacff742b4359443c3",
+          "url": "https://github.com/purlis/purlis/commit/f23873e75d6c307dcc1eebd1cf79f34757fd3824"
+        },
+        "date": 1793434509358,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.675808,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.657, 0.660, 0.676, 0.678, 0.694 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.538169500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.286, 16.410, 16.538, 16.545, 16.660 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8589495,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.247, 101.705, 101.859, 102.203, 102.855 ms"
           }
         ]
       }
