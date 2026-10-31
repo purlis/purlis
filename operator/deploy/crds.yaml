@@ -47,7 +47,7 @@ spec:
               forge:
                 description: |-
                   A team's GitHub App, for runners' forge tools (#4204). Left out, the operator reads no
-                  Secret for this pool and a runner's token comes from the desktop.
+                  Secret for this pool.
                 nullable: true
                 properties:
                   appKeySecretRef:
@@ -70,8 +70,9 @@ spec:
                   mintInCluster:
                     default: false
                     description: |-
-                      Whether the operator mints tokens for the pool's runners, with the desktop away. Anyone
-                      who may use the Pool can use these repos through it. False unless set.
+                      Whether the pool opts in to the operator minting tokens for its runners. Nothing is minted
+                      yet (#4206). Once it is, anyone who may use the Pool can use these repos through it. False
+                      unless set.
                     type: boolean
                   repos:
                     description: |-
@@ -256,8 +257,8 @@ spec:
             properties:
               forge:
                 description: |-
-                  What the desktop sends the runner to work on (#4204). Changed only by who asked for the
-                  claim (deploy/policy.yaml). A token covers only these and the Pool's allow-list.
+                  The repos the runner works on (#4204). Changed only by who asked for the claim, while they
+                  may use its pool (deploy/policy.yaml). A token covers only these and the Pool's allow-list.
                 nullable: true
                 properties:
                   repos:

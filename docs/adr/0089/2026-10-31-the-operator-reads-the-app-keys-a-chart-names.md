@@ -19,7 +19,7 @@ and keeps everything else in them.
    `owner/name` or `owner/*`) and `mintInCluster`. Being named by the chart is not enough to be read
    for a Pool, and being named by a Pool is not enough to be readable: both must say so. The Secret's
    data keys are `app` (the App's client id) and `key` (the PEM).
-5. **A Claim names exact repos, and only its requester changes them.** `Claim.spec.forge.repos`
+5. **A Claim names exact repos, and only its requester changes them, while they may use its Pool.** `Claim.spec.forge.repos`
    holds `owner/name` alone, since a wildcard there would make the intersection with a Pool's
    `owner/*` every repo of the owner. The policy on Claims now also sees UPDATE, for this one rule.
 6. **A persona tool line naming another App is refused by the operator**, which alone holds the

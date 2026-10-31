@@ -77,7 +77,7 @@ pub struct PoolSpec {
     #[schemars(range(min = 0, max = 20))]
     pub warm_replicas: i32,
     /// A team's GitHub App, for runners' forge tools (#4204). Left out, the operator reads no
-    /// Secret for this pool and a runner's token comes from the desktop.
+    /// Secret for this pool.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forge: Option<PoolForge>,
 }
@@ -93,8 +93,9 @@ pub struct PoolForge {
     /// repos of the Claim.
     #[schemars(length(min = 1, max = 256), inner(length(max = 140), regex(pattern = crate::forge::POOL_REPO)))]
     pub repos: Vec<String>,
-    /// Whether the operator mints tokens for the pool's runners, with the desktop away. Anyone
-    /// who may use the Pool can use these repos through it. False unless set.
+    /// Whether the pool opts in to the operator minting tokens for its runners. Nothing is minted
+    /// yet (#4206). Once it is, anyone who may use the Pool can use these repos through it. False
+    /// unless set.
     #[serde(default)]
     pub mint_in_cluster: bool,
 }
@@ -283,8 +284,8 @@ pub struct ClaimSpec {
     /// Its pool's `stopped` stops it too. False unless set.
     #[serde(default)]
     pub stopped: bool,
-    /// What the desktop sends the runner to work on (#4204). Changed only by who asked for the
-    /// claim (deploy/policy.yaml). A token covers only these and the Pool's allow-list.
+    /// The repos the runner works on (#4204). Changed only by who asked for the claim, while they
+    /// may use its pool (deploy/policy.yaml). A token covers only these and the Pool's allow-list.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forge: Option<ClaimForge>,
 }

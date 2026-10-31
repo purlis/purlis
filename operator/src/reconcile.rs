@@ -28,7 +28,7 @@ use crate::upstream::{
 use crate::vouch::{self, MountedKeys, Vouching};
 use futures::StreamExt;
 use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
-use k8s_openapi::api::core::v1::{Namespace, Pod, ResourceQuota, Secret};
+use k8s_openapi::api::core::v1::{Namespace, Pod, ResourceQuota};
 use k8s_openapi::api::rbac::v1::RoleBinding;
 use kube::api::{
     Api, DeleteParams, ObjectMeta, PartialObjectMeta, Patch, PatchParams, PostParams, Preconditions,
@@ -1168,7 +1168,8 @@ pub async fn run(client: Client, keys: MountedKeys, cluster: String, quota: Quot
     let metrics = Arc::new(Metrics::default());
     tokio::select! {
         () = run_claims(client.clone(), keys.clone(), cluster.clone(), quota, metrics) => {}
-        () = publish_pool_status(client, keys, cluster) => {}
+        () = publish_pool_status(client.clone(), keys, cluster) => {}
+        () = crate::forge::check_keys(client, vouch::RECHECK) => {}
     }
     tracing::info!("stopped; upstream {} is pinned", upstream::VERSION);
 }
@@ -1178,8 +1179,6 @@ pub async fn run(client: Client, keys: MountedKeys, cluster: String, quota: Quot
 /// word for it: written whenever a Pool says anything else, and looked at again every
 /// [`vouch::RECHECK`], since the kubelet changes the mounted keys without a word to the operator.
 async fn publish_pool_status(client: Client, keys: Arc<MountedKeys>, cluster: String) {
-    let secrets = Api::<Secret>::default_namespaced(client.clone());
-    let mut key_checks = crate::forge::KeyChecks::default();
     let pools = Api::<Pool>::all(client);
     let mut events = watcher(pools.clone(), watcher::Config::default())
         .default_backoff()
@@ -1211,9 +1210,6 @@ async fn publish_pool_status(client: Client, keys: Arc<MountedKeys>, cluster: St
             .map(|since| since.as_secs())
             .unwrap_or_default();
         for pool in looked_at {
-            key_checks
-                .look_at(&secrets, &pool.name_any(), &pool.spec)
-                .await;
             let next = vouch::pool_status(&keys, &cluster, pool.status.as_ref(), now);
             let Some(patch) = pool_status_patch(pool.status.as_ref(), &next) else {
                 continue;

@@ -1671,6 +1671,10 @@ async fn the_operator_reads_only_the_app_key_the_chart_names_and_only_in_its_nam
         ("update", APP_KEY_SECRET),
         ("patch", APP_KEY_SECRET),
         ("delete", APP_KEY_SECRET),
+        ("list", APP_KEY_SECRET),
+        ("watch", APP_KEY_SECRET),
+        ("create", APP_KEY_SECRET),
+        ("deletecollection", APP_KEY_SECRET),
     ] {
         let asked = Asked {
             group: "",
@@ -1691,6 +1695,8 @@ async fn the_operator_reads_only_the_app_key_the_chart_names_and_only_in_its_nam
         opted_in("e2e-forge-other", OTHER_SECRET, true),
         opted_in("e2e-forge-named-only", APP_KEY_SECRET, false),
         Pool::new("e2e-forge-out", PoolSpec::new(runner_image())),
+        // Sorted last by the cluster's list, so a line of its says every Pool was looked at.
+        opted_in("e2e-forge-z-last", APP_KEY_SECRET, true),
     ] {
         pools
             .patch(
@@ -1720,11 +1726,11 @@ async fn the_operator_reads_only_the_app_key_the_chart_names_and_only_in_its_nam
         all
     };
     let said = eventually(
-        "the operator looks at both opted-in pools",
-        Duration::from_secs(60),
+        "the operator looks at every pool, this one last",
+        Duration::from_secs(150),
         || async {
             let log = logs().await;
-            (log.contains("e2e-forge-in") && log.contains("e2e-forge-other")).then_some(log)
+            log.contains("e2e-forge-z-last").then_some(log)
         },
     )
     .await;
@@ -1742,16 +1748,17 @@ async fn the_operator_reads_only_the_app_key_the_chart_names_and_only_in_its_nam
     );
     assert!(!said.contains("e2e-forge-out"), "{said}");
     assert!(!said.contains("e2e-forge-named-only"), "{said}");
-    assert!(
-        !said.contains("not a real key"),
-        "the key is in the log: {said}"
-    );
+    // Neither the key nor the Secret as the API server sends it, in base64.
+    for held in ["not a real key", "-----BEGIN", "LS0tLS1CRUdJTi"] {
+        assert!(!said.contains(held), "{held} is in the log: {said}");
+    }
 
     for pool in [
         "e2e-forge-in",
         "e2e-forge-other",
         "e2e-forge-named-only",
         "e2e-forge-out",
+        "e2e-forge-z-last",
     ] {
         let _ = pools.delete(pool, &DeleteParams::default()).await;
     }
@@ -1819,7 +1826,7 @@ async fn admission_refuses_a_bad_allow_list_and_a_claims_wildcard() {
         .create(
             &PostParams::default(),
             &pool_with(serde_json::json!({
-                "appKeySecretRef": key, "repos": ["acme/*", "acme/.github", "other/app"], "mintInCluster": true,
+                "appKeySecretRef": { "name": APP_KEY_SECRET, "namespace": "kube-system" }, "repos": ["acme/*", "acme/.github", "other/app"], "mintInCluster": true,
             })),
         )
         .await
@@ -1842,10 +1849,17 @@ async fn admission_refuses_a_bad_allow_list_and_a_claims_wildcard() {
             "apiVersion": "runners.purlis.dev/v1alpha1",
             "kind": "Claim",
             "metadata": { "name": name, "namespace": scratch.name },
-            "spec": { "pool": "e2e-forge-bad", "requester": "kubernetes-admin", "forge": { "repos": repos } },
+            "spec": { "pool": "e2e-forge-bad", "requester": ADMIN, "forge": { "repos": repos } },
         }))
         .expect("a claim")
     };
+    claims
+        .create(
+            &PostParams::default(),
+            &claim_with("e2e-forge-good", serde_json::json!(["acme/app"])),
+        )
+        .await
+        .expect("a claim naming an exact repo is taken");
     for repos in [
         serde_json::json!(["acme/*"]),
         serde_json::json!(["*/*"]),
@@ -1857,7 +1871,7 @@ async fn admission_refuses_a_bad_allow_list_and_a_claims_wildcard() {
                 &claim_with("e2e-forge-c", repos.clone()),
             )
             .await;
-        assert!(made.is_err(), "the claim's {repos} was taken");
+        refused_in_words("a claim's wildcard or bare owner", made, "spec.forge.repos");
     }
     pools
         .delete("e2e-forge-bad", &DeleteParams::default())
@@ -1983,8 +1997,46 @@ async fn only_a_claims_requester_changes_the_repos_it_names() {
         .await
         .expect("the claim");
     assert_eq!(held.spec.forge.expect("its forge").repos, ["acme/app"]);
-    // The operator's finalizer got through the same policy.
-    assert!(!held.metadata.finalizers.unwrap_or_default().is_empty());
+    // The operator's finalizer gets through the same policy.
+    eventually(
+        "the operator's finalizer",
+        Duration::from_secs(60),
+        || async {
+            let held = claims_in(&client, &scratch.name)
+                .get("e2e-forge-peer")
+                .await
+                .ok()?;
+            (!held.metadata.finalizers.unwrap_or_default().is_empty()).then_some(())
+        },
+    )
+    .await;
+    // A peer adds no repos to a claim that names none, either.
+    let bare = claim_by("e2e-forge-bare", "e2e-forge-peer", "e2e-ada");
+    ada.create(&PostParams::default(), &bare)
+        .await
+        .expect("a claim naming no repos");
+    let added = bea
+        .patch("e2e-forge-bare", &params, &repos(&["acme/app"]))
+        .await;
+    refused_in_words("a peer's adding repos", added, "may change the repos");
+    // Its requester, once they may no longer use the pool, changes them no more.
+    let bindings =
+        kube::api::ApiResource::erase::<k8s_openapi::api::rbac::v1::ClusterRoleBinding>(&());
+    Api::<kube::api::DynamicObject>::all_with(client.clone(), &bindings)
+        .delete("e2e-forge-peer-use", &DeleteParams::default())
+        .await
+        .expect("her use taken back");
+    eventually("her use is gone", Duration::from_secs(30), || async {
+        ada.patch("e2e-forge-peer", &params, &repos(&["acme/more"]))
+            .await
+            .err()
+    })
+    .await;
+    let held = claims_in(&client, &scratch.name)
+        .get("e2e-forge-peer")
+        .await
+        .expect("the claim");
+    assert_eq!(held.spec.forge.expect("its forge").repos, ["acme/app"]);
 
     let _ = pools
         .delete("e2e-forge-peer", &DeleteParams::default())

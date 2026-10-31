@@ -70,15 +70,19 @@ spec:
         cluster operator puts a warm pool on the template of a purlis pool, or takes one off it.'
       reason: Forbidden
     # The repos a claim names say what its runner's token may cover, within its Pool's allow-list
-    # (#4204). Someone else who may patch claims in the namespace has no say in that.
+    # (#4204). Someone else who may patch claims in the namespace has no say in that, and nor has
+    # its requester once they may no longer use the pool. Any other patch is left alone, so a
+    # finalizer's removal never depends on the authorizer.
     - expression: >-
         request.resource.group != 'runners.purlis.dev' || request.operation != 'UPDATE' ||
-        request.userInfo.username == object.spec.requester ||
         (has(object.spec.forge) ?
         has(oldObject.spec.forge) && object.spec.forge == oldObject.spec.forge :
-        !has(oldObject.spec.forge))
+        !has(oldObject.spec.forge)) ||
+        (request.userInfo.username == object.spec.requester &&
+        authorizer.group('runners.purlis.dev').resource('pools')
+        .name(object.spec.pool).check('use').allowed())
       messageExpression: >-
-        'Only ' + object.spec.requester + ', who asked for this claim, may change the repos it names.'
+        'Only ' + object.spec.requester + ', who asked for this claim, while they may use its pool, may change the repos it names.'
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

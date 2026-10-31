@@ -173,7 +173,8 @@ The chart's values, all in its
 | `forge.keySecretNames` | the Secrets in the release's namespace holding a GitHub App's key, which the Role `purlis-forge-key-reader` lets the operator `get` ([below](#minting-github-app-tokens-in-the-cluster)); empty, there is no such Role and it may read no Secret. The one value that changes what the operator may do, and never its own signing key | `[]` |
 | `perPerson.quota` | what each person's runners may hold at once, in their namespace's quota `purlis-person` ([below](#each-persons-namespace)): `claims` (a count), `cpu` and `memory` (what their runners' pods ask for), `storage` (what their kept runners' volumes ask for); a key left out is not limited | `claims: 5`, `cpu: "4"`, `memory: 8Gi`, `storage: 50Gi` |
 
-No value changes what the operator may do or how its pod is confined.
+No value but `forge.keySecretNames` changes what the operator may do, and none changes how its pod
+is confined.
 
 ### With the plain manifests
 
@@ -649,7 +650,7 @@ pinned to a key the operator no longer uses: they ask again. Roll forward rather
 ## What it may do
 
 Its ClusterRole, in [`operator/deploy/operator.yaml`](../operator/deploy/operator.yaml), is all
-it holds:
+it holds, but for the one Role below where the chart names a key:
 
 | API group | Resources | Verbs |
 |---|---|---|
@@ -712,9 +713,9 @@ and memory included. Give cluster-admin and node access accordingly.
 
 **Not finished yet.** A Pool can be opted in, and the operator checks its key, but nothing is
 minted until #4206 and no chat uses a token minted here until #4207: this section says what the
-keys mean. Today a pool's runner gets its token from the desktop.
+keys mean. Until then, a pool's runner has no token minted in the cluster.
 
-A cluster admin opts a Pool in with three steps:
+A cluster admin opts a Pool in with these steps:
 
 ```sh
 # 1. The organisation's GitHub App, as a Secret in the operator's namespace: `app` is the App's
@@ -722,14 +723,17 @@ A cluster admin opts a Pool in with three steps:
 kubectl -n purlis-system create secret generic org-app \
   --from-literal=app=<the App's client id> --from-file=key=<the App's private key>.pem
 
-# 2. The chart names it, which is all the operator may read: the Role purlis-forge-key-reader
+# 2. A cluster installed before these keys needs the new definitions first (Helm leaves them).
+kubectl apply --server-side -f operator/deploy/crds.yaml
+
+# 3. The chart names it, which is all the operator may read: the Role purlis-forge-key-reader
 #    gets `get` on these names and no others, in this namespace.
 helm upgrade purlis-cluster-operator <chart> --namespace purlis-system --reuse-values \
   --set 'forge.keySecretNames[0]=org-app'
 ```
 
 ```yaml
-# 3. The Pool says so.
+# 4. The Pool says so.
 apiVersion: runners.purlis.dev/v1alpha1
 kind: Pool
 metadata:
@@ -747,22 +751,26 @@ spec:
   `helm template --set 'forge.keySecretNames[0]=<name>'` renders them. With no name set there is no
   Role at all, since an empty `resourceNames` would mean every Secret.
 - **The operator reads a Secret only for a Pool that says `mintInCluster: true`**, by name, and
-  says in its log whether that Pool's key can be read and which App it is, or why not: not named
+  says in its log, within a minute, whether that Pool's key can be read and which App it is, or why not: not named
   by the chart, not there, or not holding both keys. It logs neither the key nor anything else of
   the Secret. It does not keep the key.
 - **`Pool.spec.forge.repos` is the most a token may cover.** A token will cover only the repos that
   are on this list and also on the Claim. A bare `*`, `*/*`, a partial wildcard, a path or a URL
   is refused at admission. Keep the list as narrow as the team's work: anyone who may `use` the
   Pool can reach these repos through it, once minting is on.
-- **`Claim.spec.forge.repos`** names the repos of the workspace the desktop sends, each exactly
-  `owner/name`: a wildcard is refused at admission. Only the Claim's `requester` may change it, as
-  the policy holds, so someone else who may patch claims in the namespace cannot widen it.
+- **Writing a Pool is using the keys the chart names.** Whoever may create or patch Pools can point
+  one at any Secret in `forge.keySecretNames` with any allow-list, so give that right only to
+  people who may use every App named there.
+- **`Claim.spec.forge.repos`** will name the repos of the workspace the desktop sends (#4207), each
+  exactly `owner/name`: a wildcard is refused at admission. Only the Claim's `requester` may change
+  it, while they may `use` its Pool, as the policy holds. Someone else who may patch claims in the
+  namespace cannot.
 - **A Pool never names `purlis-cluster-operator-signing-key`**, and neither do the chart's values.
 - **A tool line names one App.** A persona's tool whose `app` is not the Secret's `app` is refused,
   by the operator, once it mints (#4206).
 - **The desktop reads `mintInCluster` from the Pool** as the pool is added, and records it
-  ([`runners.json`](plane-format.md)); the person does not choose it. To pick up a change, add the
-  pool again. The operator goes by the Pool as it is now.
+  ([`runners.json`](plane-format.md)); the person does not choose it. To pick up a change, remove
+  the pool and add it again, which also releases its claim and runner. The operator goes by the Pool as it is now.
 
 ## Tests
 

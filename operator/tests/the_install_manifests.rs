@@ -365,7 +365,7 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     // Only who asked changes the repos a claim names (#4204).
     assert_eq!(
         expression(4),
-        "request.resource.group!='runners.purlis.dev'||request.operation!='UPDATE'||request.userInfo.username==object.spec.requester||(has(object.spec.forge)?has(oldObject.spec.forge)&&object.spec.forge==oldObject.spec.forge:!has(oldObject.spec.forge))"
+        "request.resource.group!='runners.purlis.dev'||request.operation!='UPDATE'||(has(object.spec.forge)?has(oldObject.spec.forge)&&object.spec.forge==oldObject.spec.forge:!has(oldObject.spec.forge))||(request.userInfo.username==object.spec.requester&&authorizer.group('runners.purlis.dev').resource('pools').name(object.spec.pool).check('use').allowed())"
     );
 
     let binding = documents

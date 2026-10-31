@@ -10,9 +10,9 @@
 //! and says in its log whether the Pool can mint: a Pool that is not opted in has none of its
 //! Secrets read. Nothing is minted yet, and the key is not kept: #4206 mints.
 
-use crate::resources::PoolSpec;
+use crate::resources::{Pool, PoolSpec};
 use k8s_openapi::api::core::v1::Secret;
-use kube::Api;
+use kube::{Api, Client, ResourceExt};
 use std::collections::HashMap;
 
 /// What `Pool.spec.forge.repos` holds: `owner/name` or `owner/*`, never a bare `*` or `*/*`, a
@@ -38,7 +38,11 @@ pub const APP: &str = "app";
 pub const KEY: &str = "key";
 
 /// The most a client id may be, as the desktop's tool lines hold it (`mint::of`).
-const MOST_APP: usize = 128;
+const MOST_APP: usize = 64;
+
+/// How long one read of a Secret is waited for: a stalled read says so and is tried at the next
+/// look, rather than hold up every other Pool's.
+const READ_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// The Secret to read for this Pool: only one that says `mintInCluster`.
 pub fn key_to_read(pool: &PoolSpec) -> Option<&str> {
@@ -56,7 +60,8 @@ pub struct AppKey {
 }
 
 impl AppKey {
-    /// `secret`'s client id, once it holds a client id under [`APP`] and a PEM under [`KEY`].
+    /// `secret`'s client id, once it holds a client id under [`APP`] and a PEM under [`KEY`]. Whether
+    /// that PEM is the App's private key shows only when it signs (#4206).
     pub fn of(secret: &Secret) -> Result<AppKey, String> {
         let held = |key: &str| secret.data.as_ref().and_then(|data| data.get(key));
         let app = held(APP)
@@ -70,7 +75,7 @@ impl AppKey {
             })
             .ok_or_else(|| format!("its data key {APP} holds no GitHub App's client id"))?;
         if !held(KEY).is_some_and(|key| key.0.starts_with(b"-----BEGIN ")) {
-            return Err(format!("its data key {KEY} holds no PEM private key"));
+            return Err(format!("its data key {KEY} holds no PEM"));
         }
         Ok(AppKey {
             app: app.to_owned(),
@@ -96,31 +101,41 @@ impl AppKey {
     }
 }
 
-/// **Says in the log whether each opted-in Pool can mint**, once per thing it has to say, so a
-/// Pool looked at again says nothing new. Read by name, with the operator's own right to `get`
-/// what the chart names, in its own namespace.
+/// **Says in the log whether each opted-in Pool's key can be read**, once per thing it has to
+/// say, so a Pool looked at again says nothing new. Read by name, with the operator's own right to
+/// `get` what the chart names, in its own namespace.
 #[derive(Default)]
-pub struct KeyChecks {
+struct KeyChecks {
     said: HashMap<String, Result<String, String>>,
 }
 
 impl KeyChecks {
-    /// Looks at the Pool `name`, whose `spec` the cluster holds.
-    pub async fn look_at(&mut self, secrets: &Api<Secret>, name: &str, spec: &PoolSpec) {
+    /// Looks at every Pool the cluster holds, and forgets what it said of any that went.
+    async fn look_at(&mut self, secrets: &Api<Secret>, pools: &[Pool]) {
+        self.said
+            .retain(|name, _| pools.iter().any(|pool| pool.name_any() == *name));
+        for pool in pools {
+            self.look_at_one(secrets, &pool.name_any(), &pool.spec)
+                .await;
+        }
+    }
+
+    async fn look_at_one(&mut self, secrets: &Api<Secret>, name: &str, spec: &PoolSpec) {
         let Some(secret) = key_to_read(spec) else {
             self.said.remove(name);
             return;
         };
-        let read = match secrets.get(secret).await {
-            Ok(found) => AppKey::of(&found).map(|key| key.app),
-            Err(kube::Error::Api(status)) if status.is_forbidden() => Err(
+        let read = match tokio::time::timeout(READ_WITHIN, secrets.get(secret)).await {
+            Err(_) => Err("the cluster did not answer in time".to_owned()),
+            Ok(Ok(found)) => AppKey::of(&found).map(|key| key.app),
+            Ok(Err(kube::Error::Api(status))) if status.is_forbidden() => Err(
                 "the chart's forge.keySecretNames does not name it, so the operator may not read it"
                     .to_owned(),
             ),
-            Err(kube::Error::Api(status)) if status.is_not_found() => {
+            Ok(Err(kube::Error::Api(status))) if status.is_not_found() => {
                 Err("it is not in the operator's namespace".to_owned())
             }
-            Err(error) => Err(error.to_string()),
+            Ok(Err(error)) => Err(error.to_string()),
         };
         if self.said.get(name) == Some(&read) {
             return;
@@ -134,5 +149,22 @@ impl KeyChecks {
             }
         }
         self.said.insert(name.to_owned(), read);
+    }
+}
+
+/// **Looks at the opted-in Pools' keys every `every`**, for as long as the operator runs: a task of
+/// its own, so a stalled read never holds up publishing the signing keys.
+pub(crate) async fn check_keys(client: Client, every: std::time::Duration) {
+    let secrets = Api::<Secret>::default_namespaced(client.clone());
+    let pools = Api::<Pool>::all(client);
+    let mut checks = KeyChecks::default();
+    let mut tick = tokio::time::interval(every);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tick.tick().await;
+        match pools.list(&kube::api::ListParams::default()).await {
+            Ok(all) => checks.look_at(&secrets, &all.items).await,
+            Err(error) => tracing::warn!(%error, "the pools could not be listed; trying again"),
+        }
     }
 }

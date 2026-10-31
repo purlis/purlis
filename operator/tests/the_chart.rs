@@ -3,7 +3,7 @@
 
 //! The operator's Helm chart, `charts/purlis-cluster-operator/`, rendered by `helm` itself: the
 //! plain manifests in `deploy/` are what it renders, so the two never disagree, and no value it
-//! takes widens what the operator may do or names its image by anything but a digest.
+//! takes but `forge.keySecretNames` widens what the operator may do, or names its image by anything but a digest.
 //!
 //! Needs `helm` (v4) on PATH. When the chart changes, regenerate the plain manifests with
 //! `PURLIS_OPERATOR_BLESS=1 cargo test --test the_chart` and read their diff.
@@ -322,7 +322,7 @@ fn access(documents: &[Value]) -> Vec<Value> {
 }
 
 #[test]
-fn no_value_changes_what_the_operator_may_do() {
+fn no_value_but_the_key_names_changes_what_the_operator_may_do() {
     let plain = access(&rendered(&with_digest(&[])));
     assert_eq!(
         plain.len(),
@@ -624,18 +624,34 @@ fn the_values_never_name_the_signing_key_or_a_name_rbac_would_read_as_every_name
     assert!(render(&twice).is_err(), "one name twice was taken");
     // A check the schema makes, the template makes too: a schema can be skipped.
     let chart = chart();
-    let out = helm(&[
-        "template",
-        "purlis-cluster-operator",
-        chart.to_str().expect("a UTF-8 path"),
-        "--skip-schema-validation",
-        "--set",
-        DIGEST_VALUE,
-        "--set",
-        "forge.keySecretNames[0]=purlis-cluster-operator-signing-key",
-    ]);
+    let skipped = |name: &str| {
+        let name = format!("forge.keySecretNames[0]={name}");
+        helm(&[
+            "template",
+            "purlis-cluster-operator",
+            chart.to_str().expect("a UTF-8 path"),
+            "--namespace",
+            "purlis-system",
+            "--kube-version",
+            KUBERNETES,
+            "--skip-schema-validation",
+            "--set",
+            DIGEST_VALUE,
+            "--set",
+            &name,
+        ])
+    };
     assert!(
-        !out.status.success(),
-        "the signing key was taken with the schema skipped"
+        skipped("org-app").status.success(),
+        "the control was refused"
     );
+    for name in ["purlis-cluster-operator-signing-key", ""] {
+        let out = skipped(name);
+        assert!(
+            !out.status.success(),
+            "{name:?} was taken with the schema skipped"
+        );
+        let said = String::from_utf8_lossy(&out.stderr);
+        assert!(said.contains("may not read"), "{said}");
+    }
 }
