@@ -2,11 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import type { State } from "./chatState";
+import { nothingKnown, type ChatStates, type State } from "./chatState";
 import { owedAfterEnded, restartsDue, withRestartOwed } from "./restartAtPause";
 
-const states = (bySession: Record<number, State>) => (session: number) =>
-  bySession[session] ?? "unknown";
+/** The chats in `bySession`'s states, those in `onItsOwnWork` waiting on a monitor of their own. */
+const states = (bySession: Record<number, State>, onItsOwnWork: number[] = []): ChatStates => ({
+  ...nothingKnown,
+  bySession,
+  ownWork: Object.fromEntries(
+    onItsOwnWork.map((session) => [session, { helpers: 0, workflows: 0, monitors: 1, shells: 0 }]),
+  ),
+});
 
 describe("a restart owed for a grant (#1986)", () => {
   it("waits while the chat is mid-turn and is made at its next pause", () => {
@@ -30,7 +36,10 @@ describe("a restart owed for a grant (#1986)", () => {
   });
 
   it("is never made behind the person's back for a harness that says nothing of its turns", () => {
-    expect(restartsDue(withRestartOwed([], 5), states({}))).toEqual({ restart: [], ended: [] });
+    expect(restartsDue(withRestartOwed([], 5), states({}))).toEqual({
+      restart: [],
+      ended: [],
+    });
   });
 
   it("keeps each chat's restart to its own pause", () => {
@@ -42,10 +51,26 @@ describe("a restart owed for a grant (#1986)", () => {
   });
 });
 
+describe("a restart owed to a chat waiting on its own work (#3887)", () => {
+  it("waits for that work, which a restart would cut off, and is made once the chat's turn has nothing in flight", () => {
+    const owed = withRestartOwed(withRestartOwed([], 3), 4);
+    expect(restartsDue(owed, states({ 3: "waiting", 4: "waiting" }, [3]))).toEqual({
+      restart: [4],
+      ended: [],
+    });
+    expect(restartsDue(owed, states({ 3: "waiting", 4: "waiting" })).restart).toEqual([3, 4]);
+  });
+});
+
 describe("Restart now (#1986)", () => {
   it("restarts a chat mid-turn at once, without waiting for its pause", () => {
     const owed = withRestartOwed([], 3);
     expect(restartsDue(owed, states({ 3: "running" }), { now: 3 }).restart).toEqual([3]);
+  });
+
+  it("restarts a chat waiting on its own work at once: the person chose to cut it off (#3887)", () => {
+    const owed = withRestartOwed([], 3);
+    expect(restartsDue(owed, states({ 3: "waiting" }, [3]), { now: 3 }).restart).toEqual([3]);
   });
 
   it("restarts a chat whose harness says nothing of its turns", () => {

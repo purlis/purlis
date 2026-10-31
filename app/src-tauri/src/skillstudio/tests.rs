@@ -92,8 +92,49 @@ fn the_studio_shows_nothing_while_its_flag_is_off() {
             clashes: Vec::new(),
             first: StudioFirst::default(),
             pins_refused: None,
+            not_supported: Vec::new(),
             router: None,
+            levels_to_confirm: None,
+            needs: Vec::new(),
         }
+    );
+}
+
+#[test]
+fn a_declared_harness_with_neither_a_skill_format_nor_mcp_is_said_in_one_line() {
+    // SK-30, #2985: its chats get no skills, and the studio says why.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plane");
+    skill(
+        &root.join("skills"),
+        "deploy",
+        "---\nname: deploy\ndescription: Deploys.\n---\n",
+    );
+    std::fs::create_dir_all(root.join("harnesses")).unwrap();
+    std::fs::write(
+        root.join("harnesses/goose.toml"),
+        "name = \"goose\"\ntitle = \"Goose\"\nprogram = \"goose\"\n\n[session]\n\n\
+         [terminal]\nready_to_type = \"raw-and-quiet\"\n\n[levels]\n\n[capabilities]\n\
+         mcp_servers = \"no: it takes none\"\n",
+    )
+    .unwrap();
+
+    let studio = studio(&root, None, true, None, None, &no_harness());
+
+    assert_eq!(
+        studio.not_supported,
+        [StudioNotSupported {
+            name: "goose".to_owned(),
+            title: "Goose".to_owned(),
+            said: "Skills are not supported on Goose: it has no skill format purlis can hand \
+                   skills by, and its declaration does not say it takes MCP servers, so its \
+                   chats get no skills."
+                .to_owned(),
+        }]
+    );
+    assert!(
+        studio.harnesses.iter().all(|one| one.title != "Goose"),
+        "it is no harness skills reach"
     );
 }
 
@@ -573,6 +614,48 @@ fn the_studio_says_which_router_its_chats_are_routed_by() {
     );
     assert_eq!(built_in.extension, None);
     assert!(!built_in.problem);
+    assert_eq!(
+        built_in.preview,
+        "The rows' hidden marks are what the built-in router hides for a chat at the \
+         workspace's root.",
+        "#4215: the place and the router the marks preview"
+    );
+    assert_eq!(
+        router(None).preview,
+        "The rows' hidden marks are what the built-in router hides for a chat at the project's \
+         root."
+    );
+    assert_eq!(
+        studio(
+            root,
+            None,
+            true,
+            Some("alpha"),
+            Some("reviewer"),
+            &no_harness()
+        )
+        .router
+        .expect("a router")
+        .preview,
+        "The rows' hidden marks are what the built-in router hides for a chat at the \
+         workspace's root as reviewer.",
+        "the persona the studio is filtered to, whose pins the marks read"
+    );
+    // A clone holding a repo skill: a chat started there counts it, and the line says so.
+    let clone = root.join("workspaces/alpha/api");
+    std::fs::create_dir_all(clone.join(".git")).unwrap();
+    std::fs::create_dir_all(clone.join(".claude/skills/review")).unwrap();
+    std::fs::write(
+        clone.join(".claude/skills/review/SKILL.md"),
+        "---\nname: review\ndescription: Reviews.\n---\n",
+    )
+    .unwrap();
+    assert_eq!(
+        router(Some("alpha")).preview,
+        "The rows' hidden marks are what the built-in router hides for a chat at the \
+         workspace's root. A chat started in a clone counts that clone's repo skills too, and \
+         its own Skills view says what it hides."
+    );
 
     std::fs::write(
         root.join("workspaces/alpha/workspace.json"),
@@ -581,10 +664,16 @@ fn the_studio_says_which_router_its_chats_are_routed_by() {
     .unwrap();
     let chosen = router(Some("alpha"));
     assert_eq!(chosen.extension.as_deref(), Some("relevance"));
-    assert!(
-        chosen.said.contains("the router relevance"),
-        "{}",
-        chosen.said
+    assert_eq!(
+        chosen.said,
+        "Chats here are routed by the router relevance, asked at each chat's start."
+    );
+    assert_eq!(
+        chosen.preview,
+        "The rows' hidden marks are what the built-in router hides for a chat at the workspace's \
+         root, since the router relevance is asked only at each chat's start. A chat started in \
+         a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
+        "#4215: never the extension's, which a read of the studio does not ask"
     );
 
     std::fs::write(
@@ -595,4 +684,52 @@ fn the_studio_says_which_router_its_chats_are_routed_by() {
     let wrong = router(Some("alpha"));
     assert!(wrong.problem);
     assert!(wrong.said.contains("built-in router"), "{}", wrong.said);
+}
+
+#[test]
+fn the_studio_says_the_budget_and_what_its_scope_writes_as_its_router_3692() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
+    std::fs::create_dir_all(root.join("personas/reviewer")).unwrap();
+    std::fs::write(
+        root.join("personas/reviewer/persona.md"),
+        "---\nname: reviewer\nrole: Reviews.\nskill-router: built-in\n---\n\nReviews.\n",
+    )
+    .unwrap();
+    let router = |workspace: Option<&str>, persona: Option<&str>| {
+        studio(root, None, true, workspace, persona, &no_harness())
+            .router
+            .expect("a router while the studio is on")
+    };
+
+    let at_root = router(None, None);
+    assert_eq!(
+        at_root.written, None,
+        "the project's root chooses no router"
+    );
+    assert_eq!(
+        at_root.budget,
+        StudioBudget {
+            skills: 30,
+            chars: 6_000
+        }
+    );
+    assert_eq!(router(Some("alpha"), None).written, None);
+
+    std::fs::write(
+        root.join("workspaces/alpha/workspace.json"),
+        r#"{"settings": {"skills": {"router": "relevance"}}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        router(Some("alpha"), None).written.as_deref(),
+        Some("relevance")
+    );
+    assert_eq!(
+        router(None, Some("reviewer")).written.as_deref(),
+        Some("built-in"),
+        "a persona's own line"
+    );
 }

@@ -4,8 +4,9 @@
 /**
  * **The tabs family's lint** (`eslint.ui-rules.js` finds this file, #3387):
  *
- * `purlis/tabs-family` (error: the session strip is on React Aria's tabs, #3042): a `tab`,
- * `tablist` or `tabpanel` role written by hand, in JSX or in an object of props, the strip's
+ * `purlis/tabs-family` (error: the session strip is on React Aria's tabs, #3042, and a page's
+ * tabs are `PageTabs`, #3668): a `tab`, `tablist` or `tabpanel` role written by hand, a strip's
+ * or a page's alike, in JSX or in an object of props, the strip's
  * old hand-made tablist (`StripTablist`), and `data-scope="tabs"` by hand. A tablist is the
  * family's `useTabStrip`, `TabStripRow` and `StripTab` (`ui/tabs/TabStrip`), a tab's cell its
  * `TabCell`, and the panel a tab names `tabPanelOf` (`ui/tabs/Tabs`). The tablists still drawn
@@ -17,8 +18,11 @@ import { classStrings } from "../familyLint.js";
 /** The roles of a tablist's elements, which only the tabs family writes. */
 const TAB_ROLES = new Set(["tab", "tablist", "tabpanel"]);
 
+/** The family's scopes, which only its wrappers write: the strip's and a page's tabs. */
+const SCOPES = new Set(["tabs", "page-tabs"]);
+
 const TABS_SAID =
-  "draw a tablist with `useTabStrip`, `TabStripRow` and `StripTab` from `ui/tabs/TabStrip` (React Aria's tabs), a tab's cell with `TabCell` and the panel it names with `tabPanelOf` from `ui/tabs/Tabs` (#3042).";
+  "draw a page's tabs with `PageTabs` from `ui/tabs/PageTabs` (#3668), and a strip's with `useTabStrip`, `TabStripRow` and `StripTab` from `ui/tabs/TabStrip` (React Aria's tabs), a tab's cell with `TabCell` and the panel it names with `tabPanelOf` from `ui/tabs/Tabs` (#3042).";
 
 const tabsFamily = {
   meta: {
@@ -27,7 +31,7 @@ const tabsFamily = {
     messages: {
       role: `\`role="{{role}}"\` by hand: ${TABS_SAID}`,
       owner: `\`StripTablist\` is the strip's old hand-made tablist: ${TABS_SAID}`,
-      scope: `\`data-scope="tabs"\` is drawn by the family's wrappers only: ${TABS_SAID}`,
+      scope: `\`data-scope="{{scope}}"\` is drawn by the family's wrappers only: ${TABS_SAID}`,
     },
     schema: [],
   },
@@ -45,9 +49,9 @@ const tabsFamily = {
         else if (
           node.name.name === "data-scope" &&
           node.value?.type === "Literal" &&
-          node.value.value === "tabs"
+          SCOPES.has(node.value.value)
         )
-          context.report({ node, messageId: "scope" });
+          context.report({ node, messageId: "scope", data: { scope: node.value.value } });
       },
       // `{ role: "tabpanel", … }`, handed on to an element.
       Property(node) {
@@ -61,9 +65,9 @@ const tabsFamily = {
         else if (
           key === "data-scope" &&
           node.value?.type === "Literal" &&
-          node.value.value === "tabs"
+          SCOPES.has(node.value.value)
         )
-          context.report({ node, messageId: "scope" });
+          context.report({ node, messageId: "scope", data: { scope: node.value.value } });
       },
       ImportDeclaration(node) {
         if (!/(?:^|\/)StripTablist$/.test(String(node.source.value))) return;
@@ -96,16 +100,13 @@ export const off = {
 };
 
 /**
- * **This family's controls still drawn as a raw `<button>`** (D-2904-9): A tab drawn by hand (`role="tab"`), and a tab's marks and closer and the strip's offers, said by its role
- * or its class, which the button family's rule lets through until this family's lane moves them.
+ * **This family's controls still drawn as a raw `<button>`** (D-2904-9, #3012): a tab drawn by
+ * hand, by its role (`role="tab"`), and the strip's own controls, by the family's one class
+ * (`ui-tabs-control`), never by a word a view picked (`closer`, `crumb`): the button family's
+ * rule lets these through until this family's lane moves them, and refuses a bare button with
+ * any other class.
  */
 export const rawButtons = {
   roles: ["tab"],
-  classes: [
-    // The tab strips and a pane's top line: a tab's marks and closer, the strip's offers.
-    "closer",
-    "crumb",
-    "tab-tasks-hand",
-    "tab-tasks-counts",
-  ],
+  classes: ["ui-tabs-control"],
 };

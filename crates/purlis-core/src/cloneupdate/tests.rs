@@ -374,7 +374,12 @@ fn a_pull_is_refused_where_the_repository_tracks_a_denied_file_and_is_told_to_fe
         assert!(said.contains("Nothing was run."), "{said}");
         // What to do instead: the two steps the arm can check.
         assert!(
-            said.contains("Fetch first, as a command of its own (`git fetch`)"),
+            said.contains("fetch first, as a command of its own (`git fetch`)"),
+            "{said}"
+        );
+        // #3831: and first, the update the app makes for the chat.
+        assert!(
+            said.contains("run `purlis worktree update` in it instead"),
             "{said}"
         );
         assert!(
@@ -456,6 +461,35 @@ fn a_rebase_purlis_runs_is_judged_for_the_head_it_is_handed_whatever_head_says()
         ..a_clone()
     };
     assert_eq!(judged_rebase(TOP, "p", "t", &place(true), &plain), None);
+}
+
+#[test]
+fn a_rebase_onto_a_new_base_is_judged_for_the_commits_after_the_old_one() {
+    // #3836: `rebase --onto p o t` replays what `t` has and `o` lacks, not what `p` lacks. The
+    // old base's own commits (`p..o`) carry a denied file and are left behind, so they are not
+    // judged; the piece's own are.
+    let moved = Fake {
+        differ: vec![("t", "p", vec!["src/a.rs"])],
+        replayed_from: vec![
+            ("p", "t", vec!["app/.vscode/tasks.json", "src/a.rs"]),
+            ("o", "t", vec!["src/a.rs"]),
+        ],
+        ..a_clone()
+    };
+    assert_eq!(
+        judged_rebase_from(TOP, "p", "o", "t", &place(true), &moved),
+        None
+    );
+    // The same move with no old base replays them, and is refused.
+    assert!(judged_rebase(TOP, "p", "t", &place(true), &moved).is_some());
+    // And the piece's own commits are judged: one that touches a denied file is refused.
+    let own = Fake {
+        differ: vec![("t", "p", vec!["src/a.rs"])],
+        replayed_from: vec![("o", "t", vec![".husky/pre-commit"])],
+        ..a_clone()
+    };
+    let said = judged_rebase_from(TOP, "p", "o", "t", &place(true), &own).expect("refused");
+    assert!(said.contains("would write `.husky/pre-commit`"), "{said}");
 }
 
 #[test]

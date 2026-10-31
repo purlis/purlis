@@ -13,6 +13,8 @@
 //!   ([`skill_draft_reject`]).
 //! - **"Ask a chat to draft a skill"** ([`skill_draft_chat`]) opens a chat where the level's skills
 //!   are reached from, with the core's prompt typed and never sent, as a curation chat is opened.
+//!   **"Ask a chat to write them"** ([`skill_trigger_tests_chat`]) opens one the same way, asked
+//!   for a skill's trigger tests (#3925).
 //! - **Try it** opens a scratch chat in a throwaway piece, armed with the built-in skills and the
 //!   draft alone, on the profile the person picked or the project's default; the piece goes when
 //!   the chat closes (`Chats::close`).
@@ -27,7 +29,7 @@ use specta::Type;
 use purlis_core::hookwire::{Answer, ProposeAsk};
 use purlis_core::skills::verbs::drafts;
 
-use crate::curation::{ChatTyped, Curating};
+use crate::curation::{ChatTyped, Curating, StartRefused};
 use crate::planes::{Held, PlaneId, Planes};
 use crate::skillchange::{SkillChanged, SkillLevel};
 
@@ -71,6 +73,10 @@ pub struct SkillDraft {
     pub level: SkillLevel,
     /// The chat that wrote it last, by its number.
     pub chat: Option<u32>,
+    /// Whether that chat is open now, for an out-of-date draft (false for any other): "Ask the
+    /// chat to redo it" types into it ([`skill_draft_redo_in`]), where a closed one's opens a
+    /// chat afresh ([`skill_draft_redo`]).
+    pub chat_open: bool,
     /// A new skill, rather than a change to one.
     pub new: bool,
     /// A file it changes changed in the project since: Accept is refused.
@@ -98,6 +104,7 @@ impl From<drafts::Draft> for SkillDraft {
             id: draft.id,
             name: draft.name,
             chat: draft.chat,
+            chat_open: false,
             new: draft.new,
             files: draft
                 .files
@@ -130,12 +137,40 @@ pub(crate) async fn skill_drafts(
         if !purlis_core::skills::studio_on_here() {
             return Ok(Vec::new());
         }
-        Ok(drafts::list(held.root())
+        let listed = drafts::list(held.root());
+        // Whether its chat is open says only what an out-of-date draft's redo does: the chats
+        // are looked at only where one is.
+        let open = if listed.iter().any(drafts::Draft::stale) {
+            held.chats().open_now()
+        } else {
+            Vec::new()
+        };
+        Ok(listed
             .into_iter()
-            .map(SkillDraft::from)
+            .map(|draft| {
+                let chat_open = draft.stale() && drafting_chat(&open, &draft).is_some();
+                SkillDraft {
+                    chat_open,
+                    ..SkillDraft::from(draft)
+                }
+            })
             .collect())
     })
     .await
+}
+
+/// **The chat that drafted `draft`, where it is still open** among `open`: the chat of its number,
+/// in the draft's own workspace for a workspace's draft (a project's or a persona's is written
+/// from anywhere), so a number a later chat took in another workspace is never it.
+fn drafting_chat<'a>(
+    open: &'a [crate::chats::Open],
+    draft: &drafts::Draft,
+) -> Option<&'a crate::chats::Open> {
+    let chat = draft.chat?;
+    let workspace = draft.level.at.workspace();
+    open.iter().find(|one| {
+        one.session == chat && (workspace.is_none() || one.workspace.as_deref() == workspace)
+    })
 }
 
 /// **Accepts a draft**: one commit of exactly its files.
@@ -174,6 +209,25 @@ pub(crate) async fn skill_level_accept(
     .await
 }
 
+/// **Accepts the workspace and persona folders `folders` the studio listed** (#3718), each there
+/// now: the person's one press where purlis cannot confirm which of them they accepted before
+/// (`levels::to_confirm`).
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_levels_confirm(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    folders: Vec<String>,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("accepting the project's folders", move || {
+        crate::skillchange::flag_on()?;
+        purlis_core::skills::levels::confirm(held.root(), &folders)?;
+        Ok(SkillChanged::default())
+    })
+    .await
+}
+
 /// **Rejects a draft**: deletes it.
 #[tauri::command]
 #[specta::specta]
@@ -194,31 +248,24 @@ pub(crate) async fn skill_draft_reject(
 
 /// **"Ask a chat to draft a skill"** (decision 13): a chat where `level`'s skills are reached
 /// from (the project's root, or the workspace's folder), on the project's default profile, with
-/// the core's prompt typed and never sent.
+/// the core's prompt typed and never sent, ending with `what` the skill should do where New
+/// skill… asked it (S4, #3684).
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_draft_chat(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     level: SkillLevel,
+    what: String,
     columns: u16,
     rows: u16,
-) -> Result<Curating, String> {
+) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
-    crate::off_the_window("starting the chat", move || {
+    crate::curation::off_the_window_refused("starting the chat", move || {
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let level: purlis_core::skills::verbs::Level = (&level).into();
-        let cwd = match level.at.workspace() {
-            None => root.clone(),
-            Some(ws) => purlis_core::workspaces::Plane::open(&root)
-                .workspace(ws)
-                .map_err(|_| {
-                    format!("this project has no workspace {ws:?}, so no chat was opened")
-                })?
-                .dir()
-                .to_path_buf(),
-        };
+        let cwd = where_level_is_reached(&root, &level)?;
         let (profile, _) = crate::curation::default_profile(&root, "no chat was opened")?;
         open(
             &held,
@@ -227,7 +274,46 @@ pub(crate) async fn skill_draft_chat(
                 persona: None,
                 cwd,
                 label: "Draft a skill".to_owned(),
-                prompt: drafts::asking(&level),
+                prompt: drafts::asking(&level, &what),
+                then_a_space: false,
+                starts_runs: None,
+            },
+            purlis_core::engine::Size { columns, rows },
+        )
+    })
+    .await
+}
+
+/// **"Ask a chat to write them"** (#3925): a chat where `level`'s skills are reached from, on the
+/// project's default profile, with the core's prompt for the trigger tests of the skill `name`
+/// typed and never sent ([`drafts::asking_for_trigger_tests`]). It starts as "Ask a chat to draft
+/// a skill" does, through the same start; its write comes back as a draft.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_trigger_tests_chat(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    level: SkillLevel,
+    name: String,
+    columns: u16,
+    rows: u16,
+) -> Result<Curating, StartRefused> {
+    let held = planes.held(&plane)?;
+    crate::curation::off_the_window_refused("starting the chat", move || {
+        crate::skillchange::flag_on()?;
+        let root = held.root().to_path_buf();
+        let level: purlis_core::skills::verbs::Level = (&level).into();
+        let prompt = drafts::asking_for_trigger_tests(&root, &level, &name)?;
+        let cwd = where_level_is_reached(&root, &level)?;
+        let (profile, _) = crate::curation::default_profile(&root, "no chat was opened")?;
+        open(
+            &held,
+            ChatTyped {
+                profile,
+                persona: None,
+                cwd,
+                label: format!("Trigger tests of {name}"),
+                prompt,
                 then_a_space: false,
                 starts_runs: None,
             },
@@ -250,9 +336,9 @@ pub(crate) async fn skill_draft_try(
     profile: Option<String>,
     columns: u16,
     rows: u16,
-) -> Result<Curating, String> {
+) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
-    crate::off_the_window("starting Try it", move || {
+    crate::curation::off_the_window_refused("starting Try it", move || {
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let standing: Vec<std::path::PathBuf> = held
@@ -264,23 +350,7 @@ pub(crate) async fn skill_draft_try(
             .collect();
         drafts::sweep_tries(&root, &standing);
         let draft = drafts::one(&root, &id)?;
-        // The harness and profile of the draft's own level (decision 50): the chat that drafted
-        // it where it still runs there, else another chat of that workspace (or of the
-        // project's root), else the project's default.
-        let chats_open = held.chats().open_now();
-        let at_level = |one: &&crate::chats::Open| {
-            one.workspace.as_deref() == draft.level.at.workspace() && one.profile.is_some()
-        };
-        let of_level = chats_open
-            .iter()
-            .filter(at_level)
-            .find(|one| Some(one.session) == draft.chat)
-            .or_else(|| chats_open.iter().find(at_level))
-            .and_then(|one| one.profile.clone());
-        let profile = match profile.or(of_level) {
-            Some(profile) => profile,
-            None => crate::curation::default_profile(&root, "Try it did not start")?.0,
-        };
+        let profile = try_profile(&held, &draft, profile)?;
         let tried = drafts::try_out(&root, &id)?;
         let started = open(
             &held,
@@ -305,18 +375,153 @@ pub(crate) async fn skill_draft_try(
     .await
 }
 
-/// Opens `chat` with its prompt typed once its harness has started, as a curation chat is.
+/// The profile Try it starts `draft`'s chat on: `picked`, where the person picked one, else the
+/// harness and profile of the draft's own level (decision 50): the chat that drafted it where it
+/// still runs there, else another chat of that workspace (or of the project's root), else the
+/// project's default.
+fn try_profile(
+    held: &Arc<Held>,
+    draft: &drafts::Draft,
+    picked: Option<String>,
+) -> Result<String, String> {
+    if let Some(profile) = picked {
+        return Ok(profile);
+    }
+    let chats_open = held.chats().open_now();
+    let at_level = |one: &&crate::chats::Open| {
+        one.workspace.as_deref() == draft.level.at.workspace() && one.profile.is_some()
+    };
+    let of_level = chats_open
+        .iter()
+        .filter(at_level)
+        .find(|one| Some(one.session) == draft.chat)
+        .or_else(|| chats_open.iter().find(at_level))
+        .and_then(|one| one.profile.clone());
+    match of_level {
+        Some(profile) => Ok(profile),
+        None => Ok(crate::curation::default_profile(held.root(), "Try it did not start")?.0),
+    }
+}
+
+/// **"Ask the chat to redo it"** (S9), for a draft the project changed a file of since: the
+/// core's redo prompt typed into chat `session`, the chat that drafted it, unsent — or copied,
+/// with why, where it cannot be typed now. Refused where `session` is not that chat, open in the
+/// draft's workspace. A redo the chat then writes is drafted on the project's copy (`drafts::take`).
+// On the window's thread, as every command that types into a chat is (`useskill::use_skill`).
+// Not a doc comment past here, because the generated bindings carry those.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn skill_draft_redo_in(
+    planes: tauri::State<'_, Planes>,
+    clipboard: tauri::State<'_, crate::vaults::SystemClipboard>,
+    plane: PlaneId,
+    id: String,
+    session: u32,
+) -> Result<crate::references::Handed, String> {
+    let held = planes.held(&plane)?;
+    crate::skillchange::flag_on()?;
+    let draft = drafts::one(held.root(), &id)?;
+    let open = held.chats().open_now();
+    if drafting_chat(&open, &draft).map(|one| one.session) != Some(session) {
+        return Err(NOT_ITS_CHAT.to_owned());
+    }
+    crate::references::typed_or_copied(
+        &held,
+        session,
+        drafts::redoing(&draft.level, &draft.name, &stale_of(&draft), true),
+        REDO_COPIED,
+        &|text| clipboard.put_text(text),
+    )
+}
+
+/// The files of `draft` the project changed since, below the skill's folder.
+fn stale_of(draft: &drafts::Draft) -> Vec<&str> {
+    draft
+        .files
+        .iter()
+        .filter(|file| file.stale)
+        .map(|file| file.path.as_str())
+        .collect()
+}
+
+/// What [`skill_draft_redo_in`] refuses a chat with that is not the draft's own, open now.
+const NOT_ITS_CHAT: &str =
+    "the chat that drafted it is not open any more, so nothing was typed: ask a chat to redo it";
+
+/// What the clipboard is said to hold where the redo prompt could not be typed, and the rule it
+/// is typed by: at the chat's prompt, as Use skill… types a skill.
+const REDO_COPIED: crate::references::Copied = crate::references::Copied {
+    on: "the request is",
+    it: "it is",
+    may: |_, now| purlis_core::reference::at_its_prompt(now),
+};
+
+/// **"Ask a chat to redo it"** (S9), where the chat that drafted it is closed: a chat where the
+/// draft's level's skills are reached from, as "Ask a chat to draft a skill" opens one, with the
+/// core's redo prompt typed and never sent, which the person ends with what the change was.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_draft_redo(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    id: String,
+    columns: u16,
+    rows: u16,
+) -> Result<Curating, StartRefused> {
+    let held = planes.held(&plane)?;
+    crate::curation::off_the_window_refused("starting the chat", move || {
+        crate::skillchange::flag_on()?;
+        let root = held.root().to_path_buf();
+        let draft = drafts::one(&root, &id)?;
+        let cwd = where_level_is_reached(&root, &draft.level)?;
+        let (profile, _) = crate::curation::default_profile(&root, "no chat was opened")?;
+        open(
+            &held,
+            ChatTyped {
+                profile,
+                persona: None,
+                cwd,
+                label: format!("Redo {}", draft.name),
+                prompt: drafts::redoing(&draft.level, &draft.name, &stale_of(&draft), false),
+                then_a_space: false,
+                starts_runs: None,
+            },
+            purlis_core::engine::Size { columns, rows },
+        )
+    })
+    .await
+}
+
+/// Where a chat that writes `level`'s skills starts: the project's root, or its workspace's
+/// folder.
+fn where_level_is_reached(
+    root: &std::path::Path,
+    level: &purlis_core::skills::verbs::Level,
+) -> Result<std::path::PathBuf, String> {
+    match level.at.workspace() {
+        None => Ok(root.to_path_buf()),
+        Some(ws) => Ok(purlis_core::workspaces::Plane::open(root)
+            .workspace(ws)
+            .map_err(|_| format!("this project has no workspace {ws:?}, so no chat was opened"))?
+            .dir()
+            .to_path_buf()),
+    }
+}
+
+/// Opens `chat` with its prompt typed once its harness has started, as a curation chat is. A
+/// refused start says the approval its profile needs, where it needs one.
 fn open(
     held: &Arc<Held>,
     chat: ChatTyped,
     size: purlis_core::engine::Size,
-) -> Result<Curating, String> {
+) -> Result<Curating, StartRefused> {
     let root = held.root().to_path_buf();
-    let (label, cwd) = (chat.label.clone(), chat.cwd.clone());
+    let (label, cwd, profile) = (chat.label.clone(), chat.cwd.clone(), chat.profile.clone());
     let typed =
         crate::curation::start_typed(held, chat, size, crate::curation::when_typed, |why| {
             format!("{why}, so nothing was typed and no chat was opened.")
-        })?;
+        })
+        .map_err(StartRefused::on(&profile, &root))?;
     Ok(Curating {
         session: typed.session,
         name: typed.name,
@@ -359,6 +564,10 @@ pub(crate) fn sweep(root: &std::path::Path, record: &purlis_core::reopen::Record
         .filter_map(|chat| chat.cwd.clone())
         .collect();
     purlis_core::skills::levels::sweep(root, &ids);
-    purlis_core::hoststart::sweep_settings(root, &ids);
+    purlis_core::hoststart::sweep_settings(
+        purlis_core::hoststart::chat_settings_here().as_deref(),
+        root,
+        &ids,
+    );
     drafts::sweep_tries(root, &cwds);
 }

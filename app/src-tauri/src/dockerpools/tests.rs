@@ -13,6 +13,9 @@ fn adding(name: &str) -> PoolAdding {
         memory_mib: None,
         processes: None,
         tmp_mib: None,
+        suspend_after: None,
+        frames: None,
+        width: None,
     }
 }
 
@@ -59,6 +62,23 @@ fn a_pool_takes_the_limits_typed_and_the_defaults_for_the_rest() {
 }
 
 #[test]
+fn a_pool_takes_its_browser_frame_limits_as_typed() {
+    let pool = pool_of(&PoolAdding {
+        frames: Some(30),
+        width: Some(1920),
+        ..adding("builds")
+    })
+    .unwrap();
+    assert_eq!(
+        pool.link_frames(),
+        purlis_session_protocol::browsing::LinkFrames {
+            frames: 30,
+            width: 1920
+        }
+    );
+}
+
+#[test]
 fn a_pool_the_core_would_refuse_is_refused_in_its_words() {
     for (adding, says) in [
         (
@@ -75,6 +95,21 @@ fn a_pool_the_core_would_refuse_is_refused_in_its_words() {
                 ..adding("builds")
             },
             "memory",
+        ),
+        // #3297: a pool's browser frame limits, each within its bounds.
+        (
+            PoolAdding {
+                frames: Some(61),
+                ..adding("builds")
+            },
+            "frames",
+        ),
+        (
+            PoolAdding {
+                width: Some(70_000),
+                ..adding("builds")
+            },
+            "widest browser frame",
         ),
     ] {
         let refused = pool_of(&adding).unwrap_err();
@@ -93,6 +128,27 @@ fn the_pools_are_listed_with_a_new_pools_defaults() {
     assert_eq!(shown.pools[0].image, IMAGE);
     assert_eq!(shown.defaults.cpus, "2");
     assert_eq!(shown.defaults.memory_mib, 4096);
+    assert_eq!(shown.suspend_after, "24h");
+    assert_eq!(shown.pools[0].suspend_after, "24h");
+}
+
+#[test]
+fn a_pool_takes_the_time_typed_before_its_runner_suspends_and_a_day_when_empty() {
+    let typed = |after: Option<&str>| {
+        pool_of(&PoolAdding {
+            suspend_after: after.map(str::to_owned),
+            ..adding("builds")
+        })
+        .map(|pool| row(&pool).suspend_after)
+    };
+    assert_eq!(typed(Some("12h")).as_deref(), Ok("12h"));
+    assert_eq!(typed(Some(" 90m ")).as_deref(), Ok("90m"));
+    assert_eq!(typed(Some("120m")).as_deref(), Ok("2h"));
+    assert_eq!(typed(Some("")).as_deref(), Ok("24h"));
+    assert_eq!(typed(None).as_deref(), Ok("24h"));
+    for refused in ["a day", "1d", "10s", "1000h", "-1h"] {
+        assert!(typed(Some(refused)).is_err(), "{refused:?} was taken");
+    }
 }
 
 #[cfg(unix)]
@@ -150,5 +206,68 @@ fn what_a_removal_left_and_why_a_pool_was_refused_are_said_safely() {
     assert_eq!(
         refused_said("docker create failed: ssh://someone:hidden@host\u{202E} said no"),
         "docker create failed: ssh://…@host said no"
+    );
+}
+
+/// How a runner was made to suspend is said as `runners.json` spells a pool's time (#3717).
+#[cfg(unix)]
+#[test]
+fn how_a_runner_was_made_to_suspend_is_said_as_a_pools_time_is() {
+    use purlis_core::dockerpool::MadeSuspending;
+    assert_eq!(suspends_shown(MadeSuspending::Never), PoolSuspends::Never);
+    assert_eq!(
+        suspends_shown(MadeSuspending::After(std::time::Duration::from_secs(
+            90 * 60
+        ))),
+        PoolSuspends::After {
+            after: "90m".into()
+        }
+    );
+    assert_eq!(
+        serde_json::to_value(PoolSuspends::After {
+            after: "24h".into()
+        })
+        .ok(),
+        Some(serde_json::json!({"made": "after", "after": "24h"}))
+    );
+}
+
+/// **A pool's links end once it is gone from this machine**: not while a removal left it kept, and
+/// also where what this machine keeps cannot be read.
+#[cfg(unix)]
+#[test]
+fn a_pools_links_end_once_it_is_gone_and_not_while_it_is_kept() {
+    use std::os::unix::fs::PermissionsExt;
+    let config = tempfile::tempdir().unwrap();
+    let path = purlis_core::machine::dir(config.path()).join(purlis_core::machine::RUNNERS_FILE);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let write = |text: String| {
+        std::fs::write(&path, text).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    };
+    let image = format!("ghcr.io/purlis/purlis-runner@sha256:{}", "a".repeat(64));
+    write(
+        serde_json::json!({
+            "version": 1,
+            "pools": [{ "name": "builds", "kind": "docker", "image": image }],
+            "runners": [],
+        })
+        .to_string(),
+    );
+    let window = std::sync::Arc::new(crate::hostedsessions::Connection::default());
+    let _pool = window.to_a_pool("builds");
+    links_end_once_gone(&window, config.path(), "builds");
+    assert_eq!(window.removals_of("builds"), 0, "still kept");
+    write(serde_json::json!({"version": 1, "pools": [], "runners": []}).to_string());
+    links_end_once_gone(&window, config.path(), "builds");
+    assert_eq!(window.removals_of("builds"), 1, "gone");
+    write("not json".to_owned());
+    links_end_once_gone(&window, config.path(), "builds");
+    assert_eq!(window.removals_of("builds"), 2, "cannot be read");
+    let _ = window.to_a_pool("builds").ran_unsandboxed();
+    links_end_once_gone(&window, config.path(), "builds");
+    assert!(
+        window.untrusts("builds"),
+        "only a pool seen to be gone lets go of what is held against its name"
     );
 }

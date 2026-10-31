@@ -191,7 +191,7 @@ jobs:
       # jobs build (`scenario` on macOS, `scenario-linux` on Linux), and its own 0.8 to 1.1 GB
       # saves helped hold the repository's caches at 10.9 GB against the 10 GB they may (on
       # 2026-10-12), past which GitHub drops the oldest, `main`'s gating ones among them.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: ${{ runner.os == 'macOS' && 'scenario' || 'scenario-linux' }}
           save-if: false
@@ -334,12 +334,12 @@ jobs:
       - uses: ./.github/actions/rust-toolchain
       # Restores the `rust` job's cache, which builds purlis-core's tests too, and saves none
       # (the 10 GB the repository's caches may hold, as `stress` above says).
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: rust
           save-if: false
       - name: Pollers at once on a 300,000-file plane, with and without the shared standing
-        run: cargo test -p purlis-core --lib -- planegit::tests::pollers_at_once --test-threads 1 --nocapture
+        run: tools/tests-ran.sh -- cargo test -p purlis-core --lib -- planegit::tests::pollers_at_once --test-threads 1 --nocapture
         env:
           CHARTER_STANDING_FILES: "300000"
 
@@ -370,13 +370,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # `shell: bash` for `pipefail`, so the test's own failure is the step's.
       - name: ⌘P, ⌘⇧F and status on a generated repo
         shell: bash
-        run: cargo test --release -p purlis-core --test search_is_measured_on_large_repos -- --ignored --nocapture --test-threads=1 2>&1 | tee fm-12.log
+        run: |
+          tools/tests-ran.sh -- cargo test --release -p purlis-core --test it -- search_is_measured_on_large_repos:: --ignored --nocapture --test-threads=1 2>&1 | tee fm-12.log
         env:
           CHARTER_MEASURE_FILES: ${{ matrix.files }}
           CHARTER_MEASURE_BUDGETS: report

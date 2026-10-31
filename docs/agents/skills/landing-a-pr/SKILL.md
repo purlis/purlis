@@ -26,9 +26,12 @@ A small fix after approval lands on that approval when the new commits only answ
 
 Run `tools/land.mjs` with `--watch` and act on what it says.
 
+**Runs held for approval are the operator's.** When a run of the head waits on approval, the tool names each one (name, id and link), says the operator approves them, and exits with status 4 without reading a check or enqueueing anything. Never rerun or approve such a run yourself, and never start a fresh run some other way (an empty push, `gh pr update-branch`) to get past it. Hand the run ids to the operator, and land again once they have run (#3991).
+
 When it reports a drop from the queue, read the annotations it prints:
 
 - **The pull request's own failure:** fix it, review the fix (step 1), land again.
+- **A merge conflict:** it prints no annotations, since the queue built nothing. Bring main into the branch, resolve the conflict, review the new head (step 1), and land again.
 - **A known flake:** find or file its ticket (label `flaky`), link it in a comment on the pull request, and land once more. A second drop on the same check is a real failure.
 - **A `Flaky (passed on retry N)` warning on a green run:** nextest retried a Rust test once and it passed (`.config/nextest.toml`). Nothing blocks the landing, but find or file the test's `flaky` ticket and link it, as for a red one: the retry saves the rerun, it does not fix the flake.
 - **Main itself is red:** landing stops for everyone. Open or join the pull request that fixes main, labelled `fixes-main`, and land that first; then land this one again.

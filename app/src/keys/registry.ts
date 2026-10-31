@@ -42,6 +42,7 @@ import { asksForAMenu } from "../ui/menu/ContextMenu";
 import { asksForTheMenu } from "../terminalRows";
 import { fileKeyOf, fileKeySaid, opensIt } from "./paletteKeys";
 import { opensFind, opensFindInAFile } from "./findKeys";
+import { viewHistoryKeyOf } from "./viewKeys";
 import { focusKeySaid, opensTheShortcuts, shortcutsKeySaid, togglesFocus } from "./ownKeys";
 import {
   aModalIsUp,
@@ -68,6 +69,7 @@ export const SCOPES = [
   "terminal",
   "editor",
   "form",
+  "view",
 ] as const;
 export type Scope = (typeof SCOPES)[number];
 
@@ -185,6 +187,8 @@ const isTask = (want: TaskKey) => (e: KeyboardEvent, mac: boolean) => taskKeyOf(
 const isSize = (want: SizeKey) => (e: KeyboardEvent, mac: boolean) => sizeKey(e, mac) === want;
 const sideSaid = (which: keyof ReturnType<typeof sideKeysSaid>) => (mac: boolean) =>
   sideKeysSaid(mac)[which] ?? "";
+/** Use skill…'s chords (#3954): ⌘⇧S, and Ctrl+Shift+S off a Mac. */
+const USE_SKILL = { mac: cmd("S", { shift: true }), other: ctl("S", { shift: true }) };
 /** No modifier held. */
 const plain = (e: KeyboardEvent) => !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
 
@@ -288,6 +292,30 @@ export const SHORTCUTS: readonly Shortcut[] = [
     yields: ["dialog", "terminal"],
     rows: ["view.region:previous"],
     matches: (e) => f6Of(e)?.back === true,
+  },
+  {
+    id: "view.back",
+    does: "Back to the last page in this view tab",
+    group: "Go to",
+    where: "view",
+    kind: "key",
+    chords: { mac: [cmd("[")], other: [bare("ArrowLeft", { alt: true })] },
+    said: (mac) => (mac ? "⌘[" : "Alt+←"),
+    // An editor keeps its own ⌘[ (indentLess) and Alt+← (cursorSyntaxLeft); a dialog or a menu
+    // opened from the view keeps the keys it is handed.
+    yields: ["modal", "dialog", "menu", "editor"],
+    matches: (e, mac) => viewHistoryKeyOf(e, mac) === "back",
+  },
+  {
+    id: "view.forward",
+    does: "Forward again, in this view tab",
+    group: "Go to",
+    where: "view",
+    kind: "key",
+    chords: { mac: [cmd("]")], other: [bare("ArrowRight", { alt: true })] },
+    said: (mac) => (mac ? "⌘]" : "Alt+→"),
+    yields: ["modal", "dialog", "menu", "editor"],
+    matches: (e, mac) => viewHistoryKeyOf(e, mac) === "forward",
   },
   // Window
   {
@@ -518,6 +546,23 @@ export const SHORTCUTS: readonly Shortcut[] = [
     matches: opensAShell,
   },
   {
+    id: "chat.useSkill",
+    does: "Use one of the chat's skills: Use skill…",
+    group: "Tabs and chats",
+    where: "window",
+    kind: "key",
+    // `S` for skill (#3954). ⌘⇧S was no key of the window's; Ctrl with Shift and a letter is no
+    // byte to a chat's terminal, so it is the window's while a chat has the keyboard, as
+    // Ctrl+Shift+T is. An editor keeps it, for a Save As of its own.
+    chords: { mac: [USE_SKILL.mac], other: [USE_SKILL.other] },
+    said: (mac) => (mac ? "⌘⇧S" : "Ctrl+Shift+S"),
+    yields: ["modal", "editor"],
+    // Each chat tab's Use skill… row (`tab.useskill:<tab>`) says it, as each tab's Close row says
+    // ⌫: the key opens it on the chat in front, the pane with the keyboard in a split tab.
+    rows: ["tab.useskill:"],
+    matches: (e, mac) => isChord(e, mac ? USE_SKILL.mac : USE_SKILL.other),
+  },
+  {
     id: "tasks.menu",
     does: "The menu of this tab's chats",
     group: "Tabs and chats",
@@ -631,7 +676,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   },
   {
     id: "chat.leave",
-    does: "Out of the chat's terminal (with Shift, back)",
+    does: "Out of the chat's terminal, a browser you drive or DevTools (with Shift, back)",
     group: "Tabs and chats",
     where: "terminal",
     kind: "key",
@@ -1054,6 +1099,13 @@ const INSIDE: ReadonlyArray<readonly [Scope, Scope]> = [
   ["dialog", "menu"],
   ["dialog", "row"],
   ["dialog", "editor"],
+  // A view tab holds lists, page tabs, forms and editors, and opens menus and dialogs.
+  ["view", "row"],
+  ["view", "tab"],
+  ["view", "form"],
+  ["view", "editor"],
+  ["view", "menu"],
+  ["view", "dialog"],
 ];
 
 /** Whether a key in `a` and one in `b` can be pressed in the same place. */

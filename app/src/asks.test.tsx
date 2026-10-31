@@ -12,6 +12,7 @@ import { OPEN_BROWSER_ASK, type OpenBrowserAsk } from "./browserNeedsYou";
 import { OPEN_PROPOSAL_ASK } from "./proposedChangeOpen";
 import { REMOVE_WORKSPACE_ASK } from "./removeWorkspaceAsk";
 import { OPEN_RUNNER_WRITE_ASK } from "./runnerWriteOpen";
+import { OPEN_RUNNER_DISPATCH_ASK } from "./runnerDispatchOpen";
 import { PROFILE_SIGN_IN } from "./settings/links";
 import { useSandboxCommands } from "./sandboxAsked";
 
@@ -70,6 +71,20 @@ const RUNNER_WRITE: Shown = {
   answer: { via: "runner-write", id: 3 },
 };
 
+/** A task a chat on a pool's runner asked to start on this machine. */
+const RUNNER_DISPATCH: Shown = {
+  session: 6,
+  ask: "runner-dispatch:2",
+  says: "Asks, from pool builds, to start the task 'check prod' as devops on this machine: look",
+  options: [
+    { id: "open", label: "Open", allows: false },
+    { id: "refuse", label: "Refuse", allows: false },
+  ],
+  source: "runner-dispatch",
+  chain: [],
+  answer: { via: "runner-dispatch", id: 2 },
+};
+
 const DISPATCH: Shown = {
   session: 4,
   ask: "dispatch:7",
@@ -124,7 +139,7 @@ const SIGN_IN: Shown = {
   ],
   source: "sign-in",
   chain: ["Profile oc"],
-  answer: { via: "sign-in", profile: "oc" },
+  answer: { via: "sign-in", profile: "oc", pool: null },
 };
 
 const SANDBOX_ONLY: Shown = {
@@ -315,7 +330,34 @@ describe("answering through the path an ask names", () => {
       window.removeEventListener(PROFILE_SIGN_IN, heard);
     }
     expect(calls.map((one) => [one.cmd, one.args])).toEqual([
-      ["dismiss_sign_in", { plane: PLANE, profile: "oc" }],
+      ["dismiss_sign_in", { plane: PLANE, profile: "oc", pool: null }],
+    ]);
+  });
+
+  it("signs a profile in on a pool's runner by opening its shell tab, and puts it away there (#2049)", async () => {
+    const onPool: Shown = {
+      ...SIGN_IN,
+      ask: "sign-in:oc:on:builds",
+      answer: { via: "sign-in", profile: "oc", pool: "builds" },
+    };
+    const calls = sent({ dismiss_sign_in: null });
+    const opened: unknown[] = [];
+    const heard = (event: Event) => opened.push((event as CustomEvent).detail);
+    window.addEventListener(PROFILE_SIGN_IN, heard);
+    try {
+      expect(await answerTaken(PLANE, onPool, "sign-in:openai")).toEqual({
+        refused: undefined,
+        live: false,
+        opened: true,
+      });
+      expect(opened).toEqual([{ plane: PLANE, profile: "oc", provider: "openai", pool: "builds" }]);
+      expect(calls).toEqual([]);
+      await answerTaken(PLANE, onPool, "dismiss");
+    } finally {
+      window.removeEventListener(PROFILE_SIGN_IN, heard);
+    }
+    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
+      ["dismiss_sign_in", { plane: PLANE, profile: "oc", pool: "builds" }],
     ]);
   });
 
@@ -566,6 +608,29 @@ describe("the list", () => {
     const { result } = renderHook(() => useAsks([PLANE]));
     await new Promise((settle) => setTimeout(settle, 20));
     expect(PLANE in result.current.held).toBe(false);
+  });
+});
+
+describe("a runner chat's open or dispatch", () => {
+  it("is refused through its own command, and opened in its tab to approve", async () => {
+    const calls = sent({ refuse_runner_dispatch: null });
+    const asked: unknown[] = [];
+    const heard = (event: Event) => asked.push((event as CustomEvent).detail);
+    window.addEventListener(OPEN_RUNNER_DISPATCH_ASK, heard);
+    expect(await answerTaken(PLANE, RUNNER_DISPATCH, "open")).toEqual({
+      refused: undefined,
+      live: false,
+      opened: true,
+    });
+    window.removeEventListener(OPEN_RUNNER_DISPATCH_ASK, heard);
+    expect(asked).toEqual([{ plane: PLANE, id: 2 }]);
+    expect(await answerTaken(PLANE, RUNNER_DISPATCH, "refuse")).toEqual({
+      refused: undefined,
+      live: false,
+    });
+    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
+      ["refuse_runner_dispatch", { plane: PLANE, id: 2 }],
+    ]);
   });
 });
 

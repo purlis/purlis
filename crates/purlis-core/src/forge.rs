@@ -38,6 +38,7 @@ use serde_json::Value;
 use crate::worktree::git;
 
 pub mod accounts;
+pub mod apptoken;
 pub mod backend;
 pub mod budget;
 pub mod checks;
@@ -275,6 +276,17 @@ impl Forge {
             .and_then(Kind::parse)
             .unwrap_or(DEFAULT_KIND);
         Forge::default_of(kind)
+    }
+
+    /// The forge a clone of `record` from `url` signs in to (#4079): the record's kind, at the
+    /// server the URL really names, its port included. [`Forge::for_record`] answers the kind's
+    /// default host, so an account on a self-hosted server was never found for its own clone,
+    /// and an account is matched on the server, host and port, never the host alone (#1850).
+    pub fn for_clone(record: &Value, url: &str) -> Forge {
+        Forge {
+            kind: Forge::for_record(record).kind,
+            host: https_server_of(url).unwrap_or_else(|| host_of(url)),
+        }
     }
 
     /// The `credential.helper` a clone of this forge gets in its local config.

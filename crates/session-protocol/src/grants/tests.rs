@@ -104,6 +104,28 @@ fn only_a_desktop_on_its_link_to_a_runner_unpairs() {
 }
 
 #[test]
+fn only_a_desktop_on_its_link_to_a_runner_has_it_keep_a_profile() {
+    for scope in Scope::ALL {
+        assert_eq!(
+            scope.may(Power::KeepProfile),
+            scope == Scope::RemoteLink,
+            "{scope}"
+        );
+    }
+}
+
+#[test]
+fn only_a_desktop_on_its_link_to_a_runner_hands_it_a_sign_ins_redirect() {
+    for scope in Scope::ALL {
+        assert_eq!(
+            scope.may(Power::SignInRedirect),
+            scope == Scope::RemoteLink,
+            "{scope}"
+        );
+    }
+}
+
+#[test]
 fn only_the_window_or_its_hosts_relay_starts_watches_or_logs_in_a_browser() {
     for scope in Scope::ALL {
         let windows = matches!(scope, Scope::LocalUi | Scope::RemoteLink);

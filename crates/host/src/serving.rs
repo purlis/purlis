@@ -58,12 +58,47 @@ pub type Answering = Arc<dyn Fn() -> Result<Option<(Identity, Pinned)>, String> 
 /// (`unpair`, 1.25, #2525): no later link from it is admitted.
 pub type Unpairing = Arc<dyn Fn(&Pinned) -> Result<(), String> + Send + Sync>;
 
+/// Keeps a profile for the desktop a link proved, on the runner (`keep_profile`, 1.43, #2049),
+/// and says whether its harness says it is signed in there.
+pub type Keeping = Arc<
+    dyn Fn(&Pinned, &session::ProfileToKeep) -> Result<session::ProfileStanding, String>
+        + Send
+        + Sync,
+>;
+
+/// Forgets the profile of a name the runner keeps for the desktop a link proved, with its
+/// folder and sign-in there (`forget_profile`, 1.52, #4047).
+pub type Forgetting = Arc<dyn Fn(&Pinned, &str) -> Result<(), String> + Send + Sync>;
+
+/// The name of each profile the runner keeps for the desktop a link proved, and for no other
+/// (`kept_profiles`, 1.57, #4060).
+pub type Listing = Arc<dyn Fn(&Pinned) -> Result<Vec<String>, String> + Send + Sync>;
+
+/// A page of the settings files the runner holds of the profile named, for the desktop a link
+/// proved, after the path named, and whether more follow (`settings_held`, 1.61, #4088).
+pub type Holding = Arc<
+    dyn Fn(&Pinned, &str, Option<&str>) -> Result<(Vec<session::HeldSetting>, bool), String>
+        + Send
+        + Sync,
+>;
+
+/// Hands a sign-in's redirect to the login waiting on the runner's loopback, and says whether it
+/// took it (`sign_in_redirect`, 1.59, #4044).
+pub type Delivering = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
+
 /// A runner's pairing, as its host serves it: who it is and whom it admits ([`Answering`]),
-/// and how the desktop it admits is taken out of its peers ([`Unpairing`]).
+/// how the desktop it admits is taken out of its peers ([`Unpairing`]), how it keeps that
+/// desktop's profiles ([`Keeping`]), forgets them ([`Forgetting`]) and names them ([`Listing`]),
+/// says what it holds of one ([`Holding`]), and how it hands a login that desktop's browser's answer ([`Delivering`]).
 #[derive(Clone)]
 pub struct Pairing {
     pub answering: Answering,
     pub unpairing: Unpairing,
+    pub keeping: Keeping,
+    pub forgetting: Forgetting,
+    pub listing: Listing,
+    pub holding: Holding,
+    pub delivering: Delivering,
 }
 
 /// The lock's file name beside `purlisd.sock`, the socket of a person's own config home.
@@ -198,6 +233,11 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
         };
         let hosting = hosting.clone();
         let unpairing = Arc::clone(&pairing.unpairing);
+        let keeping = Arc::clone(&pairing.keeping);
+        let forgetting = Arc::clone(&pairing.forgetting);
+        let listing = Arc::clone(&pairing.listing);
+        let holding = Arc::clone(&pairing.holding);
+        let delivering = Arc::clone(&pairing.delivering);
         tokio::spawn(async move {
             let chats = Arc::new(hosting.clone());
             match hostlink::answer_local(
@@ -216,6 +256,12 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
                         hosting,
                         desktop,
                         unpairing,
+                        keeping,
+                        forgetting,
+                        staged: std::sync::Mutex::default(),
+                        listing,
+                        holding,
+                        delivering,
                         unpaired: Arc::clone(&unpaired),
                     };
                     let serving = session::serve(answered.link, paired, None);
@@ -236,12 +282,23 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
 }
 
 /// The session protocol on a link from the desktop a runner is paired with: the host's own,
-/// and `unpair` (1.25, #2525), which takes that desktop, the one the handshake proved, out of
-/// the runner's peers.
+/// `unpair` (1.25, #2525), which takes that desktop, the one the handshake proved, out of the
+/// runner's peers, `keep_profile` (1.43, #2049), which keeps one of its profiles here, its
+/// settings staged on this link first (`stage_profile_settings`, 1.56, #4081),
+/// `forget_profile` (1.52, #4047), which forgets one, `kept_profiles` (1.57, #4060), which
+/// names the ones kept, `settings_held` (1.61, #4088), which says what it holds of one, and
+/// `sign_in_redirect` (1.59, #4044), which hands a login here its browser's answer.
 struct PairedLink {
     hosting: Hosting,
     desktop: Pinned,
     unpairing: Unpairing,
+    keeping: Keeping,
+    forgetting: Forgetting,
+    /// The settings staged on this link: in memory, so they end with it.
+    staged: std::sync::Mutex<session::StagedSettings>,
+    listing: Listing,
+    holding: Holding,
+    delivering: Delivering,
     /// Told once the desktop is unpaired, so its link ends.
     unpaired: Arc<tokio::sync::Notify>,
 }
@@ -249,6 +306,156 @@ struct PairedLink {
 /// How long the link of a desktop that unpaired stays open after its answer, for the answer to
 /// reach it.
 const UNPAIRED_LINK_ENDS: std::time::Duration = std::time::Duration::from_secs(2);
+
+impl PairedLink {
+    /// `unpair` (1.25): the desktop the handshake proved taken out of the runner's peers.
+    async fn unpair(&self) -> Result<session::Answer, session::Refusal> {
+        let (unpairing, desktop) = (Arc::clone(&self.unpairing), self.desktop.clone());
+        let unpaired = tokio::task::spawn_blocking(move || unpairing(&desktop))
+            .await
+            .unwrap_or_else(|why| Err(format!("the unpairing did not finish: {why}")));
+        match unpaired {
+            Ok(()) => {
+                say("the desktop this runner was paired with unpaired it");
+                self.unpaired.notify_one();
+                Ok(session::Answer::Done)
+            }
+            Err(why) => Err(session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            }),
+        }
+    }
+
+    /// What this link has staged, taken: a keep, or a refused batch, starts the next afresh.
+    fn staged(&self) -> session::StagedSettings {
+        std::mem::take(
+            &mut *self
+                .staged
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
+    /// `stage_profile_settings` (1.56, #4081): part of a profile's settings, held on this link.
+    /// A batch refused drops all of them, so nothing of them can be kept.
+    fn stage(&self, batch: session::SettingsBatch) -> Result<session::Answer, session::Refusal> {
+        let mut staged = self
+            .staged
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match staged.add(batch) {
+            Ok(()) => Ok(session::Answer::Done),
+            Err(why) => {
+                *staged = session::StagedSettings::default();
+                Err(session::Refusal {
+                    code: session::NOT_STARTED.into(),
+                    why,
+                })
+            }
+        }
+    }
+
+    /// `keep_profile` (1.43, #2049): the desktop's profile kept here, off the runtime, since
+    /// its harness is asked whether it is signed in. Settings staged for it (#4081) are kept as
+    /// the same settings sent with it are, checked whole.
+    async fn keep(
+        &self,
+        mut profile: session::ProfileToKeep,
+    ) -> Result<session::Answer, session::Refusal> {
+        let staged = self.staged();
+        if let Some(files) = profile.settings_staged.take() {
+            let refused = |why| session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            };
+            if profile.settings.is_some() {
+                return Err(refused(
+                    "a profile's settings came both staged and with it".to_owned(),
+                ));
+            }
+            profile.settings = Some(staged.finished(&profile.name, files).map_err(refused)?);
+        }
+        let (keeping, desktop) = (Arc::clone(&self.keeping), self.desktop.clone());
+        tokio::task::spawn_blocking(move || keeping(&desktop, &profile))
+            .await
+            .unwrap_or_else(|why| Err(format!("the profile was not kept: {why}")))
+            .map(|standing| session::Answer::ProfileKept { standing })
+            .map_err(|why| session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            })
+    }
+
+    /// `forget_profile` (1.52, #4047): the desktop's profile forgotten here, off the runtime,
+    /// since its folder is deleted.
+    async fn forget(&self, name: String) -> Result<session::Answer, session::Refusal> {
+        // A chat running on it here keeps its folder and sign-in: it ends first.
+        if self.hosting.runs_on_profile(&name) {
+            return Err(session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why: "a chat on that profile runs on this runner, so it was not forgotten; end \
+                      the chat first"
+                    .into(),
+            });
+        }
+        let (forgetting, desktop) = (Arc::clone(&self.forgetting), self.desktop.clone());
+        tokio::task::spawn_blocking(move || forgetting(&desktop, &name))
+            .await
+            .unwrap_or_else(|why| Err(format!("the profile was not forgotten: {why}")))
+            .map(|()| session::Answer::Done)
+            .map_err(|why| session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            })
+    }
+
+    /// `kept_profiles` (1.57, #4060): the desktop's profiles kept here, by name, read off the
+    /// runtime.
+    async fn list(&self) -> Result<session::Answer, session::Refusal> {
+        let (listing, desktop) = (Arc::clone(&self.listing), self.desktop.clone());
+        tokio::task::spawn_blocking(move || listing(&desktop))
+            .await
+            .unwrap_or_else(|why| Err(format!("the profiles kept here were not read: {why}")))
+            .map(|names| session::Answer::Profiles { names })
+            .map_err(|why| session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            })
+    }
+
+    /// `settings_held` (1.61, #4088): what is kept here of the desktop's profile, read off the
+    /// runtime, since each file is read and digested.
+    async fn held(
+        &self,
+        profile: String,
+        after: Option<String>,
+    ) -> Result<session::Answer, session::Refusal> {
+        let (holding, desktop) = (Arc::clone(&self.holding), self.desktop.clone());
+        tokio::task::spawn_blocking(move || holding(&desktop, &profile, after.as_deref()))
+            .await
+            .unwrap_or_else(|why| Err(format!("the settings here were not read: {why}")))
+            .map(|(files, more)| session::Answer::SettingsHeld { files, more })
+            .map_err(|why| session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            })
+    }
+
+    /// `sign_in_redirect` (1.59, #4044): the desktop's browser's answer handed to the login
+    /// waiting here, off the runtime, since the login signs in with its vendor before it answers.
+    async fn deliver(&self, target: String) -> Result<session::Answer, session::Refusal> {
+        let delivering = Arc::clone(&self.delivering);
+        tokio::task::spawn_blocking(move || delivering(&target))
+            .await
+            .unwrap_or_else(|why| Err(format!("the redirect was not handed on: {why}")))
+            .map(|()| session::Answer::Done)
+            .map_err(|why| session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            })
+    }
+}
 
 impl session::Host for PairedLink {
     async fn call(
@@ -278,23 +485,15 @@ impl session::Host for PairedLink {
             }
             return answer;
         }
-        if command != session::Command::Unpair {
-            return session::Host::call(&self.hosting, command, peer).await;
-        }
-        let (unpairing, desktop) = (Arc::clone(&self.unpairing), self.desktop.clone());
-        let unpaired = tokio::task::spawn_blocking(move || unpairing(&desktop))
-            .await
-            .unwrap_or_else(|why| Err(format!("the unpairing did not finish: {why}")));
-        match unpaired {
-            Ok(()) => {
-                say("the desktop this runner was paired with unpaired it");
-                self.unpaired.notify_one();
-                Ok(session::Answer::Done)
-            }
-            Err(why) => Err(session::Refusal {
-                code: session::NOT_STARTED.into(),
-                why,
-            }),
+        match command {
+            session::Command::KeepProfile(profile) => self.keep(profile).await,
+            session::Command::ForgetProfile { name } => self.forget(name).await,
+            session::Command::StageProfileSettings(batch) => self.stage(batch),
+            session::Command::SettingsHeld { profile, after } => self.held(profile, after).await,
+            session::Command::KeptProfiles => self.list().await,
+            session::Command::SignInRedirect { target } => self.deliver(target.0).await,
+            session::Command::Unpair => self.unpair().await,
+            command => session::Host::call(&self.hosting, command, peer).await,
         }
     }
 

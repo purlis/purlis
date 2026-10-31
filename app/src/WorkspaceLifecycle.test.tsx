@@ -17,7 +17,8 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetRepoClones } from "./repoClones";
 import { chipName, openAllWorkspaces, workspaceChips, workspaceInFront } from "./test-strips";
-import { findResult, theResult } from "./actionResult.testkit";
+import { findOnCard, findResult } from "./actionResult.testkit";
+import { keepUnsaved, unsavedNow, type UnsavedWork } from "./unsavedWork";
 
 /**
  * Making a workspace and deleting one, from the window.
@@ -49,6 +50,7 @@ afterEach(() => {
   cleanup();
   clearMocks();
   forgetRepoClones();
+  for (const one of unsavedNow()) keepUnsaved(one.key, undefined);
 });
 
 const PLANE = "/home/dev/plane";
@@ -207,6 +209,8 @@ function core(
       const name = String(got.name);
       if (name.includes("/"))
         throw `invalid workspace name '${name}' (use letters, digits, '.', '_', '-'; must not start with a dot)`;
+      // Made, so the plane lists it when it is read again, as the core's does.
+      made.push(name);
       const ready = `✓ Workspace '${name}' ready (LOCAL) → workspaces/${name}/`;
       // As `wscmd/create.rs` says it with no vision: a line written for an agent (#3344).
       return got.vision == null
@@ -246,6 +250,38 @@ async function settled() {
 }
 
 describe("deleting a workspace", () => {
+  it("asks first about the unsaved work a save writes into it (#3929)", async () => {
+    const { calls } = core();
+    render(<App />);
+    await settled();
+    const deploy: UnsavedWork = {
+      key: "deploy",
+      plane: PLANE,
+      view: { from: null, view: "skill-studio", key: "" },
+      workspace: "alpha",
+      name: "deploy",
+      save: vi.fn(() => Promise.resolve(undefined)),
+      discard: vi.fn(() => keepUnsaved("deploy", undefined)),
+      kind: "test",
+      handOver: () => null,
+    };
+    keepUnsaved("deploy", deploy);
+
+    const asked = await askToDelete("alpha");
+    expect(asked).toHaveAccessibleName("Save your changes to deploy?");
+    expect(calls("workspace_at_risk")).toEqual([]);
+    await userEvent.click(within(asked).getByRole("button", { name: "Discard and leave" }));
+
+    // Then the removal's own question, which deletes nothing until it is answered: the work
+    // goes only with the workspace.
+    expect(deploy.discard).not.toHaveBeenCalled();
+    await waitFor(() => expect(calls("workspace_at_risk")).toHaveLength(1));
+    expect(await screen.findByRole("alertdialog")).not.toHaveAccessibleName(
+      "Save your changes to deploy?",
+    );
+    expect(calls("workspace_remove")).toEqual([]);
+  });
+
   it("is reached from the workspace tab's own menu, which the operator asked for", async () => {
     core();
     render(<App />);
@@ -627,6 +663,9 @@ describe("a plane with no workspace yet", () => {
   });
 });
 
+/** The card the new workspace's ready notice hangs from its chip on (#3648). */
+const readyCard = () => screen.findByRole("region", { name: "Notices for gamma" });
+
 describe("picking a new workspace's repos (ADR 0055)", () => {
   async function createWithRepos(repos: string[]) {
     await menuOn("alpha");
@@ -657,37 +696,36 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
         ["clone_repo", "web"],
       ]),
     );
-    expect(await findResult("Cloned api, web into gamma.")).toBeInTheDocument();
+    // On the new workspace's chip's card, where its clone counted (#3649).
+    expect(await findOnCard("gamma", "Cloned 2 repos")).toHaveTextContent("api, web into gamma.");
   });
 
-  it("says a workspace made as a closable notice in plain words, kept under Results (#3344)", async () => {
+  it("says a workspace made in plain words on its chip's card, kept under Results (#3344, #3648)", async () => {
     core();
     render(<App />);
     await settled();
 
     await createWithRepos([]);
 
-    const title = await findResult("Workspace gamma is ready");
-    const notice = theResult();
+    const notice = await readyCard();
     expect(notice.querySelector('[role="status"]')).not.toBeNull();
+    expect(notice).toHaveTextContent("Workspace gamma is ready");
     expect(notice).toHaveTextContent(
       "It has no vision yet. Add one so its chats know what it is for.",
     );
-    expect(title).toBeInTheDocument();
     // The core's lines are behind Details, and the one written for an agent is never shown.
     expect(notice).not.toHaveTextContent("ask the developer");
     await userEvent.click(within(notice).getByRole("button", { name: "Details" }));
     expect(notice).toHaveTextContent("✓ Workspace 'gamma' ready (LOCAL) → workspaces/gamma/");
     expect(document.body).not.toHaveTextContent("ask the developer");
-    expect(within(notice).getByRole("button", { name: "Open gamma" })).toBeInTheDocument();
+    // Making it opened it, so nothing offers to open it (#3648).
+    expect(within(notice).queryByRole("button", { name: "Open gamma" })).toBeNull();
     // Kept under Results in the Inbox's Notices, with the same ways on.
     const results = await screen.findByRole("region", { name: "Results" });
     expect(within(results).getByText("Workspace gamma is ready")).toBeInTheDocument();
-    expect(within(results).getByRole("button", { name: "Open gamma" })).toBeInTheDocument();
-    // × closes the notice; the result stays under Results.
-    await userEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    expect(within(results).getByRole("button", { name: "Add a vision" })).toBeInTheDocument();
+    // Nothing of it stands at the top of the content (#3648).
     expect(document.querySelector(".window-work > .action-result")).toBeNull();
-    expect(within(results).getByText("Workspace gamma is ready")).toBeInTheDocument();
   });
 
   it("says a result in one live region, though Results lists it too (#3344)", async () => {
@@ -696,13 +734,13 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
     await settled();
 
     await createWithRepos([]);
-    await findResult("Workspace gamma is ready");
+    const card = await readyCard();
     await screen.findByRole("region", { name: "Results" });
     const saying = [...document.querySelectorAll('[role="status"]')].filter((one) =>
       one.textContent?.includes("Workspace gamma is ready"),
     );
     expect(saying).toHaveLength(1);
-    expect(saying[0].closest(".window-work > .action-result")).not.toBeNull();
+    expect(card.contains(saying[0])).toBe(true);
   });
 
   it("adds a vision from the notice, through the core, and says it was recorded (#3344)", async () => {
@@ -711,8 +749,7 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
     await settled();
 
     await createWithRepos([]);
-    await findResult("Workspace gamma is ready");
-    await userEvent.click(within(theResult()).getByRole("button", { name: "Add a vision" }));
+    await userEvent.click(within(await readyCard()).getByRole("button", { name: "Add a vision" }));
     const dialog = await screen.findByRole("dialog", { name: "Add a vision for gamma" });
     await userEvent.type(within(dialog).getByRole("textbox"), "Keep the CI green");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save vision" }));
@@ -730,8 +767,7 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
     await settled();
 
     await createWithRepos([]);
-    await findResult("Workspace gamma is ready");
-    await userEvent.click(within(theResult()).getByRole("button", { name: "Add a vision" }));
+    await userEvent.click(within(await readyCard()).getByRole("button", { name: "Add a vision" }));
     const dialog = await screen.findByRole("dialog", { name: "Add a vision for gamma" });
     await userEvent.type(within(dialog).getByRole("textbox"), "## Not a vision");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save vision" }));
@@ -740,16 +776,19 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
     expect(within(dialog).getByRole("textbox")).toHaveValue("## Not a vision");
   });
 
-  it("closes a result's notice with Esc while the keyboard is in it (#3344)", async () => {
+  it("dismisses a workspace's card with Esc while the keyboard is in it (#3648)", async () => {
     core();
     render(<App />);
     await settled();
 
     await createWithRepos([]);
-    await findResult("Workspace gamma is ready");
-    within(theResult()).getByRole("button", { name: "Open gamma" }).focus();
+    within(await readyCard())
+      .getByRole("button", { name: "Add a vision" })
+      .focus();
     await userEvent.keyboard("{Escape}");
-    expect(document.querySelector(".window-work > .action-result")).toBeNull();
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Notices for gamma" })).toBeNull(),
+    );
   });
 
   it("says which repo did not clone, in the core's words, and clones the rest", async () => {
@@ -759,7 +798,7 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
 
     await createWithRepos(["api", "web"]);
 
-    expect(await findResult(/Could not clone api into gamma/)).toHaveTextContent(
+    expect(await findOnCard("gamma", /Could not clone api into gamma/)).toHaveTextContent(
       "api: clone failed — no access.",
     );
     expect(calls("clone_repo").map((one) => one.args.repo)).toEqual(["api", "web"]);
@@ -772,7 +811,7 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
 
     await createWithRepos(["api"]);
 
-    expect(await findResult(/Could not clone api into gamma/)).toHaveTextContent(
+    expect(await findOnCard("gamma", /Could not clone api into gamma/)).toHaveTextContent(
       "api was cloned, but purlis does not see it in gamma. purlis said: ✓ api cloned",
     );
   });

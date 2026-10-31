@@ -36,6 +36,9 @@ fn starting(id: &str, level: &Level) -> Graded {
         report: interrupted_report(50_000, Some(1.5), None),
         spent: Spent::default(),
         plugins_off: None,
+        model: None,
+        previous: None,
+        after_edit: false,
     }
 }
 
@@ -124,7 +127,9 @@ fn a_grade_whose_row_cannot_be_written_is_kept_for_the_next_start() {
         .expect("held")
         .into_path();
     // This machine's record folder is a file: no row can go there.
-    let record = crate::plane::state_dir(root).join(super::super::LOCAL_DIR);
+    let record = crate::appstate::dir(root)
+        .unwrap()
+        .join(super::super::LOCAL_DIR);
     std::fs::write(&record, "not a folder").unwrap();
     assert!(interrupted(root, laptop, |_| false).is_empty());
     assert!(held.exists(), "kept, never lost");
@@ -202,7 +207,7 @@ fn a_start_while_another_records_the_folder_waits_its_turn_and_records_once_3443
         .create(true)
         .truncate(false)
         .write(true)
-        .open(crate::plane::state_dir(&root).join(CLAIM))
+        .open(crate::appstate::dir(&root).unwrap().join(CLAIM))
         .unwrap();
     theirs.lock().unwrap();
 
@@ -225,4 +230,198 @@ fn a_start_while_another_records_the_folder_waits_its_turn_and_records_once_3443
         1,
         "recorded once"
     );
+}
+
+/// #3582: a grade's marker says what its chats spent so far, so a grade purlis stops under is
+/// recorded with that spend, and not with nothing.
+#[test]
+fn a_grade_stopped_after_its_chats_spent_is_recorded_with_what_they_spent_3582() {
+    let (tmp, level) = project();
+    let root = tmp.path();
+    let mut marker = began(root, &level, &starting("g-spent", &level)).expect("held");
+    let spent = Spent {
+        chats: 2,
+        tokens: Some(12_000),
+        cost_usd: Some(0.12),
+        // #3602: and how many it asked for, ran or not.
+        asked_for: Some(3),
+    };
+    marker.spent(spent).expect("rewritten");
+    assert!(
+        interrupted(root, laptop, |_| false).is_empty(),
+        "the rewritten marker is locked as the first was"
+    );
+    let folder = marker.parent().unwrap().to_path_buf();
+    let names: Vec<_> = std::fs::read_dir(&folder)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(
+        names,
+        ["g-spent.json"],
+        "nothing half-written is left beside it"
+    );
+    drop(marker);
+    assert_eq!(interrupted(root, laptop, |_| false), ["g-spent"]);
+    let read = super::super::grades_of(root, "deploy", Some(&level));
+    assert_eq!(read.len(), 1, "{read:?}");
+    assert_eq!(read[0].report.ended, GradeEnd::Interrupted);
+    assert_eq!(read[0].spent, spent);
+    assert_eq!(read[0].report.spent_tokens, Some(12_000));
+    assert_eq!(read[0].report.spent_usd, Some(0.12));
+    assert!(read[0].report.arms.is_empty(), "no chat is scored");
+}
+
+/// #3582: a spend no sound row could hold is never written, so the marker keeps the last one it
+/// could and the grade is still recorded, never taken away as unsound.
+#[test]
+fn a_spend_no_row_could_hold_leaves_the_marker_as_it_was_3582() {
+    let (tmp, level) = project();
+    let root = tmp.path();
+    let mut marker = began(root, &level, &starting("g-past", &level)).expect("held");
+    let first = Spent {
+        chats: 1,
+        tokens: Some(5_000),
+        cost_usd: None,
+        asked_for: None,
+    };
+    marker.spent(first).expect("rewritten");
+    let past = Spent {
+        chats: 2,
+        tokens: Some(u64::MAX),
+        cost_usd: None,
+        asked_for: None,
+    };
+    assert!(marker.spent(past).is_err(), "refused");
+    drop(marker);
+    assert_eq!(interrupted(root, laptop, |_| false), ["g-past"]);
+    let read = super::super::grades_of(root, "deploy", Some(&level));
+    assert_eq!(read[0].spent, first, "the last spend it could hold");
+}
+
+/// #3582: a write a crash cut short leaves its `.partial` beside the markers; the next start
+/// takes it away, and leaves one another process still writes, as its lock says.
+#[test]
+fn a_half_written_marker_a_crash_left_is_taken_away_at_the_next_start_3582() {
+    let (tmp, level) = project();
+    let root = tmp.path();
+    let marker = began(root, &level, &starting("g-cut", &level)).expect("held");
+    let folder = marker.parent().unwrap().to_path_buf();
+    let left = folder.join(".g-gone.json.partial");
+    std::fs::write(&left, "{ half").unwrap();
+    let writing = folder.join(".g-cut.json.partial");
+    let file = std::fs::File::create(&writing).unwrap();
+    file.lock().unwrap();
+    assert!(interrupted(root, laptop, |_| false).is_empty());
+    assert!(!left.exists(), "taken away");
+    assert!(writing.exists(), "one still being written is left");
+    assert!(marker.exists(), "and the marker with it");
+}
+
+#[test]
+fn a_grade_under_way_in_the_plane_s_state_folder_is_never_read() {
+    // #3718: the grades under way are read from this machine's app state alone.
+    let (tmp, level) = project();
+    let root = tmp.path();
+    drop(began(root, &level, &starting("g-moved", &level)).expect("held"));
+    crate::appstate::put_in_the_plane(root, DIR);
+    assert!(interrupted(root, laptop, |_| false).is_empty());
+}
+
+/// A router's grade starting in `root`'s workspace `ops`, held as this machine's alone.
+fn router_starting(id: &str) -> RouterGraded {
+    RouterGraded {
+        v: super::super::routers::VERSION,
+        grade: id.to_owned(),
+        router: "relevance".into(),
+        workspace: Some("ops".into()),
+        persona: None,
+        commit: None,
+        library: Vec::new(),
+        harness: None,
+        profile: Some("work".into()),
+        ts: "2026-10-27T01:00:00+00:00".into(),
+        runs: 3,
+        report: super::super::routers::interrupted_report("relevance", 50_000, Some(1.5), None),
+        spent: Spent::default(),
+        model: None,
+    }
+}
+
+/// #3616: a router's grade purlis stopped under is recorded as interrupted at the project's next
+/// start, with what its chats spent, beside its other grades, and is never left running.
+#[test]
+fn a_router_s_grade_purlis_stopped_under_is_recorded_interrupted_3616() {
+    let (tmp, _) = project();
+    let root = tmp.path();
+    let mut marker = began_router(root, true, &router_starting("g-router")).expect("held");
+    let spent = Spent {
+        chats: 2,
+        tokens: Some(4_000),
+        cost_usd: Some(0.04),
+        asked_for: None,
+    };
+    // As a grade's chats say it (#3602): a router's row keeps no count of what it asked for.
+    marker
+        .spent(Spent {
+            asked_for: Some(3),
+            ..spent
+        })
+        .expect("rewritten");
+    assert!(
+        interrupted(root, laptop, |_| false).is_empty(),
+        "a held lock reads as a grade that runs, whatever it grades"
+    );
+    drop(marker);
+    assert_eq!(interrupted(root, laptop, |_| false), ["g-router"]);
+    let read = super::super::routers::grades_of(root, "relevance", Some("ops"), None);
+    assert_eq!(read.len(), 1, "{read:?}");
+    assert_eq!(read[0].report.ended, GradeEnd::Interrupted);
+    assert_eq!(read[0].report.cap, Some(50_000));
+    assert_eq!(read[0].report.cost_cap_usd, Some(1.5));
+    assert_eq!(read[0].spent, spent);
+    assert_eq!(read[0].report.spent_tokens, Some(4_000));
+    assert_eq!(read[0].report.spent_usd, Some(0.04));
+    assert!(read[0].report.skills.is_empty(), "no chat is scored");
+    assert!(
+        interrupted(root, laptop, |_| false).is_empty(),
+        "recorded once"
+    );
+    // No skill's grade is read from it.
+    assert!(super::super::grades_of(root, "deploy", None).is_empty());
+}
+
+/// #3616: a router's grade and a skill's are held side by side, each recorded where it belongs,
+/// and a router's never counts as a skill's under way.
+#[test]
+fn a_router_s_grade_and_a_skill_s_are_held_side_by_side_3616() {
+    let (tmp, level) = project();
+    let root = tmp.path();
+    drop(began_router(root, true, &router_starting("g-r")).expect("held"));
+    drop(began(root, &level, &starting("g-s", &level)).expect("held"));
+    assert_eq!(of(root, &level, "deploy"), ["g-s"], "the skill's alone");
+    let mut recorded = interrupted(root, laptop, |_| false);
+    recorded.sort();
+    assert_eq!(recorded, ["g-r", "g-s"]);
+    assert_eq!(
+        super::super::grades_of(root, "deploy", Some(&level)).len(),
+        1
+    );
+    assert_eq!(
+        super::super::routers::grades_of(root, "relevance", Some("ops"), None).len(),
+        1
+    );
+}
+
+/// #3616: a router's grade that ended is no longer held, and one whose id is not a plain name is
+/// refused.
+#[test]
+fn a_router_s_grade_that_ended_is_not_recorded_again_3616() {
+    let (tmp, _) = project();
+    let root = tmp.path();
+    let marker = began_router(root, true, &router_starting("g-ended")).expect("held");
+    ended(root, "g-ended");
+    drop(marker);
+    assert!(interrupted(root, laptop, |_| false).is_empty());
+    assert!(began_router(root, true, &router_starting("../escape")).is_err());
 }

@@ -116,6 +116,12 @@ pub enum Called {
     Pages,
     SwitchPage,
     Screenshot,
+    /// The browser's downloads (#2020).
+    Downloads,
+    /// Files of the chat's folder put into a page's file input (#2020).
+    Upload,
+    /// A download saved into the chat's folder (#2020).
+    SaveDownload,
     /// A new browser for the chat.
     New,
     /// The chat closes a browser.

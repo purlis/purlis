@@ -84,8 +84,8 @@ fn a_theme_that_names_no_parts_draws_exactly_as_today() {
     // Purlis Classic names only its tabs' strip look (#2914), its activity items' (#2917), and
     // what keeps it as it drew when the family defaults took Purlis's (#3177): its rail's 9px
     // corners, its title bar's 5px chips and its update pill's primary words; its resize
-    // handles' accent line (#3143); and its tables' rule between rows (#2911, #2804). Nothing it
-    // draws falls back.
+    // handles' accent line (#3143); its tables' rule between rows (#2911, #2804); and its card
+    // rows' ground (#3774). Nothing it draws falls back.
     for theme in built_ins() {
         assert!(
             theme.parts.keys().all(|key| {
@@ -99,6 +99,9 @@ fn a_theme_that_names_no_parts_draws_exactly_as_today() {
                 ]
                 .contains(&key.family)
                     || (key.family == "table" && key.part == "rule")
+                    // Its side views' card rows on the sunken ground, which steps from its
+                    // panels where the raised one barely does (#3774).
+                    || (key.family == "list" && key.variant == Some("card"))
             }),
             "{} names parts beyond what keeps it as it drew",
             theme.name
@@ -107,15 +110,15 @@ fn a_theme_that_names_no_parts_draws_exactly_as_today() {
     }
     // Purlis names its panels' fill (#2913), the one its docked tabs join by default (#2914),
     // the edges it draws none of (#3177): its tooltip's, dialog's and popover's, and its cards'
-    // ground and edge (#2912). Its tabs and its buttons are the family defaults and cost nothing
+    // ground and edge (#2912), and its card rows' ground (#3669). Its tabs and its buttons are the
+    // family defaults and cost nothing
     // to measure: a button part would have its consent floors measured at every hue a
     // workspace's colour can take, at every launch.
     let purlis = built_in("purlis").expect("Purlis");
     assert!(
-        purlis
-            .parts
-            .keys()
-            .all(|key| ["panel", "tooltip", "dialog", "popover", "card"].contains(&key.family)),
+        purlis.parts.keys().all(
+            |key| ["panel", "tooltip", "dialog", "popover", "card", "list"].contains(&key.family)
+        ),
         "{:?}",
         purlis.parts.keys().collect::<Vec<_>>()
     );
@@ -806,7 +809,8 @@ fn the_buttons_family_default_is_what_button_css_draws() {
     // A selector prettier wraps (a long variant's `:not(…)`) read back onto one line.
     let css = &include_str!("../../../../app/src/ui/button/button.css")
         .replace("(\n    ", "(")
-        .replace("\n  ) {", ") {");
+        .replace("\n  ) {", ") {")
+        .replace("\n  ),\n", "),\n");
     let token = |var: &str| -> Value {
         if var == "transparent" {
             return Value::from(var);
@@ -829,6 +833,19 @@ fn the_buttons_family_default_is_what_button_css_draws() {
         .and_then(|it| it.split_whitespace().last())
         .expect("the button's border");
     let base_hover = rule(css, &format!("{root}[data-hovered]:not([data-disabled])"));
+    // **Open is drawn as under the pointer** (#3524): every hover rule names the open state
+    // first, at the same weight, so the two cannot drift apart.
+    let opens_as_hover = |selector: &str| {
+        let open = selector.replace("[data-hovered]", "[data-open]");
+        assert!(
+            css.contains(&format!("\n{open},\n{selector} {{")),
+            "{selector} does not name {open} (#3524)"
+        );
+    };
+    opens_as_hover(&format!("{root}[data-hovered]:not([data-disabled])"));
+    opens_as_hover(&format!(
+        "{root}[data-selected][data-hovered]:not([data-disabled])"
+    ));
     for variant in parts::MANIFEST[0].variants.iter().map(|one| one.name) {
         let own_selector = format!("{root}[data-variant=\"{variant}\"]");
         let own = if css.contains(&format!("\n{own_selector} {{")) {
@@ -838,6 +855,7 @@ fn the_buttons_family_default_is_what_button_css_draws() {
         };
         let hovered = format!("{own_selector}[data-hovered]:not([data-disabled])");
         let own_hover = if css.contains(&format!("\n{hovered} {{")) {
+            opens_as_hover(&hovered);
             rule(css, &hovered)
         } else {
             ""
@@ -862,6 +880,16 @@ fn the_buttons_family_default_is_what_button_css_draws() {
         for key in ["fill", "text", "border", "hover", "hover_text"] {
             assert_eq!(held[key], drawn[key], "{variant}'s {key}");
         }
+        // The engine holds the open look to the hover look the stylesheet draws it as.
+        assert_eq!(
+            held["open"],
+            json!({ "fill": drawn["hover"], "text": drawn["hover_text"] }),
+            "{variant} open"
+        );
+        assert_eq!(
+            held["open_selected"], held["selected_hover"],
+            "{variant} open, on"
+        );
     }
     let pressed = rule(css, &format!("{root}[data-selected]"));
     assert_eq!(
@@ -958,7 +986,7 @@ fn the_popover_and_menu_family_defaults_are_what_their_stylesheets_draw() {
     let border = declared(surface, "border")
         .and_then(|it| it.split_whitespace().last())
         .expect("the surface's border");
-    for variant in ["popover", "menu"] {
+    for variant in ["popover", "menu", "notice"] {
         for state in [&[][..], &[Hover][..]] {
             assert_eq!(
                 parts::look_of("popover", variant, state).map(str::to_owned),
@@ -1381,9 +1409,11 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     assert_eq!(popover["since"], 6);
     assert_eq!(
         names(&popover, "parts"),
-        ["root", "filter", "rule", "list", "header", "footer", "key"]
+        [
+            "root", "filter", "rule", "list", "header", "footer", "key", "point"
+        ]
     );
-    assert_eq!(names(&popover, "variants"), ["popover", "menu"]);
+    assert_eq!(names(&popover, "variants"), ["popover", "menu", "notice"]);
     let menu = family("menu");
     assert_eq!(menu["since"], 6);
     assert_eq!(
@@ -1400,7 +1430,7 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     // The list family (#2911): a row, the list around it, its slots and a group's name.
     let list = family("list");
     assert_eq!(list["since"], 11);
-    assert_eq!(list["variants"], json!([]));
+    assert_eq!(names(&list, "variants"), ["row", "card"]);
     assert_eq!(
         names(&list, "parts"),
         [
@@ -1411,11 +1441,18 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
             "description",
             "trail",
             "header",
-            "shortcut"
+            "shortcut",
+            "summary",
+            "count",
+            "run",
+            "actions"
         ]
     );
-    // The key at a row's end (#2921), the next release's.
-    assert_eq!(list["parts"][7]["since"], parts::NEXT);
+    // The key at a row's end (#2921), the next release's, a card row's lines (#3669), and a
+    // group's count and a run's quiet line (#3670).
+    for at in 7..=11 {
+        assert_eq!(list["parts"][at]["since"], parts::NEXT);
+    }
     // The table family (#2911): a row, the card that holds the table, a column's name, a cell
     // and the bar over a table that chooses.
     let table = family("table");
@@ -1488,7 +1525,8 @@ fn the_schema_completes_every_part_key_and_no_size_inside_a_state() {
         assert!(
             !said(&loaded)
                 .iter()
-                .any(|one| one.contains("is not a component part")),
+                .any(|one| one.contains("is not a component part")
+                    || one.contains("reaches nothing")),
             "{key}"
         );
     }
@@ -2030,6 +2068,25 @@ fn a_grounds_alpha_is_read_as_drawn() {
 // The field families (#2905)
 // ---------------------------------------------------------------------------------------
 
+/// **An sm field is never clamped under the 24px target** (#3250, WCAG 2.5.8): a theme that
+/// rounds a field family's root clamps its sm roots to the same floor its stylesheet draws them
+/// at, the sm button's (#3210), so a compact density's 18px chrome never makes an sm field a
+/// smaller target.
+#[test]
+fn an_sm_field_is_clamped_to_the_24px_floor_in_every_field_family() {
+    let sheet = sheet_of(json!({
+        "text-input.root.corner-radius": 8,
+        "select.root.corner-radius": 8,
+        "combobox.root.corner-radius": 8,
+    }));
+    for scope in ["text-input", "select", "combobox"] {
+        let sm = format!(
+            ":where([data-scope=\"{scope}\"][data-part=\"root\"][data-size=\"sm\"]) {{ --purlis-part-height: max(24px, var(--size-chrome), var(--space-7)); }}"
+        );
+        assert!(sheet.contains(&sm), "{scope}: {sheet}");
+    }
+}
+
 #[test]
 fn a_family_with_no_variants_is_reached_by_its_part_alone() {
     let sheet = sheet_of(json!({
@@ -2053,7 +2110,7 @@ fn a_family_with_no_variants_is_reached_by_its_part_alone() {
     assert!(!sheet.contains("data-variant"), "{sheet}");
     // Only the families whose corners the theme sets are clamped to their own sizes.
     assert!(sheet.contains(
-        ":where([data-scope=\"text-input\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(var(--size-chrome), var(--space-7)); }"
+        ":where([data-scope=\"text-input\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(24px, var(--size-chrome), var(--space-7)); }"
     ));
     assert!(!sheet.contains("[data-scope=\"button\"]"), "{sheet}");
 }
@@ -2123,9 +2180,10 @@ fn a_boxs_words_on_its_fill_are_held_to_their_floor() {
             .iter()
             .map(|one| one.part.as_str())
             .collect::<Vec<_>>(),
-        // The fill at rest reaches the refused box too, whose danger edge is then under 3:1 on
-        // it (#3323).
-        ["text-input.root", "text-input.root.invalid"]
+        // The fill at rest reached the refused box too, whose danger edge was then under 3:1 on
+        // it (#3323). The rest's fallback now draws the refused state's own look back after it
+        // (#4040), so the refused box is its default again and does not fall on its own.
+        ["text-input.root"]
     );
     // The prototype's look (R54): borderless on the window's fill. A border that is the box's
     // only edge on its own ground must hold 3:1; with none, its words are what is measured. A
@@ -2418,16 +2476,29 @@ fn a_set_of_states_that_falls_back_draws_a_default_its_floors_hold() {
     })));
     let theme = loaded.theme.first();
     let sheet = parts::stylesheet(theme);
-    // The fallback is written once, for the state the stylesheet writes last.
-    let focused = "[data-variant=\"primary\"][data-focus-visible])";
-    let written: Vec<&str> = sheet
+    // The fallback is written once, keyed on both states, as the pair's own default (#4174):
+    // the stylesheet's rule for focus alone stays the theme's. It used to be the focused default
+    // keyed on the focus alone, which took the theme's focus edge from every focused button.
+    let both =
+        "[data-variant=\"primary\"][data-hovered]:not([data-disabled])[data-focus-visible]) {";
+    let written: Vec<&str> = sheet.lines().filter(|line| line.contains(both)).collect();
+    assert_eq!(written.len(), 1, "{sheet}");
+    assert!(written[0].contains("var(--accent-fill-hover)"), "{sheet}");
+    assert!(
+        written[0].contains("border-color: var(--accent-fill-edge)"),
+        "{sheet}"
+    );
+    let focused = "[data-variant=\"primary\"][data-focus-visible]) {";
+    let alone: Vec<&str> = sheet
         .lines()
+        .map(str::trim)
         .filter(|line| line.contains(focused))
         .collect();
-    assert_eq!(written.len(), 2, "{sheet}");
-    assert!(written[1].contains("var(--accent-fill)"), "{sheet}");
-    assert!(
-        written[1].contains("border-color: var(--accent-fill-edge)"),
+    assert_eq!(
+        alone,
+        [
+            ":where([data-scope=\"button\"][data-part=\"root\"][data-variant=\"primary\"][data-focus-visible]) { border-color: var(--accent-base); }"
+        ],
         "{sheet}"
     );
 }

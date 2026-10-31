@@ -114,10 +114,24 @@ const DRAWN: &[Drawn] = &[
         part: "count",
         css: include_str!("../../../../app/src/App.css"),
         own: &[".tab-tasks-counts .count"],
-        around: &[
-            ".tabs .tab-tasks button",
-            ".tabs .tab-tasks button.tab-tasks-counts",
-        ],
+        // The chip's pill, which the counts' quiet ghost lets show through (#3264).
+        around: &[".tabs .tab-tasks-pill"],
+        on: None,
+    },
+    Drawn {
+        family: "status-item",
+        part: "dot",
+        css: include_str!("../../../../app/src/ui/status/status.css"),
+        own: &["[data-part=\"dot\"][data-scope=\"status-item\"]"],
+        around: &[],
+        on: None,
+    },
+    Drawn {
+        family: "status-item",
+        part: "dot-warning",
+        css: include_str!("../../../../app/src/ui/status/status.css"),
+        own: &["[data-part=\"dot-warning\"][data-scope=\"status-item\"]"],
+        around: &[],
         on: None,
     },
     Drawn {
@@ -191,6 +205,38 @@ const DRAWN: &[Drawn] = &[
         own: &["[data-part=\"row\"][data-scope=\"titlebar\"]"],
         around: &[],
         on: Some("surface.overlay"),
+    },
+    Drawn {
+        family: "titlebar",
+        part: "dot",
+        css: include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
+        own: &["[data-part=\"dot\"][data-scope=\"titlebar\"]"],
+        around: &[],
+        on: None,
+    },
+    Drawn {
+        family: "titlebar",
+        part: "dot-warning",
+        css: include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
+        own: &["[data-part=\"dot-warning\"][data-scope=\"titlebar\"]"],
+        around: &[],
+        on: None,
+    },
+    Drawn {
+        family: "titlebar",
+        part: "dot-needs",
+        css: include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
+        own: &["[data-part=\"dot-needs\"][data-scope=\"titlebar\"]"],
+        around: &[],
+        on: None,
+    },
+    Drawn {
+        family: "titlebar",
+        part: "row-count",
+        css: include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
+        own: &["[data-part=\"row-count\"][data-scope=\"titlebar\"]"],
+        around: &[],
+        on: None,
     },
 ];
 
@@ -319,7 +365,7 @@ fn every_part_that_takes_a_fill_and_words_is_drawn_where_its_stylesheet_says() {
 #[test]
 fn a_fallback_paints_only_the_fills_a_part_paints_itself() {
     // A tab whose words vanish on its fill falls back; the count inside it, which paints no
-    // ground of its own, is not given its counts button's sunken pill.
+    // ground of its own, is not given its chip's sunken pill.
     let theme = shaped(
         json!({}),
         json!({ "tabs.tab.fill": "surface.base", "tabs.tab.text": "surface.base" }),

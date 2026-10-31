@@ -11,6 +11,8 @@ import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import { Plus, RefreshCw, X } from "lucide-react";
 import { expectFocusInSight } from "../../stories.testkit";
+import { Form, TextField } from "../field/Field";
+import { Menu, MenuItem, MenuTrigger, MenuWords } from "../menu/Menu";
 import {
   Button,
   ButtonRow,
@@ -102,6 +104,161 @@ export const Quiet: Story = {
   play: pressedByTheKeyboard,
 };
 /**
+ * **The quiet ghost inline** (#3264): a breadcrumb's crumbs, words in a line of words. In a line
+ * too narrow for them they cut to an ellipsis and keep the line's height; Tab reaches each, with
+ * its ring in sight, and Enter presses it.
+ */
+function InlineCrumbs() {
+  const [shown, show] = useState("deep");
+  return (
+    <div style={{ display: "grid", gap: "var(--space-3)", justifyItems: "start" }}>
+      <nav
+        aria-label="Chat path"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          inlineSize: "9rem",
+          overflow: "hidden",
+          fontSize: "var(--font-size-xs)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {["steward 4 of the long name", "talk"].map((name) => (
+          <span key={name} style={{ display: "contents" }}>
+            <Button
+              variant="quiet"
+              size="sm"
+              inline
+              style={{ flex: "0 1 auto", minInlineSize: "1.5em" }}
+              onPress={() => show(name)}
+            >
+              {name}
+            </Button>
+            <span aria-hidden="true" style={{ whiteSpace: "pre" }}>
+              {" › "}
+            </span>
+          </span>
+        ))}
+        <span aria-current="page">deep</span>
+      </nav>
+      <p role="status" style={{ margin: 0 }}>
+        {`Showing ${shown}`}
+      </p>
+    </div>
+  );
+}
+
+export const QuietInline: Story = {
+  render: () => <InlineCrumbs />,
+  play: async ({ canvas, userEvent }) => {
+    const own = canvas.getByRole("button", { name: "steward 4 of the long name" });
+    const talk = canvas.getByRole("button", { name: "talk" });
+    // Cut, as a native button's words are: the box is narrower than what it says.
+    await expect(own.scrollWidth).toBeGreaterThan(own.clientWidth);
+    await expect(getComputedStyle(own).textOverflow).toBe("ellipsis");
+    // As tall as the line's words.
+    const word = canvas.getByText("deep").getBoundingClientRect().height;
+    await expect(Math.abs(own.getBoundingClientRect().height - word)).toBeLessThanOrEqual(1);
+    await userEvent.tab();
+    await expect(own).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.tab();
+    await expect(talk).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Showing talk"));
+  },
+};
+/** An Activity line: its name, which shows its chat, as words in the line (#3523). */
+function ActivityLine() {
+  const [shown, setShown] = useState("nothing");
+  return (
+    <div style={{ display: "grid", gap: "var(--space-3)", justifyItems: "start" }}>
+      <p style={{ margin: 0 }}>
+        <Button
+          inline
+          variant="ghost"
+          tooltip="Show its chat"
+          aria-label="Show chat talk"
+          onPress={() => setShown("talk")}
+        >
+          talk
+        </Button>{" "}
+        asked devops 3 to check the staging cluster.
+      </p>
+      <p role="status" style={{ margin: 0 }}>
+        {`Showing ${shown}`}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * **A line's name that shows its chat** (#3523, the Activity tab): the inline ghost, the line's
+ * own words in the primary tier, underlined under the pointer and the keyboard. The picture is
+ * the line at rest.
+ */
+export const GhostInline: Story = {
+  render: () => <ActivityLine />,
+  play: async ({ canvas, userEvent }) => {
+    const name = canvas.getByRole("button", { name: "Show chat talk" });
+    await expect(name).toHaveAttribute("data-inline");
+    await expect(getComputedStyle(name).textDecorationLine).toBe("none");
+    await userEvent.tab();
+    await expect(name).toHaveFocus();
+    await expect(getComputedStyle(name).textDecorationLine).toBe("underline");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Showing talk"));
+  },
+};
+
+/** An address bar whose Go is unavailable while the address is empty (`BrowserView`). */
+function AddressBar() {
+  const [sent, setSent] = useState(0);
+  return (
+    <div style={{ display: "grid", gap: "var(--space-3)", justifyItems: "start" }}>
+      <Form
+        aria-label="Go to an address"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setSent((was) => was + 1);
+        }}
+      >
+        <TextField aria-label="Address" value="" onChange={() => {}} />
+        <Button type="submit" aria-disabled>
+          Go
+        </Button>
+      </Form>
+      <p role="status" style={{ margin: 0 }}>
+        {`Sent ${sent} times`}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * **An unavailable submit button sends nothing** (#3522, #3636): it stays its form's submit
+ * button, so Enter in the lone field (the browser's own submit, a click on that button) and ⌘⏎
+ * (the form's, which finds its primary action unavailable) send nothing, and a click on it is
+ * refused.
+ */
+export const UnavailableSubmit: Story = {
+  render: () => <AddressBar />,
+  play: async ({ canvas, userEvent }) => {
+    const go = canvas.getByRole("button", { name: "Go" });
+    await expect(go).toHaveAttribute("type", "submit");
+    await userEvent.click(canvas.getByRole("textbox", { name: "Address" }));
+    await userEvent.keyboard("{Enter}");
+    await userEvent.keyboard(
+      navigator.platform.startsWith("Mac")
+        ? "{Meta>}{Enter}{/Meta}"
+        : "{Control>}{Enter}{/Control}",
+    );
+    await userEvent.click(go);
+    await expect(canvas.getByRole("status")).toHaveTextContent("Sent 0 times");
+  },
+};
+
+/**
  * **The quiet ghost as the window draws it** (#3214): small icon marks in a pane's corner, split
  * and close, where the close that ends a chat takes the danger colour under the pointer
  * (`paneFrame.css`), and the split keeps the quiet hover.
@@ -147,6 +304,44 @@ export const QuietPaneMarks: Story = {
     expectFocusInSight();
   },
 };
+/**
+ * **A theme that draws the quiet hover its own way** (#3295): it sets `button.root.quiet.hover`'s
+ * fill and words in the `parts` layer, as the engine writes a theme's parts. The close that ends a
+ * chat takes the theme's fill, but keeps its danger mark: its glyph in the danger colour and an
+ * edge of it, drawn in the `cues` layer after the theme's.
+ */
+export const QuietHoverThemedKeepsTheCloseCue: Story = {
+  // What is held is a computed colour and edge under a theme's rule, not a picture.
+  parameters: { screenshot: false },
+  render: () => (
+    <div className="pane-doing" style={{ visibility: "visible" }}>
+      <style>{`@layer parts {
+  :where([data-scope="button"][data-part="root"][data-variant="quiet"][data-hovered]:not([data-disabled])) {
+    background-color: var(--surface-hover);
+    color: var(--text-primary);
+  }
+}`}</style>
+      <IconButton
+        icon={<X />}
+        aria-label="End this pane's chat"
+        variant="quiet"
+        size="sm"
+        className="ends-a-chat"
+      />
+      <span data-testid="danger" style={{ color: "var(--danger-text)" }} />
+    </div>
+  ),
+  play: async ({ canvas }) => {
+    const close = canvas.getByRole("button", { name: "End this pane's chat" });
+    const danger = getComputedStyle(canvas.getByTestId("danger")).color;
+    close.setAttribute("data-hovered", "true");
+    const drawn = getComputedStyle(close);
+    const [words, edge] = [drawn.color, drawn.boxShadow];
+    close.removeAttribute("data-hovered");
+    await expect(words).toBe(danger);
+    await expect(edge).toContain(danger);
+  },
+};
 export const Link: Story = {
   args: { variant: "link", label: "Open its settings" },
   play: pressedByTheKeyboard,
@@ -163,6 +358,103 @@ export const Disabled: Story = {
     await userEvent.tab();
     await expect(button).not.toHaveFocus();
     await expect(canvas.getByRole("status")).toHaveTextContent("Pressed 0 times");
+  },
+};
+
+/**
+ * **An unavailable menu button with its reason** (#3116): it keeps the focus and says why, and
+ * starts nothing: no press, Enter, Space or arrow opens the menu it is the trigger of.
+ */
+export const UnavailableMenuTrigger: Story = {
+  render: () => (
+    <MenuTrigger>
+      <Button isDisabled tooltip="Only the owner shares this project.">
+        Share
+      </Button>
+      <Menu aria-label="Share">
+        <MenuItem id="link" textValue="Copy link">
+          <MenuWords said="Copy link" />
+        </MenuItem>
+      </Menu>
+    </MenuTrigger>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const share = canvas.getByRole("button", { name: "Share" });
+    await expect(share).toHaveAttribute("aria-disabled", "true");
+    await expect(share).toHaveAccessibleDescription("Only the owner shares this project.");
+    await userEvent.tab();
+    await expect(share).toHaveFocus();
+    expectFocusInSight();
+    // After each way of pressing it, no menu: one press that opened it and the next that closed
+    // it again would pass a single look at the end.
+    const noMenu = () => expect(document.querySelector('[role="menu"]')).toBeNull();
+    for (const key of ["{Enter}", " ", "{ArrowDown}", "{ArrowUp}"]) {
+      await userEvent.keyboard(key);
+      await noMenu();
+    }
+    await userEvent.click(share);
+    await noMenu();
+    await expect(share).toHaveAttribute("aria-expanded", "false");
+  },
+};
+
+/** The variants with a fill under the pointer, each drawn as a trigger whose menu is open. */
+const OPENED: readonly ButtonVariant[] = [
+  "secondary",
+  "primary",
+  "ghost",
+  "quiet",
+  "danger",
+  "grants",
+  "soft-accent",
+  "warning-soft",
+];
+
+/**
+ * **A trigger whose menu is open** (#3524): drawn as it is under the pointer, in every variant
+ * with a hover fill, so the press that opened it still shows while the pointer is in the menu.
+ * The row is each variant held open; the `3 more` beside it opens a real menu, and is drawn at
+ * rest again once it closes.
+ */
+export const OpenTrigger: Story = {
+  render: () => (
+    <div style={{ display: "grid", gap: "var(--space-3)", justifyItems: "start" }}>
+      <ButtonRow aria-label="Open triggers" role="group">
+        {OPENED.map((variant) => (
+          <Button key={variant} variant={variant} aria-haspopup="menu" aria-expanded>
+            {variant}
+          </Button>
+        ))}
+      </ButtonRow>
+      <MenuTrigger>
+        <Button variant="quiet" size="sm">
+          3 more
+        </Button>
+        <Menu aria-label="More">
+          <MenuItem id="one" textValue="One">
+            <MenuWords said="One" />
+          </MenuItem>
+        </Menu>
+      </MenuTrigger>
+    </div>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    for (const variant of OPENED)
+      await expect(canvas.getByRole("button", { name: variant })).toHaveAttribute("data-open");
+    const more = canvas.getByRole("button", { name: "3 more" });
+    await expect(more).not.toHaveAttribute("data-open");
+    await userEvent.click(more);
+    await waitFor(() => expect(document.querySelector('[role="menu"]')).not.toBeNull());
+    await expect(more).toHaveAttribute("data-open");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(document.querySelector('[role="menu"]')).toBeNull());
+    await expect(more).not.toHaveAttribute("data-open");
+    // The pointer goes, so the picture is of it at rest (#4098). The click left the story's
+    // pointer on it, and whether it was still drawn as under the pointer once the menu had come
+    // and gone hung on what pointer events the browser itself sent meanwhile, so the picture
+    // varied from run to run.
+    await userEvent.unhover(more);
+    await waitFor(() => expect(more).not.toHaveAttribute("data-hovered"));
   },
 };
 
@@ -226,6 +518,45 @@ export const RowOfOneSize: Story = {
       await expect(one).toHaveFocus();
       expectFocusInSight();
     }
+  },
+};
+
+/**
+ * **The key that presses it** (R33, #3377): the `shortcut` part, small and mono after the words,
+ * on the primary and the secondary, and off (`shortcutOff`): its room kept and nothing drawn, so
+ * a button whose key does not press it now is as wide as one whose key does (R163). The key is
+ * never part of the button's name or words.
+ */
+export const WithItsKey: Story = {
+  render: () => (
+    <div style={{ display: "grid", gap: "var(--space-3)", justifyItems: "start" }}>
+      <ButtonRow aria-label="Keys on" role="group">
+        <Button variant="primary" shortcut="⌘↩" aria-keyshortcuts="Meta+Enter">
+          Start chat
+        </Button>
+        <Button shortcut="⌘S" aria-keyshortcuts="Meta+S">
+          Save
+        </Button>
+      </ButtonRow>
+      <ButtonRow aria-label="Key off" role="group">
+        <Button variant="primary" shortcut="⌘↩" shortcutOff>
+          Start chat
+        </Button>
+      </ButtonRow>
+    </div>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const [on, off] = canvas.getAllByRole("button", { name: "Start chat" });
+    for (const button of [on, off]) await expect(button).toHaveTextContent(/^Start chat$/);
+    const hint = (button: HTMLElement) =>
+      button.querySelector('[data-scope="button"][data-part="shortcut"]') as HTMLElement;
+    await expect(hint(on)).toBeVisible();
+    await expect(hint(off)).not.toBeVisible();
+    // Off keeps its room: the two are one width.
+    await expect(off.getBoundingClientRect().width).toBe(on.getBoundingClientRect().width);
+    await userEvent.tab();
+    await expect(on).toHaveFocus();
+    expectFocusInSight();
   },
 };
 

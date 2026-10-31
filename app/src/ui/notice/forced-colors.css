@@ -13,4 +13,13 @@
     outline: 2px dashed CanvasText;
     outline-offset: -2px;
   }
+
+  /* A notice that needs a decision (#3678): a dotted outline, apart from trouble's dashes, beside
+     its mark. */
+  [data-scope="notice"][data-part="root"][data-variant="attention"] {
+    outline-width: 2px;
+    outline-style: dotted;
+    outline-color: CanvasText;
+    outline-offset: -2px;
+  }
 }

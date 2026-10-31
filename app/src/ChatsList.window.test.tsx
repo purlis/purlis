@@ -17,7 +17,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { FinishedTask, Moved, OpenChat } from "./bindings";
 import { setChatsListPrefs } from "./chatsListPrefs";
-import { cardOf } from "./chatCard.testkit";
+import { cardOf, theCard } from "./chatCard.testkit";
 import type { State } from "./chatState";
 import { forgetThisLaunch } from "./regions";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
@@ -448,6 +448,40 @@ describe("the order of the Chats list (V100-47)", () => {
     expect(shape()).toEqual(["1 steward 1", "1 steward 3", "1 steward 2"]);
   });
 
+  it("does not move a row while the keyboard is in a row's menu (#3594)", async () => {
+    const { move } = await settled();
+    const before = shape();
+
+    act(() => row("steward 3").focus());
+    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    const menu = await screen.findByRole("menu");
+    await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+    move(1, "waiting", [3, 1]);
+
+    expect(shape()).toEqual(before);
+
+    // The menu closed and gave the keyboard back to its row; once that leaves, the rows move.
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    act(() => (document.activeElement as HTMLElement).blur());
+
+    expect(shape()).toEqual(["1 steward 1", "2 devops 4", "1 steward 3", "1 steward 2"]);
+  });
+
+  it("does not move a row while the pointer is on a row's card, which stands beside the list", async () => {
+    const { move } = await settled();
+    const before = shape();
+
+    await userEvent.hover(row("steward 3"));
+    const shown = await theCard();
+    // Off the row and straight onto its card, as a pointer reading it goes (WCAG 1.4.13).
+    await userEvent.hover(shown);
+    move(1, "waiting", [3, 1]);
+
+    expect(shape()).toEqual(before);
+  });
+
   it("is not held by a row a pointer's press focused, once the pointer has left", async () => {
     const { move } = await settled();
 
@@ -526,10 +560,9 @@ describe("the order of the Chats list (V100-47)", () => {
     act(() => setChatsListPrefs({ grouped: true }));
 
     expect(shape()).toEqual(["1 steward 2", "1 steward 1", "2 devops 4", "1 steward 3"]);
-    expect([...theTree().querySelectorAll(".chats-group")].map((one) => one.textContent)).toEqual([
-      "alpha",
-      "beta",
-    ]);
+    expect(
+      [...theTree().querySelectorAll(".chats-group-name")].map((one) => one.textContent),
+    ).toEqual(["alpha", "beta"]);
     // The names over them are not rows: the tree still counts three sessions.
     expect(place("steward 3")).toBe("3/3");
   });

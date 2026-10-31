@@ -154,6 +154,20 @@ pub struct PoolRequests {
     pub limits: PoolLimitsShown,
     /// Its CPUs in thousandths, to be added up.
     pub millicpus: u32,
+    /// The seconds its runners no longer kept ran this week (#3492): a runner's own are in
+    /// what it answers ([`RunnerAsked::ran_this_week`]).
+    pub removed_ran_this_week: u32,
+    /// What one hour of one of its runners costs, where it declares a price (#3491): only then
+    /// is money shown for it.
+    pub price: Option<PricePerHour>,
+}
+
+/// **A pool's price per hour, as it declares it** (#3491): its amount the decimal it was
+/// written as, and its currency's ISO 4217 code. Money is shown in it, never converted.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PricePerHour {
+    pub amount: String,
+    pub currency: String,
 }
 
 /// **What the Devices view draws first** (#2052): this machine's version, where everything the
@@ -169,6 +183,9 @@ pub struct DevicesShown {
     /// engine is a local socket on this machine. Only then does the use table name them as the
     /// person's.
     pub owned: bool,
+    /// How many projects the window holds (#3534): with more than one, each chat and browser
+    /// row names its project.
+    pub projects: u32,
 }
 
 /// **Where each chat and browser the window has open is** (#2052): on this machine, on a runner
@@ -249,22 +266,31 @@ pub const MOST_SHOWN: usize = 200;
 pub fn shown_safely(text: &str) -> String {
     // Read no further than a cap can use: a megabyte of text costs no more than its start.
     let start: String = text.chars().take(MOST_SHOWN * 8).collect();
+    let cut = text.chars().nth(MOST_SHOWN * 8).is_some();
     let one_line: String = start
         .chars()
-        .map(|ch| {
-            if matches!(ch, '\n' | '\r' | '\t') {
-                ' '
-            } else {
-                ch
-            }
-        })
+        // Every blank parts two words, as a space does.
+        .map(|ch| if ch.is_whitespace() { ' ' } else { ch })
         .collect();
     let seen = purlis_unicode::unhidden(&one_line, purlis_unicode::Breaks::Marked);
-    let mut out = String::new();
-    for word in without_userinfo(&seen)
-        .split(' ')
-        .filter(|word| !word.is_empty())
+    let hidden = without_userinfo(&seen);
+    let mut words: Vec<&str> = hidden.split(' ').filter(|word| !word.is_empty()).collect();
+    // A word the cut ends part way through is not shown where it may be an address: what of it
+    // would be hidden may lie past the cut.
+    if cut && words.last().is_some_and(|word| word.contains(':')) {
+        words.pop();
+    }
+    // Nor is an address the cut leaves open, one that may hold a user (`scheme://…`, or one whose
+    // authority holds a `:`) with no `@` after it, nor anything after it: what of it would be
+    // hidden may lie past the cut. Any other address (`unix:///…`, `https://host/…`) stays.
+    if cut
+        && let Some(open) = words.iter().rposition(|word| may_hold_a_user(word))
+        && !words[open..].iter().any(|word| decoded(word).contains('@'))
     {
+        words.truncate(open);
+    }
+    let mut out = String::new();
+    for word in words {
         if !out.is_empty() {
             out.push(' ');
         }
@@ -278,36 +304,233 @@ pub fn shown_safely(text: &str) -> String {
     out
 }
 
+/// Whether `word` is an address that may hold a user once [`parted_addresses`] has read it:
+/// one it wrote `scheme://…`, or one whose authority, as its escapes read, still holds a `:`.
+fn may_hold_a_user(word: &str) -> bool {
+    if word.ends_with("://…") {
+        return true;
+    }
+    let read = decoded(word);
+    read.find("://").is_some_and(|scheme| {
+        read[scheme + 3..]
+            .split('/')
+            .next()
+            .is_some_and(|authority| authority.contains(':'))
+    })
+}
+
 /// `text` with the user and password before a host written `…`, word by word: in
 /// `scheme://user[:password]@host`, the whole of what stands between `://` and the word's last
 /// `@` (a password may hold a `/`), and in `user@host` without a scheme (as ssh writes it), what
-/// stands before the `@`. An image named by its digest (`name@sha256:…`) keeps its name.
+/// stands before the `@`, a password holding any character. An image named by its digest at its
+/// full length (`name[:tag]@sha256:…`) is kept whole ([`is_digest`]).
+///
+/// A word written in percent escapes (`%3A`, `%2F`, `%40`) is read as it would be written
+/// unescaped, and shown so where that hides a user. An address a blank parts
+/// (`scheme://user:pass word@host`) loses what stands between its `://` and its `@` across the
+/// words ([`parted_addresses`]).
 fn without_userinfo(text: &str) -> String {
-    text.split(' ')
-        .map(|word| {
-            let Some(at) = word.rfind('@') else {
-                return word.to_owned();
-            };
-            if let Some(scheme) = word.find("://").filter(|scheme| scheme + 3 <= at) {
-                return format!("{}…{}", &word[..scheme + 3], &word[at..]);
+    // Words alone: two blanks in a row (a `\r\n`) part two words as one blank does.
+    let mut words: Vec<String> = text
+        .split(' ')
+        .filter(|word| !word.is_empty())
+        .map(one_word)
+        .collect();
+    parted_addresses(&mut words);
+    words.join(" ")
+}
+
+/// [`without_userinfo`] of one word, as it is written or as its percent escapes read.
+fn one_word(word: &str) -> String {
+    let hidden = without_userinfo_in(word);
+    if hidden != word {
+        return hidden;
+    }
+    match unescaped(word) {
+        Some(read) => {
+            let hidden = without_userinfo_in(&read);
+            if hidden == read {
+                word.to_owned()
+            } else {
+                hidden
             }
-            let (before, after) = word.split_at(at);
-            let digest = ["@sha256:", "@sha384:", "@sha512:"]
-                .iter()
-                .any(|algorithm| after.starts_with(algorithm));
-            // A word that names a path or a registry before its `@` is not a user's name.
-            if digest || before.is_empty() || before.contains('/') {
-                return word.to_owned();
+        }
+        None => hidden,
+    }
+}
+
+/// `word` with its escapes of `:`, `/` and `@` (`%3A`, `%2F`, `%40`, in either case) read as
+/// those characters, where it holds an escaped `@`; `None` where it holds none.
+fn unescaped(word: &str) -> Option<String> {
+    word.to_ascii_lowercase()
+        .contains("%40")
+        .then(|| decoded(word))
+}
+
+/// `word` with its escapes of `:`, `/` and `@` (`%3A`, `%2F`, `%40`, in either case) read as
+/// those characters, and every other character as it is.
+fn decoded(word: &str) -> String {
+    let mut read = String::with_capacity(word.len());
+    let mut rest = word;
+    while let Some(at) = rest.find('%') {
+        read.push_str(&rest[..at]);
+        let escaped = rest.get(at + 1..at + 3).map(str::to_ascii_lowercase);
+        let ch = match escaped.as_deref() {
+            Some("3a") => Some(':'),
+            Some("2f") => Some('/'),
+            Some("40") => Some('@'),
+            _ => None,
+        };
+        match ch {
+            Some(ch) => {
+                read.push(ch);
+                rest = &rest[at + 3..];
             }
-            // Keep what opens the word (a quote, a bracket): only the name itself goes.
-            let opens = before
-                .char_indices()
-                .find(|(_, ch)| ch.is_alphanumeric())
-                .map_or(before.len(), |(at, _)| at);
-            format!("{}…{after}", &before[..opens])
+            None => {
+                read.push('%');
+                rest = &rest[at + 1..];
+            }
+        }
+    }
+    read.push_str(rest);
+    read
+}
+
+/// **An address a blank parts, hidden across its words**: a word `scheme://…:…` with no `@`,
+/// then the first later word with one (before any word that is an address of its own), each read
+/// as its percent escapes read ([`decoded`]). What stands between the `://` and that `@` is a
+/// user's where the first word is not a host and a port (`scheme://host:port`), where the word
+/// with the `@` comes right after it, or where that word is itself hidden as a user's
+/// (`…@host`) or begins with its `@`: the words between go, and both are written `scheme://…` and `…@host`. A word
+/// `scheme://user:…` that no `@` follows is written `scheme://…`.
+fn parted_addresses(words: &mut Vec<String>) {
+    let mut at = 0;
+    while at < words.len() {
+        let read = decoded(&words[at]);
+        let Some(scheme) = read.find("://") else {
+            at += 1;
+            continue;
+        };
+        let rest = &read[scheme + 3..];
+        let authority = rest.split('/').next().unwrap_or_default();
+        if read.contains('@') || !authority.contains(':') {
+            at += 1;
+            continue;
+        }
+        let hosted = is_host_and_port(authority);
+        let opened = read[..scheme + 3].to_owned();
+        let next = words[at + 1..]
+            .iter()
+            .map(|later| decoded(later))
+            .position(|later| later.contains('@') || later.contains("://"))
+            .map(|after| at + 1 + after)
+            .filter(|next| !decoded(&words[*next]).contains("://"));
+        let host_of = |word: &str| {
+            let word = decoded(word);
+            word.rfind('@')
+                .map(|sign| word[sign..].to_owned())
+                .unwrap_or_default()
+        };
+        match next {
+            Some(next)
+                if !hosted
+                    || next == at + 1
+                    || words[next].contains("…@")
+                    || words[next].starts_with('@') =>
+            {
+                let host = host_of(&words[next]);
+                words[at] = format!("{opened}…");
+                words[next] = format!("…{host}");
+                words.drain(at + 1..next);
+                at += 2;
+            }
+            None if !hosted => {
+                words[at] = format!("{opened}…");
+                at += 1;
+            }
+            _ => at += 1,
+        }
+    }
+}
+
+/// Whether `authority`, what follows `://` up to its first `/`, is a host and a port:
+/// `host:digits` or `[address]:digits`, the digits possibly none.
+fn is_host_and_port(authority: &str) -> bool {
+    let (host, port) = match authority.strip_prefix('[') {
+        Some(bracketed) => match bracketed.split_once(']') {
+            Some((_, "")) => return true,
+            Some((_, after)) => match after.strip_prefix(':') {
+                Some(port) => ("[]", port),
+                None => return false,
+            },
+            None => return false,
+        },
+        None => match authority.split_once(':') {
+            Some(parts) => parts,
+            None => return true,
+        },
+    };
+    !host.is_empty() && !host.contains(':') && port.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// [`without_userinfo`] of the one word `word`, as it is written.
+fn without_userinfo_in(word: &str) -> String {
+    let Some(at) = word.rfind('@') else {
+        return word.to_owned();
+    };
+    // An image named by its digest (`name[:tag]@sha256:<64 hex>`) is kept whole: no host is
+    // spelled that way.
+    if is_digest(&word[at..]) {
+        return word.to_owned();
+    }
+    if let Some(scheme) = word.find("://").filter(|scheme| scheme + 3 <= at) {
+        return format!("{}…{}", &word[..scheme + 3], &word[at..]);
+    }
+    let (before, after) = word.split_at(at);
+    // A name and a password (`name:…@`) is a user's, whatever the password holds: one at the
+    // word's start, or one after a path's last `/`. Anything else before its `@` names a path
+    // or a registry.
+    let whole = before
+        .split_once(':')
+        .is_some_and(|(name, _)| !name.is_empty() && !name.contains('/'));
+    let after_a_path = before.rsplit_once('/').filter(|(_, last)| {
+        last.split_once(':')
+            .is_some_and(|(name, _)| !name.is_empty())
+    });
+    if !whole && after_a_path.is_none() && (before.is_empty() || before.contains('/')) {
+        return word.to_owned();
+    }
+    // Keep what opens the word (a quote, a bracket, a path): only the name itself goes.
+    let first_letter = || {
+        before
+            .char_indices()
+            .find(|(_, ch)| ch.is_alphanumeric())
+            .map_or(before.len(), |(at, _)| at)
+    };
+    let opens = if whole {
+        first_letter()
+    } else {
+        after_a_path.map_or_else(first_letter, |(path, _)| path.len() + 1)
+    };
+    format!("{}…{after}", &before[..opens])
+}
+
+/// Whether `after`, a word from its `@` on, is a digest at its full length, in either case:
+/// `@sha256:` and 64 hex digits, `@sha384:` and 96, or `@sha512:` and 128, then at most the
+/// punctuation that ends a sentence or a quote.
+fn is_digest(after: &str) -> bool {
+    let lower = after.to_ascii_lowercase();
+    [("@sha256:", 64), ("@sha384:", 96), ("@sha512:", 128)]
+        .iter()
+        .any(|(algorithm, length)| {
+            lower.strip_prefix(algorithm).is_some_and(|rest| {
+                rest.len() >= *length
+                    && rest.as_bytes()[..*length].iter().all(u8::is_ascii_hexdigit)
+                    && rest.as_bytes()[*length..]
+                        .iter()
+                        .all(u8::is_ascii_punctuation)
+            })
         })
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 /// **Why a runner did not list what it holds, in purlis's words** (#2052): a refusal says so,
@@ -709,6 +932,9 @@ pub struct RunnerAsked {
     pub contacted: Option<u32>,
     /// What it holds, set against what the window has open.
     pub holds: NotOpenHere,
+    /// The seconds it ran this week (the ISO week in local time), as this machine recorded it
+    /// (#3492, [`purlis_core::runnerhours`]); none where it was not answered in time.
+    pub ran_this_week: Option<u32>,
 }
 
 /// **Everything the window has open**, in one walk of the projects it holds: each chat and
@@ -775,6 +1001,136 @@ fn what_is_open(planes: &crate::planes::Planes) -> (Vec<Placed>, Vec<BrowserPlac
     (chats, browsers, open)
 }
 
+/// One runner's home, as the disk its pool holds is counted by (#3493).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HomeOf {
+    pub pool: String,
+    /// Its home's volume on this machine's Docker.
+    pub volume: String,
+}
+
+/// **The disk one pool's runners hold** (#3493, spec #2041 story 55): their home volumes
+/// together, a draining runner's included.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolDisk {
+    pub pool: String,
+    /// In kilobytes of 1000 bytes, as Docker says sizes, to the nearest; `u32` so it is a
+    /// `number` in TypeScript, and held at its most (some 4 TB) rather than wrapped.
+    pub kilobytes: u32,
+    /// How many of its runners' homes Docker did not list: their disk is not known, and is
+    /// said apart rather than counted as nothing.
+    pub not_listed: u32,
+}
+
+/// **The disk each pool's runners hold**, as the use table says it (#3493).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum DiskHeld {
+    /// Each pool's, in the order the pools were added.
+    Read { pools: Vec<PoolDisk> },
+    /// Docker could not say, and why, in its words ([`shown_safely`]).
+    NotRead { why: String },
+    /// It was not read within the time a second read of it waits ([`WAITS_AT_MOST`]).
+    Unanswered,
+}
+
+/// **[`DiskHeld`] of each of `pools`**, from the disk each volume holds as Docker read it
+/// (`held`, [`purlis_core::dockerpool::homes_held`]) and each kept runner's home (`homes`).
+pub fn disk_of(
+    pools: &[String],
+    homes: &[HomeOf],
+    held: Result<BTreeMap<String, u64>, String>,
+) -> DiskHeld {
+    let held = match held {
+        Ok(held) => held,
+        Err(why) => {
+            return DiskHeld::NotRead {
+                why: shown_safely(&why),
+            };
+        }
+    };
+    let pools = pools
+        .iter()
+        .map(|pool| {
+            let of: Vec<Option<u64>> = homes
+                .iter()
+                .filter(|home| home.pool == *pool)
+                .map(|home| held.get(&home.volume).copied())
+                .collect();
+            let bytes: u64 = of
+                .iter()
+                .flatten()
+                .fold(0, |sum, one| sum.saturating_add(*one));
+            PoolDisk {
+                pool: pool.clone(),
+                kilobytes: u32::try_from(bytes.saturating_add(500) / 1000).unwrap_or(u32::MAX),
+                not_listed: u32::try_from(of.iter().filter(|one| one.is_none()).count())
+                    .unwrap_or(u32::MAX),
+            }
+        })
+        .collect();
+    DiskHeld::Read { pools }
+}
+
+/// The reads of the disk held in flight: one at a time, as each runner is asked.
+fn reading_disk() -> &'static Joined<Result<DiskHeld, String>> {
+    static READING: std::sync::OnceLock<Joined<Result<DiskHeld, String>>> =
+        std::sync::OnceLock::new();
+    READING.get_or_init(Joined::default)
+}
+
+/// **The disk each pool's runners hold** (#3493): their home volumes, as `docker system df`
+/// says, which reads them and starts nothing, so **a suspended runner is never woken by it**.
+/// Read apart from [`devices`], so a Docker slow to count every volume holds up no other part
+/// of the view, and held to the time each read of Docker is.
+#[tauri::command]
+#[specta::specta]
+pub async fn devices_disk() -> Result<DiskHeld, String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("reading the disk this machine's runners hold", move || {
+            reading_disk().once("disk", WAITS_AT_MOST, read_disk, || {
+                Ok(DiskHeld::Unanswered)
+            })
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        Err("purlis keeps Docker pools on macOS and Linux only.".to_owned())
+    }
+}
+
+/// [`devices_disk`], read.
+#[cfg(unix)]
+fn read_disk() -> Result<DiskHeld, String> {
+    let config = purlis_core::machine::config_root()
+        .ok_or_else(|| "There is no config home on this machine.".to_owned())?;
+    let pools: Vec<String> = purlis_core::runners::pools(&config)
+        .map_err(|why| why.to_string())?
+        .iter()
+        .map(|pool| pool.name().to_owned())
+        .collect();
+    let homes: Vec<HomeOf> = purlis_core::runners::read(&config)
+        .map_err(|why| why.to_string())?
+        .iter()
+        .map(|one| HomeOf {
+            pool: one.pool().to_owned(),
+            volume: one.made.runner.volume(),
+        })
+        .collect();
+    if homes.is_empty() {
+        return Ok(disk_of(&pools, &homes, Ok(BTreeMap::new())));
+    }
+    // Held to a time as every read is ([`purlis_core::dockerpool::READS_WITHIN`]).
+    let docker = crate::runnerlinks::docker()?;
+    Ok(disk_of(
+        &pools,
+        &homes,
+        docker.homes_held().map_err(|why| why.0),
+    ))
+}
+
 /// **Every device and what runs on it** (#2052): this machine and every runner it keeps, each
 /// with the chats and browsers the window has open there, and each pool's limits.
 #[tauri::command]
@@ -783,6 +1139,7 @@ pub async fn devices(
     planes: tauri::State<'_, crate::planes::Planes>,
 ) -> Result<DevicesShown, String> {
     let (chats, browsers, _) = what_is_open(&planes);
+    let projects = u32::try_from(planes.every_held().len()).unwrap_or(u32::MAX);
     crate::off_the_window("reading this machine's devices", move || {
         let (kept, pools, owned) = kept_here()?;
         Ok(DevicesShown {
@@ -790,6 +1147,7 @@ pub async fn devices(
             placement: placed(&kept, chats, browsers),
             pools,
             owned,
+            projects,
         })
     })
     .await
@@ -800,7 +1158,7 @@ fn kept_here() -> Result<(Vec<KeptRunner>, Vec<PoolRequests>, bool), String> {
     let Some(config) = purlis_core::machine::config_root() else {
         return Ok((Vec::new(), Vec::new(), false));
     };
-    let kept = purlis_core::runners::read(&config)
+    let kept: Vec<KeptRunner> = purlis_core::runners::read(&config)
         .map_err(|why| why.to_string())?
         .iter()
         .map(|one| KeptRunner {
@@ -809,6 +1167,8 @@ fn kept_here() -> Result<(Vec<KeptRunner>, Vec<PoolRequests>, bool), String> {
             draining: one.draining,
         })
         .collect();
+    let hours = purlis_core::runnerhours::read(&config);
+    let week = purlis_core::runnerhours::this_week_began();
     let pools = purlis_core::runners::pools(&config)
         .map_err(|why| why.to_string())?
         .iter()
@@ -816,6 +1176,11 @@ fn kept_here() -> Result<(Vec<KeptRunner>, Vec<PoolRequests>, bool), String> {
             pool: pool.name().to_owned(),
             limits: crate::dockerpools::shown(pool.limits()),
             millicpus: pool.limits().millicpus(),
+            removed_ran_this_week: removed_ran(&hours, pool.name(), &kept, week),
+            price: pool.price().map(|price| PricePerHour {
+                amount: price.amount().to_owned(),
+                currency: price.currency().to_owned(),
+            }),
         })
         .collect();
     // As the pool logins decide it (D-2050-4): a local socket on this machine.
@@ -823,6 +1188,27 @@ fn kept_here() -> Result<(Vec<KeptRunner>, Vec<PoolRequests>, bool), String> {
         purlis_core::poollogins::owned(purlis_core::dockerpool::Docker::engine_on_this_machine())
             .is_ok();
     Ok((kept, pools, owned))
+}
+
+/// **The seconds `pool`'s runners that `kept` no longer lists ran from `since`** (#3492): a
+/// removed runner's run was stopped as it was removed, so only whole runs count.
+#[cfg(unix)]
+pub fn removed_ran(
+    hours: &[purlis_core::runnerhours::Line],
+    pool: &str,
+    kept: &[KeptRunner],
+    since: u64,
+) -> u32 {
+    let ran: u64 = purlis_core::runnerhours::runners_of(hours, pool)
+        .iter()
+        .filter(|runner| {
+            !kept
+                .iter()
+                .any(|one| one.pool == pool && one.runner == **runner)
+        })
+        .map(|runner| purlis_core::runnerhours::ran_since(hours, pool, runner, since, None))
+        .sum();
+    u32::try_from(ran).unwrap_or(u32::MAX)
 }
 
 /// No Docker pool is kept but on macOS and Linux: this machine is the only device.
@@ -864,10 +1250,6 @@ pub async fn device_runner(
 /// How long an ask of a runner waits on another ask of it already in flight.
 pub const WAITS_AT_MOST: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// How long each `docker` run an ask makes may take (an inspect, a version, the check before a
-/// link): a wedged engine answers nothing, and the ask goes on without it.
-pub const EACH_DOCKER_RUN_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
-
 /// What a runner not answered in time is said to be: not known, last answered when it last was.
 pub fn unanswered(last: Option<u64>) -> RunnerAsked {
     RunnerAsked {
@@ -876,6 +1258,7 @@ pub fn unanswered(last: Option<u64>) -> RunnerAsked {
         version: None,
         contacted: last.and_then(|at| u32::try_from(at).ok()),
         holds: NotOpenHere::default(),
+        ran_this_week: None,
     }
 }
 
@@ -889,19 +1272,16 @@ fn ask_runner(
 ) -> Result<RunnerAsked, String> {
     let config = purlis_core::machine::config_root()
         .ok_or_else(|| "There is no config home on this machine.".to_owned())?;
-    let here = crate::runnerlinks::Machine::here(&config)?;
-    // Every `docker` run this ask makes is held to a time: a wedged engine holds up nothing.
-    let machine = crate::runnerlinks::Machine {
-        docker: here.docker.clone().within(EACH_DOCKER_RUN_WITHIN),
-        ..here
-    };
+    // Every `docker` run this ask makes only reads, so each is held to a time
+    // ([`purlis_core::dockerpool::READS_WITHIN`]): a wedged engine holds up nothing.
+    let machine = crate::runnerlinks::Machine::here(&config)?;
     let kept = purlis_core::runners::read(&config)
         .map_err(|why| why.to_string())?
         .into_iter()
         .find(|one| one.pool() == pool && one.name() == runner)
         .ok_or_else(|| format!("No runner {runner} of pool {pool} is on this machine."))?;
     let asked = answered(
-        machine.docker.running(&kept.made).map_err(|why| why.0),
+        machine.running(&kept).map_err(|why| why.0),
         || {
             // As it is: a runner is never woken to be asked.
             let to = crate::runnerlinks::ToARunner::of_kept(&machine, &kept)
@@ -915,7 +1295,18 @@ fn ask_runner(
     if let Some(at) = asked.contacted {
         contacts().answered(name, at);
     }
+    // After its container was read, which wrote when it ran (#3492): an open run counts up to
+    // now only while Docker says it runs.
+    let now = crate::sandboxing::now_secs();
+    let ran = purlis_core::runnerhours::ran_since(
+        &purlis_core::runnerhours::read(&config),
+        pool,
+        runner,
+        purlis_core::runnerhours::this_week_began(),
+        (asked.standing == RunnerStanding::Running).then_some(now),
+    );
     Ok(RunnerAsked {
+        ran_this_week: Some(u32::try_from(ran).unwrap_or(u32::MAX)),
         holds: not_open_here(&asked.holds, open, pool),
         standing: asked.standing,
         link: asked.link,

@@ -61,6 +61,7 @@ import {
   TextField as AriaTextField,
 } from "react-aria-components";
 import { submits } from "./submitKey";
+import { reveal } from "../reveal";
 import { Tooltip } from "../tooltip/Tooltip";
 
 /** The text input's sizes: 24, 28 and 32 px at the default text size and density (`field.css`). */
@@ -190,11 +191,98 @@ export interface TextAreaProps extends Omit<Common<HTMLTextAreaElement>, "value"
 
 /** A field a form checks before it is sent: whether its value is right, said where it is not. */
 interface Check {
-  check: () => boolean;
+  /** Checks the field, saying why where it is not right: those words, or `undefined`. */
+  check: () => string | undefined;
   element: () => HTMLElement | null;
 }
 
 const Checks = createContext<Set<Check> | null>(null);
+
+/**
+ * **What a form's refused send says, and the lines it quiets** (#3291): `null` outside a form;
+ * in one, whether its one alert summary is showing. While it shows, the fields' own lines are no
+ * live regions, so the refusal is heard once, as the summary, and not again from every line it
+ * filled.
+ */
+const Summary = createContext<{
+  quiet: boolean;
+  say: (refused: Refused) => void;
+  end: () => void;
+} | null>(null);
+
+/**
+ * Whether what draws a refused field's words is inside a {@link Form} (`inForm`), and whether
+ * that form's summary is saying the refusal now (`quiet`): a settings row's refusal line, which
+ * is not an `ErrorLine`, follows the same rule. `end` ends the summary, as the person's change
+ * does: a field whose change fires no native event (a select's or a combobox's pick) calls it.
+ */
+export function useFormSummary(): { inForm: boolean; quiet: boolean; end: () => void } {
+  const summary = useContext(Summary);
+  return {
+    inForm: summary !== null,
+    quiet: summary?.quiet ?? false,
+    end: summary?.end ?? NOTHING_SAID,
+  };
+}
+
+/** **A send refused elsewhere** (the core's answer to it): the labels of the fields it refused,
+ *  and what it said of the whole. */
+export type Refused = {
+  fields: readonly { name: string; why?: string }[];
+  reasons?: readonly string[];
+};
+
+/**
+ * **The core's answer to a send, refused**, as its form's owner hands it to the {@link Form}:
+ * the refusal, and `answer`, a number the owner counts up for every answer it is given. A new
+ * `answer` is said once; the person's edits to the refusal it holds are not a new one, and a
+ * second refusal reading as the last did is heard again.
+ */
+export type RefusedAnswer = Refused & { answer: number };
+
+/**
+ * **Says a send refused elsewhere through the form it was sent from** (#3291): what draws a
+ * form's fields, inside it, calls this with the core's refusal in the same handler that hands
+ * the fields their words, so the form's summary is its one signal. Outside a form it does
+ * nothing, and the refusal is its fields' own.
+ */
+export function useFormRefusal(): (refused: Refused) => void {
+  return useContext(Summary)?.say ?? NOTHING_SAID;
+}
+const NOTHING_SAID = () => undefined;
+
+/** The one sentence a refused send is heard as: what was said of the whole, then the fields. */
+export function summaryOf({ fields, reasons = [] }: Refused): string {
+  const [one] = fields;
+  const names = fields.map((field) => field.name).join(", ");
+  const which =
+    fields.length === 0
+      ? []
+      : fields.length === 1
+        ? [one.why !== undefined ? `${one.name}: ${one.why}` : `1 field to fix: ${names}.`]
+        : [`${fields.length} fields to fix: ${names}.`];
+  return [...reasons, ...which].join(" ");
+}
+
+/** A field's name, as its label gives it: what `aria-labelledby` names, the box's own
+ *  `aria-label` among them where it names the box itself (React Aria's way with both). */
+export function nameOf(element: HTMLElement): string {
+  const own = element.getAttribute("aria-label") ?? "";
+  const by = (element.getAttribute("aria-labelledby") ?? "")
+    .split(/\s+/)
+    .map((id) =>
+      id === ""
+        ? ""
+        : id === element.id
+          ? own
+          : (document.getElementById(id)?.textContent ?? "").trim(),
+    )
+    .filter((words) => words !== "")
+    .join(" ");
+  if (by !== "") return by;
+  const label = (element as HTMLInputElement).labels?.[0]?.textContent?.trim() ?? "";
+  return label !== "" ? label : (element.getAttribute("aria-label") ?? "");
+}
 
 /** A form's first submit button: its primary action, the one ⌘⏎ and Enter in a box send. */
 function primaryOf(form: HTMLFormElement): HTMLButtonElement | HTMLInputElement | null {
@@ -228,6 +316,9 @@ export type FormProps = Omit<FormHTMLAttributes<HTMLFormElement>, "onSubmit" | "
   className?: string;
   ref?: Ref<HTMLFormElement>;
   children?: ReactNode;
+  /** The core's last answer to a send, refused: said once, as the form's summary, for each new
+   *  `answer`. */
+  refused?: RefusedAnswer;
 };
 
 /**
@@ -235,22 +326,80 @@ export type FormProps = Omit<FormHTMLAttributes<HTMLFormElement>, "onSubmit" | "
  * ⌘⏎ (Ctrl+Enter off macOS) sends from anywhere in it, a textarea included, as Enter in a box
  * does. Its primary action is its first submit button; while that is unavailable, or when it
  * is a grant or what cannot be undone, ⌘⏎ sends nothing: those are pressed. A field that is not right says why and the focus goes to the first such, and
- * `onSubmit` is not called.
+ * `onSubmit` is not called. A field in a folded disclosure is brought out of it first
+ * (`ui/reveal.ts`, #3675).
+ *
+ * **One signal per refusal** (#3291). A refused send, by the form's own checks or by the core
+ * (`refused`, counted by its owner's `answer`, or `useFormRefusal` from inside it), is heard
+ * once: as the form's one alert
+ * summary, drawn for a screen reader alone, since every field shows its own words. One field
+ * refused is its name and why ("Name: A name is letters…"); more are how many and which ("2
+ * fields to fix: Name, Port."). The fields' lines are
+ * polite live regions, quiet while the summary says it, so they do not speak over it, and each
+ * stays its field's description, so the error is reachable from the field. The person's next
+ * change ends the summary (a native change, or a select's pick, `useFormSummary().end`), and the
+ * lines are heard field by field again. A refusal again says the summary anew, whatever it says.
  */
-export function Form({ onSubmit, onKeyDown, children, ...rest }: FormProps) {
+export function Form({ onSubmit, onKeyDown, onChange, refused, children, ...rest }: FormProps) {
   const [checks] = useState(() => new Set<Check>());
+  // What the form said itself (its checks, or `useFormRefusal`); `key` draws it anew, so a
+  // refusal that reads as the last one did is heard again.
+  const [own, setOwn] = useState<{ said: string; key: string } | null>(null);
+  const told = useRef(0);
+  const tell = useCallback((refusal: Refused) => {
+    const said = summaryOf(refusal);
+    told.current += 1;
+    setOwn(said === "" ? null : { said, key: `told-${told.current}` });
+  }, []);
+  // The core's answer, said for each new `answer` its owner counts, drawn from the props in the
+  // render it arrives in, so the lines it fills are quiet in that same render. It is said until
+  // the person changes something or the form says something since (`done`); one standing as the
+  // form is drawn was said before it.
+  const [done, setDone] = useState(refused?.answer);
+  const fromAnswer =
+    refused !== undefined && refused.answer !== done && summaryOf(refused) !== ""
+      ? { said: summaryOf(refused), key: `answer-${refused.answer}` }
+      : null;
+  const heard = own ?? fromAnswer;
+  /** Ends what is said: the person changed something, or the form sends or says anew. */
+  const end = useCallback(() => {
+    setOwn(null);
+    setDone(refused?.answer);
+  }, [refused?.answer]);
   const submit = (event: FormEvent<HTMLFormElement>) => {
     const wrong = [...checks]
-      .filter((one) => !one.check())
-      .map((one) => one.element())
-      .filter((element): element is HTMLElement => element !== null)
-      .sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+      .map((one) => ({ why: one.check(), element: one.element() }))
+      .filter(
+        (one): one is { why: string; element: HTMLElement } =>
+          one.why !== undefined && one.element !== null,
+      )
+      .sort((a, b) =>
+        a.element.compareDocumentPosition(b.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+      );
+    end();
     if (wrong.length > 0) {
       event.preventDefault();
-      wrong[0].focus();
+      tell({ fields: wrong.map((one) => ({ name: nameOf(one.element), why: one.why })) });
+      // A field in a fold is brought out of it first, so the focus lands (#3675).
+      reveal(wrong[0].element);
+      wrong[0].element.focus();
       return;
     }
     onSubmit(event);
+  };
+  // Said by what draws the fields, in the handler that hands them their words.
+  const say = useCallback(
+    (refusal: Refused) => {
+      setDone(refused?.answer);
+      tell(refusal);
+    },
+    [refused?.answer, tell],
+  );
+  const quiet = heard !== null;
+  const summary = useMemo(() => ({ quiet, say, end }), [quiet, say, end]);
+  const changed = (event: ChangeEvent<HTMLFormElement>) => {
+    onChange?.(event);
+    end();
   };
   const keys = (event: KeyboardEvent<HTMLFormElement>) => {
     onKeyDown?.(event);
@@ -265,11 +414,19 @@ export function Form({ onSubmit, onKeyDown, children, ...rest }: FormProps) {
   };
   return (
     <Checks.Provider value={checks}>
-      {/* A native form: its fields check themselves (React Aria's `aria` validation), so the
-          browser's own checks and bubbles are off. */}
-      <form {...rest} noValidate onSubmit={submit} onKeyDown={keys}>
-        {children}
-      </form>
+      <Summary.Provider value={summary}>
+        {/* A native form: its fields check themselves (React Aria's `aria` validation), so the
+            browser's own checks and bubbles are off. */}
+        <form {...rest} noValidate onSubmit={submit} onKeyDown={keys} onChange={changed}>
+          {children}
+          {heard !== null && (
+            // For a screen reader alone (`hidden-words`): every field shows its own words.
+            <p key={heard.key} className="hidden-words" role="alert" data-form-summary="">
+              {heard.said}
+            </p>
+          )}
+        </form>
+      </Summary.Provider>
     </Checks.Provider>
   );
 }
@@ -300,7 +457,7 @@ function useInline(
     // The box's own value: what the person sees in it when they leave it or send the form.
     const now = validate?.(element()?.value ?? value ?? "");
     setShown(now);
-    return now === undefined;
+    return now;
   }, [validate, element, value]);
   const checks = useContext(Checks);
   useEffect(() => {
@@ -312,7 +469,8 @@ function useInline(
     };
   }, [checks, check, element, validate]);
   const left = useCallback(
-    () => (shown === undefined && value !== undefined && value === first ? true : check()),
+    () =>
+      shown === undefined && value !== undefined && value === first ? true : check() === undefined,
     [shown, value, first, check],
   );
   return { said: error ?? following, left, check };
@@ -391,12 +549,14 @@ function joined<T>(...refs: (Ref<T> | undefined)[]): RefCallback<T> {
  * `validate`, or an `error` prop, set or not) keeps one line under its box whether or not it says
  * anything, so a refusal that comes or goes moves nothing around it.
  *
- * - **Heard when it lands.** The line is an assertive live region from the start, empty and in the
- *   accessibility tree: a live region that is already there when its words arrive is announced by
- *   VoiceOver on WebKit, where one unhidden and filled at once may not be. While it says something
- *   it is an alert, as every refusal in the window is, and it describes the box
- *   (`aria-describedby`) in full; empty, it is no alert, so a screen reader's list of alerts and a
- *   query for one find only what is said.
+ * - **Heard when it lands, once.** The line is a polite live region from the start, empty and in
+ *   the accessibility tree: a live region that is already there when its words arrive is
+ *   announced by VoiceOver on WebKit, where one unhidden and filled at once may not be. Polite,
+ *   and never an alert as well (#3291): an alert role added in the render that fills a live
+ *   region can be heard twice, and assertive lines cut off the typing echo and each other when
+ *   one send refuses several fields. A refused send is said once, by its form's summary
+ *   ({@link Form}), and the line is quiet while it does. Saying something, the line describes the
+ *   box (`aria-describedby`) in full, so the error is reachable from its field.
  * - **Read whole by sight.** A refusal too long for its line (the core's words in a settings
  *   row) is cut short at rest; while the field holds the keyboard, or the pointer is on the line,
  *   the whole of it is drawn over what follows, from where the line starts, so nothing moves, and
@@ -439,14 +599,14 @@ export function ErrorLine({ id, said }: { id: string; said: string | undefined }
     return () => field.removeEventListener("focusin", inSight);
   }, [clipped]);
   const shown = said !== undefined && clipped;
+  const { quiet } = useFormSummary();
   return (
     <div data-error-room="" data-clipped={shown ? "" : undefined} ref={room}>
       <p
         data-scope="field"
         data-part="error"
         id={id}
-        role={said !== undefined ? "alert" : undefined}
-        aria-live="assertive"
+        aria-live={quiet ? "off" : "polite"}
         aria-atomic="true"
       >
         {said !== undefined && <span ref={words}>{said}</span>}

@@ -676,7 +676,8 @@ export function StartChat({
               onChange={setName}
               // It follows the persona picked: the name the chat takes when this is left empty,
               // `steward 10` by the number the core says the next chat takes (R30), or in words
-              // where an older answer sent none.
+              // where an older answer sent none. A guess, which can run low under the session
+              // host after a window ended without its record (`Chats::next_number`).
               placeholder={`${persona ?? picked?.kind ?? "chat"} ${
                 options.next_number == null ? "and its number" : options.next_number
               }`}

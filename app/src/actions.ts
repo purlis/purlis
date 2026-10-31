@@ -39,13 +39,14 @@ import type {
   MemoryScope,
   PanelBlock,
   RowAction,
-  SkillBudget,
   SubjectCurations,
 } from "./bindings";
 import { activityTitle, activityView } from "./activity";
 import { chatNetworkTitle, chatNetworkView } from "./chatNetwork";
 import { DISPATCHES_TITLE, DISPATCHES_VIEW } from "./dispatches";
+import { BROWSERS_GRID_TITLE, BROWSERS_GRID_VIEW } from "./browsersGrid";
 import {
+  SKILL_NEEDS_IN,
   SKILL_STUDIO_IN,
   SKILL_STUDIO_SHOW,
   SKILL_STUDIO_TITLE,
@@ -53,12 +54,13 @@ import {
   asPersona,
   OPEN_SKILL_STUDIO,
   skillStudioAs,
+  skillNeedsAs,
+  skillStudioAt,
   inWorkspace,
-  skillStudioTitle,
   skillStudioView,
 } from "./skillStudio";
-import { budgetSaid, budgetShort } from "./UseSkill";
 import { backSaid } from "./chatState";
+import { listed as namesListed } from "./chatMoves";
 import { handedOff, tasksOf, type ListedChat } from "./chatsTree";
 import { MAIN } from "./here";
 import {
@@ -130,7 +132,6 @@ import {
 } from "./tabs";
 import { isBrowser } from "./browsers";
 import { anyPoolKept, startAddingAPool } from "./pools";
-import { POOLS } from "./settings/pools";
 import { isDriven } from "./browserDriving";
 
 /**
@@ -151,7 +152,14 @@ export const READ_AGAIN = "workspace.readagain";
 /** What running an action answered: one line to say, or a refusal in the words it came in —
  *  with the Settings group that puts it right, where a setting does. */
 export type Ran =
-  { ok: true; said?: string } | { ok: false; refused: string; settings?: SettingsWay };
+  | { ok: true; said?: string }
+  | {
+      ok: false;
+      refused: string;
+      settings?: SettingsWay;
+      /** Where to go on from the refusal, as its notice offers it: Approve and start… (#3968). */
+      ways?: readonly SaidWay[];
+    };
 
 /** A way on from what an action answered (#3344): "Open git-ci-cd", the filled primary where
  *  `primary`, or "Add a vision". */
@@ -175,17 +183,34 @@ export type Said = {
   title?: string;
   details?: string;
   ways?: readonly SaidWay[];
-  /** A line about work still under way ("Cloning 2 repo(s)…"), which the next line replaces:
-   *  said, but not kept under Results. */
+  /** A line about work still under way ("Cloning 2 repos…"), which the next line replaces:
+   *  said, but not kept under Results, unless it is on a `track`. Its mark says it is running. */
   progress?: boolean;
+  /** How far that work has got, drawn as a bar under it: the stage, and its percent (#4079). */
+  meter?: { label: string; percent: number };
+  /** **The run of lines it is one of** (#3649): a line on a track takes the place of the one
+   *  kept before it on that track, in place, so a clone's progress turns into its result in one
+   *  notice. A progress line on a track is kept until then. */
+  track?: string;
+  /** **A line said just before it, in the same breath** (#3649): a workspace's ready notice,
+   *  said a moment before its clone's first line. The window draws only the newest line of a
+   *  render, so it keeps this one first, where it has not kept it already. */
+  after?: Said;
+  /** **The one workspace it is about**, where it is about a whole workspace (a workspace made):
+   *  its notice hangs from that workspace's chip in the title bar (`noticePlace.ts`, #3648). */
+  workspace?: string;
 };
 
 /** What the window says of a row's answer: nothing for a quiet success. */
 export function saidOf(from: string, answer: Ran): Said | undefined {
   if (answer.ok) return answer.said ? { from, refused: false, words: answer.said } : undefined;
-  return answer.settings === undefined
-    ? { from, refused: true, words: answer.refused }
-    : { from, refused: true, words: answer.refused, settings: answer.settings };
+  return {
+    from,
+    refused: true,
+    words: answer.refused,
+    ...(answer.settings === undefined ? {} : { settings: answer.settings }),
+    ...(answer.ways === undefined ? {} : { ways: answer.ways }),
+  };
 }
 
 /**
@@ -322,6 +347,9 @@ export type Does =
    *  same chat, in a new run with no conversation resumed. */
   | { verb: "startFresh"; tab: number }
   | { verb: "restartChat"; tab: number }
+  /** Moves the tab's chat to pool `to`'s runner, or here for `null` (#2048): prepared now, it
+   *  moves at the chat's next pause. */
+  | { verb: "moveChat"; tab: number; to: string | null }
   /** Restart chat on a row of the Chats list, for a chat with no tab (#1462): by its number. */
   | { verb: "restartListed"; session: number }
   /** Opens the dialog that asks a persona for something from a chat's tab. It starts nothing
@@ -586,8 +614,9 @@ export type Does =
   | { verb: "taskBranch"; id: string; act: "merge" | "discard" }
   /** Opens a new chat for one curation action on one subject, with the action's prompt typed
    *  into it and never sent (ADR 0061). It carries the action's id and nothing of its text: the
-   *  core resolves the subject again (`curate`), so what is typed is the core's prompt now. */
-  | { verb: "curate"; subject: string; action: string }
+   *  core resolves the subject again (`curate`), so what is typed is the core's prompt now.
+   *  `label` is only what a refusal's Approve and start… names it by (#3968). */
+  | { verb: "curate"; subject: string; action: string; label: string }
   | { verb: "quit" }
   /** Puts a branch file's or folder's path on the clipboard (FM-10): relative to the branch's
    *  folder, or `absolute`. The core places the path and copies it, so the absolute path is
@@ -754,9 +783,6 @@ export type Now = {
   vaults?: readonly string[];
   /** Whether the Skill studio's flag is on (#2765): its row is offered only then. */
   skillStudio?: boolean;
-  /** Each open chat's skill budget, by session, where it is known (#2775): what its Use skill…
-   *  row says, so a chat's budget is on its tab's menu wherever its pane leaves the chip out. */
-  skillBudgets?: Readonly<Record<number, SkillBudget>>;
   /**
    * The focused workspace's open todos, by slug and title (`Panels.todos`), one close and one
    * forget row each. Only the focused workspace's: the Todos panel is the one surface that
@@ -863,6 +889,15 @@ export type Now = {
   /** Whether a chat can be restarted on its conversation: it has a Restart chat row. A shell
    *  has no conversation, and no row. */
   restartable?: (session: number) => boolean;
+  /** Where a chat can move (#2048): each pool it may move to, or `null` for this machine, for a
+   *  chat on a pool's runner. Nothing for a chat that does not move. */
+  movesTo?: (session: number) => readonly (string | null)[];
+  /** The other chats of a chat's workspace running where it runs (#3453), by name: they share
+   *  its clones, so they move with it, and its Move rows name them. */
+  movesWith?: (session: number) => readonly string[];
+  /** Whether Move here brings back the repositories a chat cloned on its runner (#3811): the
+   *  runner names the clones it holds. */
+  clonesComeBack?: (session: number) => boolean;
   /** Why each chat's Smart close stopped without its record (SI-8f), for its needs-you rows. */
   stopped?: Readonly<Record<number, string>>;
   /**
@@ -947,6 +982,8 @@ export type Doing = {
   startFresh: (tab: number) => void;
   /** Restarts the tab's chat on its conversation, once its turn has ended. */
   restartChat: (tab: number) => void;
+  /** Asks for the tab's chat to move to pool `to`'s runner, or here (#2048). */
+  moveChat: (tab: number, to: string | null) => void;
   /** The same for a chat with no tab, from its row in the Chats list (#1462). */
   restartListed: (session: number) => void;
   /** Opens the dialog that asks `persona` for something from the tab's chat. */
@@ -1114,7 +1151,7 @@ export type Doing = {
   taskBranch: (id: string, act: "merge" | "discard") => void;
   /** Opens a curation chat. The core can refuse — the action gone, a harness that cannot be
    *  typed into — so it answers a `Ran`. */
-  curate: (subject: string, action: string) => Promise<Ran>;
+  curate: (subject: string, action: string, label: string) => Promise<Ran>;
   quit: () => void;
   /** Each answers a `Ran`: the core places the path and can refuse it — a path that left the
    *  branch, a link, a file gone meanwhile — and says so in its own sentence. */
@@ -1404,6 +1441,8 @@ export const usingSkillId = (tab: number) => `tab.useskill:${tab}`;
 
 /** The catalogue's id for the row that opens the project's Dispatches tab (#1452). */
 export const DISPATCHES_SHOW = "dispatches.show";
+/** The catalogue's id for the row that opens the project's Browsers grid (#2027). */
+export const BROWSERS_SHOW = "browsers.show";
 /** The Skill studio (#2765), offered only while its flag is on: `skillStudio.ts` spells it. */
 export { SKILL_STUDIO_SHOW };
 
@@ -1411,6 +1450,25 @@ export { SKILL_STUDIO_SHOW };
 function can(id: string, title: string, does: Does, name?: string): Offer {
   return { id, title, available: true, reason: "", does, name };
 }
+
+/** What Move to pool says it does (#2048). */
+export const MOVE_TO_RUNNER_NOTE =
+  "Its branch, uncommitted work and conversation go with it at its next pause. Its browsers start fresh there.";
+
+/**
+ * What Move here says it does (#2048), and of a clone the runner made (#3454): a runner before
+ * session protocol 1.51 cannot name its clones, so such a clone stays there.
+ */
+export const MOVE_HERE_NOTE =
+  "Its branch, uncommitted work and conversation come back to this machine at its next pause. A repository cloned only on the runner stays there.";
+
+/** What Move here says it does from a runner that names its clones (1.51, #3811). */
+export const MOVE_HERE_WITH_CLONES_NOTE =
+  "Its branch, uncommitted work and conversation come back to this machine at its next pause, with each repository it cloned on the runner.";
+
+/** What a Move row says of the other chats of the workspace that move with it (#3453). */
+export const MOVE_TOGETHER_NOTE =
+  "They share its workspace's clones, so they move together: each keeps working until it is at a pause, and none starts there before all of their work is there. If one cannot move, none does.";
 
 /** What Restart chat keeps and what it changes. */
 const RESTART_KEEPS =
@@ -1561,7 +1619,12 @@ function curationRows(subject: SubjectCurations, cannotOpen: string | null): Off
     if (cannotOpen !== null) return { ...cannot(id, title, cannotOpen, name), group };
     const who = action.runner === null ? "with no persona" : `as ${action.runner}`;
     return {
-      ...can(id, title, { verb: "curate", subject: subject.subject, action: action.id }, name),
+      ...can(
+        id,
+        title,
+        { verb: "curate", subject: subject.subject, action: action.id, label: action.label },
+        name,
+      ),
       note: `Opens a chat ${who} in ${action.cwd}, with its prompt typed and not sent.`,
       group,
     };
@@ -1995,24 +2058,19 @@ export function catalogue(now: Now): Offer[] {
 
   // **Use skill… on a chat's tab** (#2775): one row per chat, behind the Skill studio's flag.
   // The palette lists the chat in front's alone (`menuOnly`, as Ask's); each tab's menu has its
-  // own. It opens a picker and types nothing until a skill is picked, so it sits above the line.
+  // own, and the key registry's `chat.useSkill` presses the one in front. It opens a picker and
+  // types nothing until a skill is picked, so it sits above the line. It says no budget: the
+  // chat's budget is the Skills view's to say (spec #3679 S8, #3954), which the pane's Skills
+  // chip opens.
   if (now.skillStudio) {
     for (const tab of now.tabs.order) {
       const chat = chatOf(now.tabs, tab);
       // A shell runs no tool with skills, as it has no profile to ask a persona on.
       if (chat === undefined || !(now.askable?.(chat) ?? false)) continue;
       const name = now.tabs.byId[tab].name;
-      const budget = now.skillBudgets?.[chat];
       offers.push({
-        ...can(
-          usingSkillId(tab),
-          budget === undefined ? "Use skill…" : `Use skill… (${budgetShort(budget)})`,
-          { verb: "useSkill", tab },
-        ),
-        note:
-          budget === undefined
-            ? `Chat ${name}: one of its skills, typed into it for you to send.`
-            : `Chat ${name}: one of its skills, typed into it for you to send. ${budgetSaid(budget)}.`,
+        ...can(usingSkillId(tab), "Use skill…", { verb: "useSkill", tab }),
+        note: `Chat ${name}: one of its skills, typed into it for you to send.`,
         ...(tab === now.tabs.inFront ? {} : { menuOnly: true as const }),
       });
     }
@@ -2110,6 +2168,34 @@ export function catalogue(now: Now): Offer[] {
       midTurn: { session: chat, title: `Restart chat ${name} when this turn ends` },
       noState: { session: chat, note: restartNoteNoState(name) },
     });
+  }
+
+  // **Move to runner and Move here** (#2048): one row per place the chat can move, under its
+  // restart. It ends nothing by itself: the move is prepared while the chat works, and happens
+  // at its next pause, which the row's note says.
+  for (const tab of now.tabs.order) {
+    const chat = chatOf(now.tabs, tab);
+    if (chat === undefined) continue;
+    const name = now.tabs.byId[tab].name;
+    // The other chats of its workspace move with it (#3453), so the row names them.
+    const others = now.movesWith?.(chat) ?? [];
+    const together = others.length === 0 ? "" : ` with ${namesListed(others)}`;
+    for (const to of now.movesTo?.(chat) ?? []) {
+      const here =
+        (now.clonesComeBack?.(chat) ?? false) ? MOVE_HERE_WITH_CLONES_NOTE : MOVE_HERE_NOTE;
+      const note = to === null ? here : MOVE_TO_RUNNER_NOTE;
+      offers.push({
+        ...can(
+          `tab.move:${tab}:${to ?? ""}`,
+          to === null
+            ? `Move chat ${name}${together} here`
+            : `Move chat ${name}${together} to pool ${to}`,
+          { verb: "moveChat", tab, to },
+          name,
+        ),
+        note: others.length === 0 ? note : `${note} ${MOVE_TOGETHER_NOTE}`,
+      });
+    }
   }
 
   // **A chat's work link** (V60, ADR 0088 §3): which work item it works on. Above the line: it
@@ -2238,15 +2324,26 @@ export function catalogue(now: Now): Offer[] {
       offers.push({
         ...can(
           `${SKILL_STUDIO_IN}${workspace}`,
-          "Open in Skill studio",
+          OPEN_SKILL_STUDIO,
           {
             verb: "openView",
             view: skillStudioView(inWorkspace(workspace)),
-            title: skillStudioTitle(inWorkspace(workspace)),
+            title: SKILL_STUDIO_TITLE,
           },
           workspace,
         ),
         note: `${workspace}: every skill its chats get, and why any other is left out.`,
+      });
+    // Its Needs you (#3695): what its Skills summary's "need you" runs. Not a row of the palette
+    // or a menu, which offer the studio itself.
+    if (now.skillStudio)
+      offers.push({
+        ...can(`${SKILL_NEEDS_IN}${workspace}`, `Skills that need you in ${workspace}`, {
+          verb: "openView",
+          view: skillStudioAt(inWorkspace(workspace), "needs"),
+          title: SKILL_STUDIO_TITLE,
+        }),
+        menuOnly: true,
       });
     // Its cross-repo changes (charter#470), for the workspace in front of the operator: a view
     // tab keyed by the workspace and filed on its strip, which asks the forge when it opens and
@@ -2334,11 +2431,11 @@ export function catalogue(now: Now): Offer[] {
     ...can("settings.you", "Your settings…", { verb: "openYourSettings" }),
     note: "Your text sizes and your editor, on this machine.",
   });
-  // **Add a Docker pool…** (#2679): the way to this machine's first pool, there with or without
-  // a project, as Your settings… is. Nothing else about pools is listed until one is kept.
+  // **Add a pool…** (#2679): the way to this machine's first pool, there with or without a
+  // project, as Your settings… is. Its dialog adds a Docker or a cluster pool (#3292).
   offers.push({
-    ...can("pool.add", "Add a Docker pool…", { verb: "addDockerPool" }),
-    note: "A runner on your Docker, held to the limits you set.",
+    ...can("pool.add", "Add a pool…", { verb: "addDockerPool" }),
+    note: "A runner on your Docker, or one claimed in your team's cluster.",
   });
   // **Devices** (#2052): this machine and every runner it keeps, offered once it keeps a pool,
   // so nothing about runners shows before the first is added (spec #2041 story 6).
@@ -2448,15 +2545,25 @@ export function catalogue(now: Now): Offer[] {
       offers.push({
         ...can(
           skillStudioAs(persona),
-          "Open in Skill studio",
+          OPEN_SKILL_STUDIO,
           {
             verb: "openView",
             view: skillStudioView(asPersona(persona)),
-            title: skillStudioTitle(asPersona(persona)),
+            title: SKILL_STUDIO_TITLE,
           },
           persona,
         ),
         note: `${persona}: every skill its chats get in any workspace, and why any other is left out.`,
+      });
+    // Its Needs you (#3695): what its page's "need you" row runs.
+    if (now.skillStudio)
+      offers.push({
+        ...can(skillNeedsAs(persona), `Skills that need you as ${persona}`, {
+          verb: "openView",
+          view: skillStudioAt(asPersona(persona), "needs"),
+          title: SKILL_STUDIO_TITLE,
+        }),
+        menuOnly: true,
       });
   }
 
@@ -2530,6 +2637,17 @@ export function catalogue(now: Now): Offer[] {
         title: DISPATCHES_TITLE,
       }),
       note: "The work this project's chats handed to other chats, in a tab of its own.",
+    });
+    // **Every browser, live, in a tab of its own** (#2027): the Browsers grid, with the
+    // Inbox's scope switch. The Chats view's heading draws this row as a button while the
+    // project has a browser.
+    offers.push({
+      ...can(BROWSERS_SHOW, "Open browsers", {
+        verb: "openView",
+        view: BROWSERS_GRID_VIEW,
+        title: BROWSERS_GRID_TITLE,
+      }),
+      note: "Every browser, live, in a tab of its own: this project's, a workspace's or every project's.",
     });
     if (now.skillStudio)
       offers.push({
@@ -3295,6 +3413,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "restartChat":
       doing.restartChat(does.tab);
       return DID;
+    case "moveChat":
+      doing.moveChat(does.tab, does.to);
+      return DID;
     case "restartListed":
       doing.restartListed(does.session);
       return DID;
@@ -3533,7 +3654,7 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
         });
       return DID;
     case "curate":
-      return doing.curate(does.subject, does.action);
+      return doing.curate(does.subject, does.action, does.label);
     case "quit":
       doing.quit();
       return DID;
@@ -3584,9 +3705,9 @@ function settingsGroupRows(
     group,
     ...extra,
   });
-  // The Pools group only once this machine keeps a pool (#2679).
-  const you = SETTINGS_GROUPS.you.filter((one) => one.id !== POOLS || anyPoolKept());
-  const rows: Offer[] = you.map((one) => ({
+  // The Pools group with or without a pool, as Settings lists it (the person's ruling of
+  // 2026-10-30).
+  const rows: Offer[] = SETTINGS_GROUPS.you.map((one) => ({
     ...can(
       `settings.group:${one.id}`,
       `Your settings: ${one.label}`,

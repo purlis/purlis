@@ -82,7 +82,7 @@ pub(super) const SELECT: Family = Family {
     sized_apart: &[
         (
             "[data-scope=\"select\"][data-part=\"root\"][data-size=\"sm\"]",
-            "max(var(--size-chrome), var(--space-7))",
+            "max(24px, var(--size-chrome), var(--space-7))",
         ),
         (
             "[data-scope=\"select\"][data-part=\"root\"][data-size=\"lg\"]",
@@ -137,7 +137,7 @@ pub(super) const COMBOBOX: Family = Family {
     sized_apart: &[
         (
             "[data-scope=\"combobox\"][data-part=\"root\"][data-size=\"sm\"]",
-            "max(var(--size-chrome), var(--space-7))",
+            "max(24px, var(--size-chrome), var(--space-7))",
         ),
         (
             "[data-scope=\"combobox\"][data-part=\"root\"][data-size=\"lg\"]",

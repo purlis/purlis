@@ -62,9 +62,13 @@ function removal(of: MachineProfileRow): MachineProfileRemoval {
       };
 }
 
+/** What removing a profile says of the pools' runners that keep it: none, unless a test says. */
+let removeNote: string | null = null;
+
 beforeEach(() => {
   profiles = [];
   sent = [];
+  removeNote = null;
   mockIPC((cmd, args) => {
     const given = (args ?? {}) as Record<string, unknown>;
     sent.push({ cmd, args: given });
@@ -98,7 +102,7 @@ beforeEach(() => {
       }
       case "machine_profile_remove":
         profiles = profiles.filter((one) => one.name !== given.name);
-        return null;
+        return removeNote;
       default:
         return null;
     }
@@ -265,6 +269,22 @@ describe("Settings › You › Profiles", () => {
       }),
     );
     await waitFor(() => expect(screen.queryByText("work")).toBeNull());
+  });
+
+  it("says a pool's runner before 1.52 keeps a removed profile (#3849)", async () => {
+    profiles = [row("work")];
+    removeNote =
+      "Pool builds's runner runs a purlis before 1.52, so it keeps the profile 'work' and its sign-in until the runner is made again.";
+    render(<Row at={0} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Remove work" }));
+    const asked = await screen.findByRole("alertdialog");
+    await userEvent.click(within(asked).getByRole("button", { name: "Remove profile" }));
+
+    expect(
+      await screen.findByText(
+        /Removed work and deleted .* Pool builds's runner runs a purlis before 1\.52/,
+      ),
+    ).toBeTruthy();
   });
 
   it("removes nothing when the question is cancelled", async () => {

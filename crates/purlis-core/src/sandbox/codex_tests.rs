@@ -74,6 +74,7 @@ fn codex_start(plane: &Path, machine: &Machine) -> Result<Option<Applied>, NotSt
             config: profile_home(machine),
             data: None,
             sandbox_only: Some("codex-sandbox".to_owned()),
+            state: None,
         });
     }
     Ok(applied)
@@ -419,6 +420,7 @@ fn a_codex_chat_on_the_operators_own_home_or_any_folder_purlis_did_not_make_has_
             config: Some(folder.clone()),
             data: None,
             sandbox_only: Some(name.to_owned()),
+            state: None,
         });
         let Form::Codex(wrap) = applied.form() else {
             panic!("a Codex wrap");

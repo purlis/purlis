@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ARRANGEMENT, panelToggled, type Arrangement } from "./regions";
-import { cycleOf, f6Of, stepped } from "./regionCycle";
+import { cycleOf, f6Of, stepped, steppedWithCard } from "./regionCycle";
 
 const away = (arrangement: Arrangement, ...ids: string[]) =>
   arrangement.map((one) => (ids.includes(one.id) ? { ...one, collapsed: true } : one));
@@ -65,5 +65,30 @@ describe("the key", () => {
     expect(f6Of(key({ key: "F6", metaKey: true }))).toBeUndefined();
     expect(f6Of(key({ key: "F6", altKey: true }))).toBeUndefined();
     expect(f6Of(key({ key: "F7" }))).toBeUndefined();
+  });
+});
+
+describe("F6 while a chip's card is up (#3648)", () => {
+  const cycle = ["left", "centre", "right"] as const;
+  it("goes to the card first, from outside every region and round from the last", () => {
+    expect(steppedWithCard(cycle, undefined, "out", false)).toBe("card");
+    expect(steppedWithCard(cycle, "right", "out", false)).toBe("card");
+    expect(steppedWithCard(cycle, "left", "out", false)).toBe("centre");
+  });
+
+  it("goes back to it from the first region with Shift", () => {
+    expect(steppedWithCard(cycle, "left", "out", true)).toBe("card");
+    expect(steppedWithCard(cycle, undefined, "out", true)).toBe("right");
+    expect(steppedWithCard(cycle, "centre", "out", true)).toBe("left");
+  });
+
+  it("goes on from the card to the first region, or with Shift the last", () => {
+    expect(steppedWithCard(cycle, undefined, "in", false)).toBe("left");
+    expect(steppedWithCard(cycle, undefined, "in", true)).toBe("right");
+  });
+
+  it("is the cycle as it was with no card up", () => {
+    expect(steppedWithCard(cycle, "right", "none", false)).toBe("left");
+    expect(steppedWithCard(cycle, undefined, "none", false)).toBe("left");
   });
 });

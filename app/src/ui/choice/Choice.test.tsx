@@ -15,6 +15,7 @@ import { OptionCard, OptionCards, Radio, RadioGroup, Segment, SegmentedControl }
 import { Slider } from "./Slider";
 import { Switch } from "./Switch";
 import { ColorWell } from "./ColorWell";
+import { drawnWith } from "../../cascade.testkit";
 
 afterEach(cleanup);
 
@@ -62,6 +63,17 @@ describe("a checkbox", () => {
     const box = screen.getByRole("checkbox", { name: "Draw purlis's footer" });
     expect(box).toHaveAttribute("id", "footer");
     expect(box).toHaveAttribute("tabindex", "0");
+  });
+
+  it("draws a chip's count after its words, said once and never part of its name (#3484)", () => {
+    render(
+      <Checkbox variant="chip" count={2}>
+        needs you
+      </Checkbox>,
+    );
+    const box = screen.getByRole("checkbox", { name: "needs you" });
+    expect(rootOf(box).querySelector('[data-part="count"]')).toHaveTextContent("2");
+    expect(box).toHaveAccessibleDescription("2");
   });
 
   it("is described by its line, which is not part of its name", () => {
@@ -334,5 +346,113 @@ describe("a colour well", () => {
     fireEvent.change(well, { target: { value: hex("445566") } });
     fireEvent.blur(well);
     expect(committed).toHaveBeenCalledTimes(1);
+  });
+});
+
+// WCAG 2.5.8 (#4173): the compact density draws the chrome at 18px, so every choice's row and a
+// small segmented control take the sm button's floor, 24 CSS px, as a field's does (#3250).
+describe("a choice's target size (#4173)", () => {
+  const FLOOR = "max(24px, var(--size-chrome), var(--space-7))";
+
+  it("never draws a choice row under the 24px target, in any density or text size", () => {
+    render(
+      <>
+        <Checkbox>Sign commits</Checkbox>
+        <Checkbox variant="chip">working</Checkbox>
+        <RadioGroup aria-label="Density" value="compact" onChange={() => {}}>
+          <Radio value="compact">Compact</Radio>
+        </RadioGroup>
+        <Switch>Auto-save</Switch>
+        <Slider
+          label="Window text size"
+          minValue={10}
+          maxValue={24}
+          value={14}
+          onChange={() => {}}
+          shown={(px) => `${px}px`}
+          spoken={(px) => `${px} pixels`}
+        />
+      </>,
+    );
+    for (const [role, name] of [
+      ["checkbox", "Sign commits"],
+      ["checkbox", "working"],
+      ["radio", "Compact"],
+      ["switch", "Auto-save"],
+    ] as const) {
+      const root = rootOf(screen.getByRole(role, { name }));
+      expect(drawnWith(root, "min-block-size"), name).toBe(FLOOR);
+    }
+    const slider = screen
+      .getByRole("slider", { name: "Window text size" })
+      .closest('[data-scope="slider"][data-part="root"]') as Element;
+    expect(drawnWith(slider, "min-block-size")).toBe(FLOOR);
+  });
+
+  it("never draws a small segmented control under the 24px target", () => {
+    render(
+      <SegmentedControl size="sm" aria-label="Level" value="you" onChange={() => {}}>
+        <Segment value="you">You</Segment>
+        <Segment value="workspace">Workspace</Segment>
+      </SegmentedControl>,
+    );
+    expect(drawnWith(screen.getByRole("radiogroup", { name: "Level" }), "block-size")).toBe(FLOOR);
+  });
+
+  // A segment sits inside the control's padding, so it is drawn under the control (20px in a 24px
+  // control). Its press reaches through that padding by the same length the padding is, one
+  // custom property both read, so a theme's padding (`segmented-control.root.padding`, which the
+  // engine writes into it too) moves the reach with it. The story hit-tests it in the browser.
+  it("pads the control and reaches a segment's press by one length, the control's padding", () => {
+    render(
+      <SegmentedControl size="sm" aria-label="Level" value="you" onChange={() => {}}>
+        <Segment value="you">You</Segment>
+      </SegmentedControl>,
+    );
+    const group = screen.getByRole("radiogroup", { name: "Level" });
+    expect(drawnWith(group, "--segment-reach")).toBe("var(--space-1)");
+    expect(drawnWith(group, "padding")).toBe("var(--segment-reach)");
+  });
+
+  // The slider's press lands on its area, not its row (#4173): the area is the 24px target, its
+  // track and thumb centred in it, so nothing it draws moves.
+  it("never draws the slider's press area under the 24px target", () => {
+    render(
+      <Slider
+        label="Window text size"
+        minValue={10}
+        maxValue={24}
+        value={14}
+        onChange={() => {}}
+        shown={(px) => `${px}px`}
+        spoken={(px) => `${px} pixels`}
+      />,
+    );
+    const area = document.querySelector('[data-scope="slider"][data-part="area"]') as Element;
+    expect(drawnWith(area, "block-size")).toBe(FLOOR);
+  });
+});
+
+// WCAG 2.5.8 (#4197): a choice with no words is drawn its mark's size, 14px across; its press
+// reaches a 24 by 24 square around it, placed on its root. The story hit-tests the square.
+describe("a choice with no words (#4197)", () => {
+  it("places the press it reaches past its mark on its root", () => {
+    render(
+      <>
+        <Checkbox aria-label="Choose the row" />
+        <RadioGroup aria-label="Density" value="compact" onChange={() => {}}>
+          <Radio value="compact" aria-label="Compact" />
+        </RadioGroup>
+        <Switch aria-label="Auto-save" />
+      </>,
+    );
+    for (const [role, name] of [
+      ["checkbox", "Choose the row"],
+      ["radio", "Compact"],
+      ["switch", "Auto-save"],
+    ] as const)
+      expect(drawnWith(rootOf(screen.getByRole(role, { name })), "position"), name).toBe(
+        "relative",
+      );
   });
 });

@@ -43,8 +43,25 @@ import { Notice, NoticeList } from "./Notice";
 import { ForgeSignInEnded } from "./ForgeSignInEnded";
 import { AddDockerPoolHost } from "./AddDockerPool";
 import { ActionResultNotice, ResultsGroup } from "./ActionResultNotice";
+import {
+  AT_STATUS,
+  dormantCause,
+  dormantSays,
+  placeOfSaid,
+  useChipNotices,
+  type ChipNotices,
+  type StandingNotice,
+} from "./ChipNotices";
+import { chipsOf } from "./noticePlace";
 import { dismissGone, GoneProjectNotice, settleGone, useGoneDismissed } from "./GoneProjectNotice";
-import { goneCause, goneKept, keepGoneDismissed, letGoneGo, settleGoneKept } from "./dismissals";
+import {
+  goneCause,
+  goneKept,
+  keepGoneDismissed,
+  letGoneGo,
+  settleGoneKept,
+  useDismissals,
+} from "./dismissals";
 import { askUpdate, tellSaved, useRepoSaving } from "./saving";
 import { OPEN_LICENCES } from "./LicencesView";
 import {
@@ -64,7 +81,8 @@ import { useScreenReaderMode } from "./screenReader";
 import { useLatestSaid } from "./latestSaid";
 import { resultsFor, useKeptResults } from "./keptResults";
 import { useAlerts } from "./alerts";
-import type { InboxAlertsDo, WindowAlerts } from "./InboxAlerts";
+import { LAYOUT_FIX, LAYOUT_FIX_LABEL, type InboxAlertsDo, type WindowAlerts } from "./InboxAlerts";
+import { useAlertFix } from "./alertFix";
 import { waitingAsk, type Elsewhere } from "./InboxElsewhere";
 import { ApprovePlane } from "./ApprovePlane";
 import { drawThemeFor, Extensions } from "./Extensions";
@@ -91,6 +109,9 @@ import { placeOf, scopeLadder } from "./fileFind";
 import { useJumpAsks, type Pending } from "./fileJump";
 import type { Place } from "./pieceViews";
 import { ClosingProject } from "./ClosingProject";
+import { discardUnsavedIn, unsavedIn } from "./unsavedWork";
+import { carriedBack, carryOut, useUnsavedAcrossWindows } from "./unsavedWindows";
+import { UnsavedWorkQuestion, type UnsavedAsk } from "./UnsavedWorkQuestion";
 import { QuitWarning, type Ending } from "./QuitWarning";
 import { RelaunchAsk } from "./RelaunchAsk";
 import { useNoBrowserMenu } from "./Menus";
@@ -106,6 +127,7 @@ import { slideTowards } from "./workspaceSlide";
 import { pinsChanged } from "./workspacePins";
 import type { Needing, Quiet } from "./NeedsYou";
 import { useAsks } from "./asks";
+import { giveKeyboardTo } from "./paneKeyboard";
 import { landsOn, useNotificationLanding, type Landing } from "./askNotices";
 import { aQuestionIsUp, useCloseHanded } from "./closeHanded";
 import { useAwayRefusals } from "./dispatchAway";
@@ -157,6 +179,20 @@ const STILL_CLOSING =
  * second launch handing its directory over, and the quit that ends every project's chats at
  * once.
  */
+/**
+ * **What the layout's Update does, said from one workspace's chip** (#3930's review): it updates
+ * every workspace behind the layout, so it names the others it touches.
+ */
+function layoutUpdates(name: string, behind: readonly string[]): string {
+  const others = behind.filter((one) => one !== name);
+  if (others.length === 0) return `${LAYOUT_FIX_LABEL} brings it up to date.`;
+  const named =
+    others.length === 1
+      ? others[0]
+      : `${others.slice(0, -1).join(", ")} and ${others[others.length - 1]}`;
+  return `${LAYOUT_FIX_LABEL} brings it up to date, and ${named} too.`;
+}
+
 function App() {
   // The WebView's own menu, taken away from the whole window (`Menus.tsx`). One listener, on
   // the window, so it covers every surface including the ones with no charter menu of their
@@ -661,6 +697,9 @@ function App() {
       void gone;
       return rest;
     });
+    // And the unsaved work its views held (#3929): asked about first where the close was this
+    // window's, and never drawn here again.
+    discardUnsavedIn(plane);
   }, []);
 
   const letGoOf = useCallback(
@@ -686,28 +725,62 @@ function App() {
     [takeOut],
   );
 
+  /** **A project's close or a quit waiting on the answer about the unsaved work it
+   *  would lose** (#3929, `unsavedWork.ts`), asked before what it ends is. */
+  const [unsavedAsk, setUnsavedAsk] = useState<UnsavedAsk>();
+  const unsavedAskNow = useRef(unsavedAsk);
+  /** Asks about `ask`'s work, unless a question about unsaved work is up already: that one is
+   *  answered first, and this ask is one not taken (`kept`). */
+  const askUnsaved = useCallback((ask: UnsavedAsk) => {
+    if (unsavedAskNow.current !== undefined) return ask.kept?.();
+    unsavedAskNow.current = ask;
+    setUnsavedAsk(ask);
+  }, []);
+  const unsavedAnswered = useCallback(() => {
+    unsavedAskNow.current = undefined;
+    setUnsavedAsk(undefined);
+  }, []);
+
+  /** **Unsaved work across windows** (#4028): a project moved out takes its work along, and
+   *  a quit asks in every window that holds some. */
+  const { askAtQuit } = useUnsavedAcrossWindows({ planes, askUnsaved });
+
   /**
    * Moves one project into another window — a new one when `to` is null (charter#126).
    *
    * **Nothing is closed.** Its chats go on running in the core, and the window it arrives in
-   * draws them from what the core has open, as a window that reloaded would. This window only
-   * takes its tab out. A split window left holding nothing goes (`windows.rs`), and the main
-   * window left holding nothing shows the opener.
+   * draws them from what the core has open, as a window that reloaded would, and its views'
+   * unsaved work from what this window carried out (#4028). This window only takes its tab out.
+   * A split window left holding nothing goes (`windows.rs`), and the main window left holding
+   * nothing shows the opener.
    */
   const moveProject = useCallback(
-    async (plane: string, to: string | null): Promise<Ran> => {
+    async (plane: string, to: string | null, unsavedAsked = false): Promise<Ran> => {
+      // **Its views' unsaved work goes with it** (#4028): carried out before the move, and
+      // registered again in the window it goes to. Where it cannot be carried, it is asked
+      // about first, as before (#3929): the move would lose it.
+      const work = unsavedAsked ? [] : unsavedIn(plane);
+      const carried = work.length === 0 || (await carryOut(plane));
+      if (!carried) {
+        askUnsaved({ work, then: () => void moveProject(plane, to, true) });
+        return { ok: true };
+      }
       const answer = await commands
         .moveProjects([plane], plane, to)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      if (answer.status === "error") return { ok: false, refused: answer.error };
+      if (answer.status === "error") {
+        if (work.length > 0) carriedBack(plane);
+        return { ok: false, refused: answer.error };
+      }
       takeOut(plane);
       return { ok: true };
     },
-    [takeOut],
+    [askUnsaved, takeOut],
   );
 
   /** The project whose close is waiting on the operator's answer (`ClosingProject`). */
   const [closing, setClosing] = useState<string>();
+
   /** Every project's report as of the last render, read when a close arrives rather than
    *  closed over, so the verb below stays one function. */
   const reportsNow = useRef(reports);
@@ -727,13 +800,20 @@ function App() {
    * about, as `PlaneView`'s `run` does.
    */
   const closeProject = useCallback(
-    async (plane: string): Promise<Ran> => {
+    async (plane: string, unsavedAsked = false): Promise<Ran> => {
+      // **Its views' unsaved work is asked about first** (#3929): then what the close ends. The
+      // work goes with the project once it is let go of (`takeOut`).
+      const work = unsavedAsked ? [] : unsavedIn(plane);
+      if (work.length > 0) {
+        askUnsaved({ work, then: () => void closeProject(plane, true) });
+        return { ok: true };
+      }
       const said = reportsNow.current[plane];
       if (said?.settled && said.ending.length === 0) return letGoOf(plane);
       setClosing(plane);
       return { ok: true };
     },
-    [letGoOf],
+    [askUnsaved, letGoOf],
   );
 
   /**
@@ -1272,6 +1352,153 @@ function App() {
   /** Every result said, kept for the Inbox's Notices under Results (#3344). */
   const { kept: keptResults, drop: dropResult } = useKeptResults(said, inFront);
   const resultsInFront = useMemo(() => resultsFor(keptResults, inFront), [keptResults, inFront]);
+  /** The title bar's chips of the project in front, which a notice about a workspace hangs from
+   *  (#3648, `noticePlace.ts`). */
+  const workspacesInFront = inFront === undefined ? undefined : reports[inFront]?.workspaces;
+  const chipsInFront = useMemo(
+    () =>
+      workspacesInFront === undefined
+        ? []
+        : chipsOf({
+            pins: workspacesInFront.pins,
+            dormant: workspacesInFront.dormant,
+            focused: workspacesInFront.focused,
+          }),
+    [workspacesInFront],
+  );
+  /** **"X is gone, kept dormant", on its dormant chip** (#3651): the same line the Notices
+   *  centre lists, with its Forget, and dismissed in the one per-project record both read. */
+  const {
+    dismissed: dismissedInFront,
+    dismiss: dismissInFront,
+    showAgain: showAgainInFront,
+  } = useDismissals(inFront ?? "");
+  const dormantInFront = workspacesInFront?.dormant;
+  const forgetInFront = workspacesInFront?.forget;
+  /** **The workspaces behind the current layout** (#3650): the project's `reinit` alert, by the
+   *  names the core gave it, so each one's chip hangs it. */
+  // Their names as one string first, so a reading that names the same ones (every poll) draws
+  // nothing again.
+  const behindNamed = useMemo(() => {
+    if (inFront === undefined || alertsRead.at !== "read") return "";
+    const read = alertsRead.planes.find((one) => one.plane === inFront);
+    return (read?.alerts ?? [])
+      .filter((one) => one.way.kind === "fix" && one.way.id === LAYOUT_FIX)
+      .flatMap((one) => (Array.isArray(one.workspaces) ? one.workspaces : []))
+      .join("\n");
+  }, [alertsRead, inFront]);
+  const behindInFront = useMemo(
+    () => (behindNamed === "" ? [] : behindNamed.split("\n")),
+    [behindNamed],
+  );
+  /** Its Update, pressed from a chip's card: the Inbox row's own fix, the one state both read
+   *  for the project in front (`alertFix.ts`), then every project's alerts read again, so the
+   *  line goes from both once the layout is mended. */
+  const layoutFix = useAlertFix(inFront ?? "", LAYOUT_FIX, LAYOUT_FIX_LABEL, rereadAlerts);
+  const layoutSaid = layoutFix.said;
+  const layoutBusy = layoutFix.busy;
+  /** The press, through a ref, so the lines are not drawn again for each new closure. */
+  const applyLayout = useRef(layoutFix.apply);
+  useLayoutEffect(() => {
+    applyLayout.current = layoutFix.apply;
+  });
+  const staleInFront = workspacesInFront?.standing;
+  const standingInFront = useMemo<StandingNotice[]>(
+    () => [
+      ...(dormantInFront ?? [])
+        .filter((name) => !dismissedInFront.has(dormantCause(name)))
+        .map((name) => ({
+          workspace: name,
+          cause: dormantCause(name),
+          says: dormantSays(name),
+          fixes: [{ label: "Forget", onPress: () => forgetInFront?.(name) }],
+          dismiss: () => dismissInFront(dormantCause(name)),
+        })),
+      // **A stale repo** (#1985, #3650): read and dismissed by the project, the Inbox's line.
+      ...(staleInFront ?? []),
+      // **A layout behind** (#3650): goes when it is mended, as the Inbox's alert does, so it has
+      // no Dismiss there or here. Its Update mends every workspace behind, as it does there.
+      ...behindInFront.map((name): StandingNotice => ({
+        workspace: name,
+        cause: `alert:reinit:${name}`,
+        says: `${name} is behind the current layout. ${layoutUpdates(name, behindInFront)}${layoutSaid === undefined ? "" : ` ${layoutSaid}`}`,
+        fixes: [
+          {
+            label: LAYOUT_FIX_LABEL,
+            busy: layoutBusy,
+            onPress: () => applyLayout.current(LAYOUT_FIX),
+          },
+        ],
+        kind: "warning",
+        tone: layoutSaid === undefined ? "news" : "trouble",
+      })),
+    ],
+    [
+      dormantInFront,
+      dismissedInFront,
+      dismissInFront,
+      forgetInFront,
+      staleInFront,
+      behindInFront,
+      layoutSaid,
+      layoutBusy,
+    ],
+  );
+  /** **Every ask the registry derives, in every project** (#1690): what the hand's number
+   *  counts, and where it opens the Inbox. */
+  const registry = useAsks(planes);
+  /** **Brings chat `session` of the project in front forward** (#3652): a ✋ dot's press, whose
+   *  chat answers its question on its own band. The same `showChat` a Go of the Inbox runs. */
+  const bringChat = useCallback((session: number) => {
+    const plane = inFrontNow.current;
+    if (plane === undefined) return;
+    setShowing({ at: "plane", plane });
+    void reportsNow.current[plane]?.run({
+      id: `needs.show:${session}`,
+      title: "Show the chat that asks",
+      available: true,
+      reason: "",
+      does: { verb: "showChat", session },
+    });
+    // The asking chat types next even where it was in front already: `showChat` hands the
+    // keyboard over only when its pane changes, and the press was on the ✋ (#3652's review).
+    giveKeyboardTo(plane, session);
+  }, []);
+  /** The notices hung from those chips: a view onto the kept results, so a dismissal in either
+   *  place is one (#3648); and the ✋ of a chat asking to remove a chip's workspace (#3652). */
+  const chipNotices = useChipNotices({
+    asks: inFront === undefined ? undefined : registry.held[inFront],
+    bring: bringChat,
+    said,
+    kept: keptResults,
+    plane: inFront,
+    chips: chipsInFront,
+    drop: dropResult,
+    onSettings: followSaid,
+    standing: standingInFront,
+    // A dormant chip's press asks for its line again, dismissed or not (#3651).
+    bringBack: (workspace) => {
+      if (dormantInFront?.includes(workspace) === true) showAgainInFront(dormantCause(workspace));
+    },
+  });
+  /** **The status bar's card** (#3653): the project's and the app's results, its own list alone,
+   *  which keeps while the chips change, so the project's view handed it is drawn again only when
+   *  what the status bar shows does. It stays drawn under the palette, as a chip's card does: the
+   *  palette is modal and gives the keyboard back where it was as it closes (#3653's review). */
+  const statusList = chipNotices.on.get(AT_STATUS);
+  const statusUp = chipNotices.open === AT_STATUS;
+  const { show: showNotices, hide: hideNotices, dismiss: dismissNotice } = chipNotices;
+  const statusNotices = useMemo<ChipNotices>(
+    () => ({
+      on: new Map(statusList === undefined ? [] : [[AT_STATUS, statusList]]),
+      open: statusUp ? AT_STATUS : undefined,
+      show: showNotices,
+      hide: hideNotices,
+      dismiss: dismissNotice,
+      onSettings: followSaid,
+    }),
+    [statusList, statusUp, showNotices, hideNotices, dismissNotice, followSaid],
+  );
   const windowLines = useMemo(
     () => ({
       at: setInboxLinesAt,
@@ -1379,18 +1606,24 @@ function App() {
   useEffect(() => {
     // The catch is attached here and not in the cleanup: a window that cannot listen is
     // still a window, and a rejection nothing is holding yet is an unhandled one.
-    const listening = listen("quit-asked", () => {
+    const askToQuit = () => {
       // Nothing to end is nothing to warn about — but only once every project has said what
       // it has open. Before that, no tabs means "not yet", and quitting on it would end every
       // chat the window had not drawn.
       if (atQuit.current.settled && atQuit.current.ending.length === 0)
         void commands.quit().catch(() => undefined);
       else setAsking(true);
+    };
+    const listening = listen("quit-asked", () => {
+      // **The unsaved work of every window's views is asked about first** (#3929, #4028): this
+      // window's, then each split window's, there. Keep editing is a quit not taken, which the
+      // core is told as the warning's Not now tells it.
+      askAtQuit(askToQuit, () => void commands.quitCancelled().catch(() => undefined));
     }).catch(() => undefined);
     // Unlistening can fail too — the window may be going away under it — and a cleanup
     // that throws into nothing is an unhandled rejection, not a diagnosis.
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
-  }, []);
+  }, [askAtQuit]);
 
   // The app menu's Settings… (`⌘,`), which is the core's (`lifecycle.rs`) and says so with an
   // event, as its Quit does. The same verb the palette row runs.
@@ -1441,6 +1674,7 @@ function App() {
       linkWorkItem: () => undefined,
       startFresh: () => undefined,
       restartChat: () => undefined,
+      moveChat: () => undefined,
       restartListed: () => undefined,
       askPersona: () => undefined,
       useSkill: () => undefined,
@@ -1773,9 +2007,6 @@ function App() {
     [planes, reports],
   );
 
-  /** **Every ask the registry derives, in every project** (#1690): what the hand's number
-   *  counts, and where it opens the Inbox. */
-  const registry = useAsks(planes);
   /**
    * **The ✋ opens the Inbox** (#1692, I-2): the project in front's, where something waits there,
    * and otherwise the first project along the strip with something waiting, brought to the
@@ -2102,7 +2333,8 @@ function App() {
         chip
       ) : (
         <Menued
-          on={{ on: "workspace", workspace }}
+          // The plane root's chip takes the root's menu (#3654), which has no pin to let go.
+          on={workspace === OUTSIDE ? { on: "root" } : { on: "workspace", workspace }}
           offers={inFrontFound}
           onPress={(offer) => void reports[inFront]?.run(offer)}
         >
@@ -2149,6 +2381,7 @@ function App() {
                   held={paletteOpen}
                   does={switchDoes}
                   menuOf={workspaceMenu}
+                  notices={chipNotices}
                 />
               )}
             </>
@@ -2206,17 +2439,21 @@ function App() {
           />
         )}
         <div className="window-work">
-          {/* What the last action answered, as a closable notice at the top of the content
-          (#3344). Said here only while the palette is down: it is modal and draws over this
-          notice, and shows the same words itself rather than leaving the operator to guess at a
-          sentence behind the overlay. One state, two places it can be drawn — never two states.
-          Closed, it stays closed until the next result; it is kept under Results in the Inbox's
-          Notices either way. */}
-          {said && said !== closedSaid && !paletteOpen && (
+          {/* **No result is in the page's flow while a project is in front** (#3648, #3653): one
+          about a workspace hangs from its chip, and a project's or the app's pops from the status
+          bar's Notices item; each is listed in the Notices centre too. With no project in front
+          the window has no status bar and no Notices centre, so its result stands here, at the
+          top of the opener's page, as the window's own lines do (D-LB-1). */}
+          {said && said !== closedSaid && !paletteOpen && inFront === undefined && (
             <ActionResultNotice
               cause={`result:${said.from}`}
               said={said}
-              onClose={() => setClosedSaid(said)}
+              onClose={() => {
+                setClosedSaid(said);
+                // Closed here, it does not pop on the status bar of the project that comes next
+                // (#3653's review).
+                hideNotices();
+              }}
               onSettings={followSaid}
             />
           )}
@@ -2226,6 +2463,20 @@ function App() {
               into={resultsAt}
               onDrop={dropResult}
               onSettings={followSaid}
+              // **No chip, so listed here alone, with a way there** (#3651, D-3648-16): a
+              // result about a workspace the title bar draws no chip for offers "Open X",
+              // while the project has that workspace.
+              openOf={(one) => {
+                const place = placeOfSaid(one, chipsInFront);
+                if (place.at !== "centre") return undefined;
+                // Only to a workspace the project still has: one removed or renamed since has
+                // no way there, and a way that does nothing is no way (#3651's review).
+                if (workspacesInFront?.names.includes(place.open) !== true) return undefined;
+                return {
+                  label: `Open ${place.open}`,
+                  onPress: () => switchDoes.go(inFront, place.open),
+                };
+              }}
             />
           )}
 
@@ -2324,8 +2575,8 @@ function App() {
               ))}
             {/* A browser sign-in a forge ended, with Sign in again (#729). */}
             <ForgeSignInEnded />
-            {/* Add a Docker pool… (#2679): a dialog, opened from the palette or the Pools group. */}
-            <AddDockerPoolHost />
+            {/* Add a pool… (#2679): a dialog, opened from the palette or the Pools group. */}
+            <AddDockerPoolHost plane={inFront} />
             {/* An entry the store itself would not take back, said the same way. */}
             {notRestored.map((line) => (
               <Notice
@@ -2396,6 +2647,7 @@ function App() {
               onReport={onReport}
               onSessionRows={onSessionRows}
               alerts={alerts}
+              statusNotices={plane === inFront ? statusNotices : undefined}
               contributed={contributedPanels}
               views={extensionViews}
               commands={extensionCommands}
@@ -2502,6 +2754,10 @@ function App() {
       {extensions && <Extensions onClose={() => setExtensions(false)} />}
 
       {asking && <QuitWarning chats={everyEnding} onQuit={quit} onCancel={dontQuit} />}
+
+      {/* The one question a close asks about a view's unsaved work (#3929): a project's, a
+          quit's. */}
+      {unsavedAsk && <UnsavedWorkQuestion asked={unsavedAsk} onAnswered={unsavedAnswered} />}
 
       {closing !== undefined && (
         <ClosingProject

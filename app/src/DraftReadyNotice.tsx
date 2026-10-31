@@ -4,9 +4,13 @@
 import { useContext, useState } from "react";
 import type { PlaneId } from "./bindings";
 import { Notice, NoticeOf } from "./Notice";
-import { askSettingsAction } from "./settings/links";
 import { draftReadySays, useSkillDrafts } from "./skillDraftAsks";
-import { SKILL_STUDIO_SHOW, useSkillStudioOn } from "./skillStudio";
+import { AT_THE_ROOT, askSkillStudio, useSkillStudioOn } from "./skillStudio";
+
+/** What the notice's one action is called (S8, #3694): one draft is opened, several are listed. */
+export function openDraftsSaid(drafts: number): string {
+  return drafts === 1 ? "Open the draft" : "Open the drafts";
+}
 
 /**
  * **"Draft ready in Skill studio", on the tab of the chat that drafted it** (SK-9, #2772,
@@ -14,7 +18,8 @@ import { SKILL_STUDIO_SHOW, useSkillStudioOn } from "./skillStudio";
  * tab says of it. Trying, accepting and rejecting it are the studio's alone, and nothing else
  * asks for it: the Inbox does not list it.
  *
- * - **Open in Skill studio**: the studio, where the draft waits with its diff.
+ * - **Open the draft** (S8, #3694): the studio at Drafts › that draft, where it waits with its
+ *   diff (#3690); **Open the drafts**, at Drafts, where the chat drafted several.
  * - **Dismiss**: puts it away until the chat drafts again.
  */
 export function DraftReadyNotice({ plane, session }: { plane: PlaneId; session: number }) {
@@ -22,7 +27,8 @@ export function DraftReadyNotice({ plane, session }: { plane: PlaneId; session: 
   const drafts = useSkillDrafts(plane, 0, on);
   const offScreen = useContext(NoticeOf) !== null;
   const [putAway, setPutAway] = useState<string>();
-  const mine = drafts.filter((draft) => draft.chat === session).map((draft) => draft.name);
+  const drafted = drafts.filter((draft) => draft.chat === session);
+  const mine = drafted.map((draft) => draft.name);
   const key = mine.join("\n");
   if (!on || mine.length === 0 || putAway === key) return null;
   return (
@@ -32,8 +38,14 @@ export function DraftReadyNotice({ plane, session }: { plane: PlaneId; session: 
       label="Draft ready in Skill studio"
       fixes={[
         {
-          label: "Open in Skill studio",
-          onPress: () => askSettingsAction(plane, SKILL_STUDIO_SHOW),
+          label: openDraftsSaid(drafted.length),
+          onPress: () =>
+            askSkillStudio(
+              plane,
+              AT_THE_ROOT,
+              "drafts",
+              drafted.length === 1 ? drafted[0].id : undefined,
+            ),
         },
       ]}
       onDismiss={() => setPutAway(key)}

@@ -5,7 +5,7 @@
 //! back through the skill set the studio shows, and, on a plane that is a git repository, as one
 //! commit of exactly its own paths.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::*;
 use crate::testgit::run;
@@ -32,6 +32,8 @@ fn plane() -> tempfile::TempDir {
         "release",
         "Cuts a release, then skills:deploy.",
     );
+    // Its app state, made before purlis was used there (#3718): nothing waits for an Accept.
+    crate::appstate::made(root).unwrap();
     tmp
 }
 
@@ -102,6 +104,51 @@ fn a_new_skill_from_a_template_lands_at_the_level_it_was_made_at() {
     assert!(!gets(root, None).contains(&"triage".to_owned()));
     let text = std::fs::read_to_string(folder.join("SKILL.md")).unwrap();
     assert!(text.contains("## Steps"), "{text}");
+}
+
+/// #3925: Write trigger tests starts a skill's `evals/triggers.json` from a template where it has
+/// none, which a grade then reads; a file it has already is never written over.
+#[test]
+fn trigger_tests_start_from_a_template_and_one_there_is_left_as_it_is() {
+    let tmp = plane();
+    let root = tmp.path();
+    let level = Level::workspace("ops");
+    skill(
+        root,
+        "workspaces/ops/skills/triage",
+        "triage",
+        "Sorts new issues.",
+    );
+
+    let (file, lines) = on(root, None, |cx| start_trigger_tests(cx, &level, "triage"));
+    let file = file.unwrap();
+    assert_eq!(file, "workspaces/ops/skills/triage/evals/triggers.json");
+    assert!(
+        said(&lines, |line| matches!(line, Say::Done(_))),
+        "{lines:?}"
+    );
+    let written = std::fs::read_to_string(root.join(&file)).unwrap();
+    assert_eq!(written, purlis_skills::grade::triggers_template("triage"));
+    let counted = crate::skills::grades::trigger_tests(root, &level, "triage").unwrap();
+    assert_eq!(counted.runs, 2, "a grade reads the template");
+
+    std::fs::write(root.join(&file), "[]").unwrap();
+    let (again, lines) = on(root, None, |cx| start_trigger_tests(cx, &level, "triage"));
+    assert_eq!(again.unwrap(), file);
+    assert!(
+        said(&lines, |line| matches!(line, Say::Info(_))),
+        "{lines:?}"
+    );
+    assert_eq!(std::fs::read_to_string(root.join(&file)).unwrap(), "[]");
+
+    std::fs::write(root.join(&file), vec![b' '; 300 * 1024]).unwrap();
+    let refused = did(root, |cx| start_trigger_tests(cx, &level, "triage")).unwrap_err();
+    assert!(
+        refused.starts_with("triage's trigger tests were left as they are"),
+        "{refused}"
+    );
+
+    assert!(did(root, |cx| start_trigger_tests(cx, &level, "nowhere")).is_err());
 }
 
 #[test]
@@ -219,6 +266,52 @@ fn a_rename_follows_into_every_persona_skill_and_turn_off_that_names_it() {
         &lines,
         |line| matches!(line, Say::Info(text) if text.starts_with("Not saved"))
     ));
+}
+
+#[test]
+fn a_rename_takes_its_pins_with_it_in_their_place_and_who_uses_it_names_them() {
+    let tmp = plane();
+    let root = tmp.path();
+    skill(root, "skills/triage", "triage", "Sorts issues.");
+    let ops = crate::skills::PinnedBy::Workspace("ops".to_owned());
+    let steward = crate::skills::PinnedBy::Persona("steward".to_owned());
+    for (by, name) in [(&ops, "triage"), (&ops, "deploy"), (&steward, "deploy")] {
+        crate::skills::pin(root, by, name, true).unwrap();
+    }
+    assert_eq!(
+        users(root, &Level::project(), "deploy").unwrap().pinned_by,
+        [ops.clone(), steward.clone()]
+    );
+
+    let (renamed, lines) = on(root, None, |cx| {
+        rename(cx, &Level::project(), "deploy", "ship")
+    });
+
+    renamed.unwrap();
+    assert_eq!(crate::skills::pins_written(root, &ops), ["triage", "ship"]);
+    assert_eq!(crate::skills::pins_written(root, &steward), ["ship"]);
+    assert!(said(
+        &lines,
+        |line| matches!(line, Say::Done(text) if text == "workspace ops pins ship now")
+    ));
+    let followed = users(root, &Level::project(), "ship").unwrap();
+    assert_eq!(followed.pinned_by, [ops, steward]);
+}
+
+#[test]
+fn a_local_skills_rename_leaves_the_projects_pins_alone() {
+    let tmp = plane();
+    let root = tmp.path();
+    let local = Level::project().local(true);
+    let dir = local.dir(root).unwrap();
+    let folder = dir.strip_prefix(root).unwrap().join("notes");
+    skill(root, folder.to_str().unwrap(), "notes", "Keeps notes.");
+    let ops = crate::skills::PinnedBy::Workspace("ops".to_owned());
+    crate::skills::pin(root, &ops, "notes", true).unwrap();
+
+    did(root, |cx| rename(cx, &local, "notes", "jottings")).unwrap();
+
+    assert_eq!(crate::skills::pins_written(root, &ops), ["notes"]);
 }
 
 #[test]
@@ -364,6 +457,7 @@ fn delete_says_who_uses_it_and_a_skill_git_does_not_track_comes_back_on_restore(
             persona: None,
             personas: vec!["steward".to_owned()],
             skills: vec!["release".to_owned()],
+            pinned_by: Vec::new(),
         }
     );
 
@@ -379,7 +473,7 @@ fn delete_says_who_uses_it_and_a_skill_git_does_not_track_comes_back_on_restore(
         ("deploy", &Level::project())
     );
 
-    did(root, |cx| restore(cx, &listed[0])).unwrap();
+    did(root, |cx| restore(cx, &listed[0], None)).unwrap();
     assert!(gets(root, None).contains(&"deploy".to_owned()));
     assert_eq!(grant_of(&root.join("skills/deploy")), Ok(Grant::All));
     assert!(deleted(root).is_empty());
@@ -390,7 +484,7 @@ fn delete_says_who_uses_it_and_a_skill_git_does_not_track_comes_back_on_restore(
         0,
         "the kept folder is taken away once its skill went back"
     );
-    let again = did(root, |cx| restore(cx, &listed[0]));
+    let again = did(root, |cx| restore(cx, &listed[0], None));
     assert!(again.unwrap_err().contains("cannot be restored"));
 }
 
@@ -478,7 +572,7 @@ fn a_delete_stranded_in_its_kept_folder_says_so_and_is_restored_from_there() {
     let listed = deleted(root);
     assert_eq!(listed.len(), 1, "{listed:?}");
 
-    did(root, |cx| restore(cx, &listed[0])).unwrap();
+    did(root, |cx| restore(cx, &listed[0], None)).unwrap();
 
     assert!(root.join("skills/deploy/SKILL.md").is_file());
     assert!(root.join("skills/deploy.toml").is_symlink());
@@ -507,7 +601,7 @@ fn a_restore_whose_file_beside_the_folder_cannot_move_keeps_the_folder_and_refus
     std::os::unix::fs::symlink(outside.path().join("deploy.toml"), &kept_toml).unwrap();
     let listed = deleted(root);
 
-    let refused = did(root, |cx| restore(cx, &listed[0])).unwrap_err();
+    let refused = did(root, |cx| restore(cx, &listed[0], None)).unwrap_err();
 
     assert!(
         refused.starts_with("deploy was not restored: "),
@@ -649,7 +743,7 @@ fn a_committed_skill_is_deleted_by_git_and_restored_from_the_commit_that_removed
         .unwrap_or_else(|| panic!("{listed:?}"));
     assert_eq!(one.kept(), &kept);
 
-    did(root, |cx| restore(cx, one)).unwrap();
+    did(root, |cx| restore(cx, one, None)).unwrap();
     assert!(root.join("skills/release/SKILL.md").exists());
     let (subject, paths) = last_commit(root);
     assert!(subject.ends_with("skill restore release"), "{subject}");
@@ -677,7 +771,7 @@ fn a_committed_skill_whose_commit_cannot_land_is_kept_on_this_machine() {
         let listed = deleted(root);
         let one = listed.iter().find(|one| one.name == "release").unwrap();
         assert_eq!(one.kept(), &kept);
-        did(root, |cx| restore(cx, one)).unwrap();
+        did(root, |cx| restore(cx, one, None)).unwrap();
         assert!(
             root.join("skills/release/SKILL.md").exists(),
             "staged too: {staged_too}"
@@ -1083,7 +1177,7 @@ fn files_git_ignores_left_in_a_deleted_skills_folder_do_not_hide_it_from_restore
         .iter()
         .find(|one| one.name == "release")
         .unwrap_or_else(|| panic!("hidden by an ignored file: {listed:?}"));
-    did(root, |cx| restore(cx, one)).unwrap();
+    did(root, |cx| restore(cx, one, None)).unwrap();
     assert!(root.join("skills/release/SKILL.md").exists());
 }
 
@@ -1364,6 +1458,7 @@ fn a_personas_skill_says_who_uses_it_and_is_deleted_and_restored_from_git() {
             persona: Some("reviewer".to_owned()),
             personas: vec!["auditor".to_owned()],
             skills: vec!["release".to_owned()],
+            pinned_by: Vec::new(),
         }
     );
 
@@ -1381,7 +1476,7 @@ fn a_personas_skill_says_who_uses_it_and_is_deleted_and_restored_from_git() {
         .unwrap_or_else(|| panic!("{listed:?}"));
     assert_eq!(one.level, Level::persona("reviewer"));
 
-    did(root, |cx| restore(cx, one)).unwrap();
+    did(root, |cx| restore(cx, one, None)).unwrap();
     assert!(gets_as(root, None, "reviewer").contains(&"lint".to_owned()));
     let (subject, paths) = last_commit(root);
     assert!(subject.ends_with("skill restore lint"), "{subject}");
@@ -1411,7 +1506,7 @@ fn a_personas_local_skill_is_kept_on_this_machine_when_deleted_and_shared_into_i
     let listed = deleted(root);
     let one = listed.iter().find(|one| one.name == "scratch").unwrap();
     assert_eq!(one.level, local);
-    did(root, |cx| restore(cx, one)).unwrap();
+    did(root, |cx| restore(cx, one, None)).unwrap();
     assert!(
         root.join("personas/reviewer/skills.local/scratch/SKILL.md")
             .exists()
@@ -1489,4 +1584,822 @@ fn a_skills_copies_come_in_the_one_order_its_tab_shows_them() {
     );
     assert!(copies[0].1.ends_with("skills/deploy"));
     assert!(Level::copies_of(root, "nothing").next().is_none());
+}
+
+/// The folder of this machine's kept deletes in the plane at `root`.
+fn kept_deletes(root: &Path) -> PathBuf {
+    crate::plane::state_dir(root).join(DELETED_DIR)
+}
+
+/// The names of the kept deletes in the plane at `root`, sorted.
+fn kept_names(root: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(kept_deletes(root))
+        .unwrap()
+        .map(|one| one.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    names
+}
+
+/// Gives the one kept delete of `folder` the stamp `stamp`, as if it had been deleted then.
+fn deleted_at(root: &Path, folder: &str, stamp: u128) -> String {
+    let dir = kept_deletes(root);
+    let was = kept_names(root)
+        .into_iter()
+        .find(|name| name.ends_with(&format!("-{folder}")))
+        .unwrap();
+    let now = format!("{stamp}-{folder}");
+    std::fs::rename(dir.join(&was), dir.join(&now)).unwrap();
+    now
+}
+
+/// Long enough ago that a kept delete is past its removal: a day more than [`EXPIRY_AFTER`].
+fn long_ago() -> u128 {
+    (std::time::SystemTime::now() - EXPIRY_AFTER - std::time::Duration::from_secs(DAY))
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+}
+
+#[cfg(unix)]
+#[test]
+fn a_skill_kept_deleted_past_its_time_is_removed_and_a_newer_copy_of_it_is_kept() {
+    let tmp = plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let old = deleted_at(root, "deploy", long_ago());
+    skill(root, "skills/deploy", "deploy", "Ships it again.");
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    did(root, |cx| delete(cx, &Level::project(), "release")).unwrap();
+    let young = kept_names(root)
+        .into_iter()
+        .filter(|name| *name != old)
+        .collect::<Vec<_>>();
+
+    let expired = expire(root, std::time::SystemTime::now());
+
+    assert_eq!(
+        expired,
+        Expired {
+            removed: vec![old],
+            ..Expired::default()
+        }
+    );
+    assert_eq!(
+        kept_names(root),
+        young,
+        "the newer copy and the other skill stay"
+    );
+    let listed = deleted(root);
+    assert_eq!(listed.len(), 2, "{listed:?}");
+    assert_eq!(
+        listed[0].stays(std::time::SystemTime::now()),
+        "kept on this machine for 30 more days"
+    );
+    assert!(
+        root.join("skills").is_dir() && root.join("charter.toml").is_file(),
+        "nothing outside the kept deletes is touched"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn an_expiry_follows_no_link_out_of_the_kept_deletes() {
+    let tmp = plane();
+    let root = tmp.path();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("precious"), "keep me").unwrap();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let old = deleted_at(root, "deploy", long_ago());
+    let kept = kept_deletes(root).join(&old);
+    // Inside the deleted skill's folder: a link out, to a folder and to a file.
+    std::os::unix::fs::symlink(outside.path(), kept.join("deploy/out")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("precious"),
+        kept.join("deploy/precious"),
+    )
+    .unwrap();
+    // Beside it, a link named as a kept delete is, past its time, to a folder outside.
+    std::os::unix::fs::symlink(outside.path(), kept_deletes(root).join("1000-outside")).unwrap();
+
+    let expired = expire(root, std::time::SystemTime::now());
+
+    assert_eq!(expired.removed, vec![old], "{expired:?}");
+    assert!(!kept.exists());
+    assert!(kept_deletes(root).join("1000-outside").is_symlink());
+    assert_eq!(
+        std::fs::read_to_string(outside.path().join("precious")).unwrap(),
+        "keep me"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn kept_deletes_that_are_a_link_are_never_expired() {
+    let tmp = plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let old = deleted_at(root, "deploy", long_ago());
+    // The kept deletes moved elsewhere, and a link left in their place.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let moved = elsewhere.path().join("kept");
+    std::fs::rename(kept_deletes(root), &moved).unwrap();
+    std::os::unix::fs::symlink(&moved, kept_deletes(root)).unwrap();
+
+    let expired = expire(root, std::time::SystemTime::now());
+
+    assert_eq!(expired, Expired::default());
+    assert!(moved.join(&old).join("deploy/SKILL.md").is_file());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_kept_delete_holding_what_no_delete_puts_there_is_left_whole_and_said() {
+    let tmp = plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let old = deleted_at(root, "deploy", long_ago());
+    let kept = kept_deletes(root).join(&old);
+    std::fs::write(kept.join("notes.txt"), "mine").unwrap();
+    // Named as no delete names its folder: a `..` and a name with no stamp.
+    for name in ["1000-..", "deploy", "1000-"] {
+        std::fs::create_dir_all(kept_deletes(root).join(name)).unwrap();
+    }
+
+    let expired = expire(root, std::time::SystemTime::now());
+
+    assert!(expired.removed.is_empty(), "{expired:?}");
+    assert_eq!(expired.failed.len(), 1, "{expired:?}");
+    assert_eq!(expired.failed[0].0, old);
+    assert!(expired.failed[0].1.contains("notes.txt"));
+    assert!(kept.join("deploy/SKILL.md").is_file());
+    assert!(kept.join(KEPT_FROM).is_file());
+    for name in ["1000-..", "deploy", "1000-"] {
+        assert!(kept_deletes(root).join(name).is_dir());
+    }
+}
+
+#[test]
+fn a_kept_deletes_name_is_a_stamp_and_one_plain_folder_name() {
+    assert_eq!(
+        kept_name("1761000000000-deploy"),
+        Some((1_761_000_000_000, "deploy"))
+    );
+    assert_eq!(kept_name("1-my-skill"), Some((1, "my-skill")));
+    for not_one in [
+        "1-..",
+        "1-.",
+        "1-",
+        "-deploy",
+        "x1-deploy",
+        "1-a/b",
+        "1-a\\b",
+        "deploy",
+    ] {
+        assert_eq!(kept_name(not_one), None, "{not_one}");
+    }
+}
+
+#[test]
+fn a_deleted_skill_says_how_long_it_stays() {
+    let here = |at: u64| Deleted {
+        name: "deploy".to_owned(),
+        level: Level::project(),
+        folder: "deploy".to_owned(),
+        kept: Kept(Source::Here(format!("{}-deploy", at * 1000))),
+        at,
+    };
+    let when = |secs: u64| std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
+    let at = 1_761_000_000;
+    let kept_for = KEPT_HERE_FOR.as_secs();
+    assert_eq!(
+        here(at).stays(when(at)),
+        "kept on this machine for 30 more days"
+    );
+    assert_eq!(
+        here(at).stays(when(at + kept_for - DAY - 1)),
+        "kept on this machine for 2 more days"
+    );
+    assert_eq!(
+        here(at).stays(when(at + kept_for - 60)),
+        "kept on this machine for 1 more day"
+    );
+    assert_eq!(
+        here(at).stays(when(at + kept_for + 1)),
+        "removed from this machine soon"
+    );
+    assert_eq!(
+        here(at + 365 * DAY).stays(when(at)),
+        "kept on this machine for 30 more days",
+        "never more than its time, whatever clock stamped it"
+    );
+    let in_git = Deleted {
+        kept: Kept(Source::Commit("abc".to_owned())),
+        ..here(at)
+    };
+    assert_eq!(
+        in_git.stays(when(at + 10 * kept_for)),
+        "kept in the project's history"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_kept_delete_past_its_time_is_offered_back_no_more_and_removed_only_a_day_later() {
+    let tmp = plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let ms = |at: std::time::SystemTime| {
+        at.duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    };
+    // Deleted 30 days and an hour ago: past its time, within its removal's day.
+    let then = std::time::SystemTime::now() - KEPT_HERE_FOR - std::time::Duration::from_secs(3600);
+    let kept = deleted_at(root, "deploy", ms(then));
+
+    assert!(deleted(root).is_empty(), "past its time, no list offers it");
+    assert_eq!(
+        expire(root, std::time::SystemTime::now()),
+        Expired::default()
+    );
+    assert!(
+        kept_deletes(root)
+            .join(&kept)
+            .join("deploy/SKILL.md")
+            .is_file()
+    );
+
+    let a_day_on = std::time::SystemTime::now() + std::time::Duration::from_secs(DAY);
+    assert_eq!(expire(root, a_day_on).removed, vec![kept]);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_kept_delete_holding_a_name_that_is_not_text_is_left_whole() {
+    use std::os::unix::ffi::OsStrExt as _;
+    let tmp = plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let old = deleted_at(root, "deploy", long_ago());
+    let kept = kept_deletes(root).join(&old);
+    let odd = kept.join(std::ffi::OsStr::from_bytes(b"\xff\xfe"));
+    if std::fs::write(&odd, "mine").is_err() {
+        // A file system that takes only text names (APFS refuses these): nothing to test.
+        return;
+    }
+
+    let expired = expire(root, std::time::SystemTime::now());
+
+    assert!(expired.removed.is_empty(), "{expired:?}");
+    assert!(kept.join(KEPT_FROM).is_file());
+    assert!(kept.join("deploy/SKILL.md").is_file());
+    assert!(odd.exists());
+}
+
+/// Every level of [`plane`]: the project's, the workspace `ops`'s and the persona `steward`'s,
+/// shared and local.
+fn every_level() -> Vec<Level> {
+    [
+        Level::project(),
+        Level::workspace("ops"),
+        Level::persona("steward"),
+    ]
+    .into_iter()
+    .flat_map(|level| [level.clone(), level.local(true)])
+    .collect()
+}
+
+/// Where [`skill`] writes a skill `folder` at `level` of [`plane`].
+fn at(level: &Level, folder: &str) -> String {
+    format!("{}/{folder}", level.rel().unwrap())
+}
+
+/// The names that belong to a built-in skill (spec #3679 S12): one purlis ships, found with no
+/// bundle beside the binary; one only `bundle` holds; the index skill's; and the name of its own
+/// a route gives a built-in skill.
+const RESERVED: [&str; 4] = ["secrets", "bundled", "skill-index", "purlis-browser"];
+
+/// A bundle's `skills/` holding the built-in skill `bundled`.
+fn bundle() -> tempfile::TempDir {
+    let built_in = tempfile::tempdir().unwrap();
+    skill(built_in.path(), "bundled", "bundled", "Comes with purlis.");
+    built_in
+}
+
+#[test]
+fn a_new_skill_with_a_built_in_skills_name_is_refused_at_every_level_in_the_agreed_words() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+
+    for level in every_level() {
+        for name in RESERVED {
+            let (refused, _) = on(root, Some(built_in.path()), |cx| {
+                create(
+                    cx,
+                    &level,
+                    name,
+                    "Stands in.",
+                    &BuiltInTemplates,
+                    &TemplateId::BuiltIn(Template::Blank),
+                )
+            });
+            assert_eq!(
+                refused.unwrap_err(),
+                crate::skills::NAME_RESERVED,
+                "{level} {name}"
+            );
+            assert!(!root.join(at(&level, name)).exists(), "{level} {name}");
+        }
+    }
+    assert_eq!(
+        crate::skills::NAME_RESERVED,
+        "That name belongs to a built-in skill; pick another, or make a copy."
+    );
+}
+
+#[test]
+fn a_rename_to_a_built_in_skills_name_is_refused_at_every_level_and_changes_nothing() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+
+    for level in every_level() {
+        let folder = at(&level, "mine");
+        skill(root, &folder, "mine", "Mine.");
+        let was = std::fs::read_to_string(root.join(&folder).join("SKILL.md")).unwrap();
+        for name in RESERVED {
+            let (refused, _) = on(root, Some(built_in.path()), |cx| {
+                rename(cx, &level, "mine", name)
+            });
+            assert_eq!(
+                refused.unwrap_err(),
+                crate::skills::NAME_RESERVED,
+                "{level} {name}"
+            );
+            assert!(!root.join(at(&level, name)).exists(), "{level} {name}");
+        }
+        let now = std::fs::read_to_string(root.join(&folder).join("SKILL.md")).unwrap();
+        assert_eq!(now, was, "{level}");
+    }
+}
+
+#[test]
+fn a_skill_named_as_a_built_in_one_is_not_moved_or_shared_to_any_level() {
+    let tmp = plane();
+    let root = tmp.path();
+    // Written by hand, or by a purlis older than the built-in skill.
+    let from = Level::workspace("ops");
+    skill(root, &at(&from, "secrets"), "secrets", "Mine.");
+
+    for to in every_level().into_iter().filter(|to| *to != from) {
+        let refused = did(root, |cx| {
+            move_to(cx, &from, "secrets", &to, Some(&Grant::All))
+        });
+        assert_eq!(refused.unwrap_err(), crate::skills::NAME_RESERVED, "{to}");
+        assert!(!root.join(at(&to, "secrets")).exists(), "{to}");
+    }
+    assert!(root.join(at(&from, "secrets")).join("SKILL.md").is_file());
+
+    let local = from.clone().local(true);
+    skill(root, &at(&local, "theme"), "theme", "Mine.");
+    let refused = did(root, |cx| share(cx, &local.at, "theme"));
+    assert_eq!(refused.unwrap_err(), crate::skills::NAME_RESERVED);
+    assert!(root.join(at(&local, "theme")).join("SKILL.md").is_file());
+    assert!(!root.join(at(&from, "theme")).exists());
+}
+
+#[test]
+fn a_deleted_skill_named_as_a_built_in_one_is_not_restored() {
+    let tmp = plane();
+    let root = tmp.path();
+    skill(root, "skills/secrets", "secrets", "Mine.");
+    did(root, |cx| delete(cx, &Level::project(), "secrets")).unwrap();
+    let listed = deleted(root);
+    assert_eq!(listed.len(), 1, "{listed:?}");
+
+    let refused = did(root, |cx| restore(cx, &listed[0], None));
+
+    assert_eq!(
+        refused.unwrap_err(),
+        "secrets cannot be restored under its name: it belongs to a built-in skill now, so \
+         restore it under a new name"
+    );
+    assert!(!root.join("skills/secrets").exists());
+}
+
+/// #3729: a deleted skill whose name a built-in skill took comes back under a name the person
+/// picks, its `name:` and folder renamed, from this machine's kept copy.
+#[test]
+fn a_deleted_skill_named_as_a_built_in_one_is_restored_under_a_new_name() {
+    let tmp = plane();
+    let root = tmp.path();
+    skill(root, "skills/secrets", "secrets", "Mine.");
+    std::fs::write(root.join("skills/secrets/notes.md"), "kept\n").unwrap();
+    did(root, |cx| delete(cx, &Level::project(), "secrets")).unwrap();
+    let listed = deleted(root);
+
+    let landed = did(root, |cx| restore(cx, &listed[0], Some("my-secrets"))).unwrap();
+
+    assert_eq!(landed, root.join("skills/my-secrets"));
+    let text = std::fs::read_to_string(root.join("skills/my-secrets/SKILL.md")).unwrap();
+    assert!(text.contains("name: my-secrets\n"), "{text}");
+    assert!(text.contains("description: Mine.\n"), "{text}");
+    assert_eq!(
+        std::fs::read_to_string(root.join("skills/my-secrets/notes.md")).unwrap(),
+        "kept\n"
+    );
+    assert!(!root.join("skills/secrets").exists());
+    assert!(deleted(root).is_empty(), "{:?}", deleted(root));
+}
+
+/// #3729: a skill whose name is free comes back under it alone: renamed after, what names it
+/// follows, as a restore under a new name would leave it behind.
+#[test]
+fn a_deleted_skill_whose_name_is_free_is_not_restored_under_another() {
+    let tmp = plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let listed = deleted(root);
+
+    let refused = did(root, |cx| restore(cx, &listed[0], Some("ship")));
+
+    assert_eq!(
+        refused.unwrap_err(),
+        "deploy is restored under its own name: restore it, then rename it, so what names it \
+         follows"
+    );
+    assert!(!root.join("skills/ship").exists());
+    assert!(!root.join("skills/deploy").exists());
+}
+
+/// #3729: from the commit that removed it, as one commit that lands it under its new name.
+#[test]
+fn a_committed_deleted_skill_comes_back_under_a_new_name_in_one_commit() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    skill(root, "skills/secrets", "secrets", "Mine.");
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "secrets"]);
+    did(root, |cx| delete(cx, &Level::project(), "secrets")).unwrap();
+    let listed = deleted(root);
+    let one = listed.iter().find(|one| one.name == "secrets").unwrap();
+    assert!(one.kept().in_git(), "{one:?}");
+
+    did(root, |cx| restore(cx, one, Some("my-secrets"))).unwrap();
+
+    let (subject, paths) = last_commit(root);
+    assert!(
+        subject.ends_with("skill restore secrets as my-secrets"),
+        "{subject}"
+    );
+    assert_eq!(paths, ["skills/my-secrets/SKILL.md"]);
+    let text = std::fs::read_to_string(root.join("skills/my-secrets/SKILL.md")).unwrap();
+    assert!(text.contains("name: my-secrets\n"), "{text}");
+    assert!(!root.join("skills/secrets").exists());
+    let status = run(root, &["status", "--porcelain", "--", "skills"]);
+    assert_eq!(status.out, "");
+}
+
+/// #3729: the new name is checked as a rename's is: a built-in skill's is refused with the
+/// agreed sentence, as are a name the format does not allow and one the level has, and nothing
+/// comes back.
+#[test]
+fn a_deleted_skill_is_not_restored_under_a_name_it_cannot_take() {
+    let tmp = plane();
+    let root = tmp.path();
+    skill(root, "skills/secrets", "secrets", "Mine.");
+    skill(root, "skills/vault", "vault", "Theirs.");
+    did(root, |cx| delete(cx, &Level::project(), "secrets")).unwrap();
+    let listed = deleted(root);
+
+    let reserved = did(root, |cx| restore(cx, &listed[0], Some("browser")));
+    assert_eq!(reserved.unwrap_err(), crate::skills::NAME_RESERVED);
+    let bad = did(root, |cx| restore(cx, &listed[0], Some("My Secrets")));
+    assert!(bad.unwrap_err().contains("cannot be a skill's name"));
+    let taken = did(root, |cx| restore(cx, &listed[0], Some("vault")));
+    assert!(taken.unwrap_err().contains("already have one named vault"));
+    let same = did(root, |cx| restore(cx, &listed[0], Some("secrets")));
+    assert_eq!(same.unwrap_err(), crate::skills::NAME_RESERVED);
+
+    assert!(!root.join("skills/secrets").exists());
+    assert!(!root.join("skills/browser").exists());
+    assert_eq!(deleted(root).len(), 1);
+}
+
+#[test]
+fn a_skill_on_disk_named_as_a_built_in_one_is_a_clash_to_rename_at_every_level() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+    for level in every_level() {
+        skill(root, &at(&level, "bundled"), "bundled", "Mine.");
+    }
+    // Its folder's name is not its name: the name is what clashes.
+    skill(root, "skills/vault", "secrets", "Mine.");
+
+    let clashes = crate::skills::named_as_a_built_in(root, Some(built_in.path()));
+
+    let mut wanted: Vec<(String, Level, String)> = every_level()
+        .into_iter()
+        .map(|level| ("bundled".to_owned(), level.clone(), at(&level, "bundled")))
+        .collect();
+    wanted.insert(
+        1,
+        (
+            "secrets".to_owned(),
+            Level::project(),
+            "skills/vault".to_owned(),
+        ),
+    );
+    let found: Vec<(String, Level, String)> = clashes
+        .into_iter()
+        .map(|one| (one.name, one.level, one.folder))
+        .collect();
+    assert_eq!(found, wanted);
+    // Without the bundle, the name only it holds is anyone's again; the one purlis ships is not.
+    let bare: Vec<String> = crate::skills::named_as_a_built_in(root, None)
+        .into_iter()
+        .map(|one| one.name)
+        .collect();
+    assert_eq!(bare, ["secrets"]);
+}
+
+#[test]
+fn a_deleted_skill_counts_the_days_left_to_bring_it_back_wherever_it_is_kept() {
+    let here = |at: u64| Deleted {
+        name: "deploy".to_owned(),
+        level: Level::project(),
+        folder: "deploy".to_owned(),
+        kept: Kept(Source::Here(format!("{}-deploy", at * 1000))),
+        at,
+    };
+    let when = |secs: u64| std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
+    let at = 1_761_000_000;
+    let kept_for = KEPT_HERE_FOR.as_secs();
+    assert_eq!(here(at).days_left(when(at)), 30);
+    assert_eq!(here(at).days_left(when(at + 3 * DAY)), 27);
+    assert_eq!(here(at).days_left(when(at + kept_for - 60)), 1);
+    assert_eq!(here(at).days_left(when(at + kept_for + 1)), 0);
+    assert_eq!(
+        here(at + 365 * DAY).days_left(when(at)),
+        30,
+        "never more than its time, whatever clock stamped it"
+    );
+    let in_git = Deleted {
+        kept: Kept(Source::Commit("abc".to_owned())),
+        ..here(at)
+    };
+    assert_eq!(in_git.days_left(when(at + 18 * DAY)), 12);
+    assert_eq!(in_git.days_left(when(at + 2 * kept_for)), 0);
+}
+
+#[test]
+fn a_skill_kept_deleted_on_this_machine_shows_its_last_text() {
+    let tmp = plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let listed = deleted(root);
+    let text = deleted_text(root, &listed[0]).unwrap();
+    assert!(text.contains("description: Ships it."), "{text}");
+}
+
+#[test]
+fn a_committed_skill_deleted_by_git_shows_its_last_text_from_the_commit() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "release")).unwrap();
+    let listed = deleted(root);
+    let one = listed.iter().find(|one| one.name == "release").unwrap();
+    let text = deleted_text(root, one).unwrap();
+    assert!(text.contains("name: release"), "{text}");
+}
+
+#[test]
+fn the_last_text_of_a_record_the_project_does_not_list_is_refused_unread() {
+    let tmp = plane();
+    let root = tmp.path();
+    std::fs::write(root.join("secret.md"), "not a skill").unwrap();
+    let made_up = Deleted {
+        name: "deploy".to_owned(),
+        level: Level::project(),
+        folder: "../..".to_owned(),
+        kept: Kept(Source::Commit("HEAD".to_owned())),
+        at: 0,
+    };
+    let refused = deleted_text(root, &made_up).unwrap_err();
+    assert!(refused.contains("not a deleted skill"), "{refused}");
+}
+
+/// What a chat in `workspace` gets, by name, with the built-in skills in `built_in`.
+fn gets_with(root: &Path, built_in: &Path, workspace: Option<&str>) -> Vec<String> {
+    crate::skills::in_the_studio(Some(built_in), root, workspace, None)
+        .effective
+        .into_iter()
+        .map(|e| e.skill.name)
+        .collect()
+}
+
+/// A copy's own description, as Make my own copy proposes one (#3777, `copyDescriptionOf`).
+const MINE: &str = "Comes with purlis. (your copy of bundled)";
+
+#[test]
+fn my_own_copy_of_a_built_in_skill_lands_at_the_level_picked_under_its_new_name() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+    let was = std::fs::read_to_string(built_in.path().join("bundled/SKILL.md")).unwrap();
+
+    let (folder, lines) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(
+            cx,
+            "bundled",
+            &Level::workspace("ops"),
+            "my-bundled",
+            "Comes with purlis, my steps.",
+        )
+    });
+
+    let folder = folder.unwrap();
+    assert_eq!(folder, root.join("workspaces/ops/skills/my-bundled"));
+    let text = std::fs::read_to_string(folder.join("SKILL.md")).unwrap();
+    // Its own name and its own description, every other byte the built-in's (#3777).
+    assert_eq!(
+        text,
+        was.replace("name: bundled", "name: my-bundled").replace(
+            "description: Comes with purlis.",
+            "description: Comes with purlis, my steps."
+        )
+    );
+    assert!(said(&lines, |line| matches!(line, Say::Done(done) if done
+        .contains("copied from the built-in skill bundled"))));
+    // The built-in skill is as it was, and a chat in the workspace gets both.
+    assert_eq!(
+        std::fs::read_to_string(built_in.path().join("bundled/SKILL.md")).unwrap(),
+        was
+    );
+    let got = gets_with(root, built_in.path(), Some("ops"));
+    assert_eq!(
+        got.iter().filter(|name| *name == "bundled").count(),
+        1,
+        "{got:?}"
+    );
+    assert_eq!(
+        got.iter().filter(|name| *name == "my-bundled").count(),
+        1,
+        "{got:?}"
+    );
+}
+
+#[test]
+fn my_own_copy_lands_at_every_level_and_a_project_copy_reaches_the_root() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+
+    for level in every_level() {
+        let to = format!(
+            "copy-{}",
+            every_level().iter().position(|one| *one == level).unwrap()
+        );
+        let folder = did(root, |cx| {
+            copy_built_in(cx, "bundled", &level, &to, MINE).map(|_| ())
+        });
+        // `did` has no built-in skills: nothing to copy from.
+        assert_eq!(
+            folder.unwrap_err(),
+            "bundled is no built-in skill, so there is nothing to copy"
+        );
+        let (made, _) = on(root, Some(built_in.path()), |cx| {
+            copy_built_in(cx, "bundled", &level, &to, MINE)
+        });
+        assert_eq!(made.unwrap(), root.join(at(&level, &to)), "{level}");
+    }
+    let got = gets_with(root, built_in.path(), None);
+    assert!(got.contains(&"copy-0".to_owned()), "{got:?}");
+    assert!(got.contains(&"bundled".to_owned()), "{got:?}");
+}
+
+#[test]
+fn my_own_copy_under_a_built_in_skills_name_is_refused_in_the_agreed_words() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+
+    for level in every_level() {
+        for name in RESERVED {
+            let (refused, _) = on(root, Some(built_in.path()), |cx| {
+                copy_built_in(cx, "bundled", &level, name, MINE)
+            });
+            assert_eq!(
+                refused.unwrap_err(),
+                crate::skills::NAME_RESERVED,
+                "{level} {name}"
+            );
+            assert!(!root.join(at(&level, name)).exists(), "{level} {name}");
+        }
+    }
+}
+
+#[test]
+fn my_own_copy_is_refused_for_a_skill_that_is_not_built_in_or_a_name_the_level_holds() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+
+    let (refused, _) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(cx, "deploy", &Level::project(), "my-deploy", MINE)
+    });
+    assert_eq!(
+        refused.unwrap_err(),
+        "deploy is no built-in skill, so there is nothing to copy"
+    );
+    assert!(!root.join("skills/my-deploy").exists());
+
+    let was = std::fs::read_to_string(root.join("skills/release/SKILL.md")).unwrap();
+    let (refused, _) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(cx, "bundled", &Level::project(), "release", MINE)
+    });
+    assert!(
+        refused
+            .unwrap_err()
+            .contains("already have one named release"),
+        "a name the level holds"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("skills/release/SKILL.md")).unwrap(),
+        was
+    );
+
+    let (refused, _) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(cx, "bundled", &Level::project(), "Not A Name", MINE)
+    });
+    assert!(refused.unwrap_err().contains("cannot be a skill's name"));
+}
+
+#[test]
+fn my_own_copy_is_refused_the_built_ins_description_word_for_word_or_one_that_breaks_a_rule() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+
+    // The built-in's own words, spaces around them or not: a chat could not tell the two apart.
+    for same in ["Comes with purlis.", "  Comes with purlis. "] {
+        let (refused, _) = on(root, Some(built_in.path()), |cx| {
+            copy_built_in(cx, "bundled", &Level::project(), "my-bundled", same)
+        });
+        assert_eq!(
+            refused.unwrap_err(),
+            "the copy's description is bundled's word for word, so a chat could not tell them \
+             apart: say what your copy does differently"
+        );
+    }
+    let (refused, _) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(cx, "bundled", &Level::project(), "my-bundled", "")
+    });
+    assert!(
+        refused
+            .unwrap_err()
+            .starts_with("the copy's description: it is empty"),
+        "an empty description"
+    );
+    let (refused, _) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(
+            cx,
+            "bundled",
+            &Level::project(),
+            "my-bundled",
+            "Steps: mine",
+        )
+    });
+    assert!(
+        refused.unwrap_err().contains("\": \""),
+        "a rule of the line format"
+    );
+    // A character the line format cannot hold is said as the description's, not the built-in's.
+    for odd in ["Mine.\u{c}more", "Mine.\u{1f}"] {
+        let (refused, _) = on(root, Some(built_in.path()), |cx| {
+            copy_built_in(cx, "bundled", &Level::project(), "my-bundled", odd)
+        });
+        assert!(
+            refused
+                .unwrap_err()
+                .starts_with("the copy's description holds a character"),
+            "{odd:?}"
+        );
+    }
+    assert!(!root.join("skills/my-bundled").exists());
+
+    // One made trims its description, and the built-in keeps its own.
+    let (made, _) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(cx, "bundled", &Level::project(), "my-bundled", "  Mine.  ")
+    });
+    let text = std::fs::read_to_string(made.unwrap().join("SKILL.md")).unwrap();
+    assert!(text.contains("\ndescription: Mine.\n"), "{text}");
+    assert!(
+        std::fs::read_to_string(built_in.path().join("bundled/SKILL.md"))
+            .unwrap()
+            .contains("\ndescription: Comes with purlis.\n")
+    );
 }

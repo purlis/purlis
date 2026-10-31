@@ -39,6 +39,21 @@
   background-color: var(--danger-surface);
 }
 
+/* **What needs a decision** (#3678): nothing went wrong, but the person must choose. Its own
+   ground and words (`attention.*`), and its mark, a question in a circle, before its words, so it is never
+   told by colour alone. Trouble keeps the danger ground, for real failures. */
+[data-scope="notice"][data-part="root"][data-variant="attention"] {
+  color: var(--attention-text);
+  background-color: var(--attention-surface);
+}
+
+/* An attention line's mark, the first thing it says. */
+[data-scope="notice"][data-part="message"] > [data-scope="notice"][data-part="mark"] {
+  vertical-align: text-bottom;
+  margin-block-start: 0;
+  margin-inline-end: var(--space-2);
+}
+
 /* The line: what it says, and its ways out (`ButtonRow`, #1855). */
 [data-scope="notice"][data-part="root"] > [data-scope="button-row"] {
   margin: 0;
@@ -48,10 +63,6 @@
 
 [data-scope="notice"][data-part="whose"] {
   font-weight: var(--font-weight-strong);
-}
-
-[data-scope="notice"][data-part="message"] code {
-  opacity: 0.7;
 }
 
 [data-scope="notice"][data-part="message"] p {
@@ -157,6 +168,10 @@
 
 [data-scope="notice"][data-part="root"][data-placement="inbox"][data-variant="trouble"] {
   background-color: var(--danger-surface);
+}
+
+[data-scope="notice"][data-part="root"][data-placement="inbox"][data-variant="attention"] {
+  background-color: var(--attention-surface);
 }
 
 [data-scope="notice"][data-part="root"][data-placement="inbox"] > [data-scope="button-row"] {
@@ -291,6 +306,10 @@
   background-color: var(--danger-surface);
 }
 
+[data-scope="notice"][data-part="root"][data-layout="card"][data-placement="alone"][data-variant="attention"] {
+  background-color: var(--attention-surface);
+}
+
 [data-scope="notice"][data-part="mark"] {
   display: inline-grid;
   margin-block-start: 1px;
@@ -299,6 +318,10 @@
 
 [data-scope="notice"][data-part="root"][data-variant="trouble"] > [data-part="mark"] {
   color: var(--danger-text);
+}
+
+[data-scope="notice"][data-part="root"][data-variant="attention"] [data-part="mark"] {
+  color: var(--attention-text);
 }
 
 [data-scope="notice"][data-part="mark"] svg {
@@ -320,6 +343,29 @@
   color: var(--text-primary);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-medium);
+}
+
+/* **A secondary way on the card is visibly a button** (#3478): the card stands on its own ground
+   (the overlay, or trouble's and attention's), which a theme may give a secondary button's own
+   fill too (Purlis does: a way on the card read as words with no box). On a card's row of ways it
+   is drawn a step from that fill toward the words, and a further step under the pointer, so it
+   stands farther from every card ground than the family's fill, and farther still when pointed
+   at. Mixed in OKLab, as the check measures how far apart two colours look
+   (`noticeCardFill.test.ts`). A theme's own `button.root` fill, in the `parts` layer above,
+   still wins. */
+[data-scope="notice"][data-part="root"][data-layout="card"]
+  > [data-scope="button-row"]
+  [data-scope="button"][data-part="root"][data-variant="secondary"] {
+  background-color: color-mix(in oklab, var(--control-base), var(--text-primary) 14%);
+}
+
+[data-scope="notice"][data-part="root"][data-layout="card"]
+  > [data-scope="button-row"]
+  [data-scope="button"][data-part="root"][data-variant="secondary"]:is(
+    [data-hovered]:not([data-disabled]),
+    [data-open]:not([data-disabled])
+  ) {
+  background-color: color-mix(in oklab, var(--control-base), var(--text-primary) 22%);
 }
 
 [data-scope="notice"][data-part="root"][data-layout="card"] > [data-scope="button-row"] {

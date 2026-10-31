@@ -31,7 +31,7 @@ pub use adapter::{HarnessAdapter, SkillStart, SkillToStart};
 /// lines they sit on, so no harness has to cut anything. Each adapter adds its own cap on one
 /// description and whether it lists a skill's path ([`HarnessAdapter::skill_budget`]); whether a
 /// manual-only skill is free follows from what it reads ([`Harness::skill_budget`]).
-pub(crate) const SKILL_BUDGET: crate::skills::Budget = crate::skills::Budget {
+pub const SKILL_BUDGET: crate::skills::Budget = crate::skills::Budget {
     skills: 30,
     chars: 6_000,
     per_description: None,
@@ -409,15 +409,6 @@ impl Harness {
     /// or purlis's translation ([`Self::skill_frontmatter`], SK-8).
     pub fn skill_budget(self) -> crate::skills::Budget {
         self.adapter().skill_budget()
-    }
-
-    /// **Whether purlis arms a prompt hook on this harness** that hands a turn context of its
-    /// own (SK-15c): where a router that reads prompts points a prompt at skills its list leaves
-    /// out. Claude Code's and Codex's `UserPromptSubmit`, opencode's `chat.message` in purlis's
-    /// plugin ([`crate::dispatched::told_by_a_line`]). A harness with none gets the listing and
-    /// `skill_find` alone, and its skills' badges say so.
-    pub fn prompt_hook(self) -> bool {
-        crate::dispatched::told_by_a_line(Some(self))
     }
 
     /// [`HarnessAdapter::skill_frontmatter`]: what this harness reads of a skill's frontmatter

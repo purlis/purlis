@@ -140,6 +140,34 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
                 *tint,
                 None,
             ),
+            Finding::CardNotApart {
+                tint,
+                card,
+                ground,
+                ratio,
+                floor,
+            } => (
+                format!("a side view's card row ({card}) on its panel ({ground})"),
+                Some(*floor),
+                *tint,
+                Some(*ratio),
+            ),
+            Finding::NoticeWayNotApart {
+                tint,
+                variant,
+                ground,
+                pointed,
+                distance,
+                floor,
+            } => (
+                format!(
+                    "a {variant} notice card's secondary way{} on its ground ({ground})",
+                    if *pointed { " under the pointer" } else { "" }
+                ),
+                Some(*floor),
+                *tint,
+                Some(*distance),
+            ),
             Finding::SelectionTextAlone => (
                 "selection.text is a colour while selection.background is \"platform\", so it \
                  is never drawn"

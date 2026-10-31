@@ -8,7 +8,8 @@
  * (`purlis/notice-family`).
  *
  * - **Drawn by its parts.** A Notice's box is `data-scope="notice" data-part="root"`, its
- *   `data-variant` its tone (`news`, `trouble`) and its `data-placement` where it stands: `pane`
+ *   `data-variant` its tone (`news`, `trouble`, `attention`) and its `data-placement` where it
+ *   stands: `pane`
  *   (its pane's row, above the terminal), `inbox` (a row of the Inbox's list) or `alone` (on a
  *   page). Inside it are its line (the ways out's row, `ButtonRow`), what it says (`message`),
  *   whose it is (`whose`) and what a way out opened (`under`). `notice.css` draws the family
@@ -23,11 +24,11 @@
  *   `data-scope="notice-row"`) stands above the terminal and takes the height it leaves. Both are
  *   layout, drawn here and themed through the Notices they hold.
  */
-import { CircleAlert, CircleCheck } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleQuestionMark, LoaderCircle } from "lucide-react";
 import type { ComponentPropsWithRef, ReactNode, Ref } from "react";
 
 /** The family's variants, in the order the manifest names them. */
-export const NOTICE_VARIANTS = ["news", "trouble"] as const;
+export const NOTICE_VARIANTS = ["news", "trouble", "attention"] as const;
 export type NoticeTone = (typeof NOTICE_VARIANTS)[number];
 
 /** Where a Notice stands: its pane's row, a row of the Inbox's list, or alone on a page. */
@@ -93,13 +94,16 @@ export function NoticeMessage({
   );
 }
 
-/** **A card's mark** (#3344): a check for news, an alert for trouble; decoration, its tone said
- *  in words inside the message. */
-export function NoticeMark({ tone }: { tone: NoticeTone }) {
-  const Mark = tone === "trouble" ? CircleAlert : CircleCheck;
+/** **A Notice's mark** (#3344): a check for news, an alert for trouble, a question for what needs
+ *  a decision (#3678); decoration, its tone said in words inside the message. A card draws it at
+ *  its start, and an attention line before its words, so attention is never told by its colour
+ *  alone. */
+export function NoticeMark({ tone, running = false }: { tone: NoticeTone; running?: boolean }) {
+  const Mark =
+    tone === "trouble" ? CircleAlert : tone === "attention" ? CircleQuestionMark : CircleCheck;
   return (
     <span data-scope="notice" data-part="mark" aria-hidden="true">
-      <Mark />
+      {running ? <LoaderCircle className="spinning" /> : <Mark />}
     </span>
   );
 }

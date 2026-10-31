@@ -13,6 +13,8 @@
 use serde::Serialize;
 use specta::Type;
 
+pub(crate) mod needs;
+
 /// The catalogue row that opens the Skill studio on one scope's chats is this, then the scope's
 /// key (`app/src/skillStudio.ts`).
 pub(crate) const STUDIO_IN: &str = "skills.studio:";
@@ -24,6 +26,124 @@ pub(crate) const PERSONA_SCOPE_KEY: &str = "persona/";
 /// The catalogue row that opens the Skill studio on a chat as `persona`.
 pub(crate) fn studio_as(persona: &str) -> String {
     format!("{STUDIO_IN}{PERSONA_SCOPE_KEY}{persona}")
+}
+
+/// The catalogue row that opens the Skill studio's Needs you on one scope's chats is this, then
+/// the scope's key (#3695): a summary line's "need you".
+pub(crate) const NEEDS_IN: &str = "skills.needs:";
+
+/// The catalogue row that opens Needs you on a chat as `persona`.
+pub(crate) fn needs_as(persona: &str) -> String {
+    format!("{NEEDS_IN}{PERSONA_SCOPE_KEY}{persona}")
+}
+
+/// **How many items Needs you holds for a chat in `workspace` as `persona`** (#3695), read as
+/// [`skill_studio`] reads them ([`with_the_projects_needs`]), the extensions' lints asked as it
+/// asks them ([`with_list_lints`], #3940) where `executor` is given, for a summary line.
+/// `waiting` is the files purlis's own proposed changes wait on.
+pub(crate) fn needing_here(
+    executor: Option<&purlis_core::executor::Executor>,
+    root: &std::path::Path,
+    waiting: &[String],
+    workspace: Option<&str>,
+    persona: Option<&str>,
+) -> usize {
+    let built_in =
+        crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
+    let count = |more: &[&dyn purlis_core::skills::SkillLint]| {
+        needing_with(
+            root,
+            built_in.as_deref(),
+            waiting,
+            workspace,
+            persona,
+            &purlis_core::harness_plugin::Env::of(&[]),
+            more,
+        )
+    };
+    match executor {
+        Some(executor) => with_list_lints(executor, root, count),
+        None => count(&[]),
+    }
+}
+
+/// **The extensions' lints as a studio list asks them, handed to `with`** (#3940): each
+/// extension this machine approved and the project has on that declares `skill-lint`, answered
+/// from what it said of the same files before and asked only within the list's time
+/// ([`purlis_core::skills::studio::ListLints`]). None where there is no such extension or no
+/// config home. The one way the studio and the summary lines ask them, so their counts agree.
+pub(crate) fn with_list_lints<T>(
+    executor: &purlis_core::executor::Executor,
+    root: &std::path::Path,
+    with: impl FnOnce(&[&dyn purlis_core::skills::SkillLint]) -> T,
+) -> T {
+    purlis_core::skills::studio::with_studio(executor, root, |studio| {
+        let lints = studio
+            .map(|studio| studio.list_lints())
+            .filter(|lints| !lints.is_empty());
+        let more: Vec<&dyn purlis_core::skills::SkillLint> = lints
+            .iter()
+            .map(|lints| lints as &dyn purlis_core::skills::SkillLint)
+            .collect();
+        with(&more)
+    })
+}
+
+/// [`needing_here`], with the built-in skills in `built_in` and `env` read for where each
+/// harness keeps its own. The studio is read only for what its items are worked out from
+/// ([`purlis_core::skills::Reading::Needs`], #3781): no badge, no router, no list of the
+/// workspaces or levels, so a persona's page draws its count without the whole studio.
+#[cfg(test)]
+pub(crate) fn needing(
+    root: &std::path::Path,
+    built_in: Option<&std::path::Path>,
+    waiting: &[String],
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    env: &purlis_core::harness_plugin::Env<'_>,
+) -> usize {
+    needing_with(root, built_in, waiting, workspace, persona, env, &[])
+}
+
+/// [`needing_here`]'s count, with the built-in skills in `built_in`, `env` read for where each
+/// harness keeps its own, and the plane's own skills linted by `more` too ([`with_list_lints`]).
+pub(crate) fn needing_with(
+    root: &std::path::Path,
+    built_in: Option<&std::path::Path>,
+    waiting: &[String],
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    env: &purlis_core::harness_plugin::Env<'_>,
+    more: &[&dyn purlis_core::skills::SkillLint],
+) -> usize {
+    let mut studio = studio_read(
+        purlis_core::skills::Reading::Needs,
+        root,
+        built_in,
+        true,
+        workspace,
+        persona,
+        env,
+        more,
+    );
+    with_the_projects_needs(&mut studio, root, waiting);
+    studio.needs.len()
+}
+
+/// **The project's own items of Needs you, added to `studio`'s** (#3689): the old
+/// `[harness_plugins]` keys, whose Ask Needs you holds while the studio is on. A file whose
+/// removal waits among `waiting`, the files purlis's own proposed changes wait on, is asked
+/// about no more. The one way the studio, its count and the summary lines add them.
+pub(crate) fn with_the_projects_needs(
+    studio: &mut Studio,
+    root: &std::path::Path,
+    waiting: &[String],
+) {
+    if !studio.on {
+        return;
+    }
+    let old = crate::oldplugins::notice_of(root, waiting);
+    studio.needs = needs::with_old_keys(std::mem::take(&mut studio.needs), old.as_ref());
 }
 
 /// The level a skill comes from, as the studio draws it.
@@ -106,8 +226,8 @@ pub struct StudioSkill {
     /// for a skill a chat gets from purlis, its own for one from outside the plane, none for a
     /// skill left out.
     pub compat: Vec<SkillCompat>,
-    /// What the built-in lints say of a skill from outside the plane (SK-8): that it widens the
-    /// chat, and what else is worth knowing. Empty for the plane's and the built-in skills.
+    /// What the built-in lints say of a skill a chat gets, the plane's own too (SK-8, #3780): that
+    /// it widens the chat, and what else is worth knowing. Empty for the built-in skills.
     pub lint: Vec<String>,
     /// Each harness whose chats a router hid it from the list of, and why (SK-15), each by its
     /// own budget: the chat still has it, through the index skill. Empty where every one lists it.
@@ -324,6 +444,12 @@ pub struct StudioHarness {
     /// The project's skills a repo of the workspace leaves out of its chats in that clone, each
     /// with why (SK-53): the core's `HarnessInTheStudio::repo_left_out`.
     pub repo_left_out: Vec<StudioSkill>,
+    /// **What its own catalogue holds** (#3324), in the core's words (`OwnCatalogue::said`),
+    /// which `purlis skill list` says too: the skills it finds itself in the person's own
+    /// folders and its plugins, listed against its own limit and never counted in purlis's
+    /// budget. Null for a harness that finds none of its own, and where the studio was read only
+    /// for a count of its needs.
+    pub own: Option<String>,
 }
 
 /// A harness or repo skill with the name of a skill purlis hands a chat (ADR 0099 §3): both
@@ -500,9 +626,48 @@ pub struct Studio {
     /// Why a chat reads none of the pins of the workspace or the persona it is filtered to,
     /// where it reads none (SK-15d): its rows' Pin switches then say so.
     pub pins_refused: Option<crate::skillchange::SkillPinsRefused>,
+    /// The declared harnesses skills are not supported on (SK-30): each skill's badge names them,
+    /// and the harnesses' list says why in one line.
+    pub not_supported: Vec<StudioNotSupported>,
     /// The router its chats are routed by, and how it did at each one's start (SK-15b). Null
     /// while the studio is off.
     pub router: Option<StudioRouter>,
+    /// Where purlis cannot confirm which of the project's workspace and persona folders the
+    /// person accepted (#3718): the one item the studio shows for the project, whose Accept
+    /// accepts the folders it lists (`skill_levels_confirm`). Null otherwise.
+    pub levels_to_confirm: Option<StudioLevelsToConfirm>,
+    /// **What in these skills needs the person** (#3689): the Needs you page's items, by kind,
+    /// each with why and one fix ([`needs`]). Empty while the studio is off.
+    pub needs: Vec<needs::NeedsYou>,
+}
+
+/// **The one item for the project's folders** (#3718): what it says, and the folders its Accept
+/// accepts, relative to the project.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioLevelsToConfirm {
+    pub said: String,
+    pub folders: Vec<String>,
+}
+
+/// **A declared harness skills are not supported on** (SK-30, #2985): the core's
+/// `skills::NotSupported`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioNotSupported {
+    /// The word a profile's `kind` names it by.
+    pub name: String,
+    pub title: String,
+    /// Why its chats get no skills, in one line.
+    pub said: String,
+}
+
+impl From<purlis_core::skills::NotSupported> for StudioNotSupported {
+    fn from(one: purlis_core::skills::NotSupported) -> Self {
+        Self {
+            name: one.name,
+            title: one.title,
+            said: one.said,
+        }
+    }
 }
 
 /// **The router a studio's chats are routed by** (SK-15b, ADR 0102 §5, §6), and how it did at
@@ -518,6 +683,41 @@ pub struct StudioRouter {
     /// Each chat open here that its start routed by an extension, by its number, with how
     /// that went: its timing, and whether it fell back on the built-in router.
     pub chats: Vec<StudioRouted>,
+    /// **The router's newest grade** (SK-15e, #3233), in a sentence: how many of the library's
+    /// trigger tests pass with it and with the built-in router, and the library's commit it was
+    /// graded on. Null where it has none, and for the built-in router.
+    pub grade: Option<String>,
+    /// **That grade's id** (#3617): what opens its scorecard. Null where `grade` is.
+    pub graded: Option<String>,
+    /// **What the scope's own choice writes** (#3692): the persona's `skill-router:` line, or
+    /// else the workspace's `settings.skills.router`, as written. Null where it writes none,
+    /// and at the project's root, which chooses no router. What Change… starts from.
+    pub written: Option<String>,
+    /// **A chat's skill budget** (SK-12, ADR 0102 §1): past it the router decides what a chat's
+    /// list shows. The same on every harness.
+    pub budget: StudioBudget,
+    /// **What the rows' "hidden by the router" marks preview** (#4215), in a sentence: a chat at
+    /// the workspace's root (or the project's), in no clone, routed by the built-in router. Where
+    /// an extension's router is chosen, it says that the marks are the built-in router's choice.
+    pub preview: String,
+}
+
+/// **A chat's skill budget**, as the Routing page says it: the most skills its list holds, and
+/// the most characters of their descriptions together.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+pub struct StudioBudget {
+    pub skills: u32,
+    pub chars: u32,
+}
+
+impl Default for StudioBudget {
+    fn default() -> Self {
+        let budget = purlis_core::harness::SKILL_BUDGET;
+        StudioBudget {
+            skills: u32::try_from(budget.skills).unwrap_or(u32::MAX),
+            chars: u32::try_from(budget.chars).unwrap_or(u32::MAX),
+        }
+    }
 }
 
 /// One chat a router extension was asked about at its start.
@@ -525,13 +725,34 @@ pub struct StudioRouter {
 pub struct StudioRouted {
     pub session: u32,
     pub routing: crate::useskill::SkillRouting,
+    /// **Every skill the routing hid at its start, by name** (#3692): the routing record's, so
+    /// the Routing page says what a chat started without on its list.
+    pub hidden: Vec<String>,
 }
 
-/// The router chats in `workspace` as `persona` of the project at `root` are routed by.
+impl StudioRouted {
+    /// Chat `session`'s routing at its start, as the Routing page lists it.
+    pub(crate) fn of(session: u32, routed: &purlis_core::skills::router::Routed) -> Self {
+        StudioRouted {
+            session,
+            routing: routed.into(),
+            hidden: routed
+                .record
+                .hidden
+                .iter()
+                .map(|one| one.skill.clone())
+                .collect(),
+        }
+    }
+}
+
+/// The router chats in `workspace` as `persona` of the project at `root` are routed by, where
+/// `in_a_clone` says whether a clone of it holds repo skills a chat there counts (#4215).
 fn router_of(
     root: &std::path::Path,
     workspace: Option<&str>,
     persona: Option<&str>,
+    in_a_clone: bool,
 ) -> StudioRouter {
     use purlis_core::skills::router::{Chosen, chosen};
     let (said, problem, extension) = match chosen(root, workspace, persona) {
@@ -542,8 +763,7 @@ fn router_of(
         ),
         Ok(Chosen::Extension(id)) => (
             format!(
-                "Chats here are routed by {}, asked at each chat's start; the rows show what \
-                 the built-in router would hide.",
+                "Chats here are routed by {}, asked at each chat's start.",
                 purlis_core::skills::Router::Extension(id.clone()).shown()
             ),
             false,
@@ -551,12 +771,63 @@ fn router_of(
         ),
         Err(why) => (format!("{why}."), true, None),
     };
+    let newest = extension.as_deref().and_then(|id| {
+        purlis_core::skills::grades::routers::grades_of(root, id, workspace, persona)
+            .into_iter()
+            .next()
+    });
+    let grade = newest.as_ref().map(|newest| newest.said());
+    let graded = newest.map(|newest| newest.grade);
+    let pinner = persona
+        .map(|p| purlis_core::skills::PinnedBy::Persona(p.to_owned()))
+        .or_else(|| workspace.map(|ws| purlis_core::skills::PinnedBy::Workspace(ws.to_owned())));
     StudioRouter {
+        preview: preview_of(workspace, persona, extension.as_deref(), in_a_clone),
         said,
         problem,
         extension,
         chats: Vec::new(),
+        grade,
+        graded,
+        written: pinner.and_then(|by| purlis_core::skills::router::written(root, &by)),
+        budget: StudioBudget::default(),
     }
+}
+
+/// **What the studio's hidden marks preview** (#4215; ADR 0102 as amended 2026-10-31): the
+/// start of a chat at the root of `workspace` (or of the project), as `persona` where the studio
+/// is filtered to one, which is in no clone, so no repo skill counts against its budget, routed
+/// by the built-in router, which asks nothing. An extension's router (`extension`) is asked only
+/// at a chat's real start, never by a read of the studio, so where one is chosen the marks are
+/// the built-in router's choice and say so. Where a clone holds repo skills (`in_a_clone`), a
+/// chat started there counts them too, which the line says.
+fn preview_of(
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    extension: Option<&str>,
+    in_a_clone: bool,
+) -> String {
+    let at = match workspace {
+        Some(_) => "a chat at the workspace's root",
+        None => "a chat at the project's root",
+    };
+    let as_persona = persona.map_or_else(String::new, |persona| format!(" as {persona}"));
+    let since = extension.map_or_else(String::new, |id| {
+        format!(
+            ", since {} is asked only at each chat's start",
+            purlis_core::skills::Router::Extension(id.to_owned()).shown()
+        )
+    });
+    let clones = if in_a_clone {
+        " A chat started in a clone counts that clone's repo skills too, and its own Skills view \
+         says what it hides."
+    } else {
+        ""
+    };
+    format!(
+        "The rows' hidden marks are what the built-in router hides for {at}{as_persona}{since}.\
+         {clones}"
+    )
 }
 
 /// **What the studio offers when it opens** (SK-22, #2785; decision 42), as the core works it
@@ -594,6 +865,7 @@ impl From<purlis_core::skills::first_open::FirstOpen> for StudioFirst {
 /// The studio of the project at `root`, for a chat at its root (`workspace` `None`) or in
 /// `workspace`, as `persona` or on none, with the built-in skills in `built_in`: nothing while
 /// the flag is off. Its list is the command line's (`purlis_core::skills::studio_list`).
+#[cfg(test)]
 pub(crate) fn studio(
     root: &std::path::Path,
     built_in: Option<&std::path::Path>,
@@ -602,6 +874,46 @@ pub(crate) fn studio(
     persona: Option<&str>,
     env: &purlis_core::harness_plugin::Env<'_>,
 ) -> Studio {
+    studio_linted(root, built_in, on, workspace, persona, env, &[])
+}
+
+/// The studio of the project at `root`, read as `studio` reads it, the plane's own skills linted
+/// by `more` too: the extensions' lints as a list asks them ([`with_list_lints`], #3940).
+pub(crate) fn studio_linted(
+    root: &std::path::Path,
+    built_in: Option<&std::path::Path>,
+    on: bool,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    env: &purlis_core::harness_plugin::Env<'_>,
+    more: &[&dyn purlis_core::skills::SkillLint],
+) -> Studio {
+    studio_read(
+        purlis_core::skills::Reading::Whole,
+        root,
+        built_in,
+        on,
+        workspace,
+        persona,
+        env,
+        more,
+    )
+}
+
+/// [`studio`], read for `reading`: for Needs you's count alone (#3781), without the badges, the
+/// router, the workspaces or the levels, which no item reads. Its items are the whole studio's.
+#[allow(clippy::too_many_arguments)]
+fn studio_read(
+    reading: purlis_core::skills::Reading,
+    root: &std::path::Path,
+    built_in: Option<&std::path::Path>,
+    on: bool,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    env: &purlis_core::harness_plugin::Env<'_>,
+    more: &[&dyn purlis_core::skills::SkillLint],
+) -> Studio {
+    let whole = reading == purlis_core::skills::Reading::Whole;
     let workspace = workspace.map(str::to_owned);
     let persona = persona.map(str::to_owned);
     if !on {
@@ -616,7 +928,10 @@ pub(crate) fn studio(
             clashes: Vec::new(),
             first: StudioFirst::default(),
             pins_refused: None,
+            not_supported: Vec::new(),
             router: None,
+            levels_to_confirm: None,
+            needs: Vec::new(),
         };
     }
     let off = workspace
@@ -632,12 +947,15 @@ pub(crate) fn studio(
     let purlis_core::skills::StudioList {
         rows,
         harnesses: all,
-    } = purlis_core::skills::studio_list(
+        not_supported,
+    } = purlis_core::skills::studio_list_for(
+        reading,
         built_in,
         root,
         workspace.as_deref(),
         persona.as_deref(),
         env,
+        more,
     );
     let first = purlis_core::skills::first_open::first_open(root, &rows).into();
     let skills = rows
@@ -647,24 +965,49 @@ pub(crate) fn studio(
             plane_shown(root, workspace.as_deref(), &off, by, row)
         })
         .collect();
+    // Whether a chat started in a clone counts repo skills a chat at the root does not (#4215).
+    let in_a_clone = all.iter().any(|one| {
+        one.outside
+            .iter()
+            .any(|found| found.origin == purlis_core::skills::Origin::Repo && !found.off)
+    });
     let (harnesses, clashes) = harnesses(&all);
-    let workspaces = purlis_core::workspaces::Plane::open(root)
-        .workspaces()
-        .unwrap_or_default();
-    let router = router_of(root, workspace.as_deref(), persona.as_deref());
-    Studio {
+    let workspaces = if whole {
+        purlis_core::workspaces::Plane::open(root)
+            .workspaces()
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let router =
+        whole.then(|| router_of(root, workspace.as_deref(), persona.as_deref(), in_a_clone));
+    let mut studio = Studio {
         on,
         workspace,
         persona,
         workspaces,
-        levels: crate::skillchange::levels(root),
+        levels: if whole {
+            crate::skillchange::levels(root)
+        } else {
+            Vec::new()
+        },
         skills,
         harnesses,
         clashes,
         first,
         pins_refused,
-        router: Some(router),
-    }
+        not_supported: not_supported.into_iter().map(Into::into).collect(),
+        router,
+        levels_to_confirm: purlis_core::skills::levels::to_confirm(root).map(|(said, folders)| {
+            StudioLevelsToConfirm {
+                said: said.to_owned(),
+                folders,
+            }
+        }),
+        needs: Vec::new(),
+    };
+    studio.needs = needs::of(&studio);
+    studio
 }
 
 /// A row of a skill from outside the plane, for the window: read only, with whose it is and how
@@ -738,6 +1081,7 @@ fn harnesses(
                     .cloned()
                     .map(outside_shown)
                     .collect(),
+                own: one.own.and_then(|own| own.said(adapter.title())),
             }
         })
         .collect();
@@ -1005,7 +1349,6 @@ pub(crate) async fn skill_runs(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum SkillPanelKey {
-    Grades,
     Runs,
     Extension { extension: String, panel: String },
 }
@@ -1017,7 +1360,6 @@ impl From<purlis_core::skills::studio::PanelKey> for SkillPanelKey {
     fn from(key: purlis_core::skills::studio::PanelKey) -> SkillPanelKey {
         use purlis_core::skills::studio::PanelKey;
         match key {
-            PanelKey::Grades => SkillPanelKey::Grades,
             PanelKey::Runs => SkillPanelKey::Runs,
             PanelKey::Extension { extension, panel } => {
                 SkillPanelKey::Extension { extension, panel }
@@ -1026,8 +1368,8 @@ impl From<purlis_core::skills::studio::PanelKey> for SkillPanelKey {
     }
 }
 
-/// **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Grades and Runs
-/// panels, then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
+/// **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,
+/// then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
 /// or refused with the core's sentence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct SkillPanel {
@@ -1040,17 +1382,15 @@ pub struct SkillPanel {
     pub refused: Option<String>,
 }
 
-/// The panels on skill `skill`'s tab in the project at `root`, asked with `studio`, the Grades
-/// panel of the copy at `level` (#3353).
+/// The panels on skill `skill`'s tab in the project at `root`, asked with `studio`.
 pub(crate) fn panels(
     root: &std::path::Path,
     skill: &str,
-    level: Option<&purlis_core::skills::verbs::Level>,
     studio: Option<purlis_core::skills::studio::Studio<'_>>,
 ) -> Vec<SkillPanel> {
     let answered = match studio {
-        Some(studio) => studio.panels(root, skill, level),
-        None => purlis_core::skills::studio::own_panels(root, skill, level),
+        Some(studio) => studio.panels(root, skill),
+        None => purlis_core::skills::studio::own_panels(root, skill),
     };
     answered
         .into_iter()
@@ -1073,10 +1413,10 @@ pub(crate) fn panels(
         .collect()
 }
 
-/// **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Grades panel, of the copy at
-/// `level` the tab shows (null: the copy it shows first, #3353), and its Runs panel, which lists
-/// every run of the skill, newest first, then each extension's. None while the flag is off. On a
-/// blocking thread, as it reads the project's skill log and asks each extension.
+/// **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
+/// run of the skill, newest first, then each extension's. A skill's grades are no panel: its
+/// Grades tab reads them whole ([`crate::skillgrade::skill_grades`]). None while the flag is off.
+/// On a blocking thread, as it reads the project's skill log and asks each extension.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_panels(
@@ -1084,7 +1424,6 @@ pub(crate) async fn skill_panels(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     skill: String,
-    level: Option<crate::skillchange::SkillLevel>,
 ) -> Result<Vec<SkillPanel>, String> {
     let held = planes.held(&plane)?;
     let executor = views.executor();
@@ -1095,10 +1434,7 @@ pub(crate) async fn skill_panels(
         Ok(purlis_core::skills::studio::with_studio(
             &executor,
             held.root(),
-            |studio| {
-                let level = level.as_ref().map(purlis_core::skills::verbs::Level::from);
-                panels(held.root(), &skill, level.as_ref(), studio)
-            },
+            |studio| panels(held.root(), &skill, studio),
         ))
     })
     .await
@@ -1118,11 +1454,19 @@ pub(crate) async fn skill_studio_on() -> Result<bool, String> {
 /// whether it is on, which `PURLIS_SKILL_STUDIO` still decides where it is set.
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn set_skill_studio_on(on: bool) -> Result<bool, String> {
+pub(crate) async fn set_skill_studio_on(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    on: bool,
+) -> Result<bool, String> {
+    let held = planes.every_held();
     crate::off_the_window("turning the Skill studio preview on or off", move || {
         let root = purlis_core::machine::config_root()
             .ok_or_else(|| "There is no config home on this machine to keep it in.".to_owned())?;
         purlis_core::skills::set_studio_on(&root, on)?;
+        // The old plugin keys' Ask is the Inbox's only while the studio is off (#3689).
+        for one in &held {
+            one.chats().asks_may_have_moved();
+        }
         Ok(purlis_core::skills::studio_on_here())
     })
     .await
@@ -1134,22 +1478,39 @@ pub(crate) async fn set_skill_studio_on(on: bool) -> Result<bool, String> {
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_studio(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     workspace: Option<String>,
     persona: Option<String>,
 ) -> Result<Studio, String> {
     let held = planes.held(&plane)?;
+    let executor = views.executor();
     crate::off_the_window("reading the project's skills", move || {
         let built_in =
             crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
-        let mut studio = studio(
+        let on = purlis_core::skills::studio_on_here();
+        let read = |more: &[&dyn purlis_core::skills::SkillLint]| {
+            studio_linted(
+                held.root(),
+                built_in.as_deref(),
+                on,
+                workspace.as_deref(),
+                persona.as_deref(),
+                &purlis_core::harness_plugin::Env::of(&[]),
+                more,
+            )
+        };
+        // The extensions' lints only while the studio is on: off, nothing is read at all.
+        let mut studio = if on {
+            with_list_lints(&executor, held.root(), read)
+        } else {
+            read(&[])
+        };
+        with_the_projects_needs(
+            &mut studio,
             held.root(),
-            built_in.as_deref(),
-            purlis_core::skills::studio_on_here(),
-            workspace.as_deref(),
-            persona.as_deref(),
-            &purlis_core::harness_plugin::Env::of(&[]),
+            &held.proposals().paths_of(crate::proposals::BY_PURLIS),
         );
         // How the router did at the start of each chat open here in the studio's scope (SK-15b).
         if let Some(router) = studio.router.as_mut() {
@@ -1158,10 +1519,7 @@ pub(crate) async fn skill_studio(
                 .routings()
                 .into_iter()
                 .filter(|one| one.workspace == workspace && one.persona == persona)
-                .map(|one| StudioRouted {
-                    session: one.session,
-                    routing: one.routed.as_ref().into(),
-                })
+                .map(|one| StudioRouted::of(one.session, &one.routed))
                 .collect();
         }
         Ok(studio)

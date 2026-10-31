@@ -7,6 +7,7 @@ import { $, browser, expect } from "@wdio/globals";
 import { press, projectRoot, stateOf, untilSays } from "../acting.js";
 import { showView } from "../opening.js";
 import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
+import { studioPage, studioMore, studioSkill } from "../studio.js";
 
 /**
  * **A persona's own skills, changed in the Skill studio** (SK-32, #3003), in the built app
@@ -88,39 +89,49 @@ describe("changing a persona's own skills", function () {
     await press(PANE, "Brings", "starting");
     await $(STUDIO).waitForExist({ timeout: 20_000 });
 
-    await press(STUDIO, "New skill");
-    await expect($('[data-testid="skill-new-level"]')).toHaveText(
-      new RegExp(`It lands in the persona ${PERSONA} skills\\.`),
-    );
+    // New skill… asks how first; Write it yourself lands where the person came from (#3684).
+    await press(STUDIO, "New skill…");
+    await press('[data-testid="skill-new"]', "Write it yourself");
     await typeInto("Name", MADE);
-    await typeInto("What it does and when to use it", "Probes it.");
-    await press(STUDIO, "Make it");
+    await typeInto("What it does, and when a chat should use it", "Probes it.");
+    await expect($('[data-testid="skill-new-write"]')).toHaveText(
+      new RegExp(`${MADE} is made in the persona ${PERSONA} skills`),
+    );
+    await press('[data-testid="skill-new-write"]', "Make it and open its page");
     const made = await $(`[data-testid="skill-${MADE}"]`);
     await made.waitForExist({ timeout: 20_000 });
     await expect(made).toHaveText(/persona/);
     expect(existsSync(join(own(MADE), "SKILL.md"))).toBe(true);
 
-    await (await $(`aria/Rename ${MADE}`)).click();
+    // Each change is made on the skill chosen in the Library, beside the list (#3681).
+    await studioSkill(MADE);
+    await studioMore(MADE, "Rename");
     await typeInto("New name", RENAMED);
-    await (await $('form[aria-label^="Rename"] button[type="submit"]')).click();
+    // Rename is a dialog that says what changes with it (#3685).
+    await press('[data-testid="skill-rename"]', "Rename");
     const renamed = await $(`[data-testid="skill-${RENAMED}"]`);
     await renamed.waitForExist({ timeout: 20_000 });
     expect(existsSync(join(own(RENAMED), "SKILL.md"))).toBe(true);
     expect(existsSync(own(MADE))).toBe(false);
 
-    await (await $(`aria/Delete ${RENAMED}`)).click();
+    await studioSkill(RENAMED);
+    await studioMore(RENAMED, "Delete");
     const users = await $('[data-testid="skill-users"]');
     await users.waitForExist({ timeout: 20_000 });
-    await expect(users).toHaveText(new RegExp(`chats as ${PERSONA}, in every workspace`));
-    await (
-      await $(`section[aria-label="Delete ${RENAMED}"] button[data-variant="danger"]`)
-    ).click();
+    await expect(users).toHaveText(new RegExp(`[Cc]hats as ${PERSONA}, in every workspace`));
+    await press('[data-testid="skill-delete"]', "Delete");
     await renamed.waitForExist({ reverse: true, timeout: 20_000 });
     expect(existsSync(own(RENAMED))).toBe(false);
 
-    const restore = await $(`aria/Restore ${RENAMED}`);
+    await studioPage("Deleted");
+    // A deleted skill's page, beside the list, holds Bring back (S9, #3691).
+    const row = await $(`[data-testid="deleted-${RENAMED}"]`);
+    await row.waitForClickable({ timeout: 20_000 });
+    await row.click();
+    const restore = await $(`aria/Bring back ${RENAMED}`);
     await restore.waitForClickable({ timeout: 20_000 });
     await restore.click();
+    await studioPage("Library");
     await browser.waitUntil(
       async () => (await $(`[data-testid="skill-${RENAMED}"]`)).isExisting(),
       { timeout: 20_000, timeoutMsg: "the restored skill never came back to the studio" },
@@ -129,21 +140,15 @@ describe("changing a persona's own skills", function () {
   });
 
   it("moves it into the project's skills after asking its grant, and the persona keeps it", async () => {
-    // Move to's first level is the project's shared skills.
-    const picker = `[data-scope="select"][data-part="root"][aria-label="Move ${RENAMED} to"]`;
-    await $(picker).waitForExist({ timeout: 20_000 });
-    await browser.execute((css: string) => {
-      document.querySelector<HTMLElement>(css)?.click();
-    }, picker);
-    await $('[role="listbox"]').waitForExist({ timeout: 10_000 });
-    await browser.execute(() => {
-      document
-        .querySelector<HTMLElement>('[role="listbox"] [role="option"][data-value="0"]')
-        ?.click();
-    });
-
-    const prompt = `section[aria-label="Move ${RENAMED} to the project skills"]`;
-    await $(prompt).waitForExist({ timeout: 20_000 });
+    // Move is a dialog of the levels, each with who gets it there (#3685); its first is the
+    // project's shared skills.
+    await studioSkill(RENAMED);
+    await studioMore(RENAMED, "Move to another level");
+    const prompt = '[data-testid="skill-move"]';
+    // The level by its name, as a screen reader reads the radio, never by its tag.
+    const project = await (await $(prompt)).$("aria/project");
+    await project.waitForExist({ timeout: 20_000 });
+    await project.click();
     await untilSays(`${prompt} [data-testid="persona-keeps"]`, `${PERSONA} keeps it`);
     await press(prompt, "Move");
 

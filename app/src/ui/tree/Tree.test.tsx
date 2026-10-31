@@ -6,7 +6,7 @@
  * a theme's parts are keyed on (ADR 0103). The look itself is held by the stories, in a real
  * browser (`Tree.stories.tsx`).
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { useState } from "react";
@@ -414,5 +414,41 @@ describe("a tree whose owner reads, chooses and drags its rows", () => {
     };
     fireEvent.dragStart(row("b.txt"), { dataTransfer });
     expect(set["text/plain"]).toBe("b.txt");
+  });
+});
+
+describe("a tree that may drag, with its drag off (#3532)", () => {
+  function Still({ draggable }: { draggable: boolean }) {
+    return (
+      <Tree aria-label="Files of main" mayDrag draggable={draggable}>
+        <TreeRow
+          id="a"
+          textValue="a.txt"
+          content={<RowLabel>a.txt</RowLabel>}
+          carries={{ "text/plain": "a.txt" }}
+        />
+      </Tree>
+    );
+  }
+
+  it("draws no drag on its rows, and warns of nothing, until its drag turns on", () => {
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { rerender } = render(<Still draggable={false} />);
+      const tree = screen.getByRole("treegrid");
+      const a = within(tree).getByRole("row", { name: /^a\.txt/ });
+      expect(a).not.toHaveAttribute("draggable");
+      expect(a).not.toHaveAttribute("aria-describedby");
+      expect(tree).not.toHaveAttribute("data-allows-dragging");
+
+      // And the same tree and row drag once it is on.
+      rerender(<Still draggable />);
+      expect(screen.getByRole("treegrid")).toBe(tree);
+      expect(within(tree).getByRole("row", { name: /^a\.txt/ })).toBe(a);
+      expect(a).toHaveAttribute("draggable", "true");
+      expect(warned).not.toHaveBeenCalled();
+    } finally {
+      warned.mockRestore();
+    }
   });
 });

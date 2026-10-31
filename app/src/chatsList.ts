@@ -11,7 +11,7 @@
  * answer redraws its own marks and no row (SC-3).
  */
 import type { FinishedTask } from "./bindings";
-import { markOf, type ChatStates } from "./chatState";
+import { markOf, ownWorkOf, type ChatStates } from "./chatState";
 import type { ChatRow, ListedChat } from "./chatsTree";
 import { shownOf } from "./finished";
 import { shownState, type Shown, type ShownKind } from "./shownState";
@@ -34,6 +34,7 @@ export function shownOfRow(
       row.report === null ? null : { report: row.report, outcome: row.outcome, asking: row.asking },
     harness: row.harness,
     tasksAtWork,
+    ownWork: ownWorkOf(states, row.session),
   });
 }
 
@@ -48,7 +49,14 @@ export type Rank = 0 | 1 | 2;
 export function rankOf(kind: ShownKind | undefined): Rank {
   if (kind === "needs-you") return 0;
   // A chat waiting on its tasks is at work through them (#1491): nothing waits on the person.
-  if (kind === "working" || kind === "asking" || kind === "unheard" || kind === "waiting-on-tasks")
+  // So is one waiting on its own work (#3878).
+  if (
+    kind === "working" ||
+    kind === "asking" ||
+    kind === "unheard" ||
+    kind === "waiting-on-tasks" ||
+    kind === "waiting-on-own-work"
+  )
     return 1;
   return 2;
 }
@@ -276,4 +284,19 @@ export function sinceSaid(seconds: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
   if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h`;
   return `${Math.floor(seconds / 86_400)}d`;
+}
+
+/**
+ * **A chat row's time at its end** (#3484, the prototype's `.rm`): `now` in its first minute,
+ * minutes in its first hour, and then the clock time it came into its state, `10:42`, or its
+ * day, `10-26`, where that was before today (`PanelList.shortDate`'s style).
+ */
+export function rowTimeSaid(seconds: number, now: Date): string {
+  if (seconds < 60) return "now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  const at = new Date(now.getTime() - seconds * 1000);
+  const two = (n: number) => String(n).padStart(2, "0");
+  return at.toDateString() === now.toDateString()
+    ? `${two(at.getHours())}:${two(at.getMinutes())}`
+    : `${two(at.getMonth() + 1)}-${two(at.getDate())}`;
 }

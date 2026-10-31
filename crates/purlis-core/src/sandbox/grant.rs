@@ -269,6 +269,10 @@ pub struct Grants {
     /// Which of them were allowed for the chat's next run alone ([`Level::Once`], D-sock-3):
     /// a scope of its own, so a start can judge each against the scopes policy leaves open.
     pub once: Vec<What>,
+    /// **On a runner, what the start from its desktop says its person allowed of the chat's
+    /// persona** (#4071, [`super::persona::tools_its_desktop_allowed`]), as its digest: for this
+    /// start alone, set only for a start a link made, and it arms tools and grants nothing else.
+    pub tools_allowed_by_desktop: Option<String>,
 }
 
 impl Grants {
@@ -516,6 +520,43 @@ pub fn brokered_route(class: Class) -> &'static str {
              ever writes it. Make the change yourself, in your own editor or terminal."
         }
     }
+}
+
+/// What a Notice says of a refused write of a repository's git folder that was there as a
+/// Claude Code chat started, or of a folder above one ([`keeps_git_folder`]): no grant lets it
+/// through, so it says the way that works.
+pub const GIT_FOLDER_KEPT: &str = "That holds a repository's git folder, which stays where it is \
+     while the chat runs, so no grant would let this through. Make the change yourself, in your \
+     own terminal; a branch folder is removed with `purlis worktree remove`.";
+
+/// **Whether `path`, refused to a Claude Code chat of the plane at `root`, is held so a
+/// repository's git folder stays where it is** ([`super::Denied::git_folder_pins`]): a path
+/// that holds a git folder as a whole, or a folder above one, up to the folder it was found in
+/// ([`super::git_folders_searched`]). Allowing the chat to write such a folder would not let
+/// the refused write through, so its Notice offers no Allow. Compared as written and as the
+/// kernel names it, case-folded where names are (`folded`).
+pub fn keeps_git_folder(path: &Path, root: &Path, folded: bool) -> bool {
+    let fold = |path: &Path| {
+        if folded {
+            PathBuf::from(path.to_string_lossy().to_lowercase())
+        } else {
+            path.to_path_buf()
+        }
+    };
+    let asked = lexical(path);
+    let asked = [fold(&asked), fold(&super::real(&asked))];
+    super::planted::git_folders_kept(&super::git_folders_searched(root))
+        .into_iter()
+        .any(|(pin, searched)| {
+            let searched = lexical(&searched);
+            pin.ancestors()
+                .take_while(|folder| folder.starts_with(&searched))
+                .any(|held| {
+                    [fold(held), fold(&super::real(held))]
+                        .iter()
+                        .any(|held| asked.contains(held))
+                })
+        })
 }
 
 /// `typed` as a host a grant names, or why not.

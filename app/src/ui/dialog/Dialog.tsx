@@ -529,9 +529,9 @@ const FooterPlace = createContext<Place | null>(null);
 
 /**
  * Whether `main` is the one ⏎ finds: an act that grants never is, and one that cannot be taken
- * back is not unless it says so (#1210).
+ * back is not unless it says so (#1210). A review page's bar asks the same (#3672).
  */
-const submits = (main: DialogAction | undefined): boolean =>
+export const returnFinds = (main: DialogAction | undefined): boolean =>
   main !== undefined && main.variant !== "grants" && (main.byReturn ?? main.variant !== "danger");
 
 /** The room of a grant's lock, held and never drawn, on an answer that may be a grant. */
@@ -550,8 +550,13 @@ function buttonOf(action: Partial<DialogAction> | undefined): Omit<ButtonProps, 
   return props as Omit<ButtonProps, "onPress">;
 }
 
-/** The answers in their places: Cancel, the other, the main action. */
-function DialogAnswerRow({
+/**
+ * **The answers in their places**: Cancel, the other, the main action. A dialog's footer draws
+ * them, and so does a review page's bar (`ui/review-page`, #3672), so the two keep one set of
+ * rules: the places, the reserved words, a grant's lock, and which answer Return finds
+ * ({@link returnFinds}).
+ */
+export function DialogAnswerRow({
   cancel,
   main,
   alternative,
@@ -561,7 +566,7 @@ function DialogAnswerRow({
   const mainRest = buttonOf(main);
   const outRest = buttonOf(out);
   const otherRest = buttonOf(alternative);
-  const submitting = submits(main);
+  const submitting = returnFinds(main);
   return (
     <ButtonRow size="md">
       {cancel !== false && (
@@ -607,7 +612,7 @@ export function DialogAnswers(answers: Answers) {
   useLayoutEffect(() => {
     if (!place) return;
     place.setSubmit(
-      main !== undefined && submits(main) && !main.isDisabled ? main.onPress : undefined,
+      main !== undefined && returnFinds(main) && !main.isDisabled ? main.onPress : undefined,
     );
   });
   if (!place) return null;
@@ -678,7 +683,7 @@ function DialogRows({ props, names }: { props: DialogProps; names: ReturnType<ty
     if (event.target !== event.currentTarget) return;
     event.preventDefault();
     if (inside) submitFromInside.current?.();
-    else if (main !== undefined && submits(main) && !main.isDisabled) main.onPress?.();
+    else if (main !== undefined && returnFinds(main) && !main.isDisabled) main.onPress?.();
   };
   const chord = (event: ReactKeyboardEvent<HTMLFormElement>) => {
     if (!chordSends(event.nativeEvent) || !event.currentTarget.contains(event.target as Node))

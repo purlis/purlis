@@ -128,13 +128,15 @@ fn purlis_classic_draws_exactly_today_s_values() {
     // Light's `state.waiting` (and its glow) moved again, to `#7a5100`, so a title-bar chip's
     // waiting count holds 4.5:1 on its amber wash over the title bar (#3041). Both gained
     // `accent.wash-hover`, the chosen title-bar chip under the pointer, its `tab.active` (#3345).
+    // Both gained `attention.surface` and `attention.text`, what needs a decision (#3678), a
+    // tone Classic never drew before, so nothing it drew moved.
     assert_eq!(
         digest(classic_dark()),
-        "83cf058e7c0b688b862765ef6e41c91b2fed4d4bd3caa132bfda233776ec0dfa"
+        "60cc5868a167acc9d70103997f1be1dd9f45a8bb54b35631bf36424982af9b2d"
     );
     assert_eq!(
         digest(classic_light()),
-        "abdd2792336bb4619bceb69808dd205eca2b0c32f0e1b786c997f2f3e0c60c10"
+        "dc0a3fe9646851f38020d246f2f80f3f99ded065a0c7650e4814adae15677610"
     );
     for theme in [classic_dark(), classic_light()] {
         assert_eq!(theme.motion.durations["duration.quick"], 120);

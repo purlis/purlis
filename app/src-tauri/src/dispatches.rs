@@ -261,6 +261,24 @@ pub(crate) fn message(held: &Held, task: u32, said: &purlis_core::dispatchtalk::
     kept(held, task, said.kind, None, &said.text, None);
 }
 
+/// **A message between persona chat `task` and its asking chat that purlis could not deliver**
+/// (#3902): its sender closed with it still queued, and it could not be delivered then. Kept on
+/// the task's dispatch record with why, in purlis's words around the message, where the person
+/// reads it in the Dispatches tab.
+pub(crate) fn not_delivered(
+    held: &Held,
+    task: u32,
+    kind: purlis_core::dispatchtalk::Kind,
+    text: &str,
+    why: &str,
+) {
+    let said = format!(
+        "Not delivered: its sender closed with it still queued, and it could not be delivered \
+         ({why}). It said: {text}"
+    );
+    kept(held, task, kind, None, &said, None);
+}
+
 /// [`message`], for the asking chat's answer to question `number` of `task` (#1496): the
 /// window is told which question the line answers, so an open Activity tab closes that one
 /// and no other.
@@ -287,15 +305,54 @@ fn kept(
     let Some(record) = running_for(held, task) else {
         return;
     };
+    kept_on(held, &record.id, kind, by, text, answers);
+}
+
+/// [`kept`], on the dispatch record `id`: whether the record took it (it runs, and was written).
+fn kept_on(
+    held: &Held,
+    id: &str,
+    kind: purlis_core::dispatchtalk::Kind,
+    by: Option<dispatchrecord::By>,
+    text: &str,
+    answers: Option<u32>,
+) -> bool {
     let now = chrono::Utc::now();
-    match dispatchrecord::said_by(held.root(), &record.id, kind, by, text, now) {
+    match dispatchrecord::said_by(held.root(), id, kind, by, text, now) {
         Ok(Taken::Kept(kept)) => crate::activity::said(held, &kept, answers),
         // Counted, and past what a record keeps the text of: the tab is told how many, and
         // none of the message's words.
         Ok(Taken::Counted(counted)) => crate::activity::unkept(held, &counted, answers),
-        Ok(Taken::Nothing) => {}
-        Err(why) => tracing::warn!("purlis: a dispatch's record was not updated ({why})"),
+        Ok(Taken::Nothing) => return false,
+        Err(why) => {
+            tracing::warn!("purlis: a dispatch's record was not updated ({why})");
+            return false;
+        }
     }
+    true
+}
+
+/// **A message a chat left queued when it did not come back after a restart** (#3958): kept on
+/// the running dispatch `record` it was between, in purlis's words around its line
+/// ([`purlis_core::dispatchqueue::undelivered::Message::line`]: masked, or without its words
+/// where they held a secret), where the person reads it in the Dispatches tab. **Once**: the
+/// line names the message's id, and a record that holds it already takes it no second time.
+/// Whether the record holds it now.
+pub(crate) fn undelivered_on(
+    held: &Held,
+    record: &Record,
+    message: &purlis_core::dispatchqueue::undelivered::Message,
+) -> bool {
+    let named = format!("(queued as {})", message.id);
+    if record.talk.iter().any(|said| said.text.contains(&named)) {
+        return true;
+    }
+    let said = format!(
+        "Not delivered {named}: its sender queued it while purlis did not answer, and did not \
+         come back after purlis restarted, so it was never delivered. It was {}.",
+        message.line()
+    );
+    kept_on(held, &record.id, message.what.kind(), None, &said, None)
 }
 
 /// The person answered the question persona chat `task` put to its asking chat (#1496), with

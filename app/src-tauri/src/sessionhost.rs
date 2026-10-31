@@ -137,6 +137,7 @@ impl Composes {
             plugin: shipped.plugin,
             git_hooks: shipped.git_hooks,
             skill_sets: None,
+            chat_settings: None,
         })
     }
 }
@@ -153,6 +154,7 @@ impl purlis_host::Compose for Composes {
                 number: starting.number,
                 start: starting.start,
                 reporting: starting.reporting,
+                prompt_key: starting.prompt_key,
                 started_by: starting.started_by.word(),
             },
             starting.size,
@@ -167,6 +169,9 @@ impl purlis_host::Compose for Composes {
                         starting.project_path,
                     ),
                 ) as std::sync::Arc<dyn purlis_core::skills::router::AskRouter>,
+                // The chat's confinement as it is now, which its tool's runs here are held to
+                // (#3407).
+                |confinement: &str| beside.reach_of(confinement),
             ),
         )
     }
@@ -307,7 +312,9 @@ impl SessionHost {
         };
         // Each project's link names the window by the name it keeps for it (#2623).
         if let Some(config) = purlis_core::machine::config_root() {
-            self.connection.naming_in(config);
+            self.connection.naming_in(config.clone());
+            // Where a runner a chat ran on without the sandbox is kept as one (D-2050-27).
+            self.connection.runners_in(config);
         }
         self.start_at(place, || {
             std::env::current_exe()

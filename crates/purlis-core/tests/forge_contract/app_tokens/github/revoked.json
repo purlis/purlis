@@ -1,0 +1,22 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/apps/installations (Revoke an installation access token: 204 No Content)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "DELETE",
+            "path": "installation/token"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "",
+        "err": "",
+        "status": 204
+      }
+    }
+  ]
+}

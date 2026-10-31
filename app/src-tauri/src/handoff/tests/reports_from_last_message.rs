@@ -366,15 +366,12 @@ fn a_finished_task_is_not_closed_while_it_or_the_person_is_at_it() {
 }
 
 #[test]
-fn closing_a_task_is_never_pre_allowed_for_claude_code() {
-    // It ends a chat: the person is asked before it runs, as for any word not ruled in.
-    for rule in purlis_core::harness::claude::DISPATCH_TASK_ALLOW {
-        assert!(!rule.contains("dispatch close"), "{rule}");
-    }
+fn closing_a_task_is_pre_allowed_for_claude_code_by_its_own_name() {
+    // #3785, ruled 2026-10-29: tidying its own tasks is the chat's own. The app refuses a close
+    // of a task that is not finished, that the person typed in or is looking at, so the
+    // harness's prompt beside it asked nothing the person decides.
     assert!(
-        !purlis_core::chattools::PRE_ALLOWED
-            .iter()
-            .any(|tool| tool.contains("close")),
-        "no tool closes a task without asking"
+        purlis_core::harness::claude::DISPATCH_TASK_ALLOW
+            .contains(&"Bash(purlis dispatch close *)")
     );
 }

@@ -397,7 +397,6 @@ fn every_variable_the_product_sets_is_written_under_the_purlis_prefix() {
         crate::hookwire::TOKEN_ENV,
         crate::hookwire::HARNESS_ENV,
         crate::skills::LISTED_ENV,
-        crate::skills::PROMPT_ROUTER_ENV,
         crate::start::FOOTER_ENV,
         crate::chatenv::SESSION_BUS_KEPT,
         crate::datahome::HOME_VAR,

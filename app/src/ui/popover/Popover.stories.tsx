@@ -11,11 +11,13 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useRef, useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
-import { expectFocusInSight, untilFocused } from "../../stories.testkit";
+import { expectFocusInSight, untilFocusWithin, untilFocused } from "../../stories.testkit";
 import { Button } from "../button/Button";
+import { TextField } from "../field/Field";
 import { InlineMenu, MenuItem } from "../menu/Menu";
 import {
   AnchoredPopover,
+  HeldPopover,
   PopoverDialog,
   PopoverFilter,
   PopoverFooter,
@@ -52,7 +54,7 @@ export const ACard: Story = {
     await expect(trigger).toHaveFocus();
     await userEvent.keyboard("{Enter}");
     const card = await screen.findByRole("dialog", { name: "steward 4" });
-    await waitFor(() => expect(card.contains(document.activeElement)).toBe(true));
+    await untilFocusWithin(() => card, "Popover: Enter opens the card with the keyboard in it");
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     // The keyboard comes back to the trigger after the popover has gone, a frame or more later.
@@ -83,19 +85,17 @@ function WorkspacePicker() {
           {({ close }: { close: () => void }) => (
             <>
               <PopoverFilter>
-                <input
-                  className="ui-input"
+                <TextField
                   aria-label="Go to a workspace in purlis"
                   placeholder="Go to a workspace in purlis…"
                   value={typed}
                   autoFocus
-                  onChange={(event) => setTyped(event.target.value)}
+                  onChange={setTyped}
                   onKeyDown={(event) => {
                     if (event.key !== "ArrowDown") return;
                     event.preventDefault();
                     list.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
                   }}
-                  style={{ inlineSize: "100%" }}
                 />
               </PopoverFilter>
               <PopoverList>
@@ -133,7 +133,7 @@ export const AListWithItsFilter: Story = {
     await userEvent.keyboard("{Enter}");
     const popover = await screen.findByRole("dialog", { name: "Workspaces" });
     const filter = within(popover).getByRole("textbox", { name: "Go to a workspace in purlis" });
-    await waitFor(() => expect(filter).toHaveFocus());
+    await untilFocused(() => filter, "Workspaces: the keyboard starts in the filter");
     expectFocusInSight();
     // The anatomy: the filter row, its rule, the list and the footer, in that order.
     const parts = [...popover.querySelectorAll("[data-part]")]
@@ -149,8 +149,9 @@ export const AListWithItsFilter: Story = {
         .map((one) => one.textContent),
     ).toEqual(["docs", "ops"]);
     await userEvent.keyboard("{ArrowDown}");
-    await waitFor(() =>
-      expect(within(popover).getByRole("menuitem", { name: "docs" })).toHaveFocus(),
+    await untilFocused(
+      () => within(popover).getByRole("menuitem", { name: "docs" }),
+      "Workspaces: Down reaches docs",
     );
     await userEvent.keyboard("{ArrowDown}{ArrowDown}");
     // The arrows stop at the list's end.
@@ -160,8 +161,9 @@ export const AListWithItsFilter: Story = {
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Went to ops"));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     // The keyboard is back on the trigger; open again for the picture.
-    await waitFor(() =>
-      expect(canvas.getByRole("button", { name: "All workspaces" })).toHaveFocus(),
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "All workspaces" }),
+      "Workspaces: the keyboard is back on the trigger",
     );
     await userEvent.keyboard("{Enter}");
     await screen.findByRole("dialog", { name: "Workspaces" });
@@ -175,14 +177,13 @@ function Refused() {
   const taken = typed.trim() === "web";
   return (
     <div style={{ display: "grid", gap: "var(--space-3)", justifyItems: "start" }}>
-      <input
-        ref={box}
-        className="ui-input"
+      <TextField
+        inputRef={box}
         aria-label="Rename chat claude 4"
-        aria-invalid={taken}
+        isInvalid={taken}
         aria-describedby={taken ? "refused" : undefined}
         value={typed}
-        onChange={(event) => setTyped(event.target.value)}
+        onChange={setTyped}
       />
       <AnchoredPopover triggerRef={box} isOpen={taken} className="row-card">
         <div id="refused" role="alert">
@@ -209,5 +210,65 @@ export const ARefusalBesideItsField: Story = {
     // It took no keyboard.
     await expect(box).toHaveFocus();
     expectFocusInSight();
+  },
+};
+
+/** A panel list's row with its card held open beside it, on the side it opens from, with the
+ *  point it takes from the row, as `PanelList`'s row card is drawn. */
+function HeldRowCard() {
+  const row = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(true);
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-end", inlineSize: "40rem" }}>
+      <button
+        ref={row}
+        type="button"
+        className="ui-row"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((was) => !was)}
+      >
+        steward 4
+      </button>
+      <HeldPopover
+        triggerRef={row}
+        isOpen={open}
+        onOpenChange={setOpen}
+        className="row-card"
+        side="left"
+        align="start"
+        offset={6}
+        arrow
+        aria-label="steward 4"
+      >
+        <p style={{ margin: 0 }}>Running in alpha, on claude.</p>
+      </HeldPopover>
+    </div>
+  );
+}
+
+/**
+ * **A held card's point** (#3648's review): the SVG triangle in the surface's own ground, and
+ * nothing behind it. The notice card's point is a part of its own (`point`), so no rule of it
+ * reaches this one: no box, no edge and no turn.
+ */
+export const AHeldCardsPoint: Story = {
+  render: () => <HeldRowCard />,
+  play: async () => {
+    const card = await screen.findByRole("dialog", { name: "steward 4" });
+    const surface = card.closest<HTMLElement>('[data-scope="popover"][data-part="root"]');
+    const arrow = surface?.querySelector<HTMLElement>('[data-scope="popover"][data-part="arrow"]');
+    await expect(arrow?.querySelector("svg")).not.toBeNull();
+    const drawn = getComputedStyle(arrow as HTMLElement);
+    // No fill: its colour's alpha is nothing, however the engine writes "transparent".
+    const alpha = Number(drawn.backgroundColor.match(/[\d.]+/g)?.[3] ?? 1);
+    await expect(alpha).toBe(0);
+    await expect(drawn.borderTopStyle).toBe("none");
+    await expect(drawn.rotate).toBe("none");
+    // What it says is drawn beside its point, once React Aria has placed it (it stays hidden
+    // until then).
+    await waitFor(() =>
+      expect(within(card).getByText("Running in alpha, on claude.")).toBeVisible(),
+    );
   },
 };

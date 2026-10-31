@@ -113,6 +113,12 @@ export interface TreeProps<T extends object> extends Omit<
   /** Its rows are dragged out with what each `carries` (`ui/list/drag.ts`). */
   draggable?: boolean;
   /**
+   * **Its rows may start dragging while it is drawn** (#3532): the tree is handed React Aria's
+   * drag hooks from its first draw, off until `draggable`, so it stays the same tree when its
+   * drag turns on. A tree that is `draggable` from its first draw, or never, needs none.
+   */
+  mayDrag?: boolean;
+  /**
    * **Its rows are as wide as their words** where the view scrolls sideways (the Explorer, the
    * Changes view): a row is never narrower than its one line, so its pill and its ring reach
    * the end of a long name (#1796). By default a row is as wide as the tree and cuts its words.
@@ -264,6 +270,7 @@ export function Tree<T extends object>({
   empty,
   "aria-keyshortcuts": keys,
   draggable = false,
+  mayDrag = false,
   fit = "tree",
   choosesMany = false,
   stopAt,
@@ -276,10 +283,16 @@ export function Tree<T extends object>({
   const own = useCollectionElement(keys, said);
   const onKeyDownCapture = useTreeKeys(fixed, onRowKey);
   const drawing = useMemo(() => ({ size, twist, fixed, stopAt }), [size, twist, fixed, stopAt]);
-  // What a dragged row carries is its own (`carries`, its value to React Aria).
+  // What a dragged row carries is its own (`carries`, its value to React Aria). **A tree that
+  // may drag is handed the hooks from its first draw, off until it drags** (#3532): React Aria
+  // takes a tree's drag hooks once, so handing them over only as the drag turns on would make it
+  // another tree, and the row the keyboard was on (the plane's files once the plane's read
+  // lands) would leave the page with the focus. A tree that never drags is handed none, so its
+  // rows run no drag hooks at all.
   const drag = useDragAndDrop<Value>({
     getItems: (_keys, items) => items.flatMap((item) => (item?.carries ? [item.carries] : [])),
     getAllowedDropOperations: () => ["copy"],
+    isDisabled: !draggable,
   }).dragAndDropHooks;
   return (
     // An element around the tree that draws nothing, so its keys are heard before React Aria's
@@ -289,13 +302,10 @@ export function Tree<T extends object>({
         <TreeDrawing.Provider value={drawing}>
           <AriaTree
             {...rest}
-            // React Aria takes a tree's drag hooks once: a tree that starts or stops dragging
-            // (the plane root's files after a workspace's) is another tree.
-            key={draggable ? "drags" : "still"}
             // A tree that never folds keeps what its owner says is open.
             onExpandedChange={fixed ? undefined : onExpandedChange}
             ref={own}
-            dragAndDropHooks={draggable ? drag : undefined}
+            dragAndDropHooks={mayDrag || draggable ? drag : undefined}
             className={className}
             style={style}
             data-scope="tree"
@@ -325,6 +335,20 @@ function Twist() {
 }
 
 /**
+ * **The twist as a mark** (#3670): the same chevron, drawn by the same part, for a fold that is
+ * not a tree's row (a list's section that folds, a run of rows folded to one line). It points at
+ * the words while closed and down while open, from the `data-expanded` of the row it is in. It
+ * is no button: the row it is in folds and unfolds, and says so with its own `aria-expanded`.
+ */
+export function TwistMark() {
+  return (
+    <span data-scope="tree" data-part="twist" aria-hidden="true">
+      <ChevronRight aria-hidden="true" />
+    </span>
+  );
+}
+
+/**
  * **The tree's Tab stop, on this row** (`stopAt`): while the keyboard is not in the tree, its
  * stop moves to the row, so Tab lands where the owner says; the keyboard's own place wins once
  * it has been in.
@@ -348,6 +372,8 @@ function TakesTheStop({ at, state }: { at: Key; state: TreeItemContentRenderProp
  * are no React Aria drop targets a keyboard drag could reach. React Aria looks for a drag button
  * and warns of a row with none; the slot's ref is held by an element that draws nothing and
  * takes no focus, as {@link HeldOpen} holds the twist's, so → on a row never lands on one.
+ * A row of a tree that may drag holds one while its drag is off too (#3532): React Aria looks
+ * for the button wherever the tree has the hooks.
  */
 function NoDrag() {
   const slot = useSlottedContext(AriaButtonContext, "drag");

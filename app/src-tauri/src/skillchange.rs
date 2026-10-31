@@ -172,6 +172,9 @@ pub struct SkillUsers {
     pub persona: Option<String>,
     pub personas: Vec<String>,
     pub skills: Vec<String>,
+    /// Every workspace and persona whose pins name it, the workspaces first: what a rename
+    /// changes with it.
+    pub pinned_by: Vec<SkillPinner>,
 }
 
 /// A deleted skill Restore can bring back.
@@ -184,6 +187,15 @@ pub struct DeletedSkill {
     pub level: SkillLevel,
     /// Its level as a person reads it: `project`, `local workspace ops`.
     pub label: String,
+    /// How many days are left to bring it back (S9, #3691): at least 1, as one past its 30 days
+    /// is not listed.
+    pub days_left: u32,
+    /// Whether the project's history keeps it (its delete was a commit), so it is still there
+    /// after its days, for `purlis skill restore`; else this machine keeps it, and removes it then.
+    pub in_history: bool,
+    /// Whether its name belongs to a built-in skill now (a newer purlis ships one of that name),
+    /// so it comes back only under a new name (#3729).
+    pub reserved: bool,
 }
 
 /// A level a skill can be moved to or made at, and its words.
@@ -378,6 +390,29 @@ pub(crate) async fn skill_new(
     .await
 }
 
+/// **Make my own copy** (#3686): the built-in skill `name` copied to `level` under the new name
+/// `to` and its own `description` (#3777), which the person can edit. The built-in skill keeps
+/// loading.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_copy(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    name: String,
+    level: SkillLevel,
+    to: String,
+    description: String,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("copying the skill", move || {
+        flag_on()?;
+        heard(held.root(), |cx| {
+            verbs::copy_built_in(cx, &name, &(&level).into(), &to, &description)
+        })
+    })
+    .await
+}
+
 /// The text of a skill's `SKILL.md`, which the light editor opens.
 #[tauri::command]
 #[specta::specta]
@@ -400,6 +435,7 @@ pub(crate) async fn skill_text(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_save(
+    app: tauri::AppHandle,
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     level: SkillLevel,
@@ -410,8 +446,33 @@ pub(crate) async fn skill_save(
     let held = planes.held(&plane)?;
     crate::off_the_window("saving the skill", move || {
         flag_on()?;
+        let level: Level = (&level).into();
+        let changed = heard(held.root(), |cx| verbs::edit(cx, &level, &name, &was, &now))?;
+        // The person's own save in their editor is the one edit that may grade the skill, where
+        // they turned grading after each edit on for it (SK-58).
+        crate::skillgrade::after_edit::saved(app, held, plane, level, name);
+        Ok(changed)
+    })
+    .await
+}
+
+/// **Write trigger tests** (#3925): starts the skill's trigger tests file from a template where
+/// it has none, committed as one change ([`verbs::start_trigger_tests`]). The window then opens
+/// the file to write in.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_trigger_tests_start(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    level: SkillLevel,
+    name: String,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("starting the trigger tests", move || {
+        flag_on()?;
+        let level: Level = (&level).into();
         heard(held.root(), |cx| {
-            verbs::edit(cx, &(&level).into(), &name, &was, &now)
+            verbs::start_trigger_tests(cx, &level, &name)
         })
     })
     .await
@@ -485,6 +546,7 @@ pub(crate) async fn skill_users(
             persona: users.persona,
             personas: users.personas,
             skills: users.skills,
+            pinned_by: users.pinned_by.into_iter().map(SkillPinner::from).collect(),
         })
     })
     .await
@@ -548,10 +610,13 @@ pub(crate) fn cut_short(root: &std::path::Path) -> DeletesCutShort {
         by: By::Window,
         say: &mut say,
     });
+    // The skills this machine kept deleted past their time (SK-33).
+    verbs::expire_now(root);
     ended
 }
 
-/// The deleted skills Restore can bring back, newest first.
+/// **The deleted skills Bring back can bring back**, newest first: those deleted in the last 30
+/// days, each with its days left (S9, #3691).
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skills_deleted(
@@ -561,10 +626,16 @@ pub(crate) async fn skills_deleted(
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the deleted skills", move || {
         flag_on()?;
+        let now = std::time::SystemTime::now();
+        let reserved = purlis_core::skills::Reserved::of(built_in().as_deref());
         verbs::deleted(held.root())
             .into_iter()
+            .filter(|one| one.days_left(now) > 0)
             .map(|one| {
                 Ok(DeletedSkill {
+                    reserved: reserved.holds(&one.name),
+                    days_left: u32::try_from(one.days_left(now)).unwrap_or(u32::MAX),
+                    in_history: one.kept().in_git(),
                     id: serde_json::to_string(&one)
                         .map_err(|_| format!("{} could not be listed to restore", one.name))?,
                     label: one.level.to_string(),
@@ -577,21 +648,44 @@ pub(crate) async fn skills_deleted(
     .await
 }
 
+/// **The last text of the deleted skill `id` names**: its `SKILL.md` as it was when it was
+/// deleted, for its page on Deleted (S9, #3691). Refused for one the project does not list.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_deleted_text(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    id: String,
+) -> Result<String, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading the deleted skill", move || {
+        flag_on()?;
+        let deleted: verbs::Deleted = serde_json::from_str(&id)
+            .map_err(|_| "That deleted skill is not one this project lists.".to_owned())?;
+        verbs::deleted_text(held.root(), &deleted)
+    })
+    .await
+}
+
 /// **Restores** the deleted skill `id` names: the core's record of it, as [`skills_deleted`]
-/// handed it out.
+/// handed it out. `under` a new name where one is given (#3729): one whose own name belongs to
+/// a built-in skill now comes back only so.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_restore(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     id: String,
+    under: Option<String>,
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("restoring the skill", move || {
         flag_on()?;
         let deleted: verbs::Deleted = serde_json::from_str(&id)
             .map_err(|_| "That deleted skill is not one this project lists.".to_owned())?;
-        heard(held.root(), |cx| verbs::restore(cx, &deleted))
+        heard(held.root(), |cx| {
+            verbs::restore(cx, &deleted, under.as_deref())
+        })
     })
     .await
 }
@@ -750,6 +844,111 @@ pub(crate) async fn skill_pin(
     crate::off_the_window("pinning the skill", move || {
         flag_on()?;
         pin(held.root(), &by, &name, on)
+    })
+    .await
+}
+
+/// **A router the Skill studio's Change… offers** (SK-15b, #3692): an extension this machine
+/// approved, the project has on, and that declares `skill-router`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillRouterOffer {
+    /// Its id, which a choice writes.
+    pub id: String,
+    /// Its name, as its manifest gives it.
+    pub name: String,
+}
+
+/// **Every router extension the project at `root` can choose** (#3692), in id order: what
+/// [`purlis_core::skills::studio::Studio::declaring`] finds that declares `skill-router`.
+fn routers_in(
+    executor: &purlis_core::executor::Executor,
+    root: &std::path::Path,
+) -> Vec<SkillRouterOffer> {
+    purlis_core::skills::studio::with_studio(executor, root, |studio| {
+        studio
+            .map(|studio| {
+                studio
+                    .declaring(purlis_core::extension::capability::Capability::SkillRouter)
+                    .into_iter()
+                    .map(|asked| SkillRouterOffer {
+                        id: asked.id,
+                        name: asked.name,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+}
+
+/// **The router extensions the Skill studio's Change… offers**, beside the built-in router
+/// (#3692): each approved here, on in the project, and declaring `skill-router`. Read when the
+/// dialog opens, never with the studio, so opening a chat or the studio asks no extension's
+/// manifest.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_routers(
+    views: tauri::State<'_, crate::views::Views>,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+) -> Result<Vec<SkillRouterOffer>, String> {
+    let held = planes.held(&plane)?;
+    let executor = views.executor();
+    crate::off_the_window("reading the router extensions", move || {
+        flag_on()?;
+        Ok(routers_in(&executor, held.root()))
+    })
+    .await
+}
+
+/// **Chooses `router` for `by`'s chats** (#3692): `built-in`, an id among `offered` (read only
+/// for an id), or `None`
+/// to take the choice out (a persona's chats then take their workspace's router). An id that is
+/// not offered here is refused, writing nothing: a router not approved or not on would never be
+/// asked, and every chat would fall back. The core's `verbs::route`, one commit.
+pub(crate) fn route(
+    root: &std::path::Path,
+    by: &SkillPinner,
+    router: Option<&str>,
+    offered: impl FnOnce() -> Vec<SkillRouterOffer>,
+) -> Result<SkillChanged, String> {
+    use purlis_core::skills::router::{BUILT_IN, Chosen};
+    let chosen = match router {
+        None => None,
+        Some(BUILT_IN) => Some(Chosen::BuiltIn),
+        Some(id) if offered().iter().any(|one| one.id == id) => {
+            Some(Chosen::Extension(id.to_owned()))
+        }
+        Some(id) => {
+            return Err(format!(
+                "No router extension '{}' is approved on this machine and on in this project, so \
+                 nothing was changed.",
+                purlis_core::shown::readable(id, 64)
+            ));
+        }
+    };
+    let by = by.into();
+    heard(root, |cx| verbs::route(cx, &by, chosen.as_ref()))
+}
+
+/// **Chooses the router a workspace's or a persona's chats are routed by**, or takes the choice
+/// out (`router` null), from the Skill studio's Routing page (#3692). One commit; chats started
+/// after it are routed by it.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_router_choose(
+    views: tauri::State<'_, crate::views::Views>,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    by: SkillPinner,
+    router: Option<String>,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    let executor = views.executor();
+    crate::off_the_window("choosing the router", move || {
+        flag_on()?;
+        route(held.root(), &by, router.as_deref(), || {
+            routers_in(&executor, held.root())
+        })
     })
     .await
 }

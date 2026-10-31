@@ -1,0 +1,234 @@
+{
+  "data": {
+    "nodes": [
+      {
+        "databaseId": 110058382230,
+        "checkRuns": {
+          "totalCount": 36,
+          "nodes": [
+            {
+              "databaseId": 122539552841,
+              "name": "app builds (macos-latest)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-10-27T23:44:52Z",
+              "completedAt": "2026-10-27T23:50:04Z",
+              "annotations": {
+                "totalCount": 0,
+                "nodes": []
+              }
+            },
+            {
+              "databaseId": 122539552930,
+              "name": "rust tests (part 1 of 4)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-10-27T23:44:52Z",
+              "completedAt": "2026-10-28T00:06:22Z",
+              "annotations": {
+                "totalCount": 1,
+                "nodes": [
+                  {
+                    "annotationLevel": "NOTICE",
+                    "title": "Slowest Rust tests"
+                  }
+                ]
+              }
+            },
+            {
+              "databaseId": 122539552952,
+              "name": "rust tests (part 3 of 4)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-10-27T23:44:52Z",
+              "completedAt": "2026-10-28T00:04:59Z",
+              "annotations": {
+                "totalCount": 3,
+                "nodes": [
+                  {
+                    "annotationLevel": "NOTICE",
+                    "title": "Slowest Rust tests"
+                  },
+                  {
+                    "annotationLevel": "WARNING",
+                    "title": "Flaky (passed on retry 1): purlis-browser-engine::typing_while_driving_stays_quick_on_a_large_page a_key_into_a_second_field_of_a_large_page_is_held_in_words_until_the_page_is_read"
+                  },
+                  {
+                    "annotationLevel": "FAILURE",
+                    "title": "a_key_into_a_second_field_of_a_large_page_is_held_in_words_until_the_page_is_read"
+                  }
+                ]
+              }
+            },
+            {
+              "databaseId": 122539553053,
+              "name": "rust tests (part 4 of 4)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-10-27T23:44:52Z",
+              "completedAt": "2026-10-28T00:02:07Z",
+              "annotations": {
+                "totalCount": 1,
+                "nodes": [
+                  {
+                    "annotationLevel": "NOTICE",
+                    "title": "Slowest Rust tests"
+                  }
+                ]
+              }
+            },
+            {
+              "databaseId": 122539553105,
+              "name": "recorded behaviour",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-10-27T23:44:52Z",
+              "completedAt": "2026-10-27T23:48:37Z",
+              "annotations": {
+                "totalCount": 0,
+                "nodes": []
+              }
+            },
+            {
+              "databaseId": 122539553127,
+              "name": "rust tests (part 2 of 4)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-10-27T23:44:52Z",
+              "completedAt": "2026-10-28T00:07:24Z",
+              "annotations": {
+                "totalCount": 1,
+                "nodes": [
+                  {
+                    "annotationLevel": "NOTICE",
+                    "title": "Slowest Rust tests"
+                  }
+                ]
+              }
+            },
+            {
+              "databaseId": 122539553319,
+              "name": "web (part 1 of 4)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-10-27T23:44:52Z",
+              "completedAt": "2026-10-27T23:55:50Z",
+              "annotations": {
+                "totalCount": 0,
+                "nodes": []
+              }
+            },
+            {
+              "databaseId": 122539554490,
+              "name": "windows (build, test, evidence only)",
+              "conclusion": "SKIPPED",
+              "startedAt": "2026-10-27T23:44:50Z",
+              "completedAt": "2026-10-27T23:44:50Z",
+              "annotations": {
+                "totalCount": 0,
+                "nodes": []
+              }
+            }
+          ]
+        }
+      },
+      {
+        "databaseId": 110050404504,
+        "checkRuns": {
+          "totalCount": 30,
+          "nodes": [
+            {
+              "databaseId": 122533513274,
+              "name": "rust tests (part 1 of 3)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-10-27T23:28:47Z",
+              "completedAt": "2026-10-27T23:58:43Z",
+              "annotations": {
+                "totalCount": 1,
+                "nodes": [
+                  {
+                    "annotationLevel": "NOTICE",
+                    "title": "Slowest Rust tests"
+                  }
+                ]
+              }
+            },
+            {
+              "databaseId": 122533513398,
+              "name": "rust tests (part 3 of 3)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-10-27T23:28:47Z",
+              "completedAt": "2026-10-27T23:49:21Z",
+              "annotations": {
+                "totalCount": 2,
+                "nodes": [
+                  {
+                    "annotationLevel": "NOTICE",
+                    "title": "Slowest Rust tests"
+                  },
+                  {
+                    "annotationLevel": "WARNING",
+                    "title": "Flaky (passed on retry 1): purlis-host::the_kill_switch_reaches_every_runner_this_machine_keeps a_runner_not_reached_is_tried_again_while_the_desktop_stays_stopped"
+                  }
+                ]
+              }
+            },
+            {
+              "databaseId": 122533513416,
+              "name": "rust tests (part 2 of 3)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-10-27T23:28:47Z",
+              "completedAt": "2026-10-27T23:45:10Z",
+              "annotations": {
+                "totalCount": 1,
+                "nodes": [
+                  {
+                    "annotationLevel": "NOTICE",
+                    "title": "Slowest Rust tests"
+                  }
+                ]
+              }
+            },
+            {
+              "databaseId": 122533513450,
+              "name": "app builds (macos-latest)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-10-27T23:28:48Z",
+              "completedAt": "2026-10-27T23:36:40Z",
+              "annotations": {
+                "totalCount": 0,
+                "nodes": []
+              }
+            },
+            {
+              "databaseId": 122533513454,
+              "name": "recorded behaviour",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-10-27T23:28:47Z",
+              "completedAt": "2026-10-27T23:33:21Z",
+              "annotations": {
+                "totalCount": 0,
+                "nodes": []
+              }
+            },
+            {
+              "databaseId": 122533513613,
+              "name": "web (part 1 of 4)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-10-27T23:28:47Z",
+              "completedAt": "2026-10-27T23:42:53Z",
+              "annotations": {
+                "totalCount": 0,
+                "nodes": []
+              }
+            },
+            {
+              "databaseId": 122533514626,
+              "name": "windows (build, test, evidence only)",
+              "conclusion": "SKIPPED",
+              "startedAt": "2026-10-27T23:28:45Z",
+              "completedAt": "2026-10-27T23:28:45Z",
+              "annotations": {
+                "totalCount": 0,
+                "nodes": []
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { SandboxMark, type SandboxSaid } from "./SandboxMark";
-import { memo, type ReactNode } from "react";
+import { memo, useMemo, type ReactNode } from "react";
 import { Hand, ListTodo, SquareTerminal } from "lucide-react";
 import { ChatMark, StoppingMark, WrappingUp } from "./NeedsYou";
-import { markOf, useChatsHere, useChatsSelect } from "./chatState";
+import { markOf, ownWorkOf, useChatsHere, useChatsSelect, type ChatStates } from "./chatState";
 import { PlaneUpdatedMark, type PlaneUpdates } from "./PlaneUpdated";
 import { chatOf, contentsOf, panesOf, shownIn, type Tabs } from "./tabs";
 import { PersonaMark } from "./PersonaMark";
@@ -97,6 +97,7 @@ export const ChatShownState = memo(function ChatShownState({
         task: report === null ? null : { report, outcome, asking },
         harness,
         tasksAtWork: tasksAtWorkOf(states, below),
+        ownWork: ownWorkOf(states, session),
       }),
     sameShown,
   );
@@ -140,6 +141,7 @@ export const ChatPersonaState = memo(function ChatPersonaState({
         task: report === null ? null : { report, outcome, asking },
         harness,
         tasksAtWork: tasksAtWorkOf(states, below),
+        ownWork: ownWorkOf(states, session),
       }),
     sameShown,
   );
@@ -329,7 +331,53 @@ export function TabMarks({
 
 /** The states a persona's row tells, the strongest first (#3341): the person is asked for, then
  *  a question or a wait is open, then something is at work. A persona at rest tells none. */
-const AT_WORK: readonly Shown["kind"][] = ["needs-you", "asking", "waiting-on-tasks", "working"];
+const AT_WORK: readonly Shown["kind"][] = [
+  "needs-you",
+  "asking",
+  "waiting-on-tasks",
+  "waiting-on-own-work",
+  "working",
+];
+
+/** The strongest of `sessions`' states that tells a persona at work (#3341), or nothing for a
+ *  persona whose chats all rest. The one reading both the row's mark and its group use (#3483),
+ *  so the two always agree. */
+function atWorkOf(states: ChatStates, sessions: readonly number[]): Shown | undefined {
+  let best: Shown | undefined;
+  for (const session of sessions) {
+    const one = shownState({
+      board: markOf(states, session, false),
+      needsYou: states.needsYou.includes(session),
+      task: null,
+      harness: null,
+      ownWork: ownWorkOf(states, session),
+    });
+    if (one === undefined || !AT_WORK.includes(one.kind)) continue;
+    if (best === undefined || AT_WORK.indexOf(one.kind) < AT_WORK.indexOf(best.kind)) best = one;
+  }
+  return best;
+}
+
+/**
+ * **The personas with a chat at work or asking** (#3483): what the Personas view's Working now
+ * holds, by {@link atWorkOf}, as the row's mark reads it. Redrawn only when who is at work
+ * changes, never on a move that leaves it the same.
+ */
+export function usePersonasAtWork(
+  personaChats: ReadonlyMap<string, readonly number[]> | undefined,
+): ReadonlySet<string> {
+  const names = useChatsSelect(useChatsHere(), (states) =>
+    [...(personaChats ?? NO_PERSONA_CHATS)]
+      .filter(([, sessions]) => atWorkOf(states, sessions) !== undefined)
+      .map(([persona]) => persona)
+      .sort()
+      .join("\n"),
+  );
+  return useMemo(() => new Set(names === "" ? [] : names.split("\n")), [names]);
+}
+
+/** No persona's chats: what a view drawn without them is handed. */
+const NO_PERSONA_CHATS: ReadonlyMap<string, readonly number[]> = new Map();
 
 /**
  * **Whether a persona's chats are at work or ask for you** (#3341, the prototype's Personas
@@ -341,25 +389,7 @@ export const PersonaAtWork = memo(function PersonaAtWork({
 }: {
   sessions: readonly number[];
 }) {
-  const shown = useChatsSelect(
-    useChatsHere(),
-    (states) => {
-      let best: Shown | undefined;
-      for (const session of sessions) {
-        const one = shownState({
-          board: markOf(states, session, false),
-          needsYou: states.needsYou.includes(session),
-          task: null,
-          harness: null,
-        });
-        if (one === undefined || !AT_WORK.includes(one.kind)) continue;
-        if (best === undefined || AT_WORK.indexOf(one.kind) < AT_WORK.indexOf(best.kind))
-          best = one;
-      }
-      return best;
-    },
-    sameShown,
-  );
+  const shown = useChatsSelect(useChatsHere(), (states) => atWorkOf(states, sessions), sameShown);
   if (shown === undefined) return null;
   return (
     <span className="persona-at-work">

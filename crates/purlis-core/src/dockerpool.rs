@@ -7,9 +7,10 @@
 //!
 //! **Every runner container is confined the same way, and nothing loosens it** ([`Runner`]):
 //!
-//! - Docker's default seccomp profile with one call added, `pidfd_getfd`, which the Linux
-//!   sandbox's supervisor takes a chat's socket with to make its `listen` ([`SECCOMP_PROFILE`],
-//!   #3410); the runtime's default AppArmor profile; and never `--privileged`;
+//! - Docker's default seccomp profile with what purlis needs added ([`SECCOMP_PROFILE`]):
+//!   `pidfd_getfd`, which the Linux sandbox's supervisor takes a chat's socket with to make its
+//!   `listen` (#3410), and what the browser engine's own sandbox needs to start (#3298); the
+//!   runtime's default AppArmor profile; and never `--privileged`;
 //! - every capability dropped (`--cap-drop ALL`), none added, and no new privileges
 //!   (`no-new-privileges`), so nothing in it gains a power its user does not have;
 //! - a user who is not root, by number ([`User`]);
@@ -18,7 +19,8 @@
 //! - its own network namespace on Docker's default bridge, never the machine's;
 //! - a read-only root file system, so its home volume is the only place it can write that may
 //!   hold a program it runs: `/tmp` is a `tmpfs` (`nosuid`, `nodev`, `noexec`), and Docker's
-//!   own `/dev/shm` is memory-backed and `noexec` too;
+//!   own `/dev/shm` is memory-backed and `noexec` too, a quarter of the runner's memory, which
+//!   the browser engine shares its pages' memory through (#3298);
 //! - the pool's limits ([`Limits`]): CPUs, memory with no swap beyond it, processes, and the
 //!   size of `/tmp`.
 //!
@@ -54,6 +56,74 @@ pub const PREFIX: &str = "purlis-runner-";
 /// Where `purlis` is in a runner image (`docs/runner-image.md`).
 pub const PURLIS: &str = "/usr/local/bin/purlis";
 
+/// **The shell script a drained runner's sign-ins are carried with** (#4011, #4055): `sh -c`
+/// hands it the old home, the new home, the folder under the new home they go to where its data
+/// home has the purlis spelling ([`crate::profilestore::carried_under_a_runner_home`]), the one
+/// where it does not ([`crate::profilestore::carried_under_an_old_runner_home`]), so a running
+/// runner's data home never moves under it, and each `<from>=<to>` pair
+/// ([`crate::profilestore::carried_in_a_runner_home`]). A `*` in a pair is a profile's name:
+/// each one found under the old home goes to the same name. The new runner serves chats as it
+/// runs, so nothing is written where they could have put something first: the folder is walked
+/// to one folder at a time, never through a link, and held by its real path, and the files go
+/// into a batch folder of its own that no one knew the name of before it was made, each written
+/// only where nothing is (`set -C`) and put in place whole, by a link. Only a plain file inside
+/// the old home is carried, never a link or what a folder linked out of it holds. What it makes is
+/// the runner's user's alone. A file that cannot be carried is said and passed over: the profile
+/// is then signed in again, as before any was carried, and the drain goes on.
+pub const COPY_PROFILES: &str = r#"set -u
+umask 077
+from=$1 to=$2 stage=$3 old_stage=$4
+shift 4
+from=$(cd -P "$from" && pwd -P) || exit 1
+cd -P "$to" || exit 1
+here=$(pwd -P)
+data=${stage%/*}
+if [ -L "$data" ] || { [ -e "$data" ] && [ ! -d "$data" ]; }; then exit 1; fi
+[ -d "$data" ] || stage=$old_stage
+set -f
+IFS=/
+for part in $stage; do
+  [ -n "$part" ] || continue
+  [ ! -L "$part" ] || exit 1
+  [ -d "$part" ] || mkdir "$part" || exit 1
+  cd -P "$part" || exit 1
+  here=$here/$part
+  [ "$(pwd -P)" = "$here" ] || exit 1
+done
+unset IFS
+set +f
+batch=$(mktemp -d ./XXXXXXXX) || exit 1
+batch=${batch#./}
+cd -P "$batch" || exit 1
+[ "$(pwd -P)" = "$here/$batch" ] || exit 1
+set -C
+for pair in "$@"; do
+  src=${pair%%=*} dst=${pair#*=}
+  for found in "$from"/$src; do
+    rel=${found#"$from/"}
+    [ -f "$found" ] && [ ! -L "$found" ] && [ -r "$found" ] || continue
+    case $(realpath -- "$found") in "$from"/*) ;; *) continue ;; esac
+    out=$dst
+    case $src in
+      *'*'*)
+        name=${rel#"${src%%\**}"}
+        name=${name%"${src#*\*}"}
+        case $name in ''|*/*|.*) continue ;; esac
+        out=${dst%%\**}$name${dst#*\*}
+        ;;
+    esac
+    { mkdir -p "${out%/*}" && [ ! -e "$out" ] && [ ! -L "$out" ] && cat "$found" > "$out.part" \
+        && ln "$out.part" "$out"; } || echo "not carried: $rel" >&2
+    rm -f "$out.part"
+  done
+done
+cd .. && rmdir "$batch" 2>/dev/null
+exit 0
+"#;
+
+/// How long carrying a runner's sign-ins may take before it is ended (#4011): a few small files.
+pub const CARRIED_WITHIN: std::time::Duration = std::time::Duration::from_secs(120);
+
 /// The longest runner name: a pool's longest, and the dash and eight hex digits a runner made
 /// beside it after an update adds ([`successor_name`], #2749).
 const MOST_NAME: usize = 49;
@@ -66,6 +136,17 @@ pub const PURLIS_RUNNER_IMAGE: &str = "ghcr.io/purlis/purlis-runner";
 /// pool's name, a dash and the first eight hex digits of the image's digest.
 pub fn successor_name(pool: &str, image: &Image) -> String {
     format!("{pool}-{}", &image.digest()[..8])
+}
+
+/// **The name of a runner made again for `pool`** (#4149), after its runner was removed outside
+/// purlis: the pool's name, a dash and eight hex digits drawn at random, as long as a name made
+/// after an update ([`successor_name`]), so it fits wherever that one does.
+pub fn remade_name(pool: &str) -> Result<String, Refused> {
+    let mut drawn = [0u8; 4];
+    getrandom::fill(&mut drawn)
+        .map_err(|why| refused(format!("purlis could not draw a runner's name: {why}")))?;
+    let hex: String = drawn.iter().map(|byte| format!("{byte:02x}")).collect();
+    Ok(format!("{pool}-{hex}"))
 }
 
 /// Why a runner container was not made, checked or linked, in words a person reads.
@@ -286,10 +367,45 @@ impl Limits {
     fn tmp_options(&self) -> String {
         format!("rw,nosuid,nodev,noexec,size={}m", self.tmp_mib)
     }
+
+    /// **The size of a runner's `/dev/shm`, in MiB** (#3298): a quarter of its memory. The
+    /// browser engine shares its pages' memory through it, and Docker's own 64 MiB is too
+    /// little for a busy page, which then ends. It is memory-backed and counted against the
+    /// runner's memory, so it gives the runner nothing past its limit.
+    pub fn shm_mib(&self) -> u64 {
+        self.memory_mib / 4
+    }
 }
 
-/// One runner of the pool, as it is made: its name, its image, its user, its home and its
-/// pool's limits.
+/// **How long a pool's runner is left without a link from its desktop before it suspends
+/// itself, by default** (#2051): a day, as the host's own `UNLINKED_FOR`. A pool sets its own
+/// (`suspendAfter`, #3471) within [`LEAST_SUSPEND_AFTER`] and [`MOST_SUSPEND_AFTER`].
+pub const SUSPEND_AFTER: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// The shortest a pool's runner may be left without a link before it suspends: a minute, so a
+/// link that drops and comes back does not suspend it.
+pub const LEAST_SUSPEND_AFTER: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The longest a pool's runner may be left without a link before it suspends: 30 days.
+pub const MOST_SUSPEND_AFTER: std::time::Duration =
+    std::time::Duration::from_secs(30 * 24 * 60 * 60);
+
+/// `duration`, where it is a time a pool's runner may be left without a link before it
+/// suspends: whole seconds, [`LEAST_SUSPEND_AFTER`] to [`MOST_SUSPEND_AFTER`].
+pub fn suspend_after(duration: std::time::Duration) -> Result<std::time::Duration, Refused> {
+    if duration.subsec_nanos() == 0
+        && (LEAST_SUSPEND_AFTER..=MOST_SUSPEND_AFTER).contains(&duration)
+    {
+        Ok(duration)
+    } else {
+        Err(refused(
+            "a pool's runner suspends after at least a minute and at most 30 days without a link",
+        ))
+    }
+}
+
+/// One runner of the pool, as it is made: its name, its image, its user, its home, its
+/// pool's limits, and how long it is left without a link before it suspends itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Runner {
     name: String,
@@ -297,6 +413,7 @@ pub struct Runner {
     user: User,
     home: String,
     limits: Limits,
+    suspends_after: std::time::Duration,
 }
 
 impl Runner {
@@ -338,6 +455,7 @@ impl Runner {
             user,
             home: home.to_owned(),
             limits: Limits::default(),
+            suspends_after: SUSPEND_AFTER,
         })
     }
 
@@ -348,6 +466,20 @@ impl Runner {
 
     pub fn limits(&self) -> Limits {
         self.limits
+    }
+
+    /// This runner, suspending itself after `after` without a link from its desktop, its
+    /// pool's `suspendAfter` (#3471), in place of [`SUSPEND_AFTER`].
+    pub fn suspending_after(self, after: std::time::Duration) -> Runner {
+        Runner {
+            suspends_after: after,
+            ..self
+        }
+    }
+
+    /// How long it is left without a link from its desktop before it suspends itself.
+    pub fn suspends_after(&self) -> std::time::Duration {
+        self.suspends_after
     }
 
     pub fn name(&self) -> &str {
@@ -403,6 +535,7 @@ impl Runner {
         pair("--security-opt", format!("seccomp={}", seccomp.display()));
         pair("--network", "bridge".into());
         pair("--ipc", "private".into());
+        pair("--shm-size", format!("{}m", self.limits.shm_mib()));
         pair("--cgroupns", "private".into());
         pair(
             "--mount",
@@ -414,12 +547,28 @@ impl Runner {
         pair("--memory-swap", format!("{}m", self.limits.memory_mib));
         pair("--pids-limit", self.limits.pids.to_string());
         args.push("--read-only".to_owned());
+        // The `purlis` the check asks whether it holds its programs from namespaces is the one
+        // that serves (D-2050-26, #3702): whatever the image's own entrypoint, with the runtime's
+        // init as PID 1 to reap what a chat's programs leave behind, as the image's `tini` did.
+        args.push("--init".to_owned());
+        args.push("--entrypoint".to_owned());
+        args.push(PURLIS.to_owned());
         let mut all = vec!["run".to_owned(), "--detach".to_owned()];
         all.extend(args);
         all.push(self.image.as_str().to_owned());
-        // It suspends itself a day without a link from its desktop, keeping its home (#2051).
+        // It suspends itself after its pool's time without a link from its desktop, keeping its
+        // home (#2051, #3471). The bare flag is the default, a day, so a runner image of a
+        // purlis before #3471 starts as it did for a pool that keeps it.
         all.push("serve".to_owned());
-        all.push("--suspends-unlinked".to_owned());
+        all.push(
+            match crate::spelledtime::spelled(self.suspends_after, crate::spelledtime::UP_TO_HOURS)
+            {
+                Some(after) if self.suspends_after != SUSPEND_AFTER => {
+                    format!("--suspends-unlinked={after}")
+                }
+                _ => "--suspends-unlinked".to_owned(),
+            },
+        );
         all
     }
 }
@@ -441,6 +590,11 @@ impl ContainerId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Its first twelve digits, as Docker shows a container's id.
+    pub fn short(&self) -> &str {
+        &self.0[..12]
+    }
 }
 
 /// A runner's container as it was made: what every check and every link holds it to.
@@ -448,6 +602,73 @@ impl ContainerId {
 pub struct Made {
     pub container: ContainerId,
     pub runner: Runner,
+}
+
+/// How a runner's sign-in is run: in a terminal the person drives, or driven by purlis with no
+/// terminal (#4042).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Typed {
+    InATerminal,
+    Driven,
+    /// Driven by the person, in a terminal the runner's `purlis` makes of this size (#4043).
+    InOwnTerminal(crate::engine::Size),
+    /// In a terminal the person drives, by the harness's device-code flow: what is left where
+    /// the browser's answer cannot reach the runner (#4044).
+    DeviceInATerminal,
+    /// [`Typed::InOwnTerminal`], by the harness's device-code flow: a login that waits for the
+    /// browser's answer on the runner's loopback, which nothing carries from a terminal (#4044).
+    DeviceInOwnTerminal(crate::engine::Size),
+}
+
+impl Typed {
+    /// The flag `docker exec` and `kubectl exec` run it with: `-it` in a terminal the person
+    /// drives, `-i` with pipes purlis drives.
+    pub fn exec_flag(self) -> &'static str {
+        match self {
+            Typed::InATerminal | Typed::DeviceInATerminal => "-it",
+            Typed::Driven | Typed::InOwnTerminal(_) | Typed::DeviceInOwnTerminal(_) => "-i",
+        }
+    }
+}
+
+/// **The runner's own words that sign its profile `name` in**, to `provider`'s plan where one is
+/// named, by `typed`: what `docker exec` runs in a Docker runner's container and `kubectl exec`
+/// in a cluster runner's pod (#3819), so both run the same sign-in, and a login over pipes ends
+/// with its input on either (#4043).
+pub fn sign_in_words(typed: Typed, name: &str, provider: Option<&str>) -> Vec<String> {
+    let mut words: Vec<String> = [PURLIS, "profile", "sign-in", name]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect();
+    if let Some(provider) = provider {
+        words.extend(["--provider".to_owned(), provider.to_owned()]);
+    }
+    // A plan's login asks from a list in a terminal, which nothing answers when driven: a plan
+    // whose login waits for the browser is told so, and only it, as a runner before #4044 knows
+    // no `--way` (Copilot's device code is its login's default). Where the browser's answer
+    // cannot reach the runner, the device-code flow is named (#4044).
+    match typed {
+        Typed::Driven
+            if provider
+                .is_some_and(crate::profilestore::sign_in::driven::plan_waits_for_the_browser) =>
+        {
+            words.extend(["--way".to_owned(), "browser".to_owned()]);
+        }
+        Typed::DeviceInATerminal | Typed::DeviceInOwnTerminal(_) => {
+            words.extend(["--way".to_owned(), "device".to_owned()]);
+        }
+        Typed::InATerminal | Typed::Driven | Typed::InOwnTerminal(_) => {}
+    }
+    // Over pipes the login ends with its input (#4043), on a cluster runner too (#3819).
+    match typed {
+        Typed::InATerminal | Typed::DeviceInATerminal => {}
+        Typed::Driven => words.push("--until-input-ends".to_owned()),
+        Typed::InOwnTerminal(size) | Typed::DeviceInOwnTerminal(size) => words.extend([
+            "--in-own-terminal".to_owned(),
+            format!("{}x{}", size.columns, size.rows),
+        ]),
+    }
+    words
 }
 
 impl Made {
@@ -467,6 +688,100 @@ impl Made {
     /// `docker`'s arguments that ask the runner's `purlis` its version (#2749).
     pub fn version_args(&self) -> Vec<String> {
         self.exec(&["--version"])
+    }
+
+    /// **The name of the container that carries sign-ins to this runner** (#4011): its own
+    /// container's, with `-copy`, so what a carry that stopped short left is found with this
+    /// runner's ([`Docker::remove_leftovers_of`], [`Docker::copy_profiles`]).
+    pub fn copy_container(&self) -> String {
+        format!("{}-copy", self.runner.container())
+    }
+
+    /// **`docker`'s arguments that carry `from`'s sign-ins into this runner's home** (#4011,
+    /// ruled 2026-10-30): a container of this runner's image, named for it, labelled as made by
+    /// `desktop` and removed once it ends, that mounts `from`'s home volume read-only and this
+    /// runner's home volume, and runs [`COPY_PROFILES`] as this runner's user. It reaches no
+    /// network, holds no capability and writes nothing but the new home, so nothing of the homes
+    /// leaves the Docker host.
+    pub fn copy_profiles_args(&self, from: &Made, desktop: &str) -> Vec<String> {
+        let mut args: Vec<String> = [
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--name",
+            &self.copy_container(),
+            "--label",
+            &format!("{LABEL}={}", self.runner.name()),
+            "--label",
+            &format!("{DESKTOP_LABEL}={desktop}"),
+            "--user",
+            &self.runner.user.spelled(),
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--read-only",
+            "--pids-limit",
+            "64",
+            "--memory",
+            "256m",
+            "--cpus",
+            "1",
+            "--mount",
+            &format!(
+                "type=volume,source={},target=/from,readonly",
+                from.runner.volume()
+            ),
+            "--mount",
+            &format!("type=volume,source={},target=/to", self.runner.volume()),
+            "--entrypoint",
+            "/bin/sh",
+            self.runner.image.as_str(),
+            "-c",
+            COPY_PROFILES,
+            "sh",
+            "/from",
+            "/to",
+            &crate::profilestore::carried_under_a_runner_home(),
+            &crate::profilestore::carried_under_an_old_runner_home(),
+        ]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect();
+        args.extend(crate::profilestore::carried_in_a_runner_home());
+        args
+    }
+
+    /// `docker`'s arguments that run the runner's own `purlis profile sign-in` of its profile
+    /// `name` (#2049), to `provider`'s plan where one is named, with a terminal the person drives:
+    /// the harness's own sign-in, run on the runner in the runner's folder for that profile.
+    pub fn sign_in_args(&self, name: &str, provider: Option<&str>) -> Vec<String> {
+        self.sign_in_args_by(Typed::InATerminal, name, provider)
+    }
+
+    /// [`Made::sign_in_args`], by `typed`: in a terminal the person drives (`-it`), or with its
+    /// input and output pipes (`-i`, #4042), for purlis to drive or to carry a terminal the
+    /// runner's `purlis` makes. Over pipes the login ends with its input (#4043), since ending
+    /// `docker exec` ends nothing in the container.
+    pub fn sign_in_args_by(&self, typed: Typed, name: &str, provider: Option<&str>) -> Vec<String> {
+        let mut args: Vec<String> = [
+            "exec",
+            typed.exec_flag(),
+            "--user",
+            &self.runner.user.spelled(),
+            self.container.as_str(),
+        ]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect();
+        args.extend(sign_in_words(typed, name, provider));
+        args
+    }
+
+    /// `docker`'s arguments that run the runner's own sign-out of its profile `name` (#4043).
+    pub fn sign_out_args(&self, name: &str) -> Vec<String> {
+        self.exec(&["profile", "sign-out", name])
     }
 
     fn exec(&self, words: &[&str]) -> Vec<String> {
@@ -497,8 +812,13 @@ pub struct Engine {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Seccomp {
     /// The runner's own, [`SECCOMP_PROFILE`]: a server a chat starts there listens where it
-    /// was bound.
+    /// was bound, and the browser engine makes its sandbox there.
     Runners,
+    /// The runner's profile as a purlis made it from #3410 until #3298
+    /// ([`EARLIER_SECCOMP_PROFILE`]): a server a chat starts there listens, and the browser
+    /// engine cannot make its sandbox, so no browser starts there until the runner is removed
+    /// and added again. It is stricter than the runner's own, so the runner is still linked.
+    RunnersEarlier,
     /// The runtime's own default, which a runner made before #3410 runs. It is stricter than
     /// the runner's (it refuses `pidfd_getfd`), so the runner is still linked, and no server a
     /// chat starts there listens until the runner is removed and added again.
@@ -522,9 +842,175 @@ pub fn check_on(
     checked_on(inspected, made, engine, true)
 }
 
+/// The most kept of what a runner's sign-in check prints, on each of its outputs.
+const STANDING_MOST: u64 = 64 * 1024;
+
+/// How long a runner's sign-in check is waited for.
+const STANDING_WITHIN: std::time::Duration = std::time::Duration::from_secs(180);
+
+/// **What `purlis profile sign-in <name> --check` said of `name`, in `printed`**: signed in, not
+/// signed in, or that its harness cannot tell, each by the words that command writes. `Err`, in
+/// the runner's own words cut short, for anything else, such as a profile it does not keep.
+pub fn standing_said(
+    name: &str,
+    printed: &str,
+) -> Result<crate::profilestore::sign_in::Standing, String> {
+    use crate::profilestore::sign_in::Standing;
+    let (signed_in, signed_out) = (
+        format!("'{name}' is signed in "),
+        format!("'{name}' is not "),
+    );
+    for line in printed.lines() {
+        if line.starts_with(&signed_in) {
+            return Ok(Standing::SignedIn);
+        }
+        if line.starts_with(&signed_out) {
+            return Ok(Standing::SignedOut);
+        }
+        if line.contains(&format!("cannot tell whether '{name}'")) {
+            return Ok(Standing::CannotTell);
+        }
+    }
+    let last = printed.lines().rfind(|line| !line.trim().is_empty());
+    Err(format!(
+        "the runner says: {}",
+        crate::shown::short(last.unwrap_or("nothing"))
+    ))
+}
+
+/// **A runner removed outside purlis** (#4149, [`Docker::gone`]): Docker lists no container
+/// of its id. Whether its home volume is still there, whose sign-ins a runner made again takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Gone {
+    pub home_kept: bool,
+}
+
+/// What [`Docker::resumed`] did: what it read of the container first, and whether it started it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Resumed {
+    pub before: Ran,
+    pub started: bool,
+}
+
 /// Whether `inspected`, what `docker inspect <container>` printed, says the container runs.
 pub fn is_running(inspected: &serde_json::Value) -> bool {
     inspected.pointer("/0/State/Running") == Some(&serde_json::Value::Bool(true))
+}
+
+/// **What Docker says of a container's latest run** (#3492): whether it runs, when it started,
+/// and when its last run ended, each in seconds since the epoch and `None` where Docker gives
+/// no time (a container never started says `0001-01-01T00:00:00Z`). The runner hours record
+/// is written from these ([`crate::runnerhours::seen`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Ran {
+    pub running: bool,
+    pub started: Option<u64>,
+    pub finished: Option<u64>,
+}
+
+/// [`Ran`], from what `docker inspect <container>` printed.
+pub fn ran(inspected: &serde_json::Value) -> Ran {
+    let at = |key: &str| {
+        inspected
+            .pointer(&format!("/0/State/{key}"))
+            .and_then(serde_json::Value::as_str)
+            .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
+            .and_then(|time| u64::try_from(time.timestamp()).ok())
+            .filter(|secs| *secs > 0)
+    };
+    Ran {
+        running: is_running(inspected),
+        started: at("StartedAt"),
+        finished: at("FinishedAt"),
+    }
+}
+
+/// **The disk each volume holds, by its name** (#3493), from what `docker system df -v` printed
+/// (`printed`): its `Local Volumes space usage` table, as Docker and Podman both write it, a
+/// volume's name first on its line and its size last. A size is read as both write one (Go's
+/// `units.HumanSize`, decimal: `0B`, `512kB`, `1.234GB`), in bytes; a line whose size is not
+/// written so is left out, so nothing is guessed. Podman will not print this verbose table in
+/// another format, so the table is read rather than `--format`.
+pub fn homes_held(printed: &str) -> std::collections::BTreeMap<String, u64> {
+    let mut held = std::collections::BTreeMap::new();
+    let mut lines = printed
+        .lines()
+        .skip_while(|line| !line.trim_start().starts_with("Local Volumes space usage"))
+        .skip(1)
+        .skip_while(|line| line.trim().is_empty());
+    // Its header.
+    if !lines
+        .next()
+        .is_some_and(|line| line.trim_start().starts_with("VOLUME NAME"))
+    {
+        return held;
+    }
+    for line in lines.take_while(|line| !line.trim().is_empty()) {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        // Its name, its links, its size.
+        let [name, _, .., size] = words.as_slice() else {
+            continue;
+        };
+        if let Some(bytes) = bytes_of(size) {
+            held.insert((*name).to_owned(), bytes);
+        }
+    }
+    held
+}
+
+/// `size` as Go's `units.HumanSize` writes it (`1.234GB`), in bytes; `None` where it is not.
+fn bytes_of(size: &str) -> Option<u64> {
+    const UNITS: [&str; 9] = ["B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
+    let at = size.find(|c: char| !(c.is_ascii_digit() || c == '.'))?;
+    let (number, unit) = size.split_at(at);
+    let power = UNITS
+        .iter()
+        .position(|one| one.eq_ignore_ascii_case(unit))?;
+    let (whole, part) = number.split_once('.').unwrap_or((number, ""));
+    if whole.is_empty() || part.len() > 9 || !part.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let digits: u128 = format!("{whole}{part}").parse().ok()?;
+    let scale = 1000u128.checked_pow(u32::try_from(power).ok()?)?;
+    let bytes = digits.checked_mul(scale)? / 10u128.pow(u32::try_from(part.len()).ok()?);
+    Some(u64::try_from(bytes).unwrap_or(u64::MAX))
+}
+
+/// **How a runner's container was made to suspend itself** (#3717), which its pool's
+/// `suspendAfter` does not say for a runner made before it: a runner made before purlis
+/// suspended runners (#2051) never does, and one made before a pool had its own time (#3471)
+/// keeps the time it was made with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MadeSuspending {
+    /// It was made with `serve` alone, and never suspends itself.
+    Never,
+    /// It suspends itself after this long without a link from its desktop.
+    After(std::time::Duration),
+}
+
+/// [`MadeSuspending`], from the command `docker inspect <container>` says it was made with
+/// (`Config.Cmd`, as [`Runner::create_args`] gives it); `None` where that is not a runner's
+/// `serve` as purlis makes one, a time outside [`suspend_after`]'s bounds included.
+pub fn made_suspending(inspected: &serde_json::Value) -> Option<MadeSuspending> {
+    let words: Vec<&str> = inspected
+        .pointer("/0/Config/Cmd")?
+        .as_array()?
+        .iter()
+        .map(serde_json::Value::as_str)
+        .collect::<Option<_>>()?;
+    match words.as_slice() {
+        ["serve"] => Some(MadeSuspending::Never),
+        ["serve", "--suspends-unlinked"] => Some(MadeSuspending::After(SUSPEND_AFTER)),
+        ["serve", flag] => {
+            let after = flag.strip_prefix("--suspends-unlinked=")?;
+            // Held to the bounds `purlis serve` holds it to: a time it refuses is none it
+            // suspends after.
+            crate::spelledtime::read(after, crate::spelledtime::UP_TO_HOURS)
+                .filter(|after| suspend_after(*after).is_ok())
+                .map(MadeSuspending::After)
+        }
+        _ => None,
+    }
 }
 
 /// [`check_on`], the container's running held to it only where `running` says so: a suspended
@@ -607,22 +1093,21 @@ fn checked_on(
     if !options.iter().any(|option| is_no_new_privileges(option)) {
         return Err(not("may gain new privileges"));
     }
-    // The runner's seccomp profile, or, on a runner made before it, the runtime's own default
-    // (no seccomp option at all), which is stricter.
-    let seccomp = if options
+    // The runner's seccomp profile, or, on a runner made before it, its earlier one or the
+    // runtime's own default (no seccomp option at all), each stricter.
+    let seccomp = if let Some(seccomp) = options
         .iter()
-        .any(|option| is_the_runners_seccomp(option, podman))
+        .find_map(|option| the_runners_seccomp(option, podman))
     {
-        Seccomp::Runners
+        seccomp
     } else if options.iter().any(|option| option.starts_with("seccomp")) {
         return Err(not("does not have the runner's seccomp profile"));
     } else {
         Seccomp::RuntimeDefault
     };
-    if let Some(option) = options
-        .iter()
-        .find(|option| !is_no_new_privileges(option) && !is_the_runners_seccomp(option, podman))
-    {
+    if let Some(option) = options.iter().find(|option| {
+        !is_no_new_privileges(option) && the_runners_seccomp(option, podman).is_none()
+    }) {
         let named = option.split(['=', ':']).next().unwrap_or_default();
         return Err(not(&format!(
             "has a security option of its own ({named}), where purlis keeps the runtime's defaults"
@@ -979,7 +1464,10 @@ pub fn check_oci(
     // own default ([`check_podman`]).
     let compiled = oci.pointer("/linux/seccomp");
     let held = match seccomp {
-        Seccomp::Runners => compiled.is_some_and(is_the_runners_compiled),
+        Seccomp::Runners => compiled.is_some_and(|it| is_compiled_from(SECCOMP_PROFILE, it)),
+        Seccomp::RunnersEarlier => {
+            compiled.is_some_and(|it| is_compiled_from(EARLIER_SECCOMP_PROFILE, it))
+        }
         Seccomp::RuntimeDefault => {
             compiled.is_some_and(|it| it.is_object() && it["defaultAction"] == "SCMP_ACT_ERRNO")
         }
@@ -1014,7 +1502,8 @@ pub fn check_oci(
         let own = RUNTIME_MOUNTS.contains(&(to, kind)) && from == kind
             || (to == "/dev/shm" && kind == "tmpfs")
             || (kind == "bind" && own_file)
-            || (kind == "bind" && to == made.runner.home && from_path == home_volume);
+            || (kind == "bind" && to == made.runner.home && from_path == home_volume)
+            || is_podmans_init(mount);
         if !own {
             return Err(not(&format!(
                 "has {to} mounted from {from}, which is not the pool's own"
@@ -1022,6 +1511,20 @@ pub fn check_oci(
         }
     }
     Ok(())
+}
+
+/// **Whether `mount` is Podman's own init, as `--init` binds it** (#3702): its `catatonit`, from
+/// where the machine's Podman keeps it (a regular file there), bound read-only at `/run/podman-init`, the runner's PID 1
+/// that reaps what a chat's programs leave behind. Measured on rootless Podman 2026-10-29.
+fn is_podmans_init(mount: &serde_json::Value) -> bool {
+    let field = |name: &str| mount.get(name).and_then(serde_json::Value::as_str);
+    let from = std::path::Path::new(field("source").unwrap_or_default());
+    field("destination") == Some("/run/podman-init")
+        && field("type") == Some("bind")
+        && from.is_absolute()
+        && from.file_name().is_some_and(|name| name == "catatonit")
+        && std::fs::metadata(from).is_ok_and(|found| found.is_file())
+        && mount.get("options") == Some(&serde_json::json!(["bind", "ro", "rprivate"]))
 }
 
 /// Where Podman keeps its default seccomp profile, as `podman info` names it.
@@ -1074,54 +1577,92 @@ fn is_containers_default(profile: &str) -> bool {
     a_version && a_suffix
 }
 
-/// **The runner container's seccomp profile** (#3410): Docker's default, the Moby project's
-/// `seccomp/v0.2.4` (Apache-2.0), kept beside it as published (`seccomp-moby-v0.2.4.json`), with
-/// one rule added after its first: `pidfd_getfd` allowed, which that profile allows only with
-/// `CAP_SYS_PTRACE`. The Linux sandbox's supervisor takes a chat's own socket with it to make the
-/// chat's `listen` (`purlis_linux_sandbox`), and every capability is dropped from a runner, so
-/// without it no server a chat starts there listens. Nothing else differs from Docker's default.
+/// **The runner container's seccomp profile** (#3410, #3298): Docker's default, the Moby
+/// project's `seccomp/v0.2.4` (Apache-2.0), kept beside it as published
+/// (`seccomp-moby-v0.2.4.json`), with four rules added after its first. Every capability is
+/// dropped from a runner, and Docker's default allows each of these calls only with one:
+///
+/// - `pidfd_getfd`: the Linux sandbox's supervisor takes a chat's own socket with it to make the
+///   chat's `listen` (`purlis_linux_sandbox`), so without it no server a chat starts listens;
+/// - `clone` and `unshare` making no namespace but a user, a process and a network one
+///   (`CLONE_NEWNS`, `CLONE_NEWCGROUP`, `CLONE_NEWUTS` and `CLONE_NEWIPC` refused, and
+///   `CLONE_NEWTIME` to `unshare`, which alone takes it), and `chroot`:
+///   the browser engine's own sandbox makes them as it starts, and ends without them (measured
+///   2026-10-28; ruled that day, ADR 0089). `chroot` reaches nothing outside a user namespace a
+///   process made itself, since the kernel still asks for `CAP_SYS_CHROOT`. Only the browser engine
+///   may make namespaces on a runner: its host starts everything else unable to
+///   (`purlis_linux_sandbox::NO_NAMESPACES`).
+///
+/// Nothing else differs from Docker's default.
 pub const SECCOMP_PROFILE: &str = include_str!("dockerpool/seccomp.json");
 
-/// The file name [`SECCOMP_PROFILE`] is kept under in a run's folder, for `docker` to read.
-pub const SECCOMP_FILE: &str = "runner-seccomp.json";
+/// **The runner's profile as a purlis made it from #3410 until #3298**: Docker's default and
+/// `pidfd_getfd` alone, kept as it was so a runner made then is still known and linked
+/// ([`Seccomp::RunnersEarlier`]).
+pub const EARLIER_SECCOMP_PROFILE: &str = include_str!("dockerpool/seccomp-runner-2026-10-27.json");
 
-/// [`SECCOMP_PROFILE`], read.
-fn the_runners_profile() -> serde_json::Value {
-    serde_json::from_str(SECCOMP_PROFILE).unwrap_or(serde_json::Value::Null)
+/// The file name [`SECCOMP_PROFILE`] is kept under in a run's folder, for `docker` to read: a
+/// name of its own, so Podman, which keeps only the path, says which profile a runner runs.
+pub const SECCOMP_FILE: &str = "runner-seccomp-engine.json";
+
+/// The file name [`EARLIER_SECCOMP_PROFILE`] is kept under, as a purlis from #3410 to #3298
+/// kept the runner's profile.
+pub const EARLIER_SECCOMP_FILE: &str = "runner-seccomp.json";
+
+/// **What a runner image's `purlis` is asked, to tell whether it holds what it starts from
+/// namespaces** (#3298, D-2050-26): `_no-namespaces` starting a shell that ends at once. A
+/// `purlis` from before it does not know the command, and answers otherwise.
+const HOLDS_FROM_NAMESPACES: [&str; 5] = ["_no-namespaces", "--", "/bin/sh", "-c", "exit 0"];
+
+/// A profile kept here, read.
+fn profile_of(text: &str) -> serde_json::Value {
+    serde_json::from_str(text).unwrap_or(serde_json::Value::Null)
 }
 
-/// Whether `option`, one of a container's security options as `inspect` writes it, is the
-/// runner's seccomp profile. Docker's client reads the file and sends its contents, and the
-/// engine keeps them as they came: held to the runner's profile rule for rule. Podman reads the
-/// file as it makes the container and keeps only its path: held to an absolute path naming the
-/// runner's profile's file, and, where its runtime's config can be read (rootless), to what it
-/// compiled from it ([`check_oci`]). Rootful Podman's runtime config is root's: there the path is
-/// all that is read (ADR 0078, amended 2026-10-27).
-fn is_the_runners_seccomp(option: &str, podman: bool) -> bool {
-    let Some(profile) = option.strip_prefix("seccomp=") else {
-        return false;
-    };
+/// Which of the runner's seccomp profiles `option`, one of a container's security options as
+/// `inspect` writes it, is, if either. Docker's client reads the file and sends its contents,
+/// and the engine keeps them as they came: held to the runner's profile, or its earlier one, rule
+/// for rule. Podman reads the file as it makes the container and keeps only its path: held to an
+/// absolute path naming either profile's file, each a name of its own, and, where its runtime's
+/// config can be read (rootless), to what it compiled from it ([`check_oci`]). Rootful Podman's
+/// runtime config is root's: there the path is all that is read (ADR 0078, amended 2026-10-27
+/// and 2026-10-28).
+fn the_runners_seccomp(option: &str, podman: bool) -> Option<Seccomp> {
+    let profile = option.strip_prefix("seccomp=")?;
     if podman {
         let path = std::path::Path::new(profile);
-        path.is_absolute() && path.file_name() == Some(std::ffi::OsStr::new(SECCOMP_FILE))
+        if !path.is_absolute() {
+            return None;
+        }
+        match path.file_name().and_then(std::ffi::OsStr::to_str) {
+            Some(SECCOMP_FILE) => Some(Seccomp::Runners),
+            Some(EARLIER_SECCOMP_FILE) => Some(Seccomp::RunnersEarlier),
+            _ => None,
+        }
     } else {
-        serde_json::from_str::<serde_json::Value>(profile)
-            .is_ok_and(|given| given == the_runners_profile())
+        let given = serde_json::from_str::<serde_json::Value>(profile).ok()?;
+        if given == profile_of(SECCOMP_PROFILE) {
+            Some(Seccomp::Runners)
+        } else if given == profile_of(EARLIER_SECCOMP_PROFILE) {
+            Some(Seccomp::RunnersEarlier)
+        } else {
+            None
+        }
     }
 }
 
 /// Whether `compiled`, the profile Podman's runtime config holds for a container, is exactly what
-/// Podman makes of [`SECCOMP_PROFILE`] for a runner, which holds no capability, on the
-/// architecture the profile names first ([`compiled_for`]).
-fn is_the_runners_compiled(compiled: &serde_json::Value) -> bool {
+/// Podman makes of `profile` for a runner, which holds no capability, on the architecture the
+/// profile names first ([`compiled_for`]).
+fn is_compiled_from(profile: &str, compiled: &serde_json::Value) -> bool {
     compiled
         .pointer("/architectures/0")
         .and_then(serde_json::Value::as_str)
-        .and_then(compiled_for)
+        .and_then(|native| compiled_for(profile, native))
         .is_some_and(|ours| &ours == compiled)
 }
 
-/// **What Podman (`containers/common`'s seccomp) makes of [`SECCOMP_PROFILE`]** for a container
+/// **What Podman (`containers/common`'s seccomp) makes of `text`**, a runner's profile, for a container
 /// with no capability on the architecture `native` (`SCMP_ARCH_X86_64` or `SCMP_ARCH_AARCH64`),
 /// as its runtime config holds it: the default action and errno; `native` and the
 /// architectures its map puts beside it; and each rule its conditions keep, by its names,
@@ -1129,14 +1670,14 @@ fn is_the_runners_compiled(compiled: &serde_json::Value) -> bool {
 /// is kept unless it is for other architectures, excluded on this one, or for a capability. Each
 /// rule's lowest kernel is below the 6.12 the Linux sandbox needs, so none is dropped for it.
 /// None for any other architecture, or a condition this does not know.
-fn compiled_for(native: &str) -> Option<serde_json::Value> {
+fn compiled_for(text: &str, native: &str) -> Option<serde_json::Value> {
     use serde_json::{Map, Value, json};
     let arch = match native {
         "SCMP_ARCH_X86_64" => "amd64",
         "SCMP_ARCH_AARCH64" => "arm64",
         _ => return None,
     };
-    let profile = the_runners_profile();
+    let profile = profile_of(text);
     let mut architectures = vec![Value::from(native)];
     for map in profile["archMap"].as_array()? {
         if map["architecture"] == native {
@@ -1219,12 +1760,38 @@ pub struct Docker {
     /// Where each run's copy of Docker's settings is made: `<data>/docker-settings`, unless
     /// another folder is named (a test's).
     settings_in: Option<std::path::PathBuf>,
-    /// How long each run may take, where a caller holds it to a time ([`Docker::within`]); none
-    /// for a run that takes as long as it takes (a pull, a make).
-    within: Option<std::time::Duration>,
+    /// How long each run that only reads may take (an inspect, a version, a list): [`READS_WITHIN`]
+    /// unless a caller holds it to another time ([`Docker::within`]). A run that changes
+    /// something (a pull, a make, a start, a removal) takes as long as it takes.
+    reads_within: std::time::Duration,
 }
 
+/// **How long each `docker` run that only reads may take** (#3546): an inspect, an `info`, a
+/// list, a runner's version. One still running then is ended and refused, saying it did not
+/// answer, so a wedged engine holds up no pool surface that asks it.
+///
+/// The time stops this machine's `docker`, not what it started: a runner's `purlis --version`
+/// that hangs inside its container keeps running there until the container stops. It is
+/// purlis's own, which prints and ends, and a version once read is not asked again.
+pub const READS_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
+
 pub mod settings;
+
+/// Why a `docker` run gave no answer: it did not answer in its time ([`READS_WITHIN`]), or it
+/// was refused otherwise. Only the first says the engine may be stuck, so nothing that would
+/// follow a refusal (a pull after an inspect, a Podman's `info` after Docker's) is run then.
+enum Failed {
+    Late(Refused),
+    Refused(Refused),
+}
+
+impl From<Failed> for Refused {
+    fn from(failed: Failed) -> Refused {
+        match failed {
+            Failed::Late(why) | Failed::Refused(why) => why,
+        }
+    }
+}
 
 /// Where a `docker` command is looked for first: where Docker's installers put it, Docker
 /// Desktop's own, `/usr/local`'s, Homebrew's and the system's.
@@ -1266,16 +1833,16 @@ impl Docker {
         Docker {
             program: program.into(),
             settings_in: None,
-            within: None,
+            reads_within: READS_WITHIN,
         }
     }
 
-    /// **This `docker`, each of its runs held to `within`** (#2052): a run still going when it is
-    /// up is ended and refused, so a wedged engine holds up nothing that asks it. For what only
-    /// reads (an inspect, a version); a pull or a make takes as long as it takes.
+    /// **This `docker`, each of its runs that only reads held to `within`** rather than
+    /// [`READS_WITHIN`] (#2052, #3546): a read still going when it is up is ended and refused.
+    /// A pull or a make takes as long as it takes.
     #[must_use]
     pub fn within(mut self, within: std::time::Duration) -> Docker {
-        self.within = Some(within);
+        self.reads_within = within;
         self
     }
 
@@ -1445,7 +2012,23 @@ impl Docker {
     fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
         // A checked copy of Docker's settings, the engine pinned, and its helpers found where it
         // is (#2752), whatever the window's environment and Docker's own settings say.
-        self.run_prepared(&self.prepared()?, args, input, most)
+        self.run_prepared(&self.prepared()?, args, input, most, None)
+    }
+
+    /// [`Docker::run`], for a run that **only reads**: held to its time ([`READS_WITHIN`]).
+    fn read(&self, args: &[String], most: u64) -> Result<String, Refused> {
+        self.read_or_late(args, most).map_err(Refused::from)
+    }
+
+    /// [`Docker::read`], saying apart a read that did not answer in its time ([`Failed::Late`]).
+    fn read_or_late(&self, args: &[String], most: u64) -> Result<String, Failed> {
+        self.ran_prepared(
+            &self.prepared().map_err(Failed::Refused)?,
+            args,
+            None,
+            most,
+            Some(self.reads_within),
+        )
     }
 
     /// [`Docker::run`], given its run's folder already prepared, which is kept until the run
@@ -1456,7 +2039,21 @@ impl Docker {
         args: &[String],
         input: Option<&str>,
         most: u64,
+        within: Option<std::time::Duration>,
     ) -> Result<String, Refused> {
+        self.ran_prepared(prepared, args, input, most, within)
+            .map_err(Refused::from)
+    }
+
+    /// [`Docker::run_prepared`], saying apart a run that did not answer in its time.
+    fn ran_prepared(
+        &self,
+        prepared: &settings::Prepared,
+        args: &[String],
+        input: Option<&str>,
+        most: u64,
+        within: Option<std::time::Duration>,
+    ) -> Result<String, Failed> {
         let mut command = std::process::Command::new(&self.program);
         command.envs(prepared.env.iter().map(|(name, value)| (name, value)));
         for name in settings::CLEARED {
@@ -1464,10 +2061,21 @@ impl Docker {
         }
         command.args(args);
         let first = || args.first().map(String::as_str).unwrap_or_default();
-        let ran = crate::boundedrun::run_within(&mut command, input, most, MOST_SAID, self.within)
+        let ran = crate::boundedrun::run_within(&mut command, input, most, MOST_SAID, within)
             .map_err(|why| {
             use crate::boundedrun::Unanswered;
-            refused(match why {
+            if let Unanswered::NotFinished(why) = &why
+                && why.kind() == std::io::ErrorKind::TimedOut
+            {
+                let secs = within.unwrap_or_default().as_secs().max(1);
+                return Failed::Late(refused(format!(
+                    "docker {} did not answer within {}, so purlis ended it: the Docker engine \
+                     may be stuck",
+                    first(),
+                    crate::counts::counted(secs, "second", "seconds")
+                )));
+            }
+            Failed::Refused(refused(match why {
                 Unanswered::NotStarted(why) => {
                     format!("{} could not be run: {why}", self.program.display())
                 }
@@ -1478,24 +2086,31 @@ impl Docker {
                 Unanswered::NotFinished(why) => {
                     format!("{} did not finish: {why}", self.program.display())
                 }
-            })
+            }))
         })?;
         if !ran.status.success() {
             // Docker's own words say why (ADR 0078 §2: a connector's stderr is shown in full).
-            return Err(refused(format!(
+            return Err(Failed::Refused(refused(format!(
                 "docker {} failed: {}",
                 first(),
                 String::from_utf8_lossy(&ran.said).trim()
-            )));
+            ))));
         }
-        String::from_utf8(ran.printed)
-            .map_err(|_| refused("docker answered with something that is not text"))
+        String::from_utf8(ran.printed).map_err(|_| {
+            Failed::Refused(refused("docker answered with something that is not text"))
+        })
     }
 
     fn json(&self, args: &[&str], what: &str) -> Result<serde_json::Value, Refused> {
+        self.json_or_late(args, what).map_err(Refused::from)
+    }
+
+    /// [`Docker::json`], saying apart a read that did not answer in its time ([`Failed::Late`]).
+    fn json_or_late(&self, args: &[&str], what: &str) -> Result<serde_json::Value, Failed> {
         let args: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
-        let out = self.run(&args, None, MOST_INSPECTED)?;
-        serde_json::from_str(&out).map_err(|_| refused(format!("{what} did not answer JSON")))
+        let out = self.read_or_late(&args, MOST_INSPECTED)?;
+        serde_json::from_str(&out)
+            .map_err(|_| Failed::Refused(refused(format!("{what} did not answer JSON"))))
     }
 
     /// The user and home `image` declares, for the runner made from it: its `USER` must be a
@@ -1503,21 +2118,23 @@ impl Docker {
     /// this machine does not hold yet is pulled first, by its digest.
     pub fn declared(&self, image: &Image) -> Result<(User, String), Refused> {
         let inspect = || {
-            self.json(
+            self.json_or_late(
                 &["image", "inspect", image.as_str()],
                 "docker image inspect",
             )
         };
-        // An image this machine does not hold yet is pulled, by its digest, then read.
+        // An image this machine does not hold yet is pulled, by its digest, then read. An engine
+        // that did not answer is said to be so, and nothing is pulled from it.
         let inspected = match inspect() {
             Ok(inspected) => inspected,
-            Err(_) => {
+            Err(Failed::Late(why)) => return Err(why),
+            Err(Failed::Refused(_)) => {
                 self.run(
                     &["pull".into(), "--quiet".into(), image.as_str().into()],
                     None,
                     MOST_INSPECTED,
                 )?;
-                inspect()?
+                inspect().map_err(Refused::from)?
             }
         };
         let config = inspected
@@ -1551,13 +2168,15 @@ impl Docker {
     /// The daemon's security options, held to [`check_daemon`]; or, for a Podman, which has no
     /// such field, its host's security, held to [`check_podman`] (#2680).
     fn check_daemon(&self) -> Result<Engine, Refused> {
-        let docker = self.json(
+        let docker = self.json_or_late(
             &["info", "--format", "{{json .SecurityOptions}}"],
             "docker info",
         );
         match docker {
             Ok(options) => check_daemon(&options).map(|()| Engine::default()),
-            Err(why) => match self.json(
+            // An engine that did not answer is not asked again as a Podman.
+            Err(Failed::Late(why)) => Err(why),
+            Err(Failed::Refused(why)) => match self.json(
                 &["info", "--format", "{{json .Host.Security}}"],
                 "podman info",
             ) {
@@ -1581,7 +2200,7 @@ impl Docker {
     pub fn make_for(&self, runner: &Runner, desktop: Option<&str>) -> Result<Made, Refused> {
         self.check_daemon()?;
         let volume = runner.volume();
-        let listed = self.run(
+        let listed = self.read(
             &[
                 "volume".into(),
                 "ls".into(),
@@ -1589,7 +2208,6 @@ impl Docker {
                 "--filter".into(),
                 format!("name={volume}"),
             ],
-            None,
             MOST_INSPECTED,
         )?;
         if listed.lines().any(|line| line.trim() == volume) {
@@ -1601,7 +2219,7 @@ impl Docker {
         // Nor where a container of its name is: one a run that failed can leave is then
         // this runner's alone, and removed with its volume.
         let container = runner.container();
-        let named = self.run(
+        let named = self.read(
             &[
                 "container".into(),
                 "ls".into(),
@@ -1611,7 +2229,6 @@ impl Docker {
                 "--filter".into(),
                 format!("name={container}"),
             ],
-            None,
             MOST_INSPECTED,
         )?;
         if named.lines().any(|line| line.trim() == container) {
@@ -1623,19 +2240,27 @@ impl Docker {
         // Docker makes the container and its volume before it starts it, so a run that fails
         // can leave both: they are removed with the refusal.
         // The runner's seccomp profile, in the run's own folder, read by `docker` as it runs.
+        // The profile that lets the browser engine make its sandbox only for an image whose
+        // `purlis` holds everything else it starts from namespaces (D-2050-26); the earlier one,
+        // where its browsers are refused, for any other.
+        let holds = self.holds_from_namespaces(runner);
+        let (file, profile) = if holds {
+            (SECCOMP_FILE, SECCOMP_PROFILE)
+        } else {
+            (EARLIER_SECCOMP_FILE, EARLIER_SECCOMP_PROFILE)
+        };
         let prepared = self.prepared()?;
-        let seccomp = prepared
-            .keep(SECCOMP_FILE, SECCOMP_PROFILE)
-            .map_err(|why| {
-                refused(format!(
-                    "purlis could not keep the runner's seccomp profile for docker: {why}"
-                ))
-            })?;
+        let seccomp = prepared.keep(file, profile).map_err(|why| {
+            refused(format!(
+                "purlis could not keep the runner's seccomp profile for docker: {why}"
+            ))
+        })?;
         let made = self.run_prepared(
             &prepared,
             &runner.create_args_for(desktop, &seccomp),
             None,
             MOST_INSPECTED,
+            None,
         );
         drop(prepared);
         let out = match made {
@@ -1651,11 +2276,16 @@ impl Docker {
                 return Err(self.and_removed(why, &runner.container(), &volume));
             }
         };
-        // A runner made now runs the runner's profile: the runtime's own default is taken only
-        // for one made before it (#3410).
+        // A runner made now runs the profile chosen for it: the runtime's own default is taken
+        // only for one made before #3410.
+        let wanted = if holds {
+            Seccomp::Runners
+        } else {
+            Seccomp::RunnersEarlier
+        };
         match self.checked(&made) {
-            Ok(Seccomp::Runners) => Ok(made),
-            Ok(Seccomp::RuntimeDefault) => {
+            Ok(seccomp) if seccomp == wanted => Ok(made),
+            Ok(_) => {
                 let why = refused(format!(
                     "runner {}'s container was made without the runner's seccomp profile, so \
                      purlis does not link to it",
@@ -1665,6 +2295,59 @@ impl Docker {
             }
             Err(why) => Err(self.and_removed(why, made.container.as_str(), &volume)),
         }
+    }
+
+    /// **Whether `runner`'s image's `purlis` holds what it starts from namespaces** (D-2050-26),
+    /// asked of a container of the image made for that alone and removed as it ends: no network,
+    /// every capability dropped, no new privileges, its root read-only. Anything but a clean
+    /// answer within [`PROBE_WITHIN`] is a no, and its container is removed: an image whose
+    /// `purlis` does not answer holds up no pool.
+    fn holds_from_namespaces(&self, runner: &Runner) -> bool {
+        // No name of its own, which a runner's could be: the engine's id for it, written to a
+        // file of this run's, is what removes it, and nothing else (#3702).
+        let Ok(folder) = tempfile::tempdir() else {
+            return false;
+        };
+        let cidfile = folder.path().join("probe.cid");
+        let mut args: Vec<String> = [
+            "run",
+            "--rm",
+            "--cidfile",
+            &cidfile.display().to_string(),
+            "--user",
+            &runner.user.spelled(),
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--network",
+            "none",
+            "--read-only",
+            "--entrypoint",
+            PURLIS,
+            runner.image.as_str(),
+        ]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect();
+        args.extend(HOLDS_FROM_NAMESPACES.iter().map(|word| (*word).to_owned()));
+        let held = self
+            .clone()
+            .within(PROBE_WITHIN)
+            .run(&args, None, MOST_INSPECTED)
+            .is_ok();
+        if !held {
+            let id = std::fs::read_to_string(&cidfile).unwrap_or_default();
+            if let Ok(id) = ContainerId::new(id.trim()) {
+                let rm = [
+                    "rm".to_owned(),
+                    "--force".to_owned(),
+                    id.as_str().to_owned(),
+                ];
+                let _ = self.run(&rm, None, MOST_SAID);
+            }
+        }
+        held
     }
 
     /// `why`, after removing the container `container` names and the volume `volume`; a
@@ -1677,6 +2360,193 @@ impl Docker {
                  container {container} and the volume {volume} with docker"
             )),
         }
+    }
+
+    /// **The line a person's shell runs to sign the profile `name` in on `made`'s runner**
+    /// (#2049), on the engine whose local socket is `engine`, to `provider`'s plan where one is
+    /// named: the container checked as it was made first, as the connector checks it before
+    /// every link, then [`Docker::sign_in_login`] with settings of purlis's own
+    /// ([`settings::for_a_sign_in`]). Refused, with nothing to type, where either fails.
+    pub fn sign_in_line(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Result<String, String> {
+        self.checked_sign_in(made, engine, name, provider, Typed::InATerminal)?
+            .line()
+    }
+
+    /// [`Docker::sign_in_line`], by the harness's device-code flow (#4044): what a person is left
+    /// with where this machine's port for the browser's answer is taken.
+    pub fn device_sign_in_line(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Result<String, String> {
+        self.checked_sign_in(made, engine, name, provider, Typed::DeviceInATerminal)?
+            .line()
+    }
+
+    /// **The runner's own sign-in of the profile `name`, for purlis to drive with no terminal**
+    /// (#4042): [`Docker::sign_in_line`]'s, checked the same way, its input and output pipes.
+    pub fn driven_sign_in(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Result<crate::profilestore::sign_in::Login, String> {
+        self.checked_sign_in(made, engine, name, provider, Typed::Driven)
+    }
+
+    /// **Whether the runner says `name` is signed in**, by its own `purlis profile sign-in
+    /// --check` ([`standing_said`]), through the same `docker` as [`Docker::driven_sign_in`]:
+    /// for a sign-in with no link to the runner to ask over (#4046). `Err` where it says neither,
+    /// as for a profile it does not keep.
+    pub fn standing_on_runner(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+    ) -> Result<crate::profilestore::sign_in::Standing, String> {
+        let login = self.driven_sign_in(made, engine, name, None)?;
+        let mut command = std::process::Command::new(&login.program);
+        command
+            .args(&login.args)
+            .arg("--check")
+            .envs(login.env.iter().map(|(n, v)| (n, v)));
+        for name in &login.cleared {
+            command.env_remove(name);
+        }
+        // Bounded, in time and in what is kept of it: the runner's answer is its own. A runner
+        // that fetches the harness first (#4007) is given the time a fetch takes.
+        let ran = crate::boundedrun::run_within(
+            &mut command,
+            None,
+            STANDING_MOST,
+            STANDING_MOST,
+            Some(STANDING_WITHIN),
+        )
+        .map_err(|why| match why {
+            crate::boundedrun::Unanswered::NotStarted(e) => {
+                format!("{} could not be run: {e}", login.program)
+            }
+            crate::boundedrun::Unanswered::PrintedTooMuch => {
+                "it printed more than a status check does".to_owned()
+            }
+            crate::boundedrun::Unanswered::NotFinished(_) => "it did not answer in time".to_owned(),
+        })?;
+        standing_said(name, &String::from_utf8_lossy(&ran.said))
+    }
+
+    /// **The runner's own sign-in of the profile `name`, in a terminal of `size` carried over
+    /// pipes** (#4043): [`Docker::driven_sign_in`]'s, for the person to drive in the window. With
+    /// `device`, by the harness's device-code flow, for a login that waits for the browser's
+    /// answer on the runner's loopback, which nothing carries from a terminal (#4044).
+    pub fn terminal_sign_in(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+        size: crate::engine::Size,
+        device: bool,
+    ) -> Result<crate::profilestore::sign_in::Login, String> {
+        let typed = if device {
+            Typed::DeviceInOwnTerminal(size)
+        } else {
+            Typed::InOwnTerminal(size)
+        };
+        self.checked_sign_in(made, engine, name, provider, typed)
+    }
+
+    /// **Runs the runner's own sign-out of the profile `name`** (#4043), the container checked
+    /// as it was made first. Its harness may be fetched for it, so it has [`SIGN_OUT_WITHIN`].
+    pub fn sign_out(&self, made: &Made, name: &str) -> Result<(), String> {
+        self.check(made).map_err(|why| why.0)?;
+        self.clone()
+            .within(SIGN_OUT_WITHIN)
+            .run(&made.sign_out_args(name), None, MOST_SAID)
+            .map(drop)
+            .map_err(|why| why.0)
+    }
+
+    /// **The runner's own sign-in of the profile `name`, by `typed`**, the container checked as it
+    /// was made first ([`Docker::sign_in_line`], [`Docker::driven_sign_in`]).
+    pub fn checked_sign_in(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+        typed: Typed,
+    ) -> Result<crate::profilestore::sign_in::Login, String> {
+        self.check(made).map_err(|why| why.0)?;
+        let settings_in = match &self.settings_in {
+            Some(folder) => folder.clone(),
+            None => crate::datahome::root()
+                .ok_or_else(|| "purlis has no data folder to keep docker's settings in".to_owned())?
+                .join(settings::DIR),
+        };
+        let settings = settings::for_a_sign_in(&settings_in).map_err(|why| why.0)?;
+        self.sign_in_login_by(typed, made, engine, &settings, name, provider)
+    }
+
+    /// **What the line [`Docker::sign_in_line`] types runs**: this `docker`, named by its path,
+    /// with Docker's settings the folder `settings` (`--config` and `DOCKER_CONFIG`), its plugin
+    /// hooks off (`DOCKER_CLI_HOOKS=false`), no context (`DOCKER_CONTEXT` cleared), the engine
+    /// named on the line (`--host unix://<engine>`), and the container by its id: no setting of
+    /// the shell's, or of the person's Docker, decides what runs.
+    pub fn sign_in_login(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        settings: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Result<crate::profilestore::sign_in::Login, String> {
+        self.sign_in_login_by(Typed::InATerminal, made, engine, settings, name, provider)
+    }
+
+    /// [`Docker::sign_in_login`], by `by` ([`Made::sign_in_args_by`]).
+    pub fn sign_in_login_by(
+        &self,
+        by: Typed,
+        made: &Made,
+        engine: &std::path::Path,
+        settings: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Result<crate::profilestore::sign_in::Login, String> {
+        let typed = |path: &std::path::Path, what: &str| {
+            path.to_str()
+                .map(str::to_owned)
+                .ok_or_else(|| format!("{what} is not at a path purlis can type"))
+        };
+        let settings = typed(settings, "docker's settings for the sign-in")?;
+        let mut args = vec![
+            "--config".to_owned(),
+            settings.clone(),
+            "--host".to_owned(),
+            format!("unix://{}", typed(engine, "the Docker engine's socket")?),
+        ];
+        args.extend(made.sign_in_args_by(by, name, provider));
+        Ok(crate::profilestore::sign_in::Login {
+            program: typed(&self.program, "this machine's docker")?,
+            args,
+            env: vec![
+                ("DOCKER_CONFIG".to_owned(), settings),
+                ("DOCKER_CLI_HOOKS".to_owned(), "false".to_owned()),
+            ],
+            cleared: settings::CLEARED
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect(),
+        })
     }
 
     /// What Docker says of `made`'s container, its home volume and the daemon, held to
@@ -1702,54 +2572,155 @@ impl Docker {
                 .ok_or_else(|| refused("podman did not say where its runtime's config is"))?;
             let store = self.json(&["info", "--format", "{{json .Store}}"], "podman info")?;
             let config = std::path::Path::new(path);
-            check_oci(
-                &read_oci(config)?,
-                made,
-                config,
-                &podman_store(&store)?,
-                seccomp,
-            )?;
+            let (oci, store) = (read_oci(config)?, podman_store(&store)?);
+            check_oci(&oci, made, config, &store, seccomp)?;
         }
         let volume = made.runner.volume();
         let inspected = self.json(&["volume", "inspect", &volume], "docker volume inspect")?;
         check_volume(&inspected, made)?;
+        // A runner whose profile lets the browser engine make namespaces runs a `purlis` that
+        // holds everything else it starts from them (D-2050-26), or it is not linked.
+        if seccomp == Seccomp::Runners
+            && self
+                .run(&made.exec(&HOLDS_FROM_NAMESPACES), None, MOST_INSPECTED)
+                .is_err()
+        {
+            return Err(refused(format!(
+                "runner {}'s container lets its browser engine make namespaces, and its purlis \
+                 does not hold its programs from them, so purlis does not link to it; remove \
+                 the runner and add it again",
+                made.runner.name
+            )));
+        }
         Ok(seccomp)
     }
 
     /// **Whether `made`'s container runs** (#2051): one a runner suspended stopped itself.
     pub fn running(&self, made: &Made) -> Result<bool, Refused> {
+        self.ran(made).map(|ran| ran.running)
+    }
+
+    /// **[`Ran`] of `made`'s container** (#3492): [`Docker::running`], with when it started and
+    /// last stopped. Read once, as [`Docker::running`] is.
+    pub fn ran(&self, made: &Made) -> Result<Ran, Refused> {
         let inspected = self.json(
             &["container", "inspect", made.container.as_str()],
             "docker container inspect",
         )?;
-        Ok(is_running(&inspected))
+        Ok(ran(&inspected))
+    }
+
+    /// **The disk each volume on this engine holds, by its name** (#3493, [`homes_held`]): read
+    /// by `docker system df -v`, which only reads, so no container is started by it, a
+    /// suspended runner's included; held to its time as every read is ([`READS_WITHIN`]).
+    pub fn homes_held(&self) -> Result<std::collections::BTreeMap<String, u64>, Refused> {
+        let printed = self.read(
+            &["system".into(), "df".into(), "--verbose".into()],
+            MOST_INSPECTED,
+        )?;
+        Ok(homes_held(&printed))
+    }
+
+    /// **Whether `made`'s container was removed outside purlis** (#4149): Docker lists no
+    /// container of its id, stopped or running, so no link to it can come back. `None` where
+    /// Docker still lists it (a runner only stopped or suspended); refused where Docker did not
+    /// answer, which says nothing of the runner. A gone runner says whether its home volume, and
+    /// with it the sign-ins kept there, is still there.
+    pub fn gone(&self, made: &Made) -> Result<Option<Gone>, Refused> {
+        let id = made.container.as_str();
+        let listed = self.read(
+            &[
+                "container".into(),
+                "ls".into(),
+                "--all".into(),
+                "--quiet".into(),
+                "--no-trunc".into(),
+                "--filter".into(),
+                format!("id={id}"),
+            ],
+            MOST_INSPECTED,
+        )?;
+        if listed.lines().any(|line| line.trim() == id) {
+            return Ok(None);
+        }
+        let volume = made.runner.volume();
+        let volumes = self.read(
+            &[
+                "volume".into(),
+                "ls".into(),
+                "--quiet".into(),
+                "--filter".into(),
+                format!("name={volume}"),
+            ],
+            MOST_INSPECTED,
+        )?;
+        Ok(Some(Gone {
+            home_kept: volumes.lines().any(|line| line.trim() == volume),
+        }))
+    }
+
+    /// **When `made`'s home volume was made**, in seconds since the epoch, as Docker says it
+    /// (#4149): a home made after its runner was paired is not the one purlis made for it, and
+    /// nothing of it is carried. `None` where Docker gives no time it reads.
+    pub fn home_made_at(&self, made: &Made) -> Result<Option<u64>, Refused> {
+        let inspected = self.json(
+            &["volume", "inspect", &made.runner.volume()],
+            "docker volume inspect",
+        )?;
+        Ok(inspected
+            .pointer("/0/CreatedAt")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
+            .and_then(|time| u64::try_from(time.timestamp()).ok()))
+    }
+
+    /// **[`MadeSuspending`] of `made`'s container** (#3717): `None` where its command is not a
+    /// runner's `serve` as purlis makes one.
+    pub fn made_suspending(&self, made: &Made) -> Result<Option<MadeSuspending>, Refused> {
+        let inspected = self.json(
+            &["container", "inspect", made.container.as_str()],
+            "docker container inspect",
+        )?;
+        Ok(made_suspending(&inspected))
     }
 
     /// **[`Docker::check`], a suspended runner started again first** (#2051): a runner left a
     /// day without a link stops its own container, keeping its home volume; the next link to it
     /// starts that container again, once it is checked as it was made, and checks it whole once
     /// it runs. A container that runs is only checked.
-    pub fn resumed(&self, made: &Made) -> Result<(), Refused> {
+    ///
+    /// It answers what it read of the container before anything was started ([`Ran`]), and
+    /// whether it started it, so the runner hours record has both (#3492).
+    pub fn resumed(&self, made: &Made) -> Result<Resumed, Refused> {
         let engine = self.check_daemon()?;
         let inspected = self.json(
             &["container", "inspect", made.container.as_str()],
             "docker container inspect",
         )?;
-        if is_running(&inspected) {
-            return self.check(made);
+        let before = ran(&inspected);
+        if before.running {
+            return self.check(made).map(|()| Resumed {
+                before,
+                started: false,
+            });
         }
         checked_on(&inspected, made, engine, false)?;
         let id = made.container.as_str().to_owned();
         self.run(&["start".to_owned(), id.clone()], None, MOST_INSPECTED)?;
         // Started here and not as it was made once it runs: it is stopped again, and not linked.
-        self.check(made).inspect_err(|_| {
-            if let Err(why) = self.run(&["stop".to_owned(), id], None, MOST_INSPECTED) {
-                tracing::warn!(
-                    "purlis: a runner's container started again and refused its check was not \
+        self.check(made)
+            .map(|()| Resumed {
+                before,
+                started: true,
+            })
+            .inspect_err(|_| {
+                if let Err(why) = self.run(&["stop".to_owned(), id], None, MOST_INSPECTED) {
+                    tracing::warn!(
+                        "purlis: a runner's container started again and refused its check was not \
                      stopped: {why}"
-                );
-            }
-        })
+                    );
+                }
+            })
     }
 
     /// Pair `made`'s runner with `desktop`, once its container passes the check: the runner's
@@ -1766,20 +2737,21 @@ impl Docker {
         crate::runnerlink::from_line(&out).map_err(refused)
     }
 
-    /// **Removes what a make of the runner `name` by `desktop` left behind** (#2869): its
-    /// container, only where one of exactly its name carries the runner label of that name and
-    /// `desktop`'s label ([`DESKTOP_LABEL`]), removed by the id the listing gave; then its home
-    /// volume of exactly its name, only once no container of that name is left, whatever its
-    /// labels. One another desktop made, or one made before the label, is left as it is. What it
-    /// removed, each named. Only for a name no kept runner holds: the caller says so.
-    pub fn remove_leftovers_of(&self, name: &str, desktop: &str) -> Result<Vec<String>, Refused> {
+    /// **Removes each container of exactly a name in `names` that carries the runner label of
+    /// `name` and `desktop`'s label** ([`DESKTOP_LABEL`]), by the id the listing gave: one another
+    /// desktop made, or one made before the label, is left as it is. Each removed, named.
+    fn remove_labelled(
+        &self,
+        name: &str,
+        desktop: &str,
+        names: &[String],
+    ) -> Result<Vec<String>, Refused> {
         let words = |words: &[&str]| -> Vec<String> {
             words.iter().map(|word| (*word).to_owned()).collect()
         };
         let container = format!("{PREFIX}{name}");
-        let volume = format!("{PREFIX}{name}-home");
         let mut removed = Vec::new();
-        let listed = self.run(
+        let listed = self.read(
             &words(&[
                 "container",
                 "ls",
@@ -1793,7 +2765,6 @@ impl Docker {
                 "--filter",
                 &format!("label={LABEL}={name}"),
             ]),
-            None,
             MOST_INSPECTED,
         )?;
         for line in listed.lines() {
@@ -1803,7 +2774,7 @@ impl Docker {
             else {
                 continue;
             };
-            if named != container || made_by != desktop {
+            if !names.iter().any(|one| one == named) || made_by != desktop {
                 continue;
             }
             let id = ContainerId::new(id)?;
@@ -1812,10 +2783,31 @@ impl Docker {
                 None,
                 MOST_INSPECTED,
             )?;
-            removed.push(format!("container {container}"));
+            removed.push(format!("container {named}"));
         }
+        Ok(removed)
+    }
+
+    /// **Removes what a make of the runner `name` by `desktop` left behind** (#2869): its
+    /// container, only where one of exactly its name carries the runner label of that name and
+    /// `desktop`'s label ([`DESKTOP_LABEL`]), removed by the id the listing gave; then its home
+    /// volume of exactly its name, only once no container of that name is left, whatever its
+    /// labels. One another desktop made, or one made before the label, is left as it is. What it
+    /// removed, each named. Only for a name no kept runner holds: the caller says so.
+    pub fn remove_leftovers_of(&self, name: &str, desktop: &str) -> Result<Vec<String>, Refused> {
+        let words = |words: &[&str]| -> Vec<String> {
+            words.iter().map(|word| (*word).to_owned()).collect()
+        };
+        let container = format!("{PREFIX}{name}");
+        let volume = format!("{PREFIX}{name}-home");
+        // The container that carried sign-ins to it (#4011) is its leftover too.
+        let mut removed = self.remove_labelled(
+            name,
+            desktop,
+            &[container.clone(), format!("{container}-copy")],
+        )?;
         // A home volume goes only once no container of its name is left, whoever made it.
-        let still = self.run(
+        let still = self.read(
             &words(&[
                 "container",
                 "ls",
@@ -1825,13 +2817,12 @@ impl Docker {
                 "--filter",
                 &format!("name={container}"),
             ]),
-            None,
             MOST_INSPECTED,
         )?;
         if still.lines().any(|line| line.trim() == container) {
             return Ok(removed);
         }
-        let volumes = self.run(
+        let volumes = self.read(
             &words(&[
                 "volume",
                 "ls",
@@ -1839,7 +2830,6 @@ impl Docker {
                 "--filter",
                 &format!("name={volume}"),
             ]),
-            None,
             MOST_INSPECTED,
         )?;
         if volumes.lines().any(|line| line.trim() == volume) {
@@ -1857,7 +2847,7 @@ impl Docker {
     /// its container passes the check.
     pub fn version_of(&self, made: &Made) -> Result<String, Refused> {
         self.check(made)?;
-        let out = self.run(&made.version_args(), None, crate::runnerlink::MOST_LINE)?;
+        let out = self.read(&made.version_args(), crate::runnerlink::MOST_LINE)?;
         version_in(&out).map(str::to_owned).ok_or_else(|| {
             refused(format!(
                 "runner {}'s purlis did not say its version as purlis does: {:?}",
@@ -1865,6 +2855,37 @@ impl Docker {
                 out.trim()
             ))
         })
+    }
+
+    /// **Carries `from`'s sign-ins into `to`'s home** (#4011), on the Docker host
+    /// ([`Made::copy_profiles_args`]), for at most [`CARRIED_WITHIN`]: nothing of either home
+    /// passes through this machine. What did not answer in its time is removed, and one a
+    /// carry before left, of `desktop`'s, goes first so it holds no later carry back (#4055).
+    pub fn copy_profiles(&self, from: &Made, to: &Made, desktop: &str) -> Result<(), Refused> {
+        let prepared = self.prepared()?;
+        let _ = self.remove_labelled(to.runner.name(), desktop, &[to.copy_container()]);
+        let ran = self
+            .ran_prepared(
+                &prepared,
+                &to.copy_profiles_args(from, desktop),
+                None,
+                MOST_INSPECTED,
+                Some(CARRIED_WITHIN),
+            )
+            .map(|_| ());
+        if let Err(Failed::Late(_)) = &ran {
+            let _ = self.run(
+                &[
+                    "container".into(),
+                    "rm".into(),
+                    "--force".into(),
+                    to.copy_container(),
+                ],
+                None,
+                MOST_INSPECTED,
+            );
+        }
+        ran.map_err(Refused::from)
     }
 
     /// Remove `made`'s container and its home's volume, whatever state they are in.
@@ -1929,7 +2950,7 @@ impl Docker {
         let Err(why) = self.run(&words(removing), None, MOST_INSPECTED) else {
             return Ok(());
         };
-        match self.run(&words(listing), None, MOST_INSPECTED) {
+        match self.read(&words(listing), MOST_INSPECTED) {
             Ok(list) if !list.lines().any(|line| line.trim() == listed) => Ok(()),
             _ => Err(refused(format!(
                 "{what} could not be removed ({why}); remove it with `{how}`"
@@ -2013,6 +3034,13 @@ fn read_oci(path: &std::path::Path) -> Result<serde_json::Value, Refused> {
 
 /// The most of what `docker` prints that purlis reads, for an answer that is not a pairing's.
 const MOST_INSPECTED: u64 = 4 * 1024 * 1024;
+
+/// How long an image's `purlis` is given to answer whether it holds what it starts from
+/// namespaces (D-2050-26): its image is already here, and the answer is a start and an exit.
+const PROBE_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How long a runner's own sign-out has: long enough to fetch the version its profile pins.
+pub(crate) const SIGN_OUT_WITHIN: std::time::Duration = std::time::Duration::from_secs(180);
 
 /// The most of what `docker` says on standard error that purlis keeps to show.
 const MOST_SAID: u64 = 64 * 1024;

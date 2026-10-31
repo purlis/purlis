@@ -63,21 +63,28 @@ const NO_CHATS: readonly number[] = [];
 /**
  * **A browser, live and small** (#2024): its thumbnail view, about a frame a second, drawn on
  * a canvas while it can be seen (its project in front and the window not hidden), and nothing
- * asked of the browser while it cannot.
+ * asked of the browser while it cannot. A tile of the Browsers grid (#2027) is the same view,
+ * drawn from a wider frame.
  */
-const BrowserThumbnail = memo(function BrowserThumbnail({
+export const BrowserThumbnail = memo(function BrowserThumbnail({
   program,
   driver,
+  across = THUMBNAIL_ACROSS,
+  live = true,
 }: {
   program: string;
   /** Who drives it, where its agent does not: marked on it (#2300). */
   driver: BrowserDriver | null;
+  /** How many pixels across its frame is drawn. */
+  across?: number;
+  /** It may ask for frames now: else it keeps the last it drew. */
+  live?: boolean;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const inFront = useProjectShown();
   const windowSeen = useWindowSeen();
-  const seen = inFront && windowSeen;
-  const { watched } = useBrowserWatch(program, "thumbnail", canvas, seen, THUMBNAIL_ACROSS);
+  const seen = inFront && windowSeen && live;
+  const { watched } = useBrowserWatch(program, "thumbnail", canvas, seen, across);
   return (
     <span
       className="browser-thumbnail"
@@ -263,7 +270,12 @@ function BrowserRow({
           )}
           {/* Who drives it, where its agent does not (#2300). */}
           {driver !== null && (
-            <span className="chat-browser-driver ui-text-meta" data-driver={driver}>
+            // The person's own hand is the one that matters: strong, as a meta word that counts
+            // is (#3917). Primary at the meta's size is no rank of the scale.
+            <span
+              className={`chat-browser-driver ui-text-meta${driver === "person" ? " ui-text-strong" : ""}`}
+              data-driver={driver}
+            >
               {DRIVEN[driver].mark}
             </span>
           )}

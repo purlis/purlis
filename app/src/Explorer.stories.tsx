@@ -12,7 +12,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { Explorer } from "./Explorer";
+import { Explorer, type ExplorerPart } from "./Explorer";
 import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
 import type { FileScope, FolderEntry, Panels as PanelsModel, PlaneId } from "./bindings";
 import type { WorkspaceState } from "./workspaceState";
@@ -84,12 +84,12 @@ function core() {
   );
 }
 
-function stateOf(repos: string[]): WorkspaceState {
+function stateOf(repos: string[], absent: string[] = []): WorkspaceState {
   const panels: PanelsModel = {
     workspace: "smart-ide",
     repos,
     paths: {},
-    absent: [],
+    absent,
     refused: [],
     todos: [],
     done_todos: [],
@@ -119,7 +119,16 @@ function stateOf(repos: string[]): WorkspaceState {
 
 /** The view in a left side panel, its head the view's title and its actions, as `RegionFrame`
  *  draws it (#3330), and the view under it the one scroll. */
-function View({ repos }: { repos: string[] }) {
+function View({
+  repos,
+  absent = [],
+  part = "explorer",
+}: {
+  repos: string[];
+  absent?: string[];
+  /** The Explorer's part: `repos` is the Repos view, where a repo not cloned is listed. */
+  part?: ExplorerPart;
+}) {
   const [head, setHead] = useState<HTMLElement | null>(null);
   return (
     <Panel variant="side" aria-label="Explorer" role="region">
@@ -139,10 +148,10 @@ function View({ repos }: { repos: string[] }) {
           <HeadActions.Provider value={head}>
             <ChatsHere.Provider value={fixedChats(nothingKnown)}>
               <Explorer
-                part="explorer"
+                part={part}
                 plane={PLANE}
                 workspace="smart-ide"
-                state={stateOf(repos)}
+                state={stateOf(repos, absent)}
                 chats={[]}
                 spot={undefined}
                 onPick={() => {}}
@@ -214,6 +223,27 @@ export const FilterAllRepos: Story = {
       canvas.getByRole("button", { name: /Search contents in Workspace/ }),
     ).toBeVisible();
     (document.activeElement as HTMLElement | null)?.blur();
+    await settled();
+  },
+};
+
+/**
+ * **A repo the workspace names that is not cloned here** (#3790): in the Repos view, under the
+ * cloned repos, in its own section, its name quieter than a cloned repo's (the secondary role, strong, never a fade).
+ */
+export const ARepoNotClonedHere: Story = {
+  args: { repos: ["purlis", "theme-lab"], absent: ["k8s-operator"], part: "repos" },
+  play: async ({ canvas, canvasElement }) => {
+    const absent = await canvas.findByTestId("absent");
+    await expect(absent).toHaveTextContent("Not cloned here");
+    await expect(absent).toHaveTextContent("k8s-operator");
+    // Quieter than a cloned repo's name, as drawn: a rule the cascade drops would leave them equal.
+    const name = (repo: string, under: Element) =>
+      [...under.querySelectorAll(".repo")].find((one) => one.textContent === repo);
+    const notCloned = name("k8s-operator", absent);
+    const cloned = name("purlis", canvasElement);
+    if (notCloned === undefined || cloned === undefined) throw new Error("no repo name drawn");
+    await expect(getComputedStyle(notCloned).color).not.toBe(getComputedStyle(cloned).color);
     await settled();
   },
 };

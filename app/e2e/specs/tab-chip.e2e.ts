@@ -3,6 +3,7 @@
 
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
+import { REST_MS } from "../../src/tabRest.ts";
 import { bringSideBack, putSideAway, sideIsAway, type SideRegion } from "../sides.js";
 import {
   SELECTED_TAB,
@@ -31,6 +32,15 @@ import {
  * gives: a WebDriver pointer action on the embedded driver raises no pointer events the page
  * sees. What is sent is what the platform sends as a pointer goes from one element to the
  * next: it leaves the one for the other, and moves.
+ *
+ * **So the dispatched pointer is the only one on the strip** (#3521). The runner's own cursor
+ * is a real one, wherever the machine left it, and no WebDriver call moves it: the embedded
+ * driver's pointer actions are page `MouseEvent`s (`tauri-plugin-wdio-webdriver`'s desktop
+ * executor). When a chip is drawn under that cursor the engine sends its own pointer events at
+ * the cursor's point, which is not the dispatched one, and the chip reads the two as a hand that
+ * moved and rests (the menu that opened under a parked pointer, once). {@link fenceRealPointer}
+ * stops the engine's own pointer events for this file, and keeps what it stopped for a failure
+ * to say.
  */
 
 type Box = { left: number; right: number; top: number; bottom: number; width: number };
@@ -216,9 +226,132 @@ async function measured(name: string) {
   );
 }
 
+/** The window global the fence keeps its listener and what it stopped on. */
+const FENCE = "__purlisTabChipFence";
+
+/** The window global the parked case keeps what the counts heard on, and how to stop hearing. */
+const HEARD = "__purlisTabChipHeard";
+
+/** The window global {@link pointer} stamps, on the page's own clock, when it last moved onto a
+ *  chip's counts, and {@link watchForMenu} when a task menu was first drawn after that (#3660). */
+const RESTED = "__purlisTabChipRested";
+
+/** How many events the fence and the parked case's counts keep: the last ones, for a failure. */
+const KEPT = 20;
+
+/** The pointer events the engine sends of the runner's own cursor, which the fence stops. */
+const REAL_POINTER = [
+  "pointerover",
+  "pointerout",
+  "pointermove",
+  "pointerdown",
+  "pointerup",
+  "pointercancel",
+];
+
+/**
+ * **The runner's own cursor is fenced off the window** (`on`), or let in again: every pointer
+ * event the engine sends itself (`isTrusted`) is stopped before the app hears it, and the last
+ * {@link KEPT} are kept, each with its point and what it was on. A dispatched event is never
+ * stopped. Putting it up again starts what it keeps afresh (#3610), so a case reads its own.
+ */
+async function fenceRealPointer(on: boolean): Promise<void> {
+  await browser.execute(
+    (key: string, types: string[], up: boolean, kept: number) => {
+      const held = window as unknown as Record<string, unknown>;
+      const was = held[key] as { stop: (event: Event) => void } | undefined;
+      if (was) for (const type of types) window.removeEventListener(type, was.stop, true);
+      held[key] = undefined;
+      if (!up) return;
+      const stopped: string[] = [];
+      const stop = (event: Event) => {
+        if (!event.isTrusted) return;
+        event.stopImmediatePropagation();
+        const at = event as PointerEvent;
+        const what = at.target instanceof Element ? at.target.className : String(at.target);
+        stopped.push(`${at.type} at ${at.clientX},${at.clientY} on ${what}`);
+        if (stopped.length > kept) stopped.shift();
+      };
+      for (const type of types) window.addEventListener(type, stop, true);
+      held[key] = { stop, stopped };
+    },
+    FENCE,
+    REAL_POINTER,
+    on,
+    KEPT,
+  );
+}
+
+/** The parked case's counts stop hearing, and what they heard goes (#3610). */
+async function unhear(): Promise<void> {
+  await browser.execute((key: string) => {
+    const held = window as unknown as Record<string, { off?: () => void } | undefined>;
+    held[key]?.off?.();
+    held[key] = undefined;
+  }, HEARD);
+}
+
+/** What the fence has stopped since it went up: the runner's cursor's events, in order. */
+async function stoppedByFence(): Promise<string[]> {
+  return browser.execute(
+    (key: string) =>
+      ((window as unknown as Record<string, { stopped?: string[] } | undefined>)[key]?.stopped ?? [
+        "(no fence)",
+      ]) as string[],
+    FENCE,
+  );
+}
+
 /** How many task menus are open. */
 async function menus(): Promise<number> {
   return browser.execute(() => document.querySelectorAll('.tasks-menu[data-part="root"]').length);
+}
+
+/**
+ * **When a task menu opens is read on the page's clock, not the runner's** (#3660). A pause
+ * on the runner followed by a look at the menus says nothing on a slow runner: its look can
+ * be answered after the rest is long over. This watches the page from now on and stamps, with
+ * `performance.now()`, the first moment a task menu is drawn, beside the moment
+ * {@link pointer} last came onto a chip. Answers whether a menu was already open.
+ */
+async function watchForMenu(): Promise<boolean> {
+  return browser.execute((key: string) => {
+    const held = window as unknown as Record<string, unknown>;
+    const was = held[key] as { observer?: MutationObserver } | undefined;
+    was?.observer?.disconnect();
+    const open = () => document.querySelector('.tasks-menu[data-part="root"]') !== null;
+    const watch: { arrived?: number; opened?: number; observer?: MutationObserver } = {};
+    watch.observer = new MutationObserver(() => {
+      if (watch.opened !== undefined || !open()) return;
+      watch.opened = performance.now();
+      watch.observer?.disconnect();
+    });
+    watch.observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    held[key] = watch;
+    return open();
+  }, RESTED);
+}
+
+/** The watch {@link watchForMenu} put up stops, whether or not a menu came, and what it
+ *  stamped goes: nothing watches the page for the cases after. */
+async function unwatch(): Promise<void> {
+  await browser.execute((key: string) => {
+    const held = window as unknown as Record<string, { observer?: MutationObserver } | undefined>;
+    held[key]?.observer?.disconnect();
+    held[key] = undefined;
+  }, RESTED);
+}
+
+/** How long after the pointer came onto the chip its menu was drawn, in the page's own
+ *  milliseconds, once {@link watchForMenu} has seen both; or why it cannot say. */
+async function restTook(): Promise<number | string> {
+  return browser.execute((key: string) => {
+    const watch = (window as unknown as Record<string, { arrived?: number; opened?: number }>)[key];
+    if (watch === undefined) return "nothing was watching for the menu";
+    if (watch.arrived === undefined) return "the pointer never came onto the chip";
+    if (watch.opened === undefined) return "no menu was drawn";
+    return watch.opened - watch.arrived;
+  }, RESTED);
 }
 
 /**
@@ -274,7 +407,7 @@ async function cross(dwell: number): Promise<{ over: number; chips: number }> {
 /** Puts the pointer on the counts of the chip on the tab called `name`, or takes it off. */
 async function pointer(name: string, what: "on" | "off"): Promise<boolean> {
   return browser.execute(
-    (strip: string, called: string, how: string) => {
+    (strip: string, called: string, how: string, rested: string) => {
       const cell = [...document.querySelectorAll<HTMLElement>(`${strip} > .tab`)].find(
         (one) => one.querySelector(".tab-name")?.textContent === called,
       );
@@ -298,6 +431,11 @@ async function pointer(name: string, what: "on" | "off"): Promise<boolean> {
         // Onto it, and then a move to another point: a rest is counted from a move the
         // person made, never from the pointer merely being found there.
         send("pointerover");
+        // The rest is counted from this move: when it was, for a case that watches the menu.
+        const watch = (window as unknown as Record<string, { arrived?: number } | undefined>)[
+          rested
+        ];
+        if (watch) watch.arrived = performance.now();
         send("pointermove", 2);
       } else send("pointerout");
       return true;
@@ -305,6 +443,7 @@ async function pointer(name: string, what: "on" | "off"): Promise<boolean> {
     STRIP,
     name,
     what,
+    RESTED,
   );
 }
 
@@ -368,6 +507,8 @@ describe("the chip a session's tab wears for its tasks", () => {
     // The chatsLeft guard now starts every file with no chat running, so nothing is ended here
     // that this file did not start.
     wereAlreadyOpen = await tabNames();
+    // Only the dispatched pointer is ever on the strip (#3521, the file's comment).
+    await fenceRealPointer(true);
     was = await browser.getWindowSize();
     await windowIs(1280, 800);
     // **Each tab is waited for by itself, and by its name.** The pane in front already shows
@@ -465,6 +606,8 @@ describe("the chip a session's tab wears for its tasks", () => {
       }
     };
     await tried(() => pretend(asker, []));
+    await tried(() => fenceRealPointer(false));
+    await tried(() => unhear());
     await tried(() => browser.keys("Escape"));
     await tried(() => browser.setWindowSize(was.width, was.height));
     await tried(() => endChatsStartedHere(started));
@@ -536,44 +679,91 @@ describe("the chip a session's tab wears for its tasks", () => {
     // the engine finds the pointer on the new chip, and nobody's hand moved.
     await pretend(asker, ["working"]);
     await untilChip(mine[0], true);
-    const parked = await browser.execute((strip: string) => {
-      const counts = document.querySelector<HTMLElement>(`${strip} .tab-tasks-counts`);
-      if (!counts) return false;
-      const at = counts.getBoundingClientRect();
-      const here = {
-        bubbles: true,
-        cancelable: true,
-        pointerId: 1,
-        pointerType: "mouse",
-        isPrimary: true,
-        clientX: at.left + at.width / 2,
-        clientY: at.top + at.height / 2,
-      };
-      counts.dispatchEvent(new PointerEvent("pointerover", { ...here, relatedTarget: null }));
-      // The same point again, as an engine says "still here" after a layout.
-      counts.dispatchEvent(new PointerEvent("pointermove", here));
-      counts.dispatchEvent(new PointerEvent("pointermove", here));
-      return true;
-    }, STRIP);
-    expect(parked).toBe(true);
+    // What the fence stopped before this case is the cases' before it.
+    await fenceRealPointer(true);
+    const parked = await browser.execute(
+      (strip: string, key: string, kept: number) => {
+        const counts = document.querySelector<HTMLElement>(`${strip} .tab-tasks-counts`);
+        if (!counts) return false;
+        const at = counts.getBoundingClientRect();
+        const here = {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 1,
+          pointerType: "mouse",
+          isPrimary: true,
+          clientX: at.left + at.width / 2,
+          clientY: at.top + at.height / 2,
+        };
+        // The last pointer events the counts hear from here, for a failure to say which moved
+        // them; `off` stops hearing them, as the case ends.
+        const heard: string[] = [];
+        const hear = (event: Event) => {
+          const one = event as PointerEvent;
+          heard.push(
+            `${one.isTrusted ? "the engine's" : "dispatched"} ${one.type} at ${one.clientX},${one.clientY}`,
+          );
+          if (heard.length > kept) heard.shift();
+        };
+        const types = ["pointerover", "pointermove", "pointerout"];
+        for (const type of types) counts.addEventListener(type, hear);
+        const off = () => {
+          for (const type of types) counts.removeEventListener(type, hear);
+        };
+        (window as unknown as Record<string, unknown>)[key] = { heard, off };
+        counts.dispatchEvent(new PointerEvent("pointerover", { ...here, relatedTarget: null }));
+        // The same point again, as an engine says "still here" after a layout.
+        counts.dispatchEvent(new PointerEvent("pointermove", here));
+        counts.dispatchEvent(new PointerEvent("pointermove", here));
+        return true;
+      },
+      STRIP,
+      HEARD,
+      KEPT,
+    );
+    try {
+      expect(parked).toBe(true);
 
-    await browser.pause(1_200);
-    expect(await menus()).toBe(0);
+      await browser.pause(1_200);
+      if ((await menus()) !== 0) {
+        // Which pointer moved it (#3521): what the counts heard, and what the fence stopped.
+        const heard = await browser.execute(
+          (key: string) =>
+            (window as unknown as Record<string, { heard?: string[] } | undefined>)[key]?.heard ??
+            [],
+          HEARD,
+        );
+        throw new Error(
+          `a menu opened under a pointer parked 1.2 s; the counts heard ${JSON.stringify(heard)}; ` +
+            `the fence stopped ${JSON.stringify(await stoppedByFence())}`,
+        );
+      }
+    } finally {
+      await unhear();
+    }
   });
 
   it("opens the menu once the pointer has rested on the chip, and closes it once it has gone", async () => {
     await pretend(asker, ["working", "failed", "done"]);
     await untilChip(mine[0], true);
 
-    expect(await pointer(mine[0], "on")).toBe(true);
-    // Not at once: a third of the way into the rest there is still no menu.
-    await browser.pause(110);
-    expect(await menus()).toBe(0);
-    await browser.waitUntil(async () => (await menus()) === 1, {
-      timeout: 5_000,
-      interval: 50,
-      timeoutMsg: "resting on the chip opened no menu",
-    });
+    try {
+      expect(await watchForMenu()).toBe(false);
+      expect(await pointer(mine[0], "on")).toBe(true);
+      await browser.waitUntil(async () => (await menus()) === 1, {
+        timeout: 5_000,
+        interval: 50,
+        timeoutMsg: "resting on the chip opened no menu",
+      });
+      // Not at once: the menu was drawn no sooner than a whole rest after the pointer came, on
+      // the page's clock, however long the runner took to look (#3660). 2 ms under, for the
+      // clock's coarsening.
+      const took = await restTook();
+      if (typeof took === "string") throw new Error(`the rest was not timed: ${took}`);
+      check("the menu opened before the pointer had rested, ms", took, "atLeast", REST_MS - 2);
+    } finally {
+      await unwatch();
+    }
 
     const seen = await browser.execute(() => {
       const menu = document.querySelector<HTMLElement>('.tasks-menu[data-part="root"]');

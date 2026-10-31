@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  atAPause,
   backSaid,
   failedTasksOf,
   childrenOf,
@@ -13,10 +14,13 @@ import {
   taskFailedSaid,
   needsOf,
   nothingKnown,
+  inItsTurn,
+  ownWorkOf,
   quietOnes,
   refusalsOf,
   reportsTo,
   stateOf,
+  turnStateOf,
   underneath,
   waitsOnItsPrompt,
 } from "./chatState";
@@ -500,5 +504,45 @@ describe("a chat stopped on its prompt (#1601)", () => {
     const older = doing(5, "running");
     const newer = asks(5);
     expect(waitsOnItsPrompt(moved(moved(nothingKnown, newer), older), 5)).toBe(true);
+  });
+});
+
+describe("a chat waiting on its own work (#3878)", () => {
+  const monitors = { helpers: 0, workflows: 0, monitors: 2, shells: 0 };
+
+  it("knows what it waits on from its newest snapshot, and forgets it when the wait ends", () => {
+    const waiting = moved(nothingKnown, { ...doing(3, "waiting"), own_work: monitors });
+    expect(ownWorkOf(waiting, 3)).toEqual(monitors);
+    expect(ownWorkOf(waiting, 4)).toBeUndefined();
+    expect(waiting.needsYou).toEqual([]);
+
+    const woke = moved(waiting, doing(3, "running"));
+    expect(ownWorkOf(woke, 3)).toBeUndefined();
+  });
+
+  it("is in its turn still, as a restart or a move owed it counts it (#3887)", () => {
+    const waiting = moved(nothingKnown, { ...doing(3, "waiting"), own_work: monitors });
+    expect(inItsTurn(waiting, 3)).toBe(true);
+    expect(inItsTurn(moved(nothingKnown, doing(3, "running")), 3)).toBe(true);
+    expect(inItsTurn(moved(nothingKnown, doing(3, "waiting")), 3)).toBe(false);
+    expect(inItsTurn(nothingKnown, 3)).toBe(false);
+    // So it is no pause, and reads as mid-turn to what waits for one.
+    expect(atAPause(waiting, 3)).toBe(false);
+    expect(atAPause(moved(nothingKnown, doing(3, "waiting")), 3)).toBe(true);
+    expect(atAPause(nothingKnown, 3)).toBe(false);
+    expect(turnStateOf(waiting, 3)).toBe("running");
+    expect(turnStateOf(moved(nothingKnown, doing(3, "done")), 3)).toBe("done");
+  });
+
+  it("keeps the same map when a move says the same wait again", () => {
+    const before = moved(nothingKnown, { ...doing(3, "waiting"), own_work: monitors });
+    const after = moved(before, { ...doing(3, "waiting"), own_work: { ...monitors } });
+    expect(after.ownWork).toBe(before.ownWork);
+  });
+
+  it("does not let an older snapshot bring back a wait that has ended", () => {
+    const older = { ...doing(3, "waiting"), own_work: monitors };
+    const newer = doing(3, "waiting", [3]);
+    expect(ownWorkOf(moved(moved(nothingKnown, newer), older), 3)).toBeUndefined();
   });
 });

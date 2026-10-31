@@ -12,6 +12,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  conflicted,
   dropReason,
   fixesMain,
   parseArgs,
@@ -20,6 +21,7 @@ import {
   refusal,
   requiredNames,
   sortChecks,
+  unposted,
 } from "./land.mjs";
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "land.mjs");
@@ -35,7 +37,8 @@ const ENQUEUED_AT = "2026-10-27T12:00:00Z";
 //
 // A reply is what the API answers, whole. When the call passes `--jq`, the stand-in applies it,
 // as gh does, so the paths the script reads are tested too; it knows only plain paths
-// (`.a.b`) and fails on anything else, rather than guess.
+// (`.a.b`) and fails on anything else, rather than guess. With `--paginate --slurp`, it answers
+// the reply's `pages`, or its `out` as the one page, wrapped in an array, as gh does.
 const FAKE_GH = `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
@@ -47,7 +50,7 @@ if (!rule) { process.stderr.write("stand-in gh has no answer for: " + line); pro
 const reply = rule.replies[Math.min(rule.used ?? 0, rule.replies.length - 1)];
 rule.used = (rule.used ?? 0) + 1;
 fs.writeFileSync(process.env.FAKE_GH_STATE, JSON.stringify(state));
-let out = reply.out;
+let out = args.includes("--slurp") ? (reply.pages ?? (reply.out === undefined ? undefined : [reply.out])) : reply.out;
 const jq = args.indexOf("--jq");
 if (jq !== -1 && out !== undefined) {
   const path = args[jq + 1];
@@ -132,6 +135,8 @@ function rules(over = {}) {
     mainCi: { match: "workflows/ci.yml/runs", replies: [{ out: runs([ciRun()]) }] },
     waiting: { match: "status=action_required", replies: [{ out: runs([]) }] },
     rerun: { match: "^run rerun", replies: [{ out: "" }] },
+    // The head's runs, read when only required checks that have not posted are left.
+    headRuns: { match: "head_sha=.*per_page=100", replies: [{ out: runs([]) }] },
     // By default main requires nothing by name, so `gh pr checks --required` alone decides.
     ruleset: {
       match: "^api repos/purlis/purlis/rules/branches/main",
@@ -180,6 +185,7 @@ function land(args, over = {}, env = {}) {
       FAKE_GH_LOG: logPath,
       LAND_POLL_SECONDS: "0",
       LAND_SETTLE_SECONDS: "0",
+      LAND_UNPOSTED_SECONDS: "0",
       ...env,
     },
   });
@@ -326,16 +332,43 @@ test("a drop is read from the newest merge group the pull request was tested in"
     id,
     head_sha: sha,
     head_branch: branch,
+    created_at: "2026-10-27T12:05:00Z",
   });
   const picked = queueRuns(
     [run(1, OTHER), run(5, HEAD), run(6, HEAD), run(9, MAIN, "gh-readonly-queue/main/pr-70-x")],
     "7",
+    ENQUEUED_AT,
   );
   assert.deepEqual(
     picked.map((r) => r.id),
     [5, 6],
   );
   assert.deepEqual(queueRuns([], "7"), []);
+  // A group built before this enqueue is from an earlier time in the queue.
+  const older = { ...run(12, OTHER), created_at: "2026-10-27T11:00:00Z" };
+  assert.deepEqual(queueRuns([older], "7", ENQUEUED_AT), []);
+});
+
+test("a merge conflict is told apart from the other reasons for a drop", () => {
+  for (const reason of ["merge_conflict", "MERGE_CONFLICT", "merge conflict"])
+    assert.equal(conflicted(reason), true, reason);
+  for (const reason of ["the required checks failed", undefined, ""])
+    assert.equal(conflicted(reason), false, String(reason));
+});
+
+test("only required checks that have not posted, with no run going, will not post", () => {
+  const notPosted = (name) => ({ name, state: "not posted yet" });
+  const left = { pending: [notPosted("docs")], failing: [] };
+  assert.deepEqual(unposted(left, []), ["docs"]);
+  // A run waiting on approval reads completed, as the live API answers it.
+  const waitingOnApproval = { status: "completed", conclusion: "action_required" };
+  assert.deepEqual(unposted(left, [{ status: "completed" }, waitingOnApproval]), ["docs"]);
+  // A run still going may post it.
+  for (const status of ["queued", "in_progress", "waiting", "requested", "pending"])
+    assert.deepEqual(unposted(left, [{ status }]), [], status);
+  // So may a posted check still going.
+  assert.deepEqual(unposted({ pending: [check("web", "pending"), notPosted("docs")] }, []), []);
+  assert.deepEqual(unposted({ pending: [] }, []), []);
 });
 
 // Against a stand-in gh.
@@ -490,24 +523,42 @@ test("with --watch, pending checks are waited for, then it lands", () => {
   assert.match(got.stdout, /#7 merged/);
 });
 
-test("runs waiting on approval are rerun, then given a moment, before the checks are read", () => {
+test("a run held for approval is named and never rerun: the tool stops for the operator (#3991)", () => {
+  // A run held for approval is held so a person approves it. The tool reran four such runs on
+  // #3659 and #3871, which skipped that person, and a lane's own rerun of one is refused.
   const waiting = {
     match: "status=action_required",
-    replies: [{ out: runs([{ id: 41, name: "ci", html_url: "https://ci/41" }]) }],
+    replies: [
+      {
+        out: runs([
+          { id: 41, name: "ci", html_url: "https://ci/41" },
+          { id: 42, name: "stories", html_url: "https://ci/42" },
+        ]),
+      },
+    ],
   };
-  const got = land(["7", "--sha", HEAD], { waiting }, { LAND_SETTLE_SECONDS: "1" });
-  assert.equal(got.status, 0, got.stderr);
+  const got = land(["7", "--sha", HEAD, "--watch"], { waiting });
+  assert.equal(got.status, 4, got.stderr);
   const said = lines(got.calls);
-  const rerun = said.indexOf("run rerun 41 --repo purlis/purlis");
-  assert.ok(rerun >= 0);
-  assert.ok(rerun < said.findIndex((line) => line.startsWith("pr checks")));
+  assert.ok(!said.some((line) => line.startsWith("run rerun")), said.join("\n"));
   assert.ok(
     said.some((line) => line.includes(`head_sha=${HEAD}`) && line.includes("action_required")),
   );
-  // The pause after a rerun is what keeps the old, failed check from being read.
-  assert.ok(got.took >= 1000, `took ${got.took}ms`);
-  // With nothing rerun, there is no pause.
-  assert.ok(land(["7", "--sha", HEAD], {}, { LAND_SETTLE_SECONDS: "2" }).took < 2000);
+  // It stops before it reads a check, marks a draft ready or enqueues anything.
+  assert.ok(!said.some((line) => line.startsWith("pr checks")));
+  assert.ok(!said.some((line) => line.startsWith("pr ready")));
+  assert.equal(enqueueCall(got.calls), undefined);
+  // Each held run by its name, id and link, and who approves them.
+  assert.match(got.stderr, /ci 41 https:\/\/ci\/41/);
+  assert.match(got.stderr, /stories 42 https:\/\/ci\/42/);
+  assert.match(got.stderr, /the operator approves them/);
+});
+
+test("with nothing held for approval, nothing is rerun and there is no pause", () => {
+  const got = land(["7", "--sha", HEAD], {}, { LAND_SETTLE_SECONDS: "2" });
+  assert.equal(got.status, 0, got.stderr);
+  assert.ok(!lines(got.calls).some((line) => line.startsWith("run rerun")));
+  assert.ok(got.took < 2000);
 });
 
 test("a required check that has never posted is refused without --watch, naming it", () => {
@@ -544,15 +595,42 @@ test("with none reported yet, each required check is named as not posted", () =>
   assert.match(got.stderr, /docs \(build, links, reachable\): not posted yet/);
 });
 
-test("with --watch, after a rerun it waits until every required check has posted and passed", () => {
-  // #3539: the rerun runs' checks had not posted when the checks were read, so the tool read
-  // nothing pending and enqueued, and GitHub refused: "5 of 9 required status checks are expected".
+test("the rules are read every page, so a required check on a later page counts", () => {
+  const filler = Array.from({ length: 30 }, (_, i) => ({ type: "deletion", ruleset_id: i }));
+  const got = land(["7", "--sha", HEAD], {
+    ruleset: {
+      match: "^api repos/purlis/purlis/rules/branches/main",
+      replies: [{ pages: [filler, rulesFor(["docs (build, links, reachable)"])] }],
+    },
+  });
+  assert.equal(got.status, 1);
+  assert.match(got.stderr, /docs \(build, links, reachable\): not posted yet/);
+  const read = lines(got.calls).find((line) => line.includes("rules/branches/main"));
+  assert.match(read, /--paginate --slurp/);
+});
+
+test("a failed read of main's rules or its protection stops it, enqueueing nothing", () => {
+  // D-3539-3: falling back to the checks that have posted would bring #3539 back.
+  for (const which of ["ruleset", "branch"]) {
+    const match =
+      which === "ruleset"
+        ? "^api repos/purlis/purlis/rules/branches/main"
+        : "^api repos/purlis/purlis/branches/main";
+    const got = land(["7", "--sha", HEAD, "--watch"], {
+      [which]: { match, replies: [{ err: "HTTP 403: Resource not accessible", exit: 1 }] },
+    });
+    assert.equal(got.status, 1, which);
+    assert.match(got.stderr, /failed: HTTP 403: Resource not accessible/, which);
+    assert.equal(enqueueCall(got.calls), undefined, which);
+    assert.ok(!lines(got.calls).some((line) => line.startsWith("pr checks")), which);
+  }
+});
+
+test("with --watch, it waits until every required check has posted and passed", () => {
+  // #3539: a run's checks had not posted when the checks were read, so the tool read nothing
+  // pending and enqueued, and GitHub refused: "5 of 9 required status checks are expected".
   const required = ["rust (fmt, clippy, test)", "stories", "docs (build, links, reachable)"];
   const got = land(["7", "--sha", HEAD, "--watch"], {
-    waiting: {
-      match: "status=action_required",
-      replies: [{ out: runs([{ id: 41, name: "docs", html_url: "https://ci/41" }]) }],
-    },
     ruleset: {
       match: "^api repos/purlis/purlis/rules/branches/main",
       replies: [{ out: rulesFor(["stories"]) }],
@@ -594,7 +672,6 @@ test("with --watch, after a rerun it waits until every required check has posted
     .map((line, i) => (line.startsWith("pr checks") ? i : -1))
     .filter((i) => i >= 0);
   assert.equal(checkReads.length, 4);
-  assert.ok(said.indexOf("run rerun 41 --repo purlis/purlis") < checkReads[0]);
   assert.ok(checkReads[3] < said.findIndex((line) => line.includes("enqueuePullRequest")));
   assert.match(got.stdout, /#7 merged/);
 });
@@ -607,12 +684,113 @@ test("with --watch, a required check that never posts is given up on, named, and
         match: "^api repos/purlis/purlis/branches/main",
         replies: [{ out: branchFor(["recorded behaviour"]) }],
       },
+      // A run of the head still going might yet post it, so the wait goes on to its limit.
+      headRuns: {
+        match: "head_sha=.*per_page=100",
+        replies: [{ out: runs([{ id: 50, status: "in_progress" }]) }],
+      },
     },
     { LAND_CHECKS_FOR_SECONDS: "3" },
   );
   assert.equal(got.status, 1);
   assert.match(got.stderr, /still going after 3 seconds/);
   assert.match(got.stderr, /recorded behaviour: not posted yet/);
+  assert.match(got.stdout, /waiting on required checks not posted yet: recorded behaviour/);
+  assert.equal(enqueueCall(got.calls), undefined);
+});
+
+test("with --watch, a required check nothing is left to post is refused early, named", () => {
+  // A name no workflow defines (a renamed job) never posts: rather than wait the whole limit for
+  // GitHub to refuse, it stops once nothing of the head is still going, a few polls running.
+  const got = land(
+    ["7", "--sha", HEAD, "--watch"],
+    {
+      branch: {
+        match: "^api repos/purlis/purlis/branches/main",
+        replies: [{ out: branchFor(["rust (fmt, clippy, test)", "renamed job"]) }],
+      },
+      checks: {
+        match: "^pr checks 7",
+        replies: [
+          { out: [check("rust (fmt, clippy, test)", "pending")], exit: 8 },
+          { out: [check("rust (fmt, clippy, test)", "pass")] },
+        ],
+      },
+      headRuns: {
+        match: "head_sha=.*per_page=100",
+        replies: [{ out: runs([{ id: 50, status: "completed", conclusion: "success" }]) }],
+      },
+    },
+    // The limit is far off: only the early stop ends this wait.
+    { LAND_CHECKS_FOR_SECONDS: "3600" },
+  );
+  assert.equal(got.status, 1);
+  assert.match(got.stderr, /no run of its head is going to post them:\n {2}renamed job$/m);
+  assert.match(got.stderr, /Running it again is safe/);
+  assert.doesNotMatch(got.stderr, /still going after/);
+  assert.equal(enqueueCall(got.calls), undefined);
+  const said = lines(got.calls);
+  // The runs are not read while a posted check is still going, and it gives up after three polls.
+  assert.equal(
+    said.filter((line) => line.includes("per_page=100") && line.includes("head_sha")).length,
+    3,
+  );
+  assert.equal(said.filter((line) => line.startsWith("pr checks")).length, 4);
+});
+
+// Main requires a check this head will never post, and every run of the head has finished.
+const neverPosts = {
+  branch: {
+    match: "^api repos/purlis/purlis/branches/main",
+    replies: [{ out: branchFor(["rust (fmt, clippy, test)", "renamed job"]) }],
+  },
+  checks: {
+    match: "^pr checks 7",
+    replies: [{ out: [check("rust (fmt, clippy, test)", "pass")] }],
+  },
+  headRuns: {
+    match: "head_sha=.*per_page=100",
+    replies: [{ out: runs([{ id: 50, status: "completed", conclusion: "success" }]) }],
+  },
+};
+
+test("the early refusal says running it again is safe, and waits a while as well as three polls", () => {
+  const got = land(["7", "--sha", HEAD, "--watch"], neverPosts, {
+    LAND_CHECKS_FOR_SECONDS: "3600",
+    LAND_UNPOSTED_SECONDS: "1",
+  });
+  assert.equal(got.status, 1);
+  assert.match(got.stderr, /renamed job/);
+  assert.match(got.stderr, /Running it again is safe/);
+  // Three polls take no time here; the second it must also wait is what holds it.
+  assert.ok(got.took >= 1000, `took ${got.took}ms`);
+  const runReads = lines(got.calls).filter(
+    (line) => line.includes("head_sha") && line.includes("per_page=100"),
+  );
+  assert.ok(runReads.length > 3, `${runReads.length} reads of the runs`);
+});
+
+test("when the head moved off the reviewed sha, the early refusal says so, not a renamed job", () => {
+  // The baselines bot pushes: gh pr checks reads the new head, where nothing has posted, while
+  // the runs read are the reviewed head's, all finished.
+  const got = land(
+    ["7", "--sha", HEAD, "--watch"],
+    {
+      ...neverPosts,
+      view: {
+        match: "^pr view 7 ",
+        replies: [{ out: prOf() }, { out: prOf({ headRefOid: OTHER }) }],
+      },
+    },
+    { LAND_CHECKS_FOR_SECONDS: "3600" },
+  );
+  assert.equal(got.status, 1);
+  assert.match(
+    got.stderr,
+    new RegExp(`head moved to ${OTHER}, off the reviewed ${HEAD}: review it and run again`),
+  );
+  assert.match(got.stderr, /Running it again is safe/);
+  assert.doesNotMatch(got.stderr, /renamed/);
   assert.equal(enqueueCall(got.calls), undefined);
 });
 
@@ -729,7 +907,19 @@ test("a drop from the queue names GitHub's reason and the failing check, from it
     poll: { match: "query=query", replies: [{ out: gone }] },
     groups: {
       match: "event=merge_group",
-      replies: [{ out: runs([{ id: 90, name: "ci", head_sha: OTHER, head_branch: branch }]) }],
+      replies: [
+        {
+          out: runs([
+            {
+              id: 90,
+              name: "ci",
+              head_sha: OTHER,
+              head_branch: branch,
+              created_at: "2026-10-27T12:10:00Z",
+            },
+          ]),
+        },
+      ],
     },
     jobs: {
       match: "runs/90/jobs",
@@ -774,26 +964,83 @@ test("a drop from the queue names GitHub's reason and the failing check, from it
   assert.deepEqual(forbidden(got.calls), []);
 });
 
+const droppedFor = (reason) => ({
+  match: "query=query",
+  replies: [
+    {
+      out: polled({
+        state: "OPEN",
+        mergeQueueEntry: null,
+        timelineItems: { nodes: [{ createdAt: "2026-10-27T12:01:00Z", reason }] },
+      }),
+    },
+  ],
+});
+// A group of #7's from before this enqueue, with a failed job: an earlier time in the queue.
+const olderGroup = {
+  groups: {
+    match: "event=merge_group",
+    replies: [
+      {
+        out: runs([
+          {
+            id: 80,
+            name: "ci",
+            head_sha: OTHER,
+            head_branch: `gh-readonly-queue/main/pr-7-${OTHER}`,
+            created_at: "2026-10-27T11:00:00Z",
+          },
+        ]),
+      },
+    ],
+  },
+  jobs: {
+    match: "runs/80/jobs",
+    replies: [
+      {
+        out: {
+          total_count: 1,
+          jobs: [{ id: 801, name: "e2e", conclusion: "failure", html_url: "https://ci/801" }],
+        },
+      },
+    ],
+  },
+  notes: {
+    match: "check-runs/801/annotations",
+    replies: [
+      {
+        out: [
+          { annotation_level: "failure", path: "old.rs", start_line: 3, message: "stale failure" },
+        ],
+      },
+    ],
+  },
+};
+
 test("a drop with no failed queue run says GitHub's reason is the cause", () => {
   const got = land(["7", "--sha", HEAD, "--watch"], {
-    poll: {
-      match: "query=query",
-      replies: [
-        {
-          out: polled({
-            state: "OPEN",
-            mergeQueueEntry: null,
-            timelineItems: {
-              nodes: [{ createdAt: "2026-10-27T12:01:00Z", reason: "merge conflict" }],
-            },
-          }),
-        },
-      ],
-    },
+    poll: droppedFor("removed by a maintainer"),
+    ...olderGroup,
   });
   assert.equal(got.status, 3);
-  assert.match(got.stderr, /unmerged: merge conflict/);
+  assert.match(got.stderr, /unmerged: removed by a maintainer/);
   assert.match(got.stderr, /no queue run of it failed/);
+  // An older group's failure is not why it left this time.
+  assert.doesNotMatch(got.stderr, /stale failure|e2e/);
+});
+
+test("a drop for a merge conflict says so, and prints no queue run's checks", () => {
+  const got = land(["7", "--sha", HEAD, "--watch"], {
+    poll: droppedFor("merge_conflict"),
+    ...olderGroup,
+  });
+  assert.equal(got.status, 3);
+  assert.match(got.stderr, /left the merge queue unmerged: merge_conflict/);
+  assert.match(got.stderr, /conflicts with main, or with an entry ahead of it/);
+  assert.doesNotMatch(got.stderr, /stale failure|e2e|no queue run of it failed/);
+  // A conflict builds no group, so no run is read for it.
+  assert.ok(!lines(got.calls).some((line) => line.includes("event=merge_group")));
+  assert.deepEqual(forbidden(got.calls), []);
 });
 
 test("a pull request closed while queued is reported", () => {

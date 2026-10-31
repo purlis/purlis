@@ -7,6 +7,54 @@ use std::path::PathBuf;
 
 use crate::profilestore::{Adopted, Folders, MachineProfile};
 
+/// [`super::login_for`], by the harness's own default.
+fn login_for(profile: &Profile, program: &str, provider: Option<&str>) -> Result<Login, String> {
+    super::login_for(profile, program, provider, Way::Asked)
+}
+
+/// **A flow asked for by name is the harness's own word for it**: opencode's `--method` labels on
+/// its ChatGPT plan alone, Codex's `--device-auth`, and none where a harness has no such flow
+/// (#4044).
+#[test]
+fn a_flow_is_asked_for_in_the_harnesss_own_words() {
+    let words = |kind: &str, plan, way| {
+        super::login_for(&profile(kind), "/bin/it", plan, way).map(|login| login.args)
+    };
+
+    assert_eq!(
+        words("opencode", Some("openai"), Way::Browser).unwrap()[2..],
+        [
+            "--provider",
+            "openai",
+            "--method",
+            "ChatGPT Pro/Plus (browser)"
+        ][..]
+    );
+    assert_eq!(
+        words("opencode", Some("openai"), Way::Device).unwrap()[2..],
+        [
+            "--provider",
+            "openai",
+            "--method",
+            "ChatGPT Pro/Plus (headless)"
+        ][..]
+    );
+    assert_eq!(words("codex", None, Way::Browser).unwrap(), ["login"]);
+    assert_eq!(
+        words("codex", None, Way::Device).unwrap(),
+        ["login", "--device-auth"]
+    );
+    assert!(words("claude", None, Way::Device).is_err());
+    assert!(words("opencode", Some("github-copilot"), Way::Device).is_err());
+    // Copilot's own flow is the one purlis drives: asked for by browser, it runs as it is.
+    assert_eq!(
+        words("opencode", Some("github-copilot"), Way::Browser),
+        words("opencode", Some("github-copilot"), Way::Asked)
+    );
+    assert_eq!(Way::named("device"), Some(Way::Device));
+    assert_eq!(Way::named("anything"), None);
+}
+
 /// What a [`Look`] was asked, in order: each program run with its words and folder variables,
 /// and each path whose name was looked for. A `Look` has no way to read a file, so this is
 /// every file purlis touches to tell whether a profile is signed in.
@@ -82,6 +130,7 @@ fn made(kind: &str) -> MachineProfile {
         sign_in: None,
         pinned: None,
         sandbox_only: false,
+        kept_for: None,
         rest: Default::default(),
     }
 }
@@ -253,7 +302,7 @@ fn an_adopted_profile_is_signed_in_by_the_persons_own_sign_in_and_never_asked() 
         variables: Vec::new(),
     });
 
-    let why = login_of(&record, None).expect_err("nothing to sign in");
+    let why = login_of(&record, None, None).expect_err("nothing to sign in");
 
     assert!(why.contains("own sign-in"), "{why}");
 }
@@ -301,7 +350,7 @@ fn the_line_a_shell_runs_sets_the_folders_and_runs_the_program_it_names() {
 
     assert_eq!(
         login.line().unwrap(),
-        "env CLAUDE_CONFIG_DIR=/profiles/work/config /Users/me/.local/bin/claude auth login\n"
+        "/usr/bin/env CLAUDE_CONFIG_DIR=/profiles/work/config /Users/me/.local/bin/claude auth login\n"
     );
 }
 
@@ -318,7 +367,7 @@ fn a_folder_with_a_space_is_one_word_of_the_line() {
 
     assert_eq!(
         login.line().unwrap(),
-        "env 'CODEX_HOME=/Users/my profiles/work/config' /bin/codex login\n"
+        "/usr/bin/env 'CODEX_HOME=/Users/my profiles/work/config' /bin/codex login\n"
     );
 }
 
@@ -426,35 +475,116 @@ fn a_refused_start_leaves_one_wait_until_the_harness_says_it_is_signed_in() {
     assert!(waiting(root).is_empty(), "gone for good");
 }
 
+/// **A harness that cannot tell keeps the Ask** (#4223): the same rule as a pool's. Only signed
+/// in lets a wait go by itself, while the person may still be signing in.
 #[test]
-fn a_watch_after_sign_in_lets_the_wait_go_once_the_harness_says_signed_in() {
-    struct Then(std::sync::atomic::AtomicU32);
-    impl Look for Then {
-        fn status(&self, _: &str, _: &[&str], _: &[(String, String)]) -> Option<i32> {
-            let asked = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Some(if asked < 2 { 1 } else { 0 })
-        }
-        fn is_there(&self, _: &Path) -> bool {
-            false
-        }
-    }
-    let root = Path::new("/projects/watched");
-    let profile = profile_in("codex", "watched");
+fn a_harness_that_cannot_tell_keeps_the_wait() {
+    let root = Path::new("/projects/cannot-tell");
+    let profile = profile_in("codex", "cannot-tell");
     waits_on(root, &profile);
-    let (tell, told) = std::sync::mpsc::channel();
 
-    watch(
-        profile,
-        Then(std::sync::atomic::AtomicU32::new(0)),
-        Duration::from_millis(1),
-        Duration::from_secs(5),
-        move || tell.send(()).unwrap(),
-    )
-    .join()
-    .unwrap();
+    assert_eq!(
+        look_again(&profile, &Recorded::answering(None)),
+        Standing::CannotTell
+    );
+    assert_eq!(waiting(root).len(), 1, "it cannot tell: it still waits");
 
-    told.try_recv().expect("the window was told");
-    assert!(waiting(root).is_empty());
+    assert_eq!(
+        look_again(&profile, &Recorded::answering(Some(0))),
+        Standing::SignedIn
+    );
+    assert!(waiting(root).is_empty(), "signed in, and let go");
+}
+
+/// **Looking again asks the harness**, whatever it said a moment ago: what a watcher does.
+#[test]
+fn looking_again_asks_the_harness_every_time() {
+    let profile = profile_in("codex", "looked-again");
+
+    assert_eq!(
+        look_again(&profile, &Recorded::answering(Some(1))),
+        Standing::SignedOut
+    );
+    assert_eq!(
+        look_again(&profile, &Recorded::answering(Some(0))),
+        Standing::SignedIn
+    );
+}
+
+/// Signed in lets go that profile's waits in every project.
+#[test]
+fn signed_in_lets_go_every_project_s_wait() {
+    let (one, two) = (Path::new("/projects/one"), Path::new("/projects/two"));
+    let profile = profile_in("codex", "everywhere");
+    waits_on(one, &profile);
+    waits_on(two, &profile);
+
+    let mut went = let_go_everywhere(&profile);
+    went.sort();
+
+    assert_eq!(
+        went,
+        [one, two],
+        "it says whose went, for their windows (#4205)"
+    );
+    assert!(waiting(one).is_empty());
+    assert!(waiting(two).is_empty());
+}
+
+/// **Leaving a sign-in lets go only waits older than the moment the shell was last seen open**
+/// (#4203): a start refused after that says the profile waits in the Inbox, and it does.
+#[test]
+fn leaving_a_sign_in_keeps_a_wait_raised_after_the_shell_was_last_seen() {
+    let root = Path::new("/projects/left");
+    let profile = profile_in("codex", "left");
+    waits_on(root, &profile);
+    let last_seen = Instant::now();
+
+    let_go_older(root, "work", last_seen);
+    assert!(waiting(root).is_empty(), "older: it goes");
+    let gone = Instant::now();
+
+    waits_on(root, &profile);
+    let_go_older(root, "work", gone);
+    assert_eq!(waiting(root).len(), 1, "raised since: it stays");
+    dismiss(root, "work");
+}
+
+/// **A second refusal counts as raised then** (#4203): the usual case, a project whose Ask is why
+/// Sign in was pressed. How long it has waited, as the Inbox says, does not change.
+#[test]
+fn a_start_refused_again_after_the_shell_was_last_seen_keeps_the_wait() {
+    let root = Path::new("/projects/refused-again");
+    let profile = profile_in("codex", "refused-again");
+    waits_on(root, &profile);
+    let since = waiting(root)[0].since;
+    let last_seen = Instant::now();
+
+    waits_on(root, &profile);
+    let_go_older(root, "work", last_seen);
+
+    let waits = waiting(root);
+    assert_eq!(waits.len(), 1);
+    assert_eq!(waits[0].since, since);
+    dismiss(root, "work");
+}
+
+/// **Only a harness that says signed in counts**, for a watcher (#4223).
+#[test]
+fn only_signed_in_counts_as_signed_in_now() {
+    let profile = profile_in("codex", "signed-in-now");
+    for (status, signed_in) in [
+        (Some(0), true),
+        (Some(1), false),
+        (Some(7), false),
+        (None, false),
+    ] {
+        assert_eq!(
+            signed_in_now(&profile, &Recorded::answering(status)),
+            signed_in,
+            "{status:?}"
+        );
+    }
 }
 
 #[test]
@@ -505,4 +635,109 @@ fn the_plans_sign_in_offers_are_the_ones_the_harnesss_declaration_lists() {
     assert!(providers("codex").is_empty());
     let codex = login_for(&profile("codex"), "/bin/codex", None).unwrap();
     assert_eq!(codex.args, ["login"]);
+}
+
+/// A runner's record of the desktop's profile `work` of `kind`, kept for it and pinned.
+fn kept_pinned(kind: &str) -> MachineProfile {
+    MachineProfile {
+        kept_for: Some("01JA0DESKT0P00000000000000".to_owned()),
+        pinned: Some(crate::profilestore::pin::Pinned {
+            version: "2.1.300".to_owned(),
+            at: 1,
+        }),
+        ..made(kind)
+    }
+}
+
+/// **On a runner, Sign in runs the pinned version it installed, not one found on `PATH`**
+/// (#4007): a runner image carries no harness, so the version a chat's start installs is the
+/// one that signs the profile in.
+#[test]
+fn a_runners_sign_in_runs_the_pinned_version_it_installed() {
+    let installed = PathBuf::from("/runner/data/harnesses/claude/2.1.300/claude");
+
+    let login = login_of(&kept_pinned("claude"), None, Some(&installed)).expect("a sign-in");
+
+    assert_eq!(login.program, installed.display().to_string());
+    assert_eq!(login.args, ["auth", "login"]);
+    assert!(
+        login
+            .env
+            .iter()
+            .any(|(n, v)| n == "CLAUDE_CONFIG_DIR" && v == "/profiles/work/config"),
+        "{:?}",
+        login.env
+    );
+}
+
+/// **Signing out is the harness's own** (#4043), by the version it signed in with, in the
+/// profile's folder.
+#[test]
+fn a_runners_sign_out_is_its_harnesss_own_by_the_pinned_version() {
+    let installed = PathBuf::from("/runner/data/harnesses/claude/2.1.300/claude");
+
+    let claude = logout_of(&kept_pinned("claude"), Some(&installed)).expect("a sign-out");
+    let codex = logout_of(&kept_pinned("codex"), Some(&installed)).expect("a sign-out");
+
+    assert_eq!(claude.program, installed.display().to_string());
+    assert_eq!(claude.args, ["auth", "logout"]);
+    assert_eq!(codex.args, ["logout"]);
+    assert!(
+        claude.env.iter().any(|(n, _)| n == "CLAUDE_CONFIG_DIR"),
+        "{:?}",
+        claude.env
+    );
+}
+
+/// **opencode's sign-out asks which in its own terminal**, so purlis runs none.
+#[test]
+fn a_harness_with_no_plain_sign_out_is_refused_in_words() {
+    let why = logout_of(&kept_pinned("opencode"), Some(Path::new("/bin/opencode")))
+        .expect_err("no sign-out");
+
+    assert!(why.contains("signed nothing out"), "{why}");
+}
+
+/// A machine that answers every status with 0, and installs `pinned` as a runner's pinned
+/// version: the program each status was asked of, in order.
+struct WithPinned {
+    pinned: Option<PathBuf>,
+    programs: RefCell<Vec<String>>,
+}
+
+impl Look for WithPinned {
+    fn status(&self, program: &str, _: &[&str], _: &[(String, String)]) -> Option<i32> {
+        self.programs.borrow_mut().push(program.to_owned());
+        Some(0)
+    }
+    fn is_there(&self, _: &Path) -> bool {
+        false
+    }
+    fn pinned_program(&self, _: &MachineProfile) -> Option<PathBuf> {
+        self.pinned.clone()
+    }
+}
+
+/// **On a runner, whether a profile is signed in is asked of its pinned version** (#4007), and
+/// of the harness on `PATH` where none is installed for it.
+#[test]
+fn a_runners_standing_is_asked_of_its_pinned_version_where_it_is_installed() {
+    let installed = PathBuf::from("/runner/data/harnesses/claude/2.1.300/claude");
+    let mut record = kept_pinned("claude");
+    record.folders.config = PathBuf::from("/profiles/pinned-standing/config");
+    let pinned = WithPinned {
+        pinned: Some(installed.clone()),
+        programs: RefCell::new(Vec::new()),
+    };
+    let unpinned = WithPinned {
+        pinned: None,
+        programs: RefCell::new(Vec::new()),
+    };
+
+    assert_eq!(standing_of(&record, &pinned), Some(Standing::SignedIn));
+    forget_of(&record);
+    assert_eq!(standing_of(&record, &unpinned), Some(Standing::SignedIn));
+
+    assert_eq!(*pinned.programs.borrow(), [installed.display().to_string()]);
+    assert_eq!(*unpinned.programs.borrow(), ["claude"]);
 }

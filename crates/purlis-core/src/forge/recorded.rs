@@ -4,7 +4,7 @@
 //! A transport that answers from recorded exchanges, and fails every request nobody recorded
 //! (ADR 0070 §7, the recorded run).
 //!
-//! The contract suite (`tests/forge_contract.rs`) runs each backend operation through it,
+//! The contract suite (`tests/it/forge_contract.rs`) runs each backend operation through it,
 //! once per forge. A recording is a JSON file: the source its answers were taken from, and the
 //! exchanges in the order they are expected.
 //!

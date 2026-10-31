@@ -16,6 +16,8 @@
 //!   purlis's, which its program loads beside purlis's, so a chat may use either.
 //! - **Tools this machine lacks** (decision 30): a program a `` !`command` `` in its text or one
 //!   of its scripts calls that this machine does not have. No requirement system: a warning.
+//! - **Scripts it lacks** (#3780): a `scripts/<path>` its text names that its folder does not
+//!   have, where its folder is there to look in.
 //!
 //! Every lint here is pure: the caller hands it the skill's files and what it may check them
 //! against, and nothing here reads a disk.
@@ -62,10 +64,37 @@ pub enum Lint {
     BuiltInName,
     /// A program it calls that this machine does not have, and where it calls it.
     Missing { tool: String, place: Place },
+    /// A script its text names, by its path inside the folder, that its folder does not have
+    /// (#3780): a chat told to run it finds none.
+    NoSuchScript(String),
+    /// This many of its files were not read for the lint (#3459), past the most bytes one lint
+    /// reads ([`MOST_LINT_BYTES`]), or one list reads for every skill it lints
+    /// ([`MOST_LIST_BYTES`]): nothing it says of them is checked.
+    FilesUnread { files: usize, past: ReadBudget },
     /// What another lint said, a line of its own words, and whose lint it is: an extension that
     /// declares `skill-lint` (ADR 0101). Always a warning: a lint of a third party's never stops
     /// a save.
     Said { by: String, says: String },
+}
+
+/// **The most bytes of a skill's other files one lint reads** (#3459): its scripts and notes,
+/// each of at most [`crate::MOST_BYTES`]. A skill's folder holds up to 200 files, so without it
+/// one lint could read some 50 MiB.
+pub const MOST_LINT_BYTES: u64 = 1 << 20;
+
+/// **The most bytes of skills' other files one list reads for every skill it lints** (#3459):
+/// the studio lints each skill of a clone, up to 2000 to a folder, so a clone of many skills
+/// costs no more than this. The plane's own skills have as much again of their own, so what a
+/// clone holds never leaves them unread.
+pub const MOST_LIST_BYTES: u64 = 16 << 20;
+
+/// Which budget of bytes left a skill's files unread ([`Lint::FilesUnread`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadBudget {
+    /// One lint's, [`MOST_LINT_BYTES`].
+    Lint,
+    /// One list's, [`MOST_LIST_BYTES`].
+    List,
 }
 
 /// Where a skill calls a program.
@@ -154,6 +183,26 @@ impl Finding {
                     Place::Script(path) => path,
                 }
             ),
+            Lint::NoSuchScript(path) => format!(
+                "it names {path}, which its folder doesn't have: a chat told to run it finds none"
+            ),
+            Lint::FilesUnread { files, past } => format!(
+                "{} not read for this lint: purlis reads at most {}",
+                if *files == 1 {
+                    "1 of its files was".to_owned()
+                } else {
+                    format!("{files} of its files were")
+                },
+                match past {
+                    ReadBudget::Lint => {
+                        format!("{} MiB of one skill's files", MOST_LINT_BYTES >> 20)
+                    }
+                    ReadBudget::List => format!(
+                        "{} MiB of files for all the skills in one list",
+                        MOST_LIST_BYTES >> 20
+                    ),
+                }
+            ),
         })
     }
 }
@@ -173,6 +222,9 @@ pub struct SkillFiles<'a> {
     /// The plugin a harness skill comes in, which the harness knows it by the name of
     /// (`<plugin>:<name>`), or `None` for any other skill.
     pub plugin: Option<&'a str>,
+    /// Every file of its folder but its `SKILL.md`, by its path inside it, text or not, where
+    /// its folder was read; `None` for a text with no folder yet, which names no script it lacks.
+    pub listed: Option<&'a [String]>,
 }
 
 /// **A lint of a skill's files** (the SkillLint capability, ADR 0101): what the live lint asks, of
@@ -181,6 +233,14 @@ pub struct SkillFiles<'a> {
 pub trait SkillLint {
     /// Everything it finds in `skill`, in the order a person reads it.
     fn findings(&self, skill: &SkillFiles<'_>) -> Vec<Finding>;
+
+    /// **Everything it finds in each of `skills`**, one answer per skill in their order: each
+    /// one's [`Self::findings`]. A lint that answers many skills at once overrides it, as an
+    /// extension's lint asked in a studio list does (#4195): one question, so one start of its
+    /// program, for a whole list.
+    fn findings_of_each(&self, skills: &[SkillFiles<'_>]) -> Vec<Vec<Finding>> {
+        skills.iter().map(|skill| self.findings(skill)).collect()
+    }
 }
 
 /// The shortest description that can tell a chat when to use a skill.
@@ -232,6 +292,7 @@ impl SkillLint for BuiltInLints<'_> {
         out.extend(keys(skill));
         out.extend(references(skill, self));
         out.extend(tools_missing(skill, self.has));
+        out.extend(scripts_missing(skill));
         out
     }
 }
@@ -355,6 +416,66 @@ fn tools_missing(skill: &SkillFiles<'_>, has: &dyn Fn(&str) -> bool) -> Vec<Find
         if !called.is_empty() {
             said(called, Place::Script(path.clone()));
         }
+    }
+    out
+}
+
+/// The folder a skill keeps the scripts its steps run in, by the Agent Skills layout.
+const SCRIPTS: &str = "scripts/";
+
+/// **Each script the skill's text names that its folder does not have**, once each (#3780): a
+/// `scripts/<path>` that is neither a file of its folder nor a folder holding one. Nothing where
+/// its folder was not listed.
+fn scripts_missing(skill: &SkillFiles<'_>) -> Vec<Finding> {
+    let Some(listed) = skill.listed else {
+        return Vec::new();
+    };
+    let has = |path: &str| {
+        listed.iter().any(|one| {
+            one.strip_prefix(path)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+        })
+    };
+    let mut said: Vec<String> = Vec::new();
+    for path in scripts_named(skill.text) {
+        if !has(&path) && !said.contains(&path) {
+            said.push(path);
+        }
+    }
+    said.into_iter()
+        .map(|path| warns(Lint::NoSuchScript(path)))
+        .collect()
+}
+
+/// Every `scripts/<path>` `text` names, as written: at the start of a path or after `./`, never
+/// inside another path or a link, never a glob or a path built from a variable, and never one
+/// that climbs out with `..`. A full stop or a `/` it ends with is the sentence's, or says a
+/// folder.
+fn scripts_named(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for (at, _) in text.match_indices(SCRIPTS) {
+        let before = &text[..at];
+        let before = before.strip_suffix("./").unwrap_or(before);
+        if before
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric() || "_-./:~$\\".contains(c))
+        {
+            continue;
+        }
+        let rest = &text[at..];
+        let end = rest
+            .find(|c: char| !(c.is_alphanumeric() || "._/-+@=".contains(c)))
+            .unwrap_or(rest.len());
+        if rest[end..].starts_with(|c: char| "*?{[<$%".contains(c)) {
+            continue;
+        }
+        let path = rest[..end].trim_end_matches(['.', '/']);
+        let inside = path.strip_prefix(SCRIPTS).unwrap_or_default();
+        if inside.is_empty() || inside.split('/').any(|part| part == "..") {
+            continue;
+        }
+        out.push(path.to_owned());
     }
     out
 }

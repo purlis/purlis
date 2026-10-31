@@ -27,7 +27,7 @@
 <div id="_r_0_" aria-label="Show only" role="group" data-scope="checkbox-group" data-roving="">
 <label data-scope="checkbox" data-part="root" data-variant="chip" data-react-aria-pressable="true" class="react-aria-Checkbox" data-rac="">
 <span style="border: 0px; clip: rect(0px); clip-path: inset(50%); height: 1px; margin: -1px; overflow: hidden; padding: 0px; position: absolute; width: 1px; white-space: nowrap;">
-<input aria-labelledby="_r_h_-label" data-react-aria-pressable="true" tabindex="0" type="checkbox" title="">
+<input aria-labelledby="_r_h_-label" aria-describedby="_r_h_-count" data-react-aria-pressable="true" tabindex="0" type="checkbox" title="">
 </span>
 <span data-scope="checkbox" data-part="box" aria-hidden="true">
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check" aria-hidden="true" focusable="false" data-scope="checkbox" data-part="tick">
@@ -36,10 +36,11 @@
 </svg>
 </span>
 <span data-scope="checkbox" data-part="label" id="_r_h_-label">needs you</span>
+<span data-scope="checkbox" data-part="count" id="_r_h_-count">1</span>
 </label>
 <label data-scope="checkbox" data-part="root" data-variant="chip" data-react-aria-pressable="true" class="react-aria-Checkbox" data-rac="">
 <span style="border: 0px; clip: rect(0px); clip-path: inset(50%); height: 1px; margin: -1px; overflow: hidden; padding: 0px; position: absolute; width: 1px; white-space: nowrap;">
-<input aria-labelledby="_r_k_-label" data-react-aria-pressable="true" tabindex="-1" type="checkbox" title="">
+<input aria-labelledby="_r_k_-label" aria-describedby="_r_k_-count" data-react-aria-pressable="true" tabindex="-1" type="checkbox" title="">
 </span>
 <span data-scope="checkbox" data-part="box" aria-hidden="true">
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check" aria-hidden="true" focusable="false" data-scope="checkbox" data-part="tick">
@@ -48,10 +49,13 @@
 </svg>
 </span>
 <span data-scope="checkbox" data-part="label" id="_r_k_-label">working</span>
+<span data-scope="checkbox" data-part="count" id="_r_k_-count">7</span>
 </label>
 </div>
 <div data-top-slot="">
 </div>
+</div>
+<div class="hidden-words" role="status" aria-label="Restarts" aria-atomic="false">
 </div>
 <div class="chats-list">
 <ul class="ui-tree" role="tree" aria-label="Chats of this project" tabindex="-1" data-orientation="vertical" style="outline: none;">
@@ -81,8 +85,10 @@
 <span class="ui-row-trail">
 </span>
 </button>
-<button type="button" class="needs-you-mark rolled-up" data-mark="needs-you" data-leads-to="2" tabindex="-1" aria-label="Go to live check of the staging cluster after the release below cancel mid-turn smart-ide, which needs you" data-tooltip-target="">
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-hand" aria-hidden="true">
+<span class="rolled-up-at" aria-hidden="true">
+<button data-mark="needs-you" data-leads-to="2" data-scope="button" data-part="root" data-variant="quiet" data-size="sm" data-icon-only="" class="rolled-up" data-rac="" type="button" tabindex="-1" data-react-aria-pressable="true" aria-label="Go to live check of the staging cluster after the release below cancel mid-turn smart-ide, which needs you" id="react-aria-_r_12_">
+<span data-scope="button" data-part="icon" aria-hidden="true">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-hand" aria-hidden="true" style="width: 1em; height: 1em; color: var(--needs-you-base);">
 <path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2">
 </path>
 <path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2">
@@ -92,7 +98,9 @@
 <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15">
 </path>
 </svg>
+</span>
 </button>
+</span>
 </li>
 <li role="none" data-level="2">
 <button type="button" class="chat ui-row ui-tree-row" role="treeitem" aria-level="2" aria-posinset="1" aria-setsize="1" aria-expanded="true" data-tab="false" data-session="2" tabindex="-1" data-orientation="vertical" data-radix-collection-item="">
@@ -211,6 +219,7 @@
 </span>
 </span>
 <span class="ui-row-trail">
+<span class="chat-time ui-text-meta" aria-hidden="true">10-25</span>
 </span>
 </button>
 </li>
@@ -232,6 +241,7 @@
 </span>
 </span>
 <span class="ui-row-trail">
+<span class="chat-time ui-text-meta" aria-hidden="true">10:42</span>
 </span>
 </button>
 </li>
@@ -258,6 +268,7 @@
 </span>
 <span class="ui-row-trail">
 <span class="stopping ui-text-meta">Stopping…</span>
+<span class="chat-time ui-text-meta" aria-hidden="true">10:42</span>
 </span>
 </button>
 </li>
@@ -283,6 +294,7 @@
 </span>
 </span>
 <span class="ui-row-trail">
+<span class="chat-time ui-text-meta" aria-hidden="true">10:42</span>
 </span>
 </button>
 </li>
@@ -314,6 +326,7 @@
 </span>
 </span>
 <span class="ui-row-trail">
+<span class="chat-time ui-text-meta" aria-hidden="true">now</span>
 </span>
 </button>
 </li>
@@ -339,6 +352,7 @@
 </span>
 </span>
 <span class="ui-row-trail">
+<span class="chat-time ui-text-meta" aria-hidden="true">now</span>
 </span>
 </button>
 </li>
@@ -371,6 +385,7 @@
 <span aria-hidden="true">5</span>
 <span class="sr-only">5 tasks</span>
 </span>
+<span class="chat-time ui-text-meta" aria-hidden="true">10:42</span>
 </span>
 </button>
 </li>
@@ -400,6 +415,7 @@
 </span>
 </span>
 <span class="ui-row-trail">
+<span class="chat-time ui-text-meta" aria-hidden="true">10:42</span>
 </span>
 </button>
 </li>
@@ -424,10 +440,10 @@
 <span class="persona-mark" data-persona="devops" data-mark="initials" data-initials="DE" data-colour="red" style="--accent-base: #b1a4a2; --accent-surface: #312626;" aria-hidden="true" data-tooltip-target="">
 </span>
 </button>
-<button data-scope="button" data-part="root" data-variant="secondary" data-size="sm" class="finished-reopen" data-rac="" type="button" tabindex="0" data-react-aria-pressable="true" aria-label="Reopen live check of the staging cluster after the release" id="react-aria-_r_3k_">
+<button data-scope="button" data-part="root" data-variant="secondary" data-size="sm" class="finished-reopen" data-rac="" type="button" tabindex="0" data-react-aria-pressable="true" aria-label="Reopen live check of the staging cluster after the release" id="react-aria-_r_3m_">
 <span data-scope="button" data-part="label">Reopen</span>
 </button>
-<button data-scope="button" data-part="root" data-variant="secondary" data-size="sm" class="finished-clear" data-rac="" type="button" tabindex="0" data-react-aria-pressable="true" aria-label="Clear live check of the staging cluster after the release" id="react-aria-_r_3p_">
+<button data-scope="button" data-part="root" data-variant="secondary" data-size="sm" class="finished-clear" data-rac="" type="button" tabindex="0" data-react-aria-pressable="true" aria-label="Clear live check of the staging cluster after the release" id="react-aria-_r_3r_">
 <span data-scope="button" data-part="label">Clear</span>
 </button>
 </div>
@@ -449,21 +465,21 @@
 <span class="persona-mark" data-persona="devops" data-mark="initials" data-initials="DE" data-colour="red" style="--accent-base: #b1a4a2; --accent-surface: #312626;" aria-hidden="true" data-tooltip-target="">
 </span>
 </button>
-<button data-scope="button" data-part="root" data-variant="secondary" data-size="sm" class="finished-reopen" data-rac="" type="button" tabindex="0" data-react-aria-pressable="true" aria-label="Reopen a_name_with_no_space_in_it_that_is_far_wider_than_a_sidebar" id="react-aria-_r_44_">
+<button data-scope="button" data-part="root" data-variant="secondary" data-size="sm" class="finished-reopen" data-rac="" type="button" tabindex="0" data-react-aria-pressable="true" aria-label="Reopen a_name_with_no_space_in_it_that_is_far_wider_than_a_sidebar" id="react-aria-_r_46_">
 <span data-scope="button" data-part="label">Reopen</span>
 </button>
-<button data-scope="button" data-part="root" data-variant="secondary" data-size="sm" class="finished-clear" data-rac="" type="button" tabindex="0" data-react-aria-pressable="true" aria-label="Clear a_name_with_no_space_in_it_that_is_far_wider_than_a_sidebar" id="react-aria-_r_49_">
+<button data-scope="button" data-part="root" data-variant="secondary" data-size="sm" class="finished-clear" data-rac="" type="button" tabindex="0" data-react-aria-pressable="true" aria-label="Clear a_name_with_no_space_in_it_that_is_far_wider_than_a_sidebar" id="react-aria-_r_4b_">
 <span data-scope="button" data-part="label">Clear</span>
 </button>
 </div>
 </div>
 <div class="finished-fold">
 <button type="button" class="ui-row ui-tree-row finished-count ui-text-secondary" tabindex="0" aria-expanded="false">
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true" focusable="false" data-scope="disclosure" data-part="twist">
 <path d="m9 18 6-6-6-6">
 </path>
 </svg>Finished (1)</button>
-<button data-scope="button" data-part="root" data-variant="secondary" data-size="sm" class="finished-clear" data-rac="" type="button" tabindex="0" data-react-aria-pressable="true" id="react-aria-_r_4e_">
+<button data-scope="button" data-part="root" data-variant="secondary" data-size="sm" class="finished-clear" data-rac="" type="button" tabindex="0" data-react-aria-pressable="true" id="react-aria-_r_4g_">
 <span data-scope="button" data-part="label">Clear finished</span>
 </button>
 </div>

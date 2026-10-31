@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
+import { drawnWith } from "./cascade.testkit";
 import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
 import type { ChatRow } from "./chatsTree";
 import { TabTasks } from "./TabChip";
@@ -172,8 +173,11 @@ describe("a tab's chip", () => {
     act(() => void vi.advanceTimersByTime(REST_MS * 4));
     expect(menu()).toBeNull();
 
+    expect(counts()).not.toHaveAttribute("data-open");
     fireEvent.click(counts());
     expect(menu()).not.toBeNull();
+    // The family draws the counts open while their menu is (#3524).
+    expect(counts()).toHaveAttribute("data-open", "");
   });
 
   it("opens for a pointer the person moved onto it and then held still", () => {
@@ -427,5 +431,59 @@ describe("what a session's tasks used (#1500)", () => {
     // No tokens line: its tooltip only repeats its name, for a pointer where the name is cut
     // short, and the keyboard's focus opens none.
     expect(tipOf(screen.getByRole("menuitem", { name: /^talk/ }))).toBeNull();
+  });
+});
+
+describe("the chip's pill (#3264, D-3264-3)", () => {
+  /** A tab's chip as `TabTasks` draws it, in its strip: the hand's box, then the counts' pill. */
+  function chip(open: boolean) {
+    const strip = document.createElement("div");
+    strip.className = "tabs";
+    strip.innerHTML = `<div class="tab"><span class="tab-tasks"${open ? " data-open" : ""}>
+      <span class="tab-tasks-mark"><button class="tab-tasks-hand"></button></span>
+      <span class="tab-tasks-pill"><button class="tab-tasks-counts" data-scope="button"
+        data-part="root" data-variant="quiet" data-size="sm"${open ? " data-open" : ""}></button></span>
+    </span></div>`;
+    document.body.append(strip);
+    const [mark, pill] = ["tab-tasks-mark", "tab-tasks-pill"].map(
+      (one) => strip.querySelector(`.${one}`) as HTMLElement,
+    );
+    return { strip, mark, pill };
+  }
+
+  it("is the sunken ground, and the counts draw their open menu from the family (#3524)", () => {
+    const shut = chip(false);
+    expect(drawnWith(shut.pill, "background")).toBe("var(--surface-sunken)");
+    expect(drawnWith(shut.pill, "border-radius")).toBe("var(--radius-full)");
+    // It clips the quiet button's hover fill, and its open one, to its ends.
+    expect(drawnWith(shut.pill, "overflow")).toBe("hidden");
+    const counts = (one: { pill: HTMLElement }) => one.pill.querySelector("button") as HTMLElement;
+    expect(drawnWith(counts(shut), "background")).toBe("transparent");
+    // Open, the pill is as it was, and the button family draws the counts as under the pointer.
+    const open = chip(true);
+    expect(drawnWith(open.pill, "background")).toBe("var(--surface-sunken)");
+    expect(drawnWith(counts(open), "background")).toBe("var(--surface-hover)");
+    expect(drawnWith(counts(open), "color")).toBe("var(--text-primary)");
+    shut.strip.remove();
+    open.strip.remove();
+  });
+
+  it("draws the keyboard's ring on the pill and the hand's box, inside them, as a strip's are", () => {
+    const { strip, mark, pill } = chip(false);
+    for (const box of [pill, mark]) {
+      // The state React Aria writes on the button inside, as the cascade testkit reads it.
+      box.querySelector("button")?.setAttribute("data-cascade-focus", "");
+      expect(drawnWith(box, "outline-offset", { focusVisible: true })).toBe(
+        "var(--focus-ring-inset)",
+      );
+      expect(drawnWith(box, "outline", { focusVisible: true })).toBe(
+        "var(--focus-ring-width) solid var(--focus-ring)",
+      );
+    }
+    // Without the keyboard's focus inside, no ring.
+    for (const box of [pill, mark])
+      box.querySelector("button")?.removeAttribute("data-cascade-focus");
+    expect(drawnWith(pill, "outline")).toBeUndefined();
+    strip.remove();
   });
 });

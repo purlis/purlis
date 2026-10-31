@@ -3,7 +3,7 @@
 
 //! The driver against a stand-in engine that answers DevTools as the real one does, from the
 //! recorded trees of the fixture site's frames page. What only a real engine can show (that the
-//! page really changed) is in `tests/the_fixture_sites_hard_pages_pass.rs`.
+//! page really changed) is in `tests/it/the_fixture_sites_hard_pages_pass.rs`.
 
 use std::collections::HashMap;
 use std::sync::mpsc::{self, SyncSender};
@@ -25,6 +25,8 @@ use crate::ending::{EndedBy, Ending};
 
 mod aim;
 mod drawn;
+mod files;
+mod inspect;
 mod login;
 mod reach;
 mod reading;
@@ -124,6 +126,8 @@ struct Engine {
     reused: Mutex<Vec<(String, i64)>>,
     /// Why its connection closed, as the real one says it (#2745).
     closed: Mutex<Option<Closed>>,
+    /// Its taps (#2028): each one's number, its sessions, and where its messages go.
+    taps: Mutex<Vec<(u64, std::collections::HashSet<String>, crate::cdp::TapSink)>>,
 }
 
 /// A world of purlis's own the stand-in made.
@@ -160,11 +164,34 @@ impl Engine {
                 .opened_at
                 .insert(target.to_owned(), url.to_owned());
         }
-        let _ = super::lock(&self.events).send(Event {
+        let event = Event {
             method: method.to_owned(),
             params,
             session_id: session.map(str::to_owned),
-        });
+        };
+        // A tapped session's word goes to its tap, as the connection hands it (#2028).
+        {
+            let mut taps = super::lock(&self.taps);
+            let gone = (method == "Target.detachedFromTarget")
+                .then(|| event.params["sessionId"].as_str().map(str::to_owned))
+                .flatten();
+            if let Some(tap) = taps.iter_mut().find(|(_, sessions, _)| {
+                session.is_some_and(|s| sessions.contains(s))
+                    || gone.as_ref().is_some_and(|g| sessions.contains(g))
+            }) {
+                if method == "Target.attachedToTarget"
+                    && let Some(under) = event.params["sessionId"].as_str()
+                {
+                    tap.1.insert(under.to_owned());
+                }
+                if let Some(gone) = &gone {
+                    tap.1.remove(gone);
+                }
+                (tap.2)(crate::cdp::Tapped::Event(event));
+                return;
+            }
+        }
+        let _ = super::lock(&self.events).send(event);
     }
 
     /// Says, now, that the engine's own drag started: the word it held back
@@ -661,6 +688,48 @@ impl DevTools for Stand {
     fn dropped_events(&self) -> u64 {
         *super::lock(&self.0.dropped)
     }
+
+    fn tap(&self, session: &str, sink: crate::cdp::TapSink) -> Option<crate::cdp::Tap> {
+        let mut taps = super::lock(&self.0.taps);
+        let number = taps.len() as u64 + 1;
+        taps.push((number, std::iter::once(session.to_owned()).collect(), sink));
+        Some(crate::cdp::Tap::for_a_test(number))
+    }
+
+    fn untap(&self, tap: &crate::cdp::Tap) {
+        super::lock(&self.0.taps).retain(|(number, _, _)| *number != tap.number());
+    }
+
+    /// Answers as the stand-in answers any call, to the tap, under the tap's own id.
+    fn send_tapped(
+        &self,
+        tap: &crate::cdp::Tap,
+        id: u64,
+        method: &str,
+        params: Value,
+        session: &str,
+    ) -> Result<(), CallError> {
+        let sink = super::lock(&self.0.taps)
+            .iter()
+            .find(|(number, sessions, _)| *number == tap.number() && sessions.contains(session))
+            .map(|(_, _, sink)| Arc::clone(sink))
+            .ok_or(CallError::Engine {
+                code: -32001,
+                message: "the session is not this tap's".into(),
+            })?;
+        let sent = Sent {
+            method: method.to_owned(),
+            params,
+            session: Some(session.to_owned()),
+        };
+        super::lock(&self.0.sent).push(sent.clone());
+        let outcome = self
+            .0
+            .answer(&sent)
+            .map_err(|why| json!({ "code": -32000, "message": why.to_string() }));
+        sink(crate::cdp::Tapped::Answer { id, outcome });
+        Ok(())
+    }
 }
 
 fn limits() -> Limits {
@@ -754,6 +823,7 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
         worlds: Mutex::new(Vec::new()),
         reused: Mutex::new(Vec::new()),
         closed: Mutex::new(None),
+        taps: Mutex::new(Vec::new()),
     });
     let browser = Browser::over(Arc::new(Stand(engine.clone())), receiver, limits, judge).unwrap();
     // Set up means both sessions resumed: every frame is known by then.

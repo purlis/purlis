@@ -4,15 +4,15 @@
 /// <reference types="node" />
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { attentionPanels, Panels } from "./Panels";
 import { HeadActions } from "./viewHead";
-import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
+import { ChatsHere, fixedChats, nothingKnown, type State } from "./chatState";
 import { drawnWith } from "./cascade.testkit";
 import { ReadOnlySaid } from "./ReadOnlyLine";
-import { wears } from "./textRoles.testkit";
+import { inherited, wears } from "./textRoles.testkit";
 import { CATALOGUE, type ViewId } from "./regions";
 import { catalogue, catalogued, type Catalogued, type Offer } from "./actions";
 import { noTabs } from "./tabs";
@@ -369,6 +369,10 @@ describe("the right-hand region", () => {
     const alerts = screen.getAllByRole("alert");
     expect(alerts.length).toBeGreaterThan(0);
     for (const alert of alerts) expect(alert).toHaveTextContent("no workspace 'alpha'");
+    // Words that say something is wrong are `danger.text` (#3938, `docs/ui-primitives.md`);
+    // `state.failed` is a state's mark.
+    const line = screen.getByTestId("panels").querySelector("p.trouble");
+    expect(line && inherited(line, "color")).toBe("var(--danger-text)");
   });
 
   it("says the plane is still being read rather than saying there is nothing to do", () => {
@@ -540,8 +544,10 @@ describe("charter's own panels", () => {
     // default persona keeps its star beside the name, and the word is the row's hover.
     draw();
 
-    const rows = within(screen.getByTestId("panel-personas")).getAllByRole("row");
-    const [devops, steward] = rows;
+    // The rows, and not the names of the groups they are under (#3483).
+    const personas = within(screen.getByTestId("panel-personas"));
+    const devops = personas.getByRole("row", { name: "devops" });
+    const steward = personas.getByRole("row", { name: "steward" });
     expect(devops).toHaveTextContent(/^devops$/);
     expect(steward).toHaveTextContent(/^steward$/);
     expect(within(screen.getByTestId("panel-personas")).queryByText(/memories/)).toBeNull();
@@ -861,6 +867,12 @@ describe("a todo's box and a done todo (R131, ADR 0106)", () => {
     const panel = within(screen.getByTestId("panel-todos"));
     const done = panel.getByTestId("panel-row-done/20260301-090000-ship");
     expect(done).toHaveClass("is-checked");
+    // Its words step back to the quiet tier, the meta's, by their class (#3917): a colour App.css
+    // set on them lost to the body role's later layer, and only the strike drew.
+    wears(done.querySelector(".row-text"), "meta", "a done todo's words");
+    expect(drawnWith(done.querySelector(".row-text") as Element, "text-decoration")).toBe(
+      "line-through",
+    );
     expect(panel.getByTestId("panel-row-20260302-091400-review")).not.toHaveClass("is-checked");
     // Under a group of its own, after the days the open ones are under.
     const groups = panel.getAllByRole("rowgroup");
@@ -1221,7 +1233,8 @@ describe("a panel's words, each on its text role (#1920)", () => {
 
     const [empty] = screen.getAllByText("No workspace focused.");
     wears(empty, "secondary", "the empty sentence");
-    expect(drawnWith(empty, "opacity")).toBe("1");
+    // The role's colour is what makes it quiet: no rule fades it (#3790).
+    expect(drawnWith(empty, "opacity")).toBeUndefined();
   });
 });
 
@@ -1442,5 +1455,208 @@ describe("the right side's rows on the frame (#3341)", () => {
     expect(
       screen.getByRole("row", { name: /devops/ }).querySelector(".persona-at-work"),
     ).toBeNull();
+  });
+});
+
+describe("the Personas view's groups (#3483, the prototype's Q1 A)", () => {
+  const personas = personasPanel(["devops", "ops", "release", "steward"], "steward");
+  /** A session record of `persona` in the focused workspace: who has worked here. */
+  const record = (persona: string) => ({
+    path: `workspaces/alpha/sessions/2026-10-27-1000-${persona}.md`,
+    title: `${persona}'s work`,
+    when: "2026-10-27 10:00",
+    persona,
+    harness: null,
+    resumable: false,
+  });
+  const drawn = (
+    bySession: Record<number, State>,
+    workingHere = new Set<string>(),
+    { names, offers = new Map() }: { names?: string[]; offers?: Catalogued } = {},
+  ) => (
+    <ChatsHere.Provider value={fixedChats({ ...nothingKnown, bySession, needsYou: [] })}>
+      <Panels
+        view="personas"
+        workspace="alpha"
+        state={state({
+          panels: {
+            ...PANELS,
+            sessions: [record("devops")],
+            contributed: [names === undefined ? personas : personasPanel(names, "steward")],
+          },
+        })}
+        offers={offers}
+        onPress={() => {}}
+        contributed={[]}
+        shownRow={undefined}
+        onShowRow={() => {}}
+        personaChats={
+          new Map([
+            ["steward", [7]],
+            ["release", [8]],
+          ])
+        }
+        chatPersonasHere={workingHere}
+      />
+    </ChatsHere.Provider>
+  );
+  /** Each group's name and its rows' names, in the order they are drawn. */
+  const groups = () =>
+    screen.getAllByRole("rowgroup").map((group) => ({
+      name: within(group).getByRole("rowheader").firstElementChild?.textContent,
+      count: group.querySelector('[data-part="header"] [data-count]')?.textContent,
+      rows: [...group.querySelectorAll('[data-part="root"] .row-text')].map(
+        (row) => row.textContent,
+      ),
+    }));
+
+  it("draws Working now, In this workspace and On the plane, each with its count", () => {
+    render(drawn({ 7: "running" }, new Set(["ops"])));
+
+    expect(groups()).toEqual([
+      { name: "Working now", count: "1", rows: ["steward"] },
+      // Who has a record here (devops) or a chat at rest here (ops).
+      { name: "In this workspace", count: "2", rows: ["devops", "ops"] },
+      // release's chat is at rest, and not in this workspace.
+      { name: "On the plane", count: "1", rows: ["release"] },
+    ]);
+  });
+
+  it("moves a persona to Working now when one of its chats starts, and back when they rest", () => {
+    const { rerender } = render(drawn({}));
+    expect(groups().map((group) => group.name)).toEqual(["In this workspace", "On the plane"]);
+
+    rerender(drawn({ 8: "running" }));
+    expect(groups()[0]).toEqual({ name: "Working now", count: "1", rows: ["release"] });
+
+    rerender(drawn({ 8: "done" }));
+    expect(groups().map((group) => group.name)).toEqual(["In this workspace", "On the plane"]);
+  });
+
+  describe("held still while the pointer is over the list or the keyboard is in it (#3566)", () => {
+    const list = () => screen.getByTestId("list-personas");
+    const rowOf = (name: string) =>
+      within(list()).getByRole("row", { name: new RegExp(`^${name}`) });
+
+    it("moves no row under the pointer, and moves it once the pointer has left", () => {
+      const { rerender } = render(drawn({}));
+      fireEvent.pointerEnter(list());
+
+      // release's chat starts while the pointer is over the list.
+      rerender(drawn({ 8: "running" }));
+      expect(groups().map((group) => group.name)).toEqual(["In this workspace", "On the plane"]);
+
+      fireEvent.pointerLeave(list());
+      expect(groups()[0]).toEqual({ name: "Working now", count: "1", rows: ["release"] });
+    });
+
+    it("moves no row while the keyboard is in the list, and moves it once the keyboard has left", async () => {
+      const { rerender } = render(drawn({}));
+      act(() => rowOf("devops").focus());
+      await userEvent.keyboard("{ArrowDown}");
+
+      rerender(drawn({ 8: "running" }));
+      expect(groups().map((group) => group.name)).toEqual(["In this workspace", "On the plane"]);
+
+      act(() => (document.activeElement as HTMLElement).blur());
+      expect(groups()[0]).toEqual({ name: "Working now", count: "1", rows: ["release"] });
+    });
+
+    it("waits for both the pointer and the keyboard to leave", async () => {
+      const { rerender } = render(drawn({}));
+      fireEvent.pointerEnter(list());
+      act(() => rowOf("devops").focus());
+      await userEvent.keyboard("{ArrowDown}");
+
+      rerender(drawn({ 8: "running" }));
+      fireEvent.pointerLeave(list());
+      expect(groups().map((group) => group.name)).toEqual(["In this workspace", "On the plane"]);
+
+      act(() => (document.activeElement as HTMLElement).blur());
+      expect(groups()[0].name).toBe("Working now");
+    });
+
+    it("draws another workspace's groups at once, though the pointer is over the list", () => {
+      const { rerender } = render(drawn({}));
+      fireEvent.pointerEnter(list());
+      rerender(
+        <ChatsHere.Provider value={fixedChats({ ...nothingKnown, bySession: {}, needsYou: [] })}>
+          <Panels
+            view="personas"
+            workspace="beta"
+            state={state({ panels: { ...PANELS, sessions: [], contributed: [personas] } })}
+            offers={new Map()}
+            onPress={() => {}}
+            contributed={[]}
+            shownRow={undefined}
+            onShowRow={() => {}}
+            chatPersonasHere={new Set(["ops"])}
+          />
+        </ChatsHere.Provider>,
+      );
+      expect(groups()[0]).toEqual({ name: "In this workspace", count: "1", rows: ["ops"] });
+    });
+
+    it("is not held by the keyboard in its Filter box, which is drawn in the view's top", async () => {
+      const { rerender } = render(drawn({}));
+      const filter = screen.getByRole("searchbox", { name: "Filter Personas" });
+      await userEvent.click(filter);
+      await userEvent.keyboard("d{Backspace}");
+      expect(filter).toHaveFocus();
+
+      rerender(drawn({ 8: "running" }));
+      expect(groups()[0]).toEqual({ name: "Working now", count: "1", rows: ["release"] });
+    });
+
+    it("is held while the keyboard is in a row's menu", async () => {
+      const show: Offer = {
+        id: "persona.show:devops",
+        title: "Show devops",
+        available: true,
+        reason: "",
+        does: { verb: "openProject" },
+      };
+      const offers = new Map([[show.id, show]]);
+      const { rerender } = render(drawn({}, undefined, { offers }));
+      act(() => rowOf("devops").focus());
+      await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+      const menu = await screen.findByRole("menu");
+      await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+
+      rerender(drawn({ 8: "running" }, undefined, { offers }));
+      expect(groups().map((group) => group.name)).toEqual(["In this workspace", "On the plane"]);
+
+      // The menu closed, and the keyboard is no longer in the list: the next draw moves the row.
+      await userEvent.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+      act(() => (document.activeElement as HTMLElement).blur());
+      rerender(drawn({ 8: "running" }, undefined, { offers }));
+      expect(groups()[0].name).toBe("Working now");
+    });
+
+    it("draws a persona added or removed under the hold at once, in the group it has now", () => {
+      const { rerender } = render(drawn({}));
+      fireEvent.pointerEnter(list());
+
+      rerender(drawn({}, new Set(["qa"]), { names: ["devops", "ops", "qa", "steward"] }));
+      expect(groups()).toEqual([
+        // qa came under the hold: drawn at once, in the group it has now.
+        { name: "In this workspace", count: "2", rows: ["devops", "qa"] },
+        { name: "On the plane", count: "2", rows: ["ops", "steward"] },
+      ]);
+      // release was removed, and is gone at once.
+      expect(within(list()).queryByRole("row", { name: /^release/ })).toBeNull();
+    });
+
+    it("lets go when the window is left, as a pointer parked over it sends no leave", () => {
+      const { rerender } = render(drawn({}));
+      fireEvent.pointerEnter(list());
+      rerender(drawn({ 8: "running" }));
+
+      act(() => {
+        window.dispatchEvent(new Event("blur"));
+      });
+      expect(groups()[0].name).toBe("Working now");
+    });
   });
 });

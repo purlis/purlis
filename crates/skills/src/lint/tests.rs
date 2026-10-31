@@ -39,6 +39,7 @@ fn found(text: &str, others: &[(String, String)], handed: bool) -> Vec<Finding> 
         others,
         origin,
         plugin: None,
+        listed: None,
     })
 }
 
@@ -230,6 +231,7 @@ fn a_skill_naming_itself_names_one_there_is_though_the_plane_has_no_skill_of_its
         others: &[],
         origin: crate::Origin::Repo,
         plugin: None,
+        listed: None,
     });
     assert_eq!(
         says(&findings),
@@ -254,6 +256,7 @@ fn a_repo_or_harness_skill_named_like_a_built_in_one_warns_and_a_skill_purlis_ha
             others: &[],
             origin,
             plugin,
+            listed: None,
         });
         findings
             .iter()
@@ -304,6 +307,7 @@ fn on_a_route_that_names_built_in_skills_their_own_only_that_name_warns() {
             others: &[],
             origin: crate::Origin::Repo,
             plugin: None,
+            listed: None,
         })
         .iter()
         .any(|one| one.lint == Lint::BuiltInName)
@@ -316,4 +320,66 @@ fn on_a_route_that_names_built_in_skills_their_own_only_that_name_warns() {
         assert!(warned(route, "secrets"), "{route:?}");
         assert!(!warned(route, "purlis-secrets"), "{route:?}");
     }
+}
+
+/// What the lints say of `text`, a project skill whose folder holds `listed`.
+fn said_with_files(text: &str, listed: Option<&[String]>) -> Vec<Option<String>> {
+    let plane = ["deploy".to_owned()].into();
+    let built_in = std::collections::HashSet::new();
+    lints(&plane, &built_in)
+        .findings(&SkillFiles {
+            name: "deploy",
+            text,
+            others: &[],
+            origin: crate::Origin::Project,
+            plugin: None,
+            listed,
+        })
+        .iter()
+        .map(Finding::shown)
+        .collect()
+}
+
+#[test]
+fn a_script_the_skill_names_and_its_folder_does_not_have_warns_once() {
+    // #3780: the prototype's deploy, whose step 3 runs a script it never shipped.
+    let text = skill(
+        "",
+        "1. Build it.\n2. Run `scripts/build.sh`.\n3. Tag it with ./scripts/tag.sh, then \
+         scripts/tag.sh again.\n",
+    );
+    let listed = ["scripts/build.sh".to_owned(), "notes.md".to_owned()];
+    assert_eq!(
+        said_with_files(&text, Some(&listed)),
+        [Some(
+            "it names scripts/tag.sh, which its folder doesn't have: a chat told to run it \
+             finds none"
+                .to_owned()
+        )]
+    );
+}
+
+#[test]
+fn a_skill_whose_folder_is_not_listed_or_that_names_a_folder_a_glob_or_another_path_is_clean() {
+    let text = skill(
+        "",
+        "Run scripts/helpers, scripts/*.sh, scripts/build-${TARGET}.sh, other/scripts/x.sh \
+         and https://example.com/scripts/y.sh. See scripts/.\n\
+         Then scripts/déploy.sh and scripts/c++-build.sh.\n",
+    );
+    let listed = [
+        "scripts/helpers/a.sh".to_owned(),
+        "scripts/déploy.sh".to_owned(),
+        "scripts/c++-build.sh".to_owned(),
+    ];
+    assert_eq!(
+        said_with_files(&text, Some(&listed)),
+        Vec::<Option<String>>::new()
+    );
+    // A text not yet saved has no folder to check against.
+    let missing = skill("", "Run scripts/tag.sh.\n");
+    assert_eq!(
+        said_with_files(&missing, None),
+        Vec::<Option<String>>::new()
+    );
 }

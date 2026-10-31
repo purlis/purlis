@@ -58,6 +58,37 @@ pub(super) const CARD: Family = Family {
             description: "Its first line, where it has one: whose it is, what it asks.",
             properties: WORDS,
         },
+        Part {
+            name: "facts-label",
+            since: super::NEXT,
+            description: "A fact's label, in the column at the start of a list of facts (#3673).",
+            properties: WORDS,
+        },
+        Part {
+            name: "facts-value",
+            since: super::NEXT,
+            description: "A fact's value, beside its label: words, a badge, a link or a fix.",
+            properties: WORDS,
+        },
+        Part {
+            name: "tile",
+            since: super::NEXT,
+            description: "A totals tile, in a row of them: its edge, corners and the room inside \
+                          it. It has no ground of its own: its words stand on the surface under it.",
+            properties: &[
+                Prop::BorderColour,
+                Prop::BorderWidth,
+                Prop::CornerRadius,
+                Prop::Padding,
+                Prop::Gap,
+            ],
+        },
+        Part {
+            name: "tile-value",
+            since: super::NEXT,
+            description: "A tile's value, a size larger than its label, in figures of one width.",
+            properties: WORDS,
+        },
     ],
     variants: &[
         Variant {
@@ -86,9 +117,12 @@ pub(super) const CARD: Family = Family {
     defaults: card_look,
     states: &[],
     focused: "[data-focus-visible]",
-    words: &[],
+    // A fact's label is in the secondary tier (#3673).
+    words: &[("facts-label", "text.secondary")],
     corner_most: None,
-    around: &[],
+    // Facts and totals stand on a page as often as in a card: each is reached by its own
+    // attributes, in no variant and no state (#3673).
+    around: &["facts-label", "facts-value", "tile", "tile-value"],
     fills: &[],
     under: &[],
 };
@@ -142,6 +176,19 @@ pub(super) const NOTICE: Family = Family {
             description: "Whose it is, before what it says, for a chat that is not on screen.",
             properties: &[Prop::Text, Prop::FontWeight],
         },
+        Part {
+            name: "mark",
+            since: super::NEXT,
+            description: "A card's mark before its title (#3478): the shape that says what kind of \
+                          notice it is, in its colour.",
+            properties: &[Prop::Text],
+        },
+        Part {
+            name: "title",
+            since: super::NEXT,
+            description: "A card's title (#3478), over what it says: its colour, size and weight.",
+            properties: &[Prop::Text, Prop::FontSize, Prop::FontWeight],
+        },
     ],
     variants: &[
         Variant {
@@ -156,6 +203,13 @@ pub(super) const NOTICE: Family = Family {
             description: "Something went wrong. Its waiting edge stays.",
             consent: Some(Consent::Asks),
         },
+        Variant {
+            name: "attention",
+            since: super::NEXT,
+            description: "Nothing went wrong, but the person must decide: a change to review, a \
+                          draft out of date (#3678). Its waiting edge stays.",
+            consent: Some(Consent::Asks),
+        },
     ],
     // A pane's row on the base ground; the Inbox's side and a settings page, base or raised.
     grounds: &["surface.base", "surface.raised"],
@@ -168,20 +222,54 @@ pub(super) const NOTICE: Family = Family {
     defaults: notice_look,
     states: &[],
     focused: "[data-focus-visible]",
-    words: &[],
+    // A card's title in the primary words, read on the card's ground (#3478). Its mark's colour
+    // is its variant's (`notice.css`: success, danger, attention), which one default cannot say,
+    // so it names none: a theme's own mark colour is held as a mark, at 3:1. A card's `under`,
+    // the room its Details open in, is no part: it paints nothing and its words are the
+    // Notice's own.
+    words: &[("title", "text.primary")],
     corner_most: None,
     around: &[],
     fills: &[],
     under: &[],
 };
 
+/// **The ground a Notice's card stands on in `variant`** (#4210), as `notice.css` draws a card
+/// alone: news on the overlay, trouble and attention on their own grounds. A card's title, its
+/// mark and its ways are read on it, where a theme sets no fill of the Notice's own; a Notice's
+/// box, in a pane or alone, stands on the family's default fill instead.
+pub(super) fn notice_card_ground(variant: &str) -> &'static str {
+    match variant {
+        "trouble" => "danger.surface",
+        "attention" => "attention.surface",
+        _ => "surface.overlay",
+    }
+}
+
+/// **The colour a card's mark is drawn in by default in `variant`** (#4210), as `notice.css`
+/// draws it: news in the success colour, trouble and attention in their own words.
+pub(super) fn notice_mark_words(variant: &str) -> &'static str {
+    match variant {
+        "trouble" => "danger.text",
+        "attention" => "attention.text",
+        _ => "state.success",
+    }
+}
+
 /// **A Notice's colours as `app/src/ui/notice/notice.css` draws them**: the raised ground edged in
-/// the waiting colour (purlis speaking, #1647), and trouble's danger ground and words.
+/// the waiting colour (purlis speaking, #1647), trouble's danger ground and words, and
+/// attention's own ground and words (#3678).
 pub(super) fn notice_look(variant: &str, _states: &[State]) -> Look {
     if variant == "trouble" {
         Look {
             fill: "danger.surface",
             text: "danger.text",
+            border: "state.waiting",
+        }
+    } else if variant == "attention" {
+        Look {
+            fill: "attention.surface",
+            text: "attention.text",
             border: "state.waiting",
         }
     } else {

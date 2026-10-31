@@ -443,21 +443,106 @@ async fn a_link_to_a_draining_runner_reaches_its_chats_and_starts_none() {
     };
 
     let old = routed(Scope::LocalUi, a.clone()).await;
-    tokio::time::timeout(PATIENCE, old.relay_to("builds/old"))
-        .await
-        .unwrap()
-        .expect("a draining runner is reached");
+    assert_eq!(
+        tokio::time::timeout(PATIENCE, old.relay_to("builds/old"))
+            .await
+            .unwrap()
+            .expect("a draining runner is reached")
+            .as_deref(),
+        Some("builds/old"),
+        "the window is told the runner its link reached (1.48)"
+    );
     old.list().await.expect("its chats are listed");
     assert!(refused_as_draining(&old.start_program(start()).await));
 
     // Relayed by the pool's name while its runner is the pool's: it starts chats.
     let now = routed(Scope::LocalUi, a).await;
-    tokio::time::timeout(PATIENCE, now.relay_to("builds"))
-        .await
-        .unwrap()
-        .unwrap();
+    assert_eq!(
+        tokio::time::timeout(PATIENCE, now.relay_to("builds"))
+            .await
+            .unwrap()
+            .unwrap()
+            .as_deref(),
+        Some("builds/builds"),
+        "a pool's name is answered with the runner it resolved to"
+    );
     assert!(!refused_as_draining(&now.start_program(start()).await));
     // The pool moves to a new runner: that same link starts no new chat there.
     draining.lock().unwrap().push("builds/builds".to_owned());
     assert!(refused_as_draining(&now.start_program(start()).await));
+}
+
+#[test]
+fn a_runner_is_named_without_the_key_its_link_reports() {
+    assert_eq!(super::runner_named("team/team@abcd"), "team/team");
+    assert_eq!(super::runner_named("builds/builds-1"), "builds/builds-1");
+}
+
+/// A runner's connector whose check finds the runner removed outside purlis (#4149), counting
+/// each time it is asked.
+#[derive(Clone)]
+struct ToAGoneRunner {
+    checks: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl Connector for ToAGoneRunner {
+    type Io = DuplexStream;
+
+    fn connect(&self) -> BoxFuture<'static, std::io::Result<DuplexStream>> {
+        self.checks
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async {
+            Err(std::io::Error::other(hostlink::FarEndGone(
+                "pool builds's runner builds was removed outside purlis".into(),
+            )))
+        })
+    }
+}
+
+/// **A runner removed outside purlis is refused, in plain words, and never linked to in a loop**
+/// (#4149): each command tries the check at most twice, and is refused saying so.
+#[tokio::test]
+async fn a_runner_removed_outside_purlis_is_refused_in_plain_words_and_not_tried_in_a_loop() {
+    let checks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let connector = ToAGoneRunner {
+        checks: Arc::clone(&checks),
+    };
+    let desktop = Arc::new(Kept::new(DESKTOP));
+    let pinned = Kept::new(RUNNER).pinned();
+    let relays: RelaysTo = Arc::new(move |_: &str| {
+        let (connector, desktop, pinned) =
+            (connector.clone(), Arc::clone(&desktop), pinned.clone());
+        Ok((
+            Arc::new(move || {
+                keep_linked(
+                    connector.clone(),
+                    Handshake::THIS_BUILD,
+                    desktop.identity(),
+                    pinned.clone(),
+                    Liveness::default(),
+                )
+            }) as Keep,
+            "builds/builds".to_owned(),
+        ))
+    });
+    let a = Hosting::running_with(Echo, StandIns::default()).relaying_with(relays);
+    let window = routed(Scope::LocalUi, a).await;
+    window.relay_to("builds").await.unwrap();
+
+    for _ in 0..3 {
+        let refused = tokio::time::timeout(PATIENCE, window.list())
+            .await
+            .expect("refused, not left waiting")
+            .unwrap_err();
+        assert_eq!(code(&refused), Some(session::NOT_STARTED), "{refused}");
+        assert!(
+            refused
+                .to_string()
+                .contains("Runner removed outside purlis"),
+            "{refused}"
+        );
+    }
+    // Seen red: with the Down that ended the links not kept, the commands looped on the check.
+    let asked = checks.load(std::sync::atomic::Ordering::SeqCst);
+    assert!(asked <= 7, "the check was asked {asked} times");
 }

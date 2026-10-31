@@ -113,13 +113,22 @@ fn the_tools_are_the_ones_charter_names_and_each_says_what_it_does() {
             "session_record_list",
             "session_record_read",
             "session_record",
+            "worktree_update",
+            "worktree_remove",
             "workspace_vision",
             "workspace_section",
             "change_status",
             "dispatch",
             "dispatch_list",
             "dispatch_read",
+            "dispatch_wait",
+            "dispatch_tell",
+            "dispatch_answer",
+            "dispatch_cancel",
+            "dispatch_close",
             "dispatch_report",
+            "dispatch_note",
+            "dispatch_ask",
             "ask_operator",
         ]
     );
@@ -548,6 +557,7 @@ fn a_dispatch_s_arguments_are_its_name_its_brief_and_a_persona_where_one_is_name
         [
             "brief",
             "in",
+            "long",
             "name",
             "profile",
             "to",
@@ -575,6 +585,18 @@ fn a_dispatch_waits_only_when_told_to_and_for_the_default_unless_told_how_long()
     );
     assert!(dispatch_waits(&args(json!({"wait": "yes"}))).is_err());
     assert!(dispatch_waits(&args(json!({"wait": true, "wait_seconds": -1}))).is_err());
+}
+
+#[test]
+fn a_dispatch_is_long_running_only_when_told_to() {
+    // #3905: one job with one answer is the default.
+    assert_eq!(
+        dispatch_long(&args(json!({"name": "n", "brief": "b"}))),
+        Ok(false)
+    );
+    assert_eq!(dispatch_long(&args(json!({"long": false}))), Ok(false));
+    assert_eq!(dispatch_long(&args(json!({"long": true}))), Ok(true));
+    assert!(dispatch_long(&args(json!({"long": "yes"}))).is_err());
 }
 
 #[test]
@@ -980,6 +1002,132 @@ fn dispatch_read_names_the_task_by_its_chat_number_and_nothing_else() {
     assert_eq!((tool.schema)()["required"], json!(["chat"]));
 }
 
+/// #3786, ruled 2026-10-29: every `purlis dispatch` subcommand has a chat tool, so a chat has
+/// nothing to pipe and nothing for a rider to meet; and each runs without its harness asking,
+/// the one that only waits among the reads and the rest among the dispatch tools.
+#[test]
+fn every_dispatch_subcommand_has_a_tool_a_claude_code_chat_runs_without_asking() {
+    for (tool, reads) in [
+        (DISPATCH_LIST, true),
+        (DISPATCH_READ, true),
+        (DISPATCH_WAIT, true),
+        (DISPATCH_TELL, false),
+        (DISPATCH_ANSWER, false),
+        (DISPATCH_CANCEL, false),
+        (DISPATCH_CLOSE, false),
+        (DISPATCH_REPORT, false),
+        (DISPATCH_NOTE, false),
+        (DISPATCH_ASK, false),
+    ] {
+        let spec = TOOLS
+            .iter()
+            .find(|spec| spec.name == tool)
+            .unwrap_or_else(|| panic!("{tool} is a tool"));
+        assert_eq!(spec.read_only, reads, "{tool}");
+        if reads {
+            assert!(PRE_ALLOWED.contains(&tool), "{tool}");
+        } else {
+            assert!(DISPATCH_TOOLS.contains(&tool), "{tool}");
+        }
+        // Handed to the app, never run here.
+        let said = call(
+            std::path::Path::new("/nowhere"),
+            &crate::active::Place::PlaneRoot,
+            tool,
+            &serde_json::Map::new(),
+            chrono::NaiveDate::from_ymd_opt(2026, 10, 29)
+                .and_then(|day| day.and_hms_opt(12, 0, 0))
+                .expect("a time"),
+        )
+        .expect_err("not run here");
+        assert!(said.contains("purlis's MCP server"), "{tool}: {said}");
+    }
+}
+
+#[test]
+fn a_dispatch_tool_names_its_task_by_number_and_its_text_whole() {
+    let args = |value: Value| value.as_object().cloned().unwrap_or_default();
+    assert_eq!(
+        dispatch_task(&args(json!({"chat": 12})), DISPATCH_CANCEL),
+        Ok(12)
+    );
+    let said = dispatch_task(&args(json!({"chat": "12"})), DISPATCH_CLOSE).expect_err("refused");
+    assert_eq!(
+        said,
+        "dispatch_close needs `chat`: the task's chat, by its number in dispatch_list"
+    );
+    assert_eq!(
+        dispatch_text(
+            &args(json!({"text": "and the logs"})),
+            "text",
+            DISPATCH_TELL
+        ),
+        Ok("and the logs".to_owned())
+    );
+    assert_eq!(
+        dispatch_flag(&args(json!({})), "all", DISPATCH_TELL),
+        Ok(false)
+    );
+    assert_eq!(
+        dispatch_flag(&args(json!({"all": true})), "all", DISPATCH_TELL),
+        Ok(true)
+    );
+    assert!(dispatch_flag(&args(json!({"all": "yes"})), "all", DISPATCH_TELL).is_err());
+    assert_eq!(dispatch_ack(&args(json!({"ack": 7}))), Ok(Some(7)));
+    assert_eq!(dispatch_ack(&args(json!({}))), Ok(None));
+    assert!(dispatch_ack(&args(json!({"ack": -1}))).is_err());
+    let said = dispatch_text(&args(json!({})), "question", DISPATCH_ASK).expect_err("refused");
+    assert_eq!(said, "dispatch_ask needs `question`, as text");
+    assert_eq!(dispatch_wait_seconds(&args(json!({}))), Ok(None));
+    assert_eq!(
+        dispatch_wait_seconds(&args(json!({"wait_seconds": 60}))),
+        Ok(Some(60))
+    );
+    assert!(dispatch_wait_seconds(&args(json!({"wait_seconds": "60"}))).is_err());
+    for (tool, required) in [
+        (DISPATCH_WAIT, json!(["chat"])),
+        // `chat`, or `all` for every task still working (#3904).
+        (DISPATCH_TELL, json!(["text"])),
+        (DISPATCH_ANSWER, json!(["chat", "text"])),
+        (DISPATCH_CANCEL, json!(["chat"])),
+        (DISPATCH_CLOSE, json!(["chat"])),
+        // `text`, or `ack` alone (#3904).
+        (DISPATCH_NOTE, serde_json::Value::Null),
+        (DISPATCH_ASK, json!(["question"])),
+    ] {
+        let spec = TOOLS.iter().find(|spec| spec.name == tool).expect("a tool");
+        assert_eq!((spec.schema)()["required"], required, "{tool}");
+    }
+}
+
+#[test]
+fn the_tools_that_write_only_the_chat_s_own_scope_are_named_and_never_among_the_reads() {
+    // #3829, ruled 2026-10-29: own-scope work runs without the harness asking, and
+    // `ask_operator` is the person's question, asked once by the app. Kept apart from
+    // PRE_ALLOWED, which a grade's chat is served alone (SK-16).
+    assert_eq!(
+        OWN_SCOPE_TOOLS,
+        [
+            "todo_add",
+            "todo_done",
+            "memory_add",
+            "persona_remember",
+            "workspace_section",
+            "workspace_vision",
+            "ask_operator",
+            "worktree_update",
+            "worktree_remove",
+        ]
+    );
+    for name in OWN_SCOPE_TOOLS {
+        assert!(
+            TOOLS.iter().any(|tool| tool.name == name),
+            "{name} is not a tool"
+        );
+        assert!(!PRE_ALLOWED.contains(&name), "{name}");
+    }
+}
+
 #[test]
 fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
     // V79: the pre-allowed tools are the five reads, and `persona_where` beside them
@@ -996,6 +1144,8 @@ fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
             "persona_where",
             "dispatch_list",
             "dispatch_read",
+            // A wait on one of the chat's own tasks (#3786).
+            "dispatch_wait",
             // The theme specimen's pictures (#2330, ADR 0064 amended 2026-10-17).
             "theme_preview",
             // The chat's own skills, read or loaded (SK-13, ADR 0063 amended 2026-10-20).
@@ -1086,4 +1236,85 @@ fn an_acp_session_s_server_is_handed_each_scope_variable_once_with_the_chat_s_va
             {"name": crate::hookwire::TOKEN_ENV, "value": "the-chat-s-own"},
         ])
     );
+}
+
+#[test]
+fn an_update_is_handed_to_the_app_by_the_server_and_never_run_by_call() {
+    // #3831: the app runs it, after judging it, outside the chat's sandbox.
+    let p = tempfile::tempdir().unwrap();
+    let before = snapshot(p.path());
+    let refused = call(
+        p.path(),
+        &in_ws("alpha"),
+        WORKTREE_UPDATE,
+        &serde_json::Map::new(),
+        at(9, 0),
+    )
+    .unwrap_err();
+    assert!(refused.contains("purlis's MCP server"), "{refused}");
+    assert_eq!(snapshot(p.path()), before, "call wrote something");
+}
+
+#[test]
+fn an_update_s_arguments_are_its_step_and_at_a_start_a_base() {
+    use crate::hookwire::UpdateStep;
+    assert_eq!(
+        worktree_update_args(&args(json!({}))),
+        Ok(UpdateStep::Start { base: None })
+    );
+    assert_eq!(
+        worktree_update_args(&args(json!({"step": "start", "base": "main"}))),
+        Ok(UpdateStep::Start {
+            base: Some("main".to_owned())
+        })
+    );
+    assert_eq!(
+        worktree_update_args(&args(json!({"step": "continue"}))),
+        Ok(UpdateStep::Continue)
+    );
+    assert_eq!(
+        worktree_update_args(&args(json!({"step": "abort"}))),
+        Ok(UpdateStep::Abort)
+    );
+    assert!(worktree_update_args(&args(json!({"step": "abort", "base": "main"}))).is_err());
+    assert!(worktree_update_args(&args(json!({"step": "reset"}))).is_err());
+    assert!(worktree_update_args(&args(json!({"base": 3}))).is_err());
+}
+
+#[test]
+fn a_removal_is_handed_to_the_app_by_the_server_and_never_run_by_call() {
+    // #3879: the app removes the folder, only where nothing would be lost.
+    let p = tempfile::tempdir().unwrap();
+    let before = snapshot(p.path());
+    let refused = call(
+        p.path(),
+        &in_ws("alpha"),
+        WORKTREE_REMOVE,
+        &args(json!({"repo": "widget", "piece": "p1"})),
+        at(9, 0),
+    )
+    .unwrap_err();
+    assert!(refused.contains("purlis's MCP server"), "{refused}");
+    assert_eq!(snapshot(p.path()), before, "call wrote something");
+}
+
+#[test]
+fn a_removal_s_arguments_are_a_folder_s_names_and_whether_to_delete_its_branch() {
+    assert_eq!(
+        worktree_remove_args(&args(json!({"repo": "widget", "piece": "p1"}))),
+        Ok(("widget".to_owned(), "p1".to_owned(), false))
+    );
+    assert_eq!(
+        worktree_remove_args(&args(
+            json!({"repo": "widget", "piece": "p1", "delete_branch": true})
+        )),
+        Ok(("widget".to_owned(), "p1".to_owned(), true))
+    );
+    for bad in [
+        json!({"piece": "p1"}),
+        json!({"repo": "widget", "piece": " "}),
+        json!({"repo": "widget", "piece": "p1", "delete_branch": "yes"}),
+    ] {
+        assert!(worktree_remove_args(&args(bad.clone())).is_err(), "{bad}");
+    }
 }

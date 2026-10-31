@@ -87,7 +87,7 @@ The frontmatter is flat `key: value` lines. The keys this version acts on:
 | `description`, `agent-description` | The persona's one-line description: quoted to a chat that runs as it, and shown by `persona show`. `agent-description` is read first. |
 | `icon`, `color` | What the persona is drawn with in the app: one of purlis's icons by name, and a palette colour or `#rrggbb`. |
 | `disallowed-tools` | Tools a chat as this persona is denied. **Honoured on Claude Code**, as deny rules of the chat's own settings. On Codex and opencode purlis cannot deny them, so a chat as this persona is **refused** there, and so is a dispatch to it. |
-| `skills` | The skills the persona declares, which `persona stats` compares with the skills it used. No chat preloads them (see below). |
+| `skills` | The skills a chat as the persona loads beside its own, in any workspace (#2768, behind the Skill studio's flag): `purlis:<name>`, `<plugin>:<name>` or a skill's name. `persona lint` warns of an entry that names nothing, one written `charter:`, and one its chats start without (#2934). `persona stats` compares them with the skills it used. |
 | `dispatch-isolation` | `worktree`: a chat dispatched to this persona works in a worktree of its own, on a branch of its own, when the dispatch names no place (`purlis docs show handoff`, *Where it works*). |
 | `agent-tools`, `memory`, and a `model` that names no profile | **Read by nothing.** Each only fed the sub-agent purlis used to generate — see *Personas are chats, not sub-agents* below. |
 
@@ -339,6 +339,16 @@ server nobody approved is **withheld**, never started without its credential, an
 told at its start which servers it did not get and how they are approved. No credential is
 ever written into the chat's configuration: the server asks the vault when it starts.
 
+**In a sandboxed chat, an approved server's `env` values come from your approval** (#3441).
+Its run starts with each variable its entry's `env` writes out, at the value the approved line
+shows, never the value in the chat's own environment. A value the harness fills in (`${VAR}`,
+`${VAR:-default}`) is not on the line, so the run starts without that variable, and so does a
+variable that makes a program load code or write out its memory (`NODE_OPTIONS`, `DYLD_*` and
+their kind). `approve-mcp` names each one under the server's line. Write the value out in
+`mcp.json` instead, or, if it is a credential, name it under `secrets` so it comes from the
+persona's vault, then approve again. In your own terminal and in a chat the app did not start
+sandboxed, the harness's values reach the server as before.
+
 **A credentialed server that fails as the chat starts is tried once more.** Its `purlis secret
 exec` asks the app for the server's run again, after two seconds, when the first run ended
 before the server answered or the chat was not yet open; the second run is handed what Claude
@@ -442,7 +452,7 @@ changes nothing more.
   | Key | What it did in the generated sub-agent | Now |
   | --- | --- | --- |
   | `agent-tools` | its allow-list of tools | A persona chat has every tool of its harness. A persona that listed no editing tool could not edit files and now can. |
-  | `skills` | preloaded those skills | A persona chat loads a skill when it uses it. `persona stats` still compares the declaration with what was used. |
+  | `skills` | preloaded those skills | Read again (#2768, behind the Skill studio's flag): a chat as the persona loads each skill the list names, in any workspace, and `persona lint` checks each entry (#2934). Not reported by this fix. |
   | `memory` | chose the harness's own memory store | A persona chat has the persona's memory in `personas/<name>/memory/`. |
   | `dispatch-isolation` | started it in its own worktree, and asked before two wrote in one tree | Read again (#1453): a chat dispatched to the persona works in a worktree of its own when the dispatch names no place. Nothing asks before two write in one tree. |
 

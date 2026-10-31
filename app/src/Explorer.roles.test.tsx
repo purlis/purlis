@@ -192,9 +192,9 @@ describe("the Explorer's words, each on its text role", () => {
     const drawn = draw({ workspace: undefined, part: "repos" });
     const empty = drawn.querySelector(".empty");
     wears(empty, "secondary", "the empty sentence");
-    // The role's colour is what makes it quiet: `.empty`'s own dimming is not drawn over it.
-    expect(drawnWith(empty as Element, "opacity")).toBe("1");
-    expect(inherited(empty as Element, "opacity")).toBe("1");
+    // The role's colour is what makes it quiet: no rule fades it (#3790).
+    expect(drawnWith(empty as Element, "opacity")).toBeUndefined();
+    expect(inherited(empty as Element, "opacity")).toBeUndefined();
   });
 
   it("writes no size, weight or colour of words of its own, beside the tints a state gives", () => {

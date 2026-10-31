@@ -354,6 +354,89 @@ fn a_tool_runs_with_an_environment_of_its_own() {
     );
 }
 
+/// A declared `gh` or `glab` reads none of the chat's own gh or glab settings: whatever the chat
+/// wrote under its home and `XDG_*` folders (aliases, extensions, hosts) is never where the run
+/// looks, the variables that name another settings folder, host, pager or browser never reach
+/// it, and what one run writes in its home is gone by the next. No real gh is needed: the run's
+/// environment and home are what either program reads its settings from.
+#[test]
+fn a_declared_gh_or_glab_reads_none_of_the_chats_own_settings() {
+    let project = project();
+    // The chat's own home, in its folder, with gh's and glab's settings written as each reads
+    // them: an alias, an extension and a host.
+    let chats_home = project.path().join("work/home");
+    for (below, file, text) in [
+        (".config/gh", "config.yml", "aliases:\n  x: '!echo chats'\n"),
+        (
+            ".config/gh",
+            "hosts.yml",
+            "chats.example.com:\n  user: chat\n",
+        ),
+        (
+            ".local/share/gh/extensions/gh-x",
+            "gh-x",
+            "#!/bin/sh\necho chats\n",
+        ),
+        (
+            ".config/glab-cli",
+            "config.yml",
+            "aliases:\n  x: '!echo chats'\n",
+        ),
+        (".config/glab-cli", "aliases.yml", "x: '!echo chats'\n"),
+    ] {
+        let dir = chats_home.join(below);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(file), text).unwrap();
+    }
+    let at = |below: &str| chats_home.join(below).display().to_string();
+    let homes = [
+        ("HOME", at("")),
+        ("XDG_CONFIG_HOME", at(".config")),
+        ("XDG_DATA_HOME", at(".local/share")),
+        ("XDG_STATE_HOME", at(".local/state")),
+        ("XDG_CACHE_HOME", at(".cache")),
+    ];
+    let chats = [
+        ("GH_CONFIG_DIR", at(".config/gh")),
+        ("GLAB_CONFIG_DIR", at(".config/glab-cli")),
+        ("GH_HOST", "chats.example.com".to_owned()),
+        ("GITLAB_HOST", "chats.example.com".to_owned()),
+        ("GH_REPO", "chat/repo".to_owned()),
+        ("GH_PAGER", at("pager")),
+        ("GLAB_PAGER", at("pager")),
+        ("PAGER", at("pager")),
+        ("GH_BROWSER", at("browser")),
+        ("BROWSER", at("browser")),
+        ("GIT_CONFIG_GLOBAL", at(".gitconfig")),
+    ];
+    let named = chats
+        .iter()
+        .map(|(name, _)| format!("[${{{name}:-}}]"))
+        .collect::<String>();
+    // Every place gh and glab look for their settings, as the run's own variables say.
+    let looked = r#"for f in "$XDG_CONFIG_HOME/gh/config.yml" "$XDG_CONFIG_HOME/gh/hosts.yml" "$XDG_DATA_HOME/gh/extensions/gh-x" "$HOME/.config/gh/config.yml" "$HOME/.local/share/gh/extensions/gh-x" "$XDG_CONFIG_HOME/glab-cli/config.yml" "$XDG_CONFIG_HOME/glab-cli/aliases.yml" "$HOME/.config/glab-cli/config.yml" "$HOME/Library/Application Support/glab-cli/config.yml"; do test -e "$f" && echo "seen $f"; done"#;
+    let own = r#"case "$HOME" in "$TMPDIR") echo home ;; esac; for d in "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_CACHE_HOME"; do case "$d" in "$TMPDIR"/*) echo own ;; esac; done"#;
+    // A run writes an alias and an extension in its own home; the next run sees neither.
+    let writes = r#"mkdir -p "$XDG_CONFIG_HOME/gh" "$XDG_DATA_HOME/gh/extensions/gh-x" "$XDG_CONFIG_HOME/glab-cli" && echo "aliases: {}" > "$XDG_CONFIG_HOME/gh/config.yml" && echo x > "$XDG_DATA_HOME/gh/extensions/gh-x/gh-x" && echo "x: y" > "$XDG_CONFIG_HOME/glab-cli/aliases.yml" && echo wrote"#;
+    let run = |then: &str| {
+        let mut want = wanted(
+            project.path(),
+            "team",
+            sh(&format!(r#"echo "{named}"; {own}; {looked}; {then}"#)),
+        );
+        want.env = vec!["X=TOKEN".into()];
+        for (name, value) in homes.iter().chain(&chats) {
+            want.environment.push(((*name).into(), value.into()));
+        }
+        let frames = served(&asker(project.path(), Some("devops")), want);
+        assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+        stdout(&frames)
+    };
+    let expected = format!("{}\nhome\n{}", "[]".repeat(chats.len()), "own\n".repeat(4));
+    assert_eq!(run(writes), format!("{expected}wrote\n"));
+    assert_eq!(run("true"), expected);
+}
+
 /// #2047: an approved credentialed server's line starts from what every brokered run does and
 /// the variables its approved entry sets. A variable the chat sets that names a package
 /// manager's settings, the interpreter a launcher picks or git's global settings never reaches
@@ -421,6 +504,91 @@ fn an_approved_servers_run_starts_from_its_entrys_variables_and_no_other_of_the_
             "[]".repeat(risky.len())
         )
     );
+}
+
+/// A persona `devops` (vault `team`) declaring one credentialed server, `server`, running
+/// `script` with `env` as its entry's `env`, approved on this machine.
+fn an_approved_server_running(root: &Path, script: &str, env: serde_json::Value) {
+    let persona = root.join("personas/devops");
+    std::fs::create_dir_all(&persona).unwrap();
+    std::fs::write(
+        persona.join("persona.md"),
+        "---\nname: devops\nvault: team\ndelegate-when: deploys\n---\n# devops\n",
+    )
+    .unwrap();
+    let entry = serde_json::json!({
+        "type": "stdio",
+        "command": "/bin/sh",
+        "args": ["-c", script],
+        "env": env,
+        "secrets": {"X": "TOKEN"},
+    });
+    std::fs::write(
+        persona.join("mcp.json"),
+        serde_json::json!({"mcpServers": {"server": entry}}).to_string(),
+    )
+    .unwrap();
+    let fingerprint =
+        crate::personaverbs::mcp::fingerprint(Some("team"), &entry).expect("it needs consent");
+    crate::personaverbs::mcp::approve(
+        root,
+        &crate::personaverbs::state_dir(root),
+        "devops",
+        &[fingerprint],
+    )
+    .unwrap();
+}
+
+/// #3441: an approved server's environment values come from the person's approval. A value the
+/// chat sets for one of its entry's variables never reaches the run, which starts with the value
+/// approved; one the chat's environment lacks is set all the same; and one the harness expands
+/// (`${…}`) is no value the person read, so the run starts without it.
+#[test]
+fn an_approved_servers_environment_values_come_from_the_approval_not_the_chat() {
+    let project = project();
+    let root = project.path();
+    let script = r#"echo "[$SERVER_URL][$REGION][${TEAM:-}]""#;
+    an_approved_server_running(
+        root,
+        script,
+        serde_json::json!({
+            "SERVER_URL": "https://server.example.com",
+            "REGION": "eu",
+            "TEAM": "${TEAM}",
+        }),
+    );
+    let mut want = wanted(root, "team", sh(script));
+    want.env = vec!["X=TOKEN".into()];
+    want.environment
+        .push(("SERVER_URL".into(), "https://chat.example.com".into()));
+    want.environment
+        .push(("TEAM".into(), "the-chats-team".into()));
+    let frames = served_as_asked(&asker(root, Some("devops")), want);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "[https://server.example.com][eu][]\n");
+}
+
+/// #3441: an approved value is held to the names a chat's is. One the entry writes out under a
+/// name that makes a program load code it names never reaches the run, whatever the line says.
+#[test]
+fn an_approved_servers_value_that_makes_a_program_load_code_never_reaches_its_run() {
+    let project = project();
+    let root = project.path();
+    let script = r#"echo "[${NODE_OPTIONS:-}][${DYLD_INSERT_LIBRARIES:-}][$REGION]""#;
+    an_approved_server_running(
+        root,
+        script,
+        serde_json::json!({
+            "NODE_OPTIONS": "--require /work/x.js",
+            "DYLD_INSERT_LIBRARIES": "/work/x.dylib",
+            "REGION": "eu",
+        }),
+    );
+    let mut want = wanted(root, "team", sh(script));
+    want.env = vec!["X=TOKEN".into()];
+    let frames = served_as_asked(&asker(root, Some("devops")), want);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "[][][eu]\n");
 }
 
 /// #2047: a brokered tool's process keeps no core dump, which would hold its values. This
@@ -1442,6 +1610,7 @@ fn an_app_answering(
     let listener = Listener::bind(dir.path(), &socket).unwrap();
     let token = listener.tokens().issue_to_this_process(7).unwrap();
     let reading = listener.hear(Hearing {
+        serve: crate::hookwire::serve::refusing(),
         secret_exec: Box::new(move |ask, reader, writer| {
             asked.store(true, Ordering::SeqCst);
             answer(ask, reader, writer);
@@ -1822,6 +1991,7 @@ fn from_outside_the_chat_secret_exec_says_why_and_runs_nothing() {
         .tokens()
         .bind(7, Program::of(program.id()).expect("the program, read"));
     let _reading = listener.hear(Hearing {
+        serve: crate::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, _| panic!("nothing outside the chat is run")),
         blocked: Box::new(|_| {}),
         doing: Box::new(|_| {}),
@@ -4738,6 +4908,105 @@ fn a_runners_run_logs_none_of_its_values() {
     assert!(!logged.contains("team"), "nor the vault: {logged}");
 }
 
+/// Every line of chat `chat`'s trace in `project`.
+fn traced(project: &Path, chat: &str) -> Vec<serde_json::Value> {
+    std::fs::read_to_string(crate::trace::file(project, chat))
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("a trace line"))
+        .collect()
+}
+
+#[test]
+fn a_runners_record_of_a_run_says_its_values_came_from_its_desktop() {
+    let project = a_runners_project();
+    let mut want = wanted(project.path(), "team", sh("true"));
+    want.file = vec!["KUBECONFIG=KUBECONFIG".into()];
+
+    served_handed(
+        &asker(project.path(), Some("devops")),
+        want,
+        kubeconfig_handed(),
+    );
+
+    let ran = traced(project.path(), "7");
+    let ran = ran
+        .iter()
+        .find(|line| line["event"] == "secret-exec")
+        .expect("the run is recorded");
+    assert_eq!(ran["mode"], "brokered");
+    assert_eq!(ran["from"], "desktop", "{ran}");
+    assert_eq!(
+        ran["request"],
+        request_of("a-run"),
+        "the request the desktop's record answers"
+    );
+    assert!(!ran.to_string().contains("k8s-s3cret"), "{ran}");
+}
+
+#[test]
+fn a_value_sent_to_a_runner_is_recorded_on_the_desktop_by_its_keys_and_never_its_value() {
+    let desktop = tempfile::tempdir().unwrap();
+    let handed = Handed::of(
+        7,
+        "kubectl",
+        "a-run",
+        [
+            ("KUBECONFIG".to_owned(), KUBECONFIG.to_owned()),
+            ("TOKEN".to_owned(), "t0ken-s3cret".to_owned()),
+        ],
+    );
+
+    let forwarded = Forwarded::of(&handed);
+    drop(handed);
+    forwarded.record(
+        desktop.path(),
+        &Sent {
+            persona: "devops",
+            vault: "team",
+            pool: "builds",
+            runner: "01JB0RUNNER0000000000000000",
+        },
+    );
+
+    let lines = traced(desktop.path(), "7");
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    let sent = &lines[0];
+    assert_eq!(sent["event"], "secret.forwarded");
+    assert_eq!(sent["vault"], "team");
+    assert_eq!(
+        sent["key_names"],
+        serde_json::json!(["KUBECONFIG", "TOKEN"])
+    );
+    assert_eq!(sent["runner"], "01JB0RUNNER0000000000000000");
+    assert_eq!(sent["pool"], "builds");
+    assert_eq!(sent["chat"], 7);
+    assert_eq!(sent["persona"], "devops");
+    assert_eq!(sent["tool"], "kubectl");
+    assert_eq!(sent["request"], request_of("a-run"));
+    let said = sent.to_string();
+    assert!(
+        !said.contains("k8s-s3cret") && !said.contains("t0ken-s3cret"),
+        "{said}"
+    );
+    assert!(
+        !said.contains("a-run"),
+        "the run's own number is never written: {said}"
+    );
+    assert!(
+        crate::secrets::cmd::HANDED_OUT.contains(&FORWARDED),
+        "kept by the sweep until it is audited"
+    );
+}
+
+#[test]
+fn a_request_is_named_by_a_digest_of_its_run_that_tells_runs_apart() {
+    assert_eq!(request_of("a-run"), request_of("a-run"));
+    assert_ne!(request_of("a-run"), request_of("another-run"));
+    // The first 8 bytes of SHA-256 of "a-run", in hex.
+    assert_eq!(request_of("a-run"), "484d9350f0337a01");
+}
+
 #[test]
 fn the_values_sent_for_a_run_say_their_keys_alone() {
     let handed = kubeconfig_handed();
@@ -4754,4 +5023,80 @@ fn the_values_sent_for_a_run_say_their_keys_alone() {
     );
     assert!(!back.is_for(8, "sh", "a-run"), "nor another chat's");
     assert!(!back.is_for(7, "kubectl", "a-run"), "nor another tool's");
+}
+
+/// A GitHub App's tool (#2053, E2): its run is handed the token minted from the App's key in
+/// `GH_TOKEN`, and the key itself reaches nothing of the run: not its environment, not its
+/// output, not a frame.
+#[test]
+fn a_github_app_tool_is_handed_the_token_minted_for_it_and_never_its_key() {
+    use crate::sandbox::tools::{Handed, Ready, Tool, mint::Mint};
+    let project = project();
+    // The vault's TOKEN stands in for the App's key; the mint is the test's own.
+    crate::forge::apptoken::MINT_HERE.with(|mint| {
+        *mint.borrow_mut() = Some(Box::new(|key: &str| {
+            if key == TOKEN {
+                Ok(zeroize::Zeroizing::new("minted-gh-token-5c3a".to_owned()))
+            } else {
+                Err("the mint was handed something other than the App's key".to_owned())
+            }
+        }));
+    });
+    let mut asker = asker(project.path(), Some("devops"));
+    asker.confines.as_mut().unwrap().tools.push(Ready {
+        tool: Tool {
+            mint: Some(Mint {
+                app: "Iv23liExample".to_owned(),
+            }),
+            ..Tool::one("sh", "team", "GH_TOKEN", Handed::Env, "TOKEN")
+        },
+        program: PathBuf::from("/bin/sh"),
+    });
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(
+            r#"case "$GH_TOKEN" in minted-gh-token-5c3a) echo token-handed;; esac
+              if env | grep -q 's3cret-value'; then echo key-in-env; fi"#,
+        ),
+    );
+    want.env = vec!["GH_TOKEN=TOKEN".into()];
+    let frames = served_as_asked(&asker, want);
+    crate::forge::apptoken::MINT_HERE.with(|mint| *mint.borrow_mut() = None);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "token-handed\n");
+    let wire = serde_json::to_string(&frames).unwrap();
+    assert!(!wire.contains(&b64(TOKEN.as_bytes())), "{wire}");
+    assert!(!wire.contains(TOKEN), "{wire}");
+}
+
+/// A GitHub App's tool whose mint is refused runs nothing, and says why.
+#[test]
+fn a_github_app_tool_whose_mint_is_refused_runs_nothing() {
+    use crate::sandbox::tools::{Handed, Ready, Tool, mint::Mint};
+    let project = project();
+    crate::forge::apptoken::MINT_HERE.with(|mint| {
+        *mint.borrow_mut() = Some(Box::new(|_: &str| {
+            Err("the GitHub App is installed on none of this chat's repos".to_owned())
+        }));
+    });
+    let mut asker = asker(project.path(), Some("devops"));
+    asker.confines.as_mut().unwrap().tools.push(Ready {
+        tool: Tool {
+            mint: Some(Mint {
+                app: "Iv23liExample".to_owned(),
+            }),
+            ..Tool::one("sh", "team", "GH_TOKEN", Handed::Env, "TOKEN")
+        },
+        program: PathBuf::from("/bin/sh"),
+    });
+    let mut want = wanted(project.path(), "team", sh("echo ran"));
+    want.env = vec!["GH_TOKEN=TOKEN".into()];
+    let frames = served_as_asked(&asker, want);
+    crate::forge::apptoken::MINT_HERE.with(|mint| *mint.borrow_mut() = None);
+    assert!(
+        matches!(frames.last(), Some(Frame::Refused { why, .. }) if why.contains("installed on none")),
+        "{frames:?}"
+    );
+    assert_eq!(stdout(&frames), "");
 }

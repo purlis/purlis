@@ -5,7 +5,7 @@
 //! it. Each is required whole ([`CompatLevel::HardRequirement`]): a kernel that cannot apply
 //! one starts nothing.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use landlock::{
     ABI, Access, AccessFs, AccessNet, CompatLevel, Compatible, NetPort, PathBeneath, PathFd,
@@ -55,8 +55,11 @@ fn fully(status: RulesetStatus) -> Result<(), String> {
 }
 
 /// The supervisor's own layer: it reads everything, writes only what `reach` names, makes no
-/// device, and connects over TCP only to `reach`'s ports (anywhere, at the floor).
-pub(super) fn supervisor(reach: &Reach) -> Result<(), String> {
+/// device, and connects over TCP only to `reach`'s ports (anywhere, at the floor), and binds
+/// and connects to the ports picked for the chat's test servers (`picked`, #3396). Landlock names
+/// ports and no address, so this layer allows those on any host; the supervisor's own code binds
+/// and reaches them on 127.0.0.1 alone. The chat's own layer ([`chat`]) allows no port.
+pub(super) fn supervisor(reach: &Reach, picked: &[u16]) -> Result<(), String> {
     let all = AccessFs::from_all(AT);
     let read = AccessFs::from_read(AT);
     let write = AccessFs::from_write(AT) & !(AccessFs::MakeChar | AccessFs::MakeBlock);
@@ -113,6 +116,14 @@ pub(super) fn supervisor(reach: &Reach) -> Result<(), String> {
                 .add_rule(NetPort::new(*port, AccessNet::ConnectTcp))
                 .map_err(|why| why.to_string())?;
         }
+        for port in picked {
+            created = created
+                .add_rule(NetPort::new(
+                    *port,
+                    AccessNet::BindTcp | AccessNet::ConnectTcp,
+                ))
+                .map_err(|why| why.to_string())?;
+        }
     }
     fully(
         created
@@ -122,11 +133,12 @@ pub(super) fn supervisor(reach: &Reach) -> Result<(), String> {
     )
 }
 
-/// The chat's layer: it starts programs and nothing else by itself. Every file it opens and
-/// every connection it makes is the supervisor's; it binds no port, signals no process
-/// outside the sandbox and reaches no abstract socket made outside it.
-pub(super) fn chat() -> Result<(), String> {
-    let created = Ruleset::default()
+/// The chat's layer: it starts programs from beneath `starts` (those there now) and does nothing
+/// else by itself. Every file it opens and every connection it makes is the supervisor's; it
+/// binds no port, signals no process outside the sandbox and reaches no abstract socket made
+/// outside it.
+pub(super) fn chat(starts: &[PathBuf]) -> Result<(), String> {
+    let mut created = Ruleset::default()
         .set_compatibility(CompatLevel::HardRequirement)
         .handle_access(AccessFs::from_all(AT))
         .map_err(|why| why.to_string())?
@@ -136,12 +148,15 @@ pub(super) fn chat() -> Result<(), String> {
         .map_err(|why| why.to_string())?
         .create()
         .map_err(|why| why.to_string())?
-        // What starting a program needs.
-        .add_rule(PathBeneath::new(
-            open("/")?,
-            AccessFs::Execute | AccessFs::ReadFile,
-        ))
+        // The kernel reads a program it starts, an interpreter too, under this layer's rule for
+        // reading; every other read is the supervisor's.
+        .add_rule(PathBeneath::new(open("/")?, AccessFs::ReadFile))
         .map_err(|why| why.to_string())?;
+    for path in starts.iter().filter(|path| path.exists()) {
+        created = created
+            .add_rule(PathBeneath::new(open(path)?, AccessFs::Execute))
+            .map_err(|why| why.to_string())?;
+    }
     fully(
         created
             .restrict_self()

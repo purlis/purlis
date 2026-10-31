@@ -85,7 +85,7 @@ fn keep_blocked_answers_the_block_it_showed_and_tells_the_chat_in_fixed_words() 
         target: "paste.example:8443".to_owned(),
     };
     // Not held on it: answered already, so nothing is done and the chat is told nothing.
-    assert!(keep_block(&chats, 4, &shown, None).is_none());
+    assert!(keep_block(&chats, 4, &shown, None, &|_, _| Ok(())).is_none());
     assert!(told.lock().unwrap().is_empty());
     chats.blocks().heard(
         4,
@@ -96,7 +96,7 @@ fn keep_blocked_answers_the_block_it_showed_and_tells_the_chat_in_fixed_words() 
             target: "paste.example:8443".to_owned(),
         },
     );
-    keep_block(&chats, 4, &shown, None).expect("kept blocked");
+    keep_block(&chats, 4, &shown, None, &|_, _| Ok(())).expect("kept blocked");
     assert_eq!(
         *told.lock().unwrap(),
         vec![(
@@ -110,7 +110,7 @@ fn keep_blocked_answers_the_block_it_showed_and_tells_the_chat_in_fixed_words() 
         )]
     );
     // Answered: a second press finds nothing held, and tells the chat nothing more.
-    assert!(keep_block(&chats, 4, &shown, None).is_none());
+    assert!(keep_block(&chats, 4, &shown, None, &|_, _| Ok(())).is_none());
     assert_eq!(told.lock().unwrap().len(), 1);
 }
 

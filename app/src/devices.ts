@@ -7,8 +7,10 @@ import {
   type BrowserOnADevice,
   type ChatOnADevice,
   type DevicesShown,
+  type DiskHeld,
   type PlaneId,
   type PoolRequests,
+  type PricePerHour,
   type RunnerAsked,
   type RunnerOnTheList,
 } from "./bindings";
@@ -42,13 +44,19 @@ export function answerOf(asked: Asked | undefined): RunnerAsked | undefined {
   return asked === undefined || asked === "asking" || "failed" in asked ? undefined : asked;
 }
 
+/** The disk each pool's runners hold, as Docker read it, that it is being read, or why purlis
+ *  could not read it (#3493). */
+export type DiskAsked = DiskHeld | "reading" | { failed: string };
+
 export type DevicesHeld = {
   read: Read;
   /** What each runner answered, or that it is being asked, by `<pool>/<runner>`. */
   asked: Readonly<Record<string, Asked>>;
+  /** The disk each pool's runners hold (#3493): read apart, so a slow count holds up nothing. */
+  disk: DiskAsked;
 };
 
-const START: DevicesHeld = { read: { state: "reading" }, asked: {} };
+const START: DevicesHeld = { read: { state: "reading" }, asked: {}, disk: "reading" };
 let held: DevicesHeld = START;
 const listeners = new Set<() => void>();
 /** The newest read out: an answer to an older one is dropped. */
@@ -73,11 +81,12 @@ function caught<T>(sent: Promise<Said<T>>): Promise<Said<T>> {
 const inFlight = new Map<string, Promise<Said<RunnerAsked>>>();
 
 /**
- * How long the window waits on one ask of a runner, in milliseconds: longer than the core takes
- * to give up on its own (each Docker run is held to 20 seconds, a link to two times 20, a joined
- * ask to 60), so this is only for a core that answers nothing at all.
+ * How long the window waits on one ask of a runner, in milliseconds: longer than one ask takes
+ * at its slowest in the core (its Docker runs are each held to 20 seconds, its link to two times
+ * 20, and a whole ask comes to about 100 to 140 seconds), so this is only for a core that
+ * answers nothing at all.
  */
-let answerWithinMs = 90_000;
+let answerWithinMs = 150_000;
 
 /** For a test: how long an ask is waited on. */
 export function answerWithinForTests(ms: number) {
@@ -87,7 +96,30 @@ export function answerWithinForTests(ms: number) {
 /** For a test: forget every ask in flight, so the next view asks each runner anew. */
 export function forgetDevicesForTests() {
   inFlight.clear();
+  diskInFlight = undefined;
   reading += 1;
+}
+
+/** The read of the disk held in flight: a second read waits on it rather than reading again. */
+let diskInFlight: Promise<Said<DiskHeld>> | undefined;
+
+/** Reads the disk each pool's runners hold, or waits on the read in flight; at most
+ *  {@link answerWithinMs}. */
+function readDisk(): Promise<Said<DiskHeld>> {
+  if (diskInFlight !== undefined) return diskInFlight;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<Said<DiskHeld>>((resolve) => {
+    timer = setTimeout(
+      () => resolve({ status: "ok", data: { state: "unanswered" } }),
+      answerWithinMs,
+    );
+  });
+  const disk = Promise.race([caught(commands.devicesDisk()), late]).finally(() => {
+    clearTimeout(timer);
+    if (diskInFlight === disk) diskInFlight = undefined;
+  });
+  diskInFlight = disk;
+  return disk;
 }
 
 /** What a runner not answered in time is said to be: not known. */
@@ -97,6 +129,7 @@ const UNANSWERED: RunnerAsked = {
   version: null,
   contacted: null,
   holds: { open: [], browsers_open: [], chats: 0, browsers: 0 },
+  ran_this_week: null,
 };
 
 /** Asks runner `one` how it is, or waits on the ask of it in flight; at most {@link answerWithinMs}. */
@@ -140,9 +173,23 @@ export async function rereadDevices() {
   set(() => ({
     read: { state: "read", shown },
     asked: Object.fromEntries(runners.map((one) => [runnerKey(one), "asking" as const])),
+    disk: "reading",
   }));
-  await Promise.all(
-    runners.map(async (one) => {
+  const disk = (async () => {
+    const said = await readDisk();
+    if (mine !== reading) return;
+    const disk: DiskAsked =
+      said.status === "ok" &&
+      typeof said.data === "object" &&
+      said.data !== null &&
+      (said.data.state !== "read" || Array.isArray(said.data.pools))
+        ? said.data
+        : { failed: said.status === "error" ? said.error : "purlis did not say." };
+    set((was) => ({ ...was, disk }));
+  })();
+  await Promise.all([
+    disk,
+    ...runners.map(async (one) => {
       const answer = await ask(one);
       if (mine !== reading) return;
       const asked: Asked =
@@ -151,7 +198,7 @@ export async function rereadDevices() {
           : { failed: answer.status === "error" ? answer.error : "purlis did not say." };
       set((was) => ({ ...was, asked: { ...was.asked, [runnerKey(one)]: asked } }));
     }),
-  );
+  ]);
 }
 
 function subscribe(listener: () => void) {
@@ -243,9 +290,15 @@ export function arranged(shown: DevicesShown, asked: Readonly<Record<string, Ask
 
 /**
  * What a runner's row says of how it is: its badge, its first line, and what Docker or the link
- * said, which the row draws apart from purlis's own words, as said elsewhere.
+ * said, which the row draws apart from purlis's own words, as said elsewhere. `removes` where its
+ * way out is to remove its pool (#3533): a runner whose key changed is refused on every link.
  */
-export type Health = { badge: string; line: string; said?: { by: string; text: string } };
+export type Health = {
+  badge: string;
+  line: string;
+  said?: { by: string; text: string };
+  removes?: true;
+};
 
 /** **How a runner is, in words** (#2052): `asked` as its row says it. */
 export function healthSaid(asked: Asked | undefined): Health {
@@ -276,7 +329,8 @@ export function healthSaid(asked: Asked | undefined): Health {
   if (link.state === "key_changed")
     return {
       badge: "key changed",
-      line: "It answered with another key than the one this machine paired with, so purlis does not link to it. Remove its pool in Settings › You › This machine › Pools, then add the pool again.",
+      removes: true,
+      line: "It answered with another key than the one this machine paired with, so purlis does not link to it. Remove its pool, then add the pool again.",
     };
   // Suspended is said by the container alone: this view's link is never made to one, and so
   // never says so (D-2052-9).
@@ -323,14 +377,22 @@ export type PoolUse = {
   memoryMib: number;
   /** How many of its runners have not answered yet: its counts are not whole until none. */
   asking: number;
+  /** The seconds its runners ran this week, those no longer kept included (#3492). */
+  ranThisWeek: number;
+  /** How many of its runners' hours this week are not known yet: not answered, or not in time. */
+  hoursNotKnown: number;
+  /** Its price per hour, where it declares one (#3491): only then is money shown for it. */
+  price: PricePerHour | null;
 };
 
 /**
  * **Each pool's use per person** (#2052, story 55): its runners that run and that are suspended,
  * and the CPUs and memory those that run request (a runner requests its pool's limits). A Docker
  * pool on this machine's own engine is the person's (`owned`, D-2050-4), so its one row is
- * "You"; one on an engine elsewhere is not known to be anyone's in particular. Money is never
- * shown: no pool declares a price per hour yet, and a cost is never guessed.
+ * "You"; one on an engine elsewhere is not known to be anyone's in particular. Its hours this
+ * week are its runners' as each answers, and its runners' no longer kept (#3492). Money is shown
+ * only for a pool that declares a price per hour (#3491): its hours this week times that price,
+ * in its currency. A cost is never guessed.
  */
 export function usageOf(
   pools: readonly PoolRequests[],
@@ -348,6 +410,7 @@ export function usageOf(
     });
     const running = standing.filter((one) => one === "running").length;
     const millicpus = running * pool.millicpus;
+    const ran = of.map((one) => answerOf(asked[runnerKey(one)])?.ran_this_week ?? null);
     return {
       pool: pool.pool,
       person: owned ? "You" : NOT_KNOWN_TO_BE_YOURS,
@@ -356,6 +419,9 @@ export function usageOf(
       cpus: cpusSaid(millicpus),
       memoryMib: running * pool.limits.memory_mib,
       asking: standing.filter((one) => one === "asking").length,
+      ranThisWeek: ran.reduce<number>((sum, one) => sum + (one ?? 0), pool.removed_ran_this_week),
+      hoursNotKnown: ran.filter((one) => one === null).length,
+      price: pool.price,
     };
   });
 }
@@ -365,9 +431,115 @@ export function runningSaid(use: Pick<PoolUse, "running" | "asking">): string {
   return use.asking === 0 ? `${use.running}` : `${use.running}, ${use.asking} not answered yet`;
 }
 
+/**
+ * What a use row's Hours this week cell says (#3492): the hours to the tenth, and those of runners
+ * not known yet apart.
+ */
+export function hoursSaid(use: Pick<PoolUse, "ranThisWeek" | "hoursNotKnown">): string {
+  const tenths = Math.round(use.ranThisWeek / 360);
+  const hours = `${Math.floor(tenths / 10)}.${tenths % 10}`;
+  return use.hoursNotKnown === 0 ? hours : `${hours}, ${use.hoursNotKnown} not answered yet`;
+}
+
+/**
+ * What a use row's Money this week cell says (#3491): nothing for a pool that declares no price;
+ * else its hours this week times its price, in its currency, and the runners whose hours are not
+ * known yet apart, as its hours say them. **Worked from the exact seconds**, not from the hours as
+ * the row rounds them to the tenth: what is charged is the time that ran, so it may differ from
+ * the shown hours times the price by up to three minutes' worth.
+ */
+export function moneySaid(
+  use: Pick<PoolUse, "ranThisWeek" | "hoursNotKnown" | "price">,
+): string | undefined {
+  if (use.price === null) return undefined;
+  const money = moneyOf(use.ranThisWeek, use.price);
+  return use.hoursNotKnown === 0 ? money : `${money}, ${use.hoursNotKnown} not answered yet`;
+}
+
+/**
+ * **`seconds` at `price` per hour**, in its currency's minor unit, half up: `"0.25 EUR"`.
+ * Worked in whole numbers (`BigInt`) from the decimal the pool declared, never in binary floats,
+ * and shown with its ISO 4217 code, never converted.
+ */
+export function moneyOf(seconds: number, price: PricePerHour): string {
+  const [whole, part = ""] = price.amount.split(".");
+  const digits = minorDigits(price.currency);
+  // seconds × amount / 3600, in minor units: (seconds × whole-and-part × 10^digits) over
+  // (3600 × 10^part's length), rounded half up.
+  const over = 3600n * 10n ** BigInt(part.length);
+  const times =
+    BigInt(Math.max(0, Math.trunc(seconds))) * BigInt(whole + part) * 10n ** BigInt(digits);
+  const minor = (times * 2n + over) / (over * 2n);
+  const text = minor.toString().padStart(digits + 1, "0");
+  const amount = digits === 0 ? text : `${text.slice(0, -digits)}.${text.slice(-digits)}`;
+  return `${amount} ${price.currency}`;
+}
+
+/** How many digits `currency` has after its point, as the runtime's ISO 4217 data says: else 2. */
+function minorDigits(currency: string): number {
+  try {
+    return (
+      new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions()
+        .maximumFractionDigits ?? 2
+    );
+  } catch {
+    return 2;
+  }
+}
+
 /** `millicpus`, as a number of CPUs to the thousandth: `2`, `1.5`. */
 function cpusSaid(millicpus: number): string {
   const whole = Math.floor(millicpus / 1000);
   const part = millicpus % 1000;
   return part === 0 ? `${whole}` : `${whole}.${`${part}`.padStart(3, "0").replace(/0+$/, "")}`;
+}
+
+/**
+ * **`kilobytes` said in Docker's decimal units** (#3493): whole kilobytes below a megabyte, then
+ * to the tenth of the largest unit it is at least one of: `4 kB`, `1.8 GB`.
+ */
+export function sizeSaid(kilobytes: number): string {
+  if (kilobytes === 0) return "0 B";
+  if (kilobytes < 1000) return `${kilobytes} kB`;
+  const units = ["MB", "GB", "TB"];
+  let at = 0;
+  let tenths = Math.round(kilobytes / 100);
+  while (tenths >= 10_000 && at < units.length - 1) {
+    at += 1;
+    tenths = Math.round(kilobytes / (100 * 1000 ** at));
+  }
+  return `${Math.floor(tenths / 10)}.${tenths % 10} ${units[at]}`;
+}
+
+/**
+ * What a use row's Disk held cell says (#3493): the disk `pool`'s runners hold, and those whose
+ * home Docker did not list apart, never as nothing. Where it is not read, it says so: a size is
+ * never guessed.
+ */
+export function diskSaid(disk: DiskAsked, pool: string): string {
+  if (disk === "reading") return "reading…";
+  if ("failed" in disk || disk.state !== "read") return "not read";
+  const one = disk.pools.find((each) => each.pool === pool);
+  if (one === undefined) return "not read";
+  const size = sizeSaid(one.kilobytes);
+  return one.not_listed === 0 ? size : `${size}, ${one.not_listed} not listed`;
+}
+
+/** Why the disk held is not read, Docker's words apart from purlis's own; none where it is. */
+export function diskTrouble(
+  disk: DiskAsked,
+): { line: string; said?: { by: string; text: string } } | undefined {
+  if (disk === "reading") return undefined;
+  if ("failed" in disk)
+    return { line: `purlis could not read the disk the runners hold: ${disk.failed}` };
+  if (disk.state === "not_read")
+    return {
+      line: "purlis could not read the disk the runners hold.",
+      said: { by: "Docker said", text: disk.why },
+    };
+  if (disk.state === "unanswered")
+    return {
+      line: "The disk the runners hold was not read in time. purlis reads it again when you press Refresh.",
+    };
+  return undefined;
 }

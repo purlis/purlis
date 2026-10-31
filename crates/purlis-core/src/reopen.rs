@@ -251,9 +251,26 @@ pub struct Chat {
     /// flag as the window that started it read it (`purlis_core::skills::reach_chats_here`). A
     /// chat reattached from the session host (#2006) takes this, not the flag as read at its
     /// reattach, so its arming, its Notice, its stamp and Use skill… keep its start's word.
-    /// `None` is a chat whose start in this launch has not returned or did not happen, and every
+    /// `None` is a chat whose start in this launch has not returned, and every
     /// record written before this field: a reattach then reads the flag again, as before. Not a format change, for [`Self::pinned`]'s reason.
     pub plane_skills: Option<bool>,
+    /// **How the chat's start routed its skills** (SK-15f, #3578): the built-in router, or what
+    /// came of asking the router extension its persona or workspace chose (SK-15b). A chat
+    /// reattached from the session host routes its set by this, as its harness still holds the
+    /// listing that start handed it, and its router is not asked again. `None` is a chat whose
+    /// start in this launch has not returned, one its runner armed, and every record written
+    /// before this field: a reattach then asks its router again, as before. Not a
+    /// format change, for [`Self::pinned`]'s reason.
+    pub routing: Option<crate::skills::router::Kept>,
+    /// **The level a task starts at** (#3787): its asking chat's permission mode as the app
+    /// heard it from that chat's harness, capped at auto ([`crate::dispatchmode`]), and what
+    /// the task's harness is started in ([`crate::harness::HarnessAdapter::task_mode_words`]).
+    /// [`crate::dispatchmode::Level::Asks`] for every other chat.
+    ///
+    /// **Never written to the record on disk**, so never read from it: the record is a file a
+    /// level could be written into by anyone who can write the plane's state, and a chat
+    /// brought back from it starts in its harness's default.
+    pub task_level: crate::dispatchmode::Level,
 }
 
 impl Chat {
@@ -380,6 +397,11 @@ pub struct HandedFrom {
     /// Whether the person started it, from that chat's tab (#1438), and not that chat itself.
     /// Its report still goes to that chat, and says so.
     pub by_person: bool,
+    /// **Whether it was dispatched as a long-running task** (#3905, `purlis dispatch --long`):
+    /// its notes are its heartbeat, and purlis never asks it for a report nor makes one from
+    /// its last message ([`crate::dispatched::owes_at_turn_end`]). Written by the app from the
+    /// dispatch it decided, never from anything the task sends.
+    pub long: bool,
 }
 
 /// How one chat started another (the spec's two modes of a dispatch, #1434).
@@ -1592,6 +1614,14 @@ struct ChatOnDisk {
         deserialize_with = "lenient"
     )]
     plane_skills: Option<bool>,
+    /// How the chat's start routed its skills, or absent — see [`Chat::routing`]. A value that
+    /// does not read whole reads as absent.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    routing: Option<crate::skills::router::Kept>,
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -1643,6 +1673,9 @@ struct FromOnDisk {
     /// `"person"` for a chat the person started from that chat's tab (#1438), or absent.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     by: String,
+    /// `true` for a long-running task (#3905), or absent.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    long: bool,
 }
 
 /// The personas above a chat as its record keeps them, held to what the app writes: one per
@@ -1691,6 +1724,7 @@ impl From<&HandedFrom> for FromOnDisk {
             } else {
                 String::new()
             },
+            long: from.long,
         }
     }
 }
@@ -1752,6 +1786,8 @@ impl FromOnDisk {
             root: a_ulid(&self.root),
             above: self.above.and_then(|above| chain_above(above, depth)),
             by_person: self.by == BY_PERSON,
+            // Only a task is long-running: a handoff's work moved, and owes nothing.
+            long: self.long && !older && Mode::of(&self.mode) == Mode::Task,
         })
     }
 }
@@ -1817,6 +1853,7 @@ impl From<&Record> for OnDisk {
                     pid: chat.pid.unwrap_or_default(),
                     model: chat.model.clone().unwrap_or_default(),
                     plane_skills: chat.plane_skills,
+                    routing: chat.routing.clone(),
                 })
                 .collect(),
             dealt: highest_dealt(record),
@@ -1902,6 +1939,9 @@ impl From<ChatOnDisk> for Chat {
             pid: (chat.pid > 0).then_some(chat.pid),
             model: crate::state::Model::new(&chat.model).map(|model| model.as_str().to_owned()),
             plane_skills: chat.plane_skills,
+            routing: chat.routing,
+            // Never on disk ([`Chat::task_level`]): a chat read back asks.
+            task_level: crate::dispatchmode::Level::Asks,
         }
     }
 }

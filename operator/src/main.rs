@@ -42,20 +42,43 @@ async fn operate() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    // Mounted from its Secret by the kubelet: the operator reads no Secret itself (#2056).
-    let path = purlis_cluster_operator::vouch::SIGNING_KEY_PATH;
-    let signing = match std::fs::read_to_string(path)
-        .map_err(|error| error.to_string())
-        .and_then(|pem| purlis_cluster_operator::vouch::SigningKey::from_pem(&pem))
-    {
-        Ok(signing) => signing,
+    // Mounted from its Secret by the kubelet: the operator reads no signing key through the API
+    // (#2056), and reads the mounted keys again as they are rolled (#3305).
+    let path = purlis_cluster_operator::vouch::SIGNING_KEY_DIR;
+    let keys = match purlis_cluster_operator::vouch::MountedKeys::read(path) {
+        Ok(keys) => keys,
         Err(error) => {
             tracing::error!(%error, %path, "no signing key: the operator vouches for no runner without one (docs/cluster-operator.md)");
             return ExitCode::FAILURE;
         }
     };
-    tracing::info!(signing_key = %signing.public(), "signing runners' link keys");
-    purlis_cluster_operator::run(client, signing).await;
+    let now = keys.now();
+    tracing::info!(
+        signing_key = %now.current.public(),
+        next_signing_key = ?now.next.as_ref().map(purlis_cluster_operator::vouch::SigningKey::public),
+        "signing runners' link keys"
+    );
+    // Every statement names its cluster (#3305): an operator that cannot tell which does not start.
+    let cluster = match purlis_cluster_operator::cluster_of(&client).await {
+        Ok(cluster) => cluster,
+        Err(error) => {
+            tracing::error!(%error, "no cluster id (docs/cluster-operator.md)");
+            return ExitCode::FAILURE;
+        }
+    };
+    tracing::info!(%cluster, "in the cluster");
+    // The chart's perPerson.quota (#2055): an operator that cannot read it does not start.
+    let var = purlis_cluster_operator::person::QUOTA_VAR;
+    let quota = match purlis_cluster_operator::person::Quota::from_var(
+        std::env::var(var).ok().as_deref(),
+    ) {
+        Ok(quota) => quota,
+        Err(error) => {
+            tracing::error!(%error, "no per-person quota (docs/cluster-operator.md)");
+            return ExitCode::FAILURE;
+        }
+    };
+    purlis_cluster_operator::run(client, keys, cluster, quota).await;
     ExitCode::SUCCESS
 }
 

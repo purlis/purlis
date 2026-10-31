@@ -287,3 +287,40 @@ fn a_plain_server_whose_args_look_like_a_secret_exec_line_is_not_an_approved_lin
         "{lines:?}"
     );
 }
+
+/// #3441: an approved server's run takes its environment values from the person's approval:
+/// each value its entry writes out in full, as the consent line showed it. A value the harness
+/// expands (`${…}`) is no value the person read, so its run starts without it.
+#[test]
+fn an_approved_servers_environment_is_the_values_its_entry_writes_out() {
+    let plane = Plane::daily_with_ops();
+    let expanded = OPS_MCP.replacen(
+        "\"env\": {\"GRAFANA_URL\"",
+        "\"env\": {\"REGION\": \"${REGION:-eu}\", \"GRAFANA_URL\"",
+        1,
+    );
+    assert_ne!(expanded, OPS_MCP, "the expanded value went in");
+    plane.write("personas/ops/mcp.json", &expanded);
+    let fingerprints: Vec<String> = crate::personaverbs::mcp::credentialed(plane.root(), "ops")
+        .into_iter()
+        .filter_map(|c| c.fingerprint)
+        .collect();
+    crate::personaverbs::mcp::approve(plane.root(), &plane.state(), "ops", &fingerprints)
+        .expect("recorded");
+    let grafana = approved_servers(plane.root(), &plane.state(), "ops")
+        .into_iter()
+        .find(|server| {
+            server
+                .words
+                .iter()
+                .any(|w| w == "GRAFANA_TOKEN=grafana-token")
+        })
+        .expect("grafana is approved");
+    assert_eq!(
+        grafana.env,
+        [(
+            "GRAFANA_URL".to_owned(),
+            "https://grafana.example.com".to_owned()
+        )]
+    );
+}

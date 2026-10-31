@@ -12,14 +12,15 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { CircleDashed, Star } from "lucide-react";
-import { expectFocusInSight, untilFocused } from "../../stories.testkit";
+import { expectFocusInSight, untilFocusInSight, untilFocused } from "../../stories.testkit";
 import { Button } from "../button/Button";
 import { Menu, MenuItem, MenuWords } from "../menu/Menu";
 import { List, ListBox, ListOption, ListRow, ListRowSection, type Selection } from "./List";
 import { ListFilter, noMatchSaid, useListFilter } from "./ListFilter";
 import { AimedList, AimedOption } from "./AimedList";
 import { TextField } from "../field/Field";
-import { RowDescription, RowLabel, RowLead, RowTrail } from "./Row";
+import { RowBelow, RowDescription, RowLabel, RowLead, RowTrail } from "./Row";
+import { Badge } from "../badge/Badge";
 
 /** Twenty-eight personas, as Start a chat lists them (R164: a list over about seven is filtered). */
 const PERSONAS = [
@@ -138,13 +139,15 @@ export const ToChooseFrom: Story = {
     const second = within(list).getByRole("option", { name: "web-dev" });
     await untilFocused(() => second, "To choose from: Down moves to web-dev");
     await expect(second).toHaveAttribute("aria-selected", "true");
-    expectFocusInSight();
+    await untilFocusInSight("To choose from: web-dev is in sight");
     await userEvent.keyboard("{End}");
     await untilFocused(
       () => within(list).getByRole("option", { name: "scribe" }),
       "To choose from: End moves to the last persona",
     );
-    expectFocusInSight();
+    // The list scrolls the last persona into sight after it takes the focus, which WebKit can
+    // finish a frame later (#4078).
+    await waitFor(() => expectFocusInSight());
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(
       () => within(list).getByRole("option", { name: "scribe" }),
@@ -273,6 +276,83 @@ export const RowsThatAct: Story = {
     await untilFocused(() => ship, "Rows that act: Down moves to the next row");
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(() => ship, "Rows that act: Down passes over a row that cannot be used");
+    expectFocusInSight();
+  },
+};
+
+/** Skills as the Skill studio's Library lists them: a name and its tags, then a line under. */
+function LinesUnder() {
+  return (
+    <div style={{ inlineSize: "20rem" }}>
+      <List aria-label="Skills" selectionMode="single" defaultSelectedKeys={["deploy"]}>
+        <ListRow id="deploy" textValue="deploy">
+          <RowLabel>deploy</RowLabel>
+          <RowTrail>
+            <Badge>project</Badge>
+          </RowTrail>
+          <RowBelow clamp={1} data-testid="below-deploy">
+            Deploys a service to staging or production with the checks the team agreed on: tests
+            green, a changelog entry and a tag.
+          </RowBelow>
+        </ListRow>
+        <ListRow id="lint-rs" textValue="lint-rs">
+          <RowLabel>lint-rs</RowLabel>
+          <RowTrail>
+            <Badge>workspace</Badge>
+            <Badge variant="waiting">Off</Badge>
+          </RowTrail>
+          <RowBelow clamp={2} data-testid="below-lint-rs">
+            Off in smart-ide: a workspace can turn a granted skill off, and smart-ide has, so its
+            chats start without it until it is turned on again there.
+          </RowBelow>
+        </ListRow>
+        <ListRow id="browser" textValue="browser">
+          <RowLabel>browser</RowLabel>
+          <RowTrail>
+            <Badge>built-in</Badge>
+          </RowTrail>
+        </ListRow>
+      </List>
+    </div>
+  );
+}
+
+/**
+ * **A line under a row's words** (#3751): a skill's one-line description, cut at the end of its
+ * line, and a reason that takes two lines. Each row grows to fit what is under its words and no
+ * line is cut off mid-line; the arrows still walk one row at a time. The picture is the three
+ * rows.
+ */
+export const LinesUnderTheWords: Story = {
+  render: () => <LinesUnder />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Skills" });
+    /** The height of what a line under holds, without its padding. */
+    const wordsOf = (name: string) => {
+      const below = canvas.getByTestId(`below-${name}`);
+      const drawn = getComputedStyle(below);
+      return below.clientHeight - parseFloat(drawn.paddingTop) - parseFloat(drawn.paddingBottom);
+    };
+    for (const name of ["deploy", "lint-rs"]) {
+      const row = within(list).getByRole("row", { name: new RegExp(`^${name}`) });
+      const belowBox = canvas.getByTestId(`below-${name}`).getBoundingClientRect();
+      const label = within(row).getByText(name).getBoundingClientRect();
+      // Under the words, inside the row: nothing of its lines is past the row's end.
+      await expect(belowBox.top).toBeGreaterThanOrEqual(label.bottom - 1);
+      await expect(belowBox.bottom).toBeLessThanOrEqual(row.getBoundingClientRect().bottom + 1);
+    }
+    // Cut at its clamp and never mid-line: the description is one whole line (it never wraps),
+    // and the reason exactly two of them.
+    const line = wordsOf("deploy");
+    await expect(Math.abs(wordsOf("lint-rs") / line - 2)).toBeLessThan(0.1);
+    await userEvent.tab();
+    const deploy = within(list).getByRole("row", { name: /^deploy/ });
+    await untilFocused(() => deploy, "Lines under: Tab lands on the chosen row");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(
+      () => within(list).getByRole("row", { name: /^lint-rs/ }),
+      "Lines under: Down moves to the next row, its line with it",
+    );
     expectFocusInSight();
   },
 };

@@ -13,7 +13,13 @@ import {
   NOT_KNOWN_TO_BE_YOURS,
   arranged,
   contactSaid,
+  diskSaid,
+  diskTrouble,
+  sizeSaid,
   healthSaid,
+  hoursSaid,
+  moneyOf,
+  moneySaid,
   runningSaid,
   usageOf,
   versionSaid,
@@ -48,6 +54,7 @@ const answered = (
   state: "running" | "suspended",
   open: number[] = [],
   browsersOpen: string[] = [],
+  ranThisWeek: number | null = 0,
 ): RunnerAsked => ({
   standing: { state },
   link: state === "running" ? { state: "linked" } : null,
@@ -59,10 +66,17 @@ const answered = (
     chats: 0,
     browsers: 0,
   },
+  ran_this_week: ranThisWeek,
 });
 
 const LIMITS = { cpus: "1.5", memory_mib: 2048, processes: 512, tmp_mib: 512 };
-const pool = (name: string): PoolRequests => ({ pool: name, limits: LIMITS, millicpus: 1500 });
+const pool = (name: string, removedRan = 0, price: PoolRequests["price"] = null): PoolRequests => ({
+  pool: name,
+  limits: LIMITS,
+  millicpus: 1500,
+  removed_ran_this_week: removedRan,
+  price,
+});
 
 const shownWith = (placement: Partial<DevicesShown["placement"]>): DevicesShown => ({
   version: "0.9.0",
@@ -75,6 +89,7 @@ const shownWith = (placement: Partial<DevicesShown["placement"]>): DevicesShown 
   },
   pools: [],
   owned: true,
+  projects: 1,
 });
 
 describe("arranged", () => {
@@ -254,8 +269,22 @@ describe("usageOf", () => {
         cpus: "3",
         memoryMib: 4096,
         asking: 0,
+        ranThisWeek: 0,
+        hoursNotKnown: 0,
+        price: null,
       },
-      { pool: "qa", person: "You", running: 0, suspended: 1, cpus: "0", memoryMib: 0, asking: 0 },
+      {
+        pool: "qa",
+        person: "You",
+        running: 0,
+        suspended: 1,
+        cpus: "0",
+        memoryMib: 0,
+        asking: 0,
+        ranThisWeek: 0,
+        hoursNotKnown: 0,
+        price: null,
+      },
     ]);
   });
 
@@ -282,5 +311,122 @@ describe("usageOf", () => {
     expect(use[0]).toMatchObject({ running: 1, cpus: "1.5", memoryMib: 2048, asking: 1 });
     expect(runningSaid(use[0])).toBe("1, 1 not answered yet");
     expect(runningSaid({ running: 2, asking: 0 })).toBe("2");
+  });
+
+  it("adds a pool's hours this week over its runners and those no longer kept", () => {
+    const use = usageOf(
+      [pool("builds", 1800)],
+      [runner("builds", "builds"), runner("builds", "b2")],
+      {
+        "builds/builds": answered("running", [], [], 3 * 3600),
+        "builds/b2": answered("suspended", [], [], 5400),
+      },
+      true,
+    );
+    // Three hours, an hour and a half, and half an hour of a runner removed since.
+    expect(use[0]).toMatchObject({ ranThisWeek: 5 * 3600, hoursNotKnown: 0 });
+    expect(hoursSaid(use[0])).toBe("5.0");
+  });
+
+  it("says hours to the tenth, and the runners whose hours are not known yet apart", () => {
+    const use = usageOf(
+      [pool("builds")],
+      [runner("builds", "builds"), runner("builds", "b2"), runner("builds", "b3")],
+      {
+        "builds/builds": answered("running", [], [], 4500),
+        "builds/b2": "asking",
+        "builds/b3": answered("suspended", [], [], null),
+      },
+      true,
+    );
+    expect(use[0]).toMatchObject({ ranThisWeek: 4500, hoursNotKnown: 2 });
+    expect(hoursSaid(use[0])).toBe("1.3, 2 not answered yet");
+    expect(hoursSaid({ ranThisWeek: 0, hoursNotKnown: 0 })).toBe("0.0");
+    expect(hoursSaid({ ranThisWeek: 100 * 3600 - 1, hoursNotKnown: 0 })).toBe("100.0");
+  });
+
+  it("shows money only for a pool that declares a price: its hours this week times that price", () => {
+    const use = usageOf(
+      [pool("builds", 0, { amount: "0.10", currency: "EUR" }), pool("qa")],
+      [runner("builds", "builds"), runner("qa", "qa")],
+      {
+        "builds/builds": answered("running", [], [], 2700),
+        "qa/qa": answered("running", [], [], 3600),
+      },
+      true,
+    );
+    // Three quarters of an hour at 0.10 EUR is 0.075 EUR, to the cent half up.
+    expect(moneySaid(use[0])).toBe("0.08 EUR");
+    expect(moneySaid(use[1])).toBeUndefined();
+  });
+
+  it("says money with the runners whose hours are not known yet apart", () => {
+    expect(
+      moneySaid({ ranThisWeek: 3600, hoursNotKnown: 1, price: { amount: "2", currency: "USD" } }),
+    ).toBe("2.00 USD, 1 not answered yet");
+  });
+});
+
+describe("moneyOf", () => {
+  it("works exactly from the declared decimal, where binary floats would not", () => {
+    // Three hours at 0.1 EUR: 3 × 0.1 in binary floats is 0.30000000000000004.
+    expect(moneyOf(3 * 3600, { amount: "0.1", currency: "EUR" })).toBe("0.30 EUR");
+    expect(moneyOf(1, { amount: "123456789.123456", currency: "USD" })).toBe("34293.55 USD");
+    expect(moneyOf(0, { amount: "5", currency: "USD" })).toBe("0.00 USD");
+  });
+
+  it("rounds to the currency's own minor unit and never converts it", () => {
+    expect(moneyOf(5400, { amount: "15", currency: "JPY" })).toBe("23 JPY");
+    expect(moneyOf(3600, { amount: "1.2345", currency: "KWD" })).toBe("1.235 KWD");
+    expect(moneyOf(1800, { amount: "0.01", currency: "GBP" })).toBe("0.01 GBP");
+  });
+});
+
+describe("sizeSaid", () => {
+  it("says a size in Docker's decimal units, to the tenth past a kilobyte", () => {
+    expect(sizeSaid(0)).toBe("0 B");
+    expect(sizeSaid(4)).toBe("4 kB");
+    expect(sizeSaid(999)).toBe("999 kB");
+    expect(sizeSaid(1_000)).toBe("1.0 MB");
+    expect(sizeSaid(1_750_000)).toBe("1.8 GB");
+    expect(sizeSaid(999_960)).toBe("1.0 GB");
+    expect(sizeSaid(4_294_967_295)).toBe("4.3 TB");
+  });
+});
+
+describe("diskSaid", () => {
+  const read = {
+    state: "read" as const,
+    pools: [
+      { pool: "builds", kilobytes: 1_750_000, not_listed: 0 },
+      { pool: "qa", kilobytes: 2_000, not_listed: 1 },
+    ],
+  };
+
+  it("says the disk a pool's runners hold, and those whose home Docker did not list apart", () => {
+    expect(diskSaid(read, "builds")).toBe("1.8 GB");
+    expect(diskSaid(read, "qa")).toBe("2.0 MB, 1 not listed");
+  });
+
+  it("says it is reading until Docker answers, and not read where it could not", () => {
+    expect(diskSaid("reading", "builds")).toBe("reading…");
+    expect(diskSaid({ state: "not_read", why: "no daemon" }, "builds")).toBe("not read");
+    expect(diskSaid({ state: "unanswered" }, "builds")).toBe("not read");
+    expect(diskSaid({ failed: "No config home." }, "builds")).toBe("not read");
+    // A pool added since the disk was read is not guessed at.
+    expect(diskSaid(read, "new")).toBe("not read");
+  });
+
+  it("says why it is not read, Docker's words apart from purlis's", () => {
+    expect(diskTrouble(read)).toBeUndefined();
+    expect(diskTrouble("reading")).toBeUndefined();
+    expect(diskTrouble({ state: "not_read", why: "no daemon" })).toEqual({
+      line: "purlis could not read the disk the runners hold.",
+      said: { by: "Docker said", text: "no daemon" },
+    });
+    expect(diskTrouble({ failed: "No config home." })).toEqual({
+      line: "purlis could not read the disk the runners hold: No config home.",
+    });
+    expect(diskTrouble({ state: "unanswered" })?.line).toMatch(/not read in time/);
   });
 });

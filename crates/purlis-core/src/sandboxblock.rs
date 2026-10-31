@@ -371,6 +371,12 @@ impl Block {
         if (self.operation, self.kind) == (Operation::Listen, Kind::LocalService) {
             return "listening on a port of this Mac".to_owned();
         }
+        // A server refused on no port a person could allow (#3396, #3440): one the system
+        // picks, one on another machine's address, or one whose socket the wrap could not take.
+        // Never "a system folder", which no listen is on.
+        if (self.operation, self.kind) == (Operation::Listen, Kind::System) {
+            return "a server this chat started, which did not start".to_owned();
+        }
         // Likewise a connection to an address dialled past the proxy (#2423).
         if (self.operation, self.kind) == (Operation::Connect, Kind::Address) {
             return "a connection to an internet address by a program that does not go through \
@@ -454,6 +460,66 @@ pub fn told_the_chat_of_a_read(taken: &[Block]) -> Option<String> {
          answer. Do not work around the block.",
         said.join("; ")
     ))
+}
+
+/// **Whether a block is the asking chat's own to retry** (#3861): a write the sandbox refused
+/// in the git record of the branch folder the chat works in ([`own_branch_record`]), where its
+/// own `git add`, `git commit` or `git worktree add` writes. The Bash guard refuses those before
+/// they run (arm A9b), but a line it cannot place (`cd -`, `popd`) still runs and meets the
+/// sandbox. No grant ever opens that record, so the person has nothing to answer: the chat is
+/// told the purlis command that does it ([`told_the_chat_to_retry`]), and the app raises no
+/// Notice. The block is kept in the network record all the same.
+///
+/// `chat_dir` is the folder the app started the chat in, by the app's own record. A record of
+/// another branch folder, of the same clone or another, is not the chat's own and keeps its
+/// Notice, as do purlis's own block, a path that is not absolute, and every other block.
+pub fn its_own_to_retry(block: &Block, target: Option<&str>, chat_dir: Option<&Path>) -> bool {
+    if block.ours
+        || !matches!(
+            (block.operation, block.kind),
+            (Operation::Write | Operation::File, Kind::ProtectedFile)
+        )
+    {
+        return false;
+    }
+    let (Some(target), Some(chat_dir)) = (target.map(Path::new), chat_dir) else {
+        return false;
+    };
+    let (Some(path), Some(own)) = (branch_record_path(target), own_branch_record(chat_dir)) else {
+        return false;
+    };
+    path.starts_with(own)
+}
+
+/// **The git record of the branch folder `chat_dir` is in** (#3861): the linked worktree's
+/// record in its clone's `.git/worktrees/<name>`, which the folder's `.git` file names, and
+/// whose own `gitdir` names that `.git` back. `None` where `chat_dir` is in no branch folder (a
+/// clone's own `.git` is a folder), or the two do not name each other.
+pub fn own_branch_record(chat_dir: &Path) -> Option<PathBuf> {
+    let folder = chat_dir
+        .ancestors()
+        .find(|dir| dir.join(".git").symlink_metadata().is_ok())?;
+    let dot_git = folder.join(".git");
+    if !dot_git.symlink_metadata().ok()?.is_file() {
+        return None;
+    }
+    let named = std::fs::read_to_string(&dot_git).ok()?;
+    let record = folder.join(named.trim().strip_prefix("gitdir:")?.trim());
+    let back = std::fs::read_to_string(record.join("gitdir")).ok()?;
+    let canonical = |path: &Path| std::fs::canonicalize(path).ok();
+    if canonical(Path::new(back.trim()))? != canonical(&dot_git)? {
+        return None;
+    }
+    branch_record_path(&canonical(&record)?)
+}
+
+/// What the chat is told of a block that was its own to retry ([`its_own_to_retry`], #3861):
+/// what was refused, and the purlis commands that do it.
+pub fn told_the_chat_to_retry() -> String {
+    format!(
+        "⬢ purlis's sandbox blocked a write to this branch folder's git record, which no chat \
+         writes and no Allow opens. Retry it with purlis: {WORKTREE_COMMIT_WAY}"
+    )
 }
 
 /// What a chat is told of a write to macOS's per-user folders (#1416): fixed words, the same
@@ -1242,6 +1308,16 @@ fn target_of(block: &Block, named: &str, place: &Place<'_>) -> Option<String> {
                 .ok()
                 .map(|port| port.to_string())
         }
+        // A server on a port the system picks (#3396), or one whose socket the wrap could not
+        // take (#3440): named as such, so the Notice can say why no Allow names it. Anything
+        // else refused there names nothing.
+        (Operation::Listen, Kind::System) => {
+            use crate::sandbox::localport::{PICKED, SOCKET_NOT_TAKEN, picks_its_port};
+            if named == SOCKET_NOT_TAKEN {
+                return Some(SOCKET_NOT_TAKEN.to_owned());
+            }
+            (named == PICKED || picks_its_port(named)).then(|| PICKED.to_owned())
+        }
         // The certificate check is one service, whatever the line said of it.
         (Operation::Lookup, Kind::CertificateCheck) => {
             Some(crate::sandbox::services::TRUSTD.to_owned())
@@ -1270,10 +1346,10 @@ fn target_of(block: &Block, named: &str, place: &Place<'_>) -> Option<String> {
 ///
 /// Chosen by the path alone: the block keeps its [`Kind`], and nothing is kept of the path.
 pub fn way_out(path: &Path, root: &Path) -> Option<&'static str> {
-    let path = unprivate(&lexical(path));
-    if in_a_branch_folders_record(&path) {
+    if branch_record_path(path).is_some() {
         return Some(WORKTREE_COMMIT_WAY);
     }
+    let path = unprivate(&lexical(path));
     let within = path.strip_prefix(unprivate(&lexical(root))).ok()?;
     let parts: Vec<&str> = within
         .components()
@@ -1287,12 +1363,13 @@ pub fn way_out(path: &Path, root: &Path) -> Option<&'static str> {
             "purlis writes session records for a chat: write one with `purlis session record`.",
         ),
         ["workspaces", _, "memory", _, ..] => Some(
-            "purlis writes a workspace's memory for a chat: record one with `purlis workspace \
-             remember \"<fact>\"`.",
+            "purlis writes a workspace's memory for a chat: record one with the memory_add \
+             tool, or `purlis workspace remember -w <workspace> \"<fact>\"`.",
         ),
         ["personas", _, "memory", _, ..] => Some(
-            "purlis writes a persona's memory for a chat: record one with `purlis persona \
-             remember`, and `--shared` for shared memory.",
+            "purlis writes a persona's memory for a chat: record one with the \
+             persona_remember tool (shared for shared memory), or `purlis persona remember \
+             <persona> \"<fact>\"`.",
         ),
         ["workspaces", _, "todos", _, ..] => Some(
             "purlis writes a workspace's todos for a chat: add one with `purlis workspace todo \
@@ -1315,11 +1392,21 @@ pub fn way_out(path: &Path, root: &Path) -> Option<&'static str> {
 const NEW_WORKSPACE_WAY: &str = "purlis makes a workspace for a chat: create one with `purlis \
      workspace create <name> --vision \"<text>\"`.";
 
-/// What a Notice says of a refused write in a branch folder's git record (#1476, #1055).
+/// What a Notice says of a refused write in a branch folder's git record (#1476, #1055): a
+/// commit in one, or a raw `git worktree add` making one (#3798).
 const WORKTREE_COMMIT_WAY: &str = "A branch folder keeps its git record in its clone's .git, \
-     which no chat writes, so git add and git commit are refused there. Commit with `purlis \
-     worktree commit -m \"<message>\" --all`, or with paths in place of --all: the commit is made on \
-     the folder's branch, outside the sandbox.";
+     which no chat writes, so git worktree add, git add and git commit are refused there. Cut a \
+     branch folder with `purlis worktree add <repo> <piece>`. Commit with `purlis worktree \
+     commit -m \"<message>\" --all`, or with paths in place of --all: the commit is made on the \
+     folder's branch, outside the sandbox. A fetch, pull or rebase there is refused the same \
+     way: `purlis worktree update` brings the folder up to its base.";
+
+/// `path`, spelled as a block's path is compared, where it is in a branch folder's git record
+/// ([`in_a_branch_folders_record`]): what [`way_out`] and [`its_own_to_retry`] both judge.
+fn branch_record_path(path: &Path) -> Option<PathBuf> {
+    let path = unprivate(&lexical(path));
+    in_a_branch_folders_record(&path).then_some(path)
+}
 
 /// Whether `path` is in a linked worktree's own record in its clone's git directory
 /// (`.git/worktrees/<name>/…`), where git keeps a branch folder's index.
@@ -1348,6 +1435,7 @@ fn names_a_lookup(block: &Block) -> bool {
         (Operation::Lookup, Kind::Host)
             | (Operation::Connect, Kind::LocalSocket)
             | (Operation::Connect | Operation::Listen, Kind::LocalService)
+            | (Operation::Listen, Kind::System)
             | (Operation::Lookup, Kind::CertificateCheck)
     )
 }
@@ -1722,6 +1810,15 @@ fn network_refusal_on(line: &str, docker_words: bool) -> Option<(Operation, Kind
             Some(port.to_string()),
         ));
     }
+    // A test server refused a port the system picks (#3396): no port a person could allow, so
+    // a server that did not start.
+    if crate::sandbox::localport::picked_port_refused_in(line) {
+        return Some((
+            Operation::Listen,
+            Kind::System,
+            Some(crate::sandbox::localport::PICKED.to_owned()),
+        ));
+    }
     // A local socket: Go's dial refused by the sandbox (`EPERM`), on any platform; or Docker's
     // client in its own words where the sandbox says them (#1637). A socket's own file mode
     // (`EACCES`, "connect: permission denied") is never the sandbox's.
@@ -1814,12 +1911,15 @@ fn ends_as_a_refusal(line: &str) -> bool {
         return true;
     }
     // Node's refused listen ends with the address it asked for: `listen EPERM: operation not
-    // permitted 127.0.0.1:3000` (#2019).
+    // permitted 127.0.0.1:3000` (#2019), or the address alone where it asked for a port the
+    // system picks (#3396).
     if lower.contains("listen eperm: ")
-        && crate::sandbox::localport::listen_refused_in(line).is_some()
-        && lower
-            .rsplit_once(' ')
-            .is_some_and(|(_, last)| crate::sandbox::localport::listened_port(last).is_some())
+        && (crate::sandbox::localport::listen_refused_in(line).is_some()
+            || crate::sandbox::localport::picked_port_refused_in(line))
+        && lower.rsplit_once(' ').is_some_and(|(_, last)| {
+            crate::sandbox::localport::listened_port(last).is_some()
+                || crate::sandbox::localport::picks_its_port(last)
+        })
     {
         return true;
     }
@@ -1849,14 +1949,22 @@ fn ends_as_a_refusal(line: &str) -> bool {
 }
 
 /// **Whether purlis's own proxy tells the app each host a chat of `harness` was refused**
-/// (#1663): a harness purlis wraps (Codex, opencode) reaches the network only through it
+/// (#1663): a harness purlis wraps (Codex, opencode, a Claude Code on a runner) reaches the
+/// network only through it
 /// (`crate::sandbox::egress`), and the app hears its refusals by name. Such a chat's hook leaves
 /// a refused host to it, so one refusal is one Notice; a lookup or a socket it still reads.
 pub fn the_proxy_tells_hosts(harness: Option<&str>) -> bool {
-    matches!(
-        harness.and_then(crate::harness::Harness::of_registry_or_kind),
-        Some(crate::harness::Harness::Codex | crate::harness::Harness::Opencode)
-    )
+    wrapped_claude_code()
+        || matches!(
+            harness.and_then(crate::harness::Harness::of_registry_or_kind),
+            Some(crate::harness::Harness::Codex | crate::harness::Harness::Opencode)
+        )
+}
+
+/// Whether this process is a hook of a Claude Code chat purlis wraps whole (#4083): held as a
+/// harness purlis wraps is, and told as one.
+fn wrapped_claude_code() -> bool {
+    crate::sandbox::wrapped_whole_in(&crate::envvar::var)
 }
 
 /// **The local sockets the system's name lookup is reached through** on Linux (#2428):
@@ -1892,9 +2000,10 @@ pub fn the_hooks_own(
     if !the_proxy_tells_hosts(harness) {
         return found;
     }
-    let supervised = harness
-        .and_then(crate::harness::Harness::of_registry_or_kind)
-        .is_some_and(|harness| os.purlis_wraps(harness));
+    let supervised = wrapped_claude_code()
+        || harness
+            .and_then(crate::harness::Harness::of_registry_or_kind)
+            .is_some_and(|harness| os.purlis_wraps(harness));
     found
         .into_iter()
         .filter(|(block, _)| !is_the_proxys(block))

@@ -558,12 +558,15 @@ fn the_profile_denies_every_class_after_what_it_lets_the_chat_write() {
             .unwrap_or_else(|| panic!("{rule} missing:\n{profile}"));
         assert!(at > allow, "{rule} comes before the write allow");
     }
-    // The integrity class inside the plane, written for.
+    // The integrity class inside the plane, written for, under every spelling on macOS.
     assert!(
-        profile.contains(&format!(
-            "(deny file-write* file-link (subpath \"{}\"))",
-            real(&plane.path().join(".charter/app")).display()
-        )),
+        held_in_every_case(
+            profile,
+            &real(&plane.path().join(".charter/app"))
+                .display()
+                .to_string(),
+            Access::Write
+        ),
         "{profile}"
     );
 }
@@ -1255,6 +1258,7 @@ fn stated(harness: Harness, plane: &Path, cwd: &Path, machine: &Machine) -> Stat
         )
         .expect("starts");
     match applied.form() {
+        Form::ClaudeWrapped(_) => unreachable!("wrapped only on a runner"),
         Form::ClaudeCode(settings) => {
             let list = |key: &str| -> Vec<String> {
                 settings.sandbox["filesystem"][key]
@@ -1274,12 +1278,18 @@ fn stated(harness: Harness, plane: &Path, cwd: &Path, machine: &Machine) -> Stat
         Form::Codex(_) | Form::Opencode(_) => {
             let profile = line.args[1].clone();
             let read = profile.clone();
+            // As spelled, or under every spelling, as macOS holds what is in the state folder.
             Stated {
-                denies_write: Box::new(move |path| profile.contains(path)),
+                denies_write: Box::new(move |path| {
+                    profile.contains(path)
+                        || [Access::Write, Access::ReadWrite]
+                            .into_iter()
+                            .any(|access| held_in_every_case(&profile, path, access))
+                }),
                 denies_read: Box::new(move |path| {
                     read.contains(&format!(
                         "(deny file-read* file-write* file-link (subpath \"{path}\"))"
-                    ))
+                    )) || held_in_every_case(&read, path, Access::ReadWrite)
                 }),
             }
         }
@@ -1699,4 +1709,18 @@ fn a_try_its_scratch_chat_writes_its_throwaway_folder_and_no_other_folder_of_the
         !allows.contains(&format!("(subpath \"{}\")", real(plane.path()).display())),
         "{allows:?}"
     );
+}
+
+/// Whether `profile` holds `path`, with what is below it, under every spelling of its name, as
+/// macOS holds everything in the state folder.
+fn held_in_every_case(profile: &str, path: &str, access: Access) -> bool {
+    super::seatbelt::denial_rules(&Denial {
+        class: Class::Integrity,
+        path: PathBuf::from(path),
+        access,
+        named: None,
+        reach: Reach::AndBelow,
+        any_case: true,
+    })
+    .is_ok_and(|rules| !rules.is_empty() && rules.iter().all(|rule| profile.contains(rule)))
 }

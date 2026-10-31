@@ -34,6 +34,13 @@ use std::path::{Path, PathBuf};
 
 use crate::worktree::git;
 
+mod moving;
+
+pub use moving::{
+    MOVED, Work, bundle_work, give_work, receive_over, sent, take_over, take_work_back,
+    take_work_fresh, work_of,
+};
+
 /// Where a branch's snapshot of uncommitted work is kept, in a repository either end holds.
 pub const SNAPSHOTS: &str = "refs/purlis/snapshots/";
 
@@ -213,6 +220,148 @@ pub fn repo_in(project: &Path, repo: &str) -> Result<PathBuf, Refused> {
     Ok(at)
 }
 
+/// **The clones `project` holds in `workspace`** (1.51, #3811): the folder name of each
+/// repository in the workspace's folder, sorted. Only a folder reached through no link, with a
+/// name a repository's folder may have ([`repo_in`]) and not one the workspace keeps for its own
+/// ([`crate::contain::workspace_keeps`]), that is a repository on a branch with a commit. None where the
+/// workspace has no folder. Refused for a name no workspace has, and for a workspace reached
+/// through a link.
+pub fn clones_in(project: &Path, workspace: &str) -> Result<Vec<String>, Refused> {
+    if !crate::contain::workspace_name_ok(workspace) {
+        return Err(not_allowed(format!(
+            "`{workspace}` is not a workspace's name, so no clone of it was named"
+        )));
+    }
+    let workspaces = project.join("workspaces");
+    let folder = workspaces.join(workspace);
+    for walked in [&workspaces, &folder] {
+        match std::fs::symlink_metadata(walked) {
+            Ok(meta) if meta.is_dir() => {}
+            Ok(_) => {
+                return Err(not_allowed(format!(
+                    "workspace {workspace} is not a folder in the project, so no clone of it was \
+                     named"
+                )));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => {
+                return Err(Refused::Git(format!(
+                    "workspace {workspace}'s folder could not be read: {e}"
+                )));
+            }
+        }
+    }
+    let entries = std::fs::read_dir(&folder).map_err(|e| {
+        Refused::Git(format!(
+            "workspace {workspace}'s folder could not be read: {e}"
+        ))
+    })?;
+    let mut clones: Vec<String> = entries
+        .filter_map(Result::ok)
+        // `file_type` does not follow a link.
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| crate::contain::repo_name_ok(name))
+        .filter(|name| !crate::contain::workspace_keeps(name))
+        .filter(|name| a_repository(&folder.join(name)))
+        // Only one whose work a move can give: on a branch with a commit ([`work_of`]). One
+        // on no branch, or none yet, stays where it is, as before 1.51.
+        .filter(|name| current_branch(&folder.join(name)).is_some())
+        .collect();
+    clones.sort();
+    Ok(clones)
+}
+
+/// The longest `origin` URL a clone is named or given with (#3985): far past any forge's
+/// address, so no runner fills a clone's configuration, or the chat's tab, with one.
+const ORIGIN_MOST: usize = 2048;
+
+/// `url`, where it is one a clone is given as its `origin` (#3985): a forge's HTTPS or SSH
+/// address with no sign-in in it, held to the rules a URL pasted here is held to
+/// ([`crate::getproject::ProjectUrl::parse`]: no other transport, no local path, no token and
+/// nothing git or ssh would read as an option), exactly as it is, and within [`ORIGIN_MOST`].
+/// Nor an `ssh://` user name ssh could read as an option, which those rules leave to git, a
+/// scheme git would hand a remote helper of that spelling (`HTTPS://`), any character but ASCII
+/// letters, digits and `-._~:/@+`, or a leading `~` a shell would expand: the chat's tab shows
+/// the host it reaches as it is, and a shell takes the command it offers as it is.
+fn forge_url(url: &str) -> Option<&str> {
+    (url.len() <= ORIGIN_MOST
+        && !url.starts_with('~')
+        && url
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-._~:/@+".contains(&byte))
+        && (url.starts_with("https://") || url.starts_with("ssh://") || !url.contains("://"))
+        && !url.contains("://-")
+        && crate::getproject::ProjectUrl::parse(url).is_ok_and(|parsed| parsed.as_str() == url))
+    .then_some(url)
+}
+
+/// **Where each of `repos`, clones `project` holds in `workspace`, came from** (1.54, #3985):
+/// the `origin` URL of each one's own configuration, by its folder name, as its git keeps it
+/// (no included file read, no `insteadOf` applied), and only where it is a forge's address
+/// with no sign-in in it ([`forge_url`]). Nothing for a name that is not one of its clones
+/// ([`clones_in`]), nor for one whose `.git` is not a folder of its own with a config file in it.
+pub fn origins_in(
+    project: &Path,
+    workspace: &str,
+    repos: &[String],
+) -> std::collections::BTreeMap<String, String> {
+    let Ok(clones) = clones_in(project, workspace) else {
+        return std::collections::BTreeMap::new();
+    };
+    let folder = project.join("workspaces").join(workspace);
+    clones
+        .into_iter()
+        .filter(|clone| repos.contains(clone))
+        // Only a clone's own `.git` folder, and its own config file in it: never one reached
+        // through a link, named by a `.git` file or shared through `commondir`, which would
+        // read another repository's configuration.
+        .filter(|clone| {
+            let git = folder.join(clone).join(".git");
+            std::fs::symlink_metadata(&git).is_ok_and(|meta| meta.is_dir())
+                && std::fs::symlink_metadata(git.join("config")).is_ok_and(|meta| meta.is_file())
+        })
+        .filter_map(|clone| {
+            let ran = run(
+                &folder.join(&clone),
+                &[
+                    "config",
+                    "--file",
+                    ".git/config",
+                    "--no-includes",
+                    "--get",
+                    "remote.origin.url",
+                ],
+            )
+            .ok()
+            .filter(git::Run::ok)?;
+            let url = forge_url(ran.out.strip_suffix('\n').unwrap_or(&ran.out))?.to_owned();
+            Some((clone, url))
+        })
+        .collect()
+}
+
+/// **The `origin` the runner's clone had, as the person may give a clone made fresh from its
+/// work** (#3985): never written into the clone, only offered on the chat's tab with the one
+/// command that adds it, so a remote a runner named is the person's own act, never one a save
+/// pushes to on its own. Only a forge's address with no sign-in in it ([`forge_url`]), in
+/// characters a shell takes as they are, a runner's word being held to the rules every URL
+/// here is. Refused where `pool` keeps its branches under `refs/remotes/origin/`.
+pub fn offered_origin(pool: &str, url: &str) -> Result<String, Refused> {
+    if forge_url(url).is_none() {
+        return Err(not_allowed(
+            "the runner's clone named an origin that is not a forge's HTTPS or SSH address with \
+             no sign-in in it",
+        ));
+    }
+    if pool.eq_ignore_ascii_case("origin") {
+        return Err(not_allowed(format!(
+            "pool {pool}'s branches are kept under that remote's name"
+        )));
+    }
+    Ok(url.to_owned())
+}
+
 /// **A snapshot of `tree`'s uncommitted work**: a commit of the work tree as it is, its untracked
 /// files that are not ignored included, whose parent is what `tree` has checked out. `None`
 /// where nothing is uncommitted. Staged in an index of its own, so what is staged in `tree` is
@@ -235,6 +384,49 @@ pub fn snapshot(
 /// [`snapshot`], telling `left` each changed or new file it left out as a save to the forge
 /// would refuse it, as the window names them.
 pub fn snapshot_leaving(
+    tree: &Path,
+    scratch: &Path,
+    leave_out: &[String],
+    left: &mut Vec<String>,
+) -> Result<Option<String>, Refused> {
+    let Some(written) = work_tree(tree, scratch, leave_out, left)? else {
+        return Ok(None);
+    };
+    let committed = run(tree, &["rev-parse", "--verify", "--quiet", "HEAD^{tree}"])?;
+    if committed.ok() && committed.line() == written {
+        return Ok(None);
+    }
+    commit_work(tree, &written).map(Some)
+}
+
+/// A commit of the tree `written` on top of what `tree` has checked out: a snapshot.
+fn commit_work(tree: &Path, written: &str) -> Result<String, Refused> {
+    let commit = run(
+        tree,
+        &[
+            "-c",
+            "user.name=purlis",
+            "-c",
+            "user.email=purlis@localhost",
+            "-c",
+            "commit.gpgSign=false",
+            "commit-tree",
+            "-p",
+            "HEAD",
+            "-m",
+            "purlis: uncommitted work",
+            written,
+        ],
+    )?;
+    if !commit.ok() {
+        return Err(git_failed("keep the uncommitted work", &commit));
+    }
+    Ok(commit.line().to_owned())
+}
+
+/// **The tree `tree`'s work tree is**, as a snapshot stages it ([`snapshot_leaving`]), or `None`
+/// where nothing is uncommitted.
+fn work_tree(
     tree: &Path,
     scratch: &Path,
     leave_out: &[String],
@@ -298,31 +490,7 @@ pub fn snapshot_leaving(
     if !written.ok() {
         return Err(git_failed("write the uncommitted work", &written));
     }
-    let committed = run(tree, &["rev-parse", "--verify", "--quiet", "HEAD^{tree}"])?;
-    if committed.ok() && committed.line() == written.line() {
-        return Ok(None);
-    }
-    let commit = run(
-        tree,
-        &[
-            "-c",
-            "user.name=purlis",
-            "-c",
-            "user.email=purlis@localhost",
-            "-c",
-            "commit.gpgSign=false",
-            "commit-tree",
-            "-p",
-            "HEAD",
-            "-m",
-            "purlis: uncommitted work",
-            written.line(),
-        ],
-    )?;
-    if !commit.ok() {
-        return Err(git_failed("keep the uncommitted work", &commit));
-    }
-    Ok(Some(commit.line().to_owned()))
+    Ok(Some(written.line().to_owned()))
 }
 
 /// Whether the repository at `tree` ignores case in its names (`core.ignorecase`), as git sets
@@ -1135,6 +1303,129 @@ impl purlis_host::Code for Moves {
         let (heads, bundled) = give(&at, have, into).map_err(code_refused)?;
         Ok((wire_refs(heads), bundled == Bundled::Wrote))
     }
+
+    fn take_work(
+        &self,
+        project: &Path,
+        repo: &str,
+        bundle: Option<&Path>,
+        refs: &[purlis_host::protocol::session::CodeRef],
+        checkout: &str,
+    ) -> Result<Vec<purlis_host::protocol::session::CodeRef>, purlis_host::protocol::session::Refusal>
+    {
+        let at = repo_in(project, repo).map_err(code_refused)?;
+        let scratch = moves_scratch()?;
+        let refs: Vec<Ref> = refs
+            .iter()
+            .map(|one| Ref {
+                name: one.name.clone(),
+                oid: one.oid.clone(),
+            })
+            .collect();
+        receive_over(&at, scratch.path(), bundle, &refs, checkout)
+            .map(wire_refs)
+            .map_err(code_refused)
+    }
+
+    fn give_work(
+        &self,
+        project: &Path,
+        repo: &str,
+        have: &[String],
+        into: &Path,
+    ) -> Result<
+        (Vec<purlis_host::protocol::session::CodeRef>, bool),
+        purlis_host::protocol::session::Refusal,
+    > {
+        let at = repo_in(project, repo).map_err(code_refused)?;
+        let scratch = moves_scratch()?;
+        let (heads, bundled) = give_work(&at, scratch.path(), have, into).map_err(code_refused)?;
+        Ok((wire_refs(heads), bundled == Bundled::Wrote))
+    }
+
+    fn take_conversation(
+        &self,
+        project: &Path,
+        carried: &purlis_host::Carried,
+        from: &Path,
+    ) -> Result<(), purlis_host::protocol::session::Refusal> {
+        of_a_chat(project, carried)
+            .keep(&carried.file, from)
+            .map_err(conversation_refused)
+    }
+
+    fn give_conversation(
+        &self,
+        project: &Path,
+        carried: &purlis_host::Carried,
+        into: &Path,
+    ) -> Result<String, purlis_host::protocol::session::Refusal> {
+        let found = of_a_chat(project, carried)
+            .find()
+            .map_err(conversation_refused)?;
+        std::fs::copy(&found.path, into).map_err(|why| {
+            conversation_refused(crate::conversationmove::Refused::Io(format!(
+                "the conversation could not be read: {why}"
+            )))
+        })?;
+        Ok(found.shape)
+    }
+
+    fn clones_of(
+        &self,
+        project: &Path,
+        workspace: &str,
+    ) -> Result<Vec<String>, purlis_host::protocol::session::Refusal> {
+        clones_in(project, workspace).map_err(code_refused)
+    }
+
+    fn origins_of(
+        &self,
+        project: &Path,
+        workspace: &str,
+        repos: &[String],
+    ) -> std::collections::BTreeMap<String, String> {
+        origins_in(project, workspace, repos)
+    }
+}
+
+#[cfg(unix)]
+fn of_a_chat<'a>(
+    project: &'a Path,
+    carried: &'a purlis_host::Carried,
+) -> crate::conversationmove::OfAChat<'a> {
+    crate::conversationmove::OfAChat {
+        root: project,
+        workspace: &carried.workspace,
+        profile: &carried.profile,
+        conversation: &carried.conversation,
+    }
+}
+
+#[cfg(unix)]
+fn conversation_refused(
+    why: crate::conversationmove::Refused,
+) -> purlis_host::protocol::session::Refusal {
+    use purlis_host::protocol::session;
+    let code = match &why {
+        crate::conversationmove::Refused::NotAllowed(_) => session::NOT_ALLOWED,
+        _ => session::NOT_STARTED,
+    };
+    session::Refusal {
+        code: code.into(),
+        why: why.to_string(),
+    }
+}
+
+#[cfg(unix)]
+fn moves_scratch() -> Result<tempfile::TempDir, purlis_host::protocol::session::Refusal> {
+    tempfile::Builder::new()
+        .prefix("purlis-move-")
+        .tempdir()
+        .map_err(|why| purlis_host::protocol::session::Refusal {
+            code: purlis_host::protocol::session::NOT_STARTED.into(),
+            why: format!("there is no room to move the work: {why}"),
+        })
 }
 
 fn run(dir: &Path, args: &[&str]) -> Result<git::Run, Refused> {

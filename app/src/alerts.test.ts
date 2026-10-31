@@ -23,7 +23,7 @@ const A = "/home/dev/a";
 const B = "/home/dev/b";
 
 function row(subject: string): AlertRow {
-  return { severity: "warn", subject, detail: "d", way: { kind: "saving" } };
+  return { severity: "warn", subject, detail: "d", workspaces: [], way: { kind: "saving" } };
 }
 
 function plane(at: string, alerts: AlertRow[], stopped: string | null = null): PlaneAlerts {

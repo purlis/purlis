@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillsMissingNotice, missingSays } from "./SkillsMissingNotice";
-import { SETTINGS_ACTION, type SettingsActionAsk } from "./settings/links";
+import { CHAT_SKILLS_ASKED, type ChatSkillsAsk } from "./chatSkillsAsk";
 
 afterEach(() => {
   cleanup();
@@ -22,7 +22,7 @@ const MISSING = {
 };
 
 describe("a chat's missing skills", () => {
-  it("names each, and opens the Skill studio on the persona", async () => {
+  it("names each, and shows this chat's skills in the Skills view (S8, #3694)", async () => {
     const asked: string[] = [];
     mockIPC((cmd) => {
       if (cmd === "chat_skills_missing") return MISSING;
@@ -32,17 +32,20 @@ describe("a chat's missing skills", () => {
       }
       throw new Error(`unexpected ${cmd}`);
     });
-    const ran: SettingsActionAsk[] = [];
-    const hear = (event: Event) => ran.push((event as CustomEvent<SettingsActionAsk>).detail);
-    window.addEventListener(SETTINGS_ACTION, hear);
+    const ran: ChatSkillsAsk[] = [];
+    const hear = (event: Event) => ran.push((event as CustomEvent<ChatSkillsAsk>).detail);
+    window.addEventListener(CHAT_SKILLS_ASKED, hear);
     try {
       render(<SkillsMissingNotice plane="p" session={7} />);
 
       expect(await screen.findByText(/superpowers:tdd, langfuse/)).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "Open in Skill studio" }));
-      expect(ran).toEqual([{ plane: "p", action: "skills.studio:persona/ops" }]);
+      // One action: where the missing skills sit in Needs you with their fixes. The old
+      // Open Skill studio is gone.
+      expect(screen.queryByRole("button", { name: "Open Skill studio" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Show in Skills" }));
+      expect(ran).toEqual([{ plane: "p", session: 7 }]);
     } finally {
-      window.removeEventListener(SETTINGS_ACTION, hear);
+      window.removeEventListener(CHAT_SKILLS_ASKED, hear);
     }
   });
 
@@ -141,33 +144,5 @@ describe("a chat's missing skills", () => {
       "This chat works in a repo with its own copy of 2 built-in skills, which it gets beside " +
         "purlis's and may use instead: secrets, browser.",
     );
-  });
-
-  it("opens the Skill studio on a chat at the project's root for a chat on no persona", async () => {
-    mockIPC((cmd) => {
-      if (cmd === "chat_skills_missing")
-        return {
-          persona: null,
-          missing: [],
-          no_built_in: [],
-          broken: [
-            { name: "half", level: "project", local: false, label: "project", why: "not a skill" },
-          ],
-          by_a_repo: [],
-          beside_a_built_in: [],
-        };
-      return null;
-    });
-    const ran: SettingsActionAsk[] = [];
-    const hear = (event: Event) => ran.push((event as CustomEvent<SettingsActionAsk>).detail);
-    window.addEventListener(SETTINGS_ACTION, hear);
-    try {
-      render(<SkillsMissingNotice plane="p" session={7} />);
-      expect(await screen.findByText(/could not be loaded: half/)).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "Open in Skill studio" }));
-      expect(ran).toEqual([{ plane: "p", action: "skills.studio" }]);
-    } finally {
-      window.removeEventListener(SETTINGS_ACTION, hear);
-    }
   });
 });

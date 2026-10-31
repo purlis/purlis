@@ -38,10 +38,17 @@ slow-timeout = { period = "60s", terminate-after = 5 }
 # shape added and has taken from 150 s to 275 s on a runner, so it is given fifteen minutes
 # before it is called hung. The bound on each verdict is the test's own and is not this.
 [[profile.ci.overrides]]
-filter = "package(purlis-core) & binary(every_guard_reads_a_hostile_command_in_linear_time)"
+filter = "package(purlis-core) & binary(it) & test(/^every_guard_reads_a_hostile_command_in_linear_time::/)"
 slow-timeout = { period = "60s", terminate-after = 15 }
 # Not retried: its bounds are a verdict on speed, and a retry of a hang would hold the job for
 # thirty minutes of its forty-five.
+retries = 0
+
+# A person's whole way through a Docker pool: each step's real work, a harness fetched and a large
+# settings folder sent three times over, with two runners made and one left to drain.
+[[profile.ci.overrides]]
+filter = "package(purlis-app) & test(/^behaviour::pool_journey::in_a_docker_pool$/)"
+slow-timeout = { period = "60s", terminate-after = 15 }
 retries = 0
 
 # The run's report, at `target/nextest/ci/junit.xml`: `tools/slowest-tests.mjs` reads each

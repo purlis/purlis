@@ -99,6 +99,7 @@ fn studio(ask: &serde_json::Value) -> serde_json::Value {
         "findings" => serde_json::json!({
             "findings": [{ "says": format!("the probe was handed {files} files of {}", word("skill")) }],
         }),
+        "findings-of-each" => findings_of_each(ask),
         "template" => serde_json::json!({
             "text": format!(
                 "---\nname: {}\ndescription: {}\n---\n\n# {}\n\nWritten by the studio probe.\n",
@@ -119,9 +120,37 @@ fn studio(ask: &serde_json::Value) -> serde_json::Value {
             ],
         }),
         "route" => routed(ask),
-        "prompt" => pointed(ask),
         other => serde_json::json!({ "error": format!("the probe has no answer to {other:?}") }),
     }
+}
+
+/// **A lint's answer about many skills at once** (#4195): for each skill asked, in order, how
+/// many files it was handed and how many skills the one question held.
+fn findings_of_each(ask: &serde_json::Value) -> serde_json::Value {
+    let skills = ask
+        .get("skills")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let many = skills.len();
+    let answered: Vec<serde_json::Value> = skills
+        .iter()
+        .map(|one| {
+            let name = one
+                .get("skill")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
+            let files = one
+                .get("files")
+                .and_then(serde_json::Value::as_array)
+                .map_or(0, Vec::len);
+            serde_json::json!({
+                "skill": name,
+                "findings": [{ "says": format!("the probe was handed {files} files of {name} in one question of {many}") }],
+            })
+        })
+        .collect();
+    serde_json::json!({ "skills": answered })
 }
 
 /// The skill whose name makes the probe's router take longer than any router has.
@@ -154,30 +183,6 @@ fn routed(ask: &serde_json::Value) -> serde_json::Value {
     serde_json::json!({ "hidden": hidden })
 }
 
-/// The start of the names the probe's router points a prompt at.
-pub const POINTS: &str = "probe-point";
-
-/// **A router's pointers for a prompt**: every skill it was asked about whose name starts with
-/// [`POINTS`], where the prompt is not empty.
-fn pointed(ask: &serde_json::Value) -> serde_json::Value {
-    let prompt = ask
-        .get("prompt")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("");
-    let pointed: Vec<&str> = ask
-        .get("skills")
-        .and_then(serde_json::Value::as_array)
-        .map(|skills| {
-            skills
-                .iter()
-                .filter_map(|one| one.get("name").and_then(serde_json::Value::as_str))
-                .filter(|name| !prompt.is_empty() && name.starts_with(POINTS))
-                .collect()
-        })
-        .unwrap_or_default();
-    serde_json::json!({ "pointed": pointed })
-}
-
 /// **One thing tried from inside the sandbox**, and what happened, as one line: `ok` and what it
 /// saw, or what refused it.
 ///
@@ -190,6 +195,10 @@ fn pointed(ask: &serde_json::Value) -> serde_json::Value {
 /// - `environ <pid>`: what `ps -wwE` shows of another process's command and environment.
 /// - `proxy <host>`: ask its proxy (`HTTPS_PROXY`) for a tunnel to `<host>:443`, and say the
 ///   proxy's status line.
+/// - `start <program> <args>…`: start a program, and say how it ended and what it printed.
+/// - `start-linked <program> <at>`: the same through a symbolic link made at `<at>`, which it
+///   takes away again.
+/// - `start-held <program>` on Linux: the same through a path-only descriptor of it.
 pub fn tried(words: &[String]) -> String {
     let said = match words {
         [verb, path] if verb == "read" => std::fs::read(path)
@@ -222,12 +231,57 @@ pub fn tried(words: &[String]) -> String {
         [verb, host] if verb == "proxy" => through_the_proxy(host),
         [verb, host, named] if verb == "hello" => hello_through_the_proxy(host, named),
         [verb, pid] if verb == "environ" => environ(pid),
+        [verb, program, args @ ..] if verb == "start" => started(program, args),
+        #[cfg(unix)]
+        [verb, program, at] if verb == "start-linked" => {
+            match std::os::unix::fs::symlink(program, at) {
+                Ok(()) => {
+                    let said = started(at, &[]);
+                    let _ = std::fs::remove_file(at);
+                    said
+                }
+                // Never a refusal of the start: nothing was started.
+                Err(why) => Ok(format!("no link was made: {}", why.kind())),
+            }
+        }
+        #[cfg(target_os = "linux")]
+        [verb, program] if verb == "start-held" => {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            use std::os::unix::io::AsRawFd as _;
+            /// `O_PATH`, the same number on every architecture purlis runs on.
+            const PATH_ONLY: i32 = 0o10000000;
+            match std::fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(PATH_ONLY)
+                .open(program)
+            {
+                Ok(held) => started(&format!("/proc/self/fd/{}", held.as_raw_fd()), &[]),
+                // Never a refusal of the start: nothing was started.
+                Err(why) => Ok(format!("no descriptor was held: {}", why.kind())),
+            }
+        }
         _ => Err(format!("nothing to try in {words:?}")),
     };
     match said {
         Ok(it) => it,
         Err(why) => format!("refused: {why}"),
     }
+}
+
+/// How `program` started with `args` ended and what it printed, or why it did not start.
+fn started(program: &str, args: &[String]) -> Result<String, String> {
+    std::process::Command::new(program)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map(|out| {
+            format!(
+                "ok, it ended {} and said {}",
+                out.status,
+                String::from_utf8_lossy(&out.stdout).trim()
+            )
+        })
+        .map_err(|why| why.kind().to_string())
 }
 
 /// The proxy's status line for a tunnel to `host`, or why there was none.

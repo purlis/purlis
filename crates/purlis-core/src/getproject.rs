@@ -24,12 +24,11 @@
 //! a sign-in git would have asked for is a "no access" sentence instead. No chat reaches this module; its only caller is a command of the window's
 //! alone.
 
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
-use std::time::Duration;
+use std::sync::atomic::AtomicBool;
 
+use crate::cloning::{self, Followed, Reading, read_words};
+pub use crate::cloning::{Progress, Stage, read_progress};
 use crate::worktree::git;
 
 /// Where a project goes when the person has not picked a place yet: `~/Projects` (ruling Q7).
@@ -233,62 +232,6 @@ pub fn home() -> Option<PathBuf> {
     dirs::home_dir()
 }
 
-/// Which part of a clone is running, in the person's words.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Stage {
-    /// Reaching the forge, and the forge getting the project ready.
-    Connecting,
-    /// The project's history coming down.
-    Downloading,
-    /// That history being unpacked.
-    Unpacking,
-    /// The project's files written into the folder.
-    WritingFiles,
-}
-
-impl Stage {
-    /// What the window says while this stage runs.
-    pub fn words(self) -> &'static str {
-        match self {
-            Self::Connecting => "Connecting",
-            Self::Downloading => "Downloading",
-            Self::Unpacking => "Unpacking",
-            Self::WritingFiles => "Writing files",
-        }
-    }
-}
-
-/// How far a clone has got: its stage, and the share of that stage done when git says.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Progress {
-    pub stage: Stage,
-    pub percent: Option<u8>,
-}
-
-/// One line of git's `--progress` output as [`Progress`], or `None` for a line that is not
-/// progress (and may say why a clone failed).
-pub fn read_progress(line: &str) -> Option<Progress> {
-    let line = line.trim();
-    // The forge's own preparation comes as `remote: …`, and is part of connecting.
-    let said = line.strip_prefix("remote: ").unwrap_or(line);
-    let (what, rest) = said.split_once(':')?;
-    let stage = match what {
-        "Enumerating objects" | "Counting objects" | "Compressing objects" => Stage::Connecting,
-        "Receiving objects" => Stage::Downloading,
-        "Resolving deltas" => Stage::Unpacking,
-        "Updating files" | "Checking out files" => Stage::WritingFiles,
-        _ => return None,
-    };
-    let percent = rest.split_once('%').and_then(|(number, _)| {
-        number
-            .trim()
-            .parse::<u8>()
-            .ok()
-            .filter(|number| *number <= 100)
-    });
-    Some(Progress { stage, percent })
-}
-
 /// Why a project was not got.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Why {
@@ -339,85 +282,40 @@ pub enum Got {
     CalledOff,
 }
 
-/// Why git's own words say a clone failed, as one of the window's sentences.
-///
-/// git's words are matched lower-cased; `LC_ALL=C` keeps them in English. The no-access words
-/// come first: a forge that says "not found" to a sign-in it refuses says so as well.
+/// Why git's own words say a clone failed, as one of the window's sentences ([`read_words`]).
 pub fn read_failure(url: &ProjectUrl, said: &[String]) -> Refused {
-    let all = said.join("\n").to_lowercase();
-    let any = |words: &[&str]| words.iter().any(|word| all.contains(word));
     let host = url.host();
     let shown = url.as_str();
-    let (why, sentence) = if any(&[
-        "permission denied",
-        "authentication failed",
-        "could not read username",
-        "could not read password",
-        "terminal prompts disabled",
-        "host key verification failed",
-        "access denied",
-        "returned error: 401",
-        "returned error: 403",
-    ]) {
-        let sentence = match url.transport() {
-            Transport::Ssh => format!(
-                "{host} did not accept your SSH key for {shown}. Check that your key is loaded \
-                 and that {host} is a known host (try `ssh -T` to it in a terminal), or paste \
-                 the HTTPS URL. Then Retry."
-            ),
-            _ => format!(
-                "{host} did not let you in to {shown}. Sign in to {host} with git on this \
-                 machine, or paste the SSH URL, then Retry."
-            ),
-        };
-        (Why::NoAccess, sentence)
-    } else if any(&[
-        "repository not found",
-        "could not be found",
-        "does not appear to be a git repository",
-        "returned error: 404",
-        "does not exist",
-    ]) || all.contains("repository '") && all.contains("' not found")
-    {
-        (
+    let (why, sentence) = match read_words(said) {
+        Reading::NoAccess => {
+            let sentence = match url.transport() {
+                Transport::Ssh => format!(
+                    "{host} did not accept your SSH key for {shown}. Check that your key is loaded \
+                     and that {host} is a known host (try `ssh -T` to it in a terminal), or paste \
+                     the HTTPS URL. Then Retry."
+                ),
+                _ => format!(
+                    "{host} did not let you in to {shown}. Sign in to {host} with git on this \
+                     machine, or paste the SSH URL, then Retry."
+                ),
+            };
+            (Why::NoAccess, sentence)
+        }
+        Reading::Missing => (
             Why::Missing,
             format!(
                 "There is no project at {shown}. Check the owner and the name. A private project \
                  you cannot reach looks missing too."
             ),
-        )
-    } else if any(&[
-        "could not resolve host",
-        "could not resolve hostname",
-        "connection refused",
-        "connection timed out",
-        "operation timed out",
-        "network is unreachable",
-        "failed to connect",
-        "no route to host",
-    ]) {
-        (
+        ),
+        Reading::Unreachable | Reading::Stalled | Reading::StalledOnLargeFiles => (
             Why::Unreachable,
             format!("purlis could not reach {host}. Check your connection, then Retry."),
-        )
-    } else {
-        let last = said
-            .iter()
-            .rev()
-            .map(|line| line.trim())
-            .find(|line| !line.is_empty())
-            .map(|line| line.strip_prefix("fatal: ").unwrap_or(line))
-            .unwrap_or("it stopped without saying why");
-        (Why::Git, format!("git could not get {shown}: {last}"))
+        ),
+        Reading::Other(last) => (Why::Git, format!("git could not get {shown}: {last}")),
     };
     Refused { why, sentence }
 }
-
-/// How often a running clone is checked for the person's stop.
-const LISTEN: Duration = Duration::from_millis(50);
-
-/// The most lines of git's own words kept to say why a clone failed.
-const KEPT_LINES: usize = 40;
 
 /// Clones `url` into `into`, telling `progress` how far it has got, and stopping as soon as
 /// `called_off` is raised.
@@ -528,91 +426,25 @@ fn no_prompt_ssh(dir: &Path) -> Vec<String> {
     }
 }
 
-/// Reads a running clone to its end: its progress to `progress`, its other words kept to say
-/// why it failed, and the child stopped the moment `called_off` is raised.
+/// Reads a running clone to its end ([`cloning::follow`]). No stall limit: the person watches
+/// the page and can call it off.
 fn follow(
     url: &ProjectUrl,
     into: &Path,
-    mut child: std::process::Child,
+    child: std::process::Child,
     called_off: &AtomicBool,
     progress: &mut dyn FnMut(Progress),
 ) -> Result<Got, Refused> {
-    let (lines, heard) = mpsc::channel::<String>();
-    if let Some(mut stdout) = child.stdout.take() {
-        std::thread::spawn(move || {
-            let _ = std::io::copy(&mut stdout, &mut std::io::sink());
-        });
-    }
-    if let Some(stderr) = child.stderr.take() {
-        std::thread::spawn(move || {
-            // git rewrites a progress line in place with `\r`, so either ends a line.
-            let mut line = Vec::new();
-            for byte in std::io::BufReader::new(stderr).bytes() {
-                let Ok(byte) = byte else { break };
-                if byte != b'\r' && byte != b'\n' {
-                    line.push(byte);
-                    continue;
-                }
-                if !line.is_empty() {
-                    if lines
-                        .send(String::from_utf8_lossy(&line).into_owned())
-                        .is_err()
-                    {
-                        return;
-                    }
-                    line.clear();
-                }
-            }
-            if !line.is_empty() {
-                let _ = lines.send(String::from_utf8_lossy(&line).into_owned());
-            }
-        });
-    }
-    let mut said: Vec<String> = Vec::new();
-    let mut last: Option<Progress> = None;
-    loop {
-        if called_off.load(Ordering::SeqCst) {
-            git::stop(&mut child);
-            return Ok(Got::CalledOff);
+    match cloning::follow(child, called_off, None, progress) {
+        Ok(Followed::Ended { ok: true, .. }) => Ok(Got::Cloned(into.to_path_buf())),
+        Ok(Followed::Ended { said, .. } | Followed::Stalled { said }) => {
+            Err(read_failure(url, &said))
         }
-        match heard.recv_timeout(LISTEN) {
-            Ok(line) => match read_progress(&line) {
-                Some(now) if last != Some(now) => {
-                    last = Some(now);
-                    progress(now);
-                }
-                Some(_) => {}
-                None => {
-                    said.push(line);
-                    if said.len() > KEPT_LINES {
-                        said.remove(0);
-                    }
-                }
-            },
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
-        }
-    }
-    let status = loop {
-        if called_off.load(Ordering::SeqCst) {
-            git::stop(&mut child);
-            return Ok(Got::CalledOff);
-        }
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) => std::thread::sleep(LISTEN),
-            Err(err) => {
-                return Err(Refused {
-                    why: Why::Git,
-                    sentence: format!("purlis lost track of git while it cloned: {err}"),
-                });
-            }
-        }
-    };
-    if status.success() {
-        Ok(Got::Cloned(into.to_path_buf()))
-    } else {
-        Err(read_failure(url, &said))
+        Ok(Followed::CalledOff) => Ok(Got::CalledOff),
+        Err(err) => Err(Refused {
+            why: Why::Git,
+            sentence: format!("purlis lost track of git while it cloned: {err}"),
+        }),
     }
 }
 

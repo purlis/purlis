@@ -49,7 +49,7 @@ Zed's, and it is the only one that can colour the terminal at all.
 ## The vocabulary
 
 `TOKENS` in `app/src/theme/theme.ts` is the list, with a comment on each group saying what it
-means. A hundred and twenty-one colour names in twenty-three groups, and the typed tokens below
+means. A hundred and thirty-two colour names in twenty-four groups, and the typed tokens below
 them:
 
 | group                                  | tokens                                                                                          | what it is                                                                                        |
@@ -64,6 +64,7 @@ them:
 | `tree.*`                               | `guide`                                                                                         | a tree's indent guides, one straight hairline per level                                           |
 | `needs-you.*`                          | `base` `text`                                                                                   | the one signal this app exists for                                                                |
 | `danger.*`                             | `base` `surface` `text` `wash`                                                                  | an answer that cannot be taken back                                                               |
+| `attention.*`                          | `surface` `text`                                                                                | what needs a decision where nothing went wrong (#3678): an attention Notice's ground, and its words and mark on it; trouble stays `danger.*`'s, for real failures |
 | `state.*`                              | `running` `waiting` `waiting-glow` `failed` `success` `unreadable`                              | what a chat, or a check on a branch, is doing                                                     |
 | `overlay.*`                            | `scrim` `shadow`                                                                                | what goes over the window when something is modal                                                 |
 | `terminal.*`                           | `background` `foreground` `cursor` `cursor-accent` `selection` `find-match` `find-match-active` | the two `find-*` are a find's matches in a pane, drawn under the text (`theme.searchDecorations`) |
@@ -1091,6 +1092,9 @@ has it; nothing reads the key after that.
   - **`inbox`**: **`scope`**, whose asks the Inbox lists: `all` (All projects) or `workspace`
     (This workspace). Leave it out for the project's, the default. A value that is neither is
     read as the default.
+  - **`browsers`**: **`scope`**, which browsers the Browsers grid shows (#2027), in the Inbox's
+    words: `all` (All projects) or `workspace` (This workspace). Leave it out for the project's,
+    the default. A value that is neither is read as the default.
 
   purlis writes a project's entry when anything in it changes; the core keeps the entries a
   window did not send, so two windows keep each other's. It keeps at most 32, and at most
@@ -1194,12 +1198,12 @@ has it; nothing reads the key after that.
   (`app/src/railMode.ts`); the first frame draws the rail as it says. Where the rail would
   crowd the work, the window hides it over a `rail` left out (#3077, `app/src/railRoom.ts`), and
   that hide is never written.
-- **`skills`** is what the Skills view keeps for the window (#3308, #3281): `"onlyThisChat": true`
-  while Only this chat's narrows its list to the chat in front, and `"folded"`, the levels folded
-  in its tree (`["built-in", "program:Claude Code"]`, at most 16, a name that is no level
-  skipped). Each is left out at its default, every skill listed and every level open, and the
-  whole entry while both are. Any other value is the default, and the Inbox says so. The switch
-  and the folds write it (`app/src/skillsViewPrefs.ts`).
+- **`skills`** is what the Skills view keeps for the window (#3281, #3693): `"folded"`, the
+  groups folded (`["built-in"]`, of `needs-you`, `in-chat`, `built-in` and `left-out`, at most
+  16, a name that is no group skipped). It is left out at its default, Left out and the built-in
+  skills folded. The view follows the chat in front, so the `"onlyThisChat"` an older purlis
+  wrote is read past and never written. Any other value is the default, and the Inbox says so.
+  The folds write it (`app/src/skillsViewPrefs.ts`).
 - **`dismissed`** is the Notices you dismissed (NO-2, V91j), per project by its path, each
   by its cause. A Notice stays hidden while its cause is kept here, and the window lets the
   cause go once the project answers without it, so the Notice shows again if the cause comes
@@ -1887,7 +1891,9 @@ view wears one.
 1. **Colour follows the role, never the other way.** A word is not made quieter by picking a
    quieter colour; it is given the role it has, and the role brings the colour.
 2. **Muted is for meta only.** A help line or a where line is secondary. (Muted was the
-   window's most used text colour, mostly on secondary-role text.)
+   window's most used text colour, mostly on secondary-role text.) One exception stands until
+   the view tabs move onto the roles (below): a view's sentence that wears no role
+   (`.view-body .none`, `.pending`) is drawn muted by one rule in `App.css` (#3938).
 3. **Nothing is under the words' floor.** 11px (`--font-size-xs`) is it: `0.72rem` and
    `0.65rem` become it, and a snap never lands under it. The one step below, `--font-size-2xs`
    (10px, the operator, 2026-10-17), is for a tight secondary label only: the Chats view's and the
@@ -1977,7 +1983,9 @@ One change each, each checked against a screenshot (#1920):
 4. the tab strips and the status bar;
 5. Settings;
 6. Notices and dialogs;
-7. Welcome.
+7. Welcome;
+8. the view tabs (Todos, Memory, a task's changes, the skills' pages): their `.none` and
+   `.pending` sentences wear `ui-text-secondary`, and `.view-body`'s muted goes (#3938).
 
 Along the way the section label gets one spelling (`ui-text-label`, which is `.sidebar-title`'s
 type today), and the two largest size tokens are each read by a role or removed.

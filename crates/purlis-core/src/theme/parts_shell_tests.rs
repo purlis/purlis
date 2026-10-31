@@ -86,7 +86,14 @@ fn the_window_s_families_are_in_the_manifest_at_version_3() {
     assert_eq!(
         of("status-item"),
         (
-            vec!["root".into(), "icon".into(), "label".into(), "count".into()],
+            vec![
+                "root".into(),
+                "icon".into(),
+                "label".into(),
+                "count".into(),
+                "dot".into(),
+                "dot-warning".into()
+            ],
             vec![
                 "bar".into(),
                 "pill".into(),
@@ -465,6 +472,90 @@ fn the_title_bar_chip_s_defaults_are_what_titlebar_css_draws() {
     assert_eq!(text, token(declared(unpinned_lit, "color").unwrap()));
 }
 
+#[test]
+fn the_plane_root_s_chip_is_the_workspace_chip_s_root_variant_since_next() {
+    // A theme keys it as a chip (`titlebar.workspace.root.*`, #3654), new in the next release.
+    let manifest = parts::manifest_json();
+    let titlebar = manifest["families"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|one| one["name"] == "titlebar")
+        .unwrap();
+    let root = titlebar["variants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|one| one["name"] == "root")
+        .expect("the root chip is a variant of the title bar's chip");
+    assert_eq!(root["since"], parts::NEXT);
+    assert_eq!(root["consent"], false);
+    // Drawn as a pin is (titlebar.css): quiet at rest, the card's fill under the pointer, the
+    // accent's wash while the plane root is in front, and never looking merely hovered then.
+    let css = css_of(include_str!("../../../../app/src/ui/titlebar/titlebar.css"));
+    let chip = "[data-part=\"workspace\"][data-scope=\"titlebar\"]";
+    for states in [
+        &[][..],
+        &[parts::State::Hover][..],
+        &[parts::State::Selected][..],
+        &[parts::State::Hover, parts::State::Selected][..],
+    ] {
+        assert_eq!(
+            parts::look_of("titlebar", "root", states),
+            parts::look_of("titlebar", "pinned", states),
+            "{states:?}"
+        );
+    }
+    let own = rule(&css, &format!("{chip}[data-variant=\"root\"]"));
+    assert!(declared(own, "background-color").is_none());
+    assert!(declared(own, "color").is_none());
+    // A theme's key for it is read and drawn on the root chip alone.
+    let sheet = sheet_of(json!({ "titlebar.workspace.root.selected.fill": "accent.surface" }));
+    assert!(
+        sheet.contains("[data-variant=\"root\"][data-selected]"),
+        "{sheet}"
+    );
+}
+
+#[test]
+fn a_dormant_pin_s_chip_is_the_workspace_chip_s_dormant_variant_since_next() {
+    // A theme keys it as a chip (`titlebar.workspace.dormant.*`, #3651), new in the next release.
+    let manifest = parts::manifest_json();
+    let titlebar = manifest["families"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|one| one["name"] == "titlebar")
+        .unwrap();
+    let dormant = titlebar["variants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|one| one["name"] == "dormant")
+        .expect("a dormant pin's chip is a variant of the title bar's chip");
+    assert_eq!(dormant["since"], parts::NEXT);
+    assert_eq!(dormant["consent"], false);
+    // Drawn as titlebar.css draws it: muted words and the subtle line at rest, never the chosen
+    // wash (it is never current), the card's fill and the primary words under the pointer.
+    let css = css_of(include_str!("../../../../app/src/ui/titlebar/titlebar.css"));
+    let chip = "[data-part=\"workspace\"][data-scope=\"titlebar\"]";
+    let own = rule(&css, &format!("{chip}[data-variant=\"dormant\"]"));
+    let [fill, text, border] = parts::look_of("titlebar", "dormant", &[]);
+    assert_eq!(fill, "transparent");
+    assert_eq!(text, token(declared(own, "color").unwrap()));
+    assert_eq!(border, token(declared(own, "border-color").unwrap()));
+    assert_eq!(declared(own, "border-style"), Some("dotted"));
+    assert_eq!(
+        parts::look_of("titlebar", "dormant", &[parts::State::Selected]),
+        parts::look_of("titlebar", "dormant", &[]),
+        "never current, so never the chosen wash"
+    );
+    let lit = rule(&css, &format!("{chip}[data-variant=\"dormant\"][data-hovered]"));
+    let [fill, text, _] = parts::look_of("titlebar", "dormant", &[parts::State::Hover]);
+    assert_eq!(fill, token(declared(lit, "background-color").unwrap()));
+    assert_eq!(text, token(declared(lit, "color").unwrap()));
+}
+
 // ---------------------------------------------------------------------------------------
 // The window's geometry (#2805)
 // ---------------------------------------------------------------------------------------
@@ -554,4 +645,426 @@ fn the_window_s_geometry_is_written_in_px_and_held_to_its_bounds() {
         "{:?}",
         said(&loaded)
     );
+}
+
+// ---------------------------------------------------------------------------------------
+// A chip's notice dot and a notice card's point (#3648): parts drawn beside their roots
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_chip_s_notice_dot_is_reached_by_its_own_attributes_not_inside_a_chip() {
+    // The dot is the chip's sibling in its slot (`ChipSlot`), so a rule inside a chip would reach
+    // nothing: it is drawn around the chip, in no variant and no state of it.
+    let sheet = sheet_of(json!({ "titlebar.dot.fill": "accent.base" }));
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"titlebar\"][data-part=\"dot\"]) { background-color: var(--accent-base); }"
+        ),
+        "{sheet}"
+    );
+    let loaded = load(&with_parts(json!({ "titlebar.dot.pinned.hover.fill": "accent.base" })));
+    assert!(
+        said(&loaded)
+            .iter()
+            .any(|one| one.contains("parts.titlebar.dot.pinned.hover.fill is not")),
+        "{:?}",
+        said(&loaded)
+    );
+}
+
+#[test]
+fn each_kind_of_notice_dot_is_a_part_of_its_own() {
+    // A warning's dot (#3649) is keyed apart from news's, so a theme colouring one never colours
+    // the other the same, and it too is drawn around the chip, in no variant and no state.
+    let sheet = sheet_of(json!({
+        "titlebar.dot.fill": "accent.base",
+        "titlebar.dot-warning.fill": "state.waiting",
+    }));
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"titlebar\"][data-part=\"dot-warning\"]) { background-color: var(--state-waiting); }"
+        ),
+        "{sheet}"
+    );
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"titlebar\"][data-part=\"dot\"]) { background-color: var(--accent-base); }"
+        ),
+        "{sheet}"
+    );
+    let loaded = load(&with_parts(json!({ "titlebar.dot-warning.pinned.fill": "state.waiting" })));
+    assert!(
+        said(&loaded)
+            .iter()
+            .any(|one| one.contains("parts.titlebar.dot-warning.pinned.fill is not")),
+        "{:?}",
+        said(&loaded)
+    );
+}
+
+#[test]
+fn the_needs_you_dot_is_a_part_of_its_own_that_reaches_the_dot() {
+    // A needs-you dot (#3652) is keyed apart from the other kinds, and reached by its own
+    // attributes around the chip, as every dot is, in no variant and no state.
+    let sheet = sheet_of(json!({ "titlebar.dot-needs.fill": "state.failed" }));
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"titlebar\"][data-part=\"dot-needs\"]) { background-color: var(--state-failed); }"
+        ),
+        "{sheet}"
+    );
+    assert!(
+        !sheet.contains("[data-part=\"workspace\"] [data-scope=\"titlebar\"][data-part=\"dot-needs\"]"),
+        "never reached inside a chip: {sheet}"
+    );
+    let loaded = load(&with_parts(json!({ "titlebar.dot-needs.hover.fill": "state.failed" })));
+    assert!(
+        said(&loaded)
+            .iter()
+            .any(|one| one.contains("parts.titlebar.dot-needs.hover.fill is not")),
+        "{:?}",
+        said(&loaded)
+    );
+}
+
+#[test]
+fn a_notice_card_s_point_is_its_own_part_and_leaves_every_other_popover_s_arrow_alone() {
+    // The point is the notice card's (`HungPopover`); the arrow a held popover draws is an SVG of
+    // the surface's own ground, no part a theme keys.
+    let sheet = sheet_of(json!({ "popover.point.fill": "surface.raised" }));
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"popover\"][data-part=\"point\"]) { background-color: var(--surface-raised); }"
+        ),
+        "{sheet}"
+    );
+    let loaded = load(&with_parts(json!({
+        "popover.arrow.fill": "surface.raised",
+        "popover.point.popover.fill": "surface.raised",
+    })));
+    let notes = said(&loaded);
+    for key in ["popover.arrow.fill", "popover.point.popover.fill"] {
+        assert!(
+            notes.iter().any(|one| one.contains(&format!("parts.{key} is not"))),
+            "{key}: {notes:?}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// The crumb, the ⌄, and a switcher's rows and pins (#3656): parts drawn apart from every chip
+// ---------------------------------------------------------------------------------------
+
+/// The title bar's parts drawn apart from every chip, each with the states its own element is
+/// marked in (`ProjectCrumb`, `AllWorkspaces`, `SwitcherPin` and `SwitcherRow`).
+const APART: &[(&str, &[&str])] = &[
+    ("crumb", &["hover", "selected", "focused"]),
+    ("all", &["hover", "selected", "focused"]),
+    ("pin", &["hover", "selected", "focused"]),
+    ("row", &["hover", "selected"]),
+];
+
+/// The attribute the window marks a state by, on the part's own element.
+fn marked(state: &str) -> &'static str {
+    match state {
+        "hover" => "[data-hovered]:not([data-disabled])",
+        "selected" => "[data-selected]",
+        "focused" => "[data-focus-visible]",
+        _ => unreachable!("{state}"),
+    }
+}
+
+#[test]
+fn the_crumb_the_all_button_a_row_and_a_pin_are_reached_by_their_own_attributes() {
+    // None is drawn inside a workspace chip, so a rule inside one would reach nothing.
+    for (part, _) in APART {
+        let sheet = sheet_of(json!({ format!("titlebar.{part}.fill"): "surface.raised" }));
+        assert!(
+            sheet.contains(&format!(
+                ":where([data-scope=\"titlebar\"][data-part=\"{part}\"]{}) {{ background-color: var(--surface-raised); }}",
+                unless(part)
+            )),
+            "{part}: {sheet}"
+        );
+        assert!(
+            !sheet.contains(&format!(
+                "[data-part=\"workspace\"] [data-scope=\"titlebar\"][data-part=\"{part}\"]"
+            )),
+            "{part} is never reached inside a chip: {sheet}"
+        );
+    }
+}
+
+#[test]
+fn the_crumb_s_words_reach_the_crumb() {
+    // The ticket's own case (#3656): `titlebar.crumb.fill` and its words draw the crumb.
+    let sheet = sheet_of(json!({
+        "titlebar.crumb.fill": "surface.raised",
+        "titlebar.crumb.text": "text.primary",
+    }));
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"titlebar\"][data-part=\"crumb\"]) { background-color: var(--surface-raised); color: var(--text-primary); }"
+        ),
+        "{sheet}"
+    );
+}
+
+/// What a part's keys never reach (#4000): an unavailable switcher row.
+fn unless(part: &str) -> &'static str {
+    if part == "row" {
+        ":not([data-unavailable])"
+    } else {
+        ""
+    }
+}
+
+#[test]
+fn each_apart_part_s_state_reaches_the_part_marked_in_it() {
+    for (part, states) in APART {
+        for state in *states {
+            let sheet = sheet_of(json!({
+                format!("titlebar.{part}.{state}.fill"): "surface.raised",
+            }));
+            assert!(
+                sheet.contains(&format!(
+                    ":where([data-scope=\"titlebar\"][data-part=\"{part}\"]{}{}) {{ background-color: var(--surface-raised); }}",
+                    marked(state),
+                    unless(part)
+                )),
+                "{part} {state}: {sheet}"
+            );
+        }
+    }
+}
+
+#[test]
+fn an_apart_part_in_a_chip_s_variant_or_a_state_it_is_never_in_is_said_and_left_out() {
+    // No release has published format 2 (v0.4.1 has no theme schema), so the schema never
+    // completes these keys, and a theme that writes one is told it reaches nothing.
+    let keys = parts::schema()["properties"].clone();
+    for key in [
+        "titlebar.crumb.pinned.fill",
+        "titlebar.all.unpinned.hover.text",
+        "titlebar.pin.root.fill",
+        "titlebar.row.dormant.corner-radius",
+        "titlebar.row.focused.fill",
+    ] {
+        let loaded = load(&with_parts(json!({ key: "surface.raised" })));
+        assert!(!loaded.refused, "{key}: {:?}", said(&loaded));
+        assert!(
+            said(&loaded)
+                .iter()
+                .any(|one| one.contains(&format!("parts.{key} reaches nothing"))
+                    && one.contains("apart")),
+            "{key}: {:?}",
+            said(&loaded)
+        );
+        assert!(
+            !parts::stylesheet(loaded.theme.first()).contains("var(--surface-raised)"),
+            "{key} draws nothing"
+        );
+        assert!(keys.get(key).is_none(), "{key} is not completed");
+    }
+    // Its own keys are.
+    for key in [
+        "titlebar.crumb.fill",
+        "titlebar.crumb.hover.fill",
+        "titlebar.row.selected.text",
+        "titlebar.pin.focused.fill",
+    ] {
+        assert!(keys.get(key).is_some(), "{key}");
+    }
+}
+
+#[test]
+fn a_chip_that_falls_leaves_the_crumb_s_colours_as_the_theme_sets_them() {
+    // #3946's review: in Purlis dark a faint unpinned chip breaks its floor and draws its
+    // default back; the crumb, which broke nothing, keeps the primary words the theme gave it.
+    let loaded = load(&json!({
+        "name": "Shaped",
+        "extends": "purlis",
+        "parts": {
+            "titlebar.crumb.text": "text.primary",
+            "titlebar.workspace.unpinned.text": "text.faint",
+        },
+    }));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    let dark = loaded
+        .theme
+        .appearances
+        .iter()
+        .find(|one| one.id == "dark")
+        .expect("Purlis dark");
+    let fell = parts::fallen(dark);
+    assert!(
+        fell.iter()
+            .any(|one| one.part == "titlebar.workspace.unpinned"),
+        "the chip falls: {fell:?}"
+    );
+    let sheet = parts::stylesheet(dark);
+    let crumb = "[data-scope=\"titlebar\"][data-part=\"crumb\"]";
+    assert!(
+        sheet.contains(&format!(
+            ":where({crumb}) {{ color: var(--text-primary); }}"
+        )),
+        "{sheet}"
+    );
+    for line in sheet.lines().filter(|line| line.contains(crumb)) {
+        assert!(
+            !line.contains("--text-secondary"),
+            "the crumb is drawn back: {line}"
+        );
+    }
+}
+
+#[test]
+fn a_chip_s_own_parts_are_still_reached_inside_it() {
+    // The count is drawn in the chip, in its variants and states.
+    let sheet = sheet_of(json!({ "titlebar.count.pinned.hover.fill": "surface.raised" }));
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"titlebar\"][data-part=\"workspace\"][data-variant=\"pinned\"][data-hovered]:not([data-disabled]) [data-scope=\"titlebar\"][data-part=\"count\"])"
+        ),
+        "{sheet}"
+    );
+}
+
+#[test]
+fn the_pairs_the_crumb_the_all_button_a_row_and_a_pin_draw_are_held() {
+    // What `titlebar.css` draws them in, at rest and in each state, on the title bar and on the
+    // switcher's popover: each is a pair the check holds every built-in to
+    // (`check_tests::every_built_in_still_clears_the_check`), words at 4.5:1 and marks at 3:1.
+    let words = 4.5;
+    let mark = 3.0;
+    for (front, back, floor) in [
+        // The crumb: secondary words on the bar, and on the card's fill under the pointer and
+        // while its switcher is open.
+        ("text.secondary", "surface.deep", words),
+        ("text.secondary", "surface.overlay", words),
+        // The ⌄, a mark: quiet on the bar, primary on the card's fill.
+        ("text.quiet", "surface.deep", mark),
+        ("text.primary", "surface.overlay", mark),
+        // A pin, a mark on the popover: faint at rest, primary under the pointer, the accent
+        // while pinned.
+        ("text.faint", "surface.overlay", mark),
+        ("accent.base", "surface.overlay", mark),
+        // A row: secondary on the popover, primary on the selected row's fill, faint while it
+        // cannot run.
+        ("text.secondary", "surface.overlay", words),
+        ("text.primary", "list.selected", words),
+        ("text.faint", "surface.overlay", mark),
+    ] {
+        assert!(
+            check::PAIRS.iter().any(|pair| pair.front == front
+                && pair.back == back
+                && pair.under.is_none()
+                && pair.floor >= floor),
+            "{front} on {back} at {floor}:1 is held"
+        );
+    }
+}
+
+#[test]
+fn the_manifest_says_which_parts_are_drawn_apart_from_the_next_version_on() {
+    // What version 12 shipped keeps its contract; the next version says it, and the release
+    // step carries it into the version it gives the next release.
+    let part = |version: u32, name: &str| -> Value {
+        parts::manifest_as_of(version)["families"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|one| one["name"] == "titlebar")
+            .unwrap()["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|one| one["name"] == name)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(
+        part(parts::VERSION + 1, "crumb")["apart"],
+        json!(["hover", "selected", "focused"])
+    );
+    assert_eq!(part(parts::VERSION + 1, "row")["apart"], json!(["hover", "selected"]));
+    assert!(part(parts::VERSION, "crumb").get("apart").is_none());
+    assert!(part(parts::VERSION + 1, "count").get("apart").is_none());
+    assert!(parts::has_unreleased());
+}
+
+#[test]
+fn the_notices_item_s_dots_are_reached_by_their_own_attributes_not_inside_an_item() {
+    // The status bar's dots (#3653) are the Notices item's sibling over its corner, as a chip's
+    // are in its slot: drawn around the item, in no variant and no state of it.
+    for part in ["dot", "dot-warning"] {
+        let sheet = sheet_of(json!({ format!("status-item.{part}.fill"): "accent.base" }));
+        assert!(
+            sheet.contains(&format!(
+                ":where([data-scope=\"status-item\"][data-part=\"{part}\"]) {{ background-color: var(--accent-base); }}"
+            )),
+            "{part}: {sheet}"
+        );
+        let key = format!("status-item.{part}.bar.hover.fill");
+        let loaded = load(&with_parts(json!({ key.clone(): "accent.base" })));
+        assert!(
+            said(&loaded)
+                .iter()
+                .any(|one| one.contains(&format!("parts.{key} is not"))),
+            "{key}: {:?}",
+            said(&loaded)
+        );
+    }
+}
+
+/// #3999: the unpinned chip and a dormant one draw no fill of their own at rest, and the
+/// unpinned one none while it is current, so their dashed and dotted line is what draws them
+/// apart from the bar and says which they are. It is a non-text boundary, held to 3:1 (WCAG
+/// 1.4.11) on the bar's ground outside it and on its own fill inside it, in every state, in every
+/// built-in appearance. The window's hairline (`border.subtle`) measured 1.38:1 there in Purlis
+/// dark; the line is drawn in the chip's muted words, held to 4.5 on both grounds.
+#[test]
+fn an_edged_chip_s_line_holds_3_to_1_in_every_state_in_every_built_in() {
+    use parts::State::{Focused, Hover, Selected};
+    let states: [&[parts::State]; 5] = [&[], &[Hover], &[Selected], &[Selected, Hover], &[Focused]];
+    for theme in built_ins().iter().chain(&purlis().appearances) {
+        for variant in ["unpinned", "dormant"] {
+            for held in states {
+                let [fill, _, border] = parts::look_of("titlebar", variant, held);
+                for ground in ["surface.deep", fill] {
+                    if ground == "transparent" {
+                        continue;
+                    }
+                    let ratio = check::contrast(theme.value(border), theme.value(ground));
+                    assert!(
+                        ratio >= 3.0,
+                        "{} {}: the {variant} chip's {border} on {ground} {held:?} is {ratio:.2}",
+                        theme.name,
+                        theme.id
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// #3999 at the engine's interface: a theme that colours the chip itself has the unpinned and
+/// dormant chips' default looks measured (D-3949-3). They hold, so neither draws its default back.
+#[test]
+fn a_theme_that_colours_the_chip_leaves_the_edged_chips_standing() {
+    for base in ["purlis", "purlis-classic"] {
+        let loaded = load(&json!({
+            "name": "Shaped",
+            "extends": base,
+            "parts": { "titlebar.workspace.text": "text.secondary" },
+        }));
+        assert!(!loaded.refused, "{:?}", said(&loaded));
+        for appearance in &loaded.theme.appearances {
+            let fell: Vec<_> = parts::fallen(appearance)
+                .into_iter()
+                .filter(|one| one.part.starts_with("titlebar.workspace"))
+                .collect();
+            assert!(fell.is_empty(), "{base} {}: {fell:?}", appearance.id);
+        }
+    }
 }

@@ -227,8 +227,10 @@
 }
 
 /* **A group's name is held under the top** while its group is in sight, on the panel's fill, so
-   the rows scroll under it: the prototype's 26px `.ghead`. */
-[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="header"] {
+   the rows scroll under it: the prototype's 26px `.ghead`. A list's group and a tree's alike: the
+   Chats view's workspace names are its tree's (#3484). */
+[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="header"],
+[data-scope="panel-section"][data-frame] [data-scope="tree"][data-part="header"] {
   position: sticky;
   inset-block-start: var(--panel-section-top-size);
   z-index: 1;
@@ -249,6 +251,7 @@
 }
 
 [data-scope="panel-section"][data-frame] [data-part="header"] > [data-count] {
+  flex: none;
   font-variant-numeric: tabular-nums;
   letter-spacing: normal;
 }
@@ -287,4 +290,312 @@
 [data-scope="panel-section"][data-frame] .ui-tree-row {
   --ui-row-height: calc(var(--size-control) + var(--space-1));
   scroll-margin-block-start: var(--panel-section-row-clear);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   **The view frame** (#3666, the Skill studio frame's variant A): a view tab laid out as pages.
+   The page navigation, the page's list, and the item chosen in it beside it, each pane its own
+   scroll; narrow, page-and-back. The panes' sizes are the frame's and never their content's, so a
+   new item or a count that changes moves nothing (#2800).
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="view-frame"][data-part="root"] {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  block-size: 100%;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+/* It takes the keyboard only when a crumb it was on has gone, and draws no ring for it. */
+[data-scope="view-frame"][data-part="root"]:focus {
+  outline: none;
+}
+
+[data-scope="view-frame"][data-part="body"] {
+  flex: 1 1 auto;
+  /* The navigation's column: the prototype's 170. A box's size, not a step of the scale. */
+  --view-frame-nav: 170px;
+  display: grid;
+  grid-template-columns: var(--view-frame-nav) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  box-sizing: border-box;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow: hidden;
+}
+
+/* Narrow: the picker over one pane, the list or the item. */
+[data-scope="view-frame"][data-part="body"][data-narrow] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* **The page navigation**: a column of pages, on the panel's own fill, its own scroll. */
+[data-scope="view-frame"][data-part="nav"] {
+  box-sizing: border-box;
+  min-block-size: 0;
+  overflow: auto;
+  padding: var(--space-4) var(--space-3);
+  border-inline-end: 1px solid var(--border-subtle);
+}
+
+[data-scope="view-frame"][data-part="nav"] > ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The two panes beside each other, the separator between them. */
+[data-scope="view-frame"][data-part="panes"] {
+  min-block-size: 0;
+  min-inline-size: 0;
+  --separator-room: 0px;
+}
+
+/* **A pane**: its own scroll, as tall as the frame whatever it holds. */
+[data-scope="view-frame"][data-part="list"],
+[data-scope="view-frame"][data-part="item"] {
+  box-sizing: border-box;
+  block-size: 100%;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow: auto;
+}
+
+[data-scope="view-frame"][data-part="list"] {
+  border-inline-end: 1px solid var(--border-subtle);
+}
+
+/* **The item's pane keeps its page header's room at its top** (#3944): what the keyboard reaches
+   in its body is scrolled into view under the header, never behind it (WCAG 2.4.11). The header
+   writes its height here (`ViewPageHeader`). */
+[data-scope="view-frame"][data-part="item"] {
+  --view-frame-header-size: 0px;
+  scroll-padding-block-start: var(--view-frame-header-size);
+}
+
+/* The list pane takes the keyboard only as the person comes back from an item to it. */
+[data-scope="view-frame"][data-part="list"]:focus {
+  outline: none;
+}
+
+[data-scope="view-frame"][data-part="list"]:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+[data-scope="view-frame"][data-part="body"][data-narrow] > [data-part="list"],
+[data-scope="view-frame"][data-part="body"]:not(:has(> [data-part="panes"])) > [data-part="list"] {
+  border-inline-end: 0;
+}
+
+/* **A page's heading and lead line**, over its list: 12 at the top and the sides, as the
+   prototype's filters are. */
+[data-scope="view-frame"][data-part="head"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-5) var(--space-4);
+}
+
+[data-scope="view-frame"][data-part="head"] > h2 {
+  margin: 0;
+}
+
+/* **The lead line**: one line that says what the page or the item is, in the muted tier. */
+[data-scope="view-frame"][data-part="lead"] {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-md);
+}
+
+/* **The item's page header**, held at the top of its pane while its body scrolls under it: 16
+   above and at the sides (the prototype's `.dh`, whose 20 snaps to 16), on the panel's fill. */
+[data-scope="view-frame"][data-part="header"] {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-6) var(--space-5);
+  border-block-end: 1px solid var(--border-subtle);
+  background-color: var(--panel-fill);
+}
+
+[data-scope="view-frame"][data-part="header"] > h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-lg);
+}
+
+[data-scope="view-frame"][data-part="name"] {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Narrow: the picker over the pane, and the way back over an item. */
+[data-scope="view-frame"][data-part="picker"],
+[data-scope="view-frame"][data-part="back"] {
+  padding: var(--space-4) var(--space-5);
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   **A page in the navigation** (the `view-nav` family, #3666): its name, its count at its end,
+   and the mark that says it is the current page. A state changes a colour or paints the mark,
+   never a size, so choosing a page moves no other.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="view-nav"][data-part="item"] {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-block-size: var(--size-control);
+  margin: 0;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-control);
+  background-color: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-size-md);
+  text-align: start;
+  cursor: pointer;
+}
+
+[data-scope="view-nav"][data-part="label"] {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A page that starts a group: a rule above it, out of its box, so it moves nothing. */
+li:has(> [data-scope="view-nav"][data-part="item"][data-starts-group]) {
+  margin-block-start: var(--space-4);
+  padding-block-start: var(--space-4);
+  border-block-start: 1px solid var(--border-subtle);
+}
+
+/* Under the pointer: the pointer's ground and the primary words. */
+[data-scope="view-nav"][data-part="item"][data-hovered] {
+  background-color: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+/* **The current page**: the accent's wash, the accent's words and the mark at its start, so it is
+   told by more than its colour (WCAG 1.4.1), whatever the pointer does. */
+[data-scope="view-nav"][data-part="item"][data-selected] {
+  background-color: var(--accent-wash);
+  color: var(--accent-text);
+}
+
+[data-scope="view-nav"][data-part="item"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+/* The mark: a short bar at the start edge, there in every state and painted only on the current
+   page, so painting it moves nothing. */
+[data-scope="view-nav"][data-part="indicator"] {
+  position: absolute;
+  inset-block: var(--space-3);
+  inset-inline-start: 0;
+  inline-size: 3px;
+  border-radius: var(--radius-full);
+  background-color: transparent;
+  pointer-events: none;
+}
+
+[data-scope="view-nav"][data-part="item"][data-selected] > [data-part="indicator"] {
+  background-color: var(--accent-base);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   **A view tab's top bar** (#3667, the Skill studio frame's `.bar`): back and forward, the path,
+   then the view's own controls at its end, over a hairline. One line, as tall as a control; the
+   path gives way before the controls do.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="view-frame"][data-part="bar"] {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  padding: var(--space-4) var(--space-5);
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+[data-scope="view-frame"][data-part="history"] {
+  display: flex;
+  flex: none;
+  gap: var(--space-1);
+}
+
+[data-scope="view-frame"][data-part="controls"] {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  margin-inline-start: auto;
+}
+
+/* **The path**: one line of names. Each before the last gives way in proportion to its length,
+   so a long name is cut first, with an ellipsis; where the person is stays whole while it can. */
+[data-scope="view-frame"][data-part="path"] {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-size-md);
+  list-style: none;
+  white-space: nowrap;
+}
+
+[data-scope="view-frame"][data-part="path"] > li {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-inline-size: 0;
+}
+
+[data-scope="view-frame"][data-part="path"] > li:last-child {
+  flex-shrink: 0;
+  max-inline-size: 100%;
+}
+
+/* Where the person is: its name in the primary tier, cut with an ellipsis only once nothing else
+   gives way. */
+[data-scope="view-frame"][data-part="crumb"] {
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+  text-overflow: ellipsis;
+}
+
+[data-scope="view-frame"][data-part="crumb-separator"] {
+  flex: none;
+  padding-inline: var(--space-2);
+  color: var(--text-muted);
 }

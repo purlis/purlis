@@ -17,7 +17,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { FinishedTask, Moved, OpenChat } from "./bindings";
 import type { State } from "./chatState";
-import { cardOf } from "./chatCard.testkit";
+import { cardOf, theCard } from "./chatCard.testkit";
 import { forgetThisLaunch } from "./regions";
 import type { Shown } from "./shownState";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
@@ -507,11 +507,19 @@ describe("a limit, said where it binds (#1498)", () => {
     const heard = (event: Event) => linked.push((event as CustomEvent).detail);
     window.addEventListener("charter-settings-link", heard);
     try {
-      await userEvent.click(within(line).getByRole("button", { name: "Dispatch settings" }));
+      // The pointer's (#3759): out of the tree, which owns its rows alone.
+      await userEvent.click(
+        within(line).getByRole("button", { name: "Dispatch settings", hidden: true }),
+      );
     } finally {
       window.removeEventListener("charter-settings-link", heard);
     }
     expect(linked).toEqual([{ plane: PLANE, link: { group: "project.dispatch" } }]);
+    // The row says the whole sentence, where a screen reader is (#3759).
+    expect(line.closest("li")?.querySelector('[role="treeitem"]')).toHaveAttribute(
+      "aria-description",
+      SAID,
+    );
     // A task's own row says nothing of its asker's limit.
     expect(screen.queryByTestId("at-limit-2")).toBeNull();
 
@@ -521,6 +529,36 @@ describe("a limit, said where it binds (#1498)", () => {
     await reports(7, "done");
 
     await waitFor(() => expect(screen.queryByTestId("at-limit-1")).toBeNull());
+  });
+
+  // #3886: the card describes the row while it is up, over the row's own description, and the
+  // whole sentence was on the words' hover alone.
+  it("says the whole limit sentence in the row's card, and to a screen reader while it is up", async () => {
+    const six = [2, 3, 4, 5, 6, 7].map((session) => task(session, `check ${session}`));
+    core([
+      chat(1, {
+        tasks_limit: 6,
+        tasks_running: 6,
+        at_limit: { limit: 6, row: "at its task limit (6)", said: SAID, own: true },
+      }),
+      ...six,
+    ]);
+    render(<App />);
+    const tree = await rows(7);
+    const steward = row(tree, "steward 1");
+    await screen.findByTestId("at-limit-1");
+
+    // The card down: the row's own description.
+    expect(steward.getAttribute("aria-describedby")).toBeNull();
+    expect(steward).toHaveAttribute("aria-description", SAID);
+
+    // The keyboard rests on the row: its card says the sentence, and describes the row.
+    await userEvent.keyboard("{Shift}");
+    act(() => steward.focus());
+    const shown = await theCard();
+    expect(shown).toHaveTextContent(SAID);
+    expect(steward.getAttribute("aria-describedby")).toBe(shown.id);
+    expect(steward).toHaveAccessibleDescription(expect.stringContaining(SAID));
   });
 
   it("ends the session's tab menu with how many of its tasks run against its limit", async () => {

@@ -38,19 +38,27 @@ spec:
           type: RuntimeDefault
       # The key the operator signs runners' link keys with (#2056), made once by whoever
       # installs it (docs/cluster-operator.md) and mounted by the kubelet: the operator holds no
-      # right to read a Secret.
+      # right to read it. The whole Secret is mounted, key.pem and, while a team admin
+      # rolls the key, next.pem (#3305), and the kubelet refreshes it, so a roll needs no restart.
       volumes:
         - name: signing-key
           secret:
             secretName: purlis-cluster-operator-signing-key
             # 0440, in decimal: YAML readers disagree on a leading zero.
             defaultMode: 288
-            items:
-              - key: key.pem
-                path: key.pem
       containers:
         - name: operator
           image: {{ include "purlis-cluster-operator.image" . }}
+          # Its metrics (#3737), served at /metrics; the Service purlis-cluster-operator-metrics
+          # reaches them.
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+          env:
+            # What each person's runners may hold at once (#2055), as JSON.
+            - name: PURLIS_PER_PERSON_QUOTA
+              value: {{ .Values.perPerson.quota | toJson | quote }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

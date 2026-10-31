@@ -3,8 +3,10 @@
 
 //! **A grade under way, held on this machine while it runs** (#3353): a grade is recorded when it
 //! ends, so a crash, a fault or a quit while it ran would lose it, and leave nothing to say it
-//! ever ran. While it runs, its row is held in `<state>/grades-under-way/<grade>.json`, its report
-//! saying it was interrupted ([`GradeEnd::Interrupted`]); its end takes the file away
+//! ever ran. While it runs, its row is held in this machine's app state of the project
+//! (`crate::appstate`), `<data>/app-state/<clone key>/grades-under-way/<grade>.json`, its report
+//! saying it was interrupted ([`GradeEnd::Interrupted`]), and, as each chat ends, what its chats
+//! spent so far ([`Marker::spent`], #3582); its end takes the file away
 //! ([`ended`]). At the project's next start, a row still held there that no running purlis holds
 //! is recorded as it is, interrupted ([`interrupted`]), so a grade never stays running and is
 //! never lost. The chat it ran then is the session host's to end with every other chat nothing
@@ -19,12 +21,18 @@
 //! it names, so a crashed grade whose number another process took is recorded all the same, and
 //! a running one is never recorded on a system where a process number says nothing. Where the
 //! lock cannot be asked, the file's process number is read as before.
+//!
+//! **A router's grade is held the same way** (#3616): its row ([`RouterGraded`]) in the same
+//! folder, under the `router` key where a skill's is under `graded`, so a start reads a held lock
+//! as a grade that runs, whatever it grades, and records one purlis stopped under in the
+//! routers' record (`super::routers`).
 
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 
 use purlis_skills::grade::{self, GradeEnd, GradeReport};
 
+use super::routers::RouterGraded;
 use super::{Graded, Level, MOST_FILES, Spent, is_local, plain, record_to};
 
 /// **A grade's file under way, and its lock, held while the grade runs** (#3466): dropped once it
@@ -32,6 +40,8 @@ use super::{Graded, Level, MOST_FILES, Spent, is_local, plain, record_to};
 #[derive(Debug)]
 pub struct Marker {
     path: PathBuf,
+    /// What the file holds: what [`Marker::spent`] writes again, with the spend so far.
+    held: UnderWay,
     /// `None` where the file could not be locked: a start then reads its process number.
     _lock: Option<crate::filelock::Held>,
 }
@@ -40,6 +50,30 @@ impl Marker {
     /// The file's path.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// **Says in the file what the grade's chats spent so far** (#3582): `spent`, its chats,
+    /// tokens and cost as the chats said them, in the row and in its report, so a grade purlis
+    /// stops under is recorded with what it spent, and the chats it asked for so far, ran or
+    /// not (`Spent::asked_for`, #3602), so an estimate can share that spend over them. Written
+    /// whole beside the file and renamed over it, as [`began`] writes it, and locked before it
+    /// is in its place where the first was: the lock is the file's, so the new file takes it
+    /// before the old one lets it go. A spend no sound row could hold is refused, and the file
+    /// stays as it was, so the grade is never taken away unrecorded at the next start.
+    pub fn spent(&mut self, spent: Spent) -> std::io::Result<()> {
+        let mut held = self.held.clone();
+        held.row.spent(spent);
+        if !held.row.sound() {
+            return Err(std::io::Error::other("no sound row says that spend"));
+        }
+        let dir = self
+            .path
+            .parent()
+            .ok_or_else(|| std::io::Error::other("the file has no folder"))?;
+        // The old file's lock goes once the new one, locked, is in its place.
+        self._lock = put(dir, &self.path, &mut held, self.held.locked)?;
+        self.held = held;
+        Ok(())
     }
 
     /// The file's path, its lock let go of, as a crash lets go of it.
@@ -59,18 +93,19 @@ impl std::ops::Deref for Marker {
     }
 }
 
-/// The folder of this machine's state the grades under way are held in.
-const DIR: &str = "grades-under-way";
+/// The folder of this machine's app state of the project the grades under way are held in.
+pub const DIR: &str = "grades-under-way";
 
 /// The most bytes of one grade under way read back.
 const MOST_FILE_BYTES: u64 = 64 * 1024;
 
 /// The file beside that folder a start holds the lock of while it records what it finds there:
 /// two purlis processes starting one project at once never both record one grade (#3443).
-const CLAIM: &str = "grades-under-way.lock";
+pub const CLAIM: &str = "grades-under-way.lock";
 
 /// One grade under way, as its file holds it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "Stored", into = "Stored")]
 struct UnderWay {
     /// The process that runs it: a file whose process still runs is that purlis's, never
     /// recorded by another.
@@ -83,12 +118,127 @@ struct UnderWay {
     #[serde(default)]
     locked: bool,
     /// Its row as it would be recorded had it ended now: no chat scored, interrupted.
-    graded: Graded,
+    row: Row,
 }
 
-/// The folder grades under way are held in, in the project at `root`.
-fn dir(root: &Path) -> PathBuf {
-    crate::plane::state_dir(root).join(DIR)
+/// **What a grade under way grades** (#3616): a skill's copy, or a router on its library.
+#[derive(Debug, Clone, PartialEq)]
+enum Row {
+    Skill(Box<Graded>),
+    Router(Box<RouterGraded>),
+}
+
+/// [`UnderWay`] as its file holds it: a skill's row under `graded`, as every file before #3616
+/// holds it, or a router's under `router`; one of them, never both.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Stored {
+    pid: u32,
+    local: bool,
+    #[serde(default)]
+    locked: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    graded: Option<Box<Graded>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    router: Option<Box<RouterGraded>>,
+}
+
+impl TryFrom<Stored> for UnderWay {
+    type Error = &'static str;
+
+    fn try_from(stored: Stored) -> Result<Self, Self::Error> {
+        let row = match (stored.graded, stored.router) {
+            (Some(graded), None) => Row::Skill(graded),
+            (None, Some(router)) => Row::Router(router),
+            _ => return Err("a grade under way holds one row: a skill's or a router's"),
+        };
+        Ok(UnderWay {
+            pid: stored.pid,
+            local: stored.local,
+            locked: stored.locked,
+            row,
+        })
+    }
+}
+
+impl From<UnderWay> for Stored {
+    fn from(held: UnderWay) -> Self {
+        let (graded, router) = match held.row {
+            Row::Skill(graded) => (Some(graded), None),
+            Row::Router(router) => (None, Some(router)),
+        };
+        Stored {
+            pid: held.pid,
+            local: held.local,
+            locked: held.locked,
+            graded,
+            router,
+        }
+    }
+}
+
+impl Row {
+    /// The grade's id, which names its file.
+    fn grade(&self) -> &str {
+        match self {
+            Row::Skill(graded) => &graded.grade,
+            Row::Router(graded) => &graded.grade,
+        }
+    }
+
+    /// Whether a newer purlis wrote it: left for that one.
+    fn newer(&self) -> bool {
+        match self {
+            Row::Skill(graded) => graded.v > super::VERSION,
+            Row::Router(graded) => graded.v > super::routers::VERSION,
+        }
+    }
+
+    /// Whether it is a sound row of its record. This machine's own row, stamped by its own clock
+    /// as the grade began: a clock set back since never makes it unsound, so no stamp is too late
+    /// here (#3273).
+    fn sound(&self) -> bool {
+        let now = chrono::DateTime::<chrono::Utc>::MAX_UTC;
+        match self {
+            Row::Skill(graded) => graded.sound(now),
+            Row::Router(graded) => graded.sound(now),
+        }
+    }
+
+    /// Says `spent`, what its chats spent so far, in the row and in its report.
+    fn spent(&mut self, spent: Spent) {
+        match self {
+            Row::Skill(graded) => {
+                graded.spent = spent;
+                graded.report.spent_tokens = spent.tokens;
+                graded.report.spent_usd = spent.cost_usd;
+            }
+            // A router's row never says the chats it asked for (#3602): its estimate counts
+            // a scored grade's arms alone, so an interrupted one gives none.
+            Row::Router(graded) => {
+                graded.spent = Spent {
+                    asked_for: None,
+                    ..spent
+                };
+                graded.report.spent_tokens = spent.tokens;
+                graded.report.spent_usd = spent.cost_usd;
+            }
+        }
+    }
+
+    /// Records it, to this machine's state where `local`, else to the committed record of the
+    /// device `device` names.
+    fn record(&self, root: &Path, local: bool, device: impl FnOnce() -> String) -> Option<PathBuf> {
+        match self {
+            Row::Skill(graded) => record_to(root, local, graded, device),
+            Row::Router(graded) => super::routers::record_to(root, local, graded, device),
+        }
+    }
+}
+
+/// The folder grades under way are held in, in this machine's app state of the project at `root`
+/// (`crate::appstate`). `None` where this machine has no data home.
+fn dir(root: &Path) -> Option<PathBuf> {
+    Some(crate::appstate::dir(root)?.join(DIR))
 }
 
 /// **The report of a grade purlis stopped under before it was scored**: no chat scored, the caps
@@ -119,32 +269,78 @@ pub fn interrupted_report(
 /// file of this machine's state, opened following no link, and locked before it is in its place
 /// ([`Marker`]). The grade's id names the file, so an id that is not a plain name is refused.
 pub fn began(root: &Path, level: &Level, graded: &Graded) -> std::io::Result<Marker> {
-    if !plain(&graded.grade) {
+    let row = Row::Skill(Box::new(Graded {
+        report: interrupted_report(
+            graded.report.cap.unwrap_or_default(),
+            graded.report.cost_cap_usd,
+            graded.report.priced.clone(),
+        ),
+        spent: Spent::default(),
+        ..graded.clone()
+    }));
+    hold(root, is_local(root, level), row)
+}
+
+/// **Holds `graded`, a router's grade starting in the project at `root`, as under way**
+/// (#3616), as [`began`] holds a skill's: its row, with its report set to
+/// [`super::routers::interrupted_report`] and nothing spent. `local` says whether its library
+/// holds a copy that is this machine's alone, so its row goes to this machine's record.
+pub fn began_router(root: &Path, local: bool, graded: &RouterGraded) -> std::io::Result<Marker> {
+    let report = &graded.report;
+    let row = Row::Router(Box::new(RouterGraded {
+        report: super::routers::interrupted_report(
+            &graded.router,
+            report.cap.unwrap_or_default(),
+            report.cost_cap_usd,
+            report.priced.clone(),
+        ),
+        spent: Spent::default(),
+        ..graded.clone()
+    }));
+    hold(root, local, row)
+}
+
+/// `row`, a grade starting in the project at `root`, held as under way: see [`began`].
+fn hold(root: &Path, local: bool, row: Row) -> std::io::Result<Marker> {
+    if !plain(row.grade()) {
         return Err(std::io::Error::other("the grade's id is not a plain name"));
     }
     let mut held = UnderWay {
         pid: std::process::id(),
-        local: is_local(root, level),
+        local,
         locked: false,
-        graded: Graded {
-            report: interrupted_report(
-                graded.report.cap.unwrap_or_default(),
-                graded.report.cost_cap_usd,
-                graded.report.priced.clone(),
-            ),
-            spent: Spent::default(),
-            ..graded.clone()
-        },
+        row,
     };
-    let dir = dir(root);
+    let dir = crate::appstate::made(root)
+        .map_err(std::io::Error::other)?
+        .join(DIR);
     std::fs::create_dir_all(&dir)?;
     if !std::fs::symlink_metadata(&dir)?.is_dir() {
         return Err(std::io::Error::other("the folder is not a folder"));
     }
-    let path = dir.join(format!("{}.json", graded.grade));
-    // Written whole beside it, then renamed over it: a start that reads the folder meanwhile
-    // finds no file, or the whole one, never half of it.
-    let partial = dir.join(format!(".{}.json.partial", graded.grade));
+    let path = dir.join(format!("{}.json", held.row.grade()));
+    let lock = put(&dir, &path, &mut held, false)?;
+    Ok(Marker {
+        path,
+        held,
+        _lock: lock,
+    })
+}
+
+/// **Puts `held` in its place `path`, in the folder `dir`**: written whole beside it, then renamed
+/// over it, so a start that reads the folder meanwhile finds no file, or the whole one, never half
+/// of it. The new file is locked before it is written and renamed, so no start ever finds it in
+/// its place unlocked, and `held` says whether it is: the lock is the file's, and the rename
+/// keeps the file. Where `must_lock`, a file that cannot be locked is never put in its place, as
+/// the one it would replace says it is locked. The answer is the new file's lock, where it took
+/// one.
+fn put(
+    dir: &Path,
+    path: &Path,
+    held: &mut UnderWay,
+    must_lock: bool,
+) -> std::io::Result<Option<crate::filelock::Held>> {
+    let partial = dir.join(format!(".{}.json.partial", held.row.grade()));
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -154,16 +350,18 @@ pub fn began(root: &Path, level: &Level, graded: &Graded) -> std::io::Result<Mar
     }
     let written = (|| {
         let mut file = crate::contain::nofollow(&mut options).open(&partial)?;
-        // Locked before it is written and renamed, so no start ever finds it in its place
-        // unlocked, and the file says whether it is: the lock is the file's, and the rename
-        // keeps the file.
         held.locked = match file.try_lock() {
             Ok(()) => true,
+            Err(why) if must_lock => {
+                return Err(std::io::Error::other(format!(
+                    "the file could not be locked again ({why})"
+                )));
+            }
             Err(why) => {
                 tracing::warn!(
                     "purlis: grade {} under way is not locked ({why}): its process number says \
                      whether it runs",
-                    graded.grade
+                    held.row.grade()
                 );
                 false
             }
@@ -171,19 +369,21 @@ pub fn began(root: &Path, level: &Level, graded: &Graded) -> std::io::Result<Mar
         let text = serde_json::to_string(&held).map_err(std::io::Error::other)?;
         file.write_all(text.as_bytes())?;
         file.sync_all()?;
-        std::fs::rename(&partial, &path)?;
+        std::fs::rename(&partial, path)?;
         Ok(held.locked.then(|| crate::filelock::Held::locked(file)))
     })();
     if written.is_err() {
         let _ = std::fs::remove_file(&partial);
     }
-    written.map(|lock| Marker { path, _lock: lock })
+    written
 }
 
 /// **The grade `grade` ended**, recorded or not: it is no longer held as under way.
 pub fn ended(root: &Path, grade: &str) {
-    if plain(grade) {
-        let _ = std::fs::remove_file(dir(root).join(format!("{grade}.json")));
+    if plain(grade)
+        && let Some(dir) = dir(root)
+    {
+        let _ = std::fs::remove_file(dir.join(format!("{grade}.json")));
     }
 }
 
@@ -205,7 +405,9 @@ pub fn interrupted(
     device: impl Fn() -> String,
     runs_here: impl Fn(&str) -> bool,
 ) -> Vec<String> {
-    let dir = dir(root);
+    let Some(dir) = dir(root) else {
+        return Vec::new();
+    };
     if !std::fs::symlink_metadata(&dir).is_ok_and(|meta| meta.is_dir()) {
         return Vec::new();
     }
@@ -218,6 +420,14 @@ pub fn interrupted(
     let mut out = Vec::new();
     for entry in reader.take(MOST_FILES).filter_map(Result::ok) {
         let path = entry.path();
+        // A write a crash cut short ([`put`]): taken away once no other holds its lock, as its
+        // writer holds it while it writes.
+        if is_partial(&path) {
+            if locked_by_another(&path) == Some(false) {
+                let _ = std::fs::remove_file(&path);
+            }
+            continue;
+        }
         if path.extension().is_none_or(|ext| ext != "json") {
             continue;
         }
@@ -238,19 +448,62 @@ pub fn interrupted(
         // A lock no other holds says the grade ended only where the grade took it.
         let held_by_a_running_purlis = match locked.filter(|_| held.locked) {
             Some(locked) => locked,
-            None if held.pid == std::process::id() => runs_here(&held.graded.grade),
+            None if held.pid == std::process::id() => runs_here(held.row.grade()),
             None => crate::process::alive(held.pid),
         };
         if held_by_a_running_purlis {
             continue;
         }
-        if record_to(root, held.local, &held.graded, &device).is_none() {
+        if held.row.record(root, held.local, &device).is_none() {
             continue;
         }
-        out.push(held.graded.grade.clone());
+        out.push(held.row.grade().to_owned());
         let _ = std::fs::remove_file(&path);
     }
     out
+}
+
+/// **The grades of the copy of `name` at `level` under way in the project at `root`**, by id: what
+/// a rename or a move of a skill only on this machine keeps, as each is recorded by the name and
+/// level it began under once it ends (#4104). Read through no link, at most [`MOST_FILES`].
+pub fn of(root: &Path, level: &Level, name: &str) -> Vec<String> {
+    let Some(dir) = dir(root) else {
+        return Vec::new();
+    };
+    if !std::fs::symlink_metadata(&dir).is_ok_and(|meta| meta.is_dir()) {
+        return Vec::new();
+    }
+    let Ok(reader) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let rel = level.rel();
+    // A row that says no level is a local workspace's copy's (`super::read`): another level's
+    // copy of the name is another skill.
+    let levelless = is_local(root, level) && level.at.workspace().is_some();
+    let mut out: Vec<String> = reader
+        .take(MOST_FILES)
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| !is_partial(path) && path.extension().is_some_and(|ext| ext == "json"))
+        .filter_map(|path| match read(&path) {
+            Held::Sound(held) => match held.row {
+                Row::Skill(graded) => Some(*graded),
+                Row::Router(_) => None,
+            },
+            Held::Newer | Held::Unsound => None,
+        })
+        .filter(|row| row.skill == name && (row.level == rel || (levelless && row.level.is_none())))
+        .map(|row| row.grade)
+        .collect();
+    out.sort();
+    out
+}
+
+/// Whether `path` is a file [`put`] writes before it is renamed into its place.
+fn is_partial(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with('.') && name.ends_with(".json.partial"))
 }
 
 /// **Whether another holds the lock of the grade's file at `path`** ([`Marker`]), or `None` where
@@ -282,7 +535,7 @@ fn claimed(root: &Path) -> Option<crate::filelock::Held> {
         options.mode(0o600);
     }
     let file = crate::contain::nofollow(&mut options)
-        .open(crate::plane::state_dir(root).join(CLAIM))
+        .open(crate::appstate::dir(root)?.join(CLAIM))
         .ok()?;
     match file.lock() {
         Ok(()) => Some(crate::filelock::Held::locked(file)),
@@ -320,12 +573,12 @@ fn read(path: &Path) -> Held {
     let Some(held) = text.and_then(|text| serde_json::from_str::<UnderWay>(&text).ok()) else {
         return Held::Unsound;
     };
-    let named = path.file_stem().and_then(|stem| stem.to_str()) == Some(held.graded.grade.as_str());
+    let named = path.file_stem().and_then(|stem| stem.to_str()) == Some(held.row.grade());
     if !named {
         Held::Unsound
-    } else if held.graded.v > super::VERSION {
+    } else if held.row.newer() {
         Held::Newer
-    } else if held.graded.sound() {
+    } else if held.row.sound() {
         Held::Sound(Box::new(held))
     } else {
         Held::Unsound

@@ -487,6 +487,7 @@ fn a_captcha_page_raises_an_ask_and_the_chat_is_told_only_that_the_person_finish
                 false,
                 &AsPersona::default,
                 &|_| Err("no login here".to_owned()),
+                &|| Err("no folder here".to_owned()),
                 1000,
             )
             .0
@@ -611,6 +612,7 @@ fn a_browser_view_on_a_runner_is_reconnecting_while_its_link_is_down_and_reconne
         .send(Pushed::LinkDown {
             why: "the link to it ended".into(),
             key_changed: false,
+            gone: false,
         })
         .unwrap();
     until("the view is said to be reconnecting", || {
@@ -631,6 +633,7 @@ fn a_browser_view_that_draws_again_from_a_snapshot_is_reconnected() {
         .send(Pushed::LinkDown {
             why: "the link to it ended".into(),
             key_changed: false,
+            gone: false,
         })
         .unwrap();
     until("the view is said to be reconnecting", || {
@@ -671,6 +674,7 @@ fn a_browser_view_closed_while_its_link_is_down_is_told_nothing_more() {
         .send(Pushed::LinkDown {
             why: "the link to it ended".into(),
             key_changed: false,
+            gone: false,
         })
         .unwrap();
     until("the view is said to be reconnecting", || {
@@ -1476,5 +1480,93 @@ fn a_browsers_end_the_window_did_not_ask_for_is_said_crashed_and_one_it_asked_fo
             },
         ],
         "a close the window asked for is said by whoever asked it, never as a crash"
+    );
+}
+
+/// **A chat that ran, or may have run, on a pool's runner without the sandbox ends the browsers
+/// the window started there, and no browser starts there after** (D-2050-27, D-2050-28, #3702):
+/// held untrusted by the window even where this machine keeps no record of its runners.
+#[test]
+fn a_chat_with_no_sandbox_on_a_pools_runner_ends_its_browsers_there_and_starts_none_after() {
+    use crate::chatbrowsers::Driver;
+    let with = a_window_with_a_runner();
+    let window = &with.window;
+    let program = window
+        .browsers
+        .start(
+            &window.root,
+            Some("builds"),
+            purlis_session_protocol::browsing::BrowserReach::default(),
+            None,
+        )
+        .expect("it starts on the runner");
+    let told = Arc::new(Mutex::new(Vec::<String>::new()));
+    window.browsers.connection.ending_browsers_with({
+        let told = Arc::clone(&told);
+        Arc::new(move |pool: &str| told.lock().unwrap().push(pool.to_owned()))
+    });
+
+    window
+        .browsers
+        .connection
+        .to_a_pool("builds")
+        .ran_unsandboxed()
+        .expect("nothing to keep on a machine that keeps no runners");
+
+    assert_eq!(*told.lock().unwrap(), ["builds"], "its browsers are ended");
+    assert_eq!(window.browsers.end_on("builds"), 1);
+    assert_eq!(
+        window.browsers.pool_of(&program),
+        None,
+        "ended and forgotten"
+    );
+    let refused = window
+        .browsers
+        .start(
+            &window.root,
+            Some("builds"),
+            purlis_session_protocol::browsing::BrowserReach::default(),
+            None,
+        )
+        .unwrap_err();
+    assert!(
+        format!("{refused:?}").contains("without the sandbox"),
+        "{refused:?}"
+    );
+    // This machine's own browsers are not the runner's.
+    assert!(
+        window
+            .browsers
+            .start(
+                &window.root,
+                None,
+                purlis_session_protocol::browsing::BrowserReach::default(),
+                None,
+            )
+            .is_ok()
+    );
+}
+
+/// #3297: the window holds a runner browser to the more of its pool's limits and the defaults,
+/// so it draws what a runner before 1.49 sends (the defaults) and what one since sends (the
+/// pool's), and nothing past both.
+#[test]
+fn the_window_holds_a_runner_browser_to_the_more_of_its_pools_limits_and_the_defaults() {
+    use purlis_session_protocol::browsing::LinkFrames;
+    let held = |frames, width| super::window_holds(LinkFrames { frames, width });
+    assert_eq!(
+        held(30, 1920),
+        LinkFrames {
+            frames: 30,
+            width: 1920
+        }
+    );
+    assert_eq!(held(5, 800), LinkFrames::DEFAULT);
+    assert_eq!(
+        held(10, 2560),
+        LinkFrames {
+            frames: 15,
+            width: 2560
+        }
     );
 }

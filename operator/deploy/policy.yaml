@@ -20,6 +20,19 @@
 # A Claim's pool never changes after it is made (crds.yaml), so creating one is the only time
 # this is asked. operator/tests/the_install_manifests.rs holds it, and the kind tests check that
 # the cluster refuses a Claim from someone who may not use its pool.
+#
+# Upstream's claims on a purlis pool's warm pool, and warm pools of its template, are made by
+# the operator alone, so a runner from a pool is had only through a Claim (#2055).
+#
+# The second policy, purlis-runner-namespaces (#2055): only the operator makes a runner
+# namespace (purlis-runners-*) or changes who it is for, and the operator binds
+# purlis-runner-owner, and makes the quota purlis-person, in a runner namespace alone, for the
+# one person that namespace is for, who is not the operator.
+#
+# The third policy, purlis-operator-changes-only-a-sandboxs-mode, narrows the operator's own
+# `patch` on upstream's sandboxes (#2058), which RBAC cannot scope to a field or an owner: the
+# operator may change only a Sandbox's spec.operatingMode, and only on a Sandbox a SandboxClaim
+# controls.
 ---
 # Source: purlis-cluster-operator/templates/policy.yaml
 # Copyright 2026 Purlis
@@ -41,10 +54,18 @@ spec:
     resourceRules:
       - apiGroups: [runners.purlis.dev]
         apiVersions: ["*"]
-        operations: [CREATE]
+        # UPDATE only for who may change the repos a claim names, the last rule below (#4204).
+        operations: [CREATE, UPDATE]
         resources: [claims]
+      # Upstream's objects, so that a runner from a purlis pool is had only through a Claim
+      # (#2055): its warm pools and claims, on purlis's templates and warm pools.
+      - apiGroups: [extensions.agents.x-k8s.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [sandboxclaims, sandboxwarmpools]
   validations:
     - expression: >-
+        request.resource.group != 'runners.purlis.dev' || request.operation != 'CREATE' ||
         authorizer.group('runners.purlis.dev').resource('pools')
         .name(object.spec.pool).check('use').allowed()
       messageExpression: >-
@@ -53,9 +74,212 @@ spec:
     # Who asked for a claim is stamped on it, as the cluster signed them in, and never changes
     # (crds.yaml): the operator vouches for it with the runner's link key (#2056).
     - expression: >-
+        request.resource.group != 'runners.purlis.dev' || request.operation != 'CREATE' ||
         object.spec.requester == request.userInfo.username
       messageExpression: >-
         'A claim names who makes it: set spec.requester to ' + request.userInfo.username + '.'
+      reason: Forbidden
+    # An upstream claim on a purlis pool's warm pool, or a warm pool of a purlis pool's template,
+    # is made by the operator alone, for a Claim it acts on: one made directly would have a
+    # runner without the checks above. Nor is one moved onto or off a purlis pool's object by
+    # anyone else. Purlis's names start purlis-pool- (operator/src/upstream.rs).
+    - expression: >-
+        request.resource.resource != 'sandboxclaims' ||
+        request.userInfo.username == 'system:serviceaccount:purlis-system:purlis-cluster-operator' ||
+        (request.operation == 'UPDATE' ?
+        oldObject.spec.warmPoolRef.name == object.spec.warmPoolRef.name ||
+        !oldObject.spec.warmPoolRef.name.startsWith('purlis-pool-') &&
+        !object.spec.warmPoolRef.name.startsWith('purlis-pool-') :
+        !object.spec.warmPoolRef.name.startsWith('purlis-pool-'))
+      messageExpression: >-
+        'Runners from a purlis pool are claimed with a Claim (runners.purlis.dev): only the purlis
+        cluster operator puts an upstream claim on the warm pool of a purlis pool, or takes one off it.'
+      reason: Forbidden
+    - expression: >-
+        request.resource.resource != 'sandboxwarmpools' ||
+        request.userInfo.username == 'system:serviceaccount:purlis-system:purlis-cluster-operator' ||
+        (request.operation == 'UPDATE' ?
+        oldObject.spec.sandboxTemplateRef.name == object.spec.sandboxTemplateRef.name ||
+        !oldObject.spec.sandboxTemplateRef.name.startsWith('purlis-pool-') &&
+        !object.spec.sandboxTemplateRef.name.startsWith('purlis-pool-') :
+        !object.spec.sandboxTemplateRef.name.startsWith('purlis-pool-'))
+      messageExpression: >-
+        'Runners from a purlis pool are claimed with a Claim (runners.purlis.dev): only the purlis
+        cluster operator puts a warm pool on the template of a purlis pool, or takes one off it.'
+      reason: Forbidden
+    # The repos a claim names say what its runner's token may cover, within its Pool's allow-list
+    # (#4204). Someone else who may patch claims in the namespace has no say in that, and nor has
+    # its requester once they may no longer use the pool. Any other patch is left alone, so a
+    # finalizer's removal never depends on the authorizer.
+    - expression: >-
+        request.resource.group != 'runners.purlis.dev' || request.operation != 'UPDATE' ||
+        (has(object.spec.forge) ?
+        has(oldObject.spec.forge) && object.spec.forge == oldObject.spec.forge :
+        !has(oldObject.spec.forge)) ||
+        (request.userInfo.username == object.spec.requester &&
+        authorizer.group('runners.purlis.dev').resource('pools')
+        .name(object.spec.pool).check('use').allowed())
+      messageExpression: >-
+        'Only ' + object.spec.requester + ', who asked for this claim, while they may use its pool, may change the repos it names.'
+      reason: Forbidden
+---
+# Source: purlis-cluster-operator/templates/runner-namespaces-policy.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-runner-namespaces
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [namespaces, namespaces/status, namespaces/finalize, resourcequotas]
+      - apiGroups: [rbac.authorization.k8s.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [rolebindings]
+  variables:
+    - name: operator
+      expression: >-
+        request.userInfo.username == 'system:serviceaccount:purlis-system:purlis-cluster-operator'
+    - name: runners
+      expression: >-
+        request.resource.resource == 'namespaces' ?
+        object.metadata.name.startsWith('purlis-runners-') :
+        request.namespace.startsWith('purlis-runners-')
+    # Who a runner namespace is for, by the marks the operator puts on it.
+    - name: marks
+      expression: >-
+        request.resource.resource != 'namespaces' ? [] :
+        [has(object.metadata.labels) && 'app.kubernetes.io/managed-by' in object.metadata.labels ?
+        object.metadata.labels['app.kubernetes.io/managed-by'] : '',
+        has(object.metadata.annotations) && 'runners.purlis.dev/requester' in object.metadata.annotations ?
+        object.metadata.annotations['runners.purlis.dev/requester'] : '']
+    - name: oldMarks
+      expression: >-
+        request.resource.resource != 'namespaces' || request.operation != 'UPDATE' ? [] :
+        [has(oldObject.metadata.labels) && 'app.kubernetes.io/managed-by' in oldObject.metadata.labels ?
+        oldObject.metadata.labels['app.kubernetes.io/managed-by'] : '',
+        has(oldObject.metadata.annotations) && 'runners.purlis.dev/requester' in oldObject.metadata.annotations ?
+        oldObject.metadata.annotations['runners.purlis.dev/requester'] : '']
+    # Who the runner namespace a role binding is made in is for: the one subject it may name.
+    - name: requester
+      expression: >-
+        request.resource.resource == 'rolebindings' && namespaceObject != null &&
+        has(namespaceObject.metadata.annotations) &&
+        'runners.purlis.dev/requester' in namespaceObject.metadata.annotations ?
+        namespaceObject.metadata.annotations['runners.purlis.dev/requester'] : ''
+  validations:
+    # A runner namespace is made by the operator alone, and who it is for is changed by no one
+    # else.
+    - expression: >-
+        request.resource.resource != 'namespaces' || variables.operator || !variables.runners ||
+        request.operation == 'UPDATE' && variables.marks == variables.oldMarks
+      messageExpression: >-
+        'Only the purlis cluster operator makes a runner namespace (purlis-runners-*), or changes who it is for.'
+      reason: Forbidden
+    # The operator makes no other namespace.
+    - expression: >-
+        request.resource.resource != 'namespaces' || !variables.operator || variables.runners
+      messageExpression: >-
+        'The purlis cluster operator makes runner namespaces (purlis-runners-*) alone.'
+      reason: Forbidden
+    # The operator binds one role, purlis-runner-owner, in a runner namespace alone, to the one
+    # person that namespace is for, who is not the operator itself.
+    - expression: >-
+        request.resource.resource != 'rolebindings' || !variables.operator ||
+        variables.runners && variables.requester != '' &&
+        variables.requester != 'system:serviceaccount:purlis-system:purlis-cluster-operator' &&
+        object.metadata.name == 'purlis-runner-owner' &&
+        object.roleRef.kind == 'ClusterRole' && object.roleRef.name == 'purlis-runner-owner' &&
+        has(object.subjects) && size(object.subjects) == 1 &&
+        (object.subjects[0].kind == 'User' && !object.subjects[0].name.startsWith('system:') &&
+        object.subjects[0].name == variables.requester ||
+        object.subjects[0].kind == 'ServiceAccount' && has(object.subjects[0].namespace) &&
+        'system:serviceaccount:' + object.subjects[0].namespace + ':' + object.subjects[0].name ==
+        variables.requester)
+      messageExpression: >-
+        'The purlis cluster operator binds purlis-runner-owner alone, in a runner namespace alone, to the one person it is for, who is not the operator.'
+      reason: Forbidden
+    # The operator caps a person in their runner namespace alone, with purlis-person.
+    - expression: >-
+        request.resource.resource != 'resourcequotas' || !variables.operator ||
+        variables.runners && object.metadata.name == 'purlis-person'
+      messageExpression: >-
+        'The purlis cluster operator makes the quota purlis-person, in a runner namespace alone.'
+      reason: Forbidden
+---
+# Source: purlis-cluster-operator/templates/sandbox-policy.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+# The operator's `patch` on upstream's sandboxes, narrowed by the cluster (#2058): RBAC cannot
+# name a field or an owner, so this policy refuses any change the operator's service account
+# makes to a Sandbox but its spec.operatingMode, and any change at all to a Sandbox no
+# SandboxClaim controls. The operator may not change policies or their bindings, so it cannot
+# lift this. Kept when the release is uninstalled, as the policy on Claims is.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-operator-changes-only-a-sandboxs-mode
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [agents.x-k8s.io]
+        apiVersions: ["*"]
+        operations: [UPDATE]
+        resources: [sandboxes]
+  matchConditions:
+    - name: by-the-operator
+      expression: >-
+        request.userInfo.username ==
+        'system:serviceaccount:purlis-system:purlis-cluster-operator'
+  validations:
+    - expression: >-
+        has(oldObject.metadata.ownerReferences) &&
+        oldObject.metadata.ownerReferences.exists(r, has(r.controller) && r.controller &&
+        r.kind == 'SandboxClaim' && r.apiVersion.startsWith('extensions.agents.x-k8s.io/'))
+      message: purlis's cluster operator changes only a Sandbox a SandboxClaim controls.
+      reason: Forbidden
+    # Every field of the pinned upstream's Sandbox spec but operatingMode, each as it was
+    # (operator/tests/the_install_manifests.rs holds the list to the vendored definitions).
+    - expression: >-
+        has(object.spec.podTemplate) == has(oldObject.spec.podTemplate) &&
+        (!has(object.spec.podTemplate) || object.spec.podTemplate == oldObject.spec.podTemplate) &&
+        has(object.spec.service) == has(oldObject.spec.service) &&
+        (!has(object.spec.service) || object.spec.service == oldObject.spec.service) &&
+        has(object.spec.shutdownPolicy) == has(oldObject.spec.shutdownPolicy) &&
+        (!has(object.spec.shutdownPolicy) || object.spec.shutdownPolicy == oldObject.spec.shutdownPolicy) &&
+        has(object.spec.shutdownTime) == has(oldObject.spec.shutdownTime) &&
+        (!has(object.spec.shutdownTime) || object.spec.shutdownTime == oldObject.spec.shutdownTime) &&
+        has(object.spec.volumeClaimTemplates) == has(oldObject.spec.volumeClaimTemplates) &&
+        (!has(object.spec.volumeClaimTemplates) || object.spec.volumeClaimTemplates == oldObject.spec.volumeClaimTemplates)
+      message: purlis's cluster operator changes only a Sandbox's spec.operatingMode.
+      reason: Forbidden
+    - expression: >-
+        has(object.metadata.labels) == has(oldObject.metadata.labels) &&
+        (!has(object.metadata.labels) || object.metadata.labels == oldObject.metadata.labels) &&
+        has(object.metadata.annotations) == has(oldObject.metadata.annotations) &&
+        (!has(object.metadata.annotations) || object.metadata.annotations == oldObject.metadata.annotations) &&
+        has(object.metadata.ownerReferences) == has(oldObject.metadata.ownerReferences) &&
+        (!has(object.metadata.ownerReferences) || object.metadata.ownerReferences == oldObject.metadata.ownerReferences) &&
+        has(object.metadata.finalizers) == has(oldObject.metadata.finalizers) &&
+        (!has(object.metadata.finalizers) || object.metadata.finalizers == oldObject.metadata.finalizers)
+      message: purlis's cluster operator changes no label, annotation, owner or finalizer of a Sandbox.
       reason: Forbidden
 ---
 # Source: purlis-cluster-operator/templates/policy.yaml
@@ -70,4 +294,32 @@ metadata:
     helm.sh/resource-policy: keep
 spec:
   policyName: purlis-claims-use-their-pool
+  validationActions: [Deny]
+---
+# Source: purlis-cluster-operator/templates/runner-namespaces-policy.yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-runner-namespaces
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: purlis-runner-namespaces
+  validationActions: [Deny]
+---
+# Source: purlis-cluster-operator/templates/sandbox-policy.yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-operator-changes-only-a-sandboxs-mode
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: purlis-operator-changes-only-a-sandboxs-mode
   validationActions: [Deny]

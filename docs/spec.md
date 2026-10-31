@@ -235,8 +235,9 @@ When two choices conflict, the higher priority wins.
     - **Main gate:** scenario tests driving the real app against a **fake harness binary** that
       replays recorded output and fires recorded hooks.
     - **Unit tests** stay small.
-    - **Mutation testing** runs nightly on the core crate alone, with `cargo-mutants --in-diff`,
-      sharded. It never blocks a PR.
+    - **Mutation testing** runs on the core crate alone, with `cargo-mutants --in-diff`,
+      sharded. It never blocks a PR. Its nightly schedule is paused since 2026-10-29; it runs
+      by hand until it runs on a pull request's own diff (#3837).
 21. **Distribution:** one signed installer per OS. It installs the app and puts `purlis` on
     PATH. The Claude Code plugin keeps calling `charter hook …`. A final PyPI release points to
     the new install.
@@ -601,7 +602,7 @@ Each milestone is something the operator actually uses, not a layer.
   - a worktree per chat (ADR 0027). The gap ADR 0027 named is closed: the harness layer is
     written into a piece when purlis cuts it and again when a chat starts there, so that chat
     has the plane's guards and its persona's agents
-    (`crates/purlis-core/tests/a_chat_in_a_worktree_gets_the_planes_layer.rs`). `unwired` is
+    (`crates/purlis-core/tests/it/a_chat_in_a_worktree_gets_the_planes_layer.rs`). `unwired` is
     left only on a tree whose layer is not in it yet, and a chat is refused there rather than
     started unguarded. What is still missing is in decision 4
   - panels and the palette (read-only at M1; the panels write todos, personas and vaults since

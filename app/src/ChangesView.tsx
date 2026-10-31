@@ -26,8 +26,8 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 import { catalogueMenu, Menued } from "./Menus";
 import type { Catalogued, Offer } from "./actions";
 import type { WorkspaceState } from "./workspaceState";
-import type { Cloning } from "./NotCloned";
-import type { CloneState } from "./repoClones";
+import { CloneBar, type Cloning } from "./NotCloned";
+import { cloningWords, type CloneState } from "./repoClones";
 import { useArrived } from "./lib/arrived";
 import { Tree, TreeRow } from "./ui/tree/Tree";
 
@@ -214,6 +214,7 @@ export function ChangesView({
                   <FolderGit2 className="node-icon" />
                   <span className="repo">{name}</span>{" "}
                   <span className="none">{absentSaid(cloning.get(name))}</span>
+                  <CloneBar repo={name} state={cloning.get(name)} />
                 </>
               }
             />
@@ -272,7 +273,7 @@ function absentSaid(clone: CloneState | undefined): string {
     case "waiting":
       return "waiting to be cloned";
     case "cloning":
-      return "cloning…";
+      return `cloning… ${cloningWords(clone)}`.trimEnd();
     case "cloned":
       return "cloned";
     case "failed":

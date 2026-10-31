@@ -38,7 +38,7 @@ import {
 } from "../table/ControlTable";
 import { panelRoot } from "../panel/Panel";
 import { editorToolbar, TabCell, tabPart, tabsPart, ToolbarFile } from "./Tabs";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 
 /** The view a story shows. */
 type Shown = "settings" | "vault" | "persona" | "memory" | "file";
@@ -548,7 +548,7 @@ export const Settings: Story = {
     await nothingScrollsUnderTheActions(canvasElement);
     canvas.getByRole("button", { name: "Close this view" }).focus();
     await userEvent.tab();
-    await waitFor(() => expect(project).toHaveFocus());
+    await untilFocused(() => project, "Tab reaches the project");
     expectFocusInSight();
     atRest();
   },
@@ -586,8 +586,9 @@ export const Vault: Story = {
     await nothingScrollsUnderTheActions(canvasElement);
     canvas.getByRole("button", { name: "Close this view" }).focus();
     await userEvent.tab();
-    await waitFor(() =>
-      expect(canvas.getByRole("button", { name: "Delete vault…" })).toHaveFocus(),
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Delete vault…" }),
+      "Tab reaches Delete vault…",
     );
     expectFocusInSight();
     atRest();
@@ -603,7 +604,7 @@ export const Persona: Story = {
     canvas.getByRole("button", { name: "Close this view" }).focus();
     for (const name of ["Edit persona.md", "Profile…", "Delete persona…"]) {
       await userEvent.tab();
-      await waitFor(() => expect(canvas.getByRole("button", { name })).toHaveFocus());
+      await untilFocused(() => canvas.getByRole("button", { name }), `Tab reaches ${name}`);
       expectFocusInSight();
     }
     atRest();
@@ -618,8 +619,9 @@ export const Memory: Story = {
     await nothingScrollsUnderTheActions(canvasElement);
     canvas.getByRole("button", { name: "Close this view" }).focus();
     await userEvent.tab();
-    await waitFor(() =>
-      expect(canvas.getByRole("button", { name: "New shared memory" })).toHaveFocus(),
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "New shared memory" }),
+      "Tab reaches New shared memory",
     );
     expectFocusInSight();
     atRest();
@@ -641,8 +643,9 @@ export const File: Story = {
     await nothingScrollsUnderTheActions(canvasElement);
     canvas.getByRole("button", { name: "Close this view" }).focus();
     await userEvent.tab();
-    await waitFor(() =>
-      expect(canvas.getByRole("button", { name: "Open in your editor" })).toHaveFocus(),
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Open in your editor" }),
+      "Tab reaches Open in your editor",
     );
     expectFocusInSight();
     atRest();

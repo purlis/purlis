@@ -347,8 +347,13 @@ enum Asked<'a> {
     /// command line.
     Command { name: &'a str, args: &'a [String] },
     /// A studio question (protocol 3, ADR 0101). Waits its turn behind a question in flight, as
-    /// an event does: the studio asks several things of one extension at once.
-    Studio(&'a extension::studio::Ask<'a>),
+    /// an event does: the studio asks several things of one extension at once. `until` is when
+    /// its answer must be in by, its wait and its start inside it, where its asker holds a
+    /// deadline of its own (a studio list's lints, #3940).
+    Studio {
+        ask: &'a extension::studio::Ask<'a>,
+        until: Option<Instant>,
+    },
 }
 
 /// What a program said: one answer line, or — for a command — everything it printed and how it
@@ -689,9 +694,38 @@ impl Executor {
         extension: &str,
         ask: &extension::studio::Ask<'_>,
     ) -> Result<serde_json::Map<String, serde_json::Value>, String> {
-        self.put(config_root, project, extension, Asked::Studio(ask), |_| {
-            serde_json::Value::Null
-        })
+        self.asked_in_the_studio(config_root, project, extension, ask, None)
+    }
+
+    /// [`Self::studio`], answered by `until` or refused: its wait for its slot and its confined
+    /// program's start inside it, as a router's question is (#3940). For an asker that holds a
+    /// deadline of its own: a studio list asking each extension's lint.
+    pub fn studio_until(
+        &self,
+        config_root: &Path,
+        project: &extension::project::Choices,
+        extension: &str,
+        ask: &extension::studio::Ask<'_>,
+        until: Instant,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+        self.asked_in_the_studio(config_root, project, extension, ask, Some(until))
+    }
+
+    fn asked_in_the_studio(
+        &self,
+        config_root: &Path,
+        project: &extension::project::Choices,
+        extension: &str,
+        ask: &extension::studio::Ask<'_>,
+        until: Option<Instant>,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+        self.put(
+            config_root,
+            project,
+            extension,
+            Asked::Studio { ask, until },
+            |_| serde_json::Value::Null,
+        )
         .map(|put| put.reply.unwrap_or_default())
     }
 
@@ -762,7 +796,7 @@ impl Executor {
                 }
                 (None, None)
             }
-            Asked::Studio(ask) => {
+            Asked::Studio { ask, .. } => {
                 let capability = ask.capability();
                 let studio = declared
                     .studio
@@ -834,13 +868,21 @@ impl Executor {
         let gate = before_hand + began.elapsed().saturating_sub(before_hand + handed_in);
 
         // A router's question is bounded from here, its wait for its slot and its confined start
-        // inside its deadline (ADR 0102 §6); every other from its program's start.
+        // inside its deadline (ADR 0102 §6), and so is one asked by a time (#3940); every other
+        // from its program's start.
         let bound = match asked {
-            Asked::Studio(
-                extension::studio::Ask::Route { .. } | extension::studio::Ask::Prompt { .. },
-            ) => Bound {
+            Asked::Studio {
+                ask: extension::studio::Ask::Route { .. },
+                ..
+            } => Bound {
                 deadline: self.router_deadline,
                 until: Some(Instant::now() + self.router_deadline),
+            },
+            Asked::Studio {
+                until: Some(until), ..
+            } => Bound {
+                deadline: until.saturating_duration_since(Instant::now()),
+                until: Some(until),
             },
             _ => Bound {
                 deadline: self.deadline,
@@ -848,7 +890,7 @@ impl Executor {
             },
         };
         let _held = match asked {
-            Asked::Event(_) | Asked::Studio(_) => self.hold_within(
+            Asked::Event(_) | Asked::Studio { .. } => self.hold_within(
                 extension,
                 bound
                     .until
@@ -899,7 +941,7 @@ impl Executor {
             }
         };
         let protocol = found.manifest.protocol;
-        if let Asked::Studio(_) = asked {
+        if let Asked::Studio { .. } = asked {
             // Every key but `charter` and `error` is the question's own answer, read against its
             // closed shape by `extension::studio`, which refuses a key it does not know.
             let reply = reply_open(extension, &line, protocol).map_err(with_report)?;
@@ -2130,7 +2172,7 @@ fn request_line(
         }
         // A studio question is its capability and its `ask`, which carries what purlis hands it
         // of a skill: nothing of the project is a path it is handed (ADR 0101 §2).
-        Asked::Studio(ask) => {
+        Asked::Studio { ask, .. } => {
             doc.insert("studio".into(), ask.capability().as_str().into());
             doc.insert("ask".into(), ask.line());
         }

@@ -131,9 +131,16 @@ pub struct ChatSkills {
     /// The clones of its workspace it works in, by name, whose repo skills its harness reads
     /// (#3462): what the Skills view narrows a chat's repo skills to. None for a chat in no clone.
     pub repos: Vec<String>,
+    /// Why the chat gets no skills, where its harness is a declared one skills are not supported
+    /// on (SK-30): said in place of the words for a tool purlis does not know.
+    pub not_supported: Option<String>,
     /// How its router extension did at its start (SK-15b): null for a chat routed by the
     /// built-in router, which is asked nothing.
     pub routing: Option<SkillRouting>,
+    /// The skills its persona names that it started without, as its tab's Notice says them
+    /// (SK-5), until that is put away: null for a chat that has every one. Held from its start,
+    /// so the chip on its pane says every need of the chat's own with no read of its own (#3953).
+    pub missing: Option<crate::chats::SkillsMissing>,
 }
 
 /// **How a chat's router extension did at its start** (SK-15b, ADR 0102 §6): the core's routing
@@ -170,7 +177,9 @@ impl ChatSkills {
             skills: Vec::new(),
             budget: None,
             repos: Vec::new(),
+            not_supported: None,
             routing: None,
+            missing: None,
         }
     }
 }
@@ -195,20 +204,8 @@ pub(crate) fn small(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 
-/// The skills of chat `session` of `held`, as the core works them out, and the salt its prompts
-/// are digested under, or `None` for a chat that is not open or runs no tool purlis knows the
-/// skills of. One read of the chat.
-fn of_the_chat(
-    held: &Held,
-    session: u32,
-) -> Option<(
-    purlis_core::skills::ChatSkills,
-    Option<purlis_core::skillspan::PromptSalt>,
-)> {
-    of_this_chat(held, &held.chats().skills_of(session)?)
-}
-
-/// [`of_the_chat`], for `chat`, read of the open chats once.
+/// **The skills of `chat` of `held`, as the core works them out**, and the salt its prompts are
+/// digested under, or `None` for a chat that runs no tool purlis knows the skills of.
 fn of_this_chat(
     held: &Held,
     chat: &crate::chats::ChatForSkills,
@@ -285,7 +282,9 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
             pins_together: skills.pins_together.as_ref().map(Into::into),
         }),
         repos: Vec::new(),
+        not_supported: None,
         routing: None,
+        missing: None,
     }
 }
 
@@ -313,7 +312,10 @@ pub(crate) async fn chat_skills(
         );
         if shown.known {
             shown.repos = repos_of_the_chat(&held, &chat);
-            shown.routing = chat.start.routed.as_deref().map(Into::into);
+            shown.routing = chat.start.routed.as_ref().map(Into::into);
+            shown.missing = held.chats().skills_missing(session);
+        } else {
+            shown.not_supported = chat.not_supported.clone();
         }
         Ok(shown)
     })
@@ -343,13 +345,22 @@ pub(crate) fn use_skill(
     if !purlis_core::skills::studio_on_here() {
         return Err("The Skill studio is not turned on on this machine.".to_owned());
     }
-    let (skills, salt) = of_the_chat(&held, session).ok_or_else(|| NO_TOOL.to_owned())?;
+    let chat = held
+        .chats()
+        .skills_of(session)
+        .ok_or_else(|| NO_TOOL.to_owned())?;
+    let (skills, salt) = of_this_chat(&held, &chat).ok_or_else(|| {
+        chat.not_supported
+            .clone()
+            .unwrap_or_else(|| NO_TOOL.to_owned())
+    })?;
     let typing = typing_of(&skills, salt.as_ref(), &skill, &values)?;
     typed_and_held(&held, session, typing, &|text| clipboard.put_text(text))
 }
 
 /// What Use skill… types to start `skill` of `skills` with `values`, its text digested under
-/// the chat's `salt`; refused for a chat that has no id yet, whose prompts nothing could match.
+/// the chat's `salt`; refused for a chat that has no prompt key, whose prompts nothing could
+/// match.
 fn typing_of(
     skills: &purlis_core::skills::ChatSkills,
     salt: Option<&purlis_core::skillspan::PromptSalt>,

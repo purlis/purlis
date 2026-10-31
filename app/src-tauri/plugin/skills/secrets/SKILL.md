@@ -200,7 +200,8 @@ vault.
   with `--body-file -` and a **quoted** heredoc (`<<'BODY'`). A published body cannot be
   withdrawn. A leaked value has to be rotated, which is the operator's work, not yours.
 - **The same slip applies to purlis's own commands that persist prose.** These include
-  `purlis persona remember` and `purlis workspace remember`, `note`, `todo` and `vision`. A
+  `purlis persona remember <persona>` and `purlis workspace remember -w <workspace>`, `note`,
+  `todo` and `vision`. A
   backtick in a double-quoted argument runs as a command, and its output replaces the word in
   a committed file. **Backslash-escape each backtick** (`\``).
 - If the vault or the key does not exist, say so and ask for it to be added. Do not work

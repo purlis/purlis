@@ -13,7 +13,14 @@ import { useState } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import type { ProfileRow, StartOptions } from "./bindings";
 import { StartChat } from "./StartChat";
-import { expectFocusInSight, pictureNow } from "./stories.testkit";
+import {
+  SHORT_WINDOW,
+  expectAnchored,
+  expectFocusInSight,
+  inAWindow,
+  pictureNow,
+  untilFocused,
+} from "./stories.testkit";
 
 const PERSONAS = [
   "steward",
@@ -145,8 +152,13 @@ export const PrototypeB: Story = {
     await expect(dialog).toHaveAttribute("data-size", "wide");
     await expect(dialog).toHaveAccessibleDescription("In smart-ide · purlis's built-in profiles");
     // The keyboard starts on Cancel: a Return pressed by habit starts nothing.
-    await waitFor(() => expect(page.getByRole("button", { name: "Cancel" })).toHaveFocus());
+    await untilFocused(
+      () => page.getByRole("button", { name: "Cancel" }),
+      "Start a chat: the keyboard starts on Cancel",
+    );
     await pictureNow();
+    // At its fixed top, its bottom clear of the window's (R2).
+    expectAnchored(dialog);
     const box = boxOf(dialog);
 
     const filter = page.getByRole("searchbox", { name: "Filter personas" });
@@ -193,6 +205,36 @@ export const PrototypeB: Story = {
   },
 };
 
+/**
+ * **In a short window** (#3389, #3510): at about 500 px the dialog is shorter than its 620 px,
+ * keeps its fixed top and the 24 px under it, and the footer, with Start, is inside the window,
+ * where the operator could not reach it before. No picture: the window is resized for this
+ * story alone.
+ */
+export const InAShortWindow: Story = {
+  parameters: { screenshot: false },
+  play: async () => {
+    const page = within(document.body);
+    const dialog = await page.findByRole("dialog", { name: "Start a chat" });
+    await untilFocused(
+      () => page.getByRole("button", { name: "Cancel" }),
+      "Start a chat: the keyboard starts on Cancel",
+    );
+    if (await inAWindow(SHORT_WINDOW.width, SHORT_WINDOW.height))
+      await expect(dialog.getBoundingClientRect().height).toBeLessThan(620);
+    expectAnchored(dialog);
+    const box = dialog.getBoundingClientRect();
+    for (const name of ["Cancel", "Start chat"]) {
+      const answer = page.getByRole("button", { name }).getBoundingClientRect();
+      // In the window, and inside the dialog, which clips what runs past its edge.
+      await expect(answer.top).toBeGreaterThanOrEqual(0);
+      await expect(answer.bottom).toBeLessThanOrEqual(window.innerHeight);
+      await expect(answer.top).toBeGreaterThanOrEqual(box.top - 0.5);
+      await expect(answer.bottom).toBeLessThanOrEqual(box.bottom + 0.5);
+    }
+  },
+};
+
 /** The prototype's harnesses in a project that runs every chat sandboxed, one asking approval. */
 const GUARDED: StartOptions = {
   ...OPTIONS,
@@ -221,7 +263,10 @@ export const SandboxAndApproval: Story = {
   play: async ({ userEvent }) => {
     const page = within(document.body);
     const dialog = await page.findByRole("dialog", { name: "Start a chat" });
-    await waitFor(() => expect(page.getByRole("button", { name: "Cancel" })).toHaveFocus());
+    await untilFocused(
+      () => page.getByRole("button", { name: "Cancel" }),
+      "Start a chat: the keyboard starts on Cancel",
+    );
     // Said in the details' Sandbox section; the dialog fades in as it opens, so it is waited for.
     await waitFor(() =>
       expect(page.getByText("claude reaches only the hosts this project allows.")).toBeVisible(),

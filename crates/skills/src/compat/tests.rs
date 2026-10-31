@@ -246,27 +246,3 @@ fn a_skill_its_harness_keeps_manual_only_by_a_file_beside_it_says_so_on_its_badg
     let refused = compat("no frontmatter", OUTSIDE, &BRIEFED);
     assert_eq!(refused.clone().kept_manual(), refused);
 }
-
-#[test]
-fn a_harness_with_no_prompt_hook_says_no_router_points_a_chat_there() {
-    // SK-15c (#3231): a router that reads prompts points a prompt at skills the chat's list
-    // leaves out through the harness's prompt hook; where it has none, the badge says so.
-    let badge = compat(&skill(""), HANDED, &READS_ALL);
-    assert!(
-        !badge
-            .lines()
-            .iter()
-            .any(|line| line.contains("prompt hook")),
-        "{:?}",
-        badge.lines()
-    );
-    let without = badge.without_a_pointer();
-    let lines = without.lines();
-    assert!(
-        lines.iter().any(|line| line
-            == "No router points a prompt at it here: this program has no prompt hook, so the chat \
-                finds it in its list, the index skill or with skill_find."),
-        "{lines:?}"
-    );
-    assert_eq!(without.fit, Fit::Full, "how well it fits is not changed");
-}

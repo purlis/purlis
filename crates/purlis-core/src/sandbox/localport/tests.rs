@@ -261,6 +261,43 @@ fn a_refused_listen_names_the_port_the_server_asked_for() {
     }
 }
 
+/// #3396: a test server on a port the system picks is refused its listen with no port a person
+/// could allow, and is read as such: port 0 on this Mac's loopback or on every interface, in
+/// Seatbelt's, Go's and the supervisor's words, or Node's address with no port after it, which
+/// is how Node says a listen on port 0.
+#[test]
+fn a_refused_listen_on_a_port_the_system_picks_is_read_as_such() {
+    for line in [
+        "listen tcp 127.0.0.1:0: bind: operation not permitted",
+        "listen tcp [::1]:0: bind: operation not permitted",
+        "listen tcp :0: bind: operation not permitted",
+        "Error: listen EPERM: operation not permitted 127.0.0.1",
+        "Error: listen EPERM: operation not permitted ::1",
+        "Error: listen EPERM: operation not permitted 0.0.0.0",
+        "Error: listen EPERM: operation not permitted ::",
+    ] {
+        assert!(picked_port_refused_in(line), "{line}");
+        assert_eq!(listen_refused_in(line), None, "{line}");
+    }
+    for address in ["*:0", "127.0.0.1:0", "[::1]:0", "0.0.0.0:0", "localhost:0"] {
+        assert!(picks_its_port(address), "{address}");
+    }
+    for never in [
+        // A port it named, another machine's address, a port already taken, a connect.
+        "Error: listen EPERM: operation not permitted 127.0.0.1:3000",
+        "listen tcp 192.168.1.5:0: bind: operation not permitted",
+        "Error: listen EPERM: operation not permitted 192.168.1.5",
+        "Error: listen EADDRINUSE: address already in use 127.0.0.1",
+        "dial tcp 127.0.0.1:0: connect: operation not permitted",
+        "Error: listen EPERM: operation not permitted",
+    ] {
+        assert!(!picked_port_refused_in(never), "{never}");
+    }
+    for never in ["127.0.0.1:3000", "192.168.1.5:0", "", "0", "/tmp/x.sock"] {
+        assert!(!picks_its_port(never), "{never}");
+    }
+}
+
 /// #2019: a chat allowed to serve on port N listens on a socket of its own in the folder purlis
 /// made for it, and on no TCP port: that socket alone is made, bound and accepted on.
 #[test]
@@ -512,6 +549,313 @@ while (accept(my $c, $s)) {
             assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "no");
         }
     }
+    /// **Claude Code's rules for a socket it is allowed let a server listen there** (#3316): as
+    /// its macOS profile builder writes each `network.allowUnixSockets` path (read out of Claude
+    /// Code 2.1.312), the socket domain, `network-bind` and `network-outbound` on the path as a
+    /// `subpath`, and no `network-inbound`; with the file's own make and remove allowed, as its
+    /// `allowWrite` would. The server binds, listens and is reached through its door.
+    #[test]
+    fn claude_codes_rules_for_an_allowed_socket_let_a_server_listen_there() {
+        if !can_apply() {
+            let _ = writeln!(
+                std::io::stderr(),
+                "skipped: this process is already sandboxed, so no second profile applies"
+            );
+            return;
+        }
+        let base = tempfile::tempdir().expect("a folder");
+        let folder = base.path().canonicalize().expect("real").join("serve");
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&folder)
+            .expect("the chat's folder");
+        let socket = serve_socket(&folder, 4000);
+        let at = seatbelt::string(&socket.display().to_string()).expect("a string");
+        let cwd = tempfile::tempdir().expect("a folder");
+        let tmp = tempfile::tempdir().expect("a temp folder");
+        let mut own = seatbelt::Own::default();
+        own.after.extend([
+            "(allow system-socket (socket-domain AF_UNIX))".to_owned(),
+            format!("(allow network-bind (local unix-socket (subpath {at})))"),
+            format!("(allow network-outbound (remote unix-socket (subpath {at})))"),
+            format!("(allow file-write-create file-write-unlink (literal {at}))"),
+        ]);
+        let profile =
+            seatbelt::profile(&[], &own, cwd.path(), tmp.path(), &[], None).expect("a profile");
+        let mut server = crate::forklock::spawn(
+            std::process::Command::new(backend::SANDBOX_EXEC)
+                .args(["-p", &profile, "/usr/bin/perl", "-e", UNIX])
+                .arg(socket.display().to_string())
+                .arg("serve")
+                .current_dir(cwd.path())
+                .stdout(std::process::Stdio::piped()),
+        )
+        .expect("the server starts");
+        let mut ready = String::new();
+        let _ = std::io::BufRead::read_line(
+            &mut std::io::BufReader::new(server.stdout.take().expect("its output")),
+            &mut ready,
+        );
+        let port = free_port();
+        let carried = if ready.trim() == "yes" {
+            let door = door::Door::open(port, &socket).expect("the door opens");
+            let carried = ask(port, &format!("127.0.0.1:{port}"));
+            drop(door);
+            carried
+        } else {
+            String::new()
+        };
+        let _ = server.kill();
+        let _ = server.wait();
+        let _ = writeln!(
+            std::io::stderr(),
+            "claude code's socket rules: {} | through the door: {:?}",
+            ready.trim(),
+            carried.lines().next()
+        );
+        assert_eq!(ready.trim(), "yes");
+        assert!(carried.ends_with("ok"), "{carried}");
+    }
+
+    /// **A Claude Code chat's Node server dials in to its door, and binds nothing** (#3316),
+    /// under Claude Code's own rules for a chat (read out of its macOS profile builder): its
+    /// hook socket reachable as `network.allowUnixSockets` makes it, the folder the hook socket
+    /// is in denied to its writes, and no TCP port bound (`allowLocalBinding` off). Started as
+    /// `purlis listen PORT -- node server.js` starts it, its server parks connections at its door
+    /// through the hook socket and is reached through the door on `127.0.0.1:PORT`. In the same
+    /// chat a listen on the next port, and a bind of the chat's own port by a program the shim
+    /// does not move, are each refused.
+    #[test]
+    fn a_claude_code_chats_node_server_dials_in_to_its_door_and_binds_nothing() {
+        if !can_apply() {
+            let _ = writeln!(
+                std::io::stderr(),
+                "skipped: this process is already sandboxed, so no second profile applies"
+            );
+            return;
+        }
+        let Some(node) = std::env::var_os("PATH").and_then(|path| {
+            std::env::split_paths(&path)
+                .map(|dir| dir.join("node"))
+                .find(|node| node.is_file())
+        }) else {
+            // CI puts Node on the confinement job's PATH: there, none is a failure.
+            assert!(std::env::var_os("CI").is_none(), "no node on PATH");
+            let _ = writeln!(std::io::stderr(), "skipped: no node on PATH");
+            return;
+        };
+        let port = free_port();
+        let base = tempfile::tempdir().expect("a folder");
+        let root = base.path().canonicalize().expect("real");
+        let app = root.join("app");
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&app)
+            .expect("the app's folder");
+        let hook = app.join("hooks.sock");
+        let listener = crate::hookwire::Listener::bind(&root, &hook).expect("the hook socket");
+        let token = listener.tokens().issue_to_this_process(3).expect("a token");
+        let (door, slots) = door::Door::dialled(port).expect("the door opens");
+        let _reading = listener.serving_only(Box::new(move |ask, slot| {
+            if ask.chat != 3 || ask.serve != port {
+                crate::hookwire::serve::refused(slot, door::NO_DOOR);
+            } else if let Err(slot) = slots.park(slot) {
+                crate::hookwire::serve::refused(slot, door::SLOTS_FULL);
+            }
+        }));
+        let cwd = tempfile::tempdir().expect("a folder");
+        let cwd_path = cwd.path().canonicalize().expect("real");
+        let shim = cwd_path.join("shim.cjs");
+        std::fs::write(
+            &shim,
+            include_str!("../../../../purlis-cli/src/listen/shim.cjs"),
+        )
+        .expect("the shim");
+        std::fs::write(
+            cwd_path.join("server.js"),
+            r#"const http = require("node:http");
+const net = require("node:net");
+const port = Number(process.env.PORT);
+const server = http.createServer((req, res) => res.end("dial ok"));
+server.listen(port, "127.0.0.1", () => console.log("listening " + JSON.stringify(server.address())));
+const other = net.createServer();
+other.on("error", (err) => console.log("other " + err.code));
+other.listen(port + 1, "127.0.0.1", () => console.log("other listening"));
+"#,
+        )
+        .expect("the server");
+        let at = seatbelt::string(&hook.display().to_string()).expect("a string");
+        let denied = seatbelt::string(&app.display().to_string()).expect("a string");
+        let tmp = tempfile::tempdir().expect("a temp folder");
+        let mut own = seatbelt::Own::default();
+        own.after.extend([
+            "(allow system-socket (socket-domain AF_UNIX))".to_owned(),
+            format!("(allow network-bind (local unix-socket (subpath {at})))"),
+            format!("(allow network-outbound (remote unix-socket (subpath {at})))"),
+            format!("(deny file-write* (subpath {denied}))"),
+        ]);
+        let profile =
+            seatbelt::profile(&[], &own, &cwd_path, tmp.path(), &[], None).expect("a profile");
+        let mut server = crate::forklock::spawn(
+            std::process::Command::new(backend::SANDBOX_EXEC)
+                .args(["-p", &profile])
+                .arg(&node)
+                .arg("server.js")
+                .current_dir(&cwd_path)
+                .env("NODE_OPTIONS", format!("--require \"{}\"", shim.display()))
+                .env("PORT", port.to_string())
+                .env("HOST", "127.0.0.1")
+                .env(door::DIAL_ENV, &hook)
+                .env("PURLIS_SERVE_PORT", port.to_string())
+                .env(crate::hookwire::CHAT_ENV, "3")
+                .env(crate::hookwire::TOKEN_ENV, token.expose())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped()),
+        )
+        .expect("the server starts");
+        let said = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let reading = {
+            let said = std::sync::Arc::clone(&said);
+            let mut out = server.stdout.take().expect("its output");
+            std::thread::spawn(move || {
+                let mut chunk = [0u8; 1024];
+                while let Ok(n) = out.read(&mut chunk) {
+                    if n == 0 {
+                        break;
+                    }
+                    said.lock()
+                        .expect("held")
+                        .push_str(&String::from_utf8_lossy(&chunk[..n]));
+                }
+            })
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let ready = || {
+            let said = said.lock().expect("held");
+            said.contains("listening {") && said.contains("other ")
+        };
+        while !ready() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        let carried = ask(port, &format!("127.0.0.1:{port}"));
+        // A program the shim does not move, binding the chat's own port itself.
+        let direct = crate::forklock::output(
+            std::process::Command::new(backend::SANDBOX_EXEC)
+                .args(["-p", &profile, "/usr/bin/perl", "-e", TCP])
+                .args(["4", "127.0.0.1", &port.to_string()])
+                .current_dir(&cwd_path),
+        )
+        .expect("it runs");
+        // Nor on every interface: nothing of the chat's binds its port anywhere.
+        let elsewhere: Vec<String> = [("4", "0.0.0.0"), ("6", "::")]
+            .iter()
+            .map(|(family, address)| {
+                let out = crate::forklock::output(
+                    std::process::Command::new(backend::SANDBOX_EXEC)
+                        .args(["-p", &profile, "/usr/bin/perl", "-e", TCP])
+                        .args([*family, *address, &port.to_string()])
+                        .current_dir(&cwd_path),
+                )
+                .expect("it runs");
+                String::from_utf8_lossy(&out.stdout).trim().to_owned()
+            })
+            .collect();
+        drop(door);
+        let _ = server.kill();
+        let _ = server.wait();
+        let _ = reading.join();
+        let mut errors = String::new();
+        if let Some(mut err) = server.stderr.take() {
+            let _ = err.read_to_string(&mut errors);
+        }
+        let said = said.lock().expect("held").clone();
+        let _ = writeln!(
+            std::io::stderr(),
+            "dialled server said: {said:?} | its errors: {errors:?} | through the door: {:?}",
+            carried.lines().next()
+        );
+        assert!(
+            said.contains(&format!("\"port\":{port}")),
+            "it says it listens on its port: {said}"
+        );
+        assert!(carried.starts_with("HTTP/1.1 200 OK"), "{carried}");
+        assert!(carried.ends_with("dial ok"), "{carried}");
+        assert!(
+            said.contains("other EPERM"),
+            "a listen on another port is refused: {said}"
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&direct.stdout).trim(),
+            "bind",
+            "a direct bind of its own port is refused"
+        );
+        assert_eq!(
+            elsewhere,
+            ["bind", "bind"],
+            "its port is bound nowhere else"
+        );
+    }
+
+    /// **No server binds a socket in a folder denied to writes, whatever the socket rules
+    /// allow** (#3316): binding makes the socket's file, which is a write. Claude Code writes a
+    /// `denyWrite` folder after every allow, so it outranks an `allowWrite` of the socket inside
+    /// it: once with that write allowed, once with none, the bind is refused. So a Claude Code
+    /// chat can make its socket only where no denial holds, and the folder purlis keeps chats'
+    /// sockets in is denied to every chat's writes.
+    #[test]
+    fn no_server_binds_a_socket_in_a_folder_denied_to_writes() {
+        if !can_apply() {
+            let _ = writeln!(
+                std::io::stderr(),
+                "skipped: this process is already sandboxed, so no second profile applies"
+            );
+            return;
+        }
+        let base = tempfile::tempdir().expect("a folder");
+        let root = base.path().canonicalize().expect("real");
+        let folder = root.join("serve");
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&folder)
+            .expect("the chat's folder");
+        let socket = serve_socket(&folder, 4001);
+        let at = seatbelt::string(&socket.display().to_string()).expect("a string");
+        let denied = seatbelt::string(&root.display().to_string()).expect("a string");
+        let cwd = tempfile::tempdir().expect("a folder");
+        let tmp = tempfile::tempdir().expect("a temp folder");
+        let mut got = Vec::new();
+        for (name, write) in [("with its write", true), ("with no write", false)] {
+            let _ = std::fs::remove_file(&socket);
+            let mut own = seatbelt::Own::default();
+            own.after.extend([
+                "(allow system-socket (socket-domain AF_UNIX))".to_owned(),
+                format!("(allow network-bind (local unix-socket (subpath {at})))"),
+                format!("(allow network-outbound (remote unix-socket (subpath {at})))"),
+            ]);
+            if write {
+                own.after
+                    .push(format!("(allow file-write* (subpath {at}))"));
+            }
+            own.after
+                .push(format!("(deny file-write* (subpath {denied}))"));
+            let profile =
+                seatbelt::profile(&[], &own, cwd.path(), tmp.path(), &[], None).expect("a profile");
+            let out = crate::forklock::output(
+                std::process::Command::new(backend::SANDBOX_EXEC)
+                    .args(["-p", &profile, "/usr/bin/perl", "-e", UNIX])
+                    .arg(socket.display().to_string())
+                    .arg("once")
+                    .current_dir(cwd.path()),
+            )
+            .expect("it runs");
+            got.push(format!(
+                "{name}: {}",
+                String::from_utf8_lossy(&out.stdout).trim()
+            ));
+        }
+        assert_eq!(got, ["with its write: bind", "with no write: bind"]);
+    }
+
     /// A server the person starts on every interface after the door opened is refused its
     /// bind, as on Linux, and the port is free on every interface once the door is let go.
     #[test]

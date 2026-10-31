@@ -121,12 +121,18 @@ name: mutants
 # was `while part_count >= 0` on a `usize`, which `unused_comparisons` would have suppressed
 # under `-D warnings` — and it was a real finding.
 
+# **Paused on 2026-10-29: run it by hand (`workflow_dispatch`) until #3837.** In 30 nights it
+# was never green, used 1,699 runner-hours and led to no fix after #461 (2026-09-26):
+#   * on a night the baseline passed, shards ran into the 300-minute limit below without
+#     finishing, or failed on survivors: a night spent 38 to 181 runner-hours, and on the
+#     nights since 2026-10-24 no shard that ran finished. No night was green, so "since the
+#     last green run" never moved and every night was the same oversized diff;
+#   * on the others the baseline was red (#1892; on 2026-10-29 a whole-process memory test
+#     that #3749 had put in one process with ~1,990 others), and nothing else ran.
+# #3837 runs it on a pull request's own purlis-core diff, by label, where someone reads it.
+# The `schedule` lines come back only with a budget measured to finish; the jobs below still
+# read `github.event.schedule`, so they do not change when they do.
 on:
-  schedule:
-    # Monday to Saturday: what changed since the last green run.
-    - cron: "17 3 * * 1-6"
-    # Sunday: this week's slice of the crate. `plan` tells the two apart by this exact string.
-    - cron: "17 3 * * 0"
   workflow_dispatch:
     inputs:
       scope:
@@ -184,7 +190,7 @@ jobs:
           fetch-depth: 0
       # No cache: `--list` reads the source and `cargo metadata`, and builds nothing.
       - uses: ./.github/actions/rust-toolchain
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-mutants@${{ env.MUTANTS_VERSION }}
       - id: plan
@@ -295,7 +301,7 @@ jobs:
         with:
           packages: bubblewrap socat
       - uses: ./.github/actions/rust-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       # Every crate the workspace's lock names, and not only purlis-core's: the gitoxide
       # guard reads `cargo metadata --offline` over the whole workspace, which a
       # `--package purlis-core` build never downloads.
@@ -353,13 +359,13 @@ jobs:
         with:
           packages: bubblewrap socat
       - uses: ./.github/actions/rust-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       # Every crate the workspace's lock names, and not only purlis-core's: the gitoxide
       # guard reads `cargo metadata --offline` over the whole workspace, which a
       # `--package purlis-core` build never downloads.
       - name: Every crate the lock names
         run: cargo fetch --locked
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-mutants@${{ env.MUTANTS_VERSION }}
       # `timeout-minutes` on the STEP and not the job, so that when the budget is exceeded the

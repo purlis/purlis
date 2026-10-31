@@ -23,10 +23,11 @@
 //! it, and below it for one that should not.
 
 mod fixtures;
+pub mod routers;
 
 pub use fixtures::{
     EVALS_DIR, FixtureFile, Fixtures, MOST_PROMPT_BYTES, MOST_TRIGGER_TESTS, OutcomeEval, Read,
-    Refused, TriggerTest, Wrong, fixtures_of,
+    Refused, TriggerTest, Wrong, fixtures_of, triggers_path, triggers_template,
 };
 
 /// How many times each fixture runs in each arm: skill-creator's and `claude plugin eval`'s
@@ -36,8 +37,9 @@ pub const RUNS: u8 = 3;
 /// The share of a trigger test's runs that has to start the skill for it to count as triggered.
 pub const TRIGGER_THRESHOLD: f64 = 0.5;
 
-/// How many chats in a row that did not start end a grade: the harness or its profile is not
-/// working, and every chat after them would not start either.
+/// How many chats in a row that did not start end a grade, in all or in one arm: the harness,
+/// its profile or the arm's router is not working, and every chat after them would not start
+/// either.
 pub const NOT_STARTED_IN_A_ROW: u32 = 2;
 
 /// The framework a grade's report says graded it, when it is purlis's own runner.
@@ -55,6 +57,10 @@ pub enum Arm {
     Without,
     /// The skill as its previous version had it.
     Previous,
+    /// The library, routed by the router under grade (SK-15e, ADR 0102 §8): a router's grade.
+    Router,
+    /// The library, routed by the built-in router: a router's grade's baseline.
+    BuiltInRouter,
 }
 
 impl Arm {
@@ -79,7 +85,15 @@ impl GradeRequest {
     /// The arm the others are compared with: the previous version where the grade has one,
     /// else no skill.
     pub fn baseline(&self) -> Option<Arm> {
-        [Arm::Previous, Arm::Without]
+        [Arm::Previous, Arm::Without, Arm::BuiltInRouter]
+            .into_iter()
+            .find(|arm| self.arms.contains(arm))
+    }
+
+    /// The arm the baseline is compared with: the skill as it is, or, in a router's grade, the
+    /// router under grade.
+    pub fn graded(&self) -> Option<Arm> {
+        [Arm::With, Arm::Router]
             .into_iter()
             .find(|arm| self.arms.contains(arm))
     }
@@ -230,6 +244,16 @@ pub struct TriggerScore {
     pub pass: Option<bool>,
     /// Each run's chat, where it started, in run order.
     pub chats: Vec<Option<String>>,
+    /// Of its chats, the ones that asked the person something and were ended there (SK-59,
+    /// #3239): no run, never a "did not trigger", and said in the grade rather than as a notice
+    /// on a chat nobody can see. Absent where none did, and in a row written before.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub asked: u32,
+}
+
+/// Whether `n` is nothing: an `asked` that is not written.
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 /// **One arm over the whole grade.**
@@ -348,13 +372,25 @@ impl GradeReport {
         self.arms.iter().find(|one| one.arm == arm)
     }
 
+    /// How many of its chats asked the person something and were ended there (SK-59, #3239).
+    pub fn asked(&self) -> u32 {
+        self.triggers
+            .iter()
+            .fold(0u32, |all, score| all.saturating_add(score.asked))
+    }
+
     /// How many trigger tests passed with the skill, of those that ran: the grade a skill's
     /// history shows for its version.
     pub fn passed_with(&self) -> (u32, u32) {
+        self.passed_in(Arm::With)
+    }
+
+    /// How many trigger tests passed in `arm`, of those that ran in it.
+    pub fn passed_in(&self, arm: Arm) -> (u32, u32) {
         let with: Vec<&TriggerScore> = self
             .triggers
             .iter()
-            .filter(|score| score.arm == Arm::With && score.pass.is_some())
+            .filter(|score| score.arm == arm && score.pass.is_some())
             .collect();
         let passed = with.iter().filter(|score| score.pass == Some(true)).count();
         (
@@ -382,7 +418,10 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
     let mut ran: Vec<Vec<Vec<ChatRan>>> =
         vec![vec![Vec::new(); request.arms.len()]; request.triggers.len()];
     let mut ended = GradeEnd::Whole;
+    // Counted in all, and per arm: arms take turns, so a chat of one arm that starts says
+    // nothing of another arm whose chats do not (a router that never answers, SK-15e).
     let mut not_started_in_a_row = 0u32;
+    let mut not_started_in_its_arm = vec![0u32; request.arms.len()];
     let mut not_started: Option<String> = None;
     let mut spent: Option<u64> = None;
     let mut spent_usd: Option<f64> = None;
@@ -440,6 +479,7 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
                 let stop = match &result.end {
                     ChatEnd::NotStarted { why } => {
                         not_started_in_a_row += 1;
+                        not_started_in_its_arm[a] += 1;
                         not_started = Some(why.clone());
                         None
                     }
@@ -448,6 +488,7 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
                     ChatEnd::OverLimit => Some(GradeEnd::OverLimit),
                     ChatEnd::Turn | ChatEnd::TimedOut | ChatEnd::Asked => {
                         not_started_in_a_row = 0;
+                        not_started_in_its_arm[a] = 0;
                         None
                     }
                 };
@@ -468,7 +509,7 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
                     ended = GradeEnd::OverLimit;
                     break 'runs;
                 }
-                if not_started_in_a_row >= NOT_STARTED_IN_A_ROW {
+                if not_started_in_a_row.max(not_started_in_its_arm[a]) >= NOT_STARTED_IN_A_ROW {
                     ended = GradeEnd::ChatsDidNotStart;
                     break 'runs;
                 }
@@ -486,6 +527,10 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
                 .filter(|one| one.ran() && one.started(skill))
                 .count();
             let rate = (runs > 0).then(|| triggered as f64 / runs as f64);
+            let asked = results
+                .iter()
+                .filter(|one| one.end == ChatEnd::Asked)
+                .count();
             triggers.push(TriggerScore {
                 query: test.query.clone(),
                 should_trigger: test.should_trigger,
@@ -495,6 +540,7 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
                 rate,
                 pass: rate.map(|rate| (rate >= TRIGGER_THRESHOLD) == test.should_trigger),
                 chats: results.iter().map(|one| one.chat.clone()).collect(),
+                asked: u32::try_from(asked).unwrap_or(u32::MAX),
             });
         }
     }
@@ -549,7 +595,7 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
             .and_then(|one| one.pass_rate)
             .map(|stat| stat.mean)
     };
-    let delta = mean_of(Some(Arm::With))
+    let delta = mean_of(request.graded())
         .zip(mean_of(request.baseline()))
         .map(|(with, base)| with - base);
 

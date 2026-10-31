@@ -38,6 +38,10 @@ pub struct ProfileFolders {
     /// The profile's name, where it is one this machine keeps for sandboxed chats only
     /// (#2037): what a wrapped Codex's home is checked against.
     pub sandbox_only: Option<String>,
+    /// Where Claude Code keeps its state file (`.claude.json`) for this chat: in its config
+    /// folder where the chat's environment names one, and in the home where it names none, as
+    /// Claude Code reads it (#4083). None for every other harness.
+    pub state: Option<PathBuf>,
 }
 
 impl ProfileFolders {
@@ -58,10 +62,21 @@ impl ProfileFolders {
             Harness::Codex => (homes.codex.clone(), None),
             Harness::Opencode => (homes.config.clone(), homes.data.clone()),
         };
+        let named = set(&folders.config_env);
+        let state = (harness == Harness::ClaudeCode)
+            .then(|| match &named {
+                Some(folder) => Some(folder.join(super::claude_wrap::STATE_FILE)),
+                None => homes
+                    .home
+                    .as_ref()
+                    .map(|home| home.join(super::claude_wrap::STATE_FILE)),
+            })
+            .flatten();
         Self {
-            config: set(&folders.config_env).or(config),
+            config: named.or(config),
             data: set(&folders.data_env).or(data),
             sandbox_only: None,
+            state,
         }
     }
 }

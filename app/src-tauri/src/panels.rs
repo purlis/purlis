@@ -1203,7 +1203,10 @@ fn memory_panel(
         ),
         empty: panel::Empty {
             headline: "Nothing remembered yet".into(),
-            body: Some("A chat records one with `purlis workspace remember`.".into()),
+            body: Some(format!(
+                "A chat records one with the memory_add tool, or `purlis workspace remember -w \
+                 {workspace}`."
+            )),
             // The `+` on the list's heading, drawn again where the list is empty (#1156).
             offer: Some(format!("memory.new:workspace/{workspace}")),
         },
@@ -1249,7 +1252,9 @@ pub(crate) fn shared_memory_view(root: &Path) -> Result<Vec<panel::Block>, Strin
                 empty: panel::Empty {
                     headline: "Nothing shared yet".into(),
                     body: Some(
-                        "A chat records one with `purlis persona remember --shared`.".into(),
+                        "A chat records one with the persona_remember tool and shared, or \
+                         `purlis persona remember <persona> --shared`."
+                            .into(),
                     ),
                     offer: Some("memory.new:shared".into()),
                 },
@@ -1334,10 +1339,15 @@ fn memory_rows_of(
 /// whose source has gone, not as a failure. A definition charter will not read is a trouble
 /// note, and the memories are still drawn under it.
 ///
-/// `state` is the plane's state directory: the vault registry's local half is there.
+/// `executor` asks the extensions' lints its Skills line counts, as the studio does (#3940):
+/// `None` counts purlis's own alone. `state` is the plane's state directory: the vault
+/// registry's local half is there. `waiting`
+/// is the files purlis's own proposed changes wait on, which its Skills line counts no more.
 pub(crate) fn persona_view(
+    executor: Option<&purlis_core::executor::Executor>,
     root: &Path,
     state: &Path,
+    waiting: &[String],
     name: &str,
 ) -> Result<Option<Vec<panel::Block>>, String> {
     if !purlis_core::personas::valid_name(name) {
@@ -1412,9 +1422,10 @@ pub(crate) fn persona_view(
         }
     }
     // Its skills (SK-5, #2768), behind the Skill studio's flag: a count of what it brings into
-    // every workspace, which opens the studio on it.
+    // every workspace, which opens the studio on it, and what needs the person (#3695).
     if purlis_core::skills::studio_on_here() {
-        blocks.extend(crate::personaskills::blocks(root, name));
+        let needing = crate::skillstudio::needing_here(executor, root, waiting, None, Some(name));
+        blocks.extend(crate::personaskills::blocks(root, name, needing));
     }
     match memory_rows(root, name) {
         Err(why) => blocks.push(panel::Block::Note {
@@ -1434,7 +1445,8 @@ pub(crate) fn persona_view(
                 empty: panel::Empty {
                     headline: "Nothing remembered yet".into(),
                     body: Some(format!(
-                        "A chat as {name} records one with `purlis persona remember`."
+                        "A chat as {name} records one with the persona_remember tool, or \
+                         `purlis persona remember {name}`."
                     )),
                     offer: Some(format!("memory.new:persona/{name}")),
                 },

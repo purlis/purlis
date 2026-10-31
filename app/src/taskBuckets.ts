@@ -59,6 +59,7 @@ export function taskBucketOf(kind: ShownKind | undefined): TaskBucket {
     case "asking":
     case "unheard":
     case "waiting-on-tasks":
+    case "waiting-on-own-work":
       return "working";
     case "failed":
     case "unreported":

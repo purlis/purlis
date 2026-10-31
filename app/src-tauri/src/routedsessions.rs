@@ -77,6 +77,7 @@ struct Shared {
     ends: Mutex<Option<Ends>>,
     reconnecting: Mutex<Option<Reconnecting>>,
     relayed: Mutex<Option<Arc<crate::hooks::Relayed>>>,
+    skill_runs: Mutex<Option<crate::host::SkillRunsHeard>>,
     /// The highest number said to have gone out, for a pool made after it was said.
     dealt: AtomicU32,
     /// When the runners' branches were last fetched for the window's focus.
@@ -130,7 +131,7 @@ impl RoutedSessions {
         let to_a_pool: ToAPool = {
             let (connection, plane) = (Arc::clone(connection), plane.clone());
             Arc::new(move |pool| {
-                purlis_core::runners::runner_for(&config, pool).map_err(|why| format!("{why}."))?;
+                purlis_core::runners::runner_of(&config, pool).map_err(|why| format!("{why}."))?;
                 Ok(
                     Box::new(crate::hostedsessions::HostedSessions::on_a_pools_runner(
                         connection.to_a_pool(pool),
@@ -237,6 +238,9 @@ fn pool_of(
     if let Some(reconnecting) = lock(&shared.reconnecting).clone() {
         made.when_reconnecting(reconnecting);
     }
+    if let Some(tell) = lock(&shared.skill_runs).clone() {
+        made.when_skill_runs_heard(of_the_pool(pool, tell));
+    }
     let dealt = shared.dealt.load(Ordering::Relaxed);
     if dealt > 0 {
         made.already_dealt(dealt);
@@ -245,6 +249,12 @@ fn pool_of(
     Ok(Arc::clone(
         lock(&shared.pools).entry(pool.to_owned()).or_insert(made),
     ))
+}
+
+/// `tell`, told each skill run as one of `pool`'s runner's (#3084).
+fn of_the_pool(pool: &str, tell: crate::host::SkillRunsHeard) -> crate::host::SkillRunsHeard {
+    let pool = pool.to_owned();
+    Arc::new(move |_, run| tell(Some(&pool), run))
 }
 
 /// Which pool each chat runs on, as the router has it now: `None` for this machine's.
@@ -327,11 +337,22 @@ impl SessionHost for RoutedSessions {
         self.here.composes_its_harness_chats()
     }
 
+    fn pool_for(&self, workspace: Option<&str>) -> Option<String> {
+        self.route(workspace).ok().flatten()
+    }
+
     fn composes_its_harness_chats_in(&self, workspace: Option<&str>) -> bool {
         match self.route(workspace) {
             // A start whose pool is not kept is refused as it opens, in its own words.
             Ok(Some(_)) | Err(_) => true,
             Ok(None) => self.here.composes_its_harness_chats_in(workspace),
+        }
+    }
+
+    fn composes_the_harness_chat(&self, id: u32) -> bool {
+        match self.host_of(id) {
+            Some(host) => host.composes_its_harness_chats(),
+            None => self.here.composes_the_harness_chat(id),
         }
     }
 
@@ -463,6 +484,18 @@ impl SessionHost for RoutedSessions {
         self.here.when_reconnecting(tell);
     }
 
+    /// Each pool's runner tells its own, as the pool's (#3084); this machine's host tells none.
+    fn when_skill_runs_heard(&self, tell: crate::host::SkillRunsHeard) {
+        *lock(&self.shared.skill_runs) = Some(Arc::clone(&tell));
+        let pools: Vec<(String, Arc<dyn SessionHost>)> = lock(&self.shared.pools)
+            .iter()
+            .map(|(name, pool)| (name.clone(), Arc::clone(pool)))
+            .collect();
+        for (name, pool) in pools {
+            pool.when_skill_runs_heard(of_the_pool(&name, Arc::clone(&tell)));
+        }
+    }
+
     fn reconnecting(&self) -> Vec<u32> {
         let mut all: BTreeSet<u32> = self.here.reconnecting().into_iter().collect();
         for pool in self.pools() {
@@ -517,13 +550,18 @@ impl SessionHost for RoutedSessions {
         self.here.already_dealt(dealt);
     }
 
-    /// A confinement the window planned is this machine's: a runner composes its own.
+    /// A confinement the window planned is this machine's: a runner composes its own. Where every
+    /// start runs on a pool ([`Self::every_start_on`]), the window's shells run there too, and so
+    /// does the confinement it planned for one.
     fn confine(
         &self,
         plan: &purlis_core::sandbox::plan::Plan,
         hearing: purlis_core::sandbox::plan::Hearing,
     ) -> Result<purlis_core::sandbox::Confinement, String> {
-        self.here.confine(plan, hearing)
+        match &self.every_start_on {
+            Some(pool) => self.pool(pool)?.confine(plan, hearing),
+            None => self.here.confine(plan, hearing),
+        }
     }
 
     fn reports_to(&self) -> Option<PathBuf> {
@@ -565,8 +603,37 @@ impl SessionHost for RoutedSessions {
         self.here.hold_here();
     }
 
+    /// On the runner of `pool`: this machine's host keeps the board, so it holds the project
+    /// first.
+    fn move_ahead(&self, pool: &str, workspace: &str) -> Result<(), String> {
+        let host = self.pool(pool)?;
+        self.here.hold_here();
+        host.move_ahead(pool, workspace)
+    }
+
+    fn move_in(&self, pool: &str, chats: &[crate::host::Moving]) -> Result<(), String> {
+        self.pool(pool)?.move_in(pool, chats)
+    }
+
+    fn move_out(
+        &self,
+        pool: &str,
+        chats: &[crate::host::Moving],
+    ) -> Result<crate::host::CameBack, String> {
+        self.pool(pool)?.move_out(pool, chats)
+    }
+
     fn pool_of(&self, id: u32) -> Option<String> {
         lock(&self.shared.chats).get(&id).cloned()
+    }
+
+    /// Asked of the host of the pool it runs on, where there is one already: never made for it.
+    fn clones_come_back(&self, id: u32) -> bool {
+        let Some(pool) = self.pool_of(id) else {
+            return false;
+        };
+        let host = lock(&self.shared.pools).get(&pool).map(Arc::clone);
+        host.is_some_and(|host| host.clones_come_back(id))
     }
 
     /// None for the project as a whole: each pool's is said by [`Self::runner_logs`] (#3393).
@@ -639,6 +706,24 @@ impl SessionHost for RoutedSessions {
         match self.host_of(number) {
             Some(host) => host.ran_with(number),
             None => self.here.ran_with(number),
+        }
+    }
+
+    fn prompt_key_started(
+        &self,
+        number: u32,
+        minted: Option<purlis_core::skillspan::PromptSalt>,
+    ) -> Option<purlis_core::skillspan::PromptSalt> {
+        match self.host_of(number) {
+            Some(host) => host.prompt_key_started(number, minted),
+            None => self.here.prompt_key_started(number, minted),
+        }
+    }
+
+    fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {
+        match self.host_of(number) {
+            Some(host) => host.prompt_key_left(number),
+            None => self.here.prompt_key_left(number),
         }
     }
 

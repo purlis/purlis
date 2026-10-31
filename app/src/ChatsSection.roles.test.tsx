@@ -272,16 +272,23 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     expect(named(drawnWith(count, "background-color"))).toBe("--control-count");
   });
 
-  it("heads a workspace's sessions with the section label, where the list is grouped", () => {
+  it("heads a workspace's sessions with the frame's group head, where the list is grouped (#3484)", () => {
     setChatsListPrefs({ grouped: true });
     const section = draw();
     const groups = [...section.querySelectorAll(".chats-group")];
 
-    expect(groups.map((one) => one.textContent)).toEqual(["smart-ide", "volaticloud"]);
+    expect(groups.map((one) => one.querySelector(".chats-group-name")?.textContent)).toEqual([
+      "smart-ide",
+      "volaticloud",
+    ]);
     for (const group of groups) {
-      wears(group, "label", `${group.textContent}'s heading`);
+      // The frame's group head (`ui/panel/panel.css`): 11px spaced capitals, medium, quiet.
+      expect(named(drawnWith(group, "font-size"))).toBe("--font-size-xs");
+      expect(named(drawnWith(group, "font-weight"))).toBe("--font-weight-medium");
+      expect(named(drawnWith(group, "color"))).toBe("--text-quiet");
       expect(drawnWith(group, "text-transform")).toBe("uppercase");
-      expect(drawnWith(group, "letter-spacing")).toBe("0.05em");
+      expect(drawnWith(group, "letter-spacing")).toBe("0.06em");
+      expect(group.querySelector("[data-count]")?.textContent).toMatch(/^\d+$/);
     }
   });
 

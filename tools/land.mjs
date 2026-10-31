@@ -15,28 +15,32 @@
 //   3. refuses while main is red: the newest finished `ci` run of a push to main failed. A pull
 //      request labelled `fixes-main` lands past a red main, and only it goes to the front of the
 //      queue (`jump`), since a jump restarts every group being built;
-//   4. reruns the runs of the head that wait on approval (`action_required`): gh counts those as
-//      failing checks, so they are rerun, and given a moment to start, before the checks are read;
+//   4. stops when any run of the head is held for approval (`action_required`), naming each by
+//      its name, id and link: the operator approves them, and it never reruns one (#3991). Exit 4;
 //   5. reads the required checks: their names from main's rulesets and branch protection, and
 //      their states from `gh pr checks --required`, which lists only the checks that have posted,
-//      so a required check not posted yet (a rerun's, just started) counts as pending. With
+//      so a required check not posted yet (a run's, just started) counts as pending. With
 //      `--watch` it waits until every one has posted and finished, and without it, it refuses
-//      while any is pending; either way it refuses while any failed, naming each;
+//      while any is pending; either way it refuses while any failed, naming each. A wait that
+//      can only end in GitHub's refusal stops early: when the only checks left are required ones
+//      that have not posted, and no run of the head is still going to post them, for a few polls
+//      running (a job renamed while protection still names it, or a run waiting on approval);
 //   6. marks a draft ready (`gh pr ready`), which the queue needs, and reads the checks again. No
 //      workflow here starts on `ready_for_review` today; the second read is a safety net for one
 //      that does;
 //   7. reads main once more, then enqueues through GraphQL `enqueuePullRequest` with the head it
 //      checked as `expectedHeadOid`, so a push since is refused by GitHub;
 //   8. prints the queue position, and with `--watch` waits until the pull request merges, or
-//      says it left the queue unmerged, with GitHub's reason and the failing checks of its queue
-//      run, from their annotations.
+//      says it left the queue unmerged, with GitHub's reason and the failing checks of the queue
+//      run this enqueue started, from their annotations. A merge conflict built no run: it says
+//      so, and prints no checks.
 //
 // The queue tests each entry on top of main and the entries ahead of it, and merges on green, so
 // this never updates the branch, never merges by hand, and never deletes a branch. It never
 // downloads a log either: a check's annotations say why it failed.
 //
 // Exit status: 0 enqueued (merged, with `--watch`), 1 refused or failed, 2 usage, 3 dropped from
-// the queue. It needs `gh`, signed in.
+// the queue, 4 runs held for approval (the operator approves them). It needs `gh`, signed in.
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -105,9 +109,9 @@ export function redRun(runs) {
 }
 
 /**
- * The names of the checks main requires, of `rules` (the rules GitHub applies to the branch, from
- * its rulesets) and `protection` (the branch's classic protection, as the branch reads it):
- * either can require a check, and the queue waits on both.
+ * The names of the checks main requires, from `rules` (the rules GitHub applies to the branch,
+ * from its rulesets) and from `protection` (the branch's classic protection, as the branch reads
+ * it): either can require a check, and the queue waits on both.
  */
 export function requiredNames(rules, protection) {
   const fromRules = (rules ?? [])
@@ -136,6 +140,30 @@ export function sortChecks(checks, required = []) {
   return { pending, failing };
 }
 
+/**
+ * Whether a workflow run (the REST API's) is still going, and so may yet post a check. A run
+ * waiting on approval reads `completed`, with the conclusion `action_required`: it posts nothing
+ * until a person acts, so it is not going.
+ */
+const going = (run) => run.status !== "completed";
+
+/**
+ * The required names that will not post, of `checks` (`sortChecks`'s answer) and `runs` (the
+ * workflow runs of the head): those not posted yet, when every check that has posted has finished
+ * and no run of the head is still going. Anything still going might post them, so then it is none.
+ */
+export function unposted(checks, runs) {
+  const missing = checks.pending.filter((check) => check.state === "not posted yet");
+  if (missing.length === 0 || missing.length < checks.pending.length) return [];
+  if ((runs ?? []).some(going)) return [];
+  return missing.map((check) => check.name);
+}
+
+/** Whether GitHub's `reason` for a drop is a merge conflict, which builds no queue run. */
+export function conflicted(reason) {
+  return /merge[\s_-]*conflict/i.test(reason ?? "");
+}
+
 /** One line per check, for a refusal. */
 const named = (checks) =>
   checks.map((check) => `  ${check.name}: ${check.state}${check.link ? ` ${check.link}` : ""}`);
@@ -152,11 +180,15 @@ export function dropReason(events, since) {
 
 /**
  * The runs of a merge-group commit to read when pull request `number` left the queue unmerged,
- * of `runs` (the repository's `merge_group` runs): those of the newest group it was tested in.
+ * of `runs` (the repository's `merge_group` runs): those of the newest group it was tested in
+ * since `since` (when this enqueue was made). A group from an earlier time in the queue is not
+ * why it left this time.
  */
-export function queueRuns(runs, number) {
-  const mine = runs.filter((run) =>
-    (run.head_branch ?? "").startsWith(`gh-readonly-queue/main/pr-${number}-`),
+export function queueRuns(runs, number, since = "") {
+  const mine = runs.filter(
+    (run) =>
+      (run.head_branch ?? "").startsWith(`gh-readonly-queue/main/pr-${number}-`) &&
+      (run.created_at ?? "") >= since,
   );
   const newest = [...mine].sort((a, b) => b.id - a.id)[0];
   return newest ? mine.filter((run) => run.head_sha === newest.head_sha) : [];
@@ -174,10 +206,18 @@ const SETTLE = seconds("LAND_SETTLE_SECONDS", 30);
 // How long a wait lasts before it gives up: the checks, then the queue. The tests shorten the first.
 const CHECKS_FOR = seconds("LAND_CHECKS_FOR_SECONDS", 120 * 60);
 const QUEUE_FOR = 240 * 60;
+// How many polls running, and how long, the required checks left must be ones that have not
+// posted, with no run of the head going, before the wait gives up on them: a run just queued takes
+// a moment to show, and longer while Actions is slow. The tests shorten the time.
+const UNPOSTED_POLLS = 3;
+const UNPOSTED_FOR = seconds("LAND_UNPOSTED_SECONDS", 5 * 60);
 const waitedFor = (s) => (s % 60 === 0 ? `${s / 60} minutes` : `${s} seconds`);
 
 const pause = (s) =>
   s > 0 && Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, s * 1000);
+
+/** The exit status when runs of the head are held for approval: the operator's to approve. */
+export const HELD = 4;
 
 /** Stops with `message` and `status`. */
 function stop(message, status = 1) {
@@ -266,17 +306,22 @@ function main(options) {
     "--jq",
     ".workflow_runs",
   ]);
-  for (const run of waiting ?? []) {
-    gh(["run", "rerun", String(run.id), "--repo", repo], false);
-    console.log(`reran ${run.name} (${run.html_url}), which waited on approval`);
-  }
-  // Until the rerun starts, gh still reads its old check as failed.
-  if ((waiting ?? []).length > 0) pause(SETTLE);
+  // A run held for approval is held so a person approves it: the tool never reruns one (#3991).
+  if ((waiting ?? []).length > 0)
+    stop(
+      [
+        `pull request #${options.pr} has runs held for approval:`,
+        ...waiting.map((run) => `  ${run.name} ${run.id} ${run.html_url}`),
+        "the operator approves them; land again once they have run.",
+      ].join("\n"),
+      HELD,
+    );
 
   // 5, 6. The required checks. Their names come from main's rules, since gh lists only the
-  // checks that have posted: right after a rerun, a required check can be missing altogether.
+  // checks that have posted: a required check whose run has not started can be missing.
+  // The rules come a page at a time, 30 to a page: a required check can be on any page.
   const required = requiredNames(
-    gh(["api", `repos/${repo}/rules/branches/main`]),
+    (gh(["api", `repos/${repo}/rules/branches/main`, "--paginate", "--slurp"]) ?? []).flat(),
     gh(["api", `repos/${repo}/branches/main`, "--jq", ".protection"]),
   );
   const readChecks = () => {
@@ -303,8 +348,23 @@ function main(options) {
           };
     stop(`gh pr checks ${options.pr} failed: ${done.stderr}`);
   };
+  const headRuns = () =>
+    gh([
+      "api",
+      "-X",
+      "GET",
+      `repos/${repo}/actions/runs`,
+      "-f",
+      `head_sha=${head}`,
+      "-f",
+      "per_page=100",
+      "--jq",
+      ".workflow_runs",
+    ]);
   const checksGate = (wait) => {
     let checks = readChecks();
+    let stuck = { names: "", polls: 0, since: 0 };
+    let said = "";
     for (let waited = 0; wait && checks.pending.length > 0 && checks.failing.length === 0;) {
       if (waited >= CHECKS_FOR)
         stop(
@@ -313,6 +373,39 @@ function main(options) {
             ...named(checks.pending),
           ].join("\n"),
         );
+      // Each change in what has not posted is said, so a long wait names what it waits on.
+      const missing = checks.pending.filter((check) => check.state === "not posted yet");
+      const now = missing.map((check) => check.name).join(", ");
+      if (now && now !== said) console.log(`waiting on required checks not posted yet: ${now}`);
+      said = now;
+      // The runs are read only when nothing posted is still going: it is the one case they decide.
+      const names = missing.length === checks.pending.length ? unposted(checks, headRuns()) : [];
+      const key = names.join("\n");
+      const same = names.length > 0 && key === stuck.names;
+      stuck = {
+        names: key,
+        polls: names.length === 0 ? 0 : same ? stuck.polls + 1 : 1,
+        since: same ? stuck.since : Date.now(),
+      };
+      if (stuck.polls >= UNPOSTED_POLLS && Date.now() - stuck.since >= UNPOSTED_FOR * 1000) {
+        const again =
+          "Running it again is safe: it enqueues nothing until every required check has passed.";
+        // The runs were read of the reviewed head, the checks of the current one: a push since
+        // (the baselines bot's, say) leaves the new head with nothing posted.
+        const moved = viewPr().headRefOid;
+        if (moved !== head)
+          stop(
+            `pull request #${options.pr}'s head moved to ${moved}, off the reviewed ${head}: review it and run again with --sha ${moved}. ${again}`,
+          );
+        stop(
+          [
+            `pull request #${options.pr} waits on required checks that have not posted, and no run of its head is going to post them:`,
+            ...names.map((name) => `  ${name}`),
+            "A job renamed or removed while main still requires its old name, or a run waiting on approval, does this; GitHub would refuse the enqueue. Fix main's required checks or the run, and land again.",
+            again,
+          ].join("\n"),
+        );
+      }
       pause(POLL);
       waited += Math.max(POLL, 1);
       checks = readChecks();
@@ -400,6 +493,14 @@ function main(options) {
   /** Says why the pull request left the queue unmerged, from the annotations of its queue run. */
   function dropped(reason) {
     const lines = [`#${options.pr} left the merge queue unmerged${reason ? `: ${reason}` : ""}`];
+    // A conflict is found before any group is built, so no queue run says anything about it, and
+    // an older group's failures would only mislead.
+    if (conflicted(reason)) {
+      lines.push(
+        "  it conflicts with main, or with an entry ahead of it: bring main into its branch, resolve the conflict, have the new head reviewed, and land again",
+      );
+      stop(lines.join("\n"), 3);
+    }
     // The newest 50 merge-group runs of the whole repository: with at most five groups building
     // and a few workflows each, that holds the group this pull request just left, read within a
     // poll of it leaving. Keep it at 50 or more.
@@ -415,7 +516,7 @@ function main(options) {
       "--jq",
       ".workflow_runs",
     ]);
-    for (const run of queueRuns(runs ?? [], options.pr)) {
+    for (const run of queueRuns(runs ?? [], options.pr, entry.enqueuedAt ?? "")) {
       const jobs = gh([
         "api",
         "-X",

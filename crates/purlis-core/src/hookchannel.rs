@@ -410,7 +410,7 @@ impl KeptBoard {
         Box::new(move |id, heard| {
             let told = serde_json::to_value(heard).is_ok_and(|line| hand_on(id, line));
             if !told {
-                kept.board().hear(heard);
+                kept.board().hear_at(heard, chrono::Utc::now().timestamp());
             }
             told
         })
@@ -456,7 +456,7 @@ impl KeptBoard {
     /// A line handed on whose window went before it replied (#2006): heard here, as one no
     /// window took is.
     fn unheard(&self, heard: &crate::hookwire::relay::Heard) {
-        self.board().hear(heard);
+        self.board().hear_at(heard, chrono::Utc::now().timestamp());
     }
 
     /// Chat `number`'s program ended, `exit`, with no window there to say so.
@@ -540,6 +540,11 @@ impl purlis_host::Hear for HookChannels {
         // A `secret exec` of a chat composed here runs here on the values its desktop sends
         // (#2047).
         relaying.of_project_at(path);
+        // A Claude Code chat's server dials in on macOS alone (#3316): each slot is handed on to
+        // the window beside this socket, which holds the doors.
+        if cfg!(target_os = "macos") {
+            relaying.handing_slots_to(&crate::hookwire::serve::beside(&socket));
+        }
         let reading = listener.hear(relaying.hearing(Arc::clone(&tokens)));
         Ok(Some(Arc::new(HookChannel {
             socket,

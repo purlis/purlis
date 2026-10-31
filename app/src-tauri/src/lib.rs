@@ -32,17 +32,20 @@ mod awayrunners;
 mod blockedsave;
 mod branchwatch;
 mod brokered;
+mod browserfiles;
 mod browserlimits;
 mod browserneedsyou;
 mod browserproof;
 mod browsers;
 mod changes;
 mod chatbrowsers;
+mod chatmoves;
 mod chats;
 mod clipath;
 mod createproject;
 mod curation;
 // The Devices view (#2052).
+mod clusterpools;
 mod devices;
 mod dispatchaway;
 mod dispatched;
@@ -80,6 +83,8 @@ mod host;
 mod inboxupdates;
 mod machineprofiles;
 mod personaskills;
+mod routergrade;
+mod signinwatch;
 mod skillchange;
 mod skilldrafts;
 mod skillgrade;
@@ -126,6 +131,7 @@ mod pin;
 mod planes;
 mod planewatch;
 mod poolfollow;
+mod poolprofiles;
 mod pooltools;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod portal;
@@ -144,6 +150,7 @@ mod restoring;
 mod routedsessions;
 #[cfg(unix)]
 mod runnercode;
+mod runnerdispatches;
 mod runnerlinks;
 mod runnerlog;
 mod runnerwrites;
@@ -774,6 +781,19 @@ struct OpenChat {
     untaken: Option<String>,
     /// The harness profile it started on, where it started on one.
     profile: Option<String>,
+    /// The pool whose runner it runs on (#2048), or `null` for this machine: its tab offers
+    /// Move here, and a chat here Move to runner.
+    #[specta(optional)]
+    pool: Option<String>,
+    /// The workspace it works in, or `null` at the project's root (#3453): its tab's move names
+    /// the other chats of its workspace, which move with it.
+    #[specta(optional)]
+    workspace: Option<String>,
+    /// Whether Move here brings back a clone its runner's chat made there (#3811): its runner
+    /// names the clones it holds (session protocol 1.51). `null` for a chat here, and for one on
+    /// a runner before 1.51, whose Move here row says such a clone stays there.
+    #[specta(optional)]
+    clones_come_back: Option<bool>,
     /// The persona it adopted.
     persona: Option<String>,
     /// What its harness cannot tell charter, said on the chat — none where it tells all.
@@ -880,9 +900,13 @@ impl HandedFromNote {
 fn drawn_of(held: &planes::Held, open: chats::Open) -> OpenChat {
     let id = held.chats().chat_at(open.session).and_then(|at| at.id);
     let browser_sites = browser_sites_of(held, open.session);
+    let pool = held.chats().pool_of(open.session);
+    let clones_come_back = held.chats().clones_come_back(open.session).then_some(true);
     OpenChat {
         id,
         browser_sites,
+        pool,
+        clones_come_back,
         ..OpenChat::from(open)
     }
 }
@@ -2256,6 +2280,98 @@ async fn restart_chat(
     .map_err(|err| format!("purlis could not restart the chat: {err}"))?
 }
 
+/// **Moves chat `session` to the runner of pool `to`, or here where `to` is `null`** (#2048):
+/// checked now, and prepared in the background while the chat keeps working; the window then
+/// asks [`move_chat_now`] at its next pause. Refused, in a sentence, for a chat that does not
+/// move.
+#[tauri::command]
+#[specta::specta]
+async fn move_chat(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+    to: Option<String>,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    tauri::async_runtime::spawn_blocking(move || held.move_chat(session, to))
+        .await
+        .map_err(|err| format!("purlis could not move the chat: {err}"))?
+}
+
+/// **Switches chat `session`'s prepared move now** (#2048), which the window asks at the chat's
+/// pause between turns: the chat in its new place as the window draws it, or why it does not
+/// move yet. A move whose switch fails is refused with why, and the chat stays where it ran.
+#[tauri::command]
+#[specta::specta]
+async fn move_chat_now(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+    columns: u16,
+    rows: u16,
+) -> Result<chatmoves::MoveNow, String> {
+    let held = planes.held(&plane)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        match held.move_chat_now(session, Size { columns, rows })? {
+            Some(moved) => Ok(chatmoves::MoveNow {
+                moved: moved
+                    .into_iter()
+                    .map(|(was, started)| {
+                        Ok(chatmoves::MovedChat {
+                            was,
+                            chat: drawn(&held, started)?,
+                            notices: held.chats().start_notes(started),
+                        })
+                    })
+                    .collect::<Result<_, String>>()?,
+                not_yet: None,
+            }),
+            None => Ok(chatmoves::MoveNow {
+                moved: Vec::new(),
+                not_yet: Some(chatmoves::NOT_AT_A_PAUSE.to_owned()),
+            }),
+        }
+    })
+    .await
+    .map_err(|err| format!("purlis could not move the chat: {err}"))?
+}
+
+/// **This project's chat moves** (#2048), as the window draws them when it is drawn anew.
+#[tauri::command]
+#[specta::specta]
+fn chat_moves(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<chatmoves::ChatMove>, String> {
+    Ok(planes.held(&plane)?.moves().shown())
+}
+
+/// **Puts chat `session`'s move away** (#2048): one still prepared is forgotten for every chat
+/// of it, and a failed one's reason is dismissed. One being made now is refused (#3814).
+#[tauri::command]
+#[specta::specta]
+fn put_away_chat_move(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+) -> Result<(), String> {
+    planes.held(&plane)?.moves().put_away(session)
+}
+
+/// **Chat `session`'s move waited on its profile's sign-in on the runner, which the window's
+/// strip says is done** (#3477): the move is prepared again, which asks the runner itself, so it
+/// goes ahead once the profile is signed in there, or waits again. Refused for a move that waits
+/// on no sign-in.
+#[tauri::command]
+#[specta::specta]
+fn chat_move_signed_in(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+) -> Result<(), String> {
+    planes.held(&plane)?.moves().signed_in(session)
+}
+
 /// **The chats this project has open that run under a sandbox other than the one the
 /// project's settings decide for them now** (#1428), or none. The window asks when the
 /// project's settings change, when its chats do, and after each of its own sandbox commands
@@ -2654,6 +2770,9 @@ impl From<chats::Open> for OpenChat {
                 .or_else(|| open.harness.map(purlis_core::harness_card::built_in_card))
                 .map(|card| HarnessGlance::from(&card)),
             profile: open.profile,
+            pool: None,
+            clones_come_back: None,
+            workspace: open.workspace,
             persona: open.persona,
             in_front: open.in_front,
             shows: open.shows,
@@ -2906,6 +3025,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<hooks::RefusedMore>()
         // What `chat-project-settings-changed` carries (ADR 0067 as amended 2026-10-16).
         .typ::<projectsettings::Rescreened>()
+        // What `chat-move` carries (#2048).
+        .typ::<chatmoves::MoveTold>()
         .typ::<chatbrowsers::BrowsersEnded>()
         .typ::<chatbrowsers::BrowsersListed>()
         .typ::<chatbrowsers::TimelineMoved>()
@@ -2939,10 +3060,17 @@ fn commands() -> Builder<tauri::Wry> {
         // The Skill studio's catalogue row and a persona's scope key (#2768): named once for
         // the persona page's summary row and the window's catalogue.
         .constant("SKILL_STUDIO_IN", skillstudio::STUDIO_IN)
+        .constant("SKILL_NEEDS_IN", skillstudio::NEEDS_IN)
         .constant("SKILL_RUNS_PANEL", skillstudio::RUNS_PANEL)
         // What `skill-grade` carries, and the event's name (SK-16, #2779).
         .typ::<skillgrade::SkillGradeStep>()
         .constant("SKILL_GRADE", skillgrade::EVENT)
+        // What `router-grade` carries, and the event's name (SK-15e, #3233).
+        .typ::<routergrade::RouterGradeStep>()
+        .constant("ROUTER_GRADE", routergrade::EVENT)
+        // What `skill-grade-after-edit` carries, and its name (SK-58, #3238).
+        .typ::<skillgrade::after_edit::SkillGradeAfterEditStep>()
+        .constant("SKILL_GRADE_AFTER_EDIT", skillgrade::after_edit::EVENT)
         .constant("PERSONA_SCOPE_KEY", skillstudio::PERSONA_SCOPE_KEY)
         // The one rule for a character a reader does not see (SK-51, #3202): the window marks
         // what it draws itself from the core's own tables, never from a list of its own.
@@ -2995,10 +3123,12 @@ fn ui_rpc_client() -> String {
     // `Channel` stays imported only while something the client keeps still names it.
     let names = if client.contains("Channel<") {
         "invoke as __TAURI_INVOKE, windowOnly as __WINDOW_ONLY, windowOnlyRefused as \
-         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, Channel"
+         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, \
+         windowOnlyStartRefused as __WINDOW_ONLY_START_REFUSED, Channel"
     } else {
         "invoke as __TAURI_INVOKE, windowOnly as __WINDOW_ONLY, windowOnlyRefused as \
-         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT"
+         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, \
+         windowOnlyStartRefused as __WINDOW_ONLY_START_REFUSED"
     };
     client.replacen(
         TAURI_INVOKE,
@@ -3085,6 +3215,8 @@ fn without_channel_commands(bindings: &str) -> String {
                 "__WINDOW_ONLY_RESULT"
             } else if command.contains(", Refused>(__TAURI_INVOKE(") {
                 "__WINDOW_ONLY_REFUSED"
+            } else if command.contains(", StartRefused>(__TAURI_INVOKE(") {
+                "__WINDOW_ONLY_START_REFUSED"
             } else {
                 panic!(
                     "`{name}` is the window's alone and its error is a shape the link's client has no refusal for"
@@ -3571,7 +3703,7 @@ pub fn run() {
                 // A browser whose engine ends by itself leaves its chat at once, with any Ask
                 // about it (#2385).
                 let window = app.handle().clone();
-                app.manage(std::sync::Arc::new(
+                let browsers = std::sync::Arc::new(
                     browsers::WindowBrowsers::new(host.connection())
                         .budgeted_by(std::sync::Arc::new(|| {
                             purlis_core::browserlimits::Limits::here().on_this_device
@@ -3595,7 +3727,20 @@ pub fn run() {
                                 }
                             })
                         }),
-                ));
+                );
+                // The browsers on a pool's runner end once a chat ran there without the
+                // sandbox (D-2050-28): off the thread that kept it.
+                let ending = std::sync::Arc::downgrade(&browsers);
+                host.connection()
+                    .ending_browsers_with(std::sync::Arc::new(move |pool: &str| {
+                        let (ending, pool) = (ending.clone(), pool.to_owned());
+                        tauri::async_runtime::spawn_blocking(move || {
+                            if let Some(browsers) = ending.upgrade() {
+                                browsers.end_on(&pool);
+                            }
+                        });
+                    }));
+                app.manage(browsers);
                 app.manage(host);
             }
             // No session host to fail where none runs.
@@ -3993,6 +4138,17 @@ pub fn run() {
                 // A sandboxed Claude Code chat whose project settings changed so that it no
                 // longer loads them: the window restarts it at once (ADR 0067 as amended
                 // 2026-10-16).
+                // Each chat move's stage (#2048): the window drives the switch at its pause.
+                .telling_moves({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |plane: PlaneId, told: chatmoves::ChatMove| {
+                        let told = chatmoves::MoveTold {
+                            plane: plane.clone(),
+                            moving: told,
+                        };
+                        windows::emit_for_plane(&window, &plane, chatmoves::EVENT, &told);
+                    })
+                })
                 .telling_project_settings({
                     let window = app.handle().clone();
                     std::sync::Arc::new(move |told: projectsettings::Rescreened| {

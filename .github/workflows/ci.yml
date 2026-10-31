@@ -11,7 +11,8 @@ on:
   # the pull request on top. It runs every job a pull request runs, and is gated as one: the jobs
   # that compare a change with main (`bench`, the cold start, the scoped macOS and Docker jobs)
   # treat a merge group as a pull request and measure it against the group's base
-  # (`.github/actions/change-base`). No job is filtered by path, so every required check reports.
+  # (`.github/actions/change-base`). A merge group is never scoped by what it changes
+  # (`tools/ci-scope.mjs`): every job a pull request could run, it runs.
   merge_group:
     types: [checks_requested]
   # Nightly, for the evidence-only jobs below, which nothing else runs (V70). The gating jobs
@@ -36,12 +37,26 @@ on:
 # conclusion; and none of these names is in branch protection, so a pull request waits on nothing it
 # no longer runs. `bench` measures each pull request against main (V62), so it stays.
 
+# **A pull request's heavy jobs run by what it changes (#3505).** The `changes` job sorts the change
+# into scopes (`tools/ci-scope.mjs`, the one place that says which paths need which jobs): a pull
+# request that changes only docs, agent skills or a tool a person runs by hand needs no Rust, app,
+# scenario or web build, and one that changes only the window's sources (`app/src/`, but for the
+# files Rust reads by name) needs no Rust suite, fmt, clippy or cargo-deny (#3596). No workflow has
+# a `paths:` filter, and no job that carries a required check's name is skipped by `if:`: such a job
+# always runs, and skips its expensive steps when its scope is untouched, as `parity` does. The jobs
+# behind a `*-checks` job (`rust`, `lint`, `scenario`, `scenario-linux`) are skipped by scope, and
+# their `*-checks` job passes only when the scope says there was nothing to run. The whole-tree
+# guards, Rust tests that read every file of the repository, and the window's guards, which read
+# every file of `app/src/`, run on every change (`recorded`). A merge group, a push to main and a
+# nightly run every scope. When `changes` itself fails, every scope's output is empty and every job
+# runs (`!= 'false'`), so a fault there runs more, never less.
+
 concurrency:
   # The nightly run keeps a group of its own, so it never displaces a merge's pending run on main.
   group: ci-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
   # Superseding a PR's run is right: only the newest push is a claim about that branch.
   # Superseding a run on `main` is NOT: every merge's run is the record for that commit, and
-  # `main` is protected by eight required checks. Cancelling it leaves the commit with no
+  # `main` is protected by nine required checks. Cancelling it leaves the commit with no
   # verified result at all — measured on 2026-09-20, three merges in a row cancelled the
   # previous merge's run, so three commits on a protected branch were never checked.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -56,6 +71,26 @@ env:
   NEXTEST_VERSION: "0.9.146"
 
 jobs:
+  # Which scopes this change needs (`tools/ci-scope.mjs`, `.github/actions/change-scope`).
+  changes:
+    name: what this change touches
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      rust: ${{ steps.scope.outputs.rust }}
+      web: ${{ steps.scope.outputs.web }}
+      app: ${{ steps.scope.outputs.app }}
+      scenario: ${{ steps.scope.outputs.scenario }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The pull request's merge commit and its first parent: what the change is.
+          fetch-depth: 2
+          persist-credentials: false
+      - name: The scopes this change needs
+        id: scope
+        uses: ./.github/actions/change-scope
+
   # The Rust suite in four parts on four runners, each building the tests and running a quarter
   # of them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
   # request waits on (2026-10-10), and each of two took 15 to 16 minutes by 2026-10-27. Runners
@@ -69,6 +104,9 @@ jobs:
   # carries the required check's name and passes when every part did.
   rust:
     name: rust tests (part ${{ matrix.part }} of 4)
+    needs: changes
+    # Skipped whole when nothing Rust reads has changed; `rust-checks` says so.
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
     strategy:
       fail-fast: false
       matrix:
@@ -101,7 +139,7 @@ jobs:
       # The repository holds 10 GB of caches, and each pull request's own 0.8-1.2 GB ones
       # pushed `main`'s out: on 2026-10-08 the caches held 12 GB and a run on `main` started
       # with none (the rust-cache README's own advice for a busy repository).
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
@@ -109,7 +147,7 @@ jobs:
       # cargo-nextest runs every test binary's tests at once, each test in a process of its own,
       # where `cargo test` runs the binaries one after another. Its settings are in
       # `.config/nextest.toml`. A machine without it runs the same tests with `cargo test`.
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # The pinned engine makes its sandbox with user namespaces, which Ubuntu 23.10 and later
@@ -156,6 +194,28 @@ jobs:
       - name: Run the doctests
         if: matrix.part == 2
         run: tools/no-orphans.sh --reap -- cargo test --workspace --locked --doc
+      # **Claude Code's own sandbox on Linux, on the settings purlis writes** (#2211): the macOS
+      # step in `scenario`'s, here on bubblewrap. The version purlis supports, this runner's build
+      # of it from npm with no install scripts run, against a stand-in model on a loopback port;
+      # the repositories' probes alone (`tools/seatbelt-case.sh --repositories-here`). Ubuntu
+      # 23.10 and later let only a program an AppArmor profile names make a user namespace, and
+      # Claude Code has none, so the runner allows them, as a machine without that rule does. No
+      # model is called, and no credential is used.
+      - name: Claude Code's own sandbox on Linux, on the settings purlis writes
+        if: matrix.part == 3
+        run: |
+          version=$(sed 's/ .*//' tests/fixtures/harness-versions/claude.txt)
+          case "$RUNNER_ARCH" in
+            ARM64) arch=arm64 ;;
+            X64) arch=x64 ;;
+            *) echo "::error::no Claude Code build for $RUNNER_ARCH"; exit 1 ;;
+          esac
+          package="@anthropic-ai/claude-code-linux-$arch"
+          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/claude-code" "$package@$version"
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
+            cargo nextest run --workspace --locked --profile ci --no-capture \
+            -E 'package(purlis-core) & binary(it) & test(/^claude_codes_own_sandbox_holds_the_settings_purlis_writes::/)'
       # The theme schema only grows within a format (#2524). `Run the tests` holds the engine's
       # schema to the committed `docs/schema/theme.v2.schema.json`; this step holds it to the
       # file the last release's tag holds, fetched with git, so an edit of the committed file
@@ -174,6 +234,8 @@ jobs:
   # minutes that part 1 waited on before its tests (2026-10-12).
   lint:
     name: rust (fmt, clippy)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -186,7 +248,7 @@ jobs:
       - uses: ./.github/actions/rust-toolchain
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # tauri::generate_context! reads the built frontend, so it has to exist before clippy.
@@ -199,7 +261,7 @@ jobs:
       # (the header records each one's sha256) or a generator change without its output each
       # turn this red. The Python is pinned by minor version, because a minor release is what
       # fixes CPython's Unicode version: 3.14 is Unicode 16.0.0.
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
       - name: The Unicode tables are what the generator makes of their pinned inputs
@@ -225,16 +287,21 @@ jobs:
   # The required check `rust (fmt, clippy, test)`: green only when the lint and every part of
   # `rust` are. `!cancelled()` so a red one still reports here as red, not as skipped, which a
   # required check would count as passing.
+  # Skipped is green only when the change touched nothing Rust reads (`changes`).
   rust-checks:
     name: rust (fmt, clippy, test)
-    needs: [lint, rust]
+    needs: [changes, lint, rust]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: The lint and every part passed
         env:
+          SCOPE: ${{ needs.changes.outputs.rust }}
           RESULTS: ${{ needs.lint.result }} ${{ needs.rust.result }}
-        run: test "$RESULTS" = "success success"
+        run: |
+          if [ "$SCOPE" = false ]; then want="skipped skipped"; else want="success success"; fi
+          echo "scope: ${SCOPE:-unknown}, results: $RESULTS"
+          test "$RESULTS" = "$want"
   # **The parity suite against a Docker pool** (#2045, spec #2041): the behaviour suite
   # (`app/src-tauri/src/behaviour.rs`) on its Docker pool target, each behaviour on a pool of its
   # own whose runner is a container of this build's runner image, reached through `docker exec`
@@ -292,11 +359,11 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/rust-toolchain
       - if: steps.scope.outputs.run == 'true'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - if: steps.scope.outputs.run == 'true'
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
@@ -307,7 +374,7 @@ jobs:
           mkdir -p app/dist
           cargo build --locked -p purlis-cli --bin purlis -p fake-harness --bin fake-harness
           cargo nextest run --locked -p purlis-app --lib --no-run
-          cargo nextest run --locked -p purlis-core --test a_docker_pool_runner_is_linked_through_docker_exec --test code_crosses_to_a_docker_pools_runner_and_back --no-run
+          cargo nextest run --locked -p purlis-core --test it --no-run
       - name: The runner image of this build, and the parity suite's around it, by digest
         if: steps.scope.outputs.run == 'true'
         run: |
@@ -318,9 +385,25 @@ jobs:
           cp target/debug/purlis "$context/purlis"
           cp -R app/src-tauri/plugin "$context/plugin"
           docker build --file runner-image/Dockerfile --tag purlis-runner:parity "$context"
+          # The runner image as it ships, with no harness, and one an update moves it to, for the
+          # test of a person's whole way through a pool (`behaviour::pool_journey`).
+          docker tag purlis-runner:parity localhost:5000/purlis-runner:shipped
+          docker push localhost:5000/purlis-runner:shipped
+          echo "DOCKER_POOL_JOURNEY_IMAGE=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner:shipped | sed 's/.*@//')" >> "$GITHUB_ENV"
+          printf 'FROM purlis-runner:parity\nLABEL dev.purlis.parity.next=true\n' \
+            | docker build --tag localhost:5000/purlis-runner:next -
+          docker push localhost:5000/purlis-runner:next
+          echo "DOCKER_POOL_JOURNEY_NEXT_IMAGE=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner:next | sed 's/.*@//')" >> "$GITHUB_ENV"
           parity="$RUNNER_TEMP/parity"
           mkdir -p "$parity"
           cp target/debug/purlis target/debug/fake-harness "$parity/"
+          # The Claude Code purlis supports, this runner's build of it from npm with no install
+          # scripts run, for the behaviour that runs it inside the wrap (#4083). No model is
+          # called, and no credential is used.
+          version=$(sed 's/ .*//' tests/fixtures/harness-versions/claude.txt)
+          package="@anthropic-ai/claude-code-linux-x64"
+          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/claude-code" "$package@$version"
+          cp "$RUNNER_TEMP/claude-code/node_modules/$package/claude" "$parity/claude-code"
           docker build --file tests/parity/runner.Dockerfile \
             --build-arg RUNNER=purlis-runner:parity --build-arg "AT=$PWD/target/debug" \
             --tag localhost:5000/purlis-runner-parity:candidate "$parity"
@@ -371,27 +454,34 @@ jobs:
       # `--retries 0` in both: the `ci` profile's retry is reported by `rust`'s annotate step,
       # which this job has not, so a flake here fails as it did rather than pass unseen.
       # Run whatever the step above found, so each step's result is its own.
-      - name: The pool's link and code over it, on Docker
+      - name: The pool's link, code over it and a chat's move, on Docker
         if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
         run: >-
           tools/no-orphans.sh --reap --
           cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
-          --test a_docker_pool_runner_is_linked_through_docker_exec
-          --test code_crosses_to_a_docker_pools_runner_and_back
+          --test it -E 'test(/^(a_docker_pool_runner_is_linked_through_docker_exec|a_killed_docker_exec_closes_what_it_ran_on_a_runner|code_crosses_to_a_docker_pools_runner_and_back|a_chat_moves_to_a_docker_pools_runner_and_back)::/)'
       - name: What the runners left, if a test failed
         if: failure() && steps.scope.outputs.run == 'true'
         run: docker ps --all --no-trunc || true
+  # A required check, so it always runs, and skips its steps when nothing Rust reads has changed.
   deny:
     name: rust (licences, advisories)
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/rust-toolchain
+      - name: Nothing Rust reads has changed
+        if: needs.changes.outputs.rust == 'false'
+        run: echo "::notice::nothing Rust reads has changed; the licences and advisories are not checked"
+      - if: needs.changes.outputs.rust != 'false'
+        uses: ./.github/actions/rust-toolchain
       # cargo-deny itself, the version `EmbarkStudios/cargo-deny-action` v2.1.1 runs, checked
       # against its published SHA-256. Run here rather than in that action's container so its
       # findings can be read: each is an annotation on `Cargo.lock` (qw390), the one place a
       # failure shows without the job's log.
       - name: Install cargo-deny
+        if: needs.changes.outputs.rust != 'false'
         env:
           DENY_VERSION: "0.20.2"
           DENY_SHA256: "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
@@ -403,6 +493,7 @@ jobs:
           tar -xzf /tmp/deny.tgz -C /tmp
           install -m 0755 "/tmp/$name/cargo-deny" "$HOME/.cargo/bin/cargo-deny"
       - name: cargo deny check
+        if: needs.changes.outputs.rust != 'false'
         run: |
           status=0
           cargo deny --format json --log-level warn --all-features check 2> deny.jsonl || status=$?
@@ -418,8 +509,13 @@ jobs:
   # longest job a pull request waited on, and by 2026-10-27 each of two parts took 10 to 12
   # minutes of vitest alone. Part 1 also runs the type check, lint and format check, part 2 the
   # licences and the tools' tests. `web-checks` carries the required check's name.
+  #
+  # It always runs, for the tools' tests, which run on every change; the rest of its steps run
+  # when the change touches what the web checks read (`changes`).
   web:
     name: web (part ${{ matrix.part }} of 4)
+    needs: changes
+    if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
@@ -435,19 +531,24 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: app/package-lock.json
+      - name: Nothing the web checks read has changed
+        if: needs.changes.outputs.web == 'false'
+        run: echo "::notice::nothing the web checks read has changed; only the tools' tests run"
       - run: npm ci
+        if: needs.changes.outputs.web != 'false'
       # Every npm package the app ships, and every vendored asset (app/icons/vendored.json), is
       # under a licence deny.toml allows (FM-3, #1106). It reads the lockfile and nothing else,
       # under a second, so it gates as part of this job rather than as evidence.
       - run: node ../tools/npm-licences.mjs
-        if: matrix.part == 2
+        if: matrix.part == 2 && needs.changes.outputs.web != 'false'
       - run: npm run typecheck
-        if: matrix.part == 1
+        if: matrix.part == 1 && needs.changes.outputs.web != 'false'
       - run: npm run lint
-        if: matrix.part == 1
+        if: matrix.part == 1 && needs.changes.outputs.web != 'false'
       - run: npm run format:check
-        if: matrix.part == 1
+        if: matrix.part == 1 && needs.changes.outputs.web != 'false'
       - run: npm test -- --shard=${{ matrix.part }}/4
+        if: needs.changes.outputs.web != 'false'
       # The tools' own tests (node:test), such as the cold-start gate's decision.
       - run: node --test "../tools/*.test.mjs"
         if: matrix.part == 2
@@ -522,7 +623,7 @@ jobs:
       - if: steps.scope.outputs.measure == 'true'
         uses: ./.github/actions/rust-toolchain
       - if: steps.scope.outputs.measure == 'true'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - if: steps.scope.outputs.measure == 'true'
@@ -642,8 +743,14 @@ jobs:
   #
   # Two jobs, not one matrix, because a job's `if:` cannot see `matrix`, and a matrix `exclude`
   # computed per event is undone by `include`, which adds an excluded entry back.
+  #
+  # Both legs, `app builds (ubuntu-24.04)` and `app builds (macos-latest)`, are required checks,
+  # so the job always runs, and skips its steps when nothing the app is built from has changed
+  # (`changes`).
   app:
     name: app builds (${{ matrix.os }}${{ matrix.evidence && ', evidence only' || '' }})
+    needs: changes
+    if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
@@ -667,9 +774,13 @@ jobs:
           # The pull request's merge commit and its first parent, main as it is now: the cold
           # start below is measured against main's build of it (#1866).
           fetch-depth: 2
+      - name: Nothing the app is built from has changed
+        if: needs.changes.outputs.app == 'false'
+        run: echo "::notice::nothing the app is built from has changed; it is not built"
       # Which OS this runner image really is, and a warning when a label has moved off the
       # version its row in `docs/platforms.md` names.
       - name: What this runner is
+        if: needs.changes.outputs.app != 'false'
         env:
           EXPECT: ${{ matrix.expect }}
         run: |
@@ -687,38 +798,43 @@ jobs:
       # bubblewrap and socat: Claude Code's Linux sandbox runs through them (ADR 0067 §1).
       # Cached and bounded, as the `rust` job's (#1477).
       - name: Tauri's Linux build dependencies, an X server and i3 to start it in, and the sandbox's programs
-        if: runner.os == 'Linux'
+        if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux') }}
         timeout-minutes: 9
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
           packages: xvfb xauth dbus-x11 i3 bubblewrap socat
       - uses: ./.github/actions/rust-toolchain
+        if: needs.changes.outputs.app != 'false'
       # Not on the newer images: rust-cache's key has the OS and architecture but not the image,
       # so they would restore objects compiled on macOS 26 or Ubuntu 24.04 and only link them.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-        if: ${{ !matrix.evidence }}
+        if: ${{ needs.changes.outputs.app != 'false' && (!matrix.evidence) }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: needs.changes.outputs.app != 'false'
         with:
           node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci
+        if: needs.changes.outputs.app != 'false'
         working-directory: app
       # Every Rust crate and npm package this platform's build ships has its licence text
       # (#1784). `vite build` generates the notices from the locked graph and fails on the same
       # thing; this names it as a step of its own. Nothing is committed, so nothing can be stale.
       - name: Every shipped crate and npm package has its licence text
+        if: needs.changes.outputs.app != 'false'
         run: node tools/third-party-notices.mjs
       - run: npx tauri build --debug --no-bundle
+        if: needs.changes.outputs.app != 'false'
         working-directory: app
       # The window's main bundle carries no CodeMirror (#987): the light editor is a lazy chunk
       # (ADR 0086 rows M2 and L6), and a static import would quietly undo that. It reads the
       # `app/dist` this build left. Not on the evidence images, which only report.
       - name: The window's main bundle carries no CodeMirror
-        if: ${{ !matrix.evidence }}
+        if: ${{ needs.changes.outputs.app != 'false' && (!matrix.evidence) }}
         run: node tools/main-chunk-has-no-codemirror.mjs
       # main's app, built in this job, for the cold start below to be held to (#1866, ADR 0086 as
       # amended): the merge commit's first parent, main as it is now, built into the same target
@@ -731,11 +847,11 @@ jobs:
       # built in the environment the change set up), and the step fails rather than ungate it.
       - name: The commit this change is measured against
         id: base
-        if: runner.os == 'Linux' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+        if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')) }}
         uses: ./.github/actions/change-base
       - name: main's app, for the cold start to be measured against
         id: main-app
-        if: runner.os == 'Linux' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+        if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')) }}
         timeout-minutes: 20
         env:
           GH_TOKEN: ${{ github.token }}
@@ -772,7 +888,7 @@ jobs:
       # request held the same code to main already. `tools/coldstart-linux.sh` says why not a
       # release build.
       - name: Cold start on X, on the runner's own session bus (charter-app#24's machine)
-        if: runner.os == 'Linux'
+        if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux') }}
         env: &coldstart-env
           APP: ${{ steps.main-app.outputs.change }}
           BASELINE_APP: ${{ steps.main-app.outputs.app }}
@@ -789,18 +905,18 @@ jobs:
           EVIDENCE_ONLY: ${{ github.event_name != 'pull_request' && github.event_name != 'merge_group' && '1' || '' }}
         run: tools/coldstart-linux.sh bare
       - name: Cold start on i3 under X11, on the runner's own session bus
-        if: runner.os == 'Linux'
+        if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux') }}
         env: *coldstart-env
         run: tools/coldstart-linux.sh i3
       - name: Cold start on i3 under X11 with no session bus, as startx into i3
-        if: runner.os == 'Linux'
+        if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux') }}
         env: *coldstart-env
         run: tools/coldstart-linux.sh i3-nobus
       # A launch that puts 1, 10 and 40 chats back (ADR 0086 row L8): when the window could be
       # used and when the chats had started. They start behind the window, so the first must
       # not grow with them. Evidence: reported in the job's summary, and it fails nothing.
       - name: A launch that puts chats back, on X (evidence only)
-        if: runner.os == 'Linux'
+        if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux') }}
         continue-on-error: true
         env:
           APP: ${{ steps.main-app.outputs.change }}
@@ -811,7 +927,10 @@ jobs:
   # image breaking upstream must not stop that. Nightly only (V70).
   app-evidence:
     name: app builds (${{ matrix.os }}${{ matrix.evidence && ', evidence only' || '' }})
-    if: github.event_name == 'schedule'
+    # `changes` for the steps it shares with `app`; a nightly runs every scope, and a `changes`
+    # that fails runs it all the same.
+    needs: changes
+    if: ${{ !cancelled() && github.event_name == 'schedule' }}
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -972,13 +1091,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
       # tauri::generate_context! reads the built frontend, as in the `rust` job.
       - run: mkdir -p app/dist
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # The names the studio probe's network tests look up, from the hosts file, not outside DNS
@@ -1026,7 +1145,7 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/rust-toolchain
       - if: steps.scope.outputs.run == 'true'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: false
       # Not under `no-orphans.sh`: on a macOS runner the system starts processes of the job's
@@ -1060,7 +1179,7 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/tests/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
@@ -1068,7 +1187,7 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/rust-toolchain
       - if: steps.scope.outputs.run == 'true'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: false
       # The names the studio probe's network tests look up, from the hosts file, not outside DNS
@@ -1076,18 +1195,24 @@ jobs:
       - name: The studio probe's names
         if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/studio-probe-names
+      # Node, for a Claude Code chat's server dialling in to its door (#3316).
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
       - name: The studio probe, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p studio-probe
       # A wrapped chat's own compiled profile, applied for real: no port bound, nothing listening.
       - name: A wrapped chat listens nowhere, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
-        run: cargo test --locked -p purlis-core --test a_sandboxed_chat_listens_nowhere_under_seatbelt
+        run: |
+          tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- a_sandboxed_chat_listens_nowhere_under_seatbelt::
       # A chat allowed to serve on a port, under its own compiled profile for real (#2019): its
       # own socket and no TCP port, reached through purlis's door alone.
       - name: A chat's server behind its door, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
-        run: cargo test --locked -p purlis-core --lib -- sandbox::localport::tests::under_seatbelt
+        run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::localport::tests::under_seatbelt
       # Which of the confined profile's parts the probe needs to start, each tried on its own.
       # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
       - name: What the sandbox refused
@@ -1107,7 +1232,8 @@ jobs:
       fail-fast: false
       matrix:
         node: ["20", "22"]
-        kind: [plain, vite, next]
+        # `dial-` kinds: a Claude Code chat's server dials in to its door (#3316).
+        kind: [plain, vite, next, dial-plain, dial-express, dial-vite, dial-refused]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1143,16 +1269,44 @@ jobs:
   # The `rust` job's `cargo test --workspace` runs these too. This job exists so the gate has a
   # NAME — "recorded behaviour" is a required check — and so a red run says which contract moved
   # without reading a whole test log. It builds no frontend and needs no Tauri.
+  #
+  # A required check, so it always runs, and skips its steps when nothing Rust reads has changed.
   recorded:
     name: recorded behaviour
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Nothing Rust reads has changed
+        if: needs.changes.outputs.rust == 'false'
+        run: echo "::notice::nothing Rust reads has changed; the recorded behaviour is not replayed, and only the whole-tree and window guards run"
+      # On every change: the whole-tree guards below need the toolchain when nothing else does.
       - uses: ./.github/actions/rust-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # **The whole-tree guards** (`WHOLE_TREE_GUARDS` in `tools/ci-scope.mjs`): Rust tests that
+      # read every file of the repository, docs and tools included, so a change that leaves Rust
+      # out of scope can still fail them (a new tool with no licence header). The `rust` job runs
+      # them with the rest of the suite; when it is skipped, they run here, alone.
+      #
+      # With them, the window's guards (`WINDOW_SOURCE_GUARDS`, #3596): Rust tests that read every
+      # file of `app/src/`, which runs no Rust suite of its own. Each is a module of the core's one
+      # test binary (#3613), picked by its name.
+      # A name that picks no test passes `cargo test` green, so a renamed file would quietly stop
+      # running: `tools/tests-ran.sh` fails the step on such a name instead (#3752). So does every
+      # other step that picks tests by name, here and in the scheduled workflows.
+      - name: The whole-tree guards, as Rust is out of scope
+        if: needs.changes.outputs.rust == 'false'
+        run: >-
+          tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it --
+          every_first_party_source_file_carries_its_licence_header::
+          no_tracked_file_is_one_a_sandboxed_chat_may_not_write::
+          no_old_name_is_spelled_in_the_window_or_its_assets::
+          every_deferral_names_its_ticket::
       - name: The plane writes, hooks, status line and doctor, as recorded
+        if: needs.changes.outputs.rust != 'false'
         run: cargo test --locked -p purlis-cli --test recorded_behaviour
       # A red replay offers the file a bless would write, so rows that moved on purpose can be
       # taken from here where no machine at hand can run the recorder (a sandboxed chat cannot
@@ -1161,13 +1315,13 @@ jobs:
       # fields that were meant to move, before anyone commits it. A row's verdict (`denies`,
       # `allows`) is never moved by a bless.
       - name: What a bless would record, where the replay differs
-        if: failure()
+        if: ${{ needs.changes.outputs.rust != 'false' && (failure()) }}
         continue-on-error: true
         env:
           CHARTER_RECORDED_BLESS: "1"
         run: cargo test --locked -p purlis-cli --test recorded_behaviour
       - name: The blessed file, to check and commit by hand
-        if: failure()
+        if: ${{ needs.changes.outputs.rust != 'false' && (failure()) }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: recorded-behaviour-blessed
@@ -1176,35 +1330,67 @@ jobs:
             tests/fixtures/recorded/behaviour-blobs.jsonl.gz
           if-no-files-found: error
       - name: The shell reader and the plane-root guards, as recorded
+        if: needs.changes.outputs.rust != 'false'
         run: >-
-          cargo test --locked -p purlis-core
-          --test the_shell_is_read_the_way_python_reads_it
-          --test the_leak_guard_answers_what_the_python_answers
-          --test the_golden_rule_and_the_prose_guards_answer_what_the_python_answers
-          --test the_handoff_guard_answers_what_the_python_answers
-          --test the_plane_root_guards_answer_what_the_python_answers
+          tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it --
+          the_shell_is_read_the_way_python_reads_it::
+          the_leak_guard_answers_what_the_python_answers::
+          the_golden_rule_and_the_prose_guards_answer_what_the_python_answers::
+          the_handoff_guard_answers_what_the_python_answers::
+          the_plane_root_guards_answer_what_the_python_answers::
 
-  # The scenario specs on macOS in two parts on two runners (WebdriverIO's `--shard`): on one
-  # runner the job took 15 minutes, 7 of them building on macOS's slow runner and 6 running the
-  # specs one at a time, longer than any other job but `rust` (2026-10-10). Each part builds for
-  # itself, as `rust`'s do. Part 1 also runs the seven runs that each need an app of their own
-  # (`extras`); the app as it ships is `app`'s macOS leg (`app builds (macos-latest)`): part
-  # 2's half of the specs is the heavier, 13 to 16 minutes against part 1's 7 to 11 (2026-10-12).
+  # The scenario specs on macOS in four parts on four runners: on one runner the job took 15
+  # minutes, 7 of them building on macOS's slow runner and 6 running the specs one at a time,
+  # longer than any other job but `rust` (2026-10-10). Each part builds for itself, as `rust`'s
+  # do. The seven runs that each need an app of their own (`extras`) are a leg that runs no spec
+  # (`specs: false`): in a spec part they added about 7 minutes after its specs, and that part was
+  # the run's longest job (31 to 32 minutes on 2026-10-28; 25.9 with the extras apart). macOS
+  # runners vary a lot: the same half of the specs took 622 to 984 s and the build 179 to 485 s
+  # across those runs. The app as it ships is `app`'s macOS leg (`app builds (macos-latest)`).
+  #
+  # Four parts, not two (#3615): on 14 runs of 2026-10-28 a half took 24 minutes at the median and
+  # up to 31, of which 15.5 running its specs and 8 building, and the build is the runner's speed
+  # (sccache hit 80 to 90% on the fastest build and the slowest alike). A build shared through an
+  # artifact would only move those 8 minutes in front of every part, so the specs are what to cut.
+  # The parts are cut by measured time (`e2e/parts.ts`), not by WebdriverIO's `--shard`, which
+  # counts files: its four parts would have taken 4.6, 10.8, 6.3 and 8.2 minutes of specs, the
+  # cut ones 7.7, 7.7, 6.9 and 7.6. Runners do not queue (Enterprise runners, 2026-10-13), so a
+  # part costs runner minutes, not wait. Every part is a run of neighbours in name order, as
+  # before.
+  #
+  # macOS's own sandbox checks are a leg of their own too (`sandbox`): they compile the core's
+  # tests and build no app, 4.2 minutes on average that made the single-app leg the next longest.
   # `scenario-checks` carries the required check's name. Linux has the same steps, in
   # `scenario-linux`.
+  #
+  # Skipped whole, and no macOS runner held, when nothing the scenarios run has changed
+  # (`changes`); `scenario-checks` says so.
   scenario:
-    name: scenario tests (${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }})
+    name: scenario tests (${{ matrix.os }}, ${{ matrix.specs && format('part {0} of {1}', matrix.shard, matrix.shards) || matrix.sandbox && 'the sandbox runs' || 'the single-app runs' }})
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' }}
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest]
-        shard: [1, 2]
-        shards: [2]
+        shard: [1, 2, 3, 4]
+        shards: [4]
+        extras: [false]
+        specs: [true]
+        sandbox: [false]
         include:
-          - shard: 1
+          - os: macos-latest
+            shard: extras
+            shards: 4
             extras: true
-          - shard: 2
+            specs: false
+            sandbox: false
+          - os: macos-latest
+            shard: sandbox
+            shards: 4
             extras: false
+            specs: false
+            sandbox: true
     runs-on: ${{ matrix.os }}
     steps: &scenario-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1220,7 +1406,7 @@ jobs:
           tauri: true
           packages: xvfb dbus-x11 bubblewrap socat
       - uses: ./.github/actions/rust-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # **sccache for the workspace's own crates, on macOS** (2026-10-12, an experiment kept only
@@ -1234,27 +1420,39 @@ jobs:
         if: runner.os == 'macOS'
         with:
           version: v0.18.0
+      # A cache that does not answer is a slower job, never a failed one: the storage behind
+      # the Actions cache refuses reads once the account's egress is over its limit
+      # ("ServerBusy"), and sccache then failed `rustc -vV` and the whole job with it
+      # (2026-10-30, three merge-queue drops). The server is started here; only one that comes
+      # up is put in front of rustc, and SCCACHE_IGNORE_SERVER_IO_ERROR has a later failure
+      # compile without it.
       - name: Compile through sccache
         if: runner.os == 'macOS'
         env:
           MODE: ${{ github.ref == 'refs/heads/main' && 'READ_WRITE' || 'READ_ONLY' }}
         run: |
-          {
-            echo "RUSTC_WRAPPER=sccache"
-            echo "SCCACHE_GHA_ENABLED=true"
-            echo "SCCACHE_GHA_RW_MODE=$MODE"
-          } >> "$GITHUB_ENV"
+          export SCCACHE_GHA_ENABLED=true SCCACHE_GHA_RW_MODE="$MODE"
+          if sccache --start-server >/dev/null 2>&1 && sccache --show-stats >/dev/null 2>&1; then
+            {
+              echo "RUSTC_WRAPPER=sccache"
+              echo "SCCACHE_GHA_ENABLED=true"
+              echo "SCCACHE_GHA_RW_MODE=$MODE"
+              echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
+            } >> "$GITHUB_ENV"
+          else
+            echo "::warning title=sccache::the build cache did not answer, so this job compiles without it"
+          fi
       # Whether macOS's sandbox matches a name as typed or as it is on disk, measured; that the
       # case-classed rules purlis writes for Claude Code hold every spelling (#2071, #2107); and
       # the profiles a wrapped chat starts under, at the full sandbox and at the floor, built by
       # the core and applied whole to the same operations (#2128). After the toolchain and the
       # caches, since the core's test writes those profiles out.
       - name: macOS's sandbox and a name spelled in another case
-        if: runner.os == 'macOS' && matrix.extras
+        if: runner.os == 'macOS' && matrix.sandbox
         env:
           PURLIS_SEATBELT_OUT: ${{ runner.temp }}/seatbelt-emitted
         run: |
-          cargo test --locked -p purlis-core --test the_profiles_a_wrapped_chat_starts_under_are_written_out
+          tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- the_profiles_a_wrapped_chat_starts_under_are_written_out::
           tools/seatbelt-case.sh "$PURLIS_SEATBELT_OUT"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -1262,6 +1460,7 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci
+        if: ${{ !matrix.sandbox }}
         working-directory: app
       # **Claude Code's own sandbox, on the settings purlis writes** (#2211). Claude Code builds its
       # sandbox itself, so the real one is run: the version purlis supports
@@ -1271,7 +1470,7 @@ jobs:
       # the step above, and a wrong answer fails the step. No model is called, and no credential
       # is used.
       - name: Claude Code's own sandbox on the settings purlis writes
-        if: runner.os == 'macOS' && matrix.extras
+        if: runner.os == 'macOS' && matrix.sandbox
         run: |
           version=$(sed 's/ .*//' tests/fixtures/harness-versions/claude.txt)
           case "$RUNNER_ARCH" in
@@ -1282,7 +1481,7 @@ jobs:
           package="@anthropic-ai/claude-code-darwin-$arch"
           npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/claude-code" "$package@$version"
           PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
-            cargo test --locked -p purlis-core --test claude_codes_own_sandbox_holds_the_settings_purlis_writes -- --nocapture
+            tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- claude_codes_own_sandbox_holds_the_settings_purlis_writes:: --nocapture
       # The `e2e` feature puts WebdriverIO's embedded WebDriver server inside the app, which is
       # what drives it on macOS as well as Linux. It is in no build anyone is given.
       #
@@ -1290,9 +1489,33 @@ jobs:
       # are built by the same cargo run as the app (the packages after `--`). Built apart, their
       # dependencies resolve other features than the app's, so purlis-core compiled twice
       # (2026-10-12); together, once. They take the app's `purlis-core/fenced` with it.
+      #
+      # **What this build spends its time on** (#3742, 2026-10-29; six legs' logs and cargo's
+      # timings). Not linking (6 s for the app's program) and not sccache's round trips (under a
+      # second a hit): the app's own crate, 193 s of a 394 s cargo run, compiled afresh on every
+      # leg. Its library also emitted a `staticlib` and a `cdylib`, Tauri's template's for iOS and
+      # Android, and sccache never caches a crate that links (`crate-type` among its
+      # non-cacheable calls), so "80 to 90% hits" counted only the small crates. The library is now
+      # an `rlib` alone (`app/src-tauri/Cargo.toml`). The frontend was the rest: `tsc` before vite
+      # took 20 to 150 s per leg, a type check the required `web` job already makes, so
+      # `build:e2e` is vite alone. Rejected: a lighter debug profile (`line-tables-only` is already
+      # the dev profile, and #3560's opt-level made the cold build 21 to 32 min), another linker
+      # (6 s to win), a `target/` cache (rust-cache already restores the dependencies, and the
+      # workspace's crates change with every pull request that runs this job).
       - name: Build the app, the harness and the CLI for the scenario tests
-        run: npx tauri build --debug --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli
+        if: ${{ !matrix.sandbox }}
+        run: npx tauri build --debug --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli --timings
         working-directory: app
+      # Cargo's own account of that build, unit by unit (`--timings`), kept a week: what a slow
+      # build spent its time on, read without rerunning it (#3742).
+      - name: Keep cargo's timings of the build
+        if: ${{ !cancelled() && !matrix.sandbox }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cargo-timings-${{ matrix.os }}-${{ matrix.shard }}
+          path: target/cargo-timings/cargo-timing.html
+          retention-days: 7
       # What sccache found, as a notice: whether the experiment pays, without the log.
       - name: sccache's hits and misses
         if: runner.os == 'macOS' && !cancelled()
@@ -1301,18 +1524,23 @@ jobs:
         # and #1829's run showed no notice at all.
         run: |
           said=$(sccache --show-stats 2>&1 | head -30 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
-          echo "::notice title=sccache (macOS part ${{ matrix.shard }})::${said:-sccache said nothing}"
-      - run: npm run e2e -- --shard ${{ matrix.shard }}/${{ matrix.shards }}
-        if: runner.os == 'macOS'
+          echo "::notice title=sccache (macOS, ${{ matrix.specs && format('part {0}', matrix.shard) || matrix.sandbox && 'the sandbox runs' || 'the single-app runs' }})::${said:-sccache said nothing}"
+      # The part's specs, cut by `e2e/parts.ts` (#3615).
+      - run: npm run e2e
+        if: runner.os == 'macOS' && matrix.specs
         working-directory: app
-      - run: xvfb-run -a npm run e2e -- --shard ${{ matrix.shard }}/${{ matrix.shards }}
-        if: runner.os == 'Linux'
+        env:
+          PURLIS_E2E_PART: ${{ matrix.shard }}/${{ matrix.shards }}
+      - run: xvfb-run -a npm run e2e
+        if: runner.os == 'Linux' && matrix.specs
         working-directory: app
+        env:
+          PURLIS_E2E_PART: ${{ matrix.shard }}/${{ matrix.shards }}
       # The slowest spec files and tests of the run above, as notices on the job: what makes the
       # specs slow, readable through the checks API without the log (`tools/e2e-timings.mjs`). A
       # report, so it never turns the job red.
       - name: Annotate the slowest scenario specs
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.specs }}
         continue-on-error: true
         run: node ../tools/e2e-timings.mjs logs/timings.jsonl "${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }}"
         working-directory: app
@@ -1320,7 +1548,7 @@ jobs:
       # notice on the part of the job that ran them: a switch to a project of many chats apart
       # from one to a project of one (`tools/switch-notice.mjs`). A report, never a verdict.
       - name: Annotate the project switches
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.specs }}
         continue-on-error: true
         run: node ../tools/switch-notice.mjs logs/project-switch.jsonl "${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }}"
         working-directory: app
@@ -1437,24 +1665,31 @@ jobs:
           name: scenario-logs-${{ matrix.os }}-${{ matrix.shard }}
           path: app/logs
 
-  # The required check `scenario tests (macos-latest)`: green only when both parts are, and
+  # The required check `scenario tests (macos-latest)`: green only when every leg is, and
   # `!cancelled()` for the reason `rust-checks` gives.
   scenario-checks:
     name: scenario tests (macos-latest)
-    needs: scenario
+    needs: [changes, scenario]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: Both parts passed
+      - name: Every leg passed
         env:
+          SCOPE: ${{ needs.changes.outputs.scenario }}
           RESULT: ${{ needs.scenario.result }}
-        run: test "$RESULT" = success
+        run: |
+          if [ "$SCOPE" = false ]; then want=skipped; else want=success; fi
+          echo "scope: ${SCOPE:-unknown}, result: $RESULT"
+          test "$RESULT" = "$want"
 
   # Its own job, not a leg of `scenario`'s matrix, so that `scenario-checks` waits on macOS
   # alone. Two parts too, since its specs alone took 7.8 minutes of 12.7 (2026-10-12); Linux
-  # runners are not the ones in short supply. Part 2 runs the seven single-app runs, as on macOS.
+  # runners are not the ones in short supply. Part 2 runs the seven single-app runs (on macOS
+  # they are a leg of their own).
   scenario-linux:
     name: scenario tests (${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }})
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' }}
     strategy:
       fail-fast: false
       matrix:
@@ -1464,29 +1699,37 @@ jobs:
         include:
           - shard: 1
             extras: false
+            specs: true
+            sandbox: false
           - shard: 2
             extras: true
+            specs: true
+            sandbox: false
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
 
   # The required check `scenario tests (ubuntu-24.04)`, as `scenario-checks` is for macOS.
   scenario-linux-checks:
     name: scenario tests (ubuntu-24.04)
-    needs: scenario-linux
+    needs: [changes, scenario-linux]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: Both parts passed
+      - name: Every leg passed
         env:
+          SCOPE: ${{ needs.changes.outputs.scenario }}
           RESULT: ${{ needs.scenario-linux.result }}
-        run: test "$RESULT" = success
+        run: |
+          if [ "$SCOPE" = false ]; then want=skipped; else want=success; fi
+          echo "scope: ${SCOPE:-unknown}, result: $RESULT"
+          test "$RESULT" = "$want"
 
   windows:
     # M4, the Windows question. ADR 0025 names macOS, Linux AND Windows; nothing has ever
     # been compiled on Windows, so this job exists to find out what is true rather than to
     # pass.
     #
-    # **Not a gate, and not one of the eight required checks.** The same reasoning `fifty
+    # **Not a gate, and not one of the nine required checks.** The same reasoning `fifty
     # tabs` gives in `stress.yml`, and more of it: a required check on a platform with no
     # port would block every merge in the repo — including the ports that would make it
     # green. It reports, and it is allowed to fail. It runs nightly, not on a pull
@@ -1509,7 +1752,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: What this runner is

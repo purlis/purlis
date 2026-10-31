@@ -2,23 +2,33 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * The Skill studio's changes (SK-7, #2770): New skill at the level the person came from, Rename,
- * a move into the project that asks for a grant first, Delete that says who uses the skill and
- * offers Restore, the grant control, and a workspace's turn-on refused with the grant that would
- * reach it. The core is mocked; what each command does is the core's seam test.
+ * The Skill studio's changes (SK-7, #2770): New skill at the level the person came from; Rename,
+ * Move and Delete as dialogs that say what changes and who is affected, ending in a notice with
+ * Undo or Bring it back (#3685); the grant control, and a workspace's turn-on refused with the grant that would
+ * reach it. Each is done from the skill chosen in the Library, beside the list (#3681). The core
+ * is mocked; what each command does is the core's seam test.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { SkillStudioTab } from "./SkillStudioTab";
+import { chooseMore, forgetStudio, openSkill, renderStudio } from "./SkillStudioTab.testkit";
+import { need } from "./skillsListing.testkit";
 import { AT_THE_ROOT, asPersona, inWorkspace } from "./skillStudio";
 import { pickIn } from "./ui/select/select.testkit";
 import { levelFrom, PROJECT } from "./skillChanges";
+import {
+  DELETED_FOR,
+  HISTORY_MOVES,
+  HISTORY_RESTARTS_LOCAL,
+  historySaid,
+} from "./SkillChangeDialogs";
+import { NAME_RESERVED } from "./SkillCopy";
 
 afterEach(() => {
   cleanup();
   clearMocks();
+  forgetStudio();
 });
 
 const deploy = {
@@ -104,15 +114,17 @@ describe("the Skill studio's changes", () => {
   it("makes a new skill at the level the person came from", async () => {
     const asked = core([deploy], "ops");
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+    renderStudio(inWorkspace("ops"));
 
-    await user.click(await screen.findByRole("button", { name: "New skill" }));
-    expect(screen.getByTestId("skill-new-level")).toHaveTextContent(
-      "It lands in the workspace ops skills.",
-    );
+    await user.click(await screen.findByRole("button", { name: "New skill…" }));
+    await user.click(await screen.findByRole("button", { name: "Write it yourself" }));
+    expect(screen.getByRole("radio", { name: /^workspace ops\b/ })).toBeChecked();
     await user.type(screen.getByLabelText("Name"), "triage");
-    await user.type(screen.getByLabelText("What it does and when to use it"), "Sorts issues.");
-    await user.click(screen.getByRole("button", { name: "Make it" }));
+    await user.type(
+      screen.getByLabelText("What it does, and when a chat should use it"),
+      "Sorts issues.",
+    );
+    await user.click(screen.getByRole("button", { name: "Make it and open its page" }));
 
     await waitFor(() => expect(asked.some((one) => one.cmd === "skill_new")).toBe(true));
     expect(asked.find((one) => one.cmd === "skill_new")?.args).toMatchObject({
@@ -132,16 +144,46 @@ describe("the Skill studio's changes", () => {
     expect(levelFrom(asPersona("flat"), LEVELS)).toEqual(PROJECT);
   });
 
-  it("renames a skill", async () => {
-    const asked = core([deploy], null);
+  it("renames a skill in a dialog that checks the name and says what changes with it", async () => {
+    const triage = { ...deploy, name: "triage", folder: "skills/triage" };
+    const secrets = { ...deploy, name: "secrets", level: "built-in", label: "built-in" };
+    const asked = core([deploy, triage, secrets], null, {
+      skill_users: () => ({
+        root: true,
+        workspaces: ["ops"],
+        persona: null,
+        personas: ["steward"],
+        skills: ["release"],
+        pinned_by: [{ at: "workspace", name: "ops" }],
+      }),
+    });
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio();
 
-    await user.click(await screen.findByRole("button", { name: "Rename deploy" }));
-    const box = screen.getByLabelText("New name");
+    await openSkill("skill-deploy", user);
+    await chooseMore("deploy", /^Rename/, user);
+    const dialog = await screen.findByRole("dialog", { name: "Rename deploy" });
+    const reach = await within(dialog).findByRole("region", { name: "Changed with it" });
+    await waitFor(() => expect(reach).toHaveTextContent("1 persona that names it: steward"));
+    expect(reach).toHaveTextContent("1 skill that names it: release");
+    expect(reach).toHaveTextContent("Its pins, by workspace ops");
+    expect(dialog).toHaveTextContent(HISTORY_MOVES);
+
+    const box = within(dialog).getByLabelText("New name");
+    const rename = within(dialog).getByRole("button", { name: "Rename" });
+    for (const [typed, says] of [
+      ["Ship", /lowercase letters, digits and hyphens/],
+      ["secrets", NAME_RESERVED],
+      ["triage", "There is already a skill named triage here."],
+    ] as const) {
+      await user.clear(box);
+      await user.type(box, typed);
+      expect(within(dialog).getByTestId("skill-rename-problem")).toHaveTextContent(says);
+      expect(rename).toBeDisabled();
+    }
     await user.clear(box);
     await user.type(box, "ship");
-    await user.click(screen.getByRole("button", { name: "Rename" }));
+    await user.click(rename);
 
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_rename")?.args).toMatchObject({
@@ -150,9 +192,59 @@ describe("the Skill studio's changes", () => {
         to: "ship",
       }),
     );
+    const notice = await screen.findByRole("status", { name: /Skill renamed/ });
+    expect(notice).toHaveTextContent("deploy is ship now.");
+    expect(screen.queryByRole("dialog", { name: "Rename deploy" })).toBeNull();
+    await user.click(within(notice).getByRole("button", { name: "Undo" }));
+    await waitFor(() =>
+      expect(asked.filter((one) => one.cmd === "skill_rename")[1]?.args).toMatchObject({
+        level: { at: "project", local: false },
+        name: "ship",
+        to: "deploy",
+      }),
+    );
+    expect(await screen.findByRole("status", { name: /Rename undone/ })).toHaveTextContent(
+      "ship is deploy again.",
+    );
   });
 
-  it("asks where a skill reaches before it becomes a project skill", async () => {
+  it("says the core's refusal of a rename in its dialog, which stays open", async () => {
+    core([deploy], null, {
+      skill_users: () => ({
+        root: true,
+        workspaces: [],
+        persona: null,
+        personas: [],
+        skills: [],
+        pinned_by: [],
+      }),
+      skill_rename: () => {
+        throw "the project is opened read-only";
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio();
+
+    await openSkill("skill-deploy", user);
+    await chooseMore("deploy", /^Rename/, user);
+    const dialog = await screen.findByRole("dialog", { name: "Rename deploy" });
+    expect(
+      await within(dialog).findByText("No persona, skill or pin names it."),
+    ).toBeInTheDocument();
+    const box = within(dialog).getByLabelText("New name");
+    await user.clear(box);
+    await user.type(box, "ship");
+    await user.click(within(dialog).getByRole("button", { name: "Rename" }));
+
+    expect(await within(dialog).findByTestId("skill-rename-refused")).toHaveTextContent(
+      "the project is opened read-only",
+    );
+    // A new name typed takes the refusal of the last one away.
+    await user.type(box, "s");
+    expect(within(dialog).queryByTestId("skill-rename-refused")).toBeNull();
+  });
+
+  it("moves a skill in a dialog of every level and who gets it, asking where it reaches in the project", async () => {
     const triage = {
       ...deploy,
       name: "triage",
@@ -167,18 +259,49 @@ describe("the Skill studio's changes", () => {
       pinned: false,
     };
     const asked = core([triage], "ops", {
-      skill_move_needs_grant: (args) => (args.to as { at: string }).at === "project",
+      skill_move_needs_grant: (args) =>
+        (args.to as { at: string }).at === "project" &&
+        (args.from as { at: string }).at !== "project",
+      skill_users: () => ({
+        root: false,
+        workspaces: ["ops"],
+        persona: null,
+        personas: [],
+        skills: [],
+        pinned_by: [],
+      }),
     });
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+    renderStudio(inWorkspace("ops"));
 
-    await pickIn(await screen.findByLabelText("Move triage to"), /^project$/, user);
-    const prompt = await screen.findByRole("region", {
-      name: "Move triage to the project skills",
-    });
+    await openSkill("skill-triage", user);
+    await chooseMore("triage", /^Move to another level/, user);
+    const dialog = await screen.findByRole("dialog", { name: "Move triage to another level" });
+    expect(dialog).toHaveTextContent("It is a workspace ops skill now. Only chats in ops get it.");
+    // Each level says who gets it there; the one it is at is not offered.
+    const web = within(dialog).getByRole("radio", { name: /^workspace web/ });
+    expect(within(dialog).queryByRole("radio", { name: /^workspace ops/ })).toBeNull();
+    expect(dialog).toHaveTextContent("Only chats in web get it.");
+    expect(within(dialog).getByRole("button", { name: "Move" })).toBeDisabled();
+
+    await user.click(web);
+    const changes = await within(dialog).findByRole("region", { name: "What changes" });
+    await waitFor(() => expect(changes).toHaveTextContent("Chats in ops stop getting it."));
+    expect(changes).toHaveTextContent("Chats in web start getting it.");
+
+    await user.click(within(dialog).getByRole("radio", { name: /^project/ }));
+    await pickIn(
+      await within(dialog).findByLabelText("Where triage will reach"),
+      "Every workspace",
+      user,
+    );
+    await waitFor(() =>
+      expect(within(dialog).getByRole("region", { name: "What changes" })).toHaveTextContent(
+        "Chats at the project's root, chats in web start getting it.",
+      ),
+    );
     expect(asked.some((one) => one.cmd === "skill_move")).toBe(false);
-    await pickIn(within(prompt).getByLabelText("Where triage will reach"), "Every workspace", user);
-    await user.click(within(prompt).getByRole("button", { name: "Move" }));
+    await user.click(within(dialog).getByRole("button", { name: "Move" }));
 
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_move")?.args).toMatchObject({
@@ -186,6 +309,17 @@ describe("the Skill studio's changes", () => {
         name: "triage",
         to: { at: "project", local: false },
         grant: { to: "all" },
+      }),
+    );
+    const notice = await screen.findByRole("status", { name: /Skill moved/ });
+    expect(notice).toHaveTextContent("triage is a project skill now.");
+    await user.click(within(notice).getByRole("button", { name: "Undo" }));
+    await waitFor(() =>
+      expect(asked.filter((one) => one.cmd === "skill_move")[1]?.args).toMatchObject({
+        from: { at: "project", local: false },
+        name: "triage",
+        to: { at: "workspace", name: "ops", local: false },
+        grant: null,
       }),
     );
   });
@@ -198,6 +332,7 @@ describe("the Skill studio's changes", () => {
         persona: null,
         personas: ["steward"],
         skills: [],
+        pinned_by: [{ at: "persona", name: "steward" }],
       }),
       skills_deleted: () =>
         asked.some((one) => one.cmd === "skill_delete")
@@ -207,25 +342,36 @@ describe("the Skill studio's changes", () => {
                 name: "deploy",
                 level: { at: "project", local: false },
                 label: "project",
+                days_left: 30,
+                in_history: false,
+                reserved: false,
               },
             ]
           : [],
     });
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio();
 
-    await user.click(await screen.findByRole("button", { name: "Delete deploy" }));
-    const users = await screen.findByTestId("skill-users");
-    expect(users).toHaveTextContent("Used by chats at the project's root, chats in ops.");
-    expect(users).toHaveTextContent("Named by 1 persona: steward.");
-    await user.click(
-      within(screen.getByRole("region", { name: "Delete deploy" })).getByRole("button", {
-        name: "Delete",
-      }),
+    await openSkill("skill-deploy", user);
+    await chooseMore("deploy", /^Delete/, user);
+    const dialog = await screen.findByRole("dialog", { name: "Delete deploy?" });
+    expect(dialog).toHaveTextContent(DELETED_FOR);
+    const users = await within(dialog).findByTestId("skill-users");
+    await waitFor(() =>
+      expect(users).toHaveTextContent("Chats at the project's root, chats in ops."),
     );
+    expect(users).toHaveTextContent("1 persona names it: steward.");
+    expect(users).toHaveTextContent("Pinned by persona steward.");
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
 
     const notice = await screen.findByRole("status", { name: /Skill deleted/ });
-    await user.click(within(notice).getByRole("button", { name: "Restore" }));
+    expect(notice).toHaveTextContent("deploy is deleted. It stays in Deleted for 30 days.");
+    // The Deleted page says how long the deleted skill can be brought back (SK-33, S9).
+    await user.click(await screen.findByRole("button", { name: /^Deleted/ }));
+    expect(await screen.findByTestId("deleted-deploy")).toHaveTextContent(
+      "30 days left to bring it back",
+    );
+    await user.click(within(notice).getByRole("button", { name: "Bring it back" }));
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_restore")?.args).toMatchObject({
         id: "abc:skills/deploy",
@@ -233,11 +379,12 @@ describe("the Skill studio's changes", () => {
     );
   });
 
-  it("changes a project skill's grant on its row", async () => {
+  it("changes a project skill's grant beside the list", async () => {
     const asked = core([deploy], null);
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio();
 
+    await openSkill("skill-deploy", user);
     await pickIn(await screen.findByLabelText("Where deploy reaches"), "The root and ops", user);
 
     await waitFor(() =>
@@ -254,9 +401,10 @@ describe("the Skill studio's changes", () => {
       "ops",
     );
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+    renderStudio(inWorkspace("ops"));
 
-    await user.click(await screen.findByRole("button", { name: "Turn on in ops" }));
+    await openSkill("skill-deploy", user);
+    await user.click(screen.getAllByRole("button", { name: "Turn on in ops" })[0]);
 
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_turn")?.args).toMatchObject({
@@ -267,11 +415,12 @@ describe("the Skill studio's changes", () => {
     );
   });
 
-  it("pins a skill for a workspace's chats with the row's Pin switch, one change (SK-15d)", async () => {
+  it("pins a skill for a workspace's chats with its Pin switch, one change (SK-15d)", async () => {
     const asked = core([deploy], "ops");
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+    renderStudio(inWorkspace("ops"));
 
+    await openSkill("skill-deploy", user);
     const pin = await screen.findByRole("switch", { name: "Pin deploy for workspace ops" });
     expect(pin).not.toBeChecked();
     await user.click(pin);
@@ -287,8 +436,9 @@ describe("the Skill studio's changes", () => {
     const pinned = { ...deploy, pinned: true, pinned_by: [{ at: "persona", name: "reviewer" }] };
     const asked = core([pinned], null);
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={asPersona("reviewer")} changed={0} />);
+    renderStudio(asPersona("reviewer"));
 
+    await openSkill("skill-deploy", user);
     const pin = await screen.findByRole("switch", { name: "Pin deploy for persona reviewer" });
     expect(pin).toBeChecked();
     await user.click(pin);
@@ -301,9 +451,10 @@ describe("the Skill studio's changes", () => {
       }),
     );
     cleanup();
+    forgetStudio();
     core([pinned], null);
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
-    await screen.findByTestId("skill-deploy");
+    renderStudio();
+    await openSkill("skill-deploy");
     expect(screen.queryByRole("switch", { name: /^Pin deploy/ })).toBeNull();
   });
 
@@ -329,16 +480,17 @@ describe("the Skill studio's changes", () => {
       ],
       "ops",
     );
-    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+    renderStudio(inWorkspace("ops"));
 
-    await screen.findByTestId("skill-deploy");
+    const user = userEvent.setup();
+    await openSkill("skill-handoff", user);
     expect(screen.queryByRole("switch", { name: "Pin handoff for workspace ops" })).toBeNull();
-    expect(screen.getAllByRole("switch", { name: "Pin deploy for workspace ops" })).toHaveLength(1);
+    const shown = await openSkill("skill-deploy", user);
     expect(
-      within(screen.getByTestId("skill-deploy")).getByRole("switch", {
-        name: "Pin deploy for workspace ops",
-      }),
+      within(shown).getByRole("switch", { name: "Pin deploy for workspace ops" }),
     ).toBeInTheDocument();
+    await openSkill("skill-deploy-hidden-1", user);
+    expect(screen.queryByRole("switch", { name: /^Pin deploy/ })).toBeNull();
   });
 
   it("gives the Pin switch to the copy a chat gets, not the first row of the name (SK-15d)", async () => {
@@ -355,15 +507,15 @@ describe("the Skill studio's changes", () => {
       ],
       "ops",
     );
-    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+    renderStudio(inWorkspace("ops"));
 
-    const shown = await screen.findByTestId("skill-deploy-hidden-1");
+    const user = userEvent.setup();
+    const shown = await openSkill("skill-deploy-hidden-1", user);
     expect(
       within(shown).getByRole("switch", { name: "Pin deploy for workspace ops" }),
     ).toBeInTheDocument();
-    expect(
-      within(screen.getByTestId("skill-deploy")).queryByRole("switch", { name: /^Pin deploy/ }),
-    ).toBeNull();
+    const first = await openSkill("skill-deploy", user);
+    expect(within(first).queryByRole("switch", { name: /^Pin deploy/ })).toBeNull();
   });
 
   it("says a workspace's pins aren't used and removes the entry that is no skill's name (SK-15d)", async () => {
@@ -377,23 +529,35 @@ describe("the Skill studio's changes", () => {
       [{ ...deploy, pinned: false, pinned_by: [{ at: "workspace", name: "ops" }] }],
       "ops",
       {},
-      { pins_refused: refused },
+      {
+        pins_refused: refused,
+        // The core's item of Needs you for it (#3689).
+        needs: [
+          need("pins:workspace ops", {
+            kind: "pins",
+            title: "workspace ops's pins",
+            tag: refused.file,
+            reason: `A chat reads none of workspace ops's pins: ${refused.why}, so a router may hide what they pin.`,
+            fix: { kind: "unpin", by: { at: "workspace", name: "ops" }, name: "Not A Name" },
+            fix_label: "Remove that pin",
+          }),
+        ],
+      },
     );
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+    renderStudio(inWorkspace("ops"), "needs");
 
-    expect(await screen.findByTestId("skill-pins-refused")).toHaveTextContent(
-      `workspace ops's pins aren't used: "Not A Name" is not a skill's name (it holds a capital).`,
+    expect(await screen.findByTestId("skill-need")).toHaveTextContent(
+      "A chat reads none of workspace ops's pins",
     );
-    const pin = screen.getByRole("switch", { name: "Pin deploy for workspace ops" });
+    await user.click(screen.getByRole("button", { name: "Library" }));
+    const item = await openSkill("skill-deploy", user);
+    const pin = within(item).getByRole("switch", { name: "Pin deploy for workspace ops" });
     expect(pin).toBeChecked();
-    expect(
-      within(screen.getByTestId("skill-deploy")).getByText("Pinned, not used"),
-    ).toBeInTheDocument();
+    expect(within(item).getByText("Pinned, not used")).toBeInTheDocument();
 
-    await user.click(
-      screen.getByRole("button", { name: 'Remove it, the pin "Not A Name" of workspace ops' }),
-    );
+    await user.click(screen.getByRole("button", { name: /^Needs you/ }));
+    await user.click(await screen.findByRole("button", { name: "Remove that pin" }));
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_pin")?.args).toMatchObject({
         by: { at: "workspace", name: "ops" },
@@ -403,25 +567,27 @@ describe("the Skill studio's changes", () => {
     );
   });
 
-  it("points to the file where a persona's pins are too many to be used (SK-15d)", async () => {
+  it("sends a persona whose pins are too many to be used to the Library to unpin some (SK-15d)", async () => {
     core(
       [deploy],
       null,
       {},
       {
-        pins_refused: {
-          by: { at: "persona", name: "reviewer" },
-          why: "the list holds more than 64 pins",
-          bad: null,
-          file: "personas/reviewer/persona.md",
-        },
+        needs: [
+          need("pins:persona reviewer", {
+            kind: "pins",
+            title: "persona reviewer's pins",
+            fix: { kind: "library" },
+            fix_label: "Unpin some in the Library",
+          }),
+        ],
       },
     );
-    render(<SkillStudioTab plane="p" scope={asPersona("reviewer")} changed={0} />);
+    const user = userEvent.setup();
+    renderStudio(asPersona("reviewer"), "needs");
 
-    expect(await screen.findByTestId("skill-pins-refused")).toHaveTextContent(
-      "persona reviewer's pins aren't used: the list holds more than 64 pins. Unpin some, or edit personas/reviewer/persona.md.",
-    );
+    await user.click(await screen.findByRole("button", { name: "Unpin some in the Library" }));
+    expect(await screen.findByTestId("skill-deploy")).toBeInTheDocument();
   });
 
   it("says which grant would reach a skill the workspace was not granted, and offers no on", async () => {
@@ -431,13 +597,14 @@ describe("the Skill studio's changes", () => {
       [{ ...deploy, on: false, not_granted: refusal, left_out: "not granted to this workspace" }],
       "ops",
     );
-    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+    renderStudio(inWorkspace("ops"));
 
+    await openSkill("skill-deploy");
     expect(await screen.findByTestId("not-granted-deploy")).toHaveTextContent(refusal);
     expect(screen.queryByRole("button", { name: "Turn on in ops" })).toBeNull();
   });
 
-  it("adds a listed skill to a persona's skills from its row, and removes a named one", async () => {
+  it("adds a listed skill to a persona's skills from its item, and removes a named one", async () => {
     const asked = core(
       [
         { ...deploy, name: "lint", written: "lint", named: true },
@@ -447,10 +614,13 @@ describe("the Skill studio's changes", () => {
       { persona_skill: () => true },
     );
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={asPersona("ops")} changed={0} />);
+    renderStudio(asPersona("ops"));
 
-    await user.click(await screen.findByRole("button", { name: "Remove lint from ops" }));
-    await user.click(await screen.findByRole("button", { name: "Add triage to ops" }));
+    await openSkill("skill-lint", user);
+    await user.click(screen.getByRole("button", { name: "Take lint out of ops" }));
+    await waitFor(() => expect(asked.some((one) => one.cmd === "persona_skill")).toBe(true));
+    await openSkill("skill-triage", user);
+    await user.click(screen.getByRole("button", { name: "Add triage to ops" }));
 
     await waitFor(() =>
       expect(asked.filter((one) => one.cmd === "persona_skill").map((one) => one.args)).toEqual([
@@ -481,23 +651,28 @@ describe("the Skill studio's changes", () => {
         persona: "reviewer",
         personas: [],
         skills: [],
+        pinned_by: [],
       }),
     });
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={asPersona("reviewer")} changed={0} />);
+    renderStudio(asPersona("reviewer"));
 
-    const row = await screen.findByTestId("skill-lint");
-    expect(row).toHaveAttribute("draggable", "true");
+    const row = await openSkill("skill-lint", user);
     // Its own skill needs no name in its skills.
     expect(within(row).queryByRole("button", { name: "Add lint to reviewer" })).toBeNull();
-    expect(screen.getByTestId("level-persona-reviewer")).toBeInTheDocument();
-    expect(screen.queryByTestId("level-persona-steward")).toBeNull();
+    // It moves to the project's levels and this persona's, never another persona's.
+    await chooseMore("lint", /^Move to another level/, user);
+    let dialog = await screen.findByRole("dialog", { name: "Move lint to another level" });
+    expect(within(dialog).getByRole("radio", { name: /^project/ })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("radio", { name: /steward/ })).toBeNull();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
-    await user.click(within(row).getByRole("button", { name: "Rename lint" }));
-    const box = screen.getByLabelText("New name");
+    await chooseMore("lint", /^Rename/, user);
+    dialog = await screen.findByRole("dialog", { name: "Rename lint" });
+    const box = within(dialog).getByLabelText("New name");
     await user.clear(box);
     await user.type(box, "check");
-    await user.click(screen.getByRole("button", { name: "Rename" }));
+    await user.click(within(dialog).getByRole("button", { name: "Rename" }));
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_rename")?.args).toMatchObject({
         level: { at: "persona", name: "reviewer", local: false },
@@ -506,12 +681,21 @@ describe("the Skill studio's changes", () => {
       }),
     );
 
-    await pickIn(await screen.findByLabelText("Move lint to"), /^project$/, user);
-    const prompt = await screen.findByRole("region", { name: "Move lint to the project skills" });
-    expect(within(prompt).getByTestId("persona-keeps")).toHaveTextContent(
+    // The faked core keeps its old name, which a real rename would not: chosen again.
+    await openSkill("skill-lint", user);
+    await chooseMore("lint", /^Move to another level/, user);
+    dialog = await screen.findByRole("dialog", { name: "Move lint to another level" });
+    await user.click(within(dialog).getByRole("radio", { name: /^project/ }));
+    expect(await within(dialog).findByTestId("persona-keeps")).toHaveTextContent(
       "reviewer keeps it in every workspace",
     );
-    await user.click(within(prompt).getByRole("button", { name: "Move" }));
+    // Its persona keeps it, so its chats are no change: the project's root starts getting it.
+    await waitFor(() =>
+      expect(within(dialog).getByRole("region", { name: "What changes" })).toHaveTextContent(
+        "Chats at the project's root start getting it.",
+      ),
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Move" }));
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_move")?.args).toMatchObject({
         from: { at: "persona", name: "reviewer", local: false },
@@ -521,21 +705,28 @@ describe("the Skill studio's changes", () => {
       }),
     );
 
-    await user.click(within(row).getByRole("button", { name: "Delete lint" }));
-    expect(await screen.findByTestId("skill-users")).toHaveTextContent(
-      "Used by chats as reviewer, in every workspace.",
+    await openSkill("skill-lint", user);
+    await chooseMore("lint", /^Delete/, user);
+    await waitFor(async () =>
+      expect(await screen.findByTestId("skill-users")).toHaveTextContent(
+        "Chats as reviewer, in every workspace.",
+      ),
     );
   });
 
   it("makes a new skill at the persona the studio shows", async () => {
     const asked = core([deploy], null);
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={asPersona("reviewer")} changed={0} />);
+    renderStudio(asPersona("reviewer"));
 
-    await user.click(await screen.findByRole("button", { name: "New skill" }));
+    await user.click(await screen.findByRole("button", { name: "New skill…" }));
+    await user.click(await screen.findByRole("button", { name: "Write it yourself" }));
     await user.type(screen.getByLabelText("Name"), "triage");
-    await user.type(screen.getByLabelText("What it does and when to use it"), "Sorts issues.");
-    await user.click(screen.getByRole("button", { name: "Make it" }));
+    await user.type(
+      screen.getByLabelText("What it does, and when a chat should use it"),
+      "Sorts issues.",
+    );
+    await user.click(screen.getByRole("button", { name: "Make it and open its page" }));
 
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_new")?.args).toMatchObject({
@@ -559,10 +750,17 @@ describe("the Skill studio's changes", () => {
       ],
       null,
     );
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio();
 
-    const row = await screen.findByTestId("skill-secrets");
-    expect(within(row).queryByRole("button", { name: "Edit secrets" })).toBeNull();
-    expect(row).not.toHaveAttribute("draggable", "true");
+    const item = await openSkill("skill-secrets");
+    expect(within(item).queryByRole("button", { name: "Edit secrets" })).toBeNull();
+    expect(within(item).queryByLabelText("Move secrets to")).toBeNull();
+  });
+});
+
+describe("what a rename or a move says of a skill's history (#3918)", () => {
+  it("says it moves with a skill git holds, and starts again for one only on this machine", () => {
+    expect(historySaid(false)).toBe(HISTORY_MOVES);
+    expect(historySaid(true)).toBe(HISTORY_RESTARTS_LOCAL);
   });
 });

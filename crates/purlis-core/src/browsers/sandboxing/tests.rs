@@ -181,3 +181,19 @@ fn shell_words(line: &str) -> Vec<String> {
     }
     words
 }
+
+/// The restriction is an unconfined process's alone: a runner's host in a container runs under
+/// its runtime's profile, which decides for it (#3298). An unread label is taken as unconfined.
+#[test]
+fn ubuntus_restriction_holds_an_unconfined_process_alone() {
+    assert!(restricts(Some("1\n"), Some("unconfined\n")));
+    assert!(restricts(Some("1\n"), None));
+    assert!(restricts(Some("1"), Some("")));
+    assert!(!restricts(Some("1\n"), Some("docker-default (enforce)\n")));
+    assert!(!restricts(
+        Some("1\n"),
+        Some("containers-default-0.57.4 (enforce)\n")
+    ));
+    assert!(!restricts(Some("0\n"), Some("unconfined\n")));
+    assert!(!restricts(None, None));
+}

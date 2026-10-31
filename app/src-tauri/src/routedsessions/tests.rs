@@ -323,6 +323,7 @@ fn the_browsers_left_on_this_machines_host_reach_the_put_back_through_the_routin
             driver: None,
             note: None,
             logins: Vec::new(),
+            prompt_key: None,
         });
 
     let left = world.sessions.browsers_left();
@@ -357,4 +358,39 @@ fn the_routing_says_every_method_of_a_chats_host() {
         .filter(|one| !said.contains(one) && one.as_str() != "fetch_back")
         .collect();
     assert!(unsaid.is_empty(), "the routing does not say {unsaid:?}");
+}
+
+#[test]
+fn a_move_is_asked_of_the_pool_it_goes_to_or_comes_from_and_never_of_this_machine() {
+    let world = a_world();
+    let chat = crate::host::Moving {
+        workspace: "fleet".into(),
+        profile: "claude".into(),
+        conversation: "0d6f3c1e".into(),
+    };
+    world.sessions.move_ahead("builds", "fleet").unwrap();
+    world
+        .sessions
+        .move_in("builds", std::slice::from_ref(&chat))
+        .unwrap();
+    world
+        .sessions
+        .move_out("builds", std::slice::from_ref(&chat))
+        .unwrap();
+    assert_eq!(
+        world.builds.moved(),
+        vec![
+            ("ahead", "builds".to_owned(), "fleet".to_owned()),
+            ("in", "builds".to_owned(), "fleet".to_owned()),
+            ("out", "builds".to_owned(), "fleet".to_owned()),
+        ]
+    );
+    assert!(world.here.moved().is_empty());
+    assert!(
+        world
+            .sessions
+            .move_in("gone", std::slice::from_ref(&chat))
+            .is_err(),
+        "a pool this machine does not keep moves nothing"
+    );
 }

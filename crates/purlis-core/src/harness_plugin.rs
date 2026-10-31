@@ -714,6 +714,19 @@ fn purlis_s_own(adapter: &dyn Adapter, id: &str) -> bool {
         || crate::plugin::FORMERLY.iter().any(|(_, new)| *new == id)
 }
 
+/// **Whether the plugin a harness names `name` is purlis's own, under any id it has had**
+/// ([`purlis_s_own`]), matched on the name before the `@`: its skills are purlis's built-in
+/// skills, or ones a chat is handed with that plugin pinned off, so they are no part of the
+/// harness's own catalogue (#3324).
+pub fn purlis_s_own_named(adapter: &dyn Adapter, name: &str) -> bool {
+    adapter
+        .pinned()
+        .iter()
+        .map(|pin| pin.id)
+        .chain(crate::plugin::FORMERLY.iter().map(|(_, new)| *new))
+        .any(|id| split(id).0 == name)
+}
+
 /// The ids in `plugins` that are off and none of purlis's own ([`purlis_s_own`]): the
 /// harness's own plugins a chat was handed off, in id order, as a grade's record names them
 /// (#3468).

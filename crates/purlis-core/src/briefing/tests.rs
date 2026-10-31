@@ -1559,8 +1559,15 @@ fn a_chat_the_app_started_is_told_the_one_route_for_work_that_reports_back() {
     assert_eq!(
         one_route_note(&env(Some("/tmp/p/hooks.sock"))),
         Some(format!(
-            "⬢ **If work has to go to another chat.** {} This says where such work goes, not \
-             that work should go: what this chat can do itself, it does.",
+            "⬢ **If work has to go to another chat.** Use purlis's tools for it first: `dispatch` \
+             starts a task; `dispatch_list`, `dispatch_read`, `dispatch_wait`, `dispatch_tell`, \
+             `dispatch_answer`, `dispatch_cancel` and `dispatch_close` look after one, and \
+             `dispatch_tell` with `all` tells every task still working at once; a task answers \
+             with `dispatch_note` (its `ack` acknowledges an instruction), `dispatch_ask` and \
+             `dispatch_report`. They need no shell; the `purlis dispatch` command does the same, \
+             one call at a time. {} This \
+             says where such work goes, not that work should go: what this chat can do itself, \
+             it does.",
             crate::handoff::ONE_ROUTE
         ))
     );
@@ -1671,6 +1678,10 @@ fn only_the_exact_mark_the_app_sets_reads_as_a_sandboxed_chat() {
         "Start without the sandbox",
         // D-PE-browser-1: a website login is a declared tool too.
         "browser-login tool",
+        // #3798: git work in a sandboxed chat goes through branch folders purlis cuts.
+        "`purlis worktree add <repo> <piece>`",
+        "`purlis worktree commit`",
+        "`purlis worktree push`",
     ] {
         assert!(SANDBOXED_NOTE.contains(said), "{said}");
     }

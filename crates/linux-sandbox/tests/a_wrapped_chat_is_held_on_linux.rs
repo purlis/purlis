@@ -429,6 +429,189 @@ fn a_socket_never_bound_does_not_listen() {
     assert_eq!(p.run(&["listen-unbound", "6"]), "EACCES");
 }
 
+/// The wrap started on `probe` in the chat's folder, with no port served, telling what it
+/// refused to the file it returns.
+fn told_command(p: &Project, probe: &[&str]) -> (Command, PathBuf) {
+    let told = p.tmp.join("told");
+    let _ = std::fs::remove_file(&told);
+    let words = purlis_linux_sandbox::line(
+        &p.profile_unserved(free_port()),
+        PROBE.to_owned(),
+        probe.iter().map(|it| (*it).to_owned()).collect(),
+    );
+    let mut command = wrap_with(
+        &words,
+        &[
+            ("TMPDIR".into(), p.tmp.clone().into()),
+            ("PROBE_TOLD".into(), told.clone().into()),
+        ],
+    );
+    command.current_dir(&p.cwd);
+    (command, told)
+}
+
+/// What the wrap `command` printed and, from `told`, what it told it refused, a line each.
+fn said_and_told(out: std::process::Output, told: &Path) -> (String, String) {
+    assert!(out.status.success(), "{out:?}");
+    (
+        String::from_utf8_lossy(&out.stdout).trim().to_owned(),
+        std::fs::read_to_string(told).unwrap_or_default(),
+    )
+}
+
+/// `probe` run under the wrap in the chat's folder, with no port served: what it printed, and
+/// what the wrap told it refused, a line each.
+fn run_told(p: &Project, probe: &[&str]) -> (String, String) {
+    let (mut command, told) = told_command(p, probe);
+    said_and_told(command.output().expect("the wrap ran"), &told)
+}
+
+/// #3396 (ruled 2026-10-30): a test server on a port the system picks, on 127.0.0.1, serves
+/// with no grant, and the chat reaches it there; nothing is told.
+#[test]
+fn a_test_server_on_a_port_the_system_picks_on_127_0_0_1_serves_and_is_reached() {
+    let p = project();
+    let (said, told) = run_told(&p, &["serve-and-dial", "127.0.0.1"]);
+    assert_eq!(said, "ok", "told: {told:?}");
+    assert_eq!(told, "", "nothing refused");
+    // Again, as a test suite starts one server after another.
+    for _ in 0..3 {
+        assert_eq!(run_told(&p, &["serve-and-dial", "127.0.0.1"]).0, "ok");
+    }
+}
+
+/// #3396: a port the system picks on any other address (every interface, IPv6's loopback) is
+/// still refused, and told, so its chat gets the Notice that says what to do: the bind on port
+/// 0, as the address it asked for.
+#[test]
+fn a_bind_on_a_port_the_system_picks_elsewhere_is_refused_and_told() {
+    let p = project();
+    for (address, as_told) in [
+        ("0.0.0.0", "0.0.0.0:0"),
+        ("::", "[::]:0"),
+        ("::1", "[::1]:0"),
+    ] {
+        let (said, told) = run_told(&p, &["serve-on", address, "0"]);
+        assert_eq!(said, "EACCES", "{address}");
+        assert!(
+            told.lines()
+                .any(|line| line == format!("network-bind {as_told}")),
+            "{address} told: {told:?}"
+        );
+    }
+}
+
+/// #3396: a chat with a test server of its own reaches only that server's port: a service on
+/// this machine's loopback it did not start is refused, as before.
+#[test]
+fn a_chat_with_a_server_of_its_own_reaches_no_other_loopback_port() {
+    let p = project();
+    let other = TcpListener::bind("127.0.0.1:0").expect("another service");
+    let other_port = other.local_addr().expect("its address").port().to_string();
+    std::thread::spawn(move || {
+        for stream in other.incoming().flatten() {
+            echo(stream);
+        }
+    });
+    let (said, _) = run_told(&p, &["serve-and-dial", "127.0.0.1", &other_port]);
+    assert_eq!(said, "EACCES");
+    // A fixed port goes the way it did: refused until a grant serves it (#2019).
+    let fixed = free_port().to_string();
+    assert_eq!(run_told(&p, &["serve-on", "127.0.0.1", &fixed]).0, "EACCES");
+}
+
+/// #3396: a datagram socket on 127.0.0.1 at a port the system picks is still refused: only a
+/// TCP socket is given a picked port.
+#[test]
+fn a_datagram_socket_is_given_no_port_the_system_picks() {
+    let p = project();
+    let (said, told) = run_told(&p, &["udp-bind"]);
+    assert_eq!(said, "EACCES", "told: {told:?}");
+}
+
+/// #3396: a test server that stopped is dialled where nothing listens any more, and answered as
+/// the kernel answers that, connection refused, with nothing told: no Notice offers to allow a
+/// port the system picked.
+#[test]
+fn a_test_server_that_stopped_is_refused_as_nothing_listening_and_not_told() {
+    let p = project();
+    let (said, told) = run_told(&p, &["picked-closed-dial"]);
+    assert_eq!(said, "ECONNREFUSED", "told: {told:?}");
+    assert!(
+        !told
+            .lines()
+            .any(|line| line.starts_with("network-outbound")),
+        "told: {told:?}"
+    );
+}
+
+/// #3396: once a chat's test server stopped, a service outside the chat that listens on the port
+/// it had is not the chat's to reach: the port was picked for the chat, but the socket listening
+/// there is not the one made for it. Refused, and not told.
+#[test]
+fn a_service_that_took_a_port_a_test_server_had_is_not_reached() {
+    let p = project();
+    let file = p.tmp.join("picked-port");
+    let (mut command, told) = told_command(&p, &["picked-closed-dial", &p.s(&file)]);
+    let child = command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("the wrap started");
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let port = loop {
+        if let Some(port) = std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|it| it.trim().parse::<u16>().ok())
+        {
+            break port;
+        }
+        assert!(std::time::Instant::now() < until, "the probe wrote no port");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    let other = TcpListener::bind(("127.0.0.1", port)).expect("the port, taken outside");
+    std::thread::spawn(move || {
+        for stream in other.incoming().flatten() {
+            echo(stream);
+        }
+    });
+    std::fs::write(p.tmp.join("picked-port.go"), "").expect("go");
+    let (said, told) = said_and_told(child.wait_with_output().expect("the wrap ended"), &told);
+    assert_eq!(said, "EACCES", "told: {told:?}");
+    assert!(
+        !told
+            .lines()
+            .any(|line| line.starts_with("network-outbound")),
+        "told: {told:?}"
+    );
+}
+
+/// #3396: Python's own test server, `HTTPServer(("127.0.0.1", 0))`, serves a request its chat
+/// makes to it.
+#[test]
+fn python_s_test_server_on_a_port_the_system_picks_answers() {
+    let mut p = project();
+    let script = r#"
+import http.server, threading, urllib.request
+class Answer(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"ok")
+    def log_message(self, *args):
+        pass
+try:
+    server = http.server.HTTPServer(("127.0.0.1", 0), Answer)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    url = "http://127.0.0.1:%d/" % server.server_port
+    print(opener.open(url, timeout=10).read().decode(), flush=True)
+except Exception as e:
+    print(repr(e), flush=True)
+"#;
+    assert_eq!(python(&mut p, script, &[]), "ok");
+}
+
 /// A thread with a descriptor table of its own is judged by its own socket: its unbound one is
 /// refused, though the process's table holds a bound socket at the same number.
 #[test]
@@ -438,6 +621,56 @@ fn a_thread_with_its_own_descriptors_is_judged_by_its_own_socket() {
         p.run(&["listen-unshared", "purlis-probe-unshared"]),
         "EACCES"
     );
+}
+
+/// A program a runner's host starts through `_no-namespaces` makes no namespace, whatever its
+/// machine lets a program make, and neither does what it starts: on a runner only the browser
+/// engine may (#3298, D-2050-25). It still runs as it was asked to.
+#[test]
+fn a_program_started_without_namespaces_makes_none() {
+    // The same probe, not held: this machine lets it make one, so what is refused below is the
+    // filter's refusal.
+    let out = Command::new(PROBE)
+        .arg("user-namespace")
+        .output()
+        .expect("the probe ran");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "ok",
+        "this machine refuses a user namespace to anyone: {out:?}"
+    );
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::no_namespaces_line(
+            PROBE.into(),
+            vec!["user-namespace".into()],
+        ))
+        .output()
+        .expect("the probe ran");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "EPERM",
+        "{out:?}"
+    );
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::no_namespaces_line(
+            "/bin/sh".into(),
+            vec!["-c".into(), format!("{PROBE} user-namespace").into()],
+        ))
+        .output()
+        .expect("the shell ran");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "EPERM",
+        "{out:?}"
+    );
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::no_namespaces_line(
+            PROBE.into(),
+            vec!["read".into(), "/etc/passwd".into()],
+        ))
+        .output()
+        .expect("the probe ran");
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok", "{out:?}");
 }
 
 /// A port free on this machine now.
@@ -589,6 +822,112 @@ fn a_process_the_chat_starts_is_held_the_same_and_cannot_lift_it() {
     assert_eq!(p.run(&["undumpable", "after.txt"]), "ok");
     // Nothing outside the sandbox is signalled.
     assert_eq!(p.run(&["signal-parent"]), "EPERM");
+}
+
+/// A profile of the confined shape: programs start from the system's folders and `from` alone,
+/// though every file is read, so what is held is the start and never the file.
+fn starts_only_from(from: &Path, written: &Path) -> String {
+    let mut roots = String::new();
+    for root in ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/nix/store"] {
+        roots.push_str(&format!(" (subpath \"{root}\")"));
+    }
+    format!(
+        "(version 1)\n(deny default)\n(allow process-exec{roots} (subpath \"{}\"))\n\
+         (allow file-read*)\n(allow file-write* (subpath \"{}\") (literal \"/dev/null\"))\n",
+        from.display(),
+        written.display()
+    )
+}
+
+/// The status and output of `sh -c script` under `profile`.
+fn sh_under(profile: &str, cwd: &Path, script: &str) -> (Option<i32>, String) {
+    let out = wrap(purlis_linux_sandbox::line(
+        profile,
+        "/bin/sh".to_owned(),
+        vec!["-c".to_owned(), script.to_owned()],
+    ))
+    .current_dir(cwd)
+    .output()
+    .expect("the wrap ran");
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stdout).trim().to_owned(),
+    )
+}
+
+fn probe_copied_to(dir: &Path) -> PathBuf {
+    let at = dir.join("copied-probe");
+    std::fs::copy(PROBE, &at).expect("a copy of the probe");
+    at
+}
+
+#[test]
+fn a_program_starts_only_from_where_the_profile_says() {
+    let p = project();
+    let inside = probe_copied_to(&p.cwd);
+    let outside = probe_copied_to(&p.outside);
+    let profile = starts_only_from(&p.cwd, &p.cwd);
+    // The system's shell and its tools, and a compiled program with the system's dynamic linker
+    // and libraries, from a folder it may start from.
+    let (status, said) = sh_under(
+        &profile,
+        &p.cwd,
+        &format!("/bin/echo tool; {} status", inside.display()),
+    );
+    assert_eq!(status, Some(0), "{said}");
+    assert!(said.starts_with("tool\nseccomp=2 "), "{said}");
+    // Beside it: refused by the kernel, as a shell says it, though it reads the file.
+    let (status, said) = sh_under(&profile, &p.cwd, &format!("{} status", outside.display()));
+    assert_eq!(status, Some(126), "{said}");
+    assert!(said.is_empty(), "{said}");
+    // The same, as the interpreter of a script it may start.
+    let script = p.cwd.join("by-script");
+    std::fs::write(&script, format!("#!{}\nstatus\n", outside.display())).expect("a script");
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("its mode");
+    let (status, said) = sh_under(&profile, &p.cwd, &script.display().to_string());
+    assert_eq!(status, Some(126), "{said}");
+    // And through a link it may start from.
+    let link = p.cwd.join("pointed");
+    std::os::unix::fs::symlink(&outside, &link).expect("a link");
+    let (status, said) = sh_under(&profile, &p.cwd, &format!("{} status", link.display()));
+    assert_eq!(status, Some(126), "{said}");
+}
+
+#[test]
+fn a_program_outside_where_the_profile_says_is_not_started_by_the_wrap() {
+    let p = project();
+    let outside = probe_copied_to(&p.outside);
+    let out = wrap(purlis_linux_sandbox::line(
+        &starts_only_from(&p.cwd, &p.cwd),
+        outside.display().to_string(),
+        vec!["status".to_owned()],
+    ))
+    .current_dir(&p.cwd)
+    .output()
+    .expect("the wrap ran");
+    assert_eq!(out.status.code(), Some(127));
+    assert!(out.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("could not be started"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn a_profile_that_names_no_start_starts_nothing() {
+    let p = project();
+    let out = wrap(purlis_linux_sandbox::line(
+        "(version 1)\n(deny default)\n(allow file-read*)\n",
+        "/bin/echo".to_owned(),
+        vec!["started".to_owned()],
+    ))
+    .current_dir(&p.cwd)
+    .output()
+    .expect("the wrap ran");
+    assert_eq!(out.status.code(), Some(127));
+    assert!(out.stdout.is_empty());
 }
 
 #[test]

@@ -1200,13 +1200,14 @@ pub(crate) fn serve_wrapped(
 /// Where `wanted` running `command` is exactly the `secret exec` line of a credentialed MCP
 /// server of `persona` this machine approved ([`crate::personaverbs::chatstart::approved_servers`]):
 /// its vault, its `--env` and `--file` hand-overs in order, no `--dotenv`, and its command. The
-/// names of the variables its approved entry sets (`env`), which its run starts with.
+/// variables its approved entry sets (`env`) and their approved values, which its run starts
+/// with (#3441).
 fn an_approved_server(
     root: &Path,
     persona: &str,
     wanted: &Wanted,
     command: &[String],
-) -> Option<Vec<String>> {
+) -> Option<Vec<(String, String)>> {
     let state = crate::personaverbs::state_dir(root);
     crate::personaverbs::chatstart::approved_servers(root, &state, persona)
         .into_iter()
@@ -1547,10 +1548,14 @@ pub fn not_answered(mut writer: Box<dyn Write + Send>) {
     );
 }
 
-/// The variables of the asker's environment a child never starts with: the chat's hook channel
-/// and its token (the child cannot reach the socket, and needs neither), and the ones the wrap
-/// sets itself. Each under its old prefix too ([`not_handed_on`]).
-const NOT_HANDED_ON: &[&str] = &[crate::hookwire::SOCKET_ENV, crate::hookwire::TOKEN_ENV];
+/// The variables of the asker's environment a child never starts with: the chat's hook channel,
+/// its token and its prompt key (the child cannot reach the socket, and needs none of them), and
+/// the ones the wrap sets itself. Each under its old prefix too ([`not_handed_on`]).
+const NOT_HANDED_ON: &[&str] = &[
+    crate::hookwire::SOCKET_ENV,
+    crate::hookwire::TOKEN_ENV,
+    crate::hookwire::PROMPT_KEY_ENV,
+];
 
 /// Whether `key` is one of [`NOT_HANDED_ON`], under the purlis prefix or an old one the window
 /// still reads ([`crate::names::ENV_PREFIX`]).
@@ -1602,6 +1607,24 @@ pub fn serve_handed(
         told,
         None,
     );
+}
+
+/// **The value a minting tool's run is handed for `key`** (#2053): the token minted from the
+/// tool's one key, and nothing for any other key.
+fn minted_for(
+    tool: &crate::sandbox::tools::Tool,
+    key: &str,
+    token: &zeroize::Zeroizing<String>,
+) -> Result<zeroize::Zeroizing<String>, super::VaultError> {
+    if tool.values.iter().any(|value| value.key == key) {
+        super::seen::remember(token);
+        Ok(token.clone())
+    } else {
+        Err(super::VaultError::new(format!(
+            "{} is handed a GitHub App's token alone, and no value of key {key}",
+            tool.name
+        )))
+    }
 }
 
 /// [`serve_handed`] in `wrap`, telling nothing of what its proxy refused.
@@ -1660,6 +1683,31 @@ pub fn armed_as(asker: &Asker, wanted: &Wanted) -> Result<String, String> {
     )?;
     if ready.tool.login.is_some() {
         return Err(login_by_the_browser_tool(&ready.tool.name));
+    }
+    // The run's own arguments (#3421), judged here so no value is sent for a run its host
+    // would refuse.
+    let args: Vec<String> = wanted
+        .command
+        .iter()
+        .skip_while(|word| *word == "--")
+        .skip(1)
+        .cloned()
+        .collect();
+    crate::sandbox::tools::allows(ready, &args)?;
+    // And the repository it runs in (#3868), on the host it runs on.
+    if let Some(folder) = wanted
+        .cwd
+        .clone()
+        .filter(|cwd| cwd.is_absolute() && cwd.is_dir())
+        .or_else(|| asker.folder.clone())
+    {
+        crate::sandbox::tools::reads_held_repository(
+            ready,
+            &args,
+            &folder,
+            &asker.root,
+            &chat_writes(asker, confines),
+        )?;
     }
     Ok(ready.tool.name.clone())
 }
@@ -1731,11 +1779,13 @@ impl std::fmt::Debug for Handed {
 
 impl Handed {
     /// The values `values`, each a key and its value, for run `run` of chat `chat`'s tool `tool`.
-    pub fn of(
+    /// Each value is taken as it is, never copied: one read into a [`zeroize::Zeroizing`] stays
+    /// the one copy (#3420).
+    pub fn of<V: Into<zeroize::Zeroizing<String>>>(
         chat: u32,
         tool: &str,
         run: &str,
-        values: impl IntoIterator<Item = (String, String)>,
+        values: impl IntoIterator<Item = (String, V)>,
     ) -> Handed {
         Handed {
             chat,
@@ -1743,7 +1793,7 @@ impl Handed {
             run: run.to_owned(),
             values: values
                 .into_iter()
-                .map(|(key, value)| (key, zeroize::Zeroizing::new(value)))
+                .map(|(key, value)| (key, value.into()))
                 .collect(),
         }
     }
@@ -1759,8 +1809,9 @@ impl Handed {
     }
 
     /// The value sent for `key`, remembered as read ([`super::seen`]) so no store of a chat's
-    /// words on this host keeps it; refused where the desktop sent none.
-    fn value(&self, key: &str) -> Result<String, super::VaultError> {
+    /// words on this host keeps it; refused where the desktop sent none. Its copy is wiped as it
+    /// is dropped (#3420).
+    fn value(&self, key: &str) -> Result<zeroize::Zeroizing<String>, super::VaultError> {
         let (_, value) = self
             .values
             .iter()
@@ -1771,8 +1822,18 @@ impl Handed {
                 ))
             })?;
         super::seen::remember(value);
-        Ok(value.to_string())
+        Ok(value.clone())
     }
+}
+
+/// **Whether a brokered run may start with `name` set**, from the chat's environment or from an
+/// approved server's entry (#3441): never purlis's own hook channel, a variable that makes a
+/// program load code it names ([`crate::sandbox::tools::loads_code`]), or one that makes it write
+/// out its memory ([`DUMPS_MEMORY`]).
+pub fn may_hand_on(name: &str) -> bool {
+    !not_handed_on(name)
+        && !crate::sandbox::tools::loads_code(name)
+        && !DUMPS_MEMORY.contains(&name)
 }
 
 /// Variables of the chat's that make a program write out its memory as it crashes, or change
@@ -1804,6 +1865,91 @@ pub fn a_run_number() -> Option<String> {
     Some(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
+/// **The event a desktop records each run's values it sent to a runner under** (#3406, ADR 0078
+/// §10, its registry row in ADR 0075 as amended there): on the desktop's own record, where the
+/// runner records the run itself as `secret-exec`.
+pub const FORWARDED: &str = "secret.forwarded";
+
+/// **What the desktop's record of values it sent names beside the run's own** ([`Forwarded`]).
+pub struct Sent<'a> {
+    /// The persona whose tool it is.
+    pub persona: &'a str,
+    /// The vault the values were read from.
+    pub vault: &'a str,
+    /// The pool whose runner they went to.
+    pub pool: &'a str,
+    /// That runner's device id.
+    pub runner: &'a str,
+}
+
+/// **The request a run's values answer, as both chains name it** (#3406): the first 8 bytes of
+/// the SHA-256 of the run's number, in hex. The desktop's [`FORWARDED`] and the runner's
+/// `secret-exec` say the same, so each is found from the other; the number itself is never
+/// written.
+pub fn request_of(run: &str) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(run.as_bytes())
+        .iter()
+        .take(8)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// **What the desktop records of values it sends a runner for one run** (#3406), taken from
+/// them before they go: the chat, the tool, the keys and the request ([`request_of`]); never a
+/// value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Forwarded {
+    chat: u32,
+    tool: String,
+    keys: Vec<String>,
+    request: String,
+}
+
+impl Forwarded {
+    /// What `handed` is recorded by.
+    pub fn of(handed: &Handed) -> Forwarded {
+        let mut keys: Vec<String> = handed.keys().map(str::to_owned).collect();
+        keys.sort();
+        keys.dedup();
+        Forwarded {
+            chat: handed.chat,
+            tool: handed.tool.clone(),
+            keys,
+            request: request_of(&handed.run),
+        }
+    }
+
+    /// **Records on this desktop that the values were sent** (#3406): [`FORWARDED`] under the
+    /// chat's own session in project `root`, naming the vault, the keys, the runner's device id,
+    /// its pool, the chat, its persona, the tool and the request. Kept by the 30-day sweep, as
+    /// every hand-out is, until it is audited (V71).
+    pub fn record(&self, root: &Path, sent: &Sent<'_>) {
+        let chat = self.chat.to_string();
+        let ctx = Ctx::new(root, Env::of(&[(crate::active::SESSION_ID_ENV, &chat)]));
+        cmd::trace_secret_use(
+            &ctx,
+            // [`FORWARDED`], written as a literal: the sweep's test finds every hand-out's
+            // event by the literal each call names.
+            "secret.forwarded",
+            &[],
+            &[
+                ("vault", Value::String(sent.vault.to_owned())),
+                (
+                    "key_names",
+                    Value::Array(self.keys.iter().cloned().map(Value::String).collect()),
+                ),
+                ("runner", Value::String(sent.runner.to_owned())),
+                ("pool", Value::String(sent.pool.to_owned())),
+                ("chat", Value::from(self.chat)),
+                ("persona", Value::String(sent.persona.to_owned())),
+                ("tool", Value::String(self.tool.clone())),
+                ("request", Value::String(self.request.clone())),
+            ],
+        );
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn serve_recorded(
     asker: &Asker,
@@ -1815,6 +1961,9 @@ pub(crate) fn serve_recorded(
     told: Told,
     reached: Option<crate::sandbox::egress::Reached>,
 ) {
+    // Counted as soon as the run is served: a chat that ends from here on keeps no GitHub App
+    // token minted for it (#3808).
+    let ends_seen = crate::forge::apptoken::ends_so_far();
     // A runner's journal names the program, never a vault (#2838): the refusal's words name
     // vaults, so a service logs neither.
     let program = wanted
@@ -1873,9 +2022,16 @@ pub(crate) fn serve_recorded(
     let persona = asker.persona.as_deref().unwrap_or_default();
     let listed = declared_now(&asker.root, persona);
     let mut declared_as: Option<String> = None;
-    // The variables of the chat's an approved server's run starts with beside
-    // [`crate::sandbox::tools::a_run_starts_from`]'s: those its approved entry sets.
-    let mut its_entry_sets: Vec<String> = Vec::new();
+    // A tool whose token a GitHub App mints (#2053): handed the token, never the key.
+    let mut minting: Option<crate::sandbox::tools::Tool> = None;
+    // The repository a declared tool's run reads (#3868), judged with its arguments.
+    let mut its_repository: Option<crate::sandbox::tools::Ready> = None;
+    // A forge tool's host, told to its run (#3869).
+    let mut forge_env: Vec<(String, String)> = Vec::new();
+    // The variables an approved server's run starts with beside
+    // [`crate::sandbox::tools::a_run_starts_from`]'s: those its approved entry sets, with the
+    // values the person approved (#3441).
+    let mut its_entry_sets: Vec<(String, String)> = Vec::new();
     match crate::sandbox::tools::declared(
         &confines.tools,
         &listed,
@@ -1897,7 +2053,10 @@ pub(crate) fn serve_recorded(
         Ok(ready) => match crate::sandbox::tools::run_words(ready, &command[1..]) {
             Ok(words) => {
                 declared_as = ready.argv0().map(str::to_owned);
+                minting = ready.tool.mint.is_some().then(|| ready.tool.clone());
                 command = words;
+                its_repository = Some(ready.clone());
+                forge_env = crate::sandbox::tools::forge_env(ready);
             }
             Err(why) => return refuse(&mut *writer, 1, why),
         },
@@ -1940,6 +2099,26 @@ pub(crate) fn serve_recorded(
         #[cfg(test)]
         Wrap::Unwrapped | Wrap::Refusing(_) => Applying::Unwrapped,
     };
+    // A declared tool reads only the person's repository configuration where it runs, and its
+    // git is held to the repository judged (#3868).
+    let mut held_to: Vec<(String, String)> = Vec::new();
+    if let Some(ready) = &its_repository {
+        let start_in = wanted
+            .cwd
+            .clone()
+            .filter(|cwd| cwd.is_absolute() && cwd.is_dir())
+            .unwrap_or_else(|| folder.clone());
+        match crate::sandbox::tools::reads_held_repository(
+            ready,
+            &command[1..],
+            &start_in,
+            &asker.root,
+            &chat_writes(asker, confines),
+        ) {
+            Ok(env) => held_to = env,
+            Err(why) => return refuse(&mut *writer, 1, why),
+        }
+    }
     let v = match handed {
         Some(_) => None,
         None => match cmd::provider(&ctx, &wanted.vault) {
@@ -1952,7 +2131,7 @@ pub(crate) fn serve_recorded(
     // A host that carries one of the run's values is never told: no Notice names it and no
     // grant is made from it. The values are known once the run is prepared, which is after its
     // proxy starts; until then nothing is told.
-    let values: Arc<std::sync::OnceLock<Vec<String>>> = Arc::default();
+    let values: Arc<std::sync::OnceLock<zeroize::Zeroizing<Vec<String>>>> = Arc::default();
     let refusals = crate::sandbox::egress::Refusals::telling({
         let asker = asker.clone();
         let vault = wanted.vault.clone();
@@ -1993,22 +2172,23 @@ pub(crate) fn serve_recorded(
     // The asker's environment, less the hook channel and what makes a program load code
     // ([`crate::sandbox::tools::loads_code`]), then the wrap's own (its proxy and its
     // temp directory), then every other vault's identity variables taken out. A run starts
-    // from only the few of the chat's variables it needs, and an approved server's from those
-    // its approved entry sets too, with a home of its own in the run's temp directory (#2047).
+    // from only the few of the chat's variables it needs, with a home of its own in the run's
+    // temp directory (#2047), and an approved server's with those its approved entry sets too,
+    // at the values the person approved, never the chat's (#3441).
     // A name is judged as it reads, with any byte that is not UTF-8 replaced, so one is never
     // let through for not spelling the name it is judged by.
+    // An approved value is held to the same names a chat's is ([`may_hand_on`]).
     let mut base: Vec<(OsString, OsString)> = wanted
         .environment
         .into_iter()
         .filter(|(k, _)| {
             let k = k.to_string_lossy();
-            !not_handed_on(&k)
-                && !crate::sandbox::tools::loads_code(&k)
-                && !DUMPS_MEMORY.contains(&k.as_ref())
-                && (crate::sandbox::tools::a_run_starts_from(&k)
-                    || its_entry_sets.iter().any(|set| *set == k))
+            may_hand_on(&k) && crate::sandbox::tools::a_run_starts_from(&k)
         })
         .collect();
+    for (k, v) in its_entry_sets.into_iter().filter(|(k, _)| may_hand_on(k)) {
+        exec::set_var(&mut base, &k, v);
+    }
     // What the tool runs by a bare name is never from a folder the chat may write
     // (D-PE-ruling-2): the project, the chat's folder, its grants and the temporary folders
     // are taken off the `PATH` it starts from.
@@ -2031,6 +2211,13 @@ pub(crate) fn serve_recorded(
         exec::set_var(&mut base, &k, v);
     }
     for (k, v) in crate::sandbox::tools::home_of_its_own(beside.tmp()) {
+        exec::set_var(&mut base, &k, v);
+    }
+    // Its git held to the repository judged above (#3868).
+    for (k, v) in held_to {
+        exec::set_var(&mut base, &k, v);
+    }
+    for (k, v) in forge_env {
         exec::set_var(&mut base, &k, v);
     }
     // ssh, and git over ssh, through the run's own SOCKS port (#1667): the chat's route names
@@ -2072,21 +2259,58 @@ pub(crate) fn serve_recorded(
         command: command.clone(),
         argv0: None,
     };
-    let prepared = match (&v, handed) {
-        (Some(v), _) => exec::prepare(&ctx, v, &req, base, Some(&within), &|| None),
-        (None, Some(handed)) => {
+    let prepared = match (&v, handed, &minting) {
+        // A GitHub App's token, minted here from its key, which goes to nothing else (#2053, E2):
+        // the tool's one key is answered with the token.
+        (Some(_), _, Some(tool)) => {
+            // Only the clones its workspace had when the chat started, as they were then, and
+            // whose git directory is in none of its grants, name the chat's repos.
+            let mut grants = confines.writable.clone();
+            if let Some(caches) = &confines.widened.caches {
+                grants.extend(caches.trees.iter().chain(caches.bare.iter()).cloned());
+            }
+            // And only those purlis cloned or the person saved from the window.
+            let config_root = crate::forge::apptoken::record_root();
+            let token = match crate::forge::apptoken::token_from_vault(
+                &ctx,
+                &crate::forge::apptoken::For {
+                    root: &asker.root,
+                    chat: asker.chat,
+                    folder: asker.folder.as_deref(),
+                    here: wanted.cwd.as_deref(),
+                    writes: &grants,
+                    started: Some(&confines.clones),
+                    on_a_runner: false,
+                    config_root: config_root.as_deref(),
+                    ends_seen: Some(ends_seen),
+                },
+                tool,
+            ) {
+                Ok(token) => token,
+                Err(why) => return refuse(&mut *writer, 1, why),
+            };
+            exec::prepare_from(
+                &|key| minted_for(tool, key, &token),
+                &req,
+                base,
+                Some(&within),
+                &|| None,
+            )
+        }
+        (Some(v), _, None) => exec::prepare(&ctx, v, &req, base, Some(&within), &|| None),
+        (None, Some(handed), _) => {
             exec::prepare_from(&|key| handed.value(key), &req, base, Some(&within), &|| {
                 None
             })
         }
-        (None, None) => return refuse(&mut *writer, 1, "no vault to read".to_owned()),
+        (None, None, _) => return refuse(&mut *writer, 1, "no vault to read".to_owned()),
     };
     let prepared = match prepared {
         Ok(prepared) => prepared,
         Err(Stopped::Said(code, why)) => return refuse(&mut *writer, code, why),
         Err(Stopped::Signal(code)) => return refuse(&mut *writer, code, "stopped".to_owned()),
     };
-    let _ = values.set(prepared.secret_values.clone());
+    let _ = values.set(zeroize::Zeroizing::new(prepared.secret_values.clone()));
     let mut prepared = prepared;
     let given: Vec<PathBuf> = Vec::new();
     // A value that points at a host the chat may reach goes through a tunnel to exactly it, and
@@ -2216,15 +2440,16 @@ pub(crate) fn serve_recorded(
     std::os::unix::process::CommandExt::process_group(&mut child, 0);
     // purlis's own wrap starts with nothing but the run's environment carried for the command
     // (#2460), and gives the command exactly that; `sandbox-exec` hands on its own.
-    let start_with = match &applying {
+    // A copy of the run's values: wiped once the child has its own (#3420).
+    let start_with = exec::WipedEnv(match &applying {
         Applying::Purlis(_) => purlis_linux_sandbox::carried::carried(prepared.env.iter().cloned()),
         _ => prepared.env.clone(),
-    };
+    });
     child
         .args(&command[1..])
         .current_dir(start_in)
         .env_clear()
-        .envs(start_with)
+        .envs(start_with.0.iter().map(|(k, v)| (k, v)))
         .stdin(if wanted.stdin {
             std::process::Stdio::piped()
         } else {
@@ -2253,6 +2478,16 @@ pub(crate) fn serve_recorded(
             (
                 "persona",
                 Value::String(asker.persona.clone().unwrap_or_default()),
+            ),
+            // Values its desktop sent (#3406): said so, with the request its desktop's
+            // `secret.forwarded` names.
+            (
+                "from",
+                handed.map_or(Value::Null, |_| Value::String("desktop".to_owned())),
+            ),
+            (
+                "request",
+                handed.map_or(Value::Null, |handed| Value::String(request_of(&handed.run))),
             ),
         ],
     );
@@ -2355,13 +2590,16 @@ fn tunnelled(
             .rev()
             .find(|(k, _)| k == name)
             .and_then(|(_, v)| v.to_str())
-            .map(str::to_owned)
+            .map(|value| zeroize::Zeroizing::new(value.to_owned()))
         else {
             continue;
         };
         // A host alone in its variable, its port beside it in another (#1708).
         let pair = host_pair(name, &value, &prepared.env);
-        let routed = pair.as_ref().map_or(value, |pair| pair.target.clone());
+        let routed = zeroize::Zeroizing::new(
+            pair.as_ref()
+                .map_or_else(|| value.to_string(), |pair| pair.target.clone()),
+        );
         let mut routed = route(&routed, &client, &opening.reach, &opening.own);
         if pair
             .as_ref()
@@ -2399,7 +2637,11 @@ fn tunnelled(
             };
             let routed = route(value, &client, &opening.reach, &opening.own);
             if let Some((pointed, at)) = opening.open(&name, routed)? {
-                *value = pointed.at(at);
+                // The value it was is wiped as the file is pointed (#3420).
+                drop(zeroize::Zeroizing::new(std::mem::replace(
+                    value,
+                    pointed.at(at),
+                )));
                 prepared.secret_values.push(value.clone());
                 let escaped = super::dotenv::escaped(value);
                 if escaped != *value {
@@ -2409,7 +2651,8 @@ fn tunnelled(
             }
         }
         if moved {
-            std::fs::write(&handed.path, handed_body(&handed.entries)?)?;
+            let body = zeroize::Zeroizing::new(handed_body(&handed.entries)?);
+            std::fs::write(&handed.path, body.as_bytes())?;
         }
     }
     Ok((opening.tunnels, opening.notes))
@@ -3143,20 +3386,22 @@ fn listen(
 ///
 /// It holds back the bytes that could still be the start of a value, at most one byte short of
 /// the longest, and never emits part of an occurrence that a later chunk could complete.
+/// What it holds, the values and the output it holds back, is wiped as it is dropped (#3420).
 pub struct Redactor {
-    secrets: Vec<String>,
+    secrets: zeroize::Zeroizing<Vec<String>>,
     longest: usize,
-    held: Vec<u8>,
+    held: zeroize::Zeroizing<Vec<u8>>,
 }
 
 impl Redactor {
     pub fn new(secrets: &[String]) -> Self {
-        let secrets: Vec<String> = secrets.iter().filter(|s| !s.is_empty()).cloned().collect();
+        let secrets: zeroize::Zeroizing<Vec<String>> =
+            zeroize::Zeroizing::new(secrets.iter().filter(|s| !s.is_empty()).cloned().collect());
         let longest = secrets.iter().map(String::len).max().unwrap_or(0);
         Self {
             secrets,
             longest,
-            held: Vec::new(),
+            held: zeroize::Zeroizing::new(Vec::new()),
         }
     }
 
@@ -3171,7 +3416,7 @@ impl Redactor {
         // held back whole, and so is any that then straddles the new cut.
         loop {
             let mut moved = false;
-            for secret in &self.secrets {
+            for secret in self.secrets.iter() {
                 let needle = secret.as_bytes();
                 let first = cut.saturating_sub(needle.len() - 1);
                 let straddling = (first..cut)

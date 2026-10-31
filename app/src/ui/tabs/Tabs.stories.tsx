@@ -16,7 +16,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Fragment, useState, type CSSProperties } from "react";
 import { expect, waitFor } from "storybook/test";
 import { Plus, X } from "lucide-react";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { useTabIds } from "../../StripTablist";
 import { ChatMark } from "../../NeedsYou";
 import type { State } from "../../chatState";
@@ -87,14 +87,16 @@ function DockedStrip({
               {marks && at === 0 && (
                 // A tab's task chip, as `SkillRunChip` draws it.
                 <span className="tab-tasks">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="tab-tasks-counts"
-                    tooltip="Using the skill review: 3 tool calls so far. Open its runs."
-                  >
-                    <span className="count">3</span>
-                  </Button>
+                  <span className="tab-tasks-pill">
+                    <Button
+                      variant="quiet"
+                      size="sm"
+                      className="tab-tasks-counts"
+                      tooltip="Using the skill review: 3 tool calls so far. Open its runs."
+                    >
+                      <span className="count">3</span>
+                    </Button>
+                  </span>
                 </span>
               )}
               <StripTab
@@ -247,7 +249,10 @@ export const Docked: Story = {
     for (const key of ["{ArrowRight}", "{ArrowRight}", "{Home}", "{End}", "{ArrowLeft}"]) {
       await userEvent.keyboard(key);
       await userEvent.keyboard("{Enter}");
-      await waitFor(() => expect(document.activeElement).toHaveAttribute("aria-selected", "true"));
+      await untilFocused(
+        () => canvas.getByRole("tab", { selected: true }),
+        `Tabs: ${key} then Enter chooses the tab the keyboard is on`,
+      );
       expect(placesOf(canvasElement)).toEqual(before);
     }
     // Past the last tab is the first (WAI-ARIA Tabs, D-3042-4).

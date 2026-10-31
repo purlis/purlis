@@ -3,7 +3,7 @@
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { $, browser, expect } from "@wdio/globals";
+import { $, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
 import {
   closeTheViewTabsOpenedSince,
@@ -11,15 +11,18 @@ import {
   runFromThePalette,
   tabNames,
 } from "../reach.js";
+import { studioMore, studioSkill } from "../studio.js";
 
 /**
- * **A skill's tab: its state, history and uses** (SK-19, #2782), in the built app against the
- * real core, with the `skill-studio` flag on for the run (`wdio.conf.ts`).
+ * **A skill's page: its state, history and uses** (SK-19, #2782; its page in the studio, #3682),
+ * in the built app against the real core, with the `skill-studio` flag on for the run
+ * (`wdio.conf.ts`).
  *
- * The spec lays a project skill on disk whose text names a skill there is none of, opens its tab
- * from the Skill studio, and finds the broken reference marked, the History panel drawn, and the
- * state "In use". It archives the skill, finds the tab saying it never loads and the state written
- * beside its folder, and restores it, which takes the state away again. Versions, diffs and
+ * The spec lays a project skill on disk whose text names a skill there is none of, opens its page
+ * in the Skill studio, and finds the broken reference marked on Overview and its History drawn.
+ * It archives the skill from the page's "…" menu, finds the banner saying it never loads and the
+ * state written beside its folder, and unarchives it from the banner, which takes the state away
+ * again. Versions, diffs and
  * reverts on a real git history are the core's seam tests (`skills/history/tests.rs`).
  *
  * **It leaves the window and the project as it found them.**
@@ -54,28 +57,30 @@ describe("a skill's tab", function () {
 
   it("shows the skill's state, history and broken use, and archives and restores it", async () => {
     await runFromThePalette("Open Skill studio", "skills.studio");
-    const open = await $(`aria/Open ${PROBE}`);
-    await open.waitForClickable({ timeout: 20_000 });
-    await open.click();
+    const item = await studioSkill(PROBE);
 
-    const uses = await $('[data-testid="skill-uses"]');
+    const uses = item.$('[data-testid="skill-uses"]');
     await uses.waitForExist({ timeout: 20_000 });
     await expect(uses).toHaveText(/e2e-gone-probe — no skill has this name/);
-    await expect($('[data-testid="skill-history"]')).toBeExisting();
-    await expect($('[data-testid="skill-lifecycle"]')).toHaveText("In use.");
+    await (await item.$('[role="tab"]*=History')).click();
+    await item.$('[data-testid="skill-history"]').waitForExist({ timeout: 20_000 });
+    await expect(item.$('[data-cause^="skill-banner:"]')).not.toBeExisting();
 
-    await (await $('[data-testid="skill-state"]').$("button=Archive")).click();
-    await browser.waitUntil(
-      async () => /never loads/.test(await (await $('[data-testid="skill-lifecycle"]')).getText()),
-      { timeout: 20_000, timeoutMsg: "the tab never said the archived skill never loads" },
-    );
+    await studioMore(PROBE, "Archive");
+    const dialog = $('[role="dialog"]');
+    await dialog.waitForExist({ timeout: 20_000 });
+    await (await dialog.$("button=Archive")).click();
+    const banner = $('[data-testid="skill-banner-archived"]');
+    await banner.waitForExist({ timeout: 20_000, timeoutMsg: "no banner said it is archived" });
+    await expect(banner).toHaveText(/never loads/);
     expect(readFileSync(beside(), "utf8")).toContain('lifecycle = "archived"');
 
-    await (await $('[data-testid="skill-state"]').$("button=Restore")).click();
-    await browser.waitUntil(
-      async () => (await (await $('[data-testid="skill-lifecycle"]')).getText()) === "In use.",
-      { timeout: 20_000, timeoutMsg: "the restored skill's tab never said it is in use" },
-    );
+    await (await $("button=Unarchive")).click();
+    await banner.waitForExist({
+      reverse: true,
+      timeout: 20_000,
+      timeoutMsg: "the unarchived skill's banner never went",
+    });
     expect(existsSync(beside())).toBe(false);
   });
 });

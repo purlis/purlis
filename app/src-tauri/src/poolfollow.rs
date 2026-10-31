@@ -25,6 +25,8 @@ use purlis_core::dockerpool::Image;
 use tauri::Runtime;
 
 #[cfg(unix)]
+use crate::dockerpools::RunnerImageOffered;
+#[cfg(unix)]
 use crate::runnerlinks::{Machine, ToARunner};
 
 /// Starts the looks, where this build looks for updates on its own.
@@ -88,10 +90,10 @@ async fn look<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path) {
     }
 }
 
-/// Whether the last look found a runner image named for this version: `None` until a look
-/// answered.
+/// What the last look found of this version's runner image: `None` until a look answered,
+/// then the image it named, or none where it named none.
 #[cfg(unix)]
-static NAMED: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
+static NAMED: std::sync::Mutex<Option<Option<Image>>> = std::sync::Mutex::new(None);
 
 /// **What a look found of this version's runner image** (#2880).
 #[cfg(unix)]
@@ -137,8 +139,8 @@ pub fn found_in(
 #[cfg(unix)]
 pub fn note_named(found: &Result<Found, String>) {
     let named = match found {
-        Ok(Found::Named(_)) => true,
-        Ok(Found::NoneNamed) => false,
+        Ok(Found::Named(image)) => Some(image.clone()),
+        Ok(Found::NoneNamed) => None,
         Ok(Found::OtherVersion) | Err(_) => return,
     };
     *NAMED
@@ -150,46 +152,98 @@ pub fn note_named(found: &Result<Found, String>) {
 /// until a look answered (#2880).
 #[cfg(unix)]
 pub fn this_versions_image_named() -> Option<bool> {
-    *NAMED
+    NAMED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        .map(Option::is_some)
+}
+
+/// **The runner image the last look found named for this version**: none until one did.
+#[cfg(unix)]
+pub fn this_versions_image_noted() -> Option<Image> {
+    NAMED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+        .flatten()
+}
+
+/// **What the Add a pool dialog is told of what the manifest offers** (the person's ruling of
+/// 2026-10-30): this version's image, a newer version's, or none; and why, where it could not
+/// be read or was refused.
+#[cfg(unix)]
+pub fn said(
+    offered: Result<purlis_core::runnerimage::Offered, String>,
+) -> Result<RunnerImageOffered, String> {
+    use purlis_core::runnerimage::Offered;
+    Ok(match offered? {
+        Offered::Ours(image) => RunnerImageOffered::Ours {
+            image: image.as_str().to_owned(),
+        },
+        Offered::Newer { image, version } => RunnerImageOffered::Newer {
+            image: image.as_str().to_owned(),
+            version,
+        },
+        Offered::None => RunnerImageOffered::NoneNamed,
+    })
+}
+
+/// **The runner image a new pool is offered** (the person's ruling of 2026-10-30): what the Add
+/// a pool dialog's Image box shows as its default.
+///
+/// - A build that never looks for updates, a local build with no update channel, is offered
+///   none, and nothing is read.
+/// - The image a look found named for this version is not read again.
+/// - On the stable channel, this version's own release's manifest is read
+///   ([`purlis_core::updates::Channel::release_endpoint`]), so a machine with an update waiting
+///   is still offered its own version's image. Where that release has no manifest, or it
+///   cannot be read, the channel's is.
+/// - On the dev channel, whose one manifest is always its newest build's, the channel's is
+///   read: of this version, its image; of a newer one, that version's, said to be so, with an
+///   update of purlis to it waiting.
+///
+/// Every image offered is checked as a look checks this version's
+/// ([`purlis_core::runnerimage::offered`]): signed by the updater's key over its line, for the
+/// version the manifest names, purlis's own image by digest.
+#[cfg(unix)]
+pub async fn image_offered<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<RunnerImageOffered, String> {
+    if !purlis_core::updates::checks_on_its_own(purlis_core::fence::FENCED, cfg!(debug_assertions))
+    {
+        return Ok(RunnerImageOffered::LocalBuild);
+    }
+    if let Some(image) = this_versions_image_noted() {
+        return Ok(RunnerImageOffered::Ours {
+            image: image.as_str().to_owned(),
+        });
+    }
+    let ours = app.package_info().version.to_string();
+    let manifest = crate::updates::manifest_for_a_new_pool(app).await?;
+    let offered = purlis_core::runnerimage::offered(
+        &manifest,
+        &crate::updates::configured_pubkey(app),
+        &ours,
+    );
+    if let Ok(purlis_core::runnerimage::Offered::Ours(image)) = &offered {
+        note_named(&Ok(Found::Named(image.clone())));
+    }
+    said(offered)
 }
 
 /// **The runner image the update manifest names for this version**, or none where the
 /// channel's manifest is of another version or names none (a release from before #2749).
-/// One updater read, listed in the network log as every read is.
+/// One updater read ([`crate::updates::this_versions_manifest`]).
 #[cfg(unix)]
 async fn runner_image<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Found, String> {
-    use tauri_plugin_updater::UpdaterExt;
-    let endpoint = crate::updates::channel_now().endpoint();
-    let url = endpoint
-        .parse()
-        .map_err(|why| format!("purlis's update endpoint is not a url: {why}"))?;
-    let ours = app.package_info().version.clone();
-    let updater = app
-        .updater_builder()
-        .endpoints(vec![url])
-        .map_err(|why| format!("purlis's update endpoint was refused: {why}"))?
-        // The manifest of this very version is the one asked for, not a newer one.
-        .version_comparator(move |current, remote| remote.version == current)
-        .build()
-        .map_err(|why| format!("purlis's updater could not be built: {why}"))?;
-    let started = std::time::Instant::now();
-    let found = updater.check().await;
-    purlis_core::netlog::updater_read(&endpoint, found.is_ok(), started.elapsed());
-    let Some(update) = found.map_err(|why| why.to_string())? else {
-        return Ok(Found::OtherVersion);
-    };
-    let pubkey = app
-        .config()
-        .plugins
-        .0
-        .get("updater")
-        .and_then(|updater| updater.get("pubkey"))
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
-    found_in(Some(&update.raw_json), &pubkey, &ours.to_string())
+    let ours = app.package_info().version.to_string();
+    let manifest = crate::updates::this_versions_manifest(app).await?;
+    found_in(
+        manifest.as_ref(),
+        &crate::updates::configured_pubkey(app),
+        &ours,
+    )
 }
 
 /// **How many chats each pool's draining runners still keep, as the last look found them**
@@ -282,8 +336,10 @@ pub fn follow_and_drain(
             kept.pool().to_owned(),
             kept.name().to_owned(),
         );
-        // A suspended runner runs no chat (#2051): it is not woken to be asked.
-        let suspended = matches!(machine.docker.running(&kept.made), Ok(false));
+        // A suspended runner runs no chat (#2051): it is not woken to be asked. One Docker no
+        // longer lists is not taken as idle on its own (#4149): Docker may only be pointing at
+        // another engine, and its chats run on where it is.
+        let suspended = matches!(machine.running(&kept), Ok(false));
         let chats = if suspended { Ok(0) } else { chats_on(&to) };
         match chats {
             Ok(0) => {

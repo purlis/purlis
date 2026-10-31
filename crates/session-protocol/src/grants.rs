@@ -44,11 +44,16 @@
 //! | `log_in`, a login purlis performs with a vault's values (1.18) | yes | | | | | relayed (1.38) |
 //! | a kept login: a browser's start from one, and a `log_in` that keeps one (1.27) | yes | | | | | |
 //! | `unpair`, the desktop taken out of a runner's peers (1.25) | | | | | | yes |
+//! | `keep_profile`, a desktop's profile kept on its runner (1.43), `forget_profile`, taken off it (1.52), `stage_profile_settings`, its settings in batches (1.56), `kept_profiles`, the ones it keeps (1.57), and `settings_held`, what it holds of one (1.61) | | | | | | yes |
+//! | `sign_in_redirect`, a sign-in's redirect handed to a login on the runner (1.59) | | | | | | yes |
 //! | `name_window`, the window naming itself on a link to its own host (1.31) | yes | | | | | |
 //! | `relay_to`, the window's link relayed by its host to a runner it keeps (1.33) | yes | | | | | |
 //! | `take_code`, `give_code`, a repository's history moved over the link as a git bundle (1.34) | yes | | | | | relayed |
+//! | `take_conversation`, `give_conversation`, a moving chat's conversation carried over the link (1.44) | yes | | | | | relayed |
+//! | `clones_of`, the clones a host holds in a workspace of a project it keeps (1.51) | yes | | | | | relayed |
 //! | `cancel_engine_download`, and the pushed `engine_download`: a browser engine's first download (1.37) | yes | | | | | |
 //! | `log_end`, and the host's own event log pushed from a cursor for its device (1.41) | yes | | | | | relayed |
+//! | `inspect`, `inspector_input`, `attach_view` of kind `inspector`: the person's DevTools of a browser they drive (1.45) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -187,6 +192,19 @@
 //!   for the desktop the link's handshake proved, never another. No other scope is granted it,
 //!   the window's included, whose own host holds no peers; and a relaying host refuses it, so it
 //!   never reaches a runner but from the desktop that removes it.
+//! - **`keep_profile` is the paired desktop's, on its own link to the runner** (1.43, #2049),
+//!   as `unpair` is. It names a profile of the desktop's, which the runner keeps in a folder of
+//!   its own with nothing of the desktop's in it, so a runner's chats can start on it. No other
+//!   scope is granted it, the window's included, whose own host has its profiles already; and a
+//!   relaying host refuses it, so it reaches a runner only from the desktop it is paired with.
+//!   `forget_profile` (1.52, #4047), which takes one of the desktop's profiles off the runner, is
+//!   granted and refused exactly as it is, and so is `kept_profiles` (1.57, #4060), which asks
+//!   the names of the ones the runner keeps for that desktop, and `settings_held` (1.61, #4088),
+//!   which asks the path and digest of each settings file it holds of one of them.
+//! - **`sign_in_redirect` is the paired desktop's, on its own link to the runner** (1.59, #4044),
+//!   as `keep_profile` is, for the sign-in that desktop started there. It reaches one login's own
+//!   port and path on the runner's loopback, and nothing else there, and crosses no answer back.
+//!   No other scope is granted it, the window's included, and a relaying host refuses it.
 //! - **`name_window` is the window's, on a link to its own host** (1.31, #2623). It names the
 //!   window by the name it keeps for that link across its restarts, so its host's relay names it
 //!   to a runner the same way after a restart, and the window takes back its runner chats. Only
@@ -207,6 +225,16 @@
 //!   decides moves between the desktop and a runner, as holding the project is. A relaying host
 //!   sends them on for a `local-ui` client alone, so `remote-link` is granted them only as the
 //!   desktop's host relaying its window, never as any other client of it.
+//! - **`take_conversation` and `give_conversation` are the window's, relayed for it** (1.44,
+//!   #2048), for the same reason: they carry the conversation of a chat the window moves, into
+//!   and out of the harness folder of a profile the host holds it on. `clones_of` (1.51,
+//!   #3811) too: it names the clones a chat the window moves back may bring with it.
+//! - **DevTools are the window's alone, on its own host** (1.45, #2028). What DevTools reach is
+//!   the whole of the inspected page: its scripts, its storage, what it typed and was filled
+//!   with. Only the person, driving the browser in their own window, opens them, so `inspect`,
+//!   `inspector_input` and a view of DevTools are `local-ui`'s, never relayed to a runner's
+//!   browser, and no other scope's: a chat's tools, the fleet's and the terminal's never reach
+//!   them.
 
 use crate::auth::Scope;
 
@@ -284,14 +312,27 @@ pub enum Power {
     /// `unpair` (1.25, #2525): the desktop on a link between hosts taken out of the runner's
     /// peers, as it removes the runner.
     Unpair,
+    /// `keep_profile` (1.43, #2049): a desktop's profile kept on its runner, and
+    /// `forget_profile` (1.52, #4047): one taken off it, `stage_profile_settings` (1.56,
+    /// #4081): the batches of its settings, `kept_profiles` (1.57, #4060): the ones kept
+    /// there, and `settings_held` (1.61, #4088): what it holds of one.
+    KeepProfile,
+    /// `sign_in_redirect` (1.59, #4044): a sign-in's redirect handed to a login on the runner.
+    SignInRedirect,
     /// `name_window` (1.31, #2623): the window names itself on a link to its own host, by the
     /// name it keeps for that link. The window's alone.
     NameWindow,
     /// `relay_to` (1.33, #2679): the window's link relayed by its own host to a runner it keeps.
     RelayTo,
     /// `take_code` and `give_code` (1.34, #2046): a repository's history moved between the
-    /// desktop and a runner as a git bundle.
+    /// desktop and a runner as a git bundle; and `take_conversation` and `give_conversation`
+    /// (1.44, #2048): a moving chat's conversation carried with it; and `clones_of` (1.51,
+    /// #3811): the clones a host holds in a workspace.
     Code,
+    /// `inspect`, `inspector_input` and `attach_view` of the kind `inspector` (1.45, #2028): the
+    /// real DevTools of a page the person drives. The window's alone, on its own host: never
+    /// relayed, since what DevTools reach is the whole of the page, and never any other scope's.
+    Inspect,
     /// `log_end`, and the host's own event log pushed from a cursor for its device (1.41,
     /// #3393): the window's, on its own host or relayed to a runner's.
     EventLog,
@@ -303,7 +344,10 @@ impl Scope {
         use Power as P;
         use Scope as S;
         match self {
-            S::LocalUi => !matches!(power, P::TakeBack | P::Unpair),
+            S::LocalUi => !matches!(
+                power,
+                P::TakeBack | P::Unpair | P::KeepProfile | P::SignInRedirect
+            ),
             S::Terminal => matches!(
                 power,
                 P::List | P::View | P::Write | P::Resize | P::Stop | P::Start | P::Subscribe
@@ -327,6 +371,8 @@ impl Scope {
                     | P::LogIn
                     | P::TakeBack
                     | P::Unpair
+                    | P::KeepProfile
+                    | P::SignInRedirect
                     | P::Code
                     | P::Rearm
                     | P::EventLog

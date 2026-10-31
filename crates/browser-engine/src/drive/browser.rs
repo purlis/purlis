@@ -28,17 +28,20 @@ use super::{
     PageId, PageInfo, Painted, Ref, Refusal, Settled, Why, lock,
 };
 use crate::WebAddress;
-use crate::cdp::{CALL_TIMEOUT, CallError, Closed, Connection, Event};
+use crate::cdp::{CALL_TIMEOUT, CallError, Closed, Connection, Event, Tap, TapSink};
 use crate::ending::{EndedBy, Ending, EngineExit};
 
 mod changes;
+mod downloads;
 mod drawing;
+mod inspect;
 mod login;
 mod reading;
 mod takeover;
 mod view;
 mod world;
 
+pub use inspect::{FRONT_END, INSPECTOR_PAGE, InspectEnded, MOST_QUEUED};
 pub use login::{LOGIN_WAIT, LoginEnded, origin_of};
 
 use drawing::Drawing;
@@ -78,6 +81,27 @@ pub(crate) trait DevTools: Send + Sync {
     fn call(&self, method: &str, params: Value, session: Option<&str>) -> Result<Value, CallError> {
         self.call_within(method, params, session, CALL_TIMEOUT)
     }
+
+    /// Taps `session` (#2028): its messages, and those of the sessions under it, go to `sink`.
+    /// `None` where it cannot be tapped.
+    fn tap(&self, _session: &str, _sink: TapSink) -> Option<Tap> {
+        None
+    }
+
+    /// Ends `tap`.
+    fn untap(&self, _tap: &Tap) {}
+
+    /// Sends a call on one of `tap`'s sessions, its answer the tap's under `id`.
+    fn send_tapped(
+        &self,
+        _tap: &Tap,
+        _id: u64,
+        _method: &str,
+        _params: Value,
+        _session: &str,
+    ) -> Result<(), CallError> {
+        Err(CallError::Ended)
+    }
 }
 
 impl DevTools for Connection {
@@ -108,6 +132,25 @@ impl DevTools for Connection {
 
     fn closed(&self) -> Option<Closed> {
         Connection::closed(self)
+    }
+
+    fn tap(&self, session: &str, sink: TapSink) -> Option<Tap> {
+        Some(Connection::tap(self, session, sink))
+    }
+
+    fn untap(&self, tap: &Tap) {
+        Connection::untap(self, tap);
+    }
+
+    fn send_tapped(
+        &self,
+        tap: &Tap,
+        id: u64,
+        method: &str,
+        params: Value,
+        session: &str,
+    ) -> Result<(), CallError> {
+        Connection::send_tapped(self, tap, id, method, params, session)
     }
 }
 
@@ -196,6 +239,17 @@ pub(crate) const ACTIVE_ELEMENT: &str = r"(() => {
 /// The expression that answers the element that has the focus, where the document it runs in has
 /// the focus, or `null` (#2295). Run in purlis's own world, not by value.
 pub(crate) const FOCUSED_HERE: &str = "document.hasFocus() ? document.activeElement : null";
+
+/// Whether a key event pastes: it carries the paste command, or it is Shift+Insert (#2028).
+fn pastes(event: &Value) -> bool {
+    let commanded = event["commands"].as_array().is_some_and(|commands| {
+        commands
+            .iter()
+            .any(|c| c == "paste" || c == "pasteAndMatchStyle")
+    });
+    let insert = event["key"] == "Insert" && event["modifiers"].as_i64().unwrap_or(0) & 8 != 0;
+    commanded || insert
+}
 
 /// The first [`MOST_TITLE_CHARS`] of `title`.
 fn kept_title(title: &str) -> String {
@@ -422,6 +476,39 @@ struct State {
     /// Where a drag of the agent's ended without the engine's word that its own drag started,
     /// by session (#2839): a word that comes later is answered by cancelling that drag there.
     cancels_late: Option<(String, (f64, f64))>,
+    /// Every download the browser began, and which are still to be told (#2020).
+    downloads: downloads::Downloads,
+    /// What the driver leaves to an Inspect (#2028).
+    inspecting: Inspecting,
+}
+
+/// **What the driver leaves to an Inspect** (#2028): the engine's word of these is the front
+/// end's, never the driver's, so no page of DevTools is ever one of the browser's pages.
+#[derive(Default)]
+struct Inspecting {
+    /// The contexts DevTools' front ends run in.
+    contexts: HashSet<String>,
+    /// Each context's front end (or blank page of DevTools'), by context: every other page of
+    /// that context is closed at once.
+    front_ends: HashMap<String, String>,
+    /// The pages a session is being made on for DevTools to speak to them.
+    bridging: HashSet<String>,
+    /// The pages a session for DevTools was asked of and not answered in time: one the engine
+    /// tells of later is let go.
+    orphans: HashSet<String>,
+}
+
+impl Inspecting {
+    /// Whether the target `info` tells of is DevTools' own.
+    fn owns(&self, info: &Value) -> bool {
+        info.get("browserContextId")
+            .and_then(Value::as_str)
+            .is_some_and(|context| self.contexts.contains(context))
+            || info
+                .get("targetId")
+                .and_then(Value::as_str)
+                .is_some_and(|target| self.front_ends.values().any(|one| one == target))
+    }
 }
 
 impl State {
@@ -811,6 +898,11 @@ enum FollowUp {
         at: (f64, f64),
         data: Value,
     },
+    /// A download past the browser's limits, cancelled where it still downloads and its file
+    /// removed (#2020).
+    DiscardDownload(downloads::Discard),
+    /// A request of DevTools' front end, which never goes (#2028).
+    Refuse(String),
     /// A request held until the judge says whether it goes (#2018).
     Judge {
         paused: Paused,
@@ -820,6 +912,18 @@ enum FollowUp {
 
 pub(crate) struct Inner {
     pub(crate) devtools: Arc<dyn DevTools>,
+    /// The person's open DevTools, if any (#2028).
+    inspection: Mutex<Option<Arc<inspect::Inspection>>>,
+    /// Whether DevTools were open while the person drove, since they last handed it back.
+    devtools_opened: AtomicBool,
+    /// Whether the agent's pastes are withheld: DevTools were open on this browser, and what
+    /// the person copied there may be what a paste gets.
+    paste_withheld: AtomicBool,
+    /// What DevTools wrote into pages since then, kept out at the hand-back.
+    devtools_writes: Mutex<Vec<String>>,
+    /// The pages that could not be read at the hand-back after DevTools: the agent's calls
+    /// wait until each can be.
+    devtools_unread: Mutex<HashSet<String>>,
     state: Mutex<State>,
     changed: Condvar,
     limits: Limits,
@@ -853,6 +957,8 @@ pub(crate) struct Inner {
     following: Mutex<Option<std::sync::mpsc::Sender<FollowUp>>>,
     /// purlis's own world in each frame its scripts run in, as the engine told of each (#2138).
     worlds: Worlds,
+    /// The folder its downloads are held in, once it was given one (#2020).
+    held_in: Mutex<Option<std::path::PathBuf>>,
 }
 
 /// A frame of a page to read: where its tree comes from and where its holder is.
@@ -897,6 +1003,9 @@ pub struct Browser {
     lease: Mutex<Lease>,
     /// The epoch of the lease the call now acting was made under.
     acting_epoch: AtomicU64,
+    /// Counts the hand-backs, each under the lease's lock: an Inspect that began before one
+    /// never finishes opening (#2028).
+    inspect_cut: AtomicU64,
     /// What the person typed while driving, kept out of later answers (#2014).
     typing: Mutex<Typing>,
     /// What each login the person cut by taking the browser over filled, cleared as they hand
@@ -951,6 +1060,11 @@ impl Browser {
     ) -> Result<Self, Refusal> {
         let inner = Arc::new(Inner {
             devtools,
+            inspection: Mutex::new(None),
+            devtools_opened: AtomicBool::new(false),
+            paste_withheld: AtomicBool::new(false),
+            devtools_writes: Mutex::new(Vec::new()),
+            devtools_unread: Mutex::new(HashSet::new()),
             state: Mutex::new(State::default()),
             changed: Condvar::new(),
             limits: limits.clone(),
@@ -967,6 +1081,7 @@ impl Browser {
             judging: Mutex::new(None),
             following: Mutex::new(None),
             worlds: Worlds::default(),
+            held_in: Mutex::new(None),
         });
         Screencast::start(&inner);
         if inner.judge.is_some() {
@@ -1061,6 +1176,7 @@ impl Browser {
             inputs: AtomicU64::new(0),
             lease: Mutex::new(Lease::default()),
             acting_epoch: AtomicU64::new(0),
+            inspect_cut: AtomicU64::new(0),
             typing: Mutex::new(Typing::default()),
             to_clear: Mutex::new(Vec::new()),
             read_last: changes::ReadLast::default(),
@@ -1116,9 +1232,14 @@ impl Browser {
         // is kept by id.
         if call.only_reads() {
             let _one = lock(&self.acting);
-            return self
-                .run_at(epoch, call)
-                .map(|answer| self.with_asked(answer));
+            let every = matches!(call, Call::Downloads);
+            return self.run_at(epoch, call).map(|answer| {
+                let mut answer = self.with_asked(answer);
+                if every {
+                    answer.downloads = lock(&self.inner.state).downloads.all();
+                }
+                answer
+            });
         }
         match self.ledger.begin(id, &call) {
             Begin::Fresh(ticket) => {
@@ -1143,9 +1264,53 @@ impl Browser {
     }
 
     /// `answer`, with the sites the judge asked about since the last answer (#2018).
+    /// And the downloads that began or moved on since (#2020).
     fn with_asked(&self, mut answer: Answer) -> Answer {
-        answer.asked = std::mem::take(&mut lock(&self.inner.state).asked);
+        let mut state = lock(&self.inner.state);
+        answer.asked = std::mem::take(&mut state.asked);
+        answer.downloads = state.downloads.untold();
+        if let Some(refused) = state.downloads.refused_since() {
+            let said = format!(
+                "purlis cancelled {refused} more {} the page began: a browser makes at most {} \
+                 downloads",
+                if refused == 1 {
+                    "download"
+                } else {
+                    "downloads"
+                },
+                self.inner.limits.most_downloads
+            );
+            answer.note = Some(match answer.note.take() {
+                Some(note) => format!("{note}; {said}"),
+                None => said,
+            });
+        }
         answer
+    }
+
+    /// Every download the browser began, as it is now (#2020): told to nobody by this.
+    pub fn downloads(&self) -> Vec<super::DownloadInfo> {
+        lock(&self.inner.state).downloads.all()
+    }
+
+    /// **Holds every download of the browser's in `folder`** (#2020), each under the engine's
+    /// own name for it, and has the engine tell of each as it goes. Browser-wide: every page's,
+    /// one opened later included. Refused where the engine will not, so a browser never runs
+    /// downloading where it was not told to.
+    pub fn hold_downloads_in(&self, folder: &std::path::Path) -> Result<(), Refusal> {
+        *lock(&self.inner.held_in) = Some(folder.to_path_buf());
+        self.devtools()
+            .call(
+                "Browser.setDownloadBehavior",
+                json!({
+                    "behavior": "allowAndName",
+                    "downloadPath": folder.to_string_lossy(),
+                    "eventsEnabled": true,
+                }),
+                None,
+            )
+            .map(drop)
+            .map_err(refusal)
     }
 
     /// **Where the agent is about to type, keys or choices into the documents at `addresses`
@@ -1518,6 +1683,10 @@ impl Browser {
                 for chord in &keys {
                     events.extend(key_events(chord).map_err(|e| Refusal::NotAKey(e.to_string()))?);
                 }
+                // What the person copied in DevTools may be what a paste gets (#2028).
+                if self.inner.paste_withheld.load(Ordering::SeqCst) && events.iter().any(pastes) {
+                    return Err(Refusal::PasteWithheld);
+                }
                 self.acting_on(&target, || {
                     for event in events {
                         self.input("Input.dispatchKeyEvent", event, &session)?;
@@ -1556,6 +1725,7 @@ impl Browser {
                         note: None,
                         repeated: false,
                         asked: Vec::new(),
+                        downloads: Vec::new(),
                     },
                 };
                 answer.content = Content::Pages(pages);
@@ -1574,6 +1744,24 @@ impl Browser {
                 Ok(self.answer_now(&target, Content::Nothing))
             }
             Call::Screenshot { page } => self.screenshot(page.as_ref()),
+            Call::Downloads => {
+                let mut answer = match self.target(None) {
+                    Ok(target) => self.answer_now(&target, Content::Nothing),
+                    Err(_) => Answer {
+                        page: None,
+                        settled: Settled::Yes,
+                        opened: Vec::new(),
+                        content: Content::Nothing,
+                        note: None,
+                        repeated: false,
+                        asked: Vec::new(),
+                        downloads: Vec::new(),
+                    },
+                };
+                answer.content = Content::Nothing;
+                Ok(answer)
+            }
+            Call::Upload { target, files } => self.upload(&target, &files),
         }
     }
 
@@ -1800,6 +1988,7 @@ impl Browser {
             note,
             repeated: false,
             asked: Vec::new(),
+            downloads: Vec::new(),
         }
     }
 
@@ -2670,6 +2859,49 @@ impl Browser {
         })
     }
 
+    /// **Puts `files` into the file input `target`** (#2020): refused, putting nothing, for an
+    /// element that is not one. The files go to the page's site as anything typed there does,
+    /// so a page on a site new to the project waits on the person first.
+    fn upload(&self, target: &Ref, files: &[std::path::PathBuf]) -> Result<Answer, Refusal> {
+        let at = self.locate(target)?;
+        let page = at.target.clone();
+        if let Some(held) = self.typing_held(&page, &self.addresses_of(target)?) {
+            return Ok(held);
+        }
+        let described = self
+            .devtools()
+            .call(
+                "DOM.describeNode",
+                json!({ "backendNodeId": at.backend }),
+                Some(&at.node_session),
+            )
+            .map_err(|why| match why {
+                CallError::Engine { .. } => Refusal::NotShown(target.clone()),
+                other => refusal(other),
+            })?;
+        if !is_file_input(&described["node"]) {
+            return Err(Refusal::NotAFileInput(target.clone()));
+        }
+        let files: Vec<String> = files
+            .iter()
+            .map(|file| file.to_string_lossy().into_owned())
+            .collect();
+        self.acting_on(&page, || {
+            self.gated(|| {
+                self.devtools().call(
+                    "DOM.setFileInputFiles",
+                    json!({ "files": files, "backendNodeId": at.backend }),
+                    Some(&at.node_session),
+                )
+            })?
+            .map_err(|why| match why {
+                CallError::Engine { .. } => Refusal::NotAFileInput(target.clone()),
+                other => refusal(other),
+            })?;
+            Ok(None)
+        })
+    }
+
     fn drag(&self, from: &Ref, to: &DragTo) -> Result<Answer, Refusal> {
         let start_at = self.locate(from)?;
         let page = start_at.target.clone();
@@ -3461,6 +3693,7 @@ impl Inner {
     /// tells of it itself, the engine is given a moment to end by itself where its pipe closed,
     /// and ended at once where the connection closed on a message, and whoever waits is told how.
     fn connection_ended(&self) {
+        self.stop_inspecting(inspect::InspectEnded::Ended);
         let closed = self.devtools.closed();
         let pipe_ended = matches!(
             closed,
@@ -3563,8 +3796,43 @@ impl Inner {
         state.page(current)?.session.clone()
     }
 
+    /// Why the open Inspect ends, where `event` says it does: its front end's target went, or
+    /// the page it inspects did.
+    fn inspection_gone(&self, event: &Event) -> Option<inspect::InspectEnded> {
+        let open = self.inspection()?;
+        let target = event.params["targetId"].as_str();
+        match event.method.as_str() {
+            "Target.targetDestroyed" | "Target.targetCrashed"
+                if target == Some(open.front_end.as_str()) =>
+            {
+                Some(inspect::InspectEnded::Ended)
+            }
+            // The page's own end is the driver's to hear too: the Inspect ends beside it.
+            "Target.targetDestroyed" | "Target.targetCrashed"
+                if target == Some(open.inspected.as_str()) =>
+            {
+                open.ends(inspect::InspectEnded::PageGone);
+                None
+            }
+            _ => None,
+        }
+    }
+
     /// Takes in one event from the engine.
     fn take_in(&self, event: &Event) {
+        // The front end of the person's DevTools is DevTools' own, never one of the browser's
+        // pages (#2028): its session is tapped, so nothing of it is the driver's.
+        if let Some(session) = event.session_id.as_deref()
+            && self.inspection_on(session).is_some()
+        {
+            return;
+        }
+        if let Some(why) = self.inspection_gone(event)
+            && let Some(open) = self.inspection()
+        {
+            open.ends(why);
+            return;
+        }
         if event.method == "Page.screencastFrame" {
             let shown = event.session_id.as_deref().and_then(|session| {
                 let state = lock(&self.state);
@@ -3589,6 +3857,82 @@ impl Inner {
                     .map(str::to_owned)
             };
             match event.method.as_str() {
+                "Browser.downloadWillBegin" => {
+                    let frame = text("/frameId").unwrap_or_default();
+                    let page_address = state
+                        .pages
+                        .iter()
+                        .find_map(|page| page.frames.get(&frame))
+                        .map(|frame| frame.url.clone());
+                    if let Some(guid) = text("/guid")
+                        && let Some(cancel) = state.downloads.began(
+                            &guid,
+                            &text("/url").unwrap_or_default(),
+                            &text("/suggestedFilename").unwrap_or_default(),
+                            page_address.as_deref(),
+                            &self.limits,
+                        )
+                    {
+                        follow.push(FollowUp::DiscardDownload(cancel));
+                    }
+                }
+                "Browser.downloadProgress" => {
+                    let bytes = |key: &str| {
+                        params
+                            .get(key)
+                            .and_then(Value::as_f64)
+                            .filter(|n| n.is_finite() && *n >= 0.0)
+                            .map_or(0, |n| n as u64)
+                    };
+                    if let Some(guid) = text("/guid")
+                        && let Some(cancel) = state.downloads.moved(
+                            &guid,
+                            bytes("receivedBytes"),
+                            bytes("totalBytes"),
+                            &text("/state").unwrap_or_default(),
+                            &self.limits,
+                        )
+                    {
+                        follow.push(FollowUp::DiscardDownload(cancel));
+                    }
+                }
+                "Target.targetCreated" | "Target.targetInfoChanged"
+                    if state.inspecting.owns(&params["targetInfo"]) =>
+                {
+                    let target = text("/targetInfo/targetId").unwrap_or_default();
+                    let front = text("/targetInfo/browserContextId")
+                        .and_then(|context| state.inspecting.front_ends.get(&context).cloned());
+                    match front {
+                        // A page DevTools' context opened that is not its front end goes at once.
+                        Some(front) if front != target => follow.push(FollowUp::Close(target)),
+                        // The front end stays at its own page: one that leaves it is closed.
+                        Some(_) => {
+                            let url = text("/targetInfo/url").unwrap_or_default();
+                            if !inspect::front_end_may_show(&url)
+                                && let Some(open) = lock(&self.inspection)
+                                    .clone()
+                                    .filter(|open| open.front_end == target)
+                            {
+                                open.ends(inspect::InspectEnded::Moved);
+                            }
+                        }
+                        None => {}
+                    }
+                }
+                "Target.attachedToTarget" if state.inspecting.owns(&params["targetInfo"]) => {}
+                // The session made for DevTools to speak to the page on: theirs, and the mark
+                // goes as it is heard.
+                "Target.attachedToTarget"
+                    if text("/targetInfo/targetId")
+                        .is_some_and(|target| state.inspecting.bridging.remove(&target)) => {}
+                "Target.attachedToTarget"
+                    if text("/targetInfo/targetId")
+                        .is_some_and(|target| state.inspecting.orphans.remove(&target)) =>
+                {
+                    if let Some(session) = text("/sessionId") {
+                        follow.push(FollowUp::Release(session));
+                    }
+                }
                 "Target.targetCreated" | "Target.targetInfoChanged" => {
                     let info = &params["targetInfo"];
                     if info.get("type").and_then(Value::as_str) == Some("page")
@@ -3726,6 +4070,13 @@ impl Inner {
                         if let Some(frame) = text("/frame/id") {
                             self.worlds.left(&frame);
                         }
+                        // A page left unread at the hand-back that loads another document is
+                        // read anew: what DevTools wrote into the old one went with it (#2028).
+                        if params.pointer("/frame/parentId").is_none()
+                            && let Some(target) = state.page_of_session(session)
+                        {
+                            lock(&self.devtools_unread).remove(&target);
+                        }
                         state.frame_seen(session, &params["frame"], true);
                     }
                 }
@@ -3757,6 +4108,20 @@ impl Inner {
                             marks.pop_front();
                         }
                         marks.push_back(without_fragment(&url).to_owned());
+                    }
+                }
+                // The front end loads its own files alone: what it asks of the web fails (#2028).
+                "Fetch.requestPaused"
+                    if text("/frameId").is_some_and(|frame| {
+                        state
+                            .inspecting
+                            .front_ends
+                            .values()
+                            .any(|one| *one == frame)
+                    }) =>
+                {
+                    if let Some(request) = text("/requestId") {
+                        follow.push(FollowUp::Refuse(request));
                     }
                 }
                 "Fetch.requestPaused" => {
@@ -3906,6 +4271,28 @@ impl Inner {
                     None,
                 );
             }
+            FollowUp::DiscardDownload(discard) => {
+                if discard.going {
+                    let _ = devtools.call(
+                        "Browser.cancelDownload",
+                        json!({ "guid": discard.guid }),
+                        None,
+                    );
+                }
+                // The engine names each file by its guid, so the guid is one plain name.
+                let held = lock(&self.held_in).clone();
+                if let Some(folder) = held
+                    && !discard.guid.is_empty()
+                    && !discard.guid.contains(['/', '\\', '\0'])
+                    && discard.guid != ".."
+                    && discard.guid != "."
+                {
+                    let file = folder.join(&discard.guid);
+                    if std::fs::symlink_metadata(&file).is_ok_and(|there| there.is_file()) {
+                        let _ = std::fs::remove_file(file);
+                    }
+                }
+            }
             FollowUp::Close(target) => {
                 let _ = devtools.call("Target.closeTarget", json!({ "targetId": target }), None);
             }
@@ -3955,6 +4342,14 @@ impl Inner {
                 if let Some((paused, outbound)) = unsent {
                     self.judged(&paused, &outbound);
                 }
+            }
+            FollowUp::Refuse(request) => {
+                let _ = devtools.call_within(
+                    "Fetch.failRequest",
+                    json!({ "requestId": request, "errorReason": "BlockedByClient" }),
+                    None,
+                    JUDGED_WITHIN,
+                );
             }
             FollowUp::CancelDrag { session, at, data } => {
                 let _ = devtools.call(
@@ -4137,6 +4532,21 @@ fn read_began(began: Duration) -> String {
         "the page is slow to read, so this is the page as a read that began {} s ago found it",
         began.as_secs()
     )
+}
+
+/// Whether a described node is an `<input type=file>`.
+fn is_file_input(node: &Value) -> bool {
+    let local = node["localName"].as_str().unwrap_or_default();
+    let attributes: Vec<&str> = node["attributes"]
+        .as_array()
+        .map(|all| all.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    local.eq_ignore_ascii_case("input")
+        && attributes.chunks(2).any(|pair| {
+            pair.len() == 2
+                && pair[0].eq_ignore_ascii_case("type")
+                && pair[1].trim().eq_ignore_ascii_case("file")
+        })
 }
 
 fn stale(written: &Ref) -> Refusal {

@@ -3,7 +3,8 @@
 **Built by #2056** on item 4 of the amendment of 2026-10-14 (*"It holds no right to `exec` or
 `attach` to a pod and reads no Secret"*), which it keeps, and spec #2041's *"the operator ...
 vouches for every runner's identity"*. *Decided in implementation, ruled by the person 2026-10-26* (D-2056-2,
-D-2056-3 in its pull request). The key has no rotation and statements no expiry yet (#3305).
+D-2056-3 in its pull request). The key is rolled, and a statement names its cluster, since
+the amendment of 2026-10-29 (#3305): [the operator's signing key is rolled](2026-10-29-the-operators-signing-key-is-rolled-and-a-statement-names-its-cluster.md).
 
 1. **The operator reads a runner's sandbox and pod, by name, and nothing more of them.**
    Vouching for a runner's link key needs the key its pod published in its status, and the
@@ -17,3 +18,5 @@ D-2056-3 in its pull request). The key has no rotation and statements no expiry 
    `purlis-cluster-operator-signing-key` in its namespace, which the kubelet mounts in the
    operator's pod, read-only and for its group alone. Without it the operator does not start:
    it vouches for no runner unsigned.
+
+**Item 1 amended 2026-10-28 by #2058:** the operator also holds `patch` on sandboxes, which an admission policy narrows to the operating mode of a sandbox a SandboxClaim controls ([the amendment](2026-10-28-the-operator-suspends-a-stopped-runner.md)).

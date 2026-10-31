@@ -257,6 +257,12 @@ pub const NOBODY_HEARS: &str = "purlis's window is not there to take this";
 
 /// The most lines that wait for the window at once, browser logins (#2050) and `secret exec`s
 /// (#2047) together.
+///
+/// This bound, [`MOST_WAITING_FOR_A_CHAT`] and `MOST_TOLD` are purlis's own, the same on
+/// every runner, and never a pool's settings (D-2050-14): they hold the memory a runner's host
+/// keeps for what waits (names alone, never a value) and keep one chat from crowding out
+/// another's, the same for a browser login as for a `secret exec`. A team tunes how its runners
+/// behave, not how much the host remembers for an absent desktop.
 pub const MOST_WAITING: usize = 16;
 
 /// The most of them one chat's: no chat crowds out another's.
@@ -361,6 +367,9 @@ pub struct Relaying {
     /// What runs a `secret exec` here on the values the window sent: the brokered run, or a
     /// test's stand-in for it.
     runs_handed: hosted::RunsHanded,
+    /// The window's socket each slot a chat's server dials in is handed on over (#3316), where
+    /// it was told one; none, and every slot is refused.
+    slots_to: Mutex<Option<std::path::PathBuf>>,
 }
 
 /// **How the host keeps what its hook channel hears** (#2003): it writes the event log, and
@@ -410,7 +419,39 @@ impl Relaying {
             root: Mutex::default(),
             waiting_lines: Mutex::default(),
             runs_handed: Arc::new(brokered::serve_handed),
+            slots_to: Mutex::default(),
         })
+    }
+
+    /// **Hands each slot a chat's server dials in on to the window at `path`** (#3316,
+    /// [`super::serve::hand_on`]): the window holds the doors. A slot it cannot hand on is
+    /// refused.
+    pub fn handing_slots_to(&self, path: &std::path::Path) {
+        *lock(&self.slots_to) = Some(path.to_path_buf());
+    }
+
+    /// What hears a `serve` line here: each slot handed on to the window ([`Self::serve`]).
+    #[cfg(unix)]
+    fn serving(self: &Arc<Self>) -> super::Serves {
+        let relaying = Arc::clone(self);
+        Box::new(move |ask, slot| relaying.serve(&ask, slot))
+    }
+
+    #[cfg(not(unix))]
+    fn serving(self: &Arc<Self>) -> super::Serves {
+        super::serve::refusing()
+    }
+
+    /// A slot's ask and connection, handed on to the window, or refused where it cannot be.
+    #[cfg(unix)]
+    fn serve(&self, ask: &super::serve::ServeAsk, slot: super::serve::Slot) {
+        let to = lock(&self.slots_to).clone();
+        let handed = to.map(|path| super::serve::hand_on(&path, ask, &slot));
+        match handed {
+            Some(Ok(())) => {}
+            Some(Err(_)) => super::serve::refused(slot, super::serve::NO_WINDOW),
+            None => super::serve::refused(slot, super::serve::NOTHING_SERVES),
+        }
     }
 
     /// **Its project is at `root` on this machine** (#2047): a `secret exec` of a chat this host
@@ -841,9 +882,10 @@ impl Relaying {
         ask.runs_as = None;
         ask.waited = false;
         ask.run = None;
-        let composed = lock(&self.root)
-            .as_deref()
-            .and_then(|root| crate::hostedchats::asker(root, ask.chat));
+        // Out of the hold first: reading the chat's record reads its confinement's board too.
+        let composed = self
+            .at()
+            .and_then(|root| crate::hostedchats::asker(&root, ask.chat));
         if let Some(asker) = composed {
             return self.secret_exec_composed_here(asker, ask, reader, writer);
         }
@@ -941,6 +983,7 @@ impl Relaying {
                 let relaying = to(self);
                 Box::new(move |ask, reader, writer| relaying.secret_exec(ask, reader, writer))
             },
+            serve: self.serving(),
         }
     }
 }
@@ -1265,6 +1308,23 @@ impl Heeding {
         if *on == Some(link) {
             *on = None;
             *lock(&self.inputs) = Inputs::default();
+        }
+    }
+
+    /// **The host these lines come from is lost to the host that relays them** (#3408): the
+    /// relay's link to it went down, and that host let go of every line it had handed on, so
+    /// none of its `secret exec`s waits for this window any more. Each one's input ends here, one
+    /// taken but not yet begun too, so whatever waits on its asker hears that it went: a run on a
+    /// pool's runner lets go of the person's Ask and reads no vault. The link the lines come over
+    /// stays, and what comes over it next is taken as before. Lost over a link the lines no
+    /// longer come over, it changes nothing, as [`Self::unlinked`] does.
+    pub fn lost_its_host(&self, link: u64) {
+        let Some((_on, mut inputs)) = self.inputs_on(link) else {
+            return;
+        };
+        let execs: Vec<u64> = inputs.by_exec.keys().copied().collect();
+        for exec in execs {
+            inputs.input_ended(exec);
         }
     }
 

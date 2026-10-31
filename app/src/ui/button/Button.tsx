@@ -19,7 +19,10 @@
  *   primary look.
  * - **Sizes**: `sm`, `md` (the default) and `lg`, which is only for the control beside a list's
  *   main filter field. A row of buttons takes one size (`ButtonRow`), so a mixed row cannot be
- *   built.
+ *   built. **`inline`** draws a button as words in a line of words, a breadcrumb's crumb (#3264):
+ *   as tall as the line, with no box padding, its words cut to an ellipsis where the line
+ *   squeezes it and underlined under the pointer and the keyboard, as a link's are. Words only:
+ *   an inline button is a box of words, and draws no icon beside them.
  * - **Behaviour is React Aria's**: press by pointer, Enter and Space, focus on press in WebKit,
  *   a visible focus ring only from the keyboard. Every button is in the tab sequence, which
  *   WebKit leaves a button out of without `tabIndex` (#190).
@@ -29,7 +32,15 @@
  *   what a screen reader hears always agree; a hint that only repeats a button's name is shown
  *   and not heard twice. **A disabled button with a hint keeps the focus** and says it is
  *   unavailable (`aria-disabled`), so the hint, which says why, is reached by the keyboard and
- *   the pointer alike, and nothing presses it.
+ *   the pointer alike, and nothing presses it: nor opens the menu or popover it is the trigger
+ *   of (#3116). **One made unavailable by hand** (`aria-disabled`, a screen's busy answer) is
+ *   the same: it keeps the focus and runs no press (#3522).
+ * - **Open** (#3524): a trigger whose menu or popover is open is drawn as it is under the
+ *   pointer (`data-open`, a theme's `button.root.open`), whether the trigger hands it its
+ *   `aria-expanded` or the call writes it beside its `aria-haspopup`. A disclosure's own
+ *   `aria-expanded` (its region is out, nothing opens over the window) is not drawn open. A
+ *   theme that sets only `button.root.hover` does not carry it to open: open keeps the family's
+ *   default, the hover tokens, until the theme names `button.root.open` too.
  * - **The key that presses it** (R33, #3377): `shortcut` draws the key after its words, in the
  *   `shortcut` part, a `kbd` small and mono. It is drawn by the stylesheet from its `data-key`
  *   and hidden from a screen reader, so the button's name and words stay its words alone; the
@@ -53,7 +64,7 @@ import {
   type ToggleButtonProps as AriaToggleButtonProps,
 } from "react-aria-components";
 import { LockOpen } from "lucide-react";
-import { pressable, renderPressed, usePressTip, type Native } from "../pressable";
+import { discloses, pressable, renderPressed, usePressTip, type Native } from "../pressable";
 import { Tipped, type Tip } from "../tooltip/Tooltip";
 
 /** The family's variants, in the order the manifest names them. */
@@ -102,6 +113,19 @@ export interface ButtonProps
   extends Drawn, Omit<AriaButtonProps, "className" | "style" | "children" | "render"> {
   children?: ReactNode;
 }
+
+/** The variants a button drawn inline takes: the ghosts, which draw no ground (#3264). */
+export type InlineVariant = Extract<ButtonVariant, "quiet" | "ghost">;
+
+/**
+ * **Words in a line of words** (#3264): as tall as the line, no box padding, cut to an ellipsis
+ * where the line squeezes it (a breadcrumb's crumb). A target inline in text is exempt from the
+ * target size (WCAG 2.5.8). **Only a ghost is drawn inline**: a button with a ground of its own
+ * (the plain, the suggested, a danger answer) would have it tight against its letters, so any
+ * other variant is a type error. Words only: an `IconButton` and a `ToggleButton` take no
+ * `inline`.
+ */
+export type Inline = { inline?: false } | { inline: true; variant: InlineVariant };
 
 export interface ToggleButtonProps
   extends
@@ -216,13 +240,19 @@ function GrantsLock() {
 }
 
 function useDrawn(
-  props: Drawn & { children?: ReactNode; isDisabled?: boolean; "aria-label"?: string },
+  props: Drawn & {
+    children?: ReactNode;
+    isDisabled?: boolean;
+    "aria-label"?: string;
+    inline?: boolean;
+  },
   iconOnly = false,
 ) {
   const rowSize = useContext(RowSize);
   const {
     variant = "secondary",
     size: ownSize = "md",
+    inline = false,
     icon,
     children,
     className,
@@ -259,15 +289,16 @@ function useDrawn(
     "data-variant": variant,
     "data-size": size,
     "data-icon-only": iconOnly ? "" : undefined,
+    "data-inline": inline ? "" : undefined,
     // #190, #1700, #2908: `ui/pressable.tsx`.
-    render: renderPressed(native, tip, own),
+    render: renderPressed(native, tip, own, { disclosure: discloses(rest), drawsOpen: true }),
     children: content,
   };
   return { drawn, surface: tip.surface, reason: tip.reason };
 }
 
 /** **A button**: words, an icon before them if it has one, in a variant and a size. */
-export function Button(props: ButtonProps) {
+export function Button(props: ButtonProps & Inline) {
   const { drawn, surface, reason } = useDrawn(props);
   return (
     <Tipped surface={surface}>

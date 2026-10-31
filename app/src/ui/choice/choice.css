@@ -20,7 +20,36 @@
    **A state never changes size** (#2800, R153): under the pointer, ticked, picked, focused or
    unavailable, a choice changes a colour, a ground, an edge's colour or a ring, never a padding, a
    border width, a height or a weight, and a mark that shows only in one state keeps its room in
-   every other. A thumb slides, and only as it is turned; never under reduced motion. */
+   every other. A thumb slides, and only as it is turned; never under reduced motion.
+
+   **A choice is never under the 24px target** (#4173, WCAG 2.5.8): a row (a checkbox, a chip, a
+   radio, a switch, a slider) and a small segmented control are at least
+   `max(24px, var(--size-chrome), var(--space-7))` tall, the sm button's floor (#3210) and the sm
+   field's (#3250). The compact density draws the chrome at 18px and the scale's 24 at 16, and a
+   smaller text size shrinks both, so neither token alone keeps one. */
+
+/* **A choice with no words is a 24px target across too** (#4197, WCAG 2.5.8): a checkbox, a
+   radio or a switch named by `aria-label` alone is drawn its mark's size (a 14px box), so its
+   press reaches a square of at least 24px centred on it, which draws nothing. Where the root is
+   already 24px or more each way (a row with words), the reach is the root itself. */
+[data-scope="checkbox"][data-part="root"]::after,
+[data-scope="radio"][data-part="root"]::after,
+[data-scope="switch"][data-part="root"]::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: max(100%, 24px);
+  block-size: max(100%, 24px);
+  translate: -50% -50%;
+}
+
+/* Right to left, the inline start is the right: centred from there. */
+[data-scope="checkbox"][data-part="root"]:dir(rtl)::after,
+[data-scope="radio"][data-part="root"]:dir(rtl)::after,
+[data-scope="switch"][data-part="root"]:dir(rtl)::after {
+  translate: 50% -50%;
+}
 
 /* ---------------------------------------------------------------------------------------------
    The checkbox: its row (the label), its box and its words.
@@ -31,8 +60,10 @@
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 0 var(--space-4);
+  /* What its press reaches past its mark is placed on it (#4197, below). */
+  position: relative;
   box-sizing: border-box;
-  min-block-size: max(var(--size-chrome), var(--space-7));
+  min-block-size: max(24px, var(--size-chrome), var(--space-7));
   min-inline-size: 0;
   color: var(--text-primary);
   background-color: transparent;
@@ -108,7 +139,7 @@
 [data-scope="checkbox"][data-part="root"][data-variant="chip"] {
   display: inline-flex;
   gap: var(--space-1);
-  min-block-size: max(var(--size-chrome), var(--space-7));
+  min-block-size: max(24px, var(--size-chrome), var(--space-7));
   padding-inline: var(--space-4);
   /* A control's corner, a field's and a chip's alike (8 in Purlis, #3113). */
   border-radius: var(--radius-control);
@@ -145,6 +176,15 @@
   color: var(--text-faint);
 }
 
+/* A count, after its words (#3484): in the root's text colour, as the words are by default, and
+   not dimmed as the prototype's is, since a dimmer one is not held to 4.5:1 on the control's
+   ground or the accent's wash. A theme colours it as the `count` part. Its figures are one width,
+   so a count that changes moves nothing after it. */
+[data-scope="checkbox"][data-part="count"] {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------------------------------------------------------------------------------------------
    The radio group: a column of options, each its mark, its words and the line under them.
    --------------------------------------------------------------------------------------------- */
@@ -160,8 +200,10 @@
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 0 var(--space-4);
+  /* What its press reaches past its mark is placed on it (#4197, below). */
+  position: relative;
   box-sizing: border-box;
-  min-block-size: max(var(--size-chrome), var(--space-7));
+  min-block-size: max(24px, var(--size-chrome), var(--space-7));
   color: var(--text-primary);
   background-color: transparent;
   cursor: default;
@@ -234,8 +276,10 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-4);
+  /* What its press reaches past its mark is placed on it (#4197, below). */
+  position: relative;
   box-sizing: border-box;
-  min-block-size: max(var(--size-chrome), var(--space-7));
+  min-block-size: max(24px, var(--size-chrome), var(--space-7));
   color: var(--text-primary);
   background-color: transparent;
   cursor: default;
@@ -356,7 +400,10 @@
   box-sizing: border-box;
   max-inline-size: 100%;
   block-size: var(--size-control);
-  padding: var(--space-1);
+  /* Its padding is the length a segment's press reaches back through (below, #4173): a theme's
+     padding is written into both (`purlis_core::theme::parts`). */
+  --segment-reach: var(--space-1);
+  padding: var(--segment-reach);
   /* A control's corner (8 in Purlis, #3113). */
   border-radius: var(--radius-control);
   color: var(--text-primary);
@@ -364,10 +411,12 @@
 }
 
 [data-scope="segmented-control"][data-part="root"][data-size="sm"] {
-  block-size: max(var(--size-chrome), var(--space-7));
+  block-size: max(24px, var(--size-chrome), var(--space-7));
 }
 
 [data-scope="segment"][data-part="root"] {
+  /* What its press reaches through the control's padding is placed on it (#4173, below). */
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -383,6 +432,17 @@
   font-size: var(--font-size-base);
   white-space: nowrap;
   cursor: default;
+}
+
+/* **A segment's target is the control's whole height** (#4173, WCAG 2.5.8): a segment is drawn
+   inside the control's padding, 4px under it (20px in a 24px control, in every density), and its
+   press reaches through that padding, so it is never a target under 24px. Its words, its ground
+   and its edge stay where they are drawn. */
+[data-scope="segment"][data-part="root"]::after {
+  content: "";
+  position: absolute;
+  inset-block: calc(-1 * var(--segment-reach));
+  inset-inline: 0;
 }
 
 [data-scope="segmented-control"][data-size="sm"] [data-scope="segment"][data-part="root"] {
@@ -432,7 +492,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-4);
-  min-block-size: max(var(--size-chrome), var(--space-7));
+  min-block-size: max(24px, var(--size-chrome), var(--space-7));
   min-inline-size: 0;
   color: var(--text-secondary);
 }
@@ -441,14 +501,15 @@
   display: contents;
 }
 
-/* Where a press lands: as tall as the thumb. */
+/* Where a press lands: the 24px target (#4173, WCAG 2.5.8), the sm button's floor. The track and
+   the thumb are centred in it, so it is no taller to the eye than the thumb. */
 [data-scope="slider"][data-part="area"] {
   position: relative;
   display: flex;
   flex: 1 1 calc(var(--space-8) * 4);
   align-items: center;
   min-inline-size: calc(var(--space-8) * 2);
-  block-size: calc(var(--size-control) / 2);
+  block-size: max(24px, var(--size-chrome), var(--space-7));
 }
 
 /* The line it moves along, 4px tall. */

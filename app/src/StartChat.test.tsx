@@ -396,6 +396,13 @@ describe("a start already running (GL-1)", () => {
 
     const start = screen.getByRole("button", { name: "Starting…" });
     expect(start).toBeDisabled();
+    // The chord does nothing while it starts, so no key is shown: its room is kept, undrawn.
+    expect(start.querySelector('[data-scope="button"][data-part="shortcut"]')).toHaveAttribute(
+      "data-off",
+      "",
+    );
+    // Nor is the key named to assistive tech.
+    expect(start).not.toHaveAttribute("aria-keyshortcuts");
     await userEvent.setup().click(start);
     expect(onStart).not.toHaveBeenCalled();
   });

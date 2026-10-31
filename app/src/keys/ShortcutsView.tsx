@@ -35,6 +35,7 @@ const placeSaid = (mac: boolean): Readonly<Record<Scope, string>> => ({
   terminal: "In a chat",
   editor: "In an editor",
   form: "In a form",
+  view: "In a view tab",
 });
 
 /** One row of the sheet: an act, its key on this keyboard, and where it applies. */

@@ -1,9 +1,11 @@
 # Copyright 2026 Purlis
 # SPDX-License-Identifier: Apache-2.0
 
-# purlis's cluster operator: its namespace, its service account, what it may do, and the one
-# pod that runs it. Applied after upstream agent-sandbox (vendor/agent-sandbox/), the policy
-# (policy.yaml) and purlis's definitions (crds.yaml); docs/cluster-operator.md says how.
+# purlis's cluster operator: its namespace, its service account, what it may do, the one pod
+# that runs it, its metrics Service and the NetworkPolicy that lets only the scrapers the chart's
+# values name reach that pod (none by default). Applied after upstream agent-sandbox
+# (vendor/agent-sandbox/), the policy (policy.yaml) and purlis's definitions (crds.yaml);
+# docs/cluster-operator.md says how.
 #
 # Rendered from the chart, charts/purlis-cluster-operator/, with its default values; never
 # edited by hand. Regenerate with
@@ -12,10 +14,14 @@
 # Its image is a placeholder digest no registry holds: install it with the image set to the
 # operator's digest (docs/cluster-operator.md).
 #
-# What it may do is the ClusterRole below and nothing else. It holds no right to exec or attach
-# to a pod and none to read a Secret, and it only reads a runner's pod by name, for the link key
-# it vouches for: upstream's controller makes the runners' pods. Its own signing key is a
-# Secret the kubelet mounts in its pod, made before it is installed (docs/cluster-operator.md).
+# What it may do is the ClusterRole purlis-cluster-operator below and nothing else. It holds no
+# exec or attach right to a pod itself and none to read a Secret, and it only reads a runner's
+# pod by name, for the link key it vouches for: upstream's controller makes the runners' pods.
+# It makes each person's runner namespace and binds purlis-runner-owner, only to that person,
+# only in runner namespaces, as the policy purlis-runner-namespaces (policy.yaml) holds at
+# admission (#2055). Its own signing key is a Secret the kubelet mounts in its pod, made before
+# it is installed (docs/cluster-operator.md). The chart's forge.keySecretNames alone adds a Role
+# that reads the GitHub App keys it names (#4204); this default install names none.
 # operator/tests/the_install_manifests.rs holds every rule.
 ---
 # The namespace the chart is installed in, which Helm leaves to the person: only pods that meet
@@ -26,6 +32,24 @@ metadata:
   name: purlis-system
   labels:
     pod-security.kubernetes.io/enforce: restricted
+---
+# Source: purlis-cluster-operator/templates/networkpolicy.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: purlis-cluster-operator
+  namespace: purlis-system
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: purlis-cluster-operator
+  policyTypes:
+    - Ingress
 ---
 # Source: purlis-cluster-operator/templates/serviceaccount.yaml
 # Copyright 2026 Purlis
@@ -51,18 +75,20 @@ metadata:
     app.kubernetes.io/part-of: purlis
 rules:
   # A team's pools and people's claims: read, and a claim's status written. Claims are read
-  # from the operator's own watch; a pool is read by name when a claim names it.
+  # from the operator's own watch; a pool is read by name when a claim names it. A claim is
+  # patched only for its finalizer, runners.purlis.dev/runner, which keeps it until its runner
+  # is removed (#2055).
   - apiGroups: [runners.purlis.dev]
     resources: [pools]
     verbs: [get, list, watch]
   - apiGroups: [runners.purlis.dev]
     resources: [claims]
-    verbs: [list, watch]
+    verbs: [list, patch, watch]
   - apiGroups: [runners.purlis.dev]
     resources: [claims/status]
     verbs: [patch]
-  # Each pool's status names the key the operator signs runners' link keys with, for a desktop
-  # to pin as it adds the pool.
+  # Each pool's status names the key the operator signs runners' link keys with and its
+  # cluster, for a desktop to pin as it adds the pool, and during a roll the next key (#3305).
   - apiGroups: [runners.purlis.dev]
     resources: [pools/status]
     verbs: [patch]
@@ -73,22 +99,74 @@ rules:
     resources: [pods]
     verbs: [get]
   # The sandbox upstream made for a claim, read by its name, so a claim is followed to its pod
-  # by uid: the sandbox is the upstream claim's, and the pod the sandbox's.
+  # by uid: the sandbox is the upstream claim's, and the pod the sandbox's. Patched in its
+  # operating mode, to suspend a stopped claim's runner and run it again (#2058): RBAC cannot
+  # narrow this to that field, so the policy in sandbox-policy.yaml (policy.yaml) does.
   - apiGroups: [agents.x-k8s.io]
     resources: [sandboxes]
-    verbs: [get]
-  # The policy's binding, by name only: the operator acts only on Claims admitted under it.
+    verbs: [get, patch]
+  # The policies' bindings, by name only: the operator acts only on Claims admitted under the
+  # policy on Claims, and in runner namespaces made under the policy on runner namespaces.
   - apiGroups: [admissionregistration.k8s.io]
     resources: [validatingadmissionpolicybindings]
-    resourceNames: [purlis-claims-use-their-pool]
+    resourceNames: [purlis-claims-use-their-pool, purlis-runner-namespaces]
     verbs: [get, list, watch]
-  # Upstream's objects a claim becomes: watched, so a claim is looked at again when one of
-  # them changes or goes; each read by name first, since the operator changes only objects it
-  # made, then made or applied server-side. Deleting them is the cluster's garbage
-  # collector's, through their owners: the operator holds no delete.
+  # Upstream's objects a claim becomes, in its requester's runner namespace: watched, so a
+  # claim is looked at again when one of them changes or goes; each read by name first, since
+  # the operator changes only objects it made, then made or applied server-side, and deleted
+  # by uid by a deleted claim's finalizer (#2055).
   - apiGroups: [extensions.agents.x-k8s.io]
     resources: [sandboxclaims, sandboxtemplates, sandboxwarmpools]
-    verbs: [create, get, list, patch, watch]
+    verbs: [create, delete, get, list, patch, watch]
+  # Each person's runner namespace, purlis-runners-<hash> (#2055): made once, and read to
+  # check it is the one the operator made for them. Never changed or deleted. kube-system is
+  # read too, once as the operator starts, for its uid, which names the cluster on every Pool
+  # and in every statement (#3305).
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [create, get]
+  # In it, the binding that gives the person alone purlis-runner-owner, and their quota:
+  # made, then read and brought back to what they should say, by name only.
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [rolebindings]
+    verbs: [create]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [rolebindings]
+    resourceNames: [purlis-runner-owner]
+    verbs: [get, patch]
+  - apiGroups: [""]
+    resources: [resourcequotas]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [resourcequotas]
+    resourceNames: [purlis-person]
+    verbs: [get, patch]
+  # The one role it may bind, which it holds none of: a person's own runners.
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterroles]
+    resourceNames: [purlis-runner-owner]
+    verbs: [bind]
+---
+# Source: purlis-cluster-operator/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: purlis-runner-owner
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+  # create, which kubectl exec asks for; get too, which a websocket exec asks for where the
+  # cluster does not authorize it as create.
+  - apiGroups: [""]
+    resources: [pods/exec]
+    verbs: [create, get]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
 ---
 # Source: purlis-cluster-operator/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -106,6 +184,27 @@ subjects:
   - kind: ServiceAccount
     name: purlis-cluster-operator
     namespace: purlis-system
+---
+# Source: purlis-cluster-operator/templates/service.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: v1
+kind: Service
+metadata:
+  name: purlis-cluster-operator-metrics
+  namespace: purlis-system
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: purlis-cluster-operator
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+      protocol: TCP
 ---
 # Source: purlis-cluster-operator/templates/deployment.yaml
 # Copyright 2026 Purlis
@@ -142,19 +241,27 @@ spec:
           type: RuntimeDefault
       # The key the operator signs runners' link keys with (#2056), made once by whoever
       # installs it (docs/cluster-operator.md) and mounted by the kubelet: the operator holds no
-      # right to read a Secret.
+      # right to read it. The whole Secret is mounted, key.pem and, while a team admin
+      # rolls the key, next.pem (#3305), and the kubelet refreshes it, so a roll needs no restart.
       volumes:
         - name: signing-key
           secret:
             secretName: purlis-cluster-operator-signing-key
             # 0440, in decimal: YAML readers disagree on a leading zero.
             defaultMode: 288
-            items:
-              - key: key.pem
-                path: key.pem
       containers:
         - name: operator
           image: ghcr.io/purlis/purlis-cluster-operator@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          # Its metrics (#3737), served at /metrics; the Service purlis-cluster-operator-metrics
+          # reaches them.
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+          env:
+            # What each person's runners may hold at once (#2055), as JSON.
+            - name: PURLIS_PER_PERSON_QUOTA
+              value: "{\"claims\":5,\"cpu\":\"4\",\"memory\":\"8Gi\",\"storage\":\"50Gi\"}"
           resources:
             limits:
               memory: 256Mi
@@ -173,3 +280,7 @@ spec:
             - name: signing-key
               mountPath: /var/run/purlis-cluster-operator/signing-key
               readOnly: true
+---
+# Source: purlis-cluster-operator/templates/forge-key-reader.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0

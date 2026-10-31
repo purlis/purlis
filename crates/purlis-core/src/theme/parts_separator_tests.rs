@@ -134,8 +134,14 @@ fn a_state_is_keyed_on_the_panel_library_s_own_marks() {
         )),
         "{sheet}"
     );
-    assert!(!sheet.contains("[data-hovered]"), "{sheet}");
-    assert!(!sheet.contains("[data-pressed]"), "{sheet}");
+    // Read on the separator's own rules: Purlis keys its card rows' states on React Aria's
+    // marks (#3669).
+    let own: Vec<&str> = sheet
+        .lines()
+        .filter(|line| line.contains("panel-separator"))
+        .collect();
+    assert!(own.iter().all(|line| !line.contains("[data-hovered]")), "{sheet}");
+    assert!(own.iter().all(|line| !line.contains("[data-pressed]")), "{sheet}");
 }
 
 // ---------------------------------------------------------------------------------------

@@ -21,6 +21,21 @@ use tokio::process::{Child, ChildStdin, ChildStdout};
 /// The check made before each connection: `Err` with why, in words, refuses it.
 pub type BeforeEach = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
 
+/// **Why a check refused a connection** (#3292): in words, or because the far end's key is no
+/// longer the one it was paired with, which the link tells as a changed key
+/// ([`purlis_session_protocol::hostlink::KeyNoLongerHeld`]), or because the far end is gone for
+/// good, which the link tells once and does not try again
+/// ([`purlis_session_protocol::hostlink::FarEndGone`], #4149).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotChecked {
+    Refused(String),
+    KeyChanged(String),
+    Gone(String),
+}
+
+/// [`BeforeEach`], whose refusal can say the far end's key changed ([`NotChecked`]).
+pub type BeforeEachChecked = Arc<dyn Fn() -> Result<(), NotChecked> + Send + Sync>;
+
 /// What each run of the command is given, made just before it runs: its variables, those it is
 /// not handed from this process, and what has to be kept until it has ended (a folder made for
 /// it). `Err` with why, in words, refuses the connection.
@@ -41,7 +56,7 @@ pub struct Prepared {
 pub struct CommandConnector {
     program: std::path::PathBuf,
     args: Vec<String>,
-    before_each: BeforeEach,
+    before_each: BeforeEachChecked,
     prepare: Option<Prepare>,
 }
 
@@ -50,6 +65,20 @@ impl CommandConnector {
         program: impl Into<std::path::PathBuf>,
         args: Vec<String>,
         before_each: BeforeEach,
+    ) -> CommandConnector {
+        CommandConnector::checked(
+            program,
+            args,
+            Arc::new(move || before_each().map_err(NotChecked::Refused)),
+        )
+    }
+
+    /// [`CommandConnector::new`], with a check that can refuse a far end as its key changed
+    /// ([`NotChecked::KeyChanged`], #3292).
+    pub fn checked(
+        program: impl Into<std::path::PathBuf>,
+        args: Vec<String>,
+        before_each: BeforeEachChecked,
     ) -> CommandConnector {
         CommandConnector {
             program: program.into(),
@@ -87,7 +116,15 @@ impl Connector for CommandConnector {
             tokio::task::spawn_blocking(move || checked())
                 .await
                 .map_err(std::io::Error::other)?
-                .map_err(std::io::Error::other)?;
+                .map_err(|why| match why {
+                    NotChecked::Refused(why) => std::io::Error::other(why),
+                    NotChecked::KeyChanged(why) => std::io::Error::other(
+                        purlis_session_protocol::hostlink::KeyNoLongerHeld(why),
+                    ),
+                    NotChecked::Gone(why) => {
+                        std::io::Error::other(purlis_session_protocol::hostlink::FarEndGone(why))
+                    }
+                })?;
             let prepared = match this.prepare.clone() {
                 Some(prepare) => Some(
                     tokio::task::spawn_blocking(move || prepare())

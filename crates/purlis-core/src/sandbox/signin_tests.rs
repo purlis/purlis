@@ -64,6 +64,7 @@ fn a_claude_code_chats_commands_cannot_read_or_write_its_profiles_sign_in_file()
         config: Some(profile.clone()),
         data: None,
         sandbox_only: None,
+        state: None,
     });
 
     let file = profile.join(".credentials.json").display().to_string();
@@ -188,8 +189,8 @@ fn the_profile_page_says_plainly_where_commands_can_read_a_profiles_sign_in() {
     assert_eq!(
         signin::commands_can_read("claude").as_deref(),
         Some(
-            "The commands this profile's chats run can read its sign-in: on macOS purlis cannot \
-             keep Claude Code's sign-in from the commands it runs."
+            "The commands this profile's chats run can read its sign-in: on macOS and on a \
+             runner purlis cannot keep Claude Code's sign-in from the commands it runs."
         )
     );
     // A harness purlis does not ship is not known to keep it from them.

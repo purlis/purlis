@@ -631,6 +631,8 @@ fn ending_a_chat_is_the_window_s_alone_and_never_in_the_link_s_client() {
         "restart_chat",
         "start_chat_fresh",
         "ask_chat_restart",
+        "move_chat",
+        "move_chat_now",
     ] {
         let called = format!("(\"{command}\"");
         assert!(bindings.contains(&called), "the window's: {command}");
@@ -766,6 +768,7 @@ fn every_command_that_changes_a_standing_dispatch_grant_is_the_window_s_alone() 
 const TAKES_A_CHANNEL: &[&str] = &[
     "watch_session",
     "get_project",
+    "clone_repo",
     "create_project_on_forge",
     "publish_project",
 ];

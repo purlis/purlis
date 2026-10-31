@@ -12,11 +12,12 @@ import { useState, type ReactNode } from "react";
 import { expect, waitFor } from "storybook/test";
 import { Bot, Code, SquareTerminal } from "lucide-react";
 import { cellInTest } from "../../../.storybook/matrix";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { Checkbox, CheckboxGroup, RovingCheckbox } from "./Checkbox";
 import { OptionCard, OptionCards, Radio, RadioGroup, Segment, SegmentedControl } from "./Radio";
 import { Slider } from "./Slider";
 import { Switch } from "./Switch";
+import { Button } from "../button/Button";
 
 /** A column the story's controls stand in, as a form's rows do. */
 function Column({ children }: { children: ReactNode }) {
@@ -122,6 +123,8 @@ function Chips() {
           key={value}
           at={at}
           variant="chip"
+          // A count after the words (#3484), and none on a chip with nothing to count.
+          count={[2, 3, undefined][at]}
           isSelected={on.has(value)}
           onChange={(to) => tick(value, to)}
         >
@@ -132,16 +135,18 @@ function Chips() {
   );
 }
 
-/** One Tab stop for the row; the arrows move along it; Space ticks the chip the keyboard is on. */
+/** One Tab stop for the row; the arrows move along it; Space ticks the chip the keyboard is on.
+ *  A chip's count follows its words and describes it, never part of its name (#3484). */
 export const ChipsOverAList: Story = {
   render: () => <Chips />,
   play: async ({ canvas, userEvent }) => {
     const needs = canvas.getByRole("checkbox", { name: "needs you" });
     const working = canvas.getByRole("checkbox", { name: "working" });
+    await expect(needs).toHaveAccessibleDescription("2");
     await userEvent.tab();
     await expect(needs).toHaveFocus();
     await userEvent.keyboard("{ArrowRight}");
-    await waitFor(() => expect(working).toHaveFocus());
+    await untilFocused(() => working, "Right moves the keyboard to working");
     expectFocusInSight();
     await userEvent.keyboard(" ");
     await waitFor(() => expect(working).not.toBeChecked());
@@ -275,7 +280,7 @@ const segmentsByKeyboard: Story["play"] = async ({ canvas, userEvent }) => {
   // chrome's and never under 24px.
   const tall =
     group.dataset.size === "sm"
-      ? drawnHeight("max(var(--size-chrome), var(--space-7))")
+      ? drawnHeight("max(24px, var(--size-chrome), var(--space-7))")
       : drawnHeight("var(--size-control)");
   await expect(group.getBoundingClientRect().height).toBeCloseTo(tall, 0);
   const segments = canvas.getAllByRole("radio").map((one) => one.closest("label") as Element);
@@ -298,6 +303,143 @@ export const SegmentedControlMd: Story = {
 export const SegmentedControlSm: Story = {
   render: () => <Segments size="sm" />,
   play: segmentsByKeyboard,
+};
+
+/**
+ * **Every choice beside a small button** (#4173, WCAG 2.5.8): the compact density draws the
+ * chrome at 18px, so a choice's row and a small segmented control take the sm button's floor, 24
+ * CSS px. Each is a 24px target by itself in every cell: a box's, a chip's, a radio's and a
+ * switch's row is its label, which takes the press; a slider's press lands on its area, which is
+ * 24px tall around the track; and a segment's reaches through the control's padding. Each is
+ * hit-tested at its edges, so axe's `target-size` passes with no spacing to lean on.
+ */
+function BesideASmallButton() {
+  const [level, setLevel] = useState("you");
+  return (
+    <div style={{ display: "grid", gap: "var(--space-1)", justifyItems: "start", width: 360 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+        <Checkbox>Sign commits</Checkbox>
+        <Button size="sm">Apply</Button>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+        <Checkbox variant="chip">working</Checkbox>
+        <Switch>Auto-save</Switch>
+      </div>
+      <RadioGroup aria-label="Density" value="compact" onChange={() => {}}>
+        <Radio value="compact">Compact</Radio>
+      </RadioGroup>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+        <SegmentedControl size="sm" aria-label="Level" value={level} onChange={setLevel}>
+          <Segment value="you">You</Segment>
+          <Segment value="workspace">Workspace</Segment>
+        </SegmentedControl>
+        <Button size="sm">Reset</Button>
+      </div>
+      <Slider
+        label="Window text size"
+        minValue={10}
+        maxValue={24}
+        value={14}
+        onChange={() => {}}
+        shown={(at) => `${at}px`}
+        spoken={(at) => `${at} pixels`}
+      />
+    </div>
+  );
+}
+
+export const ChoicesBesideASmallButton: Story = {
+  render: () => <BesideASmallButton />,
+  play: async ({ canvas, canvasElement }) => {
+    const rows = [
+      ...canvasElement.querySelectorAll<HTMLElement>(
+        '[data-scope="checkbox"][data-part="root"], [data-scope="radio"][data-part="root"], [data-scope="switch"][data-part="root"], [data-scope="slider"][data-part="root"]',
+      ),
+    ];
+    // A box, a chip, a radio, a switch and a slider.
+    await expect(rows).toHaveLength(5);
+    for (const one of [...rows, ...canvas.getAllByRole("button")])
+      await expect(one.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
+    // The slider's press lands on its area, which is the target, not its row: a press at the
+    // area's top and bottom edges is the area's.
+    const area = canvasElement.querySelector<HTMLElement>(
+      '[data-scope="slider"][data-part="area"]',
+    ) as HTMLElement;
+    const pressed = area.getBoundingClientRect();
+    await expect(pressed.height).toBeGreaterThanOrEqual(24);
+    for (const y of [pressed.top + 0.5, pressed.bottom - 0.5]) {
+      const hit = document.elementFromPoint(pressed.left + pressed.width / 2, y);
+      await expect(hit?.closest('[data-scope="slider"][data-part="area"]')).toBe(area);
+    }
+    // A segment is drawn inside the control's padding; a press lands on it through the padding,
+    // so its target is the control's whole height, at least 24px.
+    const control = canvas.getByRole("radiogroup", { name: "Level" });
+    const outer = control.getBoundingClientRect();
+    await expect(outer.height).toBeGreaterThanOrEqual(24);
+    const segments = [
+      ...control.querySelectorAll<HTMLElement>('[data-scope="segment"][data-part="root"]'),
+    ];
+    await expect(segments).toHaveLength(2);
+    for (const one of segments) {
+      const x = one.getBoundingClientRect().left + one.getBoundingClientRect().width / 2;
+      for (const y of [outer.top + 0.5, outer.bottom - 0.5]) {
+        const hit = document.elementFromPoint(x, y);
+        await expect(hit?.closest('[data-scope="segment"][data-part="root"]')).toBe(one);
+      }
+    }
+  },
+};
+
+/**
+ * **A choice with no words is a 24px target across too** (#4197, WCAG 2.5.8): a row's selection
+ * box, a radio or a switch named by `aria-label` is drawn its mark's size (a 14px box), and its
+ * press reaches a 24 by 24 square around it, which changes nothing it draws. Each is hit-tested
+ * at that square's corners.
+ */
+function Unlabelled() {
+  // Far enough apart that one's square is not another's, and in from the page's edge, so each
+  // square's corners are on the page.
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--space-8)",
+        padding: "var(--space-8)",
+      }}
+    >
+      <Checkbox aria-label="Choose the row" />
+      <RadioGroup aria-label="Density" value="compact" onChange={() => {}}>
+        <Radio value="compact" aria-label="Compact" />
+      </RadioGroup>
+      <Switch aria-label="Auto-save" />
+    </div>
+  );
+}
+
+export const ChoicesWithNoWords: Story = {
+  render: () => <Unlabelled />,
+  play: async ({ canvas }) => {
+    const roots = [
+      canvas.getByRole("checkbox", { name: "Choose the row" }),
+      canvas.getByRole("radio", { name: "Compact" }),
+      canvas.getByRole("switch", { name: "Auto-save" }),
+    ].map((control) => control.closest('[data-part="root"]') as HTMLElement);
+    for (const root of roots) {
+      const box = root.getBoundingClientRect();
+      const [x, y] = [box.left + box.width / 2, box.top + box.height / 2];
+      // The corners of the 24 by 24 square around its centre, half a px in.
+      for (const [dx, dy] of [
+        [-11.5, -11.5],
+        [11.5, -11.5],
+        [-11.5, 11.5],
+        [11.5, 11.5],
+      ]) {
+        const hit = document.elementFromPoint(x + dx, y + dy);
+        await expect(hit?.closest('[data-part="root"]'), root.dataset.scope).toBe(root);
+      }
+    }
+  },
 };
 
 function TextSize() {
