@@ -489,6 +489,13 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             "repo_left_out": one.repo_left_out.iter()
                                 .map(|row| left_out_json(one, row, row_json(row)))
                                 .collect::<Vec<_>>(),
+                            // Its own catalogue, which purlis's budget never counts (#3324).
+                            "own": one.own.map(|own| json!({
+                                "skills": own.skills,
+                                "chars": own.chars,
+                                "manual": own.manual,
+                                "said": own.said(one.harness.title()),
+                            })),
                         })).collect::<Vec<_>>(),
                         // A declared harness skills are not supported on, with why (SK-30).
                         "not_supported": list.not_supported.iter().map(|one| json!({
@@ -508,6 +515,10 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             outside_table(&one.rows)
                         );
                     }
+                    // What its own catalogue costs, beside purlis's budget (#3324).
+                    if let Some(said) = one.own.and_then(|own| own.said(one.harness.title())) {
+                        println!("{}", harness_line(&said));
+                    }
                     // What a repo takes from its chats, never a silent drop (SK-53).
                     if !one.repo_left_out.is_empty() {
                         print!(
@@ -519,7 +530,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
                 // Never a silent drop (SK-30): a declared harness's chats get no skills, and why.
                 for one in &list.not_supported {
-                    println!("\n{}", not_supported_line(&one.said));
+                    println!("\n{}", harness_line(&one.said));
                 }
             }
             Ok(0)
@@ -1137,9 +1148,10 @@ fn already_in(name: &str, lifecycle: &Lifecycle) -> Markup {
         .own(".")
 }
 
-/// A declared harness's line that skills are not supported on it (SK-30): its title is the
-/// project's words, so the line is escaped.
-fn not_supported_line(said: &str) -> Markup {
+/// A line of the core's about a harness, whose title is the project's words, so the line is
+/// escaped: that skills are not supported on a declared harness (SK-30), and what a harness's
+/// own catalogue holds beside purlis's budget (#3324).
+fn harness_line(said: &str) -> Markup {
     Markup::new().text(said)
 }
 
