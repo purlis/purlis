@@ -65,6 +65,8 @@ let signedIn = false;
 /** The steps the core has said and the window has not yet asked for. */
 let said: PoolSignInStep[];
 let waiting: ((step: PoolSignInStep) => void) | undefined;
+/** What each typed call waits on, in turn, where a test holds them; an error refuses it. */
+let typing: Promise<void>[];
 
 /** The core says `step`. */
 function says(step: PoolSignInStep) {
@@ -80,6 +82,7 @@ beforeEach(() => {
   profilesAsked = 0;
   said = [];
   waiting = undefined;
+  typing = [];
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
     asked.push({ cmd, args: a });
@@ -103,6 +106,7 @@ beforeEach(() => {
       };
     }
     if (cmd === "pool_sign_in_start") return 7;
+    if (cmd === "pool_sign_in_type") return typing.shift() ?? null;
     if (cmd === "pool_sign_in_next") {
       const next = said.shift();
       if (next) return next;
@@ -289,6 +293,69 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     expect(calls("pool_sign_in_type")).toEqual([{ flow: 7, text: "1\r" }]);
     await userEvent.click(within(opened).getByRole("button", { name: "Cancel" }));
     expect(calls("pool_sign_in_cancel")).toEqual([{ flow: 7 }]);
+  });
+
+  it("passes what is typed on one call at a time, in order (#4123)", async () => {
+    const opened = await strip();
+    says({ at: "could-not-follow", said: "Choose your sign-in method: [1] [2]" });
+    const terminal = await within(opened).findByRole("group", {
+      name: "The runner's terminal on builds",
+    });
+    await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
+    let letFirstGo = () => {};
+    typing = [new Promise((go) => (letFirstGo = go))];
+    const type = within(terminal).getByRole("button", { name: "Type 1" });
+
+    await userEvent.click(type);
+    await userEvent.click(type);
+    await waitFor(() => expect(calls("pool_sign_in_type")).toHaveLength(1));
+    // The second waits for the first to have been passed on.
+    await act(() => new Promise((done) => setTimeout(done, 20)));
+    expect(calls("pool_sign_in_type")).toHaveLength(1);
+
+    letFirstGo();
+
+    await waitFor(() => expect(calls("pool_sign_in_type")).toHaveLength(2));
+  });
+
+  it("carries on typing after a key refused, and says why (#4123)", async () => {
+    const opened = await strip();
+    says({ at: "could-not-follow", said: "Choose your sign-in method: [1] [2]" });
+    const terminal = await within(opened).findByRole("group", {
+      name: "The runner's terminal on builds",
+    });
+    await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
+    typing = [Promise.reject(new Error("that is too much to type"))];
+    const type = within(terminal).getByRole("button", { name: "Type 1" });
+
+    await userEvent.click(type);
+    expect(await within(opened).findByRole("alert")).toHaveTextContent("too much to type");
+
+    await userEvent.click(type);
+    await waitFor(() => expect(calls("pool_sign_in_type")).toHaveLength(2));
+  });
+
+  it("starts a Copilot sign-in purlis could not follow again in the terminal, with its plan (#4160)", async () => {
+    render(<PoolProfiles pool="builds" plane={undefined} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Sign open in to GitHub Copilot on pool builds" }),
+    );
+    const opened = await screen.findByRole("group", { name: "Signing open in on builds" });
+
+    says({ at: "could-not-follow", said: "Select GitHub deployment type" });
+
+    await within(opened).findByRole("group", { name: "The runner's terminal on builds" });
+    await waitFor(() =>
+      expect(calls("pool_sign_in_start")).toEqual([
+        { pool: "builds", name: "open", provider: "github-copilot", terminal: null },
+        {
+          pool: "builds",
+          name: "open",
+          provider: "github-copilot",
+          terminal: { columns: 80, rows: 16 },
+        },
+      ]),
+    );
   });
 
   it("offers no Cancel while it is checked, as the login has ended (#4043)", async () => {
