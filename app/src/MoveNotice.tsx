@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MoveSignIn, PlaneId, PlanRow } from "./bindings";
 import {
   dismissMovedAfterSignIn,
@@ -114,6 +114,15 @@ function WaitsOnASignIn({
 }) {
   // The strip, once asked for, and the plan it signs in to where the harness serves several.
   const [open, setOpen] = useState<{ plan?: string }>();
+  // Choose another plan goes with the strip it was pressed under: the keyboard moves to the first
+  // plan, once (#4278).
+  const firstPlan = useRef<HTMLButtonElement>(null);
+  const leftAPlan = useRef(false);
+  useEffect(() => {
+    if (open !== undefined || !leftAPlan.current) return;
+    leftAPlan.current = false;
+    firstPlan.current?.focus();
+  }, [open]);
   // A login approved in the browser has no way back to the runner from a terminal: it runs its
   // device-code flow there (#4044).
   const inTerminal = (plan?: string) =>
@@ -127,12 +136,18 @@ function WaitsOnASignIn({
   const [onePlan, ...otherPlans] = asked.plans;
   const signIn: NoticeAction =
     onePlan !== undefined
-      ? toPlan(onePlan)
+      ? { ...toPlan(onePlan), button: firstPlan }
       : {
           label: "Sign in",
           onPress: DRIVEN.has(asked.kind) ? () => setOpen({}) : () => inTerminal(),
         };
-  const anotherPlan = { label: "Choose another plan", onPress: () => setOpen(undefined) };
+  const anotherPlan = {
+    label: "Choose another plan",
+    onPress: () => {
+      leftAPlan.current = true;
+      setOpen(undefined);
+    },
+  };
   const tryIt = { label: "Try the move", onPress: () => signedInForMove(plane, session) };
   const cancel = { label: "Cancel move", onPress: () => putAwayMove(plane, session) };
   return (

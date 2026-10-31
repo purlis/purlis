@@ -777,6 +777,26 @@ fn a_cancelled_sign_in_ends_its_login() {
     assert_eq!(next(&driving), Event::Cancelled);
 }
 
+/// **A sign-in that had to stop says why, as a failure** (#4277): the person cancelled nothing.
+#[cfg(unix)]
+#[test]
+fn a_sign_in_that_had_to_stop_fails_with_its_reason() {
+    let login = stand_in("printf '%s' \"$PRINTED\"; exec sleep 600");
+    let driving = drive_with(&login, "claude", None, None, || Standing::SignedIn).unwrap();
+    assert!(matches!(next(&driving), Event::Open { .. }));
+    assert_eq!(next(&driving), Event::AskCode);
+
+    driving.stop("its pool changed");
+
+    assert!(driving.paste("a code").is_err(), "it takes no more input");
+    assert_eq!(
+        next(&driving),
+        Event::Failed {
+            why: "its pool changed".to_owned()
+        }
+    );
+}
+
 /// **What the person's terminal shows is passed on as it is printed** (#4043): escapes and all,
 /// read for nothing, and what it printed is kept nowhere.
 #[test]

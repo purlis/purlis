@@ -204,6 +204,32 @@ describe("a move waiting on its profile's sign-in", () => {
     expect(calls("put_away_chat_move")).toEqual([]);
   });
 
+  it("keeps the keyboard in the notice after Choose another plan, on the first plan (#4278)", async () => {
+    await notice(opencode());
+    const first = screen.getByRole("button", { name: "Sign in to ChatGPT" });
+    expect(first, "a notice that appears takes no keyboard").not.toHaveFocus();
+    await userEvent.click(first);
+    await screen.findByRole("group", { name: "Signing work in on builds" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Choose another plan" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Sign in to ChatGPT" })).toHaveFocus(),
+    );
+  });
+
+  it("does not take the keyboard for a strip closed another way after a plan was left (#4278)", async () => {
+    await notice(opencode());
+    await userEvent.click(screen.getByRole("button", { name: "Sign in to ChatGPT" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Choose another plan" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Sign in to ChatGPT" }));
+    const strip = await screen.findByRole("group", { name: "Signing work in on builds" });
+
+    await userEvent.click(within(strip).getByRole("button", { name: "Open in terminal" }));
+
+    expect(await screen.findByRole("button", { name: "Sign in to ChatGPT" })).not.toHaveFocus();
+  });
+
   it("a refused Try the move reads the core's moves back, never inventing a failure", async () => {
     mockIPC((cmd, args) => {
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });

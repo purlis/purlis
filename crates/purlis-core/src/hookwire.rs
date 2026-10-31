@@ -2268,12 +2268,18 @@ pub enum Answer {
     /// `waiting` is set where the person is already being asked about this pair for an
     /// earlier task of this chat, by that task's name: **this** ask was not held, because the
     /// person saw one brief and only that one starts.
+    ///
+    /// `held_by` is set where no grant is the question: the asking chat runs on that pool, so
+    /// the person approves this ask in the window, whatever the persona (#4148). An older
+    /// purlis on either end ignores or lacks it, and says the grant's words.
     NeedsGrant {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         from: Option<String>,
         to: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         waiting: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        held_by: Option<String>,
     },
     /// Nothing has started **yet**: every check let the dispatch through and its grant stands,
     /// and this machine is short on memory (#1467). The app holds it and decides it again once

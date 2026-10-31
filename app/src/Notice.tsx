@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type Ref,
 } from "react";
 import { createPortal } from "react-dom";
 import { PersonaMark } from "./PersonaMark";
@@ -101,6 +102,9 @@ export type NoticeAction = {
   allows?: boolean;
   /** The one way on a card Notice leads with (#3344): drawn as the filled primary. */
   primary?: boolean;
+  /** The button itself, for a caller that moves the keyboard to it once the way out it pressed
+   *  has gone (#4278, WCAG 2.4.3). */
+  button?: Ref<HTMLButtonElement>;
   /** A card Notice's disclosure (its Details, #3344): a ghost button led by a chevron that
    *  points down while what it opens is open. Needs `opens`. */
   disclosure?: boolean;
@@ -273,6 +277,7 @@ export function Notice(props: NoticeProps) {
             {fixes?.map((fix) => (
               <Button
                 key={fix.label}
+                ref={fix.button}
                 size="sm"
                 variant={
                   fix.allows === true
@@ -343,6 +348,7 @@ export function Notice(props: NoticeProps) {
       {fixes?.map((fix) => (
         <Button
           key={fix.label}
+          ref={fix.button}
           size="sm"
           variant={fix.allows === true ? "grants" : "secondary"}
           data-way="fix"

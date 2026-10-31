@@ -467,6 +467,40 @@ fn the_largest_proposed_change_fits_on_one_line_of_the_socket() {
     );
 }
 
+/// **The pool a dispatch is held on is added to the line and to nothing else** (#4148): it is
+/// absent where there is none, and a line of an older app without it still reads.
+#[test]
+fn a_held_answer_names_its_pool_only_where_it_has_one() {
+    let on_a_pool = Answer::NeedsGrant {
+        from: None,
+        to: "devops".to_owned(),
+        waiting: None,
+        held_by: Some("builds".to_owned()),
+    };
+    let line = serde_json::to_string(&on_a_pool).expect("written");
+    assert_eq!(
+        line,
+        r#"{"needs_grant":{"to":"devops","held_by":"builds"}}"#
+    );
+    assert_eq!(
+        serde_json::from_str::<Answer>(&line).expect("read"),
+        on_a_pool
+    );
+
+    let older = r#"{"needs_grant":{"to":"devops"}}"#;
+    let read = serde_json::from_str::<Answer>(older).expect("an older app's line");
+    assert_eq!(
+        read,
+        Answer::NeedsGrant {
+            from: None,
+            to: "devops".to_owned(),
+            waiting: None,
+            held_by: None,
+        }
+    );
+    assert_eq!(serde_json::to_string(&read).expect("written"), older);
+}
+
 #[test]
 fn a_written_answer_reads_back_as_written() {
     let answer = Answer::Written {

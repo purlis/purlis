@@ -801,6 +801,7 @@ fn a_handoff_to_another_persona_needs_the_grant_and_starts_nothing_until_it_is_a
             from: Some("steward".to_owned()),
             to: "devops".to_owned(),
             waiting: None,
+            held_by: None,
         }
     );
     assert_eq!(told, None, "nothing was started, so nothing is told");
@@ -836,6 +837,7 @@ fn a_handoff_to_another_persona_needs_the_grant_and_starts_nothing_until_it_is_a
             from: Some("steward".to_owned()),
             to: "devops".to_owned(),
             waiting: Some("handoff to beta".to_owned()),
+            held_by: None,
         }
     );
 
@@ -3923,6 +3925,7 @@ fn a_dispatch_to_another_persona_needs_a_grant_and_starts_nothing() {
             from: Some("steward".to_owned()),
             to: "devops".to_owned(),
             waiting: None,
+            held_by: None,
         }
     );
     assert_eq!(told, None, "nothing was started, so nothing is told");
@@ -5888,6 +5891,7 @@ fn an_allow_starts_the_dispatch_that_was_held_on_the_brief_the_person_read() {
             from: Some("steward".to_owned()),
             to: "devops".to_owned(),
             waiting: None,
+            held_by: None,
         }
     );
     // A second ask across the pair is not queued beside it: the person saw one brief.
@@ -5906,6 +5910,7 @@ fn an_allow_starts_the_dispatch_that_was_held_on_the_brief_the_person_read() {
             from: Some("steward".to_owned()),
             to: "devops".to_owned(),
             waiting: Some("check the cluster".to_owned()),
+            held_by: None,
         }
     );
     assert_eq!(held.chats().open_now().len(), before, "nothing has started");
