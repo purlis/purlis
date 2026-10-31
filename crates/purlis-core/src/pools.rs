@@ -252,6 +252,10 @@ pub fn follow(
             pool.image().as_str()
         )));
     }
+    // Made on another engine, the new runner would take the pool from the one it runs on (#4166).
+    if let Ok(kept) = runners::runner_for(config_root, name) {
+        on_its_engine(docker, &kept)?;
+    }
     let successor = crate::dockerpool::successor_name(name, image);
     // What a follow that stopped short of keeping its runner left goes first (#2869).
     clear_leftovers_locked(config_root, docker, &successor, &locked)?;
@@ -284,6 +288,22 @@ pub fn follow(
             )),
         }),
     }
+}
+
+/// **Refuses unless Docker reaches the engine that made `kept`** (#4166): nothing is made in its
+/// place or removed on another's word. A runner kept before its engine was kept passes.
+fn on_its_engine(docker: &Docker, kept: &Kept) -> Result<(), Refused> {
+    let Some(made_on) = &kept.engine else {
+        return Ok(());
+    };
+    if docker.engine_id().ok().flatten().as_ref() == Some(made_on) {
+        return Ok(());
+    }
+    Err(Refused::Other(format!(
+        "Docker does not reach the engine runner {} was made on, so it stays as it is until it \
+         does",
+        kept.name()
+    )))
 }
 
 /// **Keeps with `kept`, a runner just made, the engine that made it and its home's `CreatedAt`**
@@ -578,6 +598,8 @@ pub fn drain(
     let locked = runners::lock(config_root);
     match runners::named(config_root, name)? {
         Some(kept) if kept.draining => {
+            // Another engine knows nothing of its container or its home (#4166).
+            on_its_engine(docker, &kept)?;
             let peer = if kept.unpaired {
                 None
             } else {

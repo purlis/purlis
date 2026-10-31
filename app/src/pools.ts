@@ -389,7 +389,7 @@ export function removedSaid(name: string, homeKept: boolean): string {
 
 /** What a row says of a runner made on another engine than Docker reaches now (#4166). */
 export function anotherEngineSaid(name: string): string {
-  return `Docker points at another engine than the one pool ${name}'s runner was made on. Point Docker back at that engine and its chats come back. If that engine is gone for good, remove the pool and add it again.`;
+  return `Docker points at another engine than the one pool ${name}'s runner was made on. Point Docker back at that engine and its chats come back. If that engine is gone for good, remove the pool and add it again; anything still on that engine stays there.`;
 }
 
 /** What a row says once its runner was made again, by whether its sign-ins were carried. */

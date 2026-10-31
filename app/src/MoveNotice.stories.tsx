@@ -11,7 +11,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ChatMove } from "./bindings";
-import { forgetMove, heardMove } from "./chatMoves";
+import { dismissMovedAfterSignIn, forgetMove, heardMove, movedAfterSignIn } from "./chatMoves";
 import { MoveNotice } from "./MoveNotice";
 
 const PLANE = "/home/op/project";
@@ -53,6 +53,19 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+/** **The move went ahead after its sign-in** (#4135): its line, until it is dismissed. */
+export const MovedAfterASignIn: Story = {
+  beforeEach: () => {
+    heardMove(PLANE, { ...WAITING, stage: "switching", sign_in: null });
+    heardMove(PLANE, { ...WAITING, stage: "over", sign_in: null });
+    movedAfterSignIn(PLANE, 3, 3);
+    return () => dismissMovedAfterSignIn(PLANE, 3);
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByText("Moved to pool builds.");
+  },
+};
 
 /** **The move waits on work's sign-in on builds**: its line, with Sign in and Cancel move. */
 export const WaitsOnASignIn: Story = {

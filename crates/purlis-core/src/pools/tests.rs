@@ -2200,8 +2200,7 @@ fn a_runner_whose_home_went_with_it_is_made_again_to_sign_in_again() {
     );
 }
 
-/// A pool added on engine `engine-a` whose home printed [`HOME_CREATED`] as it was made (#4166,
-/// #4167), then its container removed outside purlis with its home left.
+/// What a home printed as it was made in the tests below (#4167).
 const HOME_CREATED: &str = "2099-06-01T10:00:00+02:00";
 
 /// Docker's home volume, as it is, printing `at` as when it was made.
@@ -2211,6 +2210,8 @@ fn home_prints(fake: &FakeDocker, at: &str) {
     fake.set("volume", &volume.to_string());
 }
 
+/// A pool added on engine `engine-a` whose home printed [`HOME_CREATED`] as it was made (#4166,
+/// #4167), then its container removed outside purlis with its home left.
 fn removed_with_its_making_kept(config: &Path, fake: &FakeDocker, ours: &Pinned) -> Kept {
     fake.set("engine", "engine-a\n");
     home_prints(fake, HOME_CREATED);
@@ -2282,6 +2283,45 @@ fn a_runner_is_not_made_again_on_another_engine() {
     assert!(refused.to_string().contains("another engine"), "{refused}");
     assert!(!fake.file("log").contains("run "), "{}", fake.file("log"));
     assert_eq!(runners::runner_for(config.path(), "first").unwrap(), old);
+}
+
+/// **An update makes no runner on another engine** (#4166): the pool stays on the one it runs on.
+#[test]
+fn a_follow_makes_nothing_on_another_engine() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    let old = a_pool_added(config.path(), &fake, &ours);
+    fake.set("engine", "engine-b\n");
+    std::fs::write(fake.file_path("log"), "").unwrap();
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+
+    let refused = follow(config.path(), &fake.docker(), "first", &new_image, &ours);
+
+    assert!(refused.is_err());
+    assert!(!fake.file("log").contains("run "), "{}", fake.file("log"));
+    assert_eq!(runners::runner_for(config.path(), "first").unwrap(), old);
+}
+
+/// **A draining runner is not drained on another engine's word** (#4166): its row stays.
+#[test]
+fn a_draining_runner_stays_while_another_engine_answers() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    a_pool_draining(config.path(), &fake);
+    let name = "first";
+    let kept = runners::named(config.path(), name).unwrap().unwrap();
+    assert!(kept.draining);
+    assert_eq!(kept.engine.as_deref(), Some("engine-a"));
+    fake.set("engine", "engine-b\n");
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    assert!(drain(config.path(), &fake.docker(), name, None).is_err());
+
+    assert!(!fake.file("log").contains(" rm"), "{}", fake.file("log"));
+    assert_eq!(runners::named(config.path(), name).unwrap(), Some(kept));
 }
 
 /// A home made after the runner was paired is not the one purlis made for it, so none of it is

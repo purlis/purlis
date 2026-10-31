@@ -266,10 +266,57 @@ describe("a move waiting on its profile's sign-in", () => {
     expect(screen.queryByText("Moved to pool builds.")).toBeNull();
   });
 
-  it("says nothing of a move that was put away, here or from another tab (#4135)", () => {
+  it("still says it moved after its moving line was dismissed (#4135)", async () => {
     act(() => {
       heardMove(PLANE, waiting());
+      heardMove(PLANE, { ...waiting(), stage: "switching", sign_in: null });
+      forgetMove(PLANE, 3);
+      heardMove(PLANE, { ...waiting(), stage: "over", sign_in: null });
+      movedAfterSignIn(PLANE, 3, 8);
+    });
+    render(<MoveNotice plane={PLANE} session={8} />);
+    expect(await screen.findByText("Moved to pool builds.")).toBeInTheDocument();
+  });
+
+  it("still says it moved where Cancel came too late (#4135)", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "put_away_chat_move") throw "Its move is being made.";
+      if (cmd === "chat_moves") return [{ ...waiting(), stage: "switching", sign_in: null }];
+      return null;
+    });
+    act(() => heardMove(PLANE, waiting()));
+    act(() => putAwayMove(PLANE, 3));
+    await waitFor(() => expect(chatMovesOf(PLANE)[3]?.stage).toBe("switching"));
+    act(() => {
+      heardMove(PLANE, { ...waiting(), stage: "over", sign_in: null });
+      movedAfterSignIn(PLANE, 3, 8);
+    });
+    render(<MoveNotice plane={PLANE} session={8} />);
+    expect(await screen.findByText("Moved to pool builds.")).toBeInTheDocument();
+  });
+
+  it("says nothing of an earlier wait when a later move never waited (#4135)", () => {
+    act(() => {
+      heardMove(PLANE, waiting());
+      forgetMove(PLANE, 3);
+      heardMove(PLANE, { ...waiting(), to: null, stage: "ready", sign_in: null });
+      movedAfterSignIn(PLANE, 3, 8);
+    });
+    render(<MoveNotice plane={PLANE} session={8} />);
+    expect(screen.queryByText(/^Moved to/)).toBeNull();
+  });
+
+  it("says nothing of a move that was put away, here or from another tab (#4135)", async () => {
+    await act(async () => {
+      heardMove(PLANE, waiting());
       putAwayMove(PLANE, 3);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(calls("put_away_chat_move")).toHaveLength(1));
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 0));
+    });
+    act(() => {
       movedAfterSignIn(PLANE, 3, 8);
       heardMove(PLANE, waiting());
       heardMove(PLANE, { ...waiting(), stage: "over", sign_in: null });
