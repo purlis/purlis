@@ -38,8 +38,8 @@ use k8s_openapi::api::authorization::v1::{
 use k8s_openapi::api::core::v1::Pod;
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use k8s_openapi::jiff::Timestamp;
+use kube::Client;
 use kube::api::{Api, PostParams};
-use kube::{Client, ResourceExt};
 use ring::agreement::{self, EphemeralPrivateKey, UnparsedPublicKey, X25519};
 use ring::{hkdf, hmac};
 use serde::{Deserialize, Serialize};
@@ -90,8 +90,9 @@ pub fn proof_text(namespace: &str, claim: &str, app: &str, challenge: &str) -> S
 /// The MAC key `shared`, the agreement of a link key and a challenge, gives.
 fn mac_key(shared: &[u8], challenge: &[u8]) -> Result<hmac::Key, String> {
     let info = [challenge];
-    let okm = hkdf::Salt::new(hkdf::HKDF_SHA256, b"purlis forge token request v1")
-        .extract(shared)
+    let salt = hkdf::Salt::new(hkdf::HKDF_SHA256, b"purlis forge token request v1");
+    let extracted = salt.extract(shared);
+    let okm = extracted
         .expand(&info, hmac::HMAC_SHA256)
         .map_err(|_| "no key".to_owned())?;
     Ok(hmac::Key::from(okm))
@@ -498,8 +499,8 @@ pub fn certificate(key: &SigningKey) -> Vec<u8> {
 
 /// The certificate and key `key` gives TLS.
 pub fn certified(key: &SigningKey) -> Result<rustls::sign::CertifiedKey, String> {
-    use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-    let private = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.pkcs8().to_vec()));
+    use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
+    let private = PrivatePkcs8KeyDer::from(key.pkcs8());
     let signer = rustls::crypto::ring::sign::any_eddsa_type(&private)
         .map_err(|_| "the signing key cannot serve TLS".to_owned())?;
     Ok(rustls::sign::CertifiedKey::new(

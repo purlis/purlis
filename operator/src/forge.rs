@@ -254,7 +254,7 @@ pub fn covered(allow_list: &[String], claim: &[String]) -> Result<Covered, Strin
 }
 
 /// How a Secret read came out, in words that hold nothing of it.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum Read {
     Found(Box<Secret>),
     Forbidden,
