@@ -358,8 +358,8 @@ impl RouterGraded {
         // nothing: it says so, and no count.
         if super::Spends::stopped_unscored(self) {
             return format!(
-                "Interrupted on {on}, {when}: purlis stopped while it ran, before any trigger \
-                 test was scored."
+                "Interrupted on {on}, {when}: the grade stopped while it ran, before any \
+                 trigger test was scored."
             );
         }
         let ended = match self.report.ended {

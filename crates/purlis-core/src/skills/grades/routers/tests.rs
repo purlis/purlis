@@ -335,7 +335,7 @@ fn an_interrupted_grade_says_it_was_interrupted_and_no_count_3616() {
     assert!(row.sound(chrono::Utc::now()), "{row:?}");
     assert_eq!(
         row.said(),
-        "Interrupted on the library at aaaaaaaaaaaa, 2026-10-02: purlis stopped while it ran, \
+        "Interrupted on the library at aaaaaaaaaaaa, 2026-10-02: the grade stopped while it ran, \
          before any trigger test was scored."
     );
 }
