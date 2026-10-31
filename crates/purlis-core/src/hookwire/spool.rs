@@ -1598,13 +1598,48 @@ fn forget(
     ended: impl Fn(u32) -> bool,
 ) -> io::Result<()> {
     let before = keys.keys.len();
-    keys.keys.retain(kept);
+    // **What a chat whose queue is cleared below left queued is set aside first** (#3958),
+    // read while `keys.json` still holds the keys that check it: nothing it queued is dropped
+    // without a record the person can see. A chat whose messages could not be set aside keeps
+    // its keys and its queue, for the next open to set aside again.
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| {
+            i64::try_from(since.as_secs()).unwrap_or(i64::MAX)
+        });
+    let mut not_set_aside = Vec::new();
+    for chat in crate::dispatchqueue::chats_in(dir) {
+        let keeps_a_key = keys.keys.iter().any(|held| held.chat == chat && kept(held));
+        if !ended(chat) || keeps_a_key {
+            continue;
+        }
+        match crate::dispatchqueue::undelivered::set_aside(dir, chat, at) {
+            Ok(0) => {}
+            Ok(count) => tracing::info!(
+                "purlis: chat {chat} ended with {count} dispatch messages still queued; they \
+                 are reported where the person reads them"
+            ),
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: what chat {chat} left queued could not be set aside to report \
+                     ({why}); its queue and its keys are kept for the next open"
+                );
+                not_set_aside.push(chat);
+            }
+        }
+    }
+    keys.keys
+        .retain(|held| kept(held) || not_set_aside.contains(&held.chat));
     if keys.keys.len() != before {
         write_keys(dir, &keys)?;
     }
     tidy(dir, &keys, &ended);
+    // And the keys their hooks were armed with (#3822): no app holds an ended chat's.
+    super::armed::disarm_ended(dir, &ended);
     // And the dispatch messages an ended chat left queued (#3902): the app delivered or
-    // reported them as the chat closed, so what is left checks under no key it keeps.
+    // reported them as the chat closed, and what was left that checked is set aside above
+    // (#3958), so what is here checks under no key it keeps. A chat whose messages could not
+    // be set aside kept its keys, and so its queue.
     if let Ok(entries) = std::fs::read_dir(dir.join(crate::dispatchqueue::DIR)) {
         for entry in entries.filter_map(Result::ok) {
             let name = entry.file_name();
@@ -1621,8 +1656,9 @@ fn forget(
                 let left = std::fs::read_dir(entry.path()).map_or(0, Iterator::count);
                 if left > 0 {
                     tracing::warn!(
-                        "purlis: chat {chat} ended with {left} dispatch messages still queued \
-                         that the app could not deliver before it ended; they are removed"
+                        "purlis: chat {chat} ended with {left} files in its dispatch queue \
+                         that the app did not deliver; what of them checked is reported, and \
+                         they are removed"
                     );
                 }
                 let _ = std::fs::remove_dir_all(entry.path());
@@ -1797,14 +1833,15 @@ impl<'a> Checked<'a> {
         if self.already.contains(&this) {
             return self.reject(Some(disk.seq), Why::Repeated);
         }
-        let (line, delivery) = match super::read_delivered(&disk.line) {
-            Some((Line::Report(report), _, delivery)) if report.chat == chat => {
+        let read = super::read_delivered(&disk.line).map(|read| (read.line, read.delivery));
+        let (line, delivery) = match read {
+            Some((Line::Report(report), delivery)) if report.chat == chat => {
                 (Spooled::Report(report), delivery)
             }
-            Some((Line::Tool(call), _, delivery)) if call.chat == chat => {
+            Some((Line::Tool(call), delivery)) if call.chat == chat => {
                 (Spooled::Tool(call), delivery)
             }
-            Some((Line::Refused(refused), _, delivery)) if refused.chat == chat => {
+            Some((Line::Refused(refused), delivery)) if refused.chat == chat => {
                 (Spooled::Refused(refused), delivery)
             }
             _ => return self.reject(Some(disk.seq), Why::NotThisChats),

@@ -35,6 +35,7 @@ function plan(over: Partial<SkillGradePlan> = {}): SkillGradePlan {
     ],
     chats: 12,
     runs: 3,
+    after_edit_chats: 18,
     tests_refused: null,
     left_out: [],
     outcome_evals: 1,
@@ -98,6 +99,7 @@ function renderPlan(over: { afterEdit?: boolean; changed?: number } = {}) {
 const step = (over: Record<string, unknown> = {}) => ({
   plane: "p",
   skill: "deploy",
+  level: { at: "project" as const, local: false },
   grade: "01GRADE",
   ran: 0,
   of: 12,
@@ -332,6 +334,7 @@ describe("Grade, cost first", () => {
     const step = {
       plane: "p",
       skill: "deploy",
+      level: { at: "project" as const, local: false },
       grade: "g",
       ran: 10,
       of: 12,
@@ -369,6 +372,7 @@ describe("Grade, cost first", () => {
       harness: "Claude Code",
       model: null as string | null,
       same_profile: true as boolean | null,
+      interrupted: false,
     };
     expect(
       costSaid(plan({ estimate: { tokens: 120000, cost_usd: 1.2, chats_then: 6, ...from } })),
@@ -410,6 +414,16 @@ describe("Grade, cost first", () => {
         }),
       ),
     ).toContain("Its last grade on work (Claude Code)");
+    // #3602: a grade purlis stopped under is gone by, as far as its chats went, and says so.
+    expect(
+      costSaid(
+        plan({
+          estimate: { tokens: 12000, cost_usd: null, chats_then: 4, ...from, interrupted: true },
+        }),
+      ),
+    ).toBe(
+      "From its interrupted grade on work (Claude Code), 2026-10-25, of 4 chats, this one should spend about 12,000 tokens.",
+    );
     // A grade purlis stopped under before any chat ran: graded, and no chat to go by.
     expect(
       costSaid(plan({ estimate: { tokens: null, cost_usd: null, chats_then: 0, ...from } })),
@@ -418,6 +432,7 @@ describe("Grade, cost first", () => {
       endedSaid({
         plane: "p",
         skill: "deploy",
+        level: { at: "project" as const, local: false },
         grade: "g",
         ran: 1,
         of: 12,
@@ -477,6 +492,7 @@ describe("a grade's token cap", () => {
       endedSaid({
         plane: "p",
         skill: "deploy",
+        level: { at: "project" as const, local: false },
         grade: "g",
         ran: 9,
         of: 12,
@@ -517,6 +533,7 @@ describe("a grade's dollar limit (#3469)", () => {
       endedSaid({
         plane: "p",
         skill: "deploy",
+        level: { at: "project" as const, local: false },
         grade: "g",
         ran: 3,
         of: 12,
@@ -555,6 +572,7 @@ describe("a grade a fault ended", () => {
       endedSaid({
         plane: "p",
         skill: "deploy",
+        level: { at: "project" as const, local: false },
         grade: "g",
         ran: 0,
         of: 12,
@@ -778,10 +796,16 @@ describe("Grade after each edit (SK-58), from its plan", () => {
     );
     const told = renderPlan({ afterEdit: true });
     const offer = await screen.findByTestId("skill-grade-after-edit-offer");
-    expect(offer.textContent).toContain("up to 12 chats and at most $15.00");
+    // A skill with no previous version yet gains one at its first saved edit (#4035): the plan
+    // shows and keeps the chats with that version's arm counted, and says why.
+    expect(offer.textContent).toContain("up to 18 chats and at most $15.00");
+    expect(offer.textContent).toContain(
+      "Your first saved edit makes a version of deploy to compare with, so each grade after an edit also runs that version: 18 chats, not the 12 a grade runs now.",
+    );
+    expect(screen.getByText("2 tests × 3 × 3 arms")).toBeInTheDocument();
     const turnOn = screen.getByRole("button", { name: "Turn on grading after each edit" });
     expect(turnOn).toHaveAccessibleDescription(
-      "Nothing runs now. Each edit you save then runs up to 12 chats, at most $15.00 each time, of work's account.",
+      "Nothing runs now. Each edit you save then runs up to 18 chats, at most $15.00 each time, of work's account.",
     );
     expect(asked.some((one) => one.cmd === "skill_grade_after_edit_on")).toBe(false);
 

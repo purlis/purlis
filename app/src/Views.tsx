@@ -112,6 +112,8 @@ import { TASK_CHANGES_VIEW, taskChangesOf, taskChangesTitle, taskChangesView } f
 import { PROPOSED_CHANGE_VIEW } from "./proposedChangeOpen";
 import { ProposedChangeTab } from "./ProposedChangeTab";
 import { RUNNER_WRITE_VIEW } from "./runnerWriteOpen";
+import { RUNNER_DISPATCH_VIEW } from "./runnerDispatchOpen";
+import { RunnerDispatchTab } from "./RunnerDispatchTab";
 import { RunnerWriteTab } from "./RunnerWriteTab";
 import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
 import { SKILL_STUDIO_VIEW, isSkillStudio } from "./skillStudio";
@@ -331,6 +333,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [PROPOSED_CHANGE_VIEW]: GitCompare,
   /** A runner chat's change to the project, whole (#2046, `runnerWriteOpen.ts`). */
   [RUNNER_WRITE_VIEW]: GitCompare,
+  /** A runner chat's held open or dispatch, whole (`runnerDispatchOpen.ts`). */
+  [RUNNER_DISPATCH_VIEW]: GitCompare,
   /** A browser, drawn live (#2012, `browsers.ts`). */
   [BROWSER_VIEW]: Globe,
   /** Every browser in scope, live (#2027, `browsersGrid.ts`). */
@@ -579,6 +583,14 @@ export function ViewPane({
           /* A runner chat's change to the project, whole, with Apply where it may be applied
              (#2046). Keyed by the held change, which is the project's. */
           <RunnerWriteTab key={`${plane}\u0000${view.key}`} plane={plane} id={Number(view.key)} />
+        ) : view.from === null && view.view === RUNNER_DISPATCH_VIEW ? (
+          /* A runner chat's held open or dispatch, whole, with Approve. Keyed by the held ask,
+             which is the project's. */
+          <RunnerDispatchTab
+            key={`${plane}\u0000${view.key}`}
+            plane={plane}
+            id={Number(view.key)}
+          />
         ) : isBrowsersGrid(view) ? (
           /* Every browser in scope, live (#2027): its This workspace is the strip's it is on. */
           <BrowsersGridTab key={plane} plane={plane} workspace={workspace} />

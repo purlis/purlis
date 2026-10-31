@@ -74,6 +74,38 @@ pub fn answer(
     isolation: &git::Isolated,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Answer {
+    answer_telling(root, asker, ask, isolation, now).answer
+}
+
+/// What the app makes of a chat's git ask ([`answer_telling`]): the answer the chat reads, and
+/// what the person is needed for, if anything.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Answered {
+    pub answer: Answer,
+    /// **The need the person is told of** (#3877): only an update of the project root left for
+    /// a reason no chat can settle ([`crate::planegit::Left::needs_the_person`]), which the
+    /// app raises as a needs-you item naming the window's Update. Every other refusal is the
+    /// chat's to retry, told in the answer alone.
+    pub needs: Option<crate::state::Need>,
+}
+
+impl From<Answer> for Answered {
+    fn from(answer: Answer) -> Self {
+        Self {
+            answer,
+            needs: None,
+        }
+    }
+}
+
+/// [`answer`], and what the person is needed for ([`Answered::needs`]).
+pub fn answer_telling(
+    root: &Path,
+    asker: &Asker,
+    ask: &GitAsk,
+    isolation: &git::Isolated,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Answered {
     git::isolated(isolation, || isolated_answer(root, asker, ask, now))
 }
 
@@ -82,8 +114,19 @@ fn isolated_answer(
     asker: &Asker,
     ask: &GitAsk,
     now: chrono::DateTime<chrono::Utc>,
-) -> Answer {
-    let no = |why: String| Answer::No { why };
+) -> Answered {
+    let no = |why: String| Answered::from(Answer::No { why });
+    let mut needs = None;
+    // The guard's question before plain git writes a branch folder (#3931): no git runs, so
+    // none of the checks below on where git would run is asked.
+    if let GitWork::WorktreeClaim { repo, piece, act } = &ask.work {
+        let folder = crate::worktree::Located {
+            workspace: ask.workspace.clone(),
+            repo: repo.clone(),
+            piece: piece.clone(),
+        };
+        return Answered::from(claim(root, asker, &folder, *act, now));
+    }
     // A workspace the ask makes is one no chat works in yet: the chat need only stand in the
     // project. Every other ask writes a workspace the chat already writes.
     let placed = match &ask.work {
@@ -143,6 +186,7 @@ fn isolated_answer(
                 now,
                 author: &crate::wscmd::ensure::author(),
                 hosts: hosts.as_deref(),
+                watch: None,
             },
             &mut say,
         ),
@@ -256,13 +300,18 @@ fn isolated_answer(
                 (Ok(code), None) => code,
             }
         }
+        // Answered before anything above was asked ([`claim`]), and never reaches here.
+        GitWork::WorktreeClaim { .. } => unreachable!("a claim is answered before any check"),
         GitWork::RootUpdate {} => {
             // Placed at the root above, so its own folder is the root.
             let chat_dir = asker.cwd.as_deref().unwrap_or(root);
             let updated = crate::planegit::update_for_a_chat(root, chat_dir, &mut say);
             let request = crate::forge::request_words_of(root, root).request_noun();
             let said = updated.said(request);
-            if matches!(updated, crate::planegit::Updated::Left(_)) {
+            if let crate::planegit::Updated::Left(left) = &updated {
+                needs = left
+                    .needs_the_person()
+                    .then_some(crate::state::Need::RootUpdateRefused);
                 say(Say::Fail(said.into()));
                 1
             } else {
@@ -369,9 +418,12 @@ fn isolated_answer(
             code
         }
     };
-    Answer::Said {
-        lines: fitted(lines, SAID_AT_MOST),
-        code,
+    Answered {
+        answer: Answer::Said {
+            lines: fitted(lines, SAID_AT_MOST),
+            code,
+        },
+        needs,
     }
 }
 
@@ -742,6 +794,56 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
         // A workspace that is not there yet holds no clone; one that is there is refused.
         // The root is the window's own Update's to check, as it checks it for the person.
         GitWork::Create { .. } | GitWork::RootUpdate {} => Vec::new(),
+        // Runs no git.
+        GitWork::WorktreeClaim { .. } => Vec::new(),
+    }
+}
+
+/// **Whether a chat's plain git may `act` in the branch folder `at`** (#3931): the
+/// one-live-writer check a brokered write makes ([`crate::piececlaim::take`]),
+/// asked by the Bash guard of a chat that runs git itself, so plain git in a folder another
+/// live chat holds is refused in the brokered refusal's words, and a chat that writes in a
+/// folder no live chat holds takes it. An empty `Said` with exit 0 where it may.
+///
+/// **A shell tab is the person's own terminal** and is never held to a claim, nor takes one:
+/// the person hands any folder over. A name that cannot be a workspace, a repo or a piece is
+/// refused.
+fn claim(
+    root: &Path,
+    asker: &Asker,
+    at: &crate::worktree::Located,
+    act: crate::hookwire::ClaimAct,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Answer {
+    let may = Answer::Said {
+        lines: Vec::new(),
+        code: 0,
+    };
+    if !asker.harnessed {
+        return may;
+    }
+    if !crate::contain::workspace_name_ok(&at.workspace)
+        || !crate::contain::repo_name_ok(&at.repo)
+        || !crate::worktree::name::piece_name_ok(&at.piece)
+    {
+        return Answer::No {
+            why: format!(
+                "'{}' · '{}' · '{}' cannot name a branch folder",
+                crate::shown::short(&at.workspace),
+                crate::shown::short(&at.repo),
+                crate::shown::short(&at.piece)
+            ),
+        };
+    }
+    let live = asker.live.as_deref();
+    match crate::piececlaim::take_telling(root, at, &who(asker), live, act.act(), now) {
+        Ok(()) => may,
+        // The one answer the guard refuses on: another live chat holds the folder.
+        Err(crate::piececlaim::Refusal::HeldByALiveChat(why)) => Answer::Said {
+            lines: vec![Say::Fail(why.into())],
+            code: crate::hookwire::CLAIM_HELD,
+        },
+        Err(crate::piececlaim::Refusal::Otherwise(why)) => Answer::No { why },
     }
 }
 

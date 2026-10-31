@@ -367,6 +367,9 @@ pub struct Relaying {
     /// What runs a `secret exec` here on the values the window sent: the brokered run, or a
     /// test's stand-in for it.
     runs_handed: hosted::RunsHanded,
+    /// The window's socket each slot a chat's server dials in is handed on over (#3316), where
+    /// it was told one; none, and every slot is refused.
+    slots_to: Mutex<Option<std::path::PathBuf>>,
 }
 
 /// **How the host keeps what its hook channel hears** (#2003): it writes the event log, and
@@ -416,7 +419,39 @@ impl Relaying {
             root: Mutex::default(),
             waiting_lines: Mutex::default(),
             runs_handed: Arc::new(brokered::serve_handed),
+            slots_to: Mutex::default(),
         })
+    }
+
+    /// **Hands each slot a chat's server dials in on to the window at `path`** (#3316,
+    /// [`super::serve::hand_on`]): the window holds the doors. A slot it cannot hand on is
+    /// refused.
+    pub fn handing_slots_to(&self, path: &std::path::Path) {
+        *lock(&self.slots_to) = Some(path.to_path_buf());
+    }
+
+    /// What hears a `serve` line here: each slot handed on to the window ([`Self::serve`]).
+    #[cfg(unix)]
+    fn serving(self: &Arc<Self>) -> super::Serves {
+        let relaying = Arc::clone(self);
+        Box::new(move |ask, slot| relaying.serve(&ask, slot))
+    }
+
+    #[cfg(not(unix))]
+    fn serving(self: &Arc<Self>) -> super::Serves {
+        super::serve::refusing()
+    }
+
+    /// A slot's ask and connection, handed on to the window, or refused where it cannot be.
+    #[cfg(unix)]
+    fn serve(&self, ask: &super::serve::ServeAsk, slot: super::serve::Slot) {
+        let to = lock(&self.slots_to).clone();
+        let handed = to.map(|path| super::serve::hand_on(&path, ask, &slot));
+        match handed {
+            Some(Ok(())) => {}
+            Some(Err(_)) => super::serve::refused(slot, super::serve::NO_WINDOW),
+            None => super::serve::refused(slot, super::serve::NOTHING_SERVES),
+        }
     }
 
     /// **Its project is at `root` on this machine** (#2047): a `secret exec` of a chat this host
@@ -948,6 +983,7 @@ impl Relaying {
                 let relaying = to(self);
                 Box::new(move |ask, reader, writer| relaying.secret_exec(ask, reader, writer))
             },
+            serve: self.serving(),
         }
     }
 }

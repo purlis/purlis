@@ -69,26 +69,31 @@ export const Labelled: Story = {
  *  right takes it away. */
 export const ValidatedOnBlur: Story = {
   args: { label: "Name", help: "Letters, digits, ., _ and -.", validate: NAME_RULE },
-  play: async ({ canvas, userEvent }) => {
+  play: async ({ canvas, canvasElement, userEvent }) => {
     const box = canvas.getByRole("textbox", { name: "Name" });
+    const line = canvasElement.querySelector(
+      '[data-scope="field"][data-part="error"]:not([data-whole])',
+    ) as HTMLElement;
     await userEvent.tab();
     await userEvent.keyboard("my name");
-    // Nothing said yet, though the line is there, a live region, so VoiceOver hears words land.
-    await expect(canvas.queryByRole("alert")).toBeNull();
+    // Nothing said yet, though the line is there, a polite live region, so VoiceOver hears words
+    // land; never an alert as well (#3291).
+    await expect(line).toBeEmptyDOMElement();
+    await expect(line).toHaveAttribute("aria-live", "polite");
     await userEvent.tab();
-    await waitFor(() =>
-      expect(canvas.getByRole("alert")).toHaveTextContent("A name is letters, digits, ., _ and -."),
-    );
+    await waitFor(() => expect(line).toHaveTextContent("A name is letters, digits, ., _ and -."));
+    await expect(canvas.queryByRole("alert")).toBeNull();
     await expect(box).toHaveAttribute("aria-invalid", "true");
     await userEvent.tab({ shift: true });
     await expect(box).toHaveFocus();
     expectFocusInSight();
     await userEvent.keyboard("{Backspace>5/}-name");
-    await waitFor(() => expect(canvas.queryByRole("alert")).toBeNull());
+    await waitFor(() => expect(line).toBeEmptyDOMElement());
     await userEvent.keyboard("{Backspace>5/} x");
     await userEvent.tab();
     // The baseline: a refused value, its edge and its words.
-    await waitFor(() => expect(canvas.getByRole("alert")).toBeVisible());
+    await waitFor(() => expect(line).toHaveTextContent("A name is letters"));
+    await expect(line).toBeVisible();
   },
 };
 
@@ -236,6 +241,41 @@ export const Sizes: Story = {
       await expect(canvas.getByRole("searchbox", { name: `Filter, ${size}` })).toHaveFocus();
       expectFocusInSight();
     }
+  },
+};
+
+/**
+ * **An sm field beside an sm button at a row's tightest gap** (#3250, WCAG 2.5.8): the compact
+ * density draws the chrome at 18px, so sm's floor is 24 CSS px, as the button's is (#3210). Each
+ * is a 24px target by itself in every cell, so axe's `target-size` passes with no spacing to
+ * lean on.
+ */
+export const SmallBesideAButton: Story = {
+  args: { "aria-label": "Filter the memories" },
+  render: () => (
+    <div
+      style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", inlineSize: "20rem" }}
+    >
+      <Held
+        type="search"
+        size="sm"
+        icon={<Search aria-hidden="true" />}
+        aria-label="Filter the memories"
+        placeholder="Filter 28 memories"
+      />
+      <Button size="sm">Clear</Button>
+    </div>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const field = canvas.getByRole("searchbox", { name: "Filter the memories" });
+    const box = field.parentElement as HTMLElement;
+    const clear = canvas.getByRole("button", { name: "Clear" });
+    for (const one of [box, clear]) {
+      await expect(one.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
+    }
+    await userEvent.tab();
+    await expect(field).toHaveFocus();
+    expectFocusInSight();
   },
 };
 

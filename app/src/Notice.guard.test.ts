@@ -365,6 +365,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 2,
     why: ACTION + "; and its progress while it copies the repo, a live value",
   },
+  "NewSkillDialog.tsx": {
+    count: 2,
+    why:
+      "New skill…'s name check as it is typed and the core's refusal (#3684), beside the fields " +
+      "the person is still filling, in the dialog that stays open",
+  },
   "NewVault.tsx": {
     count: 1,
     why: ACTION,
@@ -448,6 +454,7 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "a copy the clipboard refused, said beside the read-only screen it was asked of (#3676)",
   },
   "SearchTab.tsx": { count: 1, why: "the search's progress, a live value" },
+  "UnsavedWorkQuestion.tsx": { count: 1, why: ACTION },
   "SkillChangeDialogs.tsx": {
     count: 2,
     why:
@@ -462,9 +469,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "as it is typed, and the core's sentence for the copy just asked for. Make the copy is " +
       "the retry",
   },
+  "SkillPanels.tsx": {
+    count: 2,
+    why: "every studio page's reads in place (S11, #3978): the line said after a second while rows are held, and a read that failed with Try again",
+  },
   "SkillSources.tsx": {
-    count: 3,
-    why: "the Sources pages' reads in place (#3687): the line said after a second while rows are held, a read that failed with Try again, and the updates still being read",
+    count: 2,
+    why: "the Sources page's updates still being read (#3687), and Install all's review that is more than one read, with its first part to review in place (#4024)",
   },
   "SkillStudioDeleted.tsx": {
     count: 1,
@@ -472,10 +483,6 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "Bring back's refusal of a built-in skill's name for a deleted skill whose own a built-in " +
       "took (#3729), said as it is typed beside the New name field, in the core's sentence. " +
       "Bring back is the retry",
-  },
-  "SkillStudioTab.tsx": {
-    count: 1,
-    why: "the Library's reading line (#3681): rows held in place while the skills are read, said after a second",
   },
   "SessionPane.tsx": {
     count: 1,
@@ -585,17 +592,36 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "the reference picker saying it found no chat, inside its menu",
   },
   "settings/pools.tsx": {
-    count: 1,
+    count: 2,
     why:
       ACTION +
       ". The Pools group's read refusing (#2679), in the core's words: the group is read again " +
-      "as it comes on screen. A runner whose key changed has a Notice of its own",
+      "as it comes on screen, and This is my own refused on its row (#4071), which the switch " +
+      "pressed again retries. A runner whose key changed has a Notice of its own",
   },
-  "settings/PoolProfiles.tsx": {
+  "settings/PoolChooseProfiles.tsx": {
     count: 1,
     why:
       ACTION +
-      ". A pool's profiles refusing (#2049), in the core's words: its Ask again is the way on",
+      ". What choosing a new pool's profiles said (#4048), beside the Sign in and Not now that " +
+      "did it; the pool's own lines follow it",
+  },
+  "settings/PoolProfiles.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ". A pool's profiles refusing (#2049), in the core's words: its Ask again is the way on;" +
+      " what adding or removing one of them said (#4047), beside the buttons that did it; and" +
+      " what a profile's Sign out said (#4043), beside its line",
+  },
+  "settings/PoolSignIn.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ". A profile's sign-in on a pool's runner (#4042), inside its strip: the step it is on, said " +
+      "as it changes, and the one line of what went wrong, in the core's or the runner's words; " +
+      "its Try again, Cancel and Open in terminal are the way out; and whether Copy code put the " +
+      "device code on the clipboard (#4045), beside the button",
   },
   "settings/accounts.tsx": {
     count: 2,
@@ -612,10 +638,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "its Add profile, Import again and Remove… are the way on",
   },
   "settings/Collection.tsx": {
-    count: 3,
+    count: 2,
     why:
-      "a collection's Undo answer, a refused Remove with its users and a refused Add (ST-3): " +
-      "inline, inside Settings, beside the entry or form they are about",
+      "a collection's Undo answer and a refused Remove with its users (ST-3): inline, inside " +
+      "Settings, beside the entry they are about; a refused Add is its form's summary (#3291)",
   },
   "settings/RawToml.tsx": {
     count: 2,
@@ -626,8 +652,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "Settings' read refusal, inside its tab (NO-7, #1232)",
   },
   "settings/components.tsx": {
-    count: 2,
-    why: "the settings set's filter count and a row's refusal: inline, per field",
+    count: 3,
+    why:
+      "the settings set's filter count and a row's refusal, inline, per field: an alert on its " +
+      "own, a polite line quiet under its form's summary in a form (#3291)",
   },
   "settings/themeGallery.tsx": {
     count: 3,
@@ -643,8 +671,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "This machine's read refusal, standing in for its list inside Settings (ST-2; NO-7, #1232)",
   },
   "ui/field/Field.tsx": {
-    count: 1,
-    why: "a field's error line under its box, why its value is refused, in either of the family's boxes (#2905)",
+    count: 2,
+    why:
+      "a field's error line under its box, why its value is refused, in either of the family's " +
+      "boxes (#2905), polite; and a form's one alert summary of a refused send (#3291)",
   },
   "ui/table/TableBar.tsx": {
     count: 1,

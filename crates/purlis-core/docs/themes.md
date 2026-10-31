@@ -316,7 +316,7 @@ says what each family, part and variant is):
 | `list` (since version 11) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `body` (`padding`, `gap`), `lead` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `trail` (`text`, `gap`), `header` (`text`, `font-size`, `font-weight`), `shortcut` (`text`, `font-size`) (since the next release), `summary` (`text`, `font-size`) (since the next release), `count` (`text`, `font-size`) (since the next release), `run` (`text`, `font-size`) (since the next release), `actions` (`gap`) (since the next release) | `row` (since the next release), `card` (since the next release) | `hover`, `focused`, `selected`, `disabled` |
 | `menu` (since version 6) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`) | `default`, `danger` | `hover`, `focused`, `selected`, `disabled`, `open` |
 | `meter` (since the next release) | `root` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `track` (`fill`, `corner-radius`), `fill` (`fill`), `value` (`text`, `font-size`, `font-weight`) | `subject`, `baseline`, `previous` | none |
-| `notice` (since the next release) | `root` (`fill`, `text`, `border-colour`, `corner-radius`, `padding`, `gap`), `message` (`text`, `font-size`), `whose` (`text`, `font-weight`) | `news`, `trouble`, `attention` | none |
+| `notice` (since the next release) | `root` (`fill`, `text`, `border-colour`, `corner-radius`, `padding`, `gap`), `message` (`text`, `font-size`), `whose` (`text`, `font-weight`), `mark` (`text`), `title` (`text`, `font-size`, `font-weight`) | `news`, `trouble`, `attention` | none |
 | `option-card` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `corner-radius`, `padding`, `gap`), `icon` (`text`), `title` (`text`, `font-size`, `font-weight`), `detail` (`text`, `font-size`), `check` (`text`) | `card`, `tile` | `hover`, `selected`, `focused`, `disabled` |
 | `page-tabs` (since the next release) | `tab` (`fill`, `text`, `corner-radius`), `label` (`font-size`, `font-weight`), `count` (`text`, `font-size`), `indicator` (`fill`, `corner-radius`), `list` (`border-colour`, `border-width`, `gap`, `padding`), `panel` (`padding`) | none | `hover`, `selected`, `focused` |
 | `panel` (since version 4) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`) (since the next release) | `side`, `content`, `bottom` | none |
@@ -331,7 +331,7 @@ says what each family, part and variant is):
 | `select` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `placeholder` (`text`), `chevron` (`text`) | none | `hover`, `focused`, `disabled`, `open`, `invalid` |
 | `separator` (since the next release) | `root` (`fill`) | none | none |
 | `slider` (since the next release) | `root` (`text`, `gap`), `track` (`fill`, `corner-radius`), `fill` (`fill`, `corner-radius`), `thumb` (`fill`, `border-colour`, `corner-radius`), `output` (`text`) | none | `disabled` |
-| `status-item` (since version 4) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `icon` (`text`), `label` (`text`, `font-size`, `font-weight`), `count` (`text`) | `bar`, `pill`, `waiting`, `accent` | `hover`, `pressed`, `focused`, `disabled` |
+| `status-item` (since version 4) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `icon` (`text`), `label` (`text`, `font-size`, `font-weight`), `count` (`text`), `dot` (`fill`, `text`) (since the next release), `dot-warning` (`fill`, `text`) (since the next release) | `bar`, `pill`, `waiting`, `accent` | `hover`, `pressed`, `focused`, `disabled` |
 | `switch` (since the next release) | `root` (`text`, `gap`), `track` (`fill`, `corner-radius`), `thumb` (`fill`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`) | none | `hover`, `selected`, `focused`, `disabled` |
 | `table` (since the next release) | `root` (`fill`, `text`), `frame` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `head` (`text`, `font-size`, `font-weight`), `cell` (`padding`), `rule` (`fill`), `bar` (`gap`) | none | `hover`, `focused`, `selected`, `disabled` |
 | `tabs` (since version 8) | `tab` (`fill`, `text`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`, `max-width`, `flare`, `inset`), `label` (`text`, `font-size`, `font-weight`), `closer` (`fill`, `text`, `corner-radius`), `count` (`fill`, `text`, `corner-radius`), `indicator` (`fill`, `height`, `corner-radius`, `position`), `strip` (`fill`, `border-colour`, `border-width`), `layout` (`attach`, `sizing`, `dividers`, `gap`) | `chat`, `view`, `file`, `background` | `hover`, `selected` |
@@ -353,7 +353,13 @@ focused itself (the keyboard stays in the filter). None of them takes a chip's v
 colours back. Each is held to its floor on the ground it is drawn on, in each of its states (the
 crumb and the ⌄ on the bar, and on the card's fill under the pointer and while open; a row and
 its pin on the switcher's popover, the row Enter would go to on the selected fill), and one that
-breaks it draws its own default back there and leaves the chip alone. A switcher row's count is
+breaks it draws its own default back there and leaves the chip alone. A pinned pin and the row
+Enter would go to are measured under the pointer too, in what both states draw at once; a row's
+count is held on a fill the theme gives its row, and the row draws its own fill back where even
+the count's default cannot be read on it; a popover fill the theme sets that the switcher's rows
+and pins cannot be read on draws the popover's own back; and an unavailable row is reached by no
+row key, so it stays in the faint tier. A chip that breaks a floor at rest draws its states'
+own fills back after it, keeping what the theme sets in a state itself. A switcher row's count is
 `titlebar.row-count`, in no state, held on its amber wash over the popover and the selected row;
 `titlebar.count` is a chip's.
 

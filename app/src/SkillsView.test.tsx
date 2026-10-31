@@ -9,7 +9,8 @@
  * what each surface says and does, in the DOM a reader reads.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { skillsMissingPutAway } from "./chatSkillsAsk";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type {
@@ -34,7 +35,6 @@ import {
 } from "./skillStudio";
 import { forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
 import { PLANE_ROOT, pieceFileView } from "./pieceViews";
-import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
 import { DEFAULT_SKILLS_VIEW, SKILLS_VIEW } from "./skillsViewPrefs";
 
 afterEach(() => {
@@ -96,8 +96,8 @@ function core(
         budget: more.budget ?? null,
         routing: more.routing ?? null,
         repos: more.repos ?? [],
+        missing: more.missing ?? null,
       };
-    if (cmd === "chat_skills_missing") return more.missing ?? null;
     if (cmd === "chats_plane_updated") return more.updated ?? [];
     if (cmd === "skills_deleted" || cmd === "skill_drafts" || cmd === "skill_sources") return [];
     if (cmd === "skill_sources_offered") return [];
@@ -449,6 +449,7 @@ describe("the Skills view's review fixes", () => {
               title: "Claude Code",
               skills: [skill("pdf", { level: "installed", label: "Claude Code", folder: "" })],
               repo_left_out: [],
+              own: null,
             },
           ],
         }),
@@ -692,6 +693,7 @@ describe("a row's menu", () => {
                 }),
               ],
               repo_left_out: [],
+              own: null,
             },
           ],
         }),
@@ -737,50 +739,20 @@ describe("the view's header", () => {
     );
   });
 
-  it("starts a new skill with the studio's own starts: a chat's draft, or the studio's form", async () => {
+  it("opens the studio's own New skill… dialog, which asks how (#3684)", async () => {
     opsCore();
-    const asks: SkillChatAsk[] = [];
-    const heard = (event: Event) => asks.push((event as CustomEvent<SkillChatAsk>).detail);
-    window.addEventListener(SKILL_CHAT, heard);
     const hands = view();
     await list();
 
     await userEvent.click(screen.getByRole("button", { name: "New skill…" }));
-    const starts = await screen.findByRole("menu", { name: "Ways to start a skill" });
-    expect(
-      within(starts)
-        .getAllByRole("menuitem")
-        .map((item) => item.textContent),
-    ).toEqual([
-      "Ask a chat to draft a skillSay what you want in a chat. Its draft comes back here to try and accept.",
-      "Browse sourcesInstall a reviewed copy of a skill from a git repository.",
-      "New skillWrite one yourself, from a blank template.",
-    ]);
-    await userEvent.click(within(starts).getByRole("menuitem", { name: /Ask a chat/ }));
-    window.removeEventListener(SKILL_CHAT, heard);
-    expect(asks).toEqual([
-      { plane: "p", kind: "draft", level: { at: "workspace", name: "ops", local: false } },
-    ]);
-
-    await userEvent.click(screen.getByRole("button", { name: "New skill…" }));
-    const again = await screen.findByRole("menu", { name: "Ways to start a skill" });
-    await userEvent.click(within(again).getByRole("menuitem", { name: /blank template/ }));
+    // No menu of its own: the studio opens on its Library, and its dialog asks how there.
+    expect(screen.queryByRole("menu")).toBeNull();
     expect(hands.onOpenView).toHaveBeenLastCalledWith(
       skillStudioView(inWorkspace("ops")),
       SKILL_STUDIO_TITLE,
     );
-    // Browse sources opens the studio's Sources page on the same chats (#3681).
-    await userEvent.click(screen.getByRole("button", { name: "New skill…" }));
-    const third = await screen.findByRole("menu", { name: "Ways to start a skill" });
-    await userEvent.click(within(third).getByRole("menuitem", { name: /Browse sources/ }));
-    expect(hands.onOpenView).toHaveBeenLastCalledWith(
-      skillStudioAt(inWorkspace("ops"), "sources"),
-      SKILL_STUDIO_TITLE,
-    );
-
-    // The studio the blank template opened opens on its New skill form: one copy of the start.
     renderStudio(inWorkspace("ops"));
-    expect(await screen.findByRole("form", { name: "New skill" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "New skill" })).toBeInTheDocument();
     forgetStudio();
   });
 });
@@ -823,6 +795,66 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
     expect(screen.getByTestId("skills-view-said")).toHaveTextContent("Routed by acme in 120 ms.");
     // Nothing needs the person: no Needs you group.
     expect(screen.queryByRole("row", { name: /^Needs you/ })).toBeNull();
+  });
+
+  it("says its program's own catalogue beside the budget, never in it (#3324)", async () => {
+    core(
+      () =>
+        studio([skill("deploy")], {
+          harnesses: [
+            {
+              harness: "claude",
+              title: "Claude Code",
+              skills: [],
+              repo_left_out: [],
+              own: "Claude Code's own, not counted: 2 skills, 1,310 characters",
+            },
+            {
+              harness: "codex",
+              title: "Codex",
+              skills: [],
+              repo_left_out: [],
+              own: "Codex's own, not counted: 4 skills, 900 characters",
+            },
+          ],
+        }),
+      { chat: [given("deploy")], budget: { ...BUDGET, manual: 0 } },
+    );
+    view({ chat: STEWARD });
+    await list();
+    await waitFor(() =>
+      expect(screen.getByTestId("skills-view-said")).toHaveTextContent(
+        "3 skills of 30 · 1,234 of 6,000 characters · Claude Code's own, not counted: 2 skills, 1,310 characters",
+      ),
+    );
+    // Its own program's alone, and the budget's figures stay purlis's.
+    expect(screen.getByTestId("skills-view-said")).not.toHaveTextContent("Codex");
+    expect(screen.queryByRole("row", { name: /^Needs you/ })).toBeNull();
+  });
+
+  it("says a Codex chat's own catalogue, its program's (#3324)", async () => {
+    core(
+      () =>
+        studio([skill("deploy")], {
+          harnesses: [
+            {
+              harness: "codex",
+              title: "Codex",
+              skills: [],
+              repo_left_out: [],
+              own: "Codex's own, not counted: 4 skills, 900 characters",
+            },
+          ],
+        }),
+      { chat: [given("deploy")], budget: { ...BUDGET, manual: 0 } },
+    );
+    view({ chat: { ...STEWARD, harness: "codex" } });
+    await list();
+    await waitFor(() =>
+      expect(screen.getByTestId("skills-view-said")).toHaveTextContent(
+        "3 skills of 30 · 1,234 of 6,000 characters · Codex's own, not counted: 4 skills, 900 characters",
+      ),
+    );
   });
 
   it("puts the budget, the pins, a fallen-back router and what it started without in Needs you, each with its fix", async () => {
@@ -886,6 +918,14 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
       skillStudioAt(asPersona("reviewer"), "library"),
       SKILL_STUDIO_TITLE,
     );
+
+    // Its notice put away, its card goes, as the chip's warning does (#3953); another chat's
+    // put-away is not its own.
+    act(() => skillsMissingPutAway("p", 6));
+    expect(needOf("Started without 1 skill")).toBeInTheDocument();
+    act(() => skillsMissingPutAway("p", 5));
+    await waitFor(() => expect(() => needOf("Started without 1 skill")).toThrow());
+    expect(needOf("Its router fell back")).toBeInTheDocument();
   });
 
   it("names what changed since it started, and offers the restart that brings it", async () => {
@@ -931,26 +971,23 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
     await list();
     await waitFor(() => expect(hasRow("deploy")).toBe(true));
     expect(document.querySelector('[data-testid^="skills-need-"]')).toBeNull();
-    expect(asked.some((one) => one.cmd === "chat_skills_missing")).toBe(false);
+    expect(asked.some((one) => one.cmd === "chat_skills")).toBe(false);
   });
 });
 
 describe("a project with no skill of its own", () => {
-  it("is offered the studio's claim, and its three starts under New skill…", async () => {
+  it("is offered the studio's claim, and New skill…", async () => {
     core(() =>
       studio([skill("secrets", { level: "built-in" })], { first: { starts: true, unmoved: null } }),
     );
     view();
     const empty = await screen.findByTestId("skills-view-empty");
     expect(within(empty).getByText("This project has no skills of its own yet")).toBeVisible();
-    // Its three starts are New skill…'s, so no start is a button of a name the studio's is too.
+    // A skill is started from New skill…, which asks how (#3684): the claim has no button.
     expect(empty).toHaveTextContent("Start one of the project's own from New skill…");
     expect(within(empty).queryByRole("button")).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "New skill…" }));
-    const starts = await screen.findByRole("menu", { name: "Ways to start a skill" });
-    expect(within(starts).getAllByRole("menuitem")).toHaveLength(3);
     // The skills its chats already get are listed under it: its built-in skills, folded.
-    expect(foldOf("1 built-in skill")).toBeInTheDocument();
+    await waitFor(() => expect(foldOf("1 built-in skill")).toBeInTheDocument());
   });
 
   it("says the core's sentence where its skills cannot be read", async () => {

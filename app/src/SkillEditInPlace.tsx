@@ -9,26 +9,28 @@
  * **Leaving asks first.** While the editor holds text not saved, every way out of the skill's page
  * asks Keep editing, Discard and leave, or Save and leave: a step in the studio (a row, a page,
  * the scope, the path, back and forward), Stop editing, another change on the skill (Rename, Move,
- * Delete, New skill), and the close of the studio's tab (`skillEdit.ts`). A place reached from
- * outside the tab (a run's chip) is asked about once it is reached: Keep editing goes back.
+ * Delete, New skill). A place reached from outside the tab (a run's chip) is asked about once it
+ * is reached: Keep editing goes back. Every close that would lose the text (the tab's, the
+ * project's, a quit) asks the same question through the window's registry (`unsavedWork.ts`).
  *
  * Text with nothing changed is left without a word.
  */
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { commands, type SkillLevel, type SkillLintFinding, type StudioSkill } from "./bindings";
-import { AlertDialog } from "./ui/dialog/Dialog";
+import { LeaveQuestion } from "./UnsavedWorkQuestion";
 import type { ViewHistory } from "./ui/panel/viewHistory";
 import { samePlace, type StudioPlace } from "./skillStudio";
 import {
   SAVED,
-  closeAnswered,
   keepSkillEdit,
+  saveSkillEdit,
   skillEditIn,
   unsaved,
-  useCloseAsked,
   useSkillEdit,
+  useSkillSaved,
   type SkillEdit,
 } from "./skillEdit";
+import type { ViewRef } from "./tabs";
 import type { Said } from "./SkillPage";
 
 /** The light editor, its own chunk (`tools/main-chunk-has-no-codemirror.mjs`). */
@@ -73,17 +75,19 @@ function useSkillLint(
   return { findings, checked: lint.of === of };
 }
 
-/** What is left, once the person has answered: a step, a close, or nothing more. */
-type Leaving = { then: () => void; back?: StudioPlace; closing?: boolean };
+/** What is left, once the person has answered: a step, or nothing more. */
+type Leaving = { then: () => void; back?: StudioPlace };
 
 /**
  * **The studio's editor in place, and its guard** for the studio tab whose history is `tab`
- * (`studioHistoryOf`), walked by `walked`. Its `history` is `walked` with every step that leaves
- * the editor's page asked about first; `leave` does the same for anything else that leaves it.
+ * (`studioHistoryOf`) and whose view is `view`, walked by `walked`. Its `history` is `walked`
+ * with every step that leaves the editor's page asked about first; `leave` does the same for
+ * anything else that leaves it.
  */
 export function useSkillEditInPlace({
   plane,
   tab,
+  view,
   walked,
   busy,
   setBusy,
@@ -92,6 +96,7 @@ export function useSkillEditInPlace({
 }: {
   plane: string;
   tab: string;
+  view: ViewRef;
   walked: ViewHistory<StudioPlace>;
   busy: boolean;
   setBusy: (busy: boolean) => void;
@@ -100,7 +105,6 @@ export function useSkillEditInPlace({
   onSaved: () => void;
 }) {
   const edit = useSkillEdit(tab);
-  const closeAsked = useCloseAsked(tab);
   const lint = useSkillLint(plane, edit);
   const blocked = lint.findings.find((finding) => finding.level === "blocks");
   const [leaving, setLeaving] = useState<Leaving>();
@@ -123,11 +127,17 @@ export function useSkillEditInPlace({
     }
     setLeaving({ then });
   };
-  /** Goes on with `then` where `to` is still the editor's page, else leaves it first. */
+  /** Goes on with `then` where `to` is still the editor's page, else leaves it first. Where it
+   *  goes on, `to` is where the tab is from then, before it is drawn there: an editor opened
+   *  for it (a skill New skill… made, #3684) finds the tab at it. */
   const stepTo = (to: StudioPlace, then: () => void) => {
+    const going = () => {
+      placeNow.current = to;
+      then();
+    };
     const now = skillEditIn(tab);
-    if (now !== undefined && samePlace(now.at, to)) then();
-    else leave(then);
+    if (now !== undefined && samePlace(now.at, to)) going();
+    else leave(going);
   };
   const history: ViewHistory<StudioPlace> = {
     ...walked,
@@ -149,31 +159,28 @@ export function useSkillEditInPlace({
   /** Saves the text typed, says so, and goes on with `then`; or says why it was not saved and
    *  keeps the editor as it is. */
   const save = (then?: () => void) => {
-    const now = skillEditIn(tab);
-    if (now === undefined) return;
+    if (skillEditIn(tab) === undefined) return;
     setBusy(true);
-    void commands
-      .skillSave(plane, now.level, now.skill.name, now.was, now.now)
-      .then((answer) => {
-        if (answer.status === "error") {
-          // Not saved: a leave from afar is asked again, so the person can go back to it.
-          setSavingAway(undefined);
-          say({ tone: "trouble", label: "The skill was not saved", text: answer.error });
-          return;
-        }
-        keepSkillEdit(tab, undefined);
-        say({ tone: "news", label: "Skill saved", text: [SAVED, ...answer.data.notes].join(" ") });
-        then?.();
-      })
-      .catch((err: unknown) => {
-        setSavingAway(undefined);
-        say({ tone: "trouble", label: "The skill was not saved", text: String(err) });
-      })
-      .finally(() => {
-        setBusy(false);
-        onSaved();
-      });
+    void saveSkillEdit(tab).then((refused) => {
+      setBusy(false);
+      if (refused === undefined) return then?.();
+      // Not saved: a leave from afar is asked again, so the person can go back to it.
+      setSavingAway(undefined);
+      say({ tone: "trouble", label: "The skill was not saved", text: refused });
+      onSaved();
+    });
   };
+  // **A save, whichever way it was asked** (the studio's Save, or the window's question about a
+  // close, #3929): said here, and what the studio reads is read again. A save made while the
+  // studio was not drawn is not said: the studio drawn afresh reads it anyway.
+  const saved = useSkillSaved(tab);
+  const heard = useRef(saved);
+  useEffect(() => {
+    if (saved === undefined || heard.current === saved) return;
+    heard.current = saved;
+    say({ tone: "news", label: "Skill saved", text: [SAVED, ...saved.notes].join(" ") });
+    onSaved();
+  }, [saved, say, onSaved]);
 
   /** **Edit**: the skill's text, read now, in the editor on its page's Text tab, if the tab is
    *  still at `asked` when it comes back: where it is now, or where a step just taken goes. */
@@ -184,7 +191,15 @@ export function useSkillEditInPlace({
       // The person went elsewhere while the text was read: the editor is not opened there.
       else if (samePlace(placeNow.current, asked)) {
         const place = { ...placeNow.current, tab: "text" as const };
-        keepSkillEdit(tab, { at: place, skill, level, was: answer.data, now: answer.data });
+        keepSkillEdit(tab, {
+          plane,
+          view,
+          at: place,
+          skill,
+          level,
+          was: answer.data,
+          now: answer.data,
+        });
         walked.replace(place);
       }
     });
@@ -218,21 +233,13 @@ export function useSkillEditInPlace({
       </Suspense>
     );
 
-  // A close of the tab asked while the editor held unsaved text (`askBeforeClosing`).
   const asking: Leaving | undefined =
-    // A close is the widest leave: answered, it answers any step asked before it too.
-    closeAsked !== undefined
-      ? { then: closeAsked, closing: true }
-      : (leaving ??
-        (away && edit !== savingAway ? { then: () => undefined, back: edit.at } : undefined));
-  const answered = () => {
-    setLeaving(undefined);
-    closeAnswered(tab);
-  };
+    leaving ?? (away && edit !== savingAway ? { then: () => undefined, back: edit.at } : undefined);
+  const answered = () => setLeaving(undefined);
   const question =
     asking === undefined || edit === undefined || !unsaved(edit) ? undefined : (
       <LeaveQuestion
-        name={edit.skill.name}
+        names={[edit.skill.name]}
         blocked={blocked !== undefined}
         busy={busy}
         checking={!lint.checked}
@@ -273,53 +280,4 @@ export function useSkillEditInPlace({
      *  moved on: the tab's one place ref (#3973). */
     isAt: (place: StudioPlace) => samePlace(placeNow.current, place),
   };
-}
-
-/**
- * **The question a leave asks** while the editor holds unsaved text (S4): Keep editing, Discard
- * and leave, or Save and leave, which waits while what the lint found blocks the save.
- */
-export function LeaveQuestion({
-  name,
-  blocked,
-  checking = false,
-  busy,
-  onKeep,
-  onDiscard,
-  onSave,
-}: {
-  name: string;
-  /** Whether the lint finds what keeps the text from being saved. */
-  blocked: boolean;
-  /** Whether the lint is still to check the text as it is: Save and leave waits for it. */
-  checking?: boolean;
-  busy: boolean;
-  onKeep: () => void;
-  onDiscard: () => void;
-  onSave: () => void;
-}) {
-  return (
-    <AlertDialog
-      onClose={onKeep}
-      title={`Save your changes to ${name}?`}
-      titleId="skill-leave"
-      description={
-        blocked
-          ? "You changed its text and haven't saved it, and it can't be saved as it is: the check found what stops it from loading. If you leave now, the changes are lost."
-          : "You changed its text and haven't saved it. If you leave now, the changes are lost."
-      }
-      cancel={{ children: "Keep editing" }}
-      alternative={{
-        children: "Discard and leave",
-        variant: "danger",
-        isDisabled: busy,
-        onPress: onDiscard,
-      }}
-      main={{
-        children: "Save and leave",
-        isDisabled: busy || blocked || checking,
-        onPress: onSave,
-      }}
-    />
-  );
 }

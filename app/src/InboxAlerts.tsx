@@ -171,6 +171,17 @@ function ThisProject({
               needsSave={way.repo !== null && !way.autosave}
             />
           );
+        // A chat's undelivered messages (#3958): read, then put away.
+        if (way.kind === "left-messages")
+          return (
+            <LeftMessagesRow
+              key={way.report}
+              plane={plane}
+              alert={alert}
+              report={way.report}
+              reread={does.reread}
+            />
+          );
         return (
           <ProjectRow
             key={`${alert.subject}\n${alert.detail}`}
@@ -237,6 +248,45 @@ function Words({
 export const LAYOUT_FIX = "workspace-reinit";
 export const LAYOUT_FIX_LABEL = FIX_LABELS[LAYOUT_FIX] ?? ANY_FIX;
 
+/**
+ * **What a chat that did not come back left queued, and no running dispatch could keep**
+ * (#3958): the sender, how many, and what each said, with Put away once it is read. The words
+ * are purlis's around the messages, which the core quotes; nothing else is offered, because
+ * the chat they were for is gone or no longer at work.
+ */
+function LeftMessagesRow({
+  plane,
+  alert,
+  report,
+  reread,
+}: {
+  plane: PlaneId;
+  alert: AlertRow;
+  report: string;
+  reread: () => void;
+}) {
+  const [said, setSaid] = useState<string>();
+  const putAway = () => {
+    setSaid(undefined);
+    void commands
+      .putAwayLeftMessages(plane, report)
+      .then((answer) => {
+        if (answer.status === "error") setSaid(`purlis could not put it away: ${answer.error}`);
+        reread();
+      })
+      .catch((err: unknown) => setSaid(`purlis could not put it away: ${String(err)}`));
+  };
+  return (
+    <Notice
+      cause={`alert:${alert.subject}:${report}`}
+      tone={toneOf(alert.severity)}
+      fixes={[{ label: "Put away", onPress: putAway }]}
+    >
+      <Words severity={alert.severity} subject={alert.subject} detail={alert.detail} said={said} />
+    </Notice>
+  );
+}
+
 /** A row's Notice look: trouble for what loses work if it is left. */
 const toneOf = (severity: string) => (severity === "bad" ? "trouble" : "news");
 
@@ -248,7 +298,9 @@ function ProjectRow({
 }: {
   plane: PlaneId;
   /** Any alert but a save's red request, which draws its own Notice (`RequestMerge`). */
-  alert: Omit<AlertRow, "way"> & { way: Exclude<AlertWay, { kind: "save-request" }> };
+  alert: Omit<AlertRow, "way"> & {
+    way: Exclude<AlertWay, { kind: "save-request" } | { kind: "left-messages" }>;
+  };
   does: InboxAlertsDo;
 }) {
   const way = alert.way;

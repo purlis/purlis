@@ -159,10 +159,15 @@ function remove(shown: MachineProfileRemoval) {
   set((was) => ({ ...was, asking: undefined }));
   void acting(
     () => commands.machineProfileRemove(shown.name, shown),
-    () =>
-      shown.adopted
-        ? `Forgot ${shown.name}. ${shown.folder} stays.`
-        : `Removed ${shown.name} and deleted ${shown.folder}.`,
+    (note) =>
+      [
+        shown.adopted
+          ? `Forgot ${shown.name}. ${shown.folder} stays.`
+          : `Removed ${shown.name} and deleted ${shown.folder}.`,
+        note,
+      ]
+        .filter(Boolean)
+        .join(" "),
   );
 }
 
@@ -247,12 +252,15 @@ const listed = (plane: string | undefined): LiveSetting => ({
       pools.read.state === "read" ? pools.read.shown.pools.map((one) => one.name) : [];
     const asked = poolNames.join("\u0000");
     useEffect(() => {
-      for (const name of asked === "" ? [] : asked.split("\u0000")) void askProfiles(name);
-    }, [asked]);
+      for (const name of asked === "" ? [] : asked.split("\u0000")) void askProfiles(name, plane);
+    }, [asked, plane]);
     const onPools = (name: string) =>
       poolNames.flatMap((pool) => {
         const rows = pools.profiles[pool];
-        const row = Array.isArray(rows) ? rows.find((one) => one.name === name) : undefined;
+        const row =
+          typeof rows === "object" && "kept" in rows
+            ? rows.kept.find((one) => one.name === name)
+            : undefined;
         return row === undefined ? [] : [standingOnPool(pool, row)];
       });
     return {

@@ -9,11 +9,12 @@
  * the foot and hands back exactly what the review answered. What each command does is the core's
  * seam test (`skills/source/tests.rs`).
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillStudioTab } from "./SkillStudioTab";
+import { checkedAgo, checkedSaid } from "./SkillSources";
 import { PLANE, STUDIO_HISTORY, forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
 import { AT_THE_ROOT, sourceKey } from "./skillStudio";
 import { openViewAt } from "./ui/panel/viewHistory";
@@ -77,6 +78,7 @@ const NOTIFY = {
   description: "Tells the team.",
   folder: "skills/notify",
   brought_by: "deploy",
+  already: [],
   summary: EMPTY,
   files: [{ path: "SKILL.md", size: 5, executable: false, text: "hi", risky: false }],
   left_out: [],
@@ -92,6 +94,7 @@ const REVIEW = {
       description: "Ships it.",
       folder: "skills/deploy",
       brought_by: null,
+      already: [],
       summary: SUMMARY,
       files: [
         { path: "SKILL.md", size: 10, executable: false, text: "---\nname: deploy\n", risky: true },
@@ -173,8 +176,6 @@ const UPDATE = {
   local_edits: [{ path: "SKILL.md", change: "changed", diff: "+mine\n" }],
   skill: NOTIFY,
   brought: [],
-  reserved: [],
-  refused: null,
   accepted: { commit: "c".repeat(40), skills: [{ name: "notify", digest: "sha256:n1" }] },
 };
 
@@ -297,6 +298,163 @@ describe("the Sources page", () => {
     expect(await screen.findByTestId("skill-source")).toBeInTheDocument();
     expect(times(asked, "skill_sources")).toBeGreaterThan(1);
   });
+});
+
+/**
+ * **The clock the ages are read against** (#4110), pinned, at moments of the day where a second is
+ * about to turn. While the core answers, the clock moves on, as a read takes time on a runner. An
+ * age the test works out when the answer comes, instead of when the window was drawn, then reads
+ * a day short ("4 days" for 5).
+ */
+const MOMENTS = [
+  "2026-10-30T00:00:00.000Z",
+  "2026-10-30T09:41:59.999Z",
+  "2026-10-30T23:59:59.999Z",
+];
+
+describe.each(MOMENTS)("what each source's last check found (#3840), at %s", (moment) => {
+  const nowSecs = () => Math.floor(Date.now() / 1000);
+  /** The moment the window was drawn, which the ages it shows are counted from. */
+  const drawnSecs = Math.floor(Date.parse(moment) / 1000);
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.parse(moment));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  /** The core's read takes a moment: the clock moves on before it answers. */
+  const aMomentLater = () => vi.setSystemTime(Date.now() + 1);
+
+  it("says its skills, how many are installed and when it was checked on its row, asking no source", async () => {
+    const asked = core({
+      answers: {
+        skill_sources_checked: () => {
+          aMomentLater();
+          return [
+            { remote: SOURCE.remote, at: drawnSecs - 3 * 3600 - 30, skills: 14, installed: 2 },
+          ];
+        },
+        // The updates check has not answered: the row does not wait for it.
+        skill_updates: () => new Promise(() => undefined),
+      },
+    });
+    renderStudio(AT_THE_ROOT, "sources");
+    const row = await screen.findByTestId("skill-source");
+    await waitFor(() =>
+      expect(row).toHaveTextContent(
+        "https://example.com/skills · folder skills · 14 skills, 2 installed · checked 3 hours ago · The whole project",
+      ),
+    );
+    expect(did(asked, "skill_source_browse")).toBe(false);
+  });
+
+  it("reads what was recorded again once the updates check has answered", async () => {
+    let at: number | null = null;
+    const asked = core({
+      answers: {
+        skill_sources_checked: () => [{ remote: SOURCE.remote, at, skills: null, installed: 1 }],
+        skill_updates: () => {
+          at = nowSecs();
+          return { offers: [], unasked: [], unconfirmed: [] };
+        },
+      },
+    });
+    renderStudio(AT_THE_ROOT, "sources");
+    const row = await screen.findByTestId("skill-source");
+    await waitFor(() => expect(row).toHaveTextContent("1 installed · checked just now"));
+    expect(times(asked, "skill_sources_checked")).toBeGreaterThan(1);
+  });
+
+  it("says when its page read it in the page's lead", async () => {
+    core({
+      answers: {
+        skill_sources_checked: () => {
+          aMomentLater();
+          return [{ remote: SOURCE.remote, at: drawnSecs - 5 * 86_400, skills: 2, installed: 0 }];
+        },
+        skill_source_browse: () => ({ ...BROWSE, checked: nowSecs() }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const row = await screen.findByTestId("skill-source");
+    await waitFor(() => expect(row).toHaveTextContent("checked 5 days ago"));
+    const page = await openSource(user);
+    await within(page).findByTestId("offered-deploy");
+    expect(page).toHaveTextContent("folder skills · checked just now · The whole project");
+  });
+
+  it("reads what was recorded again on coming back from a source's page, which browsed it", async () => {
+    let at: number | null = null;
+    core({
+      answers: {
+        skill_sources_checked: () => [{ remote: SOURCE.remote, at, skills: 2, installed: 0 }],
+        skill_source_browse: () => {
+          at = nowSecs();
+          return { ...BROWSE, checked: at };
+        },
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await within(page).findByTestId("offered-deploy");
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    const row = await screen.findByTestId("skill-source");
+    await waitFor(() => expect(row).toHaveTextContent("2 skills, 0 installed · checked just now"));
+  });
+
+  it("says ages a person reads at a glance, and nothing where nothing is known", () => {
+    const now = new Date(Date.UTC(2026, 9, 30, 12));
+    expect(checkedAgo(-5, now)).toBe("checked just now");
+    expect(checkedAgo(59, now)).toBe("checked just now");
+    expect(checkedAgo(60, now)).toBe("checked 1 minute ago");
+    expect(checkedAgo(3599, now)).toBe("checked 59 minutes ago");
+    expect(checkedAgo(7200, now)).toBe("checked 2 hours ago");
+    expect(checkedAgo(86_400, now)).toBe("checked 1 day ago");
+    expect(checkedAgo(29 * 86_400, now)).toBe("checked 29 days ago");
+    const remote = SOURCE.remote;
+    expect(checkedSaid(undefined, now)).toBeNull();
+    expect(checkedSaid({ remote, at: null, skills: null, installed: 0 }, now)).toBeNull();
+    expect(checkedSaid({ remote, at: null, skills: 1, installed: 0 }, now)).toBe(
+      "1 skill, 0 installed",
+    );
+  });
+});
+
+/** Runs `run` with the process's time zone set to `zone`, then puts it back. */
+function inZone(zone: string, run: () => void) {
+  const was = process.env.TZ;
+  process.env.TZ = zone;
+  try {
+    run();
+  } finally {
+    if (was === undefined) delete process.env.TZ;
+    else process.env.TZ = was;
+  }
+}
+
+/**
+ * **An age is the same in every time zone; a date is the day where the person is** (#4110). A
+ * check 60 days before 12:00 UTC on 30 Oct was made at 12:00 UTC on 31 Aug, which is already
+ * 1 Sep in Kiritimati (UTC+14).
+ */
+describe("a source's last check in any time zone (#4110)", () => {
+  const now = new Date(Date.UTC(2026, 9, 30, 12));
+
+  it.each([
+    ["UTC", "checked 31 Aug 2026"],
+    ["Pacific/Pago_Pago", "checked 31 Aug 2026"],
+    ["America/Los_Angeles", "checked 31 Aug 2026"],
+    ["Asia/Tokyo", "checked 31 Aug 2026"],
+    ["Pacific/Kiritimati", "checked 1 Sept 2026"],
+  ])("says the same age, and the day it was there, in %s", (zone, date) =>
+    inZone(zone, () => {
+      expect(checkedAgo(5 * 86_400, now)).toBe("checked 5 days ago");
+      expect(checkedAgo(60 * 86_400, now)).toBe(date);
+    }),
+  );
 });
 
 describe("Add source…", () => {
@@ -471,6 +629,60 @@ describe("the install review", () => {
     expect(await screen.findByTestId("skill-source-page")).toBeInTheDocument();
   });
 
+  it("reads the review again where it lands, and leaves a referred skill already there as it is (#4032)", async () => {
+    const OPS = { at: "workspace", name: "ops", local: false };
+    const asked = core({
+      answers: {
+        skill_studio: () => ({
+          on: true,
+          workspace: null,
+          persona: null,
+          workspaces: [],
+          levels: [
+            { level: PROJECT, label: "project" },
+            { level: OPS, label: "ops" },
+          ],
+          harnesses: [],
+          clashes: [],
+          skills: [],
+          first: { starts: false, unmoved: null },
+        }),
+        // The project holds notify already; ops does not.
+        skill_install_review: (args) =>
+          (args.level as { at: string }).at === "project"
+            ? {
+                ...REVIEW,
+                skills: [{ ...REVIEW.skills[0], already: ["notify"] }],
+                accepted: { ...ACCEPTED, skills: [ACCEPTED.skills[0]] },
+              }
+            : REVIEW,
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
+    const review = await screen.findByTestId("install-review");
+    expect(await within(review).findByTestId("already-deploy-notify")).toHaveTextContent(
+      "It refers to notify, which its chats there have already: it is left as it is.",
+    );
+    expect(within(review).queryByTestId("reviewed-notify")).toBeNull();
+    expect(within(review).getByTestId("install-commit")).toHaveTextContent("1 skill");
+    const reviews = () => asked.filter((one) => one.cmd === "skill_install_review");
+    expect(reviews().map((one) => one.args.level)).toEqual([PROJECT]);
+
+    // Another level that does not hold it: read again, and notify comes along.
+    await user.click(within(review).getByRole("radio", { name: "ops" }));
+    expect(await within(review).findByTestId("reviewed-notify")).toBeInTheDocument();
+    expect(within(review).queryByTestId("already-deploy-notify")).toBeNull();
+    expect(reviews().map((one) => one.args.level)).toEqual([PROJECT, OPS]);
+    await user.click(within(review).getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(did(asked, "skill_install")).toBe(true));
+    const install = asked.find((one) => one.cmd === "skill_install");
+    expect(install?.args.level).toEqual(OPS);
+    expect(install?.args.reviewed).toEqual(ACCEPTED);
+  });
+
   it("holds Install, saying why, until the review is read, and Cancel goes back", async () => {
     let answer: (review: unknown) => void = () => undefined;
     core({
@@ -558,6 +770,313 @@ describe("the install review", () => {
   });
 });
 
+/** The one review of `names` as the core answers it (#4024): each named, notify brought along by
+ *  deploy, and what accepting says of exactly those; those of `there` the level holds already,
+ *  left out (#4153). */
+function setReview(names: readonly string[], there: readonly string[] = []) {
+  const HUGE = {
+    ...NOTIFY,
+    name: "huge",
+    description: "Big.",
+    folder: "skills/huge",
+    brought_by: null,
+  };
+  const reviewed = names.filter((name) => !there.includes(name));
+  const skills = [
+    ...(reviewed.includes("deploy") ? [REVIEW.skills[0], NOTIFY] : []),
+    ...(reviewed.includes("huge") ? [HUGE] : []),
+  ];
+  return {
+    kind: "review",
+    there: names.filter((name) => there.includes(name)),
+    review: {
+      commit: commit("a"),
+      skills,
+      accepted: {
+        commit: "a".repeat(40),
+        skills: skills.map((one) => ({ name: one.name, digest: `sha256:${one.name}` })),
+      },
+    },
+  };
+}
+
+/** Opens Install all… from the source's page. */
+async function openInstallAll(user: ReturnType<typeof userEvent.setup>) {
+  const page = await openSource(user);
+  await within(page).findByTestId("offered-deploy");
+  await user.click(within(page).getByRole("button", { name: "Install all…" }));
+  return screen.findByTestId("install-all-choose");
+}
+
+describe("Install all… (#4024)", () => {
+  it("ticks every skill not installed yet, greys the installed one, and reviews those ticked", async () => {
+    const asked = core({
+      answers: {
+        skill_install_set_review: (args) => setReview(args.names as string[]),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    expect(path()).toContain("Install all");
+    expect(await within(choose).findByTestId("install-all-lead")).toHaveTextContent(
+      "pinned to commit aaaaaaa",
+    );
+    const box = (name: string) =>
+      within(within(choose).getByTestId(`choose-${name}`)).getByRole("checkbox");
+    expect(box("deploy")).toBeChecked();
+    expect(box("huge")).toBeChecked();
+    // Installed: greyed, its box out of reach, with its way to the Library.
+    expect(box("notify")).not.toBeChecked();
+    expect(box("notify")).toBeDisabled();
+    const notify = within(choose).getByTestId("choose-notify");
+    expect(notify).toHaveTextContent("Installed");
+    expect(
+      within(notify).getByRole("button", { name: "See it in Library: notify" }),
+    ).toBeInTheDocument();
+    expect(within(choose).getByTestId("choose-deploy")).toHaveTextContent("runs a script");
+
+    // Untick to narrow.
+    await user.click(box("huge"));
+    expect(box("huge")).not.toBeChecked();
+    expect(did(asked, "skill_install_set_review")).toBe(false);
+    await user.click(within(choose).getByRole("button", { name: "Review 1 skill" }));
+
+    const review = await screen.findByTestId("install-all-review");
+    expect(path()).toContain("Review");
+    expect(asked.find((one) => one.cmd === "skill_install_set_review")?.args.names).toEqual([
+      "deploy",
+    ]);
+    // Read for where they land, so a skill one refers to that is there already stays out (#4032).
+    expect(asked.find((one) => one.cmd === "skill_install_set_review")?.args.level).toEqual(
+      PROJECT,
+    );
+    expect(await within(review).findByTestId("install-commit")).toHaveTextContent(
+      "at commit aaaaaaa: 2 skills, 4 risky items marked",
+    );
+    // One level for all of them, chosen at the top.
+    expect(within(review).getAllByRole("radio", { name: "project" })).toHaveLength(1);
+    // Each skill's risky items on its box; the one brought along follows the one that brought it.
+    expect(within(review).getByTestId("keep-deploy")).toHaveTextContent(
+      "Install deploy (4 risky items)",
+    );
+    expect(within(within(review).getByTestId("keep-notify")).getByRole("checkbox")).toBeDisabled();
+    expect(within(review).getByText(/Comes along: deploy refers to it/)).toBeInTheDocument();
+    // Its files are read when unfolded.
+    expect(within(review).queryByTestId("file-scripts/ship.sh")).toBeNull();
+    await user.click(within(review).getByRole("button", { name: "Its files (2)" }));
+    expect(within(review).getByTestId("file-scripts/ship.sh")).toHaveTextContent("Look closely");
+
+    await user.click(within(review).getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(did(asked, "skill_install")).toBe(true));
+    const install = asked.find((one) => one.cmd === "skill_install");
+    expect(install?.args.reviewed).toEqual(setReview(["deploy"]).review.accepted);
+    expect(install?.args.level).toEqual(PROJECT);
+    expect(await screen.findByTestId("skill-source-page")).toBeInTheDocument();
+  });
+
+  it("shows a ticked skill the level holds already as there, unticked, and installs the rest (#4153)", async () => {
+    const asked = core({
+      answers: {
+        // The project holds huge already, made there by hand.
+        skill_install_set_review: (args) => setReview(args.names as string[], ["huge"]),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    await user.click(await within(choose).findByRole("button", { name: "Review 2 skills" }));
+    const review = await screen.findByTestId("install-all-review");
+    const huge = await within(review).findByTestId("there-huge");
+    expect(within(huge).getByRole("checkbox")).not.toBeChecked();
+    expect(within(huge).getByRole("checkbox")).toBeDisabled();
+    expect(within(review).getByText(/so it is left as it is/)).toBeInTheDocument();
+    expect(within(review).queryByTestId("keep-huge")).toBeNull();
+    expect(within(review).queryByTestId("left-out-huge")).toBeNull();
+
+    await user.click(within(review).getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(did(asked, "skill_install")).toBe(true));
+    const install = asked.find((one) => one.cmd === "skill_install");
+    expect(install?.args.reviewed).toEqual(setReview(["deploy", "huge"], ["huge"]).review.accepted);
+  });
+
+  it("keeps a skill there already named when it reviews the first part (#4153)", async () => {
+    let first = true;
+    const asked = core({
+      answers: {
+        // A third skill, lint, to leave for the second part.
+        skill_source_browse: () => ({
+          ...BROWSE,
+          skills: [
+            ...BROWSE.skills,
+            {
+              name: "lint",
+              description: "Lints.",
+              folder: "skills/lint",
+              installed: [],
+              marks: [],
+            },
+          ],
+        }),
+        // The first review is past one read: deploy fits, lint is the rest, and the level holds
+        // huge already.
+        skill_install_set_review: (args) => {
+          if (!first) return setReview(args.names as string[], ["huge"]);
+          first = false;
+          return {
+            kind: "too-much",
+            fits: ["deploy"],
+            rest: ["lint"],
+            why: "example skills holds more than 64 MiB of skills to read, the most purlis reads of one skill source at once",
+            there: ["huge"],
+          };
+        },
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    await user.click(await within(choose).findByRole("button", { name: "Review 3 skills" }));
+    const review = await screen.findByTestId("install-all-review");
+    await user.click(await within(review).findByRole("button", { name: "Review the first skill" }));
+    expect(await within(review).findByTestId("there-huge")).toBeInTheDocument();
+    expect(within(review).queryByTestId("left-out-huge")).toBeNull();
+    const reviews = asked.filter((one) => one.cmd === "skill_install_set_review");
+    expect(reviews.at(-1)?.args.names).toEqual(["deploy", "huge"]);
+  });
+
+  it("holds Install where every ticked skill is there already (#4153)", async () => {
+    core({
+      answers: {
+        skill_install_set_review: (args) =>
+          setReview(args.names as string[], args.names as string[]),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    await user.click(await within(choose).findByRole("button", { name: "Review 2 skills" }));
+    const review = await screen.findByTestId("install-all-review");
+    await within(review).findByTestId("there-deploy");
+    expect(within(review).getByRole("button", { name: "Install" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
+  it("keeps the list as it was ticked when the person comes back from the review", async () => {
+    core({
+      answers: {
+        skill_install_set_review: (args) => setReview(args.names as string[]),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    const huge = () =>
+      within(within(screen.getByTestId("install-all-choose")).getByTestId("choose-huge")).getByRole(
+        "checkbox",
+      );
+    await within(choose).findByTestId("choose-huge");
+    await user.click(huge());
+    await user.click(within(choose).getByRole("button", { name: "Review 1 skill" }));
+    const review = await screen.findByTestId("install-all-review");
+    await user.click(within(review).getByRole("button", { name: "Cancel" }));
+    await screen.findByTestId("install-all-choose");
+    await waitFor(() => expect(huge()).not.toBeChecked());
+  });
+
+  it("says Update waiting on a skill whose update waits, and sends it to Review update", async () => {
+    core({ offers: [OFFER] });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    const notify = await within(choose).findByTestId("choose-notify");
+    expect(notify).toHaveTextContent("Update waiting");
+    expect(within(notify).getByRole("checkbox")).toBeDisabled();
+    await user.click(within(notify).getByRole("button", { name: "Review update: notify" }));
+    expect(await screen.findByTestId("update-review")).toBeInTheDocument();
+  });
+
+  it("leaves a skill out from the review itself, reviewing the rest again, and brings it back", async () => {
+    const asked = core({
+      answers: {
+        skill_install_set_review: (args) => setReview(args.names as string[]),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    await user.click(await within(choose).findByRole("button", { name: "Review 2 skills" }));
+    const review = await screen.findByTestId("install-all-review");
+    await within(review).findByTestId("keep-huge");
+    await user.click(within(within(review).getByTestId("keep-deploy")).getByRole("checkbox"));
+    await waitFor(() => expect(within(review).queryByTestId("keep-deploy")).toBeNull());
+    const reviews = asked.filter((one) => one.cmd === "skill_install_set_review");
+    expect(reviews.at(-1)?.args.names).toEqual(["huge"]);
+    expect(within(review).getByTestId("left-out-deploy")).toHaveTextContent("Install deploy");
+    await user.click(within(within(review).getByTestId("left-out-deploy")).getByRole("checkbox"));
+    await within(review).findByTestId("keep-deploy");
+    const again = asked.filter((one) => one.cmd === "skill_install_set_review");
+    expect(again.at(-1)?.args.names).toEqual(["deploy", "huge"]);
+  });
+
+  it("says when the set is more than one review can read, and offers the first part", async () => {
+    const asked = core({
+      answers: {
+        skill_install_set_review: (args) =>
+          (args.names as string[]).length > 1
+            ? {
+                kind: "too-much",
+                fits: ["deploy"],
+                rest: ["huge"],
+                why: "example skills holds more than 64 MiB of skills to read, the most purlis reads of one skill source at once",
+                there: [],
+              }
+            : setReview(args.names as string[]),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    await user.click(await within(choose).findByRole("button", { name: "Review 2 skills" }));
+    const review = await screen.findByTestId("install-all-review");
+    const said = await within(review).findByTestId("install-all-too-much");
+    expect(said).toHaveTextContent("more than 64 MiB of skills to read");
+    expect(said).toHaveTextContent(
+      "Install them in two parts: the first skill now, then the other 1 with Install all… again.",
+    );
+    expect(within(review).getByRole("button", { name: "Install" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await user.click(within(said).getByRole("button", { name: "Review the first skill" }));
+    await within(review).findByTestId("keep-deploy");
+    expect(
+      asked.filter((one) => one.cmd === "skill_install_set_review").at(-1)?.args.names,
+    ).toEqual(["deploy"]);
+  });
+
+  it("cannot be pressed when every skill of the source is installed", async () => {
+    core({
+      answers: {
+        skill_source_browse: () => ({
+          ...BROWSE,
+          skills: BROWSE.skills.map((one) => ({ ...one, installed: ["project"] })),
+        }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await within(page).findByTestId("offered-deploy");
+    expect(within(page).getByRole("button", { name: "Install all…" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+});
+
 describe("the update review", () => {
   it("shows what changes, the source's diff and your edits, and changes nothing until accepted", async () => {
     const asked = core({ offers: [OFFER] });
@@ -581,33 +1100,6 @@ describe("the update review", () => {
       skills: [{ name: "notify", digest: "sha256:n1" }],
     });
     expect(await screen.findByTestId("skill-sources")).toBeInTheDocument();
-  });
-
-  it("says up front that a skill it brings along has a built-in skill's name, and holds Accept update", async () => {
-    // #3728: accepting it would be refused, so the review says so before.
-    const refused =
-      "This update brings along secrets, whose name belongs to a built-in skill, so it can't be taken until the source renames it.";
-    const asked = core({
-      offers: [OFFER],
-      answers: {
-        skill_update_review: () => ({
-          ...UPDATE,
-          brought: [{ ...NOTIFY, name: "secrets", brought_by: "notify" }],
-          reserved: ["secrets"],
-          refused,
-        }),
-      },
-    });
-    const user = userEvent.setup();
-    renderStudio(AT_THE_ROOT, "sources");
-    await screen.findByTestId("skill-updates");
-    await user.click(screen.getByRole("button", { name: "Review update" }));
-    const review = await screen.findByTestId("update-review");
-    expect(await within(review).findByTestId("update-refused")).toHaveTextContent(refused);
-    const accept = within(review).getByRole("button", { name: "Accept update" });
-    expect(accept).toHaveAttribute("aria-disabled", "true");
-    await user.click(accept);
-    expect(did(asked, "skill_update")).toBe(false);
   });
 
   it("Not now leaves it as it is, and back walks the pages again", async () => {

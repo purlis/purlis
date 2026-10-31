@@ -11,14 +11,28 @@ import {
   type Catalogued,
   type Offer,
 } from "./actions";
-import type { CloneState } from "./repoClones";
+import { cloningWords, underWay, type CloneState } from "./repoClones";
 import { Button } from "./ui/button/Button";
+import { ProgressBar } from "./ui/meter/Meter";
 import { PanelSectionTitle } from "./ui/panel/Panel";
 
 /** What this window is cloning into the focused workspace, by repo (`repoClones`). */
 export type Cloning = ReadonlyMap<string, CloneState>;
 
 const NOTHING_CLONING: Cloning = new Map();
+
+/** **How far a repo's clone has got, as a bar under its row** (#4079), until it lands. */
+export function CloneBar({ repo, state }: { repo: string; state: CloneState | undefined }) {
+  if (state?.state !== "cloning" || state.percent === undefined) return null;
+  return (
+    <ProgressBar
+      className="clone-bar"
+      label={`Cloning ${repo}`}
+      value={state.percent}
+      valueLabel={cloningWords(state)}
+    />
+  );
+}
 
 /**
  * **The repos a workspace names that are not cloned here, and the way to clone them** (#1215).
@@ -38,17 +52,22 @@ const NOTHING_CLONING: Cloning = new Map();
  * Clone on hover or focus, and below the line of the row's menu. It presses the catalogue's
  * `absent.drop:<repo>`, which asks first; only the repo's row in `workspace.json` goes, since
  * nothing of it is here to delete. While its clone is under way it is not offered.
+ *
+ * **While a clone is under way, the row offers Cancel** (#4079): a clone has no deadline, so the
+ * person can always stop one from where it is drawn. `onStop` is what stops it.
  */
 export function NotClonedHere({
   absent,
   cloning = NOTHING_CLONING,
   offers,
   onPress,
+  onStop,
 }: {
   absent: readonly string[];
   cloning?: Cloning;
   offers: Catalogued;
   onPress: (offer: Offer) => void;
+  onStop?: (repo: string) => void;
 }) {
   if (absent.length === 0) return null;
   const all = offers.get(CLONE_ALL_ID);
@@ -80,6 +99,7 @@ export function NotClonedHere({
             drop={offers.get(dropMembershipId(repo))}
             offers={offers}
             onPress={onPress}
+            onStop={onStop}
           />
         ))}
       </ul>
@@ -94,6 +114,7 @@ function AbsentRow({
   drop,
   offers,
   onPress,
+  onStop,
 }: {
   repo: string;
   state: CloneState | undefined;
@@ -102,10 +123,11 @@ function AbsentRow({
   drop: Offer | undefined;
   offers: Catalogued;
   onPress: (offer: Offer) => void;
+  onStop?: (repo: string) => void;
 }) {
   // Cloned is busy too, until the panels read again drop the repo from this list: its Clone
   // must not be pressable in between.
-  const busy = state !== undefined && state.state !== "failed";
+  const busy = underWay(state) || state?.state === "cloned";
   const press = () => {
     if (offer !== undefined) onPress(offer);
   };
@@ -121,12 +143,17 @@ function AbsentRow({
             <span className="pending ui-text-secondary" aria-busy="true">
               <LoaderCircle className="node-icon spinning" />
               <span>
-                {state.state === "cloning"
-                  ? `Cloning ${repo}…`
-                  : state.state === "cloned"
+                {state?.state === "cloning"
+                  ? `Cloning ${repo}… ${cloningWords(state)}`.trimEnd()
+                  : state?.state === "cloned"
                     ? `Cloned ${repo}.`
                     : `${repo} is waiting to be cloned.`}
               </span>
+              {underWay(state) && onStop !== undefined && (
+                <Button aria-label={`Cancel cloning ${repo}`} onPress={() => onStop(repo)}>
+                  Cancel
+                </Button>
+              )}
             </span>
           ) : (
             (offer !== undefined || drop !== undefined) && (
@@ -159,6 +186,7 @@ function AbsentRow({
           )}
         </div>
       </Menued>
+      <CloneBar repo={repo} state={state} />
       {state?.state === "failed" && (
         // The core's own sentence, never a summary of it: it says whether it was access, the
         // network or a forge the operator is not logged in to.

@@ -586,7 +586,11 @@ impl SessionHost for RoutedSessions {
         self.pool(pool)?.move_in(pool, chats)
     }
 
-    fn move_out(&self, pool: &str, chats: &[crate::host::Moving]) -> Result<Vec<String>, String> {
+    fn move_out(
+        &self,
+        pool: &str,
+        chats: &[crate::host::Moving],
+    ) -> Result<crate::host::CameBack, String> {
         self.pool(pool)?.move_out(pool, chats)
     }
 
@@ -673,6 +677,24 @@ impl SessionHost for RoutedSessions {
         match self.host_of(number) {
             Some(host) => host.ran_with(number),
             None => self.here.ran_with(number),
+        }
+    }
+
+    fn prompt_key_started(
+        &self,
+        number: u32,
+        minted: Option<purlis_core::skillspan::PromptSalt>,
+    ) -> Option<purlis_core::skillspan::PromptSalt> {
+        match self.host_of(number) {
+            Some(host) => host.prompt_key_started(number, minted),
+            None => self.here.prompt_key_started(number, minted),
+        }
+    }
+
+    fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {
+        match self.host_of(number) {
+            Some(host) => host.prompt_key_left(number),
+            None => self.here.prompt_key_left(number),
         }
     }
 

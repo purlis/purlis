@@ -57,6 +57,8 @@ fn fell(theme: &ResolvedTheme) -> Vec<String> {
 
 const CRUMB: &str = "[data-scope=\"titlebar\"][data-part=\"crumb\"]";
 const ROW: &str = "[data-scope=\"titlebar\"][data-part=\"row\"]";
+/// What a row's keys never reach (#4000): an unavailable row.
+const AVAIL: &str = ":not([data-unavailable])";
 
 #[test]
 fn a_crumb_whose_words_vanish_under_the_pointer_falls_alone() {
@@ -83,16 +85,17 @@ fn a_selected_row_is_measured_on_the_selected_fill_it_is_drawn_on() {
     // selected row's fill (4.1:1): measured on the popover, it would hold.
     let theme = classic_light(json!({ "titlebar.row.selected.text": "syntax.keyword" }));
     assert_eq!(fell(&theme), ["titlebar.row.selected"]);
-    // At rest, on the popover, the same words hold.
+    // Under the pointer, on the popover, the same words hold, but not on the selected row
+    // under the pointer, which they reach too (#4000).
     let theme = classic_light(json!({ "titlebar.row.hover.text": "syntax.keyword" }));
-    assert!(fell(&theme).is_empty(), "{:?}", fell(&theme));
+    assert_eq!(fell(&theme), ["titlebar.row.hover+selected"]);
     // And words that read on the selected fill hold there.
     let theme = purlis_dark(json!({ "titlebar.row.selected.text": "text.primary" }));
     assert!(fell(&theme).is_empty(), "{:?}", fell(&theme));
     let sheet = parts::stylesheet(&theme);
     assert!(
         sheet.contains(&format!(
-            ":where({ROW}[data-selected]) {{ color: var(--text-primary); }}"
+            ":where({ROW}[data-selected]{AVAIL}) {{ color: var(--text-primary); }}"
         )),
         "{sheet}"
     );
@@ -126,13 +129,13 @@ fn a_row_that_falls_at_rest_keeps_the_selected_row_s_fill() {
     let sheet = parts::stylesheet(&theme);
     assert!(
         sheet.contains(&format!(
-            ":where({ROW}[data-selected]) {{ background-color: var(--list-selected); color: var(--text-primary); }}"
+            ":where({ROW}[data-selected]{AVAIL}) {{ background-color: var(--list-selected); color: var(--text-primary); }}"
         )),
         "{sheet}"
     );
     assert!(
         sheet.contains(&format!(
-            ":where({ROW}[data-hovered]:not([data-disabled])) {{ background-color: var(--surface-overlay); color: var(--text-secondary); }}"
+            ":where({ROW}[data-hovered]:not([data-disabled]){AVAIL}) {{ background-color: var(--surface-overlay); }}"
         )),
         "{sheet}"
     );
@@ -163,11 +166,12 @@ fn a_failing_chip_and_a_failing_crumb_each_fall_on_their_own() {
         )),
         "{sheet}"
     );
-    // Its states draw their own defaults back too: the rest rule's none would cover them.
+    // Its states draw back what their own defaults change from the rest: the rest rule's none
+    // would cover their fill.
     for state in ["[data-hovered]:not([data-disabled])", "[data-selected]"] {
         assert!(
             sheet.contains(&format!(
-                ":where({CRUMB}{state}) {{ background-color: var(--surface-overlay); color: var(--text-secondary); }}"
+                ":where({CRUMB}{state}) {{ background-color: var(--surface-overlay); }}"
             )),
             "{state}: {sheet}"
         );

@@ -239,7 +239,9 @@ describe("Settings › Sandbox's hosts", () => {
     await userEvent.type(within(form).getByLabelText("Host"), "https://x.example/");
     await userEvent.click(within(form).getByRole("button", { name: "Add host" }));
 
-    expect(await within(form).findByText(/That is a URL/)).toBeInTheDocument();
+    // Heard once, as the form's summary (#3291), and said under the field it is about.
+    expect(await within(form).findByRole("alert")).toHaveTextContent("Host: That is a URL.");
+    expect(within(form).getByLabelText("Host")).toHaveAccessibleDescription(/That is a URL/);
     expect(within(form).getByLabelText("Host")).toHaveValue("https://x.example/");
   });
 
@@ -569,7 +571,9 @@ describe("Settings › Sandbox › Persona hosts", () => {
     await pickIn(within(form).getByLabelText("Persona"), "writer");
     await userEvent.type(within(form).getByLabelText("Host"), "api.example.com");
     await userEvent.click(within(form).getByRole("button", { name: "Add host" }));
-    expect(await within(form).findByText(why)).toBeInTheDocument();
+    // Heard once, as the form's summary (#3291), and drawn where it belongs.
+    expect(await within(form).findByRole("alert")).toHaveTextContent(why);
+    expect(form.querySelector(".ui-setting-error:not([aria-live])")).toHaveTextContent(why);
   });
 
   it("removes one host, and the persona's table with its last", async () => {

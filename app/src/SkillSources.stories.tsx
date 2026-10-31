@@ -11,21 +11,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { SkillStudioTab } from "./SkillStudioTab";
-import {
-  AT_THE_ROOT,
-  SKILL_STUDIO_VIEW,
-  sourceKey,
-  studioHistoryOf,
-  type SourcesAt,
-} from "./skillStudio";
+import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.testkit";
+import { AT_THE_ROOT, sourceKey, type SourcesAt } from "./skillStudio";
 import { PROJECT } from "./skillChanges";
 import { studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
-
-const PLANE = "/home/dev/plane";
-const HISTORY = studioHistoryOf(PLANE, SKILL_STUDIO_VIEW);
 
 const commit = (c: string) => ({ id: c.repeat(40), short: c.repeat(7) });
 
@@ -81,6 +72,7 @@ const DEBUGGING = {
   description: "Finds the cause of a bug before fixing it, with a loop that goes red.",
   folder: "skills/systematic-debugging",
   brought_by: null,
+  already: [],
   summary: SCRIPTED,
   files: [
     {
@@ -112,10 +104,37 @@ const OFFER = {
   edited: true,
 };
 
-/** The faked core: two sources, one update waiting, one source not confirmed here. */
-function core() {
-  mockIPC((cmd) => {
+/** test-driven-development as its review shows it: instructions only. */
+const TDD = {
+  ...DEBUGGING,
+  name: "test-driven-development",
+  description: "Builds each behaviour test-first, one red-green slice at a time.",
+  folder: "skills/test-driven-development",
+  summary: EMPTY,
+  files: [
+    {
+      path: "SKILL.md",
+      size: 512,
+      executable: false,
+      text: "---\nname: test-driven-development\ndescription: Builds each behaviour test-first.\n---\n\n1. Write one failing test.\n2. Make it pass.\n",
+      risky: false,
+    },
+  ],
+};
+
+/** Seconds since the epoch, `ago` seconds ago: the checks are ages, so the pictures hold. */
+const secondsAgo = (ago: number) => Math.floor(Date.now() / 1000) - ago;
+
+/** The faked core: two sources, one update waiting, one source not confirmed here; the one
+ *  review of Install all… is more than one read where `tooMuch` says so (#4024). */
+function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
+  mockIPC((cmd, args) => {
     switch (cmd) {
+      case "skill_sources_checked":
+        return [
+          { remote: SUPERPOWERS.remote, at: secondsAgo(3 * 3600 + 60), skills: 14, installed: 1 },
+          { remote: PLATFORM.remote, at: null, skills: null, installed: 1 },
+        ];
       case "skill_studio":
         return studio([], {});
       case "skill_sources":
@@ -150,6 +169,7 @@ function core() {
       case "skill_source_browse":
         return {
           commit: commit("3"),
+          checked: secondsAgo(5 * 60 + 30),
           skills: [
             {
               name: "brainstorming",
@@ -181,9 +201,32 @@ function core() {
       case "skill_install_review":
         return {
           commit: commit("3"),
-          skills: [DEBUGGING],
+          // It refers to a skill the level holds already, left as it is (#4032).
+          skills: [{ ...DEBUGGING, already: ["test-driven-development"] }],
           accepted: { commit: "3".repeat(40), skills: [] },
         };
+      case "skill_install_set_review": {
+        const names = (args as { names: string[] }).names;
+        if (tooMuch)
+          return {
+            kind: "too-much",
+            fits: names.slice(0, 1),
+            rest: names.slice(1),
+            why: "https://github.com/obra/superpowers holds more than 64 MiB of skills to read, the most purlis reads of one skill source at once",
+            there: [],
+          };
+        const skills = [TDD, DEBUGGING].filter((one) => names.includes(one.name));
+        return {
+          kind: "review",
+          // Those ticked that the level holds already, made there by hand (#4153).
+          there: names.filter((name) => name === "writing-plans"),
+          review: {
+            commit: commit("3"),
+            skills,
+            accepted: { commit: "3".repeat(40), skills: [] },
+          },
+        };
+      }
       case "skill_update_review":
         return {
           name: "brainstorming",
@@ -214,8 +257,6 @@ function core() {
             files: [DEBUGGING.files[0]],
           },
           brought: [],
-          reserved: [],
-          refused: null,
           accepted: { commit: "8".repeat(40), skills: [] },
         };
       case "skill_deletes_cut_short":
@@ -228,11 +269,7 @@ function core() {
 
 /** The studio tab, `width` by 560 px, opened on Sources at `at`. */
 function Tab({ width, narrow }: { width: number; narrow?: boolean; at?: SourcesAt }) {
-  return (
-    <div className="view-body" style={{ inlineSize: width, blockSize: 560, display: "flex" }}>
-      <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
-    </div>
-  );
+  return <StudioInPanel width={width} height={560} narrow={narrow} />;
 }
 
 const SOURCE = sourceKey(SUPERPOWERS.remote);
@@ -264,6 +301,13 @@ export const Sources: Story = {
     await canvas.findByTestId("skill-updates");
     await canvas.findByTestId("skill-source-unconfirmed");
     await waitFor(() => expect(canvas.getAllByTestId("skill-source")).toHaveLength(2));
+    // What each source's last check found, on its row (#3840).
+    await waitFor(() =>
+      expect(canvas.getAllByTestId("skill-source")[0]).toHaveTextContent(
+        "14 skills, 1 installed · checked 3 hours ago",
+      ),
+    );
+    await expect(canvas.getAllByTestId("skill-source")[1]).toHaveTextContent("1 installed");
     await expect(canvas.getAllByTestId("skill-source-offered")).toHaveLength(2);
     const review = canvas.getByRole("button", { name: "Review update" });
     for (let step = 0; step < 30 && document.activeElement !== review; step++)
@@ -301,6 +345,9 @@ export const SourcePage: Story = {
     const debugging = await canvas.findByTestId("offered-systematic-debugging");
     await expect(debugging).toHaveTextContent("runs a script");
     await expect(canvas.getByTestId("offered-brainstorming")).toHaveTextContent("Update available");
+    await expect(canvas.getByTestId("skill-source-page")).toHaveTextContent(
+      "checked 5 minutes ago",
+    );
   },
 };
 
@@ -325,5 +372,81 @@ export const UpdateReview: Story = {
     const review = await canvas.findByTestId("update-review");
     await within(review).findByTestId("update-edited");
     await expect(within(review).getByRole("button", { name: "Accept update" })).toBeVisible();
+  },
+};
+
+/** **Install all…, the skills to tick** (#4024): every skill not installed yet ticked; the
+ *  installed one greyed, its update waiting, with Review update; Review at the foot. */
+export const InstallAllChoose: Story = {
+  args: { at: { at: "choose", source: SOURCE, label: SUPERPOWERS.label } },
+  play: async ({ canvas }) => {
+    const choose = await canvas.findByTestId("install-all-choose");
+    const debugging = await within(choose).findByTestId("choose-systematic-debugging");
+    await expect(within(debugging).getByRole("checkbox")).toBeChecked();
+    const brainstorming = within(choose).getByTestId("choose-brainstorming");
+    await expect(brainstorming).toHaveTextContent("Update waiting");
+    await expect(within(brainstorming).getByRole("checkbox")).toBeDisabled();
+    await expect(within(choose).getByRole("button", { name: "Review 2 skills" })).toBeVisible();
+  },
+};
+
+/** **Install all…, the one review**: where they land at the top, each skill with its box and its
+ *  risky items, one skill's files unfolded, and Install at the foot. */
+export const InstallAllReview: Story = {
+  args: {
+    at: {
+      at: "install-all",
+      source: SOURCE,
+      label: SUPERPOWERS.label,
+      skills: ["test-driven-development", "systematic-debugging"],
+    },
+  },
+  play: async ({ canvas }) => {
+    const review = await canvas.findByTestId("install-all-review");
+    await within(review).findByTestId("install-commit");
+    await expect(within(review).getByTestId("keep-systematic-debugging")).toHaveTextContent(
+      "2 risky items",
+    );
+    await userEvent.click(
+      within(within(review).getByTestId("reviewed-systematic-debugging")).getByRole("button", {
+        name: "Its files (2)",
+      }),
+    );
+    await expect(within(review).getByRole("button", { name: "Install" })).toBeVisible();
+  },
+};
+
+/** **Install all…, one ticked already there** (#4153): the level holds writing-plans, made
+ *  there by hand, so it is shown as there, its box unticked and out of reach, and left as it is. */
+export const InstallAllThere: Story = {
+  args: {
+    at: {
+      at: "install-all",
+      source: SOURCE,
+      label: SUPERPOWERS.label,
+      skills: ["test-driven-development", "writing-plans"],
+    },
+  },
+  play: async ({ canvas }) => {
+    const review = await canvas.findByTestId("install-all-review");
+    const there = await within(review).findByTestId("there-writing-plans");
+    await expect(within(there).getByRole("checkbox")).not.toBeChecked();
+    await expect(within(review).getByRole("button", { name: "Install" })).toBeVisible();
+    // The picture shows the section, below the skill being installed.
+    there.scrollIntoView({ block: "end" });
+  },
+};
+
+/** **Install all…, past one read**: it says so and offers the first part, Install held. */
+export const InstallAllTooMuch: Story = {
+  args: InstallAllReview.args,
+  beforeEach: () => {
+    core({ tooMuch: true });
+  },
+  play: async ({ canvas }) => {
+    const said = await canvas.findByTestId("install-all-too-much");
+    await expect(
+      within(said).getByRole("button", { name: "Review the first skill" }),
+    ).toBeVisible();
   },
 };

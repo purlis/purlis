@@ -204,7 +204,8 @@ call site.
 | `run`, `run_until` | a read with a deadline; `run_until` also hears a person's stop |
 | `run_untimed` | a call that checks out a tree (`worktree add`, `merge`) |
 | `run_with_input`, `spawn_fed` | a verb fed on standard input (`--stdin`, `cat-file --batch`) |
-| `run_network` | `clone`, `fetch`, and `publish` when it lands |
+| `run_network` | a chat's brokered `clone`, `fetch`, and `publish` when it lands |
+| `spawn_network` | a `clone` that is not a chat's, under the same rule: its caller reads git as it runs (see below) |
 | `run_as_session` | the project-root guards, which ask what the session's own git would do |
 | `run_in_hook` | a read from inside a git hook, of the index the hook's command is using |
 | `spawn_persons_clone` | the person's own clone from the welcome's Get a project (see below) |
@@ -278,6 +279,28 @@ repo and sees them run.
   `.git` file names something purlis will not follow is refused, as for every runner. Past the
   check they are not handed the git directory it read, so git finds the repository as the
   session's own git does, and a hook's `GIT_DIR` still names it.
+
+## A clone a chat did not ask for
+
+A repo cloned into a workspace, from the window or with `purlis clone`, goes through
+`spawn_network`: the one-credential rule holds, and the caller reads git's progress as it runs.
+A chat's brokered clone keeps `run_network` and its deadline for now.
+
+- **No total deadline.** git is stopped after five minutes with no new output, and
+  `http.lowSpeedLimit`/`http.lowSpeedTime` let curl end a dead transfer. A large repo on a slow
+  line takes as long as it takes, and the window offers Cancel, which stops git.
+- **It lands whole or not at all.** git clones into `.cloning-<name>` beside the destination,
+  which `/workspaces/*/*` already ignores and which no listing of a workspace's clones reads. A
+  finished clone is renamed into place; a failed or stopped one is removed. A leftover from a crash
+  is replaced by the next clone, and one another purlis is running is left to it.
+- **One more try** on a transfer that broke part way (early EOF, RPC failed, the remote hung up),
+  over `http.version=HTTP/1.1`, the cure for curl's HTTP/2 stream errors on a large pack.
+- **Full clones.** A `--filter=blob:none` clone would need the network and a credential for each
+  later blob, which a sandboxed chat does not have.
+- **Whose credential.** The person's purlis account for the URL's real server, port included. The
+  CLI's helper is the fallback where there is no account. What the window says of a failure names
+  neither CLI: an auth failure says which host to sign in to, and the card goes to Settings › You
+  › Accounts.
 
 ## The person's own clone
 

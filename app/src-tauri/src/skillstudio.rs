@@ -38,9 +38,11 @@ pub(crate) fn needs_as(persona: &str) -> String {
 }
 
 /// **How many items Needs you holds for a chat in `workspace` as `persona`** (#3695), read as
-/// [`skill_studio`] reads them ([`with_the_projects_needs`]), for a summary line. `waiting` is
-/// the files purlis's own proposed changes wait on.
+/// [`skill_studio`] reads them ([`with_the_projects_needs`]), the extensions' lints asked as it
+/// asks them ([`with_list_lints`], #3940) where `executor` is given, for a summary line.
+/// `waiting` is the files purlis's own proposed changes wait on.
 pub(crate) fn needing_here(
+    executor: Option<&purlis_core::executor::Executor>,
     root: &std::path::Path,
     waiting: &[String],
     workspace: Option<&str>,
@@ -48,20 +50,50 @@ pub(crate) fn needing_here(
 ) -> usize {
     let built_in =
         crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
-    needing(
-        root,
-        built_in.as_deref(),
-        waiting,
-        workspace,
-        persona,
-        &purlis_core::harness_plugin::Env::of(&[]),
-    )
+    let count = |more: &[&dyn purlis_core::skills::SkillLint]| {
+        needing_with(
+            root,
+            built_in.as_deref(),
+            waiting,
+            workspace,
+            persona,
+            &purlis_core::harness_plugin::Env::of(&[]),
+            more,
+        )
+    };
+    match executor {
+        Some(executor) => with_list_lints(executor, root, count),
+        None => count(&[]),
+    }
+}
+
+/// **The extensions' lints as a studio list asks them, handed to `with`** (#3940): each
+/// extension this machine approved and the project has on that declares `skill-lint`, answered
+/// from what it said of the same files before and asked only within the list's time
+/// ([`purlis_core::skills::studio::ListLints`]). None where there is no such extension or no
+/// config home. The one way the studio and the summary lines ask them, so their counts agree.
+pub(crate) fn with_list_lints<T>(
+    executor: &purlis_core::executor::Executor,
+    root: &std::path::Path,
+    with: impl FnOnce(&[&dyn purlis_core::skills::SkillLint]) -> T,
+) -> T {
+    purlis_core::skills::studio::with_studio(executor, root, |studio| {
+        let lints = studio
+            .map(|studio| studio.list_lints())
+            .filter(|lints| !lints.is_empty());
+        let more: Vec<&dyn purlis_core::skills::SkillLint> = lints
+            .iter()
+            .map(|lints| lints as &dyn purlis_core::skills::SkillLint)
+            .collect();
+        with(&more)
+    })
 }
 
 /// [`needing_here`], with the built-in skills in `built_in` and `env` read for where each
 /// harness keeps its own. The studio is read only for what its items are worked out from
 /// ([`purlis_core::skills::Reading::Needs`], #3781): no badge, no router, no list of the
 /// workspaces or levels, so a persona's page draws its count without the whole studio.
+#[cfg(test)]
 pub(crate) fn needing(
     root: &std::path::Path,
     built_in: Option<&std::path::Path>,
@@ -69,6 +101,20 @@ pub(crate) fn needing(
     workspace: Option<&str>,
     persona: Option<&str>,
     env: &purlis_core::harness_plugin::Env<'_>,
+) -> usize {
+    needing_with(root, built_in, waiting, workspace, persona, env, &[])
+}
+
+/// [`needing_here`]'s count, with the built-in skills in `built_in`, `env` read for where each
+/// harness keeps its own, and the plane's own skills linted by `more` too ([`with_list_lints`]).
+pub(crate) fn needing_with(
+    root: &std::path::Path,
+    built_in: Option<&std::path::Path>,
+    waiting: &[String],
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    env: &purlis_core::harness_plugin::Env<'_>,
+    more: &[&dyn purlis_core::skills::SkillLint],
 ) -> usize {
     let mut studio = studio_read(
         purlis_core::skills::Reading::Needs,
@@ -78,6 +124,7 @@ pub(crate) fn needing(
         workspace,
         persona,
         env,
+        more,
     );
     with_the_projects_needs(&mut studio, root, waiting);
     studio.needs.len()
@@ -397,6 +444,12 @@ pub struct StudioHarness {
     /// The project's skills a repo of the workspace leaves out of its chats in that clone, each
     /// with why (SK-53): the core's `HarnessInTheStudio::repo_left_out`.
     pub repo_left_out: Vec<StudioSkill>,
+    /// **What its own catalogue holds** (#3324), in the core's words (`OwnCatalogue::said`),
+    /// which `purlis skill list` says too: the skills it finds itself in the person's own
+    /// folders and its plugins, listed against its own limit and never counted in purlis's
+    /// budget. Null for a harness that finds none of its own, and where the studio was read only
+    /// for a count of its needs.
+    pub own: Option<String>,
 }
 
 /// A harness or repo skill with the name of a skill purlis hands a chat (ADR 0099 §3): both
@@ -765,6 +818,7 @@ impl From<purlis_core::skills::first_open::FirstOpen> for StudioFirst {
 /// The studio of the project at `root`, for a chat at its root (`workspace` `None`) or in
 /// `workspace`, as `persona` or on none, with the built-in skills in `built_in`: nothing while
 /// the flag is off. Its list is the command line's (`purlis_core::skills::studio_list`).
+#[cfg(test)]
 pub(crate) fn studio(
     root: &std::path::Path,
     built_in: Option<&std::path::Path>,
@@ -772,6 +826,20 @@ pub(crate) fn studio(
     workspace: Option<&str>,
     persona: Option<&str>,
     env: &purlis_core::harness_plugin::Env<'_>,
+) -> Studio {
+    studio_linted(root, built_in, on, workspace, persona, env, &[])
+}
+
+/// The studio of the project at `root`, read as `studio` reads it, the plane's own skills linted
+/// by `more` too: the extensions' lints as a list asks them ([`with_list_lints`], #3940).
+pub(crate) fn studio_linted(
+    root: &std::path::Path,
+    built_in: Option<&std::path::Path>,
+    on: bool,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    env: &purlis_core::harness_plugin::Env<'_>,
+    more: &[&dyn purlis_core::skills::SkillLint],
 ) -> Studio {
     studio_read(
         purlis_core::skills::Reading::Whole,
@@ -781,11 +849,13 @@ pub(crate) fn studio(
         workspace,
         persona,
         env,
+        more,
     )
 }
 
 /// [`studio`], read for `reading`: for Needs you's count alone (#3781), without the badges, the
 /// router, the workspaces or the levels, which no item reads. Its items are the whole studio's.
+#[allow(clippy::too_many_arguments)]
 fn studio_read(
     reading: purlis_core::skills::Reading,
     root: &std::path::Path,
@@ -794,6 +864,7 @@ fn studio_read(
     workspace: Option<&str>,
     persona: Option<&str>,
     env: &purlis_core::harness_plugin::Env<'_>,
+    more: &[&dyn purlis_core::skills::SkillLint],
 ) -> Studio {
     let whole = reading == purlis_core::skills::Reading::Whole;
     let workspace = workspace.map(str::to_owned);
@@ -837,6 +908,7 @@ fn studio_read(
         workspace.as_deref(),
         persona.as_deref(),
         env,
+        more,
     );
     let first = purlis_core::skills::first_open::first_open(root, &rows).into();
     let skills = rows
@@ -955,6 +1027,7 @@ fn harnesses(
                     .cloned()
                     .map(outside_shown)
                     .collect(),
+                own: one.own.and_then(|own| own.said(adapter.title())),
             }
         })
         .collect();
@@ -1351,23 +1424,35 @@ pub(crate) async fn set_skill_studio_on(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_studio(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     workspace: Option<String>,
     persona: Option<String>,
 ) -> Result<Studio, String> {
     let held = planes.held(&plane)?;
+    let executor = views.executor();
     crate::off_the_window("reading the project's skills", move || {
         let built_in =
             crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
-        let mut studio = studio(
-            held.root(),
-            built_in.as_deref(),
-            purlis_core::skills::studio_on_here(),
-            workspace.as_deref(),
-            persona.as_deref(),
-            &purlis_core::harness_plugin::Env::of(&[]),
-        );
+        let on = purlis_core::skills::studio_on_here();
+        let read = |more: &[&dyn purlis_core::skills::SkillLint]| {
+            studio_linted(
+                held.root(),
+                built_in.as_deref(),
+                on,
+                workspace.as_deref(),
+                persona.as_deref(),
+                &purlis_core::harness_plugin::Env::of(&[]),
+                more,
+            )
+        };
+        // The extensions' lints only while the studio is on: off, nothing is read at all.
+        let mut studio = if on {
+            with_list_lints(&executor, held.root(), read)
+        } else {
+            read(&[])
+        };
         with_the_projects_needs(
             &mut studio,
             held.root(),

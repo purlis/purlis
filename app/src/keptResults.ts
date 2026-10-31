@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { Said } from "./actions";
 
 /** At most this many results are kept: the newest, as a log would. */
@@ -11,7 +11,7 @@ export const KEPT_RESULTS = 20;
  *  command yet (`answer.late.*`), which goes when the answer comes, or a `progress` line on no
  *  track that the result replaces. It is never kept. A progress line on a track is kept, and
  *  its result takes its place (#3649). */
-function passing(said: Said): boolean {
+export function passing(said: Said): boolean {
   return (
     (said.progress === true && said.track === undefined) || said.from.startsWith("answer.late.")
   );
@@ -99,17 +99,21 @@ export function useKeptResults(said: Said | undefined, plane: string | undefined
     // A line can bring the one said before it (`Said.after`): the next id is past both.
     setKept({ list, next: nextId(list, kept.next), last: said, dropped });
   }
-  const drop = (id: number) =>
-    setKept((was) => {
-      const gone = was.list.find((one) => one.id === id);
-      return {
-        ...was,
-        list: was.list.filter((one) => one.id !== id),
-        dropped:
-          gone?.said.track === undefined
-            ? was.dropped
-            : new Set([...was.dropped, trackOf(gone.said, gone.plane)]),
-      };
-    });
+  // One function for every render, so what is handed it is not drawn again for it (#3653).
+  const drop = useCallback(
+    (id: number) =>
+      setKept((was) => {
+        const gone = was.list.find((one) => one.id === id);
+        return {
+          ...was,
+          list: was.list.filter((one) => one.id !== id),
+          dropped:
+            gone?.said.track === undefined
+              ? was.dropped
+              : new Set([...was.dropped, trackOf(gone.said, gone.plane)]),
+        };
+      }),
+    [],
+  );
   return { kept: list, drop };
 }

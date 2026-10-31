@@ -187,5 +187,33 @@ pub fn sweep(root: &Path, skill: &str) -> Vec<String> {
     gone
 }
 
+/// **Keeps `old`'s kept chats under its new name `new`** (#3918): what a rename of the skill does
+/// on this machine, where no other copy keeps the name `old`, so a grade from before it opens
+/// its chats from the skill's tab under its new name. Each grade folder of `old` goes to
+/// `new`'s; one that could not go, or that `new` holds already, stays where it is, and `old`'s
+/// folder goes only once it is empty. Then `new`'s are swept to its [`KEPT_GRADES`] newest. Only
+/// folders this module names, never through a link; nothing where either name is not plain or
+/// `old` keeps none.
+pub fn renamed(root: &Path, old: &str, new: &str) {
+    let (Some(from), Some(to)) = (skill_dir(root, old), skill_dir(root, new)) else {
+        return;
+    };
+    if old == new || !std::fs::symlink_metadata(&from).is_ok_and(|meta| meta.is_dir()) {
+        return;
+    }
+    if made_private(&to).is_err() {
+        return;
+    }
+    for grade in grades_kept(root, old) {
+        let there = to.join(&grade);
+        if std::fs::symlink_metadata(&there).is_err() {
+            let _ = std::fs::rename(from.join(&grade), there);
+        }
+    }
+    // Only an empty folder goes: what was not moved is still kept under the old name.
+    let _ = std::fs::remove_dir(&from);
+    sweep(root, new);
+}
+
 #[cfg(test)]
 mod tests;

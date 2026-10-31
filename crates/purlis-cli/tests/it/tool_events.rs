@@ -80,6 +80,7 @@ fn run(word: &str, payload: &serde_json::Value, env: &[(&str, &str)], host: Host
     let (stall, held) = mpsc::channel::<()>();
     let held = Mutex::new(held);
     let reading = listener.hear(Hearing {
+        serve: purlis_core::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, writer| purlis_core::secrets::brokered::not_answered(writer)),
         blocked: Box::new(|_| {}),
         doing: Box::new(|_| {}),
@@ -431,6 +432,7 @@ fn a_tool_hook_answers_only_once_the_host_has_recorded_its_call() {
     let token = listener.tokens().issue_to_this_process(7).expect("a token");
     let recorded_at = std::sync::Arc::new(Mutex::new(None::<Instant>));
     let _reading = listener.hear(Hearing {
+        serve: purlis_core::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, writer| purlis_core::secrets::brokered::not_answered(writer)),
         blocked: Box::new(|_| {}),
         doing: Box::new(|_| {}),

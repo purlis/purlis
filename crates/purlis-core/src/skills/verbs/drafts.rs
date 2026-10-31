@@ -520,6 +520,10 @@ pub fn accept(cx: &mut Ctx<'_>, id: &str) -> Result<PathBuf, String> {
         written.push(file_rel);
     }
     remove_in(&app_state(plane)?, DRAFTS_DIR, &draft.id)?;
+    if draft.new {
+        // A new skill: the grades of one that had its name before are none of its own (#4104).
+        super::earlier_dropped(cx, &level, &name);
+    }
     cx.done(format!("the draft of {name} is accepted, in {folder_rel}"));
     if !level.local {
         let message = if draft.new {
@@ -1076,14 +1080,49 @@ fn skills_dir_told(level: &Level) -> String {
 
 /// **The prompt "Ask a chat to draft a skill" types** (decision 13), unsent, into a chat that
 /// starts where `level`'s skills are reached from (the project's root, or its workspace's
-/// folder): one line, which the person ends with what the skill is for.
-pub fn asking(level: &Level) -> String {
+/// folder): one line, which ends with `what` the skill should do as New skill… asked it (S4,
+/// #3684), or where the person says it when that was left empty.
+///
+/// `what` is typed into a terminal and never sent, so it stays one line: a line break or another
+/// control character in it would send the prompt, or reach the terminal as a key, so each run of
+/// them and of spaces is one space.
+pub fn asking(level: &Level, what: &str) -> String {
     let dir = skills_dir_told(level);
-    format!(
+    let what = one_line(what);
+    let lead = format!(
         "Draft a skill as {dir}/<name>/SKILL.md, with name and description frontmatter (where \
          you cannot write it, write it in your own folder and run purlis propose with --from); \
-         purlis keeps it as a draft in the Skill studio for me to try. The skill should "
-    )
+         purlis keeps it as a draft in the Skill studio for me to try."
+    );
+    if what.is_empty() {
+        format!("{lead} The skill should ")
+    } else {
+        format!("{lead} What the skill does: {what}")
+    }
+}
+
+/// The most characters of what a skill should do that a draft prompt types.
+const MOST_WHAT: usize = 500;
+
+/// `text` as one line: each run of whitespace and control characters is one space, none at
+/// either end; the characters that only steer how text is shown (direction overrides and
+/// isolates, zero-width marks) dropped, so the typed prompt reads as it is; at most
+/// [`MOST_WHAT`] characters.
+fn one_line(text: &str) -> String {
+    let steering = |c: char| matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2069}' | '\u{FEFF}');
+    let line = text
+        .chars()
+        .filter(|&c| !steering(c))
+        .collect::<String>()
+        .split(|c: char| c.is_whitespace() || c.is_control())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    line.chars()
+        .take(MOST_WHAT)
+        .collect::<String>()
+        .trim_end()
+        .to_owned()
 }
 
 /// **The prompt "Ask a chat to write them" types** (#3925), unsent, for the trigger tests of the

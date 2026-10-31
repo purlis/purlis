@@ -4,6 +4,7 @@
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render as renderBare,
@@ -56,6 +57,8 @@ function core(
     stillAbsent?: string[];
     /** What `drop_repo_membership` refuses with, in the core's words, instead of dropping. */
     refuseDrop?: string;
+    /** Hands the test the way to tell the window how far a clone has got. */
+    told?: (progress: (now: { stage: string; percent: number }) => void) => void;
   } = {},
 ) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
@@ -98,6 +101,7 @@ function core(
     if (cmd === "take_repos") return null;
     if (cmd === "clone_repo") {
       const repo = String(a.repo);
+      over.told?.((now) => (a.progress as { onmessage: (n: typeof now) => void }).onmessage(now));
       inFlight += 1;
       peak = Math.max(peak, inFlight);
       try {
@@ -135,6 +139,7 @@ function core(
   return {
     asked,
     clones: () => asked.filter((one) => one.cmd === "clone_repo"),
+    cancels: () => asked.filter((one) => one.cmd === "cancel_clone_repo"),
     drops: () => asked.filter((one) => one.cmd === "drop_repo_membership"),
     /** The most `clone_repo` calls the core was running at once. */
     peak: () => peak,
@@ -167,7 +172,7 @@ describe("a repo that is not cloned here", () => {
 
     expect(await screen.findByTestId("clone-charter")).toBeInTheDocument();
     expect(within(await absent()).queryByText("charter")).toBeNull();
-    expect(clones().map((one) => one.args)).toEqual([
+    expect(clones().map((one) => one.args)).toMatchObject([
       { plane: PLANE, workspace: "alpha", repo: "charter" },
     ]);
   });
@@ -184,6 +189,26 @@ describe("a repo that is not cloned here", () => {
     expect(
       within(absentRow("charter")).queryByRole("button", { name: "Clone charter" }),
     ).toBeNull();
+    release();
+    expect(await screen.findByTestId("clone-charter")).toBeInTheDocument();
+  });
+
+  it("says the stage and the percent on the row, with a bar and Cancel, until it lands", async () => {
+    let told: ((now: { stage: string; percent: number }) => void) | undefined;
+    let release = () => {};
+    const { cancels } = core({
+      held: new Promise<void>((done) => (release = done)),
+      told: (progress) => (told = progress),
+    });
+    render(<App />);
+    await userEvent.click(within(await absent()).getByRole("button", { name: "Clone charter" }));
+    await waitFor(() => expect(told).toBeDefined());
+    act(() => told?.({ stage: "Downloading", percent: 45 }));
+    const row = absentRow("charter");
+    await waitFor(() => expect(row).toHaveTextContent("Cloning charter… Downloading 45%"));
+    expect(within(row).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "45");
+    await userEvent.click(within(row).getByRole("button", { name: "Cancel cloning charter" }));
+    await waitFor(() => expect(cancels()).toHaveLength(1));
     release();
     expect(await screen.findByTestId("clone-charter")).toBeInTheDocument();
   });

@@ -119,6 +119,7 @@ fn a_wrapped_chat_writing(chat: &Path, socket: &Path, elsewhere: &Path) -> Start
             git_hooks: None,
             reporting: None,
             confinement: None,
+            prompt_key: None,
         }),
         ..StartProgram::of(PROJECT, ProgramKind::Harness)
     }

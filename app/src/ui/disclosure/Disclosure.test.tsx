@@ -137,7 +137,7 @@ describe("a refused field inside a folded disclosure", () => {
     );
   }
 
-  it("opens it, takes the keyboard, and is said once, by the field's own line", () => {
+  it("opens it, takes the keyboard, and is said once, by the form's summary (#3291)", () => {
     let added = 0;
     render(<AddSource onAdd={() => (added += 1)} />);
     const more = trigger("More: branch, folder, sign-in");
@@ -149,10 +149,13 @@ describe("a refused field inside a folded disclosure", () => {
     expect(more).toHaveAttribute("aria-expanded", "true");
     const folder = screen.getByRole("textbox", { name: "Folder in the repository" });
     expect(folder).toHaveFocus();
-    // One signal for the refusal: the field's own alert, and nothing the fold says of itself.
+    // One signal for the refusal: the form's one summary, and nothing the fold says of itself.
+    // The field's own words are its description, quiet while the summary says it.
     const alerts = screen.getAllByRole("alert");
     expect(alerts).toHaveLength(1);
-    expect(alerts[0]).toHaveTextContent("Without a leading /.");
+    expect(alerts[0]).toHaveTextContent("Folder in the repository: Without a leading /.");
+    expect(folder).toHaveAccessibleDescription("Without a leading /.");
     expect(document.querySelectorAll('[aria-live]:not([data-part="error"])')).toHaveLength(0);
+    expect(document.querySelector('[data-part="error"]')).toHaveAttribute("aria-live", "off");
   });
 });

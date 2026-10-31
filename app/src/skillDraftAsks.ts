@@ -79,7 +79,8 @@ export const SKILL_CHAT = "purlis-skill-chat";
 
 /** What the studio asked of a project's window. */
 export type SkillChatAsk =
-  | { plane: string; kind: "draft"; level: SkillLevel }
+  /** `what` the skill should do, as New skill… asked it (#3684): `""` where it was not. */
+  | { plane: string; kind: "draft"; level: SkillLevel; what: string }
   /** `profile` null: the project's default. */
   | { plane: string; kind: "try"; id: string; profile: string | null }
   /** "Ask the chat to redo it" (S9): typed into `chat`, the chat that drafted it, where it is
@@ -94,12 +95,18 @@ export function askSkillChat(ask: SkillChatAsk): void {
 }
 
 /**
- * **Ask a chat to draft a skill** (decision 13), from where the person came: the studio's
- * toolbar and its start, and the Skills view's New skill… (#3266). The draft lands at the level
- * the scope's chats would get (decision 37), among the project's `levels`.
+ * **Ask a chat to draft a skill** (decision 13), from where the person came: the studio's Drafts
+ * page. New skill…'s Ask a chat to draft it (#3684) asks what the skill should do and where it
+ * lands first. The draft lands at the level the scope's chats would get (decision 37), among the
+ * project's `levels`.
  */
 export function askDraft(plane: string, scope: StudioScope, levels: readonly StudioLevel[]): void {
-  askSkillChat({ plane, kind: "draft", level: levelFrom(scope, levelsFor(levels, scope)) });
+  askSkillChat({
+    plane,
+    kind: "draft",
+    level: levelFrom(scope, levelsFor(levels, scope)),
+    what: "",
+  });
 }
 
 /** What a chat's tab says of the drafts it wrote (decision 38): only that they are ready. */

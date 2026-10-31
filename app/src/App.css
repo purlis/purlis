@@ -1544,6 +1544,23 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* **A runner chat's held dispatch, in its own tab**: what it would start, as label and value. */
+.runner-dispatch-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+
+.runner-dispatch-facts dt {
+  color: var(--text-muted);
+}
+
+.runner-dispatch-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* **A tab that shows a task says so** (#1486, V100-35): `steward 4 › talk`, the task's name
    dimmer than the session's, since the tab is the session's. Both names give way to an
    ellipsis as a tab's name always did; the task's goes first. */
@@ -3909,8 +3926,29 @@ body {
 }
 
 .chip-card [data-f6-card] {
+  /* Held to the room the card is given (React Aria's max height on the surface, a flex column):
+     shrunk to it, never its content's height, its notices scroll inside it, the point outside it
+     left whole, and nothing of them runs past it into the page (#3653). */
+  /* The place of what its notices place absolutely (a status's words for a screen reader), so
+     that is clipped with the list too and never lengthens the page from far down it. */
+  position: relative;
+  box-sizing: border-box;
+  flex: 0 1 auto;
+  min-block-size: 0;
+  /* At most a few notices tall, whatever the room: a card stays over the page until it is
+     hidden, so it covers no more of it than it must. */
+  max-block-size: min(28rem, 60vh);
+  overflow-y: auto;
   border-radius: var(--radius-lg);
   outline: none;
+}
+
+/* **The status bar's Notices item and its dot** (`StatusLine.tsx`, #3653): the item's box, which
+   the dot stands over the leading corner of, so the dot coming or going moves nothing. */
+.status-notices {
+  position: relative;
+  display: inline-flex;
+  flex: none;
 }
 
 .chip-card [data-f6-card]:focus-visible {
@@ -3921,6 +3959,11 @@ body {
 /* A kept result's notice is drawn in the Results list's place; its keyboard handler is no box. */
 .action-result-kept {
   display: contents;
+}
+
+.action-result-meter,
+.clone-bar {
+  margin-block-start: var(--space-1);
 }
 
 .action-result-details {
@@ -6918,6 +6961,13 @@ nav.piece-files-head {
   color: var(--text-muted);
 }
 
+/* A row's refusal line in a form, there from the start so its words are heard as they land
+   (#3291): empty, it takes no place in the row's grid, so nothing moves and no gap is added. It
+   stays in the accessibility tree. */
+.ui-setting-error:empty {
+  position: absolute;
+}
+
 /* A write the core refused (SE-17, V89e), said under the setting it was for. */
 .ui-setting-error p {
   margin: var(--space-1) 0 0;
@@ -7261,6 +7311,35 @@ nav.piece-files-head {
 
 .ui-machine-entry .ui-setting-reset {
   margin-inline-start: auto;
+}
+
+/* **A profile's sign-in on a pool's runner, in place** (#4042, `PoolSignIn.tsx`): the strip its
+   line on the pool's row opens into, the whole row wide. A head that says the step, the step's
+   body, and a foot with Cancel and Open in terminal. */
+.pool-sign-in {
+  flex: 1 0 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.pool-sign-in-head,
+.pool-sign-in-foot,
+.pool-sign-in-paste {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.pool-sign-in-head {
+  align-items: baseline;
+}
+
+.pool-sign-in-terminal {
+  max-inline-size: 100%;
+  overflow-x: auto;
 }
 
 /* A form's buttons (SettingActions, V89j): the row a form ends in, under its rows or as a
@@ -7758,32 +7837,17 @@ nav.piece-files-head {
   overflow-wrap: anywhere;
 }
 
-/* The empty studio's three starts (SK-22): side by side where they fit, stacked where not. */
-.skill-starts {
+/* New skill…'s ways (#3684, S4): one pressed card each, stacked in the dialog. */
+.skill-new-ways {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: var(--space-3);
-  max-width: 48rem;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
-  text-align: left;
 }
 
-.skill-starts > li {
+.skill-new-ways > li {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-}
-
-.skill-starts p {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  /* Each start's line, in the empty state's quiet tier, which holds AA on every theme. */
-  color: var(--text-muted);
 }
 
 /* The Skills view (#3266, #3693): a sidebar view, whose skills it shows, its header's two ways
@@ -7818,16 +7882,6 @@ nav.piece-files-head {
   margin: 0;
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
-}
-
-.skills-view .skill-starts {
-  grid-template-columns: 1fr;
-}
-
-/* New skill…'s menu, narrower than the family's widest, so at a sidebar's width it stays over
-   the view and not the editor beside it (#3308); its starts' lines wrap. */
-.skills-view-starts {
-  --menu-max: calc(var(--space-8) * 8);
 }
 
 .skills-view > .skills-view-list {

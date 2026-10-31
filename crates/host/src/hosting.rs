@@ -98,6 +98,9 @@ pub struct ToCompose<'a> {
     /// none where the host hears no channel for the project (#2000). A window's launch carries
     /// the same.
     pub reporting: Option<&'a session::Reporting>,
+    /// The chat's prompt key, which the host minted for a start it composes (1.60, #3369): set
+    /// in its environment for its hooks. A window's launch carries its own.
+    pub prompt_key: Option<&'a session::PromptKey>,
     /// The scope of the link the start came on: what its run says started it (#2171).
     pub started_by: Scope,
     /// What the host does beside a start its binary composes itself (#2171).
@@ -865,10 +868,17 @@ struct Hosted {
     /// Who opened it, for a browser (#2050): this host's own window, or a link between hosts
     /// for the window it named, which alone may act on it from such a link.
     opened_by: OpenedBy,
+    /// The profile it runs on, as its start named it: what a profile's forgetting on a runner
+    /// waits for (#4047).
+    profile: Option<String>,
     /// Whether it ends with its window (1.42, #3274): once no window is linked to this host and
     /// the last went without a quit, it is ended at once rather than kept for the grace period.
     /// Taken from this machine's window alone.
     ends_with_its_window: bool,
+    /// Its prompt key (1.60, #3369): its window's launch's, or the one minted here for a start
+    /// composed here. Kept in memory alone, for the window that takes it back, and written to
+    /// no record.
+    prompt_key: Option<session::PromptKey>,
 }
 
 /// **Who opened a hosted program** (#2050): a link of this host's own (its window), or a link
@@ -888,6 +898,16 @@ fn stopping_by(stopping: &Mutex<Option<Stopped>>, by: Stopped) {
 }
 
 impl Hosting {
+    /// **Whether a chat this host runs now is on profile `name`** (#4047): a profile is not
+    /// forgotten under a running chat, whose folder and sign-in it is.
+    pub fn runs_on_profile(&self, name: &str) -> bool {
+        self.state().programs.values().any(|hosted| {
+            !hosted.ended
+                && hosted.kind != ProgramKind::Browser
+                && hosted.profile.as_deref() == Some(name)
+        })
+    }
+
     /// A host whose starts `compose` composes, each run in a terminal of its own, its kill
     /// switch kept in memory only: a test's.
     pub fn new(compose: impl Compose) -> Hosting {
@@ -1873,6 +1893,25 @@ impl Hosting {
                 channel.forget(number);
             }
         };
+        // Its prompt key (#3369): the window's launch's, or one minted here for a chat's harness
+        // this host composes, as its token is issued here.
+        let prompt_key = match &start.launch {
+            Some(launch) => launch.prompt_key.clone(),
+            None if start.kind == ProgramKind::Harness => match session::PromptKey::mint() {
+                Ok(key) => Some(key),
+                Err(why) => {
+                    forget(&channel);
+                    self.end_confinements_of(&program);
+                    return Err(not_started(format!(
+                        "chat {number} could not be given its prompt key: {why}"
+                    )));
+                }
+            },
+            None => None,
+        };
+        // Answered only to a link that may compose a start or take one back: the window's, or
+        // its host's relaying it (#3369).
+        let answers_prompt_key = peer.scope().may(Power::Launch);
         // Composed off the runtime: a start the host composes itself reads the project's files
         // and starts its confinement (#2171).
         let composed = {
@@ -1882,6 +1921,7 @@ impl Hosting {
             let window = relayed_for(&self.state(), peer);
             let at = at.clone();
             let program = program.clone();
+            let prompt_key = prompt_key.clone();
             tokio::task::spawn_blocking(move || {
                 let beside = ForTheProgram {
                     hosting: hosting.clone(),
@@ -1901,6 +1941,7 @@ impl Hosting {
                     size,
                     start: &start,
                     reporting: reporting.as_ref(),
+                    prompt_key: prompt_key.as_ref(),
                     started_by,
                     beside: &beside,
                 })
@@ -1988,7 +2029,9 @@ impl Hosting {
                     note: start.note.clone(),
                     logins: Arc::default(),
                     opened_by: OpenedBy::ThisHost,
+                    profile: start.profile.clone(),
                     ends_with_its_window,
+                    prompt_key: prompt_key.clone(),
                 },
             );
             windowless
@@ -2083,6 +2126,7 @@ impl Hosting {
             process,
             confined,
             sandbox: Some(sandbox),
+            prompt_key: prompt_key.filter(|_| answers_prompt_key),
         })
     }
 
@@ -2213,8 +2257,11 @@ impl Hosting {
                         .collect(),
                 )),
                 opened_by,
+                profile: None,
                 // A browser lives as its chat's window keeps it (#2025), never by this word.
                 ends_with_its_window: false,
+                // A browser has no prompts of a chat's to digest.
+                prompt_key: None,
             },
         );
         drop(state);
@@ -2240,6 +2287,7 @@ impl Hosting {
             process,
             confined: None,
             sandbox: Some(session::RunSandbox::Off),
+            prompt_key: None,
         })
     }
 
@@ -2447,6 +2495,7 @@ impl Hosting {
                 } else {
                     Vec::new()
                 },
+                prompt_key: hosted.prompt_key.clone(),
             })
             .collect();
         programs.sort_by(|a, b| (a.number, &a.program).cmp(&(b.number, &b.program)));
@@ -3610,10 +3659,21 @@ impl session::Host for Hosting {
             }),
             // A runner's host keeps its desktop's profile on its link from that desktop
             // (`serving`) before this host hears of it (1.43, #2049).
-            Command::KeepProfile(_) => Err(Refusal {
+            Command::KeepProfile(_)
+            | Command::ForgetProfile { .. }
+            | Command::StageProfileSettings(_)
+            | Command::SettingsHeld { .. }
+            | Command::KeptProfiles => Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
                 why: "this host is paired with no desktop over this link, so it keeps no \
                       desktop's profile"
+                    .into(),
+            }),
+            // Nor does it wait on a login for one (1.59, #4044).
+            Command::SignInRedirect { .. } => Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "this host is paired with no desktop over this link, so it carries no \
+                      sign-in's redirect"
                     .into(),
             }),
             // The desktop's host relays a window's link to a runner before this host hears of

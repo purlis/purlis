@@ -33,6 +33,8 @@ pub struct ClusterPoolRow {
     pub namespace: String,
     /// The cluster operator key pinned as it was added, spelled `ed25519:<64 hex>`.
     pub operator_key: String,
+    /// Whether the person marked it as their own (#4071).
+    pub owned: bool,
 }
 
 /// `pool`, as its row draws it.
@@ -43,6 +45,7 @@ pub fn row(pool: &ClusterPool) -> ClusterPoolRow {
         pool: pool.pool().to_owned(),
         namespace: pool.namespace().to_owned(),
         operator_key: pool.operator().spelled(),
+        owned: pool.owned(),
     }
 }
 
@@ -83,12 +86,7 @@ pub struct ClusterPoolAdding {
 /// window's `PATH`; its caches kept in a folder of purlis's under `config`
 /// ([`purlis_core::runners::kubectl_cache`]).
 pub fn kubectl(config: &Path) -> Result<Kubectl, String> {
-    let path = purlis_core::envvar::var("PATH");
-    let home = home();
-    let cache = purlis_core::runners::kubectl_cache(config).map_err(|why| why.to_string())?;
-    Kubectl::on_this_machine(path.as_deref(), home.as_deref())
-        .map(|kubectl| kubectl.with_cache_dir(cache))
-        .map_err(|why| why.to_string())
+    purlis_core::pools::kubectl_here(config)
 }
 
 /// **The context and the cluster's Pool, held to what purlis names to kubectl** (#3292), before
@@ -263,6 +261,32 @@ pub fn add_on(
     Ok(row(&pool))
 }
 
+/// **The person marks the cluster pool `name` as their own, or takes the mark back** (#4071, the
+/// person's ruling of 2026-10-30). The window's alone (`ui::WINDOW_ONLY`): no chat, Pool or
+/// operator reaches it. Taken back, every login opted in on the pool is forgotten, so a later
+/// mark asks about each again.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_cluster_pool_owned(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    name: String,
+    owned: bool,
+) -> Result<(), String> {
+    let held = planes.every_held();
+    crate::off_the_window("marking a cluster pool", move || {
+        purlis_core::runners::set_cluster_owned(&config_root()?, &name, owned)
+            .map_err(|why| why.to_string())?;
+        if !owned {
+            for project in held {
+                project.browsers().forget_pool_logins(&name);
+            }
+            crate::poolprofiles::cancel_sign_ins_on(&name);
+        }
+        Ok(())
+    })
+    .await
+}
+
 /// **Removes the cluster pool `name`** on `config` (#3292): this machine out of its runner's
 /// peers over a link of its own while it answers, then its claim deleted, and with it its runner.
 ///
@@ -329,4 +353,4 @@ pub fn link_through(
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

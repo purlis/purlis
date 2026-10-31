@@ -176,6 +176,19 @@ pub(super) const NOTICE: Family = Family {
             description: "Whose it is, before what it says, for a chat that is not on screen.",
             properties: &[Prop::Text, Prop::FontWeight],
         },
+        Part {
+            name: "mark",
+            since: super::NEXT,
+            description: "A card's mark before its title (#3478): the shape that says what kind of \
+                          notice it is, in its colour.",
+            properties: &[Prop::Text],
+        },
+        Part {
+            name: "title",
+            since: super::NEXT,
+            description: "A card's title (#3478), over what it says: its colour, size and weight.",
+            properties: &[Prop::Text, Prop::FontSize, Prop::FontWeight],
+        },
     ],
     variants: &[
         Variant {
@@ -209,7 +222,12 @@ pub(super) const NOTICE: Family = Family {
     defaults: notice_look,
     states: &[],
     focused: "[data-focus-visible]",
-    words: &[],
+    // A card's title in the primary words, read on the card's ground (#3478). Its mark's colour
+    // is its variant's (`notice.css`: success, danger, attention), which one default cannot say,
+    // so it names none: a theme's own mark colour is held as a mark, at 3:1. A card's `under`,
+    // the room its Details open in, is no part: it paints nothing and its words are the
+    // Notice's own.
+    words: &[("title", "text.primary")],
     corner_most: None,
     around: &[],
     fills: &[],

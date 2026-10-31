@@ -16,8 +16,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use purlis_host::{
-    Answering, ComposesNothing, HostError, Hosting, Keeping, Pairing, Place, Unpairing,
-    serve_answering,
+    Answering, ComposesNothing, Forgetting, HostError, Hosting, Keeping, Listing, Pairing, Place,
+    Unpairing, serve_answering,
 };
 use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
 use purlis_session_protocol::link::Link;
@@ -92,6 +92,44 @@ fn unpairing(paired: &Paired) -> Unpairing {
 /// The profiles the runner was asked to keep, in order.
 type KeptHere = Arc<Mutex<Vec<purlis_session_protocol::session::ProfileToKeep>>>;
 
+/// Forgets the profile of a name from `kept`, for the desktop `desktop` alone; refused where
+/// none of that name is kept.
+fn forgetting(kept: &KeptHere, desktop: Option<Pinned>) -> Forgetting {
+    let kept = Arc::clone(kept);
+    Arc::new(move |asked, name| {
+        assert_eq!(
+            Some(asked),
+            desktop.as_ref(),
+            "forgotten for the desktop the link proved"
+        );
+        let mut kept = kept.lock().unwrap();
+        let before = kept.len();
+        kept.retain(|profile| profile.name != name);
+        if kept.len() == before {
+            return Err(format!("no profile named {name} is kept here"));
+        }
+        Ok(())
+    })
+}
+
+/// Names each profile in `kept`, for the desktop `desktop` alone.
+fn listing(kept: &KeptHere, desktop: Option<Pinned>) -> Listing {
+    let kept = Arc::clone(kept);
+    Arc::new(move |asked| {
+        assert_eq!(
+            Some(asked),
+            desktop.as_ref(),
+            "named for the desktop the link proved"
+        );
+        Ok(kept
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|profile| profile.name.clone())
+            .collect())
+    })
+}
+
 /// Keeps each profile in `kept`, signed out there unless its name is `signed-in`, for the
 /// desktop `desktop` alone.
 fn keeping(kept: &KeptHere, desktop: Option<Pinned>) -> Keeping {
@@ -132,20 +170,34 @@ async fn hosting_keeping(
 ) {
     let (stop, stopped) = oneshot::channel::<()>();
     let (ready, is_ready) = oneshot::channel::<()>();
+    let desktop = paired
+        .lock()
+        .unwrap()
+        .as_ref()
+        .ok()
+        .and_then(|found| found.as_ref().map(|(_, desktop)| desktop.clone()));
     let (place, pairing) = (
         place.clone(),
         Pairing {
             answering: answering(paired),
             unpairing: unpairing(paired),
-            keeping: keeping(
-                kept,
-                paired
-                    .lock()
-                    .unwrap()
-                    .as_ref()
-                    .ok()
-                    .and_then(|found| found.as_ref().map(|(_, desktop)| desktop.clone())),
-            ),
+            keeping: keeping(kept, desktop.clone()),
+            forgetting: forgetting(kept, desktop.clone()),
+            listing: listing(kept, desktop),
+            holding: Arc::new(|_, profile, after| {
+                let held = purlis_session_protocol::session::HeldSetting {
+                    path: "settings.json".to_owned(),
+                    digest: purlis_session_protocol::session::settings_digest(profile.as_bytes()),
+                };
+                Ok(purlis_session_protocol::session::settings_held_page(
+                    vec![held],
+                    after,
+                ))
+            }),
+            delivering: Arc::new(|target| match target {
+                "/auth/callback?code=c&state=s" => Ok(()),
+                _ => Err("no sign-in is waiting on the runner".to_owned()),
+            }),
         },
     );
     let host = tokio::spawn(async move {
@@ -305,6 +357,112 @@ async fn the_paired_desktop_unpairs_the_runner_and_is_linked_no_more() {
     assert!(link(&place, &desktop, &runner_pinned).await.is_err());
 }
 
+/// **A profile's settings reach the runner in batches, however large, whole** (1.56, #4081),
+/// over a real link: what one control frame could not carry is handed to the runner's keep as
+/// the one set of files it checks; a keep naming another count keeps nothing; and a batch refused
+/// drops what the link staged.
+#[tokio::test]
+async fn the_paired_desktop_stages_a_profiles_settings_in_batches_and_a_keep_takes_them_whole() {
+    use purlis_session_protocol::link::MOST_CONTROL_FRAME_BYTES;
+    use purlis_session_protocol::session::{
+        Client, ProfileToKeep, SettingsBatch, SettingsFile, settings_in_batches,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let place = place_in(dir.path());
+    let (runner, desktop) = (identity(RUNNER), identity(DESKTOP));
+    let runner_pinned = pinned_of(&runner);
+    let paired: Paired = Arc::new(Mutex::new(Ok(Some((runner, pinned_of(&desktop))))));
+    let kept = KeptHere::default();
+    let (_stop, _host) = hosting_keeping(&place, &paired, &kept).await;
+    let client = Client::new(link(&place, &desktop, &runner_pinned).await.unwrap()).0;
+    let files = vec![
+        SettingsFile {
+            path: "settings.json".into(),
+            bytes: b"{}".to_vec(),
+        },
+        SettingsFile {
+            path: "skills/large/model.bin".into(),
+            bytes: vec![7; 3 * MOST_CONTROL_FRAME_BYTES],
+        },
+    ];
+    let keep = |staged| ProfileToKeep {
+        name: "work".into(),
+        harness: "claude".into(),
+        sandbox_only: false,
+        pinned: None,
+        settings: None,
+        settings_staged: Some(staged),
+        settings_changed: None,
+    };
+    let batches = settings_in_batches("work", files.clone());
+    assert!(batches.len() > 3, "{} batches", batches.len());
+
+    // A count that is not what arrived keeps nothing, and leaves nothing staged.
+    for batch in batches.clone() {
+        client.stage_profile_settings(batch).await.unwrap();
+    }
+    let refused = client.keep_profile(keep(3)).await.unwrap_err();
+    assert!(refused.refusal().is_some(), "{refused}");
+    assert!(kept.lock().unwrap().is_empty());
+
+    // A batch refused drops what came before it, so its keep has nothing to take.
+    client
+        .stage_profile_settings(batches[0].clone())
+        .await
+        .unwrap();
+    let another = SettingsBatch {
+        profile: "another".into(),
+        pieces: Vec::new(),
+    };
+    let refused = client.stage_profile_settings(another).await.unwrap_err();
+    assert!(refused.refusal().is_some(), "{refused}");
+    // What follows may be refused too, a piece of a file whose start went with the rest.
+    for batch in batches[1..].iter().cloned() {
+        let _ = client.stage_profile_settings(batch).await;
+    }
+    let refused = client.keep_profile(keep(2)).await.unwrap_err();
+    assert!(refused.refusal().is_some(), "{refused}");
+    assert!(kept.lock().unwrap().is_empty());
+
+    for batch in batches {
+        client.stage_profile_settings(batch).await.unwrap();
+    }
+    client.keep_profile(keep(2)).await.unwrap();
+    let handed = kept.lock().unwrap().pop().expect("it was kept");
+    assert_eq!(handed.settings, Some(files));
+    assert_eq!(handed.settings_staged, None);
+}
+
+/// **The paired desktop hands the runner a sign-in's redirect, and hears only how it went**
+/// (#4044).
+#[tokio::test]
+async fn the_paired_desktop_hands_the_runner_a_sign_ins_redirect() {
+    let dir = tempfile::tempdir().unwrap();
+    let place = place_in(dir.path());
+    let (runner, desktop) = (identity(RUNNER), identity(DESKTOP));
+    let runner_pinned = pinned_of(&runner);
+    let paired: Paired = Arc::new(Mutex::new(Ok(Some((runner, pinned_of(&desktop))))));
+    let (_stop, _host) = hosting(&place, &paired).await;
+
+    let linked = link(&place, &desktop, &runner_pinned)
+        .await
+        .expect("the paired desktop is linked");
+    let client = purlis_session_protocol::session::Client::new(linked).0;
+
+    client
+        .sign_in_redirect("/auth/callback?code=c&state=s")
+        .await
+        .expect("the login took it");
+    let refused = client
+        .sign_in_redirect("/auth/callback?code=late&state=s")
+        .await
+        .expect_err("no login took it");
+    assert_eq!(
+        refused.refusal().map(|refusal| refusal.why.as_str()),
+        Some("no sign-in is waiting on the runner")
+    );
+}
+
 /// **The paired desktop has the runner keep its profile** (1.43, #2049): the runner is handed the
 /// profile's name, harness, sandbox-only mark and pin, and answers whether it is signed in there.
 #[tokio::test]
@@ -327,6 +485,8 @@ async fn the_paired_desktop_has_the_runner_keep_its_profile_and_hears_where_it_s
         sandbox_only: false,
         pinned: Some("2.1.300".into()),
         settings: None,
+        settings_staged: None,
+        settings_changed: None,
     };
     assert_eq!(
         client.keep_profile(profile("signed-in")).await.unwrap(),
@@ -339,5 +499,54 @@ async fn the_paired_desktop_has_the_runner_keep_its_profile_and_hears_where_it_s
     assert_eq!(
         *kept.lock().unwrap(),
         vec![profile("signed-in"), profile("work")]
+    );
+}
+
+/// **The paired desktop has the runner forget its profile** (1.52, #4047): asked by name, the
+/// runner forgets it, and a refusal there is said to the desktop. The desktop hears which
+/// profiles the runner keeps for it before and after (1.57, #4060).
+#[tokio::test]
+async fn the_paired_desktop_has_the_runner_forget_its_profile() {
+    let dir = tempfile::tempdir().unwrap();
+    let place = place_in(dir.path());
+    let (runner, desktop) = (identity(RUNNER), identity(DESKTOP));
+    let runner_pinned = pinned_of(&runner);
+    let paired: Paired = Arc::new(Mutex::new(Ok(Some((runner, pinned_of(&desktop))))));
+    let kept = KeptHere::default();
+    let (_stop, _host) = hosting_keeping(&place, &paired, &kept).await;
+    let linked = link(&place, &desktop, &runner_pinned)
+        .await
+        .expect("the paired desktop is linked");
+    let client = purlis_session_protocol::session::Client::new(linked).0;
+    client
+        .keep_profile(purlis_session_protocol::session::ProfileToKeep {
+            name: "work".into(),
+            harness: "claude".into(),
+            sandbox_only: false,
+            pinned: None,
+            settings: None,
+            settings_staged: None,
+            settings_changed: None,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        client.kept_profiles().await.unwrap(),
+        vec!["work".to_owned()]
+    );
+    // What it holds of one (1.61, #4088), on the same link.
+    let (held, more) = client.settings_held("work", None).await.unwrap();
+    assert_eq!(held.len(), 1);
+    assert!(!more);
+    client.forget_profile("work").await.expect("forgotten");
+
+    assert!(client.kept_profiles().await.unwrap().is_empty());
+
+    assert!(kept.lock().unwrap().is_empty());
+    let refused = client.forget_profile("work").await.unwrap_err();
+    assert!(
+        refused.to_string().contains("no profile named work"),
+        "{refused}"
     );
 }

@@ -14,6 +14,7 @@
 //! - [`review`]: the install review, summary first, and Browse.
 //! - [`install`] and [`update`]: the copy, the pin, and each newer commit's review.
 //! - [`lock`]: the lockfiles; [`write`]: every write, through handles that follow no link.
+//! - [`checked`]: when each source was last checked, and how many skills it offered then.
 //!
 //! **What is installed is what was reviewed.** The review answers the commit and a digest of
 //! each skill's files; an install is handed both back ([`Accepted`]), fetches that commit again,
@@ -24,6 +25,7 @@
 use purlis_skills::tree;
 use serde::{Deserialize, Serialize};
 
+pub mod checked;
 pub mod extension;
 pub mod fetch;
 pub mod install;
@@ -31,6 +33,7 @@ pub mod listed;
 pub mod lock;
 pub mod review;
 pub mod update;
+pub mod widen;
 mod write;
 
 pub use fetch::{Fetched, Found, MOST_SKILL_BYTES, NotASkill, SourceFile, fetch, newest};
@@ -38,12 +41,14 @@ pub use install::install;
 pub use listed::{Listed, TABLE, add, confirm, remove, sources};
 pub use lock::{Kept, Locked, Lockfile};
 pub use review::{
-    Accepted, AcceptedSkill, Browse, Offered, Review, ReviewFile, SkillReview, browse, review,
+    Accepted, AcceptedSkill, Browse, Offered, Review, ReviewFile, SetReview, SkillReview, TooMuch,
+    browse, review, review_all, review_set,
 };
 pub use update::{
     Changed, FileChange, Offer, Unasked, Unconfirmed, UpdateReview, Updates, line_diff, update,
     update_review, updates,
 };
+pub use widen::{Widening, added, widenings};
 
 /// **A skill source** (the SkillSource capability, ADR 0101 §1): what skills it offers, and one
 /// skill's files. The git source ([`Fetched`]) and each extension that declares `skill-source`
@@ -59,6 +64,13 @@ pub trait SkillSource {
         &self,
         skill: &Found,
     ) -> Result<(Vec<SourceFile>, Vec<purlis_skills::tree::LeftOut>), String>;
+    /// **Whether reading `skill`'s files keeps within what one read of the source may take**
+    /// (#4024), or what the read's limit says: asked before each skill of a review is read, so a
+    /// review past it stops before a skill and says which of those named fit, never cut part way.
+    /// A source with no such limit always fits.
+    fn fits_one_read(&self, _skill: &Found) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// **A commit's full name**, checked: 40 or 64 hex digits, lowercased.

@@ -6,6 +6,7 @@ import { Plus, RotateCw } from "lucide-react";
 import {
   commands,
   type InstallReview,
+  type InstallSetReview,
   type OfferedSkill,
   type OfferedSource,
   type ReviewSkill,
@@ -13,6 +14,7 @@ import {
   type SkillChanged,
   type SkillLevel,
   type SkillSource,
+  type SourceChecked,
   type SkillUpdateOffer,
   type SkillUpdates,
   type StudioLevel,
@@ -23,16 +25,18 @@ import { counted } from "./dispatches";
 import { Notice, type NoticeAction } from "./Notice";
 import { Choice, Field, SettingRow } from "./settings/components";
 import { labelOf, picking, sameLevel } from "./skillChanges";
+import { NotRead, ReadingRows } from "./SkillPanels";
 import { sourceKey, type SourcesAt } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card, CardTitle } from "./ui/card/Card";
+import { Checkbox } from "./ui/choice/Checkbox";
 import { Fact, Facts } from "./ui/card/Facts";
 import { Dialog } from "./ui/dialog/Dialog";
 import { Disclosure } from "./ui/disclosure/Disclosure";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { List, ListRow } from "./ui/list/List";
-import { RowBelow, RowLabel, RowTrail } from "./ui/list/Row";
+import { RowBelow, RowLabel, RowLead, RowTrail } from "./ui/list/Row";
 import { ViewListHead } from "./ui/panel/ViewFrame";
 import { ReviewPage } from "./ui/review-page/ReviewPage";
 
@@ -45,13 +49,20 @@ import { ReviewPage } from "./ui/review-page/ReviewPage";
  *
  * - **Sources**: the updates waiting, then each source the project's record names that this
  *   machine has not confirmed (purlis asks it nothing until it is), then the person's sources as
- *   rows, then the offered sources as cards (SK-22, decision 42). Add source… is a short dialog:
+ *   rows, each with what its last check found ("14 skills, 2 installed · checked 3 hours ago",
+ *   #3840, read from what that check recorded and never by asking the source), then the offered
+ *   sources as cards (SK-22, decision 42). Add source… is a short dialog:
  *   the repository and who can browse it, with its branch, its folder and its sign-in under More.
  * - **A source's page**: its skills at its newest commit, each marked Installed, Update
  *   available, or with what its files do ("runs a script", "reaches 1 host"), with Check for
  *   updates and Remove source…, which keeps every skill installed from it.
  * - **The install review**: the pinned commit, what each skill adds with the risky items marked,
  *   each file one click away under its own mark, and where it lands, with Install at the foot.
+ * - **Install all…** (#4024): the source's skills ticked, every one not installed yet, to untick
+ *   and narrow; then one review of those ticked, where they land chosen once at its top, each
+ *   skill's risky items marked and its files read when it is unfolded, and one Install for all of
+ *   them as one change. Past what one read of the source may take, it says so and asks to install
+ *   them in two parts.
  * - **The update review**: what changes in what it adds, the source's diff, the edits made here
  *   since the install, then Accept update or Not now at the foot.
  *
@@ -95,12 +106,64 @@ function offerFor(updates: SkillUpdates | undefined, key: string, name: string) 
   return updates?.offers.find((one) => sourceKey(one.remote) === key && one.name === name);
 }
 
-/** What a source's row and its page say of it under its name. */
-function aboutSource(source: SkillSource): string {
+/**
+ * **When a source was last checked** (#3840), `seconds` ago: an age, as the record of the last
+ * browse or updates check gives it, never a time nobody saw. A check after now (a clock that
+ * moved) is just now.
+ */
+export function checkedAgo(seconds: number, now: Date): string {
+  if (seconds < 60) return "checked just now";
+  if (seconds < 3600)
+    return `checked ${counted(Math.floor(seconds / 60), "minute", "minutes")} ago`;
+  if (seconds < 86_400)
+    return `checked ${counted(Math.floor(seconds / 3600), "hour", "hours")} ago`;
+  const days = Math.floor(seconds / 86_400);
+  if (days < 30) return `checked ${counted(days, "day", "days")} ago`;
+  const at = new Date(now.getTime() - seconds * 1000);
+  return `checked ${at.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+}
+
+/**
+ * **What the last check of a source found** (#3840): its skills and how many are installed from
+ * it, then when it was checked, read with the source list and never by asking the source. `null`
+ * where nothing is known: a source this machine never checked, with nothing installed from it.
+ */
+export function checkedSaid(one: SourceChecked | undefined, now: Date): string | null {
+  if (one === undefined) return null;
+  const counts =
+    one.skills !== null
+      ? `${counted(one.skills, "skill", "skills")}, ${one.installed} installed`
+      : one.installed > 0
+        ? `${one.installed} installed`
+        : null;
+  const when = one.at === null ? null : checkedAgo(now.getTime() / 1000 - one.at, now);
+  const said = [counts, when].filter((part) => part !== null);
+  return said.length === 0 ? null : said.join(" · ");
+}
+
+/** Now, drawn again each minute, so an age said on screen keeps up with the clock. */
+function useMinute(): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const ticking = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(ticking);
+  }, []);
+  return now;
+}
+
+/** When a source was checked `at` (seconds since the epoch), as its page's lead says it. */
+function checkedWhen(at: number | null | undefined, now: Date): string | null {
+  if (at === null || at === undefined) return null;
+  return checkedAgo(now.getTime() / 1000 - at, now);
+}
+
+/** What a source's row and its page say of it under its name, with what its last check found. */
+function aboutSource(source: SkillSource, checked: string | null = null): string {
   return [
     source.remote.url,
     source.folder === null ? null : `folder ${source.folder}`,
     source.remote.branch === null ? null : `branch ${source.remote.branch}`,
+    checked,
     WHO[source.kept],
     source.vault === null ? null : `signs in with ${source.vault}`,
   ]
@@ -110,11 +173,14 @@ function aboutSource(source: SkillSource): string {
 
 /** **What the Sources pages read**: the sources, the offered ones and the updates, read again
  *  each time something changed or Try again is pressed. */
-function useSourcesRead(plane: string, changed: number) {
+function useSourcesRead(plane: string, changed: number, onTheList: boolean) {
   const [asked, setAsked] = useState(0);
   const [sources, setSources] = useState<Read<readonly SkillSource[]>>();
   const [offered, setOffered] = useState<readonly OfferedSource[]>([]);
   const [updates, setUpdates] = useState<Read<SkillUpdates>>();
+  const [checked, setChecked] = useState<readonly SourceChecked[]>([]);
+  // Bumped as the updates check answers, which records each source it asked.
+  const [answered, setAnswered] = useState(0);
   useEffect(() => {
     let live = true;
     void reading(() => commands.skillSources(plane)).then((read) => {
@@ -125,32 +191,31 @@ function useSourcesRead(plane: string, changed: number) {
     });
     void reading(() => commands.skillUpdates(plane)).then((read) => {
       if (live) setUpdates(read);
+      if (live) setAnswered((n) => n + 1);
     });
     return () => {
       live = false;
     };
   }, [plane, changed, asked]);
-  return { sources, offered, updates, again: () => setAsked((n) => n + 1) };
+  // What the last checks recorded (#3840): read with the list, again once the updates check has
+  // answered, and again on coming back to the list, since a source's page browses its source.
+  useEffect(() => {
+    if (!onTheList) return;
+    let live = true;
+    void reading(() => commands.skillSourcesChecked(plane)).then((read) => {
+      if (live && Array.isArray(read.data)) setChecked(read.data);
+    });
+    return () => {
+      live = false;
+    };
+  }, [plane, changed, asked, answered, onTheList]);
+  return { sources, offered, updates, checked, again: () => setAsked((n) => n + 1) };
 }
 
-/** **Rows held while a read is asked** (S11): the layout stays, and after about a second a line
- *  says what is being read. */
-function Reading({ what }: { what: string }) {
-  const [late, setLate] = useState(false);
-  useEffect(() => {
-    const after = window.setTimeout(() => setLate(true), 1000);
-    return () => window.clearTimeout(after);
-  }, []);
-  return (
-    <div className="skill-studio-placeholders" aria-busy="true" data-testid="skill-sources-reading">
-      {[0, 1, 2].map((at) => (
-        <div key={at} className="skill-studio-placeholder" aria-hidden="true" />
-      ))}
-      <p role="status" className="honest">
-        {late ? `Reading ${what}…` : ""}
-      </p>
-    </div>
-  );
+/** What the last check of `source` recorded, among `checked`. */
+function checkedOf(checked: readonly SourceChecked[], source: SkillSource) {
+  const key = sourceKey(source.remote);
+  return checked.find((one) => sourceKey(one.remote) === key);
 }
 
 /** **A read in place**: rows held while it is asked, why it failed with Try again, or what it
@@ -167,20 +232,15 @@ function Held<T>({
   again: () => void;
   children: (data: T) => ReactNode;
 }) {
-  if (read === undefined) return <Reading what={what} />;
+  if (read === undefined) return <ReadingRows what={what} testid="skill-sources-reading" />;
   if (read.refused !== undefined)
     return (
-      <EmptyState
-        headline={`purlis could not read ${what}`}
-        body={read.refused}
-        variant="panel"
-        role="status"
+      <NotRead
+        what={what}
+        why={read.refused}
+        onAgain={again}
         testid="skill-sources-unread"
-        action={
-          <Button size="sm" icon={<RotateCw aria-hidden="true" />} onPress={again}>
-            Try again
-          </Button>
-        }
+        size="sm"
       />
     );
   return <>{children(read.data)}</>;
@@ -222,7 +282,7 @@ export function SkillSourcesPage({
   change: (label: string, run: () => Promise<Answer>) => void;
   changed: number;
 }) {
-  const read = useSourcesRead(plane, changed);
+  const read = useSourcesRead(plane, changed, at === undefined);
   const [adding, setAdding] = useState<{ offered?: OfferedSource }>();
   /** A change, and where the tab goes once it is made: only from the page it was made on, so a
    *  person who went on meanwhile is never pulled back. */
@@ -287,6 +347,46 @@ export function SkillSourcesPage({
         )}
       </Held>
     );
+  else if (at.at === "choose")
+    page = (
+      <ChooseSkillsPage
+        plane={plane}
+        source={sourceAt}
+        updates={updates}
+        changed={changed}
+        onCancel={() => onGo(toSource(at))}
+        onOpenSkill={onOpenSkill}
+        onUpdate={(skill) => onGo({ at: "update", source: at.source, label: at.label, skill })}
+        onReview={(skills) =>
+          onGo({ at: "install-all", source: at.source, label: at.label, skills })
+        }
+        kept={at.ticked}
+      />
+    );
+  else if (at.at === "install-all")
+    page = (
+      <InstallSetReviewPage
+        // A new set is a new review, and what was unticked in the last one is forgotten.
+        key={at.skills.join("\u0000")}
+        plane={plane}
+        source={sourceAt}
+        named={at.skills}
+        levels={levels}
+        start={start}
+        busy={busy}
+        // Back to the list as it was ticked.
+        onCancel={() =>
+          onGo({ at: "choose", source: at.source, label: at.label, ticked: at.skills })
+        }
+        onInstall={(review, level) =>
+          changeThen(
+            "The skills were not installed",
+            () => commands.skillInstall(plane, sourceAt, level, review.accepted, null),
+            toSource(at),
+          )
+        }
+      />
+    );
   else if (at.at === "install")
     page = (
       <InstallReviewPage
@@ -312,6 +412,7 @@ export function SkillSourcesPage({
         plane={plane}
         source={sourceAt}
         updates={updates}
+        checked={checkedOf(read.checked, sourceAt)?.at ?? null}
         busy={busy}
         changed={changed}
         onGo={onGo}
@@ -366,6 +467,7 @@ function SourcesList({
 }) {
   const updates = read.updates?.data;
   const offers = updates?.offers ?? [];
+  const now = useMinute();
   const review = (offer: SkillUpdateOffer) =>
     onGo({
       at: "update",
@@ -504,7 +606,9 @@ function SourcesList({
                             )}
                           </RowTrail>
                         )}
-                        <RowBelow clamp={1}>{aboutSource(source)}</RowBelow>
+                        <RowBelow clamp={1}>
+                          {aboutSource(source, checkedSaid(checkedOf(read.checked, source), now))}
+                        </RowBelow>
                       </ListRow>
                     );
                   })}
@@ -667,6 +771,7 @@ function SourcePage({
   plane,
   source,
   updates,
+  checked,
   busy,
   changed,
   onGo,
@@ -678,6 +783,8 @@ function SourcePage({
   plane: string;
   source: SkillSource;
   updates: SkillUpdates | undefined;
+  /** When the source was last checked, as recorded (#3840), until its browse here answers. */
+  checked: number | null;
   busy: boolean;
   changed: number;
   onGo: (to: SourcesAt) => void;
@@ -692,9 +799,21 @@ function SourcePage({
     commands.skillSourceBrowse(plane, source),
   );
   const [removing, setRemoving] = useState(false);
+  const now = useMinute();
   const unconfirmed = updates?.unconfirmed.some((one) => sourceKey(one.remote) === key) === true;
   const at = (skill: string) => ({ source: key, label: source.label, skill });
   const offered = (skill: OfferedSkill) => offerFor(updates, key, skill.name);
+  /** Why Install all… cannot be pressed: the skills are not read yet, or none is left. */
+  const allWhy =
+    read?.data === undefined
+      ? read === undefined
+        ? "It is being read now."
+        : "Its skills could not be read."
+      : read.data.skills.length === 0
+        ? "This source holds no skill."
+        : read.data.skills.every((skill) => skill.installed.length > 0)
+          ? "Every skill here is installed."
+          : undefined;
   /** Where a skill's row goes: its update, its page in the Library, or its install. */
   const onward = (skill: OfferedSkill) => {
     if (offered(skill) !== undefined) onGo({ at: "update", ...at(skill.name) });
@@ -707,7 +826,7 @@ function SourcePage({
         title={source.label}
         lead={
           <>
-            {aboutSource(source)}
+            {aboutSource(source, checkedWhen(read?.data?.checked ?? checked, now))}
             {read?.data !== undefined && (
               <>
                 {" "}
@@ -718,6 +837,14 @@ function SourcePage({
         }
       >
         <div className="skill-library-tools">
+          <Button
+            size="sm"
+            isDisabled={allWhy !== undefined}
+            tooltip={allWhy}
+            onPress={() => onGo({ at: "choose", source: key, label: source.label })}
+          >
+            Install all…
+          </Button>
           <Button
             size="sm"
             icon={<RotateCw aria-hidden="true" />}
@@ -942,16 +1069,56 @@ export function Summary({ summary, testid }: { summary: ReviewSummary; testid?: 
   );
 }
 
-/** One skill of a review: what it adds first, then every file under its mark, each readable. */
-function SkillReviewed({ skill }: { skill: ReviewSkill }) {
+/** One skill of a review: what it adds first, then every file under its mark, each readable.
+ *  In a review of many (#4024) its box to leave it out comes first, and its files are folded
+ *  under one line, read when it is unfolded. */
+function SkillReviewed({
+  skill,
+  pick,
+  folded = false,
+}: {
+  skill: ReviewSkill;
+  /** Its box in a review of many: ticked, to untick and leave it out. */
+  pick?: ReactNode;
+  /** Its files under one line, drawn only once it is unfolded. */
+  folded?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const files = (
+    <div className="skill-review-files" role="group" aria-label={`Files of ${skill.name}`}>
+      {skill.files.map((one) => (
+        <Disclosure
+          key={one.path}
+          size="sm"
+          label={`Show ${one.path}`}
+          data-testid={`file-${one.path}`}
+          trail={one.risky ? LOOK_CLOSELY : <Badge variant="ok">Plain</Badge>}
+        >
+          <pre className="skill-review-file" data-testid="skill-review-file">
+            {one.text ?? "This file is not text, so it is not shown."}
+          </pre>
+        </Disclosure>
+      ))}
+    </div>
+  );
   return (
-    <section className="skill-review" aria-label={`Review of ${skill.name}`}>
+    <section
+      className="skill-review"
+      aria-label={`Review of ${skill.name}`}
+      data-testid={`reviewed-${skill.name}`}
+    >
+      {pick}
       <h3 className="ui-text-strong">
         <code>{skill.name}</code> {skill.description}
       </h3>
       {skill.brought_by !== null && (
         <p className="honest">Comes along: {skill.brought_by} refers to it.</p>
       )}
+      {skill.already.map((one) => (
+        <p key={one} className="honest" data-testid={`already-${skill.name}-${one}`}>
+          It refers to <code>{one}</code>, which its chats there have already: it is left as it is.
+        </p>
+      ))}
       <h4 className="ui-text-small ui-text-strong">What it adds</h4>
       <Summary summary={skill.summary} testid={`summary-${skill.name}`} />
       {skill.lint.map((line) => (
@@ -959,22 +1126,23 @@ function SkillReviewed({ skill }: { skill: ReviewSkill }) {
           {line}
         </p>
       ))}
-      <h4 className="ui-text-small ui-text-strong">Its files</h4>
-      <div className="skill-review-files" role="group" aria-label={`Files of ${skill.name}`}>
-        {skill.files.map((one) => (
-          <Disclosure
-            key={one.path}
-            size="sm"
-            label={`Show ${one.path}`}
-            data-testid={`file-${one.path}`}
-            trail={one.risky ? LOOK_CLOSELY : <Badge variant="ok">Plain</Badge>}
-          >
-            <pre className="skill-review-file" data-testid="skill-review-file">
-              {one.text ?? "This file is not text, so it is not shown."}
-            </pre>
-          </Disclosure>
-        ))}
-      </div>
+      {folded ? (
+        <Disclosure
+          size="sm"
+          label={`Its files (${skill.files.length})`}
+          isExpanded={open}
+          onExpandedChange={setOpen}
+          data-testid={`files-${skill.name}`}
+          trail={skill.files.some((one) => one.risky) ? LOOK_CLOSELY : undefined}
+        >
+          {open && files}
+        </Disclosure>
+      ) : (
+        <>
+          <h4 className="ui-text-small ui-text-strong">Its files</h4>
+          {files}
+        </>
+      )}
       {skill.left_out.length > 0 && (
         <ul className="honest" aria-label={`Not installed from ${skill.name}`}>
           {skill.left_out.map((one) => (
@@ -1009,10 +1177,13 @@ function InstallReviewPage({
   onCancel: () => void;
   onInstall: (review: InstallReview, level: SkillLevel) => void;
 }) {
-  const { read, again } = useRead(`${sourceKey(source.remote)}\u0000${name}`, () =>
-    commands.skillInstallReview(plane, source, [name]),
-  );
   const [level, setLevel] = useState<SkillLevel>(start);
+  // Read again where it lands changes: a skill it refers to that the level holds already is
+  // left as it is, not brought along (#4032).
+  const { read, again } = useRead(
+    `${sourceKey(source.remote)}\u0000${name}\u0000${JSON.stringify(level)}`,
+    () => commands.skillInstallReview(plane, source, [name], level),
+  );
   const picker = picking(
     levels.map((one) => one.level),
     (one) => labelOf(levels, one),
@@ -1048,6 +1219,24 @@ function InstallReviewPage({
       <h2 className="ui-text-strong">
         Install <code>{name}</code> from {source.label}
       </h2>
+      <SettingRow
+        label="Lands in"
+        grouped
+        help={`It lands in the ${labelOf(levels, level)} skills.`}
+        control={(ids) => (
+          <Choice
+            kind="radio"
+            ids={ids}
+            options={picker.options}
+            value={picker.value}
+            disabled={busy}
+            onValueChange={(to) => {
+              const chosen = picker.chosen(to);
+              if (chosen !== undefined) setLevel(chosen);
+            }}
+          />
+        )}
+      />
       <Held read={read} what={`the review of ${name}`} again={again}>
         {(data) => (
           <>
@@ -1062,27 +1251,415 @@ function InstallReviewPage({
             {data.skills.map((skill) => (
               <SkillReviewed key={skill.name} skill={skill} />
             ))}
-            <SettingRow
-              label="Lands in"
-              grouped
-              help={`It lands in the ${labelOf(levels, level)} skills.`}
-              control={(ids) => (
-                <Choice
-                  kind="radio"
-                  ids={ids}
-                  options={picker.options}
-                  value={picker.value}
-                  disabled={busy}
-                  onValueChange={(to) => {
-                    const chosen = picker.chosen(to);
-                    if (chosen !== undefined) setLevel(chosen);
-                  }}
-                />
-              )}
-            />
           </>
         )}
       </Held>
+    </ReviewPage>
+  );
+}
+
+/**
+ * **Install all…, the skills to tick** (#4024, decisions 1 and 2): every skill of the source at
+ * its newest commit, each one not installed yet ticked, to untick and narrow. One installed is
+ * greyed, its box out of reach, marked Installed with See it in Library; one whose update waits
+ * says so, and its update stays on Review update, never in this install. Review goes on to the
+ * one review of those ticked.
+ */
+function ChooseSkillsPage({
+  plane,
+  source,
+  updates,
+  changed,
+  onCancel,
+  onOpenSkill,
+  onUpdate,
+  onReview,
+  kept,
+}: {
+  plane: string;
+  source: SkillSource;
+  updates: SkillUpdates | undefined;
+  changed: number;
+  /** What was ticked when the person came back from the review, kept as they left it. */
+  kept?: readonly string[];
+  onCancel: () => void;
+  onOpenSkill: (name: string) => void;
+  onUpdate: (name: string) => void;
+  onReview: (names: string[]) => void;
+}) {
+  const key = sourceKey(source.remote);
+  const { read, again } = useRead(`${key}\u0000${changed}`, () =>
+    commands.skillSourceBrowse(plane, source),
+  );
+  const skills = read?.data?.skills ?? [];
+  const open = skills.filter((skill) => skill.installed.length === 0).map((skill) => skill.name);
+  // Every skill not installed yet, ticked, until the person unticks one (decision 1).
+  const [ticked, setTicked] = useState<ReadonlySet<string> | undefined>(
+    kept === undefined ? undefined : new Set(kept),
+  );
+  const chosen = ticked ?? new Set(open);
+  const names = open.filter((name) => chosen.has(name));
+  const why =
+    read === undefined
+      ? "Its skills are being read."
+      : read.data === undefined
+        ? "Its skills could not be read."
+        : names.length === 0
+          ? "Tick at least one skill."
+          : undefined;
+  return (
+    <ReviewPage
+      label={`Install all from ${source.label}`}
+      data-testid="install-all-choose"
+      summary="Nothing is installed until you review them and press Install."
+      onCancel={onCancel}
+      main={{
+        children:
+          names.length === 0 ? "Review" : `Review ${counted(names.length, "skill", "skills")}`,
+        byReturn: false,
+        isDisabled: why !== undefined,
+        tooltip: why,
+        onPress: () => onReview(names),
+      }}
+    >
+      <h2 className="ui-text-strong">Install all from {source.label}</h2>
+      <Held read={read} what={source.label} again={again}>
+        {(data) => (
+          <>
+            <p className="honest" data-testid="install-all-lead">
+              Every skill not installed yet is ticked; untick one to leave it out. Those ticked go
+              through one review, and install together as one change, pinned to commit{" "}
+              <code>{data.commit.short}</code>.
+            </p>
+            <List
+              aria-label={`Skills to install from ${source.label}`}
+              selectionMode="multiple"
+              // An installed skill's box is out of reach; its buttons are not.
+              disabledBehavior="selection"
+              disabledKeys={data.skills
+                .filter((skill) => skill.installed.length > 0)
+                .map((skill) => skill.name)}
+              selectedKeys={chosen}
+              onSelectionChange={(keys) =>
+                setTicked(
+                  new Set(
+                    keys === "all" ? open : [...keys].map(String).filter((k) => open.includes(k)),
+                  ),
+                )
+              }
+            >
+              {data.skills.map((skill) => {
+                const row = {
+                  installed: skill.installed.length > 0,
+                  update: offerFor(updates, key, skill.name),
+                  marks: skill.marks ?? [],
+                };
+                return (
+                  <ListRow
+                    key={skill.name}
+                    id={skill.name}
+                    textValue={skill.name}
+                    data-testid={`choose-${skill.name}`}
+                    data-installed={row.installed || undefined}
+                  >
+                    <RowLead>
+                      <Checkbox
+                        slot="selection"
+                        aria-label={`Install ${skill.name}`}
+                        tooltip={row.installed ? "It is installed already." : undefined}
+                      />
+                    </RowLead>
+                    {/* Installed: greyed, its words stepped back to the meta tier (decision 2). */}
+                    <RowLabel className={row.installed ? "ui-text-meta" : undefined}>
+                      <code>{skill.name}</code>
+                    </RowLabel>
+                    <RowTrail>
+                      {row.update !== undefined ? (
+                        <Badge variant="accent">Update waiting</Badge>
+                      ) : (
+                        row.installed && <Badge variant="ok">Installed</Badge>
+                      )}
+                      {!row.installed &&
+                        row.marks.map((mark) => (
+                          <Badge key={mark} variant="waiting">
+                            {mark}
+                          </Badge>
+                        ))}
+                      {row.update !== undefined ? (
+                        <Button
+                          size="sm"
+                          aria-label={`Review update: ${skill.name}`}
+                          onPress={() => onUpdate(skill.name)}
+                        >
+                          Review update
+                        </Button>
+                      ) : (
+                        row.installed && (
+                          <Button
+                            size="sm"
+                            aria-label={`See it in Library: ${skill.name}`}
+                            onPress={() => onOpenSkill(skill.name)}
+                          >
+                            See it in Library
+                          </Button>
+                        )
+                      )}
+                    </RowTrail>
+                    <RowBelow clamp={2}>
+                      {skill.description}
+                      {row.installed && ` · installed: ${skill.installed.join(", ")}`}
+                      {!row.installed &&
+                        skill.marks === null &&
+                        " · its files are read when you review it"}
+                    </RowBelow>
+                  </ListRow>
+                );
+              })}
+            </List>
+          </>
+        )}
+      </Held>
+    </ReviewPage>
+  );
+}
+
+/** The first part of an install in two, as a sentence names it: "the first 12 skills". */
+function firstPart(n: number): string {
+  return n === 1 ? "the first skill" : `the first ${n} skills`;
+}
+
+/** How many risky items `review` marks, over all its skills. */
+function riskyIn(review: InstallReview): number {
+  return review.skills.reduce((n, skill) => n + skill.summary.marked, 0);
+}
+
+/**
+ * **Install all…, the one review** (#4024, decisions 3 to 7): where they land, chosen once at
+ * the top; the pinned commit; then each skill with its box ticked, what it adds with the risky
+ * items marked, and its files read when unfolded; the skills the chosen ones refer to come along,
+ * marked, their boxes following the one that brought them. Unticking one reviews the rest again,
+ * so Install installs exactly what the page shows, as one change. Past what one read of the
+ * source may take, it says so and offers the first part.
+ */
+function InstallSetReviewPage({
+  plane,
+  source,
+  named,
+  levels,
+  start,
+  busy,
+  onCancel,
+  onInstall,
+}: {
+  plane: string;
+  source: SkillSource;
+  /** The skills ticked on the list, in its order. */
+  named: readonly string[];
+  levels: readonly StudioLevel[];
+  start: SkillLevel;
+  busy: boolean;
+  onCancel: () => void;
+  onInstall: (review: InstallReview, level: SkillLevel) => void;
+}) {
+  // Those still in this install: unticking one here leaves it out and reads the review again.
+  const [names, setNames] = useState<readonly string[]>(named);
+  const [level, setLevel] = useState<SkillLevel>(start);
+  // Nothing is asked while nothing is ticked. Read again where they land changes: a skill one
+  // refers to that the level holds already is left as it is (#4032).
+  const { read, again } = useRead(
+    names.length === 0
+      ? undefined
+      : `${sourceKey(source.remote)}\u0000${JSON.stringify(level)}\u0000${names.join("\u0000")}`,
+    () => commands.skillInstallSetReview(plane, source, [...names], level),
+  );
+  const picker = picking(
+    levels.map((one) => one.level),
+    (one) => labelOf(levels, one),
+    sameLevel,
+    level,
+  );
+  const answer: InstallSetReview | undefined = read?.data;
+  const review = answer?.kind === "review" ? answer.review : undefined;
+  // A skill left out that another brings along is in the review, and is not listed as left out.
+  const leftOut = named.filter(
+    (name) => !names.includes(name) && !review?.skills.some((one) => one.name === name),
+  );
+  const narrow = (to: readonly string[]) => setNames(named.filter((name) => to.includes(name)));
+  const why =
+    names.length === 0
+      ? "Tick at least one skill."
+      : read === undefined
+        ? "The review is being read."
+        : answer === undefined
+          ? "The review could not be read."
+          : review === undefined
+            ? "It is more than one review can read: install it in two parts."
+            : review.skills.length === 0
+              ? `Every skill ticked is in the ${labelOf(levels, level)} skills already.`
+              : busy
+                ? BUSY
+                : undefined;
+  const risky = review === undefined ? 0 : riskyIn(review);
+  return (
+    <ReviewPage
+      label={`Install all from ${source.label}`}
+      data-testid="install-all-review"
+      summary="Nothing is installed until you press Install."
+      onCancel={onCancel}
+      main={{
+        children: "Install",
+        byReturn: false,
+        isDisabled: why !== undefined,
+        tooltip: why,
+        onPress: () => {
+          if (review !== undefined) onInstall(review, level);
+        },
+      }}
+    >
+      <h2 className="ui-text-strong">
+        {review !== undefined && review.skills.length === 0
+          ? `Nothing to install from ${source.label}`
+          : `Install ${counted(review?.skills.length ?? names.length, "skill", "skills")} from ${source.label}`}
+      </h2>
+      <SettingRow
+        label="Lands in"
+        grouped
+        help={`They all land in the ${labelOf(levels, level)} skills. Move one afterwards from the Library.`}
+        control={(ids) => (
+          <Choice
+            kind="radio"
+            ids={ids}
+            options={picker.options}
+            value={picker.value}
+            disabled={busy}
+            onValueChange={(to) => {
+              const chosen = picker.chosen(to);
+              if (chosen !== undefined) setLevel(chosen);
+            }}
+          />
+        )}
+      />
+      {names.length === 0 ? (
+        <EmptyState
+          headline="Every skill is left out"
+          body="Tick one below to review it, or go back to the list."
+          variant="panel"
+          testid="install-all-none"
+        />
+      ) : (
+        <Held read={read} what="the review of these skills" again={again}>
+          {(data) =>
+            data.kind === "too-much" ? (
+              <EmptyState
+                headline="These skills are more than one review can read"
+                body={
+                  data.fits.length === 0
+                    ? `${data.why}. Leave some out, and install the rest after.`
+                    : `${data.why}. Install them in two parts: ${firstPart(data.fits.length)} now, then the other ${data.rest.length} with Install all… again.`
+                }
+                variant="panel"
+                role="status"
+                testid="install-all-too-much"
+                action={
+                  data.fits.length === 0 ? (
+                    <Button size="sm" onPress={onCancel}>
+                      Back to the list
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      // Those there already stay named, so the next review says so again.
+                      onPress={() => narrow([...data.fits, ...data.there])}
+                    >
+                      Review {firstPart(data.fits.length)}
+                    </Button>
+                  )
+                }
+              />
+            ) : (
+              <>
+                <p className="honest" data-testid="install-commit">
+                  You are reviewing {source.label} at commit <code>{data.review.commit.short}</code>
+                  : {counted(data.review.skills.length, "skill", "skills")}
+                  {risky > 0 && `, ${counted(risky, "risky item", "risky items")} marked`}. Untick a
+                  skill to leave it out. What you install stays pinned to this commit. The review is
+                  read from the files: a script can do more when it runs, and the chat&apos;s
+                  sandbox bounds that. Installing copies all of them or none.
+                </p>
+                {data.review.skills.map((skill) => (
+                  <SkillReviewed
+                    key={skill.name}
+                    skill={skill}
+                    folded
+                    pick={
+                      <Checkbox
+                        isSelected
+                        isDisabled={skill.brought_by !== null || busy}
+                        tooltip={
+                          skill.brought_by !== null
+                            ? `It comes along while ${skill.brought_by} is installed.`
+                            : busy
+                              ? BUSY
+                              : undefined
+                        }
+                        onChange={() => narrow(names.filter((name) => name !== skill.name))}
+                        data-testid={`keep-${skill.name}`}
+                      >
+                        Install {skill.name}
+                        {skill.summary.marked > 0 &&
+                          ` (${counted(skill.summary.marked, "risky item", "risky items")})`}
+                      </Checkbox>
+                    }
+                  />
+                ))}
+                {data.there.length > 0 && (
+                  <section aria-labelledby="install-all-there" className="skill-review">
+                    <h3 id="install-all-there" className="ui-text-small ui-text-strong">
+                      There already
+                    </h3>
+                    <p className="honest">
+                      {data.there.length === 1
+                        ? "Chats there have this one already, so it is left as it is."
+                        : "Chats there have these already, so they are left as they are."}
+                    </p>
+                    {data.there.map((name) => (
+                      <Checkbox
+                        key={name}
+                        isSelected={false}
+                        isDisabled
+                        tooltip={`${name} is there already.`}
+                        data-testid={`there-${name}`}
+                      >
+                        Install {name}
+                      </Checkbox>
+                    ))}
+                  </section>
+                )}
+              </>
+            )
+          }
+        </Held>
+      )}
+      {leftOut.length > 0 && (
+        <section aria-labelledby="install-all-left-out" className="skill-review">
+          <h3 id="install-all-left-out" className="ui-text-small ui-text-strong">
+            Left out of this install
+          </h3>
+          {leftOut.map((name) => (
+            <Checkbox
+              key={name}
+              isSelected={false}
+              isDisabled={busy}
+              tooltip={busy ? BUSY : undefined}
+              onChange={() => narrow([...names, name])}
+              data-testid={`left-out-${name}`}
+            >
+              Install {name}
+            </Checkbox>
+          ))}
+        </section>
+      )}
     </ReviewPage>
   );
 }
@@ -1145,8 +1722,9 @@ function UpdateReviewPage({
         ? "The review is being read."
         : review === undefined
           ? "The review could not be read."
-          : // It brings along a skill under a built-in skill's name, which accepting refuses (#3728).
-            (review.refused ?? (busy ? BUSY : undefined));
+          : busy
+            ? BUSY
+            : undefined;
   let body: ReactNode;
   if (offer === undefined)
     body = updatesRead ? (
@@ -1173,11 +1751,6 @@ function UpdateReviewPage({
                 <code>{data.newer.short}</code>
               </Fact>
             </Facts>
-            {data.refused !== null && (
-              <p className="honest" role="note" data-testid="update-refused">
-                {data.refused}
-              </p>
-            )}
             {!data.from_pin && (
               <p className="honest">
                 The pinned commit is no longer in the source, so this compares with the copy here.

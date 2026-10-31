@@ -617,6 +617,185 @@ while (accept(my $c, $s)) {
         assert!(carried.ends_with("ok"), "{carried}");
     }
 
+    /// **A Claude Code chat's Node server dials in to its door, and binds nothing** (#3316),
+    /// under Claude Code's own rules for a chat (read out of its macOS profile builder): its
+    /// hook socket reachable as `network.allowUnixSockets` makes it, the folder the hook socket
+    /// is in denied to its writes, and no TCP port bound (`allowLocalBinding` off). Started as
+    /// `purlis listen PORT -- node server.js` starts it, its server parks connections at its door
+    /// through the hook socket and is reached through the door on `127.0.0.1:PORT`. In the same
+    /// chat a listen on the next port, and a bind of the chat's own port by a program the shim
+    /// does not move, are each refused.
+    #[test]
+    fn a_claude_code_chats_node_server_dials_in_to_its_door_and_binds_nothing() {
+        if !can_apply() {
+            let _ = writeln!(
+                std::io::stderr(),
+                "skipped: this process is already sandboxed, so no second profile applies"
+            );
+            return;
+        }
+        let Some(node) = std::env::var_os("PATH").and_then(|path| {
+            std::env::split_paths(&path)
+                .map(|dir| dir.join("node"))
+                .find(|node| node.is_file())
+        }) else {
+            // CI puts Node on the confinement job's PATH: there, none is a failure.
+            assert!(std::env::var_os("CI").is_none(), "no node on PATH");
+            let _ = writeln!(std::io::stderr(), "skipped: no node on PATH");
+            return;
+        };
+        let port = free_port();
+        let base = tempfile::tempdir().expect("a folder");
+        let root = base.path().canonicalize().expect("real");
+        let app = root.join("app");
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&app)
+            .expect("the app's folder");
+        let hook = app.join("hooks.sock");
+        let listener = crate::hookwire::Listener::bind(&root, &hook).expect("the hook socket");
+        let token = listener.tokens().issue_to_this_process(3).expect("a token");
+        let (door, slots) = door::Door::dialled(port).expect("the door opens");
+        let _reading = listener.serving_only(Box::new(move |ask, slot| {
+            if ask.chat != 3 || ask.serve != port {
+                crate::hookwire::serve::refused(slot, door::NO_DOOR);
+            } else if let Err(slot) = slots.park(slot) {
+                crate::hookwire::serve::refused(slot, door::SLOTS_FULL);
+            }
+        }));
+        let cwd = tempfile::tempdir().expect("a folder");
+        let cwd_path = cwd.path().canonicalize().expect("real");
+        let shim = cwd_path.join("shim.cjs");
+        std::fs::write(
+            &shim,
+            include_str!("../../../../purlis-cli/src/listen/shim.cjs"),
+        )
+        .expect("the shim");
+        std::fs::write(
+            cwd_path.join("server.js"),
+            r#"const http = require("node:http");
+const net = require("node:net");
+const port = Number(process.env.PORT);
+const server = http.createServer((req, res) => res.end("dial ok"));
+server.listen(port, "127.0.0.1", () => console.log("listening " + JSON.stringify(server.address())));
+const other = net.createServer();
+other.on("error", (err) => console.log("other " + err.code));
+other.listen(port + 1, "127.0.0.1", () => console.log("other listening"));
+"#,
+        )
+        .expect("the server");
+        let at = seatbelt::string(&hook.display().to_string()).expect("a string");
+        let denied = seatbelt::string(&app.display().to_string()).expect("a string");
+        let tmp = tempfile::tempdir().expect("a temp folder");
+        let mut own = seatbelt::Own::default();
+        own.after.extend([
+            "(allow system-socket (socket-domain AF_UNIX))".to_owned(),
+            format!("(allow network-bind (local unix-socket (subpath {at})))"),
+            format!("(allow network-outbound (remote unix-socket (subpath {at})))"),
+            format!("(deny file-write* (subpath {denied}))"),
+        ]);
+        let profile =
+            seatbelt::profile(&[], &own, &cwd_path, tmp.path(), &[], None).expect("a profile");
+        let mut server = crate::forklock::spawn(
+            std::process::Command::new(backend::SANDBOX_EXEC)
+                .args(["-p", &profile])
+                .arg(&node)
+                .arg("server.js")
+                .current_dir(&cwd_path)
+                .env("NODE_OPTIONS", format!("--require \"{}\"", shim.display()))
+                .env("PORT", port.to_string())
+                .env("HOST", "127.0.0.1")
+                .env(door::DIAL_ENV, &hook)
+                .env("PURLIS_SERVE_PORT", port.to_string())
+                .env(crate::hookwire::CHAT_ENV, "3")
+                .env(crate::hookwire::TOKEN_ENV, token.expose())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped()),
+        )
+        .expect("the server starts");
+        let said = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let reading = {
+            let said = std::sync::Arc::clone(&said);
+            let mut out = server.stdout.take().expect("its output");
+            std::thread::spawn(move || {
+                let mut chunk = [0u8; 1024];
+                while let Ok(n) = out.read(&mut chunk) {
+                    if n == 0 {
+                        break;
+                    }
+                    said.lock()
+                        .expect("held")
+                        .push_str(&String::from_utf8_lossy(&chunk[..n]));
+                }
+            })
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let ready = || {
+            let said = said.lock().expect("held");
+            said.contains("listening {") && said.contains("other ")
+        };
+        while !ready() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        let carried = ask(port, &format!("127.0.0.1:{port}"));
+        // A program the shim does not move, binding the chat's own port itself.
+        let direct = crate::forklock::output(
+            std::process::Command::new(backend::SANDBOX_EXEC)
+                .args(["-p", &profile, "/usr/bin/perl", "-e", TCP])
+                .args(["4", "127.0.0.1", &port.to_string()])
+                .current_dir(&cwd_path),
+        )
+        .expect("it runs");
+        // Nor on every interface: nothing of the chat's binds its port anywhere.
+        let elsewhere: Vec<String> = [("4", "0.0.0.0"), ("6", "::")]
+            .iter()
+            .map(|(family, address)| {
+                let out = crate::forklock::output(
+                    std::process::Command::new(backend::SANDBOX_EXEC)
+                        .args(["-p", &profile, "/usr/bin/perl", "-e", TCP])
+                        .args([*family, *address, &port.to_string()])
+                        .current_dir(&cwd_path),
+                )
+                .expect("it runs");
+                String::from_utf8_lossy(&out.stdout).trim().to_owned()
+            })
+            .collect();
+        drop(door);
+        let _ = server.kill();
+        let _ = server.wait();
+        let _ = reading.join();
+        let mut errors = String::new();
+        if let Some(mut err) = server.stderr.take() {
+            let _ = err.read_to_string(&mut errors);
+        }
+        let said = said.lock().expect("held").clone();
+        let _ = writeln!(
+            std::io::stderr(),
+            "dialled server said: {said:?} | its errors: {errors:?} | through the door: {:?}",
+            carried.lines().next()
+        );
+        assert!(
+            said.contains(&format!("\"port\":{port}")),
+            "it says it listens on its port: {said}"
+        );
+        assert!(carried.starts_with("HTTP/1.1 200 OK"), "{carried}");
+        assert!(carried.ends_with("dial ok"), "{carried}");
+        assert!(
+            said.contains("other EPERM"),
+            "a listen on another port is refused: {said}"
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&direct.stdout).trim(),
+            "bind",
+            "a direct bind of its own port is refused"
+        );
+        assert_eq!(
+            elsewhere,
+            ["bind", "bind"],
+            "its port is bound nowhere else"
+        );
+    }
+
     /// **No server binds a socket in a folder denied to writes, whatever the socket rules
     /// allow** (#3316): binding makes the socket's file, which is a write. Claude Code writes a
     /// `denyWrite` folder after every allow, so it outranks an `allowWrite` of the socket inside

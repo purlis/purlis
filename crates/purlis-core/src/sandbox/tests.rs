@@ -501,6 +501,10 @@ fn the_project_roots_manifests_are_denied_under_every_name_whatever_the_chats_fo
 /// so no such chat is started (fail closed) and there is no form of theirs to hold a spool.
 /// The hook channel's per-user fallback directory is #951's: `claude_tests` and `seatbelt_tests`
 /// hold it for each harness.
+///
+/// #3822: the keys a chat's hook is armed with are among them (`spool/armed/<chat>`), under
+/// every spelling of the state folder: a Claude Code chat's Bash sandbox and its Read and Edit
+/// tools are each denied them, while its hooks, outside that sandbox, read them.
 #[cfg(unix)]
 #[test]
 fn a_chat_never_reads_or_writes_any_chats_hook_spool_or_its_keys() {
@@ -516,6 +520,7 @@ fn a_chat_never_reads_or_writes_any_chats_hook_spool_or_its_keys() {
                     spool.join("6").join("0123456789abcdef.1.json"),
                     spool.join("6.jsonl"),
                     spool.join(crate::hookwire::spool::KEYS),
+                    spool.join(crate::hookwire::armed::DIR).join("6"),
                 ]
             })
             .collect();
@@ -544,12 +549,16 @@ fn a_chat_never_reads_or_writes_any_chats_hook_spool_or_its_keys() {
                 .filter_map(|path| path.as_str().map(std::path::PathBuf::from))
                 .collect()
         };
-        let tools_read: Vec<std::path::PathBuf> = settings
-            .deny
-            .iter()
-            .filter_map(|rule| rule.strip_prefix("Read(/")?.strip_suffix("/**)"))
-            .map(std::path::PathBuf::from)
-            .collect();
+        let tools = |tool: &str| -> Vec<std::path::PathBuf> {
+            let opens = format!("{tool}(/");
+            settings
+                .deny
+                .iter()
+                .filter_map(|rule| rule.strip_prefix(opens.as_str())?.strip_suffix("/**)"))
+                .map(std::path::PathBuf::from)
+                .collect()
+        };
+        let (tools_read, tools_edit) = (tools("Read"), tools("Edit"));
         for file in &files {
             // As the kernel names it, which is what the compiler hands the harness.
             let named = super::real(file);
@@ -557,6 +566,11 @@ fn a_chat_never_reads_or_writes_any_chats_hook_spool_or_its_keys() {
             assert!(under(&listed("denyWrite"), &named), "{os:?}: {named:?}");
             assert!(
                 under(&tools_read, &named),
+                "{os:?}: {named:?}: {:?}",
+                settings.deny
+            );
+            assert!(
+                under(&tools_edit, &named),
                 "{os:?}: {named:?}: {:?}",
                 settings.deny
             );
@@ -964,6 +978,7 @@ fn every_harness_denies_a_chat_writing_the_persons_harness_approvals_or_the_decl
         )
         .expect("compiles");
         match applied.form() {
+            Form::ClaudeWrapped(_) => unreachable!("wrapped only on a runner"),
             // Claude Code: its own sandbox's write denials, and its file tools'.
             Form::ClaudeCode(settings) => {
                 let deny_write: Vec<&str> = settings.sandbox["filesystem"]["denyWrite"]
@@ -1084,6 +1099,7 @@ fn every_harness_denies_a_chat_writing_the_skill_studio_s_records() {
         )
         .expect("compiles");
         match applied.form() {
+            Form::ClaudeWrapped(_) => unreachable!("wrapped only on a runner"),
             // Claude Code: its own sandbox's write denials, and its file tools'.
             Form::ClaudeCode(settings) => {
                 let deny_write: Vec<&str> = settings.sandbox["filesystem"]["denyWrite"]
@@ -1334,6 +1350,7 @@ fn every_harness_denies_a_chat_making_purlis_s_state_records_under_another_spell
             )
             .expect("compiles");
             match applied.form() {
+                Form::ClaudeWrapped(_) => unreachable!("wrapped only on a runner"),
                 // Claude Code: its own sandbox's write denials, and its file tools', each in
                 // either case on macOS.
                 Form::ClaudeCode(settings) => {
@@ -1664,6 +1681,10 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             Homes::charter_data(&machine(Os::Linux))
                 .expect("a data home")
                 .join(crate::dockerpool::settings::DIR),
+            // Which sign-ins a runner's logins wait for (#4044).
+            crate::profilestore::sign_in::waiting::in_data_home(
+                &Homes::charter_data(&machine(Os::Linux)).expect("a data home"),
+            ),
             // The browser logins this device keeps (#2021).
             Homes::charter_data(&machine(Os::Linux))
                 .expect("a data home")
@@ -1760,6 +1781,19 @@ fn no_chat_writes_the_browser_engines_purlis_downloads_under_either_name_of_the_
             denied.paths
         );
     }
+}
+
+#[test]
+fn no_chat_reads_or_writes_which_sign_ins_a_runner_waits_for() {
+    let linux = machine(Os::Linux);
+    let data = Homes::charter_data(&linux).expect("a data home");
+    let (_plane, denied) = denied_with(None, Os::Linux);
+    let records = crate::profilestore::sign_in::waiting::in_data_home(&data);
+    assert!(
+        paths(&denied, Class::HumanPowers, Access::ReadWrite).contains(&records),
+        "{:?}",
+        denied.paths
+    );
 }
 
 #[test]
@@ -2050,6 +2084,7 @@ fn the_model_provider_preset_reaches_the_three_harnesses_providers() {
 /// Code's `network.allowedDomains`, and the egress proxy's list for a harness purlis wraps.
 fn reached(applied: &Applied) -> Vec<String> {
     match applied.form() {
+        Form::ClaudeWrapped(_) => unreachable!("wrapped only on a runner"),
         Form::ClaudeCode(settings) => settings.sandbox["network"]["allowedDomains"]
             .as_array()
             .expect("a list")
@@ -4830,7 +4865,9 @@ fn wrap_profile(applied: &Applied) -> String {
     match applied.form() {
         Form::Opencode(wrap) => opencode::profile(wrap, cwd, tmp, &[4040], None),
         Form::Codex(wrap) => codex::profile(wrap, cwd, tmp, &[4040], None),
-        Form::ClaudeCode(_) => panic!("Claude Code is not wrapped"),
+        Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => {
+            panic!("Claude Code is not wrapped off a runner")
+        }
     }
     .expect("a profile")
 }
@@ -7349,6 +7386,7 @@ fn the_state_folder_is_held_whole_in_purlis_s_wrap() {
         )
         .expect("compiles");
         match applied.form() {
+            Form::ClaudeWrapped(_) => unreachable!("wrapped only on a runner"),
             Form::ClaudeCode(settings) => {
                 let deny_write = settings.sandbox["filesystem"]["denyWrite"].to_string();
                 let named = super::real(&state).display().to_string();
@@ -7424,6 +7462,7 @@ fn every_harness_denies_a_chat_writing_the_app_state_and_lets_it_read_it() {
         )
         .expect("compiles");
         match applied.form() {
+            Form::ClaudeWrapped(_) => unreachable!("wrapped only on a runner"),
             // Claude Code: its own sandbox's write denials, and its file tools', and no read
             // denial of it.
             Form::ClaudeCode(settings) => {

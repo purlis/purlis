@@ -845,3 +845,53 @@ describe("a save's red request (`save-request-red`)", () => {
     );
   });
 });
+
+describe("a chat's undelivered messages (#3958)", () => {
+  const LEFT: AlertRow = {
+    severity: "warn",
+    subject: "undelivered messages",
+    detail:
+      'chat 3 did not come back after purlis restarted, and 1 message it queued while purlis did not answer was never delivered, with no running dispatch left to keep them on: a follow-up to chat 9: "carry on"',
+    way: { kind: "left-messages", report: "3.abc.unplaced.json" },
+  };
+
+  it("is a Notice in the Inbox that says what was not delivered, and Put away takes it back", async () => {
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args });
+      return null;
+    });
+    const reread = vi.fn();
+    render(
+      <NoticeList>
+        <InboxAlerts
+          plane={PLANE}
+          reading={{ at: "read", planes: [{ plane: PLANE, alerts: [LEFT], stopped: null }] }}
+          machine={[]}
+          elsewhere={[]}
+          does={{
+            openSettings: vi.fn(),
+            openProject: vi.fn(),
+            openSaving: vi.fn(),
+            reread,
+            openInboxOf: vi.fn(),
+          }}
+        />
+      </NoticeList>,
+    );
+
+    const line = screen.getByRole("status");
+    expect(line.textContent).toMatch(/chat 3 did not come back after purlis restarted/i);
+    expect(line.textContent).toContain('a follow-up to chat 9: "carry on"');
+    await userEvent.click(within(line).getByRole("button", { name: "Put away" }));
+
+    await waitFor(() =>
+      expect(calls("put_away_left_messages")).toEqual([
+        {
+          cmd: "put_away_left_messages",
+          args: { plane: PLANE, report: "3.abc.unplaced.json" },
+        },
+      ]),
+    );
+    await waitFor(() => expect(reread).toHaveBeenCalled());
+  });
+});

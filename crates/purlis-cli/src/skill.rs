@@ -197,12 +197,19 @@ pub enum SkillCommand {
     /// outside the workspace, each risky one marked, and every file) and asks before it copies
     /// anything. The copy is pinned to the commit it was reviewed at, in `skills.lock`
     /// (`skills.local.lock` with `--local`). Skills the named ones refer to come along. With no
-    /// skill named, lists what the source offers.
+    /// skill named, lists what the source offers; with `--all`, installs every skill it offers
+    /// that is not installed from it yet, through one review and one commit.
     Install {
         /// The source: an https:// URL, or a folder on this machine by its full path.
         url: String,
         /// The skills to install, by name.
+        #[arg(conflicts_with = "all")]
         names: Vec<String>,
+        /// Every skill the source offers that is not installed from it yet, in one review, asked
+        /// once (`--yes` skips the question). Past what one read of the source may take, it says
+        /// which skills fit, to install in parts.
+        #[arg(long)]
+        all: bool,
         /// The source's branch (default: its own default branch).
         #[arg(long)]
         branch: Option<String>,
@@ -215,7 +222,8 @@ pub enum SkillCommand {
         /// The entry in that vault that holds the token.
         #[arg(long, requires = "vault")]
         key: Option<String>,
-        /// Where a project skill reaches: `root`, `all`, or workspace names (default: root).
+        /// Where a project skill reaches: `root`, `all`, or workspace names (default: root). A
+        /// project skill they refer to reaches those workspaces too: its grant is widened.
         #[arg(long, num_args = 1..)]
         grant: Vec<String>,
         /// Install without asking: for a script that printed and read the review itself.
@@ -482,6 +490,13 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             "repo_left_out": one.repo_left_out.iter()
                                 .map(|row| left_out_json(one, row, row_json(row)))
                                 .collect::<Vec<_>>(),
+                            // Its own catalogue, which purlis's budget never counts (#3324).
+                            "own": one.own.map(|own| json!({
+                                "skills": own.skills,
+                                "chars": own.chars,
+                                "manual": own.manual,
+                                "said": own.said(one.harness.title()),
+                            })),
                         })).collect::<Vec<_>>(),
                         // A declared harness skills are not supported on, with why (SK-30).
                         "not_supported": list.not_supported.iter().map(|one| json!({
@@ -501,6 +516,10 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             outside_table(&one.rows)
                         );
                     }
+                    // What its own catalogue costs, beside purlis's budget (#3324).
+                    if let Some(said) = one.own.and_then(|own| own.said(one.harness.title())) {
+                        println!("{}", harness_line(&said));
+                    }
                     // What a repo takes from its chats, never a silent drop (SK-53).
                     if !one.repo_left_out.is_empty() {
                         print!(
@@ -512,7 +531,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
                 // Never a silent drop (SK-30): a declared harness's chats get no skills, and why.
                 for one in &list.not_supported {
-                    println!("\n{}", not_supported_line(&one.said));
+                    println!("\n{}", harness_line(&one.said));
                 }
             }
             Ok(0)
@@ -818,6 +837,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         SkillCommand::Install {
             url,
             names,
+            all,
             branch,
             folder,
             vault,
@@ -835,7 +855,12 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     user: None,
                 }),
             };
-            install(&mut cx, &source, &names, &grant, yes, &at.level())
+            let names = if all {
+                Named::All
+            } else {
+                Named::These(&names)
+            };
+            install(&mut cx, &source, names, &grant, yes, &at.level())
         }
         SkillCommand::Update {
             confirm: Some(url),
@@ -899,12 +924,6 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
             };
             print!("{}", update_text(&update));
-            // It brings along a skill under a built-in skill's name: said before anything is
-            // asked, since accepting it is refused (#3728).
-            if let Some(why) = update.refused() {
-                voice::err(esc(&why).to_string());
-                return Ok(1);
-            }
             if !yes
                 && !asked(&format!(
                     "Update {} to {}?",
@@ -1130,9 +1149,10 @@ fn already_in(name: &str, lifecycle: &Lifecycle) -> Markup {
         .own(".")
 }
 
-/// A declared harness's line that skills are not supported on it (SK-30): its title is the
-/// project's words, so the line is escaped.
-fn not_supported_line(said: &str) -> Markup {
+/// A line of the core's about a harness, whose title is the project's words, so the line is
+/// escaped: that skills are not supported on a declared harness (SK-30), and what a harness's
+/// own catalogue holds beside purlis's budget (#3324).
+fn harness_line(said: &str) -> Markup {
     Markup::new().text(said)
 }
 
@@ -1284,8 +1304,14 @@ fn estimate_said(estimate: Option<&purlis_core::skills::grades::Estimate>) -> St
              is not known.\n"
         );
     }
+    // A grade purlis stopped under is gone by as far as its chats went, and says so (#3602).
+    let which = if estimate.interrupted {
+        "interrupted grade"
+    } else {
+        "grade"
+    };
     format!(
-        "From its grade{on}, {when}, of {}, a grade spends {}.\n",
+        "From its {which}{on}, {when}, of {}, a grade spends {}.\n",
         counted(estimate.chats_then, "chat", "chats"),
         parts.join(", ")
     )
@@ -1534,18 +1560,30 @@ fn seconds(ms: u64) -> String {
     }
 }
 
+/// Which skills `purlis skill install` installs.
+#[derive(Clone, Copy)]
+enum Named<'a> {
+    /// Those named, and the ones they refer to.
+    These(&'a [String]),
+    /// Every skill the source offers that is not installed from it yet (`--all`, #4024).
+    All,
+}
+
 /// `purlis skill install`: what `source` offers where no skill is named; else the review of
-/// `names`, asked about, then the install at `level`.
+/// `names` (or of every skill not installed from it yet), asked about, then the install at
+/// `level`.
 fn install(
     cx: &mut verbs::Ctx<'_>,
     source: &Source,
-    names: &[String],
+    named: Named<'_>,
     grant: &[String],
     yes: bool,
     level: &Level,
 ) -> Result<Code, String> {
     let root = cx.plane;
-    if names.is_empty() {
+    if let Named::These(names) = named
+        && names.is_empty()
+    {
         let browse = match source::browse(root, source) {
             Ok(browse) => browse,
             Err(why) => {
@@ -1579,14 +1617,57 @@ fn install(
             }
         }
     };
-    let review = match source::review(root, source, names) {
+    let review = match named {
+        Named::These(names) => source::review(root, cx.built_in, source, names, level),
+        Named::All => match source::review_all(root, cx.built_in, source, level) {
+            Ok(source::SetReview::Review { review, there }) => {
+                // Those the level has already, made there or from another source, or a
+                // built-in's name: left as they are, and said (#4153).
+                for name in &there {
+                    voice::info(format!(
+                        "{} is there already at {level}, so it is left as it is.",
+                        esc(name)
+                    ));
+                }
+                if review.skills.is_empty() {
+                    voice::info(format!(
+                        "{} {} offers is installed already.",
+                        if there.is_empty() {
+                            "Every skill"
+                        } else {
+                            "Every other skill"
+                        },
+                        esc(&source.to_string())
+                    ));
+                    return Ok(0);
+                }
+                Ok(review)
+            }
+            Ok(source::SetReview::TooMuch(too_much)) => {
+                voice::err(esc(&too_much_text(&too_much)).to_string());
+                return Ok(1);
+            }
+            Err(why) => Err(why),
+        },
+    };
+    let review = match review {
         Ok(review) => review,
         Err(why) => {
             voice::err(esc(&why).to_string());
             return Ok(1);
         }
     };
-    print!("{}", review_text(&review));
+    // A project skill it relies on reaches the workspaces the grant names too (#4172).
+    let widenings = source::widenings(
+        root,
+        level,
+        grant.as_ref(),
+        review
+            .skills
+            .iter()
+            .flat_map(|skill| skill.already.iter().map(String::as_str)),
+    );
+    print!("{}", review_text(&review, &widenings));
     let question = format!(
         "Install {} at {level}, pinned to {}?",
         counted(review.skills.len(), "skill", "skills"),
@@ -1620,6 +1701,23 @@ fn install(
         &review.accepted(),
         grant.as_ref(),
     ))
+}
+
+/// What `--all` says where its review is more than one read of the source may take: why, and the
+/// skills to install first, by name, so the rest follow with `--all` again (#4024). Nothing is
+/// cut from a review silently.
+fn too_much_text(too_much: &source::TooMuch) -> String {
+    if too_much.fits.is_empty() {
+        return format!("{}, so nothing was reviewed.", too_much.why);
+    }
+    format!(
+        "{}, so nothing was reviewed. Install them in two parts: first run this command with \
+         these {} named in place of --all: {}; then run it with --all again for the other {}.",
+        too_much.why,
+        counted(too_much.fits.len(), "skill", "skills"),
+        too_much.fits.join(" "),
+        too_much.rest.len()
+    )
 }
 
 /// Asks `question` on the terminal and answers whether the person said yes. No answer is no.
@@ -1694,7 +1792,8 @@ fn summary_text(summary: &purlis_core::skills::review::Summary, pad: &str) -> St
 }
 
 /// An install review as the terminal prints it: each skill's summary first, then its files.
-fn review_text(review: &source::Review) -> String {
+/// `widenings` says what the install's grant asks of the project skills they refer to (#4172).
+fn review_text(review: &source::Review, widenings: &[source::Widening]) -> String {
     let mut out = format!(
         "Review of {} from {} at {}\n",
         counted(review.skills.len(), "skill", "skills"),
@@ -1714,6 +1813,28 @@ fn review_text(review: &source::Review) -> String {
             esc(&skill.description)
         ));
         out.push_str(&summary_text(&skill.summary, "  "));
+        for name in &skill.already {
+            let one = widenings.iter().find(|one| &one.name == name);
+            match one.and_then(|one| one.widened.as_ref().map(|to| (one, to))) {
+                Some((one, to)) => out.push_str(&format!(
+                    "  refers to {}, which is granted to {}: it is left as it is, and the install \
+                     grants it to {} too\n",
+                    esc(name),
+                    esc(&one.granted.to_string()),
+                    esc(&source::added(&one.granted, to))
+                )),
+                None => out.push_str(&format!(
+                    "  refers to {}, which its chats there have already: it is left as it is\n",
+                    esc(name)
+                )),
+            }
+            for line in one
+                .map(|one| one.turned_off_said(&skill.name))
+                .unwrap_or_default()
+            {
+                out.push_str(&format!("  {}\n", esc(&line)));
+            }
+        }
         for line in &skill.lint {
             out.push_str(&format!("  lint: {}\n", esc(line)));
         }
@@ -1784,13 +1905,8 @@ fn update_text(update: &source::UpdateReview) -> String {
         changes(&update.local_edits, &mut out);
     }
     for skill in &update.brought {
-        let reserved = if update.reserved.contains(&skill.name) {
-            ", under a built-in skill's name"
-        } else {
-            ""
-        };
         out.push_str(&format!(
-            "\nComes along: {} ({}){reserved}\n",
+            "\nComes along: {} ({})\n",
             esc(&skill.name),
             esc(&skill.description)
         ));

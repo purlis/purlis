@@ -278,7 +278,8 @@ const drawn = () => new Promise((done) => requestAnimationFrame(() => requestAni
  * a chat arriving meanwhile is drawn only once the pointer has left for anywhere else. Laid out
  * by the browser: where the gap is, and what is under it, is the page's layout, which a window
  * test cannot see. It waits on what it checks, never on the clock (#3951): the card is up
- * before the chat arrives, and the hold's wait is over only when the story says so.
+ * before the chat arrives, the list says it is held (`data-holding`, #4020) before the chat
+ * arrives, and the hold's wait is over only when the story says so.
  */
 export const HeldAcrossTheGapToTheCard: Story = {
   render: () => <ArrivingInItsPanel />,
@@ -302,10 +303,24 @@ export const HeldAcrossTheGapToTheCard: Story = {
         },
         { timeout: 3000 },
       );
-      // A chat arrives while the pointer is on the list: held.
+      // The list is held before anything arrives, as it says on itself (`data-holding`, #4020).
+      const list = canvasElement.querySelector<HTMLElement>(".chats-list");
+      await expect(list).not.toBeNull();
+      await waitFor(
+        () =>
+          expect(list, "the list is held while the pointer rests on its row").toHaveAttribute(
+            "data-holding",
+          ),
+        { timeout: 3000 },
+      );
+      // A chat arrives while the pointer is on the list: held. A red run says which side broke.
       arrive();
       await drawn();
-      await expect(rowsIn(canvasElement)).toBe(2);
+      await expect(
+        list,
+        "the hold let go between the card coming up and the chat's arrival",
+      ).toHaveAttribute("data-holding");
+      await expect(rowsIn(canvasElement), "the rows changed while the list was held").toBe(2);
 
       // The gap between the row and its card, and what the page draws there: not the list.
       const from = (row as HTMLElement).getBoundingClientRect();

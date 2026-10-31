@@ -150,12 +150,13 @@
 
 /* ---------------------------------------------------------------------------------------------
    Sizes: sm 24, md 28, lg 32 at the default text size and density (#2793, #2877), as the text
-   input's. One size per row.
+   input's. One size per row. sm's floor is 24 CSS px, as the text input's and the button's
+   (#3250, WCAG 2.5.8).
    --------------------------------------------------------------------------------------------- */
 
 [data-scope="select"][data-part="root"][data-size="sm"],
 [data-scope="combobox"][data-part="root"][data-size="sm"] {
-  block-size: max(var(--size-chrome), var(--space-7));
+  block-size: max(24px, var(--size-chrome), var(--space-7));
   padding-inline: var(--space-3) var(--space-2);
   gap: var(--space-1);
   font-size: var(--font-size-sm);

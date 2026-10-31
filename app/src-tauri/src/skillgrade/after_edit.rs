@@ -79,6 +79,8 @@ impl From<after_edit::Accepted> for SkillGradeAfterEdit {
 pub struct SkillGradeAfterEditStep {
     pub plane: PlaneId,
     pub skill: String,
+    /// The copy, by its level (#3978): a same-named copy at another level is another skill.
+    pub level: SkillLevel,
     pub said: String,
 }
 
@@ -163,7 +165,8 @@ fn accepted_of(
     Ok(after_edit::Accepted {
         profile,
         model: on.model,
-        chats: plan.chats,
+        // With its previous version's arm counted, as the plan shows it (#4035).
+        chats: planned.after_edit_chats.unwrap_or(plan.chats),
         token_cap: planned.cap.tokens,
         limit_usd: planned.cap.cost_usd(&on.priced),
         tests: after_edit::tests_of(request),
@@ -309,6 +312,7 @@ fn waited_then_graded(
             tell(
                 app,
                 plane,
+                level,
                 skill,
                 "Another grade in this project ran for over an hour, so your edit was not \
                  graded: press Grade to grade it."
@@ -374,13 +378,14 @@ fn project_free(plane: &PlaneId, skill: &str) -> bool {
     }
 }
 
-/// Tells the window that a saved edit did not grade `skill`, and why.
-fn tell(app: &tauri::AppHandle, plane: &PlaneId, skill: &str, said: String) {
+/// Tells the window that a saved edit did not grade the copy of `skill` at `level`, and why.
+fn tell(app: &tauri::AppHandle, plane: &PlaneId, level: &Level, skill: &str, said: String) {
     let _ = app.emit(
         EVENT,
         SkillGradeAfterEditStep {
             plane: plane.clone(),
             skill: skill.to_owned(),
+            level: level.into(),
             said,
         },
     );
@@ -415,6 +420,7 @@ fn grade_after(
         tell(
             app,
             &plane,
+            &level,
             &skill,
             format!("Your edit was not graded: {why}"),
         );
@@ -434,7 +440,7 @@ fn grade_after(
         if let Err(not) = after_edit::update(&root, &level, &skill, |one| one.paused = Some(kept)) {
             tracing::warn!("purlis: why a grade after an edit waits was not kept ({not})");
         }
-        tell(app, &plane, &skill, why);
+        tell(app, &plane, &level, &skill, why);
         Outcome::Done
     };
     if let Err(why) = &on.checked {

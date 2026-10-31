@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 
 use purlis_core::executor::Executor;
 use purlis_core::extension::{self, project::Choices};
-use purlis_core::skills::studio::{PanelKey, Studio, Templates};
+use purlis_core::skills::studio::{Kept, ListLints, ListTime, PanelKey, Studio, Templates};
 use purlis_core::skills::{Template, TemplateId};
 use purlis_skills::change::SkillTemplate as _;
 use purlis_skills::{Lint, SkillLint as _};
@@ -216,6 +216,37 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
         }
     );
 
+    // The same lint as a studio list asks it (#3940), by a deadline: the same finding, and kept
+    // for the next list. A test's machine may take long to start the program the first time.
+    let kept: &'static std::sync::Mutex<Kept> =
+        Box::leak(Box::new(std::sync::Mutex::new(Kept::new())));
+    let time = ListTime {
+        time: std::time::Duration::from_secs(30),
+        deadline: std::time::Duration::from_secs(30),
+        now: std::time::Instant::now,
+    };
+    let skill = purlis_skills::SkillFiles {
+        name: "deploy",
+        text: "---\nname: deploy\ndescription: Deploys the service when asked to.\n---\n",
+        others: &others,
+        origin: purlis_skills::Origin::Project,
+        plugin: None,
+        listed: None,
+    };
+    for _ in 0..2 {
+        let listed = ListLints::new(studio.lints(), kept, time).findings(&skill);
+        assert_eq!(listed, findings, "as the editor's lint says it");
+    }
+    // Nothing more to ask in a list that has no time left: what was kept is still said.
+    let none_left = ListTime {
+        time: std::time::Duration::ZERO,
+        ..time
+    };
+    assert_eq!(
+        ListLints::new(studio.lints(), kept, none_left).findings(&skill),
+        findings
+    );
+
     // A panel on a skill's tab, after purlis's own Runs panel.
     let panels = studio.panels(&probe.plane(), "deploy");
     let keys: Vec<PanelKey> = panels.iter().map(|it| it.key.clone()).collect();
@@ -246,6 +277,7 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
     assert_eq!(names, [studio_probe::OFFERED]);
     let review = purlis_core::skills::source::extension::review(
         studio,
+        None,
         ID,
         &[studio_probe::OFFERED.to_owned()],
     )

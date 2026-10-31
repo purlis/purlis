@@ -1544,8 +1544,9 @@ fn write(name: &str, kind: SourceKind, source: Parsed) -> (Value, Vec<LeftOut>) 
 // VS Code
 // ------------------------------------------------------------------------------------------
 
-/// JSON with comments, as VS Code reads it: `//` and `/* */` comments and trailing commas.
-fn jsonc(text: &str) -> Result<Value, String> {
+/// JSON with comments, as VS Code reads it: `//` and `/* */` comments and trailing commas. Also
+/// how opencode's own config files are read (#3794, [`crate::opencode::OperatorRules`]).
+pub(crate) fn jsonc(text: &str) -> Result<Value, String> {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     let mut in_string = false;

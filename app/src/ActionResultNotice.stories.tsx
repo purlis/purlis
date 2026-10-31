@@ -10,6 +10,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import { ActionResultNotice } from "./ActionResultNotice";
+import { Notice } from "./Notice";
 import { workspaceMade } from "./actionResult";
 
 const LINES = [
@@ -98,5 +99,84 @@ export const WithNoChipOffersOpen: Story = {
     open.focus();
     await userEvent.keyboard("{Enter}");
     await expect(canvas.getByTestId("said")).toHaveTextContent("Went to git-ci-cd");
+  },
+};
+
+/** A card of each tone, each with a primary way and the family's secondary button. */
+function TwoWays() {
+  return (
+    <div
+      className="window-work"
+      style={{ display: "grid", gap: "var(--space-3)", inlineSize: 760 }}
+    >
+      {(["news", "trouble", "attention"] as const).map((tone) => (
+        <Notice
+          key={tone}
+          cause={`story:${tone}`}
+          tone={tone}
+          title={`A ${tone} card`}
+          fixes={[
+            { label: `Update ${tone}`, onPress: () => undefined, primary: true },
+            { label: `Later ${tone}`, onPress: () => undefined },
+          ]}
+          onDismiss={() => undefined}
+        >
+          Update it to bring its settings to this version of purlis.
+        </Notice>
+      ))}
+    </div>
+  );
+}
+
+/** Below this OKLab distance a person sees one colour (`purlis_core::theme::parts::SEEN`). */
+const SEEN = 0.02;
+
+/** A computed colour as OKLab, read back from a canvas so every way CSS writes one is one. */
+function oklabOf(colour: string): [number, number, number] {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  const drawn = canvas.getContext("2d") as CanvasRenderingContext2D;
+  drawn.fillStyle = colour;
+  drawn.fillRect(0, 0, 1, 1);
+  const [r, g, b] = [...drawn.getImageData(0, 0, 1, 1).data]
+    .slice(0, 3)
+    .map((c) => c / 255)
+    .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+}
+
+const apart = (x: string, y: string) => {
+  const [a, b] = [oklabOf(x), oklabOf(y)];
+  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+};
+
+/**
+ * **A secondary way on a card is visibly a button** (#3478, #4169's review), on each tone's
+ * card: at least a seen step from the card's ground, and farther from it under the pointer.
+ */
+export const ASecondaryWayOnTheCard: Story = {
+  render: () => <TwoWays />,
+  play: async ({ canvas }) => {
+    for (const tone of ["news", "trouble", "attention"]) {
+      const later = canvas.getByRole("button", { name: `Later ${tone}` });
+      await expect(later).toHaveAttribute("data-variant", "secondary");
+      const card = later.closest<HTMLElement>('[data-scope="notice"][data-part="root"]');
+      await expect(card).toHaveAttribute("data-layout", "card");
+      const ground = getComputedStyle(card as HTMLElement).backgroundColor;
+      const rest = getComputedStyle(later).backgroundColor;
+      later.setAttribute("data-hovered", "true");
+      const pointed = getComputedStyle(later).backgroundColor;
+      later.removeAttribute("data-hovered");
+      await expect(apart(rest, ground)).toBeGreaterThanOrEqual(SEEN);
+      await expect(apart(pointed, ground)).toBeGreaterThan(apart(rest, ground));
+    }
   },
 };

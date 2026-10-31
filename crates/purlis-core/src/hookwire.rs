@@ -57,6 +57,13 @@ pub const TOKEN_ENV: &str = "PURLIS_CHAT_TOKEN";
 /// inherited ([`NOT_INHERITED`]): an app started from a chat's shell does not hand it on.
 pub const CHAT_ID_ENV: &str = "PURLIS_CHAT_ULID";
 
+/// The chat's prompt key (#3369), in the environment of a chat purlis started and of no other:
+/// the secret its hooks key the digests of its prompts by ([`crate::skillspan::PromptSalt`]).
+/// Minted where the chat is composed, by the window or by the session host, and set there, after
+/// anything a profile set. Never on a command line, and never inherited ([`NOT_INHERITED`]): a
+/// chat another chat's shell starts gets its own.
+pub const PROMPT_KEY_ENV: &str = "PURLIS_PROMPT_KEY";
+
 /// Set to `1` in the environment of a chat the app actually started under a sandbox, and in no
 /// other (#1338, #1345). Read through [`crate::sandbox::chat_is_sandboxed`]. The app sets it at
 /// the launch, so a chat's own shell cannot claim it for the harness the hooks run under.
@@ -64,6 +71,11 @@ pub const CHAT_ID_ENV: &str = "PURLIS_CHAT_ULID";
 /// ([`crate::sandboxblock::CHAT_DIR_ENV`]): an app started from a chat's shell does not hand
 /// either on to the chats it starts.
 pub const SANDBOXED_ENV: &str = "PURLIS_SANDBOXED";
+
+/// Set to `1` on a chat purlis wraps whole although its harness has a sandbox of its own: a
+/// Claude Code chat on a runner (#4083). Read for how a refusal is worded alone
+/// ([`crate::sandbox::wrapped_whole_in`]).
+pub const WRAPPED_ENV: &str = "PURLIS_CHAT_WRAPPED";
 
 /// Where Claude Code puts the conversation a hook is running in.
 ///
@@ -114,8 +126,10 @@ pub const NOT_INHERITED: &[&str] = &[
     TOKEN_ENV,
     crate::noterminal::RELAUNCHED_ENV,
     SANDBOXED_ENV,
+    WRAPPED_ENV,
     crate::sandboxblock::CHAT_DIR_ENV,
     CHAT_ID_ENV,
+    PROMPT_KEY_ENV,
 ];
 
 /// Which conversation a report is of, and how well that is known.
@@ -287,13 +301,13 @@ impl Report {
     }
 }
 
-/// **What a hook marks of the prompt the person sent** (SK-38, #3029), under the chat's salt
-/// ([`crate::skillspan::PromptSalt`]): every stretch of its lines where the chat's harness
+/// **What a hook marks of the prompt the person sent** (SK-38, #3029), under the chat's prompt
+/// key ([`crate::skillspan::PromptSalt`], #3369): every stretch of its lines where the chat's harness
 /// confirms a typed skill by the prompt (Codex, opencode), and only its lead where the harness
 /// names the skill a prompt started (Claude Code), as a curation action's prompt is known by its
 /// lead on every harness; a first line of six words or fewer is its own lead, and so is
-/// digested whole ([`crate::skillspan::PromptMarks::lead_of`]). Nothing outside a chat that has an id, or on a
-/// harness purlis does not know. The salt separates chats and hides nothing (#3369).
+/// digested whole ([`crate::skillspan::PromptMarks::lead_of`]). Nothing outside a chat that has
+/// a prompt key, or on a harness purlis does not know.
 fn prompt_marks(
     prompt: &str,
     env: &dyn Fn(&str) -> Option<String>,
@@ -572,6 +586,10 @@ pub struct ChatTokens {
     /// after its token was replaced or its chat let it go.
     #[cfg(unix)]
     unrecorded: std::sync::Mutex<std::collections::HashMap<u32, ChatToken>>,
+    /// Each chat's armed key (#3822), minted with its token and written into the spool for its
+    /// hook alone ([`armed::arm`]): what a report's mode is believed on ([`Self::proves`]).
+    #[cfg(unix)]
+    armed: std::sync::Mutex<std::collections::HashMap<u32, armed::ArmedKey>>,
 }
 
 /// A chat's program: its pid, and when the process with that pid started, so a later process
@@ -653,6 +671,8 @@ impl ChatTokens {
             answering: std::sync::Mutex::default(),
             #[cfg(unix)]
             unrecorded: std::sync::Mutex::default(),
+            #[cfg(unix)]
+            armed: std::sync::Mutex::default(),
         }
     }
 
@@ -760,7 +780,78 @@ impl ChatTokens {
         }
         self.held().insert(chat, token.clone());
         self.rooted().remove(&chat);
+        #[cfg(unix)]
+        self.arm(chat);
         Ok(token)
+    }
+
+    /// Mints chat `chat`'s armed key and writes it where its hook reads it (#3822), replacing
+    /// any it had. A key that cannot be minted or written is said in the log and none is held:
+    /// the chat runs, and every mode it reports reads as asking (fail closed).
+    #[cfg(unix)]
+    fn arm(&self, chat: u32) {
+        // The key this start replaces proves nothing from here on, and the file is written with
+        // no lock held, so no other chat's line waits on it.
+        self.keys().remove(&chat);
+        let key = match armed::ArmedKey::new() {
+            Ok(key) => key,
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: chat {chat} has no armed key ({why}); its modes read as asking"
+                );
+                return;
+            }
+        };
+        if let Some(dir) = &self.spool
+            && let Err(why) = armed::arm(dir, chat, &key)
+        {
+            tracing::warn!(
+                "purlis: chat {chat}'s armed key was not written ({why}); its modes read as asking"
+            );
+            return;
+        }
+        self.keys().insert(chat, key);
+    }
+
+    /// Chat `chat` has ended or been let go: its armed key is forgotten and removed.
+    fn disarm(&self, chat: u32) {
+        #[cfg(unix)]
+        {
+            self.keys().remove(&chat);
+            if let Some(dir) = &self.spool {
+                armed::disarm(dir, chat);
+            }
+        }
+        #[cfg(not(unix))]
+        let _ = chat;
+    }
+
+    /// **Whether `said` is the key chat `chat`'s hook was armed with** (#3822), compared in
+    /// constant time: what a report's mode is believed on. A chat holding no key proves
+    /// nothing, nor does a line that carries none.
+    pub fn proves(&self, chat: u32, said: Option<&str>) -> bool {
+        #[cfg(unix)]
+        {
+            self.keys().get(&chat).is_some_and(|key| key.matches(said))
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (chat, said);
+            false
+        }
+    }
+
+    /// Chat `chat`'s armed key, for a test that stands in for its hook.
+    #[cfg(all(unix, any(test, feature = "test-support")))]
+    pub fn armed_key(&self, chat: u32) -> Option<armed::ArmedKey> {
+        self.keys().get(&chat).cloned()
+    }
+
+    #[cfg(unix)]
+    fn keys(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<u32, armed::ArmedKey>> {
+        self.armed
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Records the spool key of each chat whose key was not recorded as its token was issued
@@ -836,6 +927,7 @@ impl ChatTokens {
             drop(roots);
             self.unrecorded_forgotten(chat);
             self.held().remove(&chat);
+            self.disarm(chat);
         }
     }
 
@@ -863,6 +955,7 @@ impl ChatTokens {
         self.unrecorded_forgotten(chat);
         self.held().remove(&chat);
         self.rooted().remove(&chat);
+        self.disarm(chat);
     }
 
     fn rooted(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<u32, Program>> {
@@ -1019,9 +1112,24 @@ pub(crate) fn line_with(
     token: Option<&ChatToken>,
     what: &impl serde::Serialize,
 ) -> std::io::Result<Vec<u8>> {
+    line_armed(token, None, what)
+}
+
+/// [`line_with`], with the chat's armed key beside the token where the hook holds one (#3822).
+pub(crate) fn line_armed(
+    token: Option<&ChatToken>,
+    armed: Option<&str>,
+    what: &impl serde::Serialize,
+) -> std::io::Result<Vec<u8>> {
     let mut value = serde_json::to_value(what).map_err(std::io::Error::other)?;
     if let (Some(token), Some(fields)) = (token, value.as_object_mut()) {
         fields.insert(TOKEN.to_owned(), serde_json::Value::String(token.0.clone()));
+    }
+    if let (Some(armed), Some(fields)) = (armed, value.as_object_mut()) {
+        fields.insert(
+            ARMED.to_owned(),
+            serde_json::Value::String(armed.to_owned()),
+        );
     }
     let mut line = serde_json::to_vec(&value).map_err(std::io::Error::other)?;
     line.push(b'\n');
@@ -1031,10 +1139,25 @@ pub(crate) fn line_with(
 /// The field a line's token travels in.
 const TOKEN: &str = "token";
 
+/// The field a report's armed key travels in (#3822), on the socket alone: never spooled.
+const ARMED: &str = "armed";
+
 /// [`read_delivered`] for a test that looks at the line and its token alone.
 #[cfg(test)]
 fn read_line(line: &str) -> Option<(Line, Option<String>)> {
-    read_delivered(line).map(|(line, token, _)| (line, token))
+    read_delivered(line).map(|read| (read.line, read.token))
+}
+
+/// One line off the socket as [`read_delivered`] reads it: the line, and what it carried
+/// beside it, each taken off it.
+struct ReadLine {
+    line: Line,
+    /// The chat's token.
+    token: Option<String>,
+    /// Its [`Delivery`].
+    delivery: Option<Delivery>,
+    /// The chat's armed key, which only a report carries ([`armed`]).
+    armed: Option<String>,
 }
 
 /// A line off the socket, read, and the token it carried taken off it — so nothing past the
@@ -1043,8 +1166,9 @@ fn read_line(line: &str) -> Option<(Line, Option<String>)> {
 /// **Only a line a hook delivers carries one** ([`deliver`]: a report, a tool call or a refused
 /// commit), and only in its own shape. Any other kind that carries the field, or one of those
 /// three whose id is not one a hook makes, is not read: nothing past the listener holds a
-/// field that kind never has.
-fn read_delivered(line: &str) -> Option<(Line, Option<String>, Option<Delivery>)> {
+/// field that kind never has. The same of an armed key (#3822), which a report alone carries,
+/// as a string.
+fn read_delivered(line: &str) -> Option<ReadLine> {
     let mut value = serde_json::from_str::<serde_json::Value>(line).ok()?;
     let fields = value.as_object_mut()?;
     let token = match fields.remove(TOKEN) {
@@ -1052,7 +1176,13 @@ fn read_delivered(line: &str) -> Option<(Line, Option<String>, Option<Delivery>)
         _ => None,
     };
     let delivery = fields.remove(DELIVERY);
+    let armed = fields.remove(ARMED);
     let line: Line = serde_json::from_value(value).ok()?;
+    let armed = match armed {
+        None => None,
+        Some(serde_json::Value::String(armed)) if matches!(line, Line::Report(_)) => Some(armed),
+        Some(_) => return None,
+    };
     let delivery = match delivery {
         None => None,
         Some(said) => {
@@ -1062,7 +1192,12 @@ fn read_delivered(line: &str) -> Option<(Line, Option<String>, Option<Delivery>)
             Some(said.as_str().and_then(Delivery::parse)?)
         }
     };
-    Some((line, token, delivery))
+    Some(ReadLine {
+        line,
+        token,
+        delivery,
+        armed,
+    })
 }
 
 /// The field a delivered line's [`Delivery`] travels in, on the socket and in the spool.
@@ -1636,6 +1771,11 @@ pub struct GitAsk {
     /// The workspace, as the command resolved it.
     pub workspace: String,
     pub work: GitWork,
+    /// Whether the asker reads [`Answer::Alive`] lines while it waits (#4080), as a clone's
+    /// does, whose wait follows the clone's liveness and has no total bound. Absent, as from an
+    /// older command, reads as no, and nothing but the answer is sent.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub alive: bool,
 }
 
 /// A commit a sandboxed chat asks the app to make in the branch folder it stands in, as
@@ -1757,6 +1897,66 @@ pub enum GitWork {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         delete_branch: bool,
     },
+    /// **The guard's question before plain git writes a branch folder** (#3931): may this chat
+    /// `act` in the folder `<repo>/<piece>` of the ask's workspace? The app runs no git: it
+    /// judges the folder's claim against the chats it has, and takes the folder for the chat
+    /// where no live chat holds it, as a brokered write does ([`crate::piececlaim::take`]). It
+    /// answers an empty `Said` with exit 0 where the chat may write, and a `Said` with exit
+    /// [`CLAIM_HELD`] and the refusal as its one line where another live chat holds the folder:
+    /// the one answer the asking guard refuses on. Any `No` (a chat the app does not have open,
+    /// a name that cannot be a branch folder, a claim it could not judge) lets the git run, as
+    /// no answer does. Asked with [`GitAsk::alive`] off: the guard's wait is bounded, and a
+    /// liveness line would only spend it. A kind of its own, so an app that does not know it
+    /// answers nothing.
+    WorktreeClaim {
+        repo: String,
+        piece: String,
+        act: ClaimAct,
+    },
+}
+
+/// The exit status a [`GitWork::WorktreeClaim`] is answered with where another live chat holds
+/// the folder: the one answer the guard on a chat's own git refuses on (#3931, the review of
+/// #4129). Not 1, which any failure could say.
+pub const CLAIM_HELD: u8 = 3;
+
+/// What plain git would do in a branch folder, as a [`GitWork::WorktreeClaim`] names it.
+///
+/// **A wire enum of its own, not [`crate::piececlaim::Act`]**: that one also names a removal
+/// and a dispatch's warning, which no claim ask may carry, and its words are prose for a
+/// refusal. This holds the three a chat's git can ask about, in the stable snake-case spelling
+/// the socket's lines keep across app and command-line versions; [`ClaimAct::act`] and
+/// [`ClaimAct::of`] map between the two.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimAct {
+    /// A commit: `git commit`, `merge`, `cherry-pick`, `revert`, `am`.
+    Commit,
+    /// The branch rebased or pulled.
+    Update,
+    /// The branch pushed.
+    Push,
+}
+
+impl ClaimAct {
+    /// The act a branch folder's claim judges and its refusal names.
+    pub fn act(self) -> crate::piececlaim::Act {
+        match self {
+            Self::Commit => crate::piececlaim::Act::Commit,
+            Self::Update => crate::piececlaim::Act::Update,
+            Self::Push => crate::piececlaim::Act::Push,
+        }
+    }
+
+    /// The wire's word for `act`, or `None` for an act no plain git asks about.
+    pub fn of(act: crate::piececlaim::Act) -> Option<Self> {
+        match act {
+            crate::piececlaim::Act::Commit => Some(Self::Commit),
+            crate::piececlaim::Act::Update => Some(Self::Update),
+            crate::piececlaim::Act::Push => Some(Self::Push),
+            crate::piececlaim::Act::Remove | crate::piececlaim::Act::Write => None,
+        }
+    }
 }
 
 /// What a [`GitWork::WorktreeUpdate`] does.
@@ -1977,6 +2177,9 @@ pub enum Answer {
         lines: Vec<crate::repocmd::Say>,
         code: u8,
     },
+    /// Not an answer: the ask is still being worked on, and shows life (#4080). Sent only to an
+    /// asker that said it reads it ([`GitAsk::alive`]), before its one answer, and read past.
+    Alive {},
     /// A chat's theme draft is started or saved ([`Ask::ThemeDraft`], #2332): every line the
     /// app said, its exit status, and whether the draft was **made** by this ask, a copy of its
     /// kept folder or a new theme, rather than there already. The command makes its working copy
@@ -2212,6 +2415,9 @@ enum Line {
     /// After every other kind: it requires `frames`, which none of them carries. The
     /// connection carries frames from the app's acceptance on ([`framed`], #1996).
     Frames(framed::Hello),
+    /// After every other kind: it requires `serve`, which none of them carries. The connection
+    /// is parked as a slot of the chat's door from the app's acceptance on ([`serve`], #3316).
+    Serve(serve::ServeAsk),
 }
 
 impl Ask {
@@ -2255,6 +2461,7 @@ impl Line {
             Self::Output(output) => output.chat,
             Self::SecretExec(ask) => ask.chat,
             Self::Frames(hello) => hello.chat,
+            Self::Serve(ask) => ask.chat,
         }
     }
 }
@@ -2425,13 +2632,6 @@ pub struct SkillStarted {
 }
 
 impl ToolCall {
-    /// **Whether purlis's guard refused this call a git command that would update the
-    /// project's root** (arm A3c, [`crate::rootupdate`]): a needs-you item on its chat, in the
-    /// app's own words (qw348).
-    pub fn refused_a_root_update(&self) -> bool {
-        self.decision == Decision::Deny && self.rule.as_deref() == Some(crate::rootupdate::REASON)
-    }
-
     /// The line as it may be kept on disk: the same call without its argument digest (#977).
     /// The digest is unkeyed, so anyone who reads it can match it against a guess at the
     /// arguments; only the host keys it ([`crate::eventlog::ArgsKey`]) before anything is
@@ -2731,6 +2931,11 @@ pub type SecretExecuting = Box<
         + 'static,
 >;
 
+/// **What hears a `serve` line** (#3316): the ask and its connection, once the chat's token
+/// has checked. It parks the connection as a slot of the chat's door, or refuses it
+/// ([`serve::parked`], [`serve::refused`]); it returns at once either way.
+pub type Serves = Box<dyn Fn(serve::ServeAsk, serve::Slot) + Send + Sync + 'static>;
+
 /// What hears a [`SandboxBlocked`]. Nothing is answered: the hook does not wait for it.
 pub type Blocked = Box<dyn Fn(SandboxBlocked) + Send + Sync + 'static>;
 
@@ -2764,6 +2969,8 @@ pub struct Hearing {
     pub output: OutputHeard,
     /// Every brokered `secret exec`: held on its connection while the command runs.
     pub secret_exec: SecretExecuting,
+    /// Every `serve`: its connection parked as a slot of the chat's door, or refused (#3316).
+    pub serve: Serves,
 }
 
 /// Whether an app is accepting on the hook socket at `path` right now (#95): what the status
@@ -2958,13 +3165,21 @@ struct Receipt {
 }
 
 /// Delivers a chat's report: taken by the host at `path`, or spooled beside it ([`deliver`]).
+///
+/// **With the chat's armed key beside it, where this process can read one** (#3822,
+/// [`armed::ArmedKey::read`]): the chat's armed hook can, so the mode it reports is believed.
 #[cfg(unix)]
 pub fn deliver_report(
     path: &std::path::Path,
     token: Option<&ChatToken>,
     report: &Report,
 ) -> io::Result<Delivered> {
-    deliver(path, token, report)
+    deliver_armed(
+        path,
+        token,
+        armed::ArmedKey::read(path, report.chat).as_ref(),
+        report,
+    )
 }
 
 /// Delivers a tool call's line: taken by the host at `path`, or spooled beside it
@@ -3007,11 +3222,23 @@ pub fn deliver<L: SpoolLine>(
     token: Option<&ChatToken>,
     line: &L,
 ) -> io::Result<Delivered> {
+    deliver_armed(path, token, None, line)
+}
+
+/// [`deliver`], with `armed` beside the token on the socket ([`line_armed`]): on the socket
+/// alone, never into the spool, whose lines prove no mode (#3822).
+#[cfg(unix)]
+pub fn deliver_armed<L: SpoolLine>(
+    path: &std::path::Path,
+    token: Option<&ChatToken>,
+    armed: Option<&armed::ArmedKey>,
+    line: &L,
+) -> io::Result<Delivered> {
     use std::io::{BufRead, Read, Write};
 
     let delivery = Delivery::new();
     let delivered = with_delivery(line, delivery.as_ref())?;
-    let bytes = line_with(token, &delivered)?;
+    let bytes = line_armed(token, armed.map(armed::ArmedKey::expose), &delivered)?;
     let to = path.to_path_buf();
     let answered = within(A_NOTICE_TAKES_AT_MOST, move || {
         let socket = std::os::unix::net::UnixStream::connect(&to)?;
@@ -3176,7 +3403,8 @@ impl Asking {
         })
     }
 
-    /// Writes `ask` and reads the app's answer, waiting at most `within` for each half.
+    /// Writes `ask` and reads the app's answer, waiting at most `within` for each half, and
+    /// for each [`Answer::Alive`] line that comes before the answer.
     ///
     /// Every way this fails is an `Err` and never a wait: a handoff whose app did not answer
     /// prints the command to run in a terminal, which is a handoff the operator can still
@@ -3190,19 +3418,26 @@ impl Asking {
         socket.set_read_timeout(Some(within))?;
         socket.write_all(&line)?;
         socket.flush()?;
-        let mut said = String::new();
-        // The same cap the app holds a report to, turned round: an answer is a ticket or a
-        // sentence, and something that writes for ever without a newline is not the app.
-        (&mut self.stream)
-            .take(A_REPORT_IS_AT_MOST)
-            .read_line(&mut said)?;
-        if said.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "the app closed the connection without answering",
-            ));
+        // A line saying the ask is still alive is read past, and the wait starts again (#4080):
+        // `within` bounds each line, so only a silence that long ends it.
+        loop {
+            let mut said = String::new();
+            // The same cap the app holds a report to, turned round: an answer is a ticket or a
+            // sentence, and something that writes for ever without a newline is not the app.
+            (&mut self.stream)
+                .take(A_REPORT_IS_AT_MOST)
+                .read_line(&mut said)?;
+            if said.is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "the app closed the connection without answering",
+                ));
+            }
+            match serde_json::from_str(&said).map_err(io::Error::other)? {
+                Answer::Alive {} => {}
+                answer => return Ok(answer),
+            }
         }
-        serde_json::from_str(&said).map_err(io::Error::other)
     }
 }
 
@@ -3214,11 +3449,18 @@ mod off_unix;
 #[cfg(unix)]
 pub mod spool;
 
+#[cfg(unix)]
+pub mod armed;
+
 pub mod permission;
+
+pub mod alive;
 
 pub mod framed;
 
 pub mod relay;
+
+pub mod serve;
 #[cfg(unix)]
 pub use framed::Framed;
 #[cfg(not(unix))]
@@ -3350,6 +3592,33 @@ impl Listener {
         self
     }
 
+    /// Hears `serve` lines alone, each handed to `serve`; every other line is heard as
+    /// [`Self::each`] hears it. For the tests of a server dialling in (#3316).
+    #[cfg(all(test, target_os = "macos"))]
+    pub(crate) fn serving_only(self, serve: Serves) -> Reading {
+        let mut hearing = Hearing {
+            each: Box::new(|_| Ok(())),
+            answer: Box::new(|_, _| Answer::No {
+                why: NOTHING_ANSWERS.to_owned(),
+            }),
+            noticed: Box::new(|_| {}),
+            saved: Box::new(|_| {}),
+            refused: Box::new(|_| Ok(())),
+            tool: Box::new(|_| Ok(())),
+            permission: Box::new(|_| None),
+            blocked: Box::new(|_| {}),
+            doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
+            touching: Box::new(|_| {}),
+            secret_exec: Box::new(|_, _, writer| {
+                crate::secrets::brokered::not_answered(writer);
+            }),
+            serve: serve::refusing(),
+        };
+        hearing.serve = serve;
+        self.hear(hearing)
+    }
+
     /// The same listener, serving at most `per_peer` connections from one process and
     /// `at_most` from all at once. For the tests, whose every connection is one process's.
     #[cfg(test)]
@@ -3433,6 +3702,7 @@ impl Listener {
             secret_exec: Box::new(|_, _, writer| {
                 crate::secrets::brokered::not_answered(writer);
             }),
+            serve: serve::refusing(),
         })
     }
 
@@ -3849,7 +4119,13 @@ fn serve(
             );
             return;
         }
-        let Some((line, token, delivery)) = read_delivered(&line) else {
+        let Some(ReadLine {
+            line,
+            token,
+            delivery,
+            armed,
+        }) = read_delivered(&line)
+        else {
             refuse(&mut writer, UNKNOWN_LINE.to_owned());
             return;
         };
@@ -3919,7 +4195,14 @@ fn serve(
         };
         let already = (begun == Some(false)).then(RecordedAlready::held);
         match line {
-            Line::Report(report) => recorded = Some((hearing.each)(report)),
+            Line::Report(mut report) => {
+                // A mode is believed only from the chat's armed hook (#3822): one any other
+                // line names reads as asking, after the line's copy was told by what it said.
+                if !tokens.proves(chat, armed.as_deref()) {
+                    report.mode_unproven();
+                }
+                recorded = Some((hearing.each)(report));
+            }
             Line::Ask(ask) => {
                 // An ask is answered for as long as opening a chat takes, and nothing about
                 // the order of hook calls hangs on it: the turn is let go before it is.
@@ -3929,7 +4212,16 @@ fn serve(
                 if let Ok(asker) = writer.try_clone() {
                     tokens.answering(this, asker);
                 }
-                let answer = framed::on_a_line((hearing.answer)(this, ask));
+                // An asker that reads [`Answer::Alive`] is told while its ask shows life (#4080).
+                let pulse = match &ask {
+                    Ask::Git(git) if git.alive => alive::on(&writer),
+                    _ => None,
+                };
+                let answer = alive::within(pulse.as_ref(), || (hearing.answer)(this, ask));
+                if let Some(pulse) = &pulse {
+                    pulse.end();
+                }
+                let answer = framed::on_a_line(answer);
                 tokens.answered(this);
                 let Ok(mut said) = serde_json::to_vec(&answer) else {
                     return;
@@ -3962,6 +4254,22 @@ fn serve(
                 let _ = writer.set_read_timeout(None);
                 let _ = writer.set_write_timeout(Some(A_FRAME_WRITE_TAKES_AT_MOST));
                 (hearing.secret_exec)(ask, Box::new(reader), Box::new(writer));
+                return;
+            }
+            Line::Serve(ask) => {
+                // Parked for as long as the chat's server keeps it (#3316): the turn is let go
+                // first, and the connection is handed on whole. A sender that wrote past its
+                // line is not the shim, which waits for its answer, and is refused.
+                turn.finish();
+                drop(writer);
+                if !reader.buffer().is_empty() {
+                    serve::refused(reader.into_inner().socket, serve::NOT_ONE_LINE);
+                    return;
+                }
+                let slot = reader.into_inner().socket;
+                let _ = slot.set_read_timeout(None);
+                let _ = slot.set_write_timeout(Some(A_REPORT_TAKES_AT_MOST));
+                (hearing.serve)(ask, slot);
                 return;
             }
             Line::Frames(hello) => {
@@ -4205,10 +4513,12 @@ impl std::io::Read for Deadlined {
 fn refuse_with(line: &Line, why: &str, writer: &mut std::os::unix::net::UnixStream) {
     use std::io::Write;
     let said = match line {
-        Line::Report(_) | Line::Tool(_) | Line::Refused(_) => serde_json::to_vec(&Receipt {
-            taken: false,
-            refused: Some(why.to_owned()),
-        }),
+        Line::Report(_) | Line::Tool(_) | Line::Refused(_) | Line::Serve(_) => {
+            serde_json::to_vec(&Receipt {
+                taken: false,
+                refused: Some(why.to_owned()),
+            })
+        }
         Line::Ask(_) | Line::Frames(_) => serde_json::to_vec(&Answer::No {
             why: why.to_owned(),
         }),

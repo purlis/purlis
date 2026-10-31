@@ -172,6 +172,8 @@ impl SkillSet {
     /// **The set, routed by the built-in router** for a chat whose budget is `budget` and whose
     /// pins are `pins` (its persona's and its workspace's, ADR 0102 §4). Nothing leaves the set:
     /// a skill it hides is still in [`SkillSet::effective`], and named by [`Self::hidden_by_router`].
+    /// A skill the chat's harness finds itself ([`crate::Origin::Harness`]) counts against
+    /// nothing (#4192).
     #[must_use]
     pub fn routed(mut self, budget: Budget, pins: &[String]) -> Self {
         let parts = Parts::of(&self, pins);
@@ -426,7 +428,9 @@ struct Parts<'a> {
     pins: std::collections::HashSet<&'a str>,
     /// The chat's pins that name a skill of its set.
     pinned: Vec<String>,
-    /// Every skill the listing would show, each with what it declares.
+    /// Every skill the listing would show that counts against the budget, each with what it
+    /// declares: not one its harness finds itself ([`crate::Origin::Harness`]), which it lists
+    /// against its own limit and counts against nothing (ADR 0102 as amended 2026-10-31, #4192).
     listed: Vec<(&'a Effective, crate::Declared)>,
     /// What a router may hide, where nothing pins it.
     could: Vec<(&'a Effective, crate::Declared)>,
@@ -444,7 +448,7 @@ impl<'a> Parts<'a> {
         let listed: Vec<(&Effective, crate::Declared)> = set
             .effective
             .iter()
-            .filter(|e| e.route != Route::Mcp)
+            .filter(|e| e.route != Route::Mcp && e.origin != crate::Origin::Harness)
             .map(|e| (e, crate::declared(&e.skill)))
             .collect();
         let could = listed

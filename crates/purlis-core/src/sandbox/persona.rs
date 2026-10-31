@@ -499,6 +499,38 @@ pub fn tools_in_force_here(
         .unwrap_or_default()
 }
 
+/// **`persona`'s tools for the one chat a runner starts, where its desktop's person allowed
+/// exactly this list** (#4071): nobody on a runner can answer an Allow, so the start says what was
+/// allowed there, as `digest`, held here to the persona as this runner reads it. Its tools alone:
+/// its hosts stay [`in_force_here`]'s, which this never widens. Nothing of it is kept. A tool armed
+/// so is still sent nothing unless the desktop's gate passes and the person allows that run.
+pub fn tools_its_desktop_allowed(
+    root: &Path,
+    personas: &BTreeMap<String, Grants>,
+    persona: &str,
+    locks: &Locks,
+    digest: &str,
+) -> Vec<super::tools::Tool> {
+    let Some(grants) = of(personas, Some(persona)) else {
+        return Vec::new();
+    };
+    let (tools, _) = reached_tools(root, persona, grants, locks);
+    let now = digest_of(&reached(grants, locks), &tools, is_default(root, persona));
+    if now == digest { tools } else { Vec::new() }
+}
+
+/// **What the person on this machine allowed of `persona`, as its digest** (#4071): what a start
+/// of it on a runner carries. None where they allowed nothing, or a list since changed.
+pub fn digest_allowed_here(
+    root: &Path,
+    personas: &BTreeMap<String, Grants>,
+    persona: &str,
+    locks: &Locks,
+) -> Option<String> {
+    let (hosts, tools) = allowed_here(root, personas, Some(persona), locks)?;
+    Some(digest_of(&hosts, &tools, is_default(root, persona)))
+}
+
 /// `persona`'s hosts and tools under `locks`, where the person here allowed exactly them.
 fn allowed_here(
     root: &Path,

@@ -404,9 +404,7 @@ fn candidates(
 
 /// The profile a fresh chat starts on: the project's default, else the first there is.
 fn default_profile(set: &crate::profiles::ProfileSet) -> Option<String> {
-    set.default
-        .clone()
-        .or_else(|| set.profiles().first().map(|p| p.name.clone()))
+    set.for_a_new_chat()
 }
 
 #[cfg(test)]

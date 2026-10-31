@@ -4,32 +4,22 @@
 /**
  * **Editing a skill in place** (#3683, spec #3679, the amendment's S4): Edit turns the Text tab
  * into the editor, checked as the person types, with Save and Discard and an "Unsaved changes"
- * mark; leaving with unsaved changes (a row, a page, Stop editing, the tab's close) asks Keep
- * editing, Discard and leave, or Save and leave. Drawn at the window seam, the core faked at its
+ * mark; leaving with unsaved changes (a row, a page, Stop editing) asks Keep editing, Discard
+ * and leave, or Save and leave, and the unsaved text is the tab's unsaved work in the window's
+ * registry, which every close asks through (#3929). Drawn at the window seam, the core faked at its
  * command boundary.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { STUDIO_HISTORY, forgetStudio, renderStudioAt } from "./SkillStudioTab.testkit";
-import {
-  AT_THE_ROOT,
-  SKILL_STUDIO_TITLE,
-  SKILL_STUDIO_VIEW,
-  skillRowId,
-  type StudioPlace,
-} from "./skillStudio";
+import { PLANE, STUDIO_HISTORY, forgetStudio, renderStudioAt } from "./SkillStudioTab.testkit";
+import { SkillStudioTab } from "./SkillStudioTab";
+import { AT_THE_ROOT, SKILL_STUDIO_VIEW, skillRowId, type StudioPlace } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
-import {
-  askBeforeClosing,
-  forgetSkillEdit,
-  keepSkillEdit,
-  skillEditIn,
-  unsavedClosedBy,
-} from "./skillEdit";
+import { forgetSkillEdit, keepSkillEdit, skillEditIn } from "./skillEdit";
 import { typeIn } from "./editor/typing.testkit";
-import { noTabs, openView } from "./tabs";
+import { handedOver, takeHanded, unsavedIn, unsavedNow } from "./unsavedWork";
 import type { SkillLintFinding, StudioSkill } from "./bindings";
 
 afterEach(() => {
@@ -276,47 +266,112 @@ describe("leaving with unsaved changes", () => {
     expect(asked).toHaveTextContent("it can't be saved as it is");
     expect(within(asked).getByRole("button", { name: "Save and leave" })).toBeDisabled();
   });
+});
 
-  it("asks before the studio's tab closes, and closes on a leave", async () => {
+describe("the editor's unsaved text, as the window's unsaved work (#3929)", () => {
+  it("is registered while it is unsaved, by the studio's view, and goes once it is not", async () => {
     core();
+    const user = userEvent.setup();
+    const text = await startEditing(user);
+    // Opened, nothing typed: nothing a close would lose.
+    expect(unsavedNow()).toEqual([]);
+
+    typeIn(text, "More.\n");
+    expect(unsavedIn(PLANE)).toEqual([
+      expect.objectContaining({
+        key: STUDIO_HISTORY,
+        plane: PLANE,
+        view: SKILL_STUDIO_VIEW,
+        name: "deploy",
+        workspace: undefined,
+        persona: undefined,
+      }),
+    ]);
+
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+    expect(unsavedNow()).toEqual([]);
+  });
+
+  it("saves through the registry as the studio's Save does, and the editor closes", async () => {
+    const asked = core();
     const user = userEvent.setup();
     typeIn(await startEditing(user), "More.\n");
 
-    let closed = 0;
-    act(() => {
-      expect(askBeforeClosing(STUDIO_HISTORY, () => (closed += 1))).toBe(true);
-    });
-    await user.click(within(await question()).getByRole("button", { name: "Keep editing" }));
-    expect(closed).toBe(0);
-
-    act(() => void askBeforeClosing(STUDIO_HISTORY, () => (closed += 1)));
-    await user.click(within(await question()).getByRole("button", { name: "Discard and leave" }));
-    expect(closed).toBe(1);
-    // Nothing unsaved: a close goes on at once.
-    expect(askBeforeClosing(STUDIO_HISTORY, () => (closed += 1))).toBe(false);
+    const [work] = unsavedIn(PLANE);
+    expect(await work.save()).toBeUndefined();
+    expect(asked.filter((one) => one.cmd === "skill_save").map((one) => one.args)).toEqual([
+      expect.objectContaining({ plane: PLANE, name: "deploy", was: TEXT, now: `${TEXT}More.\n` }),
+    ]);
+    expect(skillEditIn(STUDIO_HISTORY)).toBeUndefined();
+    expect(unsavedNow()).toEqual([]);
   });
-});
 
-describe("which close would lose unsaved text", () => {
-  it("is the close of the tab, or of the focused pane, that shows the studio", () => {
-    const tabs = openView(noTabs(), SKILL_STUDIO_VIEW, SKILL_STUDIO_TITLE, "ops");
-    const id = tabs.order[0];
-    const plane = "p";
-    const close = { verb: "closeTab", tab: id, ends: false } as const;
-    expect(unsavedClosedBy(plane, tabs, close)).toBeUndefined();
+  it("says why a save through the registry was refused, and keeps the text", async () => {
+    core(undefined, {
+      skill_save: () => {
+        throw "nothing was saved: its frontmatter names no description:";
+      },
+    });
+    const user = userEvent.setup();
+    typeIn(await startEditing(user), "More.\n");
 
+    const [work] = unsavedIn(PLANE);
+    expect(await work.save()).toBe("nothing was saved: its frontmatter names no description:");
+    expect(skillEditIn(STUDIO_HISTORY)?.now).toBe(`${TEXT}More.\n`);
+    expect(unsavedIn(PLANE)).toHaveLength(1);
+  });
+
+  it("is a workspace's where the skill is saved into one, so its removal asks too", () => {
     keepSkillEdit(STUDIO_HISTORY, {
+      plane: PLANE,
+      view: SKILL_STUDIO_VIEW,
       at: at(DEPLOY, { tab: "text" }),
       skill: DEPLOY,
-      level: { at: "project", local: false },
+      level: { at: "workspace", name: "ops", local: false },
       was: TEXT,
       now: `${TEXT}More.\n`,
     });
-    expect(unsavedClosedBy(plane, tabs, close)).toEqual({ history: STUDIO_HISTORY, tab: id });
-    expect(unsavedClosedBy(plane, tabs, { verb: "closePane", ends: false })).toEqual({
-      history: STUDIO_HISTORY,
-      tab: id,
+    expect(unsavedIn(PLANE, { workspace: "ops" }).map((one) => one.name)).toEqual(["deploy"]);
+    unsavedIn(PLANE)[0].discard();
+    expect(skillEditIn(STUDIO_HISTORY)).toBeUndefined();
+  });
+
+  it("is carried to another window as it is, whose studio opens on it (#4028)", async () => {
+    core();
+    const user = userEvent.setup();
+    typeIn(await startEditing(user), "More.\n");
+    const edit = skillEditIn(STUDIO_HISTORY);
+    // Carried out of this window, and let go of here with its tab, as a move does.
+    const carried = handedOver(PLANE);
+    cleanup();
+    forgetSkillEdit(STUDIO_HISTORY);
+    forgetStudio();
+    expect(unsavedNow()).toEqual([]);
+
+    // Sent between windows as JSON, to a window whose studio tab has no history yet.
+    takeHanded(JSON.parse(JSON.stringify(carried)) as typeof carried);
+    expect(skillEditIn(STUDIO_HISTORY)).toEqual(edit);
+    expect(unsavedIn(PLANE).map((one) => one.key)).toEqual([STUDIO_HISTORY]);
+    render(<SkillStudioTab plane={PLANE} changed={0} />);
+
+    // On the text, not on the library away from it.
+    expect((await editorText()).textContent).toContain("More.");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("is a persona's where the skill is saved into one, so its removal asks too (#4029)", () => {
+    keepSkillEdit(STUDIO_HISTORY, {
+      plane: PLANE,
+      view: SKILL_STUDIO_VIEW,
+      at: at(DEPLOY, { tab: "text" }),
+      skill: DEPLOY,
+      level: { at: "persona", name: "steward", local: false },
+      was: TEXT,
+      now: `${TEXT}More.\n`,
     });
-    expect(unsavedClosedBy("other", tabs, close)).toBeUndefined();
+    expect(unsavedIn(PLANE, { persona: "steward" }).map((one) => one.name)).toEqual(["deploy"]);
+    expect(unsavedIn(PLANE, { workspace: "steward" })).toEqual([]);
+    unsavedIn(PLANE)[0].discard();
+    expect(skillEditIn(STUDIO_HISTORY)).toBeUndefined();
   });
 });

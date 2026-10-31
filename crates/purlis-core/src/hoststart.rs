@@ -475,6 +475,8 @@ pub struct Starting<'a> {
     pub start: &'a StartProgram,
     /// Where its hooks report, and its token, as its project's channel issued them.
     pub reporting: Option<&'a session::Reporting>,
+    /// The chat's prompt key, as the host minted it for a start it composes (#3369).
+    pub prompt_key: Option<&'a session::PromptKey>,
     /// The scope of the link the start came on, by its word: what its run says started it.
     pub started_by: &'a str,
 }
@@ -493,6 +495,7 @@ pub fn spec(
         None => {
             let mut launch = compose(starting, kit, beside)?;
             launch.reporting = starting.reporting.cloned();
+            launch.prompt_key = starting.prompt_key.cloned();
             crate::chatspec::from_launch_here(&launch, starting.number, size)
         }
     }
@@ -540,7 +543,10 @@ pub fn compose(starting: &Starting<'_>, kit: &Kit, beside: &dyn Beside) -> Resul
             resuming: None,
             without_sandbox: start.without_sandbox.then(crate::sandbox::OptOut::default),
             held: None,
-            grants: crate::sandbox::grant::Grants::default(),
+            grants: crate::sandbox::grant::Grants {
+                tools_allowed_by_desktop: what_its_desktop_allowed(starting),
+                ..Default::default()
+            },
             made: crate::sandbox::Made::Unnamed,
         },
         root,
@@ -554,6 +560,15 @@ pub fn compose(starting: &Starting<'_>, kit: &Kit, beside: &dyn Beside) -> Resul
         return Err(NOT_HANDED.into());
     }
     compose_ready(starting, ready, kit, beside)
+}
+
+/// **What a start from this runner's desktop says its person allowed of the chat's persona**
+/// (#4071): a runner has nobody to allow it. Only a link's start says so: a start of this
+/// machine's is held to this machine's Allow.
+fn what_its_desktop_allowed(starting: &Starting<'_>) -> Option<String> {
+    (starting.started_by == purlis_session_protocol::auth::Scope::RemoteLink.word())
+        .then(|| starting.start.tools_allowed.clone())
+        .flatten()
 }
 
 /// [`compose`] from what [`crate::start::ready`] decided for it: the seam a test hands a sandbox
@@ -698,13 +713,7 @@ pub fn compose_ready(
     };
     // The run this start begins, written before its program can send a line (ADR 0066), and the
     // new chat counted towards this machine's opt-out rate (ADR 0067 §7, ruling V78 d).
-    if let Err(why) = begun(
-        starting,
-        &ready,
-        persona.as_deref(),
-        sandbox.is_some(),
-        beside,
-    ) {
+    if let Err(why) = begun(starting, &ready, persona.as_deref(), sandbox, beside) {
         tracing::warn!("purlis: a composed chat's run was not written ({why})");
     }
     // Its routing record, under the run just begun, where its arming asked a router extension
@@ -758,6 +767,8 @@ pub fn compose_ready(
             .as_ref()
             .and_then(crate::sandbox::Confinement::held_as)
             .map(str::to_owned),
+        // Given with its token, by the host that starts it ([`spec`]).
+        prompt_key: None,
     })
 }
 
@@ -827,7 +838,7 @@ fn begun(
     starting: &Starting<'_>,
     ready: &crate::start::Ready,
     persona: Option<&str>,
-    sandboxed: bool,
+    sandbox: Option<&crate::sandbox::Applied>,
     beside: &dyn Beside,
 ) -> Result<(), String> {
     use crate::eventlog::{Attributes, Began, Entry, NONE};
@@ -848,13 +859,7 @@ fn begun(
             .map(|sign_in| sign_in.kind.word().to_owned()),
         provider: None,
         model: None,
-        sandbox: if sandboxed {
-            crate::sandbox::Os::this()
-                .backend_word(ready.harness)
-                .map(str::to_owned)
-        } else {
-            none()
-        },
+        sandbox: sandbox.map_or_else(none, |applied| applied.backend_word().map(str::to_owned)),
         conversation: ready.session.as_ref().map(ToString::to_string),
         started_by: Some(starting.started_by.to_owned()),
     };

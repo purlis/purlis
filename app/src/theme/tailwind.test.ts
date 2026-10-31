@@ -105,7 +105,7 @@ describe("Tailwind is wired to the tokens and to nothing else", () => {
     // utility could ever override a rule in it without `!important`.
     const css = await stylesheet();
     expect(css).toContain(
-      "@layer theme, base, vendor, charter, components, parts, utilities, forced;",
+      "@layer theme, base, vendor, charter, components, parts, cues, utilities, forced;",
     );
     expect(css).toMatch(/@layer charter\s*\{/);
   });

@@ -12,6 +12,11 @@ use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
 /// opencode's adapter.
+///
+/// **What its reports can prove** (#3822): only the chat's token. Its shim's hooks run inside
+/// purlis's wrap, which denies them the spool their armed key is in
+/// ([`crate::hookwire::armed`]), so any mode a report named would read as asking. None is
+/// read (the trait's default `reported_mode`): opencode documents no classifier-backed mode.
 pub struct Opencode;
 
 /// The one opencode adapter.
@@ -60,12 +65,16 @@ impl HarnessAdapter for Opencode {
     /// beside the plane's, is handed to the shim as its option, which adds it to the skills
     /// opencode discovers for this process ([`Harness::skills`], [`skill_dirs`]).
     ///
+    /// **Each dispatch tool runs on purlis's own dispatch grant** (#3794), allowed by name in
+    /// the same config, except where a rule of the operator's own opencode config, read from
+    /// where the chat works up ([`crate::opencode::Layers::here`]), names it.
+    ///
     /// It cannot report `SessionEnd`: quitting opencode fires no event and runs no exit
     /// handler in a plugin (measured). The app sees the process end.
     fn arm_under(
         &self,
         kit: Kit<'_>,
-        _cwd: Option<&std::path::Path>,
+        cwd: Option<&std::path::Path>,
         plugins: &crate::harness_plugin::Chosen,
         sandbox: Sandbox<'_>,
     ) -> StateHooks {
@@ -91,6 +100,9 @@ impl HarnessAdapter for Opencode {
                         Some(kit.binary),
                         sandbox.applied().is_some(),
                         &crate::skills::skills_off_for(kit, Harness::Opencode, plugins),
+                        // The operator's own rules, which an allow of purlis's yields to
+                        // (#3794).
+                        &crate::opencode::OperatorRules::read(&crate::opencode::Layers::here(cwd)),
                     ),
                 ),
                 (crate::opencode::PURE_ENV.to_owned(), "0".to_owned()),

@@ -214,6 +214,7 @@ fn a_grade() -> super::super::grades::Graded {
             chats: 6,
             tokens: None,
             cost_usd: None,
+            asked_for: None,
         },
         plugins_off: None,
         model: None,
@@ -293,4 +294,243 @@ fn a_copys_grades_are_its_own_alone() {
     };
     assert_eq!(keys(&shared), ["shared-one"]);
     assert_eq!(keys(&local), ["local-one"]);
+}
+
+// ---- lints in a list (#3940) ----------------------------------------------------------------
+
+thread_local! {
+    /// The clock a list's lints read in these tests: moved on by hand.
+    static NOW: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
+}
+
+fn test_now() -> std::time::Instant {
+    NOW.with(|now| {
+        let at = now.get().unwrap_or_else(std::time::Instant::now);
+        now.set(Some(at));
+        at
+    })
+}
+
+/// Moves the tests' clock on by `by`.
+fn pass(by: std::time::Duration) {
+    let at = test_now() + by;
+    NOW.with(|now| now.set(Some(at)));
+}
+
+/// A lint that says one line of every skill, each question asked taking `takes`, failing where
+/// `fails`, and counting what it was asked and by when.
+struct Counting {
+    takes: std::time::Duration,
+    fails: std::cell::Cell<bool>,
+    asked: std::cell::RefCell<Vec<(String, std::time::Instant)>>,
+}
+
+impl Counting {
+    fn new(takes: std::time::Duration) -> Self {
+        Self {
+            takes,
+            fails: std::cell::Cell::new(false),
+            asked: std::cell::RefCell::default(),
+        }
+    }
+
+    fn asked(&self) -> Vec<String> {
+        self.asked
+            .borrow()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+}
+
+impl InTheList for &Counting {
+    fn by(&self) -> &str {
+        "House style"
+    }
+
+    fn version(&self) -> [u8; 32] {
+        [7; 32]
+    }
+
+    fn ask(
+        &self,
+        skill: &SkillFiles<'_>,
+        until: std::time::Instant,
+    ) -> Result<Vec<String>, String> {
+        self.asked.borrow_mut().push((skill.name.to_owned(), until));
+        pass(self.takes);
+        if self.fails.get() {
+            Err("it did not answer in time".to_owned())
+        } else {
+            Ok(vec![format!("{} is long", skill.name)])
+        }
+    }
+}
+
+fn a_list<'a>(
+    lint: &'a Counting,
+    kept: &'static std::sync::Mutex<Kept>,
+) -> ListLints<&'a Counting> {
+    ListLints::new(
+        vec![lint],
+        kept,
+        ListTime {
+            time: std::time::Duration::from_millis(100),
+            deadline: std::time::Duration::from_millis(80),
+            now: test_now,
+        },
+    )
+}
+
+fn kept() -> &'static std::sync::Mutex<Kept> {
+    Box::leak(Box::new(std::sync::Mutex::new(Kept::new())))
+}
+
+fn files<'a>(name: &'a str, text: &'a str) -> SkillFiles<'a> {
+    SkillFiles {
+        name,
+        text,
+        others: &[],
+        origin: purlis_skills::Origin::Project,
+        plugin: None,
+        listed: None,
+    }
+}
+
+fn said(list: &impl SkillLint, name: &str, text: &str) -> Vec<String> {
+    list.findings(&files(name, text))
+        .iter()
+        .filter_map(Finding::shown)
+        .collect()
+}
+
+#[test]
+fn a_list_asks_a_lint_once_about_the_same_files_and_again_once_they_change() {
+    let lint = Counting::new(std::time::Duration::from_millis(1));
+    let kept = kept();
+
+    let first = a_list(&lint, kept);
+    assert_eq!(
+        said(&first, "deploy", "v1"),
+        ["House style: deploy is long"]
+    );
+    let again = a_list(&lint, kept);
+    assert_eq!(
+        said(&again, "deploy", "v1"),
+        ["House style: deploy is long"]
+    );
+    assert_eq!(lint.asked(), ["deploy"], "the second list asks nothing");
+
+    assert_eq!(
+        said(&again, "deploy", "v2"),
+        ["House style: deploy is long"]
+    );
+    assert_eq!(
+        lint.asked(),
+        ["deploy", "deploy"],
+        "new text, a new question"
+    );
+}
+
+/// A lint whose question is refused while another list, asking the same, keeps its answer.
+struct Raced {
+    kept: &'static std::sync::Mutex<Kept>,
+}
+
+impl InTheList for Raced {
+    fn by(&self) -> &str {
+        "House style"
+    }
+
+    fn version(&self) -> [u8; 32] {
+        [9; 32]
+    }
+
+    fn ask(
+        &self,
+        skill: &SkillFiles<'_>,
+        _until: std::time::Instant,
+    ) -> Result<Vec<String>, String> {
+        self.kept.lock().unwrap().0.insert(
+            key_of(self.version(), files_digest(skill)),
+            Was::Said(vec!["deploy is long".to_owned()]),
+        );
+        Err("it was still answering the other list".to_owned())
+    }
+}
+
+#[test]
+fn an_answer_another_list_kept_stands_over_a_question_this_one_could_not_ask() {
+    let kept = kept();
+    let list = ListLints::new(vec![Raced { kept }], kept, ListTime::default());
+
+    assert_eq!(said(&list, "deploy", "v1"), Vec::<String>::new());
+
+    let again = ListLints::new(vec![Raced { kept }], kept, ListTime::default());
+    assert_eq!(
+        said(&again, "deploy", "v1"),
+        ["House style: deploy is long"],
+        "the other list's answer is kept"
+    );
+}
+
+#[test]
+fn a_list_asks_only_within_its_time_and_the_next_list_asks_on() {
+    let lint = Counting::new(std::time::Duration::from_millis(40));
+    let kept = kept();
+    let names = ["a", "b", "c", "d"];
+
+    let first = a_list(&lint, kept);
+    let shown: Vec<usize> = names
+        .iter()
+        .map(|name| said(&first, name, "text").len())
+        .collect();
+    // 0, 40 and 80 ms are within its 100; at 120 it asks no more.
+    assert_eq!(shown, [1, 1, 1, 0]);
+    assert_eq!(lint.asked(), ["a", "b", "c"]);
+
+    let next = a_list(&lint, kept);
+    let shown: Vec<usize> = names
+        .iter()
+        .map(|name| said(&next, name, "text").len())
+        .collect();
+    assert_eq!(shown, [1, 1, 1, 1]);
+    assert_eq!(lint.asked(), ["a", "b", "c", "d"]);
+}
+
+#[test]
+fn each_question_in_a_list_is_asked_by_its_deadline() {
+    let lint = Counting::new(std::time::Duration::from_millis(1));
+    let list = a_list(&lint, kept());
+    let asked_at = test_now();
+
+    said(&list, "deploy", "text");
+
+    let (_, until) = lint.asked.borrow()[0];
+    assert_eq!(until, asked_at + std::time::Duration::from_millis(80));
+}
+
+#[test]
+fn a_lint_that_did_not_answer_shows_nothing_and_is_asked_again_only_after_a_while() {
+    let lint = Counting::new(std::time::Duration::from_millis(1));
+    lint.fails.set(true);
+    let kept = kept();
+
+    assert_eq!(
+        said(&a_list(&lint, kept), "deploy", "v1"),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        said(&a_list(&lint, kept), "deploy", "v1"),
+        Vec::<String>::new()
+    );
+    assert_eq!(lint.asked(), ["deploy"]);
+
+    lint.fails.set(false);
+    pass(ASK_AGAIN_AFTER);
+    assert_eq!(
+        said(&a_list(&lint, kept), "deploy", "v1"),
+        ["House style: deploy is long"]
+    );
+    assert_eq!(lint.asked(), ["deploy", "deploy"]);
 }

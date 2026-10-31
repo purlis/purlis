@@ -189,6 +189,7 @@ fn graded(id: &str, ts: &str) -> RouterGraded {
             chats: 12,
             tokens: Some(12_000),
             cost_usd: None,
+            asked_for: None,
         },
         model: None,
     }

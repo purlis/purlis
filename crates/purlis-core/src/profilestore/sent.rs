@@ -66,6 +66,17 @@ fn dropped(kind: &str) -> &'static [&'static str] {
     }
 }
 
+/// Whether `path` is a `kind` harness's own settings file, which [`without_credentials`] parses
+/// and writes again.
+pub fn rewritten(kind: &str, path: &str) -> bool {
+    matches!(
+        (kind, path),
+        ("claude", "settings.json")
+            | ("opencode", "opencode.json" | "opencode.jsonc" | "tui.json")
+            | ("codex", "config.toml")
+    )
+}
+
 /// **`bytes`, the settings file `path` of a `kind` profile, as it is sent to a runner**: a
 /// harness's own settings file with every setting [`dropped`] names removed wherever it is in it,
 /// any other file as it is. `Err`, in words, for a settings file that does not parse.

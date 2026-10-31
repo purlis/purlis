@@ -345,6 +345,29 @@
   font-weight: var(--font-weight-medium);
 }
 
+/* **A secondary way on the card is visibly a button** (#3478): the card stands on its own ground
+   (the overlay, or trouble's and attention's), which a theme may give a secondary button's own
+   fill too (Purlis does: a way on the card read as words with no box). On a card's row of ways it
+   is drawn a step from that fill toward the words, and a further step under the pointer, so it
+   stands farther from every card ground than the family's fill, and farther still when pointed
+   at. Mixed in OKLab, as the check measures how far apart two colours look
+   (`noticeCardFill.test.ts`). A theme's own `button.root` fill, in the `parts` layer above,
+   still wins. */
+[data-scope="notice"][data-part="root"][data-layout="card"]
+  > [data-scope="button-row"]
+  [data-scope="button"][data-part="root"][data-variant="secondary"] {
+  background-color: color-mix(in oklab, var(--control-base), var(--text-primary) 14%);
+}
+
+[data-scope="notice"][data-part="root"][data-layout="card"]
+  > [data-scope="button-row"]
+  [data-scope="button"][data-part="root"][data-variant="secondary"]:is(
+    [data-hovered]:not([data-disabled]),
+    [data-open]:not([data-disabled])
+  ) {
+  background-color: color-mix(in oklab, var(--control-base), var(--text-primary) 22%);
+}
+
 [data-scope="notice"][data-part="root"][data-layout="card"] > [data-scope="button-row"] {
   grid-column: 2;
   margin: var(--space-3) 0 0;

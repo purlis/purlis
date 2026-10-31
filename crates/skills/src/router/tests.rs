@@ -86,6 +86,72 @@ fn below_the_budget_every_skill_is_listed_and_there_is_no_index() {
     assert_eq!(set.index(), None);
 }
 
+/// A skill from outside the plane named `name`, of `origin`, whose `owner`'s it is.
+fn from_outside(name: &str, origin: crate::Origin, owner: crate::Owner) -> crate::OutsideSkill {
+    crate::OutsideSkill {
+        skill: crate::Skill {
+            name: name.to_owned(),
+            description: format!("Does {name}."),
+            path: std::path::PathBuf::from(format!("/elsewhere/{name}/SKILL.md")),
+        },
+        root: std::path::PathBuf::from(format!("/elsewhere/{name}")),
+        origin,
+        id: name.to_owned(),
+        owner,
+        switch: crate::Switch::Alone,
+        off: false,
+        unread: None,
+    }
+}
+
+#[test]
+fn a_harness_s_own_skills_count_against_no_budget_and_a_repo_s_do_4192() {
+    // ADR 0102 as amended 2026-10-31: the harness's own catalogue counts against nothing, so a
+    // set routed with it beside routes as a chat's start, which never holds it (#4192). A clone's
+    // repo skills are what purlis hands with the set, and count.
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+    let own = (0..5).map(|at| {
+        from_outside(
+            &format!("mine-{at}"),
+            crate::Origin::Harness,
+            crate::Owner::You,
+        )
+    });
+
+    let set = set_at_the_root(&plane, &built_in)
+        .with_outside(Route::Plugin, own.clone())
+        .routed(skills(4), &[]);
+
+    assert!(set.routing.as_ref().expect("routed").hidden.is_empty());
+    assert_eq!(set.index(), None);
+
+    let repo = (0..2).map(|at| {
+        from_outside(
+            &format!("theirs-{at}"),
+            crate::Origin::Repo,
+            crate::Owner::Repo("api".to_owned()),
+        )
+    });
+    let set = set_at_the_root(&plane, &built_in)
+        .with_outside(Route::Plugin, own.chain(repo))
+        .routed(skills(4), &[]);
+
+    let hidden: Vec<&str> = set
+        .routing
+        .as_ref()
+        .expect("routed")
+        .hidden
+        .iter()
+        .map(|one| one.name.as_str())
+        .collect();
+    assert_eq!(
+        hidden,
+        ["deploy", "lint", "release"],
+        "the repo's two put the plane's past the budget"
+    );
+}
+
 #[test]
 fn above_the_budget_the_plane_skills_are_hidden_behind_the_index_and_stay_in_the_set() {
     let tmp = tempfile::tempdir().unwrap();
