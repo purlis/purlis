@@ -769,6 +769,8 @@ fn state_on(url: &str, port: u16, client: &str) -> Option<String> {
     (written
         && one("response_type")? == "code"
         && one("client_id")? == client
+        && !one("code_challenge")?.is_empty()
+        && one("code_challenge_method")? == "S256"
         && ["127.0.0.1", "localhost"]
             .iter()
             .any(|host| back == format!("http://{host}:{port}{}", callback::PATH)))
