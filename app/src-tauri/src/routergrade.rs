@@ -38,8 +38,8 @@ use crate::planes::{PlaneId, Planes};
 use crate::skillchange::flag_on;
 use crate::skillgrade::{
     GradeEnded, GradeEstimate, GradeLeftOut, GradeOutcome, GradePrice, GradeSpent, InChats, On,
-    Running, ScoredTest, chats_on, held_to_its_end, not_kept, record_interrupted, running,
-    scored_tests, set_cap, terms,
+    Running, RunningStep, ScoredTest, chats_on, held_to_its_end, not_kept, record_interrupted,
+    running, scored_tests, set_cap, terms,
 };
 
 /// The event the window is told each step of a router's grade by.
@@ -259,7 +259,10 @@ pub(crate) fn step_of_running(plane: &PlaneId, grade: &str) -> Option<RouterGrad
     let running_now = running()
         .get(grade)
         .filter(|one| one.plane == *plane)
-        .and_then(|one| one.router_step.clone());
+        .and_then(|one| match &one.step {
+            RunningStep::Router(step) => Some(step.clone()),
+            RunningStep::Skill(_) => None,
+        });
     running_now.or_else(|| {
         last_ended()
             .iter()
@@ -491,9 +494,8 @@ pub(crate) async fn router_grade_start(
                     level: None,
                     stop: Arc::clone(&stop),
                     after_edit: None,
-                    step: None,
                     // Held from the start: a page opened before its first chat ends finds it.
-                    router_step: Some(step_of(Spent::default(), None, None, false)),
+                    step: RunningStep::Router(step_of(Spent::default(), None, None, false)),
                 },
             );
         }
@@ -548,7 +550,7 @@ pub(crate) async fn router_grade_start(
                     if step.ended.is_some() {
                         keep_end(&step);
                     } else if let Some(one) = running().get_mut(&grade) {
-                        one.router_step = Some(step.clone());
+                        one.step = RunningStep::Router(step.clone());
                     }
                     let _ = app.emit(EVENT, step);
                 };
