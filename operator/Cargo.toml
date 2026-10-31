@@ -37,6 +37,14 @@ tracing = "0.1"
 ring = "0.17"
 base64 = "0.23"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "std"] }
+# The mint port's TLS and its requests to GitHub (#4206): the versions kube's own client already
+# builds on, so the lock gains no package.
+http-body-util = "0.1"
+hyper = { version = "1", default-features = false, features = ["client", "http1"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "native-tokio", "ring"] }
+hyper-util = { version = "0.1", default-features = false, features = ["client-legacy", "http1", "tokio"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 
 [dev-dependencies]
 # The manifests in `deploy/` and the vendored upstream definitions are read as YAML.
@@ -44,7 +52,6 @@ serde_yaml = "0.9"
 # The doctor's tests answer its kube client with an API server of their own, in process: the
 # same versions the kube client already builds on, so the lock gains no package.
 http = "1"
-http-body-util = "0.1"
 tower = { version = "0.5", default-features = false, features = ["util"] }
 
 [lints.rust]

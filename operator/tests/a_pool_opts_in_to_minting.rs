@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 
 const IMAGE: &str =
     "example.test/runner@sha256:0000000000000000000000000000000000000000000000000000000000000000";
-const PEM: &str = "-----BEGIN TEST KEY-----\nnot a real key\n-----END TEST KEY-----\n";
+mod app_key;
 
 fn forge_schema(
     crd: &k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition,
@@ -128,18 +128,28 @@ fn secret(data: &[(&str, &str)]) -> Secret {
 
 #[test]
 fn the_secret_holds_the_apps_client_id_and_its_pem() {
-    let key = AppKey::of(&secret(&[("app", "Iv23liExample"), ("key", PEM)])).expect("a key");
+    let pem = app_key::pem();
+    let key = AppKey::of(&secret(&[("app", "Iv23liExample"), ("key", &pem)])).expect("a key");
     assert_eq!(key.app(), "Iv23liExample");
+    // A PEM of something else is no key: it is parsed before it is called usable (#4206).
+    let label = ["PRIVATE ", "KEY"].concat();
+    let not_rsa = format!("-----BEGIN {label}-----\naHVudGVyMg==\n-----END {label}-----\n");
     for (data, says) in [
-        (vec![("key", PEM)], "app"),
+        (vec![("key", pem.as_str())], "app"),
         (vec![("app", "Iv23liExample")], "key"),
-        (vec![("app", "not a client id"), ("key", PEM)], "app"),
+        (vec![("app", "not a client id"), ("key", &pem)], "app"),
         (vec![("app", "Iv23liExample"), ("key", "hunter2")], "key"),
+        (
+            vec![("app", "Iv23liExample"), ("key", not_rsa.as_str())],
+            "key",
+        ),
     ] {
         let why = AppKey::of(&secret(&data)).expect_err("refused");
         assert!(why.contains(says), "{why}");
         assert!(
-            !why.contains("hunter2") && !why.contains("not a client id"),
+            !why.contains("hunter2")
+                && !why.contains("aHVudGVyMg")
+                && !why.contains("not a client id"),
             "{why}"
         );
     }
@@ -149,7 +159,8 @@ fn the_secret_holds_the_apps_client_id_and_its_pem() {
 /// Ruling Q6: a persona tool line whose `app` is not the Secret's is refused.
 #[test]
 fn a_tool_line_naming_another_app_is_refused() {
-    let key = AppKey::of(&secret(&[("app", "Iv23liExample"), ("key", PEM)])).expect("a key");
+    let pem = app_key::pem();
+    let key = AppKey::of(&secret(&[("app", "Iv23liExample"), ("key", &pem)])).expect("a key");
     assert_eq!(key.serves("Iv23liExample"), Ok(()));
     let why = key.serves("Iv23liOther").expect_err("refused");
     assert!(
@@ -162,6 +173,12 @@ fn a_tool_line_naming_another_app_is_refused() {
 
 #[test]
 fn what_the_operator_logs_of_a_key_never_holds_the_key() {
-    let key = AppKey::of(&secret(&[("app", "Iv23liExample"), ("key", PEM)])).expect("a key");
-    assert!(!format!("{key:?}").contains("not a real key"));
+    let pem = app_key::pem();
+    let key = AppKey::of(&secret(&[("app", "Iv23liExample"), ("key", &pem)])).expect("a key");
+    let printed = format!("{key:?}");
+    assert!(printed.contains("Iv23liExample"), "{printed}");
+    assert!(
+        !printed.contains("MII") && !printed.contains("KEY"),
+        "{printed}"
+    );
 }

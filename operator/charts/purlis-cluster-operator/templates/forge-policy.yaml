@@ -1,0 +1,86 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+{{/*
+Who may spend a GitHub App key, and who says which repos a Claim's token covers (#4206). A policy
+and binding of their own: the operator mints only for a Claim and a Pool made once this binding has
+settled, so nothing written before these rules held can reach a token. Kept when the release is
+uninstalled, as the policy on Claims is.
+
+A cluster admin grants `use` on one key, by its Secret's name. `forgekeys` names a right: the
+cluster holds no such object.
+
+  apiGroups: [runners.purlis.dev]
+  resources: [forgekeys]
+  resourceNames: [org-app]
+  verbs: [use]
+*/ -}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-forge
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [runners.purlis.dev]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [pools]
+      - apiGroups: [runners.purlis.dev]
+        apiVersions: ["*"]
+        operations: [UPDATE]
+        resources: [claims]
+  validations:
+    # Writing a Pool's spec.forge is spending the key it names, so the writer needs `use` on that
+    # key. Any other change to a Pool, and taking its forge off, asks nothing.
+    - expression: >-
+        request.resource.resource != 'pools' || !has(object.spec.forge) ||
+        (request.operation == 'UPDATE' && has(oldObject.spec.forge) &&
+        object.spec.forge == oldObject.spec.forge) ||
+        authorizer.group('runners.purlis.dev').resource('forgekeys')
+        .name(object.spec.forge.appKeySecretRef.name).check('use').allowed()
+      messageExpression: >-
+        'You may not use the GitHub App key ' + object.spec.forge.appKeySecretRef.name + '. A cluster admin can grant use on it (forgekeys).'
+      reason: Forbidden
+    # On a Pool that mints, its image holds the link keys the operator vouches for, so changing it
+    # is spending the key too.
+    - expression: >-
+        request.resource.resource != 'pools' || request.operation != 'UPDATE' ||
+        object.spec.image == oldObject.spec.image || !has(oldObject.spec.forge) ||
+        !oldObject.spec.forge.mintInCluster ||
+        authorizer.group('runners.purlis.dev').resource('forgekeys')
+        .name(oldObject.spec.forge.appKeySecretRef.name).check('use').allowed()
+      messageExpression: >-
+        'This pool mints with the GitHub App key ' + oldObject.spec.forge.appKeySecretRef.name + ', so changing its image takes use on that key (forgekeys).'
+      reason: Forbidden
+    # The repos a claim names say what its runner's token may cover, within its Pool's allow-list.
+    # Someone else who may patch claims in the namespace has no say in that, and nor has its
+    # requester once they may no longer use the pool. Any other patch is left alone, so a
+    # finalizer's removal never depends on the authorizer.
+    - expression: >-
+        request.resource.resource != 'claims' ||
+        (has(object.spec.forge) ?
+        has(oldObject.spec.forge) && object.spec.forge == oldObject.spec.forge :
+        !has(oldObject.spec.forge)) ||
+        (request.userInfo.username == object.spec.requester &&
+        authorizer.group('runners.purlis.dev').resource('pools')
+        .name(object.spec.pool).check('use').allowed())
+      messageExpression: >-
+        'Only ' + object.spec.requester + ', who asked for this claim, while they may use its pool, may change the repos it names.'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-forge
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: purlis-forge
+  validationActions: [Deny]
