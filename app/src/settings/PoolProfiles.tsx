@@ -39,7 +39,7 @@ const SIGNS_OUT = new Set(["claude", "codex"]);
 
 /** What a terminal sign-out reaches (#4274): the running runner, never one still draining. */
 const SIGNS_OUT_IN_A_TERMINAL_ON =
-  "This signs out on the running runner. A draining runner keeps its sign-in until it is removed, and it is not carried.";
+  "This signs out on the running runner. A draining runner keeps its sign-in until it is removed, and that sign-in does not move to the new runner.";
 
 /** What a profile's line says of it while its sign-in strip is open (spec #4023 story 29). */
 const STANDING_SAID: Record<SignInStanding, string> = {

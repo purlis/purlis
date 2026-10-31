@@ -11,18 +11,21 @@ import { panesOf, type Tabs } from "../tabs";
  * that terminal. Answers what remembers a tab's session and the pool it signs out on.
  */
 export function useSignOutTerminals(tabs: Tabs, plane: string) {
-  const open = useRef(new Map<number, string>());
+  const open = useRef(new Map<number, { pool: string; shown: boolean }>());
   useEffect(() => {
     const shown = new Set(
       tabs.order.flatMap((id) => panesOf(tabs, id).map((pane) => pane.session)),
     );
-    for (const [session, pool] of open.current) {
-      if (shown.has(session)) continue;
-      open.current.delete(session);
-      void askProfiles(pool, plane, { quietly: true });
+    for (const [session, terminal] of open.current) {
+      if (shown.has(session)) terminal.shown = true;
+      // One not drawn yet has not closed.
+      else if (terminal.shown) {
+        open.current.delete(session);
+        void askProfiles(terminal.pool, plane, { quietly: true });
+      }
     }
   }, [tabs, plane]);
   return useCallback((session: number, pool: string) => {
-    open.current.set(session, pool);
+    open.current.set(session, { pool, shown: false });
   }, []);
 }

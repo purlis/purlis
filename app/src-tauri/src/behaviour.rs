@@ -195,11 +195,19 @@ impl Target {
                     ))
                     .expect("the runner's hook socket for the project");
                 let spool = purlis_core::hookwire::spool::dir_for(Path::new(&socket));
-                runner
-                    .copied(&spool.to_string_lossy())
-                    .is_some_and(|(_copy, spool)| {
-                        purlis_core::hookwire::spool::holds_lines(&spool, id)
-                    })
+                let spool = spool.to_string_lossy();
+                match runner.copied(&spool) {
+                    Some((_copy, spool)) => purlis_core::hookwire::spool::holds_lines(&spool, id),
+                    // Gone, which holds nothing; a copy that failed of a spool still there
+                    // says nothing, so it fails the test.
+                    None => {
+                        assert!(
+                            runner.path(&spool).is_none(),
+                            "the runner's spool could not be copied"
+                        );
+                        false
+                    }
+                }
             }
             None => purlis_core::hookwire::spool::holds_lines(
                 &purlis_core::hookwire::spool::dir_for(
@@ -647,7 +655,16 @@ struct HostStopped<'a> {
 
 impl Drop for HostStopped<'_> {
     fn drop(&mut self) {
-        self.runner.prints(&format!("kill -CONT {}", self.pid));
+        // Not `prints`, whose assertion would be a panic inside the panic of a failed test.
+        let _ = purlis_core::forklock::output(
+            std::process::Command::new(self.runner.docker.program()).args([
+                "exec",
+                self.runner.container.as_str(),
+                "kill",
+                "-CONT",
+                self.pid.as_str(),
+            ]),
+        );
     }
 }
 
@@ -3253,15 +3270,16 @@ fn a_host_killed_outright_brings_twenty_chats_back_within_thirty_seconds() {
     );
 }
 
-/// How many `hook.stop` lines the log of the machine chat `id` runs on holds, once its hook's line
-/// is there and no copy of it waits to be drained.
+/// How many `hook.stop` lines the log of the machine chat `id` ran on holds, the chat closed.
 ///
 /// A hook that hears nothing from its host within a quarter of a second spools the line as well
-/// (ADR 0075 §7, #952), and a busy machine can take that long, so a copy is no fault. What must
-/// hold on both paths is that the line is written once, so it is counted after the drain, the
-/// only time a second writing could have shown. That a host in time leaves no copy is
+/// (ADR 0075 §7, #952), and a busy machine can take that long, so a copy is no fault. And a host
+/// that reads the line once its hook has gone refuses it, so only the copy is left. A chat's end
+/// drains its spool, so the count comes after that, the one moment that holds on every path and
+/// the only one a second writing could show in. That a host in time leaves no copy is
 /// `a_line_the_host_takes_is_answered_only_once_its_hearer_has_recorded_it`.
-fn its_hook_line_is_written_once(target: &Target, id: u32) -> usize {
+fn its_hook_lines_once_it_is_closed(target: &Target, id: u32) -> usize {
+    target.sessions.close(id).expect("it closes");
     let stops = || {
         target
             .events_where_its_chats_run()
@@ -3290,9 +3308,9 @@ fn the_event_log_has_one_writer_and_each_hook_line_is_written_once(target: &Targ
         )),
     );
     Pane::on(target, id).shows("reported.");
-    let stops = its_hook_line_is_written_once(target, id);
+    let stops = its_hook_lines_once_it_is_closed(target, id);
     assert_eq!(stops, 1, "one line, written once");
-    // Its host recorded it as it heard it, not later from the spool.
+    // Nothing its host heard failed to reach the log.
     let not_recorded = target.hook_lines_its_host_did_not_record();
     assert!(not_recorded.is_empty(), "{not_recorded:?}");
     assert!(
@@ -3307,7 +3325,6 @@ fn the_event_log_has_one_writer_and_each_hook_line_is_written_once(target: &Targ
             "{here:?}"
         );
     }
-    target.sessions.close(id).expect("it closes");
 }
 
 /// **A chat whose program ends with the window gone still has its end recorded, and its
@@ -3905,8 +3922,10 @@ mod a_chat_without_the_sandbox_on_a_runner_makes_no_namespace_and_leaves_it_no_b
 }
 
 /// **A hook line its runner's host was too slow for is written once** (ADR 0075 §7, #952): the
-/// host stopped while the hook runs, so the hook gives up on it and spools the line. Started
-/// again, the host hears the line it was sent and drains the copy, and the log holds one line.
+/// host stopped while the hook runs, so the hook gives up on it, spools the line and ends. Started
+/// again, the host refuses what it was sent by a process now gone, and the copy is what reaches
+/// the log, once. A host and a copy that both record it is `hookwire`'s
+/// `a_line_the_host_recorded_late_and_its_hook_spooled_is_recorded_once`.
 fn a_hook_line_its_runners_host_was_too_slow_for_is_written_once(target: &Target) {
     let runner = target.runner.as_ref().expect("a runner's target");
     let project = target.project_on_its_runner(runner);
@@ -3937,11 +3956,10 @@ fn a_hook_line_its_runners_host_was_too_slow_for_is_written_once(target: &Target
     );
 
     assert_eq!(
-        its_hook_line_is_written_once(target, id),
+        its_hook_lines_once_it_is_closed(target, id),
         1,
-        "the line, and not its copy as well"
+        "written once"
     );
-    target.sessions.close(id).expect("it closes");
 }
 
 mod a_hook_line_its_runners_host_was_too_slow_for_is_written_once {
