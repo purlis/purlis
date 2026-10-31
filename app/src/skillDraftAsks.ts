@@ -87,7 +87,11 @@ export type SkillChatAsk =
    *  open; else (`chat` null, or no tab holds it) a chat opened afresh. */
   | { plane: string; kind: "redo"; id: string; name: string; chat: number | null }
   /** "Ask a chat to write them" (#3925): the trigger tests of the skill `name` at `level`. */
-  | { plane: string; kind: "triggers"; level: SkillLevel; name: string };
+  | { plane: string; kind: "triggers"; level: SkillLevel; name: string }
+  /** "Ask a chat to write outcome evals" (#2780): the outcome evals of the skill `name`. */
+  | { plane: string; kind: "evals"; level: SkillLevel; name: string }
+  /** "Improve from runs" (#2780): an edit of the skill `name`, drafted from its runs and grades. */
+  | { plane: string; kind: "improve"; level: SkillLevel; name: string };
 
 /** Asks the window of the project `ask.plane` to open a draft, a Try it or a trigger tests chat. */
 export function askSkillChat(ask: SkillChatAsk): void {

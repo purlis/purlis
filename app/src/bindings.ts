@@ -2082,6 +2082,19 @@ export const commands = {
 	 */
 	skillTriggerTestsChat: (plane: PlaneId, level: SkillLevel, name: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_trigger_tests_chat", { plane, level, name, columns, rows })),
 	/**
+	 *  **"Ask a chat to write outcome evals"** (#2780; decision 43): a chat where `level`'s skills are
+	 *  reached from, with the core's prompt for the outcome evals of the skill `name` typed and never
+	 *  sent ([`drafts::asking_for_outcome_evals`]). Its write comes back as a draft.
+	 */
+	skillOutcomeEvalsChat: (plane: PlaneId, level: SkillLevel, name: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_outcome_evals_chat", { plane, level, name, columns, rows })),
+	/**
+	 *  **"Improve from runs"** (#2780; decision 59): a chat where `level`'s skills are reached from,
+	 *  with the core's prompt to read the recent runs and grades of the skill `name` and draft an edit
+	 *  typed and never sent ([`drafts::improving_from_runs`]). It never edits the skill: its write
+	 *  comes back as a draft.
+	 */
+	skillImproveChat: (plane: PlaneId, level: SkillLevel, name: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_improve_chat", { plane, level, name, columns, rows })),
+	/**
 	 *  **Try it** (decision 50): a scratch chat in a throwaway piece, armed with the built-in skills
 	 *  and the draft `id` alone, on `profile` (the project's default where none is picked), with the
 	 *  core's prompt typed and never sent. Tries a closed chat never ended (a quit, a crash) are
