@@ -549,7 +549,24 @@ fn in_the_journey(
         &a_chat(Some("While it drains."), None),
     );
     during_pane.shows_within("While it drains.", LONG);
-    a_conversation_on(&followed);
+    // Each runner lists its own chat, as a look at it does: the new chat is on the pool's runner.
+    let on_the_new = purlis_core::runners::runner_for(&machine.config, pool).expect("its runner");
+    let chats_there = |kept: &purlis_core::runners::Kept| {
+        crate::runnerlinks::chats_on(&ToARunner::of_kept(machine, kept).expect("a link to it"))
+            .expect("it lists its chats")
+    };
+    assert_eq!(
+        chats_there(&on_the_new),
+        1,
+        "the new chat runs on the pool's runner"
+    );
+    let draining = purlis_core::runners::draining(&machine.config).expect("read");
+    assert_eq!(draining.len(), 1);
+    assert_eq!(
+        chats_there(&draining[0]),
+        1,
+        "the draining runner keeps its one chat"
+    );
     assert_eq!(
         conversations_on_the_old(),
         before,

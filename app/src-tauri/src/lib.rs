@@ -1730,7 +1730,7 @@ async fn start_chat(
 /// for the session host, and a chat that comes up after is closed.
 #[tauri::command]
 #[specta::specta]
-fn cancel_chat_start(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<(), String> {
+async fn cancel_chat_start(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<(), String> {
     hostedsessions::cancel_starts(planes.held(&plane)?.root());
     Ok(())
 }

@@ -790,6 +790,16 @@ impl SessionHost for RoutedSessions {
         lock(&self.shared.chats).get(&id).cloned()
     }
 
+    /// Each pool's own host answers this, to the router: the router itself drains with nothing.
+    fn stays_on_a_draining_runner(&self) -> bool {
+        false
+    }
+
+    /// As [`Self::stays_on_a_draining_runner`].
+    fn runner_is_gone(&self) -> bool {
+        false
+    }
+
     /// Asked of the host of the pool it runs on, where there is one already: never made for it.
     fn clones_come_back(&self, id: u32) -> bool {
         self.host_of(id)
