@@ -492,6 +492,7 @@ impl Connection {
         let Some((window, pool)) = &self.to_a_pool else {
             return Ok(());
         };
+        eprintln!("PROBE-MARK {}", std::backtrace::Backtrace::force_capture());
         lock(&window.untrusted).insert(pool.clone());
         let kept = match window.runners_config() {
             Some(config) => purlis_core::runnertaint::mark_pool(&config, pool),
@@ -2878,6 +2879,7 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
                 // A chat taken back that runs without the sandbox on a pool's runner leaves it
                 // untrusted (D-2050-27), and the browsers there end, not taken back
                 // (D-2050-28): the host clears a browser's data folder as it ends.
+                eprintln!("PROBE-HELD {:?}", chats.iter().map(|c| (c.number, c.kind, c.sandbox.clone())).collect::<Vec<_>>());
                 let taints = |chat: &HeldProgram| {
                     purlis_core::runnertaint::taints(chat.kind, chat.sandbox.as_ref())
                 };
@@ -3471,6 +3473,7 @@ impl HostedSessions {
             Err(refused) => return Err(unclear(refused.why)),
         };
         let (program, pid, confined, ran, prompt_key) = started;
+        eprintln!("PROBE-RAN {kind:?} {ran:?}");
         // A chat that runs on a pool's runner with nothing holding its files leaves that runner
         // trusted with no browser and no login until it is made again (D-2050-27): kept here,
         // where no runner reaches, before it is kept as running. Where that cannot be kept, it
