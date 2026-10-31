@@ -11,7 +11,7 @@
 //! program parts alone (`bin`, `lib`, `share` and their kin, [`PROGRAM_PARTS`]), so a package
 //! manager's `etc` and `var`, where configuration and state live, are never read. It writes only
 //! its state folder and its own temporary folder. It reaches no address but its own proxy's two
-//! loopback ports. It asks no system service but the log, so it reads no person's preferences,
+//! loopback ports. It starts programs only from what it reads. It asks no system service but the log, so it reads no person's preferences,
 //! directory entries or file events through one, and it reads no other process's arguments or
 //! environment through the system's settings. Then the denial classes, last, as for every chat:
 //! no project's vaults are read, and nothing a later program runs is written.
@@ -99,13 +99,12 @@ const DATA_VOLUME: &str = "/System/Volumes/Data";
 /// The system's links to folders a path may be written through on macOS: each the link alone.
 const LINKS_MACOS: [&str; 3] = ["/var", "/tmp", "/etc"];
 
-/// What a confined program is allowed besides files and its proxy: to run programs inside its
-/// own sandbox, signal and inspect only them, read the system's settings but those that name
+/// What a confined program is allowed besides files and its proxy: to fork inside its own
+/// sandbox, signal and inspect only what is in it, read the system's settings but those that name
 /// other processes, and log. No `user-preference-read`, no directory service and no file events:
 /// each reads what a person keeps without a file read.
 const BASE: &str = "(version 1)
 (deny default)
-(allow process-exec)
 (allow process-fork)
 (allow signal (target same-sandbox))
 (allow process-info* (target same-sandbox))
@@ -152,9 +151,10 @@ pub fn profile(
     let mut read_roots = system.clone();
     read_roots.extend(own.iter().cloned());
     // On macOS a program's libraries are mapped executable from where it reads them, an
-    // operation of its own that Linux's sandbox has no word for.
+    // operation of its own that Linux's sandbox has no word for, and a program starts from there
+    // too. Linux's reader is told the same folders in a rule of their own, below.
     let ops = if os == Os::MacOs {
-        "file-read* file-map-executable"
+        "file-read* file-map-executable process-exec"
     } else {
         "file-read*"
     };
@@ -196,6 +196,17 @@ pub fn profile(
         }
     }
     line(")".to_owned());
+    // Linux holds this with the kernel's own rule, which names folders and files by what they
+    // are beneath: the system's folders and the program's own, as it reads them.
+    if os == Os::Linux {
+        line("(allow process-exec".to_owned());
+        for root in &read_roots {
+            for name in kernel_strings(root)? {
+                line(format!("  (subpath {name})"));
+            }
+        }
+        line(")".to_owned());
+    }
     // Of each folder above what it reads, the folder alone: what a path resolves through, never
     // what else a folder holds.
     let mut above = std::collections::BTreeSet::new();
@@ -250,6 +261,11 @@ pub fn profile(
     }
     for rule in super::seatbelt::vaults_everywhere_rules()? {
         line(rule);
+    }
+    if os == Os::MacOs {
+        for rule in super::seatbelt::vaults_start_nothing_rules()? {
+            line(rule);
+        }
     }
     if out.len() > MOST_PROFILE {
         return Err(TOO_LARGE);

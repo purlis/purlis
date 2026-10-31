@@ -9,7 +9,7 @@
 //!
 //! - **Landlock** (ABI [`MIN_ABI`] or later). The chat may open, write and connect nothing by
 //!   itself, signal nothing outside the sandbox and reach no abstract socket; it may run
-//!   programs.
+//!   programs from where its profile says ([`profile::Profile::starts_from`]).
 //! - **A seccomp filter** the chat applies to itself before its program starts. It refuses the
 //!   calls that would go round the rest (datagram and raw sockets, io_uring, the kernel's key
 //!   store, a seccomp listener of its own), and hands every call a path or an address decides

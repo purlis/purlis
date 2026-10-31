@@ -393,6 +393,62 @@ fn a_confined_program_reads_its_own_folder_and_the_system_and_nothing_a_person_k
 }
 
 #[test]
+fn a_confined_program_starts_programs_from_what_it_reads_on_linux() {
+    let profile = held(Path::new(EXT), Path::new(STATE), Path::new(TMP));
+    let roots = profile.starts_from();
+    for root in [
+        EXT, STATE, TMP, "/bin", "/lib", "/lib64", "/usr/bin", "/usr/lib",
+    ] {
+        assert!(roots.contains(&PathBuf::from(root)), "{root}: {roots:?}");
+    }
+    assert!(!roots.contains(&PathBuf::from("/")), "{roots:?}");
+    // Every root is one it reads, and nothing a person keeps is beneath one.
+    for root in &roots {
+        assert!(
+            reads(&profile, &root.join("program").display().to_string())
+                || reads(&profile, &root.display().to_string()),
+            "{}",
+            root.display()
+        );
+    }
+    for kept in [
+        "/home",
+        "/root",
+        "/opt/ext/other",
+        "/opt/ext/studio-x-twin",
+        "/etc/shadow",
+    ] {
+        assert!(
+            !roots.iter().any(|root| Path::new(kept).starts_with(root)),
+            "{kept}: {roots:?}"
+        );
+    }
+}
+
+#[test]
+fn a_confined_program_starts_programs_from_what_it_reads_on_macos() {
+    let text = crate::sandbox::confined::profile(
+        Os::MacOs,
+        &[PathBuf::from("/Users/ada/ext/studio-x")],
+        &[PathBuf::from("/private/var/folders/x/T/purlis-extension-1")],
+        &[40_001],
+    )
+    .expect("a profile");
+    assert!(!text.contains("(allow process-exec)"), "{text}");
+    assert!(
+        text.contains("(allow file-read* file-map-executable process-exec\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains(
+            "(deny file-read* file-map-executable process-exec (subpath \"/System/Volumes/Data\"))"
+        ),
+        "{text}"
+    );
+    assert!(text.contains("(deny process-exec (regex "), "{text}");
+}
+
+#[test]
 fn a_confined_program_lists_no_folder_above_its_own() {
     use purlis_linux_sandbox::profile::{FileOp, Kind, Op};
     let profile = held(Path::new(EXT), Path::new(STATE), Path::new(TMP));
