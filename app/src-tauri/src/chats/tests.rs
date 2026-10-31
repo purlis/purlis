@@ -2625,6 +2625,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             skills: None,
             plane_skills: true,
             skills_read: Default::default(),
+            runs_as: None,
             clones_at_start: None,
             prompt_key: None,
         },
@@ -2702,6 +2703,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                runs_as: None,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -3143,6 +3145,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                runs_as: None,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -7498,6 +7501,7 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                runs_as: None,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -7942,6 +7946,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                runs_as: None,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -7998,6 +8003,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                runs_as: None,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -8203,6 +8209,7 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                runs_as: None,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -8479,6 +8486,7 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
                 }),
                 plane_skills,
                 skills_read: Default::default(),
+                runs_as: None,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -8653,6 +8661,133 @@ fn the_routing_a_chat_started_with_is_what_its_record_keeps_3578() {
     };
     let session = chats.start(&put_back, SIZE).unwrap();
     assert_eq!(chats.record().chats[0].routing, Some(Kept::BuiltIn));
+    let _ = chats.close(session);
+}
+
+#[test]
+fn a_runners_chat_is_armed_by_its_runner_at_its_start_and_at_its_reattach_3604() {
+    let never = || -> bool { panic!("the host was asked") };
+    assert!(armed_by_its_runner(true, false, never));
+    assert!(armed_by_its_runner(false, true, || true));
+    // A chat reattached from a host that composes none, and any start here, are armed here.
+    assert!(!armed_by_its_runner(false, true, || false));
+    assert!(!armed_by_its_runner(false, false, never));
+}
+
+/// #3604 (SK-15g): a runner's chat this window reattaches is armed by its runner, as its start
+/// was, so the window reads none of its skills, asks no router, and its record keeps no routing,
+/// though the project's skills reach every chat here. Seen red: it was read and routed here.
+#[test]
+fn a_runners_chat_reattached_is_shown_no_skills_of_this_window_s_reading_3604() {
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::write(
+        plane.path().join(purlis_core::plane::MANIFEST),
+        "requires = [{ feature = \"project-skills\" }]\n",
+    )
+    .expect("charter.toml");
+    let host = Pretend::default();
+    host.on_a_runner();
+    host.leaves_running(3, None);
+    let chats = restartable_chats_of(plane.path(), host.clone());
+
+    chats.put_back(
+        &left_running_in(
+            plane.path(),
+            Chat {
+                plane_skills: Some(true),
+                ..a_resumable_chat_in(plane.path())
+            },
+        ),
+        SIZE,
+    );
+
+    assert_eq!(host.reattached(), [3]);
+    assert_eq!(
+        lock(&chats.open)[&3].skills_read,
+        purlis_core::hoststart::ChatSkills::default(),
+        "its runner's to arm"
+    );
+    assert_eq!(chats.record().chats[0].routing, None);
+    let _ = chats.close(3);
+}
+
+/// #3084 (SK-20b): a skill run a pool's runner says its chat started and ended is logged in this
+/// project's skill log, as a local run is, with this window's word for where the chat ran; a line
+/// of another pool's, of no pool, or of a chat not open here logs nothing.
+#[test]
+fn a_runner_chats_skill_run_is_logged_here_with_where_this_window_says_it_ran_3084() {
+    use purlis_core::skilluse::relayed::{Line, Relayed};
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::write(plane.path().join(purlis_core::plane::MANIFEST), "").expect("charter.toml");
+    let host = Pretend::default();
+    host.on_a_runner();
+    let mut chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(host.clone()),
+        plane.path().to_path_buf(),
+    );
+    chats.on_device(Some(DEVICE.to_owned()));
+    let session = chats
+        .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+        .expect("it starts on the runner");
+    host.runs_on_pool(session, "builds");
+    let chat = lock(&chats.open)[&session]
+        .chat
+        .identity
+        .id
+        .clone()
+        .expect("its id");
+    let of = |chat: &str, run: &str, line: Line| Relayed {
+        chat: chat.to_owned(),
+        run: run.to_owned(),
+        at_ms: 1_793_440_800_000,
+        line,
+    };
+    let started = || Line::Started {
+        skill: "review".to_owned(),
+        started_by: purlis_core::skills::runs::StartedBy::SkillTool,
+        level: None,
+    };
+    let ended = Line::Ended {
+        ended: purlis_core::skills::runs::Ended::Turn,
+        ms: 5,
+        signals: Default::default(),
+        tokens: None,
+        parent: None,
+    };
+
+    chats.skill_run_heard(
+        Some("builds"),
+        &of(&chat, "01K6RUNA00000000000000000A", started()),
+    );
+    chats.skill_run_heard(
+        Some("builds"),
+        &of(&chat, "01K6RUNA00000000000000000A", ended),
+    );
+    // Another pool's, no pool's, and a chat this window does not have.
+    chats.skill_run_heard(
+        Some("other"),
+        &of(&chat, "01K6RUNB00000000000000000B", started()),
+    );
+    chats.skill_run_heard(None, &of(&chat, "01K6RUNC00000000000000000C", started()));
+    chats.skill_run_heard(
+        Some("builds"),
+        &of(
+            "01K6NOTHERE00000000000000D",
+            "01K6RUND00000000000000000D",
+            started(),
+        ),
+    );
+
+    let runs = purlis_core::skilluse::runs(plane.path());
+    assert_eq!(runs.len(), 1, "{runs:?}");
+    let run = &runs[0];
+    assert_eq!(run.id.as_deref(), Some("01K6RUNA00000000000000000A"));
+    assert_eq!(run.persona.as_deref(), Some("steward"));
+    assert_eq!(run.harness.as_deref(), Some(Harness::ClaudeCode.name()));
+    assert_eq!(run.workspace, Some(None));
+    assert!(run.end.is_some(), "its end");
+    assert_eq!(run.device, DEVICE, "this machine's own file");
     let _ = chats.close(session);
 }
 

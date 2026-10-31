@@ -90,6 +90,8 @@ const BUILT_IN: StudioRouter = {
   graded: null,
   written: null,
   budget: { skills: 30, chars: 6000 },
+  preview:
+    "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root. A chat started in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
 };
 
 /** A core answering `answer` for the studio, `more` for each other command, and keeping every
@@ -286,6 +288,8 @@ const RELEVANCE: StudioRouter = {
   extension: "relevance",
   written: "relevance",
   budget: { skills: 30, chars: 6000 },
+  preview:
+    "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root, since the router relevance is asked only at each chat's start. A chat started in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
   grade: null,
   graded: null,
   chats: [
@@ -329,6 +333,16 @@ describe("the Routing page (#3692)", () => {
     expect(within(facts).getByRole("button", { name: "Change…" })).toBeEnabled();
     expect(screen.getByTestId("skill-routing-no-chats")).toBeInTheDocument();
     expect(screen.queryByTestId("router-grade")).toBeNull();
+  });
+
+  it("says what the rows' hidden marks preview: the built-in router's choice at the workspace's root (#4215)", async () => {
+    core(() => studio([], { router: RELEVANCE }));
+    renderStudio(inWorkspace("ops"), "routing");
+
+    const facts = await screen.findByTestId("skill-routing-facts");
+    expect(within(facts).getByTestId("skill-routing-preview")).toHaveTextContent(
+      "what the built-in router hides for a chat at the workspace's root, since the router relevance is asked only at each chat's start",
+    );
   });
 
   it("keeps Change… out of reach at the project's root, which chooses no router", async () => {
