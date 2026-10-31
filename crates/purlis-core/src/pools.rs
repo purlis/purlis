@@ -673,6 +673,30 @@ fn carry_sign_ins(config_root: &Path, docker: &Docker, drained: &Kept) {
     }
 }
 
+/// **Removes the draining runner `name`, which was removed outside purlis** (#4168): the engine
+/// that made it no longer lists its container, so none of its chats runs and it cannot be asked.
+/// Its sign-ins are carried only from a home still there that is its own ([`is_its_own_home`]),
+/// and its row and whatever is left of it go. Refused for a runner Docker still lists, or where
+/// another engine answers.
+pub fn drain_removed(config_root: &Path, docker: &Docker, name: &str) -> Result<Removed, Refused> {
+    let locked = runners::lock(config_root);
+    let kept = runners::named(config_root, name)?
+        .filter(|kept| kept.draining)
+        .ok_or_else(|| Refused::Other(format!("no runner {name} is draining on this machine")))?;
+    let missing = docker
+        .missing(&kept.made, kept.engine.as_deref())
+        .map_err(|why| Refused::Other(why.0))?;
+    let Some(Missing::Removed(gone)) = missing else {
+        return Err(Refused::Other(format!(
+            "runner {name} is not known to be removed, so it stays as it is"
+        )));
+    };
+    if !kept.carried && gone.home_kept && is_its_own_home(docker, &kept).unwrap_or(false) {
+        carry_sign_ins(config_root, docker, &kept);
+    }
+    runners::remove_locked(config_root, docker, name, None, &locked)
+}
+
 /// A draining runner's name, and whether a sign-out ran there or why not.
 pub type DrainingSignOut = (String, Result<(), String>);
 

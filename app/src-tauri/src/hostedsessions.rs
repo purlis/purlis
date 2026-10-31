@@ -425,6 +425,52 @@ impl Connection {
         self.links_to_pool_end(pool);
     }
 
+    /// **Each link to a runner kept no more ends** (#4168): made again in its place, or removed
+    /// outside purlis as it drained, its chats do not exist on any runner now, so each is told it
+    /// ended rather than staying dimmed as if it would come back. Only for a Docker pool whose
+    /// runners this machine reads; a list that cannot be read, or is empty, says nothing.
+    pub fn links_to_gone_runners_end(&self, config: &Path) {
+        let Some(kept) = purlis_core::runners::read(config)
+            .ok()
+            .filter(|kept| !kept.is_empty())
+        else {
+            return;
+        };
+        let gone = |link: &Arc<HostLink>| {
+            link.reached_runner()
+                .is_some_and(|runner| !kept.iter().any(|one| one.name() == runner))
+        };
+        let pools: Vec<(String, Arc<Connection>)> = lock(&self.pools)
+            .iter()
+            .map(|(pool, of_it)| (pool.clone(), Arc::clone(of_it)))
+            .collect();
+        for (pool, of_it) in pools {
+            if purlis_core::runners::runner_for(config, &pool).is_err() {
+                continue;
+            }
+            let mut ended = Vec::new();
+            lock(&of_it.projects).retain(|_, link| {
+                let keep = !gone(link);
+                if !keep {
+                    ended.push(Arc::clone(link));
+                }
+                keep
+            });
+            for left in lock(&of_it.left_on_draining).values_mut() {
+                left.retain(|link| {
+                    let keep = !gone(link);
+                    if !keep {
+                        ended.push(Arc::clone(link));
+                    }
+                    keep
+                });
+            }
+            for link in ended {
+                link.end();
+            }
+        }
+    }
+
     /// Every link the window holds to the runner of `pool` ends, each chat on it told it ended
     /// with its host, and whatever comes next is dialled anew.
     pub fn links_to_pool_end(&self, pool: &str) {

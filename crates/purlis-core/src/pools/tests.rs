@@ -2357,6 +2357,67 @@ fn a_draining_runner_stays_while_another_engine_answers() {
     assert_eq!(runners::named(config.path(), name).unwrap(), Some(kept));
 }
 
+/// **A draining runner the engine that made it no longer lists is removed** (#4168), with what
+/// its own home holds carried; another engine's word removes nothing.
+#[test]
+fn a_draining_runner_removed_outside_purlis_goes_with_its_own_homes_sign_ins_carried() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    home_prints(&fake, HOME_CREATED);
+    a_pool_draining(config.path(), &fake);
+    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("containers", "");
+
+    fake.set("engine", "engine-b\n");
+    assert!(drain_removed(config.path(), &fake.docker(), "first").is_err());
+    assert!(runners::named(config.path(), "first").unwrap().is_some());
+
+    fake.set("engine", "engine-a\n");
+    drain_removed(config.path(), &fake.docker(), "first").unwrap();
+    assert!(
+        fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
+    assert_eq!(runners::named(config.path(), "first").unwrap(), None);
+}
+
+/// A home that is not its own gives nothing as a removed draining runner goes (#4168).
+#[test]
+fn a_draining_runner_removed_outside_purlis_takes_nothing_from_a_home_made_since() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    home_prints(&fake, HOME_CREATED);
+    a_pool_draining(config.path(), &fake);
+    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("containers", "");
+    home_prints(&fake, "2026-01-01T00:00:00Z");
+
+    drain_removed(config.path(), &fake.docker(), "first").unwrap();
+
+    assert!(
+        !fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
+    assert_eq!(runners::named(config.path(), "first").unwrap(), None);
+}
+
+/// A runner the engine still lists is not drained this way (#4168).
+#[test]
+fn a_draining_runner_still_listed_is_not_taken_as_removed() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    a_pool_draining(config.path(), &fake);
+    fake.set("containers", &format!("{ID}\n"));
+
+    assert!(drain_removed(config.path(), &fake.docker(), "first").is_err());
+    assert!(runners::named(config.path(), "first").unwrap().is_some());
+}
+
 /// A home made after the runner was paired is not the one purlis made for it, so none of it is
 /// carried: whoever made it could have put anything there.
 #[test]
