@@ -3931,23 +3931,21 @@ fn a_hook_line_its_runners_host_was_too_slow_for_is_written_once(target: &Target
     let id = a_chat_on_the_board(
         target,
         &a_shell(&format!(
-            "printf 'waiting.'; until [ -e .hook-go ]; do sleep 0.05; done; \
-             PURLIS_HARNESS=claude '{}' hook stop </dev/null; : > .hook-told; read line",
+            "printf 'waiting.'; : > /tmp/hook-up; until [ -e /tmp/hook-go ]; do sleep 0.05; done; \
+             PURLIS_HARNESS=claude '{}' hook stop </dev/null; : > /tmp/hook-told; read line",
             purlis()
         )),
     );
     Pane::on(target, id).shows("waiting.");
-    // Where the chat is: a runner holds the project once its first chat has started.
-    let project = target.project_on_its_runner(runner);
-    let (go, told) = (
-        format!("{project}/.hook-go"),
-        format!("{project}/.hook-told"),
-    );
+    // A pool has a container of its own, so its `/tmp` is this test's alone.
+    until("the chat's file is seen from outside it", || {
+        runner.path("/tmp/hook-up").is_some()
+    });
     let a_copy_waits = {
         let _stopped = runner.its_host_stopped();
-        runner.prints(&format!(": > '{go}'"));
+        runner.prints(": > /tmp/hook-go");
         until("the hook gives up on its stopped host", || {
-            runner.path(&told).is_some()
+            runner.path("/tmp/hook-told").is_some()
         });
         target.spool_holds_lines_of(id)
     };
