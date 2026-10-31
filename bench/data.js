@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793423878912,
+  "lastUpdate": 1793425332986,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32592,6 +32592,48 @@ window.BENCHMARK_DATA = {
             "value": 103.0952315,
             "unit": "ms",
             "extra": "median of 5 runs: 101.210, 102.357, 103.095, 103.527, 103.828 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3b847510dfdbb74a0f95d0b8ff3274748ef8f95e",
+          "message": "SK-5b: persona lint checks the skills a persona names (#4188)\n\n* SK-5b: persona lint checks the skills a persona names (#2934)\n\npurlis persona lint reads each entry of a persona's skills: list as a\nchat's start does (purlis_skills::Reference) and checks it against the\nskill set: an entry that names nothing, one written with the old\ncharter: prefix, a built-in skill purlis has none of, a harness skill no\nharness of the project has on this machine, and a bare name no level the\npersona's chats reach nor any harness has. skills is no longer a retired\nkey; with the Skill studio flag off lint says the line is read only with\nit on. The project-skills fix and lint share one answer,\nskills::persona::unresolved.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-5b: review fixes: Reference::written_old, changelog fragment, copy\n\nThe old-prefix check moves into purlis_skills (Reference::written_old,\nOLD_BUILT_IN_PREFIX) so lint parses nothing itself; the fix's wording\nsays what the entry is rewritten to; unresolved is crate-private; the\nproject-skills fix builds its environment once; a changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T04:57:54Z",
+          "tree_id": "0f7b495b46fe36c26f51037b5abc4428fd8ab2cb",
+          "url": "https://github.com/purlis/purlis/commit/3b847510dfdbb74a0f95d0b8ff3274748ef8f95e"
+        },
+        "date": 1793425327850,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.664395,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.657, 0.664, 0.664, 0.673, 0.713 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.575187500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.426, 16.574, 16.575, 16.661, 16.797 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.48866799999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.516, 102.372, 102.489, 102.661, 103.255 ms"
           }
         ]
       }
