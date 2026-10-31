@@ -206,10 +206,34 @@ fn a_code_is_not_passed_on_once_the_runner_is_no_longer_yours() {
     typed.send("the-code".to_owned()).unwrap();
     let mut written = Written::default();
 
+    // It holds as the sign-in starts, and no longer as the code is to go on.
+    let asked = std::cell::Cell::new(0);
+    let said = follow_while(&driving, &lines, &mut written, "work", "team", &|| {
+        asked.set(asked.get() + 1);
+        if asked.get() == 1 {
+            Ok(())
+        } else {
+            Err("the mark was taken back".to_owned())
+        }
+    });
+
+    assert_eq!(said, Err("the mark was taken back".to_owned()));
+    assert!(!got.exists(), "the code went nowhere");
+}
+
+/// **A login that takes no code is cancelled too** once what it was opened on no longer holds
+/// (#4164): one approved on the vendor's page would otherwise sign in all the same.
+#[cfg(unix)]
+#[test]
+fn a_sign_in_waiting_on_no_code_ends_once_the_runner_is_no_longer_yours() {
+    let login = claude("sleep 30");
+    let driving = drive_with(&login, "claude", None, None, || Standing::SignedOut).unwrap();
+    let (_typed, lines) = channel();
+    let mut written = Written::default();
+
     let said = follow_while(&driving, &lines, &mut written, "work", "team", &|| {
         Err("the mark was taken back".to_owned())
     });
 
     assert_eq!(said, Err("the mark was taken back".to_owned()));
-    assert!(!got.exists(), "the code went nowhere");
 }

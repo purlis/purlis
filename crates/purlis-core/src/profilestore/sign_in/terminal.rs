@@ -15,6 +15,9 @@ use super::driven::{Driving, Event};
 /// How long a step is waited for before the terminal's input is looked at.
 const LOOK_EVERY: Duration = Duration::from_millis(100);
 
+/// How often a sign-in followed here asks whether what it was opened on still holds.
+const STILL_EVERY: Duration = Duration::from_secs(1);
+
 /// What a terminal does for a sign-in it follows.
 pub trait Terminal {
     /// Says a line to the person.
@@ -36,9 +39,10 @@ pub fn follow(
     follow_while(driving, lines, terminal, profile, pool, &|| Ok(()))
 }
 
-/// [`follow`], with `still` asked before each code goes on, as the window's strip asks before a
-/// paste (#3819, #4164): where it refuses, the sign-in is cancelled, the code goes nowhere, and
-/// this answers its refusal.
+/// [`follow`], with `still` asked every [`STILL_EVERY`] and before each code goes on (#3819,
+/// #4164): where it refuses, the sign-in is cancelled, a code goes nowhere, and this answers its
+/// refusal. A window ends its sign-ins as a mark is taken back; this command is another process,
+/// and a login approved on the vendor's page takes no code, so it asks as it goes.
 pub fn follow_while(
     driving: &Driving,
     lines: &Receiver<String>,
@@ -48,7 +52,15 @@ pub fn follow_while(
     still: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), String> {
     let mut asked = false;
+    let mut last_asked: Option<std::time::Instant> = None;
     loop {
+        if last_asked.is_none_or(|at| at.elapsed() >= STILL_EVERY) {
+            last_asked = Some(std::time::Instant::now());
+            if let Err(why) = still() {
+                driving.cancel();
+                return Err(why);
+            }
+        }
         if let Some(event) = driving.next(LOOK_EVERY) {
             match event {
                 Event::Open { url } => {

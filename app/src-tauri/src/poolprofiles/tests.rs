@@ -653,16 +653,16 @@ fn a_cluster_runner_forgets_what_is_no_longer_chosen() {
     );
 }
 
-/// **A cluster runner's word never widens what goes to it** (#4183): a pool that names none is
-/// not made to name what its runner says it keeps, and so nothing more is sent there.
+/// **A cluster runner's word never widens what goes to it** (#4183): a pool that names none comes
+/// to name the project's default, not what its runner says it keeps, and the rest is forgotten.
 #[cfg(unix)]
 #[test]
-fn a_cluster_pool_that_names_none_does_not_take_up_what_its_runner_says_it_keeps() {
+fn a_cluster_pool_that_names_none_names_its_default_and_not_what_its_runner_says_it_keeps() {
     let config = tempfile::tempdir().unwrap();
     a_cluster_pool(config.path());
     let records = vec![record("work", "claude"), record("private", "claude")];
 
-    tidy(
+    let tidied = tidy(
         config.path(),
         "team",
         &records,
@@ -672,8 +672,15 @@ fn a_cluster_pool_that_names_none_does_not_take_up_what_its_runner_says_it_keeps
     .unwrap();
 
     assert_eq!(
+        tidied,
+        Tidied::Done {
+            forgotten: names(&["private"]),
+            refused: false
+        }
+    );
+    assert_eq!(
         purlis_core::runners::profiles_of(config.path(), "team").unwrap(),
-        None
+        Some(names(&["work"]))
     );
 }
 

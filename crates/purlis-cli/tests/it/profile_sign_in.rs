@@ -474,8 +474,9 @@ fn a_cluster_pool_kept(config: &std::path::Path) {
 
 /// **A cluster pool is signed in on only marked and vouched for now** (#4164): unmarked, it says
 /// how to mark it; marked, with a cluster that does not vouch, it says it could not confirm the
-/// runner, and tells none of the cluster's words. Neither runs anything. A stand-in `kubectl`
-/// first on `PATH` writes down any run that reached the point of a sign-in.
+/// runner, and tells none of the cluster's words. Neither runs anything. A `kubectl` installed on
+/// this machine is found before the stand-in on `PATH`, and fails on this pool's kubeconfig as
+/// the stand-in does; the kind run has the cluster that really answers.
 #[cfg(unix)]
 #[test]
 fn a_cluster_pool_is_signed_in_on_only_marked_and_vouched_for_now() {

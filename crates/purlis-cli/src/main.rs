@@ -4394,7 +4394,11 @@ fn pool_sign_in(
     let docker = Docker::on_this_machine(path.as_deref(), home.as_deref()).map_err(|why| why.0)?;
     // A runner on another version has no sign-in held to what drives it (#4043): refused in
     // words, as the window refuses it.
-    this_commands_runner(pool, name, docker.version_of(&runner.made).map_err(|why| why.0))?;
+    this_commands_runner(
+        pool,
+        name,
+        docker.version_of(&runner.made).map_err(|why| why.0),
+    )?;
     eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
     docker
         .standing_on_runner(&runner.made, &engine, name)
@@ -4428,18 +4432,24 @@ fn pool_sign_in(
 /// Refused where a pool's runner, whose `purlis --version` said `theirs`, runs another version
 /// than this command: it has no sign-in held to what drives it (#4043), refused in words, as the
 /// window refuses it.
-fn this_commands_runner(pool: &str, name: &str, theirs: Result<String, String>) -> Result<(), String> {
+fn this_commands_runner(
+    pool: &str,
+    name: &str,
+    theirs: Result<String, String>,
+) -> Result<(), String> {
     let ours = purlis_core::adopt::release_version();
     match theirs {
         Ok(theirs) if theirs == ours => Ok(()),
         Ok(theirs) => Err(format!(
-            "pool {pool}'s runner runs purlis {theirs}, and this runs {ours}, so purlis signs \
+            "pool {pool}'s runner runs purlis {}, and this runs {ours}, so purlis signs \
              nothing in there itself. Sign '{name}' in from its line in Settings › Pools with \
-             Open in terminal, or once the runner runs this version."
+             Open in terminal, or once the runner runs this version.",
+            shown::short(&theirs)
         )),
         Err(why) => Err(format!(
             "pool {pool}'s runner's version could not be read, so it may not run this purlis \
-             {ours}: {why}. Nothing was started."
+             {ours}: {}. Nothing was started.",
+            shown::short(&why)
         )),
     }
 }
@@ -4448,7 +4458,8 @@ fn this_commands_runner(pool: &str, name: &str, theirs: Result<String, String>) 
 fn not_asked(pool: &str, name: &str, why: &str) -> String {
     format!(
         "pool {pool}'s runner could not say whether '{name}' is signed in there, so nothing was \
-         started: {why}. A profile goes on a pool from its row in Settings › Pools."
+         started: {}. A profile goes on a pool from its row in Settings › Pools.",
+        shown::short(why)
     )
 }
 
@@ -4479,7 +4490,9 @@ fn cluster_pool_sign_in(
     eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
     pools::cluster_standing(config, &kubectl, pool, &judged, name)
         .map_err(|why| not_asked(pool, name, &why))?;
-    pools::cluster_runner_still_yours(config, pool, &judged)?;
+    // The standing may have taken a while, as long as the runner chose: the whole gate again.
+    let (cluster, kept) = pools::cluster_runner_still_yours(config, pool, &judged)?;
+    pools::cluster_runner_yours(config, pool, &cluster, &kept, &pools::vouched_now)?;
     let login = pools::cluster_sign_in(
         config,
         &kubectl,
@@ -4488,7 +4501,8 @@ fn cluster_pool_sign_in(
         name,
         provider,
         purlis_core::dockerpool::Typed::Driven,
-    )?;
+    )
+    .map_err(|why| shown::short(&why))?;
     let check = {
         let (config, kubectl, pool, judged, name) = (
             config.to_path_buf(),

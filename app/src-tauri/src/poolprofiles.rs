@@ -198,9 +198,10 @@ enum Tidied {
 /// ([`Readying`]), which the start names on the pool. Nothing is asked of a pool that names none with no default (no project
 /// open, or a default that is the runner's own).
 ///
-/// **A cluster runner's word never widens what goes to it** (#4183): a cluster pool that names
-/// none is left naming none, since what is named on a pool is sent to its runner, and a list of
-/// the runner's own is not the person's choice.
+/// **A cluster runner's word never widens what goes to it** (#4183): what is named on a pool is
+/// sent to its runner, and a list of the runner's own is not the person's choice. So a cluster
+/// pool that names none names the project's default from its first tidy on, and is held to it as
+/// any pool that names its own is.
 fn tidy(
     config: &Path,
     pool: &str,
@@ -208,13 +209,19 @@ fn tidy(
     default: Option<&str>,
     forget_all_but: impl FnOnce(Keep) -> Result<Option<crate::runnerlinks::Listed>, String>,
 ) -> Result<Tidied, String> {
-    let named = purlis_core::runners::profiles_of(config, pool)
+    let mut named = purlis_core::runners::profiles_of(config, pool)
         .map_err(|_| format!("there is no pool named {pool} on this machine"))?;
-    // Unsure which kind it is, it is not taken at a Docker runner's word.
-    let its_word_is_kept = matches!(
+    // Unsure which kind it is, it is not treated as a Docker pool.
+    let a_docker_pool = matches!(
         purlis_core::runners::cluster_runner_for(config, pool),
         Ok(None)
     );
+    if let (None, false, Some(default)) = (&named, a_docker_pool, default) {
+        let names = vec![default.to_owned()];
+        purlis_core::runners::name_pool_profiles_where_none(config, pool, names.clone())
+            .map_err(|why| why.to_string())?;
+        named = Some(names);
+    }
     if named.is_none() && default.is_none() {
         return Ok(Tidied::NothingToJudge);
     }
@@ -251,7 +258,7 @@ fn tidy(
                     names.push(name.clone());
                 }
             }
-            if its_word_is_kept && names.len() > 1 {
+            if names.len() > 1 {
                 purlis_core::runners::name_pool_profiles_where_none(config, pool, names)
                     .map_err(|why| why.to_string())?;
             }
