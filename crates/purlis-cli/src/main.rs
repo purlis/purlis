@@ -4373,7 +4373,8 @@ fn pool_sign_in(
         // Only a name that could be made is printed as a command to copy.
         if !purlis_core::profiles::name_ok(&record.name) {
             return Err(format!(
-                "{said} Sign '{}' in from its line in Settings › Pools.",
+                "{said} '{}' cannot be a profile's name, so no runner keeps it: make a profile with \
+                 another name.",
                 shown::short(&record.name)
             ));
         }

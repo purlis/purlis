@@ -424,7 +424,7 @@ export function SignInStrip(props: SignInStripProps) {
             Cancel
           </Button>
         )}
-        {onTerminal !== undefined && step.at !== "signed-in" && (
+        {onTerminal !== undefined && step.at !== "signed-in" && step.at !== "checking" && (
           <Button
             size="sm"
             variant="link"

@@ -1405,9 +1405,12 @@ fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
         .ok_or_else(|| "that sign-in is over".to_owned())?;
     if let Some((pool, judged)) = judged {
         let held = config_root().and_then(|config| still_yours(&config, &pool, &judged));
-        if let Err(why) = held {
+        if held.is_err() {
             pool_sign_in_cancel(flow);
-            return Err(why);
+            // Not the start's words: by now something of it may have reached the runner.
+            return Err(format!(
+                "the sign-in was stopped, as pool {pool} or its runner changed. Try again."
+            ));
         }
     }
     Ok(driving)
@@ -1631,16 +1634,6 @@ pub fn pool_sign_in_cancel(flow: u32) {
     for one in gone {
         one.driving.cancel();
     }
-}
-
-fn driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
-    SIGN_INS
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .iter()
-        .find(|one| one.flow == flow)
-        .map(|one| Arc::clone(&one.driving))
-        .ok_or_else(|| "that sign-in is over".to_owned())
 }
 
 fn record_named(config: &Path, name: &str) -> Result<profilestore::MachineProfile, String> {

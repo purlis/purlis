@@ -413,11 +413,13 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
   });
 
   it("offers no Cancel while it is checked, as the login has ended (#4043)", async () => {
-    const opened = await strip();
+    const opened = await strip("/home/op/project");
     says({ at: "checking" });
 
     expect(await within(opened).findByText(/Step 3 of 3/)).toBeInTheDocument();
     expect(within(opened).queryByRole("button", { name: "Cancel" })).toBeNull();
+    // Closing it now would throw away a login that may have signed in.
+    expect(within(opened).queryByRole("button", { name: "Open in terminal" })).toBeNull();
   });
 
   it("says why a sign-in failed and starts another by opening the page again (#4043)", async () => {
