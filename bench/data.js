@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793462962962,
+  "lastUpdate": 1793464229308,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33642,6 +33642,48 @@ window.BENCHMARK_DATA = {
             "value": 101.27080000000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.820, 101.153, 101.271, 101.362, 102.757 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3682f331e95c8d6daaaff66c22a75364c22b3537",
+          "message": "Runners: sign-out reaches all of a pool's runners; a drain carries once (#4272)\n\n* Runners: sign-out reaches a pool's draining runners; a drain carries once, unpaired first (#4121, #4145, #4146)\n\nSigning a profile out of a pool also runs on each draining runner of it, says which it\nreached, and marks the runner so no drain carries that sign-in, even one it did not reach.\nA drained runner is unpaired before its sign-ins are carried; a removal that failed does\nnot carry again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QQ54M8G08YMNRE1MSHEH\nPurlis-Persona: steward\n\n* Runners: opencode signs out on a pool's runner in a terminal from its line (#4124)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QQ54M8G08YMNRE1MSHEH\nPurlis-Persona: steward\n\n* Runners: purlis profile remove reaches the pools' runners (#4141)\n\nEach Docker pool's runner is asked over its link to forget the profile, the profile comes off\neach pool that named it, and a pool whose runner runs a purlis before 1.52 is named. Never in\na chat, and only on an engine shown to be the person's own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QQ54M8G08YMNRE1MSHEH\nPurlis-Persona: steward\n\n* Runners: review of the sign-out reach: drain state, carried batches, off the window's thread; #4141 taken out\n\nA runner is skipped for its chat count only once it answered its unpairing; one that runs and\ndid not stays. A sign-out or a removal on a runner clears what a drain carried for the profile.\nTyping the terminal sign-out leaves the window's thread. The command-line removal's reach to\nthe runners is left to #4141.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QQ54M8G08YMNRE1MSHEH\nPurlis-Persona: steward\n\n* Runners: a pool's Remove also holds its sign-in from a drain; the terminal sign-out checks its tab again before typing (#4145, #4124)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M694QQ54M8G08YMNRE1MSHEH\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T15:47:59Z",
+          "tree_id": "3d412bdcf1fef7fbbac4a194c0b1daf13df69191",
+          "url": "https://github.com/purlis/purlis/commit/3682f331e95c8d6daaaff66c22a75364c22b3537"
+        },
+        "date": 1793464225217,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5192975,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.496, 0.505, 0.519, 0.520, 0.536 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4584835,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.346, 16.389, 16.458, 16.538, 16.669 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.359301,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.430, 101.646, 102.359, 102.967, 103.385 ms"
           }
         ]
       }
