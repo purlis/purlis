@@ -953,6 +953,9 @@ export const PlaneView = memo(function PlaneView({
    *  signed in here (#2035), with that refusal: the picker offers Sign in beside it, and beside
    *  no other. */
   const [pickerSignIn, setPickerSignIn] = useState<{ profile: string; refused: string }>();
+  /** The pool's limit a start was refused on (spec #4275), with that refusal: the picker offers
+   *  to raise it beside it, and beside no other. */
+  const [pickerLimit, setPickerLimit] = useState<{ offer: PoolLimitOffer; refused: string }>();
   /** Whether the picker's fix (NO-8: its `local-ignore`) is running. */
   const [pickerFixing, setPickerFixing] = useState(false);
   /** The chat tab whose name is open for editing on the strip, if one is (charter-app#254). */
@@ -3555,6 +3558,9 @@ export const PlaneView = memo(function PlaneView({
         // cannot see beside the rows is one they cannot act on.
         setPickerTrouble(refused);
         setPickerSignIn(undefined);
+        // Over a pool's limit, what to raise it to: asked of the core, as the sign-in below is.
+        const offer = await commands.poolLimitOffer(profile, refused).catch(() => null);
+        setPickerLimit(offer === null ? undefined : { offer, refused });
         // The refusal left an Ask to sign the profile in (#2035): the Inbox reads it now.
         asksMoved(plane);
         // A profile of this machine's its harness says is not signed in here points to that
@@ -10448,6 +10454,28 @@ export const PlaneView = memo(function PlaneView({
                   setPickerTrouble(undefined);
                   setPickerSignIn(undefined);
                   showInbox();
+                }}
+                limitOffer={
+                  pickerLimit !== undefined && pickerLimit.refused === pickerTrouble
+                    ? pickerLimit.offer
+                    : undefined
+                }
+                onRaiseLimit={async (values) => {
+                  const pool = pickerLimit?.offer.pool;
+                  if (pool === undefined) return false;
+                  for (const [key, value] of values) {
+                    const saved = await commands
+                      .poolLimitSet(pool, key, value)
+                      .catch((err: unknown) => ({
+                        status: "error" as const,
+                        error: String(err),
+                      }));
+                    if (saved.status === "error") {
+                      setPickerTrouble(saved.error);
+                      return false;
+                    }
+                  }
+                  return true;
                 }}
                 onStart={(profile, persona, footer, label, newBranch, withoutSandbox) =>
                   void startPicked(profile, persona, footer, label, newBranch, withoutSandbox)

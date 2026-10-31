@@ -1,0 +1,401 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! **A pool's limits** (spec #4275, the person's rulings Q1 to Q16 of 2026-10-31): the numbers
+//! that bound a pool's runners whose right value depends on the person's setup.
+//!
+//! This is the one list of them. Each [`Limit`] says its name, its unit, its default and the
+//! measurement behind it, what it affects, how it takes effect and how a value is checked
+//! ([`Limit::check`]), so the window, the command, the file and the errors read one answer and
+//! cannot disagree. A new limit is one row of [`all`], and needs nothing else to be read and
+//! written with its pool ([`Chosen`]).
+//!
+//! **A value is the person's or purlis's** ([`Chosen`]): one left unset follows purlis's default
+//! as it improves, and one set stays across versions (Q11).
+//!
+//! **A limit that is hit is a [`LimitHit`]**, not only a sentence: which limit, the value in
+//! force, what was needed, and a value to suggest ([`Limit::hit`]), from which the window draws
+//! its offer and [`LimitHit::said`] its words.
+
+use serde_json::{Map, Value};
+
+/// What a limit counts, as the window and the file say it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unit {
+    /// Mebibytes, as a pool's `memory` and `tmp` are written.
+    Mib,
+    Files,
+}
+
+impl Unit {
+    /// A value of it, in plain words: `128 MiB`, `8192 files`.
+    #[must_use]
+    pub fn said(self, value: u64) -> String {
+        match self {
+            Unit::Mib => format!("{value} MiB"),
+            Unit::Files => format!("{value} files"),
+        }
+    }
+
+    /// The word the window puts beside a number of it.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Unit::Mib => "MiB",
+            Unit::Files => "files",
+        }
+    }
+
+    /// What a suggestion of it is rounded up to, and the least margin it leaves.
+    fn step(self) -> u64 {
+        match self {
+            Unit::Mib => 16,
+            Unit::Files => 256,
+        }
+    }
+}
+
+/// What a limit affects: the groups of the pool's page (variant B of the prototype).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Group {
+    Code,
+    SignIn,
+    Runner,
+}
+
+/// When a changed value takes effect (Q13).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TakesEffect {
+    /// From the next attempt, with nothing restarted.
+    NextAttempt,
+    /// When the runner is next replaced.
+    NextReplacement,
+}
+
+/// **Why a default is what it is** (Q10, user story 35): what was measured, on what, and what it
+/// came to. A row of [`all`] with no measurement fails its test.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Measurement {
+    pub on: &'static str,
+    pub found: &'static str,
+    pub chosen_because: &'static str,
+}
+
+/// Which limit: the name code holds one by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LimitId {
+    ProfileSize = 0,
+    ProfileFiles = 1,
+}
+
+/// One of a pool's limits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limit {
+    pub id: LimitId,
+    /// Its key in the pool's row.
+    pub key: &'static str,
+    /// Its name in plain words, for the window and the errors.
+    pub plain: &'static str,
+    pub unit: Unit,
+    pub default: u64,
+    /// The least and the most any value can be: what purlis can carry at all, on any pool. A
+    /// team's highest allowed is another thing, and is given to [`Limit::check`].
+    pub least: u64,
+    pub most: u64,
+    pub group: Group,
+    /// Under Advanced on the pool's page.
+    pub advanced: bool,
+    pub takes_effect: TakesEffect,
+    pub measured: Measurement,
+}
+
+const ALL: [Limit; 2] = [
+    Limit {
+        id: LimitId::ProfileSize,
+        key: "profileSize",
+        plain: "Most a profile may send: size",
+        unit: Unit::Mib,
+        default: 128,
+        least: 1,
+        // What a runner stages in memory (`MOST_PROFILE_SETTINGS_STAGED_BYTES`).
+        most: 1024,
+        group: Group::SignIn,
+        advanced: false,
+        takes_effect: TakesEffect::NextAttempt,
+        measured: Measurement {
+            on: "a real Claude Code profile in daily use, read as a runner is sent it, on \
+                 2026-10-31; and the largest measured for #4081",
+            found: "50.3 MiB (2026-10-31); 58 MiB (#4081)",
+            chosen_because: "over twice the largest real profile, and still what a default \
+                             runner holds in memory with room to spare",
+        },
+    },
+    Limit {
+        id: LimitId::ProfileFiles,
+        key: "profileFiles",
+        plain: "Most a profile may send: files",
+        unit: Unit::Files,
+        default: 8192,
+        least: 1,
+        // What a runner stages (`MOST_PROFILE_SETTINGS_STAGED_FILES`).
+        most: 65_536,
+        group: Group::SignIn,
+        advanced: false,
+        takes_effect: TakesEffect::NextAttempt,
+        measured: Measurement {
+            on: "a real Claude Code profile in daily use, read as a runner is sent it, on \
+                 2026-10-31",
+            found: "2,901 files, over the 2,048 a single message once carried",
+            chosen_because: "over twice the largest real profile",
+        },
+    },
+];
+
+/// **Every limit a pool has.**
+#[must_use]
+pub fn all() -> &'static [Limit] {
+    &ALL
+}
+
+/// The limit whose row key is `key`.
+#[must_use]
+pub fn of_key(key: &str) -> Option<&'static Limit> {
+    ALL.iter().find(|limit| limit.key == key)
+}
+
+impl LimitId {
+    #[must_use]
+    pub fn limit(self) -> &'static Limit {
+        &ALL[self as usize]
+    }
+}
+
+impl Limit {
+    /// **Whether `value` can be this limit's**, under the `highest` allowed where a team set one:
+    /// the one check the file, the command and the window share.
+    pub fn check(&self, value: u64, highest: Option<u64>) -> Result<(), String> {
+        if value < self.least || value > self.most {
+            return Err(format!(
+                "{} is at least {} and at most {}",
+                self.plain,
+                self.unit.said(self.least),
+                self.unit.said(self.most)
+            ));
+        }
+        match highest {
+            Some(highest) if value > highest => Err(format!(
+                "{} is at most {} on this pool",
+                self.plain,
+                self.unit.said(highest)
+            )),
+            _ => Ok(()),
+        }
+    }
+
+    /// **This limit hit**: `needed` against the value `in_force`, under the `highest` allowed.
+    #[must_use]
+    pub fn hit(&self, in_force: u64, needed: u64, highest: Option<u64>) -> LimitHit {
+        LimitHit {
+            limit: self.id,
+            in_force,
+            needed,
+            suggested: self.suggested(needed, highest),
+            highest,
+        }
+    }
+
+    /// What is needed plus a margin (a quarter, or a step at least), rounded up to a step; never
+    /// above what this limit can be. `None` where even that would not hold what is needed.
+    fn suggested(&self, needed: u64, highest: Option<u64>) -> Option<u64> {
+        let step = self.unit.step();
+        let with_margin = needed.saturating_add((needed / 4).max(step));
+        let rounded = with_margin.div_ceil(step).saturating_mul(step);
+        let ceiling = highest.map_or(self.most, |highest| highest.min(self.most));
+        let value = rounded.min(ceiling);
+        (value >= needed).then_some(value)
+    }
+}
+
+/// **A limit that was hit** (spec #4275's typed refusal).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LimitHit {
+    pub limit: LimitId,
+    pub in_force: u64,
+    pub needed: u64,
+    pub suggested: Option<u64>,
+    pub highest: Option<u64>,
+}
+
+impl LimitHit {
+    /// In plain words: how much is needed, the limit, and what to raise it to.
+    #[must_use]
+    pub fn said(&self) -> String {
+        let limit = self.limit.limit();
+        let offer = match self.suggested {
+            Some(value) => format!(": raise it to {}", limit.unit.said(value)),
+            None => format!(", more than this limit can be: send less than {}", {
+                limit.unit.said(self.highest.unwrap_or(limit.most))
+            }),
+        };
+        format!(
+            "it needs {}, over this pool's limit of {} ({}){offer}",
+            limit.unit.said(self.needed),
+            limit.unit.said(self.in_force),
+            limit.plain,
+        )
+    }
+}
+
+/// **The values the person chose for a pool's limits**, each unset where purlis's default holds.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Chosen([Option<u64>; ALL.len()]);
+
+impl Chosen {
+    /// What the person set, if they did: the mark of a value as theirs.
+    #[must_use]
+    pub fn get(&self, id: LimitId) -> Option<u64> {
+        self.0[id as usize]
+    }
+
+    /// The value that holds: what the person set, or purlis's default.
+    #[must_use]
+    pub fn in_force(&self, id: LimitId) -> u64 {
+        self.get(id).unwrap_or(id.limit().default)
+    }
+
+    /// These values, with `id` set to `value`, or back to the default.
+    #[must_use]
+    pub fn with(mut self, id: LimitId, value: Option<u64>) -> Chosen {
+        self.0[id as usize] = value;
+        self
+    }
+
+    /// Writes the values set into a pool's `row`; one unset is left out.
+    pub fn to_row(&self, row: &mut Value) {
+        for limit in all() {
+            if let Some(value) = self.get(limit.id) {
+                row[limit.key] = value.into();
+            }
+        }
+    }
+
+    /// The values a pool's row holds, each a whole number [`Limit::check`] takes, or why not.
+    pub fn from_row(fields: &Map<String, Value>) -> Result<Chosen, String> {
+        let mut chosen = Chosen::default();
+        for limit in all() {
+            let Some(value) = fields.get(limit.key) else {
+                continue;
+            };
+            let value = value
+                .as_u64()
+                .ok_or_else(|| format!("{} is a whole number", limit.plain))?;
+            limit.check(value, None)?;
+            chosen = chosen.with(limit.id, Some(value));
+        }
+        Ok(chosen)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn every_limit_has_a_default_within_its_checks_and_a_recorded_measurement() {
+        for limit in all() {
+            assert_eq!(limit.id.limit().key, limit.key, "{limit:?} is out of order");
+            assert_eq!(of_key(limit.key), Some(limit));
+            assert_eq!(limit.check(limit.default, None), Ok(()), "{}", limit.key);
+            let Measurement {
+                on,
+                found,
+                chosen_because,
+            } = limit.measured;
+            for said in [on, found, chosen_because] {
+                assert!(!said.trim().is_empty(), "{} has no measurement", limit.key);
+            }
+        }
+    }
+
+    /// The defaults hold what was measured, so an ordinary profile starts with no change.
+    #[test]
+    fn the_defaults_hold_the_largest_real_profile_measured() {
+        assert!(LimitId::ProfileSize.limit().default >= 58);
+        assert!(LimitId::ProfileFiles.limit().default >= 2901);
+    }
+
+    #[test]
+    fn a_value_is_refused_outside_what_a_limit_can_be_and_above_the_highest_allowed() {
+        let size = LimitId::ProfileSize.limit();
+        assert_eq!(size.check(1, None), Ok(()));
+        assert_eq!(size.check(1024, None), Ok(()));
+        let low = size.check(0, None).unwrap_err();
+        assert!(low.contains("at least 1 MiB"), "{low}");
+        assert!(size.check(1025, None).is_err());
+        assert_eq!(size.check(512, Some(512)), Ok(()));
+        let high = size.check(513, Some(512)).unwrap_err();
+        assert!(high.contains("at most 512 MiB on this pool"), "{high}");
+    }
+
+    #[test]
+    fn a_suggestion_is_what_is_needed_with_a_margin_rounded_up() {
+        let table = [
+            // A quarter over, then the next 16 MiB.
+            (LimitId::ProfileSize, 150, None, Some(192)),
+            // The least margin is one step.
+            (LimitId::ProfileSize, 20, None, Some(48)),
+            (LimitId::ProfileFiles, 9000, None, Some(11_264)),
+            // Stops at the highest allowed, which still holds what is needed.
+            (LimitId::ProfileSize, 150, Some(160), Some(160)),
+            (LimitId::ProfileFiles, 60_000, None, Some(65_536)),
+            // No value holds it: nothing to suggest.
+            (LimitId::ProfileSize, 170, Some(160), None),
+            (LimitId::ProfileSize, 2000, None, None),
+        ];
+        for (id, needed, highest, wanted) in table {
+            assert_eq!(
+                id.limit().hit(128, needed, highest).suggested,
+                wanted,
+                "{id:?} {needed} {highest:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_hit_says_what_is_needed_the_limit_and_the_value_to_raise_it_to() {
+        let said = LimitId::ProfileSize.limit().hit(128, 150, None).said();
+        assert_eq!(
+            said,
+            "it needs 150 MiB, over this pool's limit of 128 MiB (Most a profile may send: \
+             size): raise it to 192 MiB"
+        );
+        let none = LimitId::ProfileFiles.limit().hit(8192, 70_000, None).said();
+        assert!(none.contains("send less than 65536 files"), "{none}");
+        assert!(!none.contains("raise it"), "{none}");
+    }
+
+    #[test]
+    fn an_unset_value_follows_the_default_and_a_set_one_is_kept_and_marked() {
+        let unset = Chosen::default();
+        assert_eq!(unset.get(LimitId::ProfileSize), None);
+        assert_eq!(unset.in_force(LimitId::ProfileSize), 128);
+
+        let set = unset.with(LimitId::ProfileSize, Some(128));
+        assert_eq!(set.get(LimitId::ProfileSize), Some(128), "the person's own");
+        assert_eq!(set.with(LimitId::ProfileSize, None), unset, "a reset");
+    }
+
+    #[test]
+    fn a_row_holds_only_the_values_set_and_refuses_a_bad_one() {
+        let chosen = Chosen::default().with(LimitId::ProfileFiles, Some(9000));
+        let mut row = json!({"name": "builds"});
+        chosen.to_row(&mut row);
+        assert_eq!(row, json!({"name": "builds", "profileFiles": 9000}));
+        assert_eq!(Chosen::from_row(row.as_object().unwrap()), Ok(chosen));
+
+        for bad in [json!({"profileSize": 0}), json!({"profileSize": "128"})] {
+            assert!(Chosen::from_row(bad.as_object().unwrap()).is_err(), "{bad}");
+        }
+    }
+}

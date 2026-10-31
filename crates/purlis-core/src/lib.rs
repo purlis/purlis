@@ -178,6 +178,7 @@ pub mod planesave;
 pub mod plugin;
 pub mod plugin_install;
 #[cfg(unix)]
+pub mod poollimits;
 pub mod poollogins;
 #[cfg(unix)]
 pub mod pools;

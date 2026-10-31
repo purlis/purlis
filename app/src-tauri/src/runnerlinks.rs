@@ -604,12 +604,10 @@ pub fn unpair(to: &ToARunner) -> Result<(), String> {
     .map_err(|why| crate::devices::shown_safely(&why))
 }
 
-/// **A profile a runner kept**: whether it is signed in there, and what of its settings stayed
-/// behind, over the limits (#4081).
+/// **A profile a runner kept**: whether it is signed in there.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileKept {
     pub standing: purlis_session_protocol::session::ProfileStanding,
-    pub left_behind: Vec<purlis_core::profilestore::onrunner::LeftBehind>,
 }
 
 /// What a runner answered each profile it was asked to keep: [`ProfileKept`], or why it was not
@@ -649,10 +647,7 @@ async fn keep_one(
         .await
         .map_err(late)?
         .map_err(|why| refused_by_the_runner(&why))?;
-    Ok(ProfileKept {
-        standing,
-        left_behind: sending.left_behind,
-    })
+    Ok(ProfileKept { standing })
 }
 
 /// The most pages of what it holds a runner is asked for: more than the most files it holds take
@@ -714,7 +709,10 @@ async fn sent_what_differs(
     let sending = if held.is_empty() {
         for_a_runner_of(version, kept)?
     } else {
-        purlis_core::profilestore::onrunner::in_batches_beside(kept, &held)?
+        purlis_core::profilestore::onrunner::in_batches_beside(
+            &as_its_runner_holds(version, kept),
+            &held,
+        )?
     };
     let only_changed = sending.profile.settings_changed.is_some();
     let answer = keep_one(client, sending).await;
@@ -791,7 +789,7 @@ pub fn for_a_runner_of(
     use purlis_core::profilestore::onrunner::{ToKeep, in_batches, to_send};
     use purlis_session_protocol::session::{KNOWS_PROFILE_SETTINGS, KNOWS_SETTINGS_IN_BATCHES};
     if version >= KNOWS_SETTINGS_IN_BATCHES {
-        return in_batches(kept);
+        return in_batches(&as_its_runner_holds(version, kept));
     }
     let profile = if version >= KNOWS_PROFILE_SETTINGS {
         to_send(kept)?
@@ -801,8 +799,20 @@ pub fn for_a_runner_of(
     Ok(ToKeep {
         profile,
         batches: Vec::new(),
-        left_behind: Vec::new(),
     })
+}
+
+/// `kept`, held to what a runner speaking `version` stages: one before 1.63 stages no more than
+/// it did, whatever its pool's limit says (spec #4275).
+fn as_its_runner_holds(
+    version: purlis_session_protocol::version::Version,
+    kept: &purlis_core::profilestore::onrunner::Kept,
+) -> purlis_core::profilestore::onrunner::Kept {
+    if version >= purlis_session_protocol::session::KNOWS_LARGER_PROFILE_SETTINGS {
+        kept.clone()
+    } else {
+        kept.clone().on_an_older_runner()
+    }
 }
 
 /// Whether a runner speaking `version` keeps a desktop's profiles (`keep_profile`, 1.43).

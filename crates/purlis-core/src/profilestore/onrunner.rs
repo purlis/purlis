@@ -39,7 +39,8 @@ use std::collections::BTreeMap;
 
 use purlis_session_protocol::session as wire;
 
-use super::made::{Measured, whole_of};
+use crate::poollimits::{Chosen, LimitHit, LimitId};
+
 use super::sign_in::{self, Look, Standing};
 use super::{Homes, MachineProfile};
 
@@ -57,6 +58,10 @@ pub struct Kept {
     /// The desktop's settings folder of it, whose settings files [`to_send`] reads and sends
     /// (#3448), where they are sent: at a chat's start or move there, never at a look.
     pub settings_in: Option<PathBuf>,
+    /// The values chosen for the limits of the pool it goes to (spec #4275).
+    pub limits: Chosen,
+    /// The highest those can be on the runner it goes to, where that is lower than any pool's.
+    pub highest: Chosen,
 }
 
 /// **The most bytes of settings files sent in one `keep_profile`**, to a runner before 1.56
@@ -115,6 +120,8 @@ impl Kept {
             // version it follows to (#3446).
             pinned: record.pinned.as_ref().map(|p| p.version.clone()),
             settings_in: None,
+            limits: Chosen::default(),
+            highest: Chosen::default(),
         })
     }
 
@@ -124,6 +131,20 @@ impl Kept {
     #[must_use]
     pub fn with_settings_of(mut self, record: &MachineProfile) -> Self {
         self.settings_in = (!record.sandbox_only).then(|| record.folders.config.clone());
+        self
+    }
+
+    /// This profile, held to `limits`: the values chosen for its pool's limits (spec #4275).
+    #[must_use]
+    pub fn held_to(mut self, limits: Chosen) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    /// This profile, going to a runner before 1.63, which stages no more than it did.
+    #[must_use]
+    pub fn on_an_older_runner(mut self) -> Self {
+        self.highest = highest_on_an_older_runner();
         self
     }
 }
@@ -194,55 +215,100 @@ pub struct ToKeep {
     pub profile: purlis_session_protocol::session::ProfileToKeep,
     /// Its settings, each batch within a control frame, sent first.
     pub batches: Vec<purlis_session_protocol::session::SettingsBatch>,
-    /// What stayed behind, over the limits, so the person is told.
-    pub left_behind: Vec<LeftBehind>,
 }
 
-/// **A skill, an agent or a settings file that stayed on the desktop** (#4081): a whole skill's
-/// folder, since half a skill is no skill.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LeftBehind {
-    /// Its path under the settings folder: `skills/review`, `CLAUDE.md`.
-    pub path: String,
-    pub bytes: u64,
-}
-
-/// **Which of the settings folder's `wholes` go, and what size of each stays** (#4081): the
-/// harness's top-level files first, then the smallest first, so a large skill keeps out as little
-/// as it can, within `most_bytes` and `most_files`.
-fn wholes_that_fit(
-    wholes: Measured,
-    most_bytes: u64,
-    most_files: usize,
-) -> (std::collections::BTreeSet<String>, BTreeMap<String, u64>) {
-    let mut smallest: Vec<_> = wholes.into_iter().collect();
-    smallest.sort_by_key(|(path, (bytes, _))| (path.contains('/'), *bytes));
-    let (mut going, mut behind) = (std::collections::BTreeSet::new(), BTreeMap::new());
-    let (mut size, mut count) = (0, 0);
-    for (path, (bytes, files)) in smallest {
-        if size + bytes > most_bytes || count + files > most_files {
-            behind.insert(path, bytes);
-        } else {
-            size += bytes;
-            count += files;
-            going.insert(path);
-        }
-    }
-    (going, behind)
-}
-
-/// What the read of a profile leaves of the overall limit, as a runner counts it: a settings file
-/// rewritten without its credentials can come out longer than it went in.
+/// What the read of a profile leaves of what a runner before 1.63 stages, as it counts it: a
+/// settings file rewritten without its credentials can come out longer than it went in.
 const REWRITING_ROOM: usize = 8 * 1024 * 1024;
 
+/// What a mebibyte of a pool's limit is, in bytes.
+const MIB: u64 = 1024 * 1024;
+
+/// What a runner before 1.63 stages, as the highest of a pool's limits there.
+#[must_use]
+pub fn highest_on_an_older_runner() -> Chosen {
+    Chosen::default()
+        .with(
+            LimitId::ProfileSize,
+            Some(((wire::MOST_PROFILE_SETTINGS_BYTES - REWRITING_ROOM) as u64) / MIB),
+        )
+        .with(
+            LimitId::ProfileFiles,
+            Some(wire::MOST_PROFILE_SETTINGS_FILES as u64),
+        )
+}
+
+/// **A profile's settings over its pool's limits** (spec #4275): the typed refusal, which the
+/// Start a chat dialog draws its offer from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OverLimit {
+    pub profile: String,
+    /// The pool, once the refusal has left [`ready_on`].
+    pub pool: Option<String>,
+    pub hits: Vec<LimitHit>,
+    /// The refusal as it was said. A window asks only of the refusal it was shown.
+    pub said: String,
+}
+
+static OVER_LIMITS: Mutex<BTreeMap<String, OverLimit>> = Mutex::new(BTreeMap::new());
+
+/// **The limits that refused the start or move refused in the words `refused`** (spec #4275), as
+/// the window asks after a refusal: asked of the core, never read from the words. `None` for any
+/// other refusal.
+#[must_use]
+pub fn over_limit(profile: &str, refused: &str) -> Option<OverLimit> {
+    OVER_LIMITS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(profile)
+        .filter(|over| over.pool.is_some() && refused.contains(&over.said))
+        .cloned()
+}
+
+/// The hits of a profile of `bytes` in `files`, against what `kept` is held to.
+fn limits_hit(kept: &Kept, bytes: u64, files: u64) -> Vec<LimitHit> {
+    [
+        (LimitId::ProfileSize, bytes.div_ceil(MIB)),
+        (LimitId::ProfileFiles, files),
+    ]
+    .into_iter()
+    .filter_map(|(id, needed)| {
+        let highest = kept.highest.get(id);
+        let chosen = kept.limits.in_force(id);
+        let in_force = highest.map_or(chosen, |highest| highest.min(chosen));
+        (needed > in_force).then(|| id.limit().hit(in_force, needed, highest))
+    })
+    .collect()
+}
+
+/// The refusal of `kept` for `hits`, kept for the window to ask of ([`over_limit`]).
+fn refused_over_limit(kept: &Kept, hits: Vec<LimitHit>) -> String {
+    let said = hits
+        .iter()
+        .map(LimitHit::said)
+        .collect::<Vec<_>>()
+        .join("; ");
+    OVER_LIMITS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(
+            kept.name.clone(),
+            OverLimit {
+                profile: kept.name.clone(),
+                pool: None,
+                hits,
+                said: said.clone(),
+            },
+        );
+    said
+}
+
 /// **`kept`, as a runner of 1.56 or later is sent it** (`stage_profile_settings`, #4081): what
-/// [`to_send`] reads and removes, whatever its size, in batches, under one overall limit
-/// ([`MOST_PROFILE_SETTINGS_BYTES`](purlis_session_protocol::session::MOST_PROFILE_SETTINGS_BYTES),
-/// [`MOST_PROFILE_SETTINGS_FILES`](purlis_session_protocol::session::MOST_PROFILE_SETTINGS_FILES)).
-/// What is over it stays behind, by whole skills ([`LeftBehind`]), and the rest goes: no chat is
-/// refused for it. A harness's own settings file is the exception: it says what a chat may do, so
-/// one that cannot go, over [`MOST_SETTINGS_BYTES`], or one that does not parse, is refused in
-/// words, and nothing is sent.
+/// [`to_send`] reads and removes, in batches, whatever their number, within its pool's limits
+/// ([`Kept::limits`]). **Over a limit, nothing is sent and the start is refused** with what is
+/// needed and a value to raise it to ([`OverLimit`], spec #4275); the batches themselves are never
+/// the person's to see. A harness's own settings file over [`MOST_SETTINGS_BYTES`], or one that
+/// does not parse, is refused in words, and nothing is sent.
 pub fn in_batches(kept: &Kept) -> Result<ToKeep, String> {
     in_batches_beside(kept, &[])
 }
@@ -258,10 +324,8 @@ pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKe
         return Ok(ToKeep {
             profile,
             batches: Vec::new(),
-            left_behind: Vec::new(),
         });
     };
-    let most = wire::MOST_PROFILE_SETTINGS_BYTES - REWRITING_ROOM;
     let too_large = |path: &str, bytes: usize| {
         (super::sent::rewritten(&kept.harness, path) && bytes > MOST_SETTINGS_BYTES).then(|| {
             format!(
@@ -278,34 +342,36 @@ pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKe
             return Err(why);
         }
     }
-    let (going, mut behind) =
-        wholes_that_fit(wholes, most as u64, wire::MOST_PROFILE_SETTINGS_FILES);
+    let measured = |what: fn(&(u64, usize)) -> u64| wholes.values().map(what).sum::<u64>();
+    let hits = limits_hit(kept, measured(|w| w.0), measured(|w| w.1 as u64));
+    if !hits.is_empty() {
+        return Err(refused_over_limit(kept, hits));
+    }
+    let in_force = |id| {
+        let chosen = kept.limits.in_force(id);
+        kept.highest.get(id).map_or(chosen, |most| most.min(chosen))
+    };
     let read = super::made::settings_read(
         &kept.harness,
         folder,
-        most,
-        wire::MOST_PROFILE_SETTINGS_FILES,
-        &|path| going.contains(whole_of(path)),
+        usize::try_from(in_force(LimitId::ProfileSize).saturating_mul(MIB)).unwrap_or(usize::MAX),
+        usize::try_from(in_force(LimitId::ProfileFiles)).unwrap_or(usize::MAX),
+        &|_| true,
     )?;
-    // What grew since it was measured stays behind whole too.
-    for (path, bytes) in &read.left_behind {
-        if let Some(why) = too_large(path, usize::MAX) {
-            return Err(why);
-        }
-        *behind.entry(whole_of(path).to_owned()).or_default() += bytes;
+    // What grew since it was measured is over them all the same.
+    if !read.left_behind.is_empty() {
+        let bytes = read.files.iter().map(|one| one.1.len() as u64).sum::<u64>()
+            + read.left_behind.iter().map(|one| one.1).sum::<u64>();
+        let files = (read.files.len() + read.left_behind.len()) as u64;
+        return Err(refused_over_limit(kept, limits_hit(kept, bytes, files)));
     }
     let mut sent = Vec::with_capacity(read.files.len());
     for (path, bytes) in read.files {
         if let Some(why) = too_large(&path, bytes.len()) {
             return Err(why);
         }
-        match behind.get_mut(whole_of(&path)) {
-            Some(size) => *size += bytes.len() as u64,
-            None => {
-                let bytes = super::sent::without_credentials(&kept.harness, &path, &bytes)?;
-                sent.push(wire::SettingsFile { path, bytes });
-            }
-        }
+        let bytes = super::sent::without_credentials(&kept.harness, &path, &bytes)?;
+        sent.push(wire::SettingsFile { path, bytes });
     }
     let sent = match only_what_changed(&kept.harness, sent, held) {
         Ok((changed, sent)) => {
@@ -317,10 +383,6 @@ pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKe
     profile.settings_staged = Some(u32::try_from(sent.len()).unwrap_or(u32::MAX));
     Ok(ToKeep {
         batches: wire::settings_in_batches(&kept.name, sent),
-        left_behind: behind
-            .into_iter()
-            .map(|(path, bytes)| LeftBehind { path, bytes })
-            .collect(),
         profile,
     })
 }
@@ -449,50 +511,6 @@ fn settings_after_change(
         return Err(not_as_told());
     }
     Ok(whole.into_iter().collect())
-}
-
-/// How many of what stayed behind a Notice names before it counts the rest.
-const NAMED_LEFT_BEHIND: usize = 6;
-
-/// **What a chat's tab says of what stayed behind on pool `pool`** (#4081): what, its size, and
-/// how to bring it. `None` where nothing did.
-pub fn left_behind_note(pool: &str, name: &str, behind: &[LeftBehind]) -> Option<String> {
-    use purlis_session_protocol::session::{
-        MOST_PROFILE_SETTINGS_BYTES, MOST_PROFILE_SETTINGS_FILES,
-    };
-    const MIB: u64 = 1024 * 1024;
-    if behind.is_empty() {
-        return None;
-    }
-    let mut largest: Vec<_> = behind.iter().collect();
-    largest.sort_by_key(|one| std::cmp::Reverse(one.bytes));
-    let mut named: Vec<String> = largest
-        .iter()
-        .take(NAMED_LEFT_BEHIND)
-        .map(|one| {
-            format!(
-                "{} ({} MiB)",
-                crate::shown::short(&one.path),
-                one.bytes.div_ceil(MIB)
-            )
-        })
-        .collect();
-    if let Some(more) = behind
-        .len()
-        .checked_sub(NAMED_LEFT_BEHIND)
-        .filter(|n| *n > 0)
-    {
-        named.push(format!("{more} more"));
-    }
-    Some(format!(
-        "This chat runs on pool {pool} without some of the profile '{}''s settings, which came to \
-         more than the {} MiB and {MOST_PROFILE_SETTINGS_FILES} files a runner keeps: {}. Make \
-         them smaller or remove them from the profile, and its next chat on the pool brings the \
-         rest.",
-        crate::shown::short(name),
-        MOST_PROFILE_SETTINGS_BYTES as u64 / MIB,
-        named.join(", ")
-    ))
 }
 
 /// **Keeps the desktop's profile `kept` for the desktop `desktop` in this runner's store under
@@ -682,6 +700,8 @@ impl From<&purlis_session_protocol::session::ProfileToKeep> for Kept {
             sandbox_only: sent.sandbox_only,
             pinned: sent.pinned.clone(),
             settings_in: None,
+            limits: Chosen::default(),
+            highest: Chosen::default(),
         }
     }
 }
@@ -1035,12 +1055,30 @@ fn ready_on_for(
     // A start or a move sends the profile's settings with it, as they are now (#3448).
     let kept = Kept::of(&record)
         .map_err(|why| format!("{why}. {nothing}."))?
-        .with_settings_of(&record);
+        .with_settings_of(&record)
+        .held_to(
+            crate::runners::chosen_limits_of(config_root, pool).map_err(|why| why.to_string())?,
+        );
     match keep(&kept).map_err(|why| {
-        format!("pool {pool}'s runner did not keep the profile '{shown}': {why}. {nothing}.")
+        let said =
+            format!("pool {pool}'s runner did not keep the profile '{shown}': {why}. {nothing}.");
+        said_of_pool(name, pool, &why, &said);
+        said
     })? {
         Some(Standing::SignedOut) => Ok(Some(record)),
         Some(Standing::SignedIn | Standing::CannotTell | Standing::Fetching) | None => Ok(None),
+    }
+}
+
+/// A refusal `why` of the profile `name` left [`ready_on_for`] as `said`: where a limit said it,
+/// that is the refusal the window asks of, on `pool`.
+fn said_of_pool(name: &str, pool: &str, why: &str, said: &str) {
+    let mut all = OVER_LIMITS.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(over) = all.get_mut(name) {
+        if over.said == why {
+            over.pool = Some(pool.to_owned());
+            over.said = said.to_owned();
+        }
     }
 }
 

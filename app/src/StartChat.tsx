@@ -18,6 +18,7 @@ import { ApprovalSentence } from "./ProfileApproval";
 import {
   commands,
   type PlaneId,
+  type PoolLimitOffer,
   type ProfileRow,
   type StartOptions,
   type WithoutSandbox,
@@ -35,6 +36,7 @@ import { ListBox, ListOption } from "./ui/list/List";
 import { FILTERED_FROM, ListFilter, noMatchSaid, type Noun } from "./ui/list/ListFilter";
 import { RowLabel, RowLead, RowTrail } from "./ui/list/Row";
 import { reachableWords, startAnswer } from "./StartChatApproval";
+import { StartChatLimit } from "./StartChatLimit";
 
 /**
  * The key of the row that stands for "no persona at all".
@@ -154,6 +156,8 @@ export function StartChat({
   trouble,
   signIn,
   onShowSignIn,
+  limitOffer,
+  onRaiseLimit,
   onStart,
   onApprove,
   onInstall,
@@ -185,6 +189,10 @@ export function StartChat({
   /** Opens the Inbox, where the Ask to sign the profile in waits. Absent, the refusal's own
    *  words say where. */
   onShowSignIn?: () => void;
+  /** The limit the last attempt was refused on, offered to raise (spec #4275). */
+  limitOffer?: PoolLimitOffer;
+  /** Saves the values to the pool: `true` where they were, and the start then goes again. */
+  onRaiseLimit?: (values: ReadonlyArray<readonly [string, number]>) => Promise<boolean>;
   /** `label` is the Name field, or `null` when it was left empty. `newBranch` is the branch
    *  box, and `false` when there is none to tick. `withoutSandbox` is the person's opt-out for
    *  this chat, with the reason typed, or `null` for a sandboxed start. */
@@ -619,6 +627,17 @@ export function StartChat({
                 Sign in {signIn} waits in the Inbox.{" "}
                 <Button onPress={onShowSignIn}>Go to the Inbox</Button>
               </p>
+            )}
+            {trouble && limitOffer !== undefined && onRaiseLimit && (
+              <StartChatLimit
+                offer={limitOffer}
+                applying={starting}
+                onApply={(values) => {
+                  void onRaiseLimit(values).then((saved) => {
+                    if (saved) start();
+                  });
+                }}
+              />
             )}
             <ApprovalSentence row={picked} />
             {/* What the picked harness lacks, said once by Start: the first chat on it here

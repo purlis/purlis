@@ -1535,6 +1535,8 @@ export const commands = {
 	setClusterPoolOwned: __WINDOW_ONLY_RESULT,
 	poolProfiles: __WINDOW_ONLY_RESULT,
 	poolProfileAdd: __WINDOW_ONLY_RESULT,
+	poolLimitOffer: __WINDOW_ONLY,
+	poolLimitSet: __WINDOW_ONLY_RESULT,
 	poolProfileRemove: __WINDOW_ONLY_RESULT,
 	poolSignInStart: __WINDOW_ONLY_RESULT,
 	poolSignInNext: __WINDOW_ONLY_RESULT,
@@ -8194,6 +8196,26 @@ export type PoolLimitsShown = {
 	memory_mib: number,
 	processes: number,
 	tmp_mib: number,
+};
+
+/**  **A limit a start was refused on**, as Start a chat offers to raise it (spec #4275). */
+export type PoolLimitHitRow = {
+	/**  The limit's key: what [`pool_limit_set`] takes. */
+	key: string,
+	/**  Its name in plain words. */
+	plain: string,
+	/**  The word beside a number of it. */
+	unit: string,
+	in_force: number,
+	needed: number,
+	/**  The value offered, which the person can edit; none where no value would hold it. */
+	suggested: number | null,
+};
+
+/**  **What a refused start on a pool offers**: the pool, and each limit it was refused on. */
+export type PoolLimitOffer = {
+	pool: string,
+	hits: Array<PoolLimitHitRow>,
 };
 
 /**  Where a pool's runner stands, as one link to it says. */

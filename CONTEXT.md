@@ -524,7 +524,11 @@ is the code behind one)
 **Pool**:
 A named place runners come from, with its limits and what its runners may hold: Docker on this
 machine, or a cluster that makes them on demand. A cluster's is defined once for a team. A
-**runner provider** is the code behind one. It belongs to **Project**.
+**runner provider** is the code behind one. It belongs to **Project**. A pool's **limits** are the
+numbers that bound its runners where the right value depends on the person's setup, each a plain
+phrase such as "Longest wait for a sign-in"; a number that guards a security boundary stays fixed
+or can only be made stricter, and internal tuning stays in code. Window text says limit, never
+timeout, quota or config.
 _Avoid_: node pool (that is the cluster's), fleet, cluster (for the pool), warm pool (that is one
 setting of it), runner provider (that is the code)
 

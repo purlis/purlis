@@ -488,6 +488,8 @@ macro_rules! app_commands {
                 clusterpools::set_cluster_pool_owned,
                 poolprofiles::pool_profiles,
                 poolprofiles::pool_profile_add,
+                poolprofiles::pool_limit_offer,
+                poolprofiles::pool_limit_set,
                 poolprofiles::pool_profile_remove,
                 poolprofiles::pool_sign_in_start,
                 poolprofiles::pool_sign_in_next,

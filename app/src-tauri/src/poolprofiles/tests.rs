@@ -10,6 +10,8 @@ fn work() -> onrunner::Kept {
         sandbox_only: false,
         pinned: None,
         settings_in: None,
+        limits: Default::default(),
+        highest: Default::default(),
     }
 }
 
