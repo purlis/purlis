@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793454956802,
+  "lastUpdate": 1793456362821,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -33432,6 +33432,48 @@ window.BENCHMARK_DATA = {
             "value": 101.467042,
             "unit": "ms",
             "extra": "median of 5 runs: 100.845, 101.054, 101.467, 101.951, 102.264 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f381b6236f0654f2297d9d3565e9e81130d5aedd",
+          "message": "Title bar: pin that a theme's count fill sets the wash, and hold it in each tint (#3442, #4250) (#4251)\n\n* theme: hold that a title-bar count's fill is its wash, over the bar's ground (#3442)\n\nA theme's titlebar.count.fill already reaches the wash, the element a\nperson sees: the ground is a wrapper of its own that no part key\nreaches. These tests pin the two elements, the selector, and that the\ndigits are measured on the fill laid over the bar's ground.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme: hold a theme's own title-bar count in each tint that can move its ground (#4250)\n\nNo built-in recipe turns surface.deep, but a theme's own tint.tokens can, and a\ntint keeps a ground's luminance but not what shows through a see-through wash.\nDigits that read as written could fall under 4.5:1 in a tint. A theme that\ncolours the count now has it measured in each tint, and it falls to the default.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T13:54:16Z",
+          "tree_id": "dc5e4f48543c0a962bca25a7a71da935442ba74d",
+          "url": "https://github.com/purlis/purlis/commit/f381b6236f0654f2297d9d3565e9e81130d5aedd"
+        },
+        "date": 1793456359770,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.500247,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.496, 0.497, 0.500, 0.502, 0.517 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2730875,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.155, 16.226, 16.273, 16.350, 16.430 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.8659265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.532, 100.677, 100.866, 101.084, 102.742 ms"
           }
         ]
       }
