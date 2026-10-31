@@ -3127,7 +3127,10 @@ export const commands = {
 	 *  **The limits a start on `profile` was refused on, in the words `refused`** (spec #4275): what
 	 *  Start a chat offers beside that refusal. Asked of the core, never read from the words.
 	 */
-	poolLimitOffer: (profile: string, refused: string) => __TAURI_INVOKE<PoolLimitOffer | null>("pool_limit_offer", { profile, refused }),
+	poolLimitOffer: (profile: string, refused: string) => __TAURI_INVOKE<{
+	pool: string,
+	hits: PoolLimitHitRow[],
+} | null>("pool_limit_offer", { profile, refused }),
 	/**
 	 *  **Saves `value` as pool `pool`'s limit `key`** (spec #4275), the person's own press in their
 	 *  window: a chat has no way to it, and can only propose through the edit ask (Q6). It applies
@@ -10435,7 +10438,7 @@ export type PoolLimitHitRow = {
 /**  **What a refused start on a pool offers**: the pool, and each limit it was refused on. */
 export type PoolLimitOffer = {
 	pool: string,
-	hits: Array<PoolLimitHitRow>,
+	hits: PoolLimitHitRow[],
 };
 
 /**
