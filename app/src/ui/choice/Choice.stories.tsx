@@ -397,8 +397,17 @@ export const ChoicesBesideASmallButton: Story = {
  * at that square's corners.
  */
 function Unlabelled() {
+  // Far enough apart that one's square is not another's, and in from the page's edge, so each
+  // square's corners are on the page.
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--space-8)",
+        padding: "var(--space-8)",
+      }}
+    >
       <Checkbox aria-label="Choose the row" />
       <RadioGroup aria-label="Density" value="compact" onChange={() => {}}>
         <Radio value="compact" aria-label="Compact" />
