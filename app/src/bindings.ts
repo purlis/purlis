@@ -2035,6 +2035,12 @@ export const commands = {
 	 */
 	skillRouterChoose: (plane: PlaneId, by: SkillPinner, router: string | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_router_choose", { plane, by, router })),
 	/**
+	 *  **Lets a router read every prompt of the chats it routes, or stops it**, from the Routing page
+	 *  (ADR 0102 as amended 2026-10-31): this machine's record, and the person's own press in their
+	 *  window. Nothing else turns it on.
+	 */
+	skillRouterReadsPrompts: (plane: PlaneId, router: string, on: boolean) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_router_reads_prompts", { plane, router, on })),
+	/**
 	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
 	 *  owners, and the skills it names and that name it. Nothing while the flag is off.
 	 */
@@ -2075,6 +2081,19 @@ export const commands = {
 	 *  a skill" does, through the same start; its write comes back as a draft.
 	 */
 	skillTriggerTestsChat: (plane: PlaneId, level: SkillLevel, name: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_trigger_tests_chat", { plane, level, name, columns, rows })),
+	/**
+	 *  **"Ask a chat to write outcome evals"** (#2780; decision 43): a chat where `level`'s skills are
+	 *  reached from, with the core's prompt for the outcome evals of the skill `name` typed and never
+	 *  sent ([`drafts::asking_for_outcome_evals`]). Its write comes back as a draft.
+	 */
+	skillOutcomeEvalsChat: (plane: PlaneId, level: SkillLevel, name: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_outcome_evals_chat", { plane, level, name, columns, rows })),
+	/**
+	 *  **"Improve from runs"** (#2780; decision 59): a chat where `level`'s skills are reached from,
+	 *  with the core's prompt to read the recent runs and grades of the skill `name` and draft an edit
+	 *  typed and never sent ([`drafts::improving_from_runs`]). It never edits the skill: its write
+	 *  comes back as a draft.
+	 */
+	skillImproveChat: (plane: PlaneId, level: SkillLevel, name: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_improve_chat", { plane, level, name, columns, rows })),
 	/**
 	 *  **Try it** (decision 50): a scratch chat in a throwaway piece, armed with the built-in skills
 	 *  and the draft `id` alone, on `profile` (the project's default where none is picked), with the
@@ -2853,6 +2872,11 @@ export const commands = {
 	 */
 	startChat: (plane: PlaneId, profile: string, persona: string | null, cwd: string | null, name: string, label: string | null, boxes: Boxes, columns: number, rows: number) => typedError<Started, string>(__TAURI_INVOKE("start_chat", { plane, profile, persona, cwd, name, label, boxes, columns, rows })),
 	/**
+	 *  **The person pressed Cancel while a chat started in this project** (#4264): it stops waiting
+	 *  for the session host, and a chat that comes up after is closed.
+	 */
+	cancelChatStart: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("cancel_chat_start", { plane })),
+	/**
 	 *  The piece a chat's working directory sits in, or `None`.
 	 * 
 	 *  Called for every chat the sidebar draws. `worktree::locate` is path arithmetic and spawns
@@ -3052,7 +3076,8 @@ export const commands = {
 	 *  **Make the runner again** (#4149): the pool `name`'s runner, removed outside purlis, made
 	 *  again from the pool's own image and limits, with the sign-ins of its home where that is still
 	 *  there, and paired. The window then has it keep the pool's profiles, as after Add a pool. Refused for
-	 *  a runner Docker still has, which resumes as it is.
+	 *  a runner Docker still has, which resumes as it is. The chats of the runner it replaces do not
+	 *  exist on the new one, so the window's links to it end and each says it ended (#4168).
 	 */
 	dockerPoolMakeAgain: (name: string) => typedError<MadeAgain, string>(__TAURI_INVOKE("docker_pool_make_again", { name })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
@@ -3099,6 +3124,20 @@ export const commands = {
 	 */
 	poolProfileAdd: (pool: string, name: string, open: OpenProject) => typedError<null, string>(__TAURI_INVOKE("pool_profile_add", { pool, name, open })),
 	/**
+	 *  **The limits a start on `profile` was refused on, in the words `refused`** (spec #4275): what
+	 *  Start a chat offers beside that refusal. Asked of the core, never read from the words.
+	 */
+	poolLimitOffer: (profile: string, refused: string) => __TAURI_INVOKE<{
+	pool: string,
+	hits: PoolLimitHitRow[],
+} | null>("pool_limit_offer", { profile, refused }),
+	/**
+	 *  **Saves `value` as pool `pool`'s limit `key`** (spec #4275), the person's own press in their
+	 *  window: a chat has no way to it, and can only propose through the edit ask (Q6). It applies
+	 *  from the next attempt, with nothing restarted.
+	 */
+	poolLimitSet: (pool: string, key: string, value: number) => typedError<null, string>(__TAURI_INVOKE("pool_limit_set", { pool, key, value })),
+	/**
 	 *  **Takes profile `name` off pool `pool`** (#4047): its runner forgets it first, its folder
 	 *  and its sign-in there with it, then the pool's record leaves it out, starting from the
 	 *  open project `plane`'s default where it named none. A runner that could not forget it leaves
@@ -3116,7 +3155,7 @@ export const commands = {
 	 *  long as it runs: the redirect, and only that, is carried to the runner over a link of its own
 	 *  (`sign_in_redirect`, #4044). A sign-in of the same profile on the same pool already running is
 	 *  cancelled. Answers the sign-in's number. With `terminal`, where purlis could not follow the
-	 *  login, it runs in a terminal the runner makes, for the person to drive in the strip (#4043):
+	 *  login or the person asked for a device code (#4106), it runs in a terminal the runner makes, for the person to drive in the strip (#4043):
 	 *  what it prints is [`PoolSignInStep::Printed`], and what is typed goes back by
 	 *  [`pool_sign_in_type`]. A login that waits for the browser runs there by its harness's
 	 *  device-code flow, since nothing carries the browser's answer to that terminal (#4044).
@@ -8818,6 +8857,11 @@ export type MoveSignIn = {
 	kind: string,
 	/**  Its harness as people call it: `Claude Code`. */
 	harness: string,
+	/**
+	 *  The plans to choose from, where its harness serves several (#4181): a profile keeps none
+	 *  of its own, and a login approved in the browser is told by its plan.
+	 */
+	plans: PlanRow[],
 };
 
 /**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */
@@ -10388,6 +10432,26 @@ export type PoolDisk = {
 	not_listed: number,
 };
 
+/**  **A limit a start was refused on**, as Start a chat offers to raise it (spec #4275). */
+export type PoolLimitHitRow = {
+	/**  The limit's key: what [`pool_limit_set`] takes. */
+	key: string,
+	/**  Its name in plain words. */
+	plain: string,
+	/**  The word beside a number of it. */
+	unit: string,
+	in_force: number,
+	needed: number,
+	/**  The value offered, which the person can edit; none where no value would hold it. */
+	suggested: number | null,
+};
+
+/**  **What a refused start on a pool offers**: the pool, and each limit it was refused on. */
+export type PoolLimitOffer = {
+	pool: string,
+	hits: PoolLimitHitRow[],
+};
+
 /**
  *  A pool's limits, as a row draws them: the CPUs as typed (`2`, `1.5`), memory and `/tmp` in
  *  MiB.
@@ -10422,7 +10486,12 @@ export type PoolLink =
  *  it comes back, and the window offers Make the runner again. Whether its home volume, with
  *  its sign-ins, is still there for the runner made again to take them from.
  */
-{ state: "removed"; home_kept: boolean };
+{ state: "removed"; home_kept: boolean } | 
+/**
+ *  Docker points at another engine than the one that made it (#4166): its container may be
+ *  there still, so it is not said to be removed and Make the runner again is not offered.
+ */
+{ state: "on_another_engine" };
 
 /**  One of this machine's profiles, as a pool's runner stands with it. */
 export type PoolProfileRow = {
@@ -11700,6 +11769,12 @@ export type RouterGradePlan = {
 	/**  A grade running in this project now, where one is: a skill's or a router's. */
 	running: string | null,
 	/**
+	 *  **Whether its router's arm runs with its pointer** (SK-15k, #3619): true where the router
+	 *  reads prompts here, false where it could and the person has not turned that on, null
+	 *  where it reads none.
+	 */
+	pointer: boolean | null,
+	/**
 	 *  What pressing Grade consents to: what it grades, and the profile, model, cap and dollar
 	 *  limit this plan shows (`grades::consent_on`).
 	 */
@@ -12562,6 +12637,11 @@ export type SettingsEntry = {
 	keys: SettingsStep[],
 	/**  The Add form's values that would write it again, by the entry's key. */
 	values: EntryValue[],
+	/**
+	 *  Why a profile's icon fell back to its monogram (#3137), a sentence purlis wrote, never
+	 *  anything from the file. Optional in the window's type, as only a profile has one.
+	 */
+	icon_fell_back?: string | null,
 };
 
 /**  One value in a file, and where it is. */
@@ -13342,6 +13422,10 @@ export type SkillRouterOffer = {
 	id: string,
 	/**  Its name, as its manifest gives it. */
 	name: string,
+	/**  Whether its approval said it reads prompts, which only offers the person the switch. */
+	reads_prompts: boolean,
+	/**  Whether the person turned that on for it on this machine (ADR 0102 as amended 2026-10-31). */
+	prompts_on: boolean,
 };
 
 /**

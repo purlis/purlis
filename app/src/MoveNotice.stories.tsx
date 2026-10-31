@@ -11,7 +11,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ChatMove } from "./bindings";
-import { forgetMove, heardMove } from "./chatMoves";
+import { dismissMovedAfterSignIn, forgetMove, heardMove, movedAfterSignIn } from "./chatMoves";
 import { MoveNotice } from "./MoveNotice";
 
 const PLANE = "/home/op/project";
@@ -23,7 +23,7 @@ const WAITING: ChatMove = {
   stage: "signing-in",
   why: null,
   with: [],
-  sign_in: { profile: "work", kind: "claude", harness: "Claude Code" },
+  sign_in: { profile: "work", kind: "claude", harness: "Claude Code", plans: [] },
 };
 
 function Pane() {
@@ -54,12 +54,47 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** **The move went ahead after its sign-in** (#4135): its line, until it is dismissed. */
+export const MovedAfterASignIn: Story = {
+  beforeEach: () => {
+    heardMove(PLANE, { ...WAITING, stage: "switching", sign_in: null });
+    heardMove(PLANE, { ...WAITING, stage: "over", sign_in: null });
+    movedAfterSignIn(PLANE, 3, 3);
+    return () => dismissMovedAfterSignIn(PLANE, 3);
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByText("Moved to pool builds.");
+  },
+};
+
 /** **The move waits on work's sign-in on builds**: its line, with Sign in and Cancel move. */
 export const WaitsOnASignIn: Story = {
   play: async ({ canvas }) => {
     await canvas.findByText(/Moves to pool builds once work is signed in there/);
     await expect(canvas.getByRole("button", { name: "Sign in" })).toBeVisible();
     await expect(canvas.getByRole("button", { name: "Cancel move" })).toBeVisible();
+  },
+};
+
+/** **A harness that serves several plans** (#4181): which one is asked first, as on a pool's line. */
+export const WaitsOnAPlan: Story = {
+  beforeEach: () => {
+    heardMove(PLANE, {
+      ...WAITING,
+      sign_in: {
+        profile: "work",
+        kind: "opencode",
+        harness: "opencode",
+        plans: [
+          { id: "openai", title: "ChatGPT" },
+          { id: "github-copilot", title: "GitHub Copilot" },
+        ],
+      },
+    });
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByRole("button", { name: "Sign in to ChatGPT" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Sign in to GitHub Copilot" })).toBeVisible();
   },
 };
 

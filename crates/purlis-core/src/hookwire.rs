@@ -919,9 +919,10 @@ impl ChatTokens {
 
     /// Chat `chat`'s program `pid` has ended: its token and its program are forgotten, so a
     /// later process given the same number speaks for nothing. A program that is not the one
-    /// recorded (an end heard after the chat started again) changes nothing.
-    pub fn program_ended(&self, chat: u32, pid: u32) {
+    /// recorded (an end heard after the chat started again) changes nothing, and answers false.
+    pub fn program_ended(&self, chat: u32, pid: u32) -> bool {
         let mut roots = self.rooted();
+        let another = roots.get(&chat).is_some_and(|program| program.pid != pid);
         if roots.get(&chat).is_some_and(|program| program.pid == pid) {
             roots.remove(&chat);
             drop(roots);
@@ -929,6 +930,7 @@ impl ChatTokens {
             self.held().remove(&chat);
             self.disarm(chat);
         }
+        !another
     }
 
     /// [`Self::issue`], with this process recorded as the chat's program: for a test that
@@ -1546,6 +1548,33 @@ pub enum Ask {
     /// the window draws of the draft, or [`Answer::No`] with the refusal. No ticket, for a record's
     /// reason. Boxed: it carries the draft's theme files.
     ThemeDraft(Box<ThemeDraftAsk>),
+    /// **Which skills this prompt is pointed at** (SK-15c, ADR 0102 §3): what a chat's prompt
+    /// hook hands over where its start armed it with [`crate::skills::PROMPT_ROUTER_ENV`],
+    /// because the router its persona or workspace chose reads prompts. The app asks that router
+    /// within its 100 ms, about the skills the chat's list leaves out by its own record of the
+    /// chat whose token the line carries, writes the routing record, and answers
+    /// [`Answer::Pointed`]. **The prompt goes no further than that router**: never written,
+    /// never in a debug dump ([`PromptAsk`]). No ticket, for a record's reason.
+    Prompt(Box<PromptAsk>),
+}
+
+/// **A chat's prompt, for its router** ([`Ask::Prompt`], SK-15c).
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PromptAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// The prompt the person sent, as its hook read it.
+    pub prompt: String,
+}
+
+/// Its chat, and never its prompt: a debug dump of a line that holds one says nothing of it, as
+/// a prompt's marks say nothing (SK-38).
+impl std::fmt::Debug for PromptAsk {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PromptAsk")
+            .field("chat", &self.chat)
+            .finish_non_exhaustive()
+    }
 }
 
 /// **A chat's theme draft, started or saved** ([`Ask::ThemeDraft`], #2332).
@@ -2205,6 +2234,12 @@ pub enum Answer {
     /// Where the chat is working (#1450): names, tasks and states from the app's own record,
     /// and what changed since the chat was last told. Boxed: it is the largest answer.
     Working(Box<crate::awareness::Working>),
+    /// What a chat's router points its prompt at (SK-15c): the text its hook adds to the turn's
+    /// context, in purlis's own words, or none.
+    Pointed {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pointer: Option<String>,
+    },
     /// A task was dispatched (#1436): the persona chat is running, under this number on the
     /// app's board and this name, as `persona` (none for a chat on no persona). `note` is
     /// [`Self::Opened`]'s: something the asking chat should be told about how it was started,
@@ -2440,6 +2475,7 @@ impl Ask {
             Self::Browse(browse) => browse.chat,
             Self::ThemePreview(asks) => asks.chat,
             Self::ThemeDraft(draft) => draft.chat,
+            Self::Prompt(asked) => asked.chat,
         }
     }
 }

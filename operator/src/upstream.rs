@@ -93,6 +93,12 @@ pub const VOLUME_GROUP: i64 = 10001;
 /// The variable [`KEY_STEP`] reads its upstream claim's uid from (`purlis_core::runnerlink::CLAIM_VAR`).
 pub const CLAIM_VAR: &str = "PURLIS_CLAIM_UID";
 
+/// **The variable that marks a runner made to refuse any start outside the sandbox but a shell**
+/// (#4207, the person's ruling of 2026-10-31), set from the pod's birth on a Pool naming an App's key
+/// (`purlis_core::forge::mintport::MARK_VAR`). A pod's containers never change, so the operator can
+/// read that it has held since its first moment; nothing a runner says could tell it that.
+pub const MINTING_MARK: &str = "PURLIS_MINTING_POOL";
+
 /// What [`KEY_STEP`] runs, after the image's own entrypoint (`purlis`).
 pub fn key_step_args() -> Vec<String> {
     [
@@ -470,11 +476,19 @@ pub fn template_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -
         name: RUNNER_CONTAINER.to_owned(),
         image: Some(pool.spec.image.clone()),
         // Its home is on the kept volume (#2057); the first step made it from the image's.
-        env: Some(vec![EnvVar {
-            name: "HOME".to_owned(),
-            value: Some(RUNNER_HOME.to_owned()),
-            ..EnvVar::default()
-        }]),
+        env: Some(
+            std::iter::once(EnvVar {
+                name: "HOME".to_owned(),
+                value: Some(RUNNER_HOME.to_owned()),
+                ..EnvVar::default()
+            })
+            .chain(pool.spec.forge.is_some().then(|| EnvVar {
+                name: MINTING_MARK.to_owned(),
+                value: Some("1".to_owned()),
+                ..EnvVar::default()
+            }))
+            .collect(),
+        ),
         volume_mounts: mounts(),
         resources: Some(requests(RUNNER_REQUESTS)),
         security_context: Some(confined()),

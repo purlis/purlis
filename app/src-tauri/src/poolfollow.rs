@@ -44,7 +44,13 @@ pub fn watch<R: Runtime>(app: &tauri::AppHandle<R>) {
         tokio::time::sleep(purlis_core::updates::FIRST_CHECK_AFTER).await;
         loop {
             look(&app, &config).await;
-            tokio::time::sleep(purlis_core::updates::CHECK_EVERY).await;
+            // A runner that drains goes soon after its last chat ends, not at the next look for
+            // a new version (#4248): this asks only the runner, never the network.
+            let until = std::time::Instant::now() + purlis_core::updates::CHECK_EVERY;
+            while std::time::Instant::now() < until {
+                tokio::time::sleep(DRAINS_LOOKED_AT_EVERY).await;
+                drained(&app, &config).await;
+            }
         }
     });
 }
@@ -52,6 +58,35 @@ pub fn watch<R: Runtime>(app: &tauri::AppHandle<R>) {
 /// Not on this platform: the Docker pool runs on macOS and Linux alone.
 #[cfg(not(unix))]
 pub fn watch<R: tauri::Runtime>(_app: &tauri::AppHandle<R>) {}
+
+/// How often each draining runner is asked whether its last chat has ended.
+#[cfg(unix)]
+const DRAINS_LOOKED_AT_EVERY: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// Each draining runner with no chat left goes; nothing else is looked at.
+#[cfg(unix)]
+async fn drained<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path) {
+    if purlis_core::runners::draining(config).is_ok_and(|draining| draining.is_empty()) {
+        return;
+    }
+    let looked_in = config.to_path_buf();
+    let done = crate::off_the_window("removing runners that have drained", move || {
+        let machine = Machine::here(&looked_in)?;
+        Ok::<_, String>(follow_and_drain(&machine, None, &|to| {
+            crate::runnerlinks::chats_on(to)
+        }))
+    })
+    .await;
+    links_to_gone_runners_end(app, config);
+    match done {
+        Ok(said) => {
+            for line in said {
+                tracing::warn!("purlis: {line}");
+            }
+        }
+        Err(why) => tracing::warn!("purlis: the draining runners were not looked at: {why}"),
+    }
+}
 
 /// One look: this version's runner image, then each pool and each draining runner.
 #[cfg(unix)]
@@ -72,9 +107,9 @@ async fn look<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path) {
             None
         }
     };
-    let config = config.to_path_buf();
+    let looked_in = config.to_path_buf();
     let done = crate::off_the_window("moving pools to this version", move || {
-        let machine = Machine::here(&config)?;
+        let machine = Machine::here(&looked_in)?;
         Ok::<_, String>(follow_and_drain(&machine, image.as_ref(), &|to| {
             crate::runnerlinks::chats_on(to)
         }))
@@ -87,6 +122,15 @@ async fn look<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path) {
             }
         }
         Err(why) => tracing::warn!("purlis: the pools could not be moved to this version: {why}"),
+    }
+    links_to_gone_runners_end(app, config);
+}
+
+/// The window's links to a runner kept no more end, so its chats say they ended (#4168).
+#[cfg(unix)]
+fn links_to_gone_runners_end<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path) {
+    if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(app) {
+        host.connection().links_to_gone_runners_end(config);
     }
 }
 
@@ -321,6 +365,40 @@ pub fn follow_and_drain(
         }
     }
     for kept in purlis_core::runners::draining(&machine.config).unwrap_or_default() {
+        // Removed on the word of the engine that made it (#4168), it holds no chat and cannot be
+        // asked. A runner kept before its engine was has no such word: it stays as below.
+        if kept.engine.is_some()
+            && matches!(
+                machine.docker.missing(&kept.made, kept.engine.as_deref()),
+                Ok(Some(purlis_core::dockerpool::Missing::Removed(_)))
+            )
+        {
+            lock_waiting().remove(&(
+                machine.config.clone(),
+                kept.pool().to_owned(),
+                kept.name().to_owned(),
+            ));
+            said.push(
+                match purlis_core::pools::drain_removed(
+                    &machine.config,
+                    &machine.docker,
+                    kept.name(),
+                ) {
+                    Ok(removed) => match removed.left() {
+                        None => format!(
+                            "draining runner {} was removed outside purlis, so it is forgotten \
+                             and its chats ended with it",
+                            kept.name()
+                        ),
+                        Some(left) => {
+                            format!("draining runner {} is not all removed: {left}", kept.name())
+                        }
+                    },
+                    Err(why) => format!("draining runner {} was not removed: {why}", kept.name()),
+                },
+            );
+            continue;
+        }
         let to = match ToARunner::of_kept(machine, &kept) {
             Ok(to) => to,
             Err(why) => {

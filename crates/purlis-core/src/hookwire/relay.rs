@@ -367,6 +367,8 @@ pub struct Relaying {
     /// What runs a `secret exec` here on the values the window sent: the brokered run, or a
     /// test's stand-in for it.
     runs_handed: hosted::RunsHanded,
+    /// What a minting tool's run asks of the cluster first (#4207).
+    in_cluster: hosted::InCluster,
     /// The window's socket each slot a chat's server dials in is handed on over (#3316), where
     /// it was told one; none, and every slot is refused.
     slots_to: Mutex<Option<std::path::PathBuf>>,
@@ -419,6 +421,7 @@ impl Relaying {
             root: Mutex::default(),
             waiting_lines: Mutex::default(),
             runs_handed: Arc::new(brokered::serve_handed),
+            in_cluster: Arc::new(hosted::in_cluster),
             slots_to: Mutex::default(),
         })
     }

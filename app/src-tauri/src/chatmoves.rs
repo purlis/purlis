@@ -105,6 +105,20 @@ pub(crate) struct MoveSignIn {
     pub(crate) kind: String,
     /// Its harness as people call it: `Claude Code`.
     pub(crate) harness: String,
+    /// The plans to choose from, where its harness serves several (#4181): a profile keeps none
+    /// of its own, and a login approved in the browser is told by its plan.
+    pub(crate) plans: Vec<crate::machineprofiles::PlanRow>,
+}
+
+impl MoveSignIn {
+    fn of(asked: &SignInAsked) -> Self {
+        Self {
+            profile: asked.profile.clone(),
+            kind: asked.kind.clone(),
+            harness: asked.harness.clone(),
+            plans: crate::machineprofiles::PlanRow::of_harness(&asked.kind),
+        }
+    }
 }
 
 impl ChatMove {
@@ -117,11 +131,7 @@ impl ChatMove {
             Stage::Failed(why) => ("failed", Some(why.clone())),
         };
         let sign_in = match &one.stage {
-            Stage::SigningIn(asked) => Some(MoveSignIn {
-                profile: asked.profile.clone(),
-                kind: asked.kind.clone(),
-                harness: asked.harness.clone(),
-            }),
+            Stage::SigningIn(asked) => Some(MoveSignIn::of(asked)),
             _ => None,
         };
         ChatMove {

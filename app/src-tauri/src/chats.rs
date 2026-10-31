@@ -205,7 +205,7 @@ pub struct ChatRouted {
     pub session: u32,
     pub workspace: Option<String>,
     pub persona: Option<String>,
-    pub routed: purlis_core::skills::router::Routed,
+    pub routed: std::sync::Arc<purlis_core::skills::router::Routed>,
 }
 
 /// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
@@ -1455,6 +1455,32 @@ impl Chats {
                 as Arc<dyn crate::poolprofiles::ProfilesOnPools>
         });
         self.pools_in = config;
+    }
+
+    /// **A runner's refusal of a signed-out profile, in its pool's words** (#4233): a start let
+    /// through while the runner fetched its harness is refused by the runner as a machine of its
+    /// own, whose words send the person to sign in on the wrong one. The row is asked again, which
+    /// raises the pool's own wait; any other refusal is as it was said.
+    fn in_the_pools_words(
+        &self,
+        why: String,
+        profile: Option<&str>,
+        workspace: Option<&str>,
+    ) -> String {
+        if !purlis_core::profilestore::sign_in::is_refusal(&why) {
+            return why;
+        }
+        let (Some(on_pools), Some(profile), Some(pool)) = (
+            &self.profiles_on_pools,
+            profile,
+            self.sessions.pool_for(workspace),
+        ) else {
+            return why;
+        };
+        match on_pools.ready(&self.project, &pool, profile) {
+            Err(words) => words,
+            Ok(_) => purlis_core::profilestore::onrunner::signed_out_on_the_runner(&pool, profile),
+        }
     }
 
     /// Readies each chat's profile on the pool it starts on through `on_pools` (#2049).
@@ -3650,14 +3676,13 @@ impl Chats {
         }
         // **Its profile is kept, and signed in, on the pool's runner before it starts there**
         // (#2049): signed in, it starts with nobody asked, a moved chat's too; signed out, it
-        // starts nothing and waits as one Ask to sign it in on that pool. Settings too large to
-        // go stay behind, and its tab says which (#4081).
-        let mut left_behind = None;
+        // starts nothing and waits as one Ask to sign it in on that pool. Settings over the pool's
+        // limits start nothing either, and say what to raise (spec #4275).
         if on_the_runner
             && let (Some(on_pools), Some(profile)) = (&self.profiles_on_pools, &chat.profile)
             && let Some(pool) = self.sessions.pool_for(workspace.as_deref())
         {
-            left_behind = on_pools.ready(&self.project, &pool, profile)?;
+            on_pools.ready(&self.project, &pool, profile)?;
         }
         // The services of this machine the person allowed it alone, which the runner is told
         // of: it leaves out those its own sandbox does not give, and asks about each (#2590).
@@ -3766,7 +3791,7 @@ impl Chats {
                 why == Why::New,
             )
         };
-        let mut late: Vec<String> = left_behind.into_iter().collect();
+        let mut late: Vec<String> = Vec::new();
         // An older Claude Code keeps its own proxy, and its first chat says so (#1665), marked
         // said once its tab shows it (#1699).
         let older = sandbox
@@ -4346,6 +4371,9 @@ impl Chats {
                     confinement = composed.confinement;
                     prompt_key = composed.prompt_key;
                     composed.number
+                })
+                .map_err(|why| {
+                    self.in_the_pools_words(why, chat.profile.as_deref(), workspace.as_deref())
                 }),
             _ => self.sessions.open(
                 // The number this chat already answers to, where it has one. A chat put
@@ -4427,7 +4455,7 @@ impl Chats {
             // How this start routed its skills (#3578): what its record keeps, and what a later
             // reattach of it routes by. A runner's chat is armed by its runner, so none (#3604).
             routing: (!armed_by_its_runner)
-                .then(|| purlis_core::skills::router::Kept::of(skills.routed.as_ref())),
+                .then(|| purlis_core::skills::router::Kept::of(skills.routed.as_deref())),
             ..chat.clone()
         };
         // What a start says on its tab was said at the start it reattached to (#2006); what
@@ -4463,6 +4491,13 @@ impl Chats {
         // A runner chat's workspace clones as it starts (#2053), read before any lock is taken.
         let mut clones_at_start = (on_the_runner && !reattaching)
             .then(|| purlis_core::forge::apptoken::clones_now(&self.project));
+        #[cfg(unix)]
+        self.puts_its_repos_on_its_claim(
+            session,
+            workspace.as_deref(),
+            under.cwd.as_deref(),
+            clones_at_start.as_deref(),
+        );
         // A start under this number has been told nothing yet (#1450).
         lock(&self.told).remove(&session);
         lock(&self.starting_as).remove(&session);
@@ -5444,6 +5479,28 @@ impl Chats {
         })
     }
 
+    /// **What chat `session`'s router points `prompt` at** (SK-15c, ADR 0102 §3): asked where its
+    /// start chose a router that reads prompts and its list leaves skills out, within the
+    /// router's 100 ms, of those skills alone; the routing record told as a start's is. The text
+    /// its prompt hook adds to the turn, or `None`. The prompt is handed to that router and kept
+    /// nowhere.
+    pub fn pointed(&self, session: u32, prompt: &str) -> Option<String> {
+        // Taken out of the lock before the router is asked, which may take its 100 ms. A chat a
+        // runner's host composed is routed there, never by this machine's router.
+        let routed = lock(&self.open)
+            .get(&session)
+            .filter(|running| !running.composed_by_its_host)?
+            .skills_read
+            .routed
+            .clone()?;
+        let router = lock(&self.router).clone()?;
+        let prompted = routed.on_prompt(prompt, &router)?;
+        if let Some(tell) = lock(&self.routed).as_ref() {
+            tell(session, &prompted.record);
+        }
+        prompted.pointer
+    }
+
     /// **Every chat open here that its start routed by a router extension** (SK-15b), by number,
     /// with where it works and as whom: what the Skill studio shows of the router's timings.
     pub fn routings(&self) -> Vec<ChatRouted> {
@@ -5613,6 +5670,61 @@ impl Chats {
             },
             &device,
         );
+    }
+
+    /// **Puts the repos of the workspace chat `session` is sent with on its runner's Claim** (#4207):
+    /// off the chat's start, and only for a pool that opted in: a chat on any other pool, or one
+    /// this machine does not keep, sends nothing and reads no clone for it. A mint asked before they
+    /// arrive goes to the person, or covers what the Claim named by then, till its token is minted
+    /// again.
+    #[cfg(unix)]
+    fn puts_its_repos_on_its_claim(
+        &self,
+        session: u32,
+        workspace: Option<&str>,
+        folder: Option<&std::path::Path>,
+        clones: Option<&[purlis_core::forge::apptoken::Started]>,
+    ) {
+        let (Some(config), Some(clones)) = (&self.pools_in, clones) else {
+            return;
+        };
+        let Ok(Some(pool)) = purlis_core::pools::runs_on(config, &self.project, workspace) else {
+            return;
+        };
+        let (config, root, folder, clones) = (
+            config.clone(),
+            self.project.clone(),
+            folder.map(std::path::Path::to_path_buf),
+            clones.to_vec(),
+        );
+        let sent = std::thread::Builder::new()
+            .name("purlis-claim-repos".to_owned())
+            .spawn(move || {
+                let record = purlis_core::forge::apptoken::record_root();
+                let repos = || {
+                    purlis_core::forge::apptoken::repos_of_workspace(
+                        &purlis_core::forge::apptoken::For {
+                            root: &root,
+                            chat: session,
+                            folder: folder.as_deref(),
+                            here: None,
+                            writes: &[],
+                            started: Some(&clones),
+                            on_a_runner: true,
+                            config_root: record.as_deref(),
+                            ends_seen: None,
+                        },
+                    )
+                };
+                if let Err(why) = purlis_core::pools::add_repos_to_claim(&config, &pool, repos) {
+                    tracing::warn!(
+                        "purlis: the repos of a chat on pool {pool} did not reach its claim: {why}"
+                    );
+                }
+            });
+        if let Err(why) = sent {
+            tracing::warn!("purlis: a chat's repos did not reach its claim: {why}");
+        }
     }
 
     /// **Runner chat `session`'s workspace clones as its session started here** (#2053): `None`

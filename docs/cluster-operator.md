@@ -672,7 +672,8 @@ it holds, but for the one Role below where the chart names a key:
 
 It holds no right to `exec`, `attach` or port-forward to a pod itself, and in that ClusterRole
 none to read a Secret. Beside it, only where the chart's `forge.keySecretNames` names any, the
-Role `purlis-forge-key-reader` in the operator's own namespace gives it `get` on those Secrets
+Role `purlis-forge-key-reader` in the operator's own namespace gives it `get` on the Service
+`purlis-cluster-operator-mint`, whose address a Claim's status says, and on those Secrets
 alone ([below](#minting-github-app-tokens-in-the-cluster)).
 It binds one cluster role, `purlis-runner-owner`, only to one person, only in runner namespaces:
 RBAC cannot say where a role may be bound, so the policy on runner namespaces (above) holds it.
@@ -775,8 +776,11 @@ spec:
   keys the operator vouches for. Taking `spec.forge` off a Pool asks nothing. A wildcard RBAC rule
   on `runners.purlis.dev` holds every key. The right is asked as a Pool is written: revoking it stops
   further writes, and to stop a Pool already written, change or delete the Pool.
-- **`Claim.spec.forge.repos`** will name the repos of the workspace the desktop sends (#4207), each
-  exactly `owner/name`: a wildcard is refused at admission. Only the Claim's `requester` may change
+- **`Claim.spec.forge.repos`** names the repos of the workspaces the desktop sends, each exactly
+  `owner/name`: a wildcard is refused at admission. As a chat starts on the runner the desktop adds
+  the github.com repos of that chat's workspace, as who the kubeconfig signs in as, and the runner's
+  other chats keep theirs: **a token covers every repo on the Claim that the Pool allows, whichever
+  chat asks.** Only the Claim's `requester` may change
   it, while they may `use` its Pool, as the policy holds. Someone else who may patch claims in the
   namespace cannot.
 - **A Pool never names `purlis-cluster-operator-signing-key`**, and neither do the chart's values.
@@ -831,6 +835,47 @@ statuses: keep branch rules and environments in mind when you list repos. A toke
 It is not stored, and nothing about it is written to the API server. The operator's log has every
 mint (who, which pool and App, the repos, the permission names, the expiry) and every refusal, with
 no token and no key in it.
+
+### What the opt-in means
+
+**Anyone who may use the Pool, by name, can use its listed repos through it, with no one asked each
+time.** On a
+Pool that opts in, a chat's GitHub App tool (`mint = "github-app"`, whose App is the Secret's) gets
+its token from the operator, not the desktop, and the person is not asked about that run: the admin's
+opt-in stands as consent (ruled on #3807), and the operator's log is the record of each mint. This
+holds for such tools alone. Any other tool's vault value still comes from the desktop, with its Ask.
+
+- **On a Pool that does not opt in nothing changes:** the run needs the desktop and the person's Ask.
+- **A refused mint is not the end of the run, and never a token by itself.** The chat is told the
+  operator's words, and the run goes to the desktop, which gates it and asks the person as on any
+  other pool. With the desktop away, it waits as such a run does.
+- **What a run is held to on the runner is what its chat's start was armed with.** The desktop's
+  gate is not asked: a tool line or vault tag taken away reaches a chat as it starts again. A token
+  is kept about 50 minutes for a chat's next runs, so a right revoked stops the next mint, not one
+  already out.
+- **A chat here runs only inside purlis's sandbox.** A runner of a Pool that names an App's key is made
+  with the variable `PURLIS_MINTING_POOL`, and from its first moment its host refuses any start outside
+  the sandbox, saying why, a terminal shell the person opens alone being allowed. The operator mints only
+  for a pod made with it. **Naming a key on a Pool changes its runners' template, as changing its image
+  does: a runner made before gets no token and is no longer vouched for, so claim a new one.**
+- **The token stays in the runner's memory**, and goes when its chat ends: the runner revokes it
+  with GitHub. A revoke that fails, or a runner stopped first, leaves it to expire within its hour.
+
+### Where a runner asks
+
+**`Claim.status.mint`** holds `address` (the port as `<cluster IP>:8443`) and `operatorKey` (spelled
+as a Pool's `signingKey`), only for a runner the operator vouches for on a Pool that opts in. As the
+desktop pairs its runner it takes the address, and tells the runner the key it pinned when it added the
+pool, whatever key the status names. A status naming another address only fails the runner's handshake. The runner keeps them in
+[`mint-port.json`](plane-format.md) in its session host's folder, so it needs no way to the
+Kubernetes API.
+
+**The runner follows a roll of the signing key by itself.** The port's TLS shows the current key
+alone. `POST /forge/next-key` answers, during a roll, the same next key and word from the current
+key as every Pool's status holds, and a runner holding the current key checks that word as a desktop
+does, then holds both till the port shows the next. It looks about hourly and before a mint. A runner paired while its desktop has already moved to the next key has its mints go to the desktop until the port shows that key. **A
+runner that was stopped through the whole roll, past the old key's removal, does not follow it:** its
+mints are refused and go to its desktop until a new runner is claimed.
 
 ## Tests
 

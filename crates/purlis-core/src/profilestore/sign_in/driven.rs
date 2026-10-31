@@ -21,7 +21,7 @@
 //! and reads `code#state` lines; opencode's 1.18.33 Copilot `auth login`, a device code
 //! ([`Event::DeviceCode`], #4045); and Codex's 0.163.0 `login` and opencode's 1.18.33 ChatGPT
 //! `auth login`, which print their page and wait for the browser's answer on their own port
-//! ([`Event::Approve`], #4044). [`drive`] runs a [`Login`] and feeds it to a [`Driven`].
+//! ([`Event::Approve`], #4044). [`drive_with`] runs a [`Login`] and feeds it to a [`Driven`].
 //!
 //! **A device code goes with its page.** Both are said together, once the login has printed both,
 //! for whoever drives it to show the code before any browser opens, the page on the vendor's own
@@ -938,19 +938,10 @@ impl Forwarding {
 /// What is passed to a login, shared with what reads it, which answers its one question.
 type Input = Arc<Mutex<Option<ChildStdin>>>;
 
-/// **Runs `login` and drives it** as a login of harness `kind`, asking `check` for its status
-/// once it ends well. Refused for a harness purlis does not follow, and a login that cannot
-/// be run.
-pub fn drive(
-    login: &Login,
-    kind: &str,
-    check: impl FnOnce() -> Standing + Send + 'static,
-) -> Result<Driving, String> {
-    drive_with(login, kind, None, None, check)
-}
-
-/// [`drive`], of a login to `plan` where its harness serves several, with `carry` to take the
-/// browser's answer to a login that waits for it: one with no way to is refused.
+/// **Runs `login` and drives it** as a login of harness `kind`, to `plan` where it serves several,
+/// asking `check` for its status once it ends well, with `carry` to take the browser's answer to a
+/// login that waits for it. Refused for a login purlis does not follow, one that waits for the
+/// browser with no way to carry its answer, and one that cannot be run.
 pub fn drive_with(
     login: &Login,
     kind: &str,
@@ -1266,6 +1257,7 @@ impl Driving {
     /// [`UNDRIVEN_AFTER`]; `None` while there is none yet. After the last step, a driver that
     /// stopped telling says it failed.
     pub fn next(&self, within: Duration) -> Option<Event> {
+        debug_assert!(within < UNDRIVEN_AFTER, "a driver asks often enough");
         *self.asked.lock().unwrap_or_else(PoisonError::into_inner) = Instant::now();
         let events = self.events.lock().unwrap_or_else(PoisonError::into_inner);
         let event = events.recv_timeout(within);

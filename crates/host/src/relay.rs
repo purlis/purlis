@@ -49,8 +49,8 @@
 //! of that name ([`taken_back_as`]), the same after the window restarts, so the runner names the
 //! window that comes back its chats again; a link that names itself otherwise, or not at all, is
 //! given a name of its own and gets none of them. The name is never sent on, and never said: the
-//! other host hears only the digest. While a client link holds a name no other link takes it,
-//! and a link names itself before anything is sent on it, or not at all.
+//! other host hears only the digest. While a client link holds a name on a runner no other link
+//! takes it there, and a link names itself before anything is sent on it, or not at all.
 //!
 //! **Code is relayed for the window alone** (1.34, #2046): `take_code` and `give_code` are sent
 //! on for a `local-ui` client, and the code stream the other host opens for one is joined to a
@@ -168,8 +168,8 @@ type Named = Arc<Mutex<HashMap<u64, String>>>;
 
 /// **The window each client link of a host's relays is named, by the client link's number**
 /// (#2744): one for the whole host, shared by every relay its links make
-/// ([`Relay::claiming`]), so while one link holds a window's name, no link of another relay of
-/// the same host takes it. A link's name ends with it.
+/// ([`Relay::claiming`]), so while one link holds a window's name on a runner, no link of another
+/// relay of the same host takes it there. A link's name ends with it. Each is kept with its runner.
 pub type Claimed = Arc<Mutex<HashMap<u64, String>>>;
 
 /// Relays every client link's commands to the other host its links reach. A clone is the same
@@ -180,6 +180,8 @@ pub struct Relay {
     links: ByLink,
     named: Named,
     claimed: Claimed,
+    /// The runner this relay's names are held on ([`Relay::claiming`]).
+    claims_on: String,
     /// What each new link to the other host sends first while this host is stopped (#2051).
     stop_first: Option<crate::reach::StopFirst>,
 }
@@ -219,6 +221,7 @@ impl Relay {
             links: Arc::default(),
             named: Arc::default(),
             claimed: Arc::default(),
+            claims_on: String::new(),
             stop_first: None,
         }
     }
@@ -232,8 +235,14 @@ impl Relay {
 
     /// This relay, holding the names its client links take in `claimed`, which other relays of
     /// the same host share (#2744): a name another of their links holds is refused here too.
-    pub fn claiming(mut self, claimed: Claimed) -> Relay {
+    ///
+    /// **A name is held per runner** (#4248): the runner each link reaches, `runner`, is what its
+    /// name takes back chats on, so a window's link to a draining runner and its link to the
+    /// pool's runner now share the one name the window keeps, and two links never hold it on one
+    /// runner.
+    pub fn claiming(mut self, claimed: Claimed, runner: &str) -> Relay {
         self.claimed = claimed;
+        self.claims_on = runner.to_owned();
         self
     }
 
@@ -281,6 +290,7 @@ impl Relay {
                     .into(),
             });
         }
+        let claim = format!("{} {window}", self.claims_on);
         let mut claimed = lock(&self.claimed);
         let held = links
             .values()
@@ -288,14 +298,14 @@ impl Relay {
             || named.values().any(|other| *other == window)
             || claimed
                 .iter()
-                .any(|(link, other)| *link != peer.link() && *other == window);
+                .any(|(link, other)| *link != peer.link() && *other == claim);
         if held {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
                 why: "another window's link holds this name now".into(),
             });
         }
-        claimed.insert(peer.link(), window.clone());
+        claimed.insert(peer.link(), claim);
         named.insert(peer.link(), window);
         // A link that ended meanwhile holds no name: its end may already have been dealt with,
         // and would not let go of one taken after it.
@@ -1232,6 +1242,8 @@ async fn push_on(
             // Whether the link to the other host is up, and which projects it holds for the
             // client, is this host's to say, never the other host's (#2496, #2645).
             Pushed::LinkDown { .. } | Pushed::LinkBack {} | Pushed::NotHeld { .. } => {}
+            // No host pushes these to a link between hosts (`Power::RunGrade`, `Power::AskGrade`).
+            Pushed::GradeAsked { .. } | Pushed::StopGrade { .. } | Pushed::GradeStep { .. } => {}
             pushed => client.tell(pushed).await,
         }
     }
@@ -1369,6 +1381,17 @@ impl session::Host for Relay {
                 why: "every chat is stopped by the kill switch; nothing starts on a runner until \
                       it is re-armed in purlis's window"
                     .into(),
+            });
+        }
+        // A grade a terminal asks for runs in the window on this machine: no link carries it.
+        if matches!(command.power(), Power::AskGrade | Power::RunGrade) {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: format!(
+                    "`{}` is between a terminal and the window on one host, and is relayed to no \
+                     other",
+                    command.word()
+                ),
             });
         }
         if the_windows_alone(&command) && peer.scope() != Scope::LocalUi {

@@ -6,8 +6,9 @@
 
 use purlis_session_protocol::link::MOST_CONTROL_FRAME_BYTES;
 use purlis_session_protocol::session::{
-    Command, MOST_PROFILE_SETTINGS_BYTES, MOST_PROFILE_SETTINGS_FILES, SettingsBatch, SettingsFile,
-    SettingsPiece, StagedSettings, settings_in_batches,
+    Command, MOST_PROFILE_SETTINGS_FILES, MOST_PROFILE_SETTINGS_STAGED_BYTES,
+    MOST_PROFILE_SETTINGS_STAGED_FILES, SettingsBatch, SettingsFile, SettingsPiece, StagedSettings,
+    settings_in_batches,
 };
 
 fn file(path: &str, size: usize) -> SettingsFile {
@@ -103,7 +104,7 @@ fn a_file_twice_or_a_piece_of_no_file_begun_is_refused() {
 /// **What a link holds is held to the limits as it arrives**, in pieces as in files.
 #[test]
 fn what_a_link_stages_is_held_to_the_limits_as_it_arrives() {
-    let mut pieces: Vec<_> = (0..=MOST_PROFILE_SETTINGS_FILES)
+    let mut pieces: Vec<_> = (0..=MOST_PROFILE_SETTINGS_STAGED_FILES)
         .map(|one| piece(&format!("agents/{one}.md"), false, b""))
         .collect();
     let over_in_files = staged(vec![batch(std::mem::take(&mut pieces))]);
@@ -114,7 +115,7 @@ fn what_a_link_stages_is_held_to_the_limits_as_it_arrives() {
     stage
         .add(batch(vec![piece("agents/a.md", false, &chunk)]))
         .unwrap();
-    let over = (1..=MOST_PROFILE_SETTINGS_BYTES / chunk.len()).find_map(|_| {
+    let over = (1..=MOST_PROFILE_SETTINGS_STAGED_BYTES / chunk.len()).find_map(|_| {
         stage
             .add(batch(vec![piece("agents/a.md", true, &chunk)]))
             .err()

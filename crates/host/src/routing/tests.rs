@@ -546,3 +546,39 @@ async fn a_runner_removed_outside_purlis_is_refused_in_plain_words_and_not_tried
     let asked = checks.load(std::sync::atomic::Ordering::SeqCst);
     assert!(asked <= 7, "the check was asked {asked} times");
 }
+
+/// **A window's name is held once on each runner** (#4248): its link to a draining runner and its
+/// link to the pool's runner now share the one name it keeps, and a second link to either runner
+/// under that name is refused while the first holds it.
+#[tokio::test]
+async fn one_name_is_held_once_on_each_runner() {
+    let (a, _b) = a_desktop(Kept::pinned);
+    let name = purlis_session_protocol::browsing::Secret::new("ef".repeat(16));
+    let named_to = |runner: &'static str| {
+        let (a, name) = (a.clone(), name.clone());
+        async move {
+            let link = routed(Scope::LocalUi, a).await;
+            link.call(Command::NameWindow { name }).await.unwrap();
+            let relayed = tokio::time::timeout(PATIENCE, link.relay_to(runner))
+                .await
+                .unwrap();
+            (link, relayed)
+        }
+    };
+    let held = |relayed: &Result<Option<String>, CallError>| {
+        relayed
+            .as_ref()
+            .err()
+            .is_some_and(|why| code(why) == Some(session::NOT_ALLOWED))
+    };
+
+    let (_old, relayed) = named_to("builds/old").await;
+    relayed.expect("the draining runner takes the name");
+    let (_now, relayed) = named_to("builds").await;
+    relayed.expect("the pool's runner takes it too");
+
+    let (_again, relayed) = named_to("builds").await;
+    assert!(held(&relayed), "{relayed:?}");
+    let (_again, relayed) = named_to("builds/old").await;
+    assert!(held(&relayed), "{relayed:?}");
+}

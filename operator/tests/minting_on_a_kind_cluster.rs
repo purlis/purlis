@@ -9,7 +9,8 @@
 //! The runner's link key is read out of its pod, as only the cluster's admin could, and the proof
 //! is made with it here: `openssl` does the X25519 agreement with a key that already exists. The
 //! requests go through `curl`, pinned to the signing key every Pool's status names, as a runner
-//! will pin it.
+//! does. Then the runner image's own client asks from inside its pod (#4207). What runs a chat's
+//! tool on that token is tested apart, and a token's revoke goes to GitHub, not this stand-in.
 
 use base64::Engine as _;
 use k8s_openapi::api::core::v1::{Pod, Secret};
@@ -39,6 +40,8 @@ const WRITER: &str = "e2e-mint-writer";
 const NAMESPACE: &str = "e2e-mint";
 const POOL: &str = "e2e-mint";
 const CLAIM: &str = "e2e-mint";
+/// A Pool and Claim made before the Pool names a key.
+const EARLIER: &str = "e2e-mint-earlier";
 const TOKEN: &str = "e2e-token-minted-for-the-kind-job";
 const FORWARDED: u16 = 18443;
 
@@ -342,6 +345,24 @@ fn exec(namespace: &str, pod: &str, container: &str, command: &[&str]) -> std::p
         .expect("kubectl")
 }
 
+/// [`exec`], `input` on its standard input.
+fn exec_fed(namespace: &str, pod: &str, command: &[&str], input: &str) -> std::process::Output {
+    let mut run = Command::new("kubectl")
+        .args(["-n", namespace, "exec", "-i", pod, "-c", "runner", "--"])
+        .args(command)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("kubectl");
+    run.stdin
+        .take()
+        .expect("its input")
+        .write_all(input.as_bytes())
+        .expect("written");
+    run.wait_with_output().expect("kubectl")
+}
+
 async fn apply_rbac(client: &Client, body: Value) {
     let kind = body["kind"].as_str().expect("a kind").to_owned();
     let resource = kube::api::ApiResource {
@@ -433,9 +454,10 @@ async fn clean(client: &Client) {
         .delete(CLAIM, &params)
         .await;
     let _ = Api::<Claim>::namespaced(client.clone(), NAMESPACE)
-        .delete("e2e-mint-unvouched", &params)
+        .delete(EARLIER, &params)
         .await;
     let claims = Api::<Claim>::namespaced(client.clone(), NAMESPACE);
+    let _ = claims.delete("e2e-mint-unvouched", &params).await;
     eventually("the claims to go", Duration::from_secs(120), || {
         let claims = claims.clone();
         async move {
@@ -450,10 +472,16 @@ async fn clean(client: &Client) {
     .await;
     let pools = Api::<Pool>::all(client.clone());
     let _ = pools.delete(POOL, &params).await;
+    let _ = pools.delete(EARLIER, &params).await;
     let _ = Api::<Secret>::namespaced(client.clone(), OPERATOR_NS)
         .delete(KEY_SECRET, &params)
         .await;
-    for name in ["e2e-mint-pool-writer", "e2e-mint-key", "e2e-mint-use"] {
+    for name in [
+        "e2e-mint-pool-writer",
+        "e2e-mint-key",
+        "e2e-mint-use",
+        "e2e-mint-use-earlier",
+    ] {
         revoke(client, name).await;
     }
     let _ = Api::<k8s_openapi::api::core::v1::Namespace>::all(client.clone())
@@ -781,6 +809,89 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
         assert_eq!(claims["iss"], APP);
     }
 
+    // **A real runner client** (#4207): the runner image's own purlis, in the pod, over the way a
+    // runner has, not this test's forward. Its Claim says where to ask, and the key.
+    let said = read
+        .get(CLAIM)
+        .await
+        .expect("the Claim")
+        .status
+        .and_then(|status| status.mint)
+        .expect("the Claim's status says where to ask");
+    assert_eq!(said.address, format!("{address}:{}", mint::PORT));
+    assert_eq!(said.operator_key, *OPERATOR.get().expect("set"));
+    let paired = exec_fed(
+        &runner_ns,
+        &pod,
+        &[
+            "purlis",
+            "bridge",
+            "--pair",
+            "--key-made-at-start",
+            "/run/purlis-link/link-key",
+        ],
+        &format!(
+            "{}\n",
+            json!({ "device": "01E2EDESKTOP", "key": "22".repeat(32) })
+        ),
+    );
+    assert!(
+        paired.status.success(),
+        "the runner did not pair: {}",
+        String::from_utf8_lossy(&paired.stderr)
+    );
+    let told = |keys: &[&str]| {
+        json!({
+            "namespace": NAMESPACE, "claim": CLAIM, "cluster": line("cluster"),
+            "address": said.address, "keys": keys,
+        })
+        .to_string()
+    };
+    let tell = |keys: &[&str]| {
+        let out = exec_fed(
+            &runner_ns,
+            &pod,
+            &["purlis", "bridge", "--mint-port"],
+            &format!("{}\n", told(keys)),
+        );
+        assert!(
+            out.status.success(),
+            "the runner was not told: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    let check = || {
+        exec(
+            &runner_ns,
+            &pod,
+            "runner",
+            &["purlis", "bridge", "--mint-check", APP],
+        )
+    };
+    // Held to another key, it asks nothing of the port.
+    let other = format!("ed25519:{}", "11".repeat(32));
+    tell(&[&other]);
+    let refused = check();
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("not the operator"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    tell(&[&said.operator_key]);
+    let checked = check();
+    assert!(
+        checked.status.success(),
+        "the runner got no token: {}",
+        String::from_utf8_lossy(&checked.stderr)
+    );
+    let out = String::from_utf8_lossy(&checked.stdout);
+    assert!(!out.contains(TOKEN), "a check prints no token");
+    let answered: Value = serde_json::from_str(out.trim()).expect("what it says");
+    assert_eq!(answered["owner"], "acme");
+    assert_eq!(answered["repos"], json!(["app", "web"]));
+    assert_eq!(answered["operator"], json!(said.operator_key));
+
     // A repo outside the allow-list alone; more than one owner; nothing at all. Patched by the
     // requester, as only they may.
     let patched = |repos: &'static [&'static str]| {
@@ -798,6 +909,14 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
     refused_saying(&ask(&pin, &link_key, CLAIM, APP), "owners");
     patched(&[]).await;
     refused_saying(&ask(&pin, &link_key, CLAIM, APP), "no repos");
+    // The real client hears the operator's own words.
+    let refused = check();
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("no repos"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
     patched(&["acme/app"]).await;
 
     // A revoked `use` stops new tokens: the operator asks before each mint.
@@ -841,6 +960,105 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
         )
         .await
         .expect("the Pool");
+
+    // **A runner made before its Pool named a key mints nothing** (the person's ruling of
+    // 2026-10-31): it may have run a chat outside the sandbox, so even with its right proof.
+    as_writer
+        .create(
+            &PostParams::default(),
+            &Pool::new(EARLIER, PoolSpec::new(runner_image())),
+        )
+        .await
+        .expect("a Pool with no key");
+    grant(
+        &admin,
+        "e2e-mint-use-earlier",
+        ADA,
+        json!({
+            "apiGroups": ["runners.purlis.dev"], "resources": ["pools"],
+            "resourceNames": [EARLIER], "verbs": ["use"],
+        }),
+    )
+    .await;
+    let earlier_claim = Claim::new(
+        EARLIER,
+        ClaimSpec {
+            pool: EARLIER.to_owned(),
+            ..spec(&["acme/app"])
+        },
+    );
+    eventually("the earlier Claim", Duration::from_secs(30), || {
+        let (claims, claim) = (claims.clone(), earlier_claim.clone());
+        async move { claims.create(&PostParams::default(), &claim).await.ok() }
+    })
+    .await;
+    let earlier = eventually(
+        "the earlier runner to be vouched for",
+        Duration::from_secs(300),
+        || {
+            let read = read.clone();
+            async move {
+                read.get(EARLIER)
+                    .await
+                    .ok()
+                    .and_then(|claim| claim.status?.link_key)
+            }
+        },
+    )
+    .await;
+    let earlier_line = |name: &str| {
+        earlier
+            .statement
+            .lines()
+            .find_map(|line| line.strip_prefix(&format!("{name}: ")))
+            .expect(name)
+            .to_owned()
+    };
+    let (earlier_ns, earlier_pod) = (earlier_line("runner namespace"), earlier_line("pod"));
+    let earlier_key = eventually(
+        "the earlier runner to run",
+        Duration::from_secs(120),
+        || {
+            let (ns, pod) = (earlier_ns.clone(), earlier_pod.clone());
+            async move {
+                let out = exec(&ns, &pod, "runner", &["cat", "/run/purlis-link/link-key"]);
+                out.status
+                    .success()
+                    .then(|| unhex(String::from_utf8_lossy(&out.stdout).trim()))
+            }
+        },
+    )
+    .await;
+    let unmarked_pod = Api::<Pod>::namespaced(admin.clone(), &earlier_ns)
+        .get(&earlier_pod)
+        .await
+        .expect("its pod");
+    assert!(!mint::marked(&unmarked_pod), "its pod bears no mark");
+    let tokens_then = asked.lock().expect("the record").tokens.len();
+    as_writer
+        .patch(
+            EARLIER,
+            &PatchParams::default(),
+            &Patch::Merge(json!({ "spec": { "forge": {
+                "appKeySecretRef": { "name": KEY_SECRET },
+                "repos": ["acme/*"],
+                "mintInCluster": true,
+            } } })),
+        )
+        .await
+        .expect("the Pool opts in");
+    // At once and after its Claim is looked at again: its statement going changes only the words.
+    for _ in 0..3 {
+        let refused = ask(&pin, &earlier_key, EARLIER, APP);
+        assert_eq!(refused.0, 403, "{refused:?}");
+        assert!(refused.1.get("token").is_none(), "{refused:?}");
+        tokio::time::sleep(Duration::from_secs(10)).await;
+    }
+    assert_eq!(
+        asked.lock().expect("the record").tokens.len(),
+        tokens_then,
+        "GitHub was never asked"
+    );
 
     // On a Pool that mints, changing the image is spending the key too.
     revoke(&admin, "e2e-mint-key").await;

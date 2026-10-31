@@ -40,3 +40,33 @@ fn a_long_fix_is_counted_rather_than_drawn_whole() {
         format!("{}\u{2026} +3 not shown", "f".repeat(DISPLAY_LIMIT))
     );
 }
+
+#[test]
+fn a_profile_whose_icon_fell_back_is_listed_with_why() {
+    let dir = tempfile::tempdir().unwrap();
+    let row = icon_row(
+        &[
+            ("work", "missing.svg"),
+            ("fine", "spark"),
+            ("odd", "no-such-glyph"),
+        ],
+        Some(dir.path()),
+    )
+    .expect("a row");
+    assert_eq!(row.name, "profile icons");
+    assert_eq!(row.status, Status::Warn);
+    assert!(
+        row.detail.contains("work: the icon file is not there"),
+        "{}",
+        row.detail
+    );
+    assert!(row.detail.contains("odd: "), "{}", row.detail);
+    assert!(!row.detail.contains("fine"), "{}", row.detail);
+    assert!(!row.hint.is_empty());
+}
+
+#[test]
+fn no_row_where_no_icon_fell_back() {
+    assert!(icon_row(&[("fine", "spark")], None).is_none());
+    assert!(icon_row(&[], None).is_none());
+}

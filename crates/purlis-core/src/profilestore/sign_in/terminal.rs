@@ -15,6 +15,9 @@ use super::driven::{Driving, Event};
 /// How long a step is waited for before the terminal's input is looked at.
 const LOOK_EVERY: Duration = Duration::from_millis(100);
 
+/// How often a sign-in followed here asks whether what it was opened on still holds.
+const STILL_EVERY: Duration = Duration::from_secs(1);
+
 /// What a terminal does for a sign-in it follows.
 pub trait Terminal {
     /// Says a line to the person.
@@ -33,8 +36,31 @@ pub fn follow(
     profile: &str,
     pool: &str,
 ) -> Result<(), String> {
+    follow_while(driving, lines, terminal, profile, pool, &|| Ok(()))
+}
+
+/// [`follow`], with `still` asked every [`STILL_EVERY`] and before each code goes on (#3819,
+/// #4164): where it refuses, the sign-in is cancelled, a code goes nowhere, and this answers its
+/// refusal. A window ends its sign-ins as a mark is taken back; this command is another process,
+/// and a login approved on the vendor's page takes no code, so it asks as it goes.
+pub fn follow_while(
+    driving: &Driving,
+    lines: &Receiver<String>,
+    terminal: &mut dyn Terminal,
+    profile: &str,
+    pool: &str,
+    still: &dyn Fn() -> Result<(), String>,
+) -> Result<(), String> {
     let mut asked = false;
+    let mut last_asked: Option<std::time::Instant> = None;
     loop {
+        if last_asked.is_none_or(|at| at.elapsed() >= STILL_EVERY) {
+            last_asked = Some(std::time::Instant::now());
+            if let Err(why) = still() {
+                driving.cancel();
+                return Err(why);
+            }
+        }
         if let Some(event) = driving.next(LOOK_EVERY) {
             match event {
                 Event::Open { url } => {
@@ -53,17 +79,12 @@ pub fn follow(
                     terminal.say("Waiting for GitHub…");
                 }
                 // Said only where the browser's answer is carried to the runner (#4044), which
-                // this does not do, so a login that waits for one is not driven here; said
-                // anyway, it is followed as far as it can be.
-                Event::Approve { url, .. } => {
-                    terminal.say(&format!("Approve the sign-in on this page: {url}"));
-                    terminal.open(&url);
-                }
-                Event::PortTaken { port } => {
+                // this does not do: `drive_with` refuses such a login with no carry.
+                Event::Approve { .. } | Event::PortTaken { .. } => {
+                    driving.cancel();
                     return Err(format!(
-                        "this machine's port {port} is taken, so your browser's answer could not \
-                         reach the runner and no page was opened. Sign in with Open in terminal \
-                         on '{profile}''s line in Settings › Pools."
+                        "purlis cannot carry your browser's answer to the runner from a terminal, \
+                         so '{profile}' was not signed in on pool {pool}."
                     ));
                 }
                 Event::AskCode => {
@@ -107,10 +128,18 @@ pub fn follow(
             continue;
         }
         match lines.try_recv() {
-            Ok(code) => match driving.paste(&code) {
-                Ok(()) => asked = false,
-                Err(why) => terminal.say(&format!("{why}. Paste it again, then press Return:")),
-            },
+            Ok(code) => {
+                if let Err(why) = still() {
+                    driving.cancel();
+                    return Err(why);
+                }
+                match driving.paste(&code) {
+                    Ok(()) => asked = false,
+                    Err(why) => {
+                        terminal.say(&format!("{why}. Paste it again, then press Return:"));
+                    }
+                }
+            }
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => {
                 driving.cancel();

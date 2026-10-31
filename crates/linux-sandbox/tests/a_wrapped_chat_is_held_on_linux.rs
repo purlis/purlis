@@ -894,6 +894,40 @@ fn a_program_starts_only_from_where_the_profile_says() {
     assert_eq!(status, Some(126), "{said}");
 }
 
+/// A file in memory is for a program that starts from anywhere: one held to named folders is
+/// answered as a kernel without the call, and every program it starts with it.
+#[test]
+fn a_program_held_to_named_folders_makes_no_file_in_memory() {
+    let mut p = project();
+    // The system's own, which a profile held to the system's folders starts.
+    let Some(python) = ["/usr/bin/python3", "/bin/python3"]
+        .into_iter()
+        .find(|it| Path::new(it).exists())
+        .map(str::to_owned)
+    else {
+        panic!("the system's python3 is needed for this test");
+    };
+    let script = "import os\ntry:\n    os.memfd_create('m')\n    print('made')\n\
+                  except OSError as why:\n    print(why.strerror)\n";
+    let port = p.proxy_port();
+    let run = |profile: &str| {
+        let out = wrap(purlis_linux_sandbox::line(
+            profile,
+            python.clone(),
+            vec!["-c".to_owned(), script.to_owned()],
+        ))
+        .current_dir(&p.cwd)
+        .output()
+        .expect("the wrap ran");
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    assert_eq!(run(&p.profile(port)), "made");
+    assert_eq!(
+        run(&starts_only_from(&p.cwd, &p.cwd)),
+        "Function not implemented"
+    );
+}
+
 #[test]
 fn a_program_outside_where_the_profile_says_is_not_started_by_the_wrap() {
     let p = project();

@@ -290,6 +290,7 @@ fn studio(ask: &serde_json::Value) -> serde_json::Value {
             ],
         }),
         "route" => routed(ask),
+        "prompt" => pointed(ask),
         other => serde_json::json!({ "error": format!("the probe has no answer to {other:?}") }),
     }
 }
@@ -353,6 +354,30 @@ fn routed(ask: &serde_json::Value) -> serde_json::Value {
     serde_json::json!({ "hidden": hidden })
 }
 
+/// The start of the names the probe's router points a prompt at.
+pub const POINTS: &str = "probe-point";
+
+/// **A router's pointers for a prompt**: every skill it was asked about whose name starts with
+/// [`POINTS`], where the prompt is not empty.
+fn pointed(ask: &serde_json::Value) -> serde_json::Value {
+    let prompt = ask
+        .get("prompt")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    let pointed: Vec<&str> = ask
+        .get("skills")
+        .and_then(serde_json::Value::as_array)
+        .map(|skills| {
+            skills
+                .iter()
+                .filter_map(|one| one.get("name").and_then(serde_json::Value::as_str))
+                .filter(|name| !prompt.is_empty() && name.starts_with(POINTS))
+                .collect()
+        })
+        .unwrap_or_default();
+    serde_json::json!({ "pointed": pointed })
+}
+
 /// **One thing tried from inside the sandbox**, and what happened, as one line: `ok` and what it
 /// saw, or what refused it.
 ///
@@ -368,6 +393,8 @@ fn routed(ask: &serde_json::Value) -> serde_json::Value {
 /// - `start <program> <args>…`: start a program, and say how it ended and what it printed.
 /// - `start-linked <program> <at>`: the same through a symbolic link made at `<at>`, which it
 ///   takes away again.
+/// - `start-written <program> <at>`: the same from a copy of it written at `<at>`, which it takes
+///   away again.
 /// - `start-held <program>` on Linux: the same through a path-only descriptor of it.
 pub fn tried(words: &[String]) -> String {
     let said = match words {
@@ -412,6 +439,21 @@ pub fn tried(words: &[String]) -> String {
                 }
                 // Never a refusal of the start: nothing was started.
                 Err(why) => Ok(format!("no link was made: {}", why.kind())),
+            }
+        }
+        #[cfg(unix)]
+        [verb, program, at] if verb == "start-written" => {
+            use std::os::unix::fs::PermissionsExt as _;
+            let written = std::fs::copy(program, at)
+                .and_then(|_| std::fs::set_permissions(at, std::fs::Permissions::from_mode(0o755)));
+            match written {
+                Ok(()) => {
+                    let said = started(at, &[]);
+                    let _ = std::fs::remove_file(at);
+                    said
+                }
+                // Never a refusal of the start: nothing was started.
+                Err(why) => Ok(format!("no copy was written: {}", why.kind())),
             }
         }
         #[cfg(target_os = "linux")]

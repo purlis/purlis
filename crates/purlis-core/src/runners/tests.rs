@@ -465,6 +465,8 @@ fn a_pools_row_whole_cpus_and_set_limits_read_back_as_written() {
         suspend_after: Some(std::time::Duration::from_secs(48 * 60 * 60)),
         frames: Some(30),
         width: Some(1920),
+        chosen: crate::poollimits::Chosen::default()
+            .with(crate::poollimits::LimitId::ProfileSize, Some(256)),
     };
     record_pool(config.path(), &pool("big", set)).unwrap();
     let row = &the_file(config.path())["pools"][0];
@@ -1293,4 +1295,37 @@ fn a_cluster_pools_profiles_are_kept_in_its_record_as_a_docker_pools_are() {
         .replace_file(crate::machine::RUNNERS_FILE, text.to_string().as_bytes())
         .unwrap();
     assert!(cluster_pools(config.path()).is_err());
+}
+
+/// **A pool's limit is the person's once set, follows purlis's default while unset, and changes
+/// nothing about the pool's runner** (spec #4275, Q11, Q13), on either kind of pool's row.
+#[test]
+fn a_pools_limit_is_saved_marked_as_the_persons_and_makes_no_new_runner() {
+    use crate::poollimits::LimitId::ProfileFiles;
+    let config = tempfile::tempdir().unwrap();
+    record_pool(
+        config.path(),
+        &Pool::new("builds", Image::pinned(IMAGE).unwrap(), Set::default()).unwrap(),
+    )
+    .unwrap();
+    let before = pools(config.path()).unwrap()[0].definition_digest();
+    let chosen = |config: &Path| chosen_limits_of(config, "builds").unwrap();
+    assert_eq!(chosen(config.path()).get(ProfileFiles), None);
+    assert_eq!(chosen(config.path()).in_force(ProfileFiles), 8192);
+
+    set_pool_limit(config.path(), "builds", ProfileFiles, Some(11_264)).unwrap();
+
+    assert_eq!(chosen(config.path()).get(ProfileFiles), Some(11_264));
+    assert_eq!(
+        pools(config.path()).unwrap()[0].definition_digest(),
+        before,
+        "it applies from the next attempt"
+    );
+
+    assert!(set_pool_limit(config.path(), "builds", ProfileFiles, Some(0)).is_err());
+    assert!(set_pool_limit(config.path(), "none", ProfileFiles, Some(9000)).is_err());
+    assert_eq!(chosen(config.path()).get(ProfileFiles), Some(11_264));
+
+    set_pool_limit(config.path(), "builds", ProfileFiles, None).unwrap();
+    assert_eq!(chosen(config.path()).get(ProfileFiles), None, "a reset");
 }

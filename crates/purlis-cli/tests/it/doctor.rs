@@ -759,9 +759,10 @@ fn fix_project_skills_by_name_moves_the_skills_in_one_commit() {
     assert!(said.contains("nothing to do"), "{said}");
 }
 
-/// The move is part of the Skill studio's preview: with it off, refused, and nothing moved.
+/// A project's move does not wait on the Skill studio's flag (#4344): off, named, it is made, and
+/// its skills reach the project's chats from then on.
 #[test]
-fn fix_project_skills_is_refused_while_the_skill_studio_is_off() {
+fn fix_project_skills_runs_by_name_with_the_skill_studio_off() {
     let (_d, root) = plane_with_claude_skills();
     let out = doctor_with(
         &root,
@@ -770,12 +771,28 @@ fn fix_project_skills_is_refused_while_the_skill_studio_is_off() {
         &[("PURLIS_SKILL_STUDIO", "0")],
     );
     let said = String::from_utf8_lossy(&out.stderr);
-    assert!(said.contains("Settings › You › Previews"), "{said}");
+    assert!(said.contains("✓ committed"), "{said}");
+    assert!(!said.contains("Previews"), "{said}");
+    assert!(root.join("skills/deploy/SKILL.md").is_file(), "{said}");
+    assert!(!root.join(".claude/skills/deploy").exists(), "{said}");
+}
+
+/// Bare `--fix` with the flag off moves nothing either: only its name asks for it (#4344).
+#[test]
+fn bare_fix_never_moves_the_projects_skills_with_the_skill_studio_off() {
+    let (_d, root) = plane_with_claude_skills();
+    let out = doctor_with(
+        &root,
+        &root.join("home"),
+        &["--fix"],
+        &[("PURLIS_SKILL_STUDIO", "0")],
+    );
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(!said.contains("project-skills"), "{said}");
     assert!(
         root.join(".claude/skills/deploy/SKILL.md").is_file(),
         "{said}"
     );
-    assert!(!root.join("skills").exists(), "{said}");
 }
 
 /// Bare `--fix` never moves the skills: a commit every teammate pulls waits to be asked for.

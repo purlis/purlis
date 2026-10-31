@@ -408,12 +408,37 @@ use crate::view::{Limits, Views};
 ///
 /// 1.62 added the Skill studio's flag to a chat's start on a runner (SK-20b, #3084): `start_program`
 /// may carry `plane_skills`, whether the plane's skills reach the chat as the desktop read the
-/// flag, which a runner arms the chat by in place of its own machine's flag. Taken only from the
-/// window or its host's relay. A host before 1.62 ignores the field and reads its own flag, as
+/// flag, which a runner arms the chat by in place of its own machine's flag, unless the project requires
+/// its skills, which reach the chat whatever this says (#4344). Taken only from the window or its
+/// host's relay. A host before 1.62 ignores the field and reads its own flag, as
 /// before.
+///
+/// 1.63 added a grade asked for from a terminal (SK-61, #3241): `ask_grade`, `terminal`'s alone,
+/// is pushed as `grade_asked` to the one `local-ui` link that holds the project, since the window
+/// is where a grade runs. It answers with `answer_grade`, tells each step with `grade_step`, which
+/// the asking link is pushed, and is pushed `stop_grade` once that link has gone. An older host
+/// refuses `ask_grade` `unknown_command`, and an older window is never asked.
+///
+/// 1.64 lets a runner stage more of a profile's settings (spec #4275, #4279):
+/// `stage_profile_settings` holds them to [`MOST_PROFILE_SETTINGS_STAGED_BYTES`] and
+/// [`MOST_PROFILE_SETTINGS_STAGED_FILES`], so a pool's limit above what a runner before held can
+/// be used. No frame changes. A runner before 1.64 is held to what it staged before, and the
+/// desktop says so before it sends.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 62,
+    minor: 64,
+};
+
+/// The version that first stages a profile's settings up to a pool's limit (spec #4275).
+pub const KNOWS_LARGER_PROFILE_SETTINGS: Version = Version {
+    major: 1,
+    minor: 64,
+};
+
+/// The version that first runs a grade a terminal asked for (SK-61, #3241).
+pub const KNOWS_GRADE_ASKS: Version = Version {
+    major: 1,
+    minor: 63,
 };
 
 /// The version that first says which settings files it holds and keeps only what changed (#4088).
@@ -582,6 +607,10 @@ pub const NO_SUCH_PROJECT: &str = "no_such_project";
 /// asks for a folder or a service of this one that is not the project's own here (1.4, #2445),
 /// for a reason its `why` gives.
 pub const NOT_ALLOWED: &str = "not_allowed";
+/// **Why a start on a link relayed to a draining runner is refused** (#2865): nothing started, and
+/// the window, which knows these words, starts it again on a link to the pool's runner now.
+pub const A_DRAINING_RUNNER_STARTS_NONE: &str = "this runner is being replaced by one of this \
+     desktop's version: it keeps its chats until they end, and new chats start on its pool's runner";
 /// The host cannot carry this out now, for a reason its `why` gives (1.2): a start the host
 /// cannot compose, or a program it could not run.
 pub const NOT_STARTED: &str = "not_started";
@@ -1052,6 +1081,23 @@ pub enum Command {
     /// [`NOT_STARTED`] by a host whose binary keeps no event log. The window's, and its host's
     /// relaying it ([`crate::grants::Power::EventLog`]).
     LogEnd,
+    /// **A person at a terminal asks for a skill's grade** (1.63, SK-61, #3241): its plan, or its
+    /// start on the consent of the plan they read. `terminal`'s alone. The host asks the one
+    /// window that holds the project at `project_path` ([`Pushed::GradeAsked`]), and answers
+    /// [`Answer::GradeAnswered`], or refuses `no_such_project` where no window holds it.
+    AskGrade {
+        project: String,
+        project_path: String,
+        ask: GradeAsk,
+    },
+    /// **The window's answer to [`Pushed::GradeAsked`] `question`** (1.63). Taken only from the
+    /// link that was asked.
+    AnswerGrade { question: u64, answer: GradeAnswer },
+    /// **One step of the grade started by [`Pushed::GradeAsked`] `question`** (1.63), which the
+    /// link that asked is pushed ([`Pushed::GradeStep`]). Refused where nobody follows it any
+    /// more, and the window stops the grade on that: the floor under [`Pushed::StopGrade`], which
+    /// a full queue can lose.
+    GradeStep { question: u64, step: GradeStepTold },
 }
 
 /// One ref of a repository and the commit it is at (1.34): what `take_code` names and `code`
@@ -1364,6 +1410,16 @@ pub const MOST_PROFILE_SETTINGS_BYTES: usize = 128 * 1024 * 1024;
 /// **The most settings files a runner holds for one profile** (#4081, D-4081-2).
 pub const MOST_PROFILE_SETTINGS_FILES: usize = 8192;
 
+/// **The most bytes of settings a runner of 1.64 or later stages from its desktop on one link**
+/// (spec #4275): the most a pool's limit can be, 1 GiB, and room for a file rewritten without its
+/// credentials to come out longer. The pool's limit itself is the desktop's, and only the paired
+/// desktop stages settings. What a runner tells its desktop it holds stays within
+/// [`MOST_PROFILE_SETTINGS_BYTES`] and [`MOST_PROFILE_SETTINGS_FILES`].
+pub const MOST_PROFILE_SETTINGS_STAGED_BYTES: usize = 1032 * 1024 * 1024;
+
+/// **The most settings files a runner of 1.64 or later stages on one link** (spec #4275).
+pub const MOST_PROFILE_SETTINGS_STAGED_FILES: usize = 65_536;
+
 /// The longest path of a settings file a runner holds, the most a path names on Linux.
 const MOST_SETTINGS_PATH_BYTES: usize = 4096;
 
@@ -1452,7 +1508,7 @@ pub fn settings_in_batches(profile: &str, files: Vec<SettingsFile>) -> Vec<Setti
 
 /// **The settings a link has staged for one profile** (1.56, #4081): whole files, held in memory
 /// and only here, so a link that ends, or a batch refused, leaves nothing of them. Held to
-/// [`MOST_PROFILE_SETTINGS_BYTES`] and [`MOST_PROFILE_SETTINGS_FILES`] as they arrive. It judges
+/// [`MOST_PROFILE_SETTINGS_STAGED_BYTES`] and [`MOST_PROFILE_SETTINGS_STAGED_FILES`] as they arrive. It judges
 /// the shape of what arrives and nothing of what it says: a runner checks the whole files as it
 /// checks files one `keep_profile` carries, once they are all here.
 #[derive(Debug, Default)]
@@ -1473,10 +1529,10 @@ impl StagedSettings {
         }
         for piece in pieces {
             self.bytes += piece.bytes.len();
-            if self.bytes > MOST_PROFILE_SETTINGS_BYTES {
+            if self.bytes > MOST_PROFILE_SETTINGS_STAGED_BYTES {
                 return Err(format!(
                     "these settings are over the {} MiB a runner holds for a profile",
-                    MOST_PROFILE_SETTINGS_BYTES / (1024 * 1024)
+                    MOST_PROFILE_SETTINGS_STAGED_BYTES / (1024 * 1024)
                 ));
             }
             if piece.path.len() > MOST_SETTINGS_PATH_BYTES {
@@ -1489,9 +1545,9 @@ impl StagedSettings {
                 }
                 continue;
             }
-            if self.files.len() >= MOST_PROFILE_SETTINGS_FILES {
+            if self.files.len() >= MOST_PROFILE_SETTINGS_STAGED_FILES {
                 return Err(format!(
-                    "these settings are over the {MOST_PROFILE_SETTINGS_FILES} files a runner \
+                    "these settings are over the {MOST_PROFILE_SETTINGS_STAGED_FILES} files a runner \
                      holds for a profile"
                 ));
             }
@@ -1907,6 +1963,8 @@ pub enum Answer {
     Subscribed,
     /// Where the host's own event log ends: [`Command::LogEnd`] (1.41).
     LogEnd { device: String, seq: u64 },
+    /// What the window answered a grade a terminal asked for: [`Command::AskGrade`] (1.63).
+    GradeAnswered(GradeAnswer),
     /// The runner a relayed link reached, as `<pool>/<runner>`: [`Command::RelayTo`] (1.48).
     RelayedTo { runner: String },
     /// Done, with nothing to say.
@@ -2216,6 +2274,146 @@ pub enum Pushed {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         total: Option<u64>,
     },
+    /// **A terminal asks this window for a grade** (1.63, SK-61, #3241): pushed to one `local-ui`
+    /// link that holds `project` on this host, which answers with [`Command::AnswerGrade`].
+    GradeAsked {
+        question: u64,
+        project: String,
+        /// Where the host holds it: two clones of one project are two places.
+        project_path: String,
+        ask: GradeAsk,
+    },
+    /// **Stop this grade** (1.63): the link that asked for it has gone. Pushed to the link it was
+    /// asked of.
+    StopGrade {
+        grade: String,
+    },
+    /// **One step of the grade this link asked for** (1.63). Pushed to that link alone.
+    GradeStep {
+        step: GradeStepTold,
+    },
+}
+
+/// **Which copy of a skill a grade asked for from a terminal is of** (1.63): its level.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "at", rename_all = "snake_case")]
+pub enum GradeLevel {
+    Project { local: bool },
+    Workspace { name: String, local: bool },
+    Persona { name: String, local: bool },
+}
+
+/// **The grade a terminal asks about** (1.63): the skill's copy, and what its chats run on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GradeOf {
+    pub level: GradeLevel,
+    pub skill: String,
+    /// The profile its chats run on: the project's default where none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    /// The model its chats run on: the profile's own where none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// The outcome evals the person named, by id: none run unless named, as none run in the
+    /// window's plan unless ticked.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evals: Vec<String>,
+}
+
+/// **What a terminal asks of a grade** (1.63).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GradeAsk {
+    /// What grading it would run, as the window's plan says it.
+    Plan { of: GradeOf },
+    /// Start it, on `consent`, the digest [`GradePlanTold`] gave: refused where the plan changed.
+    Start { of: GradeOf, consent: String },
+}
+
+/// **A grade's plan, as the window would start it** (1.63): what pressing Grade there consents to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GradePlanTold {
+    /// The profile its chats run on, where one was found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    /// The model its chats run on, where the profile or the person names one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// The sandbox's name its chats run under, where they can run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<String>,
+    /// Why no grade can run on this profile and model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refused: Option<String>,
+    /// The chats it runs.
+    pub chats: u32,
+    /// The token cap it stops at.
+    pub token_cap: u64,
+    /// The dollar limit it stops at, in millionths of a dollar.
+    pub limit_micro_usd: u64,
+    /// The grade running in the project now, by id: a start is refused while there is one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub running: Option<String>,
+    /// The digest of what it grades, as the window read it: the terminal holds what it printed
+    /// to this, so it never asks a yes for a plan other than the one that would run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub graded: Option<String>,
+    /// The digest of what it grades and on what terms: what a start names. `None` where there is
+    /// nothing to grade.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consent: Option<String>,
+}
+
+/// **The window's answer to a grade a terminal asked for** (1.63).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GradeAnswer {
+    Plan(Box<GradePlanTold>),
+    /// It started, as this grade.
+    Started {
+        grade: String,
+    },
+    /// It did not, in the window's words.
+    Refused {
+        why: String,
+    },
+}
+
+/// **How a grade a terminal asked for ended** (1.63).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GradeEndTold {
+    Whole,
+    Stopped,
+    ChatsDidNotStart,
+    OverCap,
+    OverLimit,
+    SpendNotReported,
+    Failed,
+    /// The window running it went: the host's own word, never the window's.
+    WindowGone,
+}
+
+/// **One step of a grade a terminal asked for** (1.63), as the window tells its own page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GradeStepTold {
+    pub grade: String,
+    pub ran: u32,
+    pub of: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<u64>,
+    /// What its chats have cost so far, in millionths of a dollar, where they said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_micro_usd: Option<u64>,
+    /// How many of its chats asked the person something and were ended there.
+    #[serde(default)]
+    pub asked: u32,
+    /// How it ended, once it has. Absent while it runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended: Option<GradeEndTold>,
+    /// What the window says of its end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub said: Option<String>,
 }
 
 wire_words!(Command {
@@ -2281,6 +2479,9 @@ wire_words!(Command {
     CancelEngineDownload => "cancel_engine_download",
     NoteProgram => "note_program",
     LogEnd => "log_end",
+    AskGrade => "ask_grade",
+    AnswerGrade => "answer_grade",
+    GradeStep => "grade_step",
 });
 
 impl Command {
@@ -2342,6 +2543,8 @@ impl Command {
             | Command::GiveConversation { .. }
             | Command::ClonesOf { .. } => Power::Code,
             Command::LogEnd => Power::EventLog,
+            Command::AskGrade { .. } => Power::AskGrade,
+            Command::AnswerGrade { .. } | Command::GradeStep { .. } => Power::RunGrade,
         }
     }
 }
@@ -2379,6 +2582,8 @@ impl Pushed {
             Pushed::NotHeld { .. } => Some(Power::Hold),
             Pushed::Saving { .. } | Pushed::WhoIsMidTurn { .. } => Some(Power::Save),
             Pushed::Sandbox { .. } => Some(Power::Confine),
+            Pushed::GradeAsked { .. } | Pushed::StopGrade { .. } => Some(Power::RunGrade),
+            Pushed::GradeStep { .. } => Some(Power::AskGrade),
             Pushed::Event(_)
             | Pushed::EngineDownload { .. }
             | Pushed::Missed { .. }
@@ -2414,6 +2619,7 @@ wire_words!(Answer {
     SettingsHeld => "settings_held",
     Subscribed => "subscribed",
     LogEnd => "log_end",
+    GradeAnswered => "grade_answered",
     RelayedTo => "relayed_to",
     Done => "done",
 });
@@ -2443,6 +2649,9 @@ wire_words!(Pushed {
     LinkBack => "link_back",
     NotHeld => "not_held",
     EngineDownload => "engine_download",
+    GradeAsked => "grade_asked",
+    StopGrade => "stop_grade",
+    GradeStep => "grade_step",
 });
 
 /// One event, in ADR 0066's envelope.
@@ -2809,6 +3018,8 @@ enum Lane {
     Subscription,
     /// The replies to one line a held project's hooks wrote (1.3).
     Heard(u64),
+    /// The window's answer and steps of one grade a terminal asked for (1.63).
+    Grade(u64),
     /// The commands about one confinement (1.4).
     Confinement(String),
     /// The commands about one project's saving (1.7): a stop is never overtaken by the start
@@ -2855,6 +3066,8 @@ impl Lane {
             | Command::TakeConversation { .. }
             | Command::GiveConversation { .. }
             | Command::ClonesOf { .. }
+            // Waits on the window, which may be asked more meanwhile.
+            | Command::AskGrade { .. }
             // Never behind the start it cancels, which waits on the download.
             | Command::CancelEngineDownload { .. } => None,
             Command::Attach { chat: program }
@@ -2880,6 +3093,10 @@ impl Lane {
             }
             // The replies to one line keep their order: a command's frames, one after another.
             Command::ReplyHeard { heard, .. } => Some(Lane::Heard(*heard)),
+            // A grade's answer and its steps keep their order: its end comes last.
+            Command::AnswerGrade { question, .. } | Command::GradeStep { question, .. } => {
+                Some(Lane::Grade(*question))
+            }
             Command::StartSaving { project }
             | Command::StopSaving { project }
             | Command::FetchProject { project } => Some(Lane::Saving(project.clone())),
@@ -3788,6 +4005,26 @@ impl Client {
         self.kill_switch_after(Command::Rearm).await
     }
 
+    /// **Asks the host for a grade, as a terminal** (1.63, SK-61): what the window answered.
+    pub async fn ask_grade(
+        &self,
+        project: &str,
+        project_path: &str,
+        ask: GradeAsk,
+    ) -> Result<GradeAnswer, CallError> {
+        match self
+            .call(Command::AskGrade {
+                project: project.to_owned(),
+                project_path: project_path.to_owned(),
+                ask,
+            })
+            .await?
+        {
+            Answer::GradeAnswered(answer) => Ok(answer),
+            other => Err(CallError::Unexpected(other.word().to_owned())),
+        }
+    }
+
     /// **Where the host's own event log ends now** (1.41, #3393): its device, and the `seq` of
     /// its last line.
     pub async fn log_end(&self) -> Result<(String, u64), CallError> {
@@ -4110,7 +4347,10 @@ impl Subscribed {
                 | Pushed::LinkDown { .. }
                 | Pushed::LinkBack {}
                 | Pushed::NotHeld { .. }
-                | Pushed::EngineDownload { .. } => {}
+                | Pushed::EngineDownload { .. }
+                | Pushed::GradeAsked { .. }
+                | Pushed::StopGrade { .. }
+                | Pushed::GradeStep { .. } => {}
             };
             let _ = self.queue.try_send(Told::Pushed(pushed));
             return false;

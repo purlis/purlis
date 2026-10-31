@@ -470,6 +470,7 @@ fn grade_after(
                     model: accepted.model.clone(),
                     after_edit: true,
                     grader: None,
+                    follower: None,
                 },
                 planned,
             );

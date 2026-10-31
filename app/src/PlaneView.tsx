@@ -44,6 +44,7 @@ import {
   type FinishedTask,
   type OpenChat,
   type PlaneId,
+  type PoolLimitOffer,
   type Refused,
   type Sidebar as SidebarModel,
   type StartOptions,
@@ -505,6 +506,7 @@ import {
   chatMovesOf,
   forgetMove,
   heardMove,
+  movedAfterSignIn,
   moveOffers,
   movesDue,
   movesWith,
@@ -513,6 +515,7 @@ import {
   useChatMovesHeard,
 } from "./chatMoves";
 import { usePools } from "./pools";
+import { useSignOutTerminals } from "./settings/signOutTerminals";
 import { fitting, LEAST, LEAST_CHIP, leastAt, useRoom } from "./fits";
 import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
 import { panelRoot } from "./ui/panel/Panel";
@@ -841,6 +844,7 @@ export const PlaneView = memo(function PlaneView({
   shellAsked?: { typed: string; at: number };
 }) {
   const [tabs, setTabs] = useState<Tabs>(noTabs);
+  const signingOutIn = useSignOutTerminals(tabs, plane);
   // **A pane closed for good lets its band's memory go** (#3167): a pane's number is never
   // used again, so one gone from every tab is gone for good.
   const panesDrawn = useRef<{ plane: string; panes: ReadonlySet<number> }>(undefined);
@@ -950,6 +954,9 @@ export const PlaneView = memo(function PlaneView({
    *  signed in here (#2035), with that refusal: the picker offers Sign in beside it, and beside
    *  no other. */
   const [pickerSignIn, setPickerSignIn] = useState<{ profile: string; refused: string }>();
+  /** The pool's limit a start was refused on (spec #4275), with that refusal: the picker offers
+   *  to raise it beside it, and beside no other. */
+  const [pickerLimit, setPickerLimit] = useState<{ offer: PoolLimitOffer; refused: string }>();
   /** Whether the picker's fix (NO-8: its `local-ignore`) is running. */
   const [pickerFixing, setPickerFixing] = useState(false);
   /** The chat tab whose name is open for editing on the strip, if one is (charter-app#254). */
@@ -3133,13 +3140,15 @@ export const PlaneView = memo(function PlaneView({
               })
               .catch((err: unknown) => refusedBy("shell", String(err)));
           // A sign-out that asks in its terminal (#4124): named, never spelled, as a sign-in.
-          else if (typed?.signOut !== undefined)
+          else if (typed?.signOut !== undefined) {
+            signingOutIn(session, typed.pool);
             void commands
               .typeProfileSignOut(plane, session, typed.signOut, typed.pool)
               .then((said) => {
                 if (said.status === "error") refusedBy("shell", said.error);
               })
               .catch((err: unknown) => refusedBy("shell", String(err)));
+          }
           // Typed and not run: installing needs sudo, so the person presses Return (V78 c).
           else if (typed?.sandboxInstall)
             void commands
@@ -3151,7 +3160,7 @@ export const PlaneView = memo(function PlaneView({
         })
         .catch((err: unknown) => refusedBy("shell", String(err)));
     },
-    [change, plane, refusedBy, succeeded],
+    [change, plane, refusedBy, signingOutIn, succeeded],
   );
   const openShell = useCallback(
     (cwd: string | null, filed: string, typed?: Typed) =>
@@ -3507,6 +3516,10 @@ export const PlaneView = memo(function PlaneView({
   /** Whether the picker's start is in flight: the ref is the guard, the state is the button. */
   const startingNow = useRef(false);
   const [starting, setStarting] = useState(false);
+  /** The person cancelled the start in flight: what it answers is said to nobody. */
+  const startLeft = useRef(false);
+  /** Which start is the dialog's: one the person cancelled may still be winding down. */
+  const startRun = useRef(0);
   const startPicked = useCallback(
     async (
       profile: string,
@@ -3522,6 +3535,8 @@ export const PlaneView = memo(function PlaneView({
       // long as its branch takes to check out, and a second press of Start in that time was a
       // second chat. The ref answers at once, where state would answer on the next render.
       startingNow.current = true;
+      startLeft.current = false;
+      const thisStart = ++startRun.current;
       setStarting(true);
       const refused = await startOn(
         picking.where,
@@ -3534,14 +3549,19 @@ export const PlaneView = memo(function PlaneView({
         undefined,
         withoutSandbox,
       ).finally(() => {
+        if (startRun.current !== thisStart) return;
         startingNow.current = false;
         setStarting(false);
       });
+      if (startRun.current !== thisStart || startLeft.current) return;
       if (refused !== undefined) {
         // In the picker, not behind it: the operator is still choosing, and a refusal they
         // cannot see beside the rows is one they cannot act on.
         setPickerTrouble(refused);
         setPickerSignIn(undefined);
+        // Over a pool's limit, what to raise it to: asked of the core, as the sign-in below is.
+        const offer = await commands.poolLimitOffer(profile, refused).catch(() => null);
+        setPickerLimit(offer === null ? undefined : { offer, refused });
         // The refusal left an Ask to sign the profile in (#2035): the Inbox reads it now.
         asksMoved(plane);
         // A profile of this machine's its harness says is not signed in here points to that
@@ -4340,6 +4360,9 @@ export const PlaneView = memo(function PlaneView({
             return;
           }
           setPickerTrouble(refused);
+          // Over a pool's limit, the picker that comes up offers to raise it (spec #4275).
+          const offer = await commands.poolLimitOffer(only.name, refused).catch(() => null);
+          setPickerLimit(offer === null ? undefined : { offer, refused });
         } else setPickerTrouble(undefined);
         offerBeside();
         setPicking({ options: options.data, where });
@@ -5503,8 +5526,12 @@ export const PlaneView = memo(function PlaneView({
               STARTING_SIZE.columns,
               STARTING_SIZE.rows,
             )
-          : wanted.kind === "triggers"
-            ? commands.skillTriggerTestsChat(
+          : wanted.kind === "triggers" || wanted.kind === "evals" || wanted.kind === "improve"
+            ? {
+                triggers: commands.skillTriggerTestsChat,
+                evals: commands.skillOutcomeEvalsChat,
+                improve: commands.skillImproveChat,
+              }[wanted.kind](
                 plane,
                 wanted.level,
                 wanted.name,
@@ -6212,6 +6239,7 @@ export const PlaneView = memo(function PlaneView({
             else
               // Every chat of the move, each in its place (#3453).
               for (const one of done.data.moved) {
+                movedAfterSignIn(plane, one.was, one.chat.session);
                 forgetMove(plane, one.was);
                 chatRestarted(one.was, one.chat);
                 // What came back that a tool here runs, said on its tab (the person's ruling of
@@ -10431,6 +10459,30 @@ export const PlaneView = memo(function PlaneView({
                   setPickerSignIn(undefined);
                   showInbox();
                 }}
+                limitOffer={
+                  pickerLimit !== undefined && pickerLimit.refused === pickerTrouble
+                    ? pickerLimit.offer
+                    : undefined
+                }
+                onRaiseLimit={async (values) => {
+                  const pool = pickerLimit?.offer.pool;
+                  if (pool === undefined) return false;
+                  for (const [key, value] of values) {
+                    const saved = await commands
+                      .poolLimitSet(pool, key, value)
+                      .catch((err: unknown) => ({
+                        status: "error" as const,
+                        error: String(err),
+                      }));
+                    if (saved.status === "error") {
+                      // The offer stays beside the words that replaced the refusal.
+                      setPickerTrouble(saved.error);
+                      setPickerLimit((was) => was && { ...was, refused: saved.error });
+                      return false;
+                    }
+                  }
+                  return true;
+                }}
                 onStart={(profile, persona, footer, label, newBranch, withoutSandbox) =>
                   void startPicked(profile, persona, footer, label, newBranch, withoutSandbox)
                 }
@@ -10467,6 +10519,14 @@ export const PlaneView = memo(function PlaneView({
                   openSettingsAt({ group, setting });
                 }}
                 onCancel={() => {
+                  // A start the session host has not answered stops here (#4264).
+                  if (startingNow.current) {
+                    startLeft.current = true;
+                    startRun.current += 1;
+                    startingNow.current = false;
+                    setStarting(false);
+                    void commands.cancelChatStart(plane).catch(() => undefined);
+                  }
                   setPicking(undefined);
                   setPickerTrouble(undefined);
                 }}

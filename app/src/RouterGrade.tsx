@@ -29,16 +29,15 @@ import {
   endSaid,
   EstimateTile,
   GradeOn,
-  GradeProgress,
   GradingHeading,
   limitSaid,
   PlanChanged,
+  RunningGradePage,
   RunsOnTile,
   TokenCap,
   tokensSaid,
 } from "./SkillGrade";
 import { NotRead, ReadingRows, useRead } from "./SkillPanels";
-import { Button } from "./ui/button/Button";
 import { Tile, Totals } from "./ui/card/Totals";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { PanelSectionTitle } from "./ui/panel/Panel";
@@ -392,6 +391,13 @@ export function RouterGradePlanPage({
                 : `on the library at ${plan.commit.slice(0, 12)}`}
               .
             </p>
+            {plan.pointer !== null && (
+              <p data-testid="router-grade-pointer">
+                {plan.pointer
+                  ? `The router ${plan.router} reads prompts here: in its arm, each trigger test's prompt is handed to it, and its pointer reaches that prompt as in a real chat.`
+                  : `The router ${plan.router} can read prompts, but that is off on Routing, so it is graded on its answer at each chat's start alone.`}
+              </p>
+            )}
             <ul aria-label="Skills the router is graded on">
               {plan.skills.map((one) => (
                 <li key={one.skill} data-testid="router-grade-skill">
@@ -466,7 +472,7 @@ function opensItsScorecard(step: RouterGradeStep, chosen: string | null): boolea
 
 /**
  * **A router's grade running, a page on Routing** (#4222), as a skill's is (S6,
- * `GradeRunningPage`): its chats done, what it has spent against its dollar limit and its tokens
+ * `RunningGradePage`): its chats done, what it has spent against its dollar limit and its tokens
  * against its cap, with Stop fixed at the foot. A grade's chats are drawn nowhere. `onEnded` is
  * told once it ends with nothing more to say, so Routing opens its scorecard (#3617); an end with
  * words to say stays here and says them, as does one of a router no longer chosen here, whose
@@ -488,158 +494,39 @@ export function RouterGradeRunningPage({
   /** Back to Routing: the grade keeps going. */
   onBack: () => void;
 }) {
-  const [step, setStep] = useState<RouterGradeStep>();
-  // Whether the app said this grade runs, where it has: its latest step says the rest.
-  const [runs, setRuns] = useState<boolean>();
-  const [unread, setUnread] = useState<string>();
-  const [again, setAgain] = useState(0);
-  const [stopping, setStopping] = useState(false);
-  const [stopRefused, setStopRefused] = useState<string>();
-  const name = step?.router ?? router ?? "chosen here before";
-  // The latest to tell, read as an event lands: the listener is not drawn again with them, so no
-  // step is lost while it would be.
-  const ended = useRef(onEnded);
-  const chosen = useRef(router);
-  useEffect(() => {
-    ended.current = onEnded;
-    chosen.current = router;
-  });
-
-  // Listened to first, then the app's word on whether it runs and its latest step: an end told
-  // before the listener was attached is never missed, as the read after it says it runs no more.
-  useEffect(() => {
-    let live = true;
-    const listening = listen<RouterGradeStep>(ROUTER_GRADE, (event) => {
-      const now = event.payload;
-      if (now.plane !== plane || now.grade !== grade) return;
-      setStep(now);
-      if (opensItsScorecard(now, chosen.current)) ended.current();
-    }).catch(() => undefined);
-    void listening
-      .then(() => commands.routerGradeRunning(plane, grade))
-      .then((answer) => {
-        if (!live) return;
-        if (answer.status !== "ok") {
-          setUnread(answer.error);
-          return;
-        }
-        setUnread(undefined);
-        setRuns(answer.data !== null);
-        // A step told since is newer than the one the read says.
-        const now = answer.data;
-        if (now !== null) setStep((told) => told ?? now);
-        // Ended before this page listened: the event is gone, and its end is read here.
-        if (now !== null && opensItsScorecard(now, chosen.current)) ended.current();
-      })
-      .catch((err: unknown) => {
-        if (live) setUnread(String(err));
-      });
-    return () => {
-      live = false;
-      void listening.then((stop) => stop?.()).catch(() => undefined);
-    };
-  }, [plane, grade, again]);
-
-  // A read that failed with no step told says so in place, never "Reading…" for good.
-  if (step === undefined && unread !== undefined)
-    return (
-      <NotRead
-        what={`the grade of the router ${name}`}
-        why={unread}
-        onAgain={() => {
-          setUnread(undefined);
-          setAgain((n) => n + 1);
-        }}
-        testid="router-grading-not-read"
-      />
-    );
-  if (step === undefined && runs === undefined)
-    return <ReadingRows what={`the grade of the router ${name}`} testid="router-grading-reading" />;
-  if (step === undefined && runs === false)
-    return (
-      <EmptyState
-        variant="panel"
-        headline={`This grade of the router ${name} is not running any more`}
-        body="It ended while this page was away. Its scorecard says how."
-        testid="router-grade-gone"
-        action={<Button onPress={onEnded}>Open its scorecard</Button>}
-      />
-    );
-  const over = step !== undefined && step.ended !== null;
   return (
-    <ReviewPage
-      label={`Grading the router ${name}`}
-      data-testid="router-grade-running"
-      summary={over ? "It has ended." : "Stopping keeps what ran so far."}
-      summaryReserve={["It has ended.", "Stopping keeps what ran so far."]}
-      onCancel={onBack}
-      cancel={{ children: "Leave it running" }}
-      main={{
-        children: "Stop",
-        variant: "danger",
-        isDisabled: stopping || over,
-        onPress: () => {
-          setStopping(true);
-          setStopRefused(undefined);
-          void commands
-            .skillGradeStop(plane, grade)
-            .then((answer) => {
-              if (answer.status === "error") {
-                setStopping(false);
-                setStopRefused(answer.error);
-              }
-            })
-            .catch((err: unknown) => {
-              setStopping(false);
-              setStopRefused(String(err));
-            });
-        },
-      }}
-    >
-      <GradingHeading name={`Grading the router ${name}`} />
-      {stopRefused !== undefined && (
-        <Notice
-          cause={`router-grade-stop:${grade}`}
-          tone="trouble"
-          label="Not stopped"
-          onDismiss={() => setStopRefused(undefined)}
-        >
-          {stopRefused}
-        </Notice>
-      )}
-      {over && !opensItsScorecard(step, router) && (
-        // An end with words to say: something went wrong on the way, or the router it graded is
-        // no longer chosen here, so its scorecard is offered only where it can open.
-        <Notice
-          cause={`router-grade-ended:${grade}`}
-          tone={step.said === null ? "news" : "trouble"}
-          label="The grade ended"
-          fixes={
-            step.recorded && step.router === router
-              ? [
-                  { label: "Open its scorecard", onPress: onEnded },
-                  { label: "Back to the list", onPress: onBack },
-                ]
-              : [{ label: "Back to the list", onPress: onBack }]
-          }
-        >
+    <RunningGradePage
+      // Another grade is another page: nothing of this one's is drawn under its name.
+      key={`${plane}:${grade}`}
+      whose="router"
+      plane={plane}
+      grade={grade}
+      event={ROUTER_GRADE}
+      read={() => commands.routerGradeRunning(plane, grade)}
+      of={(step) => `the router ${step?.router ?? router ?? "chosen here before"}`}
+      opensItsScorecard={(step) => opensItsScorecard(step, router)}
+      // An end with words to say: something went wrong on the way, or the router it graded is no
+      // longer chosen here, so its scorecard is offered only where it can open.
+      endWords={(step) => ({
+        tone: step.said === null ? "news" : "trouble",
+        fixes:
+          step.recorded && step.router === router
+            ? [
+                { label: "Open its scorecard", onPress: onEnded },
+                { label: "Back to the list", onPress: onBack },
+              ]
+            : [{ label: "Back to the list", onPress: onBack }],
+        said: (
           <span data-testid="router-grade-ended">
             {step.router === router
               ? endSaid(step)
               : `${endSaid(step)} It graded the router ${step.router}, no longer chosen here: choose it again to read its scorecard.`}
           </span>
-        </Notice>
-      )}
-      <GradeProgress
-        label={`How far the grade of the router ${name} is`}
-        ran={step?.ran ?? 0}
-        of={step?.of ?? 0}
-        tokens={step?.tokens ?? null}
-        cap={step?.cap ?? 0}
-        costUsd={step?.cost_usd ?? null}
-        limitUsd={step?.limit_usd ?? null}
-      />
-    </ReviewPage>
+        ),
+      })}
+      onEnded={onEnded}
+      onBack={onBack}
+    />
   );
 }
 

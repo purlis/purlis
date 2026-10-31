@@ -293,8 +293,8 @@ recipe, and holds two pairs the tint adds — the mark (`accent.base`) and a tab
 `layer.workspace`. **Every tint holds the consent floors that keep colours apart itself, at every
 hue, custom colours included** (`tint::APART`, OKLab 0.1 each): the accent and the accent-hued
 tokens drawn beside danger (`focus.ring`, `list.selected-edge`, `accent.surface`, `tab.active`, and
-the primary's `accent.fill` and `accent.fill-hover` and its edge `accent.fill-edge`,
-`tint::ACCENT_KIN`) stay apart from the danger colour, and Allow and Keep blocked stay apart
+the primary's `accent.fill` and `accent.fill-hover` and its edge `accent.fill-edge`, and what a
+person reads as the accent, `markdown.link` and `chart.1`, `tint::ACCENT_KIN`) stay apart from the danger colour, and Allow and Keep blocked stay apart
 (`accent.base` from `border.control`, as the tint draws it); every rule holds whichever side a theme
 tints. At a hue that would bring a pair nearer, the tint keeps the hue and gives less colour, in
 steps of 0.005 chroma, so a red workspace stays red, and a grey accent keeps as much of its small

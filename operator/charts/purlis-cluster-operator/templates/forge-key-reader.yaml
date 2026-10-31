@@ -24,6 +24,11 @@ rules:
     resourceNames:
       {{- toYaml . | nindent 6 }}
     verbs: [get]
+  # The mint port's own Service, whose address a Claim's status says (#4207).
+  - apiGroups: [""]
+    resources: [services]
+    resourceNames: [purlis-cluster-operator-mint]
+    verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

@@ -6,7 +6,7 @@
 //! "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp", "suspendAfter",
 //! "frames", "width", "profiles"}], "runners":
 //! [{"name", "pool", "container", "image", "user", "home", "device", "key", "paired", "of"?,
-//! "draining"?}]}`.
+//! "draining"?, "engine"?, "home_created"?}]}`.
 //!
 //! - **A pool is named and defined only here** ([`Pool`]): a Docker pool's name, the runner
 //!   image by digest, and the limits the person set, each left out where purlis's default
@@ -86,6 +86,8 @@ pub struct Set {
     pub suspend_after: Option<std::time::Duration>,
     pub frames: Option<u32>,
     pub width: Option<u16>,
+    /// A pool's limits on what purlis sends and waits for ([`crate::poollimits`], spec #4275).
+    pub chosen: crate::poollimits::Chosen,
 }
 
 /// One Docker pool on this machine, as the person added it (#2679): its name, which its one
@@ -258,6 +260,12 @@ impl Pool {
         if let Some(fields) = row.as_object_mut() {
             fields.remove("pricePerHour");
             fields.remove("profiles");
+            // These apply from the next attempt, so a change makes nothing again (Q13).
+            for limit in crate::poollimits::all() {
+                if limit.takes_effect == crate::poollimits::TakesEffect::NextAttempt {
+                    fields.remove(limit.key);
+                }
+            }
         }
         let row = row.to_string();
         crate::runnerlink::hex_of(&sha2::Sha256::digest(row.as_bytes()))
@@ -316,6 +324,12 @@ pub struct Kept {
     /// The profiles signed out of its pool while it drains (#4145): their sign-ins here are
     /// never carried, even where the sign-out could not reach it.
     pub signed_out: Vec<String>,
+    /// The engine that made it, as `docker info` prints its id (#4166): only that engine's word
+    /// says it was removed. `None` for a runner kept before this, or an engine that prints none.
+    pub engine: Option<String>,
+    /// Its home volume's `CreatedAt`, as Docker printed it when it was made (#4167): only a home
+    /// that still prints this is its own, and gives sign-ins to a runner made again.
+    pub home_created: Option<String>,
 }
 
 impl Kept {
@@ -698,6 +712,48 @@ fn change_pool_profiles(
     write(config_root, &held)
 }
 
+/// **The values chosen for pool `name`'s limits** (spec #4275), of either kind; none set where no
+/// such pool is kept, so purlis's defaults hold.
+pub fn chosen_limits_of(
+    config_root: &Path,
+    name: &str,
+) -> Result<crate::poollimits::Chosen, Refused> {
+    let held = load(config_root)?;
+    let docker = held.pools.iter().find(|pool| pool.name() == name);
+    let cluster = held.clusters.iter().find(|pool| pool.name() == name);
+    Ok(docker
+        .map(|pool| pool.set.chosen)
+        .or_else(|| cluster.map(|pool| *pool.chosen))
+        .unwrap_or_default())
+}
+
+/// **Sets pool `name`'s limit `id` to `value`**, or, `None`, back to purlis's default (spec
+/// #4275), of either kind, under the file's lock. It applies from the next attempt, and defines
+/// no new runner. A value [`crate::poollimits::Limit::check`] refuses, or no such pool, is
+/// refused, and what is kept stays.
+pub fn set_pool_limit(
+    config_root: &Path,
+    name: &str,
+    id: crate::poollimits::LimitId,
+    value: Option<u64>,
+) -> Result<(), Refused> {
+    if let Some(value) = value {
+        id.limit().check(value, None).map_err(Refused::Other)?;
+    }
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    if let Some(pool) = held.pools.iter_mut().find(|pool| pool.name == name) {
+        pool.set.chosen = pool.set.chosen.with(id, value);
+    } else if let Some(pool) = held.clusters.iter_mut().find(|pool| pool.name == name) {
+        *pool.chosen = pool.chosen.with(id, value);
+    } else {
+        return Err(Refused::Other(format!(
+            "there is no pool named {name} on this machine"
+        )));
+    }
+    write(config_root, &held)
+}
+
 /// Forget the pool recorded as `name`; nothing where none is. Its runner is [`remove`]d first.
 pub fn forget_pool(config_root: &Path, name: &str) -> Result<(), Refused> {
     forget_pool_locked(config_root, name, &lock(config_root))
@@ -862,6 +918,8 @@ fn keep_in(
         carried: false,
         unpaired: false,
         signed_out: Vec::new(),
+        engine: None,
+        home_created: None,
     };
     kept.push(new.clone());
     Ok(new)
@@ -1092,7 +1150,21 @@ fn to_row(kept: &Kept) -> serde_json::Value {
     if !kept.signed_out.is_empty() {
         row["signed_out"] = kept.signed_out.clone().into();
     }
+    if let Some(engine) = &kept.engine {
+        row["engine"] = engine.as_str().into();
+    }
+    if let Some(created) = &kept.home_created {
+        row["home_created"] = created.as_str().into();
+    }
     row
+}
+
+/// Whether `text`, an engine's id or a volume's `CreatedAt` as Docker printed it, can be kept
+/// (#4166, #4167): one short line of printable words. It is only ever compared.
+pub(crate) fn usable_noted(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= 128
+        && text.chars().all(|one| one.is_ascii_graphic() || one == ' ')
 }
 
 fn from_row(row: &serde_json::Value) -> Option<Kept> {
@@ -1112,6 +1184,8 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         "carried",
         "unpaired",
         "signed_out",
+        "engine",
+        "home_created",
     ];
     if fields.keys().any(|key| !known.contains(&key.as_str())) {
         return None;
@@ -1154,6 +1228,16 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
             })
             .collect::<Option<Vec<_>>>()?,
     };
+    // Left out where nothing was noted; anything else that is not usable is a file of another shape.
+    let noted = |key: &str| match fields.get(key) {
+        None => Some(None),
+        Some(value) => value
+            .as_str()
+            .filter(|text| usable_noted(text))
+            .map(|text| Some(text.to_owned())),
+    };
+    let engine = noted("engine")?;
+    let home_created = noted("home_created")?;
     if text("pool")? != "docker" {
         return None;
     }
@@ -1182,6 +1266,8 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         carried,
         unpaired,
         signed_out,
+        engine,
+        home_created,
     })
 }
 
@@ -1247,6 +1333,7 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
     if let Some(profiles) = pool.profiles() {
         row["profiles"] = profiles.into();
     }
+    set.chosen.to_row(&mut row);
     row
 }
 
@@ -1326,7 +1413,10 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         "width",
         "profiles",
     ];
-    if fields.keys().any(|key| !known.contains(&key.as_str())) {
+    if fields
+        .keys()
+        .any(|key| !known.contains(&key.as_str()) && crate::poollimits::of_key(key).is_none())
+    {
         return None;
     }
     let text = |key: &str| fields.get(key).and_then(serde_json::Value::as_str);
@@ -1370,6 +1460,7 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         },
         frames: count(fields.get("frames"))?,
         width: count(fields.get("width"))?,
+        chosen: crate::poollimits::Chosen::from_row(fields).ok()?,
     };
     Pool::new(text("name")?, Image::pinned(text("image")?).ok()?, set).ok()
 }
@@ -1411,6 +1502,9 @@ pub struct ClusterPool {
     /// The profiles chosen for it (`profiles`, #3819), in order, as a Docker pool's are;
     /// `None` where none were.
     profiles: Option<Vec<String>>,
+    /// The values this person chose for its limits ([`crate::poollimits`], spec #4275).
+    /// Held apart, as the list of limits grows and [`Reached`] carries a whole pool.
+    chosen: Box<crate::poollimits::Chosen>,
 }
 
 impl ClusterPool {
@@ -1489,6 +1583,7 @@ impl ClusterPool {
             owned: false,
             mint_in_cluster: false,
             profiles: None,
+            chosen: Box::default(),
         })
     }
 
@@ -1943,6 +2038,7 @@ fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
     if let Some(profiles) = pool.profiles() {
         row["profiles"] = profiles.into();
     }
+    pool.chosen.to_row(&mut row);
     row
 }
 
@@ -1963,9 +2059,13 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         "mintInCluster",
         "profiles",
     ];
-    if fields.keys().any(|key| !known.contains(&key.as_str())) {
+    if fields
+        .keys()
+        .any(|key| !known.contains(&key.as_str()) && crate::poollimits::of_key(key).is_none())
+    {
         return None;
     }
+    let chosen = crate::poollimits::Chosen::from_row(fields).ok()?;
     let profiles = match fields.get("profiles") {
         None => None,
         Some(profiles) => Some(profiles_from_row(profiles)?),
@@ -2010,6 +2110,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         owned,
         mint_in_cluster,
         profiles,
+        chosen: Box::new(chosen),
         ..pool
     })
     .ok()

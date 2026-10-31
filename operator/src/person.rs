@@ -494,6 +494,7 @@ pub fn is_over_quota(error: &kube::Error) -> bool {
 pub fn status_over_quota(namespace: &str, why: &str) -> ClaimStatus {
     ClaimStatus {
         link_key: None,
+        mint: None,
         conditions: vec![condition(
             "False",
             OVER_QUOTA,
@@ -517,6 +518,7 @@ pub fn status_of_a_namespace_in_the_way(namespace: &str, made_before_policy: boo
     };
     ClaimStatus {
         link_key: None,
+        mint: None,
         conditions: vec![condition(
             "False",
             NAMESPACE_IN_THE_WAY,
@@ -533,6 +535,7 @@ pub fn status_of_a_namespace_in_the_way(namespace: &str, made_before_policy: boo
 pub fn status_of_runner_namespaces_not_in_force() -> ClaimStatus {
     ClaimStatus {
         link_key: None,
+        mint: None,
         conditions: vec![condition(
             "False",
             "PolicyNotInForce",
@@ -550,6 +553,7 @@ pub fn status_of_runner_namespaces_not_in_force() -> ClaimStatus {
 pub fn status_of_an_uncounted_quota(namespace: &str) -> ClaimStatus {
     ClaimStatus {
         link_key: None,
+        mint: None,
         conditions: vec![condition(
             "False",
             "Starting",

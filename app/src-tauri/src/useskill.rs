@@ -312,7 +312,7 @@ pub(crate) async fn chat_skills(
         );
         if shown.known {
             shown.repos = repos_of_the_chat(&held, &chat);
-            shown.routing = chat.start.routed.as_ref().map(Into::into);
+            shown.routing = chat.start.routed.as_deref().map(Into::into);
             shown.missing = held.chats().skills_missing(session);
         } else {
             shown.not_supported = chat.not_supported.clone();

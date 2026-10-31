@@ -6,6 +6,7 @@ import type { ClusterPoolRow, PoolLink, PoolRow, PoolVersion, ProjectNotHeld } f
 import { Notice } from "../Notice";
 import { useProjectsNotHeld } from "../notheld";
 import {
+  anotherEngineSaid,
   askLink,
   askVersion,
   markPoolOwned,
@@ -97,6 +98,7 @@ function linkSaid(link: PoolLink | "asking" | undefined): string | undefined {
   if (link.state === "key_changed" || link.state === "operator_key_changed") return "key changed";
   if (link.state === "suspended") return "suspended";
   if (link.state === "removed") return "removed outside purlis";
+  if (link.state === "on_another_engine") return "on another Docker engine";
   return "not linked";
 }
 
@@ -239,6 +241,9 @@ function PoolEntry({
           remaking={remaking}
           onMakeAgain={onMakeAgain}
         />
+      )}
+      {typeof link === "object" && link.state === "on_another_engine" && (
+        <p className="ui-setting-help">{anotherEngineSaid(pool.name)}</p>
       )}
       {remade !== undefined && <p className="ui-setting-help">{remade}</p>}
       {typeof link === "object" && link.state === "down" && (

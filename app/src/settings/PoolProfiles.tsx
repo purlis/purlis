@@ -14,28 +14,18 @@ import {
 import { Button } from "../ui/button/Button";
 import { Menu, MenuItem, MenuTrigger } from "../ui/menu/Menu";
 import { askProfileSignIn, askProfileSignOut } from "./links";
-import { PoolSignIn, type SignInStanding } from "./PoolSignIn";
+import { PoolSignIn, approvesIn, drivenPlan, type SignInStanding } from "./PoolSignIn";
 
 /** The harnesses whose sign-in purlis drives in place, with no terminal (#4042, #4044). */
 export const DRIVEN = new Set(["claude", "codex"]);
 
-/**
- * Whether the sign-in of `row` to the plan `plan` is driven in place: opencode's Copilot (#4045)
- * and its ChatGPT (#4044).
- */
-const drivenPlan = (row: PoolProfileRow, plan: string) =>
-  row.kind === "opencode" && (plan === "github-copilot" || plan === "openai");
-
-/**
- * Whether the login of harness `kind` to `plan` is approved in the browser, with nothing to paste
- * (#4044): Codex's, and opencode's ChatGPT one.
- */
-export const approvesIn = (kind: string, plan?: string) =>
-  kind === "codex" || (kind === "opencode" && plan === "openai");
-
 /** The harnesses with a sign-out of their own that purlis runs: opencode's asks in a terminal,
  *  which its line opens (#4124). */
 const SIGNS_OUT = new Set(["claude", "codex"]);
+
+/** What a terminal sign-out reaches (#4274): the running runner, never one still draining. */
+const SIGNS_OUT_IN_A_TERMINAL_ON =
+  "This signs out on the running runner. A draining runner keeps its sign-in until it is removed, and that sign-in does not move to the new runner.";
 
 /** What a profile's line says of it while its sign-in strip is open (spec #4023 story 29). */
 const STANDING_SAID: Record<SignInStanding, string> = {
@@ -243,9 +233,9 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
               <PoolSignIn
                 pool={pool}
                 profile={row.name}
+                kind={row.kind}
                 harness={row.harness}
                 provider={plan}
-                approves={approvesIn(row.kind, plan)}
                 onEnd={ended}
                 onStanding={setStrip}
                 onTerminal={
@@ -256,14 +246,6 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
                         // The harness's browser flow in a terminal has no way back to the
                         // runner, so a login approved in the browser runs its device flow there.
                         signIn(row, plan, approvesIn(row.kind, plan) || undefined);
-                      }
-                }
-                onDeviceCode={
-                  plane === undefined
-                    ? undefined
-                    : () => {
-                        ended(false);
-                        signIn(row, plan, true);
                       }
                 }
               />
@@ -279,21 +261,21 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
                 >
                   Sign in
                 </Button>
-              ) : plane === undefined && !row.plans.some((one) => drivenPlan(row, one.id)) ? (
+              ) : plane === undefined && !row.plans.some((one) => drivenPlan(row.kind, one.id)) ? (
                 <span className="ui-setting-help">
                   Open a project to sign it in from its window.
                 </span>
               ) : row.plans.length > 0 ? (
                 <>
                   {row.plans
-                    .filter((one) => plane !== undefined || drivenPlan(row, one.id))
+                    .filter((one) => plane !== undefined || drivenPlan(row.kind, one.id))
                     .map((one) => (
                       <Button
                         key={one.id}
                         aria-label={`Sign ${row.name} in to ${one.title} on pool ${pool}`}
                         isDisabled={out?.running === true}
                         onPress={() =>
-                          drivenPlan(row, one.id) ? open(row, one.id) : signIn(row, one.id)
+                          drivenPlan(row.kind, one.id) ? open(row, one.id) : signIn(row, one.id)
                         }
                         className="ui-setting-reset"
                       >
@@ -331,14 +313,17 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
                     {`${row.harness} signs out in a terminal: open a project to sign ${row.name} out here.`}
                   </span>
                 ) : (
-                  <Button
-                    variant="ghost"
-                    aria-label={`Sign out ${row.name} on pool ${pool} in a terminal`}
-                    onPress={() => askProfileSignOut(plane, row.name, pool)}
-                    className="ui-setting-reset"
-                  >
-                    Sign out in a terminal
-                  </Button>
+                  <>
+                    <span className="ui-setting-help">{SIGNS_OUT_IN_A_TERMINAL_ON}</span>
+                    <Button
+                      variant="ghost"
+                      aria-label={`Sign out ${row.name} on pool ${pool} in a terminal`}
+                      onPress={() => askProfileSignOut(plane, row.name, pool)}
+                      className="ui-setting-reset"
+                    >
+                      Sign out in a terminal
+                    </Button>
+                  </>
                 )
               ) : out?.name === row.name && !out.running ? (
                 <>

@@ -925,6 +925,88 @@ pub fn token_for(
     Ok(minted.token)
 }
 
+/// **The token the operator mints for a cluster runner's tool** (#4207): one per chat and App, kept
+/// in memory as [`token_for`] keeps one and revoked at the chat's end ([`chat_ended`]) by what asks,
+/// `mint`. A chat that ended while it was minted keeps nothing.
+#[cfg(unix)]
+pub fn token_in_cluster(
+    root: &Path,
+    chat: u32,
+    tool: &crate::sandbox::tools::Tool,
+    mint: &dyn Fn(&str) -> Result<Option<super::mintport::Minted>, String>,
+) -> Result<Option<Zeroizing<String>>, String> {
+    let ends_seen = ends_so_far();
+    let (Some(app), [value]) = (&tool.mint, tool.values.as_slice()) else {
+        return Err(format!("{} mints no GitHub App token", tool.name));
+    };
+    let asked = Asked {
+        root: root.to_path_buf(),
+        chat,
+        app: app.app.clone(),
+        vault: tool.vault.clone(),
+        key: value.key.clone(),
+        remotes: Vec::new(),
+        clone: None,
+    };
+    {
+        let mut kept = KEPT.lock().unwrap_or_else(|e| e.into_inner());
+        let now = chrono::Utc::now();
+        kept.retain(|one| one.alive > now);
+        if let Some(one) = kept
+            .iter()
+            .find(|one| one.asked == asked && one.until > now)
+        {
+            return Ok(Some(one.token.clone()));
+        }
+    }
+    let Some(minted) = mint(&app.app)? else {
+        return Ok(None);
+    };
+    let now = chrono::Utc::now();
+    tracing::info!(
+        "purlis: chat {chat} was handed a token of GitHub App {} the cluster's operator minted for \
+         {}",
+        app.app,
+        crate::counts::counted(minted.repos.len(), "repo", "repos"),
+    );
+    if !keep_one(
+        asked,
+        ends_seen,
+        minted.token.clone(),
+        after(now, kept_for(minted.expires_at.as_deref(), now)),
+        after(now, lives_for(minted.expires_at.as_deref(), now)),
+    ) {
+        let _ = revoke_later(vec![minted.token], format!("chat {chat}"));
+        return Err(CHAT_ENDED.to_owned());
+    }
+    Ok(Some(minted.token))
+}
+
+/// **The `owner/name` of each github.com repo of chat's workspace** (#4207), as a mint on this
+/// machine would name them ([`remotes_of_workspace`]): what the desktop puts on a Claim.
+pub fn repos_of_workspace(chat: &For<'_>) -> Vec<String> {
+    let recorded = chat
+        .config_root
+        .map(super::gitcredential::read_push_remotes)
+        .unwrap_or_default();
+    let mut repos: Vec<String> =
+        remotes_of_workspace(chat.root, chat.folder, chat.writes, chat.started, &recorded)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|remote| remote.host == HOST)
+            .map(|remote| format!("{}/{}", remote.owner, remote.name))
+            .collect();
+    repos.sort();
+    repos.dedup();
+    repos
+}
+
+/// **Revokes `token` now**, and says whether GitHub took it: what a check of the port keeps nothing
+/// of (`purlis bridge --mint-check`).
+pub fn revoke_now(token: &str) -> Result<(), String> {
+    revoke_on_github(token)
+}
+
 /// Whether `remote` is a remote of the clone at `clone`, canonical.
 fn remote_is_in(remote: &Remote, clone: &Path) -> bool {
     remote

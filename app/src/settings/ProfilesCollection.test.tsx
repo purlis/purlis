@@ -42,7 +42,7 @@ import { offeredIn, pickIn, selectNamed } from "../ui/select/select.testkit";
 
 const PLANE = "/home/dev/plane";
 
-type Profile = { name: string; kind: string; command: string[] };
+type Profile = { name: string; kind: string; command: string[]; iconFellBack?: string };
 
 const text = (profiles: readonly Profile[]) =>
   profiles
@@ -76,6 +76,7 @@ function fileOf(profiles: readonly Profile[]): SettingsFile {
       collection: "profiles",
       id: idOf(one),
       label: one.name,
+      icon_fell_back: one.iconFellBack,
       keys: [{ key: "harness" }, { key: one.name }],
       values: [
         { field: "name", value: one.name },
@@ -589,6 +590,16 @@ describe("Rename a profile", () => {
     const said = await within(screen.getByRole("group", { name: "work" })).findByRole("alert");
     expect(said).toHaveTextContent(MOVED);
     expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("says why a profile's icon fell back to its monogram, as a description of its row (#3137)", async () => {
+    const why = "the icon file is not there";
+    core({ profiles: [{ ...WORK, iconFellBack: why }, ALT] });
+    await atProject();
+    await open("Harness & profiles");
+    const row = screen.getByRole("group", { name: "work" });
+    expect(row).toHaveAccessibleDescription(`Its icon is its monogram: ${why}.`);
+    expect(screen.getByRole("group", { name: "alt" })).not.toHaveAccessibleDescription();
   });
 
   it("is refused while something uses the profile, naming it", async () => {

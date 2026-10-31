@@ -215,6 +215,7 @@ const PLAN: RouterGradePlan = {
     chats_then: 60,
   },
   estimate_same_library: true,
+  pointer: null,
   running: null,
   consent: "c0ffee",
 };
@@ -421,6 +422,37 @@ export const RoutingBuiltIn: Story = {
   play: async ({ canvas }) => {
     await expect(await canvas.findByTestId("skill-routing-no-chats")).toBeInTheDocument();
     await tabInto(() => canvas.getByRole("button", { name: "Change…" }));
+    expectFocusInSight();
+  },
+};
+
+/** **A router that reads prompts**: its switch, off by default, with the line that says it reads
+ *  every prompt beside it (ADR 0102 as amended 2026-10-31). */
+export const RouterThatReadsPrompts: Story = {
+  args: { page: "routing" },
+  beforeEach: () => {
+    mockIPC((cmd) => {
+      if (cmd === "skill_routers")
+        return [
+          { id: "relevance", name: "Relevance router", reads_prompts: true, prompts_on: false },
+        ];
+      if (cmd === "skill_studio")
+        return studio([], {
+          workspace: "smart-ide",
+          workspaces: ["smart-ide"],
+          harnesses: HARNESSES,
+          router: ROUTER,
+        });
+      if (cmd === "skill_deletes_cut_short") return { settled: [], unsettled: [] };
+      return [];
+    });
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("switch", { name: "Let it read prompts" }),
+    ).not.toBeChecked();
+    await expect(canvas.getByTestId("skill-routing-reads-every-prompt")).toBeInTheDocument();
+    await tabInto(() => canvas.getByRole("switch", { name: "Let it read prompts" }));
     expectFocusInSight();
   },
 };

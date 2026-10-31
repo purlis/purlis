@@ -231,6 +231,8 @@ step "a chat runs on a cluster runner, through the link"
 # The desktop's side (#2056), from the root workspace: a Claim made as this kubeconfig's user,
 # the operator's statement checked against the key the Pool names, a pairing over kubectl exec
 # that must agree with it, then a link through kubectl exec and a chat on it.
+cargo build --manifest-path "$repo/Cargo.toml" --locked -p purlis-cli
+CLUSTER_POOL_TEST_PURLIS=$repo/target/debug/purlis \
 CLUSTER_POOL_TEST_IMAGE=$runner CLUSTER_POOL_TEST_CONTEXT=$context \
   "$repo/tools/tests-ran.sh" -- cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-core \
   --test it -- a_chat_runs_on_a_cluster_runner_through_kubectl_exec:: --ignored --test-threads=1

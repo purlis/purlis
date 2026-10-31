@@ -1029,6 +1029,7 @@ export const commands = {
 	 */
 	skillRouters: (plane: PlaneId) => typedError<SkillRouterOffer[], string>(__TAURI_INVOKE("skill_routers", { plane })),
 	skillRouterChoose: __WINDOW_ONLY_RESULT,
+	skillRouterReadsPrompts: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
 	 *  owners, and the skills it names and that name it. Nothing while the flag is off.
@@ -1049,6 +1050,8 @@ export const commands = {
 	skillDraftReject: __WINDOW_ONLY_RESULT,
 	skillDraftChat: __WINDOW_ONLY_START_REFUSED,
 	skillTriggerTestsChat: __WINDOW_ONLY_START_REFUSED,
+	skillOutcomeEvalsChat: __WINDOW_ONLY_START_REFUSED,
+	skillImproveChat: __WINDOW_ONLY_START_REFUSED,
 	skillDraftTry: __WINDOW_ONLY_START_REFUSED,
 	skillDraftRedo: __WINDOW_ONLY_START_REFUSED,
 	skillDraftRedoIn: __WINDOW_ONLY_RESULT,
@@ -1393,6 +1396,7 @@ export const commands = {
 	harnessCards: (plane: PlaneId) => typedError<HarnessGlance[], string>(__TAURI_INVOKE("harness_cards", { plane })),
 	approveProfile: __WINDOW_ONLY_RESULT,
 	startChat: __WINDOW_ONLY_RESULT,
+	cancelChatStart: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The piece a chat's working directory sits in, or `None`.
 	 * 
@@ -1531,6 +1535,8 @@ export const commands = {
 	setClusterPoolOwned: __WINDOW_ONLY_RESULT,
 	poolProfiles: __WINDOW_ONLY_RESULT,
 	poolProfileAdd: __WINDOW_ONLY_RESULT,
+	poolLimitOffer: __WINDOW_ONLY,
+	poolLimitSet: __WINDOW_ONLY_RESULT,
 	poolProfileRemove: __WINDOW_ONLY_RESULT,
 	poolSignInStart: __WINDOW_ONLY_RESULT,
 	poolSignInNext: __WINDOW_ONLY_RESULT,
@@ -6617,6 +6623,11 @@ export type MoveSignIn = {
 	kind: string,
 	/**  Its harness as people call it: `Claude Code`. */
 	harness: string,
+	/**
+	 *  The plans to choose from, where its harness serves several (#4181): a profile keeps none
+	 *  of its own, and a login approved in the browser is told by its plan.
+	 */
+	plans: PlanRow[],
 };
 
 /**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */
@@ -8187,6 +8198,26 @@ export type PoolDisk = {
 	not_listed: number,
 };
 
+/**  **A limit a start was refused on**, as Start a chat offers to raise it (spec #4275). */
+export type PoolLimitHitRow = {
+	/**  The limit's key: what [`pool_limit_set`] takes. */
+	key: string,
+	/**  Its name in plain words. */
+	plain: string,
+	/**  The word beside a number of it. */
+	unit: string,
+	in_force: number,
+	needed: number,
+	/**  The value offered, which the person can edit; none where no value would hold it. */
+	suggested: number | null,
+};
+
+/**  **What a refused start on a pool offers**: the pool, and each limit it was refused on. */
+export type PoolLimitOffer = {
+	pool: string,
+	hits: PoolLimitHitRow[],
+};
+
 /**
  *  A pool's limits, as a row draws them: the CPUs as typed (`2`, `1.5`), memory and `/tmp` in
  *  MiB.
@@ -8221,7 +8252,12 @@ export type PoolLink =
  *  it comes back, and the window offers Make the runner again. Whether its home volume, with
  *  its sign-ins, is still there for the runner made again to take them from.
  */
-{ state: "removed"; home_kept: boolean };
+{ state: "removed"; home_kept: boolean } | 
+/**
+ *  Docker points at another engine than the one that made it (#4166): its container may be
+ *  there still, so it is not said to be removed and Make the runner again is not offered.
+ */
+{ state: "on_another_engine" };
 
 /**  One of this machine's profiles, as a pool's runner stands with it. */
 export type PoolProfileRow = {
@@ -9499,6 +9535,12 @@ export type RouterGradePlan = {
 	/**  A grade running in this project now, where one is: a skill's or a router's. */
 	running: string | null,
 	/**
+	 *  **Whether its router's arm runs with its pointer** (SK-15k, #3619): true where the router
+	 *  reads prompts here, false where it could and the person has not turned that on, null
+	 *  where it reads none.
+	 */
+	pointer: boolean | null,
+	/**
 	 *  What pressing Grade consents to: what it grades, and the profile, model, cap and dollar
 	 *  limit this plan shows (`grades::consent_on`).
 	 */
@@ -10361,6 +10403,11 @@ export type SettingsEntry = {
 	keys: SettingsStep[],
 	/**  The Add form's values that would write it again, by the entry's key. */
 	values: EntryValue[],
+	/**
+	 *  Why a profile's icon fell back to its monogram (#3137), a sentence purlis wrote, never
+	 *  anything from the file. Optional in the window's type, as only a profile has one.
+	 */
+	icon_fell_back?: string | null,
 };
 
 /**  One value in a file, and where it is. */
@@ -11141,6 +11188,10 @@ export type SkillRouterOffer = {
 	id: string,
 	/**  Its name, as its manifest gives it. */
 	name: string,
+	/**  Whether its approval said it reads prompts, which only offers the person the switch. */
+	reads_prompts: boolean,
+	/**  Whether the person turned that on for it on this machine (ADR 0102 as amended 2026-10-31). */
+	prompts_on: boolean,
 };
 
 /**

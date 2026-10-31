@@ -347,13 +347,22 @@ pub fn sign_in_file_of(harness: &str) -> Option<&'static str> {
     }
 }
 
-/// **The folder under the data home a runner keeps the sign-ins carried to it in** (#4011,
-/// #4055): `<data>/carried/<batch>/<profile>/`, a batch of each drained runner's, in a folder
-/// the carry made, until it keeps that profile for its desktop and takes them in.
-pub const CARRIED: &str = "carried";
+/// **The folder a runner keeps the sign-ins carried to it in** (#4011, #4055), under its profiles'
+/// folder ([`made::DIR`]), which a chat neither reads nor writes:
+/// `<data>/profiles/.carried/<batch>/<profile>/`, a batch of each drained runner's, until it keeps
+/// that profile for its desktop and takes them in. A profile's name starts with no dot.
+pub const CARRIED: &str = ".carried";
 
-/// **Where under a runner's home the carry puts the sign-ins it carries** (#4055): [`CARRIED`]
-/// under its data home, walked to through no link.
+/// Where the carry put them before: only ever cleared, never taken in ([`made::take_carried`]).
+pub(crate) const CARRIED_BEFORE: &str = "carried";
+
+/// [`CARRIED`] under the data home `data`.
+pub fn carried_in(data: &Path) -> PathBuf {
+    data.join(made::DIR).join(CARRIED)
+}
+
+/// **Where under a runner's home the carry puts the sign-ins it carries** (#4055): [`carried_in`]
+/// its data home, walked to through no link.
 pub fn carried_under_a_runner_home() -> String {
     Path::new(".local/share")
         .join(
@@ -362,6 +371,7 @@ pub fn carried_under_a_runner_home() -> String {
                 .next()
                 .unwrap_or("purlis"),
         )
+        .join(made::DIR)
         .join(CARRIED)
         .display()
         .to_string()
@@ -373,21 +383,20 @@ pub fn carried_under_a_runner_home() -> String {
 pub fn carried_under_an_old_runner_home() -> String {
     Path::new(".local/share")
         .join(crate::names::DATA_HOME.newest_old())
+        .join(made::DIR)
         .join(CARRIED)
         .display()
         .to_string()
 }
 
 /// **What a Docker pool's new runner takes of a runner drained beside it** (#4011, #4055, ruled
-/// 2026-10-30): its profiles' sign-ins, and nothing else, each as `<from>=<to>`, `<from>` under
-/// the old home and `<to>` under the carry's batch ([`CARRIED`]). A made profile's sign-in files
-/// ([`SIGN_IN_FILES`], `*` its name, under either spelling of the data home) go under its name,
-/// and each harness's own sign-in file in its default folder (`~/.claude/.credentials.json`,
-/// `~/.codex/auth.json`, opencode's `auth.json`) under the harness's name, the name the desktop's
-/// adopted folder is kept by. Nothing is put in a harness's folder: the new runner takes each in
-/// as it keeps the profile. No setting, hook, plugin, instruction or transcript of a harness,
-/// and nothing of purlis's own: not the profiles' records, the runner's device id, link key or
-/// peers, its harness installs, its projects or its browsers.
+/// 2026-10-30): the sign-ins of the profiles purlis made there, and nothing else, each as
+/// `<from>=<to>`, `<from>` under the old home and `<to>` under the carry's batch ([`CARRIED`]). A
+/// made profile's sign-in files ([`SIGN_IN_FILES`], `*` its name, under either spelling of the
+/// data home) go under its name. A harness's own default folder is not carried for now, so a
+/// built-in default profile signs in again on the new runner. No setting, hook, plugin,
+/// instruction or transcript of a harness, and nothing of purlis's own: not the profiles' records,
+/// the runner's device id, link key or peers, its harness installs, its projects or its browsers.
 pub fn carried_in_a_runner_home() -> Vec<String> {
     let mut pairs = Vec::new();
     for data in crate::names::DATA_HOME.spellings() {
@@ -399,14 +408,6 @@ pub fn carried_in_a_runner_home() -> Vec<String> {
                 Path::new("*").join(file).display()
             ));
         }
-    }
-    for (own, harness) in [
-        (".claude/.credentials.json", "claude"),
-        (".codex/auth.json", "codex"),
-        (".local/share/opencode/auth.json", "opencode"),
-    ] {
-        let file = sign_in_file_of(harness).unwrap_or_default();
-        pairs.push(format!("{own}={harness}/{file}"));
     }
     pairs
 }

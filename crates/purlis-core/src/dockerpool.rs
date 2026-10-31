@@ -67,18 +67,20 @@ pub const PURLIS: &str = "/usr/local/bin/purlis";
 /// to one folder at a time, never through a link, and held by its real path, and the files go
 /// into a batch folder of its own that no one knew the name of before it was made, each written
 /// only where nothing is (`set -C`) and put in place whole, by a link. Only a plain file inside
-/// the old home is carried, never a link or what a folder linked out of it holds. What it makes is
-/// the runner's user's alone. A file that cannot be carried is said and passed over: the profile
-/// is then signed in again, as before any was carried, and the drain goes on. A profile named in
-/// the colon-separated list after the two folders is not carried at all (#4145).
+/// the old home is carried, never a link or what a folder linked out of it holds. An image that
+/// names its data home by a variable carries nothing, since the runner reads it elsewhere. What
+/// it makes is the runner's user's alone. A file that cannot be carried is said and passed over:
+/// the profile is then signed in again, as before any was carried, and the drain goes on. A
+/// profile named in the colon-separated list after the two folders is not carried at all (#4145).
 pub const COPY_PROFILES: &str = r#"set -u
 umask 077
+[ -z "${PURLIS_DATA_HOME:-}${XDG_DATA_HOME:-}" ] || exit 1
 from=$1 to=$2 stage=$3 old_stage=$4 skip=$5
 shift 5
 from=$(cd -P "$from" && pwd -P) || exit 1
 cd -P "$to" || exit 1
 here=$(pwd -P)
-data=${stage%/*}
+data=${stage%/*/*}
 if [ -L "$data" ] || { [ -e "$data" ] && [ ! -d "$data" ]; }; then exit 1; fi
 [ -d "$data" ] || stage=$old_stage
 set -f
@@ -103,7 +105,7 @@ for pair in "$@"; do
   for found in "$from"/$src; do
     rel=${found#"$from/"}
     [ -f "$found" ] && [ ! -L "$found" ] && [ -r "$found" ] || continue
-    case $(realpath -- "$found") in "$from"/*) ;; *) continue ;; esac
+    [ "$(realpath -- "$found")" = "$from/$rel" ] || continue
     out=$dst
     case $src in
       *'*'*)
@@ -896,6 +898,15 @@ pub fn standing_said(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Gone {
     pub home_kept: bool,
+}
+
+/// **Why Docker lists no container of a runner's id** ([`Docker::missing`], #4166): it was
+/// removed, or Docker now reaches another engine than the one that made the runner, whose
+/// container may well be there still.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Missing {
+    Removed(Gone),
+    OnAnotherEngine,
 }
 
 /// What [`Docker::resumed`] did: what it read of the container first, and whether it started it.
@@ -1840,6 +1851,42 @@ const DOCKER_IN_HOME: &[&str] = &[
     ".rd/bin/docker",
 ];
 
+/// **Whether the runner `login` reaches says `name` is signed in** (#4046, #4164): that login's
+/// own words, with `--check`. Bounded, in time and in what is kept of it: the runner's answer is
+/// its own. A runner that fetches the harness first (#4007) is given the time a fetch takes.
+/// `Err` where it says neither, as for a profile it does not keep. A check is no login, so it
+/// is not held to its input: the runner refuses the two together.
+pub fn standing_by_login(
+    login: &crate::profilestore::sign_in::Login,
+    name: &str,
+) -> Result<crate::profilestore::sign_in::Standing, String> {
+    let mut command = std::process::Command::new(&login.program);
+    command
+        .args(login.args.iter().filter(|arg| *arg != "--until-input-ends"))
+        .arg("--check")
+        .envs(login.env.iter().map(|(n, v)| (n, v)));
+    for name in &login.cleared {
+        command.env_remove(name);
+    }
+    let ran = crate::boundedrun::run_within(
+        &mut command,
+        None,
+        STANDING_MOST,
+        STANDING_MOST,
+        Some(STANDING_WITHIN),
+    )
+    .map_err(|why| match why {
+        crate::boundedrun::Unanswered::NotStarted(e) => {
+            format!("{} could not be run: {e}", login.program)
+        }
+        crate::boundedrun::Unanswered::PrintedTooMuch => {
+            "it printed more than a status check does".to_owned()
+        }
+        crate::boundedrun::Unanswered::NotFinished(_) => "it did not answer in time".to_owned(),
+    })?;
+    standing_said(name, &String::from_utf8_lossy(&ran.said))
+}
+
 impl Docker {
     /// The `docker` command at `program`.
     pub fn at(program: impl Into<std::path::PathBuf>) -> Docker {
@@ -2427,33 +2474,7 @@ impl Docker {
         name: &str,
     ) -> Result<crate::profilestore::sign_in::Standing, String> {
         let login = self.driven_sign_in(made, engine, name, None)?;
-        let mut command = std::process::Command::new(&login.program);
-        command
-            .args(&login.args)
-            .arg("--check")
-            .envs(login.env.iter().map(|(n, v)| (n, v)));
-        for name in &login.cleared {
-            command.env_remove(name);
-        }
-        // Bounded, in time and in what is kept of it: the runner's answer is its own. A runner
-        // that fetches the harness first (#4007) is given the time a fetch takes.
-        let ran = crate::boundedrun::run_within(
-            &mut command,
-            None,
-            STANDING_MOST,
-            STANDING_MOST,
-            Some(STANDING_WITHIN),
-        )
-        .map_err(|why| match why {
-            crate::boundedrun::Unanswered::NotStarted(e) => {
-                format!("{} could not be run: {e}", login.program)
-            }
-            crate::boundedrun::Unanswered::PrintedTooMuch => {
-                "it printed more than a status check does".to_owned()
-            }
-            crate::boundedrun::Unanswered::NotFinished(_) => "it did not answer in time".to_owned(),
-        })?;
-        standing_said(name, &String::from_utf8_lossy(&ran.said))
+        standing_by_login(&login, name)
     }
 
     /// **The runner's own sign-in of the profile `name`, in a terminal of `size` carried over
@@ -2702,6 +2723,53 @@ impl Docker {
         Ok(Some(Gone {
             home_kept: volumes.lines().any(|line| line.trim() == volume),
         }))
+    }
+
+    /// **[`Docker::gone`], held to the engine that made the runner** (#4166): `made_on` is what
+    /// [`Docker::engine_id`] answered as it was made, `None` for a runner made before that was
+    /// kept, which is taken at Docker's word as it was. Where another engine answers, the runner
+    /// is not said to be removed. An engine that does not say which it is says nothing of the
+    /// runner, like a Docker that does not answer.
+    pub fn missing(&self, made: &Made, made_on: Option<&str>) -> Result<Option<Missing>, Refused> {
+        let Some(gone) = self.gone(made)? else {
+            return Ok(None);
+        };
+        let Some(made_on) = made_on else {
+            return Ok(Some(Missing::Removed(gone)));
+        };
+        match self.engine_id()? {
+            Some(now) if now == made_on => Ok(Some(Missing::Removed(gone))),
+            Some(_) => Ok(Some(Missing::OnAnotherEngine)),
+            None => Err(refused(
+                "this Docker does not say which engine it is, so purlis cannot tell whether the \
+                 runner was removed",
+            )),
+        }
+    }
+
+    /// **Which engine this `docker` reaches** (#4166), by the id `docker info` prints for it.
+    /// `None` where it prints none that reads as an id. A Podman has no such field and is
+    /// refused.
+    pub fn engine_id(&self) -> Result<Option<String>, Refused> {
+        let printed = self.read(
+            &["info".into(), "--format".into(), "{{.ID}}".into()],
+            MOST_INSPECTED,
+        )?;
+        Ok(Some(printed.trim().to_owned()).filter(|id| crate::runners::usable_noted(id)))
+    }
+
+    /// **`made`'s home volume's `CreatedAt`, exactly as Docker printed it** (#4167): the same
+    /// volume prints the same words whatever any clock says. `None` where it prints none.
+    pub fn home_created(&self, made: &Made) -> Result<Option<String>, Refused> {
+        let inspected = self.json(
+            &["volume", "inspect", &made.runner.volume()],
+            "docker volume inspect",
+        )?;
+        Ok(inspected
+            .pointer("/0/CreatedAt")
+            .and_then(serde_json::Value::as_str)
+            .filter(|text| crate::runners::usable_noted(text))
+            .map(str::to_owned))
     }
 
     /// **When `made`'s home volume was made**, in seconds since the epoch, as Docker says it

@@ -102,6 +102,7 @@ pub struct Server {
 ///   `forget_chat_that_did_not_start`, `close_plane`, `forget_project`, and the two that quit
 ///   the app to start it again (`restart_on_the_session_bus`, `restart_to_update`);
 /// - **it starts a chat or a shell as the person**: `ask_persona_chat`, `start_chat`,
+///   `cancel_chat_start`,
 ///   `start_chat_here`, `open_session`, `open_shell_in_branch`, `first_task_run`,
 ///   `resume_session`, `retry_chat_that_did_not_start`, `reopen_finished_task`, `curate` (a
 ///   chat with a curation's prompt typed), and `relaunch` (the launch's answer, which starts
@@ -279,6 +280,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Starts.
     "ask_persona_chat",
     "start_chat",
+    "cancel_chat_start",
     "start_chat_here",
     "open_session",
     "open_shell_in_branch",
@@ -643,6 +645,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A router chosen for a workspace's or a persona's chats (#3692): one commit to the project,
     // the person's own press in their window, as a pin is.
     "skill_router_choose",
+    // A router's reading of prompts turned on or off (ADR 0102 as amended 2026-10-31): only the
+    // person's own press in their window, never a chat or another link.
+    "skill_router_reads_prompts",
     // A skill's tab (#2782): reverting it to a version, deprecating, archiving or restoring it,
     // and naming its owners. Each is one commit to the project, the person's own press in their
     // window.
@@ -667,6 +672,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // a draft chat does. The person's own press in their window.
     "skill_trigger_tests_start",
     "skill_trigger_tests_chat",
+    "skill_outcome_evals_chat",
+    "skill_improve_chat",
     // A grade of a skill started or stopped (SK-16, #2779): it runs chats on the person's
     // profile, each started on a trigger test's query, and records the grade in the project.
     // The person's own press in their window, after the plan showed what it costs.
@@ -756,6 +763,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // removal deletes its sign-in there, so only the person's own window does.
     "pool_profile_add",
     "pool_profile_remove",
+    // A pool's limits (spec #4275): the person changes them directly, and a chat only proposes
+    // through the edit ask (Q6), so only their own window saves one, or reads the offer to.
+    "pool_limit_offer",
+    "pool_limit_set",
     // Signing a profile in on a pool's runner with no terminal (#4042): it runs the runner's
     // own sign-in and passes the person's code to it, so only their own window drives it.
     "pool_sign_in_start",

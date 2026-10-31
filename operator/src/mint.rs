@@ -20,6 +20,12 @@
 //! the token asked of GitHub ([`crate::github`]), limited to [`crate::github::MINTABLE`]. Each mint and refusal is in the log, with no
 //! token; nothing about a token is written to the API server.
 //!
+//! A runner is told the port's address and the key to hold it to as it is paired, from the Claim's
+//! `status.mint` ([`said_on_a_claim`]). `POST` [`NEXT_KEY_PATH`] answers the current key's word for
+//! the next one during a roll, as every Pool's status holds it, so **a runner follows a roll by
+//! itself**: it holds both keys till the port shows the next (#4207). TLS serves the current key
+//! alone, and a proof may name either.
+//!
 //! **The port's certificate is self-signed by the operator's signing key** ([`certificate`]), the
 //! key every Pool's status names, so a runner holds it to the key its desktop pinned, not to an
 //! authority. Before a runner has proved anything, every refusal is the same words.
@@ -27,7 +33,7 @@
 use crate::admission::{Admission, FORGE_POLICY, POLICY, admission, forge_in_force_since};
 use crate::forge::{self, Covered};
 use crate::github::GitHub;
-use crate::resources::{Claim, Pool};
+use crate::resources::{Claim, ClaimMint, Pool};
 use crate::vouch::{self, MountedKeys, SigningKey, SigningKeys};
 use k8s_openapi::api::admissionregistration::v1::{
     ValidatingAdmissionPolicy, ValidatingAdmissionPolicyBinding,
@@ -35,7 +41,7 @@ use k8s_openapi::api::admissionregistration::v1::{
 use k8s_openapi::api::authorization::v1::{
     ResourceAttributes, SubjectAccessReview, SubjectAccessReviewSpec,
 };
-use k8s_openapi::api::core::v1::Pod;
+use k8s_openapi::api::core::v1::{Pod, Service};
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use k8s_openapi::jiff::Timestamp;
 use kube::Client;
@@ -56,6 +62,10 @@ pub const PORT: u16 = 8443;
 
 pub const CHALLENGE_PATH: &str = "/forge/challenge";
 pub const TOKEN_PATH: &str = "/forge/token";
+pub const NEXT_KEY_PATH: &str = "/forge/next-key";
+
+/// The Service the port is reached by, in the operator's namespace.
+pub const SERVICE: &str = "purlis-cluster-operator-mint";
 
 /// How long a challenge may be answered.
 pub const CHALLENGE_LIVES: Duration = Duration::from_secs(60);
@@ -79,6 +89,10 @@ const MOST_REQUEST: usize = 16 * 1024;
 /// What an asker who has proved nothing is told, whatever the reason, so the port says nothing of
 /// which claims there are. The log holds the reason.
 pub const NOT_VOUCHED: &str = "the operator vouches for no such key on that claim";
+
+/// What a runner made before its Pool named an App's key is told.
+pub const NOT_MARKED: &str = "this runner was made before its pool named an App's key, so it mints \
+     nothing: claim a new runner";
 
 /// What the proof is a MAC of, each value one line. `operator` is the signing key the runner holds
 /// the port to, as a Pool's status spells it, so a proof made for another key is good for nothing.
@@ -330,6 +344,21 @@ pub fn runs_image(pod: &Pod, image: &str) -> bool {
     })
 }
 
+/// **Whether `pod`'s runner was made to refuse any start outside the sandbox but a shell**
+/// ([`crate::upstream::MINTING_MARK`]): only such a runner's link key has been out of a chat's reach
+/// since it was made, so nothing else mints.
+pub fn marked(pod: &Pod) -> bool {
+    pod.spec.as_ref().is_some_and(|spec| {
+        spec.containers
+            .iter()
+            .filter(|container| container.name == crate::upstream::RUNNER_CONTAINER)
+            .flat_map(|container| container.env.iter().flatten())
+            .any(|var| {
+                var.name == crate::upstream::MINTING_MARK && var.value.as_deref() == Some("1")
+            })
+    })
+}
+
 /// What a mint may cover, and with which key.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Grant {
@@ -397,6 +426,59 @@ pub fn may_mint(held: &Held<'_>) -> Result<Grant, String> {
         covered: forge::covered(&forge.repos, repos)?,
         secret: forge.app_key_secret_ref.name.clone(),
     })
+}
+
+/// **The port's address**, `<ip>:<port>`, from the Service's cluster IP: a runner's pod is given
+/// public name servers, so a cluster name would not resolve. None where the Service has no address
+/// that is one.
+pub fn address_of(service: &Service) -> Option<String> {
+    let ip: std::net::IpAddr = service.spec.as_ref()?.cluster_ip.as_deref()?.parse().ok()?;
+    Some(std::net::SocketAddr::new(ip, PORT).to_string())
+}
+
+/// **What a Claim's status says of the mint port** (#4207, the person's ruling of 2026-10-31):
+/// only for a vouched runner on a Pool that opts in. It decides nothing: a runner holds the port to
+/// the key, a desktop tells it only a key it pinned, and each mint is decided from the Claim and
+/// the Pool alone.
+pub fn mint_status(
+    pool: &Pool,
+    vouched: bool,
+    address: Option<String>,
+    key: &str,
+) -> Option<ClaimMint> {
+    let opted_in = pool
+        .spec
+        .forge
+        .as_ref()
+        .is_some_and(|forge| forge.mint_in_cluster);
+    (opted_in && vouched).then_some(())?;
+    Some(ClaimMint {
+        address: address?,
+        operator_key: key.to_owned(),
+    })
+}
+
+/// [`mint_status`], the Service read now, only where it would be said. A Service that cannot be
+/// read says nothing, and the next look at the Claim says it: the runner then asks its desktop.
+pub async fn said_on_a_claim(
+    client: &Client,
+    pool: &Pool,
+    vouched: bool,
+    key: &str,
+) -> Option<ClaimMint> {
+    // Nothing is read for a Pool that would say nothing.
+    mint_status(pool, vouched, Some(String::new()), key)?;
+    let service = Api::<Service>::namespaced(client.clone(), client.default_namespace())
+        .get_opt(SERVICE)
+        .await;
+    let address = match service {
+        Ok(service) => service.as_ref().and_then(address_of),
+        Err(why) => {
+            tracing::warn!(%why, service = SERVICE, "the mint port's address could not be read");
+            None
+        }
+    };
+    mint_status(pool, vouched, address, key)
 }
 
 /// A question for the cluster's authorizer: may `requester` `use` the Pool `pool`? Asked of the
@@ -656,6 +738,7 @@ struct Serving {
     keys: Arc<MountedKeys>,
     challenges: Challenges,
     github: Result<GitHub, String>,
+    cluster: String,
 }
 
 fn seconds_now() -> u64 {
@@ -707,6 +790,9 @@ impl Serving {
         let Some(pod) = pod.filter(|pod| pod_holds(pod, &runner.key_hex)) else {
             return Err("the runner's pod is gone, or no longer holds this key".to_owned());
         };
+        if !marked(&pod) {
+            return Err(NOT_MARKED.to_owned());
+        }
         let pool = Api::<Pool>::all(client.clone())
             .get_opt(&claim.spec.pool)
             .await
@@ -811,8 +897,26 @@ impl Serving {
         }
     }
 
+    /// During a roll, the next key with the current key's word for it, as every Pool's status says
+    /// them; otherwise nothing. Nobody need prove anything: none of it is a secret.
+    fn next_key(&self) -> String {
+        let status = vouch::pool_status(&self.keys.now(), &self.cluster, None, seconds_now());
+        match (status.next_signing_key, status.next_signing_key_vouch) {
+            (Some(next), Some(word)) => answer(
+                "200 OK",
+                &json!({
+                    "next": next,
+                    "statement": word.statement,
+                    "signature": word.signature,
+                }),
+            ),
+            _ => answer("200 OK", &json!({})),
+        }
+    }
+
     async fn respond(&self, method: &str, target: &str, body: &[u8]) -> String {
         match (method, target) {
+            ("POST", NEXT_KEY_PATH) => self.next_key(),
             ("POST", CHALLENGE_PATH) => match self.challenges.make() {
                 Ok(challenge) => answer("200 OK", &json!({ "challenge": challenge })),
                 Err(why) => answer("500 Internal Server Error", &json!({ "refused": why })),
@@ -840,17 +944,21 @@ async fn serve_one(
     stream.shutdown().await
 }
 
-/// **Serves the mint port** until the process ends. A pod with no Pool opted in answers every
-/// request with a refusal, and where the cluster enforces NetworkPolicies only runner namespaces
+/// **Serves the mint port** until the process ends. A pod with no Pool opted in refuses every
+/// token, and where the cluster enforces NetworkPolicies only runner namespaces
 /// reach it. Never returns, so a port that cannot be served never stops the rest of the operator.
-pub async fn serve(client: Client, keys: Arc<MountedKeys>) {
-    if let Err(why) = serve_until_broken(client, keys).await {
+pub async fn serve(client: Client, keys: Arc<MountedKeys>, cluster: String) {
+    if let Err(why) = serve_until_broken(client, keys, cluster).await {
         tracing::error!(%why, port = PORT, "no token will be minted: the mint port is not served");
     }
     std::future::pending::<()>().await;
 }
 
-async fn serve_until_broken(client: Client, keys: Arc<MountedKeys>) -> Result<(), String> {
+async fn serve_until_broken(
+    client: Client,
+    keys: Arc<MountedKeys>,
+    cluster: String,
+) -> Result<(), String> {
     let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls(keys.clone())?));
     let bound = match TcpListener::bind(("::", PORT)).await {
         Ok(listener) => Ok(listener),
@@ -866,6 +974,7 @@ async fn serve_until_broken(client: Client, keys: Arc<MountedKeys>) -> Result<()
         keys,
         challenges: Challenges::default(),
         github,
+        cluster,
     });
     tracing::info!(port = PORT, "serving the mint port");
     let open = Arc::new(Semaphore::new(CONNECTIONS));

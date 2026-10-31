@@ -11,7 +11,8 @@
 //! program parts alone (`bin`, `lib`, `share` and their kin, [`PROGRAM_PARTS`]), so a package
 //! manager's `etc` and `var`, where configuration and state live, are never read. It writes only
 //! its state folder and its own temporary folder. It reaches no address but its own proxy's two
-//! loopback ports. It starts programs only from what it reads. It asks no system service but the log, so it reads no person's preferences,
+//! loopback ports. It starts programs only from what it reads and cannot write, so never from its
+//! state folder or its temporary folder. It asks no system service but the log, so it reads no person's preferences,
 //! directory entries or file events through one, and it reads no other process's arguments or
 //! environment through the system's settings. Then the denial classes, last, as for every chat:
 //! no project's vaults are read, and nothing a later program runs is written.
@@ -113,6 +114,9 @@ const BASE: &str = "(version 1)
 (allow mach-lookup (global-name \"com.apple.logd\"))
 ";
 
+/// Why a profile was not written: a folder it names could not be listed.
+const NOT_LISTED: &str = "a folder of the extension's could not be listed";
+
 /// The folders a confined program reads of the system on `os`: its own folders whole, and of
 /// each prefix its program parts alone.
 fn system_roots(os: Os) -> Vec<PathBuf> {
@@ -129,6 +133,93 @@ fn system_roots(os: Os) -> Vec<PathBuf> {
         );
     }
     out
+}
+
+/// **Where a program may start from on Linux**: `system` and `reads`, less `writes` and every
+/// vault folder or key in `reads`. The kernel's rule names what is beneath a folder and takes
+/// nothing back, so a folder that holds one of those is named by what else it holds. A link in it
+/// is left out, since the kernel's rule would follow it to what it points at; what it points at
+/// is judged when it is started through the link.
+fn start_roots(
+    system: &[PathBuf],
+    reads: &[PathBuf],
+    writes: &[PathBuf],
+) -> std::io::Result<Vec<PathBuf>> {
+    let mut held = writes.to_vec();
+    for root in reads {
+        vaults_beneath(root, writes, &mut held)?;
+    }
+    let mut out = Vec::new();
+    for root in system {
+        carved(&super::real(root), &held, &mut out)?;
+    }
+    for root in reads {
+        carved(root, &held, &mut out)?;
+    }
+    Ok(out)
+}
+
+/// Every vault folder and key beneath `root`, at any depth, into `out`. What it writes is its
+/// own, never walked: it is held out whole.
+fn vaults_beneath(root: &Path, writes: &[PathBuf], out: &mut Vec<PathBuf>) -> std::io::Result<()> {
+    for entry in entries(root)? {
+        let path = entry.path();
+        if writes.contains(&path) {
+            continue;
+        }
+        if super::seatbelt::is_a_vault(&path) {
+            out.push(path);
+        } else if entry.file_type()?.is_dir() {
+            vaults_beneath(&path, writes, out)?;
+        }
+    }
+    Ok(())
+}
+
+/// `root` into `out` as what it holds besides `held`: itself where it holds none of them, nothing
+/// where it is one or is beneath one.
+fn carved(root: &Path, held: &[PathBuf], out: &mut Vec<PathBuf>) -> std::io::Result<()> {
+    if held.iter().any(|it| root.starts_with(it)) {
+        return Ok(());
+    }
+    if !held.iter().any(|it| it.starts_with(root)) {
+        out.push(root.to_path_buf());
+        return Ok(());
+    }
+    for entry in entries(root)? {
+        // A name no profile can spell is left out with the links: nothing starts from it, and the
+        // rest of the folder still does.
+        let spelled = entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| !name.chars().any(char::is_control));
+        if spelled && !entry.file_type()?.is_symlink() {
+            carved(&entry.path(), held, out)?;
+        }
+    }
+    Ok(())
+}
+
+/// What `folder` holds, in name order so a profile is the same each time; nothing where it is not
+/// there.
+fn entries(folder: &Path) -> std::io::Result<Vec<std::fs::DirEntry>> {
+    let listed = match std::fs::read_dir(folder) {
+        Ok(listed) => listed,
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(why) => return Err(why),
+    };
+    let mut out = listed.collect::<std::io::Result<Vec<_>>>()?;
+    out.sort_by_key(std::fs::DirEntry::file_name);
+    Ok(out)
+}
+
+/// Every name the kernel may give each of `roots`, as SBPL strings.
+fn spelled(roots: &[PathBuf]) -> Result<Vec<String>, &'static str> {
+    let mut out = Vec::new();
+    for root in roots {
+        out.extend(kernel_strings(root)?);
+    }
+    Ok(out)
 }
 
 /// **The profile for an extension's program on `os`**, reading `reads` (its own folder) and
@@ -179,28 +270,31 @@ pub fn profile(
     if os == Os::MacOs {
         line(format!("(deny {ops} (subpath {}))", string(DATA_VOLUME)?));
     }
-    line(format!("(allow {ops}"));
-    for root in &own {
-        for name in kernel_strings(root)? {
-            line(format!("  (subpath {name})"));
+    // A rule with no filter would allow everything, so each is written only with what it names.
+    let mut subpaths = |ops: &str, names: Vec<String>| {
+        if !names.is_empty() {
+            line(format!("(allow {ops}"));
+            for name in names {
+                line(format!("  (subpath {name})"));
+            }
+            line(")".to_owned());
         }
-    }
+    };
+    subpaths("file-read*", spelled(writes)?);
+    let mut own_names = spelled(reads)?;
     for root in system.iter().filter(|root| !root.starts_with("/System")) {
         for name in super::kernel_names(root) {
             if name.starts_with(DATA_VOLUME) {
-                line(format!(
-                    "  (subpath {})",
-                    string(&name.display().to_string())?
-                ));
+                own_names.push(string(&name.display().to_string())?);
             }
         }
     }
-    line(")".to_owned());
+    subpaths(ops, own_names);
     // Linux holds this with the kernel's own rule, which names folders and files by what they
-    // are beneath: the system's folders and the program's own, as it reads them.
+    // are beneath.
     if os == Os::Linux {
         line("(allow process-exec".to_owned());
-        for root in &read_roots {
+        for root in &start_roots(&system, reads, writes).map_err(|_| NOT_LISTED)? {
             for name in kernel_strings(root)? {
                 line(format!("  (subpath {name})"));
             }
@@ -263,6 +357,14 @@ pub fn profile(
         line(rule);
     }
     if os == Os::MacOs {
+        // What it writes may be beneath what it reads: its state folder is in its own folder.
+        for root in writes {
+            for name in kernel_strings(root)? {
+                line(format!(
+                    "(deny file-map-executable process-exec (subpath {name}))"
+                ));
+            }
+        }
         for rule in super::seatbelt::vaults_start_nothing_rules()? {
             line(rule);
         }
