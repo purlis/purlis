@@ -1506,8 +1506,8 @@ pub fn checked_at(
     if vouched.until > now.saturating_add(MOST_AHEAD) {
         return Err(Refused::NotVouched(format!(
             "the cluster operator's statement about the runner of claim {}/{} says it holds for \
-             more than fifteen minutes, which no statement does, so purlis refused it; check this \
-             machine's clock",
+             more than fifteen minutes, which no statement does, so purlis refused it. This \
+             machine's clock is probably behind the cluster's: set it right and try again",
             claimed.namespace, claimed.name
         )));
     }

@@ -344,9 +344,10 @@ impl Connection {
 
     /// **The pool `pool` was removed from this machine**: every link the window holds to its
     /// runner ends, each chat on it told it ended with its host, and whatever comes next is
-    /// dialled anew, by the name, to the runner kept under it now. Nothing of the pool's runner
-    /// stays in use however its removal went in its cluster or engine.
+    /// dialled anew, by the name, to the runner kept under it now. What the window held against
+    /// that name goes too: a pool added under it is a new runner.
     pub fn pool_removed(&self, pool: &str) {
+        lock(&self.untrusted).remove(pool);
         let Some(of_it) = lock(&self.pools).get(pool).cloned() else {
             return;
         };
@@ -358,6 +359,14 @@ impl Connection {
         for link in links {
             link.end();
         }
+    }
+
+    /// How many times the pool `pool` was removed.
+    #[cfg(test)]
+    pub(crate) fn removals_of(&self, pool: &str) -> u64 {
+        lock(&self.pools)
+            .get(pool)
+            .map_or(0, |of_it| of_it.removals.load(Ordering::SeqCst))
     }
 
     /// Keep this machine's pools' runners, as `runners.json` is read, in `config` (D-2050-27).
@@ -496,7 +505,7 @@ impl Connection {
             );
         }
         let mut projects = lock(&self.projects);
-        // Its pool was removed while this was dialled: the link may reach the runner removed.
+        // A link dialled across its pool's removal is not kept.
         if self.removals.load(Ordering::SeqCst) != removals {
             return Err(format!(
                 "pool {} was removed as its runner was being reached, so nothing was sent",
@@ -810,8 +819,8 @@ pub struct HostLink {
     shared: Arc<Shared>,
     /// What hears the host on it, which keeps it open: the link closes once this ends.
     hearing: tokio::task::AbortHandle,
-    /// Ends what hears the host as a link that went does ([`HostLink::end`]).
-    ending: Arc<tokio::sync::Notify>,
+    /// Whether the window ended it ([`HostLink::end`]): what hears it then runs to its end.
+    ended: std::sync::atomic::AtomicBool,
     /// Why the host did not take the window's name on it, where it was named and did not
     /// (#2623): said by whoever opened it, never with the name.
     unnamed: Option<String>,
@@ -823,7 +832,9 @@ pub struct HostLink {
 /// them.
 impl Drop for HostLink {
     fn drop(&mut self) {
-        self.hearing.abort();
+        if !self.ended.load(Ordering::SeqCst) {
+            self.hearing.abort();
+        }
     }
 }
 
@@ -1028,14 +1039,9 @@ impl HostLink {
             },
         );
         let lost = Arc::clone(&shared);
-        let ending = Arc::new(tokio::sync::Notify::new());
-        let ended_here = Arc::clone(&ending);
         let hearing = runtime
             .spawn(async move {
-                tokio::select! {
-                    () = hearing => {}
-                    () = ended_here.notified() => {}
-                }
+                hearing.await;
                 reconnect(&lost, Reconnect::Over);
                 // Off the runtime: each end told reads and moves the window's board.
                 let _ =
@@ -1050,7 +1056,7 @@ impl HostLink {
             runtime,
             shared,
             hearing,
-            ending,
+            ended: std::sync::atomic::AtomicBool::new(false),
             unnamed,
             most_bundle_bytes: purlis_session_protocol::code::MOST_BUNDLE_BYTES,
         })
@@ -1063,10 +1069,12 @@ impl HostLink {
         self
     }
 
-    /// **Ends this link from the window's side**: each program on it is told it ended with its
-    /// host and each pane is told, as when the link goes; the link closes once nobody holds it.
+    /// **Ends this link from the window's side, whoever still holds it**: the host sees it close,
+    /// each program on it is told it ended with its host and each pane is told, as when the link
+    /// goes, and every later call on it is refused.
     pub(crate) fn end(&self) {
-        self.ending.notify_one();
+        self.ended.store(true, Ordering::SeqCst);
+        self.client.end_link();
     }
 
     /// Send `command` and wait for the host's answer, from any thread.

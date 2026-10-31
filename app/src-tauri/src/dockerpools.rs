@@ -380,7 +380,8 @@ pub fn add_on(machine: &Machine, pool: &Pool) -> Result<PoolRow, String> {
 /// **Removes the pool `name`**: this desktop is taken out of its runner's peers over a link of
 /// its own while the runner answers, then its container and home volume are removed, and the
 /// pool with them. What could not be removed is answered, with how to remove it; nothing when
-/// all of it is gone.
+/// all of it is gone. Once it is gone from this machine, the window's links to its runner end, and
+/// the chats on them with them ([`links_end_once_gone`]).
 #[tauri::command]
 #[specta::specta]
 pub async fn remove_docker_pool(
@@ -397,17 +398,8 @@ pub async fn remove_docker_pool(
             } else {
                 remove_on(&Machine::here(&config)?, &name)
             };
-            // Gone from this machine: no link stays on the runner it had. One whose runner could
-            // not be removed is kept, and its chats with it.
-            let kept = purlis_core::runners::pools(&config)
-                .map(|pools| pools.iter().any(|pool| pool.name() == name))
-                .unwrap_or(true)
-                || is_a_cluster_pool(&config, &name).unwrap_or(true);
-            if !kept
-                && let Some(host) =
-                    tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app)
-            {
-                host.connection().pool_removed(&name);
+            if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app) {
+                links_end_once_gone(&host.connection(), &config, &name);
             }
             removed
         })
@@ -417,6 +409,30 @@ pub async fn remove_docker_pool(
     {
         let _ = (app, name);
         Err(NOT_HERE.to_owned())
+    }
+}
+
+/// **The pool `name`, as a removal left it**: gone from `config`, the window's links to its runner
+/// end. One whose runner could not be removed is still kept, and its chats with it. Where that
+/// cannot be read, the links end: a chat lost is better than a link kept to a pool removed.
+#[cfg(unix)]
+fn links_end_once_gone(
+    connection: &crate::hostedsessions::Connection,
+    config: &std::path::Path,
+    name: &str,
+) {
+    let kept = purlis_core::runners::pools(config)
+        .map(|pools| pools.iter().any(|pool| pool.name() == name))
+        .and_then(|docker| {
+            purlis_core::runners::cluster_pools(config)
+                .map(|clusters| docker || clusters.iter().any(|pool| pool.name() == name))
+        })
+        .unwrap_or_else(|why| {
+            tracing::warn!("purlis: what this machine keeps of its pools was not read: {why}");
+            false
+        });
+    if !kept {
+        connection.pool_removed(name);
     }
 }
 

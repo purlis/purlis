@@ -848,6 +848,28 @@ pub fn before_cluster_link(
     checked
 }
 
+/// [`before_cluster_link`], for a link built for the runner `reached` names
+/// ([`runners::ClusterKept::reached`]): refused unless that is the runner kept under `name` now.
+pub fn before_cluster_link_to(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    reached: &str,
+    now: u64,
+) -> Result<(), crate::clusterpool::Refused> {
+    use crate::clusterpool::Refused as Not;
+    let kept = runners::cluster_runner_for(config_root, name)
+        .map_err(|why| Not::Other(why.to_string()))?
+        .ok_or_else(|| Not::Other(format!("no cluster pool named {name} is on this machine")))?
+        .1;
+    if kept.reached() != reached {
+        return Err(Not::Other(format!(
+            "this link was made for a runner pool {name} no longer keeps"
+        )));
+    }
+    before_cluster_link(config_root, kubectl, name, now)
+}
+
 /// How long each kubectl run of the check before a value is sent waits (#4071).
 pub const VOUCHED_NOW_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
 

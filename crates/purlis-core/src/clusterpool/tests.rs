@@ -461,7 +461,7 @@ fn a_kept_claim_says_so_and_a_fresh_one_reads_as_every_claim_did() {
 }
 
 #[test]
-fn a_statement_holds_only_until_the_time_it_names_and_never_past_an_hour() {
+fn a_statement_holds_only_until_the_time_it_names_and_never_past_fifteen_minutes() {
     let operator = Operator::new();
     let key = LinkKey::generate().unwrap().public();
     let text = vouched(key).text();

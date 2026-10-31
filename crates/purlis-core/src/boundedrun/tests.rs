@@ -32,8 +32,8 @@ fn a_run_given_a_time_that_does_not_answer_in_it_is_ended_and_said_not_to_have_f
     );
 }
 
-/// **What a run given a time started ends with it**: a helper it waits on, such as a credential
-/// plugin that hangs, is not left running once its time is up.
+/// **What a run given a time started ends with it**: a helper it waits on is not left running
+/// once its time is up.
 #[cfg(unix)]
 #[test]
 fn what_a_run_given_a_time_started_is_ended_with_it() {

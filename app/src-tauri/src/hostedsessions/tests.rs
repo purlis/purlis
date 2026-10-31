@@ -125,12 +125,16 @@ fn removing_a_pool_ends_its_links_and_the_next_is_dialled_anew() {
         builds.of_project(root, Duration::ZERO).is_err(),
         "the window holds no link to its runner"
     );
-    drop(link);
+    // What a chat's tab holds does not keep it open: the host sees it close while `link` is held.
     let deadline = Instant::now() + Duration::from_secs(5);
     while closed.lock().unwrap().is_empty() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(*closed.lock().unwrap(), ["builds"], "the host saw it close");
+    assert!(
+        link.call(session::Command::List).is_err(),
+        "nothing more goes"
+    );
     assert!(
         Arc::ptr_eq(&kept, &other.of_project(root, Duration::ZERO).unwrap()),
         "another pool's stays"
@@ -139,7 +143,43 @@ fn removing_a_pool_ends_its_links_and_the_next_is_dialled_anew() {
     assert_eq!(*dials.lock().unwrap(), ["builds", "other", "builds"]);
 }
 
-/// **A link dialled as its pool is removed is not kept**: it may reach the runner removed.
+/// **A link only the window's connection holds is told too**: its end is not undone as it is let
+/// go of.
+#[test]
+fn a_chat_on_a_link_nothing_else_holds_is_told_as_its_pool_is_removed() {
+    let runtime = a_runtime();
+    let connection = in_memory_with_a_runner(
+        Hosting::running_with(ComposesNothing, StandIns::default()),
+        Hosting::running_with(ComposesNothing, StandIns::default()),
+        &runtime,
+    );
+    let builds = connection.to_a_pool("builds");
+    let root = Path::new("/planes/a");
+    let (told, heard) = std::sync::mpsc::channel();
+    let link = builds.of_project(root, Duration::from_secs(5)).unwrap();
+    link.when_it_ends(
+        "chat",
+        Box::new(move |ending| {
+            let _ = told.send(matches!(ending, Ending::WithTheHost));
+        }),
+    );
+    drop(link);
+    connection.pool_removed("builds");
+    assert_eq!(heard.recv_timeout(Duration::from_secs(5)), Ok(true));
+}
+
+/// **A pool removed takes what the window held against its name**: one added under it is new.
+#[test]
+fn a_pool_removed_is_no_longer_held_untrusted_by_its_name() {
+    let window = Arc::new(Connection::default());
+    let pool = window.to_a_pool("builds");
+    let _ = pool.ran_unsandboxed();
+    assert!(window.untrusts("builds"));
+    window.pool_removed("builds");
+    assert!(!window.untrusts("builds"));
+}
+
+/// **A link dialled across its pool's removal is not kept.**
 #[test]
 fn a_link_dialled_while_its_pool_is_removed_is_not_kept() {
     let runtime = a_runtime();

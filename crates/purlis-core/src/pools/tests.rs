@@ -1375,10 +1375,10 @@ mod cluster {
         let asked = || vouched_now_with(config.path(), &kubectl, "team", runners::now());
         assert_eq!(asked().unwrap(), "pod-uid-1", "vouched and serving");
         let claim_was = std::fs::read_to_string(cluster.dir.path().join("claim.json")).unwrap();
-        let change = |at: &str, change: &dyn Fn(&mut serde_json::Value)| {
+        let change = |change: &dyn Fn(&mut serde_json::Value)| {
             let mut claim: serde_json::Value = serde_json::from_str(&claim_was).unwrap();
             change(&mut claim);
-            cluster.write(at, &claim.to_string());
+            cluster.write("claim.json", &claim.to_string());
         };
         for said in [
             serde_json::json!({"type": "KeyPublished", "status": "False", "reason": "NotVouched"}),
@@ -1386,12 +1386,12 @@ mod cluster {
             serde_json::json!({"type": "KeyPublished", "status": "True", "reason": "Starting"}),
             serde_json::json!({"type": "Ready", "status": "True", "reason": "Vouched"}),
         ] {
-            change("claim.json", &|claim| {
+            change(&|claim| {
                 claim["status"]["conditions"] = serde_json::json!([said]);
             });
             assert!(matches!(asked(), Err(NotVouched::NotVouched(_))), "{said}");
         }
-        change("claim.json", &|claim| {
+        change(&|claim| {
             claim["spec"]["stopped"] = true.into();
         });
         assert!(matches!(asked(), Err(NotVouched::NotVouched(_))), "claim");
@@ -1427,8 +1427,31 @@ mod cluster {
             .unwrap()
             .unwrap()
         };
-        assert_eq!(of_pod("pod-uid-1"), of_pod("pod-uid-1"));
-        assert_ne!(of_pod("pod-uid-1"), of_pod("pod-uid-2"));
+        let opt_ins = crate::poollogins::OptIns::default();
+        opt_ins.allow("devops", "site", of_pod("pod-uid-1"));
+        assert_eq!(
+            opt_ins.standing("devops", "site", &of_pod("pod-uid-1")),
+            crate::poollogins::Standing::Allowed
+        );
+        assert_eq!(
+            opt_ins.standing("devops", "site", &of_pod("pod-uid-2")),
+            crate::poollogins::Standing::Changed
+        );
+    }
+
+    /// A link is checked against the runner it was made for, under whatever name.
+    #[test]
+    fn a_link_made_for_a_runner_no_longer_kept_is_refused_before_it_connects() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let kubectl = cluster.kubectl();
+        let now = runners::now();
+        let link = reached(config.path());
+        before_cluster_link_to(config.path(), &kubectl, "team", &link, now).unwrap();
+        let earlier = format!("team/team@{}", "ab".repeat(32));
+        let refused =
+            before_cluster_link_to(config.path(), &kubectl, "team", &earlier, now).unwrap_err();
+        assert!(refused.to_string().contains("no longer keeps"), "{refused}");
     }
 
     #[test]

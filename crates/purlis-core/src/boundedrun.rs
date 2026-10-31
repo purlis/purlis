@@ -50,8 +50,8 @@ const LOOKED_AT_EVERY: std::time::Duration = std::time::Duration::from_millis(20
 
 /// [`run`], and **ended once `within` is up** where it is given one: a command still running
 /// then is killed and answered [`Unanswered::NotFinished`], its error of kind `TimedOut`. A
-/// command that answers in time is read exactly as [`run`] reads it. It leads a group of its own,
-/// so what it started, such as a credential plugin that hangs, is ended with it.
+/// command that answers in time is read exactly as [`run`] reads it. On unix it leads a group of
+/// its own, so what it started is ended with it.
 pub fn run_within(
     command: &mut Command,
     input: Option<&str>,
