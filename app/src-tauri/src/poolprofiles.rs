@@ -743,7 +743,7 @@ fn offer_of(over: onrunner::OverLimit) -> Option<PoolLimitOffer> {
 /// Start a chat offers beside that refusal. Asked of the core, never read from the words.
 #[tauri::command]
 #[specta::specta]
-pub fn pool_limit_offer(profile: String, refused: String) -> Option<PoolLimitOffer> {
+pub async fn pool_limit_offer(profile: String, refused: String) -> Option<PoolLimitOffer> {
     onrunner::over_limit(&profile, &refused).and_then(offer_of)
 }
 

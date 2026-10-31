@@ -8204,7 +8204,7 @@ export type PoolLimitHitRow = {
 /**  **What a refused start on a pool offers**: the pool, and each limit it was refused on. */
 export type PoolLimitOffer = {
 	pool: string,
-	hits: Array<PoolLimitHitRow>,
+	hits: PoolLimitHitRow[],
 };
 
 /**
