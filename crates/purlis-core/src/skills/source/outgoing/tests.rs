@@ -100,7 +100,7 @@ fn a_secret_in_a_file_stops_both_and_its_value_is_never_said() {
 fn personal_data_and_a_home_path_stop_a_publish_but_not_an_export() {
     let plane = tempfile::tempdir().unwrap();
     let text = format!(
-        "{SKILL}Mail ada{}example.org and read /Users/ada/notes.md.\n",
+        "{SKILL}Mail ada{}lovelace.dev and read /Users/ada/notes.md.\n",
         '@'
     );
     skill_at(plane.path(), &Level::project(), "deploy", &text, &[]);
@@ -184,7 +184,7 @@ fn a_file_git_ignores_stays_behind_and_a_failure_of_git_stops_the_gather() {
 #[test]
 fn personal_data_in_a_files_name_stops_a_publish() {
     let plane = tempfile::tempdir().unwrap();
-    let name = format!("refs/ada{}example.org.md", '@');
+    let name = format!("refs/ada{}lovelace.dev.md", '@');
     skill_at(
         plane.path(),
         &Level::project(),

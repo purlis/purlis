@@ -67,7 +67,8 @@ fn publish_has_no_flag_to_skip_the_question() {
     let tmp = project();
     for flag in ["--yes", "-y", "--digest"] {
         let out = purlis(tmp.path(), &["publish", "deploy", "--to", TO, flag], false);
-        assert_eq!(out.status.code(), Some(2), "{flag}");
+        let said = String::from_utf8_lossy(&out.stderr);
+        assert!(said.contains("unexpected argument"), "{flag}: {said}");
     }
 }
 

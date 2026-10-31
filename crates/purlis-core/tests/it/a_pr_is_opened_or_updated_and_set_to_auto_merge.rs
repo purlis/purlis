@@ -142,9 +142,9 @@ mod prs {
         let gitlab = scene.answers(
             "glab",
             &[
-                "api",
                 "--hostname",
                 &scene.host,
+                "api",
                 "-X",
                 "POST",
                 "projects/acme%2Fwidget/merge_requests",
