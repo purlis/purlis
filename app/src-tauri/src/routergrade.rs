@@ -598,8 +598,6 @@ pub struct RouterGradeScorecard {
     /// What its chats ran on, and how it ended, in the record's words.
     pub ran_on: String,
     pub ended: String,
-    /// The router's line of it, as the Routing page says it.
-    pub said: String,
     pub outcome: GradeOutcome,
     pub arms: RouterGradeArms,
     pub spent: GradeSpent,
@@ -625,16 +623,12 @@ impl RouterGradeScorecard {
             grade: graded.grade.clone(),
             router: graded.router.clone(),
             graded: studio::said_at(&graded.ts),
-            library: match &graded.commit {
-                Some(commit) => format!("the library at {}", commit.get(..12).unwrap_or(commit)),
-                None => "a library with changes not committed".to_owned(),
-            },
+            library: graded.library_said(),
             ran_on: match &graded.model {
                 Some(model) => format!("{harness} · {model}"),
                 None => harness,
             },
             ended: grades::ended_said(graded.report.ended).to_owned(),
-            said: graded.said(),
             outcome: graded.report.ended.into(),
             arms: RouterGradeArms {
                 router: points(Arm::Router),

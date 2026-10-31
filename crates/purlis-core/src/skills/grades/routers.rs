@@ -352,14 +352,11 @@ impl RouterGraded {
     pub fn said(&self) -> String {
         let (router, of) = self.report.passed_in(Arm::Router);
         let (built_in, built_in_of) = self.report.passed_in(Arm::BuiltInRouter);
-        let on = match &self.commit {
-            Some(commit) => format!("the library at {}", short(commit)),
-            None => "a library with changes not committed".to_owned(),
-        };
+        let on = self.library_said();
         let when = self.ts.get(..10).unwrap_or(&self.ts);
         // A grade purlis stopped under before it was scored (#3616) passed nothing and failed
         // nothing: it says so, and no count.
-        if self.report.ended == grade::GradeEnd::Interrupted && self.report.skills.is_empty() {
+        if super::Spends::stopped_unscored(self) {
             return format!(
                 "Interrupted on {on}, {when}: purlis stopped while it ran, before any trigger \
                  test was scored."
@@ -374,6 +371,15 @@ impl RouterGraded {
              {built_in} of {built_in_of} with the built-in router.",
             purlis_skills::Router::Extension(self.router.clone()).shown(),
         )
+    }
+
+    /// **The library it was graded on**, in words: its commit, or that it held changes not
+    /// committed.
+    pub fn library_said(&self) -> String {
+        match &self.commit {
+            Some(commit) => format!("the library at {}", short(commit)),
+            None => "a library with changes not committed".to_owned(),
+        }
     }
 
     /// Whether a row read back says only what purlis writes, as a skill's grade is held
@@ -487,9 +493,9 @@ impl super::Spends for RouterGraded {
 }
 
 /// **What a grade of a router would cost, from its grade before** (#3618), as a skill's plan
-/// works it out ([`super::estimate_of`]), and whether that grade ran on the library this one
-/// runs on: a chat is handed the whole library, so one of another library may spend otherwise,
-/// and the plan says so.
+/// works it out ([`super::estimate_of`]), and whether that grade is known to have run on the
+/// library this one runs on: a chat is handed the whole library, so one of another library may
+/// spend otherwise, and the plan says so.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct RouterEstimate {
     pub estimate: super::Estimate,
@@ -497,22 +503,29 @@ pub struct RouterEstimate {
 }
 
 /// **The estimate of grading `planned` on `profile`** (#3618), from the grades of its router in
-/// its scope in the project at `root`: `None` where it has none, or the plan runs no chat.
+/// its scope in the project at `root`: `None` where it has none to go by, or the plan runs no
+/// chat. A grade purlis stopped under before it scored a skill is none to go by: its row says no
+/// count of the chats it asked for (#3602), so it is passed over, never read as one that ran no
+/// chat.
 pub fn estimate(
     root: &Path,
     planned: &RouterPlanned,
     profile: Option<&str>,
 ) -> Option<RouterEstimate> {
     let chats = planned.plan?.chats;
-    let grades = grades_of(
+    let grades: Vec<RouterGraded> = grades_of(
         root,
         &planned.router,
         planned.workspace.as_deref(),
         planned.persona.as_deref(),
-    );
+    )
+    .into_iter()
+    .filter(|row| !super::Spends::stopped_unscored(row))
+    .collect();
     let (estimate, last) = super::estimate_from(&grades, chats, profile)?;
-    // The same library: the same copies, each by its level, its name and what its folder held,
-    // whatever commit holds them.
+    // The same library: the same copies, each by its level, its name and the tree its folder
+    // held, whatever commit holds them. A copy with changes not committed says no tree, so a
+    // library holding one is never known to be the same.
     let held = |copies: &mut dyn Iterator<Item = RecordedCopy>| {
         let mut held: Vec<_> = copies
             .map(|copy| (copy.level, copy.skill, copy.tree))
@@ -521,9 +534,15 @@ pub fn estimate(
         held
     };
     let now = held(&mut planned.copies.iter().map(RecordedCopy::of));
+    let committed = |copies: &[(Option<String>, String, String)]| {
+        copies
+            .iter()
+            .all(|(_, _, tree)| matches!(Content::parse(tree), Some(Content::Tree(_))))
+    };
+    let then = held(&mut last.library.iter().cloned());
     Some(RouterEstimate {
         estimate,
-        same_library: held(&mut last.library.iter().cloned()) == now,
+        same_library: committed(&now) && then == now,
     })
 }
 

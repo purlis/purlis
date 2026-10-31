@@ -99,7 +99,7 @@ export function pointsSaid(points: number | null): string {
 }
 
 /** The difference between two arms' rates, as a tile's line says it: `+18 points`. */
-function against(one: number | null, other: number | null): string | undefined {
+export function against(one: number | null, other: number | null): string | undefined {
   if (one === null || other === null) return undefined;
   return `${points(one - other)} points`;
 }

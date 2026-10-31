@@ -145,7 +145,6 @@ const SCORECARD: RouterGradeScorecard = {
   library: "the library at 3f9a2c1d7e40",
   ran_on: "Claude Code · claude-sonnet-4-5",
   ended: "Finished",
-  said: "Graded on the library at 3f9a2c1d7e40, 2026-10-27: 9 of 10 trigger tests pass with the router relevance, and 8 of 10 with the built-in router.",
   outcome: "graded",
   arms: { router: 90, built_in: 80 },
   spent: { chats: 60, tokens: 240000, cost_usd: 1.84, limit_usd: 15 },

@@ -470,7 +470,6 @@ describe("the Routing page (#3692)", () => {
         library: "the library at aaaaaaaaaaaa",
         ran_on: "Claude Code",
         ended: "Finished",
-        said: grade,
         outcome: "graded",
         arms: { router: 50, built_in: 100 },
         spent: { chats: 12, tokens: 12000, cost_usd: null, limit_usd: 1.5 },

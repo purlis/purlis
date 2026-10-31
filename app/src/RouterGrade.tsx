@@ -12,6 +12,7 @@ import {
 } from "./bindings";
 import { counted } from "./dispatches";
 import {
+  against,
   KeptChatShown,
   keptChats,
   OUTCOME_SAID,
@@ -119,17 +120,25 @@ export function RouterGrade({
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
   }, [plane, router]);
 
+  // The latest read asked for: an answer to an older one, landing after it, is never drawn, so
+  // the plan shown is always of the profile and model picked.
+  const asked = useRef(0);
   /** Reads the plan of a grade on `on` and `onModel`. */
-  const read = (on: string | null, onModel: string | null) =>
+  const read = (on: string | null, onModel: string | null) => {
+    const ask = ++asked.current;
     void commands
       .routerGradePlan(plane, workspace, persona, on, onModel)
       .then((answer) => {
+        if (ask !== asked.current) return;
         if (answer.status === "ok") {
           setPlan(answer.data);
           setRefused(undefined);
         } else setRefused(answer.error);
       })
-      .catch((err: unknown) => setRefused(String(err)));
+      .catch((err: unknown) => {
+        if (ask === asked.current) setRefused(String(err));
+      });
+  };
 
   const open = () => {
     setAsking(true);
@@ -229,14 +238,16 @@ export function RouterGrade({
             setModel(to);
             read(picked, to === DEFAULT ? null : to);
           }}
-          onCap={(tokens) =>
+          onCap={(tokens) => {
+            const ask = ++asked.current;
             void commands
               .routerGradeSetCap(plane, workspace, persona, picked, pickedModel, tokens)
               .then((answer) => {
+                if (ask !== asked.current) return;
                 if (answer.status === "ok") setPlan(answer.data);
                 else setSaid({ tone: "trouble", text: answer.error });
-              })
-          }
+              });
+          }}
           onStart={start}
           onCancel={() => setAsking(false)}
         />
@@ -249,8 +260,14 @@ export function RouterGrade({
  *  (`costSaid`), and, where that grade ran on another library, that this one may spend otherwise. */
 export function routerCostSaid(plan: RouterGradePlan): string {
   const said = costSaid(plan, "router");
-  return plan.estimate_same_library === false
-    ? `${said} That grade ran on another library, and each chat is handed the whole library, so this one may spend otherwise.`
+  const { estimate } = plan;
+  // Said only of a figure the plan gives.
+  const figure =
+    estimate !== null &&
+    estimate.chats_then > 0 &&
+    (estimate.tokens !== null || estimate.cost_usd !== null);
+  return figure && plan.estimate_same_library === false
+    ? `${said} That grade may have run on another library (its skills differ, or hold changes not committed), and each chat is handed the whole library, so this one may spend otherwise.`
     : said;
 }
 
@@ -418,10 +435,6 @@ export function RouterGradeScorecardPage({
   const it = card.data;
   const end = OUTCOME_SAID[it.outcome];
   const spent = it.spent.cost_usd === null ? "" : ` for ${dollarsSaid(it.spent.cost_usd)}`;
-  const against =
-    it.arms.router === null || it.arms.built_in === null
-      ? undefined
-      : `${it.arms.router - it.arms.built_in > 0 ? "+" : ""}${it.arms.router - it.arms.built_in} points`;
   return (
     <section
       className="skill-studio-page"
@@ -437,7 +450,7 @@ export function RouterGradeScorecardPage({
           onDismiss={() => setEndPutAway(true)}
         >
           <span data-testid="router-grade-scorecard-about">
-            {`${end.said} ${it.graded}, on ${it.library}, on ${it.ran_on}${spent}. ${it.said}`}
+            {`${end.said} ${it.graded}, on ${it.library}, on ${it.ran_on}${spent}. ${it.ended}.`}
           </span>
         </Notice>
       )}
@@ -454,7 +467,7 @@ export function RouterGradeScorecardPage({
           <Tile
             label="With the built-in router"
             value={pointsSaid(it.arms.built_in)}
-            line={against}
+            line={against(it.arms.router, it.arms.built_in)}
           />
           <Tile
             label="Spent"

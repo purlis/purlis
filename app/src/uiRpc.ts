@@ -1077,12 +1077,7 @@ export const commands = {
 	 */
 	routerGradePlan: (plane: PlaneId, workspace: string | null, persona: string | null, profile: string | null, model: string | null) => typedError<RouterGradePlan, string>(__TAURI_INVOKE("router_grade_plan", { plane, workspace, persona, profile, model })),
 	routerGradeStart: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **Sets the token cap a grade in the project is held to**, on this machine, as a skill's plan
-	 *  sets it (#3618; the operator's ruling of 2026-10-26): one cap for every grade of the project.
-	 *  The answer is the router's plan again, with it.
-	 */
-	routerGradeSetCap: (plane: PlaneId, workspace: string | null, persona: string | null, profile: string | null, model: string | null, tokens: number | null) => typedError<RouterGradePlan, string>(__TAURI_INVOKE("router_grade_set_cap", { plane, workspace, persona, profile, model, tokens })),
+	routerGradeSetCap: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The scorecard of the grade `grade` of the router the studio's workspace or persona chose**
 	 *  (#3617), as the routers' record holds it.
@@ -9475,8 +9470,6 @@ export type RouterGradeScorecard = {
 	/**  What its chats ran on, and how it ended, in the record's words. */
 	ran_on: string,
 	ended: string,
-	/**  The router's line of it, as the Routing page says it. */
-	said: string,
 	outcome: GradeOutcome,
 	arms: RouterGradeArms,
 	spent: GradeSpent,

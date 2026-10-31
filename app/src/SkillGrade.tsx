@@ -99,7 +99,7 @@ export function costSaid(
   if (estimate === null)
     return of === "skill"
       ? `This skill has not been graded here before, so purlis cannot say yet what a grade spends. ${turn}`
-      : `This router has not been graded here before, so purlis cannot say yet what a grade spends. ${turn}`;
+      : `purlis knows no grade of this router here to go by (one purlis stopped under before it scored a test says nothing of what a grade spends), so it cannot say yet what this one spends. ${turn}`;
   const on =
     estimate.profile === null
       ? ""

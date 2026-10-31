@@ -240,7 +240,7 @@ describe("Grade the router, cost first (SK-15e)", () => {
       interrupted: false,
     };
     expect(routerCostSaid(plan())).toBe(
-      "This router has not been graded here before, so purlis cannot say yet what a grade spends. Each chat is one turn, and ends once the skill it tests starts.",
+      "purlis knows no grade of this router here to go by (one purlis stopped under before it scored a test says nothing of what a grade spends), so it cannot say yet what this one spends. Each chat is one turn, and ends once the skill it tests starts.",
     );
     const estimated = plan({
       estimate: { tokens: 18000, cost_usd: 0.18, chats_then: 12, ...from },
@@ -250,16 +250,18 @@ describe("Grade the router, cost first (SK-15e)", () => {
       "From its grade on work (Claude Code, sonnet), 2026-10-25, of 12 chats, this one should spend about 18,000 tokens, about $0.18.",
     );
     expect(routerCostSaid({ ...estimated, estimate_same_library: false })).toContain(
-      "That grade ran on another library, and each chat is handed the whole library, so this one may spend otherwise.",
+      "That grade may have run on another library (its skills differ, or hold changes not committed), and each chat is handed the whole library, so this one may spend otherwise.",
     );
-    expect(
-      routerCostSaid(
-        plan({
-          estimate: { tokens: null, cost_usd: null, chats_then: 12, ...from },
-          estimate_same_library: true,
-        }),
-      ),
-    ).toContain("did not say what its chats spent, so purlis cannot say what this one spends");
+    const unsaid = routerCostSaid(
+      plan({
+        estimate: { tokens: null, cost_usd: null, chats_then: 12, ...from },
+        estimate_same_library: false,
+      }),
+    );
+    expect(unsaid).toContain(
+      "did not say what its chats spent, so purlis cannot say what this one spends",
+    );
+    expect(unsaid).not.toContain("another library");
   });
 
   it("says each way a grade ends", () => {
@@ -308,7 +310,6 @@ function scorecard(over: Partial<RouterGradeScorecard> = {}): RouterGradeScoreca
     library: "the library at aaaaaaaaaaaa",
     ran_on: "Claude Code · sonnet",
     ended: "Finished",
-    said: "Graded on the library at aaaaaaaaaaaa, 2026-10-30: 1 of 2 trigger tests pass with the router relevance, and 2 of 2 with the built-in router.",
     outcome: "graded",
     arms: { router: 50, built_in: 100 },
     spent: { chats: 12, tokens: 12000, cost_usd: 0.12, limit_usd: 1.5 },
@@ -351,7 +352,7 @@ describe("A router's grade's scorecard and its chats (#3617)", () => {
       />,
     );
     expect((await screen.findByTestId("router-grade-scorecard-about")).textContent).toContain(
-      "Graded 2026-10-30 10:00 UTC, on the library at aaaaaaaaaaaa, on Claude Code · sonnet for $0.12.",
+      "Graded 2026-10-30 10:00 UTC, on the library at aaaaaaaaaaaa, on Claude Code · sonnet for $0.12. Finished.",
     );
     expect(asked[0].args).toMatchObject({ workspace: "ops", persona: null, grade: "01GRADE" });
     const totals = screen.getByRole("group", { name: "Totals of the grade of relevance" });

@@ -11639,8 +11639,6 @@ export type RouterGradeScorecard = {
 	/**  What its chats ran on, and how it ended, in the record's words. */
 	ran_on: string,
 	ended: string,
-	/**  The router's line of it, as the Routing page says it. */
-	said: string,
 	outcome: GradeOutcome,
 	arms: RouterGradeArms,
 	spent: GradeSpent,

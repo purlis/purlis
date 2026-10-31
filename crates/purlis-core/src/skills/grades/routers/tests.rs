@@ -341,18 +341,23 @@ fn an_interrupted_grade_says_it_was_interrupted_and_no_count_3616() {
 }
 
 /// #3618: a router's plan's estimate is its last grade's spend per chat, times the chats this one
-/// runs, from the newest on this profile; it says which grade that was and whether it ran on this
-/// library. An interrupted grade, which scored no skill, gives none to go by.
+/// runs, from the newest on this profile; it says which grade that was and whether it is known to
+/// have run on this library. An interrupted grade, which scored no skill, is none to go by.
 #[test]
 fn a_router_s_estimate_is_its_last_grade_s_spend_per_chat_3618() {
     let tmp = plane();
     let root = tmp.path();
-    let planned = planned(root, Some("ops"), None, "relevance").unwrap();
+    let mut planned = planned(root, Some("ops"), None, "relevance").unwrap();
     let chats = planned.plan.unwrap().chats;
     assert!(
         estimate(root, &planned, Some("claude")).is_none(),
         "never graded"
     );
+    // Each copy as a commit holds it: a library with changes not committed is never known to be
+    // the one a grade ran on.
+    for (at, one) in planned.copies.iter_mut().enumerate() {
+        one.copy.content = Content::Tree(format!("{at}").repeat(40));
+    }
 
     // 12 chats asked for in all (two skills, two arms, three runs) spent 12,000 tokens.
     let mut on_this = graded("01OLDER", "2026-10-01T10:00:00Z");
@@ -396,4 +401,19 @@ fn a_router_s_estimate_is_its_last_grade_s_spend_per_chat_3618() {
     );
     assert_eq!(said.estimate.same_profile, Some(false));
     assert!(!said.same_library, "graded on another library");
+
+    let mut uncommitted = planned.clone();
+    uncommitted.copies[0].copy.content = Content::Uncommitted;
+    on_this.library = uncommitted.copies.iter().map(RecordedCopy::of).collect();
+    written(root, &[serde_json::to_value(&on_this).unwrap()]);
+    assert!(
+        !estimate(root, &uncommitted, Some("claude"))
+            .unwrap()
+            .same_library,
+        "never known to be the same while a copy holds changes not committed"
+    );
+
+    // Its only grade interrupted: none to go by, never one that ran no chat.
+    written(root, &[serde_json::to_value(&stopped).unwrap()]);
+    assert!(estimate(root, &planned, Some("claude")).is_none());
 }
