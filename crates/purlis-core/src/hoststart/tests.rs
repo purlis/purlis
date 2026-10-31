@@ -205,6 +205,7 @@ fn only_a_links_start_says_whether_its_desktop_reaches_the_chat_with_the_planes_
             number: 1,
             start: &start,
             reporting: None,
+            prompt_key: None,
             started_by: by,
         })
     };
@@ -238,6 +239,7 @@ fn a_chat_its_desktop_said_the_flag_for_is_started_with_that_word() {
             number: 1,
             start: &start,
             reporting: None,
+            prompt_key: None,
             started_by: by,
         })
     };
