@@ -109,7 +109,7 @@ import { NewBranch } from "./NewBranch";
 import { LinkWorkItem } from "./LinkWorkItem";
 import { RenameWorkspace } from "./RenameWorkspace";
 import { AddVision } from "./AddVision";
-import { cloneRepos, settleRepoClones, useRepoClones } from "./repoClones";
+import { cloneRepos, settleRepoClones, stopRepoClones, useRepoClones } from "./repoClones";
 import { StartChat } from "./StartChat";
 import {
   handedSaid,
@@ -119,12 +119,12 @@ import {
   type Referenced,
 } from "./references";
 import {
-  SkillBudgetsHere,
+  ChatSkillSetsHere,
   UseSkill,
   UseSkillOpener,
-  useChatSkillBudgets,
+  useChatSkillSets,
+  type ChatSkillSets,
   type OpenUseSkill,
-  type SkillBudgets,
 } from "./UseSkill";
 import { Explorer, type SearchKeyHere, type Spot } from "./Explorer";
 import {
@@ -163,11 +163,14 @@ import {
   ROOT_PANELS,
   SETTINGS,
   SIDEBAR,
+  skillSetsOfChats,
   usePlaneChanged,
+  useViewChanged,
 } from "./planeChanged";
 import { useRemoveWorkspaceAsked } from "./removeWorkspaceAsk";
 import { useOpenProposalAsked } from "./proposedChangeOpen";
 import { useOpenRunnerWriteAsked } from "./runnerWriteOpen";
+import { useOpenRunnerDispatchAsked } from "./runnerDispatchOpen";
 import { BROWSER_ASK_ENDED, useOpenBrowserAsked } from "./browserNeedsYou";
 import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
@@ -187,7 +190,13 @@ import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, useSandboxBlocks } from "./sandboxBlocks";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
-import { reposCloned, reposCloning, reposNotCloned, workspaceMade } from "./actionResult";
+import {
+  reposCloned,
+  reposCloning,
+  reposNotCloned,
+  reposStopped,
+  workspaceMade,
+} from "./actionResult";
 import { Inbox, landOnGroupIn, type UpdateRow, type WindowLines } from "./Inbox";
 import { awayRow } from "./AwayRefusals";
 import {
@@ -209,7 +218,7 @@ import { useInboxOpenTold } from "./askNotices";
 import { useAnsweredWhenGone } from "./inboxRules";
 import { usePermissionAsks } from "./permissionAsks";
 import { useDismissals } from "./dismissals";
-import { dormantCause, dormantSays } from "./ChipNotices";
+import { dormantCause, dormantSays, type ChipNotices } from "./ChipNotices";
 import {
   ATTENTION_VIEWS,
   openView as viewOpenIn,
@@ -402,6 +411,7 @@ import {
 } from "./AskPersona";
 import { SandboxOffer } from "./SandboxOffer";
 import { ProjectHostsNotice } from "./ProjectHostsNotice";
+import { RunnerGoneNotice } from "./RunnerGoneNotice";
 import { RunnerKeyChangedNotice } from "./RunnerKeyChangedNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
@@ -444,7 +454,9 @@ import {
   useSkillStudioSaid,
 } from "./skillStudio";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { askBeforeClosing, forgetSkillEdit, unsavedClosedBy } from "./skillEdit";
+import { forgetSkillEdit } from "./skillEdit";
+import { discardGone, discardRemoved, unsavedClosedBy, unsavedIn } from "./unsavedWork";
+import { UnsavedWorkQuestion, type UnsavedAsk } from "./UnsavedWorkQuestion";
 import { SkillRunsHere, aPersonasOwn, useSkillRuns, type RunsOf } from "./skillRuns";
 import { CHAT_SKILLS_ASKED, type ChatSkillsAsk } from "./chatSkillsAsk";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
@@ -473,12 +485,14 @@ import { DoingsHere, useDoings, type DoingsOf } from "./chatDoing";
 import {
   ChatsHere,
   backSaid,
+  inItsTurn,
   isShell,
   movedAt,
   quietChats,
   sameList,
   sameQuiet,
   stateOf,
+  turnStateOf,
   useChats,
   useChatsHere,
   useChatsSelect,
@@ -513,6 +527,7 @@ import {
   SETTINGS_ACTION,
   SETTINGS_LINK,
   THEME_CHAT,
+  askThemeChat,
   type ProfileSignInAsk,
   type SettingsActionAsk,
   type SettingsLink,
@@ -522,7 +537,14 @@ import {
 import { enterSettings, placeOfView } from "./settings/entering";
 import { onceTheKeyboardIsBack } from "./keyboardBack";
 import { SessionOffersLent } from "./sessionOffers";
-import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
+import { askSkillChat, SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
+import { skillChatRefused } from "./SkillChatApproval";
+import {
+  StartApproveAsk,
+  startRefused,
+  startRefusedRan,
+  type StartApproving,
+} from "./StartApproval";
 import { ChatStrip, NO_ENDED, NO_ROWS } from "./ChatStrip";
 import {
   type FirstChat,
@@ -581,6 +603,8 @@ type Typed =
       provider?: string;
       /** The pool whose runner it is signed in on (#2049), where it is not this machine. */
       pool?: string;
+      /** By the harness's device-code flow (#4044). */
+      device?: boolean;
       line?: undefined;
       installer?: undefined;
       sandboxInstall?: undefined;
@@ -668,6 +692,7 @@ export const PlaneView = memo(function PlaneView({
   onReport,
   onSessionRows,
   alerts,
+  statusNotices,
   contributed: surveyedPanels = NONE,
   views: surveyedViews = NONE,
   commands: surveyedCommands = NONE,
@@ -717,6 +742,9 @@ export const PlaneView = memo(function PlaneView({
   /** Every open project's alerts, as the window reads them (#1695): this project's Inbox lists
    *  its own and this machine's as Notices, and names each other project that has some. */
   alerts?: WindowAlerts;
+  /** The notices that pop from the status line's Notices item (#3653): the window's, handed to
+   *  the project in front alone. */
+  statusNotices?: ChipNotices;
   /** What approved extensions contribute to the side region. The window's, for the same reason
    *  the alerts are: an extension is installed per machine and never travels in a plane
    *  (ADR 0041), so one survey serves every project this window holds — and this project keeps
@@ -1036,8 +1064,12 @@ export const PlaneView = memo(function PlaneView({
    *  definition or its folder moving is one of them. */
   const personaMarks = usePersonaMarks(plane, sidebarChanges);
   /** The chats running on instructions the plane has changed since they started (charter#369),
-   *  each marked on its tab. */
-  const planeUpdates = usePlaneUpdated(plane, instructionsChanges);
+   *  each marked on its tab, and those whose skills changed since (#2770), for their Skills
+   *  chip (#3953). */
+  const { files: planeUpdates, skills: skillsChanged } = usePlaneUpdated(
+    plane,
+    instructionsChanges,
+  );
   // The plane root is watched, so an edit to `charter.toml` or `charter.local.toml` — in an
   // editor, from a `git pull` — is one of these, and what this project has on may have moved
   // with it (charter-app#253). Not at the mount: `useExtensionsOn` asks then.
@@ -1072,8 +1104,16 @@ export const PlaneView = memo(function PlaneView({
     () => [...new Set(tabs.order.flatMap((id) => panesOf(tabs, id).map((pane) => pane.session)))],
     [tabs],
   );
-  /** Each open chat's skill budget (#2775): the chip on its pane and its tab's menu row. */
-  const [skillBudgets, setSkillBudget] = useChatSkillBudgets(plane, chatSessions, studioOn);
+  /** Each open chat's skill set as a whole (#2775, #3953): the chip on its pane, read again
+   *  when what the sets are made of moves on disk (#4094). */
+  const skillSetsMoved = useViewChanged([plane], skillSetsOfChats);
+  const [chatSkillSets, setChatSkills] = useChatSkillSets(
+    plane,
+    chatSessions,
+    studioOn,
+    skillsChanged,
+    skillSetsMoved,
+  );
   const reloadVaults = vaults.reload;
   /** Whether the vault picker is up. */
   const [pickingVault, setPickingVault] = useState(false);
@@ -1108,6 +1148,17 @@ export const PlaneView = memo(function PlaneView({
     refusal?: Refused;
     busy: boolean;
   }>();
+  /** **A close waiting on the person's answer about the unsaved work it would lose** (#3929,
+   *  `unsavedWork.ts`): a tab's, a pane's, or a workspace's removal. */
+  const [unsavedAsk, setUnsavedAsk] = useState<UnsavedAsk>();
+  const unsavedAskNow = useRef(unsavedAsk);
+  /** Asks about `ask`'s work, unless a question about unsaved work is up already: that one is
+   *  answered first, and this ask is one not taken (`kept`), as `App`'s is (#4029). */
+  const askUnsaved = useCallback((ask: UnsavedAsk | undefined) => {
+    if (ask !== undefined && unsavedAskNow.current !== undefined) return ask.kept?.();
+    unsavedAskNow.current = ask;
+    setUnsavedAsk(ask);
+  }, []);
   /** The workspace being renamed, while its dialog is up: whether charter is renaming it now,
    *  and why the last attempt renamed nothing, in the core's words (charter#367). */
   /** The workspace whose vision is being added (#3344), whether it is being saved, and why the
@@ -3042,6 +3093,7 @@ export const PlaneView = memo(function PlaneView({
                 typed.signIn,
                 typed.provider ?? null,
                 typed.pool ?? null,
+                typed.device ?? false,
               )
               .then((said) => {
                 if (said.status === "error") refusedBy("shell", said.error);
@@ -3259,15 +3311,16 @@ export const PlaneView = memo(function PlaneView({
    * core. The person drives the harness's flow there; purlis reads none of it.
    */
   const signIn = useCallback(
-    (profile: string, provider?: string, pool?: string) => {
-      if (root !== undefined) openShell(root, OUTSIDE, { signIn: profile, provider, pool });
+    (profile: string, provider?: string, pool?: string, device?: boolean) => {
+      if (root !== undefined) openShell(root, OUTSIDE, { signIn: profile, provider, pool, device });
     },
     [openShell, root],
   );
   useEffect(() => {
     const asked = (event: Event) => {
       const wanted = (event as CustomEvent<ProfileSignInAsk>).detail;
-      if (wanted.plane === plane) signIn(wanted.profile, wanted.provider, wanted.pool);
+      if (wanted.plane === plane)
+        signIn(wanted.profile, wanted.provider, wanted.pool, wanted.device);
     };
     window.addEventListener(PROFILE_SIGN_IN, asked);
     return () => window.removeEventListener(PROFILE_SIGN_IN, asked);
@@ -3922,6 +3975,8 @@ export const PlaneView = memo(function PlaneView({
       forgetViewHistory(studioHistoryOf(plane, gone));
       forgetSkillEdit(studioHistoryOf(plane, gone));
     }
+    // **And any view's unsaved work goes with its tab** (#3929), once it is asked about.
+    discardGone(plane, studiosBefore.current, tabs);
     studiosBefore.current = tabs;
   }, [tabs, plane]);
 
@@ -3947,6 +4002,7 @@ export const PlaneView = memo(function PlaneView({
     closeView,
     reread: rereadPanels,
     reloadVaults,
+    askUnsaved,
   });
   /** A plane's memories (SI-9b): the preview tab, edits, Delete and its Undo. */
   const memoryEdits = useMemoryEdits({
@@ -4677,21 +4733,33 @@ export const PlaneView = memo(function PlaneView({
       const track = cloneRuns;
       const run = async (repos: string[], before?: Said) => {
         let done = 0;
-        setReport({ ...reposCloning(name, repos, done, track), after: before });
-        const failed = await cloneRepos(plane, name, repos, () => {
-          done += 1;
-          if (done < repos.length) setReport(reposCloning(name, repos, done, track));
-        });
+        const onCancel = () => stopRepoClones(plane, name, repos);
+        setReport({ ...reposCloning(name, repos, done, track, { onCancel }), after: before });
+        const failed = await cloneRepos(
+          plane,
+          name,
+          repos,
+          () => {
+            done += 1;
+            if (done < repos.length)
+              setReport(reposCloning(name, repos, done, track, { onCancel }));
+          },
+          (_, moved) => setReport(reposCloning(name, repos, done, track, { moved, onCancel })),
+        );
+        // Only the ones that did not land, on the same notice.
+        const retry = () => void run(failed.map((one) => one.repo));
+        const refused = failed.filter((one) => one.stopped !== true);
         setReport(
           failed.length === 0
             ? reposCloned(name, repos, track)
-            : reposNotCloned(
-                name,
-                failed,
-                // Only the ones that failed, on the same notice.
-                () => void run(failed.map((one) => one.repo)),
-                track,
-              ),
+            : refused.length === 0
+              ? reposStopped(
+                  name,
+                  failed.map((one) => one.repo),
+                  retry,
+                  track,
+                )
+              : reposNotCloned(name, refused, retry, track),
         );
         setReplan((asked) => asked + 1);
       };
@@ -4817,7 +4885,7 @@ export const PlaneView = memo(function PlaneView({
    * against the disk at the moment of the delete — this is what the operator sees before they
    * press, not what decides.
    */
-  const removeWorkspace = useCallback(
+  const askToRemove = useCallback(
     (workspace: string) => {
       setRemoving({ workspace, busy: false });
       void commands
@@ -4841,6 +4909,16 @@ export const PlaneView = memo(function PlaneView({
     },
     [plane],
   );
+  /** **The unsaved work a save writes into the workspace is asked about first** (#3929): it goes
+   *  with the workspace. Then the removal's own question. */
+  const removeWorkspace = useCallback(
+    (workspace: string) => {
+      const work = unsavedIn(plane, { workspace });
+      if (work.length === 0) return askToRemove(workspace);
+      askUnsaved({ work, then: () => askToRemove(workspace) });
+    },
+    [askToRemove, askUnsaved, plane],
+  );
 
   // Remove… on a chat's question about a workspace opens this same dialog (qw356): the chat
   // asked, and what removes anything is the person's press in it.
@@ -4850,6 +4928,7 @@ export const PlaneView = memo(function PlaneView({
   useOpenProposalAsked(plane, showView);
   // Open on a runner chat's change its row cannot show whole opens its own tab (#2046).
   useOpenRunnerWriteAsked(plane, showView);
+  useOpenRunnerDispatchAsked(plane, showView);
   /** A browser whose chat asked the person to take it over, taken over from its Ask (#2015):
    *  its view opens, where the bar says they drive and Done hands it back. */
   const showBrowserTakenOver = useCallback(
@@ -4952,6 +5031,8 @@ export const PlaneView = memo(function PlaneView({
         return;
       }
       setRemoving(undefined);
+      // The unsaved work a save would have written into it goes with it (#3929).
+      discardRemoved(plane, { workspace });
       setReport({
         from: `workspace.remove:${workspace}`,
         refused: false,
@@ -5230,33 +5311,59 @@ export const PlaneView = memo(function PlaneView({
     [ofWorkspace, plane],
   );
 
+  /** A start refused for its profile's approval, while Approve and start… asks (#3942, #3968). */
+  const [startApproving, setStartApproving] = useState<StartApproving>();
+  /** What a start run again after Approve and start… answered, said in the line of `from` where
+   *  it says anything: a quiet start leaves the notice as it is (#3968). */
+  const sayAgain = useCallback(
+    (from: string) => (ran: Ran) => {
+      const said = saidOf(from, ran);
+      if (said !== undefined) setReport(said);
+    },
+    [],
+  );
+
   /**
    * A curation action chosen from a "Curate ▸" menu or the palette (ADR 0061): the core opens
    * the chat — the default profile, the action's runner, where it runs — and holds its prompt
    * until the harness reports its start; this puts its tab on the strip it is filed under, in
    * front, named for the action and its subject. A refusal is the core's sentence, before
-   * anything started.
+   * anything started, with Approve and start… where its profile needs approving (#3968).
    */
   const curate = useCallback(
-    async (subject: string, action: string): Promise<Ran> => {
-      const started = await commands
-        .curate(plane, subject, action, STARTING_SIZE.columns, STARTING_SIZE.rows)
-        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      if (started.status === "error") return { ok: false, refused: started.error };
-      const chat = started.data;
-      setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
-      change((tabs) =>
-        openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label),
-      );
-      return { ok: true };
+    (subject: string, action: string, label: string): Promise<Ran> => {
+      const start = async (): Promise<Ran> => {
+        const started = await commands
+          .curate(plane, subject, action, STARTING_SIZE.columns, STARTING_SIZE.rows)
+          .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+        if (started.status === "error")
+          return startRefusedRan(
+            started.error,
+            {
+              named: `The curation action ${label}`,
+              typed: "its prompt",
+              // The same action again, said in the line of the row that asked.
+              again: () => void start().then(sayAgain(`curate:${subject}/${action}`)),
+            },
+            setStartApproving,
+          );
+        const chat = started.data;
+        setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
+        change((tabs) =>
+          openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label),
+        );
+        return { ok: true };
+      };
+      return start();
     },
-    [change, plane],
+    [change, plane, sayAgain],
   );
 
   /**
    * **Settings › Theme's New theme and Edit with a chat** (#2333): the core opens the chat at the
    * gallery's level with its prompt typed and never sent, as a curation chat is opened, and its
-   * tab goes on the strip it is filed under, in front. A refusal is the core's sentence.
+   * tab goes on the strip it is filed under, in front. A refusal is the core's sentence, with
+   * Approve and start… where its profile needs approving (#3968).
    */
   useEffect(() => {
     const asked = (event: Event) => {
@@ -5273,7 +5380,16 @@ export const PlaneView = memo(function PlaneView({
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
         .then((started) => {
           if (started.status === "error") {
-            setReport({ from: "theme-chat", refused: true, words: started.error });
+            const said = startRefused(
+              started.error,
+              {
+                named: wanted.theme === null ? "New theme" : "Edit with a chat",
+                typed: "its request",
+                again: () => askThemeChat(wanted),
+              },
+              setStartApproving,
+            );
+            setReport({ from: "theme-chat", refused: true, ...said });
             return;
           }
           const chat = started.data;
@@ -5292,7 +5408,8 @@ export const PlaneView = memo(function PlaneView({
    * write them"** (SK-9, #2772; S9, #3690; #3925): the core opens
    * the chat with its prompt typed and never sent (Try it's in a throwaway folder, with the
    * built-in skills and the draft alone), and its tab goes on the strip it is filed under, in
-   * front. A refusal is the core's sentence.
+   * front. A refusal is the core's sentence, with Approve and start… where its profile needs
+   * approving (#3942).
    */
   useEffect(() => {
     const asked = (event: Event) => {
@@ -5329,7 +5446,13 @@ export const PlaneView = memo(function PlaneView({
       }
       const starting =
         wanted.kind === "draft"
-          ? commands.skillDraftChat(plane, wanted.level, STARTING_SIZE.columns, STARTING_SIZE.rows)
+          ? commands.skillDraftChat(
+              plane,
+              wanted.level,
+              wanted.what,
+              STARTING_SIZE.columns,
+              STARTING_SIZE.rows,
+            )
           : wanted.kind === "triggers"
             ? commands.skillTriggerTestsChat(
                 plane,
@@ -5351,7 +5474,8 @@ export const PlaneView = memo(function PlaneView({
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
         .then((started) => {
           if (started.status === "error") {
-            setReport({ from: "skill-chat", refused: true, words: started.error });
+            // With Approve and start… where its profile needs approving (#3942).
+            setReport(skillChatRefused(wanted, started.error, setStartApproving, askSkillChat));
             return;
           }
           const chat = started.data;
@@ -5370,34 +5494,48 @@ export const PlaneView = memo(function PlaneView({
    * project's default profile in the branch's folder, with a reference to the row typed as its
    * first prompt once its harness has started, and never sent. Its tab goes on the strip it is
    * filed under, as a curation chat's does. Where the harness cannot be typed into, the core
-   * copies the reference, and the window says so.
+   * copies the reference, and the window says so. A refusal is the core's sentence, with Approve
+   * and start… where its profile needs approving (#3968).
    */
   const startChatHere = useCallback(
-    async (at: BranchPath, lines?: { first: number; last: number }): Promise<Ran> => {
-      const started = await commands
-        .startChatHere(
-          plane,
-          at.workspace,
-          at.repo,
-          at.piece,
-          at.path,
-          // The lines picked in a file's preview (#1151): the core types them in the reference.
-          lines ?? null,
-          STARTING_SIZE.columns,
-          STARTING_SIZE.rows,
-        )
-        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      if (started.status === "error") return { ok: false, refused: started.error };
-      const chat = started.data;
-      setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
-      change((tabs) =>
-        openTab(tabs, chat.session, chat.name, whoOf(null, chat.harness), chat.label),
-      );
-      if (chat.copied === null) return { ok: true };
-      const why = chat.copied.charAt(0).toUpperCase() + chat.copied.slice(1);
-      return { ok: true, said: `${why}: ${chat.text}` };
+    (at: BranchPath, lines?: { first: number; last: number }): Promise<Ran> => {
+      const start = async (): Promise<Ran> => {
+        const started = await commands
+          .startChatHere(
+            plane,
+            at.workspace,
+            at.repo,
+            at.piece,
+            at.path,
+            // The lines picked in a file's preview (#1151): the core types them in the reference.
+            lines ?? null,
+            STARTING_SIZE.columns,
+            STARTING_SIZE.rows,
+          )
+          .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+        if (started.status === "error")
+          return startRefusedRan(
+            started.error,
+            {
+              named: "Start a chat here",
+              typed: "its reference",
+              // The same start again, said as a file's start is.
+              again: () => void start().then(sayAgain("file.chat")),
+            },
+            setStartApproving,
+          );
+        const chat = started.data;
+        setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
+        change((tabs) =>
+          openTab(tabs, chat.session, chat.name, whoOf(null, chat.harness), chat.label),
+        );
+        if (chat.copied === null) return { ok: true };
+        const why = chat.copied.charAt(0).toUpperCase() + chat.copied.slice(1);
+        return { ok: true, said: `${why}: ${chat.text}` };
+      };
+      return start();
     },
-    [change, plane],
+    [change, plane, sayAgain],
   );
 
   /**
@@ -5800,7 +5938,7 @@ export const PlaneView = memo(function PlaneView({
     if (owedRestarts.length === 0) return;
     const drive = () => {
       const states = chats.store.statesFor(chats.plane);
-      const due = restartsDue(owedRestarts, (session) => stateOf(states, session));
+      const due = restartsDue(owedRestarts, states);
       for (const session of due.restart) restartOwed(session);
       // Dropped only once the core, which hears the program itself end, owes it nothing: a
       // hook can say the session ended while its program runs on ({@link owedAfterEnded}).
@@ -5830,7 +5968,10 @@ export const PlaneView = memo(function PlaneView({
   const owedStates = useChatsSelect(
     chats,
     (states): OwedStates =>
-      Object.fromEntries(owedRestarts.map((session) => [session, stateOf(states, session)])),
+      Object.fromEntries(
+        // Waiting on its own work is mid-turn to a restart (#3887): it waits, and says so.
+        owedRestarts.map((session) => [session, turnStateOf(states, session)]),
+      ),
     sameStates,
   );
   /**
@@ -5879,7 +6020,8 @@ export const PlaneView = memo(function PlaneView({
       }
       setRestartTrouble((was) => withoutKey(was, session));
       oweRestart(session);
-      if (stateOf(chats.store.statesFor(chats.plane), session) !== "running") restartOwed(session);
+      // Mid-turn, or waiting on its own work (#3887), it waits for the turn to end.
+      if (!inItsTurn(chats.store.statesFor(chats.plane), session)) restartOwed(session);
     },
     [chats, oweRestart, plane, restartOwed],
   );
@@ -5893,7 +6035,7 @@ export const PlaneView = memo(function PlaneView({
       // unless the chat's program has ended meanwhile (#1986).
       if (act === "mid-turn") {
         const states = chats.store.statesFor(chats.plane);
-        const due = restartsDue([session], (one) => stateOf(states, one), { now: session });
+        const due = restartsDue([session], states, { now: session });
         if (due.restart.includes(session)) restartOwed(session);
       }
     },
@@ -5999,7 +6141,7 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     const drive = () => {
       const states = chats.store.statesFor(chats.plane);
-      for (const session of movesDue(chatMovesOf(plane), (one) => stateOf(states, one))) {
+      for (const session of movesDue(chatMovesOf(plane), states)) {
         if (movingNow.current.has(session)) continue;
         movingNow.current.add(session);
         const moving = chatMovesOf(plane)[session];
@@ -6011,6 +6153,7 @@ export const PlaneView = memo(function PlaneView({
             stage: "failed",
             why,
             with: moving?.with ?? [],
+            sign_in: null,
           });
         void commands
           .moveChatNow(plane, session, STARTING_SIZE.columns, STARTING_SIZE.rows)
@@ -6480,7 +6623,7 @@ export const PlaneView = memo(function PlaneView({
         .chatSkills(plane, session)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
         .then((said) => {
-          if (said.status === "ok") setSkillBudget(session, said.data.budget);
+          if (said.status === "ok") setChatSkills(session, said.data);
           setUsingSkill((was) =>
             was?.session !== session
               ? was
@@ -6490,7 +6633,7 @@ export const PlaneView = memo(function PlaneView({
           );
         });
     },
-    [plane, setSkillBudget],
+    [plane, setChatSkills],
   );
   /** Use skill…, from a chat tab's menu or the palette. */
   const useSkill = useCallback(
@@ -6605,15 +6748,19 @@ export const PlaneView = memo(function PlaneView({
       // Read again as each repo lands, so a repo that is cloned leaves "Not cloned here" while
       // the rest of a Clone all is still running. A clone the workspace does not then see is
       // a failure with a Retry — `cloneRepos` checks that for every caller (V91b).
-      const failed = await cloneRepos(plane, workspace, repos, rereadPanels);
-      return failed.length === 0
+      const ended = await cloneRepos(plane, workspace, repos, rereadPanels);
+      // A clone the person stopped is what they asked for: no failure to report.
+      const failed = ended.filter((one) => one.stopped !== true);
+      if (failed.length > 0)
+        return {
+          ok: false,
+          refused:
+            `Could not clone ${failed.map((f) => f.repo).join(", ")} into ${workspace} — ` +
+            failed.map((f) => f.said).join(" "),
+        };
+      return ended.length === 0
         ? { ok: true, said: `Cloned ${repos.join(", ")} into ${workspace}.` }
-        : {
-            ok: false,
-            refused:
-              `Could not clone ${failed.map((f) => f.repo).join(", ")} into ${workspace} — ` +
-              failed.map((f) => f.said).join(" "),
-          };
+        : { ok: true };
     },
     [plane, rereadPanels],
   );
@@ -7571,7 +7718,6 @@ export const PlaneView = memo(function PlaneView({
             profiles: profileNames,
             screenReader,
             skillStudio: studioOn,
-            skillBudgets,
             readOnly: readOnlySaid,
             places,
           }),
@@ -7634,7 +7780,6 @@ export const PlaneView = memo(function PlaneView({
       memoryStores,
       profileNames,
       studioOn,
-      skillBudgets,
       screenReader,
     ],
   );
@@ -7716,17 +7861,26 @@ export const PlaneView = memo(function PlaneView({
    * was refused and nothing has happened yet. The palette reads this answer to say what a row
    * did, and "nothing to say" is the right thing to say about a question still on screen.
    */
-  // The close asked again once the Skill studio's question is answered with a leave (#3683).
-  const askAgain = useRef<(offer: Offer, fromALink: boolean) => Promise<Ran>>(undefined);
+  // The close asked again, counted, once the question about its unsaved work is answered with
+  // a leave (#3929).
+  const askAgain =
+    useRef<(offer: Offer, fromALink: boolean, unsavedAnswered: boolean) => Promise<Ran>>(undefined);
   const askToEndNow = useCallback(
-    async (offer: Offer, fromALink: boolean): Promise<Ran> => {
-      // **A Skill studio whose editor holds unsaved text asks first** (#3683): its tab comes to
-      // the front, where the studio asks Keep editing, Discard and leave, or Save and leave, and
-      // the close is carried out once it is answered with a leave.
-      const unsaved = offer.available ? unsavedClosedBy(plane, now.current, offer.does) : undefined;
+    async (offer: Offer, fromALink: boolean, unsavedAnswered = false): Promise<Ran> => {
+      // **A view with unsaved work asks first** (#3683, #3929; `unsavedWork.ts`): its tab comes
+      // to the front, the window asks Keep editing, Discard and leave, or Save and leave, and the
+      // close is asked again once it is answered with a leave, and goes on to what it ends. The
+      // work goes with its tab once the close is carried out (`discardGone`).
+      const unsaved =
+        offer.available && !unsavedAnswered
+          ? unsavedClosedBy(plane, now.current, offer.does)
+          : undefined;
       if (unsaved !== undefined) {
         if (now.current.inFront !== unsaved.tab) bringToFront(unsaved.tab);
-        askBeforeClosing(unsaved.history, () => void askAgain.current?.(offer, fromALink));
+        askUnsaved({
+          work: unsaved.work,
+          then: () => void askAgain.current?.(offer, fromALink, true),
+        });
         return { ok: true };
       }
       if (offer.available && endsAChat(offer.does)) {
@@ -7827,27 +7981,32 @@ export const PlaneView = memo(function PlaneView({
       }
       return carryOut(offer);
     },
-    [askedByNow, bringToFront, carryOut, plane, setEndingChat],
+    [askUnsaved, askedByNow, bringToFront, carryOut, plane, setEndingChat],
   );
-  useEffect(() => {
-    askAgain.current = askToEndNow;
-  }, [askToEndNow]);
   /**
    * **A close counts as a question up from its first step** (#2761), and the mark is cleared
-   * however it settles (#2845): `closeQuestion.ts`.
+   * however it settles (#2845): `closeQuestion.ts`. The question about a view's unsaved work is
+   * one too (#3929).
    */
   const { up: questionUp, counted } = useCloseQuestion(
     plane,
-    endingChat !== undefined || keptOnClose.length > 0,
+    endingChat !== undefined || keptOnClose.length > 0 || unsavedAsk !== undefined,
     onAsking,
   );
   const askToEnd = useCallback(
-    async (offer: Offer, fromALink: boolean): Promise<Ran> => {
-      if (!offer.available || !endsAChat(offer.does)) return askToEndNow(offer, fromALink);
-      return counted(() => askToEndNow(offer, fromALink));
+    async (offer: Offer, fromALink: boolean, unsavedAnswered = false): Promise<Ran> => {
+      const asks =
+        offer.available &&
+        (endsAChat(offer.does) ||
+          (!unsavedAnswered && unsavedClosedBy(plane, now.current, offer.does) !== undefined));
+      if (!asks) return askToEndNow(offer, fromALink, unsavedAnswered);
+      return counted(() => askToEndNow(offer, fromALink, unsavedAnswered));
     },
-    [askToEndNow, counted],
+    [askToEndNow, counted, plane],
   );
+  useEffect(() => {
+    askAgain.current = askToEnd;
+  }, [askToEnd]);
   const run = useCallback((offer: Offer) => askToEnd(offer, false), [askToEnd]);
 
   /**
@@ -8162,6 +8321,32 @@ export const PlaneView = memo(function PlaneView({
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
   }, [by, inFront, press]);
+
+  /**
+   * **Use skill…'s key** (#3954, the key registry's `chat.useSkill`): Use skill… on the chat in
+   * front, as the Use skill… row of its tab opens it. In a split tab that is the pane that has
+   * the keyboard (`focusedChat`), else the tab's chat in front (`chatInFrontOf`, a view's tab
+   * included). Claimed on the window, capture-phase, by the project in front, as the shell's key
+   * is; never under a modal. With the Skill studio off, a shell or no chat in front, there is no
+   * Use skill… to open, and the key goes on.
+   */
+  useEffect(() => {
+    if (!inFront || !studioOn) return;
+    const key = (e: KeyboardEvent) => {
+      if (pressed(e, ["chat.useSkill"]) === undefined) return;
+      const tabs = now.current;
+      const session =
+        focusedChat(tabs) ??
+        (tabs.inFront === undefined ? undefined : chatInFrontOf(tabs, tabs.inFront));
+      if (session === undefined || shells.has(session)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat) return;
+      openUseSkill(session);
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, [inFront, studioOn, shells, openUseSkill]);
 
   /**
    * **Focus mode's key and the keyboard shortcuts' key** (#2921, `keys/ownKeys.ts`): each presses
@@ -8620,13 +8805,10 @@ export const PlaneView = memo(function PlaneView({
           { workspace: r.workspace, repo: r.repo, piece: r.piece, path: r.path },
           r.lines,
         ).then((ran) => {
-          // A chat that started says nothing more: its tab is in front.
+          // A chat that started says nothing more: its tab is in front. A refusal keeps its
+          // Approve and start… (#3968).
           if (ran.ok && ran.said === undefined) return;
-          setReport(
-            ran.ok
-              ? { from: "file.chat", refused: false, words: ran.said ?? "" }
-              : { from: "file.chat", refused: true, words: ran.refused },
-          );
+          setReport(saidOf("file.chat", ran));
         });
       },
     };
@@ -8969,6 +9151,12 @@ export const PlaneView = memo(function PlaneView({
         plane={plane}
         onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
       />
+      {/* **The runner this project's chats run on was removed outside purlis** (#4149): said
+          once for the project, with Make the runner again. */}
+      <RunnerGoneNotice
+        plane={plane}
+        onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
+      />
       {/* **The project's Internet access presets changed** (#1385): told once to each
           teammate, so a preset that widens never widens unseen. */}
       <ProjectPresetsNotice
@@ -9153,7 +9341,7 @@ export const PlaneView = memo(function PlaneView({
         personas={personaMarks}
         askPersona={openAskPersona}
         useSkill={openUseSkill}
-        skillBudgets={skillBudgets}
+        chatSkillSets={chatSkillSets}
         brief={openBrief}
         answer={openAnswer}
       >
@@ -9741,6 +9929,9 @@ export const PlaneView = memo(function PlaneView({
             onOpenSettings={(group) => openSettingsAt({ group })}
             pin={pin}
             alerts={noticesButton}
+            // Focus mode puts the status bar away, and its card with it: the notices wait in the
+            // Notices centre (#3653).
+            notices={focusMode ? undefined : statusNotices}
             badges={facts.badges}
             factNotes={facts.notes}
           />
@@ -9994,6 +10185,11 @@ export const PlaneView = memo(function PlaneView({
               />
             )}
 
+            {/* The one question a close asks about a view's unsaved work (#3929). */}
+            {unsavedAsk && (
+              <UnsavedWorkQuestion asked={unsavedAsk} onAnswered={() => askUnsaved(undefined)} />
+            )}
+
             {removing && (
               <DeleteWorkspace
                 workspace={removing.workspace}
@@ -10021,6 +10217,19 @@ export const PlaneView = memo(function PlaneView({
                 onAnswer={() => void forgetChat(forgetting.id, forgetting.name)}
                 onCancel={() => setForgetting(undefined)}
                 afterClose={afterForgetAsk}
+              />
+            )}
+            {startApproving && (
+              <StartApproveAsk
+                plane={plane}
+                asked={startApproving}
+                onCancel={() => setStartApproving(undefined)}
+                onApproved={() => {
+                  // The refusal it answered is put away; any other line stays.
+                  const answered = startApproving.way;
+                  setReport((was) => (was?.ways?.includes(answered) ? undefined : was));
+                  setStartApproving(undefined);
+                }}
               />
             )}
             {approving && (
@@ -10247,7 +10456,7 @@ function Lent({
   personas,
   askPersona,
   useSkill,
-  skillBudgets,
+  chatSkillSets,
   brief,
   answer,
   children,
@@ -10273,8 +10482,8 @@ function Lent({
   askPersona: OpenAskPersona;
   /** Opens Use skill… for a chat (`useOpenUseSkill`, #2775). */
   useSkill: OpenUseSkill;
-  /** Each open chat's skill budget, for the chip on its pane (#2775). */
-  skillBudgets: SkillBudgets;
+  /** Each open chat's skill set as a whole, for the chip on its pane (#2775, #3953). */
+  chatSkillSets: ChatSkillSets;
   /** Opens the Brief panel for a task (`useOpenBrief`, #1494). */
   brief: OpenBrief;
   /** Opens the Answer dialog for a task's question (`useOpenAnswer`, #1551). */
@@ -10294,11 +10503,11 @@ function Lent({
                       <ReloadPersonaMarks.Provider value={personas.reload}>
                         <AskPersonaOpener value={askPersona}>
                           <UseSkillOpener value={useSkill}>
-                            <SkillBudgetsHere.Provider value={skillBudgets}>
+                            <ChatSkillSetsHere.Provider value={chatSkillSets}>
                               <BriefOpener value={brief}>
                                 <AnswerOpener value={answer}>{children}</AnswerOpener>
                               </BriefOpener>
-                            </SkillBudgetsHere.Provider>
+                            </ChatSkillSetsHere.Provider>
                           </UseSkillOpener>
                         </AskPersonaOpener>
                       </ReloadPersonaMarks.Provider>

@@ -1,0 +1,7 @@
+┌  Add credential
+│
+●  Go to: https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&scope=openid+profile+email+offline_access&code_challenge=recorded-challenge&code_challenge_method=S256&id_token_add_organizations=true&codex_cli_simplified_flow=true&state=Zm9yLXRoaXMtc2lnbi1pbi1hbG9uZQ&originator=opencode
+│
+●  Complete authorization in your browser. This window will close automatically.
+│
+◇  Waiting for authorization...

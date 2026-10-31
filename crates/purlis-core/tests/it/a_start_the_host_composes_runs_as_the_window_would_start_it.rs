@@ -144,6 +144,7 @@ fn composed(project: &Project, start: &StartProgram, host: &Host) -> Result<Laun
                 token: "token-3".into(),
             }),
             started_by: "terminal",
+            prompt_key: None,
         },
         &project.kit(),
         host,
@@ -196,6 +197,47 @@ fn a_start_with_no_launch_runs_its_profiles_harness_in_its_workspace_as_its_pers
         Some("01J9CHAT000000000000000000")
     );
     assert_eq!(launch.reporting, None, "the host says where it reports");
+}
+
+/// #3369: the prompt key the host minted for a start it composes is in the chat's environment,
+/// for its hooks, and nowhere on its line.
+#[test]
+fn a_start_the_host_composes_carries_the_prompt_key_it_was_given_in_its_environment_alone() {
+    purlis_core::unsteered!();
+    let project = Project::on("claude");
+    let host = Host::default();
+    let start = asking(|_| {});
+    let key = session::PromptKey::mint().expect("a key");
+
+    let spec = hoststart::spec(
+        &Starting {
+            root: project.root(),
+            number: 3,
+            start: &start,
+            reporting: None,
+            started_by: "terminal",
+            prompt_key: Some(&key),
+        },
+        purlis_core::engine::Size::MIN,
+        &project.kit(),
+        &host,
+    )
+    .expect("composed");
+
+    let in_env: Vec<_> = spec
+        .env
+        .iter()
+        .filter(|(name, _)| *name == purlis_core::hookwire::PROMPT_KEY_ENV)
+        .map(|(_, value)| value.clone())
+        .collect();
+    assert_eq!(in_env, vec![std::ffi::OsString::from(key.expose())]);
+    assert!(
+        !spec
+            .args
+            .iter()
+            .any(|word| word.to_string_lossy().contains(key.expose())),
+        "the key is on the line"
+    );
 }
 
 #[test]
@@ -721,6 +763,7 @@ fn composed_with(
             start: &start,
             reporting: None,
             started_by: "terminal",
+            prompt_key: None,
         },
         ready,
         kit,

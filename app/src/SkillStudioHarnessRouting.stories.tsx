@@ -12,21 +12,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { SkillStudioTab } from "./SkillStudioTab";
-import {
-  SKILL_STUDIO_VIEW,
-  inWorkspace,
-  studioHistoryOf,
-  type StudioPage,
-  type StudioScope,
-} from "./skillStudio";
+import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.testkit";
+import { inWorkspace, type StudioPage, type StudioScope } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
 import type { Studio, StudioRouter } from "./bindings";
-
-const PLANE = "/home/dev/plane";
-const HISTORY = studioHistoryOf(PLANE, SKILL_STUDIO_VIEW);
 
 /** The prototype's programs: Claude Code's own, a plugin's and a repo's; Codex none; opencode's
  *  one, off here. */
@@ -35,6 +26,7 @@ const HARNESSES: Studio["harnesses"] = [
     harness: "claude",
     title: "Claude Code",
     repo_left_out: [],
+    own: null,
     skills: [
       skill("my-notes", {
         level: "installed",
@@ -71,11 +63,12 @@ const HARNESSES: Studio["harnesses"] = [
       }),
     ],
   },
-  { harness: "codex", title: "Codex", repo_left_out: [], skills: [] },
+  { harness: "codex", title: "Codex", repo_left_out: [], own: null, skills: [] },
   {
     harness: "opencode",
     title: "opencode",
     repo_left_out: [],
+    own: null,
     skills: [
       skill("scratch", {
         level: "installed",
@@ -137,11 +130,7 @@ function Tab({
   scope: StudioScope;
   answer: Studio;
 }) {
-  return (
-    <div className="view-body" style={{ inlineSize: width, blockSize: 520, display: "flex" }}>
-      <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
-    </div>
-  );
+  return <StudioInPanel width={width} height={520} narrow={narrow} />;
 }
 
 const meta = {

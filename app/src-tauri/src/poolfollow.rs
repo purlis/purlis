@@ -336,7 +336,9 @@ pub fn follow_and_drain(
             kept.pool().to_owned(),
             kept.name().to_owned(),
         );
-        // A suspended runner runs no chat (#2051): it is not woken to be asked.
+        // A suspended runner runs no chat (#2051): it is not woken to be asked. One Docker no
+        // longer lists is not taken as idle on its own (#4149): Docker may only be pointing at
+        // another engine, and its chats run on where it is.
         let suspended = matches!(machine.running(&kept), Ok(false));
         let chats = if suspended { Ok(0) } else { chats_on(&to) };
         match chats {

@@ -731,6 +731,7 @@ const ORDINARY: Answers = {
               ms: 900,
             },
             grade: null,
+            before: null,
           },
           {
             commit: "b".repeat(40),
@@ -749,6 +750,7 @@ const ORDINARY: Answers = {
               ms: 0,
             },
             grade: null,
+            before: null,
           },
         ],
         uncommitted: {
@@ -1019,6 +1021,7 @@ const ORDINARY: Answers = {
         harness: "claude",
         title: "Claude Code",
         repo_left_out: [],
+        own: null,
         skills: [
           {
             name: "deploy",
@@ -1701,7 +1704,7 @@ const STATES: State[] = [
         clashes: [],
       },
     },
-    drawn: /This project has no skills of its own yet/,
+    drawn: /No skill reaches these chats yet/,
   },
   {
     name: "the project's dispatches, none yet",
@@ -1905,6 +1908,25 @@ const STATES: State[] = [
       },
     },
     drawn: /asks to change this project/,
+  },
+  {
+    name: "a runner chat's open or dispatch, whole",
+    view: { from: null, view: "runner-dispatch", key: "2" },
+    answers: {
+      runner_dispatch: {
+        session: 6,
+        chat: "devops 2",
+        pool: "builds",
+        persona: "devops",
+        handoff: false,
+        name: "check prod",
+        works: "the asking chat's folder",
+        profile: "work",
+        long: false,
+        brief: "look at the cluster",
+      },
+    },
+    drawn: /start a task as/,
   },
   {
     name: "an extension's view, its action refused",

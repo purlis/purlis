@@ -373,7 +373,8 @@ impl Working {
     /// Adds the chat's own tasks **orphaned by the app's restart** (#3900) to its roster, each
     /// by its number and name: tasks whose dispatch still runs that this app cannot reach, so
     /// the chat does not take one for a task at work, nor forget it. Held to [`MOST_ROWS`] with
-    /// the rest. Only a turn's answer carries a roster, so only it is given these.
+    /// the rest. Only a turn's answer carries a roster, so only it is given these. A task known
+    /// only by its dispatch record comes as number 0, which names no chat (#3932).
     pub fn with_orphans(mut self, orphans: impl IntoIterator<Item = (u32, String)>) -> Self {
         let mut all: Vec<OpenTask> = std::mem::take(&mut self.open_tasks);
         all.extend(orphans.into_iter().map(|(chat, name)| OpenTask {
@@ -883,6 +884,16 @@ fn roster_line(working: &Working) -> Option<String> {
             // Whether it is alive (#3900): an orphan says that in place of a state; any other
             // task says it after its state, long-running or not.
             match &task.liveness {
+                // Found by its dispatch record alone (#3932): no number here is its own.
+                Some(live)
+                    if live.is_orphaned() && task.chat == crate::dispatched::NO_NUMBER_KNOWN =>
+                {
+                    format!(
+                        "{}, under a chat number no longer known, {}",
+                        quoted(&task.name),
+                        live.said()
+                    )
+                }
                 Some(live) if live.is_orphaned() => {
                     format!("chat {} {} {}", task.chat, quoted(&task.name), live.said())
                 }

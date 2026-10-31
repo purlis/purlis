@@ -187,12 +187,16 @@ export interface StudioPlace {
 /**
  * **A page inside Sources** (#3687, the amendment's S5): a source's own page, or the review of
  * installing or updating one of its skills. A source is named by its repository and branch
- * ({@link sourceKey}), and `label` is how the path over the page names it.
+ * ({@link sourceKey}), and `label` is how the path over the page names it. Install all… (#4024)
+ * is two pages: the source's skills to tick (`choose`), then the one review of those ticked
+ * (`install-all`).
  */
 export type SourcesAt =
   | { at: "source"; source: string; label: string }
   | { at: "install"; source: string; label: string; skill: string }
-  | { at: "update"; source: string; label: string; skill: string };
+  | { at: "update"; source: string; label: string; skill: string }
+  | { at: "choose"; source: string; label: string; ticked?: readonly string[] }
+  | { at: "install-all"; source: string; label: string; skills: readonly string[] };
 
 /** **A source's key**: its repository and the branch read from it, which no other source shares. */
 export function sourceKey(remote: { url: string; branch: string | null }): string {
@@ -240,11 +244,37 @@ export function samePlace(one: StudioPlace, other: StudioPlace): boolean {
   );
 }
 
-/** Two pages inside Sources are one: the same page, of the same source and skill. */
+/** **Whether a way back to `to` is a step back** (#3978): only where the step behind is `to`, on
+ *  the same tab of its skill's page. Else `to` is said in place of where the person is, so Back
+ *  to the scorecard or to a skill's grades lands where it names, never on whatever came before. */
+export function backIsTo(behind: StudioPlace | undefined, to: StudioPlace): boolean {
+  if (behind === undefined || (behind.tab ?? "overview") !== (to.tab ?? "overview")) return false;
+  // A row named by its skill's name alone is the row it was settled on since (#3978).
+  const named = (id: string | undefined) => id !== undefined && id.startsWith("#");
+  const sameSkill =
+    behind.skill === to.skill ||
+    ((named(behind.skill) || named(to.skill)) &&
+      skillOfRowId(behind.skill ?? "") === skillOfRowId(to.skill ?? ""));
+  return sameSkill && samePlace({ ...behind, skill: to.skill }, to);
+}
+
+/** Two pages inside Sources are one: the same page, of the same source and skill, or skills. */
 function sameSourcesAt(one: SourcesAt | undefined, other: SourcesAt | undefined): boolean {
   if (one === undefined || other === undefined) return one === other;
-  const skill = (at: SourcesAt) => (at.at === "source" ? undefined : at.skill);
-  return one.at === other.at && one.source === other.source && skill(one) === skill(other);
+  const skills = (at: SourcesAt) =>
+    at.at === "install" || at.at === "update"
+      ? [at.skill]
+      : at.at === "install-all"
+        ? at.skills
+        : [];
+  const these = skills(one);
+  const those = skills(other);
+  return (
+    one.at === other.at &&
+    one.source === other.source &&
+    these.length === those.length &&
+    these.every((name, at) => name === those[at])
+  );
 }
 
 /** A target's key starts with this: it names a place to open the studio at, never a tab. */

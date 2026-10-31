@@ -91,7 +91,8 @@ Story Format 3. `app/src/settings/Choice.stories.tsx` is the first, and the one 
   `app/eslint.story-rules.js`) refuses it.
 - After each move, `expectFocusInSight()` from `app/src/stories.testkit.ts` checks that the focus
   is on screen and not under anything the page draws over it, such as a dialog's sticky footer
-  (WCAG 2.4.11).
+  (WCAG 2.4.11). `untilFocused` returns once the frame after the move is drawn, the frame a
+  collection scrolls the row it moved to into sight on (#4103), so check it straight after.
 - The story is drawn in every cell of the theme matrix (below): never pin a theme on a story.
 - The picture is of the story's frame. A story that draws outside it (a dialog, a menu, a
   popover) sets `parameters: { screenshot: "page" }`; one with nothing stable to draw sets
@@ -216,7 +217,9 @@ add or change one:
    with `--update` in the pinned image, the story files and cells whose pictures failed in it, and the check keeps every live baseline, of every shard,
    as one `story-baselines`, with `drawn.json` naming the
    head and the base it tested. The check stays red: a picture counts only once it is committed.
-   A story that fails any other gate draws nothing: fix it first.
+   A story that fails any other gate draws nothing: fix it first. The check's first annotation
+   names every such story, and each shard's summary lists them before every picture that failed
+   alone, since GitHub shows only ten annotations of a step.
 2. Take the baselines, in either of two ways. Neither draws again, and both take only whole PNG
    baselines within a size and a count limit, and delete every other file in the
    `__screenshots__` directories (`tools/story-baselines.mjs take`):

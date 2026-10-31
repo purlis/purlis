@@ -6,6 +6,11 @@
 import type { FamilyTheme } from "../../theme/families.testkit";
 
 export default {
+  classless: [
+    // The Notices item's warning dot (#3653), its part named by its kind (`KINDS` in
+    // `TitleBarWorkspaces.tsx`): a mark over the item's corner, which no button stands on.
+    '[data-part="dot-warning"][data-scope="status-item"]',
+  ],
   faint: [
     // A disabled status item's words (#2913).
     '[data-scope="status-item"][data-part="root"][data-disabled]',

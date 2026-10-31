@@ -400,6 +400,136 @@ fn a_new_runner_that_does_not_pair_is_taken_back_and_the_pool_stays_as_it_was() 
     );
 }
 
+/// **A follow carries no sign-in while the old runner has chats** (#4055, ruled 2026-10-30): the
+/// new runner is made and paired with nothing of the old runner's home, so a sign-in is never
+/// held by both; a new chat on the new runner asks to sign in there.
+#[test]
+fn a_follow_carries_no_sign_in_to_the_new_runner() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    makes(&fake, &successor, NEW, &successor_answers());
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    follow(config.path(), &fake.docker(), "first", &new_image, &ours)
+        .unwrap()
+        .expect("moved");
+
+    let log = fake.file("log");
+    assert!(log.contains("--pair"), "{log}");
+    assert!(!log.contains("-copy "), "{log}");
+    assert!(!log.contains("target=/from"), "{log}");
+}
+
+/// **A draining runner's sign-ins go to the pool's runner once it has no chat left** (#4055,
+/// ruled 2026-10-30): carried from its home volume to the new runner's on the Docker host, and
+/// only then is it removed with its volume, so the old copy goes and one runner holds each
+/// sign-in.
+#[test]
+fn a_drained_runner_carries_its_sign_ins_to_the_pools_runner_then_goes_with_its_home() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    makes(&fake, &successor, NEW, &successor_answers());
+    follow(config.path(), &fake.docker(), "first", &new_image, &ours).unwrap();
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+
+    let log = fake.file("log");
+    let lines: Vec<&str> = log.lines().collect();
+    let at = |what: &dyn Fn(&str) -> bool| lines.iter().position(|line| what(line));
+    let copying = format!("--name purlis-runner-{successor}-copy ");
+    let copied = at(&|line| line.contains(&copying)).expect(&log);
+    let removed = at(&|line| line == "volume rm --force purlis-runner-first-home").expect(&log);
+    assert!(copied < removed, "{log}");
+    let copy = lines[copied];
+    assert!(copy.starts_with("run --rm --network none"), "{copy}");
+    assert!(
+        copy.contains("type=volume,source=purlis-runner-first-home,target=/from,readonly"),
+        "{copy}"
+    );
+    assert!(
+        copy.contains(&format!(
+            "type=volume,source=purlis-runner-{successor}-home,target=/to "
+        )),
+        "{copy}"
+    );
+    assert!(copy.contains(&format!(
+        "purlis.desktop={}",
+        runners::desktop_label(config.path())
+    )));
+    assert!(copy.contains(NEW), "{copy}");
+}
+
+/// **A sign-in that cannot be carried never holds the drain back** (#4055): the draining runner
+/// is removed all the same, and its profiles are signed in again on the pool's runner.
+#[test]
+fn a_drained_runner_whose_sign_ins_are_not_carried_is_removed_all_the_same() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    makes(&fake, &successor, NEW, &successor_answers());
+    follow(config.path(), &fake.docker(), "first", &new_image, &ours).unwrap();
+    fake.set("copy-fails", "");
+
+    let removed = drain(config.path(), &fake.docker(), "first", None).unwrap();
+
+    assert!(removed.forgotten);
+    assert!(
+        fake.file("log")
+            .contains("volume rm --force purlis-runner-first-home"),
+        "{}",
+        fake.file("log")
+    );
+    assert_eq!(
+        runners::runner_for(config.path(), "first").unwrap().name(),
+        successor
+    );
+}
+
+/// **A copy container an earlier carry left holds no later one back** (#4055): one of this
+/// desktop's, of the pool's runner's copy name, is removed by its id before the carry runs.
+#[test]
+fn a_copy_container_an_earlier_carry_left_is_removed_before_the_next_carry() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    makes(&fake, &successor, NEW, &successor_answers());
+    follow(config.path(), &fake.docker(), "first", &new_image, &ours).unwrap();
+    fake.set(
+        "containers-full",
+        &format!(
+            "{LEFT} purlis-runner-{successor}-copy {}\n",
+            runners::desktop_label(config.path())
+        ),
+    );
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+
+    let log = fake.file("log");
+    let left = log
+        .find(&format!("container rm --force --volumes {LEFT}"))
+        .expect(&log);
+    let copied = log
+        .find(&format!("--name purlis-runner-{successor}-copy "))
+        .expect(&log);
+    assert!(left < copied, "{log}");
+}
+
 /// **A pool's runner suspends after the pool's own time** (#3471): the runner made as it is
 /// added, and the one made beside it after an update.
 #[test]
@@ -924,6 +1054,538 @@ mod cluster {
         cluster.calls().contains("delete claims.runners.purlis.dev")
     }
 
+    /// The runner kept for `team` under `config`, as a gate judged it.
+    fn judged(config: &Path) -> runners::ClusterKept {
+        runners::cluster_runner_for(config, "team")
+            .unwrap()
+            .expect("a cluster pool")
+            .1
+    }
+
+    use crate::clusterpool::Refused as NotVouched;
+    use crate::poollogins::Bound;
+
+    fn vouches(_: &Path, _: &str) -> Result<String, NotVouched> {
+        Ok("pod-uid-1".to_owned())
+    }
+
+    /// What a link to the runner kept for `team` under `config` reports.
+    fn reached(config: &Path) -> String {
+        runners::cluster_runner_for(config, "team")
+            .unwrap()
+            .expect("a cluster pool")
+            .1
+            .reached()
+    }
+
+    fn gate(config: &Path) -> Result<Option<Bound>, String> {
+        let reached = reached(config);
+        Bound::of_a_cluster_pool(config, "team", Some(reached.as_str()), &vouches)
+    }
+
+    /// **A cluster runner's sign-in runs its own `purlis profile sign-in` in the pod its pairing
+    /// named** (#3819), through kubectl pointed at the pool's context, after the check every link
+    /// makes; a runner not vouched for now runs nothing.
+    #[test]
+    fn a_cluster_runners_sign_in_runs_in_its_vouched_pod_after_the_links_check() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let claim = claim_name(OURS, "team");
+        let login = cluster_sign_in(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            &judged(config.path()),
+            "work",
+            None,
+            crate::dockerpool::Typed::Driven,
+        )
+        .unwrap();
+        assert_eq!(
+            std::path::Path::new(&login.program),
+            cluster.kubectl().program()
+        );
+        let pod = format!("pod/{claim}");
+        let runners = crate::clusterpool::runner_namespace(crate::clusterpool::tests::REQUESTER);
+        let at = login.args.iter().position(|arg| arg == "exec").unwrap();
+        assert_eq!(
+            login.args[at..],
+            [
+                "exec",
+                "-i",
+                "--namespace",
+                &runners,
+                "--container",
+                "runner",
+                &pod,
+                "--",
+                crate::dockerpool::PURLIS,
+                "profile",
+                "sign-in",
+                "work",
+                "--until-input-ends",
+            ]
+        );
+        assert!(login.args.contains(&"--context".to_owned()));
+        assert!(login.cleared.contains(&"KUBECONFIG".to_owned()));
+        assert!(cluster.calls().contains("get claims.runners.purlis.dev"));
+
+        let typed = cluster_sign_in(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            &judged(config.path()),
+            "work",
+            Some("github-copilot"),
+            crate::dockerpool::Typed::InATerminal,
+        )
+        .unwrap();
+        assert!(typed.args.contains(&"-it".to_owned()));
+        assert!(!typed.args.contains(&"--until-input-ends".to_owned()));
+        assert!(
+            typed
+                .args
+                .ends_with(&["--provider".to_owned(), "github-copilot".to_owned()])
+        );
+
+        // Its claim no longer vouched for: nothing to run.
+        cluster.write("claim.json", "{}");
+        assert!(
+            cluster_sign_in(
+                config.path(),
+                &cluster.kubectl(),
+                "team",
+                &judged(config.path()),
+                "work",
+                None,
+                crate::dockerpool::Typed::Driven,
+            )
+            .is_err()
+        );
+    }
+
+    /// **A cluster runner's version and sign-out are asked of its own `purlis` in the vouched pod**
+    /// (#3819), after the check every link makes.
+    #[test]
+    fn a_cluster_runners_version_and_sign_out_run_its_own_purlis_after_the_links_check() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        cluster.write("paired.txt", "purlis 0.4.2 (release profile)\n");
+        assert_eq!(
+            cluster_runner_version(
+                config.path(),
+                &cluster.kubectl(),
+                "team",
+                &judged(config.path())
+            ),
+            Ok("0.4.2".to_owned())
+        );
+        assert!(cluster.calls().contains("/usr/local/bin/purlis --version"));
+        cluster_sign_out(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            &judged(config.path()),
+            "work",
+        )
+        .unwrap();
+        assert!(
+            cluster
+                .calls()
+                .contains("/usr/local/bin/purlis profile sign-out work")
+        );
+        // A runner other than the one the gate judged: nothing runs there.
+        let mut other = judged(config.path());
+        other.pod = "another".into();
+        let ran = cluster.calls().len();
+        assert!(
+            cluster_sign_out(config.path(), &cluster.kubectl(), "team", &other, "work").is_err()
+        );
+        assert!(!cluster.calls()[ran..].contains("sign-out"));
+        cluster.write("paired.txt", "not a version\n");
+        assert!(
+            cluster_runner_version(
+                config.path(),
+                &cluster.kubectl(),
+                "team",
+                &judged(config.path())
+            )
+            .is_err()
+        );
+        cluster.write("claim.json", "{}");
+        assert!(
+            cluster_sign_out(
+                config.path(),
+                &cluster.kubectl(),
+                "team",
+                &judged(config.path()),
+                "work"
+            )
+            .is_err()
+        );
+    }
+
+    /// **A cluster runner's claim says whether its home outlives its pod** (#3819): a kept claim's
+    /// does, a fresh one's does not, and only the claim this desktop kept is believed.
+    #[test]
+    fn a_cluster_runners_claim_says_whether_a_sign_in_there_outlives_its_pod() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let keeps = || claim_keeps_its_home_with(config.path(), &cluster.kubectl(), "team");
+        let mut claim: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(cluster.dir.path().join("claim.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            keeps(),
+            Ok(false),
+            "a claim that does not say kept is fresh"
+        );
+        claim["spec"]["kept"] = true.into();
+        cluster.write("claim.json", &claim.to_string());
+        assert_eq!(keeps(), Ok(true));
+        claim["spec"]["kept"] = "yes".into();
+        cluster.write("claim.json", &claim.to_string());
+        assert_eq!(keeps(), Ok(false), "kept is true alone");
+        claim["spec"]["kept"] = true.into();
+        claim["metadata"]["uid"] = "another".into();
+        cluster.write("claim.json", &claim.to_string());
+        assert!(keeps().is_err(), "another claim of its name says nothing");
+        cluster.write("claim.json", "");
+        assert!(keeps().is_err(), "a claim gone says nothing");
+    }
+
+    #[test]
+    fn a_cluster_pool_is_added_unmarked_so_its_runner_is_sent_nothing_and_nothing_asks_its_cluster()
+    {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let asked = std::cell::Cell::new(false);
+        let link = reached(config.path());
+        let refused = Bound::of_a_cluster_pool(config.path(), "team", Some(&link), &|_, _| {
+            asked.set(true);
+            Ok("pod-uid-1".to_owned())
+        })
+        .unwrap_err();
+        assert!(refused.contains("Only you can mark it"), "{refused}");
+        assert!(refused.contains("This is my own"), "{refused}");
+        assert!(!asked.get(), "an unmarked pool's cluster is never asked");
+    }
+
+    #[test]
+    fn a_marked_pool_with_its_claim_vouched_for_now_is_bound_to_the_runner_the_cluster_names() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        let bound = gate(config.path()).unwrap().expect("a cluster pool");
+        let (pool, kept) = runners::cluster_runner_for(config.path(), "team")
+            .unwrap()
+            .unwrap();
+        assert_eq!(bound.pool, "team");
+        assert_eq!(bound.runner, kept.pinned.device);
+        assert_eq!(bound.definition, pool.bound_digest(&kept));
+        assert!(bound.image.is_empty() && bound.runner_image.is_empty());
+        assert!(bound.on_a_cluster());
+        assert_eq!(
+            bound.engine,
+            format!(
+                "cluster {}, context \"team\"",
+                &crate::clusterpool::tests::CLUSTER[..8]
+            )
+        );
+    }
+
+    #[test]
+    fn a_change_to_anything_a_cluster_runner_is_bound_to_changes_what_is_bound() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let (pool, kept) = runners::cluster_runner_for(config.path(), "team")
+            .unwrap()
+            .unwrap();
+        let was = Bound::of_cluster(&pool, &kept, "pod-uid-1");
+        let mut claim = kept.clone();
+        claim.claimed.uid = "another".into();
+        let mut pod = kept.clone();
+        pod.pod = "another".into();
+        let mut device = kept.clone();
+        device.pinned.device = "another".into();
+        let mut key = kept.clone();
+        key.pinned.key = LinkKey::generate().unwrap().public();
+        for changed in [claim, pod, device, key] {
+            assert_ne!(
+                Bound::of_cluster(&pool, &changed, "pod-uid-1"),
+                was,
+                "{changed:?}"
+            );
+        }
+        let other = |context: &str, pin: crate::clusterpool::PoolPin| {
+            ClusterPool::new(
+                "team",
+                Path::new("/home/ada/.kube/config"),
+                context,
+                "default",
+                "ada",
+                pin,
+            )
+            .unwrap()
+        };
+        let pin = pool.pin().unwrap();
+        assert_ne!(
+            Bound::of_cluster(&other("elsewhere", pin.clone()), &kept, "pod-uid-1"),
+            was
+        );
+        let moved = crate::clusterpool::PoolPin {
+            cluster: "4e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b".into(),
+            ..pin.clone()
+        };
+        assert_ne!(
+            Bound::of_cluster(&other("team", moved), &kept, "pod-uid-1"),
+            was
+        );
+        let rolled = crate::clusterpool::PoolPin {
+            key: crate::clusterpool::tests::Operator::new().key(),
+            ..pin
+        };
+        assert_ne!(
+            Bound::of_cluster(&other("team", rolled), &kept, "pod-uid-1"),
+            was
+        );
+    }
+
+    #[test]
+    fn a_vouch_refused_or_unanswered_sends_nothing_and_tells_the_chat_none_of_the_clusters_words() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        let link = reached(config.path());
+        let refused = Bound::of_a_cluster_pool(config.path(), "team", Some(&link), &|_, _| {
+            Err(NotVouched::Other("kubectl said secret-host:6443".into()))
+        })
+        .unwrap_err();
+        assert!(refused.contains("sent no vault value"), "{refused}");
+        assert!(!refused.contains("secret-host"), "{refused}");
+    }
+
+    /// What the cluster says beside the statement only ever refuses a value, as it is unsigned.
+    #[test]
+    fn a_stopped_or_no_longer_vouched_runner_is_sent_no_value() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let kubectl = cluster.kubectl();
+        let asked = || vouched_now_with(config.path(), &kubectl, "team", runners::now());
+        assert_eq!(asked().unwrap(), "pod-uid-1", "vouched and serving");
+        let claim_was = std::fs::read_to_string(cluster.dir.path().join("claim.json")).unwrap();
+        let change = |change: &dyn Fn(&mut serde_json::Value)| {
+            let mut claim: serde_json::Value = serde_json::from_str(&claim_was).unwrap();
+            change(&mut claim);
+            cluster.write("claim.json", &claim.to_string());
+        };
+        for said in [
+            serde_json::json!({"type": "KeyPublished", "status": "False", "reason": "NotVouched"}),
+            serde_json::json!({"type": "KeyPublished", "status": "False", "reason": "Vouched"}),
+            serde_json::json!({"type": "KeyPublished", "status": "True", "reason": "Starting"}),
+            serde_json::json!({"type": "Ready", "status": "True", "reason": "Vouched"}),
+        ] {
+            change(&|claim| {
+                claim["status"]["conditions"] = serde_json::json!([said]);
+            });
+            assert!(matches!(asked(), Err(NotVouched::NotVouched(_))), "{said}");
+        }
+        change(&|claim| {
+            claim["spec"]["stopped"] = true.into();
+        });
+        assert!(matches!(asked(), Err(NotVouched::NotVouched(_))), "claim");
+        cluster.write("claim.json", &claim_was);
+        assert!(asked().is_ok());
+        let pool_was = std::fs::read_to_string(cluster.dir.path().join("pool.json")).unwrap();
+        let mut stopped: serde_json::Value = serde_json::from_str(&pool_was).unwrap();
+        stopped["spec"] = serde_json::json!({"stopped": true});
+        cluster.write("pool.json", &stopped.to_string());
+        assert!(matches!(asked(), Err(NotVouched::NotVouched(_))), "pool");
+        cluster.write("pool.json", &pool_was);
+        // A pod on its way out, or naming no uid, is no runner to send a value to.
+        for pod in [
+            r#"{"metadata": {}}"#,
+            r#"{"metadata": {"uid": "pod-uid-1", "deletionTimestamp": "2026-10-31T00:00:00Z"}}"#,
+        ] {
+            cluster.write("pod.json", pod);
+            assert!(matches!(asked(), Err(NotVouched::NotVouched(_))), "{pod}");
+        }
+    }
+
+    /// A kept claim's pod made again under its name, with its key, is not what the person allowed.
+    #[test]
+    fn a_pod_made_again_under_its_name_asks_again() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        let link = reached(config.path());
+        let of_pod = |uid: &'static str| {
+            Bound::of_a_cluster_pool(config.path(), "team", Some(&link), &move |_, _| {
+                Ok(uid.to_owned())
+            })
+            .unwrap()
+            .unwrap()
+        };
+        let opt_ins = crate::poollogins::OptIns::default();
+        opt_ins.allow("devops", "site", of_pod("pod-uid-1"));
+        assert_eq!(
+            opt_ins.standing("devops", "site", &of_pod("pod-uid-1")),
+            crate::poollogins::Standing::Allowed
+        );
+        assert_eq!(
+            opt_ins.standing("devops", "site", &of_pod("pod-uid-2")),
+            crate::poollogins::Standing::Changed
+        );
+    }
+
+    /// A link is checked against the runner it was made for, under whatever name.
+    #[test]
+    fn a_link_made_for_a_runner_no_longer_kept_is_refused_before_it_connects() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let kubectl = cluster.kubectl();
+        let now = runners::now();
+        let link = reached(config.path());
+        before_cluster_link_to(config.path(), &kubectl, "team", &link, now).unwrap();
+        let earlier = format!("team/team@{}", "ab".repeat(32));
+        let refused =
+            before_cluster_link_to(config.path(), &kubectl, "team", &earlier, now).unwrap_err();
+        assert!(refused.to_string().contains("no longer keeps"), "{refused}");
+    }
+
+    #[test]
+    fn a_mark_taken_back_or_a_runner_changed_while_the_cluster_was_asked_sends_nothing() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        let link = reached(config.path());
+        let refused =
+            Bound::of_a_cluster_pool(config.path(), "team", Some(&link), &|config, name| {
+                runners::set_cluster_owned(config, name, false).unwrap();
+                Ok("pod-uid-1".to_owned())
+            })
+            .unwrap_err();
+        assert!(refused.contains("not marked"), "{refused}");
+
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        Bound::of_a_cluster_pool(config.path(), "team", Some(&link), &|config, name| {
+            remove_cluster(config, None, name, None, None).unwrap();
+            Ok("pod-uid-1".to_owned())
+        })
+        .unwrap_err();
+    }
+
+    #[test]
+    fn a_link_to_any_runner_but_the_one_kept_now_is_refused() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        let link = reached(config.path());
+        assert!(Bound::of_a_cluster_pool(config.path(), "team", Some(&link), &vouches).is_ok());
+        // Under the pool's name and the runner's, a link pinned to another key is another runner.
+        let earlier = format!("team/team@{}", "ab".repeat(32));
+        for other in ["team/team", "team/other", "other/team", "team", &earlier] {
+            Bound::of_a_cluster_pool(config.path(), "team", Some(other), &vouches).unwrap_err();
+        }
+        Bound::of_a_cluster_pool(config.path(), "team", None, &vouches).unwrap_err();
+    }
+
+    #[test]
+    fn a_marked_runner_a_chat_ran_on_without_the_sandbox_is_sent_nothing() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        crate::runnertaint::mark_pool(config.path(), "team").unwrap();
+        let refused = gate(config.path()).unwrap_err();
+        assert!(refused.contains("without the sandbox"), "{refused}");
+    }
+
+    #[test]
+    fn a_name_no_cluster_pool_has_is_left_to_the_docker_pools() {
+        let config = tempfile::tempdir().unwrap();
+        assert_eq!(
+            Bound::of_a_cluster_pool(config.path(), "team", None, &vouches),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn a_claim_being_deleted_vouches_for_nothing_though_its_statement_is_still_there() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let at = cluster.dir.path().join("claim.json");
+        let mut claim: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&at).unwrap()).unwrap();
+        claim["metadata"]["deletionTimestamp"] = "2026-10-30T12:00:00Z".into();
+        std::fs::write(&at, claim.to_string()).unwrap();
+        assert!(matches!(
+            before_cluster_link(config.path(), &cluster.kubectl(), "team", runners::now()),
+            Err(NotVouched::NotVouched(_))
+        ));
+    }
+
+    #[test]
+    fn the_mark_is_the_persons_row_key_true_alone_and_a_new_add_starts_without_it() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        assert!(file(config.path())["pools"][0].get("owned").is_none());
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        assert_eq!(file(config.path())["pools"][0]["owned"], true);
+        assert!(runners::cluster_pools(config.path()).unwrap()[0].owned());
+        // A key roll keeps it: the pool is the same one.
+        let pool = &runners::cluster_pools(config.path()).unwrap()[0];
+        let rolled = crate::clusterpool::PoolPin {
+            key: crate::clusterpool::tests::Operator::new().key(),
+            ..pool.pin().unwrap()
+        };
+        runners::keep_cluster_pin(config.path(), "team", &rolled).unwrap();
+        assert!(runners::cluster_pools(config.path()).unwrap()[0].owned());
+
+        runners::set_cluster_owned(config.path(), "team", false).unwrap();
+        assert!(file(config.path())["pools"][0].get("owned").is_none());
+        runners::set_cluster_owned(config.path(), "nobody", true).unwrap_err();
+
+        let mut spelled = file(config.path());
+        spelled["pools"][0]["owned"] = false.into();
+        std::fs::write(
+            crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE),
+            spelled.to_string(),
+        )
+        .unwrap();
+        runners::cluster_pools(config.path()).unwrap_err();
+    }
+
+    #[test]
+    fn a_chat_with_no_sandbox_on_a_cluster_runner_is_kept_across_a_restart_until_its_claim_goes() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        assert!(!crate::runnertaint::pool_ran_unsandboxed(
+            config.path(),
+            "team"
+        ));
+        crate::runnertaint::mark_pool(config.path(), "team").unwrap();
+        assert!(crate::runnertaint::pool_ran_unsandboxed(
+            config.path(),
+            "team"
+        ));
+    }
+
+    #[test]
+    fn a_kubectl_that_does_not_answer_is_ended_and_refused_in_its_time() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let kubectl = dir.path().join("kubectl");
+        std::fs::write(&kubectl, "#!/bin/sh\nexec sleep 30\n").unwrap();
+        std::fs::set_permissions(&kubectl, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let began = std::time::Instant::now();
+        let refused = crate::clusterpool::Kubectl::at(&kubectl)
+            .within(Duration::from_millis(200))
+            .run(&["get".to_owned()], None, 1024);
+        assert!(matches!(refused, Err(NotVouched::Other(_))));
+        assert!(began.elapsed() < Duration::from_secs(10));
+    }
+
     #[test]
     fn a_removal_unpairs_before_it_locks_so_a_link_that_keeps_a_moved_pin_finishes() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
@@ -1229,4 +1891,178 @@ mod cluster {
         // A Docker pool's own lookup never answers with a cluster pool's runner.
         assert!(runners::runner_for(config.path(), "team").is_err());
     }
+}
+
+/// The id Docker gives the container a runner is made again in (#4149), and its name.
+const AGAIN: &str = "a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1";
+const AGAIN_NAMED: &str = "first-0a0b0c0d";
+
+/// A pool `first` added, whose container the person then removed outside purlis: Docker lists
+/// no container of its id, and its home volume where `home_made` says when it was made. What
+/// Docker makes next answers as runner [`AGAIN_NAMED`].
+fn removed_outside_purlis(
+    config: &Path,
+    fake: &FakeDocker,
+    ours: &Pinned,
+    home_made: Option<&str>,
+) -> Kept {
+    let old = a_pool_added(config, fake, ours);
+    fake.set("containers", "");
+    fake.set(
+        "volumes",
+        if home_made.is_some() {
+            "purlis-runner-first-home\n"
+        } else {
+            ""
+        },
+    );
+    fake.set("id", &format!("{AGAIN}\n"));
+    makes(fake, AGAIN_NAMED, IMAGE_OF_FIRST, &successor_answers());
+    let mut inspect: serde_json::Value = serde_json::from_str(&fake.file("inspect")).unwrap();
+    inspect[0]["Id"] = AGAIN.into();
+    fake.set("inspect", &inspect.to_string());
+    let mut volume: serde_json::Value = serde_json::from_str(&fake.file("volume")).unwrap();
+    volume[0]["CreatedAt"] = home_made.unwrap_or("2026-01-01T00:00:00Z").into();
+    fake.set("volume", &volume.to_string());
+    std::fs::write(fake.file_path("log"), "").unwrap();
+    old
+}
+
+fn make_again_here(config: &Path, fake: &FakeDocker, ours: &Pinned) -> Result<MadeAgain, Refused> {
+    make_again_as(config, &fake.docker(), "first", AGAIN_NAMED, ours)
+}
+
+/// **Make the runner again** (#4149): a runner removed outside purlis is made again beside it,
+/// from the pool's own image and limits, on a home of its own with the sign-ins of the old home
+/// carried over where that home is the one purlis made for it, paired, and kept as the pool's
+/// runner; the gone one is removed, its home with it.
+#[test]
+fn a_runner_removed_outside_purlis_is_made_again_with_its_sign_ins_and_paired() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = removed_outside_purlis(config.path(), &fake, &ours, Some("2026-01-01T00:00:00Z"));
+
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+    assert!(again.sign_ins_kept);
+    assert_eq!(again.kept.name(), AGAIN_NAMED);
+    assert_eq!(again.kept.of.as_deref(), Some("first"));
+    assert_eq!(again.kept.made.container.as_str(), AGAIN);
+    assert_eq!(again.kept.pinned.device, successor_answers().device);
+    // Only the runner made again is kept: the gone one is removed, and never drains.
+    assert_eq!(
+        runners::read(config.path()).unwrap(),
+        vec![again.kept.clone()]
+    );
+    assert_eq!(
+        runners::runner_for(config.path(), "first").unwrap().name(),
+        AGAIN_NAMED
+    );
+    let log = fake.file("log");
+    assert!(log.contains("--cpus 2 --memory 4096m"), "{log}");
+    assert!(
+        log.contains("type=volume,source=purlis-runner-first-home,target=/from,readonly"),
+        "the sign-ins were carried from the old home: {log}"
+    );
+    assert!(
+        log.contains("volume rm --force purlis-runner-first-home"),
+        "{log}"
+    );
+    assert_ne!(old.made, again.kept.made);
+}
+
+/// Its home gone too, the runner is made again with nothing carried: its profiles are signed in
+/// again.
+#[test]
+fn a_runner_whose_home_went_with_it_is_made_again_to_sign_in_again() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    removed_outside_purlis(config.path(), &fake, &ours, None);
+
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+    assert!(!again.sign_ins_kept);
+    assert!(
+        !fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
+}
+
+/// A home made after the runner was paired is not the one purlis made for it, so none of it is
+/// carried: whoever made it could have put anything there.
+#[test]
+fn a_home_made_since_the_runner_was_paired_gives_it_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    removed_outside_purlis(config.path(), &fake, &ours, Some("2099-01-01T00:00:00Z"));
+
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+    assert!(!again.sign_ins_kept);
+    assert!(
+        !fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
+}
+
+/// A runner Docker still lists, only stopped or suspended, is never made again: it resumes.
+#[test]
+fn a_runner_docker_still_lists_is_not_made_again() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = a_pool_added(config.path(), &fake, &ours);
+    fake.set("containers", &format!("{ID}\n"));
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    let refused = make_again_here(config.path(), &fake, &ours).unwrap_err();
+
+    assert!(refused.to_string().contains("still there"), "{refused}");
+    assert!(!fake.file("log").contains("run "), "{}", fake.file("log"));
+    assert_eq!(runners::read(config.path()).unwrap(), vec![old]);
+}
+
+/// A runner made again that does not pair is taken back whole, and the pool stays as it was.
+#[test]
+fn a_runner_made_again_that_does_not_pair_is_taken_back_and_the_pool_stays() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = removed_outside_purlis(config.path(), &fake, &ours, Some("2026-01-01T00:00:00Z"));
+    fake.set("paired", "not a pin\n");
+
+    assert!(make_again_here(config.path(), &fake, &ours).is_err());
+
+    let log = fake.file("log");
+    assert!(
+        log.contains(&format!("container rm --force --volumes {AGAIN}")),
+        "{log}"
+    );
+    assert!(
+        log.contains(&format!(
+            "volume rm --force purlis-runner-{AGAIN_NAMED}-home"
+        )),
+        "{log}"
+    );
+    assert!(
+        !log.contains("volume rm --force purlis-runner-first-home\n"),
+        "{log}"
+    );
+    assert_eq!(runners::read(config.path()).unwrap(), vec![old]);
+}
+
+/// The name a runner made again is drawn: the pool's, and eight hex digits.
+#[test]
+fn a_runner_made_again_is_named_for_its_pool() {
+    let named = crate::dockerpool::remade_name("first").unwrap();
+    assert!(named.starts_with("first-"), "{named}");
+    assert_eq!(named.len(), "first-".len() + 8, "{named}");
+    let image = crate::dockerpool::Image::pinned(IMAGE_OF_FIRST).unwrap();
+    let user = crate::dockerpool::User::new(10001, 10001).unwrap();
+    assert!(Runner::new(&named, image, user, "/home/purlis").is_ok());
 }

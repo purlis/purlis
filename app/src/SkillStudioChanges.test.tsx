@@ -17,7 +17,12 @@ import { need } from "./skillsListing.testkit";
 import { AT_THE_ROOT, asPersona, inWorkspace } from "./skillStudio";
 import { pickIn } from "./ui/select/select.testkit";
 import { levelFrom, PROJECT } from "./skillChanges";
-import { DELETED_FOR, HISTORY_RESTARTS } from "./SkillChangeDialogs";
+import {
+  DELETED_FOR,
+  HISTORY_MOVES,
+  HISTORY_RESTARTS_LOCAL,
+  historySaid,
+} from "./SkillChangeDialogs";
 import { NAME_RESERVED } from "./SkillCopy";
 
 afterEach(() => {
@@ -112,12 +117,14 @@ describe("the Skill studio's changes", () => {
     renderStudio(inWorkspace("ops"));
 
     await user.click(await screen.findByRole("button", { name: "New skill…" }));
-    expect(screen.getByTestId("skill-new-level")).toHaveTextContent(
-      "It lands in the workspace ops skills.",
-    );
+    await user.click(await screen.findByRole("button", { name: "Write it yourself" }));
+    expect(screen.getByRole("radio", { name: /^workspace ops\b/ })).toBeChecked();
     await user.type(screen.getByLabelText("Name"), "triage");
-    await user.type(screen.getByLabelText("What it does and when to use it"), "Sorts issues.");
-    await user.click(screen.getByRole("button", { name: "Make it" }));
+    await user.type(
+      screen.getByLabelText("What it does, and when a chat should use it"),
+      "Sorts issues.",
+    );
+    await user.click(screen.getByRole("button", { name: "Make it and open its page" }));
 
     await waitFor(() => expect(asked.some((one) => one.cmd === "skill_new")).toBe(true));
     expect(asked.find((one) => one.cmd === "skill_new")?.args).toMatchObject({
@@ -160,7 +167,7 @@ describe("the Skill studio's changes", () => {
     await waitFor(() => expect(reach).toHaveTextContent("1 persona that names it: steward"));
     expect(reach).toHaveTextContent("1 skill that names it: release");
     expect(reach).toHaveTextContent("Its pins, by workspace ops");
-    expect(dialog).toHaveTextContent(HISTORY_RESTARTS);
+    expect(dialog).toHaveTextContent(HISTORY_MOVES);
 
     const box = within(dialog).getByLabelText("New name");
     const rename = within(dialog).getByRole("button", { name: "Rename" });
@@ -713,9 +720,13 @@ describe("the Skill studio's changes", () => {
     renderStudio(asPersona("reviewer"));
 
     await user.click(await screen.findByRole("button", { name: "New skill…" }));
+    await user.click(await screen.findByRole("button", { name: "Write it yourself" }));
     await user.type(screen.getByLabelText("Name"), "triage");
-    await user.type(screen.getByLabelText("What it does and when to use it"), "Sorts issues.");
-    await user.click(screen.getByRole("button", { name: "Make it" }));
+    await user.type(
+      screen.getByLabelText("What it does, and when a chat should use it"),
+      "Sorts issues.",
+    );
+    await user.click(screen.getByRole("button", { name: "Make it and open its page" }));
 
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_new")?.args).toMatchObject({
@@ -744,5 +755,12 @@ describe("the Skill studio's changes", () => {
     const item = await openSkill("skill-secrets");
     expect(within(item).queryByRole("button", { name: "Edit secrets" })).toBeNull();
     expect(within(item).queryByLabelText("Move secrets to")).toBeNull();
+  });
+});
+
+describe("what a rename or a move says of a skill's history (#3918)", () => {
+  it("says it moves with a skill git holds, and starts again for one only on this machine", () => {
+    expect(historySaid(false)).toBe(HISTORY_MOVES);
+    expect(historySaid(true)).toBe(HISTORY_RESTARTS_LOCAL);
   });
 });

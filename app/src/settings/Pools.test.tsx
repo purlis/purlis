@@ -15,7 +15,7 @@ import type {
   PoolsShown,
   RunnerImageOffered,
 } from "../bindings";
-import { stopAddingAPool } from "../pools";
+import { doneWithTheAddedPool, stopAddingAPool } from "../pools";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 
@@ -53,6 +53,7 @@ const a_cluster_pool = (name: string): ClusterPoolRow => ({
   pool: "default",
   namespace: "op",
   operator_key: OPERATOR_KEY,
+  owned: false,
 });
 
 let pools: PoolRow[];
@@ -62,10 +63,18 @@ let link: PoolLink;
 let version: PoolVersion;
 let added: unknown[];
 let removed: unknown[];
+let madeAgain: string[];
 let notHeld: { root: string; name: string; why: string; pools: string[] }[];
 let profilesAsked: unknown[];
 /** The runner image a new pool is offered, or why it could not be read. */
 let releaseImage: RunnerImageOffered | { trouble: string };
+/** The profiles chosen for each pool, by its name, and what Add and Remove asked (#4047). */
+let chosen: string[];
+let profileChanges: unknown[];
+/** What `pool_profiles` keeps, in turn, where a test says; the last again once the rest are. */
+let profileAnswers: PoolProfileRow[][] | undefined;
+/** Whether `pool_profiles` says the runner is on a fresh claim (#3819). */
+let freshClaim: boolean;
 
 const a_profile = (name: string, standing: string): PoolProfileRow => ({
   name,
@@ -97,9 +106,14 @@ beforeEach(() => {
   };
   added = [];
   removed = [];
+  madeAgain = [];
   notHeld = [];
   profilesAsked = [];
   releaseImage = { state: "local_build" };
+  chosen = ["work", "claude"];
+  profileChanges = [];
+  freshClaim = false;
+  profileAnswers = undefined;
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
@@ -130,12 +144,48 @@ beforeEach(() => {
         clusters = [...clusters, row];
         return row;
       }
+      if (cmd === "set_cluster_pool_owned") {
+        clusters = clusters.map((one) =>
+          one.name === a.name ? { ...one, owned: a.owned as boolean } : one,
+        );
+        return null;
+      }
       if (cmd === "docker_pool_link") return link;
+      if (cmd === "docker_pool_make_again") {
+        madeAgain.push(a.name as string);
+        link = { state: "linked" };
+        return { sign_ins_kept: true };
+      }
       if (cmd === "docker_pool_version") return version;
       if (cmd === "projects_not_held") return structuredClone(notHeld);
       if (cmd === "pool_profiles") {
         profilesAsked.push(a.pool);
-        return [a_profile("work", "signed-out"), a_profile("claude", "signed-in")];
+        if (profileAnswers !== undefined)
+          return {
+            kept: profileAnswers.length > 1 ? profileAnswers.shift() : profileAnswers[0],
+            addable: [],
+            fresh_claim: freshClaim,
+          };
+        const here = [a_profile("work", "signed-out"), a_profile("claude", "signed-in")];
+        const home = { ...a_profile("home", "signed-out"), kind: "codex", harness: "Codex" };
+        const all = [...here, home];
+        return {
+          kept: chosen.flatMap((name) => all.filter((one) => one.name === name)),
+          addable: all
+            .filter((one) => !chosen.includes(one.name))
+            .map((one) => ({ name: one.name, harness: one.harness })),
+          fresh_claim: freshClaim,
+        };
+      }
+      if (cmd === "pool_profile_add") {
+        profileChanges.push(["add", a.pool, a.name]);
+        chosen = [...chosen, a.name as string];
+        return null;
+      }
+      if (cmd === "pool_profile_remove") {
+        profileChanges.push(["remove", a.pool, a.name]);
+        chosen = chosen.filter((one) => one !== a.name);
+        return null;
       }
       if (cmd === "add_docker_pool") {
         added.push(a.adding);
@@ -156,9 +206,11 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
-  // The dialog's open state is the window's, kept across renders: a test that leaves it open
-  // must not leave it over the next test's window.
+  // The dialogs' open state is the window's, kept across renders: a test that leaves the add
+  // dialog, or the sign-in that adding ends with, open must not leave it over the next test's
+  // window.
   stopAddingAPool();
+  doneWithTheAddedPool();
   clearMocks();
   Reflect.deleteProperty(globalThis, GLOBAL);
 });
@@ -249,10 +301,16 @@ describe("You › This machine › Pools", () => {
       ]),
     );
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add a pool" })).toBeNull());
-    // Adding it ends with this machine's profiles, each to sign in on its runner (#2049).
+    // Adding it ends with choosing the profiles that sign in on its runner (#2049, #4048).
     const signIn = await screen.findByRole("dialog", {
       name: "Sign your profiles in on pool builds",
     });
+    const choose = await within(signIn).findByRole("group", {
+      name: "Profiles that sign in on pool builds",
+    });
+    expect(within(choose).getByRole("checkbox", { name: "work" })).toBeChecked();
+    expect(within(choose).getByRole("checkbox", { name: "home" })).not.toBeChecked();
+    await userEvent.click(within(signIn).getByRole("button", { name: "Not now" }));
     const list = await within(signIn).findByRole("list", { name: "Profiles on pool builds" });
     expect(within(list).getByText(/Not signed in on pool builds/)).toBeInTheDocument();
     expect(within(list).getByText("Signed in on pool builds.")).toBeInTheDocument();
@@ -266,6 +324,81 @@ describe("You › This machine › Pools", () => {
     const nav = await yourSettings();
     expect(await within(nav).findByRole("button", { name: "Pools" })).toBeInTheDocument();
   });
+
+  it("keeps only the profiles chosen for a pool, and Add a profile… and Remove change them (#4047)", async () => {
+    pools = [a_pool("builds")];
+    chosen = ["work"];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    const list = await within(group).findByRole("list", { name: "Profiles on pool builds" });
+    expect(within(list).getByText("work")).toBeInTheDocument();
+    expect(within(list).queryByText("claude")).toBeNull();
+
+    await userEvent.click(within(group).getByRole("button", { name: "Add a profile…" }));
+    const menu = await screen.findByRole("menu", { name: "Add a profile…" });
+    expect(within(menu).queryByRole("menuitem", { name: /work/ })).toBeNull();
+    await userEvent.click(within(menu).getByRole("menuitem", { name: /home/ }));
+    await waitFor(() => expect(profileChanges).toEqual([["add", "builds", "home"]]));
+    expect(
+      await within(group).findByRole("button", { name: "Remove home from pool builds" }),
+    ).toBeInTheDocument();
+
+    // Remove asks first, and says the sign-in there goes with it.
+    await userEvent.click(
+      within(group).getByRole("button", { name: "Remove work from pool builds" }),
+    );
+    expect(within(group).getByText(/its sign-in there goes with it/)).toBeInTheDocument();
+    expect(profileChanges).toHaveLength(1);
+    await userEvent.click(within(group).getByRole("button", { name: "Keep work on pool builds" }));
+    expect(profileChanges).toHaveLength(1);
+    await userEvent.click(
+      within(group).getByRole("button", { name: "Remove work from pool builds" }),
+    );
+    await userEvent.click(
+      within(group).getByRole("button", { name: "Yes, remove work from pool builds" }),
+    );
+    await waitFor(() =>
+      expect(profileChanges).toEqual([
+        ["add", "builds", "home"],
+        ["remove", "builds", "work"],
+      ]),
+    );
+    await waitFor(() =>
+      expect(
+        within(group).queryByRole("button", { name: "Remove work from pool builds" }),
+      ).toBeNull(),
+    );
+  });
+
+  it("says a profile's harness is being fetched, and asks again until it is (#4008)", async () => {
+    profileAnswers = [[a_profile("work", "fetching")], [a_profile("work", "signed-in")]];
+    render(<App />);
+    await palette("Add a pool…");
+    const dialog = await screen.findByRole("dialog", { name: "Add a pool" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Name" }), "builds");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Image" }), IMAGE);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add pool" }));
+
+    const signIn = await screen.findByRole("dialog", {
+      name: "Sign your profiles in on pool builds",
+    });
+    await within(signIn).findByRole("group", { name: "Profiles that sign in on pool builds" });
+    await userEvent.click(within(signIn).getByRole("button", { name: "Not now" }));
+    const list = await within(signIn).findByRole("list", { name: "Profiles on pool builds" });
+    expect(within(list).getByText("Fetching Claude Code for this runner…")).toBeInTheDocument();
+    expect(
+      await within(list).findByText("Signed in on pool builds.", {}, { timeout: 6000 }),
+    ).toBeInTheDocument();
+    expect(profilesAsked).toEqual(["builds", "builds"]);
+    await userEvent.click(within(signIn).getByRole("button", { name: "Done" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Sign your profiles in on pool builds" }),
+      ).toBeNull(),
+    );
+  }, 10000);
 
   it("adds a pool with its own time before its runner suspends, and its row says it (#3471)", async () => {
     render(<App />);
@@ -522,6 +655,42 @@ describe("You › This machine › Pools", () => {
     expect(within(nav).getByRole("button", { name: "Pools" })).toBeInTheDocument();
   });
 
+  it("says a runner removed outside purlis, and Make the runner again makes it and keeps its profiles (#4149)", async () => {
+    pools = [a_pool("builds")];
+    link = { state: "removed", home_kept: true };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await within(group).findByText("removed outside purlis");
+    const notice = await waitFor(() => {
+      const found = group.querySelector('[data-cause="pool-runner-removed:builds"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(notice).toHaveTextContent(/Its home is still there/);
+    profilesAsked = [];
+
+    await userEvent.click(within(notice).getByRole("button", { name: "Make the runner again" }));
+
+    await waitFor(() => expect(madeAgain).toEqual(["builds"]));
+    await within(group).findByText("linked");
+    expect(group.querySelector('[data-cause="pool-runner-removed:builds"]')).toBeNull();
+    expect(group).toHaveTextContent(/made again, with its sign-ins/);
+    // Its profiles are kept there again, as after Add a pool.
+    await waitFor(() => expect(profilesAsked).toContain("builds"));
+  });
+
+  it("says a runner removed with its home that its sign-ins went too (#4149)", async () => {
+    pools = [a_pool("builds")];
+    link = { state: "removed", home_kept: false };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await within(group).findByText(/sign-ins kept there/);
+  });
+
   it("says a suspended runner is suspended, not that it would not link (#2051)", async () => {
     pools = [a_pool("builds")];
     link = { state: "suspended" };
@@ -709,6 +878,60 @@ describe("A cluster pool (#3292)", () => {
     expect(within(dialog).getByRole("button", { name: "Check its key" })).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add a pool" })).toBeNull());
+  });
+
+  it("is off until the person says This is my own, which says who else can read it", async () => {
+    clusters = [a_cluster_pool("team")];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    const mine = await within(group).findByRole("switch", { name: "This is my own" });
+    expect(mine).not.toBeChecked();
+    expect(mine).toHaveAccessibleDescription(/cluster's admins.*can read what it holds/);
+    await userEvent.click(mine);
+    await waitFor(() => expect(clusters[0].owned).toBe(true));
+    await waitFor(() =>
+      expect(within(group).getByRole("switch", { name: "This is my own" })).toBeChecked(),
+    );
+    await userEvent.click(within(group).getByRole("switch", { name: "This is my own" }));
+    await waitFor(() => expect(clusters[0].owned).toBe(false));
+  });
+
+  it("lists no profile until it is marked, then its profiles with Sign in, as a Docker pool's (#3819)", async () => {
+    clusters = [a_cluster_pool("team")];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(
+        /go to pool team's runner, and sign in there, only once you turn on This is my own/,
+      ),
+    ).toBeInTheDocument();
+    expect(within(group).queryByRole("list", { name: "Profiles on pool team" })).toBeNull();
+    expect(profilesAsked).toEqual([]);
+    await userEvent.click(within(group).getByRole("switch", { name: "This is my own" }));
+    const profiles = await within(group).findByRole("list", { name: "Profiles on pool team" });
+    expect(profilesAsked).toContain("team");
+    expect(
+      within(profiles).getByRole("button", { name: "Sign work in on pool team" }),
+    ).toBeInTheDocument();
+    expect(within(group).queryByText(/lasts only for this claim/)).toBeNull();
+  });
+
+  it("on a fresh claim says a sign-in there lasts only for this claim (#3819)", async () => {
+    clusters = [{ ...a_cluster_pool("team"), owned: true }];
+    freshClaim = true;
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(
+        "Pool team's runner is on a fresh claim, which keeps nothing once it ends: a sign-in there lasts only for this claim.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("whose cluster names another operator key has the key-changed Notice with Remove", async () => {

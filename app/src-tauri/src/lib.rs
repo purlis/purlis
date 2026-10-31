@@ -149,6 +149,7 @@ mod restoring;
 mod routedsessions;
 #[cfg(unix)]
 mod runnercode;
+mod runnerdispatches;
 mod runnerlinks;
 mod runnerlog;
 mod runnerwrites;
@@ -2356,6 +2357,20 @@ fn put_away_chat_move(
     planes.held(&plane)?.moves().put_away(session)
 }
 
+/// **Chat `session`'s move waited on its profile's sign-in on the runner, which the window's
+/// strip says is done** (#3477): the move is prepared again, which asks the runner itself, so it
+/// goes ahead once the profile is signed in there, or waits again. Refused for a move that waits
+/// on no sign-in.
+#[tauri::command]
+#[specta::specta]
+fn chat_move_signed_in(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+) -> Result<(), String> {
+    planes.held(&plane)?.moves().signed_in(session)
+}
+
 /// **The chats this project has open that run under a sandbox other than the one the
 /// project's settings decide for them now** (#1428), or none. The window asks when the
 /// project's settings change, when its chats do, and after each of its own sandbox commands
@@ -3107,10 +3122,12 @@ fn ui_rpc_client() -> String {
     // `Channel` stays imported only while something the client keeps still names it.
     let names = if client.contains("Channel<") {
         "invoke as __TAURI_INVOKE, windowOnly as __WINDOW_ONLY, windowOnlyRefused as \
-         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, Channel"
+         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, \
+         windowOnlyStartRefused as __WINDOW_ONLY_START_REFUSED, Channel"
     } else {
         "invoke as __TAURI_INVOKE, windowOnly as __WINDOW_ONLY, windowOnlyRefused as \
-         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT"
+         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, \
+         windowOnlyStartRefused as __WINDOW_ONLY_START_REFUSED"
     };
     client.replacen(
         TAURI_INVOKE,
@@ -3197,6 +3214,8 @@ fn without_channel_commands(bindings: &str) -> String {
                 "__WINDOW_ONLY_RESULT"
             } else if command.contains(", Refused>(__TAURI_INVOKE(") {
                 "__WINDOW_ONLY_REFUSED"
+            } else if command.contains(", StartRefused>(__TAURI_INVOKE(") {
+                "__WINDOW_ONLY_START_REFUSED"
             } else {
                 panic!(
                     "`{name}` is the window's alone and its error is a shape the link's client has no refusal for"

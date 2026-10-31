@@ -1,17 +1,24 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import type { PlaneUpdated, SkillBudget, SkillRouting, SkillsMissing } from "./bindings";
+import type {
+  PlaneUpdated,
+  SkillBudget,
+  SkillPinner,
+  SkillRouting,
+  SkillsMissing,
+} from "./bindings";
 import { counted } from "./dispatches";
 import { missingSays } from "./SkillsMissingNotice";
 import {
   AT_THE_ROOT,
   asPersona,
+  pinnerSaid,
   scopeOfPinner,
+  SKILL_STUDIO_TITLE,
   skillStudioTitle,
   type StudioScope,
 } from "./skillStudio";
-import { budgetSaid, pinsTogetherSaid, warnsSaid } from "./UseSkill";
 
 /**
  * **What the chat in front needs of the person about its skills, as a whole** (spec #3679 S8,
@@ -48,6 +55,10 @@ export type ChatSkillsSaid = {
   routing: SkillRouting | null;
   missing: SkillsMissing | null;
   changed: PlaneUpdated | null;
+  /** **Its program's own catalogue** (#3324), in the core's words, beside the budget and never in
+   *  it: what the program lists of its own skills against its own limit. Only the Skills view
+   *  reads it, from the studio answer it reads anyway; none where the program has none. */
+  own?: string | null;
 };
 
 /** The view's own words for a chat whose skills changed since it started (S8). */
@@ -151,11 +162,74 @@ function budgetFix(budget: SkillBudget, routing: ChatNeedFix): ChatNeedFix {
   return routing;
 }
 
-/** **What the view's header says of the chat's set** under whose it is: its budget, and how its
- *  router did at its start where it did not fall back (that is a need). */
+/** **What the view's header says of the chat's set** under whose it is: its budget, its program's
+ *  own catalogue beside it (#3324), and how its router did at its start where it did not fall
+ *  back (that is a need). */
 export function chatSetSaid(said: ChatSkillsSaid): string[] {
   return [
     ...(said.budget === null ? [] : [budgetSaid(said.budget)]),
+    ...(said.budget === null || !said.own ? [] : [said.own]),
     ...(said.routing === null || said.routing.fell_back ? [] : [said.routing.said]),
   ];
+}
+
+/** The budget in a line: `12 skills of 30 · 3,400 of 6,000 characters`, and the manual-only
+ *  skills, free on every chat (SK-8). */
+export function budgetSaid(budget: SkillBudget): string {
+  const chars = `${budget.chars.toLocaleString("en-US")} of ${budget.most_chars.toLocaleString("en-US")} characters`;
+  const skills = `${counted(budget.skills, "skill", "skills")} of ${budget.most_skills}`;
+  const manual = counted(budget.manual, "manual-only skill", "manual-only skills");
+  const free = budget.manual === 0 ? "" : ` · ${manual} free`;
+  const hidden =
+    budget.hidden === 0 ? "" : ` · ${counted(budget.hidden, "skill", "skills")} in the index skill`;
+  return `${skills} · ${chars}${free}${hidden}`;
+}
+
+/**
+ * What the chat warns of where its set is at four fifths of the budget or past it, or nothing
+ * below: which part, and what can be done.
+ */
+export function warnsSaid(budget: SkillBudget): string | undefined {
+  const what =
+    budget.warns === "both"
+      ? "skills and their descriptions are"
+      : budget.warns === "skills"
+        ? "skills are"
+        : budget.warns === "chars"
+          ? "skills' descriptions are"
+          : undefined;
+  if (what === undefined) return undefined;
+  if (budget.still_over === "not-hideable")
+    return `purlis's own skills and the ones this chat's program and repos bring are past purlis's skill budget by themselves, so all of them are listed. Turn some of the program's or repos' skills off in the Skill studio.`;
+  if (budget.still_over === "pins")
+    return `This chat's pinned skills are past purlis's skill budget, so all of them are listed. Unpin some in ${unpinIn(budget)}, or make some manual-only.`;
+  if (budget.hidden > 0)
+    return `This chat's ${what} past purlis's skill budget, so ${counted(budget.hidden, "skill is", "skills are")} hidden behind the index skill, which the chat loads them from. Make some skills manual-only, or turn some off for this workspace.`;
+  return `This chat's ${what} near or past purlis's skill budget, past which some are hidden behind the index skill. Make some skills manual-only, or turn some off for this workspace.`;
+}
+
+/**
+ * **A chat whose workspace's and persona's pins pass the most it reads only together** (#3391):
+ * each list alone is accepted, so neither studio says anything is wrong, but the chat reads none
+ * of either. Names both, how many each pins, and where to unpin; nothing where its pins are read.
+ */
+export function pinsTogetherSaid(budget: SkillBudget): string | undefined {
+  const together = budget.pins_together;
+  if (together === null) return undefined;
+  const held = together.held
+    .map((one) => `${pinnerSaid(one.by)} pins ${counted(one.pins, "skill", "skills")}`)
+    .join(" and ");
+  const where = studiosOf(together.held.map((one) => one.by));
+  return `This chat reads none of its pins: ${held}, more than the ${together.most} a chat reads together. Unpin some in ${where}.`;
+}
+
+/** Where a chat's pins are undone (SK-15d): the studio of each of its workspace and persona that
+ *  pins a skill, by its tab's title, or the studio itself where the window was not told. */
+function unpinIn(budget: SkillBudget): string {
+  return budget.pinned_by.length === 0 ? SKILL_STUDIO_TITLE : studiosOf(budget.pinned_by);
+}
+
+/** Each pinner's studio, by its tab's title: `Skill studio · ops or Skill studio · reviewer`. */
+function studiosOf(pinners: readonly SkillPinner[]): string {
+  return pinners.map((by) => skillStudioTitle(scopeOfPinner(by))).join(" or ");
 }

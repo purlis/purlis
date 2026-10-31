@@ -39,6 +39,18 @@ describe("a chat's needs as a whole", () => {
     expect(chatSetSaid({ ...NOTHING, budget: null })).toEqual([]);
   });
 
+  it("says its program's own catalogue after the budget, and not where it has no budget (#3324)", () => {
+    const own = "Codex's own, not counted: 4 skills, 900 characters";
+    expect(chatSetSaid({ ...NOTHING, own })).toEqual([
+      "3 skills of 30 · 1,234 of 6,000 characters",
+      own,
+    ]);
+    expect(chatSetSaid({ ...NOTHING, budget: null, own })).toEqual([]);
+    expect(chatSetSaid({ ...NOTHING, own: null })).toEqual([
+      "3 skills of 30 · 1,234 of 6,000 characters",
+    ]);
+  });
+
   it("go budget, router, started without, then changed, each with its fix", () => {
     const needs = chatNeedsOf(
       {

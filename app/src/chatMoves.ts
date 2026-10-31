@@ -11,7 +11,7 @@ import {
   type PlaneId,
   type PoolsShown,
 } from "./bindings";
-import type { State } from "./chatState";
+import { atAPause, type ChatStates } from "./chatState";
 
 /**
  * **Move to runner and Move here, as the window holds them** (#2048): each chat's move by
@@ -127,7 +127,15 @@ export async function askMove(
     .moveChat(plane, session, to)
     .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
   if (said.status === "error")
-    heardMove(plane, { session, from, to, stage: "failed", why: said.error, with: [] });
+    heardMove(plane, {
+      session,
+      from,
+      to,
+      stage: "failed",
+      why: said.error,
+      with: [],
+      sign_in: null,
+    });
 }
 
 /**
@@ -147,18 +155,37 @@ export function putAwayMove(plane: PlaneId, session: number) {
     .catch(() => undefined);
 }
 
-/** Whether a move may still be cancelled: while it is prepared or ready, never while it is made. */
-export function moveCancellable(one: ChatMove): boolean {
-  return one.stage === "preparing" || one.stage === "ready";
+/**
+ * **Chat `session`'s move waited on its profile's sign-in, which is done** (#3477): the core
+ * prepares it again, asking the runner itself, so it goes ahead by itself once signed in there.
+ * Where the core refused, its moves are read back, so the pane says what the core holds (another
+ * tab of the move may have told it first).
+ */
+export function signedInForMove(plane: PlaneId, session: number) {
+  void commands
+    .chatMoveSignedIn(plane, session)
+    .then(async (said) => {
+      if (said.status === "ok") return;
+      const read = await commands.chatMoves(plane);
+      if (read.status === "ok") for (const one of read.data) heardMove(plane, one);
+    })
+    .catch(() => undefined);
 }
 
-/** The chats whose move switches now: prepared, and at a pause between turns (`waiting`). */
-export function movesDue(
-  moves: Readonly<Record<number, ChatMove>>,
-  stateOf: (session: number) => State,
-): number[] {
+/** Whether a move may still be cancelled: while it is prepared, waits on a sign-in or is ready,
+ *  never while it is made. */
+export function moveCancellable(one: ChatMove): boolean {
+  return one.stage === "preparing" || one.stage === "signing-in" || one.stage === "ready";
+}
+
+/**
+ * The chats whose move switches now: prepared, and at a pause between turns ({@link atAPause}). A
+ * chat waiting on its own work (#3878) is not at a pause: a move would cut its monitors and
+ * background shells off, so it waits for them (#3887).
+ */
+export function movesDue(moves: Readonly<Record<number, ChatMove>>, states: ChatStates): number[] {
   return Object.values(moves)
-    .filter((one) => one.stage === "ready" && stateOf(one.session) === "waiting")
+    .filter((one) => one.stage === "ready" && atAPause(states, one.session))
     .map((one) => one.session);
 }
 
@@ -187,6 +214,15 @@ export function moveSaid(one: ChatMove): { words: string; trouble: boolean } {
           others.length === 0
             ? `Moving to ${where}. It keeps working here while ${meanwhile}, and moves at its next pause.`
             : `Moving to ${where} with ${listed(others)}, which share its workspace's clones. Each keeps working here while ${meanwhile}, and they move together once each is at a pause.`,
+        trouble: false,
+      };
+    case "signing-in":
+      return {
+        words: `Moves to ${where} once ${one.sign_in?.profile ?? "its profile"} is signed in there. ${
+          others.length === 0
+            ? "It keeps working here meanwhile."
+            : `It and ${listed(others)} keep working here meanwhile.`
+        }`,
         trouble: false,
       };
     case "ready":
@@ -239,8 +275,8 @@ export function movesWith(
 
 /**
  * **The pools a chat may move to** (D-2048-13): every pool this machine keeps, where its runners
- * are shown to be the person's own (a Docker pool on this machine's own engine, until a pool can
- * be marked as yours, #2561), and none otherwise. A chat's conversation and work go nowhere else.
+ * are shown to be the person's own (a Docker pool on this machine's own engine), and none
+ * otherwise. A chat's conversation and work go nowhere else.
  */
 export function poolsToMoveTo(shown: Pick<PoolsShown, "pools" | "yours"> | undefined): string[] {
   if (shown === undefined || shown.yours !== true) return [];

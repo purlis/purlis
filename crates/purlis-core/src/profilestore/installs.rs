@@ -581,6 +581,27 @@ pub fn for_a_look(record: &MachineProfile) -> Option<PathBuf> {
     for_a_look_in(record, &crate::datahome::root, Platform::here(), &OverHttps)
 }
 
+/// **Whether a fetch a look started of `record`'s pinned version is still running** (#4008), on
+/// this machine: what a runner answers as "fetching" in place of "cannot tell".
+pub fn fetching_for_a_look(record: &MachineProfile) -> bool {
+    if record.kept_for.is_none() || record.pinned.is_none() {
+        return false;
+    }
+    crate::datahome::root().is_some_and(|data| fetching_at(record, &data))
+}
+
+/// [`fetching_for_a_look`], under the data home `data`.
+pub fn fetching_at(record: &MachineProfile, data: &Path) -> bool {
+    let Some(program) = pinned_in(record, data) else {
+        return false;
+    };
+    LOOKS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .any(|(p, looked)| *p == program && matches!(looked, Looked::Fetching))
+}
+
 /// [`for_a_look_at`], with the data home `data_home` finds: asked for only for a profile kept
 /// for a desktop with a pin, so a look at any other, every look on a desktop among them, never
 /// resolves (or fences) a data home.

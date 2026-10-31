@@ -120,6 +120,7 @@ impl World {
             &GitAsk {
                 chat: 4,
                 workspace: WS.to_owned(),
+                alive: false,
                 work: GitWork::WorktreeRemove {
                     repo: REPO.to_owned(),
                     piece: piece.to_owned(),

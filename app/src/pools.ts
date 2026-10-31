@@ -9,7 +9,8 @@ import {
   type ClusterPoolKey,
   type PoolAdding,
   type PoolLink,
-  type PoolProfileRow,
+  type PoolProfiles as PoolProfilesAnswered,
+  type PoolRemoved,
   type PoolVersion,
   type PoolsShown,
   type RunnerImageOffered,
@@ -42,6 +43,10 @@ import {
  * read ({@link checkClusterPoolKey}) and shown for the person to check before Add pool pins it
  * ({@link addClusterPool}). Its runner keeps none of this machine's profiles: it is a team's
  * cluster's, so adding one ends with nothing to sign in.
+ *
+ * **A runner removed outside purlis is made again on the person's word** ({@link
+ * makeRunnerAgain}, #4149): its row, and the Notice of a refused start, offer Make the runner
+ * again, which ends as adding a pool does, with its profiles kept there again.
  */
 type Read =
   | { state: "reading" }
@@ -65,6 +70,10 @@ export type Held = {
   added: string | undefined;
   /** The pool being removed, while it is. */
   removing: string | undefined;
+  /** The pool whose runner is being made again, while it is (#4149). */
+  remaking: string | undefined;
+  /** What Make the runner again did, by the pool's name, for its row to say (#4149). */
+  remade: Readonly<Record<string, string>>;
   /** Why the last removal was refused, or what it left, in the core's words. */
   said: string | undefined;
 };
@@ -81,6 +90,8 @@ const START: Held = {
   profiles: {},
   added: undefined,
   removing: undefined,
+  remaking: undefined,
+  remade: {},
   said: undefined,
 };
 let held: Held = START;
@@ -224,21 +235,85 @@ export async function addClusterPool(adding: ClusterPoolAdding): Promise<string 
   return undefined;
 }
 
-/** What a pool's runner keeps of this machine's profiles, as last asked. */
-export type PoolProfiles = PoolProfileRow[] | "asking" | { trouble: string };
+/** Marks cluster pool `name` as the person's own, or takes the mark back (#4071): `undefined`
+ *  once it is kept, else why not. The window's alone. */
+export async function markPoolOwned(name: string, owned: boolean): Promise<string | undefined> {
+  const said = await caught(commands.setClusterPoolOwned(name, owned));
+  await rereadPools();
+  return said.status === "error" ? said.error : undefined;
+}
 
-/** Asks pool `name`'s runner to keep each of this machine's profiles, and where each stands
- *  there (#2049). */
-export async function askProfiles(name: string) {
-  set((was) => ({ ...was, profiles: { ...was.profiles, [name]: "asking" } }));
-  const said = await caught(commands.poolProfiles(name));
+/** What a pool's runner keeps of this machine's profiles, as last asked: the ones chosen for
+ *  it and the others Add a profile… offers (#4047), that they are being asked, or why not. */
+export type PoolProfiles = PoolProfilesAnswered | "asking" | { trouble: string };
+
+/** The pools whose profiles are being asked again quietly. */
+const askingQuietly = new Set<string>();
+
+/** How long a pool's profiles are shown before they are asked again while its runner fetches
+ *  a profile's harness (#4008). */
+export const ASK_AGAIN_WHILE_FETCHING_MS = 3000;
+
+/** Asks pool `name`'s runner to keep the profiles chosen for it, and where each stands there
+ *  (#2049, #4047): a pool that names none keeps the default of the open project `plane`. Asked
+ *  `quietly`, the rows shown stay until the answer comes (#4008). */
+export async function askProfiles(name: string, plane?: string, { quietly = false } = {}) {
+  // One quiet ask of a pool at a time, however many places show its profiles.
+  if (quietly && askingQuietly.has(name)) return;
+  if (quietly) askingQuietly.add(name);
+  else set((was) => ({ ...was, profiles: { ...was.profiles, [name]: "asking" } }));
+  const asked = caught(commands.poolProfiles(name, { plane: plane ?? null }));
+  const said = await asked.finally(() => {
+    if (quietly) askingQuietly.delete(name);
+  });
   const rows: PoolProfiles =
     said.status === "error"
       ? { trouble: said.error }
-      : Array.isArray(said.data)
+      : typeof said.data === "object" && said.data !== null && Array.isArray(said.data.kept)
         ? said.data
         : { trouble: "purlis did not say which profiles the runner keeps." };
   set((was) => ({ ...was, profiles: { ...was.profiles, [name]: rows } }));
+}
+
+/** Pool `name`'s profiles as last asked, outside React (#4048). */
+export function profilesHeld(name: string): PoolProfiles | undefined {
+  return held.profiles[name];
+}
+
+/** **Adds this machine's profile `profile` to pool `name`** (#4047, Add a profile…), then asks
+ *  the pool's profiles again, so its runner keeps it. Why not, in the core's words. */
+export async function addProfileToPool(
+  name: string,
+  profile: string,
+  plane?: string,
+): Promise<string | undefined> {
+  const said = await caught(commands.poolProfileAdd(name, profile, { plane: plane ?? null }));
+  await askProfiles(name, plane);
+  return said.status === "error" ? said.error : undefined;
+}
+
+/** **Takes profile `profile` off pool `name`** (#4047): its runner forgets it, sign-in included,
+ *  then the pool's profiles are asked again. What the core said of it, or why not. */
+export async function removeProfileFromPool(
+  name: string,
+  profile: string,
+  plane?: string,
+): Promise<string | undefined> {
+  const said = await caught(commands.poolProfileRemove(name, profile, { plane: plane ?? null }));
+  await askProfiles(name, plane);
+  return said.status === "error" ? said.error : (said.data ?? undefined);
+}
+
+/** **Signs profile `profile` out on pool `name`'s runner** (#4043): its harness's own sign-out,
+ *  run there, then the pool's profiles are asked again. Why it did not, in the core's words. */
+export async function signProfileOutOfPool(
+  name: string,
+  profile: string,
+  plane?: string,
+): Promise<string | undefined> {
+  const said = await caught(commands.poolSignOut(name, profile));
+  await askProfiles(name, plane);
+  return said.status === "error" ? said.error : undefined;
 }
 
 /** Closes what adding a pool ended with: its profiles to sign in there. */
@@ -294,4 +369,50 @@ export async function removePool(name: string): Promise<string | undefined> {
   });
   await rereadPools();
   return left;
+}
+
+/** **The Docker pools whose runner was removed outside purlis** (#4149): what a refused start's
+ *  Notice offers to make again. None where purlis could not ask. */
+export async function readRemovedPools(): Promise<readonly PoolRemoved[]> {
+  const said = await caught(commands.dockerPoolsRemoved());
+  return said.status === "ok" && Array.isArray(said.data) ? said.data : [];
+}
+
+/** What a Notice says of a runner removed outside purlis (#4149), by whether its home is still
+ *  there. */
+export function removedSaid(name: string, homeKept: boolean): string {
+  return homeKept
+    ? `Pool ${name}'s runner was removed outside purlis: Docker has no container of its id, so purlis no longer links to it. If Docker now points at another engine, point it back instead. Its home is still there: Make the runner again makes a runner from the pool's image and limits, with the sign-ins kept there.`
+    : `Pool ${name}'s runner was removed outside purlis: Docker has no container of its id, so purlis no longer links to it. If Docker now points at another engine, point it back instead. Its home went too, and with it the sign-ins kept there: Make the runner again makes a runner from the pool's image and limits, whose profiles you sign in again.`;
+}
+
+/** What a row says once its runner was made again, by whether its sign-ins were carried. */
+export function madeAgainSaid(name: string, signInsKept: boolean): string {
+  return signInsKept
+    ? `Pool ${name}'s runner was made again, with its sign-ins.`
+    : `Pool ${name}'s runner was made again: sign its profiles in again there.`;
+}
+
+/**
+ * **Make the runner again** (#4149): pool `name`'s runner, removed outside purlis, made again
+ * from the pool's own image and limits, with the sign-ins of its home where that is still there,
+ * and paired. Then
+ * its link and version are asked again and it keeps the pool's profiles again, as after Add a
+ * pool, for the open project `plane`. `undefined` once it is made, else why not.
+ */
+export async function makeRunnerAgain(name: string, plane?: string): Promise<string | undefined> {
+  if (held.remaking !== undefined)
+    return `purlis is making pool ${held.remaking}'s runner again: try ${name} once it is done.`;
+  set((was) => ({ ...was, remaking: name }));
+  const said = await caught(commands.dockerPoolMakeAgain(name));
+  const why = said.status === "error" ? said.error : undefined;
+  set((was) => {
+    const remade = { ...was.remade };
+    if (said.status === "ok") remade[name] = madeAgainSaid(name, said.data.sign_ins_kept);
+    else Reflect.deleteProperty(remade, name);
+    return { ...was, remaking: undefined, remade };
+  });
+  if (why !== undefined) return why;
+  await Promise.all([askLink(name), askVersion(name), askProfiles(name, plane)]);
+  return undefined;
 }

@@ -18,6 +18,7 @@ fn builds(image: &str) -> Bound {
         runner: "01JB0RUNNER0000000000000000".into(),
         runner_key: "ab".repeat(32),
         runner_image: "a".repeat(64),
+        pod: String::new(),
         engine: "this machine's Docker".into(),
     }
 }
@@ -86,6 +87,19 @@ fn a_run_that_passes_every_check_is_the_personas_tool_on_the_pool_as_it_is_now()
             run: "r1".into(),
         })
     );
+}
+
+#[test]
+fn a_cluster_pool_not_marked_is_refused_saying_how_and_nobody_is_asked() {
+    let ask = kubectl_asked();
+    let not_marked = |_: &Path, pool: &str| Err(purlis_core::poollogins::not_marked_said(pool));
+    let gate = Gate {
+        owned: &not_marked,
+        ..a_gate(&ask)
+    };
+    let refused = refused(&gate);
+    assert!(refused.contains("kubectl was sent no value"), "{refused}");
+    assert!(refused.contains("This is my own"), "{refused}");
 }
 
 #[test]
@@ -432,6 +446,49 @@ fn a_pool_that_changed_while_the_person_was_asked_is_sent_nothing() {
 }
 
 #[test]
+fn a_pool_that_changed_while_its_vault_was_read_is_sent_nothing() {
+    let tools = Arc::new(PoolTools::default());
+    let gone = Arc::new(AtomicBool::new(false));
+    let owned = Arc::new(Mutex::new(builds("a")));
+    let (done, decided) = mpsc::channel();
+    {
+        let (tools, gone, owned) = (Arc::clone(&tools), gone, owned);
+        std::thread::spawn(move || {
+            let ask = kubectl_asked();
+            let shown = Arc::clone(&owned);
+            let now = move |_: &Path, _: &str| Ok(shown.lock().unwrap().clone());
+            let gate = Gate {
+                owned: &now,
+                ..a_gate(&ask)
+            };
+            let read = move |tool: &Tool| {
+                *owned.lock().unwrap() = builds("b");
+                Ok(vec![(
+                    tool.values[0].key.clone(),
+                    Zeroizing::new("v-kubeconfig".to_owned()),
+                )])
+            };
+            let checked = checked(&gate).expect("passes the gate");
+            let mut said = Vec::new();
+            let _ = done.send(answered(
+                &gate,
+                checked,
+                &waiting(&tools, &gone, &read, Duration::from_secs(60)),
+                &mut said,
+            ));
+        });
+    }
+    let asked = the_run_asked(&tools);
+    tools.answer(6, asked.run, true);
+    let refused = decided.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert!(
+        refused
+            .expect_err("changed")
+            .contains("changed while the person was asked")
+    );
+}
+
+#[test]
 fn a_run_answered_already_or_of_another_chat_is_not_answered_again() {
     let tools = PoolTools::default();
     let (_answered, run) = tools.ask(PoolToolWaits {
@@ -595,6 +652,7 @@ fn a_github_app_tool_on_a_runner_is_sent_the_token_minted_for_it_as_its_key_s_va
         started: Some(&started),
         on_a_runner: true,
         config_root: None,
+        ends_seen: None,
     };
     let sent: Vec<(String, String)> = minted(&ctx, &gh, &chat, &minted_for_chat_6)
         .unwrap()
@@ -639,6 +697,7 @@ fn a_runner_chat_with_no_recorded_start_is_minted_nothing() {
         started: None,
         on_a_runner: true,
         config_root: None,
+        ends_seen: None,
     };
     assert_eq!(
         minted(&ctx, &gh, &chat, &never_minted).map(|sent| sent.len()),

@@ -11,7 +11,7 @@ import {
 } from "react";
 import { commands, type PlaneId } from "./bindings";
 import { RepoPicker } from "./RepoPicker";
-import { cloneRepos, underWay, useRepoClones } from "./repoClones";
+import { cloneRepos, cloningWords, underWay, useRepoClones } from "./repoClones";
 import { dropMembershipTitle } from "./actions";
 import { RemoveFromWorkspace } from "./RemoveFromWorkspace";
 import { SettingActions, type RowIds } from "./settings/components";
@@ -124,7 +124,9 @@ export function useWorkspaceRepos(
         <RepoPicker plane={plane} picked={picked} onPicked={setPicked} />
         {busy.map(([repo, c]) => (
           <p key={repo} className="pending" aria-busy="true">
-            {c.state === "cloning" ? `Cloning ${repo}…` : `${repo} is waiting to be cloned.`}
+            {c.state === "cloning"
+              ? `Cloning ${repo}… ${cloningWords(c)}`.trimEnd()
+              : `${repo} is waiting to be cloned.`}
           </p>
         ))}
         <SettingActions>

@@ -1165,13 +1165,23 @@ pub fn writes_are_sandboxed_in(env: &dyn Fn(&str) -> Option<String>, started: St
     if !chat_is_sandboxed_in(env) {
         return false;
     }
-    match started {
+    let by_its_harness = match started {
         Started::ByTheChat => true,
         Started::ByTheHarness => crate::hookwire::chat_harness(env)
             .as_deref()
             .and_then(Harness::of_registry_or_kind)
             .is_some_and(|harness| harness.adapter().sandbox_holds_what_it_starts()),
-    }
+    };
+    // A Claude Code chat purlis wraps whole (#4083), which its harness alone cannot say.
+    by_its_harness || wrapped_whole_in(env)
+}
+
+/// **Whether this chat is one purlis wraps whole although its harness has a sandbox of its own**
+/// (#4083), as the chat's line said ([`crate::hookwire::WRAPPED_ENV`]): what its hooks and its
+/// `purlis` commands read, for how a refusal or a block is told and reported. No decision that
+/// holds anything reads it, so a chat that set it itself only changes how it is told.
+pub fn wrapped_whole_in(env: &dyn Fn(&str) -> Option<String>) -> bool {
+    env(crate::hookwire::WRAPPED_ENV).as_deref() == Some("1")
 }
 
 /// What a denied path is denied for.
@@ -1246,7 +1256,8 @@ impl Os {
     /// The word a run's `sandbox` attribute names this system's backend by (ADR 0066, #868):
     /// Seatbelt on macOS; on Linux, Claude Code's own bubblewrap, or `landlock` for purlis's own
     /// wrap of a harness it holds whole (Codex, opencode; #1040). `None` where purlis has none,
-    /// or does not know which.
+    /// or does not know which. A chat that started says its own ([`Applied::backend_word`]): a
+    /// Claude Code on a runner is wrapped too (#4083).
     pub fn backend_word(self, harness: Option<Harness>) -> Option<&'static str> {
         match self {
             Self::MacOs => Some("seatbelt"),
@@ -1294,6 +1305,29 @@ impl Machine {
             home: dirs::home_dir(),
             os: Os::this(),
         }
+    }
+
+    /// **Whether this machine is a runner** (#4083): a Linux machine whose session host is paired
+    /// with a desktop ([`crate::runnerlink`]). Read from its pairing, in the session host's own
+    /// store, which no chat reads or writes. A pairing there that cannot be read is a runner all
+    /// the same, so a runner whose pairing broke never starts a Claude Code chat outside the wrap
+    /// on a profile wrapped chats wrote ([`crate::start::profile_refusal`]).
+    pub fn is_a_runner(&self) -> bool {
+        self.os == Os::Linux
+            && crate::machine::rooted(
+                self.env.get(crate::machine::HOME_VAR).map(Into::into),
+                self.env.get("XDG_CONFIG_HOME").map(Into::into),
+                self.home.clone(),
+            )
+            .is_some_and(|config| !matches!(crate::runnerlink::answering(&config), Ok(None)))
+    }
+
+    /// **Whether a chat of `harness` here starts inside purlis's own Linux wrap**: a harness purlis
+    /// holds whole ([`Os::purlis_wraps`]), and on a runner a Claude Code chat too (#4083), with
+    /// its own sandbox off: a runner has neither what it needs nor a place to make its namespace.
+    /// On a person's own Linux machine a Claude Code chat keeps its own.
+    pub fn purlis_wraps(&self, harness: Harness) -> bool {
+        self.os.purlis_wraps(harness) || (harness == Harness::ClaudeCode && self.is_a_runner())
     }
 }
 
@@ -2007,6 +2041,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         deny(
             Class::HumanPowers,
             data.join(crate::dockerpool::settings::DIR),
+            Access::ReadWrite,
+        );
+        // Which sign-ins this runner's logins wait for (#4044): a read could lock a record, so a
+        // chat neither reads nor writes them.
+        deny(
+            Class::HumanPowers,
+            crate::profilestore::sign_in::waiting::in_data_home(&data),
             Access::ReadWrite,
         );
         // The browser logins this device keeps sealed (#2021, the person's ruling of
@@ -3797,9 +3838,9 @@ impl Applied {
     /// version in it, keeps Claude Code's own proxy and the allowed domains, as before, and the
     /// first such chat on that version in this process carries the sentence that says so
     /// ([`Self::older_notice`]). A harness purlis wraps goes through the proxy whatever it
-    /// answers.
+    /// answers, a Claude Code on a runner among them (#4083).
     pub fn answered(&mut self, answer: &str) {
-        if self.harness != Harness::ClaudeCode {
+        if !matches!(*self.form, Form::ClaudeCode(_)) {
             return;
         }
         let version = program::claude_code_version(answer);
@@ -3955,9 +3996,24 @@ impl Applied {
     }
 
     /// Whether this chat's line starts with purlis's own program: a harness purlis holds
-    /// whole, on Linux (#1040).
+    /// whole, on Linux (#1040), and a Claude Code chat on a runner (#4083).
     pub fn wrapped_by_purlis_here(&self) -> bool {
-        Os::this().purlis_wraps(self.harness())
+        Os::this().purlis_wraps(self.harness()) || self.is_claude_wrapped()
+    }
+
+    /// Whether this is a Claude Code chat purlis wraps whole (#4083).
+    fn is_claude_wrapped(&self) -> bool {
+        matches!(*self.form, Form::ClaudeWrapped(_))
+    }
+
+    /// The word a run's `sandbox` attribute names this chat's sandbox by (ADR 0066): what
+    /// [`Os::backend_word`] says of its harness, and `landlock` for a Claude Code chat purlis
+    /// wraps (#4083).
+    pub fn backend_word(&self) -> Option<&'static str> {
+        if self.is_claude_wrapped() {
+            return Some("landlock");
+        }
+        Os::this().backend_word(Some(self.harness))
     }
 
     /// **At the floor, the programs `words` start, never written by the chat** (#2071, the
@@ -4018,6 +4074,7 @@ impl Applied {
         self.confines.held.extend(more.iter().cloned());
         match &mut *self.form {
             Form::ClaudeCode(settings) => *settings = settings.holding(&more),
+            Form::ClaudeWrapped(wrap) => wrap.hold(more),
             Form::Codex(codex::Wrap { held, .. }) | Form::Opencode(opencode::Wrap { held, .. }) => {
                 held.extend(more);
             }
@@ -4041,9 +4098,14 @@ impl Applied {
         {
             wrap.on_profile(name, folder);
         }
-        let Form::ClaudeCode(settings) = &mut *self.form else {
+        // A wrapped Claude Code keeps its state in its profile's config folder, and reads its
+        // sign-in there, so the wrap cannot deny that; its Read and Edit tools still are, below.
+        if let Form::ClaudeWrapped(wrap) = &mut *self.form {
+            wrap.on_profile(folders);
+        }
+        if !matches!(*self.form, Form::ClaudeCode(_) | Form::ClaudeWrapped(_)) {
             return;
-        };
+        }
         let more: Vec<Denial> = signin::credential_files(self.harness, folders)
             .into_iter()
             .map(|path| Denial {
@@ -4056,7 +4118,11 @@ impl Applied {
             })
             .filter(|denial| !self.denied.contains(denial))
             .collect();
-        *settings = settings.denying(&more);
+        match &mut *self.form {
+            Form::ClaudeCode(settings) => *settings = settings.denying(&more),
+            Form::ClaudeWrapped(wrap) => wrap.rules = wrap.rules.denying(&more),
+            Form::Codex(_) | Form::Opencode(_) => {}
+        }
         self.confines.denied.extend(more.iter().cloned());
         self.denied.extend(more);
     }
@@ -4078,6 +4144,7 @@ impl Applied {
         let mut out = match &*self.form {
             Form::Opencode(wrap) => wrap.data.iter().cloned().collect(),
             Form::Codex(wrap) => wrap.writable(),
+            Form::ClaudeWrapped(wrap) => wrap.writable(),
             Form::ClaudeCode(_) => Vec::new(),
         };
         out.extend(self.caches.iter().flat_map(|caches| caches.writable()));
@@ -4136,7 +4203,10 @@ impl Applied {
         // A chat whose network goes through purlis's proxy is never started without it (#1665):
         // a Claude Code chat's line without its ports would leave it on its own proxy, unseen.
         // (A wrapped harness's adapter refuses that itself.)
-        if self.harness == Harness::ClaudeCode && self.through_proxy && at.confinement.is_none() {
+        if matches!(*self.form, Form::ClaudeCode(_))
+            && self.through_proxy
+            && at.confinement.is_none()
+        {
             return Err(under(format!(
                 "{LEAD}, and purlis's network proxy was not started for this Claude Code chat, \
                  so nothing was started."
@@ -4220,6 +4290,7 @@ impl Applied {
         let mut form = (*self.form).clone();
         match &mut form {
             Form::ClaudeCode(settings) => *settings = settings.denying(&more),
+            Form::ClaudeWrapped(wrap) => wrap.denying(more),
             Form::Codex(codex::Wrap { denied, .. })
             | Form::Opencode(opencode::Wrap { denied, .. }) => denied.extend(more),
         }
@@ -4247,7 +4318,8 @@ impl Applied {
 
     /// **The ssh route a chat of this harness is handed** (#1667), from `confinement`: only
     /// where the sandbox wraps the whole harness (Codex, opencode), so everything that reads the
-    /// route's `PATH` and `GIT_SSH_COMMAND` runs inside it. The route sits in the chat's own temp
+    /// route's `PATH` and `GIT_SSH_COMMAND` runs inside it, a Claude Code on a runner among them
+    /// (#4083). The route sits in the chat's own temp
     /// directory, which a wrapped chat may write; a Claude Code chat's harness runs outside its
     /// sandbox, with its hooks and its servers, so a file there that a chat could have written is
     /// never on that harness's `PATH` and never its git's ssh. Claude Code's own sandbox sets
@@ -4257,7 +4329,7 @@ impl Applied {
         &self,
         confinement: Option<&'c Confinement>,
     ) -> Option<&'c tunnel::SshRoute> {
-        if self.harness == Harness::ClaudeCode {
+        if matches!(*self.form, Form::ClaudeCode(_)) {
             return None;
         }
         confinement.and_then(Confinement::ssh_route)
@@ -4270,7 +4342,7 @@ impl Applied {
         &self,
         confinement: Option<&'c Confinement>,
     ) -> Option<&'c tunnel::SshRoute> {
-        if self.harness != Harness::ClaudeCode {
+        if !matches!(*self.form, Form::ClaudeCode(_)) {
             return None;
         }
         confinement
@@ -4318,13 +4390,14 @@ impl Applied {
 
     /// [`Self::plan`], whether or not anything runs beside the chat.
     fn planned(&self) -> plan::Plan {
+        // Claude Code on its own sandbox: a wrapped one has what any wrapped harness has beside it.
         let claude = matches!(*self.form, Form::ClaudeCode(_));
         plan::Plan {
             reach: self.reach.written(),
             tunnel_ports: egress::TUNNEL_PORTS.to_vec(),
             plain_ports: egress::PLAIN_PORTS.to_vec(),
-            // A host listed without a port on every port for Claude Code, as its own proxy
-            // carried it (#1665).
+            // A host listed without a port on every port for Claude Code on its own sandbox, as
+            // its own proxy carried it (#1665); a wrapped one is carried as Codex is (#4083).
             any_port: claude,
             // Claude Code's harness runs outside its sandbox and keeps its own temp folder, so
             // its chat needs the proxy alone (#1699), and its ssh route where no chat writes
@@ -4427,11 +4500,15 @@ pub struct Confinement {
     serving: Option<Serving>,
 }
 
+/// The most slots one chat's server holds parked across all its doors (#3316).
+pub const CHAT_SLOTS_MOST: usize = 32;
+
 /// **Where a chat's servers listen, and the doors to them** (#2019, [`door`]).
 #[derive(Debug)]
 struct Serving {
-    /// The folder purlis made for this chat's sockets alone, `0700`.
-    folder: PathBuf,
+    /// The folder purlis made for this chat's sockets alone, `0700`; none where its server
+    /// dials in instead (#3316).
+    folder: Option<PathBuf>,
     /// A door for each port the chat serves on.
     doors: Vec<door::Door>,
 }
@@ -4900,10 +4977,91 @@ impl Confinement {
         }
         let (doors, unserved) = opened?;
         self.serving = Some(Serving {
-            folder: folder.to_path_buf(),
+            folder: Some(folder.to_path_buf()),
             doors,
         });
         Ok(unserved)
+    }
+
+    /// **Opens a dialled door for each port `widened` lets a Claude Code chat listen on**
+    /// (#3316): its server dials in to the hook socket and parks each connection as a slot of
+    /// the door ([`door::Door::dialled`], [`Self::park`]), so no socket is made for it and its
+    /// profile is left as it is. A port something on this Mac listens on already gets no door,
+    /// and is answered back, as [`Self::serve`] answers it. Once per confinement.
+    pub fn dial(&mut self, widened: &Widened) -> std::io::Result<Vec<u16>> {
+        if self.serving.is_some() || widened.listens.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut doors = Vec::new();
+        let mut unserved = Vec::new();
+        for port in &widened.listens {
+            match door::Door::dialled(*port) {
+                Ok((door, _)) => doors.push(door),
+                Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => unserved.push(*port),
+                Err(err) => return Err(err),
+            }
+        }
+        let open: Vec<u16> = doors.iter().map(door::Door::port).collect();
+        for port in widened
+            .listen_only
+            .iter()
+            .filter(|port| !open.contains(port))
+        {
+            if let Err(why) = self.withdraw_port(*port) {
+                tracing::warn!("purlis: port {port} could not be withdrawn ({why})");
+            }
+        }
+        self.serving = Some(Serving {
+            folder: None,
+            doors,
+        });
+        Ok(unserved)
+    }
+
+    /// **Parks `slot`, a connection this chat's server dialled in, as a slot of its door on
+    /// `port`** (#3316): whether it is the first that door was given. Handed back, with why, where
+    /// the chat has no dialled door on that port, or that door, or the chat, holds the most it
+    /// may ([`door::SLOTS_MOST`], [`CHAT_SLOTS_MOST`]).
+    #[cfg(unix)]
+    pub fn park(
+        &self,
+        port: u16,
+        slot: std::os::unix::net::UnixStream,
+    ) -> Result<bool, (std::os::unix::net::UnixStream, &'static str)> {
+        let doors = self
+            .serving
+            .as_ref()
+            .map(|serving| serving.doors.as_slice());
+        let Some(slots) = doors
+            .unwrap_or_default()
+            .iter()
+            .find(|door| door.port() == port)
+            .and_then(door::Door::slots)
+        else {
+            return Err((slot, door::NO_DOOR));
+        };
+        let held: usize = doors
+            .unwrap_or_default()
+            .iter()
+            .filter_map(door::Door::slots)
+            .map(|slots| slots.parked())
+            .sum();
+        if held >= CHAT_SLOTS_MOST {
+            return Err((slot, door::SLOTS_FULL));
+        }
+        slots.park(slot).map_err(|slot| (slot, door::SLOTS_FULL))
+    }
+
+    /// **Closes this chat's door on `port`** (#3316): its grant was taken back, so its server
+    /// is not reached there from now on, and a dialled door's parked slots are closed. Whether
+    /// there was one.
+    pub fn stop_serving(&mut self, port: u16) -> bool {
+        let Some(serving) = self.serving.as_mut() else {
+            return false;
+        };
+        let before = serving.doors.len();
+        serving.doors.retain(|door| door.port() != port);
+        serving.doors.len() != before
     }
 
     /// **Where this chat's servers listen, and the ports their doors are open on** (#2019):
@@ -4911,8 +5069,26 @@ impl Confinement {
     /// none.
     pub fn served(&self) -> Option<(&Path, Vec<u16>)> {
         let serving = self.serving.as_ref()?;
-        let ports: Vec<u16> = serving.doors.iter().map(door::Door::port).collect();
-        (!ports.is_empty()).then_some((serving.folder.as_path(), ports))
+        let ports = self.serving_ports();
+        let folder = serving.folder.as_deref()?;
+        (!ports.is_empty()).then_some((folder, ports))
+    }
+
+    /// **The ports this chat's doors are open on** (#2019, #3316), whether its servers listen on
+    /// sockets of their own or dial in. Empty before [`Self::serve`] or [`Self::dial`].
+    pub fn serving_ports(&self) -> Vec<u16> {
+        self.serving
+            .as_ref()
+            .map(|serving| serving.doors.iter().map(door::Door::port).collect())
+            .unwrap_or_default()
+    }
+
+    /// Whether this chat's server dials in to its doors (#3316) rather than listening on
+    /// sockets of its own.
+    pub fn dials_in(&self) -> bool {
+        self.serving
+            .as_ref()
+            .is_some_and(|serving| serving.folder.is_none() && !serving.doors.is_empty())
     }
 
     /// **`text` kept as `name` in this chat's own folder** (qw384b), for this chat alone and
@@ -4982,6 +5158,8 @@ impl Confinement {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Form {
     ClaudeCode(claude::Settings),
+    /// A Claude Code chat purlis wraps whole, on a runner (#4083).
+    ClaudeWrapped(claude_wrap::Wrap),
     Codex(codex::Wrap),
     Opencode(opencode::Wrap),
 }
@@ -4993,6 +5171,7 @@ impl Form {
         match self {
             Self::Codex(wrap) => Some(&wrap.denied),
             Self::Opencode(wrap) => Some(&wrap.denied),
+            Self::ClaudeWrapped(wrap) => Some(&wrap.denied),
             Self::ClaudeCode(_) => None,
         }
     }
@@ -5005,6 +5184,7 @@ impl Form {
         match self {
             Self::Codex(wrap) => wrap.planes = planes,
             Self::Opencode(wrap) => wrap.planes = planes,
+            Self::ClaudeWrapped(wrap) => wrap.planes = planes,
             Self::ClaudeCode(_) => {}
         }
     }
@@ -5087,6 +5267,15 @@ pub type Compiler = fn(&Compiled) -> Result<Form, Uncompilable>;
 /// adapter gaining a compiler and a [`Form`] variant.
 pub fn compiler(harness: Harness) -> Option<Compiler> {
     harness.adapter().sandbox_compiler()
+}
+
+/// [`compiler`] on `machine`: where purlis wraps a Claude Code chat there, its wrap and not its
+/// own sandbox's settings (#4083).
+fn compiler_on(harness: Harness, machine: &Machine) -> Option<Compiler> {
+    if harness == Harness::ClaudeCode && machine.purlis_wraps(harness) {
+        return Some(|compiled| claude_wrap::wrap(compiled).map(Form::ClaudeWrapped));
+    }
+    compiler(harness)
 }
 
 /// Why no chat on `harness` starts sandboxed on `os`, whatever the project: charter has no
@@ -6064,14 +6253,14 @@ fn for_start_at(
     let Some(policy) = policy else {
         return floor_for_start(harness, root, &plane, machine, has, persona, chat).map(Some);
     };
-    let Some(compile) = compiler(harness) else {
+    let Some(compile) = compiler_on(harness, machine) else {
         return Err(NotStarted::NoCompiler(harness));
     };
     // Ruling V87f: the one place a harness with a compiler is held back.
     if let Some(issue) = harness.adapter().sandbox_held_back() {
         return Err(NotStarted::HeldBack(harness, issue));
     }
-    if let Some(missing) = backend::missing_for(machine.os, machine.os.purlis_wraps(harness), has) {
+    if let Some(missing) = backend::missing_for(machine.os, machine.purlis_wraps(harness), has) {
         return Err(NotStarted::NoBackend(missing));
     }
     let compiled = Compiled::granted(&policy, &plane, root, machine, persona, chat);
@@ -6092,6 +6281,7 @@ fn for_start_at(
             &policy::Locks::of(root),
             &crate::programs::search_dirs(),
             &writable,
+            chat.tools_allowed_by_desktop.as_deref(),
         ) {
             applied.confines.tools = resolved.ready.clone();
             applied.tools = Some(Box::new(resolved));
@@ -6114,13 +6304,13 @@ fn floor_for_start(
     persona: Option<&str>,
     chat: &grant::Grants,
 ) -> Result<Applied, NotStarted> {
-    let Some(compile) = compiler(harness) else {
+    let Some(compile) = compiler_on(harness, machine) else {
         return Err(NotStarted::NoCompiler(harness));
     };
     if let Some(issue) = harness.adapter().sandbox_held_back() {
         return Err(NotStarted::HeldBack(harness, issue));
     }
-    if let Some(missing) = backend::missing_for(machine.os, machine.os.purlis_wraps(harness), has) {
+    if let Some(missing) = backend::missing_for(machine.os, machine.purlis_wraps(harness), has) {
         return Err(NotStarted::NoBackend(missing));
     }
     let compiled = Compiled::floor(root, machine, chat);
@@ -6138,6 +6328,7 @@ fn floor_for_start(
             &policy::Locks::of(root),
             &crate::programs::search_dirs(),
             &writable,
+            chat.tools_allowed_by_desktop.as_deref(),
         ) {
             let programs: Vec<PathBuf> = resolved
                 .ready
@@ -6178,7 +6369,8 @@ pub(crate) fn applied_of(
     // What waits for a chat's next turn is denied where the harness's hooks, which deliver
     // it, run outside the sandbox ([`Denied::and_what_waits_for_a_chat`]).
     let with_what_waits;
-    let compiled = if harness.adapter().sandbox_holds_what_it_starts() {
+    let wrapped = machine.purlis_wraps(harness);
+    let compiled = if harness.adapter().sandbox_holds_what_it_starts() || wrapped {
         compiled
     } else {
         with_what_waits = Compiled {
@@ -6206,9 +6398,10 @@ pub(crate) fn applied_of(
     };
     // Each repository's git folder held as a whole, for Claude Code alone, whose sandbox pins
     // every folder above a denied path ([`Denied::git_folder_pins`]): found here, for its start,
-    // and not for any other harness's.
+    // and not for any other harness's. A wrap holds a `.git` by its own rules ([`PLANTED`]), so
+    // a Claude Code chat purlis wraps finds none (#4083).
     let pinned;
-    let compiled = if harness == Harness::ClaudeCode {
+    let compiled = if harness == Harness::ClaudeCode && !wrapped {
         pinned = Compiled {
             denied: Denied {
                 git_folder_pins: git_folder_pins_of(root),
@@ -6247,8 +6440,8 @@ pub(crate) fn applied_of(
             clones: crate::forge::apptoken::clones_now(root),
         }),
         reach: Box::new(compiled.reach.clone()),
-        // Claude Code waits for its program's answer ([`Applied::answered`]).
-        through_proxy: harness != Harness::ClaudeCode,
+        // Claude Code on its own sandbox waits for its program's answer ([`Applied::answered`]).
+        through_proxy: harness != Harness::ClaudeCode || wrapped,
         older: None,
         tools: None,
         wrap: None,
@@ -7027,6 +7220,7 @@ pub mod browser_reach;
 pub mod browser_sites;
 pub mod caches;
 pub mod claude;
+pub mod claude_wrap;
 pub mod codex;
 pub mod confined;
 pub mod door;
@@ -7059,6 +7253,8 @@ pub mod wrapper;
 
 #[cfg(test)]
 mod claude_tests;
+#[cfg(all(test, unix))]
+mod claude_wrap_tests;
 #[cfg(test)]
 mod codex_tests;
 #[cfg(test)]

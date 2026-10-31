@@ -13,13 +13,16 @@ use super::*;
 const OLD: &str = "ghcr.io/purlis/purlis-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const NEW: &str = "ghcr.io/purlis/purlis-runner@sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
 
-/// A machine in `config` whose `docker` removes whatever it is asked to, and logs it.
+/// A machine in `config` whose `docker` removes whatever it is asked to, and logs it. Every
+/// container it is asked of is still there: none was removed outside purlis (#4149).
 fn a_machine(config: &std::path::Path) -> Machine {
     let docker = config.join("docker");
     std::fs::write(
         &docker,
         format!(
-            "#!/bin/sh\necho \"$*\" >> '{}'\nexit 0\n",
+            "#!/bin/sh\necho \"$*\" >> '{}'\ncase \"$1 $2\" in 'container ls') \
+             for a in \"$@\"; do case $a in id=*) echo \"${{a#id=}}\" ;; esac; done ;; esac\n\
+             exit 0\n",
             config.join("log").display()
         ),
     )
@@ -87,7 +90,7 @@ fn only_looked(config: &std::path::Path) -> bool {
     std::fs::read_to_string(config.join("log"))
         .unwrap_or_default()
         .lines()
-        .all(|line| line.starts_with("container inspect "))
+        .all(|line| line.starts_with("container inspect ") || line.starts_with("container ls "))
 }
 
 fn names(machine: &Machine) -> Vec<String> {
@@ -108,6 +111,10 @@ fn a_draining_runner_is_removed_once_no_chat_is_left_on_it_and_not_before() {
     follow_and_drain(&machine, None, &|_| Ok(2));
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
     assert_eq!(waiting_on(&machine.config, "first"), 2);
+    // Nor is a sign-in of it carried to the pool's runner while they run (#4055): a new chat
+    // there asks to sign in, and one runner holds each sign-in.
+    let log = std::fs::read_to_string(config.path().join("log")).unwrap_or_default();
+    assert!(!log.contains("-copy "), "{log}");
     // It does not answer: not known to be idle, so it stays.
     let said = follow_and_drain(&machine, None, &|_| Err("down".into()));
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
@@ -135,6 +142,14 @@ fn a_draining_runner_is_removed_once_no_chat_is_left_on_it_and_not_before() {
             "container rm --force --volumes {}",
             "a".repeat(64)
         )),
+        "{log}"
+    );
+    // Its sign-ins went to the pool's runner only now, with no chat left on it (#4055).
+    let carried = log
+        .find("--name purlis-runner-first-fedcba98-copy ")
+        .expect(&log);
+    assert!(
+        carried < log.find("container rm --force --volumes").unwrap(),
         "{log}"
     );
 }

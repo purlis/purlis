@@ -27,6 +27,7 @@ import {
   type SkillLevel,
 } from "./bindings";
 import { counted } from "./dispatches";
+import { NotRead, ReadingRows } from "./SkillPanels";
 import { Notice } from "./Notice";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Tile, Totals } from "./ui/card/Totals";
@@ -105,7 +106,10 @@ export function costSaid(plan: SkillGradePlan): string {
   const parts: string[] = [];
   if (estimate.tokens !== null) parts.push(`about ${tokensSaid(estimate.tokens)}`);
   if (estimate.cost_usd !== null) parts.push(`about $${estimate.cost_usd.toFixed(2)}`);
-  return `From its grade${ran}, of ${counted(estimate.chats_then, "chat", "chats")}, this one should spend ${parts.join(", ")}.`;
+  // A grade purlis stopped under is worked out from what its chats spent before it stopped
+  // (#3602), and the plan says it was interrupted.
+  const which = estimate.interrupted ? "interrupted grade" : "grade";
+  return `From its ${which}${ran}, of ${counted(estimate.chats_then, "chat", "chats")}, this one should spend ${parts.join(", ")}.`;
 }
 
 /** The dollar limit a grade is held to, and the price it was worked out at (#3469): the model's,
@@ -127,6 +131,15 @@ export function limitSaid(plan: SkillGradePlan): string {
 export function afterEditSaid(on: SkillGradeAfterEdit): string {
   const model = on.model === null ? "" : `, ${on.model}`;
   return `Each edit you save grades this skill on ${on.profile}${model}: up to ${counted(on.chats, "chat", "chats")}, and at most $${(on.limit_usd ?? 0).toFixed(2)} or ${tokensSaid(on.token_cap ?? 0)}, each time, paid by that profile's account.`;
+}
+
+/** **Why grading after each edit may run more chats than a grade now** (#4035): the previous
+ *  version's arm its first saved edit brings, counted in what the person accepts. */
+function previousArmSaid(name: string, plan: SkillGradePlan): string {
+  const chats = `${counted(plan.after_edit_chats, "chat", "chats")}, not the ${plan.chats} a grade runs now`;
+  return plan.previous_refused === null
+    ? `Your first saved edit makes a version of ${name} to compare with, so each grade after an edit also runs that version: ${chats}.`
+    : `Once its previous version can be compared, each grade after an edit also runs it: ${chats}.`;
 }
 
 /** Dollars as the window says them: `$1.92`. */
@@ -160,19 +173,6 @@ function startRefused(
   return undefined;
 }
 
-/** A read that failed, in place, with Try again (S11). */
-function NotRead({ what, why, onAgain }: { what: string; why: string; onAgain: () => void }) {
-  return (
-    <EmptyState
-      variant="panel"
-      headline={`purlis could not read ${what}`}
-      body={why}
-      testid="skill-grading-not-read"
-      action={<Button onPress={onAgain}>Try again</Button>}
-    />
-  );
-}
-
 /**
  * **A grading page's heading**, and the line under it: in the page's flow, never held over what
  * scrolls under it (a review page's body scrolls, and the plan's text would run under it).
@@ -183,15 +183,6 @@ export function GradingHeading({ name, description }: { name: string; descriptio
       <h2 className="ui-text-strong">{name}</h2>
       {description !== undefined && <p className="honest">{description}</p>}
     </div>
-  );
-}
-
-/** A read still on its way (S11). */
-export function Reading({ what }: { what: string }) {
-  return (
-    <p className="pending" aria-busy="true" data-testid="skill-grading-reading">
-      {`Reading ${what}…`}
-    </p>
   );
 }
 
@@ -296,9 +287,11 @@ export function GradePlanPage({
           setRefused(undefined);
           setAgain((n) => n + 1);
         }}
+        testid="skill-grading-not-read"
       />
     );
-  if (plan === undefined) return <Reading what={`what a grade of ${name} runs`} />;
+  if (plan === undefined)
+    return <ReadingRows what={`what a grade of ${name} runs`} testid="skill-grading-reading" />;
 
   const consent = plan.consent ?? "";
   const start = () =>
@@ -327,13 +320,18 @@ export function GradePlanPage({
   const limit = dollarsSaid(plan.cost_cap_usd ?? 0);
   const whose = plan.profile ?? "the profile";
   const nothing = plan.tests.length === 0;
+  // Grading after each edit counts the arm a first saved edit brings (#4035): its chats, and
+  // its estimate at the last grade's spend per chat.
+  const chats = afterEdit ? plan.after_edit_chats : plan.chats;
+  const arms = afterEdit && plan.after_edit_chats > plan.chats ? 3 : armsOf(plan);
+  const scale = plan.chats > 0 ? chats / plan.chats : 1;
   return (
     <ReviewPage
       label={afterEdit ? `Grade ${name} after each edit` : `Grade ${name}`}
       data-testid="skill-grade-plan"
       summary={
         afterEdit
-          ? `Nothing runs now. Each edit you save then runs up to ${counted(plan.chats, "chat", "chats")}, at most ${limit} each time, of ${whose}'s account.`
+          ? `Nothing runs now. Each edit you save then runs up to ${counted(plan.after_edit_chats, "chat", "chats")}, at most ${limit} each time, of ${whose}'s account.`
           : `Nothing runs until you press Start. It spends at most ${limit} of ${whose}'s account.`
       }
       onCancel={onCancel}
@@ -397,20 +395,26 @@ export function GradePlanPage({
         <Totals aria-label={`What a grade of ${name} runs and spends`}>
           <Tile
             label="Chats"
-            value={String(plan.chats)}
-            line={`${counted(plan.tests.length, "test", "tests")} × ${plan.runs} × ${armsOf(plan)} arms`}
+            value={String(chats)}
+            line={`${counted(plan.tests.length, "test", "tests")} × ${plan.runs} × ${arms} arms`}
           />
           <Tile label="At most" value={limit} line={`or ${tokensSaid(plan.token_cap ?? 0)}`} />
           <Tile
             label="Estimate"
             value={
               plan.estimate?.cost_usd != null
-                ? dollarsSaid(plan.estimate.cost_usd)
+                ? dollarsSaid(plan.estimate.cost_usd * scale)
                 : plan.estimate?.tokens != null
-                  ? tokensSaid(plan.estimate.tokens)
+                  ? tokensSaid(Math.round(plan.estimate.tokens * scale))
                   : "Not known"
             }
-            line={plan.estimate === null ? "not graded here before" : "from its last grade"}
+            line={
+              plan.estimate === null
+                ? "not graded here before"
+                : plan.estimate.interrupted
+                  ? "from its interrupted grade"
+                  : "from its last grade"
+            }
           />
           <Tile
             label="Runs on"
@@ -535,9 +539,10 @@ export function GradePlanPage({
             {afterEdit && (
               <p className="honest" data-testid="skill-grade-after-edit-offer">
                 Each edit you save then runs this grade again, up to{" "}
-                {counted(plan.chats, "chat", "chats")} and at most {limitSaid(plan)}, on the profile
-                and model you pick, paid by its account. If an edit makes a grade run more chats or
-                spend more, it starts nothing and asks you again.
+                {counted(plan.after_edit_chats, "chat", "chats")} and at most {limitSaid(plan)}, on
+                the profile and model you pick, paid by its account.
+                {plan.after_edit_chats > plan.chats && ` ${previousArmSaid(name, plan)}`} If an edit
+                makes a grade run more chats or spend more, it starts nothing and asks you again.
               </p>
             )}
             <TokenCap
@@ -666,9 +671,11 @@ export function GradeRunningPage({
           setUnread(undefined);
           setAgain((n) => n + 1);
         }}
+        testid="skill-grading-not-read"
       />
     );
-  if (step === undefined && runs === undefined) return <Reading what={`the grade of ${name}`} />;
+  if (step === undefined && runs === undefined)
+    return <ReadingRows what={`the grade of ${name}`} testid="skill-grading-reading" />;
   if (step === undefined && runs === false)
     return (
       <EmptyState

@@ -79,8 +79,9 @@ import { RemovePersona } from "../RemovePersona";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
 import { DeprecateDialog, OwnersDialog } from "../SkillPage";
+import { NewSkillDialog } from "../NewSkillDialog";
 import { DeleteDialog, MoveDialog, RenameDialog } from "../SkillChangeDialogs";
-import { LeaveQuestion } from "../SkillEditInPlace";
+import { LeaveQuestion } from "../UnsavedWorkQuestion";
 import { SkillCopy } from "../SkillCopy";
 import { RequestMerge } from "../SavingMerge";
 import { SavingView } from "../SavingView";
@@ -746,6 +747,7 @@ const DIALOGS: Opened[] = [
             repos: [],
             not_supported: null,
             routing: null,
+            missing: null,
           }}
           trouble="the chat is in the middle of a turn"
           busy={false}
@@ -1243,12 +1245,12 @@ const DIALOGS: Opened[] = [
       ),
   },
   {
-    name: "leaving a skill's editor with unsaved changes (#3683)",
-    file: "SkillEditInPlace.tsx",
+    name: "leaving a view's unsaved work (#3683, #3929)",
+    file: "UnsavedWorkQuestion.tsx",
     open: async () =>
       render(
         <LeaveQuestion
-          name="deploy"
+          names={["deploy"]}
           blocked={false}
           busy={false}
           onKeep={nothing}
@@ -1355,6 +1357,26 @@ const DIALOGS: Opened[] = [
           level={{ at: "project", local: false }}
           busy={false}
           onDelete={nothing}
+          onClose={nothing}
+        />,
+      ),
+  },
+  {
+    name: "New skill…, asking how (#3684)",
+    file: "NewSkillDialog.tsx",
+    open: async () =>
+      render(
+        <NewSkillDialog
+          plane="p"
+          levels={[{ level: { at: "project", local: false }, label: "project" }]}
+          start={{ at: "project", local: false }}
+          takenAt={() => []}
+          builtIns={["secrets"]}
+          busy={false}
+          onEdit={nothing}
+          onMake={nothing}
+          onDraft={nothing}
+          onSources={nothing}
           onClose={nothing}
         />,
       ),

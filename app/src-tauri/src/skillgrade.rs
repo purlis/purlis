@@ -81,7 +81,7 @@ pub struct GradeLeftOut {
 pub struct GradeEstimate {
     pub tokens: Option<f64>,
     pub cost_usd: Option<f64>,
-    /// The chats the grade it is worked out from asked for: none where none ran.
+    /// The chats the grade it is worked out from asked for, ran or not: none where none ran.
     pub chats_then: u32,
     /// That grade: when it ran, and the profile and the harness its chats ran on.
     pub ts: String,
@@ -91,6 +91,8 @@ pub struct GradeEstimate {
     pub model: Option<String>,
     /// Whether it ran on the profile this grade runs on, or `None` where that is not known.
     pub same_profile: Option<bool>,
+    /// Whether that grade was interrupted before it was scored (#3602): the plan says so.
+    pub interrupted: bool,
 }
 
 /// **The price a grade's dollar limit is worked out at** (`grades::price`), as the plan says it.
@@ -122,6 +124,9 @@ pub struct SkillGradePlan {
     /// The chats it runs in all, each one turn, and how many times each test runs in each arm.
     pub chats: u32,
     pub runs: u32,
+    /// **The chats each grade after an edit may run** (#4035): with its previous version's arm
+    /// counted where its first saved edit brings one (`after_edit::chats_to_accept`).
+    pub after_edit_chats: u32,
     /// Why the trigger tests could not be read, where they were not.
     pub tests_refused: Option<String>,
     /// The trigger tests left out, each with why: a query no chat can be started on.
@@ -325,6 +330,7 @@ impl SkillGradePlan {
             tests,
             chats: planned.plan.map(|plan| plan.chats).unwrap_or_default(),
             runs: u32::from(grading::RUNS),
+            after_edit_chats: planned.after_edit_chats.unwrap_or_default(),
             tests_refused: planned
                 .fixtures
                 .triggers
@@ -361,6 +367,7 @@ impl SkillGradePlan {
                     .map(purlis_core::skilluse::harness_title),
                 model: estimate.model.clone(),
                 same_profile: estimate.same_profile,
+                interrupted: estimate.interrupted,
             }),
             record_said: planned.record_said.clone(),
             running,
@@ -422,6 +429,9 @@ impl From<GradeEnd> for GradeEnded {
 pub struct SkillGradeStep {
     pub plane: PlaneId,
     pub skill: String,
+    /// The copy it grades, by its level (#3978): a same-named copy at another level is another
+    /// skill, whose tab a step of this one moves nothing on.
+    pub level: SkillLevel,
     pub grade: String,
     pub ran: u32,
     pub of: u32,
@@ -647,11 +657,13 @@ pub(crate) fn begin(
     // it (`skill_grades`).
     let step_of = {
         let (plane, skill, grade) = (plane.clone(), skill.clone(), id.clone());
+        let copy_level = SkillLevel::from(&level);
         let limit_usd = limits.cost_usd;
         move |spent: Spent, asked: u32, ended: Option<GradeEnded>, said: Option<String>| {
             SkillGradeStep {
                 plane: plane.clone(),
                 skill: skill.clone(),
+                level: copy_level.clone(),
                 grade: grade.clone(),
                 ran: spent.chats,
                 of,
@@ -780,6 +792,7 @@ pub(crate) fn begin(
                     },
                     grade: &grade,
                     asked: 0,
+                    asked_for: 0,
                     harness: None,
                     plugins_off: None,
                     model: model.as_deref(),
@@ -970,6 +983,10 @@ pub struct ScoredTest {
 pub struct GradeScorecard {
     pub grade: String,
     pub skill: String,
+    /// **The copy it graded, by its level**, where its row says one (#3978): a scorecard
+    /// opened from where that copy is not listed (a retired tab comes back at the project's
+    /// root) goes to the scope that lists it.
+    pub level: Option<SkillLevel>,
     /// When it ran, the version it graded, what its chats ran on and how it ended, as its row
     /// says each.
     pub graded: String,
@@ -1166,7 +1183,8 @@ pub(crate) async fn skill_grades(
     crate::off_the_window("reading a skill's grades", move || {
         flag_on()?;
         let level = Level::from(&level);
-        let read = grades::read(held.root(), &skill, Some(&level));
+        // With the grades from before a rename or a move (#3918).
+        let read = grades::read_followed(held.root(), &level, &skill);
         let tests = grades::trigger_tests(held.root(), &level, &skill);
         Ok(SkillGrades::of(&read, tests, &plane, &level, &skill))
     })
@@ -1213,6 +1231,11 @@ impl GradeScorecard {
         GradeScorecard {
             grade: graded.grade.clone(),
             skill: graded.skill.clone(),
+            level: graded
+                .level
+                .as_deref()
+                .and_then(grades::level_of_recorded)
+                .map(|level| (&level).into()),
             graded: studio::said_at(&graded.ts),
             version: studio::version_said(graded),
             ran_on: studio::ran_on_said(graded),
@@ -1327,9 +1350,11 @@ pub(crate) struct InChats<'a> {
     pub(crate) spent: Spent,
     /// Told what the chats that ran so far spent, and how many asked, as each one ends.
     pub(crate) tell: &'a dyn Fn(Spent, u32),
-    /// Who is told what the chats spent so far, each time a chat's end changes it: the grade's
-    /// marker (#3582).
+    /// Who is told what the chats spent so far, and how many it asked for, ran or not
+    /// (`Spent::asked_for`, #3602), as each chat ends: the grade's marker (#3582).
     pub(crate) on_spent: &'a dyn Fn(Spent),
+    /// The chats the grade asked for so far, ran or not (#3602).
+    pub(crate) asked_for: u32,
     /// The grade's id: what each chat's screen is kept under (SK-59).
     pub(crate) grade: &'a str,
     /// The chats that asked the person something and were ended there (SK-59).
@@ -1353,14 +1378,16 @@ impl Chats for InChats<'_> {
 
     fn run(&mut self, chat: &RunChat, tokens_left: Option<u64>) -> ChatRan {
         let ran = self.run_one(chat, tokens_left);
-        let was = self.spent;
         self.spent = counted(self.spent, &ran);
+        self.asked_for = self.asked_for.saturating_add(1);
         // Said in the grade's marker as each chat ends, so a grade purlis stops under is
-        // recorded with what its chats spent (#3582): written after the chat closed, never
-        // while one opens.
-        if self.spent != was {
-            (self.on_spent)(self.spent);
-        }
+        // recorded with what its chats spent (#3582) and how many it asked for (#3602), which
+        // its estimate shares that spend over: written after the chat closed, never while one
+        // opens. A chat that spent nothing is counted too, so it is said even then.
+        (self.on_spent)(Spent {
+            asked_for: Some(self.asked_for),
+            ..self.spent
+        });
         match (said_cost(&ran), ran.tokens) {
             (Some(cost), _) => {
                 self.cost_left = self.cost_left.map(|left| left - cost);
@@ -1407,6 +1434,7 @@ fn counted(spent: Spent, ran: &ChatRan) -> Spent {
             Some(cost) => Some(spent.cost_usd.unwrap_or(0.0) + cost),
             None => spent.cost_usd,
         },
+        asked_for: spent.asked_for,
     }
 }
 

@@ -85,6 +85,10 @@ pub struct Opening {
     /// that started it watches. A session host ends it as soon as this window's link to it ends
     /// without a quit, rather than keeping it for the window to come back to (1.42).
     pub ends_with_its_window: bool,
+    /// Its prompt key (#3369), which the window minted for a harness chat: set in its
+    /// environment for its hooks, and handed to the session host in its launch, which keeps it
+    /// for a window that takes the chat back. Its `Debug` shows nothing of it. None for a shell.
+    pub prompt_key: Option<purlis_core::skillspan::PromptSalt>,
 }
 
 /// A shell with nothing set, for fixtures (#2453): no program, the smallest terminal, nothing
@@ -111,6 +115,7 @@ impl Default for Opening {
             confinement: None,
             run: None,
             ends_with_its_window: false,
+            prompt_key: None,
         }
     }
 }
@@ -131,6 +136,9 @@ pub struct Named {
     pub resume: Option<String>,
     pub first_message: Option<String>,
     pub without_sandbox: bool,
+    /// What the person allowed of its persona here, as its digest: what arms its tools on a
+    /// runner (1.55, #4071).
+    pub tools_allowed: Option<String>,
     pub alone: Vec<u16>,
     pub size: Size,
 }
@@ -144,6 +152,8 @@ pub struct Composed {
     pub number: u32,
     pub confinement: Option<purlis_core::sandbox::Confinement>,
     pub ran: Option<purlis_session_protocol::session::RunSandbox>,
+    /// The prompt key the host minted for it (#3369), where it says one.
+    pub prompt_key: Option<purlis_core::skillspan::PromptSalt>,
 }
 
 /// **A chat that moves between this machine and a runner** (#2048): where it works, the profile
@@ -153,6 +163,30 @@ pub struct Moving {
     pub workspace: String,
     pub profile: String,
     pub conversation: String,
+}
+
+/// **What came back with chats moved off a runner** (#2048, #3811): what the person is to look
+/// at before a tool here runs it, and each clone the runner's chat made, made here whole from
+/// its work.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CameBack {
+    /// Every file that came which a tool here runs or reads as its settings, every one a save
+    /// would refuse, and every link, by its path in the project (the person's ruling of
+    /// 2026-10-27).
+    pub watch: Vec<String>,
+    /// Each clone made here fresh from the runner's chat's work (#3811): every file of it was
+    /// made there (#3990).
+    pub made: Vec<MadeHere>,
+}
+
+/// **A clone made here fresh from a runner's chat's work** (#3811, #3985).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MadeHere {
+    /// Its folder in the project.
+    pub clone: String,
+    /// The `origin` the runner's clone had, offered to the person and never written into it, or
+    /// why none is.
+    pub remote: Result<String, String>,
 }
 
 /// What a host that moves no chat says.
@@ -325,8 +359,8 @@ pub trait SessionHost: Send + Sync {
     /// their pause: the chats of one workspace, which move together (#3453). Each clone's work
     /// tree here is taken over onto the runner's once, and each conversation kept in its
     /// profile's harness folder here. Answers what came back that the person is to look at
-    /// before a tool here runs it, by its path in the project.
-    fn move_out(&self, pool: &str, chats: &[Moving]) -> Result<Vec<String>, String> {
+    /// before a tool here runs it.
+    fn move_out(&self, pool: &str, chats: &[Moving]) -> Result<CameBack, String> {
         let _ = (pool, chats);
         Err(MOVES_NO_CHAT.to_owned())
     }
@@ -525,6 +559,27 @@ pub trait SessionHost: Send + Sync {
         None
     }
 
+    /// **The prompt key chat `number` started with, as its host answered the start** (#3369),
+    /// where the window `minted` one for its launch: a host before 1.60 answers none and sets
+    /// none in the chat's environment, so its prompts are marked under none. A chat that runs in
+    /// the window's own process started with the key minted.
+    fn prompt_key_started(
+        &self,
+        number: u32,
+        minted: Option<purlis_core::skillspan::PromptSalt>,
+    ) -> Option<purlis_core::skillspan::PromptSalt> {
+        let _ = number;
+        minted
+    }
+
+    /// **The prompt key of chat `number`, left running, as its host kept it** (#3369): what the
+    /// window digests what it types into the chat under once it is reattached. `None` where its
+    /// host keeps none. Read before it is reattached.
+    fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {
+        let _ = number;
+        None
+    }
+
     /// **How chat `number`, left running, is sandboxed, as its host applied it** (#2636): `None`
     /// where its host keeps no such record, which the window takes as sandboxed. Read before
     /// it is reattached.
@@ -567,6 +622,14 @@ impl Glance {
     /// `purlis_core::state::Chat::waits_on_its_prompt`, read off one glance.
     pub fn waits_on_its_prompt(&self) -> bool {
         self.asking && self.state == State::Waiting
+    }
+
+    /// **Whether it is in its turn, as what waits for a pause between turns counts it**
+    /// (#3887): running, or its turn ended waiting on work of its own (#3878), whose monitors
+    /// and background shells a restart, a move or a save would cut off. The board says
+    /// `waiting` for that, and it is no pause.
+    pub fn in_its_turn(&self) -> bool {
+        self.state == State::Running || (self.state == State::Waiting && self.own_work)
     }
 }
 
@@ -996,6 +1059,8 @@ pub(crate) mod pretend {
                         "seatbelt".to_owned(),
                     ))
                 }),
+                // The runner mints its own (#3369).
+                prompt_key: purlis_core::skillspan::PromptSalt::of_key(&format!("composed-{id}")),
             })
         }
         fn move_ahead(&self, pool: &str, workspace: &str) -> Result<(), String> {
@@ -1008,11 +1073,11 @@ pub(crate) mod pretend {
             }
             Ok(())
         }
-        fn move_out(&self, pool: &str, chats: &[super::Moving]) -> Result<Vec<String>, String> {
+        fn move_out(&self, pool: &str, chats: &[super::Moving]) -> Result<super::CameBack, String> {
             for chat in chats {
                 lock(&self.seen.moved).push(("out", pool.to_owned(), chat.workspace.clone()));
             }
-            Ok(Vec::new())
+            Ok(super::CameBack::default())
         }
         fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {
             let now = self.seen.fetching.fetch_add(1, Ordering::SeqCst) + 1;
@@ -1110,6 +1175,11 @@ pub(crate) mod pretend {
         }
         fn left_running(&self, number: u32) -> bool {
             lock(&self.seen.left).iter().any(|(one, _)| *one == number)
+        }
+        fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {
+            self.left_running(number)
+                .then(|| purlis_core::skillspan::PromptSalt::of_key(&format!("left-{number}")))
+                .flatten()
         }
         fn ran_with(&self, number: u32) -> Option<purlis_core::sandbox::plan::Plan> {
             lock(&self.seen.left)

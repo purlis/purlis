@@ -88,6 +88,7 @@ pub(super) struct Holding {
 /// [`ENDS_UNREAD`]'s, which ends without reading any.
 pub(super) fn the_windows(window: &Arc<Window>, holding: &Arc<Holding>) -> Hearing {
     Hearing {
+        serve: crate::hookwire::serve::refusing(),
         each: {
             let window = Arc::clone(window);
             Box::new(move |report| {

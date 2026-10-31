@@ -60,6 +60,7 @@ impl Host for Board {
                 process: None,
                 confined: None,
                 sandbox: None,
+                prompt_key: None,
             },
             Command::AttachView { kind, .. } => Answer::Attached(session::Attached {
                 view: 1,
@@ -205,6 +206,7 @@ fn every_command() -> Vec<Command> {
                 git_hooks: None,
                 reporting: None,
                 confinement: None,
+                prompt_key: None,
             }),
             ..session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell)
         })),
@@ -312,7 +314,29 @@ fn every_command() -> Vec<Command> {
             sandbox_only: false,
             pinned: None,
             settings: None,
+            settings_staged: None,
+            settings_changed: None,
         }),
+        // A desktop's profile taken off its runner (1.52, #4047).
+        Command::ForgetProfile {
+            name: "work".into(),
+        },
+        // Its settings in batches, for that keep (1.56, #4081).
+        Command::StageProfileSettings(session::SettingsBatch {
+            profile: "work".into(),
+            pieces: Vec::new(),
+        }),
+        // What a runner holds of a profile's settings (1.61, #4088).
+        Command::SettingsHeld {
+            profile: "work".into(),
+            after: None,
+        },
+        // The profiles a runner keeps for its desktop (1.57, #4060).
+        Command::KeptProfiles,
+        // A sign-in's redirect handed to a login on the runner (1.59, #4044).
+        Command::SignInRedirect {
+            target: session::RedirectTarget("/auth/callback?code=c&state=s".into()),
+        },
         // A browser the person takes over, drives and hands back: the window's alone (1.14).
         Command::TakeOver {
             program: CHAT.into(),
@@ -600,6 +624,11 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             // The desktop removing the runner (1.25, #2525).
             "unpair",
             "keep_profile",
+            "forget_profile",
+            "stage_profile_settings",
+            "settings_held",
+            "kept_profiles",
+            "sign_in_redirect",
             "take_over",
             "browser_input",
             "size_browser",
@@ -702,6 +731,32 @@ async fn editor_may_call_none_of_the_session_commands() {
 async fn remote_link_may_drive_a_chat_and_take_the_windows_relayed_start_but_never_answer_its_asks()
 {
     check_the_row(Scope::RemoteLink).await;
+}
+
+#[tokio::test]
+async fn only_the_window_or_its_hosts_relay_names_what_the_person_allowed_of_a_persona() {
+    // A scope that may start nothing is refused that first.
+    for scope in Scope::ALL
+        .into_iter()
+        .filter(|scope| scope.may(purlis_session_protocol::grants::Power::Start))
+    {
+        let client = linked(scope, Board::new(false)).await;
+        let said = client
+            .call(Command::StartProgram(Box::new(session::StartProgram {
+                tools_allowed: Some("digest".into()),
+                ..session::StartProgram::of(
+                    "01J9PRJCT00000000000000000",
+                    session::ProgramKind::Harness,
+                )
+            })))
+            .await;
+        let refused = said
+            .err()
+            .and_then(|why| why.refusal().map(|refusal| refusal.why.clone()))
+            .is_some_and(|why| why.contains("persona's tools"));
+        let windows = matches!(scope, Scope::LocalUi | Scope::RemoteLink);
+        assert_eq!(refused, !windows, "{scope}");
+    }
 }
 
 #[tokio::test]

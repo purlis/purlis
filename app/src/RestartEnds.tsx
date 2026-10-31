@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Fragment, useEffect, useState } from "react";
-import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
+import { atAPause, useChatsHere, useChatsSelect } from "./chatState";
 import { commands, type PlaneId, type RestartEnds } from "./bindings";
 import { inertly } from "./sandboxBlocks";
 
@@ -88,7 +88,8 @@ export function useRestartEnds(plane: PlaneId, session: number, asked: boolean) 
 /**
  * **The restart's sentence for chat `session`'s Ask** ({@link RestartEndsSaid}), with what it
  * ends read once as the Ask is drawn, and whether it restarts now: the chat's harness says it is
- * between turns (`waiting`), so the restart an Allow owes is made at once.
+ * between turns (`waiting`), so the restart an Allow owes is made at once. A chat waiting on its
+ * own work is not (#3887): its restart waits for that work, as `restartsDue` does.
  */
 export function RestartEndsLine({
   plane,
@@ -100,6 +101,6 @@ export function RestartEndsLine({
   chat?: string;
 }) {
   const ends = useRestartEnds(plane, session, true);
-  const now = useChatsSelect(useChatsHere(), (states) => stateOf(states, session) === "waiting");
+  const now = useChatsSelect(useChatsHere(), (states) => atAPause(states, session));
   return <RestartEndsSaid ends={ends} chat={chat} now={now} />;
 }

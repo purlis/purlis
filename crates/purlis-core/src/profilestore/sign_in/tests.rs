@@ -7,6 +7,54 @@ use std::path::PathBuf;
 
 use crate::profilestore::{Adopted, Folders, MachineProfile};
 
+/// [`super::login_for`], by the harness's own default.
+fn login_for(profile: &Profile, program: &str, provider: Option<&str>) -> Result<Login, String> {
+    super::login_for(profile, program, provider, Way::Asked)
+}
+
+/// **A flow asked for by name is the harness's own word for it**: opencode's `--method` labels on
+/// its ChatGPT plan alone, Codex's `--device-auth`, and none where a harness has no such flow
+/// (#4044).
+#[test]
+fn a_flow_is_asked_for_in_the_harnesss_own_words() {
+    let words = |kind: &str, plan, way| {
+        super::login_for(&profile(kind), "/bin/it", plan, way).map(|login| login.args)
+    };
+
+    assert_eq!(
+        words("opencode", Some("openai"), Way::Browser).unwrap()[2..],
+        [
+            "--provider",
+            "openai",
+            "--method",
+            "ChatGPT Pro/Plus (browser)"
+        ][..]
+    );
+    assert_eq!(
+        words("opencode", Some("openai"), Way::Device).unwrap()[2..],
+        [
+            "--provider",
+            "openai",
+            "--method",
+            "ChatGPT Pro/Plus (headless)"
+        ][..]
+    );
+    assert_eq!(words("codex", None, Way::Browser).unwrap(), ["login"]);
+    assert_eq!(
+        words("codex", None, Way::Device).unwrap(),
+        ["login", "--device-auth"]
+    );
+    assert!(words("claude", None, Way::Device).is_err());
+    assert!(words("opencode", Some("github-copilot"), Way::Device).is_err());
+    // Copilot's own flow is the one purlis drives: asked for by browser, it runs as it is.
+    assert_eq!(
+        words("opencode", Some("github-copilot"), Way::Browser),
+        words("opencode", Some("github-copilot"), Way::Asked)
+    );
+    assert_eq!(Way::named("device"), Some(Way::Device));
+    assert_eq!(Way::named("anything"), None);
+}
+
 /// What a [`Look`] was asked, in order: each program run with its words and folder variables,
 /// and each path whose name was looked for. A `Look` has no way to read a file, so this is
 /// every file purlis touches to tell whether a profile is signed in.
@@ -539,6 +587,34 @@ fn a_runners_sign_in_runs_the_pinned_version_it_installed() {
         "{:?}",
         login.env
     );
+}
+
+/// **Signing out is the harness's own** (#4043), by the version it signed in with, in the
+/// profile's folder.
+#[test]
+fn a_runners_sign_out_is_its_harnesss_own_by_the_pinned_version() {
+    let installed = PathBuf::from("/runner/data/harnesses/claude/2.1.300/claude");
+
+    let claude = logout_of(&kept_pinned("claude"), Some(&installed)).expect("a sign-out");
+    let codex = logout_of(&kept_pinned("codex"), Some(&installed)).expect("a sign-out");
+
+    assert_eq!(claude.program, installed.display().to_string());
+    assert_eq!(claude.args, ["auth", "logout"]);
+    assert_eq!(codex.args, ["logout"]);
+    assert!(
+        claude.env.iter().any(|(n, _)| n == "CLAUDE_CONFIG_DIR"),
+        "{:?}",
+        claude.env
+    );
+}
+
+/// **opencode's sign-out asks which in its own terminal**, so purlis runs none.
+#[test]
+fn a_harness_with_no_plain_sign_out_is_refused_in_words() {
+    let why = logout_of(&kept_pinned("opencode"), Some(Path::new("/bin/opencode")))
+        .expect_err("no sign-out");
+
+    assert!(why.contains("signed nothing out"), "{why}");
 }
 
 /// A machine that answers every status with 0, and installs `pinned` as a runner's pinned

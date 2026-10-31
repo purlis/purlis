@@ -276,6 +276,22 @@ pub(super) const STATUS_ITEM: Family = Family {
             description: "Its count.",
             properties: &[Prop::Text],
         },
+        Part {
+            name: "dot",
+            since: super::NEXT,
+            description: "The dot a project's or the app's result leaves on the Notices item's \
+                          corner while its card is hidden, where the most urgent is news: its \
+                          disc and its fill, ringed in the bar's ground.",
+            properties: &[Prop::Fill, Prop::Text],
+        },
+        Part {
+            name: "dot-warning",
+            since: super::NEXT,
+            description: "The dot on the Notices item's corner where the most urgent of its \
+                          hidden results is a warning: its triangle and its fill, ringed in the \
+                          bar's ground.",
+            properties: &[Prop::Fill, Prop::Text],
+        },
     ],
     variants: &[
         Variant {
@@ -319,10 +335,13 @@ pub(super) const STATUS_ITEM: Family = Family {
         State::Disabled,
     ],
     focused: "[data-focus-visible]",
-    words: &[],
+    // The Notices item's dot (#3653): its shape, a mark, in the window's ground on the accent,
+    // or on the waiting amber for a warning, as a chip's dot is (#3649).
+    words: &[("dot", "surface.base"), ("dot-warning", "surface.base")],
     corner_most: None,
-    around: &[],
-    fills: &[],
+    // The dot is the item's sibling over its corner (#3653), drawn around the item.
+    around: &["dot", "dot-warning"],
+    fills: &[("dot", "accent.base"), ("dot-warning", "state.waiting")],
     under: &[],
 };
 
@@ -656,48 +675,53 @@ fn titlebar_look(variant: &str, states: &[State]) -> Look {
 /// the card's fill under the pointer and while open; a switcher's row and its pin stand on the
 /// popover, the row Enter would go to on the selected fill; a row's count is its amber wash, laid
 /// on the popover or on that selected row.
-pub(super) fn titlebar_apart_look(part: &str, state: Option<State>) -> super::ApartLook {
+pub(super) fn titlebar_apart_look(part: &str, states: &[State]) -> super::ApartLook {
     use super::ApartLook;
     const BAR: &[&str] = &["surface.deep"];
     const POPOVER: &[&str] = &["surface.overlay"];
-    let lit = matches!(state, Some(State::Hover | State::Selected));
-    match (part, state) {
-        ("crumb", _) => ApartLook {
+    let hovered = states.contains(&State::Hover);
+    let selected = states.contains(&State::Selected);
+    let lit = hovered || selected;
+    match part {
+        "crumb" => ApartLook {
             fill: if lit { "surface.overlay" } else { TRANSPARENT },
             words: "text.secondary",
             under: BAR,
         },
-        ("all", _) => ApartLook {
+        "all" => ApartLook {
             fill: if lit { "surface.overlay" } else { TRANSPARENT },
             words: if lit { "text.primary" } else { "text.quiet" },
             under: BAR,
         },
-        ("pin", Some(State::Hover)) => ApartLook {
-            fill: "surface.overlay",
-            words: "text.primary",
+        // Pinned, the accent wins over the pointer's primary, on the pointer's fill (#4000).
+        "pin" => ApartLook {
+            fill: if hovered { "surface.overlay" } else { TRANSPARENT },
+            words: if selected {
+                "accent.base"
+            } else if hovered {
+                "text.primary"
+            } else {
+                "text.faint"
+            },
             under: POPOVER,
         },
-        ("pin", Some(State::Selected)) => ApartLook {
-            fill: TRANSPARENT,
-            words: "accent.base",
+        // The row Enter would go to is drawn after the pointer's, so it wins over it.
+        "row" => ApartLook {
+            fill: if selected {
+                "list.selected"
+            } else if hovered {
+                "surface.overlay"
+            } else {
+                TRANSPARENT
+            },
+            words: if selected {
+                "text.primary"
+            } else {
+                "text.secondary"
+            },
             under: POPOVER,
         },
-        ("pin", _) => ApartLook {
-            fill: TRANSPARENT,
-            words: "text.faint",
-            under: POPOVER,
-        },
-        ("row", Some(State::Hover)) => ApartLook {
-            fill: "surface.overlay",
-            words: "text.secondary",
-            under: POPOVER,
-        },
-        ("row", Some(State::Selected)) => ApartLook {
-            fill: "list.selected",
-            words: "text.primary",
-            under: POPOVER,
-        },
-        ("row-count", _) => ApartLook {
+        "row-count" => ApartLook {
             fill: "wash.warning",
             words: "state.waiting",
             under: &["surface.overlay", "list.selected"],

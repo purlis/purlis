@@ -45,6 +45,29 @@ impl Lock {
         self.0.as_ref()
     }
 
+    /// [`Lock::on`] without the wait: `None` while another holder has `dir`. A directory that
+    /// cannot be locked is answered as held by nobody, for the module header's reason.
+    pub fn try_on(dir: &Path) -> Option<Self> {
+        #[cfg(unix)]
+        {
+            let Ok(file) =
+                crate::contain::nofollow(std::fs::OpenOptions::new().read(true)).open(dir)
+            else {
+                return Some(Self(None));
+            };
+            match rustix::fs::flock(&file, rustix::fs::FlockOperation::NonBlockingLockExclusive) {
+                Ok(()) => Some(Self(Some(file))),
+                Err(rustix::io::Errno::WOULDBLOCK) => None,
+                Err(_) => Some(Self(None)),
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = dir;
+            Some(Self(None))
+        }
+    }
+
     /// Lock `dir`, blocking until any other holder lets go. Never fails; see the module header.
     pub fn on(dir: &Path) -> Self {
         #[cfg(unix)]

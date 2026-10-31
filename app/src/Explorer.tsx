@@ -42,6 +42,7 @@ import {
 import { PLANE_ROOT, isPlaneRoot, type Place } from "./pieceViews";
 import { catalogueMenu } from "./Menus";
 import { NotClonedHere, type Cloning } from "./NotCloned";
+import { stopRepoClones } from "./repoClones";
 import { WorktreeMark } from "./Worktree";
 import { OUTSIDE_TITLE } from "./actions";
 import type { BranchPath, Catalogued, FileOn, FileRef, Offer } from "./actions";
@@ -1512,6 +1513,9 @@ function ReposSection({
         cloning={cloning}
         offers={offers}
         onPress={onPress}
+        onStop={
+          project === undefined ? undefined : (repo) => stopRepoClones(project, workspace, [repo])
+        }
       />
 
       {panels?.refused.map(([name, why]) => (

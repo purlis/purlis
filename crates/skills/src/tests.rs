@@ -1084,6 +1084,23 @@ fn a_reference_is_read_by_its_prefix() {
 }
 
 #[test]
+fn only_a_built_in_skill_written_with_the_old_prefix_is_written_old() {
+    // #2934: what `persona lint` says the migration rewrites (#2784).
+    for old in ["charter:handoff", " charter : handoff "] {
+        assert!(Reference::written_old(old), "{old:?}");
+    }
+    for not in [
+        "purlis:handoff",
+        "charter:",
+        "handoff",
+        "mycharter:x",
+        "sp:charter",
+    ] {
+        assert!(!Reference::written_old(not), "{not:?}");
+    }
+}
+
+#[test]
 fn a_persona_name_that_is_not_one_plain_name_has_no_folder() {
     let plane = Plane::new();
     assert_eq!(persona_dir(&plane.root, "../x", false), None);

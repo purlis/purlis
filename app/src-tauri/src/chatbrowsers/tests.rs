@@ -2786,6 +2786,7 @@ fn a_pool_as(image: &str) -> purlis_core::poollogins::Bound {
         runner: "01JB0RUNNER0000000000000000".into(),
         runner_key: "ab".repeat(32),
         runner_image: image.into(),
+        pod: String::new(),
         engine: "this machine's Docker (/var/run/docker.sock)".into(),
     }
 }

@@ -194,6 +194,32 @@ describe("the command palette", () => {
     await vi.waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
+  it("offers a refusal's ways and closes as one is pressed (#3968)", async () => {
+    const onPress = vi.fn();
+    render(
+      <Palette
+        offers={OFFERS}
+        said={{
+          from: "curate:workspace:alpha/charter/safe-remove",
+          refused: true,
+          words: "Nobody approved the profile work here yet.",
+          ways: [{ label: "Approve and start…", primary: true, onPress }],
+        }}
+        onRun={ok}
+      />,
+    );
+    await open();
+
+    const said = within(screen.getByRole("dialog"))
+      .getByText("Nobody approved the profile work here yet.")
+      .closest<HTMLElement>('[role="status"]');
+    if (said === null) throw new Error("the refusal is not said");
+    await userEvent.click(within(said).getByRole("button", { name: "Approve and start…" }));
+
+    expect(onPress).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
   it("leaves on Escape, having run nothing", async () => {
     const onRun = vi.fn(ok);
     render(<Palette offers={[ready("chat.new", "New tab")]} onRun={onRun} />);

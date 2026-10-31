@@ -139,3 +139,40 @@ fn skill_grade_says_a_row_it_skipped_and_shows_no_grade_of_it() {
         "{text}"
     );
 }
+
+/// #3602: a grade purlis stopped under before it was scored: its marker said its chats spent
+/// 8,000 tokens over the 4 it asked for, 2 of which ran.
+const INTERRUPTED: &str = concat!(
+    "{\"commit\": null, \"grade\": \"01JBGRADE00000000000000002\", \"harness\": \"claude\", ",
+    "\"level\": \"skills\", \"profile\": \"work\", \"report\": {\"arms\": [], \"cap\": 200000, ",
+    "\"delta\": null, \"ended\": \"interrupted\", \"grader\": \"purlis\", \"not_started\": null, ",
+    "\"spent_tokens\": 8000, \"spent_usd\": null, \"triggers\": []}, \"runs\": 3, ",
+    "\"skill\": \"deploy\", \"spent\": {\"asked_for\": 4, \"chats\": 2, \"cost_usd\": null, ",
+    "\"tokens\": 8000}, \"tree\": \"uncommitted\", \"ts\": \"2026-10-27T10:00:00+00:00\", ",
+    "\"v\": 1}\n"
+);
+
+/// #3602: a skill whose only grade was interrupted has its estimate worked out from that grade's
+/// spend, shared over the chats it asked for, and it says it was interrupted.
+#[test]
+fn skill_grade_works_its_estimate_out_from_an_interrupted_grade_3602() {
+    let p = Project::new();
+    let root = p.at.join("plane");
+    std::fs::write(
+        root.join("personas/_grades/2026-10.laptop.jsonl"),
+        INTERRUPTED,
+    )
+    .unwrap();
+    let out = p.run(&["skill", "grade", "deploy"]);
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    let said = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(out.status.success(), "{said}");
+    assert!(!said.contains("skipped"), "{said}");
+    assert!(
+        text.contains(
+            "From its interrupted grade on work (Claude Code), 2026-10-27, of 4 chats, a grade \
+             spends about 24000 tokens."
+        ),
+        "{text}"
+    );
+}

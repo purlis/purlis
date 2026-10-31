@@ -118,8 +118,9 @@ const LINES: [&str; 9] = [
 ];
 
 /// The furthest ahead a statement's `until` may be: an operator signs one for ten minutes, and
-/// purlis reads none that claims to hold past an hour from now, whatever signed it.
-pub const MOST_AHEAD: u64 = 3600;
+/// purlis allows five more for this machine's clock running behind the cluster's, and reads none
+/// that claims to hold past that, whatever signed it.
+pub const MOST_AHEAD: u64 = 15 * 60;
 
 /// The longest value a statement's line holds.
 const MOST_VALUE: usize = 512;
@@ -382,7 +383,7 @@ pub const ROLL_HEADER: &str = "purlis cluster operator key roll v1";
 
 /// The longest a key roll's word holds from now: the operator signs one for seven days, and
 /// purlis reads none that claims to hold an hour past that, whatever signed it.
-pub const ROLL_MOST_AHEAD: u64 = 7 * 24 * 3600 + MOST_AHEAD;
+pub const ROLL_MOST_AHEAD: u64 = 7 * 24 * 3600 + 3600;
 
 /// **The current operator key's word for the next one** (#3305): in the cluster `cluster`, the
 /// key `from` rolls to the key `to`, until `until` (seconds since the epoch). Signed as its text,
@@ -641,6 +642,8 @@ pub struct Kubectl {
     path: Option<std::ffi::OsString>,
     /// The folder its discovery and HTTP caches are kept in (`--cache-dir`), where one is named.
     cache_dir: Option<PathBuf>,
+    /// How long each run is waited for, where it is held to a time ([`Kubectl::within`]).
+    within: Option<std::time::Duration>,
 }
 
 /// The variables a run of kubectl is never handed from this process: the kubeconfig is named,
@@ -679,7 +682,16 @@ impl Kubectl {
             context: None,
             path: None,
             cache_dir: None,
+            within: None,
         }
+    }
+
+    /// This kubectl, each run ended and refused once `within` is up (#4071): what a check that
+    /// must fail closed runs, so a cluster that does not answer never holds it.
+    #[must_use]
+    pub fn within(mut self, within: std::time::Duration) -> Kubectl {
+        self.within = Some(within);
+        self
     }
 
     /// This kubectl, keeping its caches in `folder` (`--cache-dir`) rather than the home's.
@@ -870,6 +882,50 @@ impl Kubectl {
         ])
     }
 
+    /// **The words that run `pod`'s runner's own `purlis profile sign-in` of its profile `name`**
+    /// in `namespace` (#3819), to `provider`'s plan where one is named, by `typed`: the same
+    /// sign-in a Docker runner runs ([`crate::dockerpool::sign_in_words`]), as the pod's own
+    /// user, in the runner's container.
+    pub fn sign_in_args(
+        &self,
+        namespace: &str,
+        pod: &str,
+        typed: crate::dockerpool::Typed,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Vec<String> {
+        let mut args = self.args(&[
+            "exec",
+            typed.exec_flag(),
+            "--namespace",
+            namespace,
+            "--container",
+            RUNNER_CONTAINER,
+            &format!("pod/{pod}"),
+            "--",
+        ]);
+        args.extend(crate::dockerpool::sign_in_words(typed, name, provider));
+        args
+    }
+
+    /// **The words that run `pod`'s runner's own `purlis` with `words`** in `namespace`, with
+    /// pipes (#3819): its version, a profile's sign-out.
+    pub fn purlis_args(&self, namespace: &str, pod: &str, words: &[&str]) -> Vec<String> {
+        let mut args = self.args(&[
+            "exec",
+            "-i",
+            "--namespace",
+            namespace,
+            "--container",
+            RUNNER_CONTAINER,
+            &format!("pod/{pod}"),
+            "--",
+            PURLIS,
+        ]);
+        args.extend(words.iter().map(|word| (*word).to_owned()));
+        args
+    }
+
     /// The pairing's words: the bridge's pairing, taking the key the pod made as it started.
     pub fn pair_args(&self, namespace: &str, pod: &str) -> Vec<String> {
         let mut args = self.connect_args(namespace, pod);
@@ -897,7 +953,14 @@ impl Kubectl {
             command.env_remove(name);
         }
         command.args(args);
-        let ran = crate::boundedrun::run(&mut command, input, most, MOST_SAID).map_err(|why| {
+        let ran = crate::boundedrun::run_within(
+            &mut command,
+            input,
+            most,
+            MOST_SAID,
+            self.within,
+        )
+        .map_err(|why| {
             use crate::boundedrun::Unanswered;
             Refused::Other(match why {
                 Unanswered::NotStarted(why) => {
@@ -1099,7 +1162,8 @@ impl Kubectl {
     }
 
     /// The statement and its signatures on the Claim `namespace`/`name`'s status, where the
-    /// operator has written one.
+    /// operator has written one. **A Claim being deleted vouches for nothing** (#4071): its
+    /// finalizer keeps it there, statement and all, while its runner is taken away.
     pub fn statement(&self, namespace: &str, name: &str) -> Result<Option<Signed>, Refused> {
         let held = self.json(
             &[
@@ -1113,6 +1177,12 @@ impl Kubectl {
             ],
             None,
         )?;
+        if held
+            .pointer("/metadata/deletionTimestamp")
+            .is_some_and(|since| !since.is_null())
+        {
+            return Ok(None);
+        }
         let field = |name: &str| {
             held.pointer(&format!("/status/linkKey/{name}"))
                 .and_then(serde_json::Value::as_str)
@@ -1127,8 +1197,81 @@ impl Kubectl {
             }))
     }
 
+    /// **Whether the runner of the Claim `namespace`/`name` of the Pool `pool` is still serving**,
+    /// before a value goes to it: neither is stopped and the Claim's `KeyPublished` condition says
+    /// `Vouched`. None of this is signed, so it only ever refuses: the signed statement is what
+    /// vouches ([`vouched_for`]).
+    pub fn serving(&self, namespace: &str, name: &str, pool: &str) -> Result<(), Refused> {
+        let claim = self.json(
+            &[
+                "get",
+                "claims.runners.purlis.dev",
+                name,
+                "--namespace",
+                namespace,
+                "--output",
+                "json",
+            ],
+            None,
+        )?;
+        let of_the_pool = self.json(
+            &["get", "pools.runners.purlis.dev", pool, "--output", "json"],
+            None,
+        )?;
+        let stopped = |held: &serde_json::Value| {
+            held.pointer("/spec/stopped") == Some(&serde_json::Value::Bool(true))
+        };
+        let vouched = claim
+            .pointer("/status/conditions")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|conditions| {
+                conditions.iter().find(|one| {
+                    one.get("type").and_then(serde_json::Value::as_str) == Some("KeyPublished")
+                })
+            })
+            .is_some_and(|published| {
+                let field = |name: &str| published.get(name).and_then(serde_json::Value::as_str);
+                field("status") == Some("True") && field("reason") == Some("Vouched")
+            });
+        if stopped(&claim) || stopped(&of_the_pool) || !vouched {
+            return Err(Refused::NotVouched(format!(
+                "the runner of claim {namespace}/{name} is stopped, or the cluster operator's word \
+                 on it is no longer that it vouches for it"
+            )));
+        }
+        Ok(())
+    }
+
+    /// **The uid of the pod `namespace`/`pod`** as the cluster says now: a pod made again under
+    /// its name has another. Refused where it is being deleted or names none.
+    pub fn pod_uid(&self, namespace: &str, pod: &str) -> Result<String, Refused> {
+        let held = self.json(
+            &[
+                "get",
+                "pods",
+                pod,
+                "--namespace",
+                namespace,
+                "--output",
+                "json",
+            ],
+            None,
+        )?;
+        let deleting = held
+            .pointer("/metadata/deletionTimestamp")
+            .is_some_and(|since| !since.is_null());
+        held.pointer("/metadata/uid")
+            .and_then(serde_json::Value::as_str)
+            .filter(|uid| !deleting && plain(uid))
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                Refused::NotVouched(format!("the pod {namespace}/{pod} is not there as it was"))
+            })
+    }
+
     /// **The Claim `namespace`/`name` as the cluster holds it** (#3292): its uid, who asked for
-    /// it and the desktop it is marked as ([`DESKTOP_ANNOTATION`]); `None` where there is none.
+    /// it, the desktop it is marked as ([`DESKTOP_ANNOTATION`]) and whether it is kept (#3819);
+    /// `None` where there is none.
     pub fn claim_seen(&self, namespace: &str, name: &str) -> Result<Option<ClaimSeen>, Refused> {
         let printed = self.run(
             &self.args(&[
@@ -1162,6 +1305,7 @@ impl Kubectl {
                 .and_then(|marks| marks.get(DESKTOP_ANNOTATION))
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_owned),
+            kept: held.pointer("/spec/kept") == Some(&serde_json::Value::Bool(true)),
         }))
     }
 
@@ -1203,6 +1347,8 @@ pub struct ClaimSeen {
     pub uid: String,
     pub requester: Option<String>,
     pub desktop: Option<String>,
+    /// Whether it is a kept claim (`spec.kept`, #2057): its runner's home outlives its pod.
+    pub kept: bool,
 }
 
 /// **Whether a kubeconfig's context can be named to kubectl** (#3292): plain text, at most 253
@@ -1360,8 +1506,8 @@ pub fn checked_at(
     if vouched.until > now.saturating_add(MOST_AHEAD) {
         return Err(Refused::NotVouched(format!(
             "the cluster operator's statement about the runner of claim {}/{} says it holds for \
-             more than an hour, which no statement does, so purlis refused it; check this \
-             machine's clock",
+             more than fifteen minutes, which no statement does, so purlis refused it. This \
+             machine's clock is probably behind the cluster's: set it right and try again",
             claimed.namespace, claimed.name
         )));
     }

@@ -458,7 +458,10 @@ _Avoid_: session protocol (for any of it), public API
 **Runner**:
 A device, other than the one the window is on, whose own session host runs a workspace's chats,
 serves a version of one of its repos, or runs browsers, as its **label** says; one marked owned
-may run chats and browsers in one session host. A long-lived runner
+may run chats and browsers in one session host; a cluster pool's runner is marked by the person
+alone, per pool, in the window (*This is my own*, `owned` in `runners.json`), and that mark gates
+vault values and tokens, each also needing the operator to vouch for its claim at that moment
+(ADR 0089, amended 2026-10-26, item 3). A long-lived runner
 is a machine the operator adds; a short-lived one is made by a **runner provider** for a human or
 a chat, for minutes or hours. Either way the desktop's session host reaches it through a
 **connector** and talks to it over a **link**, and its shell, logs, ports and browser views come
@@ -550,6 +553,18 @@ moves its pin (ADR 0089, amended 2026-10-29). In a sentence the app shows,
 "purlis in your cluster".
 _Avoid_: operator (unqualified, where the person could be meant), controller, manager, master
 
+**Sign in** (a profile, on a pool):
+To have a profile's harness sign in on a pool's runner by its own login, run there, with nothing of
+this machine's sign-in carried to it (ADR 0095). The window drives the login in place, in a strip
+on the profile's line: it opens the login's page in the browser here, takes the code the page shows
+and passes it back, shows the device code a vendor's login gives, or, for a login that waits for
+the browser, carries that one redirect to the runner, and says the profile is **signed in on
+<pool>** once the harness's own status check on the runner says so (spec #4023).
+`purlis profile sign-in <profile> --pool <pool>` takes the same steps in a terminal. As a verb, two
+words; the noun is "sign-in".
+_Avoid_: log in, login (for the verb), authenticate, authorize, connect (an account), copy a
+sign-in (nothing is copied)
+
 **Grant** (to a runner):
 A human's approval, once per workspace on this machine, of one vault entry an app runner's spec
 declares it needs. purlis injects the value when that runner starts and only when it builds a
@@ -562,8 +577,9 @@ _Avoid_: permission, secret (for the approval), capability (that is an extension
 The person's answer, in an Ask, that one persona's browser login may be filled in its chats'
 browsers on one pool's runner: bound to that login as declared and allowed, to the pool as it is
 defined, its image, the runner that receives the values and the engine it runs on, and kept only
-while purlis runs. It is asked only where purlis can show the runner is the person's own: until a
-pool can be marked owned, a Docker pool on this machine's own engine. A runner not shown to be
+while purlis runs. It is asked only where purlis can show the runner is the person's own: a Docker
+pool on this machine's own engine, or a cluster pool the person marked *This is my own* whose
+claim the operator vouches for at that moment. A runner not shown to be
 owned is never asked about and never receives a value. A login that waited while the desktop
 was away is asked about afresh. It adds to ownership, never stands in for it (ADR 0089, amended
 2026-10-26).

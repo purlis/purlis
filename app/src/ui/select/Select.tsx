@@ -57,7 +57,7 @@ import {
   type Key,
 } from "react-aria-components";
 import { Check, ChevronDown, Search } from "lucide-react";
-import { ErrorLine, TextField, describedBy, type FieldSize } from "../field/Field";
+import { ErrorLine, TextField, describedBy, useFormSummary, type FieldSize } from "../field/Field";
 import { PopoverFilter, Surface } from "../popover/Popover";
 import { Tooltip } from "../tooltip/Tooltip";
 
@@ -139,6 +139,8 @@ export function Select({
   // A reason with no words is no refusal: nothing would be heard or drawn.
   const error = written === "" ? undefined : written;
   const invalid = error !== undefined || isInvalid === true;
+  // A pick fires no native change: it ends its form's summary itself (#3291).
+  const { end } = useFormSummary();
   const aria: Record<string, unknown> = {};
   const data: Record<string, unknown> = {};
   for (const [key, one] of Object.entries(given))
@@ -155,7 +157,9 @@ export function Select({
         // is the lock** (D-2906-11): the row drops the press handlers it knows of, but a press
         // React Aria reaches it by in a later version, typeahead on the closed button and the
         // form's hidden select all end here, and pick nothing.
-        if (!options.some((one) => one.value === to && saysWhy(one))) onValueChange(to);
+        if (options.some((one) => one.value === to && saysWhy(one))) return;
+        end();
+        onValueChange(to);
       }}
       isDisabled={isDisabled}
       isInvalid={invalid}

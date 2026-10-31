@@ -162,6 +162,7 @@ fn a_lint_of_a_harness_skill_its_switch_can_leave_out_is_a_problem_in_a_skill() 
         title: "Claude Code".to_owned(),
         skills: vec![mine, plugin],
         repo_left_out: Vec::new(),
+        own: None,
     }];
 
     let needs = of(&studio);
@@ -367,4 +368,60 @@ fn a_summary_lines_count_reads_less_and_counts_what_the_page_holds() {
         ]
     );
     assert_eq!(counted, page.needs.len());
+}
+
+/// An extension's lint, as a list asks it: it says one thing of the skill `of`.
+struct HouseStyle {
+    of: &'static str,
+}
+
+impl purlis_core::skills::SkillLint for HouseStyle {
+    fn findings(
+        &self,
+        skill: &purlis_core::skills::SkillFiles<'_>,
+    ) -> Vec<purlis_core::skills::Finding> {
+        (skill.name == self.of)
+            .then(|| purlis_core::skills::Finding {
+                severity: purlis_core::skills::Severity::Warns,
+                lint: purlis_core::skills::Lint::Said {
+                    by: "House style".to_owned(),
+                    says: "steps are numbered".to_owned(),
+                },
+            })
+            .into_iter()
+            .collect()
+    }
+}
+
+#[test]
+fn an_extensions_lint_is_a_problem_in_a_skill_counted_alike_on_the_page_and_a_summary_line() {
+    // #3940: the list asks the extensions' lints of the plane's own skills, and Needs you holds
+    // what they say, counted the same way by a persona's Skills line.
+    let tmp = tempfile::tempdir().unwrap();
+    for name in ["deploy", "ship"] {
+        skill(
+            &tmp.path().join("skills"),
+            name,
+            &format!("---\nname: {name}\ndescription: Does {name} for the whole team.\n---\n"),
+        );
+    }
+    let lint = HouseStyle { of: "deploy" };
+    let more: [&dyn purlis_core::skills::SkillLint; 1] = [&lint];
+    let mut page =
+        crate::skillstudio::studio_linted(tmp.path(), None, true, None, None, &no_harness(), &more);
+    crate::skillstudio::with_the_projects_needs(&mut page, tmp.path(), &[]);
+
+    let counted =
+        crate::skillstudio::needing_with(tmp.path(), None, &[], None, None, &no_harness(), &more);
+
+    let deploy = page
+        .skills
+        .iter()
+        .find(|one| one.name == "deploy")
+        .expect("deploy listed");
+    assert_eq!(deploy.lint, ["House style: steps are numbered"]);
+    assert_eq!(kinds(&page.needs), [(NeedKind::Problem, "deploy")]);
+    assert_eq!(counted, page.needs.len());
+    let unlinted = studio(tmp.path(), None, true, None, None, &no_harness());
+    assert_eq!(unlinted.needs, []);
 }

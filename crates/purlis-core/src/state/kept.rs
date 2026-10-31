@@ -231,14 +231,11 @@ impl Board {
             ),
             Heard::Refused(refused) => self.commit_refused(refused.chat, &refused.commit_refused),
             Heard::Tool(call) => {
-                let mut changed = false;
-                if call.refused_a_root_update() {
-                    changed |= self.needs(call.chat, Need::RootUpdateRefused);
-                }
-                if let Some(agent) = &call.agent {
-                    changed |= self.child_heard(call.chat, agent);
-                }
-                changed
+                // A refused root update raises nothing (#3877): the chat retries it with
+                // `purlis worktree update`.
+                call.agent
+                    .as_ref()
+                    .is_some_and(|agent| self.child_heard(call.chat, agent))
             }
             Heard::Doing(doing) => {
                 if !doing.doing.goes_on_past_a_prompt() && !doing.doing.starts_a_tool_of_its_own() {

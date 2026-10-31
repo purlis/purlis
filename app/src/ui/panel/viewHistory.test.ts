@@ -78,7 +78,11 @@ describe("a tab's history", () => {
   it("is kept by the tab, found again when its view draws again, and shared by no other", () => {
     const first = renderHook(() => useViewHistory("one", "Library"));
     act(() => first.result.current.go("deploy"));
-    expect(first.result.current).toMatchObject({ at: "deploy", canGoBack: true });
+    expect(first.result.current).toMatchObject({
+      at: "deploy",
+      behind: "Library",
+      canGoBack: true,
+    });
     first.unmount();
     // The tab back in front: its view draws again and finds where it was.
     const again = renderHook(() => useViewHistory("one", "Library"));
@@ -92,6 +96,7 @@ describe("a tab's history", () => {
     act(() => again.result.current.back());
     expect(again.result.current).toMatchObject({
       at: "Library",
+      behind: undefined,
       canGoBack: false,
       canGoForward: true,
     });
