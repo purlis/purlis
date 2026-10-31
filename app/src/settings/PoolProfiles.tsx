@@ -37,6 +37,10 @@ export const approvesIn = (kind: string, plan?: string) =>
  *  which its line opens (#4124). */
 const SIGNS_OUT = new Set(["claude", "codex"]);
 
+/** What a terminal sign-out reaches (#4274): the running runner, never one still draining. */
+const SIGNS_OUT_IN_A_TERMINAL_ON =
+  "This signs out on the running runner. A draining runner keeps its sign-in until it is removed, and it is not carried.";
+
 /** What a profile's line says of it while its sign-in strip is open (spec #4023 story 29). */
 const STANDING_SAID: Record<SignInStanding, string> = {
   "signing-in": "Signing in…",
@@ -331,14 +335,17 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
                     {`${row.harness} signs out in a terminal: open a project to sign ${row.name} out here.`}
                   </span>
                 ) : (
-                  <Button
-                    variant="ghost"
-                    aria-label={`Sign out ${row.name} on pool ${pool} in a terminal`}
-                    onPress={() => askProfileSignOut(plane, row.name, pool)}
-                    className="ui-setting-reset"
-                  >
-                    Sign out in a terminal
-                  </Button>
+                  <>
+                    <span className="ui-setting-help">{SIGNS_OUT_IN_A_TERMINAL_ON}</span>
+                    <Button
+                      variant="ghost"
+                      aria-label={`Sign out ${row.name} on pool ${pool} in a terminal`}
+                      onPress={() => askProfileSignOut(plane, row.name, pool)}
+                      className="ui-setting-reset"
+                    >
+                      Sign out in a terminal
+                    </Button>
+                  </>
                 )
               ) : out?.name === row.name && !out.running ? (
                 <>

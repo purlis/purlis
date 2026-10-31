@@ -430,6 +430,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
         await screen.findByRole("button", { name: "Sign out open on pool builds in a terminal" }),
       );
       expect(typed).toEqual([{ plane: "/home/op/project", profile: "open", pool: "builds" }]);
+      expect(screen.getByText(/A draining runner keeps its sign-in/)).toBeInTheDocument();
     } finally {
       window.removeEventListener(PROFILE_SIGN_OUT, heard);
       signedIn = false;
