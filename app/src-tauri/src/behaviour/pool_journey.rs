@@ -159,7 +159,7 @@ fn the_desktops_profile(machine: &Machine, root: &Path, folder: &Path) {
     std::fs::write(
         root.join(purlis_core::profiles::LOCAL_FILE),
         format!(
-            "[harness.{PROFILE}]\nkind = \"claude\"\nenv = {{ CLAUDE_CONFIG_DIR = {:?} }}\n",
+            "[harness.{PROFILE}]\nkind = \"claude\"\ncommand = [\"claude\"]\nenv = {{ CLAUDE_CONFIG_DIR = {:?} }}\n",
             folder.display().to_string()
         ),
     )
