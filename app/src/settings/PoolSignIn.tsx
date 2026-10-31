@@ -15,10 +15,25 @@ import { SignInTerminal, type Printer } from "./SignInTerminal";
 export type StripStep =
   | { at: "starting" }
   | Exclude<PoolSignInStep, { at: "printed" }>
+  | { at: "device-in-terminal" }
   | { at: "not-started"; why: string };
 
 /** A profile's standing on its line while its strip is open (spec #4023 story 29). */
 export type SignInStanding = "signing-in" | "in-the-terminal" | "failed" | "signed-in";
+
+/**
+ * Whether the login of harness `kind` to `plan` is approved in the browser, with nothing to paste
+ * (#4044): Codex's, and opencode's ChatGPT one.
+ */
+export const approvesIn = (kind: string, plan?: string) =>
+  kind === "codex" || (kind === "opencode" && plan === "openai");
+
+/**
+ * Whether the sign-in of harness `kind` to the plan `plan` is driven in place: opencode's Copilot
+ * (#4045) and its ChatGPT (#4044).
+ */
+export const drivenPlan = (kind: string, plan: string) =>
+  kind === "opencode" && (plan === "github-copilot" || plan === "openai");
 
 /** The size of the strip's terminal: as wide as a login expects, and a few lines shorter. */
 const TERMINAL: PoolSignInTerminal = { columns: 80, rows: 16 };
@@ -47,6 +62,8 @@ export function stepSaid(step: StripStep, device = false, approves = false): str
       return `Step ${steps} of ${steps}: Checking it is signed in on the runner`;
     case "could-not-follow":
       return "purlis could not follow this sign-in: the runner's own terminal is open below";
+    case "device-in-terminal":
+      return `Step 1 of ${steps}: Enter the device code the terminal below shows`;
     default:
       return null;
   }
@@ -62,7 +79,8 @@ export function stepSaid(step: StripStep, device = false, approves = false): str
  * vendor's own https host, opened when the person asks. Codex's, and opencode's ChatGPT one
  * (#4044), have nothing to paste: the person approves in the page, and purlis carries the
  * browser's answer to the runner. A port taken on this Mac is said, with a device code as the way
- * out. Nothing of this Mac's sign-in goes to the runner (ADR 0095).
+ * out, run in the strip's own terminal, so it needs no project (#4106). Nothing of this Mac's
+ * sign-in goes to the runner (ADR 0095).
  *
  * Each step is said by the core (`pool_sign_in_next`); the strip draws it, says which step it is
  * on, moves the keyboard to the code field when it appears, and says each step change to a
@@ -76,29 +94,26 @@ export function stepSaid(step: StripStep, device = false, approves = false): str
 export function PoolSignIn({
   pool,
   profile,
+  kind,
   harness,
   provider,
-  approves = false,
   onEnd,
   onTerminal,
-  onDeviceCode,
   onSignedIn,
   onStanding,
 }: {
   pool: string;
   profile: string;
+  /** Its harness, as a profile's kind names it: `claude`. */
+  kind: string;
   /** The harness as people call it: `Claude Code`. */
   harness: string;
   /** The plan it signs in to, for a harness that serves several. */
   provider?: string;
-  /** Whether its login is approved in the browser, with nothing to paste. */
-  approves?: boolean;
   /** The strip is closed; `signedIn` when it ended signed in. */
   onEnd: (signedIn: boolean) => void;
   /** "Open in terminal", where the window can open one. */
   onTerminal?: () => void;
-  /** "Use a device code", where the window can open a terminal for it. */
-  onDeviceCode?: () => void;
   /** Told once the runner says it is signed in, before anything is pressed (#3477). */
   onSignedIn?: () => void;
   /** Told the standing its line says, as it changes. */
@@ -109,8 +124,10 @@ export function PoolSignIn({
   const [code, setCode] = useState("");
   const [pasteRefused, setPasteRefused] = useState<string>();
   const [attempt, setAttempt] = useState(0);
-  // Whether this try runs in the strip's terminal: purlis could not follow the one before.
-  const [inTerminal, setInTerminal] = useState(false);
+  // Why this try runs in the strip's terminal, where it does: purlis could not follow the one
+  // before, or the person asked for a device code (#4106).
+  const [terminalFor, setTerminalFor] = useState<"lost" | "device">();
+  const inTerminal = terminalFor !== undefined;
   const flow = useRef<number>(undefined);
   // What is typed goes on one call at a time, per sign-in, so it reaches the login in order (#4123).
   const typing = useRef<Promise<void>>(Promise.resolve());
@@ -162,7 +179,7 @@ export function PoolSignIn({
           flow.current = undefined;
           // The page the login opened is over with it.
           setPage(undefined);
-          setInTerminal(true);
+          setTerminalFor("lost");
           return;
         }
         if (now.at === "signed-in") signedIn.current?.();
@@ -213,12 +230,27 @@ export function PoolSignIn({
 
   const tryAgain = () => {
     // A sign-in purlis could not follow starts again in the terminal, never at the first step.
-    setStep(inTerminal ? { at: "could-not-follow", said: "" } : { at: "starting" });
+    setStep(
+      terminalFor === "device"
+        ? { at: "device-in-terminal" }
+        : terminalFor === "lost"
+          ? { at: "could-not-follow", said: "" }
+          : { at: "starting" },
+    );
     setPage(undefined);
     setCode("");
     setPasteRefused(undefined);
     printing.current.held = [];
     setAttempt((n) => n + 1);
+  };
+
+  // The port-taken login is over: the core starts the harness's device flow in a terminal.
+  const useDeviceCode = () => {
+    setStep({ at: "device-in-terminal" });
+    setPage(undefined);
+    setPasteRefused(undefined);
+    printing.current.held = [];
+    setTerminalFor("device");
   };
 
   const type = (text: string) => {
@@ -239,9 +271,10 @@ export function PoolSignIn({
     <SignInStrip
       pool={pool}
       profile={profile}
+      kind={kind}
       harness={harness}
       provider={provider}
-      approves={approves}
+      approves={approvesIn(kind, provider)}
       step={step}
       code={code}
       setCode={setCode}
@@ -252,7 +285,7 @@ export function PoolSignIn({
       onEnd={onEnd}
       onTerminal={onTerminal}
       terminal={inTerminal ? { printer, onType: type } : undefined}
-      onDeviceCode={onDeviceCode}
+      onDeviceCode={useDeviceCode}
     />
   );
 }
@@ -261,6 +294,7 @@ export function PoolSignIn({
 function standingAt(step: StripStep): SignInStanding {
   switch (step.at) {
     case "could-not-follow":
+    case "device-in-terminal":
       return "in-the-terminal";
     // A port taken on this Mac ended the sign-in: the person acts on it (#4044).
     case "port-taken":
@@ -278,6 +312,8 @@ function standingAt(step: StripStep): SignInStanding {
 export type SignInStripProps = {
   pool: string;
   profile: string;
+  /** Its harness, as a profile's kind names it. */
+  kind: string;
   harness: string;
   /** The plan it signs in to, for a harness that serves several. */
   provider?: string;
@@ -297,8 +333,8 @@ export type SignInStripProps = {
   onTerminal?: () => void;
   /** The strip's terminal, while a login runs in it or just ended there. */
   terminal?: { printer: Printer; onType: (text: string) => void };
-  /** "Use a device code", where the window can open a terminal for it. */
-  onDeviceCode?: () => void;
+  /** "Use a device code": the harness's device flow, in the strip's terminal (#4106). */
+  onDeviceCode: () => void;
 };
 
 /** **The strip at one step**, as {@link PoolSignIn} drives it: its head, its body, its foot. */
@@ -389,6 +425,7 @@ function troubleAt(step: StripStep, who: string, pool: string, pasteRefused?: st
   switch (step.at) {
     case "code":
     case "could-not-follow":
+    case "device-in-terminal":
       return pasteRefused;
     case "refused":
       return pasteRefused ?? `The sign-in refused that code: ${step.said}`;
@@ -420,7 +457,7 @@ function Body(props: SignInStripProps & { who: string }) {
           size={TERMINAL}
           printer={props.terminal.printer}
           onType={props.terminal.onType}
-          live={props.step.at === "could-not-follow"}
+          live={props.step.at === "could-not-follow" || props.step.at === "device-in-terminal"}
         />
       )}
     </>
@@ -435,7 +472,7 @@ function StepBody({
   setCode,
   onPaste,
   page,
-  harness,
+  kind,
   provider,
   onTerminal,
   onDeviceCode,
@@ -480,19 +517,28 @@ function StepBody({
         </>
       );
     case "port-taken":
-      return onDeviceCode === undefined ? (
-        <p className="ui-setting-help">Open a project to sign in with a device code.</p>
-      ) : (
+      return (
         <>
           <Button size="sm" onPress={onDeviceCode}>
             Use a device code
           </Button>
-          {harness === "Codex" && (
-            <p className="ui-setting-help">
-              Runs <code>codex login --device-auth</code> on the runner, in a terminal.
-            </p>
-          )}
+          <p className="ui-setting-help">
+            {kind === "codex" ? (
+              <>
+                Runs <code>codex login --device-auth</code> on the runner, here in this strip.
+              </>
+            ) : (
+              "Runs its device-code sign-in on the runner, here in this strip."
+            )}
+          </p>
         </>
+      );
+    case "device-in-terminal":
+      return (
+        <p>
+          The runner&apos;s terminal below runs the device-code sign-in. Copy the page it prints to
+          your browser and enter its code there; purlis checks when it ends.
+        </p>
       );
     case "code":
     case "refused":
