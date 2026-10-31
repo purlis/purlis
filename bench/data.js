@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793434514801,
+  "lastUpdate": 1793435962676,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32886,6 +32886,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8589495,
             "unit": "ms",
             "extra": "median of 5 runs: 101.247, 101.705, 101.859, 102.203, 102.855 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a17a810afd40d236e87a22bad3915e6185da5785",
+          "message": "Continue, brokered commits and piece updates stage each file from one open handle (#3211) (#4216)\n\n* Continue, brokered commits and piece updates stage each file from one open handle (#3211)\n\nThe plane's Continue, a sandboxed chat's brokered commit and a branch\nfolder's `--continue` stage through `ondisk::stage_rows`, as saves do:\neach regular file from its one open descriptor, asked again for its\nlink count just before it is hashed, and, where the caller read it to\nlook for conflict markers, as those very bytes.\n\nLinks, deletions and nested repositories are staged by hand from what\nwas looked at (readlinkat on the held folder, update-index\n--force-remove, the nested HEAD read in-process), and changed files are\nhashed on up to four threads.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Staging from one handle: review fixes (#3211)\n\n- A folder the file system will not open is said as such, never read as\n  a deletion of what it holds; only a link or a file on the way is.\n- A large tree is looked at and staged a part at a time (OPEN_AT_ONCE),\n  so no staging holds more descriptors than that.\n- Deletions and rows go in one --index-info write, staged whole or not\n  at all; where no row is written, the blobs hashed for them leave the\n  object store again.\n- With core.fileMode=false a file in conflict keeps the mode git keeps:\n  merged, else ours, else its first stage.\n- A pipe, socket or device is refused in git's words, not skipped.\n- --continue scans each resolved file for markers a part at a time and\n  stages it from the same descriptor, rewound; off unix it looks by name\n  as before. Where the index cannot be refreshed after staging, every\n  resolved file goes back in conflict.\n- Continue drops the backstops the descriptor already covers.\n- A brokered commit looks at every path before staging any, refusing a\n  nested repository, a second name or an odd file with nothing staged;\n  an ignored folder, or a path spelled with ./, is refused as git add\n  refused it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T08:03:41Z",
+          "tree_id": "d274aae3f95885cc22811927dd87c53e14002483",
+          "url": "https://github.com/purlis/purlis/commit/a17a810afd40d236e87a22bad3915e6185da5785"
+        },
+        "date": 1793435956752,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6907369999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.655, 0.660, 0.691, 0.692, 0.696 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5774015,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.442, 16.545, 16.577, 16.587, 16.797 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.51286999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.727, 101.823, 102.513, 102.858, 103.608 ms"
           }
         ]
       }
