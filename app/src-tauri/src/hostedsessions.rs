@@ -2168,8 +2168,9 @@ struct Dimmed {
 struct Held {
     project: String,
     on: u64,
-    /// The runner of the pool it is held on, by name, where this machine keeps one.
-    runner: Option<String>,
+    /// The runners of the pool it may be held on, by name, where this machine keeps any: the
+    /// pool's, and each one draining, which a link already on it stays on.
+    runners: Vec<String>,
 }
 
 impl HostedSessions {
@@ -2437,22 +2438,19 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     } = holding;
     let link = connection.of_project(root, LINK_WITHIN)?;
     let mut held = lock(held);
-    // The pool's runner may have changed under the same link (Make the runner again, an update):
-    // the relay holds the project on the new one, which answers yes and holds none of its code.
-    let runner = (*kept_on_the_runner)
-        .then(|| runner_it_is_held_on(connection))
-        .flatten();
     if let Some(Held {
         project,
         on,
-        runner: held_on_runner,
+        runners,
     }) = &*held
         && *on == link.id
-        && *held_on_runner == runner
     {
-        return Ok((link, project.clone()));
-    }
-    if held.as_ref().is_some_and(|held| held.runner != runner) {
+        // A runner this was held on is kept no more (Make the runner again, a drain's end): the
+        // relay holds the project on the one after it, which answers yes and holds none of its
+        // code, so no word comes back that it does not hold it.
+        if !(*kept_on_the_runner && a_runner_is_gone(connection, runners)) {
+            return Ok((link, project.clone()));
+        }
         crate::runnercode::forget(sent);
     }
     let project = purlis_core::scaffold::planefile::id_to_hold_by(root)
@@ -2571,19 +2569,40 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     *held = Some(Held {
         project: project.clone(),
         on: link.id,
-        runner,
+        runners: if *kept_on_the_runner {
+            runners_of_the_pool(connection)
+        } else {
+            Vec::new()
+        },
     });
     // Held: a mark that a runner would not hold it goes (#2846).
     crate::notheld::held(root);
     Ok((link, project))
 }
 
-/// The name of the runner `connection`'s pool has now, where this machine keeps one.
-fn runner_it_is_held_on(connection: &Connection) -> Option<String> {
-    let (config, pool) = (connection.runners_config()?, connection.pool()?);
+/// The names of the runners `connection`'s pool has now: its own and each one draining. None
+/// where this machine keeps none, or they cannot be read.
+fn runners_of_the_pool(connection: &Connection) -> Vec<String> {
+    let (Some(config), Some(pool)) = (connection.runners_config(), connection.pool()) else {
+        return Vec::new();
+    };
+    let draining = purlis_core::runners::draining(&config).unwrap_or_default();
     purlis_core::runners::runner_for(&config, pool)
-        .ok()
+        .into_iter()
+        .chain(draining.into_iter().filter(|kept| kept.pool() == pool))
         .map(|kept| kept.name().to_owned())
+        .collect()
+}
+
+/// Whether this machine no longer keeps one of `runners`. A list that cannot be read says nothing
+/// is gone: a resend of the whole project waits for an answer.
+fn a_runner_is_gone(connection: &Connection, runners: &[String]) -> bool {
+    let Some(config) = connection.runners_config() else {
+        return false;
+    };
+    runners
+        .iter()
+        .any(|name| matches!(purlis_core::runners::named(&config, name), Ok(None)))
 }
 
 /// **A chat the window takes back on a pool's runner ran, or may have run, without the sandbox**

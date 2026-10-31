@@ -2816,6 +2816,24 @@ fn a_carry_goes_under_the_data_home_the_runner_has() {
     }
 }
 
+/// **A link or a file where the purlis spelling goes carries nothing**: never to the old
+/// spelling, where a runner reading the purlis one through the link would not find it.
+#[cfg(unix)]
+#[test]
+fn a_link_for_the_data_home_carries_nothing() {
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let signed_in = from.path().join(".claude/.credentials.json");
+    std::fs::create_dir_all(signed_in.parent().unwrap()).unwrap();
+    std::fs::write(&signed_in, "{}").unwrap();
+    let share = to.path().join(".local/share");
+    std::fs::create_dir_all(&share).unwrap();
+    std::os::unix::fs::symlink("/nowhere", share.join("purlis")).unwrap();
+
+    carried(from.path(), to.path());
+
+    assert!(!share.join("charter").exists());
+}
+
 /// The one batch a carry made under the home `to`.
 #[cfg(unix)]
 fn the_batch(to: &std::path::Path) -> std::path::PathBuf {

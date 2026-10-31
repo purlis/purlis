@@ -77,7 +77,9 @@ shift 4
 from=$(cd -P "$from" && pwd -P) || exit 1
 cd -P "$to" || exit 1
 here=$(pwd -P)
-[ -d "${stage%/*}" ] && [ ! -L "${stage%/*}" ] || stage=$old_stage
+data=${stage%/*}
+if [ -L "$data" ] || { [ -e "$data" ] && [ ! -d "$data" ]; }; then exit 1; fi
+[ -d "$data" ] || stage=$old_stage
 set -f
 IFS=/
 for part in $stage; do

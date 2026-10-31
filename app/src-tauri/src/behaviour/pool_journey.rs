@@ -263,6 +263,13 @@ fn the_settings_went_whole_to(runner: &OnTheRunner, folder: &Path) {
             .to_owned()
     };
     assert_eq!(count("SKILL.md"), SKILLS.to_string(), "every skill went");
+    assert_eq!(
+        runner
+            .prints(&format!("find '{there}/skills' -type f | wc -l"))
+            .trim(),
+        (SKILLS * 3).to_string(),
+        "every file of every skill went, and nothing else of them"
+    );
     assert_eq!(count("node_modules"), "0", "a skill's node_modules stays");
     assert_eq!(count(".git"), "0", "a .git stays");
     assert_eq!(
@@ -291,6 +298,23 @@ fn a_chat(first_message: Option<&str>, resume: Option<String>) -> Named {
         first_message: first_message.map(str::to_owned),
         resume,
         ..named("", false)
+    }
+}
+
+/// The conversation Claude Code itself keeps on `runner`, once it has kept one: what a screen
+/// naming the product does not prove, that the harness took the chat's first message.
+fn a_conversation_on(runner: &OnTheRunner) -> String {
+    let there = the_settings_on(runner);
+    let deadline = Instant::now() + LONG;
+    loop {
+        let found = runner.prints(&format!(
+            "find '{there}/projects' -name '*.jsonl' 2>/dev/null | head -n 1"
+        ));
+        if let Some(stem) = Path::new(found.trim()).file_stem() {
+            return stem.to_string_lossy().into_owned();
+        }
+        assert!(Instant::now() < deadline, "the chat kept no conversation");
+        std::thread::sleep(Duration::from_secs(1));
     }
 }
 
@@ -376,20 +400,7 @@ fn in_the_journey(
     the_row_says(machine, pool, &Standing::SignedIn);
     let (id, pane) = a_chat_runs(target, machine, pool, &a_chat(Some("Say hello."), None));
     pane.shows_within("Say hello.", LONG);
-    let there = the_settings_on(&runner);
-    let conversation = {
-        let deadline = Instant::now() + LONG;
-        loop {
-            let found = runner.prints(&format!(
-                "find '{there}/projects' -name '*.jsonl' 2>/dev/null | head -n 1"
-            ));
-            if let Some(stem) = Path::new(found.trim()).file_stem() {
-                break stem.to_string_lossy().into_owned();
-            }
-            assert!(Instant::now() < deadline, "the chat kept no conversation");
-            std::thread::sleep(Duration::from_secs(1));
-        }
-    };
+    let conversation = a_conversation_on(&runner);
     target.sessions.close(id).expect("it closes");
 
     step("the chat moves back");
@@ -438,12 +449,13 @@ fn in_the_journey(
         runner.prints(&format!("cat '{on_the_runner}/here.txt'")),
         "made here\n"
     );
-    let (id, _pane) = a_chat_runs(
+    let (id, pane) = a_chat_runs(
         target,
         machine,
         pool,
         &a_chat(None, Some(conversation.clone())),
     );
+    pane.shows_within("Say hello.", LONG);
     target.sessions.close(id).expect("it closes");
 
     step("the container is removed outside purlis");
@@ -483,7 +495,9 @@ fn in_the_journey(
     let runner = the_runner(machine, pool);
     the_row_says(machine, pool, &Standing::SignedIn);
     the_settings_went_whole_to(&runner, &settings);
-    let (old_chat, old_pane) = a_chat_runs(target, machine, pool, &a_chat(None, None));
+    let (old_chat, _old_pane) =
+        a_chat_runs(target, machine, pool, &a_chat(Some("Hello again."), None));
+    a_conversation_on(&runner);
 
     step("an update is followed");
     // Follow an update: new chats start on a runner of the new image, the old one keeps its
@@ -505,11 +519,21 @@ fn in_the_journey(
             .image,
         next.as_str(),
     );
-    old_pane.shows("Claude Code");
+    the_settings_went_whole_to(&followed, &settings);
     the_row_says(machine, pool, &Standing::SignedOut);
     let refused = ready_to_start(machine, &target.root, pool)
         .expect_err("a sign-in follows only once the old runner has drained");
     assert!(refused.contains("is not signed in on pool"), "{refused}");
+    // The window still uses the project's link while the old runner drains. Whatever that start
+    // comes to, what it does must not cost the new runner the project once the old one is gone.
+    if let Ok(started) = target.sessions.open_named(
+        None,
+        &a_chat(Some("While it drains."), None),
+        Hearing::default(),
+        &|_| {},
+    ) {
+        target.sessions.close(started.number).expect("it closes");
+    }
 
     target.sessions.close(old_chat).expect("it closes");
     let deadline = Instant::now() + LONG;
@@ -526,8 +550,31 @@ fn in_the_journey(
         0,
         "{said:?}"
     );
+    assert_eq!(
+        crate::dockerpools::removed_on(machine)
+            .expect("asked")
+            .len(),
+        0,
+        "the pool's own runner is there"
+    );
+    let out =
+        purlis_core::forklock::output(std::process::Command::new(machine.docker.program()).args([
+            "ps",
+            "--all",
+            "--quiet",
+            "--filter",
+            &format!("id={}", runner.container),
+        ]))
+        .expect("docker runs");
+    assert!(out.stdout.is_empty(), "the old runner's container is gone");
     the_row_says(machine, pool, &Standing::SignedIn);
-    let (id, _pane) = a_chat_runs(target, machine, pool, &a_chat(None, None));
+    let (id, _pane) = a_chat_runs(
+        target,
+        machine,
+        pool,
+        &a_chat(Some("After the update."), None),
+    );
+    a_conversation_on(&followed);
     target.sessions.close(id).expect("it closes");
 }
 
