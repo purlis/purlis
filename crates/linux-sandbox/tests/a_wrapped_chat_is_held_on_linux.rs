@@ -19,7 +19,7 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 const PROBE: &str = env!("CARGO_BIN_EXE_sandbox-probe");
 
@@ -213,6 +213,123 @@ fn unix_echo(at: &Path) {
             echo(stream);
         }
     });
+}
+
+/// A terminal this test holds both ends of.
+fn a_terminal() -> (std::fs::File, std::fs::File, String) {
+    let pair = nix::pty::openpty(None, None).expect("a terminal");
+    let name = nix::unistd::ttyname(&pair.slave)
+        .expect("its name")
+        .display()
+        .to_string();
+    (pair.master.into(), pair.slave.into(), name)
+}
+
+/// `program` under the wrap with `slave` as its terminal: its standard streams and its
+/// controlling terminal, as a chat's are. Its output goes to the terminal, unless `output` is
+/// set, when its standard output is a pipe.
+fn on_terminal(
+    p: &mut Project,
+    slave: &std::fs::File,
+    program: &str,
+    args: &[&str],
+    output: bool,
+) -> std::process::Child {
+    let port = p.proxy_port();
+    let words = purlis_linux_sandbox::line(
+        &p.profile(port),
+        program.to_owned(),
+        args.iter().map(|it| (*it).to_owned()).collect(),
+    );
+    let stream = || Stdio::from(slave.try_clone().expect("the terminal again"));
+    Command::new("/usr/bin/setsid")
+        .arg("--ctty")
+        .arg(PROBE)
+        .args(words)
+        .env_clear()
+        .envs(purlis_linux_sandbox::carried::carried(
+            std::env::vars_os().chain([("TMPDIR".into(), p.tmp.clone().into())]),
+        ))
+        .current_dir(&p.cwd)
+        .stdin(stream())
+        .stdout(if output { Stdio::piped() } else { stream() })
+        .stderr(stream())
+        .spawn()
+        .expect("the wrap started")
+}
+
+/// What the probe printed, tried under the wrap on the terminal `slave`.
+fn probed_on_terminal(p: &mut Project, slave: &std::fs::File, probe: &[&str]) -> String {
+    let child = on_terminal(p, slave, PROBE, probe, true);
+    let out = child.wait_with_output().expect("the wrap ended");
+    assert!(out.status.success(), "the wrap ended {:?}", out.status);
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+#[test]
+fn a_chat_uses_its_own_terminal_by_name_and_as_dev_tty() {
+    let mut p = project();
+    let (_master, slave, _) = a_terminal();
+    assert_eq!(probed_on_terminal(&mut p, &slave, &["own-terminal"]), "ok");
+}
+
+#[test]
+fn a_chat_opens_no_terminal_but_its_own() {
+    let mut p = project();
+    let (_master, slave, _) = a_terminal();
+    let (other_master, _other_slave, other) = a_terminal();
+    for probe in ["terminal-write", "terminal-read"] {
+        assert_eq!(
+            probed_on_terminal(&mut p, &slave, &[probe, &other]),
+            "EACCES",
+            "{probe} {other}"
+        );
+    }
+    // Nor through a chat with no terminal at all.
+    assert_eq!(p.run(&["terminal-write", &other]), "EACCES");
+    nix::fcntl::fcntl(
+        &other_master,
+        nix::fcntl::FcntlArg::F_SETFL(nix::fcntl::OFlag::O_NONBLOCK),
+    )
+    .expect("not waited for");
+    let mut got = [0u8; 8];
+    assert!(
+        (&other_master).read(&mut got).is_err(),
+        "nothing reached the other terminal"
+    );
+}
+
+#[test]
+fn a_chat_opens_a_terminal_it_made_by_name() {
+    let mut p = project();
+    let (_master, slave, _) = a_terminal();
+    assert_eq!(
+        probed_on_terminal(&mut p, &slave, &["terminal-of-its-own"]),
+        "ok"
+    );
+    assert_eq!(p.run(&["terminal-of-its-own"]), "ok");
+}
+
+#[test]
+fn an_interactive_shell_and_the_commands_in_it_keep_their_terminal() {
+    let mut p = project();
+    let (mut master, slave, name) = a_terminal();
+    let mut child = on_terminal(&mut p, &slave, "/bin/sh", &["-i"], false);
+    drop(slave);
+    master
+        .write_all(b"stty size; tty; echo done-$((1+1)); exit\n")
+        .expect("typed");
+    let reader = std::thread::spawn(move || {
+        let mut said = Vec::new();
+        // The terminal's end reads as an error once the last program on it has gone.
+        let _ = master.read_to_end(&mut said);
+        String::from_utf8_lossy(&said).into_owned()
+    });
+    assert!(child.wait().expect("the wrap ended").success());
+    let said = reader.join().expect("read");
+    assert!(said.contains("done-2"), "{said}");
+    assert!(said.contains(&name), "{said}");
+    assert!(!said.contains("not a tty"), "{said}");
 }
 
 #[test]
