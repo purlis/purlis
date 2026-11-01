@@ -1,0 +1,71 @@
+# THROWAWAY (#4026): repeats story files in WebKit, across the cells, and counts what failed.
+name: probe-4026
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  probe:
+    name: probe (${{ matrix.file }}, ${{ matrix.load }} busy)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        file: [src/ChipNotices.stories.tsx, src/ui/panel/PanelView.stories.tsx]
+        # Busy loops beside the stories: a shard's runner is rarely as idle as one file's.
+        load: [0, 8]
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
+      options: --init --ipc=host
+    env:
+      PURLIS_STORY_PICTURES: "1"
+      HOME: /root
+      FILE: ${{ matrix.file }}
+      LOAD: ${{ matrix.load }}
+    defaults:
+      run:
+        working-directory: app
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: Many runs
+        run: |
+          mkdir -p "$RUNNER_TEMP/r"
+          busy=()
+          for _ in $(seq 1 "$LOAD"); do
+            ( while :; do :; done ) &
+            busy+=("$!")
+          done
+          start=$SECONDS
+          for i in $(seq 1 40); do
+            [ $((SECONDS - start)) -lt 2100 ] || break
+            PURLIS_STORY_REPORT="$RUNNER_TEMP/r/$i.json" npx vitest run --project "stories * (webkit)" \
+              --reporter=dot --reporter=../tools/story-failures.mjs "$FILE" > /dev/null 2>&1 || true
+          done
+          for pid in "${busy[@]}"; do kill "$pid"; done
+          node -e '
+            const fs=require("fs"),p=process.argv[1];const c={};let runs=0,failed=0;
+            for(const f of fs.readdirSync(p)){runs++;const r=JSON.parse(fs.readFileSync(p+"/"+f,"utf8"));if(r.failed)failed++;
+              for(const x of r.failures){const all=x.errors.map(e=>(e.message||"")+(e.stack||"")).join("\n");
+                const g=/toMatchScreenshot|screenshots\.setup/.test(all)?"screenshot":"other";
+                const at=(all.match(/stories\.tsx:\d+/)||["?"])[0];
+                const k=`${x.story} @ ${x.cell} [${g}] ${at} ${(x.errors[0]?.message||"").split("\n").find(l=>l.trim()&&!/Click to debug/.test(l))?.slice(0,140)}`;c[k]=(c[k]||0)+1;}
+              for(const e of r.errors||[]){const k="outside: "+(e.message||"").slice(0,120);c[k]=(c[k]||0)+1;}}
+            const lines=Object.entries(c).map(([k,v])=>v+"x "+k);
+            console.log(`::notice title=${process.env.FILE.replace(/[,:]/g,"_")} load ${process.env.LOAD}: ${failed} of ${runs} runs failed::`+(lines.join("%0A")||"nothing failed"));
+          ' "$RUNNER_TEMP/r"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: probe-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/r/
+          retention-days: 3
