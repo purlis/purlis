@@ -235,3 +235,200 @@ fn opencodes_settings_with_comments_and_a_trailing_comma_are_sent() {
         assert!(json(&sent).is_object(), "{path}");
     }
 }
+
+/// **An agent's or a skill's frontmatter reaches a runner with no environment or headers** (#3866),
+/// however it is written, and its body and other keys stay.
+#[test]
+fn a_frontmatter_loses_what_it_declares_and_keeps_the_rest() {
+    let sent = filtered(
+        "claude",
+        "agents/review.md",
+        b"---\nname: review\ndescription: Reads a change\nmcpServers:\n  docs:\n    command: npx\n    \
+          env:\n      DOCS_KEY: of-the-desktop\n    headers: {X-Key: of-the-desktop}\n---\nBody env: x\n",
+    )
+    .unwrap();
+
+    let text = String::from_utf8(sent.bytes).unwrap();
+    assert!(!text.contains("of-the-desktop"), "{text}");
+    assert!(text.contains("name: \"review\""), "{text}");
+    assert!(text.contains("\"command\":\"npx\""), "{text}");
+    assert!(text.ends_with("---\nBody env: x\n"), "{text}");
+    assert!(
+        sent.removed
+            .contains(&"frontmatter.mcpServers.docs.env".to_owned()),
+        "{:?}",
+        sent.removed
+    );
+    assert!(!format!("{:?}", sent.removed).contains("of-the-desktop"));
+}
+
+/// A commented-out key is a key copied all the same.
+#[test]
+fn a_frontmatters_comments_do_not_travel() {
+    let sent = without_credentials(
+        "claude",
+        "skills/x/SKILL.md",
+        b"---\nname: x\n# env: {KEY: of-the-desktop}\n---\nBody\n",
+    )
+    .unwrap();
+    assert!(!String::from_utf8(sent).unwrap().contains("of-the-desktop"));
+}
+
+/// A frontmatter nothing is removed from stays byte for byte, so a runner's digest of it holds.
+#[test]
+fn a_frontmatter_with_nothing_to_remove_is_sent_as_written() {
+    let written = b"---\nname: x\ndescription: >\n  Two\n  lines\nversion: 1.10\n---\nBody\n";
+    let sent = filtered("claude", "skills/x/SKILL.md", written).unwrap();
+    assert_eq!(sent.bytes, written);
+    assert!(sent.removed.is_empty());
+}
+
+/// **One that is not YAML keeps only its name and description**, as a harness that reads it
+/// leniently still loads it, and what it might declare goes, whichever way it is written.
+#[test]
+fn a_frontmatter_purlis_cannot_read_keeps_only_its_name_and_description() {
+    let sent = filtered(
+        "claude",
+        "skills/x/SKILL.md",
+        b"---\nname: x\ndescription: a: b\nenv: {KEY: of-the-desktop\n---\nBody\n",
+    )
+    .unwrap();
+    assert_eq!(sent.bytes, b"---\nname: x\ndescription: a: b\n---\nBody\n");
+    assert_eq!(sent.removed.len(), 1, "{:?}", sent.removed);
+}
+
+/// **A URL's user information never reaches a runner**, in any harness's settings or any text.
+#[test]
+fn a_urls_user_information_is_removed_wherever_it_is() {
+    let written = br#"{"extraKnownMarketplaces":{"m":{"source":{"url":"https://me:of-the-desktop@host/x.git"}}}}"#;
+    let sent = filtered("claude", "settings.json", written).unwrap();
+    let text = String::from_utf8(sent.bytes).unwrap();
+    assert!(text.contains("https://host/x.git"), "{text}");
+    assert!(!text.contains("of-the-desktop"), "{text}");
+    assert_eq!(
+        sent.removed,
+        ["settings.extraKnownMarketplaces.m.source.url: a URL's user information"]
+    );
+
+    let toml = without_credentials(
+        "codex",
+        "config.toml",
+        b"[model_providers.a]\nbase_url = \"https://tok@host/v1\"\n",
+    )
+    .unwrap();
+    assert!(
+        String::from_utf8(toml)
+            .unwrap()
+            .contains("\"https://host/v1\"")
+    );
+
+    let opencode = without_credentials(
+        "opencode",
+        "opencode.json",
+        br#"{"provider":{"a":{"options":{"baseURL":"https://u:p@host"}}}}"#,
+    )
+    .unwrap();
+    assert!(
+        String::from_utf8(opencode)
+            .unwrap()
+            .contains("\"https://host\"")
+    );
+
+    assert_eq!(
+        without_credentials(
+            "claude",
+            "CLAUDE.md",
+            b"see https://u:p@host/a and an @ alone"
+        )
+        .unwrap(),
+        b"see https://host/a and an @ alone"
+    );
+}
+
+/// An address with no user information, a path with an `@` in it, stays.
+#[test]
+fn a_url_with_no_user_information_stays() {
+    let written = b"https://host/@me?a=b@c and an @ alone";
+    assert_eq!(
+        without_credentials("claude", "CLAUDE.md", written).unwrap(),
+        written
+    );
+}
+
+/// **A command that shows a credential goes whole**: a hook, the status line and the file
+/// suggester, and the rest of the settings stay. A command reading a variable keeps running.
+#[test]
+fn a_command_that_shows_a_credential_is_removed_whole() {
+    let sent = filtered(
+        "claude",
+        "settings.json",
+        br#"{"statusLine":{"type":"command","command":"API_KEY=of-the-desktop bar"},
+            "fileSuggestion":{"type":"command","command":"tool --token of-the-desktop"},
+            "hooks":{"Stop":[{"hooks":[
+              {"type":"command","command":"curl -H 'Authorization: Bearer of-the-desktop' x"},
+              {"type":"command","command":"curl -H \"Authorization: Bearer $TOKEN\" x"},
+              {"type":"command","command":"echo done"}]}]}}"#,
+    )
+    .unwrap();
+
+    let text = String::from_utf8(sent.bytes).unwrap();
+    assert!(!text.contains("of-the-desktop"), "{text}");
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value.get("statusLine"), None);
+    assert_eq!(value.get("fileSuggestion"), None);
+    let kept = value["hooks"]["Stop"][0]["hooks"].as_array().unwrap();
+    assert_eq!(kept.len(), 2, "{text}");
+    assert_eq!(kept[1]["command"], "echo done");
+    assert_eq!(sent.removed.len(), 3, "{:?}", sent.removed);
+}
+
+/// A server's or Codex's command, as a list, is read the same way.
+#[test]
+fn a_command_written_as_a_list_is_read_too() {
+    let sent = without_credentials(
+        "codex",
+        "config.toml",
+        b"notify = [\"tool\", \"--api-key\", \"of-the-desktop\"]\n\
+          [mcp_servers.a]\ncommand = \"npx\"\nargs = [\"--password=of-the-desktop\"]\n\
+          [mcp_servers.b]\ncommand = \"npx\"\nargs = [\"-y\", \"pkg\"]\n",
+    )
+    .unwrap();
+    let text = String::from_utf8(sent).unwrap();
+    assert!(!text.contains("of-the-desktop"), "{text}");
+    assert!(text.contains("mcp_servers.b"), "{text}");
+}
+
+/// **Filtering twice changes nothing** (#4088): a runner filters what it was sent again, and the
+/// two must come to one digest, or every start would send everything.
+#[test]
+fn filtering_what_was_filtered_changes_nothing() {
+    for (kind, path, written) in [
+        (
+            "claude",
+            "agents/a.md",
+            &b"---\nname: a # why\nenv: {A: b}\ndescription: \"x\\ny\"\nv: 1.10\nn: 3\n---\nhttps://u@h\n"[..],
+        ),
+        ("claude", "skills/x/SKILL.md", b"---\nname: a\nbad: {\n---\nb\n"),
+        ("claude", "settings.json", br#"{"statusLine":{"command":"x https://u:p@h"}}"#),
+        ("codex", "config.toml", b"a = \"https://u:p@h\"\n"),
+    ] {
+        let once = without_credentials(kind, path, written).unwrap();
+        let again = filtered(kind, path, &once).unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&again.bytes),
+            String::from_utf8_lossy(&once),
+            "{path}"
+        );
+        assert!(again.removed.is_empty(), "{path}: {:?}", again.removed);
+    }
+}
+
+/// A file that is not text is sent as it is.
+#[test]
+fn a_file_that_is_not_text_is_sent_as_it_is() {
+    let written = b"\xff\xfehttps://u:p@host";
+    assert_eq!(
+        without_credentials("claude", "skills/x/a.bin", written).unwrap(),
+        written
+    );
+}
