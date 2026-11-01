@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793493123489,
+  "lastUpdate": 1793494635985,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34440,6 +34440,48 @@ window.BENCHMARK_DATA = {
             "value": 101.1493515,
             "unit": "ms",
             "extra": "median of 5 runs: 100.890, 101.047, 101.149, 101.663, 101.858 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "15a8419b3d46421bf05a8fcdd3e4eccf6c9ffb9c",
+          "message": "Clones: a chat's clone through the host keeps waiting; the LFS stage against real git-lfs (#4370)\n\n* Clones: a chat's clone through the session host keeps its asker waiting (#4161)\n\nThe window now tells the host each beat (Replied::Alive), and the host beats\nthe pulse on the asker's connection. Asked for per ask (Heard::Ask's alive), so\nan older host is never sent a reply it cannot read.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69XDSQ4JH2G6TDW9EKVK1RG\nPurlis-Persona: steward\n\n* Clones: prove the Git LFS stage against a real git-lfs in CI (#4162)\n\nA CI job installs git-lfs and clones through repocmd::clone against an LFS server\nheld in the test: signed by the clone's helper, real content, the percent never\nback, a slow download kept, a silent one stopped, a repo with no LFS untouched.\nThe tests fail where CI lacks git-lfs, and are ignored elsewhere.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69XDSQ4JH2G6TDW9EKVK1RG\nPurlis-Persona: steward\n\n* Clones: git-lfs's meter is read from stdout, where it draws it (#4162)\n\nFound by the real git-lfs: git lfs pull logs to stdout, which follow threw away,\nso a healthy download read as silent and was stopped at the stall limit. The\nstage is also said before git-lfs's first line, so a server that never answers\nstalls in LFS's words.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69XDSQ4JH2G6TDW9EKVK1RG\nPurlis-Persona: steward\n\n* Clones: a landed LFS clone is asked of the person's own git (#4162)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69XDSQ4JH2G6TDW9EKVK1RG\nPurlis-Persona: steward\n\n* Clones: a landed LFS clone reads clean in purlis's own git too (#4162)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69XDSQ4JH2G6TDW9EKVK1RG\nPurlis-Persona: steward\n\n* Clones: the real LFS test asks the person's git, and names #4380 for purlis's own (#4162)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69XDSQ4JH2G6TDW9EKVK1RG\nPurlis-Persona: steward\n\n* Clones: answer the review: the meter's words are proved, fmt, weak assertions (#4162)\n\nThe slow test now needs a percent only git-lfs's own meter can say, so reworded\nmeter lines fail it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69XDSQ4JH2G6TDW9EKVK1RG\nPurlis-Persona: steward\n\n* Clones: the real LFS test writes to stderr by name, as the lint asks (#4162)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69XDSQ4JH2G6TDW9EKVK1RG\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T00:14:01Z",
+          "tree_id": "0d46890e451c84fc7a08e00d6d0e8a0b66b69cd7",
+          "url": "https://github.com/purlis/purlis/commit/15a8419b3d46421bf05a8fcdd3e4eccf6c9ffb9c"
+        },
+        "date": 1793494630126,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6701,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.640, 0.649, 0.670, 0.676, 0.680 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5888985,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.459, 16.527, 16.589, 16.631, 16.876 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.86420949999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.968, 102.393, 102.864, 103.024, 103.929 ms"
           }
         ]
       }
