@@ -491,6 +491,7 @@ macro_rules! app_commands {
                 dockerpools::runner_image_of_this_version,
                 clusterpools::cluster_contexts,
                 clusterpools::cluster_pool_key,
+                clusterpools::runner_stage,
                 clusterpools::add_cluster_pool,
                 clusterpools::set_cluster_pool_owned,
                 clusterpools::pools_minting_without_asking,

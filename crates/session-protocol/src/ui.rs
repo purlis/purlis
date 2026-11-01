@@ -760,6 +760,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // claims a runner as them and pins that key, so only their own press in their window does.
     "cluster_contexts",
     "cluster_pool_key",
+    "runner_stage",
     "add_cluster_pool",
     // The person's mark that a cluster pool is their own (#4071): half of what lets its runner
     // receive vault values and tokens, so only their own press in their window sets it.

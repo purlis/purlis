@@ -963,7 +963,7 @@ describe("A cluster pool (#3292)", () => {
     const group = await screen.findByRole("region", { name: "Pools" });
     expect(
       await within(group).findByText(
-        "Pool team's runner is on a fresh claim, which keeps nothing once it ends: a sign-in there lasts only for this claim.",
+        "Pool team's runner keeps nothing once it ends, so a sign-in there lasts only as long as the runner.",
       ),
     ).toBeInTheDocument();
   });

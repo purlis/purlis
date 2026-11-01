@@ -1549,6 +1549,7 @@ export const commands = {
 	runnerImageOfThisVersion: __WINDOW_ONLY_RESULT,
 	clusterContexts: __WINDOW_ONLY_RESULT,
 	clusterPoolKey: __WINDOW_ONLY_RESULT,
+	runnerStage: __WINDOW_ONLY_RESULT,
 	addClusterPool: __WINDOW_ONLY_RESULT,
 	setClusterPoolOwned: __WINDOW_ONLY_RESULT,
 	poolsMintingWithoutAsking: __WINDOW_ONLY_RESULT,
@@ -9992,6 +9993,16 @@ export type RunnerOnTheList = {
 	 */
 	draining: boolean,
 	on: OnADevice,
+};
+
+/**  Where a chat's runner has got to, as the window waiting on it says it (#3709). */
+export type RunnerStage = {
+	/**  The stage, in the words the person reads. */
+	said: string,
+	/**  One line more about it. */
+	more: string,
+	/**  The cluster's own words for why it waits, where it gave them. */
+	cluster_said: string | null,
 };
 
 /**  Whether a runner's container runs (#2051). */

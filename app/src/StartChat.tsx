@@ -22,6 +22,7 @@ import {
   type ProfileRow,
   type StartOptions,
   type WithoutSandbox,
+  type RunnerStage,
 } from "./bindings";
 import { useChatsHere } from "./chatState";
 import { profileCommand, profilePage } from "./settings/profileAddress";
@@ -54,6 +55,9 @@ const PERSONAS: Noun = { one: "persona", many: "personas" };
 const HEIGHT = 620;
 /** How long a start runs before the dialog says what it waits for. */
 const SAYS_THE_HOST_AFTER_MS = 3000;
+
+/** How often a waiting start asks where its runner has got to (#3709). */
+const ASKS_THE_STAGE_EVERY_MS = 3000;
 
 /**
  * What a new chat asks before anything runs.
@@ -152,6 +156,7 @@ export function StartChat({
   repo,
   place,
   starting = false,
+  readStage,
   prefer,
   trouble,
   signIn,
@@ -175,6 +180,8 @@ export function StartChat({
   /** Whether a start from this picker is running: Start says so and cannot be pressed again,
    *  because a second press was a second chat (GL-1). */
   starting?: boolean;
+  /** Where the runner of this start has got to, asked while it waits (#3709). */
+  readStage?: () => Promise<RunnerStage | undefined>;
   /**
    * The harness (a profile's `kind`) to start on, when something already knows which one is
    * wanted — a harness started by hand in a shell tab, opened as a chat instead (ADR 0062).
@@ -338,6 +345,25 @@ export function StartChat({
       setHostSlow(false);
     };
   }, [starting]);
+  const [stage, setStage] = useState<RunnerStage | undefined>();
+  useEffect(() => {
+    if (!hostSlow || readStage === undefined) return;
+    let left = false;
+    let next: number | undefined;
+    const ask = async () => {
+      const read = await readStage();
+      if (left) return;
+      setStage(read);
+      // The next is asked after this one answers: a slow cluster is never asked twice at once.
+      next = window.setTimeout(() => void ask(), ASKS_THE_STAGE_EVERY_MS);
+    };
+    void ask();
+    return () => {
+      left = true;
+      window.clearTimeout(next);
+      setStage(undefined);
+    };
+  }, [hostSlow, readStage]);
   const cancelled = useRef(false);
   const leave = () => {
     cancelled.current = true;
@@ -523,7 +549,12 @@ export function StartChat({
       // What Start will do: the persona on the harness (R33). No profile icon beside an
       // approval (#2922): it is the grant's own look, and a mark there could pass for purlis's.
       summary={
-        hostSlow ? (
+        stage !== undefined ? (
+          <span className="start-chat-summary" role="status" data-testid="start-chat-stage">
+            <strong>{stage.said}</strong> {stage.more}
+            {stage.cluster_said !== null && <code> {stage.cluster_said}</code>}
+          </span>
+        ) : hostSlow ? (
           <span className="start-chat-summary" role="status" data-testid="start-chat-host">
             Starting the session host…
           </span>

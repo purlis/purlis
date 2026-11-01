@@ -7,6 +7,8 @@ import {
   type ClusterContexts,
   type ClusterPoolAdding,
   type ClusterPoolKey,
+  type PlaneId,
+  type RunnerStage,
   type PoolAdding,
   type PoolLink,
   type PoolLimitsPage,
@@ -198,6 +200,16 @@ export async function addPool(adding: PoolAdding): Promise<string | undefined> {
   // Its profiles are asked by what it ends with ({@link askProfiles}, #2049).
   await rereadPools();
   return undefined;
+}
+
+/** Where the runner of a chat being started has got to (#3709): nothing to say where it could not
+ *  be read, since a start says what it says of any start. */
+export async function readRunnerStage(
+  plane: PlaneId,
+  workspace: string | undefined,
+): Promise<RunnerStage | undefined> {
+  const said = await caught(commands.runnerStage(plane, workspace ?? null));
+  return said.status === "ok" && said.data !== null ? said.data : undefined;
 }
 
 /** The contexts of the kubeconfig `kubeconfig` names (empty for kubectl's own default), or

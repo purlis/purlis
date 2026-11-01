@@ -3135,6 +3135,11 @@ export const commands = {
 	 */
 	clusterPoolKey: (kubeconfig: string | null, context: string, pool: string) => typedError<ClusterPoolKey, string>(__TAURI_INVOKE("cluster_pool_key", { kubeconfig, context, pool })),
 	/**
+	 *  **Where the runner of a chat being started has got to** (#3709), read from the cluster, for the
+	 *  window's Start while it waits. Nothing where there is no stage to say.
+	 */
+	runnerStage: (plane: PlaneId, workspace: string | null) => typedError<RunnerStage | null, string>(__TAURI_INVOKE("runner_stage", { plane, workspace })),
+	/**
 	 *  **Adds a cluster pool on this machine** (#3292): pins the key the person checked, claims a
 	 *  runner of the cluster's Pool, waits for its operator to vouch for it, pairs it and keeps it.
 	 *  What fails is taken back.
@@ -12268,6 +12273,16 @@ export type RunnerOnTheList = {
 	 */
 	draining: boolean,
 	on: OnADevice,
+};
+
+/**  Where a chat's runner has got to, as the window waiting on it says it (#3709). */
+export type RunnerStage = {
+	/**  The stage, in the words the person reads. */
+	said: string,
+	/**  One line more about it. */
+	more: string,
+	/**  The cluster's own words for why it waits, where it gave them. */
+	cluster_said: string | null,
 };
 
 /**  Whether a runner's container runs (#2051). */

@@ -1469,3 +1469,54 @@ fn a_found_kubectl_runs_with_its_preferences_file_off() {
     let (env, _) = kubectl.environment();
     assert!(env.contains(&("KUBERC".into(), "off".into())), "{env:?}");
 }
+
+fn a_claim_saying(status: &str, reason: &str, message: &str) -> serde_json::Value {
+    serde_json::json!({ "status": { "conditions": [
+        { "type": "Idle", "status": "True", "reason": "NothingRuns" },
+        { "type": "Ready", "status": status, "reason": reason, "message": message },
+    ]}})
+}
+
+#[test]
+fn a_cold_claims_stages_are_said_in_plain_words() {
+    let said = |reason| stage_of(&a_claim_saying("False", reason, "")).map(|stage| stage.said);
+    assert_eq!(said("Scheduling"), Some("Waiting for room in the cluster"));
+    assert_eq!(said("Pulling"), Some("Downloading the runner image"));
+    assert_eq!(said("Starting"), Some("Starting your runner"));
+    assert_eq!(
+        said("Idle"),
+        Some("Your runner was resting, and is coming back")
+    );
+}
+
+#[test]
+fn the_clusters_words_for_a_wait_are_kept_and_nothing_names_a_pod() {
+    let stage = stage_of(&a_claim_saying(
+        "False",
+        "Scheduling",
+        "0/4 nodes are available: 4 Insufficient memory.",
+    ))
+    .unwrap();
+    assert_eq!(
+        stage.cluster_said.as_deref(),
+        Some("0/4 nodes are available: 4 Insufficient memory.")
+    );
+    for reason in ["Scheduling", "Pulling", "Starting", "Idle"] {
+        let stage = stage_of(&a_claim_saying("False", reason, "")).unwrap();
+        let words = format!("{} {}", stage.said, stage.more).to_lowercase();
+        for jargon in ["pod", "claim", "node", "scheduling", "kept"] {
+            assert!(!words.contains(jargon), "{words}");
+        }
+    }
+}
+
+#[test]
+fn only_a_runner_on_its_way_has_a_stage() {
+    assert_eq!(stage_of(&a_claim_saying("True", "Running", "")), None);
+    assert_eq!(
+        stage_of(&a_claim_saying("False", "OverQuota", "too many")),
+        None
+    );
+    assert_eq!(stage_of(&a_claim_saying("True", "Pulling", "")), None);
+    assert_eq!(stage_of(&serde_json::json!({})), None);
+}
