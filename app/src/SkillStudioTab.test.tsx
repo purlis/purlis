@@ -134,17 +134,6 @@ describe("the Skill studio", () => {
     ).toBeInTheDocument();
   });
 
-  it("draws the Library's first screen of rows at once and the rest straight after (#4351)", async () => {
-    const names = Array.from({ length: 60 }, (_, n) => `crowd-${String(n).padStart(2, "0")}`);
-    answering(studio(names.map((name) => skill(name))));
-    renderStudio();
-
-    await screen.findByTestId("skill-crowd-00");
-    expect(screen.queryByTestId("skill-crowd-59")).toBeNull();
-
-    expect(await screen.findByTestId("skill-crowd-59")).toBeTruthy();
-  });
-
   it("keeps the Library's tools to search and chips, with New skill… the one way in (#4041)", async () => {
     answering(studio([skill("deploy")]));
 

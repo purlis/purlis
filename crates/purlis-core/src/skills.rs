@@ -2173,13 +2173,8 @@ fn harnesses_in_the_studio(
             // Every adapter is a harness's ([`crate::harness_plugin::adapters`]).
             let harness = Harness::of_kind(adapter.harness())?;
             // What it finds itself, and what every clone holds for it.
-            let t0 = std::time::Instant::now();
             let own = crate::harness_plugin::harness_skills(adapter, env, &choices);
-            probe_4351("    h.own", t0);
-            let t0 = std::time::Instant::now();
             let repo = crate::harness_plugin::repo_skills(adapter, &choices, &clones);
-            probe_4351("    h.repo", t0);
-            let t0 = std::time::Instant::now();
             // Each built-in skill by the name this harness knows it by (`purlis-<name>` on
             // opencode's route), so a copy of that name is the clash, and a bare one is not.
             let route = harness.skills();
@@ -2199,8 +2194,6 @@ fn harnesses_in_the_studio(
                 || pins.to_vec(),
                 None,
             );
-            probe_4351("    h.routed", t0);
-            let t0 = std::time::Instant::now();
             // Every clone's repo skills beside that, for their clashes, their rows and what a
             // repo leaves out: no one chat's set, so no routing.
             let set = SkillSet {
@@ -2224,10 +2217,7 @@ fn harnesses_in_the_studio(
                 outside,
                 rows: Vec::new(),
             };
-            probe_4351("    h.beside", t0);
-            let t0 = std::time::Instant::now();
             one.rows = outside_rows(&one, plane, known, reading);
-            probe_4351("    h.rows", t0);
             Some(one)
         })
         .collect()
@@ -3037,16 +3027,6 @@ pub enum Reading {
     Needs,
 }
 
-/// DEBUG-4351
-pub fn probe_4351(what: &str, since: std::time::Instant) {
-    use std::io::Write as _;
-    if let Some(path) = std::env::var_os("PURLIS_4351_LOG") {
-        if let Ok(mut file) = std::fs::OpenOptions::new().append(true).create(true).open(path) {
-            let _ = writeln!(file, "{what} {} us", since.elapsed().as_micros());
-        }
-    }
-}
-
 /// [`studio_list`], read for `reading`, with the plane's own skills linted by `more` too: the
 /// extensions' lints as a list asks them ([`studio::Studio::list_lints`], #3940).
 pub fn studio_list_for(
@@ -3058,34 +3038,26 @@ pub fn studio_list_for(
     env: &crate::harness_plugin::Env<'_>,
     more: &[&dyn purlis_skills::SkillLint],
 ) -> StudioList {
-    let t0 = std::time::Instant::now();
     let set = in_the_studio(built_in, plane, workspace, persona);
-    probe_4351("  list.in_the_studio", t0); let t0 = std::time::Instant::now();
     let names = persona
         .map(|persona| names_of(plane, persona))
         .unwrap_or_default();
     let known = Known::of(plane, built_in);
-    probe_4351("  list.Known::of", t0); let t0 = std::time::Instant::now();
     let pins = pins_or_none(plane, workspace, persona);
     let set_on = |route| in_the_studio_on(built_in, plane, workspace, persona, route);
-    probe_4351("  list.pins", t0); let t0 = std::time::Instant::now();
     let harnesses = harnesses_in_the_studio(
         &set, &set_on, plane, workspace, &names, &pins, env, &known, reading,
     );
-    probe_4351("  list.harnesses_in_the_studio", t0); let t0 = std::time::Instant::now();
     let mut rows = rows_of(&set, plane, &names, reading);
     // The plane's own skills have a list's budget of their own (#3459): what the clones and the
     // person's own folders hold never leaves them unread, and Needs you's problems in a skill are
     // theirs.
-    probe_4351("  list.rows_of", t0); let t0 = std::time::Instant::now();
     known.reads.set(purlis_skills::MOST_LIST_BYTES);
     with_plane_lint(&mut rows, &set, &known, more);
-    probe_4351("  list.with_plane_lint", t0); let t0 = std::time::Instant::now();
     if reading == Reading::Whole {
         with_harness_badges(&mut rows, &harnesses, &known);
         with_routing(&mut rows, &harnesses);
     }
-    probe_4351("  list.badges+routing", t0);
     StudioList {
         rows,
         harnesses,

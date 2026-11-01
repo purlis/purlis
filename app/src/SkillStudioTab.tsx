@@ -1,14 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  startTransition,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { MessageSquarePlus, Plus, Search, Sparkle, Sparkles } from "lucide-react";
 import {
   commands,
@@ -106,12 +99,6 @@ import type { Offer } from "./actions";
 import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
 import { useSkillEditInPlace } from "./SkillEditInPlace";
 
-// DEBUG-4351
-function mark4351(what: string) {
-  const g = globalThis as unknown as { __calls?: string[]; __t0?: number };
-  g.__calls?.push(`${what} +${Math.round(performance.now() - (g.__t0 ?? 0))}`);
-}
-
 /** A change in progress: New skill… (#3684), Rename, Move or Delete, each a dialog (S4, #3685),
  *  with what the core refused the last time it was asked. */
 type Doing =
@@ -163,31 +150,6 @@ function searchKeeps(skill: StudioSkill, query: string): boolean {
   const typed = query.trim().toLowerCase();
   if (typed === "") return true;
   return `${skill.name}\n${skill.description}`.toLowerCase().includes(typed);
-}
-
-/** **How many of the Library's rows its first frame draws** (#4351): more than any window shows.
- *  Two hundred rows took a third of a second to lay out, in which the tab showed none of them. */
-const FIRST_ROWS = 40;
-
-/**
- * **Whether the Library draws all its rows yet** (#4351): from the frame after `read` is first
- * there, so the first screen is up before the rest is built, and in a transition, so a press can
- * come first.
- */
-function useWholeLibrary(read: boolean): boolean {
-  const [whole, setWhole] = useState(false);
-  useEffect(() => {
-    if (!read || whole) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const frame = requestAnimationFrame(() => {
-      timer = setTimeout(() => startTransition(() => setWhole(true)));
-    });
-    return () => {
-      cancelAnimationFrame(frame);
-      clearTimeout(timer);
-    };
-  }, [read, whole]);
-  return whole;
 }
 
 /** The row's line under its name: what it does, or why it is left out where it says nothing. */
@@ -289,7 +251,6 @@ export function SkillStudioTab({
   /** Narrow or wide whatever the width: for a story or a test. Measured when left out. */
   narrow?: boolean;
 }) {
-  mark4351("render");
   const view = { ...SKILL_STUDIO_VIEW, key: tab };
   const historyId = studioHistoryOf(plane, view);
   const walked = useViewHistory<StudioPlace>(historyId, STUDIO_START);
@@ -353,10 +314,6 @@ export function SkillStudioTab({
   const studio = read?.key === key ? read.studio : undefined;
   const refused = read?.key === key ? read.refused : undefined;
   const on = studio?.on === true;
-  const wholeLibrary = useWholeLibrary(studio !== undefined);
-  useLayoutEffect(() => {
-    if (studio !== undefined) mark4351("committed with studio");
-  }, [studio]);
   // Read once the studio has said it is on: a scope picked later reads its skills, not these.
   const [opened, setOpened] = useState(false);
   if (on && !opened) setOpened(true);
@@ -370,13 +327,9 @@ export function SkillStudioTab({
       else setDoing({ what: "new" });
     }),
   );
-  // Asked before this tab's first paint rather than after it: the core reads on its own thread,
-  // and that paint took a sixth of a second on a runner with the read not yet begun (#4351).
-  useLayoutEffect(() => {
+  useEffect(() => {
     let live = true;
-    mark4351("ask skillStudio");
     void commands.skillStudio(plane, workspace, persona).then((answer) => {
-      mark4351("answer skillStudio");
       if (!live) return;
       if (answer.status === "ok") setRead({ key, studio: answer.data });
       else setRead({ key, refused: answer.error });
@@ -1108,11 +1061,6 @@ export function SkillStudioTab({
     const own = shown.filter((skill) => skill.level !== "built-in");
     const builtIns = shown.filter((skill) => skill.level === "built-in");
     const foldsBuiltIns = !chips.has("built-in");
-    // The chosen row is always drawn, wherever the list has it.
-    const ownDrawn =
-      wholeLibrary || own.slice(FIRST_ROWS).some((one) => skillRowId(one) === at.skill)
-        ? own
-        : own.slice(0, FIRST_ROWS);
     const row = (skill: StudioSkill) => {
       const mark = markOf(skill);
       return (
@@ -1223,7 +1171,7 @@ export function SkillStudioTab({
                   go({ page: "library", scope, skill: String(first) });
                 }}
               >
-                {ownDrawn.map(row)}
+                {own.map(row)}
                 {foldsBuiltIns ? (
                   <ListRun
                     id={BUILT_IN_RUN}
