@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793516645618,
+  "lastUpdate": 1793518075314,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34860,6 +34860,48 @@ window.BENCHMARK_DATA = {
             "value": 102.379636,
             "unit": "ms",
             "extra": "median of 5 runs: 101.116, 101.944, 102.380, 102.571, 102.970 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "fd179514b9f774ae29faebd204d87fdfacf789ad",
+          "message": "More of a profile is filtered before it reaches a runner (#3866) (#4414)\n\n* Filter frontmatter, URL user information and commands sent to a runner (#3866)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR1DJHSA12VQ6WVW785PYD\nPurlis-Persona: steward\n\n* Close the gaps the two reviews found in the runner filter (#3866)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR1DJHSA12VQ6WVW785PYD\nPurlis-Persona: steward\n\n* Read a runner's commands by whole words, and keep what a rewrite reads back (#3866)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR1DJHSA12VQ6WVW785PYD\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T06:54:49Z",
+          "tree_id": "98fc38591c8b4f41584598db650369bc968265c5",
+          "url": "https://github.com/purlis/purlis/commit/fd179514b9f774ae29faebd204d87fdfacf789ad"
+        },
+        "date": 1793518071436,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6853659999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.667, 0.674, 0.685, 0.691, 0.694 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5833655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.370, 16.495, 16.583, 16.645, 16.647 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5547915,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.185, 101.305, 101.555, 101.987, 102.120 ms"
           }
         ]
       }
