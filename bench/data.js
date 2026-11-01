@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793519342029,
+  "lastUpdate": 1793543783248,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34944,6 +34944,48 @@ window.BENCHMARK_DATA = {
             "value": 102.8420935,
             "unit": "ms",
             "extra": "median of 5 runs: 101.270, 102.015, 102.842, 103.005, 104.374 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "521e3a8b8ffa66cf5e1f14a1be880519be55b202",
+          "message": "CI: a missed outcome bar does not turn the ci run red (#4450)\n\nThe outcome bars job misses two bars until #4351 and #4352 are fixed, and\ntools/land.mjs reads a failed ci run of main as a red main. The job keeps\nrunning and keeps its bars; only the run conclusion changes.\n\nPart of #4343\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6BJ6MFV11F02D1T9M82MSZH\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T13:58:27Z",
+          "tree_id": "d936d44527e4cdc6749fac3424341e123960c54e",
+          "url": "https://github.com/purlis/purlis/commit/521e3a8b8ffa66cf5e1f14a1be880519be55b202"
+        },
+        "date": 1793543776769,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.717678,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.691, 0.716, 0.718, 0.731, 0.746 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.603903,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.429, 16.569, 16.604, 16.681, 16.893 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.334372,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.064, 102.189, 102.334, 102.713, 102.868 ms"
           }
         ]
       }
