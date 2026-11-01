@@ -907,6 +907,8 @@ pub struct PoolLimitRow {
     pub refused: Option<String>,
     /// The highest the team defining the pool allows, in words, where it set one (#4287).
     pub highest_said: Option<String>,
+    /// Whether its default is what the team defining the pool set (#4287).
+    pub default_by_team: bool,
 }
 
 /// **A group of a pool's limits**: what they affect, and the limits that aren't under Advanced.
@@ -952,16 +954,8 @@ fn limits_shown(
             .iter()
             .find(|one| one.limit == limit.id)
             .map(purlis_core::poollimits::RefusedValue::said)
-            .or_else(|| {
-                let top = chosen.team_highest(limit.id)?;
-                (chosen.get(limit.id)? > top).then(|| {
-                    format!(
-                        "The team that defines this pool allows at most {}, so that holds. Set a \
-                         value within it or reset this.",
-                        limit.unit.said(top)
-                    )
-                })
-            }),
+            .or_else(|| chosen.over_team_said(limit.id)),
+        default_by_team: chosen.default_by_team(limit.id),
         highest_said: chosen
             .team_highest(limit.id)
             .map(|top| format!("The team allows up to {}.", limit.unit.said(top))),
@@ -1038,15 +1032,20 @@ pub async fn pool_limits(pool: String) -> Result<PoolLimitsPage, String> {
 #[specta::specta]
 pub async fn pool_limit_check(pool: String, key: String, typed: String) -> Result<u32, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let limit = limit_named(&key)?;
-        // What the team defining a cluster pool allows is refused as it is typed (#4287).
-        let chosen = purlis_core::runners::chosen_limits_of(&config_root()?, &pool)
-            .map_err(|why| why.to_string())?;
-        let value = limit.check_typed(&typed, chosen.team_highest(limit.id))?;
-        u32::try_from(value).map_err(|_| format!("{} is too large a number here", limit.plain))
+        limit_checked_on(&config_root()?, &pool, &key, &typed)
     })
     .await
     .map_err(|why| format!("the value was not checked: {why}"))?
+}
+
+/// [`pool_limit_check`], on the machine at `config`. What the team defining a cluster pool allows
+/// is refused as it is typed (#4287).
+fn limit_checked_on(config: &Path, pool: &str, key: &str, typed: &str) -> Result<u32, String> {
+    let limit = limit_named(key)?;
+    let chosen =
+        purlis_core::runners::chosen_limits_of(config, pool).map_err(|why| why.to_string())?;
+    let value = limit.check_typed(typed, chosen.team_highest(limit.id))?;
+    u32::try_from(value).map_err(|_| format!("{} is too large a number here", limit.plain))
 }
 
 /// **Saves `value` as pool `pool`'s limit `key`, or, `null`, returns it to following purlis's

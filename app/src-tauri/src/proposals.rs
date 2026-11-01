@@ -79,6 +79,9 @@ pub struct LimitChange {
     pub value: Option<u64>,
     /// What the person had set when it was proposed: another value at Apply makes it stale.
     pub was: Option<u64>,
+    /// The default it would follow when it was proposed: another at Apply makes it stale, so a
+    /// reset never holds at another number than it showed (#4287).
+    pub default_was: u64,
     /// The file held a value this limit can't be: shown, since Apply replaces it (#4381).
     pub file_refused: bool,
 }
@@ -375,6 +378,7 @@ pub fn limit_asked_in(
                 id: limit.id,
                 value: ask.value,
                 was,
+                default_was: held.chosen.default_of(limit.id),
                 file_refused,
             },
             now,
@@ -390,10 +394,11 @@ pub fn limit_asked_in(
 
 /// A limit's value as its proposal shows it, in words: one line.
 fn limit_line(change: &LimitChange, value: Option<u64>) -> String {
+    let default = change.default_was;
     let limit = change.id.limit();
     let said = match value {
         Some(value) => limit.unit.said(value),
-        None => format!("{} (purlis's default)", limit.unit.said(limit.default)),
+        None => format!("{} (the default)", limit.unit.said(default)),
     };
     format!("{}: {said}\n", limit.plain)
 }
@@ -409,6 +414,7 @@ pub fn limit_now(change: &LimitChange) -> Now {
         // A bad value typed or taken away since is a change too: the row would say otherwise.
         Ok(held)
             if held.chosen.get(change.id) != change.was
+                || held.chosen.default_of(change.id) != change.default_was
                 || held.refused.iter().any(|one| one.limit == change.id) != change.file_refused =>
         {
             Now::Stale

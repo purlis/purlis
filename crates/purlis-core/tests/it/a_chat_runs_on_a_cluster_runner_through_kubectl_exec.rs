@@ -1099,7 +1099,11 @@ fn the_command_signs_in_on_a_cluster_pool_only_marked_and_vouched_and_a_runner_f
         "apiVersion": "runners.purlis.dev/v1alpha1",
         "kind": "Pool",
         "metadata": { "name": pool },
-        "spec": { "image": image, "keptVolume": { "size": "1Gi" } },
+        "spec": {
+            "image": image,
+            "keptVolume": { "size": "1Gi" },
+            "limits": { "signInWait": { "highest": 40 } },
+        },
     });
     kubectl
         .run(
@@ -1142,6 +1146,15 @@ fn the_command_signs_in_on_a_cluster_pool_only_marked_and_vouched_and_a_runner_f
         PATIENCE * 2,
     )
     .expect("the pool is added");
+    // What the team set on its Pool is kept with the pool, and enforced as a person sets it (#4287).
+    {
+        use purlis_core::poollimits::LimitId::SignInWait;
+        let name = team.name();
+        let chosen = purlis_core::runners::chosen_limits_of(&config, name).unwrap();
+        assert_eq!(chosen.team_highest(SignInWait), Some(40));
+        assert!(purlis_core::runners::set_pool_limit(&config, name, SignInWait, Some(41)).is_err());
+        purlis_core::runners::set_pool_limit(&config, name, SignInWait, Some(40)).unwrap();
+    }
     let paired = Paired {
         claimed: added.claimed.clone(),
         vouched: vouched(&kubectl, &operator, &added.claimed),

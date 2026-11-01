@@ -140,19 +140,25 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             }
             runners::set_pool_limit(&config()?, pool, limit.id, value)
                 .map_err(|why| why.to_string())?;
-            crate::voice::ok(saved_said(pool, limit, value));
+            let chosen = runners::chosen_limits_of(&config()?, pool).unwrap_or_default();
+            crate::voice::ok(saved_said(pool, limit, value, &chosen));
             Ok(0)
         }
     }
 }
 
 /// What a save says.
-fn saved_said(pool: &str, limit: &Limit, value: Option<u64>) -> String {
+fn saved_said(
+    pool: &str,
+    limit: &Limit,
+    value: Option<u64>,
+    chosen: &poollimits::Chosen,
+) -> String {
     let now = value.map_or_else(
         || {
             format!(
-                "back to purlis's default, {}",
-                limit.unit.said(limit.default)
+                "back to the default, {}",
+                limit.unit.said(chosen.default_of(limit.id))
             )
         },
         |value| limit.unit.said(value),
@@ -187,7 +193,9 @@ fn limits_lines(held: &runners::PoolLimitsHeld) -> Vec<String> {
             .refused
             .iter()
             .find(|one| one.limit == limit.id)
-            .map_or_else(String::new, poollimits::RefusedValue::said);
+            .map(poollimits::RefusedValue::said)
+            .or_else(|| held.chosen.over_team_said(limit.id))
+            .unwrap_or_default();
         lines.push(format!(
             "{}\t{}\t{whose}\t{}\t{refused}",
             limit.key,
@@ -205,12 +213,15 @@ fn limits_json(held: &runners::PoolLimitsHeld) -> serde_json::Value {
                 "key": limit.key,
                 "plain": limit.plain,
                 "unit": limit.unit.word(),
-                "default": limit.default,
+                "default": held.chosen.default_of(limit.id),
+                "defaultByTeam": held.chosen.default_by_team(limit.id),
+                "highest": held.chosen.team_highest(limit.id),
                 "set": held.chosen.get(limit.id),
                 "inForce": held.chosen.in_force(limit.id),
                 "applies": limit.takes_effect.said(),
                 "refused": held.refused.iter().find(|one| one.limit == limit.id)
-                    .map(purlis_core::poollimits::RefusedValue::said),
+                    .map(purlis_core::poollimits::RefusedValue::said)
+                    .or_else(|| held.chosen.over_team_said(limit.id)),
             })
         })
         .collect();
