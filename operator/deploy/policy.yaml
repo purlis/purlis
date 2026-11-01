@@ -43,6 +43,10 @@
 #
 # The sixth policy, purlis-only-the-operator-writes-a-claims-status (#3981): what the operator acts
 # on is what a Claim's status says, so no one else writes it.
+#
+# The seventh policy, purlis-operator-writes-only-a-runners-shape (#3754): the operator writes
+# upstream's templates, claims and warm pools in a runner namespace alone, a template's pod only in
+# purlis's runner shape.
 ---
 # Source: purlis-cluster-operator/templates/forge-policy.yaml
 # Copyright 2026 Purlis
@@ -434,6 +438,122 @@ spec:
       message: purlis's cluster operator changes no label, annotation, owner or finalizer of a Sandbox.
       reason: Forbidden
 ---
+# Source: purlis-cluster-operator/templates/shape-policy.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+# What the operator's service account writes of upstream's objects, held by the cluster (#3754):
+# only in runner namespaces, and a template's pod only in purlis's runner shape, so a mistake in
+# the operator, or its token used as it is, can write nothing else. It says nothing of what
+# others write. The operator may not change policies or their bindings, so it cannot lift this.
+# Kept when the release is uninstalled, as the policy on Claims is.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-operator-writes-only-a-runners-shape
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [extensions.agents.x-k8s.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [sandboxclaims, sandboxtemplates, sandboxwarmpools]
+  matchConditions:
+    - name: by-the-operator
+      expression: >-
+        request.userInfo.username ==
+        'system:serviceaccount:purlis-system:purlis-cluster-operator'
+  variables:
+    - name: template
+      expression: request.resource.resource == 'sandboxtemplates'
+    - name: pod
+      expression: object.spec.podTemplate.spec
+    - name: containers
+      expression: >-
+        variables.pod.containers +
+        (has(variables.pod.initContainers) ? variables.pod.initContainers : [])
+  validations:
+    # Only a runner namespace, which keeps every system namespace out without a list to keep.
+    - expression: request.namespace.startsWith('purlis-runners-')
+      message: purlis's cluster operator writes upstream's objects in a runner namespace alone.
+      reason: Forbidden
+    - expression: >-
+        request.resource.resource != 'sandboxclaims' ||
+        (object.spec.warmPoolRef.name.startsWith('purlis-pool-') &&
+        !has(object.spec.env) && !has(object.spec.additionalPodMetadata) &&
+        !has(object.spec.lifecycle) &&
+        (!has(object.spec.volumeClaimTemplates) ||
+        (size(object.spec.volumeClaimTemplates) == 1 &&
+        object.spec.volumeClaimTemplates[0].metadata.name == 'purlis-kept')))
+      message: >-
+        purlis's cluster operator claims a purlis pool's warm pool, with a kept volume at most and
+        nothing added to the pod.
+      reason: Forbidden
+    - expression: >-
+        request.resource.resource != 'sandboxwarmpools' ||
+        (object.spec.sandboxTemplateRef.name.startsWith('purlis-pool-') && object.spec.replicas <= 20)
+      message: purlis's cluster operator keeps a purlis pool's template warm, at most 20 of them.
+      reason: Forbidden
+    # Every field of the pinned upstream's template spec but the pod
+    # (operator/tests/the_install_manifests.rs holds the list to the vendored definitions).
+    - expression: >-
+        !variables.template ||
+        (!has(object.spec.networkPolicy) && !has(object.spec.service) &&
+        !has(object.spec.volumeClaimTemplates) &&
+        (!has(object.spec.networkPolicyManagement) || object.spec.networkPolicyManagement == 'Managed') &&
+        (!has(object.spec.envVarsInjectionPolicy) || object.spec.envVarsInjectionPolicy == 'Disallowed') &&
+        object.spec.volumeClaimTemplatesPolicy == 'Allowed')
+      message: purlis's cluster operator's template sets nothing of upstream's but its pod.
+      reason: Forbidden
+    # The default service account, no token mounted, nothing of the node's.
+    - expression: >-
+        !variables.template ||
+        ((!has(object.spec.podTemplate.metadata) ||
+        (!has(object.spec.podTemplate.metadata.labels) && !has(object.spec.podTemplate.metadata.annotations))) &&
+        (!has(variables.pod.serviceAccountName) || variables.pod.serviceAccountName == 'default') &&
+        (!has(variables.pod.serviceAccount) || variables.pod.serviceAccount == 'default') &&
+        variables.pod.automountServiceAccountToken == false &&
+        variables.pod.enableServiceLinks == false &&
+        !has(variables.pod.hostNetwork) && !has(variables.pod.hostPID) && !has(variables.pod.hostIPC) &&
+        !has(variables.pod.hostUsers) && !has(variables.pod.shareProcessNamespace) &&
+        !has(variables.pod.nodeName) && !has(variables.pod.runtimeClassName) &&
+        !has(variables.pod.ephemeralContainers) && !has(variables.pod.resourceClaims) &&
+        !has(variables.pod.securityContext.runAsUser) && !has(variables.pod.securityContext.sysctls) &&
+        !has(variables.pod.securityContext.seccompProfile) &&
+        !has(variables.pod.securityContext.supplementalGroups))
+      message: >-
+        purlis's cluster operator's template runs as the default service account, with no token
+        mounted and nothing of the node's.
+      reason: Forbidden
+    # Only purlis's volumes, each a folder of the pod's own.
+    - expression: >-
+        !variables.template ||
+        (has(variables.pod.volumes) && variables.pod.volumes.all(v,
+        v.name in ['purlis-link', 'purlis-kept'] && has(v.emptyDir)))
+      message: purlis's cluster operator's template holds only purlis's own volumes.
+      reason: Forbidden
+    # The confinement the operator's template sets, on each container.
+    - expression: >-
+        !variables.template ||
+        (size(variables.pod.containers) == 1 && variables.pod.containers[0].name == 'runner' &&
+        variables.containers.all(c, c.name in ['runner', 'link-key'] &&
+        c.securityContext.runAsNonRoot == true &&
+        c.securityContext.allowPrivilegeEscalation == false &&
+        c.securityContext.capabilities.drop == ['ALL'] && !has(c.securityContext.capabilities.add) &&
+        c.securityContext.seccompProfile.type == 'RuntimeDefault' &&
+        !has(c.securityContext.privileged) && !has(c.securityContext.runAsUser) &&
+        !has(c.securityContext.procMount) &&
+        !has(c.command) && !has(c.ports) && !has(c.volumeDevices) && !has(c.envFrom) &&
+        (!has(c.env) || c.env.all(e, !has(e.valueFrom) || has(e.valueFrom.fieldRef))) &&
+        (!has(c.volumeMounts) || c.volumeMounts.all(m, m.name in ['purlis-link', 'purlis-kept']))))
+      message: purlis's cluster operator's template confines each container as purlis's runner is.
+      reason: Forbidden
+---
 # Source: purlis-cluster-operator/templates/forge-policy.yaml
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
@@ -516,4 +636,18 @@ metadata:
     helm.sh/resource-policy: keep
 spec:
   policyName: purlis-operator-changes-only-a-sandboxs-mode
+  validationActions: [Deny]
+---
+# Source: purlis-cluster-operator/templates/shape-policy.yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-operator-writes-only-a-runners-shape
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: purlis-operator-writes-only-a-runners-shape
   validationActions: [Deny]

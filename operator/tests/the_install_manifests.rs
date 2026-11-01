@@ -288,7 +288,11 @@ fn the_operator_reads_only_its_own_policys_binding() {
     assert_eq!(strings(&rules[1]["verbs"]), ["get"]);
     assert_eq!(
         strings(&rules[1]["resourceNames"]),
-        [purlis_cluster_operator::FORGE_POLICY]
+        [
+            purlis_cluster_operator::POLICY,
+            purlis_cluster_operator::RUNNER_NAMESPACES_POLICY,
+            purlis_cluster_operator::FORGE_POLICY,
+        ]
     );
 }
 
@@ -770,4 +774,109 @@ fn spending_an_app_key_takes_use_on_it() {
         })
         .expect("its binding");
     assert_eq!(strings(&binding["spec"]["validationActions"]), ["Deny"]);
+}
+
+/// The fields of a spec in the pinned upstream's definition of `kind`.
+fn upstream_spec_fields(kind: &str) -> Vec<String> {
+    let vendored = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("vendor/agent-sandbox")
+        .join(purlis_cluster_operator::upstream::VERSION)
+        .join("sandbox-with-extensions.yaml");
+    let definition = common::yaml_documents(&vendored)
+        .into_iter()
+        .find(|d| d["kind"] == "CustomResourceDefinition" && d["spec"]["names"]["kind"] == kind)
+        .expect("the definition");
+    definition["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]
+        ["properties"]
+        .as_object()
+        .expect("its fields")
+        .keys()
+        .cloned()
+        .collect()
+}
+
+#[test]
+fn what_the_operator_writes_of_upstreams_is_held_to_a_runners_shape() {
+    let documents = documents("policy.yaml");
+    let name = "purlis-operator-writes-only-a-runners-shape";
+    let policy = policy_named(&documents, name);
+    let spec = &policy["spec"];
+    assert_eq!(spec["failurePolicy"], "Fail");
+    assert_eq!(
+        policy["metadata"]["annotations"]["helm.sh/resource-policy"],
+        "keep"
+    );
+    let rule = &spec["matchConstraints"]["resourceRules"][0];
+    assert_eq!(strings(&rule["operations"]), ["CREATE", "UPDATE"]);
+    assert_eq!(
+        strings(&rule["resources"]),
+        ["sandboxclaims", "sandboxtemplates", "sandboxwarmpools"]
+    );
+    assert!(
+        spec["matchConditions"][0]["expression"]
+            .as_str()
+            .expect("its condition")
+            .contains("system:serviceaccount:purlis-system:purlis-cluster-operator")
+    );
+    let binding = documents
+        .iter()
+        .find(|d| d["kind"] == "ValidatingAdmissionPolicyBinding" && d["metadata"]["name"] == name)
+        .expect("its binding");
+    assert_eq!(binding["spec"]["policyName"], name);
+    assert_eq!(strings(&binding["spec"]["validationActions"]), ["Deny"]);
+    let validations: Vec<String> = spec["validations"]
+        .as_array()
+        .expect("validations")
+        .iter()
+        .map(|v| v["expression"].as_str().expect("an expression").to_owned())
+        .collect();
+    assert_eq!(validations.len(), 7, "{validations:?}");
+    assert_eq!(
+        validations[0],
+        "request.namespace.startsWith('purlis-runners-')"
+    );
+    // Every field the pinned upstream gives a claim and a template is named, so a new one fails
+    // here and is looked at when the pin moves.
+    for field in upstream_spec_fields("SandboxClaim") {
+        assert!(
+            validations[1].contains(&field),
+            "{field}: {}",
+            validations[1]
+        );
+    }
+    for field in upstream_spec_fields("SandboxTemplate") {
+        assert!(
+            field == "podTemplate" || validations[3].contains(&field),
+            "{field}: {}",
+            validations[3]
+        );
+    }
+    for words in [
+        "automountServiceAccountToken == false",
+        "serviceAccountName == 'default'",
+        "!has(variables.pod.hostNetwork)",
+        "!has(variables.pod.nodeName)",
+    ] {
+        assert!(
+            validations[4].contains(words),
+            "{words}: {}",
+            validations[4]
+        );
+    }
+    assert!(validations[5].contains("['purlis-link', 'purlis-kept'] && has(v.emptyDir)"));
+    for words in [
+        "runAsNonRoot == true",
+        "allowPrivilegeEscalation == false",
+        "drop == ['ALL']",
+        "!has(c.securityContext.capabilities.add)",
+        "type == 'RuntimeDefault'",
+        "!has(c.command)",
+        "has(e.valueFrom.fieldRef)",
+    ] {
+        assert!(
+            validations[6].contains(words),
+            "{words}: {}",
+            validations[6]
+        );
+    }
 }

@@ -253,5 +253,7 @@ kubectl --context "$context" get crd/pools.runners.purlis.dev crd/claims.runners
   validatingadmissionpolicybinding/purlis-claims-use-their-pool \
   validatingadmissionpolicy/purlis-forge \
   validatingadmissionpolicybinding/purlis-forge \
+  validatingadmissionpolicy/purlis-operator-writes-only-a-runners-shape \
+  validatingadmissionpolicybinding/purlis-operator-writes-only-a-runners-shape \
   validatingadmissionpolicy/purlis-operator-changes-only-a-sandboxs-mode \
   validatingadmissionpolicybinding/purlis-operator-changes-only-a-sandboxs-mode >/dev/null

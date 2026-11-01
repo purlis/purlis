@@ -106,16 +106,16 @@ rules:
   - apiGroups: [agents.x-k8s.io]
     resources: [sandboxes]
     verbs: [get, patch]
-  # The policies' bindings, by name only: the operator acts only on Claims admitted under the
-  # policy on Claims, in runner namespaces made under the policy on runner namespaces, and mints
-  # only under the policy on App keys, which it reads too (#4206).
+  # The policies and their bindings, by name only: the operator acts only on Claims admitted under
+  # the policy on Claims, in runner namespaces made under the policy on runner namespaces, and
+  # mints only under the policy on App keys. Their creation times say when (#3854, #4206).
   - apiGroups: [admissionregistration.k8s.io]
     resources: [validatingadmissionpolicybindings]
     resourceNames: [purlis-claims-use-their-pool, purlis-runner-namespaces, purlis-forge]
     verbs: [get, list, watch]
   - apiGroups: [admissionregistration.k8s.io]
     resources: [validatingadmissionpolicies]
-    resourceNames: [purlis-forge]
+    resourceNames: [purlis-claims-use-their-pool, purlis-runner-namespaces, purlis-forge]
     verbs: [get]
   # Asked before each mint: may this Claim's requester still use its Pool (#4206)? It answers
   # questions and grants nothing.
@@ -304,7 +304,3 @@ spec:
             - name: signing-key
               mountPath: /var/run/purlis-cluster-operator/signing-key
               readOnly: true
----
-# Source: purlis-cluster-operator/templates/forge-key-reader.yaml
-# Copyright 2026 Purlis
-# SPDX-License-Identifier: Apache-2.0

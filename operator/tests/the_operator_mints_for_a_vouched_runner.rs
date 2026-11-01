@@ -17,8 +17,8 @@ use purlis_cluster_operator::github::{self, NamedRepo, Token};
 use purlis_cluster_operator::mint::{self, Asked, Challenges, Held};
 use purlis_cluster_operator::vouch::{self, About, SigningKey, SigningKeys};
 use purlis_cluster_operator::{
-    Claim, ClaimForge, ClaimSpec, ClaimStatus, FORGE_POLICY, LinkKey, POLICY, Pool, PoolForge,
-    PoolSpec, SecretRef, forge_in_force_since,
+    Claim, ClaimForge, ClaimSpec, ClaimStatus, FORGE_POLICY, LinkKey, Pool, PoolForge, PoolSpec,
+    SecretRef, in_force_since,
 };
 use ring::agreement::{self, EphemeralPrivateKey, UnparsedPublicKey, X25519};
 use serde_json::{Map, Value, json};
@@ -303,6 +303,7 @@ fn binding_of(policy: &str, made: i64) -> ValidatingAdmissionPolicyBinding {
     }))
     .expect("a binding");
     binding.metadata.creation_timestamp = made_at(made);
+    binding.metadata.generation = Some(1);
     binding
 }
 
@@ -322,11 +323,10 @@ fn pool_of(mint_in_cluster: bool) -> Pool {
 
 /// The Pool and Claim made at 1000, and both policies bound long before.
 fn may_mint(pool: &Pool, claim: &Claim) -> Result<mint::Grant, String> {
-    let binding = binding_of(POLICY, 10);
     mint::may_mint(&Held {
         claim,
         pool,
-        claims_binding: Some(&binding),
+        claims_since: made_at(40).map(|at| at.0),
         forge_since: made_at(100).map(|at| at.0),
     })
 }
@@ -386,12 +386,11 @@ fn what_was_made_before_the_policy_on_app_keys_settled_mints_nothing() {
     let keys = signing_keys();
     let claim = claim_with(&keys, &"ab".repeat(32), NOW);
     let pool = pool_of(true);
-    let binding = binding_of(POLICY, 10);
     let asked = |since: Option<k8s_openapi::jiff::Timestamp>, claim: &Claim, pool: &Pool| {
         mint::may_mint(&Held {
             claim,
             pool,
-            claims_binding: Some(&binding),
+            claims_since: made_at(40).map(|at| at.0),
             forge_since: since,
         })
     };
@@ -413,17 +412,23 @@ fn the_policy_on_app_keys_is_in_force_only_with_its_binding_and_itself_settled()
     let binding = binding_of(FORGE_POLICY, 1000);
     let mut policy = ValidatingAdmissionPolicy::default();
     policy.metadata.creation_timestamp = made_at(2000);
-    assert_eq!(forge_in_force_since(None, Some(&binding)), None);
-    assert_eq!(forge_in_force_since(Some(&policy), None), None);
-    let since = forge_in_force_since(Some(&policy), Some(&binding)).expect("in force");
+    assert_eq!(in_force_since(None, Some(&binding), FORGE_POLICY), None);
+    assert_eq!(in_force_since(Some(&policy), None, FORGE_POLICY), None);
+    let since = in_force_since(Some(&policy), Some(&binding), FORGE_POLICY).expect("in force");
     assert_eq!(since.as_second(), 2030, "the later of the two, settled");
 
     let mut audit = binding.clone();
     audit.spec.validation_actions = strings(&["Audit"]);
-    assert_eq!(forge_in_force_since(Some(&policy), Some(&audit)), None);
+    assert_eq!(
+        in_force_since(Some(&policy), Some(&audit), FORGE_POLICY),
+        None
+    );
     let mut other = binding;
     other.spec.policy_name = "other".into();
-    assert_eq!(forge_in_force_since(Some(&policy), Some(&other)), None);
+    assert_eq!(
+        in_force_since(Some(&policy), Some(&other), FORGE_POLICY),
+        None
+    );
 }
 
 #[test]

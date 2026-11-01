@@ -4038,3 +4038,182 @@ async fn what_a_claim_left_behind_is_removed() {
     let _ = pools.delete("e2e-orphan", &DeleteParams::default()).await;
     scratch.end().await;
 }
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_policy_made_again_under_its_binding_refuses_what_was_made_before_it() {
+    use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicy;
+    use purlis_cluster_operator::{POLICY, SETTLE};
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-made-again").await;
+    let pools = small_pool(&client, "e2e-made-again").await;
+    let claims = claims_in(&client, &scratch.name);
+    claims
+        .create(&PostParams::default(), &claim("before-1", "e2e-made-again"))
+        .await
+        .expect("the claim");
+    vouched_pod(&claims, "before-1").await;
+
+    let policies = Api::<ValidatingAdmissionPolicy>::all(client.clone());
+    let installed = policies.get(POLICY).await.expect("the policy");
+    policies
+        .delete(POLICY, &DeleteParams::default())
+        .await
+        .expect("the policy deleted");
+    let mut again = installed.clone();
+    again.metadata = ObjectMeta {
+        name: Some(POLICY.to_owned()),
+        labels: installed.metadata.labels.clone(),
+        annotations: installed.metadata.annotations.clone(),
+        ..ObjectMeta::default()
+    };
+    again.status = None;
+    eventually("the policy made again", Duration::from_secs(30), || async {
+        policies.create(&PostParams::default(), &again).await.ok()
+    })
+    .await;
+
+    // Looked at again, the claim made before it is refused.
+    claims
+        .patch(
+            "before-1",
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({ "metadata": { "annotations": { "e2e": "again" } } })),
+        )
+        .await
+        .expect("the claim touched");
+    eventually(
+        "the claim says it was made before the policy",
+        Duration::from_secs(60),
+        || async {
+            let claim = claims.get("before-1").await.ok()?;
+            (ready_of(&claim)?.1 == "MadeBeforePolicy").then_some(())
+        },
+    )
+    .await;
+
+    // Later tests make their claims at once: the policy settles first.
+    tokio::time::sleep(Duration::from_secs(SETTLE.as_secs().unsigned_abs() + 2)).await;
+    let _ = pools
+        .delete("e2e-made-again", &DeleteParams::default())
+        .await;
+    scratch.end().await;
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn the_operators_token_writes_upstreams_objects_only_in_a_runners_shape() {
+    use purlis_cluster_operator::upstream::{SandboxClaim, SandboxTemplate};
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-shape").await;
+    let pools = small_pool(&client, "e2e-shape").await;
+    let claims = claims_in(&client, &scratch.name);
+    claims
+        .create(&PostParams::default(), &claim("shape-1", "e2e-shape"))
+        .await
+        .expect("the claim");
+    // The operator's own objects were admitted: its runner runs.
+    vouched_pod(&claims, "shape-1").await;
+
+    let as_operator = acting_as(SERVICE_ACCOUNT).await;
+    let name = purlis_cluster_operator::upstream::name_for("e2e-shape");
+    let held = Api::<SandboxTemplate>::namespaced(client.clone(), &runners())
+        .get(&name)
+        .await
+        .expect("the operator's template");
+    let dry = PostParams {
+        dry_run: true,
+        ..PostParams::default()
+    };
+    let with = |change: &dyn Fn(&mut serde_json::Value), namespace: &str| -> SandboxTemplate {
+        let mut value = serde_json::to_value(&held).expect("JSON");
+        value["metadata"] =
+            serde_json::json!({ "name": "e2e-shape-other", "namespace": namespace });
+        change(&mut value);
+        serde_json::from_value(value).expect("a template")
+    };
+    let cases: [(&str, &str, Box<dyn Fn(&mut serde_json::Value)>); 5] = [
+        (
+            "a service account",
+            "runs as the default service account",
+            Box::new(|v: &mut serde_json::Value| {
+                v["spec"]["podTemplate"]["spec"]["serviceAccountName"] = "other".into()
+            }),
+        ),
+        (
+            "a mounted token",
+            "runs as the default service account",
+            Box::new(|v: &mut serde_json::Value| {
+                v["spec"]["podTemplate"]["spec"]["automountServiceAccountToken"] = true.into()
+            }),
+        ),
+        (
+            "a folder of the node's",
+            "only purlis's own volumes",
+            Box::new(|v: &mut serde_json::Value| {
+                v["spec"]["podTemplate"]["spec"]["volumes"][1] = serde_json::json!({
+                    "name": "purlis-kept", "hostPath": { "path": "/" },
+                })
+            }),
+        ),
+        (
+            "a capability",
+            "confines each container",
+            Box::new(|v: &mut serde_json::Value| {
+                v["spec"]["podTemplate"]["spec"]["containers"][0]["securityContext"]["capabilities"]
+                    ["add"] = serde_json::json!(["SYS_ADMIN"])
+            }),
+        ),
+        (
+            "a secret in a variable",
+            "confines each container",
+            Box::new(|v: &mut serde_json::Value| {
+                v["spec"]["podTemplate"]["spec"]["containers"][0]["env"] = serde_json::json!([{
+                    "name": "S", "valueFrom": { "secretKeyRef": { "name": "s", "key": "k" } },
+                }])
+            }),
+        ),
+    ];
+    let templates = Api::<SandboxTemplate>::namespaced(as_operator.clone(), &runners());
+    for (what, words, change) in &cases {
+        let made = templates
+            .create(&dry, &with(change.as_ref(), &runners()))
+            .await;
+        assert!(refused_saying(&made, words), "{what}: {made:?}");
+    }
+    // Its own, under another name, is admitted.
+    templates
+        .create(&dry, &with(&|_| {}, &runners()))
+        .await
+        .expect("the operator's shape is admitted");
+    // A system namespace, the operator's own among them, as its template and as its claim.
+    let upstream_claim = Api::<SandboxClaim>::namespaced(client.clone(), &runners())
+        .get("shape-1")
+        .await
+        .expect("the operator's upstream claim");
+    for namespace in ["kube-system", "agent-sandbox-system", "purlis-system"] {
+        let made = Api::<SandboxTemplate>::namespaced(as_operator.clone(), namespace)
+            .create(&dry, &with(&|_| {}, namespace))
+            .await;
+        assert!(
+            refused_saying(&made, "in a runner namespace alone"),
+            "{namespace}: {made:?}"
+        );
+        let mut other = upstream_claim.clone();
+        other.metadata = ObjectMeta {
+            name: Some("e2e-shape-other".to_owned()),
+            namespace: Some(namespace.to_owned()),
+            ..ObjectMeta::default()
+        };
+        other.status = None;
+        let made = Api::<SandboxClaim>::namespaced(as_operator.clone(), namespace)
+            .create(&dry, &other)
+            .await;
+        assert!(
+            refused_saying(&made, "in a runner namespace alone"),
+            "{namespace}: {made:?}"
+        );
+    }
+    let _ = pools.delete("e2e-shape", &DeleteParams::default()).await;
+    scratch.end().await;
+}
