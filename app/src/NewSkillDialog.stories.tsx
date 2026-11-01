@@ -91,7 +91,7 @@ export const WriteItYourself: Story = {
     const dialog = await dialogNamed("Write a new skill");
     const box = within(dialog).getByLabelText("Name");
     await untilFocusWithin(() => box, "the form starts on its name");
-    await userEvent.type(box, "secrets");
+    await userEvent.type(box, "purlis-secrets");
     await expect(within(dialog).getByTestId("skill-new-problem")).toHaveTextContent(NAME_RESERVED);
     await expect(
       within(dialog).getByRole("button", { name: "Make it and open its page" }),

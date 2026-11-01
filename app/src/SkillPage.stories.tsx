@@ -36,7 +36,7 @@ const LINT = skill("lint-rs", {
   granted: { to: "all" },
   description: "Runs clippy with the workspace's flags and explains each warning in one line.",
 });
-const BROWSER = skill("browser", {
+const BROWSER = skill("purlis-browser", {
   level: "built-in",
   label: "built-in",
   grant: null,

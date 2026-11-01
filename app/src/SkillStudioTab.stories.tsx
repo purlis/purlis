@@ -44,7 +44,7 @@ const SKILLS = [
     left_out: "a name starting with purlis- is purlis's own, so this skill never loads: rename it",
     description: "Checks a Figma frame against the built page and lists every gap.",
   }),
-  skill("browser", {
+  skill("purlis-browser", {
     level: "built-in",
     label: "built-in",
     grant: null,
@@ -52,7 +52,7 @@ const SKILLS = [
     description: "Drives a real browser for a task that needs one, with credentials from a vault.",
     folder: "/app/plugin/skills/purlis-browser",
   }),
-  skill("secrets", {
+  skill("purlis-secrets", {
     level: "built-in",
     label: "built-in",
     grant: null,
