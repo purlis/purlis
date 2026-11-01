@@ -151,6 +151,7 @@ fn a_press_on_anything_but_what_was_drawn_changes_nothing() {
         )
         .is_err()
     );
+    let digest = proposal.digest();
     let wrong_chat = Asked {
         session: 8,
         ..press(id, Press::Once, "x")
@@ -195,7 +196,7 @@ fn a_typed_domain_is_what_fills() {
     let audited = Audited::default();
     let asked = Asked {
         typed: Some("shop.example.test"),
-        ..press(id, Press::Once, &proposal.digest())
+        ..press(id, Press::Once, &digest)
     };
     answered(dir.path(), &grants, &audited, &asked).expect("allowed");
     let login = tool_of(&grants, "shop-login")
@@ -211,9 +212,10 @@ fn a_typed_domain_spelled_otherwise_is_drawn_again_before_anything_is_allowed() 
     let grants = Grants::default();
     let (id, proposal, heard) = raised(dir.path(), &grants, "https://evil.example.test/login");
     let audited = Audited::default();
+    let digest = proposal.digest();
     let asked = Asked {
         typed: Some("pаypal.example.test"),
-        ..press(id, Press::Once, &proposal.digest())
+        ..press(id, Press::Once, &digest)
     };
     let drawn = answered(dir.path(), &grants, &audited, &asked);
     assert!(matches!(drawn, Ok(Pressed::DrawnAgain { .. })), "{drawn:?}");
@@ -241,9 +243,10 @@ fn a_typed_http_site_is_refused_and_the_ask_stays() {
     let grants = Grants::default();
     let (id, proposal, _heard) = raised(dir.path(), &grants, "https://shop.example.test/");
     let audited = Audited::default();
+    let digest = proposal.digest();
     let asked = Asked {
         typed: Some("http://shop.example.test"),
-        ..press(id, Press::Once, &proposal.digest())
+        ..press(id, Press::Once, &digest)
     };
     assert!(answered(dir.path(), &grants, &audited, &asked).is_err());
     assert_eq!(grants.waiting().len(), 1);
@@ -325,9 +328,10 @@ fn an_empty_field_never_falls_back_to_the_chats_site() {
     let grants = Grants::default();
     let (id, proposal, _heard) = raised(dir.path(), &grants, "https://shop.example.test/");
     let audited = Audited::default();
+    let digest = proposal.digest();
     let asked = Asked {
         typed: Some("  "),
-        ..press(id, Press::Once, &proposal.digest())
+        ..press(id, Press::Once, &digest)
     };
     assert!(answered(dir.path(), &grants, &audited, &asked).is_err());
     assert!(tool_of(&grants, "shop-login").is_none());
@@ -340,9 +344,10 @@ fn always_on_a_typed_site_shows_its_line_first() {
     let (id, proposal, _heard) = raised(dir.path(), &grants, "https://evil.example.test/login");
     let audited = Audited::default();
     let before = file_of(dir.path());
+    let digest = proposal.digest();
     let asked = Asked {
         typed: Some("shop.example.test"),
-        ..press(id, Press::Always, &proposal.digest())
+        ..press(id, Press::Always, &digest)
     };
     let drawn = answered(dir.path(), &grants, &audited, &asked);
     assert!(matches!(drawn, Ok(Pressed::DrawnAgain { .. })), "{drawn:?}");
@@ -359,9 +364,10 @@ fn keep_blocked_is_not_asked_again_in_that_chat() {
     let grants = Grants::default();
     let (id, proposal, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
     let audited = Audited::default();
+    let digest = proposal.digest();
     let asked = Asked {
         reason: Some("not that site"),
-        ..press(id, Press::Keep, &proposal.digest())
+        ..press(id, Press::Keep, &digest)
     };
     answered(dir.path(), &grants, &audited, &asked).expect("kept");
     assert_eq!(

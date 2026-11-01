@@ -146,7 +146,6 @@ impl World {
             browser_sites: Vec::new(),
             pool_logins: Vec::new(),
             pool_tools: Vec::new(),
-            browser_logins: Vec::new(),
             declared: purlis_core::sandbox::services::Declared::default(),
         }
     }
@@ -183,6 +182,7 @@ impl World {
             browser_sites: self.browser_sites.clone(),
             pool_logins: self.pool_logins.clone(),
             pool_tools: self.pool_tools.clone(),
+            browser_logins: Vec::new(),
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
             at_its_prompt: &at_prompt,
