@@ -1105,21 +1105,23 @@ impl Browser {
                 })
                 .map_err(|e| Refusal::Engine(e.to_string()))?;
             *lock(&inner.judging) = Some(judging);
-            let (following, steps) = std::sync::mpsc::channel::<FollowUp>();
-            let follow_for = Arc::downgrade(&inner);
-            thread::Builder::new()
-                .name("browser-follow-ups".to_owned())
-                .spawn(move || {
-                    for step in steps {
-                        let Some(inner) = follow_for.upgrade() else {
-                            break;
-                        };
-                        inner.follow_up(step);
-                    }
-                })
-                .map_err(|e| Refusal::Engine(e.to_string()))?;
-            *lock(&inner.following) = Some(following);
         }
+        // Calls wait on the engine, which can leave one unanswered: the thread that reads its
+        // events never makes one, or what it reads behind that call comes too late (#4472).
+        let (following, steps) = std::sync::mpsc::channel::<FollowUp>();
+        let follow_for = Arc::downgrade(&inner);
+        thread::Builder::new()
+            .name("browser-follow-ups".to_owned())
+            .spawn(move || {
+                for step in steps {
+                    let Some(inner) = follow_for.upgrade() else {
+                        break;
+                    };
+                    inner.follow_up(step);
+                }
+            })
+            .map_err(|e| Refusal::Engine(e.to_string()))?;
+        *lock(&inner.following) = Some(following);
         let reading = inner.clone();
         thread::Builder::new()
             .name("browser-events".to_owned())
@@ -4351,7 +4353,6 @@ impl Inner {
                     }
                 }
                 self.changed.notify_all();
-                let _ = devtools.call("Runtime.runIfWaitingForDebugger", json!({}), on);
             }
             FollowUp::Judge { paused, outbound } => {
                 // Judged on a thread of its own, so a request is never held up behind another
@@ -4380,8 +4381,6 @@ impl Inner {
                 );
             }
             FollowUp::Release(session) => {
-                let on = Some(session.as_str());
-                let _ = devtools.call("Runtime.runIfWaitingForDebugger", json!({}), on);
                 let _ = devtools.call(
                     "Target.detachFromTarget",
                     json!({ "sessionId": session }),

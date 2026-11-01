@@ -309,7 +309,7 @@ impl Engine {
             "Target.setAutoAttach" if on == Some("S-PAGE-1") => {
                 self.emit(
                     "Target.attachedToTarget",
-                    json!({"sessionId":"S-PAYMENT","targetInfo":{"targetId":"PAYMENT-FRAME","type":"iframe","title":"","url":"http://other.test/pay.html","attached":true},"waitingForDebugger":true}),
+                    json!({"sessionId":"S-PAYMENT","targetInfo":{"targetId":"PAYMENT-FRAME","type":"iframe","title":"","url":"http://other.test/pay.html","attached":true},"waitingForDebugger":false}),
                     Some("S-PAGE-1"),
                 );
                 Ok(json!({}))
@@ -826,10 +826,10 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
         taps: Mutex::new(Vec::new()),
     });
     let browser = Browser::over(Arc::new(Stand(engine.clone())), receiver, limits, judge).unwrap();
-    // Set up means both sessions resumed: every frame is known by then.
+    // Set up means both sessions were read: every frame is known soon after.
     let start = std::time::Instant::now();
     while engine
-        .sent("Runtime.runIfWaitingForDebugger")
+        .sent("Page.getFrameTree")
         .iter()
         .filter(|s| s.session.as_deref() == Some("S-PAYMENT"))
         .count()
@@ -2131,8 +2131,7 @@ fn a_page_opened_with_no_address_has_not_settled_until_it_has_one() {
                 None,
             );
         }
-        if sent.method == "Runtime.runIfWaitingForDebugger"
-            && sent.session.as_deref() == Some("S-PAGE-10")
+        if sent.method == "Page.getFrameTree" && sent.session.as_deref() == Some("S-PAGE-10")
         {
             // The engine goes on in its own time: the address comes well after the quiet while.
             let events = super::lock(&engine.events).clone();
@@ -2737,7 +2736,11 @@ fn a_slow_call_to_the_engine_never_stops_its_events_being_read() {
         Some("S-PAGE-1"),
     );
     let start = std::time::Instant::now();
-    while engine.sent("Page.enable").iter().all(|s| s.session.as_deref() != Some("S-LATER")) {
+    while engine
+        .sent("Page.enable")
+        .iter()
+        .all(|s| s.session.as_deref() != Some("S-LATER"))
+    {
         assert!(start.elapsed() < Duration::from_secs(1), "never set up");
         std::thread::sleep(Duration::from_millis(5));
     }
@@ -2748,7 +2751,10 @@ fn a_slow_call_to_the_engine_never_stops_its_events_being_read() {
     );
     let start = std::time::Instant::now();
     while super::lock(&browser.inner.state).page("PAGE-7").is_none() {
-        assert!(start.elapsed() < Duration::from_secs(1), "the event waited on the call");
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "the event waited on the call"
+        );
         std::thread::sleep(Duration::from_millis(5));
     }
 }
