@@ -3185,6 +3185,7 @@ fn a_studio_read_asks_git_once_about_a_local_file_with_its_tables() {
         crate::profiles::GIT_ASKS.with(std::cell::Cell::get),
         asks + 1
     );
+}
 
 /// A machine whose Claude Code has the plugins `superpowers` and `pdf` installed, each with one
 /// skill.
