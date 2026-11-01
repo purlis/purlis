@@ -14,7 +14,7 @@ use crate::skills::{
 };
 
 /// The most skills a chat lists on every harness (ADR 0102 as amended 2026-10-21).
-const MOST: usize = 30;
+const MOST: usize = 60;
 
 fn write(dir: &Path, text: &str) {
     std::fs::create_dir_all(dir).unwrap();
@@ -537,7 +537,7 @@ fn a_briefed_chat_over_the_budget_is_briefed_on_the_index_and_not_on_what_it_hid
 
 #[test]
 fn a_chat_the_built_in_skills_put_past_the_budget_is_stamped_with_its_index() {
-    // 26 plane skills fit the budget alone; with six built-in skills they do not.
+    // 26 plane skills fit Codex's budget alone; with six built-in skills they do not.
     let (tmp, bundle) = a_plane_of(26);
     let root = tmp.path();
     for name in ["secrets", "theme", "browser", "update", "persona"] {
@@ -546,11 +546,6 @@ fn a_chat_the_built_in_skills_put_past_the_budget_is_stamped_with_its_index() {
             &format!("---\nname: {name}\ndescription: Purlis's {name}.\n---\n"),
         );
     }
-    assert!(
-        laid_out(root, &bundle, None)
-            .iter()
-            .any(|name| name == INDEX)
-    );
 
     let with = stamp(root, Some(&bundle));
     let without = stamp(root, None);
@@ -770,7 +765,7 @@ fn use_skill_and_the_stamp_of_a_chat_in_a_clone_route_its_repo_skills_as_its_fol
     // #3245: a chat's start routes its set with the repo skills of the clone it works in, so
     // Use skill… and its restart's stamp read the same clone, and mark hidden what it was not
     // handed.
-    let (tmp, bundle) = a_plane_of(MOST - 1);
+    let (tmp, bundle) = a_plane_of(crate::harness::SKILL_BUDGET.skills - 1);
     let root = tmp.path();
     let clone = root.join("workspaces/smart-ide/api");
     std::fs::create_dir_all(clone.join(".git")).unwrap();
@@ -986,4 +981,30 @@ fn the_studio_routes_a_harness_as_a_chat_at_the_workspace_root_starts_whatever_i
         "{:?}",
         codex.set.clashes
     );
+}
+
+/// **Past a written budget the router hides all it may, and a pin stays the way to keep one**
+/// (#4610): a plane of skills that fit each harness's own numbers, written down to five.
+#[test]
+fn a_written_budget_moves_the_line_the_router_hides_at_and_a_pin_still_keeps_a_skill() {
+    let (tmp, bundle) = a_plane_of(10);
+    let root = tmp.path();
+    assert!(
+        !laid_out(root, &bundle, None)
+            .iter()
+            .any(|name| name == INDEX)
+    );
+
+    std::fs::write(
+        root.join("charter.toml"),
+        "schema = 1\n[skills.budget]\nskills = 5\n",
+    )
+    .unwrap();
+    assert_eq!(laid_out(root, &bundle, None), [INDEX]);
+
+    let workspace = crate::skills::PinnedBy::Workspace("smart-ide".to_owned());
+    assert!(pin(root, &workspace, "skill-03", true).unwrap());
+    let mut kept = laid_out(root, &bundle, None);
+    kept.sort();
+    assert_eq!(kept, ["skill-03", INDEX]);
 }

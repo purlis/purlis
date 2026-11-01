@@ -89,7 +89,12 @@ const BUILT_IN: StudioRouter = {
   grade: null,
   graded: null,
   written: null,
-  budget: { skills: 30, chars: 6000 },
+  budget: [
+    { program: "Claude Code", skills: 60, chars: 15000 },
+    { program: "Codex", skills: 30, chars: 6000 },
+    { program: "opencode", skills: 30, chars: 6000 },
+  ],
+  past_limits: [],
   preview:
     "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root. A chat started in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
 };
@@ -287,7 +292,12 @@ const RELEVANCE: StudioRouter = {
   problem: false,
   extension: "relevance",
   written: "relevance",
-  budget: { skills: 30, chars: 6000 },
+  budget: [
+    { program: "Claude Code", skills: 60, chars: 15000 },
+    { program: "Codex", skills: 30, chars: 6000 },
+    { program: "opencode", skills: 30, chars: 6000 },
+  ],
+  past_limits: [],
   preview:
     "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root, since the router relevance is asked only at each chat's start. A chat started in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
   grade: null,
@@ -324,7 +334,7 @@ describe("the Routing page (#3692)", () => {
     const facts = await screen.findByTestId("skill-routing-facts");
     expect(within(facts).getByTestId("skill-routing-router")).toHaveTextContent("Built-in");
     expect(facts).toHaveTextContent(
-      "30 skills, 6,000 characters of descriptions, on every program",
+      "Claude Code: 60 skills, 15,000 characters. Codex: 30 skills, 6,000 characters.",
     );
     // What it counts, and that a program's own catalogue is not counted (#3324).
     expect(within(facts).getByTestId("skill-routing-budget-counts")).toHaveTextContent(

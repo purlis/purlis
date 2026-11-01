@@ -42,6 +42,8 @@ export const SETTINGS_GROUPS: Readonly<
     { id: "project.general", label: "General" },
     { id: "project.saving", label: "Saving" },
     { id: "project.harness", label: "Harness & profiles" },
+    // Behind the Skill studio's flag (#4610): offered only while it is on.
+    { id: "project.skills", label: "Skills" },
     { id: "project.sandbox", label: "Sandbox" },
     { id: "project.sandbox.mine", label: "Your hosts" },
     { id: "project.sandbox.yours", label: "Your level" },

@@ -18,7 +18,7 @@ fn project() -> (tempfile::TempDir, PathBuf) {
     std::fs::create_dir_all(at.join("home")).unwrap();
     std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
     std::fs::write(root.join("charter.toml"), "[plane]\n").unwrap();
-    for at in 0..40 {
+    for at in 0..70 {
         let name = format!("extra-{at:02}");
         let dir = root.join("workspaces/alpha/skills").join(&name);
         std::fs::create_dir_all(&dir).unwrap();

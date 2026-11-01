@@ -13,10 +13,11 @@
 
 use std::path::{Path, PathBuf};
 
+/// The line format's one parser, and its `str.strip` and `str.splitlines` (#3482).
+pub use budget_setting::budget_in;
 pub use purlis_skills::change::{
     BuiltInTemplates, Offer, Problem, SkillTemplate, Template, TemplateId, check,
 };
-/// The line format's one parser, and its `str.strip` and `str.splitlines` (#3482).
 pub use purlis_skills::fence;
 pub use purlis_skills::{
     Argument, At, BUILT_IN_OWN_PREFIX, BUILT_IN_PREFIXES, Budget, Chat, Clash, Compat,
@@ -39,6 +40,7 @@ pub use purlis_skills::runs;
 pub use purlis_skills::{review, tree};
 pub mod source;
 pub use purlis_skills::{About, Deprecated, Lifecycle, about_of};
+pub mod budget_setting;
 pub mod first_open;
 pub mod grades;
 pub mod graph;
@@ -1160,7 +1162,7 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
         offered
             .iter()
             .map(|one| (&one.effective.skill, &one.declared)),
-        chat.harness.skill_budget(),
+        budget_in(chat.plane, chat.workspace, chat.harness),
     );
     ChatSkills {
         harness: chat.harness,
@@ -1300,7 +1302,10 @@ fn routed(
         persona,
         harness.skills(),
         None,
-        Some(harness.skill_budget()),
+        Some(at.map_or_else(
+            || harness.skill_budget(),
+            |at| budget_in(at.plane, at.workspace, harness),
+        )),
     )
 }
 
@@ -2077,7 +2082,7 @@ impl OwnCatalogue {
 }
 
 /// `n` with its thousands set apart by commas, as the window writes a count (`1,310`).
-fn grouped(n: usize) -> String {
+pub(crate) fn grouped(n: usize) -> String {
     let digits = n.to_string();
     let mut out = String::new();
     for (at, digit) in digits.chars().enumerate() {
@@ -2190,7 +2195,7 @@ fn harnesses_in_the_studio(
                 set,
                 route,
                 &own,
-                Some(harness.skill_budget()),
+                Some(budget_in(plane, workspace, harness)),
                 || pins.to_vec(),
                 None,
             );

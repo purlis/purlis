@@ -285,7 +285,7 @@ impl SkillSet {
         let mut spent = cost(shown_now, budget);
         let index = usize::from(!named.is_empty());
         spent.skills += index;
-        spent.chars += index * INDEX_DESCRIPTION.chars().count();
+        spent.chars += index * budget.line(INDEX, INDEX_DESCRIPTION.chars().count());
         let hid_all_it_may = parts.hideable().all(|name| named.contains(name));
         let still_over = if !spent.over() {
             None
@@ -505,7 +505,7 @@ impl<'a> Parts<'a> {
         let index = usize::from(index);
         let with_index = |mut spent: crate::Spent| {
             spent.skills += index;
-            spent.chars += index * INDEX_DESCRIPTION.chars().count();
+            spent.chars += index * budget.line(INDEX, INDEX_DESCRIPTION.chars().count());
             spent
         };
         let fixed = self.fixed();

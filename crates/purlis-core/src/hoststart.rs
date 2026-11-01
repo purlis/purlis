@@ -327,7 +327,7 @@ impl ChatSkills {
         let routed = crate::skills::router::at_start(
             &set,
             chosen,
-            harness.skill_budget(),
+            crate::skills::budget_in(&self.root, self.workspace.as_deref(), harness),
             &pins,
             asker,
             crate::extension::studio::ROUTER_DEADLINE,
