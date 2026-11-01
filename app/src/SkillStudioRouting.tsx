@@ -58,8 +58,8 @@ function routerSaid(router: string): string {
   return router === BUILT_IN_ROUTER ? "the built-in router" : `the router ${router}`;
 }
 
-/** What a chat's row says under its number: its last prompt's routing first (#4297), as the line
- *  is cut at its end, then why its start fell back, or what its start hid. */
+/** What a chat's row says under its number: its start's line and its last prompt's (#4297). The
+ *  line is cut at its end, so it leads with the one its mark says. */
 function lineOf(chat: StudioRouted): string {
   const start = chat.routing.fell_back
     ? chat.routing.said
@@ -67,7 +67,10 @@ function lineOf(chat: StudioRouted): string {
       ? "It hid nothing at the chat's start."
       : `It hid ${counted(chat.hidden.length, "skill", "skills")} at the chat's start.`;
   const prompt = chat.routing.last_prompt;
-  return prompt ? `${prompt.said} ${start}` : start;
+  if (!prompt) return start;
+  return prompt.fell_back && !chat.routing.fell_back
+    ? `${prompt.said} ${start}`
+    : `${start} ${prompt.said}`;
 }
 
 /** A chat's one mark: that its start fell back on the built-in router, which is its whole list;
@@ -409,7 +412,7 @@ export function RoutedChats({
     );
   return (
     <List
-      aria-label="Each chat's start"
+      aria-label="Each chat's routing"
       className="skill-library"
       selectionMode="single"
       disallowEmptySelection
@@ -435,8 +438,8 @@ export function RoutedChats({
   );
 }
 
-/** **A chat's start, beside the list** (#3692): the router asked, how long it took, what came of
- *  it, and every skill it hid. */
+/** **A chat's routing, beside the list** (#3692, #4297): the router asked, how long it took at the
+ *  chat's start, what came of it, every skill it hid, and how it did on the last prompt. */
 export function RoutedChatItem({ chat }: { chat: StudioRouted | undefined }) {
   if (chat === undefined)
     return (

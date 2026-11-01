@@ -9067,10 +9067,11 @@ fn a_reattached_chats_prompt_key_is_the_one_its_host_kept() {
     );
 }
 
-/// A router extension that reads prompts, its question held past the deadline where `slow`, and
-/// its answer an echo of the prompt where it answers.
+/// A router extension whose question is held past the deadline where `slow`, and whose reading of
+/// prompts is `reads`.
 struct PromptRouter {
     slow: bool,
+    reads: bool,
 }
 
 impl purlis_core::skills::router::AskRouter for PromptRouter {
@@ -9089,7 +9090,7 @@ impl purlis_core::skills::router::AskRouter for PromptRouter {
     }
 
     fn reads_prompts(&self, _: &str) -> bool {
-        true
+        self.reads
     }
 }
 
@@ -9124,28 +9125,56 @@ fn a_chat_its_router_reads_the_prompts_of(plane: &Path) -> (Chats, u32) {
 }
 
 /// #4297: what the Routing page and the chat's tab read of a prompt is kept with the chat, each
-/// prompt's over the last's, and holds no word of the prompt. Seen red: only the event log had it.
+/// prompt's over the last's. Seen red: only the event log had it.
 #[test]
-fn a_chat_keeps_its_latest_prompt_s_routing_and_no_word_of_the_prompt_4297() {
-    const WORDS: &str = "the-private-words";
+fn a_chat_keeps_its_latest_prompt_s_routing_4297() {
     let plane = tempfile::tempdir().expect("a plane");
     let (chats, session) = a_chat_its_router_reads_the_prompts_of(plane.path());
-    let last = |chats: &Chats| chats.routings()[0].last_prompt.clone();
-    assert_eq!(last(&chats), None, "no prompt yet");
+    assert_eq!(chats.routings()[0].last_prompt, None, "no prompt yet");
 
-    chats.asks_routers_with(Arc::new(PromptRouter { slow: false }));
-    assert!(chats.pointed(session, WORDS).is_some());
-    let answered = last(&chats).expect("kept");
-    assert_eq!(answered.fell_back, None);
-    assert_eq!(chats.last_prompt_of(session).as_ref(), Some(&answered));
+    chats.asks_routers_with(Arc::new(PromptRouter {
+        slow: true,
+        reads: true,
+    }));
+    assert_eq!(chats.pointed(session, "go"), None);
+    let slow = chats.routings()[0].last_prompt.clone().expect("kept");
+    assert!(slow.fell_back.is_some());
+    assert_eq!(
+        chats.skills_of(session).expect("open").last_prompt.as_ref(),
+        Some(&slow),
+        "its tab reads the same"
+    );
 
-    chats.asks_routers_with(Arc::new(PromptRouter { slow: true }));
-    assert_eq!(chats.pointed(session, WORDS), None);
-    let slow = last(&chats).expect("kept");
-    assert!(slow.fell_back.is_some(), "the latest prompt's, a slow one");
-    assert!(slow.pointed.is_empty());
-    let kept = format!("{:?}", lock(&chats.open)[&session].last_prompt);
-    assert!(!kept.contains(WORDS), "{kept}");
+    let routed = lock(&chats.open)[&session].skills_read.routed.clone();
+    let routed = routed.expect("routed");
+    let answered = purlis_core::skills::router::Record {
+        prompt: true,
+        ..routed.record.clone()
+    };
+    chats.keep_last_prompt(session, &routed, Some(&answered));
+    assert_eq!(chats.routings()[0].last_prompt, Some(answered));
+    let _ = chats.close(session);
+}
+
+/// #4297: a router turned off for prompts reads no further one, so what it did on its last says
+/// nothing now, and the need it raised goes.
+#[test]
+fn a_router_that_reads_no_further_prompt_leaves_no_last_prompt_4297() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let (chats, session) = a_chat_its_router_reads_the_prompts_of(plane.path());
+    chats.asks_routers_with(Arc::new(PromptRouter {
+        slow: true,
+        reads: true,
+    }));
+    chats.pointed(session, "go");
+    assert!(chats.routings()[0].last_prompt.is_some());
+
+    chats.asks_routers_with(Arc::new(PromptRouter {
+        slow: false,
+        reads: false,
+    }));
+    assert_eq!(chats.pointed(session, "go"), None);
+    assert_eq!(chats.routings()[0].last_prompt, None);
     let _ = chats.close(session);
 }
 
@@ -9155,14 +9184,8 @@ fn a_prompt_answered_after_its_chat_started_again_is_not_kept_by_the_new_start_4
     let plane = tempfile::tempdir().expect("a plane");
     let (chats, session) = a_chat_its_router_reads_the_prompts_of(plane.path());
     let was = lock(&chats.open)[&session].skills_read.routed.clone();
-    chats.keep_last_prompt(
-        session,
-        &Arc::new(purlis_core::skills::router::Routed {
-            reads_prompts: false,
-            ..(*was.clone().expect("routed")).clone()
-        }),
-        &was.expect("routed").record,
-    );
+    let was = was.expect("routed");
+    chats.keep_last_prompt(session, &Arc::new((*was).clone()), Some(&was.record));
     assert_eq!(lock(&chats.open)[&session].last_prompt, None);
     let _ = chats.close(session);
 }

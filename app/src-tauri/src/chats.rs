@@ -187,6 +187,9 @@ pub struct ChatForSkills {
     /// Where its plane skills came from, as its start read them (#3234): what its set is routed
     /// from again (#3245).
     pub start: purlis_core::hoststart::ChatSkills,
+    /// How its router did on its latest prompt (#4297), held with `start` so the two are of one
+    /// start.
+    pub last_prompt: Option<purlis_core::skills::router::Record>,
     /// What its prompts are digested under (SK-38, #3369): its prompt key, which its hooks read
     /// too. None for a chat whose host gave it none.
     pub salt: Option<purlis_core::skillspan::PromptSalt>,
@@ -5477,6 +5480,7 @@ impl Chats {
             harness: running.harness,
             start: running.skills_read.clone(),
             plane_skills: running.plane_skills,
+            last_prompt: running.last_prompt.clone(),
             salt: running.prompt_key.clone(),
             cwd: running.chat.cwd.clone(),
             // As its start read its declaration: what a running chat started with (decision 15).
@@ -5504,21 +5508,25 @@ impl Chats {
             .routed
             .clone()?;
         let router = lock(&self.router).clone()?;
-        let prompted = routed.on_prompt(prompt, &router)?;
-        self.keep_last_prompt(session, &routed, &prompted.record);
+        let Some(prompted) = routed.on_prompt(prompt, &router) else {
+            self.keep_last_prompt(session, &routed, None);
+            return None;
+        };
+        self.keep_last_prompt(session, &routed, Some(&prompted.record));
         if let Some(tell) = lock(&self.routed).as_ref() {
             tell(session, &prompted.record);
         }
         prompted.pointer
     }
 
-    /// Keeps `record` as chat `session`'s latest prompt's routing, where the chat is still the
-    /// start `routed` came from: the router may take its 100 ms while it is started again.
+    /// Keeps `record` as chat `session`'s latest prompt's routing, or none where its router was
+    /// not asked, where the chat is still the start `routed` came from: the router may take its
+    /// 100 ms while it is started again.
     fn keep_last_prompt(
         &self,
         session: u32,
         routed: &Arc<purlis_core::skills::router::Routed>,
-        record: &purlis_core::skills::router::Record,
+        record: Option<&purlis_core::skills::router::Record>,
     ) {
         if let Some(running) = lock(&self.open).get_mut(&session)
             && running
@@ -5527,13 +5535,8 @@ impl Chats {
                 .as_ref()
                 .is_some_and(|now| Arc::ptr_eq(now, routed))
         {
-            running.last_prompt = Some(record.clone());
+            running.last_prompt = record.cloned();
         }
-    }
-
-    /// **How chat `session`'s router did on its latest prompt** (#4297), for its tab.
-    pub fn last_prompt_of(&self, session: u32) -> Option<purlis_core::skills::router::Record> {
-        lock(&self.open).get(&session)?.last_prompt.clone()
     }
 
     /// **Every chat open here that its start routed by a router extension** (SK-15b), by number,

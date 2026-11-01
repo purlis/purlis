@@ -13487,8 +13487,6 @@ export type SkillPinsTogether = {
  *  record of it, as the chat's tab and the studio say it. No word of the prompt.
  */
 export type SkillPromptRouting = {
-	/**  How long its question took, in milliseconds. */
-	ms: number,
 	/**  Whether the prompt went on with no pointer because of how it did. */
 	fell_back: boolean,
 	/**  What a person is told of it, in the core's words. */

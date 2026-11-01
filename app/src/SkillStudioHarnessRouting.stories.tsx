@@ -344,9 +344,9 @@ export const HarnessSkillsNarrow: Story = {
 export const Routing: Story = {
   args: { page: "routing" },
   play: async ({ canvas }) => {
-    const grid = await canvas.findByRole("grid", { name: "Each chat's start" });
+    const grid = await canvas.findByRole("grid", { name: "Each chat's routing" });
     await expect(within(grid).getByText("Fell back to the built-in router")).toBeVisible();
-    await tabInto(() => canvas.getByRole("grid", { name: "Each chat's start" }));
+    await tabInto(() => canvas.getByRole("grid", { name: "Each chat's routing" }));
     await userEvent.keyboard("{Enter}");
     await waitFor(() =>
       expect(canvas.getByText("figma-handoff, gpu-profile, lint-rs")).toBeInTheDocument(),
@@ -375,7 +375,6 @@ export const RoutingWithAPromptThatFellBack: Story = {
             routing: {
               ...ROUTER.chats[0].routing,
               last_prompt: {
-                ms: 101,
                 fell_back: true,
                 said: "Its last prompt went on with no pointer: 'relevance' did not answer within 100 ms.",
               },
@@ -385,7 +384,7 @@ export const RoutingWithAPromptThatFellBack: Story = {
             ...ROUTER.chats[1],
             routing: {
               ...ROUTER.chats[1].routing,
-              last_prompt: { ms: 4, fell_back: false, said: "Its last prompt took 4 ms." },
+              last_prompt: { fell_back: false, said: "Its last prompt took 4 ms." },
             },
           },
         ],
@@ -393,9 +392,9 @@ export const RoutingWithAPromptThatFellBack: Story = {
     }),
   },
   play: async ({ canvas }) => {
-    const grid = await canvas.findByRole("grid", { name: "Each chat's start" });
+    const grid = await canvas.findByRole("grid", { name: "Each chat's routing" });
     await expect(within(grid).getByText("Last prompt fell back")).toBeVisible();
-    await tabInto(() => canvas.getByRole("grid", { name: "Each chat's start" }));
+    await tabInto(() => canvas.getByRole("grid", { name: "Each chat's routing" }));
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(canvas.getByText("Last prompt")).toBeInTheDocument());
     expectFocusInSight();

@@ -393,14 +393,14 @@ describe("the Routing page (#3692)", () => {
               ...quick,
               routing: {
                 ...quick.routing,
-                last_prompt: { ms: 101, fell_back: true, said },
+                last_prompt: { fell_back: true, said },
               },
             },
             {
               ...fell,
               routing: {
                 ...fell.routing,
-                last_prompt: { ms: 4, fell_back: false, said: "Its last prompt took 4 ms." },
+                last_prompt: { fell_back: false, said: "Its last prompt took 4 ms." },
               },
             },
           ],
@@ -419,6 +419,9 @@ describe("the Routing page (#3692)", () => {
     const other = screen.getByTestId("routed-chat-4");
     expect(other).toHaveTextContent("Fell back to the built-in router");
     expect(other).toHaveTextContent("Its last prompt took 4 ms.");
+    // The line is cut at its end, so it leads with what the mark says.
+    expect(row.textContent).toMatch(/Its last prompt went on.*It hid 2 skills/);
+    expect(other.textContent).toMatch(/did not answer within 100 ms.*Its last prompt took 4 ms/);
 
     await user.click(row);
     const item = await screen.findByTestId("routed-chat-item");

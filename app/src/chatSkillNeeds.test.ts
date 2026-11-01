@@ -88,7 +88,6 @@ describe("a chat's needs as a whole", () => {
   it("make a prompt the router fell back on a need, and a prompt it answered a line of the header (#4297)", () => {
     const start = { router: "acme", ms: 9, fell_back: false, said: "Routed in 9 ms." };
     const slow = {
-      ms: 101,
       fell_back: true,
       said: "Its last prompt went on with no pointer: 'acme' did not answer within 100 ms.",
     };
@@ -105,7 +104,7 @@ describe("a chat's needs as a whole", () => {
       "Routed in 9 ms.",
     ]);
 
-    const quick = { ms: 4, fell_back: false, said: "Its last prompt took 4 ms." };
+    const quick = { fell_back: false, said: "Its last prompt took 4 ms." };
     expect(
       chatNeedsOf({ ...NOTHING, routing: { ...start, last_prompt: quick } }, AT_THE_ROOT),
     ).toEqual([]);
@@ -125,7 +124,7 @@ describe("a chat's needs as a whole", () => {
           ms: 9,
           fell_back: true,
           said: "acme fell back.",
-          last_prompt: { ms: 101, fell_back: true, said: "Its last prompt went on." },
+          last_prompt: { fell_back: true, said: "Its last prompt went on." },
         },
       },
       AT_THE_ROOT,

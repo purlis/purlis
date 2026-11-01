@@ -165,8 +165,6 @@ pub struct SkillRouting {
 /// record of it, as the chat's tab and the studio say it. No word of the prompt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct SkillPromptRouting {
-    /// How long its question took, in milliseconds.
-    pub ms: u32,
     /// Whether the prompt went on with no pointer because of how it did.
     pub fell_back: bool,
     /// What a person is told of it, in the core's words.
@@ -176,7 +174,6 @@ pub struct SkillPromptRouting {
 impl From<&purlis_core::skills::router::Record> for SkillPromptRouting {
     fn from(record: &purlis_core::skills::router::Record) -> SkillPromptRouting {
         SkillPromptRouting {
-            ms: u32::try_from(record.ms).unwrap_or(u32::MAX),
             fell_back: record.fell_back.is_some(),
             said: record.prompt_said(),
         }
@@ -352,12 +349,11 @@ pub(crate) async fn chat_skills(
         );
         if shown.known {
             shown.repos = repos_of_the_chat(&held, &chat);
-            let last_prompt = held.chats().last_prompt_of(session);
             shown.routing = chat
                 .start
                 .routed
                 .as_deref()
-                .map(|routed| SkillRouting::of(routed, last_prompt.as_ref()));
+                .map(|routed| SkillRouting::of(routed, chat.last_prompt.as_ref()));
             shown.missing = held.chats().skills_missing(session);
         } else {
             shown.not_supported = chat.not_supported.clone();

@@ -1258,7 +1258,7 @@ fn a_prompt_s_routing_says_its_timing_or_that_it_went_on_with_no_pointer() {
         &reading(&Fake::answering(
             serde_json::json!({ "pointed": ["release"] }),
         )),
-        ROUTER_DEADLINE,
+        Duration::from_secs(30),
     )
     .expect("asked");
     assert_eq!(
