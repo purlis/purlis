@@ -285,7 +285,7 @@ spec:
           env:
             # What each person's runners may hold at once (#2055), as JSON.
             - name: PURLIS_PER_PERSON_QUOTA
-              value: "{\"claims\":5,\"cpu\":\"4\",\"memory\":\"8Gi\",\"storage\":\"50Gi\"}"
+              value: "{\"claims\":5,\"cpu\":\"4\",\"ephemeralStorage\":\"10Gi\",\"memory\":\"8Gi\",\"memoryLimit\":\"24Gi\",\"storage\":\"50Gi\"}"
           resources:
             limits:
               memory: 256Mi

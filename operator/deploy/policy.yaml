@@ -368,6 +368,16 @@ spec:
       messageExpression: >-
         'The purlis cluster operator makes the NetworkPolicy purlis-forge-mint, in a runner namespace alone, to its own mint port alone.'
       reason: Forbidden
+    # A runner namespace the operator makes admits only pods meeting the restricted Pod Security
+    # Standard (#3824).
+    - expression: >-
+        request.resource.resource != 'namespaces' || !variables.operator ||
+        request.operation != 'CREATE' ||
+        has(object.metadata.labels) && 'pod-security.kubernetes.io/enforce' in object.metadata.labels &&
+        object.metadata.labels['pod-security.kubernetes.io/enforce'] == 'restricted'
+      messageExpression: >-
+        'The purlis cluster operator makes a runner namespace only under the restricted Pod Security Standard.'
+      reason: Forbidden
 ---
 # Source: purlis-cluster-operator/templates/sandbox-policy.yaml
 # Copyright 2026 Purlis

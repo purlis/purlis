@@ -38,6 +38,11 @@ pub const QUOTA: &str = "purlis-person";
 /// The label, and its value, on each runner namespace the operator makes.
 pub const MANAGED_BY: (&str, &str) = ("app.kubernetes.io/managed-by", "purlis-cluster-operator");
 
+/// The label, and its value, that has the cluster admit only pods meeting the restricted Pod
+/// Security Standard to a runner namespace (#3824). Only the namespaces made since carry it: the
+/// operator holds no right to change a namespace.
+pub const POD_SECURITY: (&str, &str) = ("pod-security.kubernetes.io/enforce", "restricted");
+
 /// The annotation a runner namespace names its requester by.
 pub const REQUESTER_ANNOTATION: &str = "runners.purlis.dev/requester";
 
@@ -59,6 +64,8 @@ pub const QUOTA_VAR: &str = "PURLIS_PER_PERSON_QUOTA";
 pub const CLAIMS_KEY: &str = "count/sandboxclaims.extensions.agents.x-k8s.io";
 pub const CPU_KEY: &str = "requests.cpu";
 pub const MEMORY_KEY: &str = "requests.memory";
+pub const MEMORY_LIMIT_KEY: &str = "limits.memory";
+pub const EPHEMERAL_STORAGE_KEY: &str = "requests.ephemeral-storage";
 pub const STORAGE_KEY: &str = "requests.storage";
 
 /// **The runner namespace of `requester`**: [`NAMESPACE_PREFIX`] and the first
@@ -79,7 +86,13 @@ pub fn namespace_for(requester: &str) -> Namespace {
     Namespace {
         metadata: ObjectMeta {
             name: Some(runner_namespace(requester)),
-            labels: Some([(MANAGED_BY.0.to_owned(), MANAGED_BY.1.to_owned())].into()),
+            labels: Some(
+                [
+                    (MANAGED_BY.0.to_owned(), MANAGED_BY.1.to_owned()),
+                    (POD_SECURITY.0.to_owned(), POD_SECURITY.1.to_owned()),
+                ]
+                .into(),
+            ),
             annotations: Some([(REQUESTER_ANNOTATION.to_owned(), requester.to_owned())].into()),
             ..ObjectMeta::default()
         },
@@ -239,7 +252,7 @@ pub fn binding_says(held: &RoleBinding, wanted: &RoleBinding) -> bool {
 /// **What each person's runners may hold at once**: the chart's `perPerson.quota`. A key left
 /// out is not limited.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct Quota {
     /// How many claims.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -258,6 +271,20 @@ pub struct Quota {
         skip_serializing_if = "Option::is_none"
     )]
     pub memory: Option<String>,
+    /// How much memory their runners' pods may use at most, together (#3844).
+    #[serde(
+        default,
+        deserialize_with = "quantity",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub memory_limit: Option<String>,
+    /// How much of their nodes' disk their runners' pods ask for, together (#3844).
+    #[serde(
+        default,
+        deserialize_with = "quantity",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub ephemeral_storage: Option<String>,
     /// How much storage their kept runners' volumes ask for.
     #[serde(
         default,
@@ -284,13 +311,16 @@ where
 }
 
 impl Default for Quota {
-    /// 5 claims, 4 CPUs, 8Gi of memory and 50Gi of storage: five runners of the template's
-    /// requests and five kept volumes of the default 10Gi fit, with room for a few warm ones.
+    /// 5 claims, 4 CPUs, 8Gi of memory asked for and 24Gi at most, 10Gi of ephemeral storage and
+    /// 50Gi of storage: five runners of the template and five kept volumes of the default 10Gi
+    /// fit, with room for a warm one.
     fn default() -> Self {
         Quota {
             claims: Some(5),
             cpu: Some("4".to_owned()),
             memory: Some("8Gi".to_owned()),
+            memory_limit: Some("24Gi".to_owned()),
+            ephemeral_storage: Some("10Gi".to_owned()),
             storage: Some("50Gi".to_owned()),
         }
     }
@@ -308,6 +338,8 @@ impl Quota {
         for (name, quantity) in [
             ("cpu", &quota.cpu),
             ("memory", &quota.memory),
+            ("memoryLimit", &quota.memory_limit),
+            ("ephemeralStorage", &quota.ephemeral_storage),
             ("storage", &quota.storage),
         ] {
             if let Some(quantity) = quantity
@@ -330,6 +362,8 @@ impl Quota {
         for (key, quantity) in [
             (CPU_KEY, &self.cpu),
             (MEMORY_KEY, &self.memory),
+            (MEMORY_LIMIT_KEY, &self.memory_limit),
+            (EPHEMERAL_STORAGE_KEY, &self.ephemeral_storage),
             (STORAGE_KEY, &self.storage),
         ] {
             if let Some(quantity) = quantity {
@@ -419,13 +453,21 @@ pub fn milli(quantity: &str) -> Option<u128> {
 }
 
 /// What one more runner asks of its requester's quota, by the quota's key: one claim, its pod's
-/// CPU and memory (`pod`, the operator's template), and for a kept claim its volume's `storage`.
+/// CPU, memory, ephemeral storage and memory limit (`pod`, the operator's template), and for a
+/// kept claim its volume's `storage`.
 pub fn asks_of(pod: &PodSpec, kept_storage: Option<&str>) -> Vec<(&'static str, String)> {
     let mut asks = vec![(CLAIMS_KEY, "1".to_owned())];
-    for (key, resource) in [(CPU_KEY, "cpu"), (MEMORY_KEY, "memory")] {
-        if let Some(asked) = pod_request(pod, resource) {
+    for (key, resource) in [
+        (CPU_KEY, "cpu"),
+        (MEMORY_KEY, "memory"),
+        (EPHEMERAL_STORAGE_KEY, "ephemeral-storage"),
+    ] {
+        if let Some(asked) = pod_counted(pod, resource, |all| all.requests.as_ref()) {
             asks.push((key, asked));
         }
+    }
+    if let Some(asked) = pod_counted(pod, "memory", |all| all.limits.as_ref()) {
+        asks.push((MEMORY_LIMIT_KEY, asked));
     }
     if let Some(storage) = kept_storage {
         asks.push((STORAGE_KEY, storage.to_owned()));
@@ -433,13 +475,17 @@ pub fn asks_of(pod: &PodSpec, kept_storage: Option<&str>) -> Vec<(&'static str, 
     asks
 }
 
-/// What `pod` asks for of `resource`, as a quota counts it: the larger of its containers'
-/// requests together and its largest first step's.
-fn pod_request(pod: &PodSpec, resource: &str) -> Option<String> {
+/// What `pod` holds of `resource` in the requests or limits `side` picks, as a quota counts it:
+/// the larger of its containers' together and its largest first step's.
+fn pod_counted(
+    pod: &PodSpec,
+    resource: &str,
+    side: fn(&ResourceRequirements) -> Option<&BTreeMap<String, Quantity>>,
+) -> Option<String> {
     let of = |resources: Option<&ResourceRequirements>| {
         resources
-            .and_then(|resources| resources.requests.as_ref())
-            .and_then(|requests| requests.get(resource))
+            .and_then(side)
+            .and_then(|quantities| quantities.get(resource))
             .and_then(|quantity| milli(&quantity.0))
             .unwrap_or(0)
     };

@@ -394,6 +394,29 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
     });
     runtime.shutdown_timeout(Duration::from_secs(5));
 
+    // What a runner used starting a chat, for the job's log (#3844): what its limits rest on.
+    let measured = kubectl
+        .run(
+            &kubectl.args(&[
+                "exec",
+                "--namespace",
+                &paired.vouched.runner_namespace,
+                "--container",
+                clusterpool::RUNNER_CONTAINER,
+                &format!("pod/{}", paired.vouched.pod),
+                "--",
+                "sh",
+                "-c",
+                "echo memory.peak $(cat /sys/fs/cgroup/memory.peak); \
+                 grep -E 'usage_usec|nr_throttled' /sys/fs/cgroup/cpu.stat; \
+                 du -sk \"$HOME\" /tmp",
+            ]),
+            None,
+            64 * 1024,
+        )
+        .expect("what the runner used");
+    eprintln!("measured #3844: {}", measured);
+
     // A killed `kubectl exec -i` closes the input of what it ran in the pod (#3819): what Cancel
     // ends a sign-in on a cluster runner by, since nothing else reaches into the pod.
     let (runners, pod) = (&paired.vouched.runner_namespace, &paired.vouched.pod);

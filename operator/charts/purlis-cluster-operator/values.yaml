@@ -26,14 +26,16 @@ resources:
     memory: 256Mi
 
 # -- What each person's runners may hold at once (#2055): the quota purlis-person in their
-# runner namespace, purlis-runners-<hash>. `claims` is a count; `cpu` and `memory` what their
-# runners' pods ask for, and `storage` what their kept runners' volumes ask for, as Kubernetes
-# quantities. A key left out is not limited. A Claim over it says OverQuota.
+# runner namespace, purlis-runners-<hash>. `claims` is a count; `cpu`, `memory` and
+# `ephemeralStorage` what their runners' pods ask for, `memoryLimit` the most those pods may use,
+# and `storage` what their kept runners' volumes ask for, as Kubernetes quantities. A key left out is not limited. A Claim over it says OverQuota.
 perPerson:
   quota:
     claims: 5
     cpu: "4"
     memory: 8Gi
+    memoryLimit: 24Gi
+    ephemeralStorage: 10Gi
     storage: 50Gi
 
 metrics:

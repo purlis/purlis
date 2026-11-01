@@ -405,7 +405,10 @@ fn the_per_person_quota_reaches_the_operator_as_set() {
     let defaults = quota_handed(&rendered(&with_digest(&[])));
     assert_eq!(
         defaults,
-        json!({ "claims": 5, "cpu": "4", "memory": "8Gi", "storage": "50Gi" })
+        json!({
+            "claims": 5, "cpu": "4", "memory": "8Gi", "memoryLimit": "24Gi",
+            "ephemeralStorage": "10Gi", "storage": "50Gi",
+        })
     );
     let quota = purlis_cluster_operator::person::Quota::from_var(Some(&defaults.to_string()))
         .expect("the operator reads the default");
@@ -415,7 +418,13 @@ fn the_per_person_quota_reaches_the_operator_as_set() {
         "perPerson.quota.cpu=1500m",
         "perPerson.quota.storage=null",
     ])));
-    assert_eq!(set, json!({ "claims": 2, "cpu": "1500m", "memory": "8Gi" }));
+    assert_eq!(
+        set,
+        json!({
+            "claims": 2, "cpu": "1500m", "memory": "8Gi", "memoryLimit": "24Gi",
+            "ephemeralStorage": "10Gi",
+        })
+    );
     for value in ["perPerson.quota.disks=2", "perPerson.quota.cpu=lots"] {
         render(&with_digest(&[value])).expect_err(value);
     }

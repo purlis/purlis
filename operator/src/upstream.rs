@@ -446,22 +446,48 @@ fn owned_by(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -> Object
 }
 
 /// What each container of a runner's pod asks for at least, so a person's quota can count it
-/// (#2055): the runner's CPU and memory, and its first step's.
-pub const RUNNER_REQUESTS: (&str, &str) = ("250m", "512Mi");
-pub const KEY_STEP_REQUESTS: (&str, &str) = ("50m", "32Mi");
+/// (#2055, #3844): the runner's CPU, memory and ephemeral storage, and its first step's.
+pub const RUNNER_REQUESTS: (&str, &str, &str) = ("250m", "512Mi", "1Gi");
+pub const KEY_STEP_REQUESTS: (&str, &str, &str) = ("50m", "32Mi", "16Mi");
 
-fn requests((cpu, memory): (&str, &str)) -> ResourceRequirements {
-    ResourceRequirements {
-        requests: Some(
-            [
-                ("cpu".to_owned(), Quantity(cpu.to_owned())),
-                ("memory".to_owned(), Quantity(memory.to_owned())),
-            ]
+/// The most memory a runner may use (#3844), what a Docker pool's runner is given by default.
+/// No CPU limit: the quota counts what a runner asks for, and a limit would only slow a chat
+/// starting on an otherwise idle node.
+pub const RUNNER_MEMORY_LIMIT: &str = "4Gi";
+/// The most its first step may use (#3844).
+pub const KEY_STEP_LIMITS: (&str, &str) = ("128Mi", "256Mi");
+/// What a runner may write outside a fresh runner's home, in its container's own layer and logs.
+/// The cluster holds a pod's home and those together to the pod's limit, so that limit is the
+/// home's size and this.
+pub const RUNNER_LAYER_MEBIBYTES: u128 = 2048;
+
+fn resources(
+    (cpu, memory, storage): (&str, &str, &str),
+    (memory_limit, storage_limit): (&str, &str),
+) -> ResourceRequirements {
+    let quantities = |pairs: [(&str, &str); 2]| {
+        pairs
             .into_iter()
-            .collect(),
-        ),
+            .map(|(name, quantity)| (name.to_owned(), Quantity(quantity.to_owned())))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    let mut requests = quantities([("cpu", cpu), ("memory", memory)]);
+    requests.insert("ephemeral-storage".to_owned(), Quantity(storage.to_owned()));
+    ResourceRequirements {
+        requests: Some(requests),
+        limits: Some(quantities([
+            ("memory", memory_limit),
+            ("ephemeral-storage", storage_limit),
+        ])),
         ..ResourceRequirements::default()
     }
+}
+
+/// A runner's ephemeral storage limit, where a fresh runner's home is `home` big: `home` and
+/// [`RUNNER_LAYER_MEBIBYTES`]. A Pool's `keptVolume.size` is always one a quantity reads as.
+fn runner_storage_limit(home: &str) -> String {
+    let mebibytes = crate::person::milli(home).unwrap_or(0) / (1_000 << 20);
+    format!("{}Mi", mebibytes + RUNNER_LAYER_MEBIBYTES)
 }
 
 /// The template of a pool's runners in `namespace`, controlled by `owners` ([`runner_owner`]): one
@@ -514,7 +540,13 @@ pub fn template_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -
             .collect(),
         ),
         volume_mounts: mounts(),
-        resources: Some(requests(RUNNER_REQUESTS)),
+        resources: Some(resources(
+            RUNNER_REQUESTS,
+            (
+                RUNNER_MEMORY_LIMIT,
+                &runner_storage_limit(&pool.spec.kept_volume.size),
+            ),
+        )),
         security_context: Some(confined()),
         ..Container::default()
     };
@@ -540,7 +572,7 @@ pub fn template_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -
         volume_mounts: mounts(),
         termination_message_path: Some(TERMINATION_LOG.to_owned()),
         termination_message_policy: Some("File".to_owned()),
-        resources: Some(requests(KEY_STEP_REQUESTS)),
+        resources: Some(resources(KEY_STEP_REQUESTS, KEY_STEP_LIMITS)),
         security_context: Some(confined()),
         ..Container::default()
     };

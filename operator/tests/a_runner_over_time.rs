@@ -11,7 +11,7 @@ use kube::api::ObjectMeta;
 use purlis_cluster_operator::lifecycle::{
     DELETION_NOTICE, Retention, RetentionFloor, STUCK, idle_condition, pausing_idle,
     pool_object_is_orphaned, retention, retention_above, saying_stuck, status_of_an_idle_runner,
-    upstream_claim_is_orphaned, with_image,
+    upstream_claim_is_orphaned, with_image, with_resources,
 };
 use purlis_cluster_operator::person::CLAIM_UID_ANNOTATION;
 use purlis_cluster_operator::upstream::{
@@ -353,4 +353,41 @@ fn only_what_the_operators_claims_have_left_is_orphaned() {
         "not a runner namespace"
     );
     assert!(!of_pool("something-else", &ns), "not named for a pool");
+}
+
+#[test]
+fn a_kept_runner_from_before_there_were_limits_takes_them_and_keeps_what_upstream_added() {
+    use k8s_openapi::api::core::v1::{Container, PodSpec, ResourceRequirements};
+    use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
+    let limited = ResourceRequirements {
+        limits: Some([("memory".to_owned(), Quantity("4Gi".to_owned()))].into()),
+        ..ResourceRequirements::default()
+    };
+    let wanted = PodSpec {
+        containers: vec![Container {
+            name: "runner".to_owned(),
+            resources: Some(limited),
+            ..Container::default()
+        }],
+        ..PodSpec::default()
+    };
+    let mut held = serde_json::json!({
+        "dnsPolicy": "None",
+        "containers": [
+            { "name": "runner", "image": "i", "resources": { "requests": { "cpu": "250m" } } },
+            { "name": "another", "resources": { "requests": { "cpu": "1" } } },
+        ],
+    });
+    assert!(with_resources(&mut held, &wanted));
+    assert_eq!(
+        held,
+        serde_json::json!({
+            "dnsPolicy": "None",
+            "containers": [
+                { "name": "runner", "image": "i", "resources": { "limits": { "memory": "4Gi" } } },
+                { "name": "another", "resources": { "requests": { "cpu": "1" } } },
+            ],
+        })
+    );
+    assert!(!with_resources(&mut held, &wanted), "already as wanted");
 }
