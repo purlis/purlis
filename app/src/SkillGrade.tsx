@@ -803,9 +803,10 @@ export function RunningGradePage<Step extends RunningStepShown>({
     let live = true;
     const listening = listen<Step>(event, (told) => {
       const now = told.payload;
+      // A page left is told nothing: its listener lets go only once the listen under way settles.
+      if (!live) return;
       if (now.plane !== plane || now.grade !== grade || !latest.current.isOurs(now)) return;
       setStep(now);
-      if (latest.current.opensItsScorecard(now)) latest.current.onEnded();
     }).catch(() => undefined);
     void listening
       .then(() => latest.current.read())
@@ -818,10 +819,12 @@ export function RunningGradePage<Step extends RunningStepShown>({
         setUnread(undefined);
         const now = answer.data;
         setRuns(now !== null);
-        // A step told since is newer than the one the read says.
-        if (now !== null) setStep((told) => told ?? now);
-        // Ended before this page listened: the event is gone, and its end is read here.
-        if (now !== null && latest.current.opensItsScorecard(now)) latest.current.onEnded();
+        // A step told since is newer than the one the read says, unless the read says the end:
+        // ended before this page listened, the event is gone, and its end is read here.
+        if (now !== null)
+          setStep((told) =>
+            told === undefined || (told.ended === null && now.ended !== null) ? now : told,
+          );
       })
       .catch((err: unknown) => {
         if (live) setUnread(String(err));
@@ -831,6 +834,16 @@ export function RunningGradePage<Step extends RunningStepShown>({
       void listening.then((stop) => stop?.()).catch(() => undefined);
     };
   }, [event, plane, grade, again]);
+
+  // The one place an end opens its scorecard, however it came to: told, read, or an end that stayed
+  // on the page until what the scorecard needs held (its router chosen again). Once, for all three.
+  const opens = step !== undefined && opensItsScorecard(step);
+  const opened = useRef(false);
+  useEffect(() => {
+    if (!opens || opened.current) return;
+    opened.current = true;
+    latest.current.onEnded();
+  }, [opens]);
 
   const graded = of(step);
   // A read that failed with no step told says so in place, never "Reading…" for good.
