@@ -1377,6 +1377,11 @@ pub fn sign_out_line(pool: &str, name: &str) -> Result<String, String> {
     onrunner::Kept::of(&record)?;
     let runner = this_desktops_runner(&config, pool)?;
     let line = crate::runnerlinks::docker()?.sign_out_line(&runner.made, &engine, name)?;
+    // A sign-in open on it would say signed in over this sign-out, so it ends first.
+    for one in let_go(|one| one.pool == pool && one.name == name) {
+        one.driving
+            .stop("the sign-in was stopped, as a sign-out of this profile started.");
+    }
     // The running runner too: a follow while the line waits makes it one that drains.
     purlis_core::runners::hold_every_runner_from_carrying(&config, pool, name)
         .map_err(|why| why.to_string())?;
@@ -1673,7 +1678,11 @@ pub async fn pool_sign_in_next(
         if let Some(over) = over.as_ref()
             && *event == driven::Event::SignedIn
         {
-            carries_again_after_a_sign_in(&over.pool, &over.name);
+            let (pool, name) = (over.pool.clone(), over.name.clone());
+            // Off this worker: a carry holds the runners' lock for minutes.
+            tauri::async_runtime::spawn_blocking(move || {
+                carries_again_after_a_sign_in(&pool, &name);
+            });
             // Told with no lock held; every project whose wait went has an Ask to stop drawing.
             let went = onrunner::let_go(None, &over.pool, &over.name);
             crate::machineprofiles::tell_asks_at(&app, &went);
@@ -2038,13 +2047,7 @@ pub fn watched_sign_in(pool: String, name: String) -> Option<crate::signinwatch:
                 &name_there,
             )
         }),
-        signed_in: Box::new(move || {
-            let signed_in = says_signed_in(&keep_on(&config, &asked, &kept));
-            if signed_in {
-                carries_again_after_a_sign_in(&asked, &kept.name);
-            }
-            signed_in
-        }),
+        signed_in: Box::new(move || says_signed_in(&keep_on(&config, &asked, &kept))),
         let_go: Box::new(move |whose| match whose {
             crate::signinwatch::Whose::Everywhere => onrunner::let_go(None, &pool, &name),
             crate::signinwatch::Whose::InTheProject(root, seen) => {

@@ -4536,7 +4536,12 @@ fn pool_sign_in(
             }
         }
     });
-    sign_in::terminal::follow(&driving, &lines, &mut ThisTerminal, name, pool)
+    sign_in::terminal::follow_while(&driving, &lines, &mut ThisTerminal, name, pool, &|| {
+        if purlis_core::runnertaint::pool_ran_unsandboxed(config, pool) {
+            return Err(purlis_core::runnertaint::signs_nothing_in_on(pool));
+        }
+        Ok(())
+    })
 }
 
 /// Refused where a pool's runner, whose `purlis --version` said `theirs`, runs another version
