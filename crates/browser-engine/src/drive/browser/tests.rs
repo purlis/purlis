@@ -1873,6 +1873,21 @@ fn a_huge_title_is_cut_and_one_past_the_read_s_bound_keeps_the_title_told() {
 }
 
 #[test]
+fn a_listed_title_is_scrubbed_before_it_is_cut() {
+    let (browser, engine) = browser();
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    browser.blank(&secret).unwrap();
+    // Across the most a listed title holds: cut first, its start would no longer match.
+    let title = format!("{}OPEN SESAME", "t".repeat(super::MOST_TITLE_CHARS - 4));
+    super::lock(&engine.model)
+        .titles
+        .insert("PAGE-1".into(), title);
+    let listed = pages_of(&browser, 2).remove(0).title;
+    assert!(!listed.contains("OPEN"), "{listed}");
+    assert!(listed.chars().count() <= super::MOST_TITLE_CHARS);
+}
+
+#[test]
 fn a_huge_title_the_tree_names_is_cut() {
     let (browser, engine) = browser();
     {
