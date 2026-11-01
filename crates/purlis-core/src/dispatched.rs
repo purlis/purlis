@@ -130,7 +130,8 @@ pub enum What {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         note: Option<String>,
     },
-    /// Wait for the answer to this task's question, for at most `within_secs`. { within_secs: u32 },
+    /// Wait for the answer to this task's question, for at most `within_secs`.
+    AwaitAnswer { within_secs: u32 },
     /// The waiting command has the answer: it need not be handed to the next turn too.
     GotAnswer,
     /// **What the person said to this chat in the purlis window** that it has not been handed
