@@ -47,7 +47,7 @@ beforeEach(() => {
 
 function Control({ setting }: { setting: LiveSetting }) {
   const shown = setting.useControl();
-  return shown.control({ id: "control", describedBy: undefined } as never);
+  return shown.control({ id: "control", labelledBy: "control-label" });
 }
 
 describe("Runs on at the project (#4536)", () => {
