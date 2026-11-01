@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793557000376,
+  "lastUpdate": 1793558953807,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35280,6 +35280,48 @@ window.BENCHMARK_DATA = {
             "value": 101.27792299999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.471, 101.058, 101.278, 101.578, 101.913 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "36f469c4fdb288459bab7caf9de8402a614a6d2c",
+          "message": "Runners: a pod's limits, the quota that holds them, and restricted Pod Security (#4428)\n\n* A runner's pod has limits, the per-person quota holds them, and a runner namespace enforces restricted Pod Security (#3844, #3824)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR15PTD1XB5QXC6PK9N1R8\nPurlis-Persona: steward\n\n* The amendment and changelog for a runner's limits and restricted Pod Security\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR15PTD1XB5QXC6PK9N1R8\nPurlis-Persona: steward\n\n* The measurement writes to stderr by name\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR15PTD1XB5QXC6PK9N1R8\nPurlis-Persona: steward\n\n* Refuse an older Standard's version at a runner namespace's making, and let the quota hold 16 runners as its CPU and memory do\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR15PTD1XB5QXC6PK9N1R8\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T17:47:51Z",
+          "tree_id": "c1ff5557865b001f1a6d68b58b2a29d5663223b6",
+          "url": "https://github.com/purlis/purlis/commit/36f469c4fdb288459bab7caf9de8402a614a6d2c"
+        },
+        "date": 1793558947061,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6539269999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.643, 0.653, 0.654, 0.663, 0.665 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4888385,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.370, 16.483, 16.489, 16.629, 16.649 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4540845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.365, 101.393, 101.454, 101.580, 101.594 ms"
           }
         ]
       }
