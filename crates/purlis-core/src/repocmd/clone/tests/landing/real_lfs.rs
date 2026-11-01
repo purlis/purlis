@@ -343,9 +343,11 @@ fn real_git_lfs_lands_each_file_as_its_content_signed_by_the_clones_helper() {
             String::from_utf8_lossy(&out.stderr)
         )
     };
-    // purlis's own git holds the filter here, so it reads these files as changed (#4380).
     let status = plain(&["status", "--porcelain"]);
     assert!(status.trim().is_empty(), "{status}");
+    // And in purlis's own, in the clone it wired, however stale the index's record of them is.
+    assert_wired(&dest);
+    assert_reads_clean(&dest);
     // The percent never goes back, across git's stages and git-lfs's own, and the window says it.
     let percents: Vec<u8> = seen.iter().map(|(_, percent)| *percent).collect();
     assert!(percents.is_sorted(), "{seen:?}");
@@ -355,6 +357,290 @@ fn real_git_lfs_lands_each_file_as_its_content_signed_by_the_clones_helper() {
     );
     assert_eq!(seen.last(), Some(&(Stage::LargeFiles, 100)), "{seen:?}");
     assert_eq!(Stage::LargeFiles.words(), "Downloading large files");
+}
+
+/// `dest`'s own config names the helper purlis's git policy writes.
+fn assert_wired(dest: &Path) {
+    let said = git::run(
+        dest,
+        &["config", "--local", "--get-all", "credential.helper"],
+        git::READ,
+    )
+    .unwrap();
+    assert!(crate::forge::is_policy_helper(said.out.trim()), "{said:?}");
+}
+
+/// git in `dest` with nothing of purlis's between, its filter as the machine names it.
+fn plain_git(dest: &Path, args: &[&str]) -> String {
+    let mut command = std::process::Command::new("git");
+    command
+        .args([
+            "-c",
+            "user.name=Plain",
+            "-c",
+            "user.email=plain@example.invalid",
+        ])
+        .args(["-c", "commit.gpgsign=false"])
+        .args(args)
+        .current_dir(dest);
+    let out = crate::forklock::output(&mut command).unwrap();
+    assert!(out.status.success(), "{args:?}: {out:?}");
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// Each tracked file's record in the index goes stale, so git has to read it through the filter.
+fn touch_everything(dest: &Path) {
+    for name in plain_git(dest, &["ls-files"]).lines() {
+        std::fs::File::options()
+            .write(true)
+            .open(dest.join(name))
+            .unwrap()
+            .set_modified(std::time::SystemTime::now())
+            .unwrap();
+    }
+}
+
+fn assert_reads_clean(dest: &Path) {
+    touch_everything(dest);
+    let run = git::run(dest, &["status", "--porcelain"], git::READ).unwrap();
+    assert!(run.ok() && run.out.trim().is_empty(), "{run:?}");
+}
+
+/// A commit through the runner, as a save makes one.
+fn commit_through_purlis(dest: &Path, message: &str) {
+    let run = git::run_untimed(
+        dest,
+        &[
+            "-c",
+            "user.name=Purlis",
+            "-c",
+            "user.email=purlis@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            message,
+        ],
+    )
+    .unwrap();
+    assert!(run.ok(), "{run:?}");
+}
+
+/// What `at` holds at `rev`.
+fn stored(dest: &Path, rev: &str, at: &str) -> String {
+    plain_git(dest, &["cat-file", "blob", &format!("{rev}:{at}")])
+}
+
+/// A clone of two large files through the real stage, and the server it came from.
+fn landed(world_name: &str) -> (World, LfsServer, Object, PathBuf) {
+    let (first, second) = (Object::of(4, 11), Object::of(2, 12));
+    let server = LfsServer::serving(vec![first.clone(), second.clone()], Sending::AtOnce);
+    let world = World::holding_real_large_files(world_name, &[&first, &second], &server);
+    let (code, said, _, _) = world.real_clone(world_name, Duration::from_secs(60), true);
+    assert_eq!(code, 0, "{said:?}");
+    let dest = world.dest(world_name);
+    assert_wired(&dest);
+    (world, server, first, dest)
+}
+
+/// What the server has been asked, so far.
+fn asked_so_far(server: &LfsServer) -> (u32, u32) {
+    (
+        server.batches(),
+        server.asked.downloads.load(Ordering::SeqCst),
+    )
+}
+
+#[test]
+#[ignore = "needs a real git-lfs: the CI job `real git-lfs` runs it"]
+fn real_git_lfs_a_commit_through_purlis_in_a_wired_clone_stores_the_pointer() {
+    if !real_git_lfs() {
+        return;
+    }
+    let (_world, server, _, dest) = landed("widget");
+    let before = asked_so_far(&server);
+    let changed = Object::of(3, 13);
+    std::fs::write(dest.join("file0.bin"), &changed.bytes).unwrap();
+
+    let added = git::run_untimed(&dest, &["add", "--", "file0.bin"]).unwrap();
+    assert!(added.ok(), "{added:?}");
+    commit_through_purlis(&dest, "a large file changed");
+
+    assert_eq!(stored(&dest, "HEAD", "file0.bin"), changed.pointer());
+    assert!(std::fs::read(dest.join("file0.bin")).unwrap() == changed.bytes);
+    assert_reads_clean(&dest);
+    assert_eq!(asked_so_far(&server), before, "a commit reached the server");
+}
+
+#[test]
+#[ignore = "needs a real git-lfs: the CI job `real git-lfs` runs it"]
+fn real_git_lfs_an_update_through_purlis_in_a_wired_clone_leaves_pointers_and_asks_nobody() {
+    if !real_git_lfs() {
+        return;
+    }
+    let (_world, server, first, dest) = landed("widget");
+    // Upstream's next commits: a file whose object is nowhere here, and a change to one that is.
+    let (new, changed) = (Object::of(1, 14), Object::of(1, 15));
+    let main = plain_git(&dest, &["symbolic-ref", "--short", "HEAD"]);
+    let main = main.trim();
+    plain_git(&dest, &["switch", "-q", "-c", "upstream"]);
+    std::fs::write(dest.join("new.bin"), new.pointer()).unwrap();
+    std::fs::write(dest.join("file1.bin"), changed.pointer()).unwrap();
+    plain_git(&dest, &["add", "--", "new.bin", "file1.bin"]);
+    plain_git(&dest, &["commit", "-q", "-m", "upstream"]);
+    plain_git(&dest, &["switch", "-q", main]);
+    let before = asked_so_far(&server);
+
+    // A branch folder of the clone, cut from there.
+    let folder = dest.with_extension("piece");
+    let folder_text = folder.to_str().unwrap();
+    let cut = git::run_untimed(
+        &dest,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "piece",
+            folder_text,
+            "upstream",
+        ],
+    )
+    .unwrap();
+    assert!(cut.ok(), "{cut:?}");
+    assert_eq!(
+        std::fs::read_to_string(folder.join("new.bin")).unwrap(),
+        new.pointer()
+    );
+    assert_reads_clean(&folder);
+
+    // A rebase of a commit of its own, onto a base that moved.
+    plain_git(&dest, &["switch", "-q", "-c", "mine", main]);
+    std::fs::write(dest.join("mine.txt"), "mine\n").unwrap();
+    plain_git(&dest, &["add", "--", "mine.txt"]);
+    plain_git(&dest, &["commit", "-q", "-m", "mine"]);
+    let rebased = git::run_untimed(&dest, &["rebase", "upstream"]).unwrap();
+    assert!(rebased.ok(), "{rebased:?}");
+    assert_reads_clean(&dest);
+    assert_eq!(stored(&dest, "HEAD", "new.bin"), new.pointer());
+    assert!(
+        std::fs::read(dest.join("file0.bin")).unwrap() == first.bytes,
+        "file0 was rewritten"
+    );
+    plain_git(&dest, &["switch", "-q", main]);
+
+    // The fast-forward a merge lands, and a pull under the one-credential rule.
+    let merged = git::run_untimed(&dest, &["merge", "--ff-only", "upstream"]).unwrap();
+    assert!(merged.ok(), "{merged:?}");
+    assert_eq!(
+        std::fs::read_to_string(dest.join("new.bin")).unwrap(),
+        new.pointer()
+    );
+    assert_eq!(
+        std::fs::read_to_string(dest.join("file1.bin")).unwrap(),
+        changed.pointer()
+    );
+    assert_reads_clean(&dest);
+    plain_git(&dest, &["reset", "-q", "--hard", "HEAD~1"]);
+    let pulled = git::run_network(
+        &dest,
+        Some(HELPER),
+        &["pull", "-q", "--ff-only", ".", "upstream"],
+    )
+    .unwrap();
+    assert!(pulled.ok(), "{pulled:?}");
+    assert_eq!(
+        std::fs::read_to_string(dest.join("new.bin")).unwrap(),
+        new.pointer()
+    );
+    assert_reads_clean(&dest);
+
+    assert_eq!(
+        asked_so_far(&server),
+        before,
+        "the filter reached the server"
+    );
+}
+
+#[test]
+#[ignore = "needs a real git-lfs: the CI job `real git-lfs` runs it"]
+fn real_git_lfs_a_helper_the_repository_wrote_still_holds_the_filter() {
+    if !real_git_lfs() {
+        return;
+    }
+    let (world, server, first, dest) = landed("widget");
+    let marker = world.home.path().join("the-planted-helper-ran");
+    let planted = format!(
+        "!f() {{ touch '{}'; printf 'username=x\\npassword=y\\n'; }}; f",
+        marker.display()
+    );
+    plain_git(
+        &dest,
+        &["config", "--local", "--add", "credential.helper", &planted],
+    );
+    let objects = dest.join(".git/lfs/objects");
+    std::fs::remove_dir_all(&objects).unwrap();
+    std::fs::remove_file(dest.join("file0.bin")).unwrap();
+    let before = asked_so_far(&server);
+
+    // The filter did not run: the file comes back as what is stored, its pointer...
+    let back = git::run_untimed(&dest, &["checkout", "--", "file0.bin"]).unwrap();
+    assert!(back.ok(), "{back:?}");
+    assert_eq!(
+        std::fs::read_to_string(dest.join("file0.bin")).unwrap(),
+        first.pointer()
+    );
+    // ...and status has no clean filter to read file1's content with.
+    touch_everything(&dest);
+    let status = git::run(&dest, &["status", "--porcelain"], git::READ).unwrap();
+    assert!(status.out.contains(" M file1.bin"), "{status:?}");
+    assert!(!marker.exists(), "purlis's git ran the planted helper");
+    assert_eq!(
+        asked_so_far(&server),
+        before,
+        "the filter reached the server"
+    );
+
+    // Control: the person's own git, with that config, does ask it.
+    std::fs::remove_file(dest.join("file0.bin")).unwrap();
+    plain_git(&dest, &["checkout", "--", "file0.bin"]);
+    assert!(
+        marker.exists(),
+        "the helper was never one the filter would ask"
+    );
+}
+
+#[test]
+#[ignore = "needs a real git-lfs: the CI job `real git-lfs` runs it"]
+fn real_git_lfs_asks_no_helper_where_the_command_line_empties_them() {
+    // What `credential.helper=` off the network rests on: git-lfs's `git credential` inherits it.
+    if !real_git_lfs() {
+        return;
+    }
+    let (world, server, _, dest) = landed("widget");
+    let marker = world.home.path().join("a-helper-ran");
+    let helper = format!("!f() {{ touch '{}'; }}; f", marker.display());
+    plain_git(&dest, &["config", "--local", "credential.helper", &helper]);
+    std::fs::remove_dir_all(dest.join(".git/lfs/objects")).unwrap();
+    let before = server.batches();
+
+    let mut command = std::process::Command::new("git");
+    command
+        .args(["-c", "credential.helper=", "lfs", "fetch"])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .current_dir(&dest);
+    let out = crate::forklock::output(&mut command).unwrap();
+
+    assert!(!out.status.success(), "{out:?}");
+    assert!(
+        server.batches() > before,
+        "it never asked its server: {out:?}"
+    );
+    assert!(
+        !marker.exists(),
+        "git-lfs asked a helper the command line emptied"
+    );
 }
 
 #[test]
