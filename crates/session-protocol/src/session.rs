@@ -4548,6 +4548,8 @@ fn unreadable_reply(frame: &[u8]) -> Option<u64> {
     value.get("reply")?.get("re")?.as_u64()
 }
 
+// Held for one turn of the loop that reads it, on its stack: nothing keeps one.
+#[allow(clippy::large_enum_variant)]
 enum Driven {
     Ask(Option<Ask>),
     Frame(Option<Result<Bytes, LinkError>>),
