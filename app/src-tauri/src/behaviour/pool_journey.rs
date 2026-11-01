@@ -837,6 +837,12 @@ mod a_window_started_again {
             id
         };
 
+        // How far it got, read where it fails or runs out of time.
+        let step = |what: &str| {
+            use std::io::Write as _;
+            let _ = writeln!(std::io::stderr(), "a window started again: {what}");
+        };
+        step("a chat starts on the pool's runner");
         let on_the_old = a_chat_that_answers("on the old");
         let chats_on = |to: &ToARunner| crate::runnerlinks::chats_on(to);
         let said = crate::poolfollow::follow_and_drain(&machine, Some(&next), &chats_on);
@@ -845,13 +851,16 @@ mod a_window_started_again {
             1,
             "the old runner keeps its chat: {said:?}"
         );
+        step("a chat starts on the runner the pool followed");
         let on_the_new = a_chat_that_answers("on the new");
 
+        step("the window is cut and started again");
         again.cut();
         let back = again.sessions_of(&target.root);
 
         for (id, said) in [(on_the_new, "on the new"), (on_the_old, "on the old")] {
-            let deadline = Instant::now() + LONG;
+            step(&format!("the window looks for the chat {said}"));
+            let deadline = Instant::now() + Duration::from_secs(60);
             while !back.left_running_in(id, None) {
                 assert!(
                     Instant::now() < deadline,
