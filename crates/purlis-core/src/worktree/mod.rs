@@ -63,7 +63,11 @@ pub fn recorded_base(clone: &Path, branch: &str) -> Option<String> {
 /// Records `base` as the branch `branch` of the clone at `clone` was cut from, in place of what
 /// was recorded: what `purlis worktree update --base` moved it onto (#3836). Why not, where
 /// git did not write it.
+///
+/// An empty `branch` is refused: git writes it as `[branch ""]`, and every git that then reads
+/// remotes, a fetch or a push among them, stops on that section (#4436).
 pub fn record_base(clone: &Path, branch: &str, base: &str) -> Result<(), String> {
+    name::branch_name_ok(branch).map_err(|e| e.to_string())?;
     name::branch_name_ok(base).map_err(|e| e.to_string())?;
     let wrote = git::run(
         clone,
@@ -75,6 +79,33 @@ pub fn record_base(clone: &Path, branch: &str, base: &str) -> Result<(), String>
         Ok(())
     } else {
         Err(wrote.err.trim().to_owned())
+    }
+}
+
+/// Takes a base recorded under no branch, `[branch ""]`, out of the clone's config, and says
+/// whether there was one (#4436). No branch has an empty name, so nothing there describes a
+/// branch, and git refuses to fetch or push while it is there. `git config` itself still reads
+/// such a file, which is what lets purlis repair it.
+pub fn mend_nameless_base(clone: &Path) -> Result<bool, String> {
+    let found = git::run(
+        clone,
+        &["config", "--local", "--get-regexp", r"^branch\.\."],
+        git::READ,
+    )
+    .map_err(|e| e.to_string())?;
+    if !found.ok() {
+        return Ok(false);
+    }
+    let removed = git::run(
+        clone,
+        &["config", "--local", "--remove-section", "branch."],
+        git::READ,
+    )
+    .map_err(|e| e.to_string())?;
+    if removed.ok() {
+        Ok(true)
+    } else {
+        Err(removed.err.trim().to_owned())
     }
 }
 
