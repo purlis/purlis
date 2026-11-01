@@ -647,7 +647,7 @@ mod limit {
         let project = tempfile::tempdir().unwrap();
         let config = a_machine();
         let proposals = Proposals::default();
-        let mut refused = vec![asks(Some(0)), asks(Some(121)), asks(None)];
+        let mut refused = vec![asks(Some(0)), asks(Some(121))];
         refused.push(ProposeLimitAsk {
             pool: "none".to_owned(),
             ..asks(Some(30))
@@ -694,6 +694,24 @@ mod limit {
         };
         assert!(before.contains("can't be used"), "{before}");
         assert!(!before.contains("lots"), "{before}");
+    }
+
+    /// A chat can't learn the person's value by guessing it: the same value is held like another.
+    #[test]
+    fn a_value_already_set_is_held_and_says_nothing_to_the_chat() {
+        let project = tempfile::tempdir().unwrap();
+        let config = a_machine();
+        let proposals = Proposals::default();
+        runners::set_pool_limit(config.path(), "builds", SignInWait, Some(30)).unwrap();
+        limit_asked_in(
+            project.path(),
+            config.path(),
+            &proposals,
+            &asks(Some(30)),
+            1,
+        )
+        .unwrap();
+        assert_eq!(proposals.every().len(), 1);
     }
 
     /// PC-8: another value since makes it stale, and Apply saves nothing.

@@ -67,7 +67,14 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
                 docker: false,
             };
             if *json {
-                println!("{}", limits_json(&held));
+                let mut said = limits_json(&held);
+                said["defaultsOnly"] = true.into();
+                if let Some(rows) = said["limits"].as_array_mut() {
+                    for row in rows {
+                        row["inForce"] = serde_json::Value::Null;
+                    }
+                }
+                println!("{said}");
             } else {
                 for line in limits_lines(&held) {
                     println!("{line}");

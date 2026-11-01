@@ -364,9 +364,6 @@ pub fn limit_asked_in(
         .map_err(|why| why.to_string())?;
     let was = held.chosen.get(limit.id);
     let file_refused = held.refused.iter().any(|one| one.limit == limit.id);
-    if was == ask.value && !file_refused {
-        return Err(format!("{} is that already", limit.plain));
-    }
     let path = format!("pool {}: {}", ask.pool, limit.plain);
     proposals
         .note_limit(
@@ -409,7 +406,13 @@ pub fn limit_now(change: &LimitChange) -> Now {
         change.id,
         change.value,
     ) {
-        Ok(held) if held.chosen.get(change.id) != change.was => Now::Stale,
+        // A bad value typed or taken away since is a change too: the row would say otherwise.
+        Ok(held)
+            if held.chosen.get(change.id) != change.was
+                || held.refused.iter().any(|one| one.limit == change.id) != change.file_refused =>
+        {
+            Now::Stale
+        }
         Ok(_) if change.file_refused => Now::Made {
             before: format!(
                 "{}: a value in the pool's file that can't be used\n",
@@ -813,6 +816,7 @@ pub(crate) fn apply_limit(
         change.id,
         change.value,
         change.was,
+        change.file_refused,
     )
     .map_err(|why| why.to_string());
     let (outcome, why) = match &saved {

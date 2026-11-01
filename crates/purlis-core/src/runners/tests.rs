@@ -1463,8 +1463,14 @@ fn a_set_held_to_what_was_there_writes_nothing_where_it_changed() {
     use crate::poollimits::LimitId::SignInWait;
     let dir = tempfile::tempdir().unwrap();
     record_pool(dir.path(), &pool("builds", Set::default())).unwrap();
-    assert!(set_pool_limit_if(dir.path(), "builds", SignInWait, Some(30), None).unwrap());
-    assert!(!set_pool_limit_if(dir.path(), "builds", SignInWait, Some(60), None).unwrap());
+    assert!(set_pool_limit_if(dir.path(), "builds", SignInWait, Some(30), None, false).unwrap());
+    assert!(!set_pool_limit_if(dir.path(), "builds", SignInWait, Some(60), None, false).unwrap());
     let chosen = chosen_limits_of(dir.path(), "builds").unwrap();
     assert_eq!(chosen.get(SignInWait), Some(30));
+
+    // A bad value typed since, with the person's own value gone, is a change too.
+    set_pool_limit(dir.path(), "builds", SignInWait, None).unwrap();
+    a_limit_typed_into_the_file(dir.path(), "signInWait", "\"lots\"");
+    assert!(!set_pool_limit_if(dir.path(), "builds", SignInWait, None, None, false).unwrap());
+    assert!(set_pool_limit_if(dir.path(), "builds", SignInWait, None, None, true).unwrap());
 }

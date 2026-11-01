@@ -829,18 +829,23 @@ pub fn set_pool_limit(
     set_limit_in(config_root, &mut held, name, id, value)
 }
 
-/// [`set_pool_limit`], **only while the person's value is still `was`**, compared under the file's
-/// lock: `Ok(false)`, and nothing written, where it has changed (PC-8, a chat's proposal).
+/// [`set_pool_limit`], **only while the person's value is still `was`** and the file still does or
+/// doesn't hold a value it can't use, compared under the file's lock: `Ok(false)`, and nothing
+/// written, where either has changed (PC-8, a chat's proposal).
 pub fn set_pool_limit_if(
     config_root: &Path,
     name: &str,
     id: crate::poollimits::LimitId,
     value: Option<u64>,
     was: Option<u64>,
+    was_refused: bool,
 ) -> Result<bool, Refused> {
     let _locked = lock(config_root);
     let mut held = load(config_root)?;
-    if limit_may_be(&held, name, id, value)?.chosen.get(id) != was {
+    let limits = limit_may_be(&held, name, id, value)?;
+    if limits.chosen.get(id) != was
+        || limits.refused.iter().any(|one| one.limit == id) != was_refused
+    {
         return Ok(false);
     }
     set_limit_in(config_root, &mut held, name, id, value).map(|()| true)
