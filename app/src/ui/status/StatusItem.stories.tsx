@@ -371,13 +371,15 @@ export const MovingAnItemByTheDrag: Story = {
     await waitFor(() =>
       expect(notices.closest('[data-part="slot"]')).toHaveAttribute("data-dragging"),
     );
-    pointer(document, "pointermove", doctor.getBoundingClientRect().left, middle);
+    pointer(document, "pointermove", doctor.getBoundingClientRect().left + 4, middle);
+    // The Doctor opening the gap says the drag is over it: every item has a transform by then,
+    // and it is only a move once it is not nothing.
     await waitFor(() =>
-      expect(doctor.closest('[data-part="slot"]')?.getAttribute("style") ?? "").toContain(
-        "translate",
+      expect(doctor.closest<HTMLElement>('[data-part="slot"]')?.style.transform).toMatch(
+        /translate3d\([1-9]/,
       ),
     );
-    pointer(document, "pointerup", doctor.getBoundingClientRect().left, middle);
+    pointer(document, "pointerup", left - 8, middle);
     notices.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await waitFor(() =>
       expect(onTheBar(bar).slice(-2)).toEqual(["purlis.notices", "purlis.doctor"]),

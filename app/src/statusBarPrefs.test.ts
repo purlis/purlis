@@ -130,7 +130,9 @@ describe("the order the person gave the status items (#3030)", () => {
     });
     hideStatusItem("purlis.pin", true);
     moveStatusItem("purlis.branches", "purlis.todos", ["purlis.todos", "purlis.branches"]);
-    const said = () => JSON.parse(written.at(-1) ?? "{}").status;
+    // By what it holds, not by its place: the last test's queued writes may land here too.
+    const said = () =>
+      written.map((text) => JSON.parse(text).status).find((status) => status?.order !== undefined);
     await expect.poll(said).toEqual({
       hidden: ["purlis.pin"],
       order: ["purlis.branches", "purlis.todos"],
