@@ -3021,7 +3021,7 @@ fn replacing_a_runner_holds_the_new_one_to_the_change_and_drains_the_old() {
 
 /// **A limit's checks hold across limits** (#4286): `/tmp` no larger than the memory it counts on.
 #[test]
-fn a_shape_change_is_refused_as_a_new_pool_would_be_and_a_cluster_pool_has_none() {
+fn a_shape_change_is_refused_as_a_new_pool_would_be_and_a_reset_is_a_change_back() {
     use crate::poollimits::LimitId;
     let config = tempfile::tempdir().unwrap();
     let ours = desktop();

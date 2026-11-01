@@ -5,7 +5,7 @@
 
 ### Fixed
 
-- **A definite refusal no longer offers a longer wait.** A code send or a cluster add refused after a long wait says why, and offers more time only where the wait itself ran out (#4398).
+- **A definite refusal no longer offers a longer wait.** A code send refused before its time, or a cluster add refused after a long wait, says why, and offers more time only where the wait itself ran out (#4398).
 - **A pool's page now uses the answer wait you set** when it asks a runner about its profiles (#4397).
 - **A pool with its own CPU, memory, process or `/tmp` limits now links to its runner.** purlis read a kept runner back with the default limits, so it refused the runner it had just made (#4286).
 - **A limit's row shows what was saved** even if reading the limits again fails (#4390).

@@ -1838,9 +1838,10 @@ impl HostLink {
             // The host's answer comes as soon as it refuses, stream or none: a refusal is
             // said at once, never after the bound on a transfer.
             tokio::pin!(asked, writing);
-            // This machine's own clock, started before the host's: `Ok(None)` is this send's
-            // wait ending it, and nothing a runner says is. Whatever answered first says itself
-            // (#4398). A send the host finishes within the same grace as any answer still counts.
+            // This machine's own clock, started before the host's: `Ok(Err(_))` is this send's
+            // wait ending it, and nothing a runner says is. An answer before its time says
+            // itself (#4398). A send the host finishes within the same grace as any answer
+            // still counts.
             let time_up = tokio::time::sleep(within);
             tokio::pin!(time_up);
             tokio::select! {
@@ -1848,19 +1849,20 @@ impl HostLink {
                 answered = &mut asked => {
                     let answer = answered.map_err(code_refused)?;
                     writing.await?;
-                    Ok(Some(answer))
+                    Ok(Ok(answer))
                 }
                 written = &mut writing => {
                     written?;
                     match tokio::time::timeout_at(graced, &mut asked).await {
-                        Ok(answered) => answered.map(Some).map_err(code_refused),
-                        Err(_) => Ok(None),
+                        Ok(answered) => answered.map(Ok).map_err(code_refused),
+                        Err(_) => Ok(Err(None)),
                     }
                 }
                 () = &mut time_up => {
                     // Its time is up, and only that is decided here. The stream stays open and
                     // keeps writing until the grace ends: dropped now, the host could read the
-                    // reset as the end of what was sent. The host's own bound ends it first.
+                    // reset as the end of what was sent. The host's own bound ends it first. A
+                    // refusal by then may be that bound, so it is said beside the limit.
                     let last = async {
                         tokio::select! {
                             biased;
@@ -1869,19 +1871,25 @@ impl HostLink {
                         }
                     };
                     match tokio::time::timeout_at(graced, last).await {
-                        Ok(Ok(answer)) => Ok(Some(answer)),
-                        Ok(Err(_)) | Err(_) => Ok(None),
+                        Ok(Ok(answer)) => Ok(Ok(answer)),
+                        Ok(Err(why)) => Ok(Err(Some(code_refused(why)))),
+                        Err(_) => Ok(Err(None)),
                     }
                 }
             }
         });
-        match sent? {
-            Some(answer) => Ok(answer),
-            None => Err(late.map_or_else(
-                || "the host did not finish moving the code in time".to_owned(),
-                |hit| self.limit_said(hit),
-            )),
-        }
+        let also = match sent? {
+            Ok(answer) => return Ok(answer),
+            Err(also) => also,
+        };
+        let said = late.map_or_else(
+            || "the host did not finish moving the code in time".to_owned(),
+            |hit| self.limit_said(hit),
+        );
+        Err(match also {
+            Some(also) => format!("{said}. The host also said: {also}"),
+            None => said,
+        })
     }
 
     /// One transfer the host writes: `ask` names it, and the bytes the host writes on the code
