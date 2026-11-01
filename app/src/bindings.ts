@@ -362,10 +362,13 @@ export const commands = {
 	 *  is made for, else asked. `forge` is the operator's answer (`github`, `gitlab`) on the call
 	 *  after a question.
 	 * 
+	 *  **`template` is laid out in a project this call made** (FR-17, #4599), by id. A folder that
+	 *  is a project already keeps what it has, and only opens.
+	 * 
 	 *  On a blocking thread (#1949), for [`open_plane`]'s reason and because making the project
 	 *  writes its files and runs git.
 	 */
-	createProject: (path: string, planeIsThisRepo: boolean, adopt: string | null, forge: "github" | "gitlab" | null) => typedError<ProjectAnswer, string>(__TAURI_INVOKE("create_project", { path, planeIsThisRepo, adopt, forge })),
+	createProject: (path: string, planeIsThisRepo: boolean, adopt: string | null, forge: "github" | "gitlab" | null, template: string | null) => typedError<ProjectAnswer, string>(__TAURI_INVOKE("create_project", { path, planeIsThisRepo, adopt, forge, template })),
 	/**
 	 *  Which harnesses are installed and signed in, and whether `gh` and `glab` are logged in.
 	 * 

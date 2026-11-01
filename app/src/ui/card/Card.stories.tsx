@@ -345,41 +345,55 @@ export const PressableDoors: Story = {
   },
 };
 
+/** The launcher's rows at `inlineSize`, as tall as the tallest (`.welcome-doors`, #4602). */
+const launcherRowsAt = (inlineSize: string) => (
+  <ul
+    style={{
+      listStyle: "none",
+      margin: 0,
+      padding: 0,
+      inlineSize,
+      display: "grid",
+      gridAutoRows: "1fr",
+      gap: "var(--space-1)",
+    }}
+  >
+    {[
+      {
+        title: "Create a project",
+        line: "On GitHub, on GitLab or only on this Mac.",
+        Mark: FolderPlus,
+      },
+      {
+        title: "Get a project from your forge",
+        line: "Clone your team's from GitHub or GitLab.",
+        Mark: CloudDownload,
+      },
+      {
+        title: "Open a folder on this machine…",
+        line: "Open a project you already have.",
+        Mark: FolderOpen,
+      },
+    ].map(({ title, line, Mark }, at) => (
+      <li key={title}>
+        <CardButton
+          variant="row"
+          title={title}
+          line={line}
+          current={at === 1}
+          mark={<Mark aria-hidden="true" />}
+          onPress={() => undefined}
+        />
+      </li>
+    ))}
+  </ul>
+);
+
 /** **The launcher's ways in**: rows of the same family, the one whose page is showing marked. */
-export const LauncherRows: Story = {
-  render: () => (
-    <ul style={{ listStyle: "none", margin: 0, padding: 0, inlineSize: "18rem" }}>
-      {[
-        {
-          title: "Create a project",
-          line: "On GitHub, on GitLab or only on this Mac.",
-          Mark: FolderPlus,
-        },
-        {
-          title: "Get a project from your forge",
-          line: "Clone your team's from GitHub or GitLab.",
-          Mark: CloudDownload,
-        },
-        {
-          title: "Open a folder on this machine…",
-          line: "Open a project you already have.",
-          Mark: FolderOpen,
-        },
-      ].map(({ title, line, Mark }, at) => (
-        <li key={title}>
-          <CardButton
-            variant="row"
-            title={title}
-            line={line}
-            current={at === 1}
-            mark={<Mark aria-hidden="true" />}
-            onPress={() => undefined}
-          />
-        </li>
-      ))}
-    </ul>
-  ),
-};
+export const LauncherRows: Story = { render: () => launcherRowsAt("18rem") };
+
+/** **At the narrowest window**: a line that wraps leaves every row the same height (#4602). */
+export const LauncherRowsNarrow: Story = { render: () => launcherRowsAt("12rem") };
 
 /** **Repos to get** (#3655): a pick a line of a list, one unavailable while another is on its way. */
 function Picks() {

@@ -61,8 +61,8 @@ export function FirstRun({
   onOpenRepo: (path: string, template: TemplateChoice) => void;
   /** Comes back to the welcome. */
   onBack: () => void;
-  /** Makes a project with no repo in this folder, and opens it. */
-  onMake: (folder: string) => void;
+  /** Makes a project with no repo in this folder, laid out from `template`, and opens it. */
+  onMake: (folder: string, template: string | null) => void;
   /** Whether the core is cloning it right now, so it is not asked twice. */
   opening: boolean;
   /** Why the last attempt opened nothing — the core's words, all of them. */
@@ -143,7 +143,7 @@ export function FirstRun({
       ) : (
         <>
           {/* Nothing but a name is needed: a project with no repo yet, on this Mac (#1810 story 8). */}
-          <OnThisMac onMake={onMake} making={opening} />
+          <OnThisMac onMake={onMake} making={opening} templates={found?.templates} />
 
           <h2>Or start from a repo you already have</h2>
 
@@ -258,10 +258,20 @@ function fitsSays(fits: string | null | undefined, templates: TemplateRow[]): st
 /**
  * **A new project on this Mac, from its name**: no account and no repo. Its folder follows the
  * name, under the place picked last, as a project made on a forge does; a name that cannot be
- * one says why.
+ * one says why. There is no repo to fit a template to, so it starts on None (#4599).
  */
-function OnThisMac({ onMake, making }: { onMake: (folder: string) => void; making: boolean }) {
+function OnThisMac({
+  onMake,
+  making,
+  templates,
+}: {
+  onMake: (folder: string, template: string | null) => void;
+  making: boolean;
+  /** The templates this purlis ships, once the machine has been read. */
+  templates: readonly TemplateRow[] | undefined;
+}) {
   const [name, setName] = useState("");
+  const [template, setTemplate] = useState(NONE);
   const [parent, setParent] = useState(rememberedParent);
   const [answered, setAnswered] = useState<{ name: string; folder?: string; why?: string }>();
   const [unpicked, setUnpicked] = useState<string>();
@@ -309,7 +319,7 @@ function OnThisMac({ onMake, making }: { onMake: (folder: string) => void; makin
     <Form
       onSubmit={(event) => {
         event.preventDefault();
-        if (ready) onMake(folder);
+        if (ready) onMake(folder, template === NONE ? null : template);
       }}
     >
       <SettingRow
@@ -324,6 +334,29 @@ function OnThisMac({ onMake, making }: { onMake: (folder: string) => void; makin
         <p className="trouble" role="alert">
           {here.why}
         </p>
+      )}
+      {templates && templates.length > 0 && (
+        <SettingRow
+          label="Template"
+          help="Personas, a review checklist and the commands purlis asks you about before a chat runs them."
+          control={(ids) => (
+            <Choice
+              ids={ids}
+              kind="select"
+              options={[
+                { value: NONE, label: "None", says: "Only the steward persona." },
+                ...templates.map((one) => ({
+                  value: one.id,
+                  label: one.title,
+                  says: one.summary,
+                })),
+              ]}
+              value={template}
+              onValueChange={setTemplate}
+              disabled={making}
+            />
+          )}
+        />
       )}
       <div className="get-project-end">
         <p className="get-project-folder">

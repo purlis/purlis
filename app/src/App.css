@@ -4507,10 +4507,11 @@ body {
   margin: 0;
 }
 
-/* **The ways in**: rows of the card family, one under another. */
+/* **The ways in**: rows of the card family, one under another, each as tall as the tallest, so a
+   narrow window that wraps one line keeps them even (#4602). */
 .welcome-doors {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-auto-rows: 1fr;
   gap: var(--space-1);
   margin: 0;
   padding: 0;
