@@ -145,6 +145,7 @@ mod content_is_searched_across_branches;
 mod every_deferral_names_its_ticket;
 mod every_first_party_source_file_carries_its_licence_header;
 mod every_git_call_goes_through_the_runner;
+mod every_named_limit_on_a_runners_path_is_sorted;
 mod every_guard_reads_a_hostile_command_in_linear_time;
 mod every_shipped_skill_names_only_purlis;
 mod every_store_the_plane_format_names_has_a_tier;
