@@ -1294,6 +1294,7 @@ impl Driving {
 
     /// **Passes the person's code to the login** ([`Driven::paste`]).
     pub fn paste(&self, code: &str) -> Result<(), String> {
+        self.takes_input()?;
         let line = self
             .driven
             .lock()
@@ -1311,6 +1312,7 @@ impl Driving {
 
     /// **Passes what the person typed to a login in a terminal**, as it is.
     pub fn typed(&self, text: &str) -> Result<(), String> {
+        self.takes_input()?;
         let takes = self
             .driven
             .lock()
@@ -1337,11 +1339,16 @@ impl Driving {
     /// `docker exec` does, the login ends with its input, on the runner ([`super::held`]).
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
-        // At once, so nothing more is passed on while the login ends. A write under way holds
-        // the lock, and is never waited for: the login's end ends it.
-        if let Ok(mut input) = self.input.try_lock() {
-            input.take();
+    }
+
+    /// Refused once it was cancelled or stopped, so nothing more is passed on while the login
+    /// ends. Its input stays open until then: a login that read the end of it would go on, not
+    /// stop.
+    fn takes_input(&self) -> Result<(), String> {
+        if self.cancelled.load(Ordering::SeqCst) {
+            return Err("the sign-in takes no more input".to_owned());
         }
+        Ok(())
     }
 
     /// **Ends the login because it had to stop, not because the person asked** (#4277): as
