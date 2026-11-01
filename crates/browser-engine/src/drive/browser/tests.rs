@@ -2710,7 +2710,7 @@ fn a_page_the_engine_made_and_has_not_told_of_is_not_called_missing() {
 #[test]
 fn no_frame_or_worker_is_held_at_its_start() {
     // Held frames are what make Chrome end itself on a page whose frame reloads quickly (#4472).
-    let (_browser, engine) = browser();
+    let (browser, engine) = browser();
     let start = std::time::Instant::now();
     while engine.sent("Target.setAutoAttach").is_empty() {
         assert!(start.elapsed() < Duration::from_secs(5), "never set up");
@@ -2718,6 +2718,38 @@ fn no_frame_or_worker_is_held_at_its_start() {
     }
     for sent in engine.sent("Target.setAutoAttach") {
         assert_eq!(sent.params["waitForDebuggerOnStart"], false, "{sent:?}");
+    }
+    // So there is nothing to let go of, and Chrome can leave that call unanswered.
+    let _ = snapshot(&browser, 1);
+    assert_eq!(engine.sent("Runtime.runIfWaitingForDebugger").len(), 0);
+}
+
+#[test]
+fn a_slow_call_to_the_engine_never_stops_its_events_being_read() {
+    // Chrome can leave a call unanswered, and an event read behind it comes too late (#4472).
+    let (browser, engine) = browser();
+    super::lock(&engine.model)
+        .slow
+        .insert("Page.enable".to_owned(), Duration::from_secs(3));
+    engine.emit(
+        "Target.attachedToTarget",
+        json!({"sessionId":"S-LATER","targetInfo":{"targetId":"LATER-FRAME","type":"iframe","title":"","url":"http://other.test/","attached":true},"waitingForDebugger":false}),
+        Some("S-PAGE-1"),
+    );
+    let start = std::time::Instant::now();
+    while engine.sent("Page.enable").iter().all(|s| s.session.as_deref() != Some("S-LATER")) {
+        assert!(start.elapsed() < Duration::from_secs(1), "never set up");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    engine.emit(
+        "Target.targetCreated",
+        json!({"targetInfo":{"targetId":"PAGE-7","type":"page","title":"","url":"about:blank","attached":false}}),
+        None,
+    );
+    let start = std::time::Instant::now();
+    while super::lock(&browser.inner.state).page("PAGE-7").is_none() {
+        assert!(start.elapsed() < Duration::from_secs(1), "the event waited on the call");
+        std::thread::sleep(Duration::from_millis(5));
     }
 }
 
