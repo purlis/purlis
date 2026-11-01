@@ -214,10 +214,40 @@ call site.
 | `run_untimed` | a call that checks out a tree (`worktree add`, `merge`) |
 | `run_with_input`, `spawn_fed` | a verb fed on standard input (`--stdin`, `cat-file --batch`) |
 | `run_network` | a chat's brokered `clone`, `fetch`, and `publish` when it lands |
-| `spawn_network` | a `clone` that is not a chat's, under the same rule: its caller reads git as it runs (see below) |
+| `spawn_network` | a `clone` that is not a chat's, and the Git LFS upload before a push, under the same rule: its caller reads git as it runs (see below) |
 | `run_as_session` | the project-root guards, which ask what the session's own git would do |
 | `run_in_hook` | a read from inside a git hook, of the index the hook's command is using |
 | `spawn_persons_clone` | the person's own clone from the welcome's Get a project (see below) |
+
+### A push sends its Git LFS objects first
+
+Purlis's git runs no hooks, so git-lfs's own `pre-push` never runs. Before a push of a repo save,
+`purlis worktree push`, `purlis change push` or a project's first publish, purlis reads the commits
+going out for Git LFS pointers (#4399). None going out, nothing else happens: git-lfs is never
+started. A plane's own save is not covered: it pushes the plane's repository.
+
+Otherwise it uploads each object before the push leaves, or refuses the push with a sentence
+saying what to do. The upload:
+
+- **Goes only to the LFS address of the URL the push goes to**, over HTTPS, as git-lfs would derive
+  it. It is given on the command line, which beats a committed `.lfsconfig` and the repository's
+  config. A repository whose LFS server is elsewhere is refused, and pushes from your own terminal.
+- **Has only the helper the push has**, on the one-credential rule. git-lfs also reads your own
+  `~/.netrc`, as git itself does.
+- **Lets the forge's answer name where the bytes go**, as a forge names its storage. That host is
+  the forge's choice, not a chat's and not in the chat's `[sandbox] egress`. The helper is asked
+  about it like any other host, and it is not in the network log.
+- **Sends only what its pointer names**: each object is read once without following a link, hashed
+  and copied to a folder of the call's own, which is what git-lfs is told to read. So a link or a
+  later change in `.git/lfs`, which a chat can write, is never read outside its sandbox.
+- **Scans what a push's scan would read**: an object up to the scan's size limit whose first
+  bytes hold no NUL is read as a commit's added lines are, and a finding refuses the push.
+- **Starts no program.** A repository whose own config names one git-lfs would start, or moves
+  its store (`lfs.storage`), is refused.
+- **Is stopped at the stall limit** (`cloning::STALL`) rather than a total deadline.
+
+An object that is not in the clone refuses the push even where the server has it already: purlis
+does not ask. `git lfs fetch --all` brings it here.
 
 ### A git that is stopped is stopped with what it started
 

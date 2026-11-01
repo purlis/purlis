@@ -50,8 +50,12 @@ pub fn forwarded(workspace: &str, work: GitWork, within: Duration) -> Forwarded 
             hookwire::Ask::Git(Box::new(GitAsk {
                 chat,
                 workspace: workspace.to_owned(),
-                // A clone's wait follows its liveness (#4080).
-                alive: matches!(work, GitWork::Clone { .. } | GitWork::Create { .. }),
+                // A clone's wait follows its liveness (#4080), and so does a push's: it may
+                // upload large files first (#4399).
+                alive: matches!(
+                    work,
+                    GitWork::Clone { .. } | GitWork::Create { .. } | GitWork::WorktreePush { .. }
+                ),
                 work,
             }))
         },

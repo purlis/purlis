@@ -149,6 +149,7 @@ pub mod memorypressure;
 pub mod memscope;
 pub mod memstore;
 pub mod names;
+pub(crate) mod lfsupload;
 pub mod netlog;
 pub mod news;
 pub mod noharness;

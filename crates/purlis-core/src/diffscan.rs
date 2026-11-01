@@ -399,6 +399,35 @@ fn raw_commit(record: &str) -> Option<(&str, &str, String)> {
     Some((commit, header, message))
 }
 
+/// **The text of a Git LFS object a push would upload** (#4399), read as a commit's added lines
+/// are and filtered through the allowlist at `HEAD`: the pointer a push sends says nothing of
+/// what it names. `path` is where a pointer to it is.
+pub(crate) fn in_large_file(repo: &Path, path: &str, text: &[u8]) -> Scan {
+    let mut read = Read::default();
+    let text = String::from_utf8_lossy(text);
+    for (at, line) in text.lines().enumerate() {
+        let found = on_line(line);
+        let first = read.found.len();
+        for (leak, value, twin) in &found {
+            read.found.push(Finding {
+                path: path.to_owned(),
+                line: at + 1,
+                rule: leak.rule,
+                kind: leak.kind,
+                masked: secretshape::masked(value),
+                fingerprint: scanallow::fingerprint(value),
+            });
+            read.twin.push(twin.map(|other| first + other));
+        }
+    }
+    through_the_allowlist(repo, read)
+}
+
+/// Whether `bytes` are text as git reads a file: no NUL in its first [`BINARY_PROBE`] bytes.
+pub(crate) fn reads_as_text(bytes: &[u8]) -> bool {
+    !bytes[..bytes.len().min(BINARY_PROBE)].contains(&0)
+}
+
 /// What a commit's or a tag's message, `where_` it is, holds that looks like a credential.
 ///
 /// **Credentials only, never personal data**: a message names people as a matter of course —
@@ -824,7 +853,7 @@ const BINARY_PROBE: usize = 8000;
 
 /// The largest file shown as binary whose bytes [`shown_as_binary`] reads to see whether they are
 /// text: the plane save's own limit ([`crate::planegit::SCAN_LIMIT`]).
-const PROBE_MOST: u64 = crate::planegit::SCAN_LIMIT as u64;
+pub(crate) const PROBE_MOST: u64 = crate::planegit::SCAN_LIMIT as u64;
 
 /// Reads a diff of `paths` in `commit` (empty for the index being committed) again, as text.
 type AsText<'a> = dyn FnMut(&str, &[String]) -> Result<String, String> + 'a;

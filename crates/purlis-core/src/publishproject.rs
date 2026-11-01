@@ -510,6 +510,15 @@ impl Hands for OnThisMachine {
         let Some(helper) = helper else {
             return crate::createproject::pushed_to_a_folder(root, &args, "push the project");
         };
+        // Its Git LFS objects first: a hook would have sent them, and purlis's git runs none
+        // (#4399).
+        crate::lfsupload::before_push(&crate::lfsupload::Push {
+            dir: root,
+            helper: Some(&helper),
+            args: &args,
+            tip: "HEAD",
+            remote: "origin",
+        })?;
         let run = git::run_network(root, Some(&helper), &args)
             .map_err(|unavailable| format!("purlis could not start git: {unavailable}"))?;
         if !run.ok() {

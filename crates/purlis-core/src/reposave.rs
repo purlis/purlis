@@ -573,11 +573,22 @@ fn commit_push(
         (None, branch.clone())
     };
 
-    let pushed = git::run_network(
-        clone,
-        Some(helper.as_str()),
-        &["push", &https, &format!("HEAD:refs/heads/{remote_branch}")],
-    );
+    let refspec = format!("HEAD:refs/heads/{remote_branch}");
+    let push_args = ["push", https.as_str(), refspec.as_str()];
+    // Its Git LFS objects first: a hook would have sent them, and purlis's git runs none (#4399).
+    if let Err(why) = crate::lfsupload::before_push(&crate::lfsupload::Push {
+        dir: clone,
+        helper: Some(helper.as_str()),
+        args: &push_args,
+        tip: &head_sha,
+        remote: "origin",
+    }) {
+        say(Say::Warn(format!("Committed, but not pushed. {why}.").into()));
+        attempt.detail = why;
+        attempt.outcome = "failed";
+        return 1;
+    }
+    let pushed = git::run_network(clone, Some(helper.as_str()), &push_args);
     let run = match pushed {
         Ok(run) => run,
         Err(unavailable) => {
