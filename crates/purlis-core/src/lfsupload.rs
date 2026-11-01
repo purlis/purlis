@@ -87,9 +87,6 @@ fn stand_in() -> Option<StandIn> {
 
 /// Uploads every object the push needs, or says in one sentence why the push must not happen.
 pub(crate) fn before_push(push: &Push) -> Result<(), String> {
-    if std::env::var_os("CI").is_some() {
-        return Ok(()); // RED: no upload, to see the tests fail for the right reason.
-    }
     let pointers = going_out(push.dir, push.tip, push.remote)?;
     if pointers.is_empty() {
         return Ok(());

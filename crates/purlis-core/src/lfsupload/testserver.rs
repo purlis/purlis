@@ -40,11 +40,11 @@ pub(crate) struct Watching {
 }
 
 fn has_ref(watching: &Watching) -> bool {
-    std::process::Command::new("git")
+    let mut command = std::process::Command::new("git");
+    command
         .args(["rev-parse", "--verify", "--quiet", &watching.reference])
-        .current_dir(&watching.forge)
-        .output()
-        .is_ok_and(|out| out.status.success())
+        .current_dir(&watching.forge);
+    crate::forklock::output(&mut command).is_ok_and(|out| out.status.success())
 }
 
 #[derive(Default)]

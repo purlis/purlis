@@ -140,10 +140,11 @@ impl Place {
     }
 
     fn ref_moved(&self) -> bool {
-        std::process::Command::new("git")
+        let mut command = std::process::Command::new("git");
+        command
             .args(["rev-parse", "--verify", "--quiet", BRANCH])
-            .current_dir(&self.forge)
-            .output()
+            .current_dir(&self.forge);
+        crate::forklock::output(&mut command)
             .unwrap()
             .status
             .success()
@@ -468,10 +469,11 @@ fn real_git_lfs_a_save_uploads_each_object_before_the_ref_moves_or_stays_committ
     let (_dir, plane, clone, bare) = saving_place();
     let reference = "refs/heads/feature/x";
     let has_ref = || {
-        std::process::Command::new("git")
+        let mut command = std::process::Command::new("git");
+        command
             .args(["rev-parse", "--verify", "--quiet", reference])
-            .current_dir(&bare)
-            .output()
+            .current_dir(&bare);
+        crate::forklock::output(&mut command)
             .unwrap()
             .status
             .success()
