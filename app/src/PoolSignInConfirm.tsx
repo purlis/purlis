@@ -14,25 +14,24 @@ export const SIGN_IN_ARMS_AFTER_MS = 1500;
 
 /** Whether its yes can be pressed: nothing typed for a moment, so no typing lands on it. */
 function useArmed(asked: PoolSignInAsk | null): boolean {
-  const [armed, setArmed] = useState(false);
+  const [armedFor, setArmedFor] = useState<number | null>(null);
   const id = asked?.id;
   useEffect(() => {
-    setArmed(false);
     if (id === undefined) return undefined;
-    let timer: ReturnType<typeof setTimeout>;
-    const again = () => {
-      setArmed(false);
+    const arm = () => setTimeout(() => setArmedFor(id), SIGN_IN_ARMS_AFTER_MS);
+    let timer = arm();
+    const typed = () => {
+      setArmedFor(null);
       clearTimeout(timer);
-      timer = setTimeout(() => setArmed(true), SIGN_IN_ARMS_AFTER_MS);
+      timer = arm();
     };
-    again();
-    document.addEventListener("keydown", again, true);
+    document.addEventListener("keydown", typed, true);
     return () => {
       clearTimeout(timer);
-      document.removeEventListener("keydown", again, true);
+      document.removeEventListener("keydown", typed, true);
     };
   }, [id]);
-  return armed;
+  return id !== undefined && armedFor === id;
 }
 
 /** The question waiting, read as the window comes up and each time the core says it changed. */

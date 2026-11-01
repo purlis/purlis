@@ -315,7 +315,13 @@ fn the_person_is_asked_only_of_a_profile_and_a_pool_this_machine_has() {
     for (name, pool) in [("nobody", "team"), ("../up", "team"), ("work", "elsewhere")] {
         assert!(
             matches!(
-                answer(&config, sign_in(name, pool), no_forget, no_keep, no_approve),
+                answer(
+                    &config,
+                    sign_in(name, pool, &config),
+                    no_forget,
+                    no_keep,
+                    no_approve
+                ),
                 Said::Refused { .. }
             ),
             "{name} on {pool}"
