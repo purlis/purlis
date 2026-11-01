@@ -1,0 +1,52 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, pulls: Create a pull request (draft)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "repos/acme/api/pulls"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "head",
+              "charter/save"
+            ]
+          },
+          {
+            "text": [
+              "base",
+              "main"
+            ]
+          },
+          {
+            "text": [
+              "title",
+              "Save"
+            ]
+          },
+          {
+            "text": [
+              "body",
+              "<!-- charter-save -->"
+            ]
+          },
+          {
+            "typed": [
+              "draft",
+              "true"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"number\": 12, \"html_url\": \"https://github.com/acme/api/pull/12\", \"state\": \"open\"}",
+        "err": ""
+      }
+    }
+  ]
+}

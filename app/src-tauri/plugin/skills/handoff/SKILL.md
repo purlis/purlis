@@ -131,12 +131,15 @@ exactly the text you wrote. There is no `--brief-file`.
 The app decides a handoff, by the rules it decides a task by.
 
 - **`opened chat N in workspace '…'`**: the new chat is a tab in that workspace, already
-  started on the brief. To this chat's own persona, that is always the answer.
+  started on the brief. To this chat's own persona, that is the answer, except on a pool's runner.
 - **`held for the person`**: the handoff is to another persona, and nobody has yet allowed this
   pair. purlis is asking the operator, on this chat's tab, with the brief in front of them.
   Nothing has opened. **Carry on with other work and do not hand it off again**: if they allow
   it, the chat opens then; if they keep it blocked, you are told on your next turn. Once a pair
   is allowed, later handoffs across it open at once.
+- **`held for the person`, naming a pool**: this chat runs on that pool's runner, so the operator
+  approves its handoffs in the window, whatever the persona. Nothing has opened. **Carry on with
+  other work and do not hand it off again**: you are told what became of it.
 - **A refusal** names the limit, the lock or the missing grant. Say it to the operator as it
   is. A chat that runs with its harness's permission prompts off is never asked for: it hands
   off to its own persona, or under a grant that already stands, and is refused otherwise. It

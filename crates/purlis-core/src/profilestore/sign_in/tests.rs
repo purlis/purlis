@@ -262,6 +262,8 @@ fn a_chat_on_a_made_profile_its_harness_says_is_signed_out_is_refused_with_sign_
     assert!(why.contains("Sign in"), "{why}");
     assert!(why.contains("purlis profile sign-in work"), "{why}");
     assert!(why.contains("Nothing was started"), "{why}");
+    assert!(is_refusal(&why), "{why}");
+    assert!(!is_refusal("the runner is out of disk"));
 }
 
 #[test]
@@ -676,8 +678,8 @@ fn a_runners_sign_in_runs_the_pinned_version_it_installed() {
 fn a_runners_sign_out_is_its_harnesss_own_by_the_pinned_version() {
     let installed = PathBuf::from("/runner/data/harnesses/claude/2.1.300/claude");
 
-    let claude = logout_of(&kept_pinned("claude"), Some(&installed)).expect("a sign-out");
-    let codex = logout_of(&kept_pinned("codex"), Some(&installed)).expect("a sign-out");
+    let claude = logout_of(&kept_pinned("claude"), Some(&installed), false).expect("a sign-out");
+    let codex = logout_of(&kept_pinned("codex"), Some(&installed), false).expect("a sign-out");
 
     assert_eq!(claude.program, installed.display().to_string());
     assert_eq!(claude.args, ["auth", "logout"]);
@@ -689,13 +691,16 @@ fn a_runners_sign_out_is_its_harnesss_own_by_the_pinned_version() {
     );
 }
 
-/// **opencode's sign-out asks which in its own terminal**, so purlis runs none.
+/// **opencode's sign-out asks which in its own terminal**, so purlis runs it only in one
+/// (#4124), and refuses it in words over pipes.
 #[test]
-fn a_harness_with_no_plain_sign_out_is_refused_in_words() {
-    let why = logout_of(&kept_pinned("opencode"), Some(Path::new("/bin/opencode")))
-        .expect_err("no sign-out");
-
+fn a_sign_out_that_asks_runs_only_in_a_terminal() {
+    let opencode = Some(Path::new("/bin/opencode"));
+    let why = logout_of(&kept_pinned("opencode"), opencode, false).expect_err("no sign-out");
     assert!(why.contains("signed nothing out"), "{why}");
+
+    let login = logout_of(&kept_pinned("opencode"), opencode, true).unwrap();
+    assert_eq!(login.args, ["auth", "logout"]);
 }
 
 /// A machine that answers every status with 0, and installs `pinned` as a runner's pinned

@@ -373,6 +373,103 @@ async fn a_bundle_past_the_hosts_bound_is_refused_too_large_and_nothing_is_taken
     assert!(runner.recorded.taken.lock().unwrap().is_empty());
 }
 
+/// **A send follows what its client gives it** (spec #4275): past the host's own bound where the
+/// client raised it, and refused past it where the client gave less.
+#[tokio::test]
+async fn a_send_is_held_to_what_its_client_gives_it_and_no_other_way_is() {
+    let held = |most_bytes| {
+        Some(session::CodeHeld {
+            most_bytes,
+            within_secs: 60,
+        })
+    };
+    let way = |held| Way::In {
+        refs: vec![fix()],
+        checkout: None,
+        moving: false,
+        held,
+    };
+
+    // Raised past the host's own, and never past what any send may be given.
+    assert_eq!(way(held(100)).held_to(8).0, 100);
+    assert_eq!(way(held(4)).held_to(8).0, 4);
+    assert_eq!(way(held(u64::MAX)).held_to(8).0, code::HIGHEST_BUNDLE_BYTES);
+    let long = way(Some(session::CodeHeld {
+        most_bytes: 1,
+        within_secs: u64::MAX,
+    }));
+    assert_eq!(
+        long.held_to(8).1,
+        Duration::from_secs(code::LONGEST_TRANSFER_SECS)
+    );
+    // No word from a client changes what the host writes back.
+    let out = Way::Out {
+        have: Vec::new(),
+        with_work: false,
+    };
+    assert_eq!(out.held_to(8), (8, TRANSFER_WITHIN));
+    assert_eq!(way(None).held_to(8), (8, TRANSFER_WITHIN));
+}
+
+#[tokio::test]
+async fn a_send_past_what_its_client_gave_is_refused_too_large_over_the_link() {
+    let mut runner = a_runner();
+    runner.host = runner.host.clone().holding_bundles_to(1024);
+    let (client, mut streams) = through_the_relay(Scope::LocalUi, &runner).await;
+    client.hold_project(PROJECT, "").await.unwrap();
+    let asked = client.take_code_held(
+        PROJECT,
+        REPO,
+        7,
+        vec![fix()],
+        None,
+        Some(session::CodeHeld {
+            most_bytes: 8,
+            within_secs: 60,
+        }),
+    );
+    let writing = async {
+        let mut stream = code_stream(&mut streams, 7).await;
+        let _ = stream.write_all(b"nine byte").await;
+        let _ = stream.shutdown().await;
+    };
+    let (answered, ()) = tokio::time::timeout(PATIENCE, async { tokio::join!(asked, writing) })
+        .await
+        .expect("the take was answered");
+    let refused = answered.unwrap_err();
+    let refusal = refused.refusal().expect("the host refused it");
+    assert_eq!(refusal.code, session::TOO_LARGE);
+    assert!(runner.recorded.taken.lock().unwrap().is_empty());
+}
+
+/// **A wait given is only a wait** (spec #4275): out of it, nothing is taken.
+#[tokio::test]
+async fn a_send_out_of_the_time_its_client_gave_takes_nothing() {
+    let runner = a_runner();
+    let (client, _streams) = through_the_relay(Scope::LocalUi, &runner).await;
+    client.hold_project(PROJECT, "").await.unwrap();
+    let refused = tokio::time::timeout(
+        PATIENCE,
+        client.take_code_held(
+            PROJECT,
+            REPO,
+            7,
+            vec![fix()],
+            None,
+            Some(session::CodeHeld {
+                most_bytes: 1024,
+                within_secs: 0,
+            }),
+        ),
+    )
+    .await
+    .expect("answered")
+    .unwrap_err();
+    let refusal = refused.refusal().expect("the host refused it");
+    assert!(refusal.why.contains("took longer"), "{}", refusal.why);
+    assert!(runner.recorded.taken.lock().unwrap().is_empty());
+}
+
 #[tokio::test]
 async fn a_project_held_at_a_place_the_client_named_moves_no_code() {
     let runner = a_runner();

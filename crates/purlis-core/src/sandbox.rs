@@ -749,6 +749,9 @@ fn keyed_of(text: &str, file: &str, known: Option<&[String]>) -> Vec<crate::sett
         .collect()
 }
 
+/// The folder a cluster runner's pod hands its link key over in (`operator/src/upstream.rs`).
+const LINK_HANDOVER: &str = "/run/purlis-link";
+
 /// What a chat's sandbox always denies (ADR 0067 §5). Classes, not a list of paths: each is
 /// turned into rules by [`Denied::of`], and no plane, persona or preset can remove one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1801,6 +1804,34 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         deny(Class::Vaults, op, Access::ReadWrite);
         deny(Class::Vaults, home.join(".op"), Access::ReadWrite);
         deny(Class::Vaults, home.join(".vault-token"), Access::ReadWrite);
+        // A runner's forge programs (#4354): what they keep is no chat's, to read or to leave
+        // for a later one. A declared tool's run has a home of its own.
+        if machine.is_a_runner() {
+            let config = machine
+                .env
+                .get("XDG_CONFIG_HOME")
+                .map(PathBuf::from)
+                .filter(|dir| dir.is_absolute())
+                .unwrap_or_else(|| home.join(".config"));
+            for kept in [
+                config.join("gh"),
+                config.join("glab-cli"),
+                home.join(".config/gh"),
+                home.join(".config/glab-cli"),
+                home.join(".local/share/gh"),
+            ]
+            .into_iter()
+            .chain(
+                // Where the runner's own environment moves them.
+                ["GH_CONFIG_DIR", "GLAB_CONFIG_DIR"]
+                    .iter()
+                    .filter_map(|var| machine.env.get(var))
+                    .map(PathBuf::from)
+                    .filter(|dir| dir.is_absolute()),
+            ) {
+                deny(Class::Vaults, kept, Access::ReadWrite);
+            }
+        }
     }
     // The registry that names the vaults: readable, never rewritten.
     deny(Class::Vaults, ctx.shared_registry(), Access::Write);
@@ -1971,6 +2002,15 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         machine.env.get("XDG_CONFIG_HOME").map(Into::into),
         machine.home.clone(),
     );
+    // A cluster runner's folder its pod's first step hands the link key over in (#4207): no chat
+    // touches it, whatever a pairing left there. A runner with no such folder has nothing to deny.
+    if machine.is_a_runner() && Path::new(LINK_HANDOVER).exists() {
+        deny(
+            Class::HumanPowers,
+            PathBuf::from(LINK_HANDOVER),
+            Access::ReadWrite,
+        );
+    }
     // Under EVERY spelling of the config home, there or not (RN-5): which one is the home
     // is decided by which is there, so a chat that could make `purlis/` beside `charter/`
     // would be writing the approvals charter reads next.
@@ -3796,6 +3836,8 @@ pub struct Applied {
     /// What [`Self::answered`] found to say once about an older Claude Code, and the version it
     /// names, marked said once a tab shows it ([`older_shown`]).
     older: Option<(String, ClaudeCodeVersion)>,
+    /// The shared folders of the home a chat at the floor finds made ([`usual_home_folders`]).
+    usual_folders: Vec<PathBuf>,
     /// The persona's tools for this chat (#1407), written as its line is decided.
     tools: Option<Box<tools::Resolved>>,
     /// purlis's own program the wrap starts the chat under on Linux, as it was checked and held
@@ -4105,6 +4147,24 @@ impl Applied {
         if let Form::ClaudeWrapped(wrap) = &mut *self.form {
             wrap.on_profile(folders);
         }
+        // On a profile of its own, a wrapped Claude Code keeps out of Claude Code's default folder,
+        // whose sign-in a pool's next runner may be given.
+        if let (Form::ClaudeWrapped(wrap), Some(default), Some(config)) =
+            (&mut *self.form, &folders.default_config, &folders.config)
+            && default != config
+        {
+            let denial = Denial {
+                class: Class::HumanPowers,
+                path: default.clone(),
+                access: Access::ReadWrite,
+                named: None,
+                reach: Reach::AndBelow,
+                any_case: false,
+            };
+            wrap.denying(vec![denial.clone()]);
+            self.confines.denied.push(denial.clone());
+            self.denied.push(denial);
+        }
         if !matches!(*self.form, Form::ClaudeCode(_) | Form::ClaudeWrapped(_)) {
             return;
         }
@@ -4151,6 +4211,12 @@ impl Applied {
         };
         out.extend(self.caches.iter().flat_map(|caches| caches.writable()));
         out
+    }
+
+    /// Makes the shared folders of the home a chat at the floor finds there
+    /// ([`usual_home_folders`]): done as a chat starts, outside its sandbox.
+    pub fn make_usual_folders(&self) {
+        make_folders(&self.usual_folders);
     }
 
     /// The form as compiled for the project, before the manifests of a chat's own folders are
@@ -4214,6 +4280,8 @@ impl Applied {
                  so nothing was started."
             )));
         }
+        // Made once the checks above have let this start go ahead.
+        self.make_usual_folders();
         let mut line = self
             .harness
             .adapter()
@@ -6415,6 +6483,30 @@ pub(crate) fn applied_of(
     } else {
         compiled
     };
+    // Every other harness's default sign-in, on every harness: its folder, or its files alone
+    // where this chat works inside that folder.
+    let mut denied_here = compiled.denied.clone();
+    let chat_ground = ground(root, machine.home.as_deref());
+    let denying = |path: PathBuf| Denial {
+        class: Class::HumanPowers,
+        path,
+        access: Access::ReadWrite,
+        named: None,
+        reach: Reach::AndBelow,
+        any_case: machine.os == Os::MacOs,
+    };
+    for (folder, files) in signin::other_harnesses_defaults(harness, machine) {
+        let whole = [denying(folder)];
+        if covering(&whole, &chat_ground).is_none() {
+            denied_here.paths.extend(whole);
+        } else {
+            denied_here.paths.extend(files.into_iter().map(denying));
+        }
+    }
+    let compiled = &Compiled {
+        denied: denied_here,
+        ..compiled.clone()
+    };
     let (form, denied) = compile_checked(compile, compiled, root, machine)?;
     let mut held = denied.clone();
     if let Some(keychains) = seatbelt::keychains(machine.home.as_deref())
@@ -6445,9 +6537,76 @@ pub(crate) fn applied_of(
         // Claude Code on its own sandbox waits for its program's answer ([`Applied::answered`]).
         through_proxy: harness != Harness::ClaudeCode || wrapped,
         older: None,
+        usual_folders: usual_home_folders(compiled.level, machine),
         tools: None,
         wrap: None,
     })
+}
+
+/// **The shared folders of the home a chat at the floor finds there** (#4357): `~/.local`,
+/// `~/.local/share` and `~/.config`, with the folders above `$XDG_DATA_HOME` and
+/// `$XDG_CONFIG_HOME` where those are in the home, each folder before what is in it.
+///
+/// Every folder above a denied path stays where it is, so a chat cannot make one that is missing:
+/// a rule cannot tell a new folder from one moved into place with files in it. Each of these holds
+/// many tools' folders, so purlis makes it before the chat starts, and the chat makes its own
+/// inside. None at the full sandbox, which keeps a chat out of the home anyway.
+fn usual_home_folders(level: Level, machine: &Machine) -> Vec<PathBuf> {
+    let Some(home) = machine.home.as_deref().filter(|_| level == Level::Floor) else {
+        return Vec::new();
+    };
+    let homes = Homes::of(machine);
+    let mut out: Vec<PathBuf> = Vec::new();
+    let usual = [home.join(".local/share"), home.join(".config")];
+    for folder in usual
+        .iter()
+        .chain(homes.data.iter())
+        .chain(homes.config.iter())
+    {
+        let plain = folder
+            .components()
+            .all(|part| part != std::path::Component::ParentDir);
+        if plain && folder.starts_with(home) && folder != home {
+            for made in ancestors_within(folder, home)
+                .into_iter()
+                .chain([folder.clone()])
+            {
+                if !out.contains(&made) {
+                    out.push(made);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// `folders`, each before what is in it, made where it is missing and its parent is there, private
+/// to the person as the XDG base directory rules ask. A name already taken is left as it is, and
+/// nothing is made through it where it is a link or a file. One not made is left to the chat, which
+/// is refused as it would have been.
+fn make_folders(folders: &[PathBuf]) {
+    let mut not_folders: Vec<&PathBuf> = Vec::new();
+    for folder in folders {
+        if not_folders.iter().any(|name| folder.starts_with(name)) {
+            continue;
+        }
+        let mut builder = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        match builder.create(folder) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(err) => {
+                tracing::warn!(
+                    "purlis: {} was not made for the chat ({err})",
+                    folder.display()
+                );
+            }
+        }
+        if !std::fs::symlink_metadata(folder).is_ok_and(|meta| meta.is_dir()) {
+            not_folders.push(folder);
+        }
+    }
 }
 
 /// What a command purlis runs on a sandboxed chat's behalf is held to (#1407): exactly what the

@@ -70,6 +70,12 @@ pub type Keeping = Arc<
 /// folder and sign-in there (`forget_profile`, 1.52, #4047).
 pub type Forgetting = Arc<dyn Fn(&Pinned, &str) -> Result<(), String> + Send + Sync>;
 
+/// The harness whose own folders forgetting the named profile would delete, for the desktop a
+/// link proved: that desktop's adopted folder, kept here as the harness's default (#4142). None
+/// for any other profile.
+pub type DeletingOwnFolders =
+    Arc<dyn Fn(&Pinned, &str) -> Result<Option<String>, String> + Send + Sync>;
+
 /// The name of each profile the runner keeps for the desktop a link proved, and for no other
 /// (`kept_profiles`, 1.57, #4060).
 pub type Listing = Arc<dyn Fn(&Pinned) -> Result<Vec<String>, String> + Send + Sync>;
@@ -96,6 +102,7 @@ pub struct Pairing {
     pub unpairing: Unpairing,
     pub keeping: Keeping,
     pub forgetting: Forgetting,
+    pub deleting_own_folders: DeletingOwnFolders,
     pub listing: Listing,
     pub holding: Holding,
     pub delivering: Delivering,
@@ -235,6 +242,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
         let unpairing = Arc::clone(&pairing.unpairing);
         let keeping = Arc::clone(&pairing.keeping);
         let forgetting = Arc::clone(&pairing.forgetting);
+        let deleting_own_folders = Arc::clone(&pairing.deleting_own_folders);
         let listing = Arc::clone(&pairing.listing);
         let holding = Arc::clone(&pairing.holding);
         let delivering = Arc::clone(&pairing.delivering);
@@ -258,6 +266,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
                         unpairing,
                         keeping,
                         forgetting,
+                        deleting_own_folders,
                         staged: std::sync::Mutex::default(),
                         listing,
                         holding,
@@ -294,6 +303,7 @@ struct PairedLink {
     unpairing: Unpairing,
     keeping: Keeping,
     forgetting: Forgetting,
+    deleting_own_folders: DeletingOwnFolders,
     /// The settings staged on this link: in memory, so they end with it.
     staged: std::sync::Mutex<session::StagedSettings>,
     listing: Listing,
@@ -390,24 +400,46 @@ impl PairedLink {
     /// `forget_profile` (1.52, #4047): the desktop's profile forgotten here, off the runtime,
     /// since its folder is deleted.
     async fn forget(&self, name: String) -> Result<session::Answer, session::Refusal> {
-        // A chat running on it here keeps its folder and sign-in: it ends first.
-        if self.hosting.runs_on_profile(&name) {
-            return Err(session::Refusal {
-                code: session::NOT_STARTED.into(),
-                why: "a chat on that profile runs on this runner, so it was not forgotten; end \
-                      the chat first"
-                    .into(),
-            });
-        }
+        // A chat running on it here keeps its folder and sign-in: it ends first. Held on the
+        // blocking thread, so a link that ends mid-delete does not let go of it (#4142).
+        let held = self.held_to_forget(&name).await?;
         let (forgetting, desktop) = (Arc::clone(&self.forgetting), self.desktop.clone());
-        tokio::task::spawn_blocking(move || forgetting(&desktop, &name))
+        tokio::task::spawn_blocking(move || {
+            let _held = held;
+            forgetting(&desktop, &name)
+        })
+        .await
+        .unwrap_or_else(|why| Err(format!("the profile was not forgotten: {why}")))
+        .map(|()| session::Answer::Done)
+        .map_err(|why| session::Refusal {
+            code: session::NOT_STARTED.into(),
+            why,
+        })
+    }
+
+    /// The profile `name` held for forgetting, with the harness whose own folders that deletes
+    /// (#4142). What cannot be told is refused, since a folder deleted under a chat does not come
+    /// back.
+    async fn held_to_forget(
+        &self,
+        name: &str,
+    ) -> Result<crate::hosting::HeldToForget, session::Refusal> {
+        let refused = |why: String| session::Refusal {
+            code: session::NOT_STARTED.into(),
+            why,
+        };
+        let (deleting, desktop, asked) = (
+            Arc::clone(&self.deleting_own_folders),
+            self.desktop.clone(),
+            name.to_owned(),
+        );
+        let own_folders = tokio::task::spawn_blocking(move || deleting(&desktop, &asked))
             .await
             .unwrap_or_else(|why| Err(format!("the profile was not forgotten: {why}")))
-            .map(|()| session::Answer::Done)
-            .map_err(|why| session::Refusal {
-                code: session::NOT_STARTED.into(),
-                why,
-            })
+            .map_err(refused)?;
+        self.hosting
+            .hold_to_forget(name, own_folders.as_deref())
+            .map_err(|why| refused(why.to_owned()))
     }
 
     /// `kept_profiles` (1.57, #4060): the desktop's profiles kept here, by name, read off the

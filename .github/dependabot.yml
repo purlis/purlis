@@ -37,6 +37,16 @@ updates:
       # alone would add a second rfd and, on Linux, split it from the `gtk3` feature line.
       - dependency-name: rfd
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # The app asks the portal through the zbus tauri-plugin-single-instance already brings in
+      # (`app/src-tauri/Cargo.toml`), so it moves when the plugin moves; a major alone would add
+      # a second zbus to the tree.
+      - dependency-name: zbus
+        update-types: ["version-update:semver-major"]
+      # The specimen's picture comes as the cairo surface wry's and GTK's own cairo-rs hands
+      # over, so it moves when they do; a 0.x minor alone is a different crate's type and does
+      # not compile.
+      - dependency-name: cairo-rs
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
   - package-ecosystem: npm
     directory: /app
     target-branch: main

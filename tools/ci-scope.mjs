@@ -23,6 +23,7 @@
 // 1. A file under `.github/`, a lockfile, the toolchain, a manifest or a shared config: every
 //    scope. So is a doc that code reads (`READ_BY_CODE`): it is compiled into a build or a test
 //    holds it.
+//    A doc only Rust's tests read (`DOCS_READ_BY_RUST`) needs what the Rust needs (5. below).
 // 2. `docs/`, `site/`, `changes/`, and `AGENTS.md` and `CLAUDE.md` (an agent's steering, which no
 //    test reads): the docs alone. Every other file at the root runs everything: tests read them
 //    by name (`community.test.ts` holds `README.md`, `CONTRIBUTING.md`, `SUPPORT.md`,
@@ -41,7 +42,14 @@
 //    every scope: a unit test of the app crate, whose test build needs Tauri
 //    (`WINDOW_WALK_MISSES` in the test). `app/e2e/`: the web checks (its type check and lint)
 //    and the scenario specs.
-// 5. Anything else: every scope. An unknown path runs everything, so a path this file has never
+// 5. `crates/` and `app/src-tauri/src/`, the Rust: every scope but `web` and `stories` (#3596,
+//    2026-10-31). The app is built from it and the scenarios drive it. Vitest's files that read
+//    it run all the same (`RUST_READERS`), alone, and a story draws only the built-in themes
+//    (`READ_BY_WEB`, which runs everything). A Rust change that moves what the window calls
+//    changes `app/src/bindings.ts` too, which runs everything.
+// 6. `operator/`: the docs and tools alone. `ci` never builds it, a workspace of its own that
+//    `operator.yml` checks, but for `operator/Dockerfile`, which a Rust test reads.
+// 7. Anything else: every scope. An unknown path runs everything, so a path this file has never
 //    heard of costs time, never a check.
 //
 // **The whole-tree guards run on every change** (`WHOLE_TREE_GUARDS`): Rust tests that read every
@@ -49,6 +57,12 @@
 // licence header, a file a sandboxed chat may not write). When `rust` is out of scope, the
 // `recorded` job runs these alone. `ci-scope.test.mjs` finds each test that walks from the
 // repository's root and fails until it is listed here or named as walking only code.
+//
+// **A job that only asks whether it is needed is not started on a pull request** (`GATES`, #3596).
+// `listen-shim`'s 14 legs, the two macOS jobs, `parity` and `bench` each take a runner to read the
+// diff and usually end there: 18 of a pull request's 38 jobs by 2026-10-31. They are not required
+// checks, so `changes` answers for them, and a skipped job passes. Their own step stays and decides
+// in a merge group and on a push, as it always has.
 //
 // **Only a pull request is scoped.** A merge group, a push to main, a nightly and a run by hand
 // run every scope: the merge group is the last check before main, and it measures the pull
@@ -73,6 +87,9 @@ const E2E = new Set(["web", "scenario", "tools"]);
 // stories, but no Rust build or test reads them, except the files in `READ_BY_RUST` and the
 // guards in `WINDOW_SOURCE_GUARDS` (#3596).
 const WINDOW = new Set(["web", "app", "scenario", "stories", "tools"]);
+// The Rust: built into the app and driven by the scenarios, read by no web check or story but for
+// `READ_BY_WEB`. `docs` for the record, as every scope but the window's says it (#3596).
+const RUST = new Set(["rust", "app", "scenario", "tools", "docs"]);
 
 // Changing one of these changes what every job builds or how it runs.
 const SHARED = new Set([
@@ -90,12 +107,15 @@ const SHARED = new Set([
 // names by a relative path and fails when one is missing here.
 export const READ_BY_CODE = [
   "CHANGELOG.md",
-  "docs/plane-format.md",
-  "docs/schema/",
   "docs/ui-primitives.md",
   "docs/design-system.md",
   "docs/adr/0076-a-run-moves-only-by-a-named-cause-and-a-chats-state-is-read-from-its-runs.md",
 ];
+
+// Docs that Rust's tests read and no window file does, so a change to one needs what a change to
+// Rust needs: `docs/plane-format.md` was in 35 of the last 199 merged pull requests, most of them
+// otherwise Rust alone (#3596). `ci-scope.test.mjs` fails when a window file comes to read one.
+export const DOCS_READ_BY_RUST = ["docs/plane-format.md", "docs/schema/"];
 
 // The files of the window's sources that Rust reads by name, so a change to one is a change to a
 // Rust build or test: the generated bindings and RPC table (held to what the Rust makes of them),
@@ -137,6 +157,67 @@ export const READ_BY_RUST = [
   "app/src/ui/tree/tree.css",
 ];
 
+// The Rust the stories draw, so a change to it runs every scope: the built-in themes, which
+// `.storybook/handed.plugin.ts` hands to each story. A folder ends in `/`.
+export const READ_BY_WEB = ["crates/purlis-core/src/theme/built-in/"];
+
+// Vitest's files (from `app/`) that read Rust: `copy.rust.test.ts` holds the window's copy written
+// in every Rust file, and the others hold a constant or a theme. `ci.yml`'s `web` job runs them
+// alone when Rust changed and `web` is out of scope. `ci-scope.test.mjs` finds each file that names
+// a Rust path and fails when one is missing here, or names none now.
+export const RUST_READERS = [
+  "e2e/dialogs.test.ts",
+  "e2e/fence.test.ts",
+  "e2e/gitAnswer.test.ts",
+  "e2e/recordedForge.test.ts",
+  "e2e/standInForge.test.ts",
+  "e2e/upgrade.test.ts",
+  "src/PersonaMark.test.tsx",
+  "src/StripMarks.test.tsx",
+  "src/allowLabels.test.ts",
+  "src/copy.rust.test.ts",
+  "src/layoutProjects.test.ts",
+  "src/settings/linkedGroups.test.ts",
+  "src/specimen/Specimen.test.tsx",
+  "src/theme/consentToggles.test.ts",
+  "src/theme/contrast.test.ts",
+  "src/theme/core.test.ts",
+  "src/theme/forced-colors.test.ts",
+  "src/theme/grounds.test.ts",
+  "src/theme/railIcons.vendor.test.ts",
+  "src/theme/registry.test.ts",
+  "src/theme/theme.test.ts",
+  "src/theme/themeIds.test.ts",
+  "src/theme/tint.test.ts",
+  "src/ui/buildingSkill.test.ts",
+  "src/ui/field/refusingFields.guard.test.ts",
+  "src/ui/menu/submenuRows.guard.test.ts",
+  "src/ui/notice/noticeCardFill.test.ts",
+  "src/windowprefs.test.ts",
+];
+
+// Rust tests read this operator file by name; the rest of `operator/` no `ci` job reads.
+const OPERATOR_READ_BY_RUST = new Set(["operator/Dockerfile"]);
+
+// The paths each job greps for in its own step, word for word (`ci-scope.test.mjs` holds them
+// together): what `gatesOf` answers before a runner is taken for it.
+export const GATES = {
+  "listen-shim":
+    "^(crates/purlis-cli/src/listen|tests/listen-shim/|\\.github/workflows/ci\\.yml$)",
+  "browser-engine":
+    "^(crates/browser-engine/|Cargo\\.lock$|rust-toolchain\\.toml$)",
+  "confinement":
+    "^(crates/studio-probe/|\\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door)(\\.rs|/)|crates/purlis-core/src/hookwire/serve(\\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\\.rs|Cargo\\.lock$|rust-toolchain\\.toml$)",
+  "parity":
+    "^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|pools|codelink|session)[^/]*(\\.rs$|/)|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|sandboxing|poolfollow)[^/]*(\\.rs$|/)|runner-image/|tests/parity/|Cargo\\.lock$|rust-toolchain\\.toml$|\\.github/workflows/ci\\.yml$)",
+  // No step of its own greps this one: the job's steps are the scenario legs'. What the Skill
+  // studio's outcome bars measure, and the suite and its stand-ins (#4343).
+  "outcome-bars":
+    "^(app/src/(Skill|UseSkill|skill|chatSkill|personaSkills)|app/src/ui/list/|app/src-tauri/src/(skill|useskill|personaskills)|crates/skills/|crates/purlis-core/src/(skills|skillspan|skilltools|skilluse)(\\.rs|/)|crates/fake-harness/|app/e2e/(outcomeBars|harness\\.ts|wdio\\.outcome\\.conf|specs/skill-outcome-bars)|\\.github/workflows/ci\\.yml$)",
+  "bench":
+    "^(crates/session-protocol/|Cargo\\.toml$|Cargo\\.lock$|rust-toolchain\\.toml$|fixtures/corpora/|tools/bench\\.mjs$|tools/latency-gate\\.mjs$|\\.github/workflows/ci\\.yml$)",
+};
+
 // The Rust tests that read every file of the window's sources (#3596): `ci.yml`'s `recorded`
 // job runs each one when `rust` is out of scope, beside the whole-tree guards, so a change to
 // the window that skips the Rust suite is still held to them. They link only the core. Here and
@@ -166,7 +247,12 @@ const readByCode = (path) => listed(READ_BY_CODE, path);
 // runs (`ciTools()` below).
 export function scopesOfPath(path, ciToolNames) {
   if (path.startsWith(".github/") || SHARED.has(path) || readByCode(path)) return ALL;
+  if (listed(DOCS_READ_BY_RUST, path)) return RUST;
   if (path.startsWith("app/src/")) return listed(READ_BY_RUST, path) ? ALL : WINDOW;
+  if (path.startsWith("crates/") || path.startsWith("app/src-tauri/src/")) {
+    return listed(READ_BY_WEB, path) ? ALL : RUST;
+  }
+  if (path.startsWith("operator/")) return OPERATOR_READ_BY_RUST.has(path) ? ALL : DOCS;
   if (path.startsWith("app/") && !path.startsWith("app/e2e/")) {
     // The app's manifests and shared configs (`package.json`, the lockfile, `tsconfig*.json`,
     // `vite.config.ts`, eslint and prettier), its `src-tauri`, icons, pages and `.storybook`.
@@ -205,6 +291,22 @@ export function scopesOf({ event, paths, ciToolNames, deleted = new Set() }) {
   }
   return { scopes, why };
 }
+
+// Whether each gated job is needed. Only a pull request is answered; every other event, and a
+// change of no paths, starts the job, whose own step then decides.
+export function gatesOf({ event, paths }) {
+  const open = event !== "pull_request" || paths.length === 0;
+  return Object.fromEntries(
+    Object.entries(GATES).map(([gate, pattern]) => {
+      const re = new RegExp(pattern);
+      return [gate, open || paths.some((path) => re.test(path))];
+    }),
+  );
+}
+
+// Which parts of `web` a change needs: part 2 holds the tools' tests, which run on every change.
+// The other three would each take a runner to say there is nothing to do.
+export const webParts = (scopes) => (scopes.has("web") ? [1, 2, 3, 4] : [2]);
 
 // The file names under `tools/` that CI runs: each one a file outside `tools/` and the docs
 // names (`tools/<name>`: a workflow, an action, `app/package.json`, `vite.config.ts`, a test),
@@ -254,6 +356,7 @@ function main([event, base]) {
   const out = process.env.GITHUB_OUTPUT;
   const say = (line) => (out ? appendFileSync(out, `${line}\n`) : console.log(line));
   let result;
+  let gates;
   try {
     let paths = [];
     let ciToolNames = new Set();
@@ -279,12 +382,16 @@ function main([event, base]) {
       });
     }
     result = scopesOf({ event, paths, ciToolNames, deleted });
+    gates = gatesOf({ event, paths });
     console.log(paths.join("\n"));
   } catch (error) {
     console.log(`::warning::the change could not be read, so every job runs: ${error.message}`);
     result = { scopes: ALL, why: [] };
+    gates = gatesOf({ event, paths: [] });
   }
   for (const scope of SCOPES) say(`${scope}=${result.scopes.has(scope)}`);
+  for (const [gate, on] of Object.entries(gates)) say(`${gate}=${on}`);
+  say(`web-parts=${JSON.stringify(webParts(result.scopes))}`);
   const skipped = SCOPES.filter((s) => !result.scopes.has(s));
   if (skipped.length === 0) {
     const because = result.why.length > 0 ? `: ${result.why.slice(0, 5).join(", ")}` : "";

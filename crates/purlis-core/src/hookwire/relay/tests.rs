@@ -1051,6 +1051,7 @@ fn the_window_is_told_an_asker_hung_up_until_its_ask_is_answered() {
         Heard::Ask {
             connection: 42,
             ask: Ask::Ticket { chat: 3 },
+            alive: false,
         },
         nothing,
     );
@@ -1829,4 +1830,86 @@ fn a_line_sent_back_with_no_path_to_a_channel_that_knows_no_project_is_not_recor
 
     assert!(refused.is_err());
     assert!(kept.recorded.lock().unwrap().is_empty());
+}
+
+// A chat's clone, heard in the host and run in the window (#4161).
+
+/// What the host's pulse wrote to the asker, as the lines it wrote.
+#[derive(Clone, Default)]
+struct Written(Arc<Mutex<Vec<u8>>>);
+
+impl Write for Written {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// The host's hearing of a window whose ask beats `beats` times, a pulse's least time apart.
+fn a_window_beating(beats: u32) -> Hearing {
+    to_a_window_answering(
+        Arc::new(ChatTokens::default()),
+        Box::new(move |_, _| {
+            for _ in 0..beats {
+                crate::hookwire::alive::beat();
+                std::thread::sleep(crate::hookwire::alive::EVERY + Duration::from_millis(5));
+            }
+            Answer::Ticket { ticket: "t".into() }
+        }),
+    )
+}
+
+#[test]
+fn each_beat_of_a_clone_in_the_window_reaches_the_asker_the_host_holds() {
+    let host = a_window_beating(3);
+    let written = Written::default();
+    let pulse = crate::hookwire::alive::Pulse::to(written.clone());
+
+    let answer =
+        crate::hookwire::alive::within(Some(&pulse), || (host.answer)(42, Ask::Ticket { chat: 3 }));
+
+    assert_eq!(answer, Answer::Ticket { ticket: "t".into() });
+    let written = String::from_utf8(written.0.lock().unwrap().clone()).unwrap();
+    let lines: Vec<&str> = written.lines().collect();
+    // Three beats, each past the host's own least time apart but for what the relay takes.
+    assert!(lines.len() >= 2, "{lines:?}");
+    assert!(
+        lines.iter().all(|line| *line == r#"{"alive":{}}"#),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn an_ask_the_host_holds_no_pulse_for_is_replied_only_its_answer() {
+    // An ask whose asker reads no Alive lines, or a host that does not read such replies.
+    let window = Arc::new(Heeding::new({
+        let (window, holding) = a_window();
+        let mut hearing = the_windows(&window, &holding);
+        hearing.answer = Box::new(|_, _| {
+            crate::hookwire::alive::beat();
+            Answer::Ticket { ticket: "t".into() }
+        });
+        hearing
+    }));
+    window.linked(LINK);
+    let replies = Arc::new(Mutex::new(Vec::new()));
+    let reply: Reply = {
+        let replies = Arc::clone(&replies);
+        Arc::new(move |replied| replies.lock().unwrap().push(replied))
+    };
+    // As an older host writes it: the field is not there.
+    let heard: Heard = serde_json::from_value(serde_json::json!(
+        {"ask": {"connection": 42, "ask": {"ticket": {"chat": 3}}}}
+    ))
+    .unwrap();
+
+    window.hear(LINK, 1, heard, reply);
+
+    assert_eq!(
+        *replies.lock().unwrap(),
+        [Replied::Answer(Answer::Ticket { ticket: "t".into() })]
+    );
 }

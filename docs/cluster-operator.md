@@ -188,7 +188,7 @@ kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6
 
 # 2. The policies: the one that admits a Claim only for someone who may use its Pool, the
 #    one on runner namespaces, and the one that narrows what the operator may change of
-#    upstream's sandboxes (below); then purlis's definitions, Pool and Claim. The policies go
+#    upstream's sandboxes, its deletions and a Claim's status (below); then purlis's definitions, Pool and Claim. The policies go
 #    first, so no Claim is admitted before they hold.
 kubectl apply --server-side -f operator/deploy/policy.yaml
 kubectl apply --server-side -f operator/deploy/crds.yaml
@@ -265,22 +265,67 @@ spec:
   that keeps runners warm takes one already counted. A kept Claim is still refused once warm
   runners fill the quota. The times are a whole number followed by `s`, `m`
   or `h`, as a Docker pool's `suspendAfter` is (`1d` is refused; write `24h`):
-  - `idleAfter` (30m, a minute at least): how long a runner is idle before it is suspended, as
-    `stopped` suspends. Idle is no running chat, no open stream, no forwarded request and no
-    build; a runner a live chat owns, or whose browser holds an Ask, is never idle. It is a
-    different clock from a runner left without a link, which a Docker pool's runner suspends
-    itself after (its `suspendAfter`); a cluster pool's runner does not yet (#3703).
-  - `deleteSuspendedAfter` (720h, 30 days): how long a kept Claim stays suspended before it is
-    deleted, with its volume.
+  - `idleAfter` (30m, a minute at least): how long a paired runner is idle before it is suspended,
+    as `stopped` suspends: its pod ends and a kept Claim's volume stays (#3980). Idle is no chat
+    (a live chat waiting on the person counts as running), no browser (one holding an Ask among
+    them), and no link holding a project. The runner is the only one that knows, so it says so
+    by ending itself with the termination message `purlis-runner-idle`, which the operator reads
+    from the pod's status. It needs no new right, and a runner image older than this never says
+    it, so it is never suspended. The Claim's `Ready` is then `False` with the reason `Idle`, its
+    `Idle` condition is `True`, and the next chat its desktop starts there runs it again: the
+    desktop writes that condition's time in the annotation `runners.purlis.dev/run-again`, which
+    you can do by hand too. **That start waits for the runner** (#4403), with the window at its
+    usual *Starting…* and its Cancel, until the operator vouches for it, for at most the pool's
+    longest wait for that (`vouchWait`, 5 minutes unless raised); past it, it is refused as any
+    start on a runner that is down, and the runner still comes back. A dispatch's first hold of
+    its project waits at most 30 seconds, then is refused while the runner comes back. A runner
+    with anything else on its Claim, an upstream object in the way among it, is not waited for.
+    **A fresh Claim's runner keeps nothing**, so it comes back with a new key, which its desktop
+    refuses as it does after `stopped`: make its Claim again. This reaches no one through purlis
+    today, since a desktop makes only kept Claims, and #4404 settles it as purlis starts making
+    fresh ones (#3709). A Pool or
+    Claim set `stopped` and back leaves an idle runner suspended. An idle Claim keeps no runner
+    warm. A runner that says it is idle waits up to five minutes, serving nothing, for the
+    operator to suspend it, and serves again if it does not. A running runner takes a change to
+    `idleAfter` when it next starts, and is still vouched for meanwhile. It is a different
+    clock from a runner left without a link, which a Docker pool's runner suspends itself after
+    (its `suspendAfter`); a cluster pool's runner does not yet (#3703).
+  - `deleteSuspendedAfter` (720h, 30 days): how long a kept Claim stays suspended for being idle
+    before it is deleted, with its volume, counted from upstream's `Suspended` condition (#3981).
+    A runner that runs again starts the count over. **A Claim or Pool that is `stopped` is never
+    deleted, stopped time does not count, and the count and any notice start over when the stop
+    ends**, a stop spent while an upstream object is in the way among it. A fresh Claim is not
+    deleted: it holds no volume. **Two hours is the least it holds at**: a Pool that says less is
+    read as two hours (#4405).
   - `noticeBeforeDelete` (168h, 7 days, shorter than `deleteSuspendedAfter`): how long before
-    that deletion its requester is sent an Update.
-  - `maxAge` (336h, 14 days): past it, a kept Claim's runner starts again on the pool's current
-    image, and a fresh Claim's is made again.
+    that deletion its Claim's `DeletionNotice` condition says when, which its desktop makes an
+    Update of. **An hour is the least it holds at**, as a Pool saying less is read (#4405). The
+    whole notice is always given, however late the operator looked, and the time it names holds:
+    a Pool's times changed later can only move it later. **The notice reaches a person only
+    through a desktop**, as that desktop checks its pools: one not opened during the notice is
+    not told, and the Claim goes all the same. Purlis has no way to reach them while it is closed,
+    so a cluster where that matters sets longer times, or watches the condition. The `RetentionEnded` condition comes just before the deletion, and the
+    cluster's policy lets the operator delete no Claim without it.
+  - `maxAge` (336h, 14 days): how old a runner may be (#3982). **A chat is never ended for it.**
+    Past it, the Claim's `PastMaxAge` condition says the runner waits. The next time it is idle it
+    takes the pool's current image, as every idle runner does, and runs on it when its desktop
+    runs it again, not before, so it costs nothing meanwhile: while a kept runner is suspended
+    its sandbox's image is brought to the pool's, its volume and pairing kept, and a fresh
+    Claim's upstream claim goes, so the next is made from the pool as it is then. A runner
+    never idle (a chat for ever, or an image older than this) stays on the image it has.
 
   The cluster refuses any other spelling, a time too long to read, a notice that is not shorter
-  than the deletion, and a warm count below 0 or above 20. **The four times are named, not yet acted on**: the operator suspends,
-  deletes and restarts on them once #3980 (idle), #3981 (retention and its Update) and #3982
-  (maximum age) are built.
+  than the deletion, and a warm count below 0 or above 20.
+- **A Claim stuck, and what Claims leave behind** (#3739). A runner not ready for 30 minutes gets
+  the condition `Stuck`, with what its `Ready` says. It only says so, as a Deployment's progress
+  deadline does: a pod waiting for a node may yet start, so nothing is suspended or deleted.
+  Deleting the Claim gives it up; for a kept one on an image that never pulls, put the Pool's
+  image right and set the Claim `stopped` and back, which brings it to that image. Every 10
+  minutes the operator also looks for an upstream claim, template or warm pool it made in a
+  runner namespace whose Claim has gone, as when a finalizer was taken off by hand, and removes
+  by uid what two looks in a row find so. **It never removes an upstream claim holding a kept
+  volume**: it says so in its log, for an admin to delete. The cluster cannot say whether a person still exists: a person who has gone stops
+  linking, so their kept runner goes idle, then its retention ends.
 - **A Claim is kept or fresh** (#2057), and its `kept` never changes after it is made: the other
   kind is another Claim.
   - **A kept Claim** (`kept: true`) gets a runner of its own, started cold, whose home is a
@@ -296,9 +341,10 @@ spec:
   - **A fresh Claim** (the default) takes a runner the pool keeps warm, when there is one, and
     keeps nothing past its pod: its home is a folder of the node's, as big as a kept Claim's
     volume.
-  - purlis chooses: kept for a chat a person works in and for any chat of a subscription
-    profile, whose sign-in lives on the volume; fresh for a short dispatched task. The person may
-    turn a chat's "Keep this runner's work" either way.
+  - A desktop makes only kept Claims today. Its choice between them is written and not yet used
+    (#3709): kept for a chat a person works in and for any chat of a subscription profile, whose
+    sign-in lives on the volume; fresh for a short dispatched task, and a chat's "Keep this
+    runner's work" either way.
 - **A Claim** lives in a namespace and names its `pool`, which never changes: another pool is
   another claim. Its `Ready` condition says whether its runner is running, and if not, why:
   `PoolNotFound` when there is no such pool, `PoolDeleted` when it was deleted after the
@@ -578,19 +624,18 @@ Prometheus, or a `ServiceMonitor`, at it:
 
 | Metric | Type | Labels | What it counts |
 |---|---|---|---|
-| `purlis_cluster_operator_claims` | gauge | `pool`, `namespace`, `state` | the Claims the operator watches; `state` is `Ready` when the runner is ready, otherwise the Claim's `Ready` reason (`Stopped`, `Starting`, `OverQuota`, …), and `Unknown` before the operator has said one |
+| `purlis_cluster_operator_claims` | gauge | `pool`, `namespace`, `state` | the Claims the operator watches; `state` is `Ready` when the runner is ready, otherwise the Claim's `Ready` reason (`Stopped`, `Idle`, `Starting`, `OverQuota`, …), and `Unknown` before the operator has said one |
 | `purlis_cluster_operator_warm_runners` | gauge | `pool`, `namespace` | the runners upstream says are warm and ready in each runner namespace |
-| `purlis_cluster_operator_suspensions_total` | counter | `pool`, `cause` | the runners the operator suspended; `cause` is `stopped` (the Claim's or its Pool's `stopped`) |
-| `purlis_cluster_operator_claims_deleted_total` | counter | `pool`, `cause` | the Claims whose runner the operator removed as they were deleted; `cause` is `requested` (someone deleted the Claim) |
+| `purlis_cluster_operator_suspensions_total` | counter | `pool`, `cause` | the runners the operator suspended; `cause` is `stopped` (the Claim's or its Pool's `stopped`) or `idle` (nothing ran on it for its pool's `idleAfter`) |
+| `purlis_cluster_operator_claims_deleted_total` | counter | `pool`, `cause` | the Claims whose runner the operator removed as they were deleted; `cause` is `requested` (someone deleted the Claim) or `retention` (its retention ended) |
 
-The counters count from the operator's start. The causes grow as the operator suspends idle
-runners (#3980) and deletes long-suspended Claims (#3981).
+The counters count from the operator's start.
 
 **Nothing may scrape them until you say who may.** The metrics name every namespace that holds
 a Claim and every runner namespace (`purlis-runners-<hash>`, one per person), with their
 Claims' states, so they are not for everyone in the cluster. They say nothing about what a
-runner does. The NetworkPolicy `purlis-cluster-operator` lets nothing reach the operator's pod
-but the scrapers you name, on the metrics port. With the chart, name them as a NetworkPolicy's
+runner does. The NetworkPolicy `purlis-cluster-operator` lets nothing reach the metrics port
+but the scrapers you name. With the chart, name them as a NetworkPolicy's
 `from` peers:
 
 ```sh
@@ -655,21 +700,25 @@ it holds, but for the one Role below where the chart names a key:
 | API group | Resources | Verbs |
 |---|---|---|
 | `runners.purlis.dev` | `pools` | get, list, watch |
-| `runners.purlis.dev` | `claims` | list, watch, patch (its finalizer) |
+| `runners.purlis.dev` | `claims` | get, list, watch, patch (its finalizer), delete (a kept Claim whose retention has ended, as a policy holds it) |
 | `runners.purlis.dev` | `claims/status` | patch |
 | `runners.purlis.dev` | `pools/status` | patch |
+| `authorization.k8s.io` | `subjectaccessreviews` | create (may a Claim's requester still use its Pool, before each mint) |
+| `networking.k8s.io` | `networkpolicies` | create; get and patch only `purlis-forge-mint` |
 | core | `pods` | get |
 | core | `namespaces` | create, get (`kube-system` too, for the cluster's uid) |
 | core | `resourcequotas` | create; get and patch only `purlis-person` |
 | `rbac.authorization.k8s.io` | `rolebindings` | create; get and patch only `purlis-runner-owner` |
 | `rbac.authorization.k8s.io` | `clusterroles`, only `purlis-runner-owner` | bind |
 | `agents.x-k8s.io` | `sandboxes` | get, patch |
-| `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool` and `purlis-runner-namespaces` | get, list, watch |
+| `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool`, `purlis-runner-namespaces` and `purlis-forge` | get, list, watch |
+| `admissionregistration.k8s.io` | `validatingadmissionpolicies`, only `purlis-forge` | get |
 | `extensions.agents.x-k8s.io` | `sandboxclaims`, `sandboxtemplates`, `sandboxwarmpools` | create, delete, get, list, patch, watch |
 
 It holds no right to `exec`, `attach` or port-forward to a pod itself, and in that ClusterRole
 none to read a Secret. Beside it, only where the chart's `forge.keySecretNames` names any, the
-Role `purlis-forge-key-reader` in the operator's own namespace gives it `get` on those Secrets
+Role `purlis-forge-key-reader` in the operator's own namespace gives it `get` on the Service
+`purlis-cluster-operator-mint`, whose address a Claim's status says, and on those Secrets
 alone ([below](#minting-github-app-tokens-in-the-cluster)).
 It binds one cluster role, `purlis-runner-owner`, only to one person, only in runner namespaces:
 RBAC cannot say where a role may be bound, so the policy on runner namespaces (above) holds it.
@@ -689,13 +738,18 @@ capability dropped.
 **Its `patch` on sandboxes is narrowed by the cluster** (#2058). RBAC cannot limit a right to
 one field or to some owners: as a role, `patch` on `sandboxes` is every field of every Sandbox
 in the cluster, those other users of agent-sandbox made without any SandboxClaim included. The
-operator needs only one: to suspend a stopped Claim's runner and run it again, it applies
-`spec.operatingMode` and nothing else, to the sandbox its Claim's upstream claim controls, with
+operator needs its mode: to suspend a stopped Claim's runner and run it again, it applies
+`spec.operatingMode` alone, to the sandbox its Claim's upstream claim controls, with
 that sandbox's uid as a precondition. Another admission policy in `policy.yaml`,
 `purlis-operator-changes-only-a-sandboxs-mode`, makes that the cluster's rule: an update by the
 operator's service account to a Sandbox is refused unless a SandboxClaim controls it (any
 SandboxClaim's, purlis's or not), and unless every field of its spec but `operatingMode`, and
-its labels, annotations, owners and finalizers, are as they were. The operator holds no right
+its labels, annotations, owners and finalizers, are as they were; its `spec.podTemplate` alone
+may also change, only on a Sandbox already `Suspended` in a `purlis-runners-*` namespace, so a
+kept runner takes its pool's image (#3982). **Its `delete` on Claims is narrowed the same way**
+(#3981): `purlis-operator-deletes-only-a-retained-claim` refuses it any Claim but a kept one, not
+stopped, with its own `RetentionEnded` condition. **Only the operator writes a Claim's status**
+(`purlis-only-the-operator-writes-a-claims-status`), since what it does rests on it. The operator holds no right
 on admission policies or their bindings but reading the bindings of the policies on Claims and
 on runner namespaces, so it cannot lift it. The spec fields it holds as they were are the
 pinned upstream's (v1.0.6, and a test holds the list to the vendored definitions): a cluster
@@ -711,9 +765,8 @@ and memory included. Give cluster-admin and node access accordingly.
 
 ## Minting GitHub App tokens in the cluster
 
-**Not finished yet.** A Pool can be opted in, and the operator checks its key, but nothing is
-minted until #4206 and no chat uses a token minted here until #4207: this section says what the
-keys mean. Until then, a pool's runner has no token minted in the cluster.
+**Not finished yet.** The operator mints for a vouched runner that asks it (below), but no chat
+asks until #4207: a chat on a pool still has no token minted here.
 
 A cluster admin opts a Pool in with these steps:
 
@@ -754,23 +807,140 @@ spec:
   says in its log, within a minute, whether that Pool's key can be read and which App it is, or why not: not named
   by the chart, not there, or not holding both keys. It logs neither the key nor anything else of
   the Secret. It does not keep the key.
-- **`Pool.spec.forge.repos` is the most a token may cover.** A token will cover only the repos that
-  are on this list and also on the Claim. A bare `*`, `*/*`, a partial wildcard, a path or a URL
+- **`Pool.spec.forge.repos` is the most a token may cover.** A token covers only the repos that
+  are on this list and also on the Claim, compared without regard to case. A bare `*`, `*/*`, a partial wildcard, a path or a URL
   is refused at admission. Keep the list as narrow as the team's work: anyone who may `use` the
-  Pool can reach these repos through it, once minting is on.
-- **Writing a Pool is using the keys the chart names.** Whoever may create or patch Pools can point
-  one at any Secret in `forge.keySecretNames` with any allow-list, so give that right only to
-  people who may use every App named there.
-- **`Claim.spec.forge.repos`** will name the repos of the workspace the desktop sends (#4207), each
-  exactly `owner/name`: a wildcard is refused at admission. Only the Claim's `requester` may change
+  Pool can reach these repos through it.
+- **Writing a Pool's `spec.forge` takes `use` on the key it names.** The policy `purlis-forge`
+  refuses the write otherwise. Grant it by the Secret's name; `forgekeys` names a right, and the
+  cluster holds no such object:
+
+  ```yaml
+  - apiGroups: [runners.purlis.dev]
+    resources: [forgekeys]
+    resourceNames: [org-app]
+    verbs: [use]
+  ```
+
+  On a Pool that mints, changing `spec.image` takes the same right, since the image holds the link
+  keys the operator vouches for. Taking `spec.forge` off a Pool asks nothing. A wildcard RBAC rule
+  on `runners.purlis.dev` holds every key. The right is asked as a Pool is written: revoking it stops
+  further writes, and to stop a Pool already written, change or delete the Pool.
+- **`Claim.spec.forge.repos`** names the repos of the workspaces the desktop sends, each exactly
+  `owner/name`: a wildcard is refused at admission. As a chat starts on the runner the desktop adds
+  the github.com repos of that chat's workspace, as who the kubeconfig signs in as, and the runner's
+  other chats keep theirs: **a token covers every repo on the Claim that the Pool allows, whichever
+  chat asks.** Only the Claim's `requester` may change
   it, while they may `use` its Pool, as the policy holds. Someone else who may patch claims in the
   namespace cannot.
 - **A Pool never names `purlis-cluster-operator-signing-key`**, and neither do the chart's values.
-- **A tool line names one App.** A persona's tool whose `app` is not the Secret's `app` is refused,
-  by the operator, once it mints (#4206).
-- **The desktop reads `mintInCluster` from the Pool** as the pool is added, and records it
-  ([`runners.json`](plane-format.md)); the person does not choose it. To pick up a change, remove
-  the pool and add it again, which also releases its claim and runner. The operator goes by the Pool as it is now.
+- **A tool line names one App.** A persona's tool whose `app` is not the Secret's `app` is refused
+  by the operator.
+- **The desktop reads `mintInCluster` from the Pool** as the pool is added and again at each link
+  to its runner, and records it ([`runners.json`](plane-format.md)); the person does not choose it.
+  The operator goes by the Pool as it is now.
+
+### How a runner gets a token
+
+The chart adds the Service `purlis-cluster-operator-mint` (port 8443, TLS 1.3) only where
+`forge.keySecretNames` names a key, and the NetworkPolicy `purlis-cluster-operator` then lets the
+namespaces the operator made for runners reach that port. In a runner namespace with a Claim on an
+opted-in Pool, the operator makes the NetworkPolicy `purlis-forge-mint`, for every pod of that
+namespace and for as long as it stands, whose one rule is the way out to that port. Reaching the
+port gets nothing without a proof and an opted-in Pool: NetworkPolicies add up, so upstream's own policy keeps every other limit on the
+runner. Upstream gives a runner public name servers, so a runner reaches the port by the Service's
+address, not its name. A plain install applies the Service and the NetworkPolicy as
+`helm template --set 'forge.keySecretNames[0]=<name>'` renders them.
+
+The port's certificate is self-signed by the operator's signing key, the key every Pool's status
+names. No authority stands behind it, so a client holds its public key to that key.
+
+Only the operator may put its `managed-by` label on a namespace, and only on a runner namespace.
+
+A runner asks in two steps. `POST /forge/challenge` answers a challenge good for 60 seconds and one
+use. A proof also names the operator's key the runner holds the port to. `POST /forge/token` takes `namespace`, `claim`, `app`, `challenge` and a `proof`: a MAC only the
+holder of the runner's link key can make (`operator/src/mint.rs`). The operator then requires, each
+read at that moment:
+
+- a statement of its own on the Claim that still holds, for the key that made the proof, and the pod
+  it names still there holding that key. Short of this every refusal is the same words, so the port
+  says nothing of which claims there are;
+- the Claim and the Pool made after the policy `purlis-forge` settled. **A Pool or Claim made before
+  never mints: delete it and make it again**, since what it says was not held to that policy;
+- the runner's pod running its Pool's image as it is now;
+- the Pool opted in, neither stopped nor being deleted, and at least one repo on both lists, of one
+  owner;
+- **the requester still allowed `use` on the Pool**, asked of the cluster before each mint, so a
+  revoked right stops new tokens at once. A Claim records no groups, so this is asked of the person
+  by name: **a right held only through a group is refused. Grant `use` to the person by name** on a
+  Pool that mints;
+- the Secret's key parsed, its `app` the one asked for.
+
+The token is limited to those repos by name and, also by name, to what the installation holds of
+the repo-level permissions that administer nothing: `actions`, `checks`, `contents`, `deployments`,
+`discussions`, `issues`, `metadata`, `pull_requests`, `repository_projects` and `statuses`, at
+`write` at most. So a minted token cannot change administration, secrets or workflow files. It can
+still push code that an existing workflow runs, with what that workflow may use, and set checks and
+statuses: keep branch rules and environments in mind when you list repos. A token GitHub says covers anything else is revoked and not handed over.
+It is not stored, and nothing about it is written to the API server. The operator's log has every
+mint (who, which pool and App, the repos, the permission names, the expiry) and every refusal, with
+no token and no key in it.
+
+### What the opt-in means
+
+**Anyone who may use the Pool, by name, can use its listed repos through it, with no one asked each
+time.** On a
+Pool that opts in, a chat's GitHub App tool (`mint = "github-app"`, whose App is the Secret's) gets
+its token from the operator, not the desktop, and the person is not asked about that run: the admin's
+opt-in stands as consent (ruled on #3807), and the operator's log is the record of each mint. This
+holds for such tools alone. Any other tool's vault value still comes from the desktop, with its Ask.
+
+- **On a Pool that does not opt in nothing changes:** the run needs the desktop and the person's Ask.
+- **A refused mint is not the end of the run, and never a token by itself.** The chat is told the
+  operator's words, and the run goes to the desktop, which gates it and asks the person as on any
+  other pool. With the desktop away, it waits as such a run does.
+- **A chat's refused mints are paced.** After a refusal the runner asks the operator again no sooner
+  than 5 seconds later, doubling each time up to 5 minutes, and until then each run goes straight to
+  the desktop. Once the desktop has refused such a run too, the chat's next runs of that tool are
+  refused on the runner on the same pace, saying so, so a loop does not keep asking the person. A
+  token or values sent clear it.
+- **A chat's start waits for its repos, at most 5 seconds.** The desktop adds the workspace's repos to
+  the Claim before the chat starts, so its first mint covers them, the chat's first message included. A cluster slower than that lets
+  the chat start: an early mint is refused and goes to the person, or covers what the Claim names by
+  then, and that token is kept as any is.
+- **A run on such a token is recorded as from the cluster:** its `secret-exec` says `"from":
+  "cluster"`, where one on values a desktop sent says `"desktop"`.
+- **What a run is held to on the runner is what its chat's start was armed with.** The desktop's
+  gate is not asked: a tool line or vault tag taken away reaches a chat as it starts again. A token
+  is kept about 50 minutes for a chat's next runs, so a right revoked stops the next mint, not one
+  already out.
+- **A chat here runs only inside purlis's sandbox.** A runner of a Pool that names an App's key is made
+  with the variable `PURLIS_MINTING_POOL`, and from its first moment its host refuses any start outside
+  the sandbox, saying why, a terminal shell the person opens alone being allowed. The operator mints only
+  for a pod made with it. **Naming a key on a Pool changes its runners' template, as changing its image
+  does: a runner made before gets no token and is no longer vouched for, so claim a new one.**
+- **The token stays in the runner's memory**, and goes when its chat ends: the runner revokes it
+  with GitHub. A revoke that fails, or a runner stopped first, leaves it to expire within its hour.
+
+### Where a runner asks
+
+**`Claim.status.mint`** holds `address` (the port as `<cluster IP>:8443`) and `operatorKey` (spelled
+as a Pool's `signingKey`), only for a runner the operator vouches for on a Pool that opts in. As the
+desktop pairs its runner it takes the address, and tells the runner the key it pinned when it added the
+pool, whatever key the status names. **It tells it again at each link**, once each for what it says,
+so a runner whose Pool opted in later (having named its key when the runner was made) or whose status said nothing in time comes to use the port. A status naming another address only fails the runner's handshake. The runner keeps them in
+[`mint-port.json`](plane-format.md) in its session host's folder, so it needs no way to the
+Kubernetes API.
+
+**The runner follows a roll of the signing key by itself.** The port's TLS shows the current key
+alone. `POST /forge/next-key` answers, during a roll, the same next key and word from the current
+key as every Pool's status holds, and a runner holding the current key checks that word as a desktop
+does, then holds both till the port shows the next. It looks about hourly and before a mint. A runner paired while its desktop has already moved to the next key has its mints go to the desktop until the port shows that key. **A
+runner that was stopped through the whole roll, past the old key's removal, does not follow it:** its
+mints are refused and go to its desktop until its desktop's next link, which tells it the key the
+desktop followed, taken only once the port shows that key. Told at a link, a runner keeps any key the
+port still shows and takes back no key it moved on from, so a desktop behind it undoes nothing it
+followed.
 
 ## Tests
 

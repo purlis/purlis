@@ -14,6 +14,29 @@
 # later; a newer glibc runs what an older one linked. The base is pinned by the digest of its
 # multi-architecture index; Dependabot proposes the next one. The packages are the archive's
 # current ones at build time, so every build of `main` carries the security fixes of that day.
+# `gh` and `glab` alone are pinned, below, so a fix in either waits for a new pin.
+
+# `gh` and `glab` (#4354): each vendor's own release package, pinned by version and checked by
+# SHA-256 as the file is fetched, for the architecture being built. The sums were read from each
+# release's published checksums file. Neither program's package has an install script, and each
+# depends only on git. Ubuntu's archive is not used: a package of it stays near the version the
+# release froze on, and these two move faster. Moving to a new version is its URLs and sums in
+# both stages, by hand. No credential comes with them: on a
+# runner, without a persona's declared tool, each is simply not signed in (ADR 0077).
+FROM scratch AS forge-programs-amd64
+ADD --checksum=sha256:e3bafef96328d1a67de3a968bdfe1cc2ffd58cf6aba8b5e201356897ed06bb3d \
+    https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.deb /gh.deb
+ADD --checksum=sha256:41583b9801086dd347fc6480b6c4597178c2e39e99e491e961a7179cd87f0407 \
+    https://gitlab.com/gitlab-org/cli/-/releases/v1.126.0/downloads/glab_1.126.0_linux_amd64.deb /glab.deb
+
+FROM scratch AS forge-programs-arm64
+ADD --checksum=sha256:cac3ff84b60b68e64cca69f31f303210c26320361cc3286b773655d4226b7b06 \
+    https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_arm64.deb /gh.deb
+ADD --checksum=sha256:2b9989364afacf34a9a75328a241b596df4318cfc8c11f437b8d65ca24d3fe7e \
+    https://gitlab.com/gitlab-org/cli/-/releases/v1.126.0/downloads/glab_1.126.0_linux_arm64.deb /glab.deb
+
+FROM forge-programs-${TARGETARCH} AS forge-programs
+
 FROM ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944
 
 # git: a chat's clone and branches. ca-certificates: every TLS connection a chat makes.
@@ -22,13 +45,16 @@ FROM ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b
 # own `deb.deps`, measured on this base 2026-10-28) and one font family, so a page's text is
 # drawn. The engine itself is not in the image: the runner's host downloads it, checked, on its
 # first browser, as on any machine.
+# `gh` and `glab` are installed from the packages checked above, listed by dpkg, so the image's
+# SBOM names them; the packages themselves are mounted, and stay out of the image.
 # Ubuntu's own `ubuntu` user (1000) is removed, so the image has one user who is not root.
-RUN apt-get update \
+RUN --mount=type=bind,from=forge-programs,target=/forge-programs apt-get update \
  && apt-get install --yes --no-install-recommends ca-certificates git tini \
       fonts-liberation libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \
       libcairo2 libcups2t64 libdbus-1-3 libdrm2 libexpat1 libgbm1 libglib2.0-0t64 libnspr4 \
       libnss3 libpango-1.0-0 libudev1 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 \
       libxfixes3 libxkbcommon0 libxrandr2 \
+ && dpkg --install /forge-programs/gh.deb /forge-programs/glab.deb \
  && rm -rf /var/lib/apt/lists/* \
  && userdel --remove ubuntu \
  && groupadd --gid 10001 purlis \

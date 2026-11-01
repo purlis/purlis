@@ -248,6 +248,12 @@ export function viewRowsOf(
   return [...listed.filter((row) => row.skill.level !== "persona"), ...personaRowsOf(personas)];
 }
 
+/** **A branch-folder chat's repo skills as rows** (`chat_branch_folder_skills`, #4326): the
+ *  studio's rows of them say only what the clone's own branch holds. */
+export function branchFolderRowsOf(skills: readonly StudioSkill[]): ListedSkill[] {
+  return skills.map((skill) => ({ key: keyOf(skill), skill }));
+}
+
 /** A skill of a chat's set the studio does not list, as a row: on, with what it does. */
 function rowOfChat(skill: ChatSkill): StudioSkill {
   return {
@@ -443,7 +449,31 @@ const UNPIN_HERE = "Unpin from this workspace";
  * **Where Show in Explorer shows a skill's folder** (#3266, #3308): in the project's own files
  * (`repo` `""`), or inside one clone of the workspace Explorer shows, by the folder's path in it.
  */
-export type ExplorerPlace = { repo: string; folder: string };
+export type ExplorerPlace = {
+  repo: string;
+  /** The branch folder of that clone it is in (#4326), where it is not in the clone's own. */
+  piece?: string;
+  folder: string;
+};
+
+/** **Where a repo skill's folder is**, from its path in the project: in a clone's own folder
+ *  (`workspaces/<workspace>/<clone>/…`, the core's `worktree::clone_dir`), or in a branch folder
+ *  of one (`workspaces/<workspace>/.worktrees/<clone>/<piece>/…`, #4326). */
+function inACheckout(
+  folder: string,
+): { workspace: string; repo: string; piece?: string; rest: string[] } | undefined {
+  const [top, workspace, repo, ...rest] = folder.split("/");
+  if (top !== "workspaces" || !workspace || !repo) return undefined;
+  if (repo === BRANCH_FOLDERS) {
+    const [clone, piece, ...inside] = rest;
+    if (!clone || !piece || inside.length === 0) return undefined;
+    return { workspace, repo: clone, piece, rest: inside };
+  }
+  return rest.length === 0 ? undefined : { workspace, repo, rest };
+}
+
+/** The folder of a workspace that holds its branch folders (the core's `worktree::DIR_NAME`). */
+const BRANCH_FOLDERS = ".worktrees";
 
 /**
  * **Where Explorer can show a skill's folder**, from the workspace it shows (`shown`, the title
@@ -461,12 +491,11 @@ export function explorerPlaceOf(
     return shown === undefined ? { repo: "", folder } : { reason: EXPLORER_AT_THE_ROOT };
   if (skill.level !== "repo") return { reason: NOT_IN_THE_PROJECT };
   if (shown === undefined) return { reason: CLONE_IN_A_WORKSPACE };
-  // `workspaces/<workspace>/<clone>/…`, as the core says a clone's folder (`worktree::clone_dir`).
-  const [top, workspace, repo, ...rest] = folder.split("/");
-  if (top !== "workspaces" || repo === undefined || repo === "" || rest.length === 0)
-    return { reason: NOT_IN_THE_PROJECT };
-  if (workspace !== shown) return { reason: CLONE_IN_A_WORKSPACE };
-  return { repo, folder: rest.join("/") };
+  const at = inACheckout(folder);
+  if (at === undefined) return { reason: NOT_IN_THE_PROJECT };
+  if (at.workspace !== shown) return { reason: CLONE_IN_A_WORKSPACE };
+  const place = { repo: at.repo, folder: at.rest.join("/") };
+  return at.piece === undefined ? place : { ...place, piece: at.piece };
 }
 
 /** A change's row of the menu: what it says, or, where it cannot run, `title` and why. */
@@ -490,7 +519,7 @@ export type MenuAt = {
 
 /** **Where Open the file opens a skill's `SKILL.md`**: one of the project's own files, by its
  *  path, or a file of a workspace's clone; else why not. */
-export type FilePlace = { workspace: string; repo: string; path: string };
+export type FilePlace = { workspace: string; repo: string; piece?: string; path: string };
 
 /** **Where a skill's `SKILL.md` is**, as Open the file opens it: the project's own files for a
  *  project, workspace or persona skill, its clone's for a repo skill. A built-in skill's and a
@@ -502,10 +531,10 @@ export function filePlaceOf(skill: StudioSkill): FilePlace | { reason: string } 
   if (skill.level === "project" || skill.level === "workspace" || skill.level === "persona")
     return { workspace: "", repo: "", path: `${folder}/SKILL.md` };
   if (skill.level !== "repo") return { reason: NOT_IN_THE_PROJECT };
-  const [top, workspace, repo, ...rest] = folder.split("/");
-  if (top !== "workspaces" || workspace === undefined || repo === undefined || rest.length === 0)
-    return { reason: NOT_IN_THE_PROJECT };
-  return { workspace, repo, path: `${rest.join("/")}/SKILL.md` };
+  const at = inACheckout(folder);
+  if (at === undefined) return { reason: NOT_IN_THE_PROJECT };
+  const place = { workspace: at.workspace, repo: at.repo, path: `${at.rest.join("/")}/SKILL.md` };
+  return at.piece === undefined ? place : { ...place, piece: at.piece };
 }
 
 /** Why a built-in skill's file is not opened: it ships with purlis. */

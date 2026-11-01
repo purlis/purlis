@@ -1910,6 +1910,61 @@ fn a_title_a_script_set_is_listed_though_the_engine_never_told_of_it() {
 }
 
 #[test]
+fn a_page_slow_to_read_does_not_cost_the_current_page_its_title() {
+    let (browser, engine) = browser();
+    a_second_page(&browser, &engine);
+    browser
+        .call(
+            &id(1),
+            Call::SwitchPage {
+                page: PageId::new("p2"),
+            },
+        )
+        .unwrap();
+    super::lock(&engine.model)
+        .titles
+        .insert("PAGE-7".into(), "Retitled by its script".into());
+    // The page opened first, read first by age, takes past the listing's whole second.
+    engine.on(|sent, _| {
+        if sent.method == "Runtime.evaluate"
+            && sent.params["expression"] == TITLE
+            && sent.session.as_deref() == Some("S-PAGE-1")
+        {
+            std::thread::sleep(Duration::from_millis(1500));
+            return Some(Err(CallError::TimedOut));
+        }
+        None
+    });
+
+    let listed = browser.call(&id(2), Call::Pages).unwrap();
+
+    assert_eq!(listed.page.unwrap().title, "Retitled by its script");
+}
+
+#[test]
+fn a_newer_page_slow_to_read_does_not_cost_an_older_current_page_its_title() {
+    let (browser, engine) = browser();
+    a_second_page(&browser, &engine);
+    super::lock(&engine.model)
+        .titles
+        .insert("PAGE-1".into(), "Retitled by its script".into());
+    engine.on(|sent, _| {
+        if sent.method == "Runtime.evaluate"
+            && sent.params["expression"] == TITLE
+            && sent.session.as_deref() == Some("S-PAGE-7")
+        {
+            std::thread::sleep(Duration::from_millis(1500));
+            return Some(Err(CallError::TimedOut));
+        }
+        None
+    });
+
+    let listed = browser.call(&id(1), Call::Pages).unwrap();
+
+    assert_eq!(listed.page.unwrap().title, "Retitled by its script");
+}
+
+#[test]
 fn a_page_whose_title_cannot_be_read_keeps_the_title_the_engine_told_of() {
     let (browser, engine) = browser();
     engine.on(|sent, _| {

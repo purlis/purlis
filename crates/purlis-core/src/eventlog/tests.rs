@@ -3752,6 +3752,8 @@ fn a_chats_routing_record_is_under_its_run_and_every_skill_run_it_opens_names_it
             skill: "deploy".to_owned(),
             why: "over-budget".to_owned(),
         }],
+        prompt: false,
+        pointed: Vec::new(),
     };
     host.begin(
         plane.path(),
@@ -3811,6 +3813,8 @@ fn a_routing_record_told_while_its_run_is_held_is_written_after_it_and_never_for
         fell_back: None,
         error: None,
         hidden: Vec::new(),
+        prompt: false,
+        pointed: Vec::new(),
     };
     for (number, run) in [
         (3, "01K6E8ZK6V4Q9T0N3M2B1C5D70"),
@@ -3870,6 +3874,8 @@ fn a_clear_keeps_the_routing_its_chat_started_under_for_its_skill_runs() {
         fell_back: None,
         error: None,
         hidden: Vec::new(),
+        prompt: false,
+        pointed: Vec::new(),
     };
     host.skill_routed(plane.path(), 3, &record).unwrap();
     let cleared = "01K6E8ZK6V4Q9T0N3M2B1C5D7K";
@@ -3923,10 +3929,88 @@ fn a_routing_told_for_a_start_taken_back_is_never_written() {
         fell_back: None,
         error: None,
         hidden: Vec::new(),
+        prompt: false,
+        pointed: Vec::new(),
     };
 
     assert_eq!(host.skill_routed(plane.path(), 3, &record).unwrap(), None);
     assert!(read(dir.path()).unwrap().is_empty());
+}
+
+#[test]
+fn a_prompt_s_routing_is_named_beside_the_start_s_and_never_in_its_place() {
+    use crate::state::Event::UserPromptSubmit;
+    use std::time::Instant;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane();
+    let mut host = recorder(dir.path());
+    host.begin(
+        plane.path(),
+        3,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &Attributes::default(),
+    )
+    .unwrap();
+    let start = crate::skills::router::Record {
+        routing: "01K6E8ZK6V4Q9T0N3M2B1C5D7R".to_owned(),
+        router: "relevance".to_owned(),
+        ms: 12,
+        fell_back: None,
+        error: None,
+        hidden: Vec::new(),
+        prompt: false,
+        pointed: Vec::new(),
+    };
+    let prompt = crate::skills::router::Record {
+        routing: "01K6E8ZK6V4Q9T0N3M2B1C5D7S".to_owned(),
+        fell_back: Some(crate::skills::router::FellBack::Slow),
+        prompt: true,
+        ..start.clone()
+    };
+    host.skill_routed(plane.path(), 3, &start).unwrap();
+    host.skill_routed(plane.path(), 3, &prompt).unwrap();
+    host.report(plane.path(), &report(3, UserPromptSubmit), Followed::No)
+        .unwrap();
+    host.tool(
+        plane.path(),
+        &starting(3, "posttooluse-skill", "toolu_a", "deploy"),
+        Instant::now(),
+    )
+    .unwrap();
+
+    let started = read(dir.path())
+        .unwrap()
+        .into_iter()
+        .find(|event| event.kind == "skill.started")
+        .expect("a run started");
+    assert_eq!(started.body["routing"], start.routing.as_str());
+    assert!(
+        started.body.get("routing_fell_back").is_none(),
+        "its start was taken"
+    );
+    assert_eq!(started.body["prompt_routing"], prompt.routing.as_str());
+    assert_eq!(started.body["prompt_routing_fell_back"], true);
+
+    // The next turn's prompt was routed by nothing: its runs name no earlier prompt's routing.
+    host.report(plane.path(), &report(3, UserPromptSubmit), Followed::No)
+        .unwrap();
+    host.tool(
+        plane.path(),
+        &starting(3, "posttooluse-skill", "toolu_b", "deploy"),
+        Instant::now(),
+    )
+    .unwrap();
+    let next = read(dir.path())
+        .unwrap()
+        .into_iter()
+        .rfind(|event| event.kind == "skill.started")
+        .expect("a second run started");
+    assert!(next.body.get("prompt_routing").is_none(), "{:?}", next.body);
+    assert_eq!(next.body["routing"], start.routing.as_str());
 }
 
 #[test]

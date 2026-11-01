@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { literalsIn } from "./literal";
 import { MOTION_TOKENS, motionProperty } from "./motion";
-import { TOKENS, inForce, property, tinted } from "./theme";
+import { TOKENS, inForce, property, tinted, tintVariables } from "./theme";
 
 // ---------------------------------------------------------------------------------------------
 // What a drawn element may say about colour.
@@ -92,7 +92,12 @@ function isTint(element: Element, name: string, value: string): boolean {
   const token = TOKENS.find((one) => property(one) === name);
   if (colour === null || token === undefined) return false;
   const tint = tinted(inForce(), colour);
-  return tint !== inForce() && tint.values[token] === value;
+  if (tint !== inForce() && tint.values[token] === value) return true;
+  // What an element tints for itself, a persona's mark (`tintVariables`): the rules that hold it
+  // are those of the tokens it sets alone, so it may keep colour a whole tab gives up (#3049).
+  const style = (element as HTMLElement | SVGElement).style;
+  const own = TOKENS.filter((one) => style.getPropertyValue(property(one)) !== "");
+  return tintVariables(inForce(), colour, own)[name] === value;
 }
 
 /**

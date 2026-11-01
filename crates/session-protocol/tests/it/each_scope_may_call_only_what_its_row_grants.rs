@@ -436,6 +436,7 @@ fn every_command() -> Vec<Command> {
             }],
             checkout: Some("refs/heads/fix-login".into()),
             moving: false,
+            held: None,
         },
         Command::GiveCode {
             project: "01J9PRJCT00000000000000000".into(),
@@ -466,6 +467,37 @@ fn every_command() -> Vec<Command> {
         },
         // Where the host's own event log ends (1.41, #3393): the window's, and relayed.
         Command::LogEnd,
+        // A grade asked for from a terminal, and the window running it (1.63, SK-61).
+        Command::AskGrade {
+            project: "01J9PRJCT00000000000000000".into(),
+            project_path: "/work/project".into(),
+            ask: session::GradeAsk::Plan {
+                of: session::GradeOf {
+                    level: session::GradeLevel::Project { local: false },
+                    skill: "deploy".into(),
+                    profile: None,
+                    model: None,
+                    evals: Vec::new(),
+                },
+            },
+        },
+        Command::AnswerGrade {
+            question: 1,
+            answer: session::GradeAnswer::Refused { why: "no".into() },
+        },
+        Command::GradeStep {
+            question: 1,
+            step: session::GradeStepTold {
+                grade: "g".into(),
+                ran: 0,
+                of: 6,
+                tokens: None,
+                cost_micro_usd: None,
+                asked: 0,
+                ended: None,
+                said: None,
+            },
+        },
         // The person's DevTools of a browser they drive (1.45, #2028): the window's alone, on its
         // own host, never relayed.
         Command::Inspect {
@@ -559,6 +591,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "give_conversation",
             "clones_of",
             "log_end",
+            "answer_grade",
+            "grade_step",
             "inspect",
             "attach_view", // DevTools' frames
             "inspector_input",
@@ -580,6 +614,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "readiness",
             "stop_all",
             "kill_switch",
+            "ask_grade",
         ],
         // The window's own commands, relayed by its host over the link between hosts (ruled
         // 2026-10-15, #2042): a hold, a start with its launch, the numbers dealt, its reply to

@@ -32,7 +32,80 @@
 # The third policy, purlis-operator-changes-only-a-sandboxs-mode, narrows the operator's own
 # `patch` on upstream's sandboxes (#2058), which RBAC cannot scope to a field or an owner: the
 # operator may change only a Sandbox's spec.operatingMode, and only on a Sandbox a SandboxClaim
-# controls.
+# controls; and its spec.podTemplate only while it is Suspended in a runner namespace (#3982).
+#
+# The fourth policy, purlis-forge (#4206): whoever writes a Pool's spec.forge needs `use` on the
+# key it names (forgekeys), and only a Claim's requester changes the repos it names. The operator
+# mints only for a Claim and a Pool made once its binding has settled.
+#
+# The fifth policy, purlis-operator-deletes-only-a-retained-claim (#3981): the operator deletes
+# only a kept Claim, not stopped, that carries its own RetentionEnded condition.
+#
+# The sixth policy, purlis-only-the-operator-writes-a-claims-status (#3981): what the operator acts
+# on is what a Claim's status says, so no one else writes it.
+---
+# Source: purlis-cluster-operator/templates/forge-policy.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-forge
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [runners.purlis.dev]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [pools]
+      - apiGroups: [runners.purlis.dev]
+        apiVersions: ["*"]
+        operations: [UPDATE]
+        resources: [claims]
+  validations:
+    # Writing a Pool's spec.forge is spending the key it names, so the writer needs `use` on that
+    # key. Any other change to a Pool, and taking its forge off, asks nothing.
+    - expression: >-
+        request.resource.resource != 'pools' || !has(object.spec.forge) ||
+        (request.operation == 'UPDATE' && has(oldObject.spec.forge) &&
+        object.spec.forge == oldObject.spec.forge) ||
+        authorizer.group('runners.purlis.dev').resource('forgekeys')
+        .name(object.spec.forge.appKeySecretRef.name).check('use').allowed()
+      messageExpression: >-
+        'You may not use the GitHub App key ' + object.spec.forge.appKeySecretRef.name + '. A cluster admin can grant use on it (forgekeys).'
+      reason: Forbidden
+    # On a Pool that mints, its image holds the link keys the operator vouches for, so changing it
+    # is spending the key too.
+    - expression: >-
+        request.resource.resource != 'pools' || request.operation != 'UPDATE' ||
+        object.spec.image == oldObject.spec.image || !has(oldObject.spec.forge) ||
+        !oldObject.spec.forge.mintInCluster ||
+        authorizer.group('runners.purlis.dev').resource('forgekeys')
+        .name(oldObject.spec.forge.appKeySecretRef.name).check('use').allowed()
+      messageExpression: >-
+        'This pool mints with the GitHub App key ' + oldObject.spec.forge.appKeySecretRef.name + ', so changing its image takes use on that key (forgekeys).'
+      reason: Forbidden
+    # The repos a claim names say what its runner's token may cover, within its Pool's allow-list.
+    # Someone else who may patch claims in the namespace has no say in that, and nor has its
+    # requester once they may no longer use the pool. Any other patch is left alone, so a
+    # finalizer's removal never depends on the authorizer.
+    - expression: >-
+        request.resource.resource != 'claims' ||
+        (has(object.spec.forge) ?
+        has(oldObject.spec.forge) && object.spec.forge == oldObject.spec.forge :
+        !has(oldObject.spec.forge)) ||
+        (request.userInfo.username == object.spec.requester &&
+        authorizer.group('runners.purlis.dev').resource('pools')
+        .name(object.spec.pool).check('use').allowed())
+      messageExpression: >-
+        'Only ' + object.spec.requester + ', who asked for this claim, while they may use its pool, may change the repos it names.'
+      reason: Forbidden
 ---
 # Source: purlis-cluster-operator/templates/policy.yaml
 # Copyright 2026 Purlis
@@ -54,8 +127,8 @@ spec:
     resourceRules:
       - apiGroups: [runners.purlis.dev]
         apiVersions: ["*"]
-        # UPDATE only for who may change the repos a claim names, the last rule below (#4204).
-        operations: [CREATE, UPDATE]
+        # Who may change the repos a claim names is the policy purlis-forge's (#4206).
+        operations: [CREATE]
         resources: [claims]
       # Upstream's objects, so that a runner from a purlis pool is had only through a Claim
       # (#2055): its warm pools and claims, on purlis's templates and warm pools.
@@ -107,20 +180,69 @@ spec:
         'Runners from a purlis pool are claimed with a Claim (runners.purlis.dev): only the purlis
         cluster operator puts a warm pool on the template of a purlis pool, or takes one off it.'
       reason: Forbidden
-    # The repos a claim names say what its runner's token may cover, within its Pool's allow-list
-    # (#4204). Someone else who may patch claims in the namespace has no say in that, and nor has
-    # its requester once they may no longer use the pool. Any other patch is left alone, so a
-    # finalizer's removal never depends on the authorizer.
+---
+# Source: purlis-cluster-operator/templates/retention-policy.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+# The operator's `delete` on Claims, narrowed by the cluster (#3981, ruled 2026-11-01): RBAC cannot
+# name which, so this policy refuses its service account any deletion but of a kept Claim that is
+# not stopped and carries its own RetentionEnded condition. Kept when the release is uninstalled,
+# as the policy on Claims is.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-operator-deletes-only-a-retained-claim
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [runners.purlis.dev]
+        apiVersions: ["*"]
+        operations: [DELETE]
+        resources: [claims]
+  matchConditions:
+    - name: by-the-operator
+      expression: >-
+        request.userInfo.username ==
+        'system:serviceaccount:purlis-system:purlis-cluster-operator'
+  validations:
     - expression: >-
-        request.resource.group != 'runners.purlis.dev' || request.operation != 'UPDATE' ||
-        (has(object.spec.forge) ?
-        has(oldObject.spec.forge) && object.spec.forge == oldObject.spec.forge :
-        !has(oldObject.spec.forge)) ||
-        (request.userInfo.username == object.spec.requester &&
-        authorizer.group('runners.purlis.dev').resource('pools')
-        .name(object.spec.pool).check('use').allowed())
-      messageExpression: >-
-        'Only ' + object.spec.requester + ', who asked for this claim, while they may use its pool, may change the repos it names.'
+        oldObject.spec.kept == true && oldObject.spec.stopped != true &&
+        has(oldObject.status) && has(oldObject.status.conditions) &&
+        oldObject.status.conditions.exists(c, c.type == 'RetentionEnded' && c.status == 'True')
+      message: purlis's cluster operator deletes only a kept Claim whose retention has ended.
+      reason: Forbidden
+---
+# Source: purlis-cluster-operator/templates/retention-policy.yaml
+# What the operator acts on is what a Claim's status says of it, so only the operator writes it,
+# whatever else a role grants (#3981).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-only-the-operator-writes-a-claims-status
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [runners.purlis.dev]
+        apiVersions: ["*"]
+        operations: [UPDATE]
+        resources: [claims/status]
+  validations:
+    - expression: >-
+        request.userInfo.username ==
+        'system:serviceaccount:purlis-system:purlis-cluster-operator'
+      message: Only purlis's cluster operator writes a Claim's status.
       reason: Forbidden
 ---
 # Source: purlis-cluster-operator/templates/runner-namespaces-policy.yaml
@@ -147,6 +269,10 @@ spec:
         apiVersions: ["*"]
         operations: [CREATE, UPDATE]
         resources: [rolebindings]
+      - apiGroups: [networking.k8s.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [networkpolicies]
   variables:
     - name: operator
       expression: >-
@@ -187,6 +313,14 @@ spec:
       messageExpression: >-
         'Only the purlis cluster operator makes a runner namespace (purlis-runners-*), or changes who it is for.'
       reason: Forbidden
+    # The operator's mark on a namespace opens its mint port to it (#4206), so no one else puts
+    # it on a namespace that is not a runner namespace.
+    - expression: >-
+        request.resource.resource != 'namespaces' || variables.operator || variables.runners ||
+        variables.marks[0] != 'purlis-cluster-operator'
+      messageExpression: >-
+        'Only the purlis cluster operator marks a namespace as its own, and only a runner namespace.'
+      reason: Forbidden
     # The operator makes no other namespace.
     - expression: >-
         request.resource.resource != 'namespaces' || !variables.operator || variables.runners
@@ -217,6 +351,19 @@ spec:
       messageExpression: >-
         'The purlis cluster operator makes the quota purlis-person, in a runner namespace alone.'
       reason: Forbidden
+    # The operator makes one NetworkPolicy, in a runner namespace alone, and what it says is its
+    # way to the mint port (#4206): a way out, to its own pods, on that port, and nothing else.
+    - expression: >-
+        request.resource.resource != 'networkpolicies' || !variables.operator ||
+        variables.runners && object.metadata.name == 'purlis-forge-mint' &&
+        object.spec.policyTypes == ['Egress'] && !has(object.spec.ingress) &&
+        size(object.spec.egress) == 1 && size(object.spec.egress[0].to) == 1 &&
+        object.spec.egress[0].to[0].namespaceSelector.matchLabels['kubernetes.io/metadata.name'] == 'purlis-system' &&
+        object.spec.egress[0].to[0].podSelector.matchLabels['app.kubernetes.io/name'] == 'purlis-cluster-operator' &&
+        size(object.spec.egress[0].ports) == 1 && object.spec.egress[0].ports[0].port == 8443
+      messageExpression: >-
+        'The purlis cluster operator makes the NetworkPolicy purlis-forge-mint, in a runner namespace alone, to its own mint port alone.'
+      reason: Forbidden
 ---
 # Source: purlis-cluster-operator/templates/sandbox-policy.yaml
 # Copyright 2026 Purlis
@@ -224,7 +371,8 @@ spec:
 # The operator's `patch` on upstream's sandboxes, narrowed by the cluster (#2058): RBAC cannot
 # name a field or an owner, so this policy refuses any change the operator's service account
 # makes to a Sandbox but its spec.operatingMode, and any change at all to a Sandbox no
-# SandboxClaim controls. The operator may not change policies or their bindings, so it cannot
+# SandboxClaim controls. Its spec.podTemplate may change only on a Sandbox already Suspended in a
+# runner namespace (#3982, ruled 2026-11-01): a kept runner next starts on its pool's image. The operator may not change policies or their bindings, so it cannot
 # lift this. Kept when the release is uninstalled, as the policy on Claims is.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
@@ -259,7 +407,9 @@ spec:
     # (operator/tests/the_install_manifests.rs holds the list to the vendored definitions).
     - expression: >-
         has(object.spec.podTemplate) == has(oldObject.spec.podTemplate) &&
-        (!has(object.spec.podTemplate) || object.spec.podTemplate == oldObject.spec.podTemplate) &&
+        (!has(object.spec.podTemplate) || object.spec.podTemplate == oldObject.spec.podTemplate ||
+        (request.namespace.startsWith('purlis-runners-') && has(oldObject.spec.operatingMode) &&
+        oldObject.spec.operatingMode == 'Suspended')) &&
         has(object.spec.service) == has(oldObject.spec.service) &&
         (!has(object.spec.service) || object.spec.service == oldObject.spec.service) &&
         has(object.spec.shutdownPolicy) == has(oldObject.spec.shutdownPolicy) &&
@@ -268,7 +418,9 @@ spec:
         (!has(object.spec.shutdownTime) || object.spec.shutdownTime == oldObject.spec.shutdownTime) &&
         has(object.spec.volumeClaimTemplates) == has(oldObject.spec.volumeClaimTemplates) &&
         (!has(object.spec.volumeClaimTemplates) || object.spec.volumeClaimTemplates == oldObject.spec.volumeClaimTemplates)
-      message: purlis's cluster operator changes only a Sandbox's spec.operatingMode.
+      message: >-
+        purlis's cluster operator changes only a Sandbox's spec.operatingMode, and its
+        spec.podTemplate only while it is Suspended in a runner namespace.
       reason: Forbidden
     - expression: >-
         has(object.metadata.labels) == has(oldObject.metadata.labels) &&
@@ -282,6 +434,20 @@ spec:
       message: purlis's cluster operator changes no label, annotation, owner or finalizer of a Sandbox.
       reason: Forbidden
 ---
+# Source: purlis-cluster-operator/templates/forge-policy.yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-forge
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: purlis-forge
+  validationActions: [Deny]
+---
 # Source: purlis-cluster-operator/templates/policy.yaml
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
@@ -294,6 +460,34 @@ metadata:
     helm.sh/resource-policy: keep
 spec:
   policyName: purlis-claims-use-their-pool
+  validationActions: [Deny]
+---
+# Source: purlis-cluster-operator/templates/retention-policy.yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-operator-deletes-only-a-retained-claim
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: purlis-operator-deletes-only-a-retained-claim
+  validationActions: [Deny]
+---
+# Source: purlis-cluster-operator/templates/retention-policy.yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-only-the-operator-writes-a-claims-status
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: purlis-only-the-operator-writes-a-claims-status
   validationActions: [Deny]
 ---
 # Source: purlis-cluster-operator/templates/runner-namespaces-policy.yaml

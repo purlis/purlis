@@ -395,6 +395,66 @@ describe("a menu's groups, toggles and submenus", () => {
     await userEvent.click(within(sub).getByRole("menuitem", { name: "Activity" }));
     expect(chose).toHaveBeenCalledWith("activity");
   });
+
+  // **#3105**: React Aria hands a menu a screen reader opened to its first row, and two calls
+  // race for it, each waiting for the page's transitions. The rows are built after the first
+  // render, so the list is asked for first, takes the keyboard, and the row's own call then finds
+  // the keyboard has moved and leaves it. The APG menu pattern asks for the first row.
+  const pastTheHandOn = () => act(() => new Promise((done) => setTimeout(done, 100)));
+
+  it("lands a screen reader's open of a root menu on its first row", async () => {
+    render(<Grouped />);
+    fireEvent.click(screen.getByRole("button", { name: "Tab" }));
+    await pastTheHandOn();
+    expect(document.activeElement).toBe(screen.getByRole("menuitemcheckbox", { name: "Pinned" }));
+  });
+
+  it("lands a screen reader's open of a submenu on its first row", async () => {
+    render(<Grouped />);
+    fireEvent.click(screen.getByRole("button", { name: "Tab" }));
+    await pastTheHandOn();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open" }));
+    await pastTheHandOn();
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Activity" }));
+  });
+
+  it("leaves a pointer's open of a root menu and of a submenu where they were", async () => {
+    render(<Grouped />);
+    await userEvent.click(screen.getByRole("button", { name: "Tab" }));
+    await pastTheHandOn();
+    const menu = screen.getByRole("menu", { name: "Tab steward 4" });
+    // On the list, and no row: a pointer has no need of a row chosen for it.
+    expect(document.activeElement).toBe(menu);
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Open" }));
+    await pastTheHandOn();
+    // The row it pressed keeps the keyboard, and the submenu is up beside it.
+    expect(screen.getByRole("menu", { name: "Open" })).toBeInTheDocument();
+    expect(document.activeElement).toBe(within(menu).getByRole("menuitem", { name: "Open" }));
+  });
+
+  // #4304: the list's own padding is not a row. A press on it moves nothing; and should the list
+  // ever take the keyboard with a row chosen, the keyboard goes on to that row.
+  it("keeps the keyboard on the chosen row through a press on the list's padding", async () => {
+    render(<Grouped />);
+    screen.getByRole("button", { name: "Tab" }).focus();
+    await userEvent.keyboard("{ArrowDown}");
+    const first = screen.getByRole("menuitemcheckbox", { name: "Pinned" });
+    await waitFor(() => expect(document.activeElement).toBe(first));
+    const list = screen.getByRole("menu", { name: "Tab steward 4" });
+    await userEvent.click(list);
+    expect(screen.getByRole("menu", { name: "Tab steward 4" })).toBe(list);
+    expect(document.activeElement).toBe(first);
+    act(() => list.focus());
+    expect(document.activeElement).toBe(first);
+  });
+
+  it("leaves a keyboard's open on the row it asked for", async () => {
+    render(<Grouped />);
+    screen.getByRole("button", { name: "Tab" }).focus();
+    await userEvent.keyboard("{ArrowUp}");
+    await pastTheHandOn();
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Open" }));
+  });
 });
 
 describe("a menu held by a project", () => {

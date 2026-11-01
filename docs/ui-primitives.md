@@ -1088,8 +1088,9 @@ Two members, by what a cell holds:
 - **The keyboard of a table of data is the APG grid's**: one Tab stop, the row last focused; ↑
   and ↓ move a row and stop at the ends, ← and → a cell and into the button a cell holds, Home and
   End to the first and last row from a row and to a row's ends from a cell, Ctrl+Home and Ctrl+End to the table's, Page Up and Page Down a page; typing
-  finds a row by its `textValue`. A table that chooses (`selectionMode="multiple"`) draws a check
-  at each row's start and one over them for every row (React Aria's `selection` slot, "Select"
+  finds a row by its `textValue`. A table that chooses (`selectionMode="multiple"`) draws the
+  choice family's `Checkbox` at each row's start and one over them for every row, a bar when only
+  some are chosen (React Aria's `selection` slot, "Select"
   and "Select All" to a reader); Space chooses the row the keyboard is on. A column with
   `allowsSorting` sorts by a press on its name (`sortDescriptor`, `onSortChange`, `aria-sort`),
   its arrow keeping its room while another column sorts, so sorting moves no name. `onRowAction`
@@ -1147,7 +1148,7 @@ Two members, by what a cell holds:
   The rule is its own part (`table.rule`, a line at each cell's top and under each column's
   name), which the family draws as none and Purlis Classic fills with `border.subtle`. A
   number's column is at the end in figures of one width (`align="end"`); a column of checks or
-  of menus is as narrow as what it holds; the check's target is 24 px with its 16 px box in it.
+  of menus is as narrow as what it holds; the check's target is 24 px with its box in the middle of it.
 - **A table of controls stacks into a form where its frame is narrow** (`stacks`, #1859): under
   32rem the columns' names are put away, each row's heading takes a line, and each cell sits under
   its column's whole words (`heading` on `ControlCell`, drawn from `data-heading`), as many side
@@ -1338,8 +1339,8 @@ are `item` (the root), `icon`, `count` and `indicator`; both corners draw the `b
   accent's wash while its view is open. The `indicator` is empty by default; Purlis Classic paints
   it as its accent edge through parts.
 - **A count** (`ActivityCount`, R119) sits at the item's top right, ringed in its bar's ground;
-  what waits on the person is drawn hot, in the needs-you colours (R120), which a theme's count
-  colours never reach.
+  what waits on the person is drawn hot, in the hot-count role `needs-you.count` and
+  `needs-you.count-text` (R120, #3098), which a theme's count colours never reach.
 - **Only the part that appears moves** (R122, R124, R127, R128): the right panel comes 24px in
   over `duration.open`, a bottom half 16px up over `duration.reveal`, a side view's list 4px up
   over `duration.swap`. A view switch inside an open panel replays nothing, and closing has no

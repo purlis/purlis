@@ -428,6 +428,11 @@ export const commands = {
 	left_in: LeftIn,
 	/**  It has a conversation to resume, so Resume puts it back. */
 	resumable: boolean,
+	/**
+	 *  Its host was a pool's runner, gone for good, and its conversation went with that runner's
+	 *  home (#4350).
+	 */
+	with_the_runner: boolean,
 } | null, string>(__TAURI_INVOKE("chat_lost_with_the_host", { plane, session })),
 	putAwayLostChat: __WINDOW_ONLY_RESULT,
 	/**
@@ -737,6 +742,7 @@ export const commands = {
 	machineProfileRemoval: __WINDOW_ONLY_RESULT,
 	machineProfileRemove: __WINDOW_ONLY_RESULT,
 	typeProfileSignIn: __WINDOW_ONLY_RESULT,
+	typeProfileSignOut: __WINDOW_ONLY_RESULT,
 	dismissSignIn: __WINDOW_ONLY_RESULT,
 	machineProfilePin: __WINDOW_ONLY_RESULT,
 	makeSandboxOnlyProfile: __WINDOW_ONLY_RESULT,
@@ -960,6 +966,13 @@ export const commands = {
 	skillShare: __WINDOW_ONLY_RESULT,
 	personaSkill: __WINDOW_ONLY_RESULT,
 	/**
+	 *  **The repo skills of the branch folder chat `session` works in** (#4326): what the Skills view
+	 *  lists for it, whose rows from the studio say only what the clone's own branch holds. None for
+	 *  any other chat, and none while the Skill studio is off. Only the view asks, never a chat's open;
+	 *  on a blocking thread, as it reads the folder.
+	 */
+	chatBranchFolderSkills: (plane: PlaneId, session: number) => typedError<StudioSkill[], string>(__TAURI_INVOKE("chat_branch_folder_skills", { plane, session })),
+	/**
 	 *  **The skills a chat's persona names that it started without** (SK-5, #2768): what its tab's
 	 *  Notice says, until it is put away. `None` for a chat that has every one.
 	 */
@@ -1028,6 +1041,7 @@ export const commands = {
 	 */
 	skillRouters: (plane: PlaneId) => typedError<SkillRouterOffer[], string>(__TAURI_INVOKE("skill_routers", { plane })),
 	skillRouterChoose: __WINDOW_ONLY_RESULT,
+	skillRouterReadsPrompts: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
 	 *  owners, and the skills it names and that name it. Nothing while the flag is off.
@@ -1048,13 +1062,15 @@ export const commands = {
 	skillDraftReject: __WINDOW_ONLY_RESULT,
 	skillDraftChat: __WINDOW_ONLY_START_REFUSED,
 	skillTriggerTestsChat: __WINDOW_ONLY_START_REFUSED,
+	skillOutcomeEvalsChat: __WINDOW_ONLY_START_REFUSED,
+	skillImproveChat: __WINDOW_ONLY_START_REFUSED,
 	skillDraftTry: __WINDOW_ONLY_START_REFUSED,
 	skillDraftRedo: __WINDOW_ONLY_START_REFUSED,
 	skillDraftRedoIn: __WINDOW_ONLY_RESULT,
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	skillLevelsConfirm: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
-	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model })),
+	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, grader: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model, grader })),
 	skillGradeStart: __WINDOW_ONLY_RESULT,
 	skillGradeStop: __WINDOW_ONLY_RESULT,
 	/**  **The scorecard of `skill`'s grade `grade`** (SK-59, #3239), as the eval record holds it. */
@@ -1392,6 +1408,7 @@ export const commands = {
 	harnessCards: (plane: PlaneId) => typedError<HarnessGlance[], string>(__TAURI_INVOKE("harness_cards", { plane })),
 	approveProfile: __WINDOW_ONLY_RESULT,
 	startChat: __WINDOW_ONLY_RESULT,
+	cancelChatStart: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The piece a chat's working directory sits in, or `None`.
 	 * 
@@ -1530,6 +1547,11 @@ export const commands = {
 	setClusterPoolOwned: __WINDOW_ONLY_RESULT,
 	poolProfiles: __WINDOW_ONLY_RESULT,
 	poolProfileAdd: __WINDOW_ONLY_RESULT,
+	poolLimitOffer: __WINDOW_ONLY,
+	poolLimitOfferForMove: __WINDOW_ONLY,
+	poolLimits: __WINDOW_ONLY_RESULT,
+	poolLimitCheck: __WINDOW_ONLY_RESULT,
+	poolLimitSet: __WINDOW_ONLY_RESULT,
 	poolProfileRemove: __WINDOW_ONLY_RESULT,
 	poolSignInStart: __WINDOW_ONLY_RESULT,
 	poolSignInNext: __WINDOW_ONLY_RESULT,
@@ -3822,6 +3844,11 @@ export type ClusterPoolAdding = {
 	pool: string,
 	/**  The cluster operator key Check its key showed, spelled as it showed it. */
 	key: string,
+	/**
+	 *  The longest wait for its runner to be vouched for, in minutes, where the person raised it
+	 *  after an add that ran out (spec #4275): saved to the pool. None is purlis's default.
+	 */
+	vouch_wait: number | null,
 };
 
 /**  What Check its key read of a cluster's Pool. */
@@ -5612,6 +5639,17 @@ export type GradeEstimate = {
 };
 
 /**
+ *  **A Grader extension a plan can name** (#3236): its id, which is what says whose program it
+ *  is, and the title it gives itself.
+ */
+export type GradeGrader = {
+	id: string,
+	title: string,
+	/**  The hosts its program can send what it is handed to: the plan says each. */
+	hosts: string[],
+};
+
+/**
  *  **A trigger test a grade leaves out** (`grades::LeftOut`): its place in the file, from 0, and
  *  why, as a sentence.
  */
@@ -6387,6 +6425,11 @@ export type LostChat = {
 	left_in: LeftIn,
 	/**  It has a conversation to resume, so Resume puts it back. */
 	resumable: boolean,
+	/**
+	 *  Its host was a pool's runner, gone for good, and its conversation went with that runner's
+	 *  home (#4350).
+	 */
+	with_the_runner: boolean,
 };
 
 /**  A profile made or imported into, and what its import did. */
@@ -6605,6 +6648,11 @@ export type MoveSignIn = {
 	kind: string,
 	/**  Its harness as people call it: `Claude Code`. */
 	harness: string,
+	/**
+	 *  The plans to choose from, where its harness serves several (#4181): a profile keeps none
+	 *  of its own, and a login approved in the browser is told by its plan.
+	 */
+	plans: PlanRow[],
 };
 
 /**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */
@@ -8175,6 +8223,62 @@ export type PoolDisk = {
 	not_listed: number,
 };
 
+/**  **A group of a pool's limits**: what they affect, and the limits that aren't under Advanced. */
+export type PoolLimitGroup = {
+	label: string,
+	help: string,
+	/**  When a change applies, where that's the same for all of its limits. */
+	applies: string | null,
+	limits: PoolLimitRow[],
+};
+
+/**  **A limit a start was refused on**, as Start a chat offers to raise it (spec #4275). */
+export type PoolLimitHitRow = {
+	/**  The limit's key: what [`pool_limit_set`] takes. */
+	key: string,
+	/**  Its name in plain words. */
+	plain: string,
+	/**  The word beside a number of it. */
+	unit: string,
+	in_force: number,
+	needed: number,
+	/**  The value offered, which the person can edit; none where no value would hold it. */
+	suggested: number | null,
+};
+
+/**  **What a refused start on a pool offers**: the pool, and each limit it was refused on. */
+export type PoolLimitOffer = {
+	pool: string,
+	hits: PoolLimitHitRow[],
+};
+
+/**  **One of a pool's limits, as its page draws it** (#4285). */
+export type PoolLimitRow = {
+	/**  Its key: what [`pool_limit_set`] and [`pool_limit_check`] take. */
+	key: string,
+	/**  Its name in plain words. */
+	plain: string,
+	/**  The word beside a number of it. */
+	unit: string,
+	/**  purlis's default. */
+	default: number,
+	/**  The default in words: `128 MiB`. */
+	default_said: string,
+	/**  What the person set; `null` where it follows purlis's default. */
+	set: number | null,
+	/**  When a change applies, where its group doesn't say it for all of its limits. */
+	applies: string | null,
+};
+
+/**
+ *  **A pool's limits, as its page draws them** (#4285): whatever the core's list holds, by group,
+ *  and those under Advanced. A group with no limit isn't listed.
+ */
+export type PoolLimitsPage = {
+	groups: PoolLimitGroup[],
+	advanced: PoolLimitRow[],
+};
+
 /**
  *  A pool's limits, as a row draws them: the CPUs as typed (`2`, `1.5`), memory and `/tmp` in
  *  MiB.
@@ -8209,7 +8313,12 @@ export type PoolLink =
  *  it comes back, and the window offers Make the runner again. Whether its home volume, with
  *  its sign-ins, is still there for the runner made again to take them from.
  */
-{ state: "removed"; home_kept: boolean };
+{ state: "removed"; home_kept: boolean } | 
+/**
+ *  Docker points at another engine than the one that made it (#4166): its container may be
+ *  there still, so it is not said to be removed and Make the runner again is not offered.
+ */
+{ state: "on_another_engine" };
 
 /**  One of this machine's profiles, as a pool's runner stands with it. */
 export type PoolProfileRow = {
@@ -9487,6 +9596,12 @@ export type RouterGradePlan = {
 	/**  A grade running in this project now, where one is: a skill's or a router's. */
 	running: string | null,
 	/**
+	 *  **Whether its router's arm runs with its pointer** (SK-15k, #3619): true where the router
+	 *  reads prompts here, false where it could and the person has not turned that on, null
+	 *  where it reads none.
+	 */
+	pointer: boolean | null,
+	/**
 	 *  What pressing Grade consents to: what it grades, and the profile, model, cap and dollar
 	 *  limit this plan shows (`grades::consent_on`).
 	 */
@@ -10349,6 +10464,11 @@ export type SettingsEntry = {
 	keys: SettingsStep[],
 	/**  The Add form's values that would write it again, by the entry's key. */
 	values: EntryValue[],
+	/**
+	 *  Why a profile's icon fell back to its monogram (#3137), a sentence purlis wrote, never
+	 *  anything from the file. Optional in the window's type, as only a profile has one.
+	 */
+	icon_fell_back?: string | null,
 };
 
 /**  One value in a file, and where it is. */
@@ -10930,6 +11050,13 @@ export type SkillGradePlan = {
 	 */
 	previous: GradePrevious | null,
 	previous_refused: string | null,
+	/**
+	 *  **The Grader extensions it can be graded by besides purlis's own** (#3236), the one picked
+	 *  (`None` is purlis's own), and why the one picked is not on offer now, where it is not.
+	 */
+	graders: GradeGrader[],
+	grader: GradeGrader | null,
+	grader_refused: string | null,
 };
 
 /**
@@ -11122,6 +11249,10 @@ export type SkillRouterOffer = {
 	id: string,
 	/**  Its name, as its manifest gives it. */
 	name: string,
+	/**  Whether its approval said it reads prompts, which only offers the person the switch. */
+	reads_prompts: boolean,
+	/**  Whether the person turned that on for it on this machine (ADR 0102 as amended 2026-10-31). */
+	prompts_on: boolean,
 };
 
 /**

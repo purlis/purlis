@@ -389,26 +389,41 @@ pub(super) fn make_in(
 /// **Takes in the sign-in carried to this runner for `record`** (#4011, #4055), a profile it
 /// keeps for its desktop: purlis's own, or the desktop's adopted folder kept as its harness's
 /// default folder under `home`. Each batch a drained runner carried
-/// (`<data>/carried/<batch>/<name>/`) is looked in, and only the sign-in file of `record`'s
-/// harness ([`super::sign_in_file_of`]), a plain file reached through no link, is moved in, by
-/// a link that never replaces a file: one the profile has here, signed in on this runner, stays
-/// over it. What was carried for the profile is then removed. What cannot be taken in is left
-/// out: the profile is signed in again, as before.
+/// ([`super::carried_in`]) is looked in, and only the sign-in file of `record`'s harness
+/// ([`super::sign_in_file_of`]), a plain file reached from the data home through no link, is moved
+/// in, by a link that never replaces a file: one the profile has here, signed in on this runner,
+/// stays over it. What was carried for the profile is then removed. What cannot be taken in is
+/// left out: the profile is signed in again, as before.
+///
+/// The folder an earlier version carried to ([`super::CARRIED_BEFORE`]) is cleared and nothing of
+/// it taken in: its profiles are signed in again.
 pub(super) fn take_carried(homes: &Homes, home: &Path, record: &MachineProfile) {
-    let carried = homes.data.join(super::CARRIED);
+    clear_carried_before(&homes.data);
+    if private_dirs(&homes.folders).is_ok() {
+        let _ = std::fs::write(homes.folders.join(super::DEFAULTS_HELD), "");
+    }
+    let carried = super::carried_in(&homes.data);
+    // A link for the folder itself: nothing is taken through it, and nothing removed through it.
+    if crate::contain::no_link_on_the_way(&homes.data, &carried).is_err() {
+        return;
+    }
     let Ok(batches) = std::fs::read_dir(&carried) else {
         return;
     };
     let mut batches: Vec<PathBuf> = batches.flatten().map(|entry| entry.path()).collect();
     batches.sort();
-    let into = super::sign_in_file_of(&record.harness).and_then(|file| {
-        let (under, rest) = file.split_once('/')?;
-        let folder = match under {
-            "config" => Some(&record.folders.config),
-            _ => record.folders.data.as_ref(),
-        }?;
-        Some((file, folder.join(rest)))
-    });
+    // opencode's own default folder takes nothing in for now: only what was carried is removed.
+    let takes = record.adopted.is_none() || record.harness != "opencode";
+    let into = super::sign_in_file_of(&record.harness)
+        .filter(|_| takes)
+        .and_then(|file| {
+            let (under, rest) = file.split_once('/')?;
+            let folder = match under {
+                "config" => Some(&record.folders.config),
+                _ => record.folders.data.as_ref(),
+            }?;
+            Some((file, folder.join(rest)))
+        });
     // Where the folders on its way may be made: a profile purlis made has its own folder, and an
     // adopted one the runner's home.
     let made_folder = homes.folder_of(&record.name);
@@ -427,7 +442,7 @@ pub(super) fn take_carried(homes: &Homes, home: &Path, record: &MachineProfile) 
         }
         if let Some((file, to)) = &into {
             let from = mine.join(file);
-            let plain = crate::contain::no_link_on_the_way(&carried, &from).is_ok()
+            let plain = crate::contain::no_link_on_the_way(&homes.data, &from).is_ok()
                 && std::fs::symlink_metadata(&from).is_ok_and(|meta| meta.file_type().is_file());
             if plain
                 && std::fs::symlink_metadata(to).is_err()
@@ -440,6 +455,44 @@ pub(super) fn take_carried(homes: &Homes, home: &Path, record: &MachineProfile) 
         }
         let _ = std::fs::remove_dir_all(&mine);
         let _ = std::fs::remove_dir(&batch);
+    }
+}
+
+/// **Removes what a drained runner carried here for the profile `name`** (#4145), from every batch
+/// ([`super::carried_in`]), so a sign-out or a removal is not undone by the next keep.
+/// A name that is not a profile's touches nothing.
+pub fn forget_carried(homes: &Homes, name: &str) {
+    if !crate::profiles::name_ok(name) {
+        return;
+    }
+    let carried = super::carried_in(&homes.data);
+    if crate::contain::no_link_on_the_way(&homes.data, &carried).is_err() {
+        return;
+    }
+    let Ok(batches) = std::fs::read_dir(&carried) else {
+        return;
+    };
+    for batch in batches.flatten().map(|entry| entry.path()) {
+        if !std::fs::symlink_metadata(&batch).is_ok_and(|meta| meta.is_dir()) {
+            continue;
+        }
+        let _ = std::fs::remove_dir_all(batch.join(name));
+        let _ = std::fs::remove_dir(&batch);
+    }
+}
+
+/// Removes the folder an earlier version carried sign-ins to, whatever is there: a link goes as a
+/// link, and what it names stays.
+fn clear_carried_before(data: &Path) {
+    let before = data.join(super::CARRIED_BEFORE);
+    match std::fs::symlink_metadata(&before) {
+        Ok(found) if found.is_dir() => {
+            let _ = std::fs::remove_dir_all(&before);
+        }
+        Ok(_) => {
+            let _ = std::fs::remove_file(&before);
+        }
+        Err(_) => {}
     }
 }
 

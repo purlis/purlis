@@ -321,7 +321,7 @@ fn families() {
         "\n/// **The closed manifest**: every family a theme may name, each declared in its own file\n\
          /// (`parts_<family>.rs`) and assembled by `build.rs`: what the first twelve versions\n\
          /// shipped in the order they shipped it, then each later family by the version it came in\n\
-         /// and its name.\npub const MANIFEST: &[Family] = &[\n",
+         /// and its name.\npub static MANIFEST: &[Family] = &[\n",
     );
     for one in &declared {
         writeln!(text, "    {}::{},", one.module, one.konst)

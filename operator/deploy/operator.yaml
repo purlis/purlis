@@ -77,13 +77,14 @@ rules:
   # A team's pools and people's claims: read, and a claim's status written. Claims are read
   # from the operator's own watch; a pool is read by name when a claim names it. A claim is
   # patched only for its finalizer, runners.purlis.dev/runner, which keeps it until its runner
-  # is removed (#2055).
+  # is removed (#2055). Deleted only once its retention has ended (#3981, ruled 2026-11-01), as
+  # the policy in retention-policy.yaml (policy.yaml) holds it.
   - apiGroups: [runners.purlis.dev]
     resources: [pools]
     verbs: [get, list, watch]
   - apiGroups: [runners.purlis.dev]
     resources: [claims]
-    verbs: [list, patch, watch]
+    verbs: [delete, get, list, patch, watch]
   - apiGroups: [runners.purlis.dev]
     resources: [claims/status]
     verbs: [patch]
@@ -106,11 +107,30 @@ rules:
     resources: [sandboxes]
     verbs: [get, patch]
   # The policies' bindings, by name only: the operator acts only on Claims admitted under the
-  # policy on Claims, and in runner namespaces made under the policy on runner namespaces.
+  # policy on Claims, in runner namespaces made under the policy on runner namespaces, and mints
+  # only under the policy on App keys, which it reads too (#4206).
   - apiGroups: [admissionregistration.k8s.io]
     resources: [validatingadmissionpolicybindings]
-    resourceNames: [purlis-claims-use-their-pool, purlis-runner-namespaces]
+    resourceNames: [purlis-claims-use-their-pool, purlis-runner-namespaces, purlis-forge]
     verbs: [get, list, watch]
+  - apiGroups: [admissionregistration.k8s.io]
+    resources: [validatingadmissionpolicies]
+    resourceNames: [purlis-forge]
+    verbs: [get]
+  # Asked before each mint: may this Claim's requester still use its Pool (#4206)? It answers
+  # questions and grants nothing.
+  - apiGroups: [authorization.k8s.io]
+    resources: [subjectaccessreviews]
+    verbs: [create]
+  # A runner namespace's way to the mint port (#4206), for a Claim on an opted-in Pool, as the
+  # policy on runner namespaces holds it: made, then read and brought back, by name only.
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [create]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    resourceNames: [purlis-forge-mint]
+    verbs: [get, patch]
   # Upstream's objects a claim becomes, in its requester's runner namespace: watched, so a
   # claim is looked at again when one of them changes or goes; each read by name first, since
   # the operator changes only objects it made, then made or applied server-side, and deleted
@@ -257,6 +277,10 @@ spec:
           ports:
             - name: metrics
               containerPort: 8080
+              protocol: TCP
+            # Where a vouched runner asks for a GitHub App token (#4206).
+            - name: mint
+              containerPort: 8443
               protocol: TCP
           env:
             # What each person's runners may hold at once (#2055), as JSON.

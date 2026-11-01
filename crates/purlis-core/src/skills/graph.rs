@@ -29,6 +29,16 @@ pub struct UsesOf {
 /// skill of the project (its own and each workspace's and persona's, shared and local) by
 /// following no link, at most [`uses::MOST_SKILLS`], against the built-in skills in `built_in`.
 pub fn uses_of(plane: &Path, built_in: Option<&Path>, name: &str) -> UsesOf {
+    uses_with(plane, built_in, name, None)
+}
+
+/// [`uses_of`], with `name`'s references read from `text` alone, one copy's: other levels' copies
+/// of the name may refer to other skills (SK-18, what a publish sends).
+pub fn uses_of_copy(plane: &Path, built_in: Option<&Path>, name: &str, text: &str) -> UsesOf {
+    uses_with(plane, built_in, name, Some(text))
+}
+
+fn uses_with(plane: &Path, built_in: Option<&Path>, name: &str, copy: Option<&str>) -> UsesOf {
     // Every level, each persona's among them (SK-32).
     let dirs: Vec<std::path::PathBuf> = Level::every(plane)
         .iter()
@@ -42,8 +52,13 @@ pub fn uses_of(plane: &Path, built_in: Option<&Path>, name: &str) -> UsesOf {
                 break 'dirs;
             }
             let text = purlis_skills::read_skill_md(plane, &skill.path).unwrap_or_default();
-            skills.push((skill.name, text));
+            if copy.is_none() || skill.name != name {
+                skills.push((skill.name, text));
+            }
         }
+    }
+    if let Some(text) = copy {
+        skills.push((name.to_owned(), text.to_owned()));
     }
     let (mut graph, cut) = uses::graph(&skills, LINKED_PLUGIN, &built_in_names(built_in));
     let node = graph.remove(name).unwrap_or_default();

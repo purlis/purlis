@@ -178,6 +178,7 @@ pub mod planesave;
 pub mod plugin;
 pub mod plugin_install;
 #[cfg(unix)]
+pub mod poollimits;
 pub mod poollogins;
 #[cfg(unix)]
 pub mod pools;
@@ -278,6 +279,8 @@ pub mod tui;
 pub mod updates;
 pub mod usage;
 pub mod version;
+#[cfg(unix)]
+pub mod windowline;
 #[cfg(unix)]
 pub mod windownames;
 pub mod windowprefs;

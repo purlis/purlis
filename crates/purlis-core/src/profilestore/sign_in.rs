@@ -60,7 +60,31 @@ pub enum Standing {
     Fetching,
 }
 
+/// **What `purlis profile sign-in <name> --check` exits with where it answers otherwise than
+/// signed in** (#4113): a desktop reads these, never the words beside them. It exits 0 for signed
+/// in, and 1 where it could not answer at all. `docker exec` and `kubectl exec` pass them on.
+pub mod check_exit {
+    /// Its harness says it is not signed in.
+    pub const SIGNED_OUT: u8 = 3;
+    /// Its harness cannot tell.
+    pub const CANNOT_TELL: u8 = 4;
+    /// Its harness is still being fetched, so it cannot say yet.
+    pub const FETCHING: u8 = 5;
+    /// This device keeps no profile of that name.
+    pub const NOT_KEPT: u8 = 6;
+}
+
 impl Standing {
+    /// What `--check` exits with for this answer ([`check_exit`]).
+    pub fn check_exit(self) -> u8 {
+        match self {
+            Standing::SignedIn => 0,
+            Standing::SignedOut => check_exit::SIGNED_OUT,
+            Standing::CannotTell => check_exit::CANNOT_TELL,
+            Standing::Fetching => check_exit::FETCHING,
+        }
+    }
+
     /// The word the window and the command line say it by.
     pub fn word(self) -> &'static str {
         match self {
@@ -162,6 +186,9 @@ struct Flow {
     /// The words after its program that sign it out, its own; none where it asks which in a
     /// terminal, as opencode's does.
     logout: Option<&'static [&'static str]>,
+    /// The words after its program of a sign-out that asks which sign-in goes, so runs only in a
+    /// terminal the person answers in (#4124): opencode's.
+    logout_asks: Option<&'static [&'static str]>,
     /// The flag that names the provider, followed by one of [`providers`]' ids, for a harness
     /// whose declaration lists plans. Empty for one that serves its own vendor's plan alone.
     provider_flag: &'static str,
@@ -205,6 +232,7 @@ const FLOWS: [Flow; 3] = [
         kind: "claude",
         login: &["auth", "login"],
         logout: Some(&["auth", "logout"]),
+        logout_asks: None,
         provider_flag: "",
         browser: &[],
         device: &[],
@@ -215,6 +243,7 @@ const FLOWS: [Flow; 3] = [
         kind: "codex",
         login: &["login"],
         logout: Some(&["logout"]),
+        logout_asks: None,
         provider_flag: "",
         browser: &[],
         // Codex's own answer for a remote machine; beta, and its account may have it off.
@@ -226,6 +255,7 @@ const FLOWS: [Flow; 3] = [
         kind: "opencode",
         login: &["auth", "login"],
         logout: None,
+        logout_asks: Some(&["auth", "logout"]),
         // opencode 1.18.33's `auth login --provider`: provider selection skipped.
         provider_flag: "--provider",
         // Its `--method` names one of the list's labels; these are its ChatGPT plan's.
@@ -374,6 +404,13 @@ pub fn refusal(profile: &Profile, passed: &[String], look: &dyn Look) -> Option<
             title = declared.title,
         )
     })
+}
+
+/// **Whether `said` is [`refusal`]'s**, as a runner's host answered a start with it (#4233): the
+/// runner found the profile signed out only once the chat reached it, and it words that as a
+/// machine of its own, which is not what the person on the desktop is to do.
+pub fn is_refusal(said: &str) -> bool {
+    said.contains("is not signed in on ") && said.contains("Nothing was started.")
 }
 
 /// **A profile a start was refused on**, waiting to be signed in: one per project and profile.
@@ -671,13 +708,20 @@ fn harness_of(record: &MachineProfile, pinned: Option<&Path>) -> Result<(Profile
 }
 
 /// **The sign-out of `record`**, one of this machine's profiles (#4043): its harness's own, as
-/// [`login_of`]'s, in its folder. Refused for a folder adopted in place and for a harness whose
-/// sign-out is only its own terminal's.
-pub fn logout_of(record: &MachineProfile, pinned: Option<&Path>) -> Result<Login, String> {
+/// [`login_of`]'s, in its folder. Refused for a folder adopted in place and, but `in_a_terminal`,
+/// for a harness whose sign-out asks in its own terminal.
+pub fn logout_of(
+    record: &MachineProfile,
+    pinned: Option<&Path>,
+    in_a_terminal: bool,
+) -> Result<Login, String> {
     let name = crate::shown::short(&record.name);
     let (profile, program) = harness_of(record, pinned)?;
     let words = flow(&profile.kind)
-        .and_then(|flow| flow.logout)
+        .and_then(|flow| {
+            flow.logout
+                .or_else(|| flow.logout_asks.filter(|_| in_a_terminal))
+        })
         .ok_or_else(|| {
             format!(
                 "{} signs '{name}' out only in its own terminal, so purlis signed nothing out.",

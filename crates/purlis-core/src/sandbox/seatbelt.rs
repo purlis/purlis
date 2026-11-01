@@ -744,14 +744,34 @@ pub fn vaults_start_nothing_rules() -> Result<Vec<String>, &'static str> {
     vault_rules("process-exec")
 }
 
+/// **Whether `path` is a project's vault folder or fingerprint key**, in any case: what
+/// [`vaults_everywhere_rules`] names, for a rule that can only name what is beneath a folder.
+pub fn is_a_vault(path: &Path) -> bool {
+    let named = |part: Option<&std::ffi::OsStr>, name: &str| {
+        part.and_then(std::ffi::OsStr::to_str)
+            .is_some_and(|part| part.eq_ignore_ascii_case(name))
+    };
+    let folder = path.parent().and_then(Path::file_name);
+    VAULT_TAILS
+        .iter()
+        .any(|(kept, _)| named(path.file_name(), kept))
+        && crate::names::STATE_DIR
+            .spellings()
+            .any(|state| named(folder, state))
+}
+
+/// What a project keeps in its state folder that no program reads, each with the end of a regex
+/// on its path.
+const VAULT_TAILS: [(&str, &str); 2] = [
+    ("vaults", "(/.*)?$"),
+    (crate::secrets::fingerprint::KEY_FILE, "$"),
+];
+
 /// A `deny` of `ops` on every project's vault folder and fingerprint key.
 fn vault_rules(ops: &str) -> Result<Vec<String>, &'static str> {
     let mut rules = Vec::new();
     for state in crate::names::STATE_DIR.spellings() {
-        for (kept, tail) in [
-            ("vaults", "(/.*)?$"),
-            (crate::secrets::fingerprint::KEY_FILE, "$"),
-        ] {
+        for (kept, tail) in VAULT_TAILS {
             let regex = format!(
                 "^/(.*/)?{}{tail}",
                 either_case(&format!("{}/{}", escaped(state), escaped(kept)))

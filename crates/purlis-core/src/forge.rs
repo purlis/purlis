@@ -51,6 +51,8 @@ mod github;
 mod gitlab;
 pub mod http;
 pub mod loopback;
+#[cfg(unix)]
+pub mod mintport;
 pub mod oauth;
 pub mod pkce;
 pub mod poll;

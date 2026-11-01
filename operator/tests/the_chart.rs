@@ -186,7 +186,17 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 # The third policy, purlis-operator-changes-only-a-sandboxs-mode, narrows the operator's own
 # `patch` on upstream's sandboxes (#2058), which RBAC cannot scope to a field or an owner: the
 # operator may change only a Sandbox's spec.operatingMode, and only on a Sandbox a SandboxClaim
-# controls.
+# controls; and its spec.podTemplate only while it is Suspended in a runner namespace (#3982).
+#
+# The fourth policy, purlis-forge (#4206): whoever writes a Pool's spec.forge needs `use` on the
+# key it names (forgekeys), and only a Claim's requester changes the repos it names. The operator
+# mints only for a Claim and a Pool made once its binding has settled.
+#
+# The fifth policy, purlis-operator-deletes-only-a-retained-claim (#3981): the operator deletes
+# only a kept Claim, not stopped, that carries its own RetentionEnded condition.
+#
+# The sixth policy, purlis-only-the-operator-writes-a-claims-status (#3981): what the operator acts
+# on is what a Claim's status says, so no one else writes it.
 ";
 
 /// The plain manifests the chart's default render makes: `operator.yaml` and `policy.yaml`.
@@ -468,7 +478,14 @@ fn the_operators_metrics_are_served_on_its_port_through_a_service_of_their_own()
     let port = purlis_cluster_operator::metrics::PORT;
     assert_eq!(
         deployment["spec"]["template"]["spec"]["containers"][0]["ports"],
-        json!([{ "name": "metrics", "containerPort": port, "protocol": "TCP" }]),
+        json!([
+            { "name": "metrics", "containerPort": port, "protocol": "TCP" },
+            {
+                "name": "mint",
+                "containerPort": purlis_cluster_operator::mint::PORT,
+                "protocol": "TCP",
+            },
+        ]),
         "{deployment}"
     );
     let service = documents
@@ -529,6 +546,44 @@ fn nothing_reaches_the_operators_pod_unless_the_values_name_who_scrapes_it() {
     );
 }
 
+/// The mint port opens only where the chart names a key (#4206), and only to runner namespaces.
+#[test]
+fn only_a_named_key_opens_the_mint_port_and_only_to_runner_namespaces() {
+    let mint_service = |documents: &[Value]| {
+        documents
+            .iter()
+            .find(|d| {
+                d["kind"] == "Service" && d["metadata"]["name"] == "purlis-cluster-operator-mint"
+            })
+            .cloned()
+    };
+    let plain = rendered(&with_digest(&[]));
+    assert!(mint_service(&plain).is_none());
+    assert!(network_policy(&plain)["spec"].get("ingress").is_none());
+
+    let named = rendered(&with_digest(&["forge.keySecretNames[0]=org-app"]));
+    let service = mint_service(&named).expect("the mint Service");
+    assert_eq!(service["spec"]["type"], "ClusterIP");
+    assert_eq!(
+        service["spec"]["ports"],
+        json!([{
+            "name": "mint",
+            "port": purlis_cluster_operator::mint::PORT,
+            "targetPort": "mint",
+            "protocol": "TCP",
+        }])
+    );
+    assert_eq!(
+        network_policy(&named)["spec"]["ingress"],
+        json!([{
+            "from": [{ "namespaceSelector": { "matchLabels": {
+                "app.kubernetes.io/managed-by": "purlis-cluster-operator",
+            } } }],
+            "ports": [{ "port": "mint", "protocol": "TCP" }],
+        }])
+    );
+}
+
 /// The Role that reads the admin's App key (#4204, ruling Q4), when the values name any Secret.
 fn key_reader(documents: &[Value]) -> Vec<&Value> {
     documents
@@ -573,6 +628,11 @@ fn a_named_key_is_read_by_get_alone_by_the_operator_alone_in_its_own_namespace()
             "apiGroups": [""],
             "resources": ["secrets"],
             "resourceNames": ["org-app", "other-app"],
+            "verbs": ["get"],
+        }, {
+            "apiGroups": [""],
+            "resources": ["services"],
+            "resourceNames": ["purlis-cluster-operator-mint"],
             "verbs": ["get"],
         }])
     );

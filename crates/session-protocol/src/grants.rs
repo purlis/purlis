@@ -54,6 +54,8 @@
 //! | `cancel_engine_download`, and the pushed `engine_download`: a browser engine's first download (1.37) | yes | | | | | |
 //! | `log_end`, and the host's own event log pushed from a cursor for its device (1.41) | yes | | | | | relayed |
 //! | `inspect`, `inspector_input`, `attach_view` of kind `inspector`: the person's DevTools of a browser they drive (1.45) | yes | | | | | |
+//! | `ask_grade`, a grade of a skill asked for from a terminal, and the pushed `grade_step` of it (1.63) | | yes | | | | |
+//! | `answer_grade`, `grade_step`, and the pushed `grade_asked` and `stop_grade`: running a grade a terminal asked for (1.63) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -235,6 +237,16 @@
 //!   `inspector_input` and a view of DevTools are `local-ui`'s, never relayed to a runner's
 //!   browser, and no other scope's: a chat's tools, the fleet's and the terminal's never reach
 //!   them.
+//! - **A grade asked for from a terminal is the person's, at their own terminal** (1.63, SK-61,
+//!   #3241; ruled 2026-10-31). It spends their account on their own yes, so only `terminal` asks:
+//!   its credential is one a chat's sandbox denies, and a peer inside a chat is refused every
+//!   scope on this socket. No agent's scope, `fleet-mcp` or `approval`, spends that way, and
+//!   neither does `remote-link`: a runner's terminal never spends through a desktop, nor a
+//!   desktop's through a runner. The window has its own Grade button, so it is not granted the
+//!   asking. **The asking asks no more than the window's own press does.** The host relays the
+//!   ask, and the window runs it through the one check every press takes, the plan's consent
+//!   digest, with the same caps. Only `local-ui` runs it, on its own host: a relaying host refuses
+//!   all of it.
 
 use crate::auth::Scope;
 
@@ -336,6 +348,12 @@ pub enum Power {
     /// `log_end`, and the host's own event log pushed from a cursor for its device (1.41,
     /// #3393): the window's, on its own host or relayed to a runner's.
     EventLog,
+    /// `ask_grade` (1.63, SK-61): a skill's plan and its start asked for from a terminal, and
+    /// hearing the grade's steps. The person's, at their terminal, and no other scope's.
+    AskGrade,
+    /// `answer_grade` and `grade_step` (1.63, SK-61): the window running a grade a terminal asked
+    /// for, and hearing `grade_asked` and `stop_grade`.
+    RunGrade,
 }
 
 impl Scope {
@@ -346,11 +364,18 @@ impl Scope {
         match self {
             S::LocalUi => !matches!(
                 power,
-                P::TakeBack | P::Unpair | P::KeepProfile | P::SignInRedirect
+                P::TakeBack | P::Unpair | P::KeepProfile | P::SignInRedirect | P::AskGrade
             ),
             S::Terminal => matches!(
                 power,
-                P::List | P::View | P::Write | P::Resize | P::Stop | P::Start | P::Subscribe
+                P::List
+                    | P::View
+                    | P::Write
+                    | P::Resize
+                    | P::Stop
+                    | P::Start
+                    | P::Subscribe
+                    | P::AskGrade
             ),
             // Only the window names itself: every other scope is refused it below, as none of
             // their rows lists it.

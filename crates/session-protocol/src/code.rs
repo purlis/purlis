@@ -31,6 +31,15 @@ pub const CODE: u8 = 0x02;
 /// and small enough that a transfer cut off at it says so rather than filling a disk.
 pub const MOST_BUNDLE_BYTES: u64 = 1024 * 1024 * 1024;
 
+/// **The most bytes a client may hold a bundle it sends to** (`CodeHeld`, 1.65, spec #4275): a
+/// host takes a higher ask at this. A bundle goes to a file on the host's disk, so this is what
+/// one send may ask of that disk.
+pub const HIGHEST_BUNDLE_BYTES: u64 = 64 * 1024 * 1024 * 1024;
+
+/// **The longest a client may give a transfer it sends** (`CodeHeld`, 1.65, spec #4275): half a
+/// day, so a client that asks more has a host give up all the same.
+pub const LONGEST_TRANSFER_SECS: u64 = 12 * 60 * 60;
+
 /// What a code stream opens with: [`CODE`], then the client's number for the transfer, a
 /// big-endian `u64`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -175,7 +175,7 @@ pub const PEM_END: &str = concat!("-----END ", "PRIVATE", " KEY-----");
 
 /// The operator's Ed25519 signing key. Its private half never leaves this process and is
 /// never printed.
-pub struct SigningKey(Ed25519KeyPair);
+pub struct SigningKey(Ed25519KeyPair, Vec<u8>);
 
 impl std::fmt::Debug for SigningKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -204,13 +204,29 @@ impl SigningKey {
     /// The key PKCS#8 DER `der` holds.
     pub fn from_pkcs8(der: &[u8]) -> Result<SigningKey, String> {
         Ed25519KeyPair::from_pkcs8_maybe_unchecked(der)
-            .map(SigningKey)
+            .map(|pair| SigningKey(pair, der.to_vec()))
             .map_err(|_| "the signing key is not an Ed25519 key in PKCS#8".to_owned())
     }
 
     /// Its public half, as a Pool's status spells it: `ed25519:` and 64 lower-case hex.
     pub fn public(&self) -> String {
         format!("ed25519:{}", hex(self.0.public_key().as_ref()))
+    }
+
+    /// Its public half, as bytes.
+    pub fn public_bytes(&self) -> &[u8] {
+        self.0.public_key().as_ref()
+    }
+
+    /// The key as the PKCS#8 DER it was read from: for the mint port's TLS alone
+    /// ([`crate::mint`]), never printed.
+    pub(crate) fn pkcs8(&self) -> &[u8] {
+        &self.1
+    }
+
+    /// Its signature over `bytes`.
+    pub(crate) fn sign_bytes(&self, bytes: &[u8]) -> Vec<u8> {
+        self.0.sign(bytes).as_ref().to_vec()
     }
 
     /// Its signature over `text`, 128 lower-case hex.
@@ -481,6 +497,13 @@ pub fn normalised(spec: &PodSpec) -> serde_json::Value {
     for list in ["initContainers", "containers"] {
         if let Some(Value::Array(containers)) = pod.get_mut(list) {
             for container in containers.iter_mut().filter_map(Value::as_object_mut) {
+                // A runner's idle time says only when it stops itself: a runner made before the
+                // pool's time changed, or before there was one, is still its template's (#3980).
+                if let Some(Value::Array(env)) = container.get_mut("env") {
+                    env.retain(|one| {
+                        one.get("name") != Some(&json!(crate::upstream::IDLE_AFTER_VAR))
+                    });
+                }
                 container.remove("imagePullPolicy");
                 if container.get("resources").is_some_and(plain_resources) {
                     container.remove("resources");

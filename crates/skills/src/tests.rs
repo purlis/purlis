@@ -2015,3 +2015,55 @@ fn persona_set_is_a_personas_own_rows_of_its_chats_set_and_asks_only_of_its_own(
         "no wider level of the plane is read: {alone:?}"
     );
 }
+
+/// **Each reason the core words itself reads as one line** (SK-23, #4343), the ones only a persona's
+/// chat meets among them. The three that carry another's sentence are given one here; the one
+/// from a file it reads is cut to its first line by `beside::table`.
+#[test]
+fn every_reason_reads_as_one_line() {
+    let said = "the sentence the core was handed".to_string();
+    let repo = "svc".to_string();
+    let reasons = [
+        Reason::NotASkill(Missing::File),
+        Reason::NotASkill(Missing::Name),
+        Reason::NotASkill(Missing::Description),
+        Reason::NotASkill(Missing::Link),
+        Reason::NotASkill(Missing::TooLarge),
+        Reason::NotASkill(Missing::Crowded),
+        Reason::NotGranted,
+        Reason::GrantUnread(said.clone()),
+        Reason::TurnedOff,
+        Reason::NameTaken {
+            by: Origin::Workspace,
+            local: false,
+        },
+        Reason::NameTaken {
+            by: Origin::Workspace,
+            local: true,
+        },
+        Reason::Twin {
+            origin: Origin::Project,
+            local: false,
+        },
+        Reason::Twin {
+            origin: Origin::Project,
+            local: true,
+        },
+        Reason::NotKeptLocal(said.clone()),
+        Reason::NotOnThisMachine,
+        Reason::NoSuchBuiltIn,
+        Reason::OffForTheHarness,
+        Reason::BuiltInsOwnName,
+        Reason::RepoUnread { repo: repo.clone() },
+        Reason::HiddenByRepo { repo },
+        Reason::Archived,
+        Reason::MadeWhileAChatRan(said),
+        Reason::IndexName,
+        Reason::HiddenByIndex,
+    ];
+    for reason in &reasons {
+        let line = reason.to_string();
+        assert!(!line.trim().is_empty(), "{reason:?} says nothing");
+        assert!(!line.contains('\n'), "{reason:?} runs over lines: {line}");
+    }
+}

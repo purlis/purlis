@@ -31,6 +31,27 @@ outputs:
   docs:
     description: The docs site.
     value: ${{ steps.scope.outputs.docs }}
+  web-parts:
+    description: The parts of the web job this change needs, as JSON.
+    value: ${{ steps.scope.outputs.web-parts }}
+  listen-shim:
+    description: Whether a pull request needs the listen shim job.
+    value: ${{ steps.scope.outputs.listen-shim }}
+  browser-engine:
+    description: Whether a pull request needs the browser engine's macOS job.
+    value: ${{ steps.scope.outputs.browser-engine }}
+  confinement:
+    description: Whether a pull request needs the studio confinement's macOS job.
+    value: ${{ steps.scope.outputs.confinement }}
+  parity:
+    description: Whether a pull request needs the parity job.
+    value: ${{ steps.scope.outputs.parity }}
+  bench:
+    description: Whether a pull request needs the latency bench.
+    value: ${{ steps.scope.outputs.bench }}
+  outcome-bars:
+    description: Whether a pull request needs the Skill studio's outcome bars.
+    value: ${{ steps.scope.outputs.outcome-bars }}
 runs:
   using: composite
   steps:

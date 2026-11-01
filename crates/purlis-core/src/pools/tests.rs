@@ -176,7 +176,7 @@ fn removing_a_pool_removes_its_runner_whole_and_then_the_pool() {
     )
     .unwrap();
     let unpaired = std::cell::Cell::new(false);
-    let unpair = |_: &Kept| {
+    let unpair = |_: &runners::Kept| {
         unpaired.set(true);
         Ok(())
     };
@@ -468,6 +468,273 @@ fn a_drained_runner_carries_its_sign_ins_to_the_pools_runner_then_goes_with_its_
     assert!(copy.contains(NEW), "{copy}");
 }
 
+/// A pool `first`, followed to a new image: its old runner `first` drains beside the successor.
+/// The log is emptied.
+fn a_pool_draining(config: &std::path::Path, fake: &FakeDocker) -> String {
+    let ours = desktop();
+    a_pool_added(config, fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    makes(fake, &successor, NEW, &successor_answers());
+    follow(config, &fake.docker(), "first", &new_image, &ours).unwrap();
+    std::fs::write(fake.file_path("log"), "").unwrap();
+    successor
+}
+
+/// **A drained runner is unpaired before its sign-ins are carried** (#4146): nothing can link to
+/// it while they go.
+#[test]
+fn a_drained_runner_is_unpaired_before_its_sign_ins_are_carried() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    let log_at_unpair = std::cell::RefCell::new(None);
+    let unpair = |_: &runners::Kept| {
+        *log_at_unpair.borrow_mut() = Some(fake.file("log"));
+        Ok(())
+    };
+
+    let removed = drain(config.path(), &fake.docker(), "first", Some(&unpair)).unwrap();
+
+    assert_eq!(removed.peer, Some(Ok(())));
+    let before = log_at_unpair.borrow().clone().expect("it was unpaired");
+    assert!(!before.contains("-copy "), "{before}");
+    assert!(fake.file("log").contains("-copy "));
+}
+
+/// **A drain whose removal failed does not carry again, nor unpair again** (#4146): the next
+/// look only removes what is left.
+#[test]
+fn a_drain_whose_removal_failed_does_not_carry_again_at_the_next_look() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    fake.set("rm-fails-volume", "1");
+    fake.set("volumes", "purlis-runner-first-home\n");
+
+    let unpaired = std::cell::Cell::new(0);
+    let unpair = |_: &runners::Kept| {
+        unpaired.set(unpaired.get() + 1);
+        Ok(())
+    };
+    let first = drain(config.path(), &fake.docker(), "first", Some(&unpair)).unwrap();
+    assert!(!first.forgotten, "{first:?}");
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(
+        kept.carried && kept.unpaired,
+        "marks kept across a read of the file"
+    );
+
+    std::fs::write(fake.file_path("log"), "").unwrap();
+    drain(config.path(), &fake.docker(), "first", Some(&unpair)).unwrap();
+
+    let log = fake.file("log");
+    assert!(!log.contains("-copy "), "{log}");
+    assert!(
+        log.contains("volume rm --force purlis-runner-first-home"),
+        "{log}"
+    );
+    assert_eq!(unpaired.get(), 1);
+}
+
+/// **A running runner that was not unpaired stays, and nothing is carried from it** (#4146).
+#[test]
+fn a_running_runner_that_was_not_unpaired_stays_and_carries_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    let unpair = |_: &runners::Kept| Err("it did not answer".to_owned());
+
+    drain(config.path(), &fake.docker(), "first", Some(&unpair)).unwrap_err();
+
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(!kept.carried && !kept.unpaired);
+    let log = fake.file("log");
+    assert!(
+        !log.contains("-copy ") && !log.contains("volume rm"),
+        "{log}"
+    );
+}
+
+/// **A stopped runner cannot be unpaired, and is still drained** (#4146).
+#[test]
+fn a_stopped_runner_that_could_not_be_unpaired_is_drained() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    let mut stopped = inspected();
+    stopped[0]["State"]["Running"] = false.into();
+    fake.set("inspect", &stopped.to_string());
+    let unpair = |_: &runners::Kept| Err("it is stopped".to_owned());
+
+    let removed = drain(config.path(), &fake.docker(), "first", Some(&unpair)).unwrap();
+
+    assert!(removed.forgotten, "{removed:?}");
+    assert!(fake.file("log").contains("-copy "));
+}
+
+/// **A profile signed out of the pool is signed out on its draining runners too, and no drain
+/// carries it** (#4121, #4145), what the sign-out did said runner by runner.
+#[test]
+fn signing_out_of_a_pool_reaches_its_draining_runners_and_nothing_is_carried_for_it() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    // Docker answers for the draining runner, as it was made.
+    fake.set("inspect", &inspected().to_string());
+    fake.set(
+        "volume",
+        r#"[{"Name":"purlis-runner-first-home","Driver":"local","Options":null,"Labels":null}]"#,
+    );
+
+    let said = sign_out_draining(config.path(), &fake.docker(), "first", "work", &[]).unwrap();
+
+    assert_eq!(said.len(), 1, "only the draining runner: {said:?}");
+    assert_eq!(said[0].0, "first");
+    said[0].1.as_ref().unwrap();
+    assert!(fake.file("log").contains("profile sign-out work"));
+
+    std::fs::write(fake.file_path("log"), "").unwrap();
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+    let log = fake.file("log");
+    assert!(log.contains("-copy "), "{log}");
+    assert!(
+        log.split_whitespace().any(|word| word == "work"),
+        "the carry names what it leaves: {log}"
+    );
+}
+
+/// **A draining runner the sign-out could not reach carries nothing for it either** (#4145): the
+/// mark is written first.
+#[test]
+fn a_draining_runner_a_sign_out_did_not_reach_carries_nothing_for_it() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    // Its container no longer answers as it was made, so its sign-out is refused.
+    fake.set("inspect", "[]");
+
+    let said = sign_out_draining(config.path(), &fake.docker(), "first", "work", &[]).unwrap();
+
+    assert!(said[0].1.is_err(), "{said:?}");
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert_eq!(kept.signed_out, ["work"]);
+}
+
+/// **A second look of one sign-out runs the harness's on no runner the first answered for**
+/// (#4298), and one that began to drain since is still reached.
+#[test]
+fn a_sign_out_runs_once_on_each_draining_runner() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    fake.set("inspect", &inspected().to_string());
+    fake.set(
+        "volume",
+        r#"[{"Name":"purlis-runner-first-home","Driver":"local","Options":null,"Labels":null}]"#,
+    );
+    let first = sign_out_draining(config.path(), &fake.docker(), "first", "work", &[]).unwrap();
+    assert_eq!(first.len(), 1);
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    let second = sign_out_draining(config.path(), &fake.docker(), "first", "work", &first).unwrap();
+
+    assert!(second.is_empty(), "{second:?}");
+    let log = fake.file("log");
+    assert!(!log.contains("profile sign-out"), "{log}");
+
+    let unseen = [("another".to_owned(), Ok(()))];
+    let reached = sign_out_draining(config.path(), &fake.docker(), "first", "work", &unseen);
+    assert_eq!(reached.unwrap().len(), 1);
+    assert!(fake.file("log").contains("profile sign-out work"));
+}
+
+/// A pool with one runner draining whose home its row knows, and whose carry and volume removal
+/// both fail on Docker's error.
+fn a_drain_docker_failed(config: &std::path::Path, fake: &FakeDocker) {
+    fake.set("engine", "engine-a\n");
+    home_prints(fake, HOME_CREATED);
+    a_pool_draining(config, fake);
+    // The fake has one volume, and making the successor printed over it.
+    home_prints(fake, HOME_CREATED);
+    fake.set("copy-fails", "");
+    fake.set("rm-fails-volume", "1");
+    fake.set("volumes", "purlis-runner-first-home\n");
+    let first = drain(config, &fake.docker(), "first", None).unwrap();
+    assert!(!first.forgotten, "{first:?}");
+    let kept = runners::named(config, "first").unwrap().unwrap();
+    assert!(kept.carry_failed && !kept.carried, "kept across a read");
+    std::fs::remove_file(fake.docker().program().with_file_name("copy-fails")).unwrap();
+    std::fs::write(fake.file_path("log"), "").unwrap();
+}
+
+/// **A carry that failed on Docker's error is tried again at the next look** (#4298), where the
+/// removal failed too and the runner is still there, and then not again.
+#[test]
+fn a_carry_docker_failed_is_tried_once_more_at_the_next_look() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_drain_docker_failed(config.path(), &fake);
+
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+
+    assert!(fake.file("log").contains("-copy "), "{}", fake.file("log"));
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(kept.carried && !kept.carry_failed, "{kept:?}");
+
+    std::fs::write(fake.file_path("log"), "").unwrap();
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+    assert!(!fake.file("log").contains("-copy "), "{}", fake.file("log"));
+}
+
+/// A second failure of Docker's ends the tries: a carry can hold the runners' lock for minutes.
+#[test]
+fn a_carry_docker_failed_twice_is_not_tried_again() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_drain_docker_failed(config.path(), &fake);
+    fake.set("copy-fails", "");
+
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+
+    assert!(fake.file("log").contains("-copy "), "{}", fake.file("log"));
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(kept.carried && !kept.carry_failed, "{kept:?}");
+}
+
+/// **A second try takes only the runner's own home** (#4298): its container may be gone by then,
+/// and a volume of that name made since is not its.
+#[test]
+fn a_second_try_of_a_carry_takes_nothing_from_a_home_made_since() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_drain_docker_failed(config.path(), &fake);
+    home_prints(&fake, "2026-01-01T00:00:00Z");
+
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+
+    assert!(!fake.file("log").contains("-copy "), "{}", fake.file("log"));
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(kept.carried && !kept.carry_failed, "{kept:?}");
+}
+
+/// **A carry stopped by a rule is not Docker's failure**, and is not tried again (#4298).
+#[test]
+fn a_carry_a_rule_stopped_is_not_tried_again() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    crate::runnertaint::mark(config.path(), &kept.made.container).unwrap();
+    fake.set("rm-fails-volume", "1");
+    fake.set("volumes", "purlis-runner-first-home\n");
+
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(kept.carried && !kept.carry_failed, "{kept:?}");
+}
+
 /// **A sign-in that cannot be carried never holds the drain back** (#4055): the draining runner
 /// is removed all the same, and its profiles are signed in again on the pool's runner.
 #[test]
@@ -495,6 +762,38 @@ fn a_drained_runner_whose_sign_ins_are_not_carried_is_removed_all_the_same() {
         runners::runner_for(config.path(), "first").unwrap().name(),
         successor
     );
+}
+
+/// **No sign-in crosses to or from a runner a chat ran on without the sandbox**: not from one, so
+/// a sign-in it could have changed reaches no later runner, and not to one, so none it never had
+/// reaches it. The runner is removed all the same, and its profiles are signed in again.
+#[test]
+fn a_drain_carries_no_sign_in_to_or_from_a_runner_a_chat_ran_on_without_the_sandbox() {
+    for marked_drained in [true, false] {
+        let config = tempfile::tempdir().unwrap();
+        let ours = desktop();
+        let fake = a_docker(&runner_answers());
+        a_pool_added(config.path(), &fake, &ours);
+        let drained = runners::runner_for(config.path(), "first").unwrap();
+        let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+        let successor = crate::dockerpool::successor_name("first", &new_image);
+        makes(&fake, &successor, NEW, &successor_answers());
+        follow(config.path(), &fake.docker(), "first", &new_image, &ours).unwrap();
+        let new = runners::runner_for(config.path(), "first").unwrap();
+        let marked = if marked_drained { &drained } else { &new };
+        crate::runnertaint::mark(config.path(), &marked.made.container).unwrap();
+        std::fs::write(fake.file_path("log"), "").unwrap();
+
+        let removed = drain(config.path(), &fake.docker(), "first", None).unwrap();
+
+        assert!(removed.forgotten);
+        let log = fake.file("log");
+        assert!(!log.contains("-copy "), "{marked_drained}: {log}");
+        assert!(
+            log.contains("volume rm --force purlis-runner-first-home"),
+            "{log}"
+        );
+    }
 }
 
 /// **A copy container an earlier carry left holds no later one back** (#4055): one of this
@@ -906,6 +1205,61 @@ mod cluster {
         }
     }
 
+    /// A Pool may opt in after it was added, and the opt-in reaches this machine at a link (#4330).
+    #[test]
+    fn a_pool_that_opts_in_later_is_kept_so_and_nothing_else_of_it_moves() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let claim = claim_name(OURS, "team");
+        cluster.vouch("ada", &claim, &claim, cluster.runner.key);
+        add_cluster(
+            config.path(),
+            &cluster.kubectl(),
+            &team(&cluster),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+        let before = file(config.path());
+        runners::keep_cluster_minting(config.path(), "team", true).unwrap();
+        let mut after = file(config.path());
+        assert_eq!(after["pools"][0]["mintInCluster"], true);
+        after["pools"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("mintInCluster");
+        assert_eq!(after, before);
+        runners::keep_cluster_minting(config.path(), "no-such-pool", true).unwrap();
+    }
+
+    /// A chat's start waits for its repos, and past its time goes on, the work finishing by itself
+    /// (#4331).
+    #[test]
+    fn work_is_waited_for_at_most_its_time_and_goes_on_past_it() {
+        let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let done = std::sync::Arc::clone(&finished);
+        assert!(
+            waited_at_most(Duration::from_secs(30), move || {
+                done.store(true, std::sync::atomic::Ordering::SeqCst);
+            })
+            .unwrap()
+        );
+        assert!(finished.load(std::sync::atomic::Ordering::SeqCst));
+
+        let (go, held) = std::sync::mpsc::channel::<()>();
+        let (came, ended) = std::sync::mpsc::channel::<()>();
+        assert!(
+            !waited_at_most(Duration::from_millis(10), move || {
+                let _ = held.recv();
+                let _ = came.send(());
+            })
+            .unwrap()
+        );
+        go.send(()).unwrap();
+        ended
+            .recv_timeout(Duration::from_secs(30))
+            .expect("it goes on past its time");
+    }
+
     #[test]
     fn a_cluster_pool_naming_another_key_than_the_one_checked_is_not_added() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
@@ -1199,6 +1553,39 @@ mod cluster {
                 "work",
                 None,
                 crate::dockerpool::Typed::Driven,
+            )
+            .is_err()
+        );
+    }
+
+    /// **A cluster runner's standing is its own `--check` in the vouched pod** (#4164); a runner
+    /// not vouched for now is not asked.
+    #[test]
+    fn a_cluster_runners_standing_is_asked_in_its_vouched_pod_after_the_links_check() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        // What it answers is read by `standing_by_login`'s own test; here, what is asked.
+        let _ = cluster_standing(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            &judged(config.path()),
+            "work",
+        );
+        assert!(
+            cluster.calls().contains("sign-in work --check"),
+            "{}",
+            cluster.calls()
+        );
+
+        cluster.write("claim.json", "{}");
+        assert!(
+            cluster_standing(
+                config.path(),
+                &cluster.kubectl(),
+                "team",
+                &judged(config.path()),
+                "work",
             )
             .is_err()
         );
@@ -2028,6 +2415,24 @@ fn a_runner_removed_outside_purlis_is_made_again_with_its_sign_ins_and_paired() 
     assert_ne!(old.made, again.kept.made);
 }
 
+/// A runner a chat ran on without the sandbox is made again with nothing carried, its home there
+/// or not: a new runner starts on no sign-in that chat could have changed.
+#[test]
+fn a_runner_a_chat_ran_on_without_the_sandbox_is_made_again_with_nothing_carried() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    removed_outside_purlis(config.path(), &fake, &ours, Some("2026-01-01T00:00:00Z"));
+    crate::runnertaint::mark_pool(config.path(), "first").unwrap();
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+    assert!(!again.sign_ins_kept);
+    let log = fake.file("log");
+    assert!(!log.contains("-copy "), "{log}");
+}
+
 /// Its home gone too, the runner is made again with nothing carried: its profiles are signed in
 /// again.
 #[test]
@@ -2045,6 +2450,342 @@ fn a_runner_whose_home_went_with_it_is_made_again_to_sign_in_again() {
         "{}",
         fake.file("log")
     );
+}
+
+/// What a home printed as it was made in the tests below (#4167).
+const HOME_CREATED: &str = "2099-06-01T10:00:00+02:00";
+
+/// Docker's home volume, as it is, printing `at` as when it was made.
+fn home_prints(fake: &FakeDocker, at: &str) {
+    let mut volume: serde_json::Value = serde_json::from_str(&fake.file("volume")).unwrap();
+    volume[0]["CreatedAt"] = at.into();
+    fake.set("volume", &volume.to_string());
+}
+
+/// A pool added on engine `engine-a` whose home printed [`HOME_CREATED`] as it was made (#4166,
+/// #4167), then its container removed outside purlis with its home left.
+fn removed_with_its_making_kept(config: &Path, fake: &FakeDocker, ours: &Pinned) -> Kept {
+    fake.set("engine", "engine-a\n");
+    home_prints(fake, HOME_CREATED);
+    removed_outside_purlis(config, fake, ours, Some(HOME_CREATED))
+}
+
+/// **A runner keeps the engine that made it and its home's `CreatedAt`** (#4166, #4167), and
+/// they stay when it is read back.
+#[test]
+fn a_runner_keeps_its_engine_and_its_homes_making_through_the_file() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    home_prints(&fake, HOME_CREATED);
+
+    let kept = a_pool_added(config.path(), &fake, &desktop());
+
+    assert_eq!(kept.engine.as_deref(), Some("engine-a"));
+    assert_eq!(kept.home_created.as_deref(), Some(HOME_CREATED));
+    let read = runners::runner_for(config.path(), "first").unwrap();
+    assert_eq!(read, kept);
+}
+
+/// **Sign-ins come from the runner's own home whatever the clocks say** (#4167): this home's
+/// time is far past its pairing, which the clock rule would refuse, and it prints what was kept.
+#[test]
+fn a_home_still_printing_what_was_kept_gives_its_sign_ins_whatever_the_clocks_say() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    removed_with_its_making_kept(config.path(), &fake, &ours);
+
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+    assert!(again.sign_ins_kept, "{}", fake.file("log"));
+}
+
+/// **A volume made again under the same name gives nothing** (#4167), even with a time the clock
+/// rule would pass.
+#[test]
+fn a_volume_made_again_under_the_runners_name_gives_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    removed_with_its_making_kept(config.path(), &fake, &ours);
+    home_prints(&fake, "2026-01-01T00:00:00Z");
+
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+    assert!(!again.sign_ins_kept);
+    assert!(
+        !fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
+}
+
+/// **Make the runner again makes nothing on another engine** (#4166).
+#[test]
+fn a_runner_is_not_made_again_on_another_engine() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = removed_with_its_making_kept(config.path(), &fake, &ours);
+    fake.set("engine", "engine-b\n");
+
+    let refused = make_again_here(config.path(), &fake, &ours).unwrap_err();
+
+    assert!(refused.to_string().contains("another engine"), "{refused}");
+    assert!(!fake.file("log").contains("run "), "{}", fake.file("log"));
+    assert_eq!(runners::runner_for(config.path(), "first").unwrap(), old);
+}
+
+/// **An update makes no runner on another engine** (#4166): the pool stays on the one it runs on.
+#[test]
+fn a_follow_makes_nothing_on_another_engine() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    let old = a_pool_added(config.path(), &fake, &ours);
+    fake.set("engine", "engine-b\n");
+    std::fs::write(fake.file_path("log"), "").unwrap();
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+
+    let refused = follow(config.path(), &fake.docker(), "first", &new_image, &ours);
+
+    assert!(refused.is_err());
+    assert!(!fake.file("log").contains("run "), "{}", fake.file("log"));
+    assert_eq!(runners::runner_for(config.path(), "first").unwrap(), old);
+}
+
+/// **Removing a pool whose runner is on another engine touches nothing there** (#4325), and names
+/// what stays and how to remove it. The pool is forgotten, so one whose engine is gone for good
+/// can still be removed.
+#[test]
+fn a_pool_removed_while_another_engine_answers_names_what_stays_there() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    let kept = a_pool_added(config.path(), &fake, &ours);
+    fake.set("engine", "engine-b\n");
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    assert!(on_another_engine(config.path(), &fake.docker(), "first"));
+    let removed = remove(config.path(), &fake.docker(), "first", None)
+        .unwrap()
+        .unwrap();
+
+    assert!(!fake.file("log").contains(" rm"), "{}", fake.file("log"));
+    assert!(removed.forgotten);
+    let left = removed.left().unwrap();
+    assert!(
+        left.contains(&format!(
+            "docker container rm --force {}",
+            kept.made.container.as_str()
+        )),
+        "{left}"
+    );
+    assert!(
+        left.contains(&format!(
+            "docker volume rm --force {}",
+            kept.made.runner.volume()
+        )),
+        "{left}"
+    );
+    assert!(left.contains("stays"), "{left}");
+    assert!(left.contains("engine-a"), "names the engine: {left}");
+    assert!(left.contains("chats"), "{left}");
+    assert!(left.contains("sign-ins"), "{left}");
+    assert!(runners::runner_for(config.path(), "first").is_err());
+    assert!(
+        !runners::pools(config.path())
+            .unwrap()
+            .iter()
+            .any(|pool| pool.name() == "first")
+    );
+}
+
+/// **A pool's draining runner on another engine is named too**, beside the pool's own (#4325).
+#[test]
+fn a_pool_removed_on_another_engine_names_each_of_its_runners() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    a_pool_draining(config.path(), &fake);
+    let names: Vec<String> = runners::read(config.path())
+        .unwrap()
+        .iter()
+        .map(|kept| kept.made.runner.volume())
+        .collect();
+    assert_eq!(names.len(), 2);
+    fake.set("engine", "engine-b\n");
+
+    let left = remove(config.path(), &fake.docker(), "first", None)
+        .unwrap()
+        .unwrap()
+        .left()
+        .unwrap();
+
+    for volume in names {
+        assert!(left.contains(&volume), "{left}");
+    }
+}
+
+/// **Where nothing says which engine answers, a removal touches nothing and keeps the row**
+/// (#4325): what is by name might be another engine's.
+#[test]
+fn a_runner_is_not_removed_where_no_engine_says_which_it_is() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    a_pool_added(config.path(), &fake, &ours);
+    assert!(!on_another_engine(config.path(), &fake.docker(), "first"));
+    fake.set("engine", "\n");
+    assert!(!on_another_engine(config.path(), &fake.docker(), "first"));
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    let removed = remove(config.path(), &fake.docker(), "first", None)
+        .unwrap()
+        .unwrap();
+
+    assert!(!fake.file("log").contains(" rm"), "{}", fake.file("log"));
+    assert!(!removed.forgotten);
+    assert!(removed.left().unwrap().contains("can be removed again"));
+    assert!(runners::runner_for(config.path(), "first").is_ok());
+}
+
+/// **A draining runner is not drained on another engine's word** (#4166): its row stays.
+#[test]
+fn a_draining_runner_stays_while_another_engine_answers() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    a_pool_draining(config.path(), &fake);
+    let name = "first";
+    let kept = runners::named(config.path(), name).unwrap().unwrap();
+    assert!(kept.draining);
+    assert_eq!(kept.engine.as_deref(), Some("engine-a"));
+    fake.set("engine", "engine-b\n");
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    assert!(drain(config.path(), &fake.docker(), name, None).is_err());
+
+    assert!(!fake.file("log").contains(" rm"), "{}", fake.file("log"));
+    assert_eq!(runners::named(config.path(), name).unwrap(), Some(kept));
+}
+
+/// **A draining runner the engine that made it no longer lists is removed** (#4168), with what
+/// its own home holds carried; another engine's word removes nothing.
+#[test]
+fn a_draining_runner_removed_outside_purlis_goes_with_its_own_homes_sign_ins_carried() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    home_prints(&fake, HOME_CREATED);
+    a_pool_draining(config.path(), &fake);
+    // The fake has one volume, and making the successor printed over it.
+    home_prints(&fake, HOME_CREATED);
+    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("containers", "");
+
+    fake.set("engine", "engine-b\n");
+    assert!(drain_removed(config.path(), &fake.docker(), "first").is_err());
+    assert!(runners::named(config.path(), "first").unwrap().is_some());
+
+    fake.set("engine", "engine-a\n");
+    drain_removed(config.path(), &fake.docker(), "first").unwrap();
+    assert!(
+        fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
+    assert_eq!(runners::named(config.path(), "first").unwrap(), None);
+}
+
+/// A home that is not its own gives nothing as a removed draining runner goes (#4168).
+#[test]
+fn a_draining_runner_removed_outside_purlis_takes_nothing_from_a_home_made_since() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    home_prints(&fake, HOME_CREATED);
+    a_pool_draining(config.path(), &fake);
+    // The fake has one volume, and making the successor printed over it.
+    home_prints(&fake, HOME_CREATED);
+    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("containers", "");
+    home_prints(&fake, "2026-01-01T00:00:00Z");
+
+    drain_removed(config.path(), &fake.docker(), "first").unwrap();
+
+    assert!(
+        !fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
+    assert_eq!(runners::named(config.path(), "first").unwrap(), None);
+}
+
+/// A removal that failed does not carry again at the next look (#4168).
+#[test]
+fn a_draining_runner_removed_outside_purlis_carries_once() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    home_prints(&fake, HOME_CREATED);
+    a_pool_draining(config.path(), &fake);
+    // The fake has one volume, and making the successor printed over it.
+    home_prints(&fake, HOME_CREATED);
+    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("containers", "");
+    fake.set("rm-fails-volume", "1");
+
+    drain_removed(config.path(), &fake.docker(), "first").unwrap();
+    assert!(
+        fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
+    assert!(
+        runners::named(config.path(), "first")
+            .unwrap()
+            .unwrap()
+            .carried
+    );
+    std::fs::write(fake.file_path("log"), "").unwrap();
+    fake.set("volumes", "purlis-runner-first-home\n");
+    drain_removed(config.path(), &fake.docker(), "first").unwrap();
+
+    assert!(
+        !fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
+}
+
+/// With no engine kept, a runner is not taken as removed (#4168).
+#[test]
+fn a_draining_runner_with_no_engine_kept_is_not_taken_as_removed() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    fake.set("containers", "");
+
+    assert!(drain_removed(config.path(), &fake.docker(), "first").is_err());
+    assert!(runners::named(config.path(), "first").unwrap().is_some());
+}
+
+/// A runner the engine still lists is not drained this way (#4168).
+#[test]
+fn a_draining_runner_still_listed_is_not_taken_as_removed() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    a_pool_draining(config.path(), &fake);
+    fake.set("containers", &format!("{ID}\n"));
+
+    assert!(drain_removed(config.path(), &fake.docker(), "first").is_err());
+    assert!(runners::named(config.path(), "first").unwrap().is_some());
 }
 
 /// A home made after the runner was paired is not the one purlis made for it, so none of it is

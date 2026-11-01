@@ -59,6 +59,15 @@ pub struct Asked {
     pub approved: Option<String>,
 }
 
+/// **A Grader extension a grade's plan can name** (#3236): its id, the title it gives itself, and
+/// the hosts its program can send what it is handed to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraderOffered {
+    pub id: String,
+    pub title: String,
+    pub hosts: Vec<String>,
+}
+
 /// **What the studio asks extensions with in the project at `root`, handed to `with`**: the
 /// executor, this machine's record of extensions and the project's choices, read once here for
 /// the window and the command line alike. With no config home, `None`: purlis's own alone.
@@ -77,6 +86,14 @@ pub fn with_studio<T>(
 }
 
 impl<'a> Studio<'a> {
+    /// **The routers the person turned on to read prompts on this machine** (ADR 0102 as amended
+    /// 2026-10-31), by id: none where the record cannot be read.
+    pub fn reading_prompts(&self) -> std::collections::BTreeSet<String> {
+        crate::extension::read(self.config_root, self.executor.built_in())
+            .registry
+            .reads_prompts
+    }
+
     /// **Each extension this machine approved, the project has on, and that declares
     /// `capability`**, in id order, by its manifest as it is on disk now. The fingerprint is
     /// re-taken by the executor before any program starts, as for every question.
@@ -113,6 +130,42 @@ impl<'a> Studio<'a> {
     ) -> Result<serde_json::Map<String, serde_json::Value>, String> {
         self.executor
             .studio(self.config_root, self.project, extension, ask)
+    }
+
+    /// **Each Grader the project can grade with besides purlis's own** (#3236): each extension
+    /// that declares `grader`, by its id and the title its shape gives it, for a grade's plan to
+    /// list beside purlis's.
+    pub fn graders(&self) -> Vec<GraderOffered> {
+        self.declaring(Capability::Grader)
+            .into_iter()
+            .map(|asked| GraderOffered {
+                hosts: crate::extension::studio::reachable(&asked.declared.hosts)
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+                title: asked.declared.grader.clone().unwrap_or(asked.name),
+                id: asked.id,
+            })
+            .collect()
+    }
+
+    /// **Grade `request` with the Grader extension `extension`** (protocol 4, #3236): its chats
+    /// run by `chats`, held to the plan and to `limits` ([`Executor::grade`]).
+    pub fn grade(
+        &self,
+        extension: &str,
+        request: &purlis_skills::grade::GradeRequest,
+        chats: &mut dyn purlis_skills::grade::Chats,
+        limits: Option<purlis_skills::grade::Limits>,
+    ) -> purlis_skills::grade::GradeReport {
+        self.executor.grade(
+            self.config_root,
+            self.project,
+            extension,
+            request,
+            chats,
+            limits,
+        )
     }
 
     /// **The lints of each extension that declares `skill-lint`**, to ask beside purlis's own.
@@ -784,9 +837,15 @@ pub fn ran_on_said(graded: &super::grades::Graded) -> String {
         .as_deref()
         .map(crate::skilluse::harness_title)
         .unwrap_or_else(|| "Not recorded".to_owned());
-    match &graded.model {
+    let ran_on = match &graded.model {
         Some(model) => format!("{harness} · {model}"),
         None => harness,
+    };
+    // A Grader extension's scores are its own (#3236): the record says whose they are.
+    if graded.report.grader == purlis_skills::grade::BUILT_IN {
+        ran_on
+    } else {
+        format!("{ran_on} · graded by {}", graded.report.grader)
     }
 }
 

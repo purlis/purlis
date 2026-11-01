@@ -9,7 +9,7 @@
  *
  * - **The header**: the skill's name, its skill level and its state, what it does, and its
  *   actions: Use in this chat, Edit and Grade, then a "…" menu of Rename, Move to another level,
- *   Deprecate, Archive, Open the file and Delete. A built-in skill's page says it can't be
+ *   Deprecate, Archive, Improve from runs, Open the file and Delete. A built-in skill's page says it can't be
  *   edited, moved or turned off, and offers only what it can do.
  * - **The banner**: where the skill isn't plainly on (off, left out, a change to review, an update
  *   waiting, hidden by the router, a clash, deprecated or archived), why in one sentence, and the
@@ -61,6 +61,7 @@ import {
   UNREAD,
 } from "./SkillDetails";
 import { GradesTab, TRIGGER_TESTS_FILE, type GradingGo } from "./SkillGrades";
+import { askSkillChat } from "./skillDraftAsks";
 import { SkillPinSwitch, SkillPinnedBy } from "./SkillPins";
 import { GrantPicker } from "./SkillLevelPickers";
 import {
@@ -598,9 +599,13 @@ export function SkillPage({
         align="end"
         aria-label={`More for ${name}`}
         disabledKeys={[
-          ...(level === null ? ["rename", "move", "deprecate", "archive", "delete"] : []),
+          ...(level === null
+            ? ["improve", "rename", "move", "deprecate", "archive", "delete"]
+            : []),
           ...(state === "archived" ? ["deprecate"] : []),
           ...("reason" in file || onOpenView === undefined ? ["file"] : []),
+          // Its draft would not land in the skill: the Grades tab holds its chat offers alike.
+          ...("reason" in file ? ["improve"] : []),
         ]}
         onAction={(key) => {
           if (key === "file" && "place" in file)
@@ -609,7 +614,8 @@ export function SkillPage({
               pieceFileTitle(file.place, file.path),
             );
           if (level === null) return;
-          if (key === "rename") onRename(level);
+          if (key === "improve") askSkillChat({ plane, kind: "improve", level, name });
+          else if (key === "rename") onRename(level);
           else if (key === "move") onMove(level);
           else if (key === "delete") onDelete(level);
           else if (key === "deprecate") {
@@ -646,6 +652,18 @@ export function SkillPage({
         </MenuItem>
         <MenuItem id="archive" textValue={archiveSaid}>
           <MenuWords said={archiveSaid} under={level === null ? cannotChange : undefined} />
+        </MenuItem>
+        <MenuItem id="improve" textValue="Improve from runs…">
+          <MenuWords
+            said="Improve from runs…"
+            under={
+              level === null
+                ? cannotChange
+                : "reason" in file
+                  ? file.reason
+                  : "A chat reads its runs and grades and drafts an edit for you to accept."
+            }
+          />
         </MenuItem>
         <MenuItem id="file" textValue="Open the file">
           <MenuWords said="Open the file" under={"reason" in file ? file.reason : undefined} />

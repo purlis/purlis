@@ -956,6 +956,21 @@ impl Kubectl {
         args
     }
 
+    /// The words that tell a paired runner where the mint port is (#4207), on standard input.
+    pub fn tell_mint_port_args(&self, namespace: &str, pod: &str) -> Vec<String> {
+        let mut args = self.connect_args(namespace, pod);
+        args.push("--mint-port".to_owned());
+        args
+    }
+
+    /// The words that tell a paired runner again at a link (#4330). A runner from before them
+    /// refuses the word, so it keeps what it followed.
+    pub fn tell_mint_port_again_args(&self, namespace: &str, pod: &str) -> Vec<String> {
+        let mut args = self.tell_mint_port_args(namespace, pod);
+        args.push("--again".to_owned());
+        args
+    }
+
     /// Runs kubectl with `args`, handing it `input`, and answers what it printed, up to `most`
     /// bytes. What it says on standard error is only shown, never read to decide anything.
     pub fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
@@ -1293,6 +1308,165 @@ impl Kubectl {
     /// it, the desktop it is marked as ([`DESKTOP_ANNOTATION`]) and whether it is kept (#3819);
     /// `None` where there is none.
     pub fn claim_seen(&self, namespace: &str, name: &str) -> Result<Option<ClaimSeen>, Refused> {
+        let Some(held) = self.claim_json(namespace, name)? else {
+            return Ok(None);
+        };
+        let text = |path: &str| {
+            held.pointer(path)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        };
+        Ok(Some(ClaimSeen {
+            uid: text("/metadata/uid").unwrap_or_default(),
+            requester: text("/spec/requester"),
+            desktop: held
+                .pointer("/metadata/annotations")
+                .and_then(|marks| marks.get(DESKTOP_ANNOTATION))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+            kept: held.pointer("/spec/kept") == Some(&serde_json::Value::Bool(true)),
+        }))
+    }
+
+    /// **`status.mint` of the Claim `namespace`/`name`** (#4207), `(address, operatorKey)`, where
+    /// the operator wrote it.
+    pub fn claim_mint(
+        &self,
+        namespace: &str,
+        name: &str,
+    ) -> Result<Option<(String, String)>, Refused> {
+        let held = self.claim_json(namespace, name)?;
+        let text = |path: &str| {
+            held.as_ref()?
+                .pointer(path)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        };
+        Ok(text("/status/mint/address").zip(text("/status/mint/operatorKey")))
+    }
+
+    /// **Adds `repos` to `Claim.spec.forge.repos`** (#4207), as the Claim's requester, whose word the
+    /// cluster's policy holds it to; what the Claim names already stays, for the runner's other
+    /// chats. Written only where it adds something, and only over the Claim as it was read, so two
+    /// chats starting at once both arrive. Refused past [`MOST_CLAIM_REPOS`].
+    pub fn add_claim_repos(
+        &self,
+        namespace: &str,
+        name: &str,
+        repos: &[String],
+    ) -> Result<(), Refused> {
+        let mut tries = CLAIM_WRITES;
+        loop {
+            tries -= 1;
+            match self.add_claim_repos_once(namespace, name, repos) {
+                Err(_) if tries > 0 => {}
+                done => return done,
+            }
+        }
+    }
+
+    fn add_claim_repos_once(
+        &self,
+        namespace: &str,
+        name: &str,
+        repos: &[String],
+    ) -> Result<(), Refused> {
+        let Some(held) = self.claim_json(namespace, name)? else {
+            return Ok(());
+        };
+        let named: Vec<String> = held
+            .pointer("/spec/forge/repos")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|repo| repo.as_str().map(str::to_owned))
+            .collect();
+        let Some(all) = repos_with(&named, repos) else {
+            return Ok(());
+        };
+        if all.len() > MOST_CLAIM_REPOS {
+            return Err(Refused::Other(format!(
+                "a claim names at most {MOST_CLAIM_REPOS} repos, so this workspace's were not added"
+            )));
+        }
+        let version = held
+            .pointer("/metadata/resourceVersion")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| Refused::Other("the claim holds no resource version".into()))?;
+        let patch = serde_json::json!({
+            "metadata": { "resourceVersion": version },
+            "spec": { "forge": { "repos": all } },
+        })
+        .to_string();
+        self.run(
+            &self.args(&[
+                "patch",
+                "claims.runners.purlis.dev",
+                name,
+                "--namespace",
+                namespace,
+                "--type=merge",
+                "--patch",
+                &patch,
+            ]),
+            None,
+            MOST_PRINTED,
+        )
+        .map(|_| ())
+    }
+
+    /// **Asks the operator to run the Claim `namespace`/`name`'s idle runner again** (#3980), where
+    /// its `Idle` condition says it is suspended: the condition's own time is the word, so this
+    /// says nothing of any later suspension. Nothing is written otherwise.
+    ///
+    /// Answers whether this word brings its runner back (#4403, [`suspended_for_being_idle`]).
+    pub fn run_again_if_idle(&self, namespace: &str, name: &str) -> Result<bool, Refused> {
+        let Some(held) = self.claim_json(namespace, name)? else {
+            return Ok(false);
+        };
+        let Some(since) = idle_since(&held) else {
+            return Ok(false);
+        };
+        let comes_back = suspended_for_being_idle(&held);
+        if run_again_word(&held) == Some(since) {
+            return Ok(comes_back);
+        }
+        let patch = serde_json::json!({
+            "metadata": { "annotations": { RUN_AGAIN_ANNOTATION: since } },
+        })
+        .to_string();
+        self.run(
+            &self.args(&[
+                "patch",
+                "claims.runners.purlis.dev",
+                name,
+                "--namespace",
+                namespace,
+                "--type=merge",
+                "--patch",
+                &patch,
+            ]),
+            None,
+            MOST_PRINTED,
+        )
+        .map(|_| comes_back)
+    }
+
+    /// **What the Claim `namespace`/`name` says of its deletion** (#3981), where its operator gave
+    /// notice: when, in its words. Data, never read to decide.
+    pub fn deletion_notice(&self, namespace: &str, name: &str) -> Result<Option<String>, Refused> {
+        Ok(self
+            .claim_json(namespace, name)?
+            .as_ref()
+            .and_then(deletion_notice_of))
+    }
+
+    /// The Claim `namespace`/`name` as the cluster has it, where it does.
+    fn claim_json(
+        &self,
+        namespace: &str,
+        name: &str,
+    ) -> Result<Option<serde_json::Value>, Refused> {
         let printed = self.run(
             &self.args(&[
                 "get",
@@ -1310,23 +1484,9 @@ impl Kubectl {
         if printed.trim().is_empty() {
             return Ok(None);
         }
-        let held: serde_json::Value = serde_json::from_str(&printed)
-            .map_err(|_| Refused::Other("kubectl get did not answer JSON".into()))?;
-        let text = |path: &str| {
-            held.pointer(path)
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        };
-        Ok(Some(ClaimSeen {
-            uid: text("/metadata/uid").unwrap_or_default(),
-            requester: text("/spec/requester"),
-            desktop: held
-                .pointer("/metadata/annotations")
-                .and_then(|marks| marks.get(DESKTOP_ANNOTATION))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned),
-            kept: held.pointer("/spec/kept") == Some(&serde_json::Value::Bool(true)),
-        }))
+        serde_json::from_str(&printed)
+            .map(Some)
+            .map_err(|_| Refused::Other("kubectl get did not answer JSON".into()))
     }
 
     /// Deletes the Claim `namespace`/`name`, and with it its runner; nothing where it is gone
@@ -1582,6 +1742,128 @@ pub fn pair(
     })
 }
 
+/// How many times a Claim's repos are written, where another write came first.
+const CLAIM_WRITES: u32 = 3;
+
+/// How many times, a second apart, a Claim's status is read for where to ask, where its Pool opts in.
+const MINT_READS: u32 = 5;
+
+/// The most repos a Claim's `spec.forge.repos` holds: what its definition allows.
+pub const MOST_CLAIM_REPOS: usize = 256;
+
+/// `named` with `adding`, in order and each once, ignoring case as GitHub does; `None` where that
+/// adds nothing.
+pub fn repos_with(named: &[String], adding: &[String]) -> Option<Vec<String>> {
+    let mut all = named.to_vec();
+    for repo in adding {
+        if !all.iter().any(|held| held.eq_ignore_ascii_case(repo)) {
+            all.push(repo.clone());
+        }
+    }
+    (all.len() > named.len()).then(|| {
+        all.sort();
+        all
+    })
+}
+
+/// **What a runner is told of the port** (#4207): the address a Claim's status says, and the key
+/// this desktop pinned, whatever key that status says. A status is nobody's signed word, so it can
+/// only send a runner to an address that then fails its handshake. During a roll this desktop has
+/// followed already, the runner's mints go to its desktop until the port shows that key.
+pub fn told_of_the_port(
+    claimed: &Claimed,
+    pin: &PoolPin,
+    address: String,
+) -> crate::forge::mintport::Told {
+    crate::forge::mintport::Told {
+        namespace: claimed.namespace.clone(),
+        claim: claimed.name.clone(),
+        cluster: pin.cluster.clone(),
+        address,
+        keys: vec![pin.key.spelled()],
+        left: Vec::new(),
+    }
+}
+
+/// **Tells the runner of `paired` where the mint port is** (#4207), where the Claim's status says
+/// ([`told_of_the_port`]), waiting a little where its Pool opts in and the status is yet to say. It
+/// decides nothing: the runner goes on asking this desktop, with the person's Ask, wherever it was
+/// not told.
+pub fn tell_the_mint_port(
+    kubectl: &Kubectl,
+    pin: &PoolPin,
+    pool: &str,
+    paired: &Paired,
+    every: std::time::Duration,
+) -> Result<(), Refused> {
+    let Claimed {
+        namespace, name, ..
+    } = &paired.claimed;
+    let seen = kubectl.pool(pool)?;
+    if !seen.mints_in_cluster {
+        return Ok(());
+    }
+    let mut reads = MINT_READS;
+    let (address, _says_of_its_key) = loop {
+        reads -= 1;
+        match kubectl.claim_mint(namespace, name)? {
+            Some(said) => break said,
+            None if reads == 0 => {
+                return Err(Refused::Other(
+                    "the claim's status does not say where to ask for a token".to_owned(),
+                ));
+            }
+            None => std::thread::sleep(every),
+        }
+    };
+    let told = told_of_the_port(&paired.claimed, pin, address);
+    let line = serde_json::to_string(&told).map_err(|why| Refused::Other(why.to_string()))?;
+    kubectl
+        .run(
+            &kubectl.tell_mint_port_args(&paired.vouched.runner_namespace, &paired.vouched.pod),
+            Some(&format!("{line}\n")),
+            crate::runnerlink::MOST_LINE,
+        )
+        .map(|_| ())
+}
+
+/// **What to tell the runner of `claimed` at a link** (#4330), from one read of its Pool and Claim:
+/// `None` where the Pool does not opt in or the status is yet to say, so the next link asks again.
+pub fn to_tell_at_a_link(
+    seen: &PoolSeen,
+    kubectl: &Kubectl,
+    pin: &PoolPin,
+    claimed: &Claimed,
+) -> Result<Option<crate::forge::mintport::Told>, Refused> {
+    if !seen.mints_in_cluster {
+        return Ok(None);
+    }
+    Ok(kubectl
+        .claim_mint(&claimed.namespace, &claimed.name)?
+        .map(|(address, _says_of_its_key)| told_of_the_port(claimed, pin, address)))
+}
+
+/// What a runner prints once a word at a link settled it (#4330).
+pub const TOLD_SETTLED: &str = "settled";
+
+/// **Tells the runner in `pod` again** (#4330, [`crate::forge::mintport::tell_again`]): true where it
+/// says that settled it, so this desktop need not say it again.
+pub fn tell_again(
+    kubectl: &Kubectl,
+    runner_namespace: &str,
+    pod: &str,
+    told: &crate::forge::mintport::Told,
+) -> Result<bool, Refused> {
+    let line = serde_json::to_string(told).map_err(|why| Refused::Other(why.to_string()))?;
+    kubectl
+        .run(
+            &kubectl.tell_mint_port_again_args(runner_namespace, pod),
+            Some(&format!("{line}\n")),
+            crate::runnerlink::MOST_LINE,
+        )
+        .map(|said| said.trim() == TOLD_SETTLED)
+}
+
 /// **Before every link**: the operator still vouches for the pod and key `paired` was paired
 /// with. Another pod or key is refused as a changed key; no statement at all is refused too. A
 /// kept claim's pod made again under its name, answering the key it was paired with, is the
@@ -1709,6 +1991,19 @@ pub fn claim_and_pair(
     };
     let paired = vouched_within(kubectl, pin, &claimed, patience, every)
         .and_then(|vouched| pair(kubectl, &claimed, &vouched, desktop));
+    if let Ok(paired) = &paired
+        && let Err(why) = tell_the_mint_port(
+            kubectl,
+            pin,
+            pool,
+            paired,
+            std::time::Duration::from_secs(1),
+        )
+    {
+        tracing::warn!(
+            "purlis: the runner of pool {pool} will ask this desktop for its tokens: {why}"
+        );
+    }
     paired.map_err(|why| match kubectl.delete_claim(namespace, name) {
         Ok(()) => why,
         Err(left) => Refused::Other(format!(
@@ -1748,6 +2043,65 @@ fn vouched_within(
         std::thread::sleep(every);
     }
 }
+
+/// What a desktop writes on a Claim to run its idle runner again (#3980):
+/// `operator/src/lifecycle.rs` reads it.
+pub const RUN_AGAIN_ANNOTATION: &str = "runners.purlis.dev/run-again";
+
+/// When the Claim `held` says its runner was suspended for being idle, where it says so.
+pub fn idle_since(held: &serde_json::Value) -> Option<&str> {
+    held.pointer("/status/conditions")?
+        .as_array()?
+        .iter()
+        .find(|one| {
+            one.get("type").and_then(serde_json::Value::as_str) == Some("Idle")
+                && one.get("status").and_then(serde_json::Value::as_str) == Some("True")
+        })?
+        .get("lastTransitionTime")?
+        .as_str()
+}
+
+/// The word its desktop wrote on the Claim `held` to run its idle runner again, where it did.
+fn run_again_word(held: &serde_json::Value) -> Option<&str> {
+    held.pointer("/metadata/annotations")?
+        .get(RUN_AGAIN_ANNOTATION)?
+        .as_str()
+}
+
+/// **Whether the Claim `held`'s runner is suspended for being idle and nothing else** (#4403), so
+/// the word to run it again brings it back and a start waits for it. An `Idle` kept while `Ready`
+/// says something else, an object in the way or its pool deleted, is not acted on, however long a
+/// start waited. The word itself says nothing later: it stays on the Claim after the runner runs.
+pub fn suspended_for_being_idle(held: &serde_json::Value) -> bool {
+    idle_since(held).is_some()
+        && held
+            .pointer("/status/conditions")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|conditions| {
+                conditions.iter().any(|one| {
+                    one.get("type").and_then(serde_json::Value::as_str) == Some("Ready")
+                        && one.get("reason").and_then(serde_json::Value::as_str) == Some("Idle")
+                })
+            })
+}
+
+/// What the Claim `held`'s `DeletionNotice` condition says, where it is `True` (#3981).
+pub fn deletion_notice_of(held: &serde_json::Value) -> Option<String> {
+    let notice = held
+        .pointer("/status/conditions")?
+        .as_array()?
+        .iter()
+        .find(|one| {
+            one.get("type").and_then(serde_json::Value::as_str) == Some("DeletionNotice")
+                && one.get("status").and_then(serde_json::Value::as_str) == Some("True")
+        })?;
+    notice
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .map(crate::shown::short)
+}
+
+pub mod idle;
 
 #[cfg(test)]
 pub(crate) mod tests;

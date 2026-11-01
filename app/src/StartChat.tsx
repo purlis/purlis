@@ -18,6 +18,7 @@ import { ApprovalSentence } from "./ProfileApproval";
 import {
   commands,
   type PlaneId,
+  type PoolLimitOffer,
   type ProfileRow,
   type StartOptions,
   type WithoutSandbox,
@@ -35,6 +36,7 @@ import { ListBox, ListOption } from "./ui/list/List";
 import { FILTERED_FROM, ListFilter, noMatchSaid, type Noun } from "./ui/list/ListFilter";
 import { RowLabel, RowLead, RowTrail } from "./ui/list/Row";
 import { reachableWords, startAnswer } from "./StartChatApproval";
+import { RaiseLimit } from "./RaiseLimit";
 
 /**
  * The key of the row that stands for "no persona at all".
@@ -50,6 +52,8 @@ const PERSONAS: Noun = { one: "persona", many: "personas" };
 
 /** The fixed height of the dialog, list beside details: whatever the list holds (R4). */
 const HEIGHT = 620;
+/** How long a start runs before the dialog says what it waits for. */
+const SAYS_THE_HOST_AFTER_MS = 3000;
 
 /**
  * What a new chat asks before anything runs.
@@ -152,6 +156,9 @@ export function StartChat({
   trouble,
   signIn,
   onShowSignIn,
+  limitOffer,
+  limitProfile,
+  onRaiseLimit,
   onStart,
   onApprove,
   onInstall,
@@ -183,6 +190,12 @@ export function StartChat({
   /** Opens the Inbox, where the Ask to sign the profile in waits. Absent, the refusal's own
    *  words say where. */
   onShowSignIn?: () => void;
+  /** The limit the last attempt was refused on, offered to raise (spec #4275). */
+  limitOffer?: PoolLimitOffer;
+  /** The profile it was refused on: it is offered only while that one is picked. */
+  limitProfile?: string;
+  /** Saves the values to the pool: `true` where they were, and the start then goes again. */
+  onRaiseLimit?: (values: ReadonlyArray<readonly [string, number]>) => Promise<boolean>;
   /** `label` is the Name field, or `null` when it was left empty. `newBranch` is the branch
    *  box, and `false` when there is none to tick. `withoutSandbox` is the person's opt-out for
    *  this chat, with the reason typed, or `null` for a sandboxed start. */
@@ -315,6 +328,16 @@ export function StartChat({
   // Whether it was left with nothing started — Escape or Cancel. Only then does the keyboard go
   // back to what had it: a start hands it to the new chat, and Settings or the install shell
   // take it where they open.
+  // A start that takes a moment says what it waits for, for as long as it waits (#4264).
+  const [hostSlow, setHostSlow] = useState(false);
+  useEffect(() => {
+    if (!starting) return;
+    const after = window.setTimeout(() => setHostSlow(true), SAYS_THE_HOST_AFTER_MS);
+    return () => {
+      window.clearTimeout(after);
+      setHostSlow(false);
+    };
+  }, [starting]);
   const cancelled = useRef(false);
   const leave = () => {
     cancelled.current = true;
@@ -334,7 +357,16 @@ export function StartChat({
   const unavailable = (approves ? !picked : !profile) || blockedByPolicy;
   // What ⏎ from the list or the cards and ⌘⏎ from anywhere may start: a plain start, never an
   // approval or a start without the sandbox (ADR 0097 §6), and nothing while one is running.
-  const byKey = !approves && withoutSandbox === null && !unavailable && !starting;
+  const [savingLimit, setSavingLimit] = useState(false);
+  const byKey = !approves && withoutSandbox === null && !unavailable && !starting && !savingLimit;
+  // Raising a limit starts the chat too, so it is offered only where that is a plain start of the
+  // profile it was refused on: never an approval or a start without the sandbox (ADR 0097 §6).
+  const raises =
+    limitProfile !== undefined &&
+    picked?.name === limitProfile &&
+    !approves &&
+    withoutSandbox === null &&
+    !unavailable;
 
   // The list, and whether the picked row is to be brought into view after this render (R22).
   const list = useRef<HTMLDivElement>(null);
@@ -434,6 +466,15 @@ export function StartChat({
     else box.removeAttribute("aria-activedescendant");
   });
 
+  // A picker cancelled while a limit saves starts nothing after it.
+  const open = useRef(true);
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
+
   // A refusal is said where the eye is: the details' top, brought into view (B2 of the review).
   const told = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -482,7 +523,11 @@ export function StartChat({
       // What Start will do: the persona on the harness (R33). No profile icon beside an
       // approval (#2922): it is the grant's own look, and a mark there could pass for purlis's.
       summary={
-        picked === undefined ? undefined : (
+        hostSlow ? (
+          <span className="start-chat-summary" role="status" data-testid="start-chat-host">
+            Starting the session host…
+          </span>
+        ) : picked === undefined ? undefined : (
           <span className="start-chat-summary" data-testid="start-chat-summary">
             {who} on{" "}
             {!approves && (
@@ -497,7 +542,7 @@ export function StartChat({
       main={startAnswer({
         approves,
         withoutSandbox: withoutSandbox !== null,
-        starting,
+        starting: starting || savingLimit,
         unavailable,
         reach,
         onPress: start,
@@ -603,6 +648,22 @@ export function StartChat({
                 Sign in {signIn} waits in the Inbox.{" "}
                 <Button onPress={onShowSignIn}>Go to the Inbox</Button>
               </p>
+            )}
+            {trouble && limitOffer !== undefined && onRaiseLimit && raises && (
+              <RaiseLimit
+                // A later refusal's suggestion is a form afresh.
+                key={limitOffer.hits.map((hit) => `${hit.key}:${hit.needed}`).join()}
+                offer={limitOffer}
+                action="Save to the pool and start"
+                working={savingLimit ? "Saving…" : starting ? "Starting…" : undefined}
+                onApply={(values) => {
+                  setSavingLimit(true);
+                  void onRaiseLimit(values).then((saved) => {
+                    setSavingLimit(false);
+                    if (saved && open.current) start();
+                  });
+                }}
+              />
             )}
             <ApprovalSentence row={picked} />
             {/* What the picked harness lacks, said once by Start: the first chat on it here

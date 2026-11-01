@@ -40,12 +40,13 @@ metrics:
   # -- Who may scrape the operator's metrics (#3737) on its Service
   # purlis-cluster-operator-metrics, as a NetworkPolicy's `from` peers, such as
   # `[{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}}]`. The
-  # NetworkPolicy purlis-cluster-operator lets nothing else reach the operator's pod: left empty,
+  # NetworkPolicy purlis-cluster-operator lets nothing else reach its metrics port: left empty,
   # nothing may scrape it.
   allowFrom: []
 
 forge:
   # -- The Secrets in the release's namespace holding a GitHub App's key (#4204), which a Pool
   # names as spec.forge.appKeySecretRef. The Role purlis-forge-key-reader lets the operator `get`
-  # these and no other Secret. Left empty, there is no such Role and it may read no Secret.
+  # these and no other Secret, and its mint port opens to runner namespaces. Left empty, there is
+  # no such Role, it may read no Secret and nothing reaches that port.
   keySecretNames: []

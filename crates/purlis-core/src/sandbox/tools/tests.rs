@@ -1250,3 +1250,122 @@ fn a_shim_with_no_app_names_its_program_where_its_own_shell_can_and_runs_it_wher
         assert!(out.stdout.starts_with(b"\xfd7zXZ\0"), "{out:?}");
     }
 }
+
+// A tool whose program is not in a runner's image (#4354)
+
+fn gh() -> Tool {
+    Tool::one("gh", "forge", "GH_TOKEN", Handed::Env, "token")
+}
+
+/// `gh` resolved in the search `dirs`, as a start on a runner of the pool's image or not.
+fn resolved_for_a_start(root: &Path, dirs: &[PathBuf], on_a_runner: bool) -> super::Resolved {
+    let mut resolved = resolve_beside(root, "devops", &[gh()], &Locks::none(), dirs, &[], &[])
+        .expect("a persona with a tool");
+    if on_a_runner {
+        resolved.refuse_what_is_absent(Some("team/runner@sha256:ab"));
+    }
+    resolved
+}
+
+#[test]
+fn the_sentence_names_the_program_and_the_pools_image() {
+    let said = super::not_in_the_image("devops", "gh", Some("team/runner@sha256:ab"));
+    assert!(said.starts_with("gh is devops's tool"), "{said}");
+    assert!(said.contains("team/runner@sha256:ab"), "{said}");
+    assert!(said.contains("has no gh"), "{said}");
+    let unnamed = super::not_in_the_image("devops", "glab", None);
+    assert!(
+        unnamed.contains("this pool's image has no glab"),
+        "{unnamed}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_program_nowhere_is_absent_and_one_only_where_a_chat_writes_is_not() {
+    let base = outside_temp("absent");
+    let (root, bin) = (base.join("project"), base.join("elsewhere"));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&bin).unwrap();
+    let nowhere = resolved_for_a_start(&root, std::slice::from_ref(&bin), false);
+    assert_eq!(nowhere.absent, ["gh"]);
+    assert!(nowhere.ready.is_empty());
+
+    // Planted where a chat writes: not the image's want of it, and never a shim saying so.
+    let planted = root.join("bin");
+    std::fs::create_dir_all(&planted).unwrap();
+    program(&planted, "gh");
+    let held = resolved_for_a_start(&root, std::slice::from_ref(&planted), true);
+    assert!(held.absent.is_empty(), "{:?}", held.absent);
+    assert!(held.refusing.is_empty());
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[cfg(unix)]
+#[test]
+fn on_a_runner_the_tools_name_says_why_and_fails_as_a_missing_program() {
+    let base = outside_temp("refusing");
+    let (root, bin) = (base.join("project"), base.join("elsewhere"));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&bin).unwrap();
+    let resolved = resolved_for_a_start(&root, std::slice::from_ref(&bin), true);
+    let written = resolved
+        .write(Path::new("/usr/local/bin/purlis"))
+        .expect("written")
+        .expect("a shim, though no tool is ready");
+    let out = crate::forklock::output(
+        std::process::Command::new(written.bin.join("gh")).arg("--version"),
+    )
+    .expect("the shim runs");
+    assert_eq!(out.status.code(), Some(127));
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(said.contains("has no gh"), "{said}");
+    assert!(said.contains("team/runner@sha256:ab"), "{said}");
+
+    // A later start with the program runs it: the refusal is gone with its shim.
+    program(&bin, "gh");
+    let later = resolved_for_a_start(&root, std::slice::from_ref(&bin), true);
+    assert!(later.refusing.is_empty());
+    later
+        .write(Path::new("/usr/local/bin/purlis"))
+        .expect("written");
+    let shim = std::fs::read_to_string(written.bin.join("gh")).expect("its shim");
+    assert!(!shim.contains("has no gh"), "{shim}");
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[cfg(unix)]
+#[test]
+fn off_a_runner_a_missing_program_writes_no_shim() {
+    let base = outside_temp("own-machine");
+    let (root, bin) = (base.join("project"), base.join("elsewhere"));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&bin).unwrap();
+    let resolved = resolved_for_a_start(&root, std::slice::from_ref(&bin), false);
+    assert_eq!(
+        resolved
+            .write(Path::new("/usr/local/bin/purlis"))
+            .expect("written"),
+        None
+    );
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_tool_with_a_program_or_not_listed_is_not_absent_from_the_image() {
+    let found = outside_temp("asked");
+    std::fs::create_dir_all(&found).unwrap();
+    super::SEARCH_HERE.with(|here| *here.borrow_mut() = Some(vec![found.clone()]));
+    let asked = |listed: &[Tool]| super::absent_from_the_image(&[], listed, "devops", "gh");
+    assert!(asked(&[gh()]).expect("refused").contains("has no gh"));
+    assert_eq!(asked(&[]), None, "not declared: `declared` says so");
+    program(&found, "gh");
+    assert_eq!(
+        asked(&[gh()]),
+        None,
+        "there, and not armed: `declared` says why"
+    );
+    super::SEARCH_HERE.with(|here| *here.borrow_mut() = None);
+    let _ = std::fs::remove_dir_all(found);
+}

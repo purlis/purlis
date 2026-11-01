@@ -450,14 +450,21 @@ pub(crate) fn fetch_workspace(
     root: &Path,
     workspace: &str,
     pool: &str,
+    beside: bool,
 ) -> Vec<String> {
     let mut failed = Vec::new();
     for rel in clones_of(root, workspace) {
         let fetched = scratch().and_then(|scratch| {
-            codelink::fetch_back(&root.join(&rel), pool, scratch.path(), |have, into| {
+            let through = |have, into: &Path| {
                 link.fetch_code(project, &rel, have, into)
                     .map(|(heads, wrote)| (core_refs(heads), wrote))
-            })
+            };
+            let repo = root.join(&rel);
+            if beside {
+                codelink::fetch_back_beside(&repo, pool, scratch.path(), through)
+            } else {
+                codelink::fetch_back(&repo, pool, scratch.path(), through)
+            }
             .map_err(|why| why.to_string())
         });
         if let Err(why) = fetched {

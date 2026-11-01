@@ -770,26 +770,6 @@ fn apart_sets(carried: &[State]) -> Vec<Vec<State>> {
     sets
 }
 
-/// **The parts held to their reading floor in every tint** (#4250), by family and part: the title
-/// bar's waiting count is a wash the bar's own ground shows through, and a tint keeps a ground's
-/// luminance but not what it shows through a wash. A recipe of a theme's own may turn that ground.
-const HELD_IN_TINTS: &[(&str, &str)] = &[("titlebar", "count")];
-
-fn held_in_tints(family: &Family, part: &str) -> bool {
-    HELD_IN_TINTS.contains(&(family.name, part))
-}
-
-/// Whether a rule colours a part of [`HELD_IN_TINTS`], so the tints are worth building for it.
-fn colours_a_part_held_in_tints(rules: &[Rule]) -> bool {
-    rules.iter().any(|rule| {
-        rule.family
-            .parts
-            .get(rule.part)
-            .is_some_and(|part| held_in_tints(rule.family, part.name))
-            && (rule.values.contains_key(&Prop::Fill) || rule.values.contains_key(&Prop::Text))
-    })
-}
-
 /// **The grounds a part's words are read on, where they are fewer than its family's** (#3254), by
 /// family and part: what the window draws the part on, not every ground the family stands on.
 #[cfg(test)]
@@ -948,6 +928,9 @@ mod rest_kept_tests;
 #[path = "part_fills_tests.rs"]
 mod part_fills_tests;
 
+#[cfg(test)]
+#[path = "see_through_tints_tests.rs"]
+mod see_through_tints_tests;
 #[cfg(test)]
 #[path = "surface_grounds_tests.rs"]
 mod surface_grounds_tests;
@@ -2517,6 +2500,7 @@ fn floor_of(family: &Family, part: &Part) -> f64 {
 /// nothing. Its line at rest is a hairline the token floors hold, and so is that same line in a
 /// state that does not change it; the grip, wider than that line, is then read on the grounds.
 fn faint_mark(
+    margin: f64,
     theme: &ResolvedTheme,
     rules: &[Rule],
     family: &Family,
@@ -2554,7 +2538,7 @@ fn faint_mark(
             look.marks[0]
         };
         if let Some(ratio) = lowest(theme, &grounds(theme, family), on, look.marks[at])
-            && ratio < floor
+            && ratio < floor + margin
         {
             return Some((
                 format!(
@@ -2571,6 +2555,7 @@ fn faint_mark(
 /// **Whether a tracked family's fill is lost on its track** (#3674): the fill, a mark, below 3:1
 /// on the track as it stands on each of the family's grounds (WCAG 1.4.11).
 fn lost_on_track(
+    margin: f64,
     theme: &ResolvedTheme,
     on: &[String],
     family: &Family,
@@ -2579,7 +2564,7 @@ fn lost_on_track(
 ) -> Option<(String, Option<f64>)> {
     let floor = theme.least.floor(3.0);
     let ratio = lowest(theme, on, look.marks[track.track], look.marks[track.fill])?;
-    (ratio < floor).then(|| {
+    (ratio < floor + margin).then(|| {
         (
             format!(
                 "the {}'s mark contrasts {floor}:1 with its {}",
@@ -2648,7 +2633,52 @@ fn edge(rules: &[Rule], family: &Family, variant: &str, look: &Drawn) -> Option<
 /// 4.5:1 and its icon at 3:1 on its fill, and a border that is the part's only edge at 3:1, or,
 /// while `states` hold [`State::Invalid`], the edge that says a value is refused (#3110), on any
 /// fill; with more contrast asked for, each raised as [`super::Least::floor`] raises it (#2925).
+/// [`unreadable_by`], at the floors themselves.
 fn unreadable(
+    theme: &ResolvedTheme,
+    on: &[String],
+    rules: &[Rule],
+    family: &Family,
+    variant: &str,
+    states: &[State],
+    look: &Drawn,
+) -> Option<(String, Option<f64>)> {
+    unreadable_by(0.0, theme, on, rules, family, variant, states, look)
+}
+
+/// **Parts drawn inside their root on an opaque ground of their own**, so the root's fill is not
+/// under them: a chip's count, on the bar's ground in the count's shape (`titlebar.css`, D-3345-3).
+const ON_A_GROUND_OF_THEIR_OWN: &[(&str, &str)] = &[("titlebar", "count")];
+
+/// **What part `at` is laid on, as drawn** (#3303): the root's own fill over the family's grounds
+/// `on`, so a see-through part fill is measured where it is. A part with no ground of its own
+/// reads the root's fill itself, and one drawn around the root, on a ground of its own or on its
+/// variant's stands on `on` alone.
+fn under_part(
+    theme: &ResolvedTheme,
+    on: &[String],
+    family: &Family,
+    at: usize,
+    variant: &str,
+    look: &Drawn,
+) -> Vec<String> {
+    let name = family.parts[at].name;
+    let ground = look.grounds[at];
+    if at == 0
+        || ground == look.fill
+        || family.around.contains(&name)
+        || ON_A_GROUND_OF_THEIR_OWN.contains(&(family.name, name))
+        || variant_ground(family, at, variant) == Some(ground)
+    {
+        return on.to_vec();
+    }
+    laid_over(theme, look.fill, on)
+}
+
+/// **What a look breaks of the reading floors, or comes within `margin` of breaking**.
+#[allow(clippy::too_many_arguments)]
+fn unreadable_by(
+    margin: f64,
     theme: &ResolvedTheme,
     on: &[String],
     rules: &[Rule],
@@ -2664,8 +2694,9 @@ fn unreadable(
         }
         // With more contrast asked for, the reading floors are raised (#2925).
         let floor = theme.least.floor(floor_of(family, part));
-        if let Some(ratio) = lowest(theme, on, look.grounds[at], look.words[at])
-            && ratio < floor
+        let under = under_part(theme, on, family, at, variant, look);
+        if let Some(ratio) = lowest(theme, &under, look.grounds[at], look.words[at])
+            && ratio < floor + margin
         {
             let what = if is_mark(family, part) {
                 "marks"
@@ -2681,6 +2712,21 @@ fn unreadable(
             ));
         }
     }
+    // The plain activity count stays told from the hot one (#3098): the floors hold its default
+    // pill apart, and a rule that brings it near draws that default.
+    if let Some(count) = plain_count_at(family)
+        && alike(
+            theme,
+            look.grounds[count],
+            super::floors::HOT_COUNT,
+            super::floors::HOT_COUNT_APART,
+        )
+    {
+        return Some((
+            "the plain count is told apart from the hot count".to_owned(),
+            None,
+        ));
+    }
     // A border is the part's edge where its fill is not told from what it is drawn on, and a
     // refused box's edge is what says so at a glance, whatever its fill.
     if let Some(border) = edge(rules, family, variant, look) {
@@ -2695,7 +2741,7 @@ fn unreadable(
         let floor = theme.least.floor(3.0);
         if on_its_ground
             && let Some(ratio) = lowest(theme, on, look.fill, border)
-            && ratio < floor
+            && ratio < floor + margin
         {
             return Some((
                 format!("the root's border contrasts {floor}:1 with its fill"),
@@ -2704,6 +2750,13 @@ fn unreadable(
         }
     }
     None
+}
+
+/// Where the activity family holds its plain count, in the family that has one.
+fn plain_count_at(family: &Family) -> Option<usize> {
+    (family.name == "activity")
+        .then(|| family.parts.iter().position(|part| part.name == "count"))
+        .flatten()
 }
 
 /// The consent floor `variant` of `family` breaks in `state`, as `theme` draws it (as written,
@@ -2886,18 +2939,25 @@ fn held_from(
             // needs none.
             && (colours(theme, &rules, family) || every_tint())
     });
-    if (consents || colours_a_part_held_in_tints(&rules)) && !theme.tint.tabs().is_empty() {
-        drawn_in.extend(
-            theme
-                .tint
-                .hues
-                .iter()
-                .map(|one| tint::tinted(theme, one.name)),
-        );
-        drawn_in.extend((0..360).map(|degree| tint::tinted_at(theme, f64::from(degree))));
+    if consents && !theme.tint.tabs().is_empty() {
+        drawn_in.extend(every_tinted(theme));
     }
     #[cfg(test)]
     DRAWN_IN.with(|it| it.set(drawn_in.len()));
+    // Built once, for the first family that shows a tint through a see-through colour (#4257),
+    // and the whole of them only for a look a coarse reading finds near a floor.
+    let coarse_tints = std::cell::OnceCell::new();
+    let coarse_tints =
+        || -> &[ResolvedTheme] { coarse_tints.get_or_init(|| coarsely_tinted(theme)) };
+    let tints = std::cell::OnceCell::new();
+    let built_for_consent = &drawn_in[1..];
+    let tints = || -> &[ResolvedTheme] {
+        if built_for_consent.is_empty() {
+            tints.get_or_init(|| every_tinted(theme))
+        } else {
+            built_for_consent
+        }
+    };
     for family in MANIFEST {
         if !rules.iter().any(|rule| std::ptr::eq(rule.family, family)) {
             continue;
@@ -2924,7 +2984,6 @@ fn held_from(
                 });
             }
         }
-        let tints: &[ResolvedTheme] = &drawn_in;
         // **A family whose rules set no colour is measured as written alone** (#2912): its
         // consent variants are drawn in the family's own colours in every tint, which the
         // token-level floors hold in each tint (`floors.rs`, #2526), and what the theme sets (an
@@ -2937,24 +2996,34 @@ fn held_from(
         };
         // At rest and in each state the family names but disabled: a disabled control is
         // exempt, as WCAG has it, and cannot be answered.
-        let singles: Vec<Vec<State>> = std::iter::once(Vec::new())
-            .chain(states_of(family).into_iter().map(|one| vec![one]))
-            .collect();
+        let singles = singles_of(family);
         let mut held = Held {
             family,
             rules: &mut rules,
             fell: &mut fell,
+            margin: 0.0,
         };
         // Held again until no fallback is written: a fallback changes how a state draws, so
         // whatever was measured against that state before is measured against what it draws
         // now. It ends, since each round that writes one names a part that had not fallen.
         loop {
             let written = held.rules.len();
+            // What shows a tint through it is read in the tints too (#4257): coarsely, and at
+            // every degree where that comes near a floor.
+            let coarse: &[ResolvedTheme] = if shows_through(theme, held.rules, family) {
+                coarse_tints()
+            } else {
+                &[]
+            };
             for states in &singles {
-                held.readable(theme, states);
-                held.readable_in_tints(tints, states);
+                held.readable(theme, coarse, tints, states);
             }
             held.apart(theme);
+            if held.apart_near(coarse) {
+                for one in tints() {
+                    held.apart(one);
+                }
+            }
             for states in &singles {
                 held.consented(drawn_in, states);
             }
@@ -2981,8 +3050,7 @@ fn held_from(
                     break;
                 }
                 for states in &next {
-                    held.readable(theme, states);
-                    held.readable_in_tints(tints, states);
+                    held.readable(theme, coarse, tints, states);
                     held.consented(drawn_in, states);
                 }
             }
@@ -2997,6 +3065,112 @@ fn held_from(
     #[cfg(test)]
     DRAWN_IN.with(|it| it.set(drawn_in.len()));
     (rules, fell)
+}
+
+/// **`theme` in every tint a workspace can give it**: each of its own colours and every whole
+/// degree (#2526). None for a theme that is not tinted.
+fn every_tinted(theme: &ResolvedTheme) -> Vec<ResolvedTheme> {
+    if theme.tint.tabs().is_empty() {
+        return Vec::new();
+    }
+    theme
+        .tint
+        .hues
+        .iter()
+        .map(|one| tint::tinted(theme, one.name))
+        .chain((0..360).map(|degree| tint::tinted_at(theme, f64::from(degree))))
+        .collect()
+}
+
+/// The looks a family is first read in: at rest and in each state it names but disabled, which is
+/// exempt, as WCAG has it, and cannot be answered.
+fn singles_of(family: &Family) -> Vec<Vec<State>> {
+    std::iter::once(Vec::new())
+        .chain(states_of(family).into_iter().map(|one| vec![one]))
+        .collect()
+}
+
+/// **How near a floor a coarse reading comes before a look is read at every degree** (#4257): more
+/// than the most a look's lowest reading at every degree was found under its lowest at the coarse
+/// tints (`see_through_tints_tests.rs`).
+pub(super) const NEAR_A_FLOOR: f64 = 0.1;
+
+/// The degrees between coarse readings.
+pub(super) const COARSE_DEGREES: usize = 10;
+
+/// **`theme` in the tints a look is first read in**: each of its own colours, and every
+/// [`COARSE_DEGREES`] degrees.
+fn coarsely_tinted(theme: &ResolvedTheme) -> Vec<ResolvedTheme> {
+    if theme.tint.tabs().is_empty() {
+        return Vec::new();
+    }
+    theme
+        .tint
+        .hues
+        .iter()
+        .map(|one| tint::tinted(theme, one.name))
+        .chain(
+            (0..360)
+                .step_by(COARSE_DEGREES)
+                .map(|degree| tint::tinted_at(theme, f64::from(degree))),
+        )
+        .collect()
+}
+
+/// **Whether a look of `family` the theme changed draws a see-through colour** (#4257). A tint
+/// keeps each token's luminance, so opaque colours read about the same in every tint; what is
+/// under a see-through one comes through turned, and the contrast moves. Asked of every colour
+/// the floors read: words, fills, edges, marks and tracks, and the grounds the family stands on,
+/// at rest, in each state and in each set of states that hold at once.
+fn shows_through(theme: &ResolvedTheme, rules: &[Rule], family: &Family) -> bool {
+    let see_through = |token: &str| hex(theme, token).is_some_and(|one| !is_opaque(one));
+    let ours = |rule: &&Rule| std::ptr::eq(rule.family, family) && !rule.fallback;
+    if !rules.iter().any(|rule| ours(&rule)) {
+        return false;
+    }
+    let sets_a_see_through_colour = rules.iter().filter(ours).any(|rule| {
+        [Prop::Fill, Prop::Text, Prop::BorderColour]
+            .iter()
+            .any(|property| {
+                matches!(rule.values.get(property), Some(PartValue::Colour(token)) if see_through(token))
+            })
+    });
+    if sets_a_see_through_colour {
+        return true;
+    }
+    // A part drawn apart from the root that a rule colours, on its own default where the rule
+    // leaves one of its colours alone.
+    let apart_shows = family.parts.iter().enumerate().any(|(at, part)| {
+        let colours_it = rules.iter().filter(ours).any(|rule| {
+            rule.part == at
+                && (rule.values.contains_key(&Prop::Fill) || rule.values.contains_key(&Prop::Text))
+        });
+        colours_it
+            && drawn_apart(family, part.name).is_some_and(|carried| {
+                apart_sets(carried).iter().any(|states| {
+                    let own = apart_look_in(family.name, part.name, states);
+                    see_through(own.fill) || see_through(own.words)
+                })
+            })
+    });
+    if apart_shows {
+        return true;
+    }
+    let on_glass = family.grounds.iter().any(|one| see_through(one));
+    let sets = singles_of(family);
+    let sets = sets.into_iter().chain(combined(family)).collect::<Vec<_>>();
+    family.looks().into_iter().any(|variant| {
+        sets.iter().any(|states| {
+            let look = drawn(rules, family, variant, states);
+            look != drawn(&[], family, variant, states)
+                && (on_glass
+                    || see_through(look.fill)
+                    || see_through(look.border)
+                    || look.grounds.iter().any(|one| see_through(one))
+                    || look.words.iter().any(|one| see_through(one))
+                    || look.marks.iter().any(|one| see_through(one)))
+        })
+    })
 }
 
 #[cfg(test)]
@@ -3260,6 +3434,7 @@ fn held_on_surfaces(
                     family: surface,
                     rules: &mut *rules,
                     fell: &mut *fell,
+                    margin: 0.0,
                 }
                 .fall(
                     variant,
@@ -3283,6 +3458,7 @@ fn held_on_surfaces(
                 family: surface,
                 rules: &mut *rules,
                 fell: &mut *fell,
+                margin: 0.0,
             }
             .fall(
                 variant,
@@ -3423,81 +3599,125 @@ struct Held<'a> {
     family: &'static Family,
     rules: &'a mut Vec<Rule>,
     fell: &'a mut Vec<Fell>,
+    /// What a floor is raised by, to ask whether a reading comes near it; 0 for a hold itself.
+    margin: f64,
 }
 
 impl Held<'_> {
-    /// Each variant the theme changes while `states` hold, held to the reading floors.
-    fn readable(&mut self, theme: &ResolvedTheme, states: &[State]) {
+    /// **Each variant the theme changes while `states` hold, held to the reading floors**: as
+    /// written, in each of the `coarse` tints, and in every one of `fine` for a look a coarse
+    /// reading finds within [`NEAR_A_FLOOR`] of its floor (#4257). A look is the same in every
+    /// tint, so it is drawn once and only its colours are read again; a fall ends the reading,
+    /// and the next round reads what it drew.
+    fn readable<'t>(
+        &mut self,
+        theme: &ResolvedTheme,
+        coarse: &[ResolvedTheme],
+        fine: impl Fn() -> &'t [ResolvedTheme],
+        states: &[State],
+    ) {
         for variant in self.family.looks() {
             let look = drawn(self.rules, self.family, variant, states);
             // A refused box's edge is held whether or not the theme names its refused state: a
-            // rule at rest or in another state reaches it too (#3110).
-            if states.contains(&State::Invalid)
-                && refusal_hidden(theme, self.rules, self.family, variant, states, &look)
-            {
-                self.fall(variant, states, REFUSAL_HIDDEN.to_owned(), None);
-                // The refused default is the edge the theme already draws when the box is not
-                // refused (a danger edge at rest): then that edge draws its default too, so the
-                // two are told apart again (#3382's review, B1).
-                let redrawn = drawn(self.rules, self.family, variant, states);
-                if refusal_hidden(theme, self.rules, self.family, variant, states, &redrawn) {
-                    let valid: Vec<State> = states
-                        .iter()
-                        .copied()
-                        .filter(|one| *one != State::Invalid)
-                        .collect();
-                    self.fall(variant, &valid, REFUSAL_HIDDEN.to_owned(), None);
+            // rule at rest or in another state reaches it too (#3110). What tells it from the
+            // same box not refused is a distance and no floor, so a see-through edge is read at
+            // every degree.
+            if states.contains(&State::Invalid) {
+                let hidden = |one: &&ResolvedTheme| {
+                    refusal_hidden(one, self.rules, self.family, variant, states, &look)
+                };
+                let see_through = !coarse.is_empty()
+                    && edge(self.rules, self.family, variant, &look)
+                        .and_then(|one| hex(theme, one))
+                        .is_some_and(|one| !is_opaque(one));
+                let tints = if see_through { fine() } else { coarse };
+                if let Some(hidden_in) = std::iter::once(theme).chain(tints).find(hidden) {
+                    self.fall(variant, states, REFUSAL_HIDDEN.to_owned(), None);
+                    // The refused default is the edge the theme already draws when the box is not
+                    // refused (a danger edge at rest): then that edge draws its default too, so
+                    // the two are told apart again (#3382's review, B1).
+                    let redrawn = drawn(self.rules, self.family, variant, states);
+                    if refusal_hidden(
+                        hidden_in,
+                        self.rules,
+                        self.family,
+                        variant,
+                        states,
+                        &redrawn,
+                    ) {
+                        let valid: Vec<State> = states
+                            .iter()
+                            .copied()
+                            .filter(|one| *one != State::Invalid)
+                            .collect();
+                        self.fall(variant, &valid, REFUSAL_HIDDEN.to_owned(), None);
+                    }
+                    continue;
                 }
-                continue;
             }
             if look == drawn(&[], self.family, variant, states) {
                 continue;
             }
-            let broken = if marked(self.family).is_some() {
-                faint_mark(theme, self.rules, self.family, variant, states, &look)
-            } else {
-                let on = grounds(theme, self.family);
-                unreadable(theme, &on, self.rules, self.family, variant, states, &look).or_else(
-                    || {
-                        tracked(self.family)
-                            .and_then(|track| lost_on_track(theme, &on, self.family, track, &look))
-                    },
-                )
+            let read = |margin: f64, one: &ResolvedTheme| {
+                if marked(self.family).is_some() {
+                    faint_mark(margin, one, self.rules, self.family, variant, states, &look)
+                } else {
+                    let on = grounds(one, self.family);
+                    unreadable_by(
+                        margin,
+                        one,
+                        &on,
+                        self.rules,
+                        self.family,
+                        variant,
+                        states,
+                        &look,
+                    )
+                    .or_else(|| {
+                        tracked(self.family).and_then(|track| {
+                            lost_on_track(margin, one, &on, self.family, track, &look)
+                        })
+                    })
+                }
             };
+            let broken = read(0.0, theme).or_else(|| {
+                coarse
+                    .iter()
+                    .any(|one| read(NEAR_A_FLOOR, one).is_some())
+                    .then(|| fine().iter().find_map(|one| read(0.0, one)))
+                    .flatten()
+            });
             if let Some((floor, ratio)) = broken {
                 self.fall(variant, states, floor, ratio);
             }
         }
     }
 
-    /// **Each part of [`HELD_IN_TINTS`] the theme colours, held to its reading floor in every
-    /// drawn theme** (#4250).
-    fn readable_in_tints(&mut self, drawn_in: &[ResolvedTheme], states: &[State]) {
+    /// **Whether a part drawn apart from the root comes near a floor in the `coarse` tints**: read
+    /// on a copy, since a reading near a floor is no fall, for [`Self::apart`] at every degree.
+    fn apart_near(&self, coarse: &[ResolvedTheme]) -> bool {
         let family = self.family;
-        for (at, part) in family.parts.iter().enumerate() {
-            if !held_in_tints(family, part.name) {
-                continue;
-            }
-            for variant in family.looks() {
-                let look = drawn(self.rules, family, variant, states);
-                let own = drawn(&[], family, variant, states);
-                if look.grounds[at] == own.grounds[at] && look.words[at] == own.words[at] {
-                    continue;
-                }
-                for one in drawn_in {
-                    let floor = one.least.floor(floor_of(family, part));
-                    let on = grounds(one, family);
-                    if let Some(ratio) = lowest(one, &on, look.grounds[at], look.words[at])
-                        && ratio < floor
-                    {
-                        let said =
-                            format!("the {}'s words contrast {floor}:1 with its fill", part.name);
-                        self.fall(variant, states, said, Some(ratio));
-                        break;
-                    }
-                }
-            }
+        if coarse.is_empty()
+            || !family
+                .parts
+                .iter()
+                .any(|part| drawn_apart(family, part.name).is_some())
+        {
+            return false;
         }
+        let mut rules = self.rules.clone();
+        let mut fell = self.fell.clone();
+        let before = fell.len();
+        let mut copy = Held {
+            family,
+            rules: &mut rules,
+            fell: &mut fell,
+            margin: NEAR_A_FLOOR,
+        };
+        for one in coarse {
+            copy.apart(one);
+        }
+        fell.len() > before
     }
 
     /// Each consent variant while `states` hold, held to the consent floors in every drawn theme.
@@ -3544,7 +3764,7 @@ impl Held<'_> {
                 let set = |property| set_colour(self.rules, family, at, &states, property);
                 let (fill, words) = (set(Prop::Fill), set(Prop::Text));
                 let own = apart_look_in(family.name, part.name, &states);
-                let floor = theme.least.floor(floor_of(family, part));
+                let floor = theme.least.floor(floor_of(family, part)) + self.margin;
                 // On what it stands on by default, where the theme colours it.
                 if fill.is_some() || words.is_some() {
                     let on = apart_grounds(theme, self.rules, family, own.under);
@@ -4740,7 +4960,7 @@ fn selector(rule: &Rule, sized: bool) -> String {
     } else {
         let name = rule.family.parts[rule.part].name;
         // A toned part keeps its tone's colours whatever a theme sets (#2917): the needs-you
-        // count stays hot (R120).
+        // count stays hot (R120), drawn from its own role (#3098).
         let untoned = if TONED.contains(&(rule.family.name, name)) {
             ":not([data-tone])"
         } else {

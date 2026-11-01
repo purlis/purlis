@@ -305,7 +305,11 @@ fn a_runners_home_is_on_the_volume_its_pod_mounts_and_its_group_may_write() {
     let runner = &pod["containers"][0];
     assert_eq!(
         runner["env"],
-        json!([{ "name": "HOME", "value": upstream::RUNNER_HOME }])
+        json!([
+            { "name": "HOME", "value": upstream::RUNNER_HOME },
+            { "name": upstream::IDLE_AFTER_VAR, "value": "30m" },
+            { "name": upstream::POOL_IMAGE_VAR, "value": pool.spec.image }
+        ])
     );
     assert!(upstream::RUNNER_HOME.starts_with(&format!("{}/", upstream::KEPT_FOLDER)));
     let home = pod["volumes"]
@@ -464,6 +468,7 @@ mod stages {
         let with = |status: &str, reason: &str| ClaimStatus {
             conditions: vec![ready(status, reason, "upstream's words")],
             link_key: None,
+            mint: None,
         };
         let staged = stage::staged(with("False", "SandboxNotReady"), None);
         assert_eq!(staged.conditions[0].reason, stage::SCHEDULING);

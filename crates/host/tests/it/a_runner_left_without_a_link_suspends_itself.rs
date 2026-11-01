@@ -119,3 +119,74 @@ async fn a_runner_that_suspends_itself_ends_every_chat_it_runs_and_stops_serving
 
     assert!(runs.last().seen().stopped, "every chat it ran ended");
 }
+
+// **A runner idle for its pool's `idleAfter` stops (#3980)**: a clock of what runs on it, not of
+// its links.
+
+#[tokio::test]
+async fn a_paired_runner_with_nothing_running_is_idle_once_its_time_has_passed() {
+    let hosting = Hosting::new(Echo);
+    timeout(LIMIT * 10, hosting.until_idle_for(LIMIT, || true))
+        .await
+        .expect("idle once the time has passed");
+}
+
+#[tokio::test]
+async fn a_runner_no_desktop_is_paired_with_is_never_idle() {
+    let hosting = Hosting::new(Echo);
+    let waited = timeout(LIMIT * 4, hosting.until_idle_for(LIMIT, || false)).await;
+    assert!(waited.is_err(), "a warm runner never says it is idle");
+}
+
+#[tokio::test]
+async fn a_link_holding_a_project_keeps_a_runner_from_being_idle() {
+    let project = tempfile::tempdir().unwrap();
+    let hosting = Hosting::new(Echo);
+    let client = the_desktops_link(&hosting).await;
+    client
+        .hold_project(PROJECT, project.path().to_str().unwrap())
+        .await
+        .expect("held");
+    let waited = timeout(LIMIT * 4, hosting.until_idle_for(LIMIT, || true)).await;
+    assert!(waited.is_err(), "a held project is an open stream");
+}
+
+#[tokio::test]
+async fn a_chat_running_with_nobody_linked_keeps_a_runner_from_being_idle() {
+    let project = tempfile::tempdir().unwrap();
+    let hosting = Hosting::running_with(Echo, StandIns::default());
+    let desktop = the_desktops_link(&hosting).await;
+    desktop
+        .hold_project(PROJECT, project.path().to_str().unwrap())
+        .await
+        .unwrap();
+    desktop
+        .start_program(StartProgram::of(PROJECT, ProgramKind::Harness))
+        .await
+        .unwrap();
+    drop(desktop);
+    let waited = timeout(LIMIT * 4, hosting.until_idle_for(LIMIT, || true)).await;
+    assert!(waited.is_err(), "overnight work is never idle");
+}
+
+#[tokio::test]
+async fn a_runner_kept_warm_is_not_idle_the_moment_it_is_paired() {
+    let hosting = Hosting::new(Echo);
+    let paired = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let says = {
+        let paired = paired.clone();
+        move || paired.load(std::sync::atomic::Ordering::SeqCst)
+    };
+    let waiting = tokio::spawn({
+        let hosting = hosting.clone();
+        async move { hosting.until_idle_for(LIMIT, says).await }
+    });
+    tokio::time::sleep(LIMIT * 2).await;
+    paired.store(true, std::sync::atomic::Ordering::SeqCst);
+    tokio::time::sleep(LIMIT / 2).await;
+    assert!(!waiting.is_finished(), "its time starts as it is paired");
+    timeout(LIMIT * 4, waiting)
+        .await
+        .expect("idle once its time has passed since")
+        .unwrap();
+}

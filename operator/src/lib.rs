@@ -39,7 +39,9 @@
 //! in its pod by the kubelet, and read again as a team admin rolls them (#3305). Beside that
 //! ClusterRole, where the chart's values name a GitHub App key, the Role
 //! `purlis-forge-key-reader` lets it `get` those Secrets alone, in its own namespace ([`forge`],
-//! #4204). It binds one role, `purlis-runner-owner`, only to one person, only
+//! #4204). **It mints a GitHub App token for a vouched runner** ([`mint`], #4206) on its own port,
+//! asking the cluster before each mint whether the runner's requester may still use the Pool. It
+//! binds one role, `purlis-runner-owner`, only to one person, only
 //! in runner namespaces, as the policy on runner namespaces holds at admission
 //! ([`RUNNER_NAMESPACES_POLICY`]). This crate's Kubernetes client is built without the websocket feature `exec`
 //! and `attach` would need.
@@ -47,7 +49,10 @@
 mod admission;
 pub mod doctor;
 pub mod forge;
+pub mod github;
+pub mod lifecycle;
 pub mod metrics;
+pub mod mint;
 pub mod person;
 mod reconcile;
 mod resources;
@@ -56,7 +61,8 @@ pub mod upstream;
 pub mod vouch;
 
 pub use admission::{
-    Admission, POLICY, RUNNER_NAMESPACES_POLICY, SETTLE, admission, in_force_since,
+    Admission, FORGE_POLICY, POLICY, RUNNER_NAMESPACES_POLICY, SETTLE, admission,
+    forge_in_force_since, in_force_since,
 };
 pub use reconcile::{
     CLUSTER_NAMESPACE, FIELD_MANAGER, LinkKeyIs, OVER_QUOTA_AGAIN, UNCOUNTED_FOR,
@@ -67,6 +73,6 @@ pub use reconcile::{
     status_withdrawn, suspending_again, warm_wanted,
 };
 pub use resources::{
-    Claim, ClaimForge, ClaimSpec, ClaimStatus, KeptVolume, LinkKey, NextSigningKeyVouch, Pool,
-    PoolForge, PoolSpec, PoolStatus, SecretRef,
+    Claim, ClaimForge, ClaimMint, ClaimSpec, ClaimStatus, KeptVolume, LinkKey, NextSigningKeyVouch,
+    Pool, PoolForge, PoolSpec, PoolStatus, SecretRef,
 };

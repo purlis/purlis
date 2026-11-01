@@ -39,6 +39,7 @@ mod extcmd;
 mod extensions;
 mod gitask;
 mod githook;
+mod gradelink;
 mod guard;
 mod handoff;
 mod hooks;
@@ -154,6 +155,18 @@ enum Command {
         /// first time; a home that keeps the runner's pairing keeps its key (#2057).
         #[arg(long, requires = "make_key", value_name = "DIR", hide = true)]
         home: Option<std::path::PathBuf>,
+        /// Keep where the operator's mint port is, as this runner's desktop says on standard
+        /// input (#4207).
+        #[arg(long, conflicts_with_all = ["pair", "make_key"], hide = true)]
+        mint_port: bool,
+        /// With `--mint-port`: as said again at a link, so what this runner followed by itself is
+        /// kept (#4330).
+        #[arg(long, requires = "mint_port", hide = true)]
+        again: bool,
+        /// Ask the mint port for a token of this GitHub App, say what it covers, and revoke it:
+        /// a check of the way there, which prints no token (#4207).
+        #[arg(long, conflicts_with_all = ["pair", "make_key", "mint_port"], value_name = "APP", hide = true)]
+        mint_check: Option<String>,
     },
     /// Scaffold a fresh control plane here: charter.toml, baseline dirs, .gitignore.
     ///
@@ -871,6 +884,13 @@ fn suspends_after(asked: Option<Option<std::time::Duration>>) -> Option<std::tim
     asked.map(|after| after.unwrap_or(a_day))
 }
 
+/// How long this runner may be idle, where its operator told it (#3980).
+#[cfg(unix)]
+fn idle_after_asked() -> Option<std::time::Duration> {
+    use purlis_core::clusterpool::idle;
+    idle::after(std::env::var(idle::AFTER_VAR).ok()?.as_str())
+}
+
 /// `purlis serve`: this user's session host, at the place the window's own host would take, so
 /// one finds the other serving and leaves it be.
 #[cfg(not(unix))]
@@ -901,10 +921,34 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
     // The skills folders a last host laid out and no running program uses, tidied as it
     // starts, as the window tidies them as it starts (#2879).
     purlis_core::skills::tidy_here_later(std::time::Duration::ZERO);
+    // A cluster runner told how long it may be idle says so to its operator as it stops (#3980).
+    // Started again in place until the operator suspends it, it serves nothing for that while.
+    let idles = idle_after_asked().map(|after| {
+        use purlis_core::clusterpool::idle;
+        let mark = std::path::Path::new(idle::MARK);
+        if let Some(left) = idle::parked_for(mark, std::time::SystemTime::now()) {
+            voice::err("this runner said it is idle: waiting for its operator to suspend it");
+            std::thread::sleep(left);
+        }
+        let _ = std::fs::remove_file(mark);
+        purlis_host::Idles {
+            after,
+            said: Box::new(|| {
+                if let Err(why) = idle::say(
+                    std::path::Path::new(idle::TERMINATION_LOG),
+                    std::path::Path::new(idle::MARK),
+                ) {
+                    voice::err(format!("this runner could not say it is idle: {why}"));
+                }
+            }),
+        }
+    });
     let place = purlis_host::Place::at(
         purlis_core::hostsocket::here(),
         purlis_core::machine::charterd(&config),
     );
+    // A cluster runner follows a roll of the key it holds the operator's mint port to (#4207).
+    purlis_core::forge::mintport::keep_following(config.clone());
     // A runner's host answers links from the one desktop it is paired with, reading its
     // pairing as each link arrives (`runnerlink`, #2044); unpaired, it links nobody, and it
     // never mints the device id its pairing mints (#2539).
@@ -950,6 +994,14 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
             let home = purlis_core::profiles::home()
                 .ok_or_else(|| "this runner has no home its profiles are in".to_owned())?;
             onrunner::forget(&homes, &home, name, &desktop.device)
+        }),
+        // And says whose own folders forgetting one deletes, so none go under a chat (#4142).
+        deleting_own_folders: std::sync::Arc::new(|desktop, name| {
+            let homes = purlis_core::profilestore::Homes::here().ok_or_else(|| {
+                "this runner has no data home its profiles are in, or it is inside a project"
+                    .to_owned()
+            })?;
+            purlis_core::profilestore::onrunner::deleting_own_folders(&homes, name, &desktop.device)
         }),
         // And names the ones it keeps for the desktop, which forgets those no longer chosen
         // (#4060).
@@ -1010,6 +1062,7 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
             },
             pairing,
             suspends_after,
+            idles,
         ))
         .unwrap_or(1),
     )
@@ -1428,7 +1481,9 @@ enum ProfileCommand {
     Authenticate {
         /// The profile's name.
         name: String,
-        /// Only say whether its harness says it is signed in on this device.
+        /// Only say whether its harness says it is signed in on this device. Exits 0 if it is,
+        /// 3 if it is not, 4 if its harness cannot tell, 5 while its harness is being fetched,
+        /// 6 if this device has no such profile, and 1 if purlis could not ask.
         #[arg(long)]
         check: bool,
         /// For an opencode profile, the plan it signs in to: openai (ChatGPT) or
@@ -1436,7 +1491,8 @@ enum ProfileCommand {
         #[arg(long)]
         provider: Option<String>,
         /// Sign it in on this pool's runner: it opens the sign-in page in your browser, reads
-        /// the code it shows, and exits non-zero if it did not sign in.
+        /// the code it shows, and exits non-zero if it did not sign in. The running purlis window
+        /// puts a profile there that the runner does not keep.
         #[arg(long, value_name = "POOL", conflicts_with = "check")]
         pool: Option<String>,
         /// Ends the sign-in when this command's input closes: how a desktop drives it on a
@@ -4160,7 +4216,7 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                 return ExitCode::FAILURE;
             }
             Ok(removal) => profilestore::remove(&store, name, &removal).map(|gone| {
-                if gone.adopted {
+                let said = if gone.adopted {
                     format!(
                         "forgot the profile '{}'; {} stays\n",
                         gone.name,
@@ -4172,7 +4228,18 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                         gone.name,
                         gone.folder.display()
                     )
-                }
+                };
+                // Its pools' runners hear of it through the running window, which holds their
+                // links (#4141).
+                #[cfg(unix)]
+                let reached = purlis_core::windowline::reach_the_pools(
+                    store.config_root(),
+                    &gone.name,
+                    purlis_core::windowline::ask,
+                );
+                #[cfg(not(unix))]
+                let reached = "";
+                format!("{said}{reached}")
             }),
         },
         ProfileCommand::Authenticate {
@@ -4239,10 +4306,15 @@ fn profile_sign_in(
         Err(why) => return refused(&why),
     };
     let Some(record) = record else {
-        return refused(&format!(
+        let said = refused(&format!(
             "this machine has no profile named '{}'. purlis profile list names the ones it has.",
             shown::short(name)
         ));
+        return if check {
+            ExitCode::from(sign_in::check_exit::NOT_KEPT)
+        } else {
+            said
+        };
     };
     // Only a desktop drives a sign-in held to its input, on a runner that keeps the profile.
     if !matches!(held, Held::No) && record.kept_for.is_none() {
@@ -4258,15 +4330,17 @@ fn profile_sign_in(
     let pinned = match installs::on_this_runner(&record, &|line| eprintln!("{line}")) {
         Ok(pinned) => pinned,
         Err(why) if check => {
-            return refused(&format!(
+            refused(&format!(
                 "{why}. purlis cannot tell whether '{}' is signed in on {here}.",
                 record.name
             ));
+            return ExitCode::from(sign_in::check_exit::CANNOT_TELL);
         }
         Err(why) => return refused(&format!("{why}. Nothing was signed in.")),
     };
     if check {
-        let said = match sign_in::standing_of(&record, &sign_in::ThisMachine) {
+        let standing = sign_in::standing_of(&record, &sign_in::ThisMachine);
+        let said = match standing {
             None => format!(
                 "'{}' is signed in by {}'s own sign-in on {here}",
                 record.name, record.title
@@ -4274,13 +4348,10 @@ fn profile_sign_in(
             Some(sign_in::Standing::SignedIn) => {
                 format!("'{}' is signed in on {here}", record.name)
             }
-            Some(sign_in::Standing::SignedOut) => {
-                eprintln!(
-                    "'{}' is not signed in on {here}: purlis profile sign-in {} signs it in",
-                    record.name, record.name
-                );
-                return ExitCode::FAILURE;
-            }
+            Some(sign_in::Standing::SignedOut) => format!(
+                "'{}' is not signed in on {here}: purlis profile sign-in {} signs it in",
+                record.name, record.name
+            ),
             Some(sign_in::Standing::Fetching) => format!(
                 "its harness is still being fetched on {here}, so it cannot yet say whether '{}' \
                  is signed in; purlis profile sign-in {} signs it in",
@@ -4293,7 +4364,7 @@ fn profile_sign_in(
             ),
         };
         eprintln!("{said}");
-        return ExitCode::SUCCESS;
+        return ExitCode::from(standing.map_or(0, sign_in::Standing::check_exit));
     }
     let login = match sign_in::login_by(&record, provider, pinned.as_deref(), way) {
         Ok(login) => login,
@@ -4326,10 +4397,11 @@ fn profile_sign_in(
 }
 
 /// `purlis profile sign-in <name> --pool <pool>` (#4046, spec #4023): the sign-in the window's
-/// strip drives ([`sign_in::driven`]), run on pool `pool`'s runner through this machine's `docker`
-/// and followed here ([`sign_in::terminal`]), for a profile the runner already keeps. Only a pool
-/// shown to be the person's own is signed in on, as the window's is. Nothing of this machine's
-/// sign-in goes to the runner (ADR 0095).
+/// strip drives ([`sign_in::driven`]), run on pool `pool`'s runner through this machine's `docker`,
+/// or its `kubectl` on a cluster pool (#4164), and followed here ([`sign_in::terminal`]). A profile
+/// the runner does not keep yet is kept there first by the running window, which alone holds a
+/// link's key (#4112). Only a pool shown to be the person's own is signed in on, as
+/// the window's is. Nothing of this machine's sign-in goes to the runner (ADR 0095).
 ///
 /// [`sign_in::driven`]: purlis_core::profilestore::sign_in::driven
 /// [`sign_in::terminal`]: purlis_core::profilestore::sign_in::terminal
@@ -4367,9 +4439,25 @@ fn pool_sign_in(
         ));
     }
     // A login approved in the browser waits for an answer only the window carries (#4044).
+    if sign_in::driven::waits_for_the_browser(&record.harness, provider) {
+        let said = "purlis follows only Claude Code's and opencode's Copilot sign-in on a pool \
+                    from a terminal: nothing here can carry your browser's answer to the runner.";
+        // Only a name that could be made is printed as a command to copy.
+        if !purlis_core::profiles::name_ok(&record.name) {
+            return Err(format!(
+                "{said} '{}' cannot be a profile's name, so no runner keeps it: make a profile with \
+                 another name.",
+                shown::short(&record.name)
+            ));
+        }
+        let plan = provider.map_or(String::new(), |plan| format!(" --provider {plan}"));
+        return Err(format!(
+            "{said} On the runner, run: purlis profile sign-in {}{plan} --way device",
+            record.name
+        ));
+    }
     if sign_in::driven::Driven::of_plan(&record.harness, provider, std::time::Instant::now())
         .is_none()
-        || sign_in::driven::waits_for_the_browser(&record.harness, provider)
     {
         return Err(format!(
             "purlis follows only Claude Code's and opencode's Copilot sign-in on a pool so far. \
@@ -4378,19 +4466,15 @@ fn pool_sign_in(
             record.name
         ));
     }
+    if let Some((cluster, kept)) =
+        runners::cluster_runner_for(config, pool).map_err(|why| why.to_string())?
+    {
+        return cluster_pool_sign_in(config, &record, pool, provider, &cluster, &kept);
+    }
     // Nothing reaches a runner, nor is read of one, before its engine is shown to be yours.
     let engine = Docker::engine_on_this_machine();
     purlis_core::poollogins::owned(engine.clone())?;
     let engine = engine?;
-    if runners::cluster_runner_for(config, pool)
-        .map_err(|why| why.to_string())?
-        .is_some()
-    {
-        return Err(format!(
-            "pool {pool} is a cluster pool, and purlis signs a profile in only on a Docker \
-             pool's runner so far."
-        ));
-    }
     let runner = runners::runner_for(config, pool)
         .map_err(|why| format!("{why}. Settings › Pools lists this machine's pools."))?;
     let path = purlis_core::envvar::var("PATH");
@@ -4398,34 +4482,17 @@ fn pool_sign_in(
     let docker = Docker::on_this_machine(path.as_deref(), home.as_deref()).map_err(|why| why.0)?;
     // A runner on another version has no sign-in held to what drives it (#4043): refused in
     // words, as the window refuses it.
-    let ours = purlis_core::adopt::release_version();
-    match docker.version_of(&runner.made) {
-        Ok(theirs) if theirs == ours => {}
-        Ok(theirs) => {
-            return Err(format!(
-                "pool {pool}'s runner runs purlis {theirs}, and this runs {ours}, so purlis signs \
-                 nothing in there itself. Sign '{name}' in from its line in Settings › Pools with \
-                 Open in terminal, or once the runner runs this version."
-            ));
-        }
-        Err(why) => {
-            return Err(format!(
-                "pool {pool}'s runner's version could not be read, so it may not run this \
-                 purlis {ours}: {}. Nothing was started.",
-                why.0
-            ));
-        }
-    }
+    this_commands_runner(
+        pool,
+        name,
+        docker.version_of(&runner.made).map_err(|why| why.0),
+    )?;
     eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
-    docker
-        .standing_on_runner(&runner.made, &engine, name)
-        .map_err(|why| {
-            format!(
-                "pool {pool}'s runner could not say whether '{name}' is signed in there, so \
-                 nothing was started: {why}. A profile goes on a pool from its row in Settings \
-                 › Pools."
-            )
-        })?;
+    kept_first(pool, name, || {
+        docker
+            .standing_on_runner(&runner.made, &engine, name)
+            .map_err(|why| not_asked(pool, name, &why))
+    })?;
     let login = docker.driven_sign_in(&runner.made, &engine, name, provider)?;
     let check = {
         let (docker, made, engine, name) = (
@@ -4437,10 +4504,19 @@ fn pool_sign_in(
         move || {
             docker
                 .standing_on_runner(&made, &engine, &name)
+                .ok()
+                .flatten()
                 .unwrap_or(sign_in::Standing::CannotTell)
         }
     };
-    let driving = sign_in::driven::drive_with(&login, &record.harness, provider, None, check)?;
+    let driving = sign_in::driven::drive_with(
+        &login,
+        &record.harness,
+        provider,
+        None,
+        purlis_core::runners::longest_login_of(config, pool),
+        check,
+    )?;
     let (typed, lines) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         for line in std::io::stdin().lines().map_while(Result::ok) {
@@ -4450,6 +4526,150 @@ fn pool_sign_in(
         }
     });
     sign_in::terminal::follow(&driving, &lines, &mut ThisTerminal, name, pool)
+}
+
+/// Refused where a pool's runner, whose `purlis --version` said `theirs`, runs another version
+/// than this command: it has no sign-in held to what drives it (#4043), refused in words, as the
+/// window refuses it.
+fn this_commands_runner(
+    pool: &str,
+    name: &str,
+    theirs: Result<String, String>,
+) -> Result<(), String> {
+    let ours = purlis_core::adopt::release_version();
+    match theirs {
+        Ok(theirs) if theirs == ours => Ok(()),
+        Ok(theirs) => Err(format!(
+            "pool {pool}'s runner runs purlis {}, and this runs {ours}, so purlis signs \
+             nothing in there itself. Sign '{name}' in from its line in Settings › Pools with \
+             Open in terminal, or once the runner runs this version.",
+            shown::short(&theirs)
+        )),
+        Err(why) => Err(format!(
+            "pool {pool}'s runner's version could not be read, so it may not run this purlis \
+             {ours}: {}. Nothing was started.",
+            shown::short(&why)
+        )),
+    }
+}
+
+/// What the person is told where a pool's runner could not say how `name` stands there.
+fn not_asked(pool: &str, name: &str, why: &str) -> String {
+    format!(
+        "pool {pool}'s runner could not say whether '{name}' is signed in there, so nothing was \
+         started: {}. A profile goes on a pool from its row in Settings › Pools.",
+        shown::short(why)
+    )
+}
+
+/// How pool `pool`'s runner stands with `name`, kept there first through the running window where
+/// `standing` says it keeps none (#4112), as the strip keeps it.
+#[cfg(unix)]
+fn kept_first(
+    pool: &str,
+    name: &str,
+    standing: impl Fn() -> Result<Option<purlis_core::profilestore::sign_in::Standing>, String>,
+) -> Result<purlis_core::profilestore::sign_in::Standing, String> {
+    purlis_core::windowline::kept_first(pool, name, standing, |asked| {
+        eprintln!("it does not keep '{name}': asking the purlis window to keep it there…");
+        purlis_core::windowline::ask(asked)
+    })
+}
+
+/// A runner is never Windows, and no window line reaches one from there.
+#[cfg(not(unix))]
+fn kept_first(
+    pool: &str,
+    name: &str,
+    standing: impl Fn() -> Result<Option<purlis_core::profilestore::sign_in::Standing>, String>,
+) -> Result<purlis_core::profilestore::sign_in::Standing, String> {
+    standing()?.ok_or_else(|| {
+        format!(
+            "pool {pool}'s runner does not keep '{name}', so nothing was started. A profile goes \
+             on a pool from its row in Settings › Pools."
+        )
+    })
+}
+
+/// [`pool_sign_in`] on the cluster pool `pool`, kept as `cluster` with its runner `kept` (#4164):
+/// behind the gate the window's strip passes ([`purlis_core::pools::cluster_runner_yours`]), over
+/// `kubectl exec -i` into the pod the gate judged. Each `kubectl exec` makes the check every link
+/// makes first; each code is held to the runner's still being as the gate judged it, as a code
+/// pasted in the strip is.
+fn cluster_pool_sign_in(
+    config: &std::path::Path,
+    record: &purlis_core::profilestore::MachineProfile,
+    pool: &str,
+    provider: Option<&str>,
+    cluster: &purlis_core::runners::ClusterPool,
+    kept: &purlis_core::runners::ClusterKept,
+) -> Result<(), String> {
+    use purlis_core::pools;
+    use purlis_core::profilestore::sign_in;
+    let name = record.name.as_str();
+    let judged = pools::cluster_runner_yours(config, pool, cluster, kept, &pools::vouched_now)?;
+    pools::cluster_runner_still_yours(config, pool, &judged)?;
+    let kubectl = pools::kubectl_here(config)?.within(pools::VOUCHED_NOW_WITHIN);
+    this_commands_runner(
+        pool,
+        name,
+        pools::cluster_runner_version(config, &kubectl, pool, &judged),
+    )?;
+    eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
+    kept_first(pool, name, || {
+        pools::cluster_standing(config, &kubectl, pool, &judged, name)
+            .map_err(|why| not_asked(pool, name, &why))
+    })?;
+    // The standing may have taken a while, as long as the runner chose: the whole gate again.
+    let (cluster, kept) = pools::cluster_runner_still_yours(config, pool, &judged)?;
+    pools::cluster_runner_yours(config, pool, &cluster, &kept, &pools::vouched_now)?;
+    let login = pools::cluster_sign_in(
+        config,
+        &kubectl,
+        pool,
+        &judged,
+        name,
+        provider,
+        purlis_core::dockerpool::Typed::Driven,
+    )
+    .map_err(|why| shown::short(&why))?;
+    let check = {
+        let (config, kubectl, pool, judged, name) = (
+            config.to_path_buf(),
+            kubectl.clone(),
+            pool.to_owned(),
+            judged.clone(),
+            name.to_owned(),
+        );
+        move || {
+            if pools::cluster_runner_still_yours(&config, &pool, &judged).is_err() {
+                return sign_in::Standing::CannotTell;
+            }
+            pools::cluster_standing(&config, &kubectl, &pool, &judged, &name)
+                .ok()
+                .flatten()
+                .unwrap_or(sign_in::Standing::CannotTell)
+        }
+    };
+    let driving = sign_in::driven::drive_with(
+        &login,
+        &record.harness,
+        provider,
+        None,
+        purlis_core::runners::longest_login_of(config, pool),
+        check,
+    )?;
+    let (typed, lines) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lines().map_while(Result::ok) {
+            if typed.send(line).is_err() {
+                return;
+            }
+        }
+    });
+    sign_in::terminal::follow_while(&driving, &lines, &mut ThisTerminal, name, pool, &|| {
+        pools::cluster_runner_still_yours(config, pool, &judged).map(drop)
+    })
 }
 
 /// This command's terminal, as a sign-in on a pool's runner says its steps there.
@@ -4590,14 +4810,23 @@ fn profile_sign_out(store: &purlis_core::profilestore::Homes, name: &str) -> Exi
         Ok(pinned) => pinned,
         Err(why) => return refused(&format!("{why}. Nothing was signed out.")),
     };
-    let logout = match sign_in::logout_of(&record, pinned.as_deref()) {
+    // One that asks which sign-in goes runs only where the person can answer (#4124).
+    let in_a_terminal =
+        std::io::IsTerminal::is_terminal(&std::io::stdin()) && !crate::memory::in_a_chat();
+    // What a drain carried for it would sign it in again at its next keep (#4145).
+    profilestore::forget_carried(store, name);
+    let logout = match sign_in::logout_of(&record, pinned.as_deref(), in_a_terminal) {
         Ok(logout) => logout,
         Err(why) => return refused(&why),
     };
     let ran = std::process::Command::new(&logout.program)
         .args(&logout.args)
         .envs(logout.env.iter().map(|(n, v)| (n, v)))
-        .stdin(std::process::Stdio::null())
+        .stdin(if in_a_terminal {
+            std::process::Stdio::inherit()
+        } else {
+            std::process::Stdio::null()
+        })
         .status();
     match ran {
         Ok(status) if status.success() => ExitCode::SUCCESS,
@@ -4875,11 +5104,23 @@ fn main() -> ExitCode {
         make_key,
         publish,
         home,
+        mint_port,
+        again,
+        mint_check,
     } = &cli.command
     {
         #[cfg(not(unix))]
         {
-            let _ = (pair, key_made_at_start, make_key, publish, home);
+            let _ = (
+                pair,
+                key_made_at_start,
+                make_key,
+                publish,
+                home,
+                mint_port,
+                again,
+                mint_check,
+            );
             return bridge();
         }
         #[cfg(unix)]
@@ -4891,6 +5132,10 @@ fn main() -> ExitCode {
             },
             _ if *pair => bridge::Asked::Pair {
                 key_made_at_start: key_made_at_start.clone(),
+            },
+            _ if *mint_port => bridge::Asked::MintPort { again: *again },
+            _ if mint_check.is_some() => bridge::Asked::MintCheck {
+                app: mint_check.clone().unwrap_or_default(),
             },
             _ => bridge::Asked::Pipe,
         };

@@ -449,6 +449,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ACTION +
       ". Also a save's own output, line by line: what the last press answered, not a standing line",
   },
+  "RaiseLimit.tsx": {
+    count: 1,
+    why: "a refused save, inside the form the refusal it raises stands in: the form is its way out",
+  },
   "ReadOnlyTerminal.tsx": {
     count: 1,
     why: "a copy the clipboard refused, said beside the read-only screen it was asked of (#3676)",
@@ -493,11 +497,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "It stays mounted, so its word is heard as it comes.",
   },
   "StartChat.tsx": {
-    count: 3,
+    count: 4,
     why:
       "a dialog's refusal: an inline error, not a Notice (V91n). NO-8: the local file git " +
       "would carry offers the doctor's local-ignore fix, refused profiles link to Settings › " +
-      "Harness, a sandbox it cannot apply offers its install, and a start's refusal is ACTION's",
+      "Harness, a sandbox it cannot apply offers its install, a start's refusal is ACTION's, and a slow " +
+      "start's status says what it waits for, in the dialog's footer",
   },
   "TabRename.tsx": { count: 1, why: "a rename's refusal, beside the box being typed in" },
   "ThemeDraftStrip.tsx": {
@@ -605,6 +610,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ACTION +
       ". What choosing a new pool's profiles said (#4048), beside the Sign in and Not now that " +
       "did it; the pool's own lines follow it",
+  },
+  "settings/PoolLimits.tsx": {
+    count: 2,
+    why: "why a pool's limits could not be read, inside its fold beside Read again; and a limit's refusal, a polite line under its box, which typing or Reset clears",
   },
   "settings/PoolProfiles.tsx": {
     count: 3,

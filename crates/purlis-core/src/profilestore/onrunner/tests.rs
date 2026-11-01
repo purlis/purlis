@@ -5,7 +5,9 @@ use super::*;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::poollimits::{Chosen, LimitId};
 use crate::profilesignin::SignIn;
+use crate::profilestore::made::whole_of;
 use crate::profilestore::{Adopted, Folders, MachineSettings, list};
 
 /// The desktop a runner keeps profiles for, by its device id.
@@ -936,7 +938,6 @@ fn a_profile_with_several_mib_of_skills_is_sent_to_its_runner() {
 
     let sent = in_batches(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap();
     assert!(sent.batches.len() > 1, "{} batches", sent.batches.len());
-    assert!(sent.left_behind.is_empty());
 
     let runner = homes(dir.path(), "runner");
     let record = kept_staged(&runner, dir.path(), sent).expect("it is kept");
@@ -1156,64 +1157,121 @@ fn a_stage_is_kept_apart_from_the_settings_folder_and_what_a_killed_keep_left_go
     assert_eq!(fs::read(settings.join("CLAUDE.md")).unwrap(), b"Be brief.");
 }
 
-/// **Over the overall limit a profile still goes, by whole skills** (#4081): a skill with a file
-/// past the limit stays behind whole, what was read of it with it, and the rest goes; the note
-/// says what, its size and how to bring it.
-#[test]
-fn over_the_overall_limit_whole_skills_stay_behind_and_the_rest_goes() {
-    use purlis_session_protocol::session::MOST_PROFILE_SETTINGS_BYTES;
-    let dir = tempfile::tempdir().unwrap();
-    let desktop = a_desktop_profile_with_settings(dir.path());
-    let config = &desktop.folders.config;
+/// A desktop profile with a sparse file of `mib` MiB: its size is what the measure sees, and
+/// nothing of it is read.
+fn with_a_large_skill(config: &Path, mib: u64) {
     let skill = config.join("skills/large");
     fs::create_dir_all(&skill).unwrap();
     fs::write(skill.join("SKILL.md"), "Use me.").unwrap();
-    // Sparse: its size is what an over-limit file says, and nothing of it is read.
     let over = fs::File::create(skill.join("weights.bin")).unwrap();
-    over.set_len(MOST_PROFILE_SETTINGS_BYTES as u64 + 1)
-        .unwrap();
-    fs::create_dir_all(config.join("skills/small")).unwrap();
-    fs::write(config.join("skills/small/SKILL.md"), "Small.").unwrap();
+    over.set_len(mib * 1024 * 1024).unwrap();
+}
 
-    let sent = in_batches(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap();
+/// **Over its pool's limit a start is refused, typed, with nothing sent** (spec #4275): how much
+/// is needed, the value in force, and that plus a margin to raise it to.
+#[test]
+fn over_the_limit_nothing_goes_and_the_refusal_says_what_is_needed_and_suggests_a_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    with_a_large_skill(&desktop.folders.config, 150);
+    let kept = Kept::of(&desktop).unwrap().with_settings_of(&desktop);
 
-    assert_eq!(sent.left_behind.len(), 1, "{:?}", sent.left_behind);
-    assert_eq!(sent.left_behind[0].path, "skills/large");
-    let paths: Vec<_> = sent
+    let said = in_batches(&kept).unwrap_err();
+
+    assert!(said.contains("it needs 151 MiB"), "{said}");
+    assert!(said.contains("limit of 128 MiB"), "{said}");
+    assert!(said.contains("raise it to 192 MiB"), "{said}");
+    assert!(
+        !said.contains("KiB"),
+        "the batch size is never said: {said}"
+    );
+}
+
+/// **A value at or above what is needed lets it go** (spec #4275): the applied suggestion works.
+#[test]
+fn a_profile_within_a_raised_limit_goes_whole() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let skill = desktop.folders.config.join("skills/many");
+    fs::create_dir_all(&skill).unwrap();
+    for one in 0..40 {
+        fs::write(skill.join(format!("{one}.md")), "x").unwrap();
+    }
+    let lowered = Chosen::default().with(LimitId::ProfileFiles, Some(10));
+    let kept = Kept::of(&desktop)
+        .unwrap()
+        .with_settings_of(&desktop)
+        .held_to(lowered);
+    assert!(in_batches(&kept).is_err(), "over the lowered limit");
+
+    let raised = lowered.with(LimitId::ProfileFiles, Some(256));
+    let sent = in_batches(&kept.held_to(raised)).unwrap();
+
+    let many = sent
         .batches
         .iter()
         .flat_map(|b| &b.pieces)
-        .map(|p| &p.path)
-        .collect();
-    assert!(paths.iter().any(|p| p.as_str() == "skills/small/SKILL.md"));
-    assert!(paths.iter().any(|p| p.as_str() == "CLAUDE.md"));
-    assert!(!paths.iter().any(|p| p.starts_with("skills/large")));
-
-    let note = left_behind_note("builds", &desktop.name, &sent.left_behind).unwrap();
-    assert!(note.contains("skills/large (129 MiB)"), "{note}");
-    assert!(note.contains("smaller"), "{note}");
-    assert_eq!(left_behind_note("builds", "work", &[]), None);
+        .filter(|p| p.path.starts_with("skills/many/"))
+        .count();
+    assert_eq!(many, 40);
 }
 
-/// A note of many names names the largest, and counts the rest.
+/// **A window asks only of the refusal it was shown** (spec #4275): the typed refusal is had by
+/// a start's own words, and by no other's, with the pool it was refused on.
 #[test]
-fn a_note_of_many_names_the_largest_and_counts_the_rest() {
-    let behind: Vec<_> = (1..=9u64)
-        .map(|one| LeftBehind {
-            path: format!("skills/{one}"),
-            bytes: one * 1024 * 1024,
-        })
-        .collect();
+fn the_typed_refusal_is_had_by_the_words_of_the_start_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut record = a_desktop_profile_with_settings(dir.path());
+    record.name = "typed-refusal".to_owned();
+    with_a_large_skill(&record.folders.config, 150);
+    let kept = Kept::of(&record).unwrap().with_settings_of(&record);
 
-    let note = left_behind_note("builds", "work", &behind).unwrap();
+    let why = in_batches(&kept).unwrap_err();
+    assert_eq!(over_limit("typed-refusal", &why), None, "no pool yet");
+    let said =
+        format!("pool builds's runner did not keep the profile: {why}. Nothing was started.");
+    said_of_pool("typed-refusal", "builds", &why, &said);
 
-    assert!(note.contains("skills/9 (9 MiB), skills/8"), "{note}");
-    assert!(note.contains("3 more"), "{note}");
-    assert!(!note.contains("skills/1 "), "{note}");
+    let over = over_limit("typed-refusal", &said).expect("the refusal it was");
+    assert_eq!(over.pool.as_deref(), Some("builds"));
+    assert_eq!(over.hits[0].limit, LimitId::ProfileSize);
+    assert_eq!(over.hits[0].in_force, 128);
+    assert_eq!(over.hits[0].needed, 151);
+    assert_eq!(over.hits[0].suggested, Some(192));
+    assert_eq!(over_limit("typed-refusal", "some other refusal"), None);
+
+    // A move's line knows its pool and not its profile (#4313).
+    assert_eq!(
+        over_limit_on("builds", &said).map(|o| o.profile),
+        Some("typed-refusal".to_owned())
+    );
+    assert_eq!(over_limit_on("another", &said), None);
+    assert_eq!(over_limit_on("builds", "some other refusal"), None);
+}
+
+/// **Raised past what a runner tells its desktop, a profile is told as nothing** (spec #4275), so
+/// its desktop sends it whole, once, rather than a change the runner would refuse.
+#[test]
+fn a_runner_holding_more_than_it_tells_says_it_holds_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let home = runner_home(dir.path());
+    let kept = Kept::of(&desktop).unwrap();
+    let record = keep(&runner, &home, &kept, DESKTOP, 7).unwrap();
+    let many = record.folders.config.join("agents");
+    fs::create_dir_all(&many).unwrap();
+    for one in 0..=wire::MOST_PROFILE_SETTINGS_FILES {
+        fs::write(many.join(format!("{one}.md")), "x").unwrap();
+    }
+
+    let (held, more) = held_for_the_desktop(&runner, DESKTOP, &kept.name, None).unwrap();
+
+    assert_eq!((held.len(), more), (0, false));
 }
 
 /// **A harness's own settings file that cannot go refuses the chat** (#4081): it says what a chat
-/// may do, so no chat starts as if it had said nothing. A larger `CLAUDE.md` is only left behind.
+/// may do, so no chat starts as if it had said nothing.
 #[test]
 fn a_harness_settings_file_too_large_to_go_refuses_the_chat() {
     let dir = tempfile::tempdir().unwrap();
@@ -1263,48 +1321,6 @@ fn a_skills_build_folders_do_not_go_to_a_runner() {
         .filter(|p| p.starts_with("skills/built"))
         .collect();
     assert_eq!(paths, ["skills/built/scripts/a.txt"]);
-    assert!(sent.left_behind.is_empty());
-}
-
-/// More files than a runner holds stay behind too, unread, rather than refusing the chat.
-#[test]
-fn files_past_the_limit_stay_behind_too() {
-    let dir = tempfile::tempdir().unwrap();
-    let desktop = a_desktop_profile_with_settings(dir.path());
-    let config = &desktop.folders.config;
-
-    let read =
-        crate::profilestore::made::settings_read("claude", config, 1024, 1, &|_| true).unwrap();
-
-    assert_eq!(read.files.len(), 1);
-    assert!(!read.left_behind.is_empty());
-}
-
-/// **A large skill keeps out as little as it can** (#4081): what stays behind is chosen by size
-/// before anything is read, so one of 20,000 files spends nothing of the limit on itself, and the
-/// harness's own files go first, whatever their size.
-#[test]
-fn a_large_skill_costs_the_ones_after_it_nothing() {
-    let wholes = Measured::from([
-        ("CLAUDE.md".to_owned(), (60, 1)),
-        ("agents/a.md".to_owned(), (10, 1)),
-        ("skills/a-vendored".to_owned(), (40, 20_000)),
-        ("skills/b".to_owned(), (20, 2)),
-        ("skills/c".to_owned(), (20, 2)),
-        ("skills/d-large".to_owned(), (70, 3)),
-    ]);
-
-    let (going, behind) = wholes_that_fit(wholes, 110, 8192);
-
-    let going: Vec<_> = going.iter().map(String::as_str).collect();
-    assert_eq!(going, ["CLAUDE.md", "agents/a.md", "skills/b", "skills/c"]);
-    assert_eq!(
-        behind,
-        BTreeMap::from([
-            ("skills/a-vendored".to_owned(), 40),
-            ("skills/d-large".to_owned(), 70),
-        ])
-    );
 }
 
 /// A skill goes or stays whole; an agent is a whole of its own.
@@ -1654,6 +1670,35 @@ fn forgetting_a_profile_the_runner_does_not_keep_is_nothing() {
     );
 }
 
+/// **Only the desktop's adopted folder deletes a harness's own folders** (#4142): that is what a
+/// chat there on no profile uses, and what its host holds back for.
+#[test]
+fn only_the_desktops_adopted_folder_deletes_its_harnesss_own_folders() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let adopted = the_desktops_adopted_folder(dir.path());
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&adopted).expect("it goes"),
+        DESKTOP,
+        7,
+    )
+    .expect("kept");
+    assert_eq!(kept.name, adopted.name);
+
+    assert_eq!(
+        deleting_own_folders(&runner, &adopted.name, DESKTOP),
+        Ok(Some("claude".to_owned()))
+    );
+    assert_eq!(
+        deleting_own_folders(&runner, &adopted.name, "another desktop"),
+        Ok(None),
+        "kept for another desktop, forget leaves it as it is"
+    );
+    assert_eq!(deleting_own_folders(&runner, "nothing", DESKTOP), Ok(None));
+}
+
 /// A runner fetching the version each profile it keeps with a pin is pinned to: none is
 /// installed yet, and no harness on `PATH` answers.
 struct StillFetching;
@@ -1708,10 +1753,7 @@ fn a_runner_keeping_a_profile_takes_in_the_sign_in_carried_to_it() {
     let dir = tempfile::tempdir().unwrap();
     let desktop = a_signed_in_desktop_profile(dir.path());
     let runner = homes(dir.path(), "runner");
-    let carried = dir
-        .path()
-        .join("runner/data")
-        .join(crate::profilestore::CARRIED)
+    let carried = crate::profilestore::carried_in(&dir.path().join("runner/data"))
         .join("Xb4tch01")
         .join("work");
     fs::create_dir_all(carried.join("config")).unwrap();
@@ -1739,6 +1781,74 @@ fn a_runner_keeping_a_profile_takes_in_the_sign_in_carried_to_it() {
     assert!(!carried.exists());
 }
 
+/// **Nothing is taken in through a link where the carried folder should be**: the sign-in it
+/// leads to stays out of the profile, and stays where it was.
+#[test]
+fn a_link_for_the_carried_folder_signs_no_profile_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let elsewhere = dir.path().join("elsewhere");
+    let planted = elsewhere.join("Xb4tch01/work/config/.credentials.json");
+    fs::create_dir_all(planted.parent().unwrap()).unwrap();
+    fs::write(&planted, "someone else's sign-in").unwrap();
+    let stage = crate::profilestore::carried_in(&dir.path().join("runner/data"));
+    fs::create_dir_all(stage.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &stage).unwrap();
+
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&desktop).expect("it goes"),
+        DESKTOP,
+        7,
+    )
+    .expect("kept");
+
+    assert!(!kept.folders.config.join(".credentials.json").exists());
+    assert_eq!(
+        fs::read_to_string(&planted).unwrap(),
+        "someone else's sign-in"
+    );
+}
+
+/// **The folder an earlier version carried to is cleared, and nothing of it taken in**: a folder
+/// goes whole, and a link goes as a link, with what it names left alone.
+#[test]
+fn what_an_earlier_version_carried_is_cleared_and_not_taken_in() {
+    for linked in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let desktop = a_signed_in_desktop_profile(dir.path());
+        let runner = homes(dir.path(), "runner");
+        let before = dir.path().join("runner/data/carried");
+        let holds = if linked {
+            dir.path().join("elsewhere")
+        } else {
+            before.clone()
+        };
+        let file = holds.join("Xb4tch01/work/config/.credentials.json");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, "the old runner's sign-in").unwrap();
+        if linked {
+            fs::create_dir_all(before.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(&holds, &before).unwrap();
+        }
+
+        let kept = keep(
+            &runner,
+            &runner_home(dir.path()),
+            &Kept::of(&desktop).expect("it goes"),
+            DESKTOP,
+            7,
+        )
+        .expect("kept");
+
+        assert!(!kept.folders.config.join(".credentials.json").exists());
+        assert!(fs::symlink_metadata(&before).is_err(), "{linked}");
+        assert_eq!(file.exists(), linked);
+    }
+}
+
 /// **A runner already keeping a profile takes in the sign-in carried to it later** (#4055): its
 /// pool's old runner carries its sign-ins only once its last chat has ended, after the profile
 /// was kept here for a chat, so the next keep takes the carried sign-in in. One the profile
@@ -1752,10 +1862,7 @@ fn a_runner_keeping_a_profile_again_takes_in_a_sign_in_carried_since() {
     let kept = keep(&runner, &runner_home(dir.path()), &sent, DESKTOP, 7).expect("kept");
     assert!(!kept.folders.config.join(".credentials.json").exists());
     let carry = |text: &str| {
-        let carried = dir
-            .path()
-            .join("runner/data")
-            .join(crate::profilestore::CARRIED)
+        let carried = crate::profilestore::carried_in(&dir.path().join("runner/data"))
             .join("Xb4tch01")
             .join("work");
         fs::create_dir_all(carried.join("config")).unwrap();
@@ -1786,17 +1893,14 @@ fn a_runner_keeping_a_profile_again_takes_in_a_sign_in_carried_since() {
 }
 
 /// **The desktop's adopted folder takes in the sign-in carried to it too** (#4055): kept as
-/// Claude Code's default folder in the runner's home, it takes the default folder's sign-in a
+/// Claude Code's default folder in the runner's home, it takes the default folder's file the
 /// drained runner carried under the harness's name; one of another harness's is left out.
 #[test]
 fn the_desktops_adopted_folder_takes_in_the_sign_in_carried_to_it() {
     let dir = tempfile::tempdir().unwrap();
     let runner = homes(dir.path(), "runner");
     let adopted = the_desktops_adopted_folder(dir.path());
-    let carried = dir
-        .path()
-        .join("runner/data")
-        .join(crate::profilestore::CARRIED)
+    let carried = crate::profilestore::carried_in(&dir.path().join("runner/data"))
         .join("Xb4tch01")
         .join("claude");
     fs::create_dir_all(carried.join("config")).unwrap();
@@ -2226,4 +2330,28 @@ fn a_keep_of_what_changed_with_no_staged_settings_is_refused() {
     )
     .unwrap_err();
     assert!(refused.contains("named no settings"), "{refused}");
+}
+
+/// **What a drain carried for a profile goes with a sign-out or a removal** (#4145), and another
+/// profile's stays.
+#[test]
+fn forgetting_what_was_carried_leaves_other_profiles_batches() {
+    let root = tempfile::tempdir().unwrap();
+    let homes = homes(root.path(), "01JA0DESKT0P00000000000000");
+    // The batches in the profiles' folder.
+    let batch = homes
+        .folder_of("any")
+        .parent()
+        .unwrap()
+        .join(crate::profilestore::CARRIED)
+        .join("b1");
+    for name in ["gone", "kept"] {
+        std::fs::create_dir_all(batch.join(name).join("config")).unwrap();
+    }
+
+    crate::profilestore::forget_carried(&homes, "gone");
+    crate::profilestore::forget_carried(&homes, "../b1");
+
+    assert!(!batch.join("gone").exists());
+    assert!(batch.join("kept").exists());
 }

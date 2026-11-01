@@ -4,9 +4,11 @@
 
 // Checks a container image against the runner image contract (docs/runner-image.md, #2043).
 //
-//   node tools/runner-image-contract.mjs IMAGE
+//   node tools/runner-image-contract.mjs [--carries PROGRAM,PROGRAM] IMAGE
 //
-// IMAGE is an image the local Docker already has. Three checks, and every problem each one finds
+// IMAGE is an image the local Docker already has. `--carries` names programs this image promises
+// beyond the contract, each of which has to answer `--version`: purlis's own carries `gh` and
+// `glab` (#4354), and a team's need not. Three checks, and every problem each one finds
 // is printed, one to a line, before the exit status says whether there was any:
 //
 //   1. its config (`docker image inspect`): Linux, a numbered user that is not root, an absolute
@@ -68,9 +70,10 @@ function docker(args, options = {}) {
 }
 
 /** What `runner-image-contract.sh` finds wrong inside `image`, run as the image's own user. */
-function insideProblems(image) {
+function insideProblems(image, carries) {
   const script = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "runner-image-contract.sh"), "utf8");
-  const run = docker(["run", "--rm", "-i", "--network", "none", "--entrypoint", "/bin/sh", image, "-s"], {
+  const carried = ["--env", `CONTRACT_CARRIES=${carries.join(" ")}`];
+  const run = docker(["run", "--rm", "-i", "--network", "none", ...carried, "--entrypoint", "/bin/sh", image, "-s"], {
     input: script,
   });
   const problems = run.stdout.split("\n").filter(Boolean);
@@ -110,7 +113,22 @@ function serveProblems(image) {
   });
 }
 
-async function main(image) {
+/**
+ * The command line's image and the programs it is to carry, or null where it is not one this
+ * tool takes. A program is a plain name, as it goes into the inside check's shell.
+ */
+export function parseArguments(args) {
+  const words = [...args];
+  let carries = [];
+  if (words[0] === "--carries") {
+    carries = (words[1] ?? "").split(",");
+    if (!carries.every((program) => /^[a-z][a-z0-9-]*$/.test(program))) return null;
+    words.splice(0, 2);
+  }
+  return words.length === 1 && !words[0].startsWith("-") ? { image: words[0], carries } : null;
+}
+
+async function main(image, carries) {
   const inspected = docker(["image", "inspect", image]);
   if (inspected.status !== 0) {
     console.log(`there is no image ${image} here: ${inspected.stderr.trim()}`);
@@ -118,7 +136,7 @@ async function main(image) {
   }
   const problems = [
     ...configProblems(JSON.parse(inspected.stdout)[0]),
-    ...insideProblems(image),
+    ...insideProblems(image, carries),
     ...(await serveProblems(image)),
   ];
   for (const problem of problems) console.log(problem);
@@ -127,10 +145,10 @@ async function main(image) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const image = process.argv[2];
-  if (!image || process.argv.length > 3) {
-    console.error("usage: node tools/runner-image-contract.mjs IMAGE");
+  const parsed = parseArguments(process.argv.slice(2));
+  if (!parsed) {
+    console.error("usage: node tools/runner-image-contract.mjs [--carries PROGRAM,PROGRAM] IMAGE");
     process.exit(2);
   }
-  process.exitCode = await main(image);
+  process.exitCode = await main(parsed.image, parsed.carries);
 }

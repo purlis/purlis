@@ -1,8 +1,8 @@
 {
-  "version": 3,
+  "version": 4,
   "id": "studio-probe",
   "name": "Studio probe",
-  "capabilities": ["skill-source", "skill-lint", "skill-template", "studio-panel", "skill-router", "cli"],
+  "capabilities": ["skill-source", "grader", "skill-lint", "skill-template", "studio-panel", "skill-router", "cli"],
   "state": "state",
   "hosts": [
     "probe.invalid",
@@ -13,6 +13,7 @@
   "contributes": {
     "runs": "bin/studio-probe",
     "skill-source": { "title": "Probe skills" },
+    "grader": { "title": "Probe grader" },
     "skill-lint": { "title": "Probe lint", "many-at-once": true },
     "skill-template": [
       { "id": "probe", "title": "Probe", "about": "A skill the probe writes, with its name and description." }
@@ -20,7 +21,7 @@
     "studio-panel": [
       { "id": "probe", "title": "Probe" }
     ],
-    "skill-router": { "title": "Probe router" },
+    "skill-router": { "title": "Probe router", "reads-prompts": true },
     "cli": [
       { "name": "try", "title": "Try one thing from inside the sandbox, and say what happened", "writes": false }
     ]

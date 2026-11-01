@@ -34,6 +34,7 @@ function Strip({
       <SignInStrip
         pool="builds"
         profile="work"
+        kind={harness === "Claude Code" ? "claude" : "codex"}
         harness={harness}
         approves={harness !== "Claude Code"}
         step={step}
@@ -49,8 +50,8 @@ function Strip({
         onEnd={() => undefined}
         onTerminal={() => undefined}
         terminal={
-          step.at === "could-not-follow"
-            ? { printer: (print) => print?.(TERMINAL_SHOWS), onType: () => undefined }
+          step.at === "could-not-follow" || step.at === "device-in-terminal"
+            ? { printer: (print) => print?.(TERMINAL_SHOWS), onType: () => undefined, attempt: 0 }
             : undefined
         }
         onDeviceCode={() => undefined}
@@ -121,6 +122,19 @@ export const CodeRefused: Story = {
 /** Codex's step 1: nothing to paste, the person approves in the page that opened. */
 export const Approve: Story = {
   args: { harness: "Codex", step: { at: "approve", url: PAGE } },
+};
+
+/** "Use a device code", pressed (#4106): the harness's device flow, in the strip's own terminal. */
+export const DeviceInTerminal: Story = {
+  args: { harness: "Codex", step: { at: "device-in-terminal" } },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByRole("group", { name: "The runner's terminal on builds" }),
+    ).toBeInTheDocument();
+    await expect(canvas.getByRole("status")).toHaveTextContent(
+      "Step 1 of 2: Enter the device code the terminal below shows",
+    );
+  },
 };
 
 /** The port for the browser's answer is taken on this Mac: it says so, and a device code is left. */

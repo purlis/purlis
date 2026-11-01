@@ -306,3 +306,113 @@ fn a_suspended_draining_runner_is_removed_without_being_asked() {
     let log = std::fs::read_to_string(config.path().join("log")).unwrap();
     assert!(!log.contains("start "), "{log}");
 }
+
+/// A runner that answered its unpairing cannot be asked, and takes no chat (#4146): the next
+/// look removes what is left without asking it.
+#[test]
+fn an_unpaired_runner_is_removed_without_being_asked_again() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    let locked = purlis_core::runners::lock(config.path());
+    purlis_core::runners::note_locked(config.path(), "first", |kept| kept.unpaired = true, &locked)
+        .unwrap();
+    drop(locked);
+
+    let said = follow_and_drain(&machine, None, &|_| panic!("it is not asked"));
+
+    assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
+}
+
+/// A machine in `config` whose `docker` lists no container and still lists each runner's home,
+/// unless `no-home` is there: removing a home fails while `volume-stays` is there.
+fn a_machine_with_only_a_home_left(config: &std::path::Path) -> Machine {
+    let machine = a_machine(config);
+    std::fs::write(
+        config.join("docker"),
+        format!(
+            "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$1 $2\" in\n  'volume ls')              [ -e '{no_home}' ] || echo purlis-runner-first-home ;;\n  'volume rm')              [ -e '{stays}' ] && exit 1 ;;\n  'container inspect') echo 'no such container' >&2;              exit 1 ;;\nesac\nexit 0\n",
+            log = config.join("log").display(),
+            stays = config.join("volume-stays").display(),
+            no_home = config.join("no-home").display(),
+        ),
+    )
+    .unwrap();
+    std::fs::write(config.join("volume-stays"), "").unwrap();
+    machine
+}
+
+/// **A runner with only its home left is removed without being asked for its chats** (#4298), on
+/// a row from before its engine was kept, which no engine's word says was removed. Nothing is
+/// left to answer: before, each look said it "stays until it answers" and tried nothing.
+#[test]
+fn a_runner_with_only_its_home_left_is_only_removed() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine_with_only_a_home_left(config.path());
+    a_pool_draining(&machine);
+    let locked = purlis_core::runners::lock(config.path());
+    purlis_core::runners::note_locked(config.path(), "first", |kept| kept.carried = true, &locked)
+        .unwrap();
+    drop(locked);
+
+    let said = follow_and_drain(&machine, None, &|_| panic!("nothing is left to ask"));
+
+    assert!(said[0].contains("is not all removed"), "{said:?}");
+    assert_eq!(names(&machine), ["first", "first-fedcba98"]);
+    std::fs::remove_file(config.path().join("volume-stays")).unwrap();
+
+    let said = follow_and_drain(&machine, None, &|_| panic!("nothing is left to ask"));
+
+    assert!(said[0].contains("had no chat left"), "{said:?}");
+    assert_eq!(names(&machine), ["first-fedcba98"]);
+}
+
+/// **A Docker that lists neither its container nor its home may be another engine** (#4149): a row
+/// with no engine kept stays, though its drain began, and what is on its engine is not orphaned.
+#[test]
+fn a_runner_whose_home_is_not_listed_either_is_not_removed_on_dockers_word() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine_with_only_a_home_left(config.path());
+    a_pool_draining(&machine);
+    let locked = purlis_core::runners::lock(config.path());
+    purlis_core::runners::note_locked(config.path(), "first", |kept| kept.carried = true, &locked)
+        .unwrap();
+    drop(locked);
+    std::fs::write(config.path().join("no-home"), "").unwrap();
+
+    let said = follow_and_drain(&machine, None, &|_| Err("down".into()));
+
+    assert!(said[0].contains("stays until it answers"), "{said:?}");
+    assert_eq!(names(&machine), ["first", "first-fedcba98"]);
+}
+
+/// A row no drain began on is not removed on Docker's word alone: without an engine kept, Docker
+/// may reach another one, where its chats still run (#4149).
+#[test]
+fn a_runner_whose_drain_did_not_begin_is_still_asked_when_docker_lists_no_container() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine_with_only_a_home_left(config.path());
+    a_pool_draining(&machine);
+
+    let said = follow_and_drain(&machine, None, &|_| Err("down".into()));
+
+    assert!(said[0].contains("stays until it answers"), "{said:?}");
+    assert_eq!(names(&machine), ["first", "first-fedcba98"]);
+}
+
+/// Carried from but not unpaired, it could still take a link, so each look still asks (#4146): a
+/// chat there keeps it.
+#[test]
+fn a_runner_carried_from_but_not_unpaired_is_still_asked() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    let locked = purlis_core::runners::lock(config.path());
+    purlis_core::runners::note_locked(config.path(), "first", |kept| kept.carried = true, &locked)
+        .unwrap();
+    drop(locked);
+
+    follow_and_drain(&machine, None, &|_| Ok(1));
+
+    assert_eq!(names(&machine), ["first", "first-fedcba98"]);
+}

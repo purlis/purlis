@@ -5,22 +5,29 @@
 // repository as it is. Run with `node --test tools/`.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { posix } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, posix } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
   AGENT_STEERING,
+  DOCS_READ_BY_RUST,
+  GATES,
+  RUST_READERS,
   READ_BY_CODE,
   READ_BY_RUST,
+  READ_BY_WEB,
   SCOPES,
   WHOLE_TREE_GUARDS,
   WINDOW_SOURCE_GUARDS,
   ciToolsOf,
+  gatesOf,
   namedIn,
   scopesOf,
   scopesOfPath,
+  webParts,
 } from "./ci-scope.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -86,14 +93,10 @@ test("CI itself, a lockfile, the toolchain and a shared config run everything", 
 
 test("code runs everything", () => {
   for (const path of [
-    "crates/purlis-core/src/lib.rs",
-    "app/src-tauri/src/lib.rs",
     "app/src-tauri/plugin/skills/theme/SKILL.md",
-    "crates/purlis-core/docs/themes.md",
     "tests/fixtures/recorded/behaviour.jsonl",
     "fixtures/corpora/a.json",
     "runner-image/Dockerfile",
-    "operator/src/main.rs",
   ]) {
     assert.deepEqual(of([path]), all, path);
   }
@@ -211,11 +214,29 @@ test("an unknown path runs everything", () => {
 test("a doc that code reads runs everything", () => {
   for (const path of [
     "CHANGELOG.md",
-    "docs/plane-format.md",
-    "docs/schema/theme.v2.schema.json",
     "docs/ui-primitives.md",
   ]) {
     assert.deepEqual(of([path]), all, path);
+  }
+  for (const path of ["docs/plane-format.md", "docs/schema/theme.v2.schema.json"]) {
+    assert.deepEqual(of([path]), ["app", "docs", "rust", "scenario", "tools"], path);
+  }
+});
+
+test("no file of the window's checks reads a doc only Rust's tests read", () => {
+  const sources = git("ls-files", "--", "app/src", "app/e2e", "app/.storybook").filter((f) =>
+    /\.(ts|tsx|mts|js|mjs)$/.test(f),
+  );
+  assert.ok(sources.length > 0);
+  for (const file of sources) {
+    const text = read(file)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    for (const doc of DOCS_READ_BY_RUST) {
+      const name = posix.basename(doc);
+      const pieces = name === "schema" ? /"docs",\s*"schema"|docs\/schema/ : new RegExp(name.replace(".", "\\."));
+      assert.ok(!pieces.test(text), `${file} reads ${doc}: take it out of DOCS_READ_BY_RUST`);
+    }
   }
 });
 
@@ -230,7 +251,7 @@ test("scopes add up over a change's paths", () => {
     "tools",
     "web",
   ]);
-  assert.deepEqual(of(["docs/a.md", "crates/host/src/lib.rs"]), all);
+  assert.deepEqual(of(["docs/a.md", "app/src-tauri/plugin/a.md"]), all);
 });
 
 test("only a pull request is scoped: a merge group, a push and a nightly run everything", () => {
@@ -407,6 +428,10 @@ test("every doc the code reads by a relative path runs everything", () => {
         ? [path]
         : [];
     for (const file of files) {
+      if (DOCS_READ_BY_RUST.some((d) => (d.endsWith("/") ? file.startsWith(d) : file === d))) {
+        assert.ok(scopesOfPath(file, new Set()).has("rust"), file);
+        continue;
+      }
       assert.deepEqual(
         [...scopesOfPath(file, new Set())].sort(),
         all,
@@ -710,4 +735,301 @@ test("every Rust test that walks the window's sources is a guard, or a known mis
         "tools/ci-scope.mjs, or to WINDOW_WALK_MISSES here with why it cannot run there",
     );
   }
+});
+
+// 2026-10-31 (#3596): runner waits came back at 336 pull request runs a day, and 62 of the last 199
+// merged pull requests changed Rust and nothing the window's checks read, yet ran them all.
+const rustOnly = ["app", "docs", "rust", "scenario", "tools"];
+
+test("a Rust change runs Rust, the app and the scenarios, not the web checks or the stories", () => {
+  for (const path of [
+    "crates/purlis-core/src/lib.rs",
+    "crates/host/src/main.rs",
+    "crates/purlis-core/tests/it/a_test.rs",
+    "crates/purlis-core/docs/themes.md",
+    "crates/host/Cargo.toml",
+    "app/src-tauri/src/panels.rs",
+  ]) {
+    assert.deepEqual(of([path]), rustOnly, path);
+  }
+  assert.deepEqual(of(["crates/host/src/lib.rs", "changes/a-fix.md"]), rustOnly);
+  assert.deepEqual(of(["crates/host/src/lib.rs", "app/src/App.tsx"]), all, "with the window");
+  assert.deepEqual(of(["crates/host/src/lib.rs"], "merge_group"), all, "the queue runs it all");
+});
+
+test("the rest of the app's Rust folder, which the window's build reads, runs everything", () => {
+  for (const path of [
+    "app/src-tauri/Cargo.toml",
+    "app/src-tauri/tauri.conf.json",
+    "app/src-tauri/capabilities/default.json",
+    "app/src-tauri/plugin/skills/theme/SKILL.md",
+  ]) {
+    assert.deepEqual(of([path]), all, path);
+  }
+});
+
+test("Rust that the stories draw runs everything", () => {
+  assert.ok(READ_BY_WEB.length > 0);
+  for (const path of READ_BY_WEB) {
+    const sample = path.endsWith("/") ? `${path}a.json` : path;
+    assert.deepEqual(of([sample]), all, sample);
+  }
+});
+
+// Every path under `crates/` or `app/src-tauri/` that a file of the window's checks names as a
+// path: a string literal, or literals handed to one `join(..)`, read from the file's folder, from
+// `app/` (`process.cwd()` in vitest) or from the root. A comment reads nothing.
+function rustNamedByWindow(files, readFile) {
+  const tracked = new Set(files);
+  const isFolder = (p) => files.some((f) => f.startsWith(`${p}/`));
+  // Keyed by path and file, so a file is found though another named the same path first.
+  const named = new Map();
+  const sources = files.filter(
+    (f) =>
+      /^app\/(src|e2e|\.storybook)\//.test(f) && /\.(ts|tsx|mts|js|mjs)$/.test(f),
+  );
+  for (const file of sources) {
+    const text = readFile(file).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const literals = [...text.matchAll(/"[^"\n]*"(?:\s*,\s*"[^"\n]*")*/g)].map((match) =>
+      [...match[0].matchAll(/"([^"\n]*)"/g)].map((m) => m[1]).join("/"),
+    );
+    // A template's tail, `${root}/crates/a/b.rs`: read from each folder as any literal is.
+    const inTemplates = [...text.matchAll(/`[^`]*`/g)].flatMap((match) =>
+      [...match[0].matchAll(/(?:crates|src-tauri)\/[A-Za-z0-9_./-]+/g)].map((m) => m[0]),
+    );
+    for (const joined of [...literals, ...inTemplates]) {
+      for (const from of [posix.dirname(file), "app", "."]) {
+        const path = posix.normalize(posix.join(from, joined)).replace(/\/$/, "");
+        if (!/^(crates\/[^/]+\/|app\/src-tauri\/)/.test(path)) continue;
+        if (!tracked.has(path) && !isFolder(path)) continue;
+        named.set(`${path}\0${file}`, file);
+      }
+    }
+  }
+  return named;
+}
+
+test("the search finds a Rust path named whole, in pieces, or from a URL", () => {
+  const files = [
+    "app/src/a.test.ts",
+    "app/e2e/b.test.ts",
+    "app/.storybook/c.ts",
+    "app/src/d.tsx",
+    "app/src/e.test.ts",
+    "crates/core/src/mark.rs",
+    "crates/core/src/other.rs",
+    "crates/core/src/theme/one.json",
+    "app/src-tauri/src/opener.rs",
+    "app/src-tauri/Cargo.toml",
+  ];
+  const text = {
+    "app/src/a.test.ts": 'join(process.cwd(), "..", "crates", "core", "src", "mark.rs")',
+    "app/e2e/b.test.ts": 'join(here, "..", "src-tauri", "src", "opener.rs")',
+    "app/.storybook/c.ts": 'new URL("../../crates/core/src/theme", import.meta.url)',
+    "app/src/d.tsx": '// join("..", "crates", "core", "src", "mark.rs")\nentry("crates", true)',
+    "app/src/e.test.ts": "readFileSync(`${root}/crates/core/src/other.rs`)",
+  };
+  const found = [...rustNamedByWindow(files, (p) => text[p] ?? "").keys()]
+    .map((key) => key.split("\0")[0])
+    .sort();
+  assert.deepEqual(found, [
+    "app/src-tauri/src/opener.rs",
+    "crates/core/src/mark.rs",
+    "crates/core/src/other.rs",
+    "crates/core/src/theme",
+  ]);
+});
+
+// A file that names a Rust path but is no test of `npm test`, and what holds it.
+const READERS_HELD_ELSEWHERE = {
+  "app/.storybook/handed.plugin.ts": "the stories: READ_BY_WEB runs everything",
+  "app/e2e/recordedForge.ts": "imported by recordedForge.test.ts, a reader, and a scenario spec",
+};
+
+test("every vitest file that names a Rust path is a reader, and every reader names one", () => {
+  const readers = new Set(rustNamedByWindow(git("ls-files"), read).values());
+  for (const file of readers) {
+    assert.ok(
+      file in READERS_HELD_ELSEWHERE || RUST_READERS.includes(file.slice("app/".length)),
+      `${file} reads Rust: add it to RUST_READERS in tools/ci-scope.mjs`,
+    );
+  }
+  for (const reader of RUST_READERS) {
+    assert.ok(readers.has(`app/${reader}`), `app/${reader} reads no Rust: take it out`);
+  }
+  for (const file of Object.keys(READERS_HELD_ELSEWHERE)) {
+    assert.ok(readers.has(file), `${file} reads no Rust: take it out`);
+  }
+});
+
+test("the web job's part 2 runs every reader, when Rust changed and web is out of scope", () => {
+  const ci = read(".github/workflows/ci.yml");
+  const step = ci.slice(ci.indexOf("- name: Vitest's files that read Rust"));
+  assert.ok(step.length < ci.length, "ci.yml has the step");
+  const run = step.slice(0, step.indexOf("\n      - "));
+  assert.match(
+    run,
+    /matrix\.part == 2 && needs\.changes\.outputs\.web == 'false' && needs\.changes\.outputs\.rust != 'false'/,
+  );
+  for (const reader of RUST_READERS) assert.ok(run.includes(reader), reader);
+});
+
+// `ci` never builds the operator: a workspace of its own, which `operator.yml` checks.
+test("the operator alone runs the tools' tests, as `ci` never builds it", () => {
+  for (const path of ["operator/src/main.rs", "operator/charts/a/values.yaml", "operator/Cargo.lock"]) {
+    assert.deepEqual(of([path]), docsOnly, path);
+  }
+  assert.deepEqual(of(["operator/Dockerfile"]), all, "a Rust test reads it");
+  const deleted = new Set(["operator/src/gone.rs"]);
+  const scopes = scopesOf({ event: "pull_request", paths: [...deleted], ciToolNames: CI_TOOLS, deleted });
+  assert.deepEqual([...scopes.scopes].sort(), docsOnly, "ci reads no path of it");
+  assert.match(read(".github/workflows/operator.yml"), /- operator\/\*\*/);
+});
+
+test("every operator file a Rust test or `ci.yml` reads runs everything", () => {
+  const rust = git("ls-files").filter((f) => f.endsWith(".rs") && !f.startsWith("operator/"));
+  for (const file of rust) {
+    const text = read(file).replace(/^\s*\/\/.*$/gm, "");
+    for (const [, path] of text.matchAll(/"(operator\/[A-Za-z0-9._/-]+)"/g)) {
+      if (path.includes("*") || path.endsWith("/")) continue;
+      assert.deepEqual(of([path]), all, `${file} reads ${path}`);
+    }
+  }
+});
+
+test("web parts: the part that runs the tools' tests alone when the web checks are out", () => {
+  assert.deepEqual(webParts(new Set(["docs", "tools"])), [2]);
+  assert.deepEqual(webParts(new Set(rustOnly)), [2]);
+  assert.deepEqual(webParts(new Set(SCOPES)), [1, 2, 3, 4]);
+  const ci = read(".github/workflows/ci.yml");
+  assert.ok(
+    ci.includes("part: ${{ fromJSON(needs.changes.outputs.web-parts || '[1,2,3,4]') }}"),
+    "an empty output runs every part",
+  );
+  assert.match(ci.slice(ci.indexOf("  web:\n")), /npm test -- --shard=\$\{\{ matrix\.part \}\}\/4/);
+  const toolsStep = ci.slice(ci.indexOf('- run: node --test "../tools/*.test.mjs"'));
+  assert.match(toolsStep.slice(0, 80), /if: matrix\.part == 2/, "part 2 has the tools' tests");
+});
+
+test("a job that only asks whether it is needed is not started on a pull request", () => {
+  assert.deepEqual(
+    gatesOf({ event: "pull_request", paths: ["docs/a.md"] }),
+    {
+      "listen-shim": false,
+      "browser-engine": false,
+      confinement: false,
+      parity: false,
+      bench: false,
+      "outcome-bars": false,
+    },
+  );
+  const yes = (path, gate) =>
+    assert.equal(gatesOf({ event: "pull_request", paths: [path] })[gate], true, `${path}: ${gate}`);
+  yes("tests/listen-shim/check.mjs", "listen-shim");
+  yes("crates/purlis-cli/src/listen/mod.rs", "listen-shim");
+  yes("crates/browser-engine/src/lib.rs", "browser-engine");
+  yes("crates/studio-probe/src/lib.rs", "confinement");
+  yes("crates/host/src/lib.rs", "parity");
+  yes("crates/session-protocol/src/lib.rs", "bench");
+  yes("Cargo.lock", "bench");
+  for (const event of ["merge_group", "push", "schedule"]) {
+    for (const [gate, on] of Object.entries(gatesOf({ event, paths: ["docs/a.md"] }))) {
+      assert.equal(on, true, `${event}: ${gate}`);
+    }
+  }
+  for (const on of Object.values(gatesOf({ event: "pull_request", paths: [] }))) {
+    assert.equal(on, true, "a change of no paths starts every job");
+  }
+});
+
+// By the operator's choice of 2026-11-01: what the bars measure and the suite itself. A regression
+// from anywhere else shows on main's push, which always runs it.
+test("the outcome bars run on a pull request that touches what they measure, and on main", () => {
+  const on = (path) => gatesOf({ event: "pull_request", paths: [path] })["outcome-bars"];
+  for (const path of [
+    "app/src/SkillStudioTab.tsx",
+    "app/src/UseSkill.tsx",
+    "app/src/skillsListing.ts",
+    "app/src/chatSkillsAsk.ts",
+    "app/src/personaSkills.tsx",
+    "app/src/SkillsChangedNotice.tsx",
+    "app/src/ui/list/Fold.tsx",
+    "app/src-tauri/src/skillstudio.rs",
+    "app/src-tauri/src/skillstudio/needs.rs",
+    "app/src-tauri/src/useskill.rs",
+    "app/src-tauri/src/personaskills.rs",
+    "crates/skills/src/lib.rs",
+    "crates/purlis-core/src/skills.rs",
+    "crates/purlis-core/src/skills/verbs.rs",
+    "crates/purlis-core/src/skilluse.rs",
+    "crates/fake-harness/src/main.rs",
+    "app/e2e/outcomeBars.ts",
+    "app/e2e/harness.ts",
+    "app/e2e/wdio.outcome.conf.ts",
+    "app/e2e/specs/skill-outcome-bars.outcome.e2e.ts",
+    ".github/workflows/ci.yml",
+  ])
+    assert.equal(on(path), true, path);
+  for (const path of ["app/src/App.tsx", "crates/host/src/lib.rs", "app/e2e/specs/tabs.e2e.ts"])
+    assert.equal(on(path), false, path);
+
+  const ci = read(".github/workflows/ci.yml");
+  const job = ci.slice(ci.indexOf("\n  outcome-bars:\n"), ci.indexOf("\n  scenario-linux-checks:\n"));
+  assert.ok(
+    job.includes(
+      "github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')",
+    ),
+    "main's push and a pull request its gate lets in, and not the merge group",
+  );
+  assert.match(
+    ci.slice(ci.indexOf("\n  changes:\n"), ci.indexOf("\n  rust:\n")),
+    /\boutcome-bars: \$\{\{ steps\.scope\.outputs\.outcome-bars \}\}/,
+  );
+});
+
+// A gate says what the job's own step decides: the step stays, for the merge group and the push,
+// which are judged in the job as they always were.
+test("each gated job reads its gate, and its own step greps the same paths", () => {
+  const ci = read(".github/workflows/ci.yml");
+  const jobs = {
+    "listen-shim": "listen-shim",
+    "browser-engine": "browser-engine-macos",
+    confinement: "studio-confinement-macos",
+    parity: "parity",
+    bench: "bench",
+  };
+  for (const [gate, job] of Object.entries(jobs)) {
+    const from = ci.indexOf(`\n  ${job}:\n`);
+    assert.ok(from > 0, job);
+    const body = ci.slice(from + 1);
+    const end = body.slice(1).search(/\n  [a-z][a-z0-9-]*:\n/);
+    const text = body.slice(0, end + 1);
+    assert.match(text, /\n    needs: changes\n/, `${job} needs changes`);
+    assert.ok(
+      text.includes(`github.event_name != 'pull_request' || needs.changes.outputs.${gate} != 'false'`),
+      `${job} is started unless its gate says false on a pull request`,
+    );
+    assert.ok(text.includes(GATES[gate]), `${job}'s step greps GATES["${gate}"]`);
+    assert.match(
+      ci.slice(ci.indexOf("\n  changes:\n"), ci.indexOf("\n  rust:\n")),
+      new RegExp(`\\b${gate}: \\$\\{\\{ steps\\.scope\\.outputs\\.${gate} \\}\\}`),
+      `changes hands on ${gate}`,
+    );
+  }
+});
+
+test("a change that cannot be read runs every scope, part and gated job", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ci-scope-"));
+  const out = join(dir, "out");
+  execFileSync("node", [join(ROOT, "tools/ci-scope.mjs"), "pull_request", "no-such-commit"], {
+    cwd: ROOT,
+    env: { ...process.env, GITHUB_OUTPUT: out },
+    stdio: "pipe",
+  });
+  const said = Object.fromEntries(
+    readFileSync(out, "utf8").trim().split("\n").map((l) => l.split("=")),
+  );
+  for (const key of [...SCOPES, ...Object.keys(GATES)]) assert.equal(said[key], "true", key);
+  assert.equal(said["web-parts"], "[1,2,3,4]");
+  rmSync(dir, { recursive: true });
 });
