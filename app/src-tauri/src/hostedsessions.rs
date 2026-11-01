@@ -1840,8 +1840,7 @@ impl HostLink {
             tokio::pin!(asked, writing);
             // This machine's own clock, started before the host's: `Ok(None)` is this send's
             // wait ending it, and nothing a runner says is. Whatever answered first says itself
-            // (#4398). Bytes all sent by then are given the same grace as any answer, so a send
-            // the host finishes just after its time still counts.
+            // (#4398). A send the host finishes within the same grace as any answer still counts.
             let time_up = tokio::time::sleep(within);
             tokio::pin!(time_up);
             tokio::select! {
@@ -1858,7 +1857,22 @@ impl HostLink {
                         Err(_) => Ok(None),
                     }
                 }
-                () = &mut time_up => Ok(None),
+                () = &mut time_up => {
+                    // Its time is up, and only that is decided here. The stream stays open and
+                    // keeps writing until the grace ends: dropped now, the host could read the
+                    // reset as the end of what was sent. The host's own bound ends it first.
+                    let last = async {
+                        tokio::select! {
+                            biased;
+                            answered = &mut asked => answered,
+                            _ = &mut writing => (&mut asked).await,
+                        }
+                    };
+                    match tokio::time::timeout_at(graced, last).await {
+                        Ok(Ok(answer)) => Ok(Some(answer)),
+                        Ok(Err(_)) | Err(_) => Ok(None),
+                    }
+                }
             }
         });
         match sent? {

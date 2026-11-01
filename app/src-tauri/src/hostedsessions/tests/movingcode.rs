@@ -205,7 +205,8 @@ fn a_send_out_of_its_time_says_the_limit_and_double_it() {
 
     let refused = link
         .write_on_a_stream(None, held, move |_client, _transfer| {
-            // The host never answers, and no stream opens: the send stalls past its time.
+            // The host never answers, and no stream opens: the send stalls past its time and
+            // its grace, about half a minute here.
             Box::pin(std::future::pending::<Result<(), session::CallError>>())
         })
         .unwrap_err();
