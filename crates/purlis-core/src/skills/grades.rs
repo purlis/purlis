@@ -1607,7 +1607,7 @@ pub fn planned_with(
     let plan = request.as_ref().map(grade::plan);
     let record = read(root, name, Some(level));
     let estimate = plan
-        .and_then(|plan| estimate_of(&record.grades, plan.chats, profile, plan.outcome_evals > 0));
+        .and_then(|plan| estimate_of(&record.grades, plan.chats, profile, plan.judge_chats * 2));
     let record_said = record.said();
     let unseen = request
         .as_ref()
