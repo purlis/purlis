@@ -1047,6 +1047,14 @@ pub fn declares_a_tool_with(root: &Path, persona: &str, vault: &str) -> bool {
         .any(|tool| tool.vault == vault)
 }
 
+/// **The browser login `persona` declares with `vault`**, where one is (#4595).
+pub fn login_with(root: &Path, persona: &str, vault: &str) -> Option<String> {
+    declared_now(root, persona)
+        .into_iter()
+        .find(|tool| tool.vault == vault && tool.login.is_some())
+        .map(|tool| tool.name)
+}
+
 /// **What reading a value directly is refused with in a sandboxed chat** (qw385): `secret
 /// get` and `secret cp` (and their `persona secret` forms), for every provider. A sandboxed
 /// chat never reads a vault, and no grant changes that; the route that works is a tool its
@@ -1278,23 +1286,90 @@ pub fn login_and_identity_for(
     name: &str,
     unconfined: bool,
 ) -> Result<(purlis_session_protocol::browsing::LogIn, String), String> {
-    use purlis_session_protocol::browsing::{LogIn, Secret};
     let (ready, ctx) = login_ready(asker, name, unconfined)?;
+    read_login(asker, name, &ready, &ctx)
+}
+
+/// **The login the person allowed from its notice, read for chat `asker`** (#4595): `tool`, as the
+/// app kept it from their press, with no start's record and no vault tag asked of it, since that
+/// press confirmed this vault and these keys for this one login. Nothing a chat says reaches it.
+/// The read is every other login's, so a key a `mint` line names is refused here too.
+pub fn granted_login(
+    asker: &Asker,
+    tool: &crate::sandbox::tools::Tool,
+) -> Result<(purlis_session_protocol::browsing::LogIn, String), String> {
+    let (ready, ctx) = granted_ready(asker, tool);
+    let (login, identity) = read_login(asker, &tool.name, &ready, &ctx)?;
+    // The mark is by the name in a vault, and one item may have two: no private key is filled.
+    let held = std::iter::once(&login.password).chain(login.user.as_ref());
+    if held
+        .into_iter()
+        .any(|value| crate::sandbox::tools::mint::a_private_key(value.expose()))
+    {
+        return Err(format!(
+            "{} is a private key, so purlis filled nothing",
+            tool.name
+        ));
+    }
+    Ok((
+        purlis_session_protocol::browsing::LogIn {
+            suggested: true,
+            ..login
+        },
+        identity,
+    ))
+}
+
+/// [`granted_login`]'s identity, no value read.
+pub fn granted_login_identity(
+    asker: &Asker,
+    tool: &crate::sandbox::tools::Tool,
+) -> Result<String, String> {
+    let (ready, _) = granted_ready(asker, tool);
+    identity_of_ready(asker, &tool.name, &ready)
+}
+
+/// The tool and the context a login the person allowed is read in.
+fn granted_ready(
+    asker: &Asker,
+    tool: &crate::sandbox::tools::Tool,
+) -> (crate::sandbox::tools::Ready, Ctx) {
+    let ready = crate::sandbox::tools::Ready {
+        tool: tool.clone(),
+        program: PathBuf::new(),
+    };
+    let ctx = match &asker.confines {
+        Some(confines) => {
+            Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
+        }
+        None => Ctx::new(&asker.root, asker.env.clone()),
+    };
+    (ready, ctx)
+}
+
+/// `ready`'s values, read from its vault, and its identity.
+fn read_login(
+    asker: &Asker,
+    name: &str,
+    ready: &crate::sandbox::tools::Ready,
+    ctx: &Ctx,
+) -> Result<(purlis_session_protocol::browsing::LogIn, String), String> {
+    use purlis_session_protocol::browsing::{LogIn, Secret};
     let (Some(login), Some((user_key, pass_key))) = (&ready.tool.login, ready.tool.login_keys())
     else {
         return Err(format!("{name} is not a browser login"));
     };
     let vault = &ready.tool.vault;
-    let v = cmd::provider(&ctx, vault).map_err(|e| e.message.to_string())?;
+    let v = cmd::provider(ctx, vault).map_err(|e| e.message.to_string())?;
     let read = |key: &str| {
-        cmd::get_value(&ctx, &v, key).map(Secret::new).map_err(|e| {
+        cmd::get_value(ctx, &v, key).map(Secret::new).map_err(|e| {
             format!(
                 "vault '{vault}' did not give {name}'s login, so nothing was filled ({})",
                 e.message
             )
         })
     };
-    let identity = identity_of_ready(asker, name, &ready)?;
+    let identity = identity_of_ready(asker, name, ready)?;
     Ok((
         LogIn {
             address: login.url.clone(),
@@ -1302,6 +1377,7 @@ pub fn login_and_identity_for(
             password: read(pass_key)?,
             keep: None,
             identity: Some(identity.clone()),
+            suggested: false,
         },
         identity,
     ))
@@ -1400,10 +1476,9 @@ fn login_ready(
                  was filled"
             ),
             None => format!(
-                "{persona} declares no browser login {name}, so nothing was filled. A login is \
-                 declared in the project's settings, [sandbox.personas.{persona}] tools = {{ \
-                 {name} = {{ vault = \"<vault>\", browser = \"https://…\", key = \"<key>\" }} \
-                 }}, and allowed on this machine"
+                "{persona} declares no browser login {name}, so nothing was filled. Call \
+                 browser_login again with site, vault and key (and user_key if the page asks for \
+                 a user name), and the person is asked"
             ),
         });
     };

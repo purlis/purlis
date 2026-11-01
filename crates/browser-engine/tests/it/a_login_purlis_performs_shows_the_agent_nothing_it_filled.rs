@@ -34,6 +34,7 @@ fn login_on(page: &str, origin: &str) -> Login {
         user: Some(USER.to_owned().into()),
         password: PASSWORD.to_owned().into(),
         only_if_asked: false,
+        suggested: false,
     }
 }
 

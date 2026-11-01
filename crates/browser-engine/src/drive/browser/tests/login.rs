@@ -13,7 +13,8 @@ use std::time::Duration;
 use serde_json::json;
 
 use super::super::login::{
-    CLEAR_FIELD, FIELD_HAS_FOCUS, FIELD_LENGTH, FOCUS_FIELD, NAME_FIELD, PASSWORD_FIELD, origin_of,
+    CLEAR_FIELD, FIELD_HAS_FOCUS, FIELD_LENGTH, FOCUS_FIELD, NAME_FIELD, PASSWORD_FIELD,
+    SAYS_IT_IS_A_NAME, origin_of,
 };
 use super::{Engine, browser_with, id, limits, snapshot};
 use crate::WebAddress;
@@ -42,6 +43,7 @@ fn login_at(origin: &str) -> Login {
         user: None,
         password: FILLED.to_owned().into(),
         only_if_asked: false,
+        suggested: false,
     }
 }
 
@@ -64,6 +66,8 @@ enum Twist {
     Unread,
     /// The page asks for no password at all: signed in already.
     AsksNothing,
+    /// The page shows a plain text field and no password: a search box, say.
+    PlainField,
     /// The engine makes no world of purlis's own in the page.
     NoWorld,
     /// purlis's world in the page ends once the field is found, before it is filled.
@@ -161,8 +165,20 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                     json!({ "result": { "type": "object", "subtype": "null", "value": null } })
                 }))
             }
+            "Runtime.evaluate" if p["expression"] == SAYS_IT_IS_A_NAME => Some(Ok(
+                json!({ "result": { "type": "object", "subtype": "null", "value": null } }),
+            )),
+            "Runtime.evaluate"
+                if twist == Twist::PlainField && p["expression"] == NAME_FIELD =>
+            {
+                Some(Ok(
+                    json!({ "result": { "type": "object", "subtype": "node", "objectId": "NAME-1" } }),
+                ))
+            }
             "Runtime.evaluate" if p["expression"] == PASSWORD_FIELD => {
-                Some(Ok(if twist == Twist::AsksNothing || (goes && seen.load(Ordering::SeqCst)) {
+                Some(Ok(if matches!(twist, Twist::AsksNothing | Twist::PlainField)
+                    || (goes && seen.load(Ordering::SeqCst))
+                {
                     json!({ "result": { "type": "object", "subtype": "null", "value": null } })
                 } else {
                     json!({ "result": { "type": "object", "subtype": "node", "objectId": "PASSWORD-1" } })
@@ -266,6 +282,27 @@ fn a_login_fills_the_declared_origin_and_its_value_is_in_no_later_answer() {
         Content::Text(text) => assert!(!text.to_lowercase().contains(FILLED), "{text}"),
         other => panic!("a find is text: {other:?}"),
     }
+}
+
+/// A chat chose this page and these keys (#4595): a key it named as the user name is typed into
+/// no field that's only text, where a page would show it, send it or keep it.
+#[test]
+fn a_login_a_chat_chose_fills_no_plain_field() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::PlainField);
+    let login = Login {
+        user: Some("named-as-a-user".to_owned().into()),
+        suggested: true,
+        ..login_at(ORIGIN)
+    };
+    let ended = browser.log_in(&login, &|| Ok(())).unwrap();
+    match ended.outcome {
+        Err(Refusal::NotLoggedIn(why)) => {
+            assert!(why.contains("says it's for a user name"), "{why}");
+        }
+        other => panic!("refused otherwise: {}", ended_as(&other)),
+    }
+    assert!(inserted(&engine).is_empty());
 }
 
 #[test]
@@ -502,6 +539,7 @@ fn a_page_that_asks_for_nothing_is_signed_in_from_kept_logins_and_nothing_is_fil
     as_a_login_form_that(&engine, true, Twist::AsksNothing);
     let login = Login {
         only_if_asked: true,
+        suggested: false,
         ..login_at(ORIGIN)
     };
     let ended = browser
@@ -524,6 +562,7 @@ fn a_page_that_asks_is_filled_though_the_browser_opened_from_kept_logins() {
     as_a_login_form(&engine, true);
     let login = Login {
         only_if_asked: true,
+        suggested: false,
         ..login_at(ORIGIN)
     };
     let ended = browser.log_in(&login, &|| Ok(())).unwrap();

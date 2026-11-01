@@ -296,6 +296,7 @@ fn a_login(identity: Option<&str>) -> purlis_session_protocol::browsing::LogIn {
         password: purlis_session_protocol::browsing::Secret::new("not-a-real-one".into()),
         keep: None,
         identity: identity.map(str::to_owned),
+        suggested: false,
     }
 }
 

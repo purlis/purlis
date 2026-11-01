@@ -59,6 +59,9 @@ pub enum About {
     /// The chat's browser logins filled on pool `pool`'s runner, where its browser runs (#2050):
     /// an Allow is for chats of its persona, while the pool stays as it is.
     PoolLogin { pool: String },
+    /// A browser login the chat suggested (#4595): an Allow is for this login, on the site the
+    /// person confirmed.
+    BrowserLogin { login: String },
 }
 
 impl About {
@@ -122,6 +125,9 @@ impl About {
             } => "using a browser that reaches this project's sites, its dev servers and the \
                   open web"
                 .to_owned(),
+            Self::BrowserLogin { login } => {
+                format!("browser login {}", code(login))
+            }
             Self::PoolLogin { pool } => {
                 format!(
                     "purlis filling your browser logins on pool {}'s runner",

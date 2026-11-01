@@ -143,6 +143,7 @@ impl World {
             browser_sites: Vec::new(),
             pool_logins: Vec::new(),
             pool_tools: Vec::new(),
+            browser_logins: Vec::new(),
             declared: purlis_core::sandbox::services::Declared::default(),
         }
     }

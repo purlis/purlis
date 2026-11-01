@@ -27,6 +27,7 @@ use purlis_session_protocol::browsing::BrowserReach;
 
 use crate::chattools::Tool;
 use crate::hookwire::Browsing;
+use crate::loginask::Suggested;
 use crate::sandbox::reach::{Reach, layer_of};
 
 /// The prefix every browser tool's name starts with.
@@ -222,10 +223,11 @@ pub fn asked(name: &str, args: &Map<String, Value>) -> Result<Asked, String> {
             if login.is_empty() {
                 return Err("give `login` the name of one of your persona's browser logins".into());
             }
+            let suggested = suggested_login(args)?;
             return Ok(Asked {
                 browser,
                 call_id,
-                asked: Browsing::LogIn { login },
+                asked: Browsing::LogIn { login, suggested },
                 changes: false,
             });
         }
@@ -393,6 +395,29 @@ fn optional(args: &Map<String, Value>, key: &str) -> Result<Option<String>, Stri
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(text)) => Ok(Some(text.clone())),
         Some(_) => Err(format!("`{key}` is a string")),
+    }
+}
+
+/// **The login a `browser_login` call suggests** (#4595): none where it names no site, and all
+/// three of `site`, `vault` and `key` where it names any of them.
+fn suggested_login(args: &Map<String, Value>) -> Result<Option<Suggested>, String> {
+    let site = optional(args, "site")?;
+    let vault = optional(args, "vault")?;
+    let key = optional(args, "key")?;
+    let user_key = optional(args, "user_key")?;
+    match (site, vault, key) {
+        (None, None, None) if user_key.is_none() => Ok(None),
+        (Some(site), Some(vault), Some(key)) => Ok(Some(Suggested {
+            site,
+            vault,
+            user_key,
+            key,
+        })),
+        _ => Err(
+            "to suggest a login, give `site`, `vault` and `key` together, and `user_key` if the \
+             page asks for a user name"
+                .to_owned(),
+        ),
     }
 }
 
@@ -694,7 +719,28 @@ fn s_login() -> Value {
             "login": {
                 "type": "string",
                 "description": "The browser login's name, as your persona declares it in the \
-                                project's settings (shop-login).",
+                                project's settings (shop-login), or a new short name for one to \
+                                suggest.",
+            },
+            "site": {
+                "type": "string",
+                "description": "For a login your persona doesn't declare: the https address of \
+                                the login page. The person confirms it before anything is filled.",
+            },
+            "vault": {
+                "type": "string",
+                "description": "For a login your persona doesn't declare: the vault to fill it \
+                                from.",
+            },
+            "user_key": {
+                "type": "string",
+                "description": "For a login your persona doesn't declare: the vault key of the \
+                                user name, if the page asks for one.",
+            },
+            "key": {
+                "type": "string",
+                "description": "For a login your persona doesn't declare: the vault key of the \
+                                password.",
             }
         }),
         &["login"],
@@ -881,7 +927,10 @@ pub const TOOLS: [Tool; 23] = [
         description: "Log this chat's browser in with one of your persona's browser logins, by \
                       its name. purlis goes to the login's page, fills it from the vault and \
                       submits it: the login never reaches you. Once logged in, the browser \
-                      reaches the login's site alone; use browser_new for any other site.",
+                      reaches the login's site alone; use browser_new for any other site. For a \
+                      login your persona doesn't declare, also give site, vault and key (and \
+                      user_key if the page asks for a user name): the person is asked, and the \
+                      call waits for their answer. Call this before asking for the vault.",
         schema: s_login,
         read_only: false,
     },
