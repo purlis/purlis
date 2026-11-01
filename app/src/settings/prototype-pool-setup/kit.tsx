@@ -120,7 +120,7 @@ function CopyButton({ text, what = "Copy" }: { text: string; what?: string }) {
 }
 
 /** Text to copy: a command, YAML, a tool line. */
-export function Code({ text, label, copy }: { text: string; label?: string; copy?: string }) {
+export function Code({ text, label, copy, wraps }: { text: string; label?: string; copy?: string; wraps?: boolean }) {
   const id = useId();
   return (
     <figure className="ps-code" aria-labelledby={label ? id : undefined}>
@@ -128,7 +128,7 @@ export function Code({ text, label, copy }: { text: string; label?: string; copy
         <span id={id}>{label ?? ""}</span>
         <CopyButton text={text} what={copy} />
       </figcaption>
-      <pre tabIndex={0} aria-label={label ?? "Commands"}>
+      <pre tabIndex={0} aria-label={label ?? "Commands"} data-wraps={wraps ? "" : undefined}>
         <code>{text}</code>
       </pre>
     </figure>

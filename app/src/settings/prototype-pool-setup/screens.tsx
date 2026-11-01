@@ -661,7 +661,7 @@ function SendToAdmin({ api }: { api: Api }) {
         title="Send to your admin"
         lead="This holds what's needed and the exact commands. Send it however your team talks: chat, email or a ticket."
       />
-      <Code label="Your message" text={ADMIN_MESSAGE} copy="Copy text" />
+      <Code label="Your message" text={ADMIN_MESSAGE} copy="Copy text" wraps />
       <Card>
         <h2 className="ps-h2">What's in it, and what isn't</h2>
         <p className="ps-p">

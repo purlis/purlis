@@ -292,3 +292,11 @@
   display: grid;
   gap: var(--space-3);
 }
+
+.ps-code pre[data-wraps] { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* A box on the page's ground needs an edge a first-time person can see (WCAG 1.4.11). The built-in
+   theme's --border-control is transparent and its fill equals the ground; see the issue on M66. */
+.ps-root [data-scope="text-input"][data-part="root"] {
+  border-color: var(--border-strong);
+}
