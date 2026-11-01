@@ -249,6 +249,44 @@ jobs:
           tools/theme-schema-since-release.sh
           cargo nextest run --workspace --locked --run-ignored only
           -E 'package(purlis-core) & test(/the_schema_only_grows_since_the_last_release$/)'
+  # **The Git LFS stage against a real git-lfs** (#4162): a clone through `repocmd::clone`, with
+  # nothing standing in for `git lfs pull`, against an LFS server the tests hold on a loopback
+  # port. Named, and `#[ignore]`d everywhere else, so no other job needs git-lfs; `--no-tests fail`
+  # and the tests' own check of `CI` make a lost test or a lost git-lfs red, never a skip. No
+  # outside network: the package comes from the runner's cache or mirror, and the server is ours.
+  git-lfs:
+    name: real git-lfs (a clone's large files)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: git-lfs
+        timeout-minutes: 9
+        uses: ./.github/actions/linux-packages
+        with:
+          packages: git-lfs
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: rust
+          save-if: false
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
+      # Where a person's `git lfs install` writes it, for every git of this machine's.
+      - name: The filter, as `git lfs install` writes it
+        run: |
+          sudo git lfs install --system
+          echo "::notice title=git-lfs::$(git lfs version)"
+      - name: Build the tests
+        run: cargo nextest run --locked -p purlis-core --lib --no-run
+      - name: The clone's large files, against the real thing
+        run: >-
+          tools/no-orphans.sh --reap --
+          cargo nextest run --locked -p purlis-core --lib --profile ci --no-tests fail --run-ignored only
+          -E 'test(/::real_lfs::/)'
   # The required check `rust (fmt, clippy, test)`: green only when every part of `rust` is.
   # `!cancelled()` so a red part still reports here as red, not as skipped, which a required
   # check would count as passing.
@@ -340,16 +378,16 @@ jobs:
   # Skipped is green only when the change touched nothing Rust reads (`changes`).
   rust-checks:
     name: rust (fmt, clippy, test)
-    needs: [changes, lint, rust, rust-doctests]
+    needs: [changes, lint, rust, rust-doctests, git-lfs]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: The lint, the doctests and every part passed
+      - name: The lint, the doctests, real git-lfs and every part passed
         env:
           SCOPE: ${{ needs.changes.outputs.rust }}
-          RESULTS: ${{ needs.lint.result }} ${{ needs.rust.result }} ${{ needs.rust-doctests.result }}
+          RESULTS: ${{ needs.lint.result }} ${{ needs.rust.result }} ${{ needs.rust-doctests.result }} ${{ needs.git-lfs.result }}
         run: |
-          if [ "$SCOPE" = false ]; then want="skipped skipped skipped"; else want="success success success"; fi
+          if [ "$SCOPE" = false ]; then want="skipped skipped skipped skipped"; else want="success success success success"; fi
           echo "scope: ${SCOPE:-unknown}, results: $RESULTS"
           test "$RESULTS" = "$want"
   # **The parity suite against a Docker pool** (#2045, spec #2041): the behaviour suite
