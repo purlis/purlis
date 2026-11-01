@@ -310,11 +310,12 @@ fn a_selected_row_far_from_the_pointer_s_is_not_said() {
 /// between the named hues.
 const VIVID: &str = "#c04040";
 
-/// A theme whose secondary button is filled with `fill`, on the [`VIVID`] card the recipe turns.
+/// A theme whose news card draws its own mix of the button's fill and the words, both `fill`, so
+/// the way is that colour exactly, on the [`VIVID`] card the recipe turns.
 fn way_beside(fill: &str) -> ResolvedTheme {
     with_parts(
-        &json!({ "surface.overlay": VIVID, "surface.hover": fill }),
-        &json!({ "button.root.secondary.fill": "surface.hover" }),
+        &json!({ "surface.overlay": VIVID, "control.base": fill, "text.primary": fill }),
+        &json!({}),
         &["surface.overlay"],
     )
 }
@@ -444,8 +445,8 @@ fn a_card_row_on_its_panel_as_written_is_said_as_it_was_and_not_again_between_th
 fn what_stands_apart_has_a_coarse_reading_within_its_margin_of_the_lowest_at_any_degree() {
     // What lets the sweep leave one at its coarse reading, on the widest recipe and a vivid card.
     let vivid = with_parts(
-        &json!({ "surface.overlay": VIVID, "surface.hover": "#40c040" }),
-        &json!({ "button.root.secondary.fill": "surface.hover" }),
+        &json!({ "surface.overlay": VIVID, "control.base": "#40c040", "text.primary": "#40c040" }),
+        &json!({}),
         &["surface.overlay"],
     );
     let (mut steps, mut oklab): (f64, f64) = (0.0, 0.0);
