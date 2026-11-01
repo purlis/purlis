@@ -439,6 +439,7 @@ pub(crate) struct AWindowAgain {
     connection: Arc<dyn Fn() -> Arc<Connection> + Send + Sync>,
     config: PathBuf,
     pool: String,
+    docker: purlis_core::dockerpool::Docker,
 }
 
 impl AWindowAgain {
@@ -459,6 +460,12 @@ impl AWindowAgain {
             root,
         )
         .every_start_on(&self.pool)
+        .taking_back_from({
+            let (docker, config) = (self.docker.clone(), self.config.clone());
+            Arc::new(move |pool: &str| {
+                crate::runnerlinks::draining_to_ask_on(&docker, &config, pool)
+            })
+        })
     }
 }
 
@@ -547,6 +554,7 @@ pub(crate) fn a_window_again_on_a_pool_of(
         connection: Arc::clone(&a_connection),
         config: config.path().to_path_buf(),
         pool: name.clone(),
+        docker: docker.clone(),
     };
     let mut target = a_window_over(
         a_connection(),

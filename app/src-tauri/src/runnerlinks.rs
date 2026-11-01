@@ -312,7 +312,15 @@ pub fn cluster_reached(
 /// as `<pool>/<runner>`. Only one that runs: a link wakes a suspended runner (#2051), which holds
 /// no chat. None whose drain began, which takes no link or has no chat left.
 pub fn draining_to_ask(config: &Path, pool: &str) -> Vec<String> {
-    let (Ok(docker), Ok(draining)) = (docker(), purlis_core::runners::draining(config)) else {
+    docker().map_or_else(
+        |_| Vec::new(),
+        |docker| draining_to_ask_on(&docker, config, pool),
+    )
+}
+
+/// [`draining_to_ask`], through `docker`.
+pub(crate) fn draining_to_ask_on(docker: &Docker, config: &Path, pool: &str) -> Vec<String> {
+    let Ok(draining) = purlis_core::runners::draining(config) else {
         return Vec::new();
     };
     draining
