@@ -157,6 +157,7 @@ export function StartChat({
   signIn,
   onShowSignIn,
   limitOffer,
+  limitProfile,
   onRaiseLimit,
   onStart,
   onApprove,
@@ -191,6 +192,8 @@ export function StartChat({
   onShowSignIn?: () => void;
   /** The limit the last attempt was refused on, offered to raise (spec #4275). */
   limitOffer?: PoolLimitOffer;
+  /** The profile it was refused on: it is offered only while that one is picked. */
+  limitProfile?: string;
   /** Saves the values to the pool: `true` where they were, and the start then goes again. */
   onRaiseLimit?: (values: ReadonlyArray<readonly [string, number]>) => Promise<boolean>;
   /** `label` is the Name field, or `null` when it was left empty. `newBranch` is the branch
@@ -354,7 +357,16 @@ export function StartChat({
   const unavailable = (approves ? !picked : !profile) || blockedByPolicy;
   // What ⏎ from the list or the cards and ⌘⏎ from anywhere may start: a plain start, never an
   // approval or a start without the sandbox (ADR 0097 §6), and nothing while one is running.
-  const byKey = !approves && withoutSandbox === null && !unavailable && !starting;
+  const [savingLimit, setSavingLimit] = useState(false);
+  const byKey = !approves && withoutSandbox === null && !unavailable && !starting && !savingLimit;
+  // Raising a limit starts the chat too, so it is offered only where that is a plain start of the
+  // profile it was refused on: never an approval or a start without the sandbox (ADR 0097 §6).
+  const raises =
+    limitProfile !== undefined &&
+    picked?.name === limitProfile &&
+    !approves &&
+    withoutSandbox === null &&
+    !unavailable;
 
   // The list, and whether the picked row is to be brought into view after this render (R22).
   const list = useRef<HTMLDivElement>(null);
@@ -454,7 +466,6 @@ export function StartChat({
     else box.removeAttribute("aria-activedescendant");
   });
 
-  const [savingLimit, setSavingLimit] = useState(false);
   // A picker cancelled while a limit saves starts nothing after it.
   const open = useRef(true);
   useEffect(() => {
@@ -531,7 +542,7 @@ export function StartChat({
       main={startAnswer({
         approves,
         withoutSandbox: withoutSandbox !== null,
-        starting,
+        starting: starting || savingLimit,
         unavailable,
         reach,
         onPress: start,
@@ -638,7 +649,7 @@ export function StartChat({
                 <Button onPress={onShowSignIn}>Go to the Inbox</Button>
               </p>
             )}
-            {trouble && limitOffer !== undefined && onRaiseLimit && (
+            {trouble && limitOffer !== undefined && onRaiseLimit && raises && (
               <RaiseLimit
                 // A later refusal's suggestion is a form afresh.
                 key={limitOffer.hits.map((hit) => `${hit.key}:${hit.needed}`).join()}

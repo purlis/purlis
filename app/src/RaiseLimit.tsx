@@ -89,6 +89,7 @@ export function RaiseLimit({
           columns={8}
           value={typed[hit.key] ?? ""}
           error={why(hit)}
+          isReadOnly={working !== undefined}
           onChange={(to) => type(hit.key, to)}
         />
       ))}

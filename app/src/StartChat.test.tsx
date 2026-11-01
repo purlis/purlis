@@ -1942,3 +1942,48 @@ const MANY_PERSONAS = [
   "security-reviewer",
   "ui-designer",
 ];
+
+describe("raising a limit a start was refused on (#4285)", () => {
+  const offer = {
+    pool: "builds",
+    hits: [
+      {
+        key: "profileSize",
+        plain: "Most a profile may send: size",
+        unit: "MiB",
+        in_force: 128,
+        needed: 150,
+        suggested: 192,
+      },
+    ],
+  };
+  const draw = (limitProfile: string, over: Partial<StartOptions> = {}) =>
+    render(
+      <StartChat
+        options={options(over)}
+        trouble="it needs 150 MiB"
+        limitOffer={offer}
+        limitProfile={limitProfile}
+        onRaiseLimit={vi.fn()}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+  const press = () => screen.queryByRole("button", { name: "Save to the pool and start" });
+
+  it("is offered on the profile it was refused on", () => {
+    draw("claude");
+    expect(press()).not.toBeNull();
+  });
+
+  it("isn't offered once another profile is picked", () => {
+    draw("another");
+    expect(press()).toBeNull();
+  });
+
+  it("isn't offered where the start would be an approval", () => {
+    draw("claude", { profiles: [{ ...ONE.profiles[0], approval: "new" }] });
+    expect(press()).toBeNull();
+  });
+});

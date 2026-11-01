@@ -612,8 +612,8 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "did it; the pool's own lines follow it",
   },
   "settings/PoolLimits.tsx": {
-    count: 1,
-    why: "why a pool's limits could not be read, inside its fold beside Read again",
+    count: 2,
+    why: "why a pool's limits could not be read, inside its fold beside Read again; and a limit's refusal, a polite line under its box, which typing or Reset clears",
   },
   "settings/PoolProfiles.tsx": {
     count: 3,

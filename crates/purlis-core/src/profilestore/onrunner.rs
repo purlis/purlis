@@ -1076,12 +1076,12 @@ fn ready_on_for(
         .held_to(
             crate::runners::chosen_limits_of(config_root, pool).map_err(|why| why.to_string())?,
         );
-    // A refusal is only ever this attempt's: an earlier one, of this profile or of another on
-    // this pool, offers nothing to any later words.
+    // A refusal is only ever this attempt's: an earlier one offers nothing to any later words.
+    // Another profile's stays, as a move's line on it may still ask for its offer.
     OVER_LIMITS
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .retain(|profile, over| profile != name && over.pool.as_deref() != Some(pool));
+        .remove(name);
     match keep(&kept).map_err(|why| {
         let said =
             format!("pool {pool}'s runner did not keep the profile '{shown}': {why}. {nothing}.");

@@ -126,6 +126,14 @@ function MoveFailed({
   const [offer, setOffer] = useState<PoolLimitOffer | null>(null);
   const [saving, setSaving] = useState(false);
   const [refused, setRefused] = useState<string>();
+  // Dismissed or gone while the limit saves: the move isn't asked for after all.
+  const left = useRef(false);
+  useEffect(() => {
+    left.current = false;
+    return () => {
+      left.current = true;
+    };
+  }, []);
   useEffect(() => {
     if (to === null || why === null) return;
     let gone = false;
@@ -144,6 +152,7 @@ function MoveFailed({
     setSaving(true);
     setRefused(undefined);
     const saved = await saveLimits(offer.pool, values);
+    if (left.current) return;
     if (saved === undefined) await askMove(plane, session, from, to);
     else setRefused(saved);
     setSaving(false);
@@ -154,7 +163,10 @@ function MoveFailed({
       at="pane"
       tone="trouble"
       label="Move"
-      onDismiss={() => putAwayMove(plane, session)}
+      onDismiss={() => {
+        left.current = true;
+        putAwayMove(plane, session);
+      }}
       under={
         offer === null ? undefined : (
           <RaiseLimit
