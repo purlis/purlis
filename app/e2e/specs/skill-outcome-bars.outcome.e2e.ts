@@ -170,6 +170,27 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
           };
         }
         probe.__t0 = started;
+        let last = started;
+        const beat = () => {
+          const now = performance.now();
+          if (now - last > 30) calls.push(`GAP ${Math.round(last - started)}..${Math.round(now - started)}`);
+          last = now;
+          if (performance.now() - started < 2500) requestAnimationFrame(beat);
+        };
+        requestAnimationFrame(beat);
+        let added = 0;
+        const seen = new MutationObserver((list) => {
+          let here = 0;
+          for (const one of list) for (const node of one.addedNodes) if (node instanceof Element) here += 1 + node.querySelectorAll("*").length;
+          added += here;
+          if (here > 50) calls.push(`ADDED ${here} @${Math.round(performance.now() - started)}`);
+        });
+        seen.observe(document.body, { childList: true, subtree: true });
+        calls.push(`DOM ${document.querySelectorAll("*").length}`);
+        setTimeout(() => {
+          seen.disconnect();
+          calls.push(`DOM ${document.querySelectorAll("*").length} added ${added}`);
+        }, 2400);
         row.click();
         calls.push(`clicked +${Math.round(performance.now() - started)}`);
         let tab = false;
@@ -202,6 +223,7 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
       { timeout: 30_000, interval: 100, timeoutMsg: "the studio's Library drew no row in 30 s" },
     );
     samples.push(took as number);
+    await browser.pause(2600);
     console.log(
       `DEBUG-4351 ${harness.kind} #${n} ${Math.round(took as number)} ms: ` +
         (await browser.execute(() => (globalThis as any).__calls.join(" | "))),
