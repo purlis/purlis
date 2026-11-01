@@ -308,6 +308,15 @@ impl Forge {
     }
 }
 
+/// Whether `value` is exactly the `credential.helper` a clone of some forge gets in its local
+/// config ([`Forge::credential_helper`]), which is how a reader tells purlis's own wiring from a
+/// helper anything else wrote there.
+pub fn is_policy_helper(value: &str) -> bool {
+    KINDS
+        .iter()
+        .any(|kind| value == format!("!{} auth git-credential", kind.cli()))
+}
+
 /// Is `host` a hostname, optionally with a port? Python's `registry.host_ok`.
 pub fn host_ok(host: &str) -> bool {
     let (name, port) = match host.rsplit_once(':') {

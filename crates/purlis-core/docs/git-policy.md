@@ -148,7 +148,16 @@ call site.
   **Git LFS keeps working.** The three values `git lfs install` writes are left alone, and
   `git-lfs` is found on the runner's fixed `PATH`. If the repo's config also names a program
   `git-lfs` itself would start (its transfer agents or extensions, a credential helper, an ssh
-  or askpass program), the LFS filter is turned off there too, yours included.
+  or askpass program, or the folder it stores objects in), the LFS filter is turned off there too, yours included. The exact
+  `credential.helper` purlis's git policy writes into a clone is not one of those, so a clone
+  purlis wired reads its LFS files as you do. There the filter never downloads: it is told to
+  leave each file as its pointer (`GIT_LFS_SKIP_SMUDGE`, what `git lfs install --skip-smudge`
+  asks for), and a call off the network also empties `credential.helper`. A file git checks out
+  there, an updated or a new branch folder's included, is its pointer until `git lfs pull`.
+  A symbolic link in the repo's LFS store turns the filter off, as a planted program does.
+  A git-lfs outside the runner's `PATH` is not found: where the filter is marked `required`, an
+  `add` fails rather than store a file whole, and a `status` still reads the file as changed.
+  A push through purlis's git runs no hook, so it does not upload the objects of its commits.
 
   Keys that cannot run, or that the runner already holds another way, are not turned off:
   `core.pager` and `pager.<verb>` (git's output is never a terminal), `alias.<verb>` (never
