@@ -190,7 +190,7 @@ jobs:
           fetch-depth: 0
       # No cache: `--list` reads the source and `cargo metadata`, and builds nothing.
       - uses: ./.github/actions/rust-toolchain
-      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: cargo-mutants@${{ env.MUTANTS_VERSION }}
       - id: plan
@@ -365,7 +365,7 @@ jobs:
       # `--package purlis-core` build never downloads.
       - name: Every crate the lock names
         run: cargo fetch --locked
-      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: cargo-mutants@${{ env.MUTANTS_VERSION }}
       # `timeout-minutes` on the STEP and not the job, so that when the budget is exceeded the
