@@ -88,6 +88,8 @@ fn a_skill_is_named_by_its_name_or_after_a_namespace_and_never_outside_the_set()
     // On disk, and not in the set: never found.
     skill(dir.path(), "hidden", "Not granted.", "");
     assert!(by_name(&set, "hidden").is_none());
+    // #4510: another plugin's skill is not this set's skill of the same leaf.
+    assert!(by_name(&set, "other-plugin:deploy").is_none());
 }
 
 #[test]
