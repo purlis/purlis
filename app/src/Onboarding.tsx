@@ -12,6 +12,7 @@ import { STEP_NAMES } from "./guidedSteps";
 import type { Onboarding as Steps } from "./useOnboarding";
 import { type Chose, type Door, Welcome } from "./Welcome";
 import { Button } from "./ui/button/Button";
+import { Variants } from "./onboarding-prototype/Variants"; // PROTOTYPE
 
 type WelcomeProps = ComponentProps<typeof Welcome>;
 
@@ -57,6 +58,7 @@ export function Onboarding({
   /** Opens a project again, for a harness step resumed at a launch that did not bring it back. */
   reopen: (path: string) => void;
 }) {
+  if (location.hash.includes("v=")) return <div style={{ position: "fixed", inset: "40px 0 0 0" }}><Variants /></div>; // PROTOTYPE
   const { progress, counted, dispatch, reread } = steps;
   const { step } = progress;
 
