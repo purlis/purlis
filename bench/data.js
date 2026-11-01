@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793490642259,
+  "lastUpdate": 1793491887286,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34356,6 +34356,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8864285,
             "unit": "ms",
             "extra": "median of 5 runs: 101.070, 101.107, 101.886, 102.327, 102.536 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ef2b1da2680d8f2afcd527c600a1f07a4b5a186e",
+          "message": "Runners: a drain's edges after a failed removal, and a draining runner's log (#4364)\n\n* Runners: a drain's edges after a failed removal (#4298)\n\nA runner whose drain began and whose container is gone is only removed. A carry Docker failed is tried once more at the next look, from the runner's own home. A pool's sign-out runs the harness's sign-out once per draining runner.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X6KXZTGWY9EA7AT6XZ3NJ\nPurlis-Persona: steward\n\n* Runners: a window's restart takes back a draining runner's chats, and its log is read (#4271)\n\nA restarted window asks each draining runner of the pool that runs and whose drain has not begun, and holds what it finds on a link of its own under the pool's one name. A pool's log is read from each link still open. While a runner of the pool drains, no fetch removes what only another runner has, after a restart too. The journey test gains a runner with only its home left.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X6KXZTGWY9EA7AT6XZ3NJ\nPurlis-Persona: steward\n\n* Runners: review fixes for a drain's edges and a restart during a drain\n\nA row with no engine kept is only removed where this Docker lists its home. A restart's asked host is kept only once it gives a chat back. The pool's log test proves the draining link is read.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X6KXZTGWY9EA7AT6XZ3NJ\nPurlis-Persona: steward\n\n* Runners: name the asked host's type\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X6KXZTGWY9EA7AT6XZ3NJ\nPurlis-Persona: steward\n\n* Runners: the pool's log test says the draining link is down itself\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X6KXZTGWY9EA7AT6XZ3NJ\nPurlis-Persona: steward\n\n* Runners: a restart's take-back from a draining runner is taken out (#4271)\n\nA runner's link is not granted programs_of, so a restarted window is refused that list on every runner. Asking draining runners would only open links. The log read from each open link, and fetches that keep branches while a pool drains, stay.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X6KXZTGWY9EA7AT6XZ3NJ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-31T23:35:08Z",
+          "tree_id": "b5c80ffe5f1a935394521c57935e29ede8fc1fd4",
+          "url": "https://github.com/purlis/purlis/commit/ef2b1da2680d8f2afcd527c600a1f07a4b5a186e"
+        },
+        "date": 1793491880895,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6758035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.656, 0.675, 0.676, 0.680, 0.680 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.475636,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.459, 16.467, 16.476, 16.536, 16.608 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.92285749999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.962, 102.061, 102.923, 103.380, 103.501 ms"
           }
         ]
       }
