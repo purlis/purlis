@@ -254,6 +254,11 @@ pub const FOR_THE_PERSON: &str = "the person";
 /// outcome, `failed: ended without a report`.
 pub const UNREPORTED: &str = "ended without a report";
 
+/// [`UNREPORTED`], for a task whose program ended with a pool's runner gone for good (#4420): the
+/// chat that asked reads why, and that nothing can bring its conversation back.
+pub const ENDED_WITH_ITS_RUNNER: &str =
+    "ended without a report because its pool's runner is gone, and its conversation went with it";
+
 /// What a report purlis made from a task's last message is called, to the chat that asked and
 /// to the person (#1981).
 pub const LAST_MESSAGE: &str = "a report purlis made from its last message";
@@ -333,7 +338,9 @@ impl Task {
     /// Whether `summary` is a text the app writes with this, where the app wrote it and no
     /// chat did: that the chat ended without a report, or that the task did not start and why.
     fn is_the_apps_own(&self, summary: &str) -> bool {
-        summary == UNREPORTED || crate::didnotstart::reason(summary).is_some()
+        summary == UNREPORTED
+            || summary == ENDED_WITH_ITS_RUNNER
+            || crate::didnotstart::reason(summary).is_some()
     }
 
     /// **A report purlis made from a task's last message** (#1981): the summary is what the
@@ -1270,6 +1277,7 @@ fn tasks_report(
     // **A task that did not start** (#1497) is said in purlis's words too, with why quoted
     // under it: the reason is the app's, and a file here is still never proof of who wrote it.
     let never_started = task.unreported && crate::didnotstart::reason(&report.summary).is_some();
+    let with_its_runner = task.unreported && report.summary == ENDED_WITH_ITS_RUNNER;
     let made = task.outcome == Outcome::LastMessage && !task.unreported;
     let mut said = match task.unreported {
         false if made => format!(
@@ -1289,6 +1297,12 @@ fn tasks_report(
             task.outcome.word(),
             crate::didnotstart::SAYS,
             quoted.join("\n")
+        ),
+        true if with_its_runner => format!(
+            "⬢ **`{}` {}: {ENDED_WITH_ITS_RUNNER}** ({whence}), on {whose}. purlis says this, not \
+             that chat. Dispatch a new task for what it had left to do.",
+            report.from,
+            task.outcome.word(),
         ),
         true => format!(
             "⬢ **`{}` {}: {UNREPORTED}** ({whence}), on {whose}. purlis says this, not that \

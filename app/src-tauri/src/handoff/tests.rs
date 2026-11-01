@@ -2341,6 +2341,44 @@ fn a_task_that_ended_with_a_gone_runner_reports_to_the_chat_that_asked() {
     assert!(record.report.is_some(), "{record:?}");
 }
 
+/// **A task that ended with a gone runner says why, and refuses Reopen in words** (#4420): its
+/// conversation went with that runner.
+#[test]
+fn a_task_that_ended_with_a_gone_runner_names_it_and_refuses_reopen() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let task = a_task_of(&held, &id, steward, "check prod");
+
+    host.program_ends_with_its_runner(task);
+
+    let mut ended = record_of(&held, task);
+    // Named, so what refuses Reopen is the runner and not a conversation it never had.
+    purlis_core::dispatchrecord::ended_in(held.root(), &ended.id, "a-conversation").unwrap();
+    assert_eq!(
+        ended.report.as_ref().map(|report| report.text.as_str()),
+        Some(purlis_core::handback::ENDED_WITH_ITS_RUNNER),
+        "{ended:?}"
+    );
+    let row = crate::finished::listed(&held)
+        .into_iter()
+        .find(|row| row.id == ended.id)
+        .expect("its finished row");
+    assert!(!row.reopens, "{row:?}");
+    assert!(
+        row.not_reopened
+            .as_deref()
+            .is_some_and(|why| why.contains("runner")),
+        "{row:?}"
+    );
+    let refused = crate::finished::reopening(&held, &ended.id).map(|_| ());
+    assert!(refused.is_err_and(|why| why.contains("went with its pool's runner")));
+    // The words alone are not the app's: a task that reported them keeps its Reopen.
+    ended.ended_by = None;
+    assert!(!ended.ended_with_its_runner());
+}
+
 /// **A chat whose idle program ended with a gone runner offers no Resume** (#4350): its
 /// conversation went with that runner's home, whatever it was doing.
 #[test]

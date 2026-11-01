@@ -992,7 +992,11 @@ pub fn unreported(held: &Held, chat: u32, _deciding: &Deciding<'_>) {
     };
     let record = crate::restored::its_session_record(held, chat)
         .and_then(|path| handback::record_path(&path));
-    let text = handback::UNREPORTED;
+    let text = if held.chats().sessions().lost_with_its_runner(chat) {
+        handback::ENDED_WITH_ITS_RUNNER
+    } else {
+        handback::UNREPORTED
+    };
     // What the app says in a chat's place names the branch it cut for it, as that chat's own
     // report would have (#1453): the work on it is still there to find.
     let task = handback::Task::unreported(record, from.by_person)

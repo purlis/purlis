@@ -6367,7 +6367,9 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
     else**: a cleared record keeps its brief, its report and every other key, is still listed
     in the Dispatches tab, and is collected as any record is.
   - `ended_by` — who ended the dispatch, where that was not its chat's own report alone:
-    `"unreported"` where the chat went without reporting and purlis said so in its place,
+    `"unreported"` where the chat went without reporting and purlis said so in its place
+    (with the report's text naming the reason where its pool's runner went for good, which also
+    ends its Reopen: the conversation went with that runner, #4420),
     `"person"` where the person stopped or closed it, whatever it reported in the one turn its
     stop gave it, and `"limit"` where purlis stopped it at its time limit, or with the task
     above it that reached one (#1512), with `ended_way` as for the person's. Written by the
