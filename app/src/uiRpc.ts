@@ -6108,6 +6108,23 @@ export type HowFailed =
  */
 "last_message";
 
+/**  What the tab draws. */
+export type IdentitiesShown = {
+	rows: IdentityRow[],
+	pending: IdentityPending[],
+	owners: IdentityOwner[],
+	personas: string[],
+};
+
+/**  What Finish did. */
+export type IdentityFinished = {
+	row: IdentityRow,
+	/**  What it read as proof. */
+	read: string | null,
+	/**  Personas with an Allow of their own still to give: Finish allows only what it showed. */
+	to_allow: string[],
+};
+
 /**  Where one of a vault's identity variables is read from now (#237). */
 export type IdentityHeld = 
 /**  Moved into the keyring, which is read first. */
@@ -6116,6 +6133,55 @@ export type IdentityHeld =
 "environment" | 
 /**  Nowhere: the vault cannot be read. */
 "unset";
+
+/**  An owner the App can be made under. */
+export type IdentityOwner = {
+	name: string,
+	/**  The person's own account, as their forge sign-in says. */
+	personal: boolean,
+};
+
+/**  An App whose key is kept and whose lines Finish hasn't written. */
+export type IdentityPending = {
+	app: string,
+	stand: IdentityStand | null,
+	trouble: string | null,
+};
+
+/**  What a removal left, for the row to say. */
+export type IdentityRemoved = {
+	/**  The App's page on GitHub, where what remains is deleted. */
+	settings_page: string | null,
+};
+
+/**
+ *  One App's row (Q6, Q17): what it acts as, on how many repos, and for whom. A forge host has
+ *  one, or one per owner where a project's repos are under several.
+ */
+export type IdentityRow = {
+	host: string,
+	/**  The App's public client id. */
+	app: string,
+	personas: string[],
+	/**  What it acts as, where GitHub could say. */
+	acts_as: string | null,
+	repos: number | null,
+	/**  The App's page on GitHub, where it is deleted. */
+	settings_page: string | null,
+	/**  Why GitHub couldn't say. The row stays, and can still be removed. */
+	trouble: string | null,
+	/**  A line this flow didn't write: shown, never read with, and removed in the project file. */
+	by_hand: boolean,
+};
+
+/**  An App as GitHub says it is, before Finish. */
+export type IdentityStand = {
+	acts_as: string,
+	owner: string,
+	installed: boolean,
+	install_page: string,
+	settings_page: string,
+};
 
 /**  One save setting as the project has it: its value, and the file that decided it. */
 export type InForce = {

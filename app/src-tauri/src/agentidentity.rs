@@ -16,16 +16,15 @@ use std::sync::Mutex;
 
 use purlis_core::forge::agentidentity::{self as core, Owner, Wanted};
 use purlis_core::forge::{accounts, loopback, oauth};
-use purlis_core::sandbox;
 use purlis_core::secrets::{Ctx, Env};
 use serde::Serialize;
 
 use crate::forgepkce::tries;
 use crate::planes::{PlaneId, Planes};
 
-/// The address of the page that posts the manifest, while a try waits on it: what Open the page
-/// again opens. In memory alone, and gone with the try.
-static OPENED: Mutex<Option<String>> = Mutex::new(None);
+/// The try waiting on GitHub and the address of the page that posts its manifest: what Open the
+/// page again opens. In memory alone, and gone with the try.
+static OPENED: Mutex<Option<(String, String)>> = Mutex::new(None);
 
 /// An owner the App can be made under.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
@@ -35,7 +34,8 @@ pub struct IdentityOwner {
     pub personal: bool,
 }
 
-/// One forge host's row (Q6, Q17): what it acts as, on how many repos, and for whom.
+/// One App's row (Q6, Q17): what it acts as, on how many repos, and for whom. A forge host has
+/// one, or one per owner where a project's repos are under several.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 pub struct IdentityRow {
     pub host: String,
@@ -86,8 +86,7 @@ pub struct IdentityFinished {
     pub row: IdentityRow,
     /// What it read as proof.
     pub read: Option<String>,
-    /// Personas with an Allow of their own still to give: what else their list holds wasn't shown
-    /// here, so Finish doesn't allow it.
+    /// Personas with an Allow of their own still to give: Finish allows only what it showed.
     pub to_allow: Vec<String>,
 }
 
@@ -96,7 +95,6 @@ pub struct IdentityFinished {
 pub struct IdentityRemoved {
     /// The App's page on GitHub, where what remains is deleted.
     pub settings_page: Option<String>,
-    pub tokens_revoked: u32,
 }
 
 fn ctx_of(planes: &Planes, plane: &PlaneId) -> Result<Ctx, String> {
@@ -116,11 +114,7 @@ fn stand_of(stand: &core::Stand) -> IdentityStand {
         acts_as: stand.acts_as(),
         owner: stand.owner.clone(),
         installed: !stand.installations.is_empty(),
-        install_page: format!(
-            "https://{}/apps/{}/installations/new",
-            core::HOST,
-            stand.slug
-        ),
+        install_page: stand.install_page(),
         settings_page: stand.settings_page(),
     }
 }
@@ -237,6 +231,7 @@ pub async fn agent_identity_create(
 ) -> Result<String, String> {
     let ctx = ctx_of(&planes, &plane)?;
     let cancelled = tries(|all| all.begin(&attempt))?;
+    let this_try = attempt.clone();
     let done = blocking(move || {
         crate::forgeaccounts::host_scope()?;
         // A test build has no person at a browser, and must never reach the real forge.
@@ -259,9 +254,11 @@ pub async fn agent_identity_create(
                 .map_err(|_| "the browser did not open".to_owned())
         };
         let open = |page: &str| {
-            *OPENED.lock().unwrap_or_else(|e| e.into_inner()) = Some(page.to_owned());
+            *OPENED.lock().unwrap_or_else(|e| e.into_inner()) =
+                Some((this_try.clone(), page.to_owned()));
             browse(page)
         };
+        core::ready_to_keep(&ctx)?;
         let exchange = oauth::Https::shared();
         let created = core::create_app(
             &wanted,
@@ -273,7 +270,10 @@ pub async fn agent_identity_create(
                 clock: loopback::Clock::system(),
             },
         );
-        *OPENED.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        let _ = OPENED
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take_if(|(opened_by, _)| *opened_by == this_try);
         let created = created?;
         core::keep_key(&ctx, &created)?;
         // The key is safe by now, and Open the page again in the window does the same.
@@ -294,12 +294,13 @@ pub fn agent_identity_create_cancel(attempt: String) {
     tries(|all| all.stop(&attempt));
 }
 
-/// **Opens GitHub's page again** for the try under way. The page's address never reaches the window.
+/// **Opens GitHub's page again** for the try under way. The page's address never reaches the
+/// window.
 #[tauri::command]
 #[specta::specta]
 pub async fn agent_identity_reopen(app: tauri::AppHandle) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt as _;
-    let page = OPENED
+    let (_, page) = OPENED
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone()
@@ -349,32 +350,17 @@ pub async fn agent_identity_finish(
     blocking(move || {
         let root = held.root().to_path_buf();
         let proof = core::prove(&ctx, &app)?;
-        let before = sandbox::persona::shown(&root);
-        let clear = |persona: &str| {
-            before
-                .iter()
-                .find(|one| one.persona == persona)
-                .is_none_or(|one| one.allowed() || (one.hosts.is_empty() && one.tools.is_empty()))
-        };
-        core::add_lines(&root, &app, &personas)?;
-        let after = sandbox::persona::shown(&root);
-        let mut to_allow = Vec::new();
         let at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |since| since.as_secs());
-        for persona in &personas {
-            let now = after.iter().find(|one| &one.persona == persona);
-            match now {
-                Some(now) if clear(persona) && !now.default => crate::sandboxing::allow_persona(
-                    &root,
-                    persona,
-                    &now.digest,
-                    &held.audit_then_record(network.as_ref()),
-                    at,
-                )?,
-                _ => to_allow.push(persona.clone()),
-            }
-        }
+        let to_allow = core::write_and_allow(&root, &app, &personas, &mut |shown| {
+            crate::sandboxing::allow_shown(
+                &root,
+                shown,
+                &held.audit_then_record(network.as_ref()),
+                at,
+            )
+        })?;
         let personas_now = core::held(&root)?
             .into_iter()
             .find(|one| one.app == app)
@@ -397,8 +383,8 @@ pub async fn agent_identity_finish(
     .await
 }
 
-/// **Removes an identity at once** (Q13): key, tool lines and live tokens. What remains on
-/// GitHub's side is the App itself, and the answer names its page.
+/// **Removes an identity at once** (Q13): key, tool lines and live tokens, of what this flow
+/// made. What remains on GitHub's side is the App itself, and the answer names its page.
 #[tauri::command]
 #[specta::specta]
 pub async fn agent_identity_remove(
@@ -413,11 +399,8 @@ pub async fn agent_identity_remove(
         let settings_page = core::stand(&ctx, &app)
             .ok()
             .map(|stand| stand.settings_page());
-        let revoked = core::remove(&ctx, &root, &app)?;
-        Ok(IdentityRemoved {
-            settings_page,
-            tokens_revoked: u32::try_from(revoked).unwrap_or(u32::MAX),
-        })
+        core::remove(&ctx, &root, &app)?;
+        Ok(IdentityRemoved { settings_page })
     })
     .await
 }

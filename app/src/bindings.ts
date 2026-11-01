@@ -1616,7 +1616,10 @@ export const commands = {
 	agentIdentityCreate: (plane: PlaneId, attempt: string, owner: string, personal: boolean, workflows: boolean) => typedError<string, string>(__TAURI_INVOKE("agent_identity_create", { plane, attempt, owner, personal, workflows })),
 	/**  Stop making the App: the listener closes at once, and nothing is kept. */
 	agentIdentityCreateCancel: (attempt: string) => __TAURI_INVOKE<void>("agent_identity_create_cancel", { attempt }),
-	/**  **Opens GitHub's page again** for the try under way. The page's address never reaches the window. */
+	/**
+	 *  **Opens GitHub's page again** for the try under way. The page's address never reaches the
+	 *  window.
+	 */
 	agentIdentityReopen: () => typedError<null, string>(__TAURI_INVOKE("agent_identity_reopen")),
 	/**  **How an App stands on GitHub**, asked as the tab waits for it to be installed. Changes nothing. */
 	agentIdentityStand: (plane: PlaneId, app: string) => typedError<IdentityStand, string>(__TAURI_INVOKE("agent_identity_stand", { plane, app })),
@@ -1630,8 +1633,8 @@ export const commands = {
 	 */
 	agentIdentityFinish: (plane: PlaneId, app: string, personas: string[]) => typedError<IdentityFinished, string>(__TAURI_INVOKE("agent_identity_finish", { plane, app, personas })),
 	/**
-	 *  **Removes an identity at once** (Q13): key, tool lines and live tokens. What remains on
-	 *  GitHub's side is the App itself, and the answer names its page.
+	 *  **Removes an identity at once** (Q13): key, tool lines and live tokens, of what this flow
+	 *  made. What remains on GitHub's side is the App itself, and the answer names its page.
 	 */
 	agentIdentityRemove: (plane: PlaneId, app: string) => typedError<IdentityRemoved, string>(__TAURI_INVOKE("agent_identity_remove", { plane, app })),
 	/**
@@ -8426,10 +8429,7 @@ export type IdentityFinished = {
 	row: IdentityRow,
 	/**  What it read as proof. */
 	read: string | null,
-	/**
-	 *  Personas with an Allow of their own still to give: what else their list holds wasn't shown
-	 *  here, so Finish doesn't allow it.
-	 */
+	/**  Personas with an Allow of their own still to give: Finish allows only what it showed. */
 	to_allow: string[],
 };
 
@@ -8460,10 +8460,12 @@ export type IdentityPending = {
 export type IdentityRemoved = {
 	/**  The App's page on GitHub, where what remains is deleted. */
 	settings_page: string | null,
-	tokens_revoked: number,
 };
 
-/**  One forge host's row (Q6, Q17): what it acts as, on how many repos, and for whom. */
+/**
+ *  One App's row (Q6, Q17): what it acts as, on how many repos, and for whom. A forge host has
+ *  one, or one per owner where a project's repos are under several.
+ */
 export type IdentityRow = {
 	host: string,
 	/**  The App's public client id. */

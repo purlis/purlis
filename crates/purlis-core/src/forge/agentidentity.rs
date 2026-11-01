@@ -14,7 +14,8 @@
 //! 3. GitHub sends the browser back with a one-time code and that `state`. Any other request is
 //!    refused by the listener's own rules, and the first that matches closes it.
 //! 4. The code is exchanged at once ([`convert`]). The answer is held to what was asked: the named
-//!    owner, the permissions, no events. The client secret and webhook secret are wiped unread.
+//!    owner, the permissions, no events. The client secret and webhook secret
+//!    are never taken out of the answer, which wipes them as it goes.
 //! 5. The key goes straight to a vault under [`mint::RESERVED_PREFIX`] ([`keep_key`]), so it is
 //!    marked from the moment it is stored: no read but the mint's ever gets it, before or after
 //!    the tool line exists. Nothing of it crosses to a page, a chat or a log.
@@ -41,6 +42,7 @@ use super::oauth::Endpoint;
 use super::pkce::{self, Code, Redirected, State};
 use super::transport::{Call, Field, Method, Reply, Transport};
 use super::{Forge, Kind};
+use crate::sandbox::persona::{Shown, looked_at};
 use crate::sandbox::tools::mint;
 use crate::secrets::{Ctx, cmd, registry};
 
@@ -201,7 +203,8 @@ fn post_page(action: &str, manifest: &str) -> (String, String) {
     let hash = base64::engine::general_purpose::STANDARD
         .encode(Sha256::digest(POST_THE_FORM.as_bytes()).as_slice());
     let policy = format!(
-        "default-src 'none'; form-action https://{HOST}; base-uri 'none'; script-src 'sha256-{hash}'"
+        "default-src 'none'; form-action https://{HOST}; base-uri 'none'; \
+         script-src 'sha256-{hash}'"
     );
     let body = format!(
         "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>purlis</title>\
@@ -213,6 +216,11 @@ fn post_page(action: &str, manifest: &str) -> (String, String) {
         attribute(manifest),
     );
     (body, policy)
+}
+
+/// The page where App `slug` is installed on repos.
+fn install_page_of(slug: &str) -> String {
+    format!("https://{HOST}/apps/{slug}/installations/new")
 }
 
 /// **An App GitHub just made.** Its key is held only until [`keep_key`] stores it.
@@ -238,7 +246,7 @@ impl Created {
     /// The page where the person installs the App on their repos.
     #[must_use]
     pub fn install_page(&self) -> String {
-        format!("https://{HOST}/apps/{}/installations/new", self.slug)
+        install_page_of(&self.slug)
     }
 }
 
@@ -271,9 +279,6 @@ pub fn convert(endpoint: &dyn Endpoint, code: &Code, wanted: &Wanted) -> Result<
              Delete that App on GitHub, close the browser tab, and start over."
         )
     })?;
-    // Neither is ever used: an App's webhook is off, and it signs in with no secret.
-    drop(answer.secret("client_secret"));
-    drop(answer.secret("webhook_secret"));
     if !(200..300).contains(&answer.status) {
         return Err(format!(
             "GitHub refused to hand over the App (HTTP {}). Its code works once and for an hour. \
@@ -415,22 +420,37 @@ pub fn create_app(
 /// The reserved key an App's private key is kept under.
 #[must_use]
 pub fn key_of(app: &str) -> String {
-    format!("{}github-{app}", mint::RESERVED_PREFIX)
+    format!("{}{app}", mint::RESERVED_PREFIX)
 }
 
 /// The client id in a reserved key's name.
 fn app_of(key: &str) -> Option<&str> {
-    key.strip_prefix(mint::RESERVED_PREFIX)?
-        .strip_prefix("github-")
+    key.strip_prefix(mint::RESERVED_PREFIX)
         .filter(|app| client_id_ok(app))
 }
 
-/// **Stores the App's key, marked by its name** ([`mint::RESERVED_PREFIX`]), in [`VAULT`], which
-/// is made in the keyring where there is none. A vault of that name in another provider is
-/// refused, so the key lands only where it was promised.
-pub fn keep_key(ctx: &Ctx, created: &Created) -> Result<(), String> {
+/// **The vault this flow's keys are in, where it is registered**: it counts only in the system
+/// keyring. A file a project commits can register a vault of this name in another provider, and
+/// that is never read, listed, signed with or written to here.
+fn own_vault(ctx: &Ctx) -> Result<Option<crate::secrets::registry::Vault>, String> {
     let doc = registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
     if !registry::vaults(&doc).contains_key(VAULT) {
+        return Ok(None);
+    }
+    let vault = cmd::provider(ctx, VAULT).map_err(|e| e.message.to_string())?;
+    if vault.provider != "keyring" {
+        return Err(format!(
+            "The vault {VAULT} isn't in the system keyring, so purlis won't use it for this. \
+             Remove or rename it in Vaults, then try again."
+        ));
+    }
+    Ok(Some(vault))
+}
+
+/// **Makes sure a key can land where it was promised**, before anything is made on GitHub: the
+/// vault is registered in the keyring where there is none, and another provider is refused.
+pub fn ready_to_keep(ctx: &Ctx) -> Result<(), String> {
+    if own_vault(ctx)?.is_none() {
         registry::add_vault(
             ctx,
             VAULT,
@@ -442,19 +462,29 @@ pub fn keep_key(ctx: &Ctx, created: &Created) -> Result<(), String> {
         )
         .map_err(|e| e.message.to_string())?;
     }
-    let vault = cmd::provider(ctx, VAULT).map_err(|e| e.message.to_string())?;
-    if vault.provider != "keyring" {
-        return Err(format!(
-            "The vault {VAULT} isn't in the system keyring, so purlis kept nothing. Remove it or \
-             rename it, then start over. The App is on GitHub and can be deleted there."
-        ));
-    }
-    let key = key_of(&created.app);
-    cmd::set_reserved(ctx, &vault, &key, &created.pem).map_err(|e| e.message.to_string())?;
-    if crate::secrets::keyring::left_unheld(ctx, &vault, &key) {
-        tracing::warn!("purlis: an App's key is in the keyring and not yet held to this app");
-    }
     Ok(())
+}
+
+/// **Stores the App's key, marked by its name** ([`mint::RESERVED_PREFIX`]), in [`VAULT`]. Past
+/// this point the App exists on GitHub, so a failure says what to do with it.
+pub fn keep_key(ctx: &Ctx, created: &Created) -> Result<(), String> {
+    let kept = || -> Result<(), String> {
+        ready_to_keep(ctx)?;
+        let vault = own_vault(ctx)?.ok_or("the vault wasn't there")?;
+        let key = key_of(&created.app);
+        cmd::set_reserved(ctx, &vault, &key, &created.pem).map_err(|e| e.message.to_string())?;
+        if crate::secrets::keyring::left_unheld(ctx, &vault, &key) {
+            tracing::warn!("purlis: an App's key is in the keyring and not yet held to this app");
+        }
+        Ok(())
+    };
+    kept().map_err(|why| {
+        format!(
+            "purlis couldn't keep the App's key, so it's lost: {why}. Delete {} on GitHub and \
+             start over.",
+            created.slug
+        )
+    })
 }
 
 /// **The github.com accounts the project's clones are under**, each once: what the person is
@@ -513,17 +543,12 @@ impl Held {
     }
 }
 
-/// **Every App the project's tool lines mint with**, one entry per App and key. Nothing where there is no file;
-/// a file that doesn't read is refused rather than read as no identity.
+/// **Every App the project's tool lines mint with**, one entry per App and key. Nothing where
+/// there is no file; a file that doesn't read is refused rather than read as no identity.
 pub fn held(root: &Path) -> Result<Vec<Held>, String> {
-    let text = match std::fs::read_to_string(crate::names::manifest(root)) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(format!("the project's settings can't be read: {e}")),
-    };
-    let cfg: toml::Table = text
+    let cfg: toml::Table = read_manifest(root)?
         .parse()
-        .map_err(|_| "the project's settings file doesn't parse".to_owned())?;
+        .map_err(|_| UNPARSED.to_owned())?;
     let mut found: Vec<Held> = Vec::new();
     let personas = cfg
         .get("sandbox")
@@ -559,14 +584,12 @@ pub fn held(root: &Path) -> Result<Vec<Held>, String> {
     Ok(found)
 }
 
-/// **The client ids of keys kept and named by no line yet**: an App waiting for Finish, also over a
-/// restart.
+/// **The client ids of keys kept and named by no line yet**: an App waiting for Finish, also over
+/// a restart. A vault of this name that isn't this flow's holds nothing waiting.
 pub fn pending(ctx: &Ctx, root: &Path) -> Result<Vec<String>, String> {
-    let doc = registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
-    if !registry::vaults(&doc).contains_key(VAULT) {
+    let Ok(Some(vault)) = own_vault(ctx) else {
         return Ok(Vec::new());
-    }
-    let vault = cmd::provider(ctx, VAULT).map_err(|e| e.message.to_string())?;
+    };
     let keys = cmd::keys(ctx, &vault).map_err(|e| e.message.to_string())?;
     let lines = held(root)?;
     Ok(keys
@@ -575,6 +598,17 @@ pub fn pending(ctx: &Ctx, root: &Path) -> Result<Vec<String>, String> {
         .filter(|app| !lines.iter().any(|one| one.app == *app))
         .map(str::to_owned)
         .collect())
+}
+
+/// What a project file that doesn't parse is refused with.
+const UNPARSED: &str = "The project's settings file doesn't parse. Fix it, then try again.";
+
+/// Whether the `gh` table `gh` is this flow's line for App `app`.
+fn is_ours(gh: &dyn toml_edit::TableLike, app: &str) -> bool {
+    let text = |key: &str| gh.get(key).and_then(toml_edit::Item::as_str);
+    text(mint::APP_KEY) == Some(app)
+        && text("vault") == Some(VAULT)
+        && text("key") == Some(key_of(app).as_str())
 }
 
 /// The value of a tool line for App `app`. The one source of what Finish shows and writes.
@@ -606,7 +640,8 @@ pub fn lines_shown(app: &str, personas: &[String]) -> String {
 /// The table under `key` of `item`, made where there is none, of the same form as `item`.
 fn child<'a>(item: &'a mut toml_edit::Item, key: &str) -> Result<&'a mut toml_edit::Item, String> {
     let inline = item.is_inline_table();
-    let not_a_table = || format!("{key} in the project's settings isn't a table");
+    let not_a_table =
+        || format!("{key} in the project's settings isn't a table. Fix it, then try again.");
     let table = item.as_table_like_mut().ok_or_else(not_a_table)?;
     if !table.contains_key(key) {
         let made = if inline {
@@ -625,17 +660,15 @@ fn child<'a>(item: &'a mut toml_edit::Item, key: &str) -> Result<&'a mut toml_ed
 /// was. A persona whose `gh` is something else is refused by name: Finish replaces nothing the
 /// person didn't see.
 pub fn with_lines(text: &str, app: &str, personas: &[String]) -> Result<String, String> {
-    let mut doc: toml_edit::DocumentMut = text
-        .parse()
-        .map_err(|_| "the project's settings file doesn't parse".to_owned())?;
+    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|_| UNPARSED.to_owned())?;
     for persona in personas {
         let sandbox = child(doc.as_item_mut(), "sandbox")?;
         let all = child(sandbox, "personas")?;
         let grants = child(all, persona)?;
         let tools = child(grants, "tools")?;
-        let table = tools
-            .as_table_like_mut()
-            .ok_or_else(|| "tools in the project's settings isn't a table".to_owned())?;
+        let table = tools.as_table_like_mut().ok_or_else(|| {
+            "tools in the project's settings isn't a table. Fix it, then try again.".to_owned()
+        })?;
         match table.get("gh") {
             None => {
                 table.insert(
@@ -643,12 +676,7 @@ pub fn with_lines(text: &str, app: &str, personas: &[String]) -> Result<String, 
                     toml_edit::Item::Value(toml_edit::Value::InlineTable(line_value(app))),
                 );
             }
-            Some(there)
-                if there
-                    .as_table_like()
-                    .and_then(|gh| gh.get(mint::APP_KEY))
-                    .and_then(toml_edit::Item::as_str)
-                    == Some(app) => {}
+            Some(there) if there.as_table_like().is_some_and(|gh| is_ours(gh, app)) => {}
             Some(_) => {
                 return Err(format!(
                     "{} already has a gh tool of its own, so purlis changed nothing. Untick it, \
@@ -661,12 +689,10 @@ pub fn with_lines(text: &str, app: &str, personas: &[String]) -> Result<String, 
     Ok(doc.to_string())
 }
 
-/// **The project file `text` with this flow's `gh` lines for App `app` taken out** ([`Held::ours`]),
-/// all else as it was. A hand-written line stays, and so does the mark on what it names.
+/// **The project file `text` with this flow's `gh` lines for App `app` taken out**
+/// ([`Held::ours`]), all else as it was. A hand-written line stays, and so does the mark on what it names.
 pub fn without_lines(text: &str, app: &str) -> Result<String, String> {
-    let mut doc: toml_edit::DocumentMut = text
-        .parse()
-        .map_err(|_| "the project's settings file doesn't parse".to_owned())?;
+    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|_| UNPARSED.to_owned())?;
     let personas = doc
         .get_mut("sandbox")
         .and_then(|sandbox| sandbox.get_mut("personas"))
@@ -682,11 +708,10 @@ pub fn without_lines(text: &str, app: &str) -> Result<String, String> {
             else {
                 continue;
             };
-            let gh = tools.get("gh").and_then(toml_edit::Item::as_table_like);
-            let text = |key: &str| gh.and_then(|gh| gh.get(key)?.as_str());
-            let ours = text(mint::APP_KEY) == Some(app)
-                && text("vault") == Some(VAULT)
-                && text("key") == Some(key_of(app).as_str());
+            let ours = tools
+                .get("gh")
+                .and_then(toml_edit::Item::as_table_like)
+                .is_some_and(|gh| is_ours(gh, app));
             if ours {
                 tools.remove("gh");
             }
@@ -703,7 +728,9 @@ fn read_manifest(root: &Path) -> Result<String, String> {
     match std::fs::read_to_string(crate::names::manifest(root)) {
         Ok(text) => Ok(text),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
-        Err(e) => Err(format!("the project's settings can't be read: {e}")),
+        Err(e) => Err(format!(
+            "The project's settings can't be read ({e}). Check the file, then try again."
+        )),
     }
 }
 
@@ -712,16 +739,45 @@ fn rewrite_manifest(
     root: &Path,
     edit: impl FnOnce(&str) -> Result<String, String>,
 ) -> Result<(), String> {
-    let path = crate::names::manifest(root);
-    let _held = crate::rewrite::Lock::on(root);
-    let text = edit(&read_manifest(root)?)?;
-    crate::rewrite::replace(root, &path, text.as_bytes(), crate::rewrite::Mode::Kept)
-        .map_err(|e| format!("the project's settings couldn't be written: {e}"))
+    crate::rewrite::update(root, &crate::names::manifest(root), |now| {
+        edit(now.unwrap_or(""))
+            .map(Some)
+            .map_err(std::io::Error::other)
+    })
+    .map(drop)
+    .map_err(|e| e.to_string())
 }
 
 /// **Adds App `app`'s line for `personas`** to the project at `root`: what Finish writes (Q11).
 pub fn add_lines(root: &Path, app: &str, personas: &[String]) -> Result<(), String> {
     rewrite_manifest(root, |text| with_lines(text, app, personas))
+}
+
+/// **Writes App `app`'s lines and allows them here** (Q11): what's shown is what's allowed, so
+/// `allow` is called for a persona only where its whole list was already allowed, or it had none.
+/// A persona with anything else waiting isn't, nor is the default persona, whose Allow reaches
+/// every chat that names no persona, nor one a policy keeps tools from. Those are answered, for the
+/// person's own Allow. Read whether or not the project's chats are sandboxed yet, so a new plane
+/// has no dead end.
+pub fn write_and_allow(
+    root: &Path,
+    app: &str,
+    personas: &[String],
+    allow: &mut dyn FnMut(&Shown) -> Result<(), String>,
+) -> Result<Vec<String>, String> {
+    let before = looked_at(root).unwrap_or_default();
+    add_lines(root, app, personas)?;
+    let after = looked_at(root).unwrap_or_default();
+    let mut left = Vec::new();
+    for persona in personas {
+        let was = before.iter().find(|(one, _)| one.persona == *persona);
+        let clear = was.is_none_or(|(one, _)| one.allowed() || !one.asks());
+        match after.iter().find(|(one, _)| one.persona == *persona) {
+            Some((now, _)) if clear && !now.default && now.asks() => allow(now)?,
+            _ => left.push(persona.clone()),
+        }
+    }
+    Ok(left)
 }
 
 /// **An App as GitHub says it is.**
@@ -739,6 +795,12 @@ impl Stand {
     #[must_use]
     pub fn acts_as(&self) -> String {
         self.slug.clone()
+    }
+
+    /// The page where it is installed on repos.
+    #[must_use]
+    pub fn install_page(&self) -> String {
+        install_page_of(&self.slug)
     }
 
     /// The App's page on GitHub, where it can be deleted.
@@ -770,7 +832,12 @@ fn read_json(
 ) -> Result<serde_json::Value, String> {
     let reply: Reply = transport
         .send(&github_com(), &Call::get(path, CALL_WAITS))
-        .map_err(|e| format!("GitHub could not be asked for {what} ({})", e.said()))?;
+        .map_err(|e| {
+            format!(
+                "GitHub didn't answer on {what} ({}). Check your connection, then try again.",
+                e.said()
+            )
+        })?;
     if reply.code != 0 {
         return Err(format!(
             "GitHub refused to say {what} ({})",
@@ -854,11 +921,17 @@ pub fn prove_over(
                 "read".to_owned(),
             )],
         );
-        let reply = jwt
-            .send(&forge, &call)
-            .map_err(|e| format!("GitHub could not be asked for a token ({})", e.said()))?;
+        let reply = jwt.send(&forge, &call).map_err(|e| {
+            format!(
+                "GitHub didn't answer when asked for a token ({}). Try again.",
+                e.said()
+            )
+        })?;
         if reply.code != 0 {
-            return Err(format!("GitHub refused a token ({})", reply.err.trim()));
+            return Err(format!(
+                "GitHub refused a token ({}). Check the App's installation, then try again.",
+                reply.err.trim()
+            ));
         }
         let answer: serde_json::Value = serde_json::from_str(&reply.out)
             .map_err(|_| "GitHub's answer held no token".to_owned())?;
@@ -906,13 +979,23 @@ fn read_with(token: &dyn Transport) -> Result<(u64, Option<String>), String> {
     Ok((count, first))
 }
 
+/// What an App with no key on this machine is said to be (Q7).
+const NO_KEY_HERE: &str = "This machine holds no key for this App, so purlis can't check it. An \
+                           App manager can generate you a key on GitHub.";
+
 /// The JWT of the App `app`, the key this flow keeps for it read by the one read that may, and
 /// dropped. No other key is ever read here: a tool line can't point this at one.
 fn jwt_of(ctx: &Ctx, app: &str) -> Result<Zeroizing<String>, String> {
     if crate::fence::FENCED {
         return Err("A test build of purlis doesn't talk to GitHub.".to_owned());
     }
-    let vault = cmd::provider(ctx, VAULT).map_err(|e| e.message.to_string())?;
+    let vault = own_vault(ctx)?.ok_or(NO_KEY_HERE)?;
+    if !cmd::keys(ctx, &vault)
+        .map_err(|e| e.message.to_string())?
+        .contains(&key_of(app))
+    {
+        return Err(NO_KEY_HERE.to_owned());
+    }
     let pem = Zeroizing::new(
         cmd::read_to_mint(ctx, &vault, &key_of(app)).map_err(|e| e.message.to_string())?,
     );
@@ -937,26 +1020,43 @@ pub fn prove(ctx: &Ctx, app: &str) -> Result<Proof, String> {
     })
 }
 
-/// **Removes the identity at once** (Q13): only this flow's key and lines ([`Held::ours`]). The
-/// file is read and edited first, so one that won't parse changes nothing. Then the key goes and
-/// every live token with it, so the file failing to write leaves no token handed out, and the
-/// sentence says the lines stayed. Answers how many live tokens went.
-pub fn remove(ctx: &Ctx, root: &Path, app: &str) -> Result<usize, String> {
+/// **Removes the identity at once** (Q13): only this flow's key and lines ([`Held::ours`]). An App
+/// with neither is refused, so pressing it never touches what a hand-written line runs on. The
+/// file is read and edited first, so one that won't parse changes nothing. Then every step runs
+/// whichever failed before it, so no live token outlasts a key that wouldn't go, and the first
+/// failure is what's said.
+pub fn remove(ctx: &Ctx, root: &Path, app: &str) -> Result<(), String> {
     if !client_id_ok(app) {
-        return Err("That isn't a GitHub App's client id.".to_owned());
+        return Err("That isn't a GitHub App's client id. Reopen this tab.".to_owned());
     }
     without_lines(&read_manifest(root)?, app)?;
     let key = key_of(app);
-    let vault = cmd::provider(ctx, VAULT).map_err(|e| e.message.to_string())?;
-    let keys = cmd::keys(ctx, &vault).map_err(|e| e.message.to_string())?;
-    if keys.iter().any(|one| *one == key) {
-        cmd::delete_reserved(ctx, &vault, &key).map_err(|e| e.message.to_string())?;
+    let vault = own_vault(ctx);
+    let kept = match &vault {
+        Ok(Some(vault)) => cmd::keys(ctx, vault)
+            .map_err(|e| e.message.to_string())?
+            .contains(&key),
+        _ => false,
+    };
+    if !kept && !held(root)?.iter().any(|one| one.app == app && one.ours()) {
+        return Err(
+            "purlis didn't write this line, so it removes nothing here. Take it out of \
+                    your project's settings."
+                .to_owned(),
+        );
     }
-    let revoked = apptoken::app_removed(root, app, Duration::from_secs(5));
-    rewrite_manifest(root, |text| without_lines(text, app)).map_err(|why| {
-        format!("The key and live tokens are gone, and the tool lines stayed: {why}")
-    })?;
-    Ok(revoked)
+    let key_gone = match vault {
+        Ok(Some(vault)) if kept => {
+            cmd::delete_reserved(ctx, &vault, &key).map_err(|e| e.message.to_string())
+        }
+        Ok(_) => Ok(()),
+        Err(why) => Err(why),
+    };
+    apptoken::app_removed(root, app, Duration::from_secs(5));
+    let lines_gone = rewrite_manifest(root, |text| without_lines(text, app));
+    key_gone
+        .and(lines_gone)
+        .map_err(|why| format!("Live tokens are gone, and not all of it was removed: {why}"))
 }
 
 #[cfg(test)]

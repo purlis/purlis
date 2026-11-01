@@ -327,6 +327,28 @@ fn a_created_app_never_prints_its_key() {
     assert!(!format!("{created:?}").contains("PRIVATE KEY"));
 }
 
+fn a_ctx(root: &std::path::Path, shared: &str) -> Ctx {
+    std::fs::write(root.join("vaults.json"), shared).unwrap();
+    Ctx::new(root, crate::secrets::Env::of(&[]))
+}
+
+#[test]
+fn a_vault_of_this_name_in_another_provider_is_never_used() {
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("stranger.json");
+    std::fs::write(&file, format!("{{\"{}\": \"x\"}}", key_of("Stranger"))).unwrap();
+    let ctx = a_ctx(
+        root.path(),
+        &serde_json::json!({ "vaults": { VAULT: {
+            "provider": "plain-file", "config": { "file": file }
+        }}})
+        .to_string(),
+    );
+    assert_eq!(pending(&ctx, root.path()).unwrap(), Vec::<String>::new());
+    assert!(ready_to_keep(&ctx).is_err());
+    assert!(own_vault(&ctx).is_err());
+}
+
 #[test]
 fn a_reserved_key_names_its_app_and_nothing_else_does() {
     assert_eq!(app_of(&key_of("Iv23li")), Some("Iv23li"));
@@ -391,8 +413,14 @@ fn removing_takes_out_only_that_apps_lines() {
          app = \"Other\", key = \"k\" }}\n"
     );
     let cfg: toml::Table = without_lines(&text, "Iv23li").unwrap().parse().unwrap();
-    assert!(cfg["sandbox"]["personas"]["dev"].get("tools").is_none());
-    assert!(cfg["sandbox"]["personas"]["qa"].get("tools").is_none());
+    let personas = &cfg["sandbox"]["personas"];
+    for persona in ["dev", "qa"] {
+        assert!(
+            personas
+                .get(persona)
+                .is_none_or(|p| p.get("tools").is_none())
+        );
+    }
     assert_eq!(
         cfg["sandbox"]["personas"]["other"]["tools"]["gh"]["app"].as_str(),
         Some("Other")
@@ -422,6 +450,43 @@ fn two_lines_of_one_app_on_two_keys_are_two_entries() {
     )
     .unwrap();
     assert_eq!(held(root.path()).unwrap().len(), 2);
+}
+
+#[test]
+fn finish_counts_only_its_own_line_as_already_written() {
+    let text = "[sandbox.personas.dev.tools]\ngh = { vault = \"v\", mint = \"github-app\", app = \
+                \"Iv23li\", key = \"k\" }\n";
+    assert!(with_lines(text, "Iv23li", &["dev".to_owned()]).is_err());
+}
+
+/// A plane whose chats aren't sandboxed yet: `[sandbox]` names no mode.
+fn a_new_plane(text: &str) -> tempfile::TempDir {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(crate::names::manifest(root.path()), text).unwrap();
+    root
+}
+
+#[test]
+fn finish_allows_on_a_plane_not_sandboxed_yet() {
+    let root = a_new_plane("[sandbox]\n\n[sandbox.personas.dev]\n");
+    let mut allowed = Vec::new();
+    let left = write_and_allow(root.path(), "Iv23li", &["dev".to_owned()], &mut |shown| {
+        allowed.push(shown.persona.clone());
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(left, Vec::<String>::new());
+    assert_eq!(allowed, ["dev"]);
+}
+
+#[test]
+fn finish_leaves_a_persona_with_more_on_its_list_to_its_own_allow() {
+    let root = a_new_plane("[sandbox]\n\n[sandbox.personas.dev]\nhosts = [\"a.example\"]\n");
+    let left = write_and_allow(root.path(), "Iv23li", &["dev".to_owned()], &mut |_| {
+        panic!("allowed more than was shown")
+    })
+    .unwrap();
+    assert_eq!(left, ["dev"]);
 }
 
 #[test]

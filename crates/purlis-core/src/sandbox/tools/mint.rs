@@ -38,7 +38,7 @@ pub const VAR: &str = "GH_TOKEN";
 /// identity keeps what GitHub hands it under this prefix, so the key is marked from the moment
 /// it is stored, with no window between the vault and the tool line. Stateless, so it holds with
 /// the project file unreadable and over a restart.
-pub const RESERVED_PREFIX: &str = "agent-identity-";
+pub const RESERVED_PREFIX: &str = "agent-identity-github-";
 
 /// **Whether `key` is under [`RESERVED_PREFIX`]**, in any case, since some stores fold case.
 pub fn reserved(key: &str) -> bool {

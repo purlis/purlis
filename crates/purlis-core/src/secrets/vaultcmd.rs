@@ -1199,6 +1199,16 @@ pub fn destroy_with(
     let v = registry::vault(ctx, name)?;
     let mut destroyed = Vec::new();
     if v.provider == "keyring" {
+        // An agent identity's key goes with its tool lines and its live tokens, or not at all.
+        if super::keyring::keys(ctx, &v)?
+            .iter()
+            .any(|key| crate::sandbox::tools::mint::reserved(key))
+        {
+            return Err(super::VaultError::new(format!(
+                "vault '{name}' holds an agent identity's key. Remove the identity in the Agent \
+                 identity tab first, then delete the vault."
+            )));
+        }
         for key in super::keyring::keys(ctx, &v)? {
             super::keyring::delete_with(store, ctx, &v, &key)?;
             destroyed.push(key);
