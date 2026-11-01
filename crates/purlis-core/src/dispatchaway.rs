@@ -347,7 +347,7 @@ fn change(root: &Path, now: u64, how: impl FnOnce(&mut Vec<Refused>) -> bool) ->
     let path = path(root);
     let dir = crate::dispatchrecord::dir(root);
     crate::rewrite::create_dir_all(&dir)?;
-    let _held = crate::rewrite::Lock::on(&dir);
+    let _held = crate::rewrite::Lock::bounded(&dir)?;
     let mut entries = match std::fs::symlink_metadata(&path) {
         Err(none) if none.kind() == io::ErrorKind::NotFound => Vec::new(),
         Err(other) => return Err(other),

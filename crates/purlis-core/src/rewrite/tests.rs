@@ -543,3 +543,30 @@ fn a_temp_left_by_a_killed_process_does_not_stop_the_next_write() {
     assert_eq!(std::fs::read(&target).unwrap(), b"{}");
     assert!(!temp.exists());
 }
+
+/// A folder someone holds refuses a writer past the wait, as busy, and writes nothing unlocked.
+#[test]
+fn a_held_folder_refuses_past_the_wait() {
+    let dir = tempfile::tempdir().unwrap();
+    let held = Lock::on(dir.path());
+    let refused = Lock::waiting(dir.path(), std::time::Duration::from_millis(60))
+        .err()
+        .expect("busy");
+    assert_eq!(refused.kind(), io::ErrorKind::WouldBlock);
+    assert!(refused.to_string().contains("Try again"), "{refused}");
+    drop(held);
+    assert!(Lock::waiting(dir.path(), std::time::Duration::ZERO).is_ok());
+}
+
+/// A holder that lets go within the wait is waited for.
+#[test]
+fn a_folder_let_go_within_the_wait_is_taken() {
+    let dir = tempfile::tempdir().unwrap();
+    let held = Lock::on(dir.path());
+    let letting_go = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        drop(held);
+    });
+    assert!(Lock::waiting(dir.path(), std::time::Duration::from_secs(5)).is_ok());
+    letting_go.join().unwrap();
+}

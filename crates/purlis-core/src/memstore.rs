@@ -63,7 +63,7 @@ pub(crate) fn lock_store(
         holding::Reach::Refused(why) => return Err(why),
         holding::Reach::ByPath => {}
     }
-    Ok(StoreLock::Path(crate::rewrite::Lock::on(dir)))
+    Ok(StoreLock::Path(crate::rewrite::Lock::bounded(dir)?))
 }
 
 /// Whether `dir` is a workspace's store, which every operation here reaches through the store
@@ -232,7 +232,7 @@ pub fn write(
     // the append: without the store's lock a line appended in between went with the old inode
     // (120 lines of 400 in a stress run). And two writes of one title in one second both chose
     // the same free name, and the second replaced the first.
-    let _held = crate::rewrite::Lock::on(dir);
+    let _held = crate::rewrite::Lock::bounded(dir)?;
     let prefix = if timestamped {
         stamp.format("%Y%m%d-%H%M%S-").to_string()
     } else {
@@ -720,7 +720,7 @@ pub fn forget(root: &std::path::Path, dir: &std::path::Path, ident: &str) -> std
         holding::Reach::Refused(e) => return Err(e),
         holding::Reach::ByPath => {}
     }
-    let _held = crate::rewrite::Lock::on(dir);
+    let _held = crate::rewrite::Lock::bounded(dir)?;
     let file = resolve(root, dir, ident)?;
     gate(root, &file)?;
     std::fs::remove_file(&file)?;
@@ -1551,7 +1551,7 @@ fn archive_moving(
         holding::Reach::ByPath => {}
     }
     let dest_dir = dir.join(ARCHIVE);
-    let _held = crate::rewrite::Lock::on(dir);
+    let _held = crate::rewrite::Lock::bounded(dir)?;
     let Some(file) = resolve_exact(root, dir, ident) else {
         return resolve_exact(root, &dest_dir, ident)
             .map(|already| (already, false))
@@ -1615,7 +1615,7 @@ pub fn unarchive(
         holding::Reach::ByPath => {}
     }
     let src_dir = dir.join(ARCHIVE);
-    let _held = crate::rewrite::Lock::on(dir);
+    let _held = crate::rewrite::Lock::bounded(dir)?;
     let Some(file) = resolve_exact(root, &src_dir, ident) else {
         // Already back is the exact name it would have come back under, and only that: a
         // store file whose name merely ends in it was never archived (SI-9d).
@@ -1788,7 +1788,7 @@ pub fn edit(
         holding::Reach::Refused(e) => return Err(e.into()),
         holding::Reach::ByPath => {}
     }
-    let _held = crate::rewrite::Lock::on(dir);
+    let _held = crate::rewrite::Lock::bounded(dir)?;
     let file = resolve_exact(root, dir, ident).ok_or_else(|| no_such(ident))?;
     let now = std::fs::read_to_string(&file)?;
     if let Base::Read(read) = base
@@ -1998,9 +1998,15 @@ fn move_by_path(
         .to_string_lossy()
         .into_owned();
     let (_first, _second) = if from < to {
-        (crate::rewrite::Lock::on(from), crate::rewrite::Lock::on(to))
+        (
+            crate::rewrite::Lock::bounded(from)?,
+            crate::rewrite::Lock::bounded(to)?,
+        )
     } else {
-        (crate::rewrite::Lock::on(to), crate::rewrite::Lock::on(from))
+        (
+            crate::rewrite::Lock::bounded(to)?,
+            crate::rewrite::Lock::bounded(from)?,
+        )
     };
     let text = std::fs::read_to_string(&file)?;
     let dest = moved_as(&name, &text, timestamped, now, restore_as)?;

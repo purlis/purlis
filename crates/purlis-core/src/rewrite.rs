@@ -24,15 +24,22 @@
 //!
 //! The lock is best effort, as `machine::Lock` is and for the same reason: a filesystem that
 //! cannot `flock` is not a reason to refuse an edit, and what is lost without the lock is
-//! exactly what was lost before it existed. It is taken blocking; the kernel releases a
-//! `flock` when its descriptor closes, including in a killed process, so a stale lock cannot
-//! wedge anything.
+//! exactly what was lost before it existed. The kernel releases a `flock` when its descriptor
+//! closes, including in a killed process, so a stale lock cannot wedge anything. A chat may open
+//! some of these folders and so hold one, so a writer waits [`MOST_WAIT`] at most ([`Lock::bounded`])
+//! and then refuses: it never writes unlocked because the folder is busy.
 //!
 //! **Never take a [`Lock`] while holding one on the same directory.** `flock` belongs to the
 //! open file description, so a second `Lock::on` in the same process waits for the first.
 
 use std::io;
 use std::path::{Path, PathBuf};
+
+/// The most [`Lock::bounded`] waits for a folder.
+pub const MOST_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// How often a wait looks again.
+const LOOKED_EVERY: std::time::Duration = std::time::Duration::from_millis(25);
 
 /// Held for one read-modify-write of a file in `dir`.
 pub struct Lock(Option<std::fs::File>);
@@ -68,7 +75,34 @@ impl Lock {
         }
     }
 
+    /// **Lock `dir`, waiting [`MOST_WAIT`] at most**: past it, refused as busy ([`io::ErrorKind::WouldBlock`]),
+    /// and the caller writes nothing.
+    pub fn bounded(dir: &Path) -> io::Result<Self> {
+        Self::waiting(dir, MOST_WAIT)
+    }
+
+    /// [`Self::bounded`], waiting `most`.
+    fn waiting(dir: &Path, most: std::time::Duration) -> io::Result<Self> {
+        let until = std::time::Instant::now() + most;
+        loop {
+            if let Some(held) = Self::try_on(dir) {
+                return Ok(held);
+            }
+            if std::time::Instant::now() >= until {
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    format!(
+                        "{} is busy, so nothing was written. Try again.",
+                        dir.display()
+                    ),
+                ));
+            }
+            std::thread::sleep(LOOKED_EVERY);
+        }
+    }
+
     /// Lock `dir`, blocking until any other holder lets go. Never fails; see the module header.
+    /// Only for a folder no chat can open: anywhere else, [`Self::bounded`].
     pub fn on(dir: &Path) -> Self {
         #[cfg(unix)]
         {
@@ -113,7 +147,7 @@ pub fn update(
     change: impl FnOnce(Option<&str>) -> io::Result<Option<String>>,
 ) -> io::Result<bool> {
     let dir = directory_of(path)?;
-    let _held = Lock::on(&dir);
+    let _held = Lock::bounded(&dir)?;
     update_held(root, path, change)
 }
 
