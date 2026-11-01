@@ -40,6 +40,21 @@ pub fn legacy_path(root: &Path) -> PathBuf {
 /// The folder in purlis's config folder this machine's files are kept in, one per clone.
 pub const MACHINE_GRANTS: &str = "sandbox-grants";
 
+/// The lock every write to [`MACHINE_GRANTS`] takes: by name, with purlis's other locks, which no
+/// chat's sandbox opens. A lock on the folder could be held by anything that can read it, and
+/// every later chat's start and grant would wait on it.
+const MACHINE_GRANTS_LOCK: &str = "sandbox-grants.lock";
+
+/// [`crate::rewrite::update`] of a file in [`MACHINE_GRANTS`], under [`MACHINE_GRANTS_LOCK`].
+fn update_kept(
+    dir: &Path,
+    file: &Path,
+    change: impl FnOnce(Option<&str>) -> io::Result<Option<String>>,
+) -> io::Result<bool> {
+    let _held = config_home().map(|home| crate::machine::Lock::named(&home, MACHINE_GRANTS_LOCK));
+    crate::rewrite::update_held(dir, file, change)
+}
+
 #[cfg(test)]
 thread_local! {
     /// The config home a test stands in for the person's, so no test reads or writes theirs.
@@ -566,7 +581,7 @@ fn write_new(file: &Path, how: impl FnOnce(&mut OnDisk)) -> io::Result<()> {
     }
     #[cfg(not(unix))]
     std::fs::create_dir_all(&dir)?;
-    crate::rewrite::update(&dir, file, |now| {
+    update_kept(&dir, file, |now| {
         // A file that is not this shape reads as empty, as [`read`] reads it: the count
         // starts again rather than refusing every chat start that would add to it.
         let mut held: OnDisk = now
@@ -1384,7 +1399,7 @@ fn change_everywhere(how: impl FnOnce(&mut Everywhere)) -> io::Result<()> {
     }
     #[cfg(not(unix))]
     std::fs::create_dir_all(&dir)?;
-    crate::rewrite::update(&dir, &file, |now| {
+    update_kept(&dir, &file, |now| {
         // A file that is not this shape reads as empty, as [`read_everywhere`] reads it: it
         // grants nothing, and the next Allow starts it again.
         let mut held: Everywhere = now
@@ -1550,7 +1565,7 @@ pub fn folders_moved(root: &Path, moved: impl Fn(&str) -> Option<String>) -> io:
     let file = path(root);
     let mut changed = 0;
     // This machine's file, in the config home (ADR 0093): held to its own folder.
-    crate::rewrite::update(&machine_folder(root), &file, |now| {
+    update_kept(&machine_folder(root), &file, |now| {
         let Some(mut held) = now.and_then(|text| serde_json::from_str::<OnDisk>(text).ok()) else {
             return Ok(None);
         };
@@ -1897,7 +1912,7 @@ pub fn legacy_dispatch_nevers(root: &Path) -> Option<Vec<(String, String)>> {
 /// Takes that key out of this file, once what it held is kept where it belongs. Every other
 /// key stays as it is written, read by this build or not.
 pub fn drop_legacy_dispatch_nevers(root: &Path) -> io::Result<()> {
-    crate::rewrite::update(&machine_folder(root), &path(root), |now| {
+    update_kept(&machine_folder(root), &path(root), |now| {
         let Some(serde_json::Value::Object(mut whole)) =
             now.and_then(|text| serde_json::from_str(text).ok())
         else {
