@@ -93,6 +93,8 @@
             "claims": { "type": "integer", "minimum": 0 },
             "cpu": { "$ref": "#/definitions/quantity" },
             "memory": { "$ref": "#/definitions/quantity" },
+            "memoryLimit": { "$ref": "#/definitions/quantity" },
+            "ephemeralStorage": { "$ref": "#/definitions/quantity" },
             "storage": { "$ref": "#/definitions/quantity" }
           }
         }

@@ -669,7 +669,17 @@ fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_
         .iter()
         .map(|v| flat(&v["expression"]))
         .collect();
-    assert_eq!(validations.len(), 6, "{validations:?}");
+    assert_eq!(validations.len(), 7, "{validations:?}");
+    // What it makes, it makes under the restricted Pod Security Standard (#3824).
+    assert_eq!(
+        validations[6],
+        "request.resource.resource!='namespaces'||!variables.operator||\
+         request.operation!='CREATE'||\
+         has(object.metadata.labels)&&'pod-security.kubernetes.io/enforce'inobject.metadata.labels&&\
+         object.metadata.labels['pod-security.kubernetes.io/enforce']=='restricted'&&\
+         (!('pod-security.kubernetes.io/enforce-version'inobject.metadata.labels)||\
+         object.metadata.labels['pod-security.kubernetes.io/enforce-version']=='latest')"
+    );
     // Its mark opens the mint port, so no one else marks another namespace (#4206).
     assert_eq!(
         validations[1],
