@@ -839,7 +839,10 @@ fn a_steward_waiting_on_the_person_with_a_task()
 /// Whether chat `chat`'s reply is an ask in the registry, as the Inbox and the ✋ read it.
 fn asks_for_a_reply(held: &Held, chat: u32) -> bool {
     let ask = format!("question:{chat}");
-    held.asks().asks.iter().any(|shown| shown.ask == ask)
+    crate::asking::every_ask(held)
+        .asks
+        .iter()
+        .any(|shown| shown.ask == ask)
 }
 
 #[test]
