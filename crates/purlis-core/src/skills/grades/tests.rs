@@ -1533,6 +1533,13 @@ fn a_plan_with_outcome_evals_is_estimated_only_from_a_grade_that_ran_some() {
     mixed.spent.tokens = Some(1260);
     let estimate = estimate_of(&[mixed.clone()], 30, Some("work"), 24).unwrap();
     assert_eq!(estimate.tokens, Some(60 + 2400));
+    let mut unsaid = mixed.clone();
+    unsaid.report.outcome_tokens = None;
+    assert_eq!(
+        estimate_of(&[unsaid], 30, Some("work"), 24).map(|one| one.tokens),
+        Some(None),
+        "what its evals spent is not known, never nothing"
+    );
     let triggers = estimate_of(&[mixed], 6, Some("work"), 0).unwrap();
     assert_eq!(triggers.tokens, Some(60), "a trigger test's chats alone");
 }

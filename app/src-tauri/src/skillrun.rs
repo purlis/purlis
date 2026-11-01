@@ -75,7 +75,8 @@ pub enum Watched {
     /// handed it (#1981), heard just before the turn's end. What an outcome eval's judge reads,
     /// and what a judge answers with.
     Said(String),
-    /// A judge reached past what it may read, as its turn's end found (SK-55).
+    /// **A guard refused a call of it** (SK-55): in a judge, which holds only the tools its read
+    /// guard answers for, a reach past what it may read. Told as it happens.
     ReadPast,
 }
 
@@ -140,11 +141,6 @@ impl SkillRuns {
         self.tell_watching(chat, Watched::Said(text));
     }
 
-    /// **Judge `chat` reached past what it may read** (SK-55), told to the grade watching it.
-    pub fn read_past(&self, chat: u32) {
-        self.tell_watching(chat, Watched::ReadPast);
-    }
-
     /// Who is told each change from now on.
     pub fn tell_to(&self, teller: Teller) {
         *self.teller.lock().unwrap_or_else(PoisonError::into_inner) = Some(teller);
@@ -191,6 +187,9 @@ impl SkillRuns {
         // A call put to the person is an ask, which a grade's chat never waits on (SK-16).
         if call.decision == purlis_core::hookwire::Decision::Ask {
             self.tell_watching(call.chat, Watched::Asked);
+        }
+        if call.decision == purlis_core::hookwire::Decision::Deny {
+            self.tell_watching(call.chat, Watched::ReadPast);
         }
         let key = call.chat.to_string();
         let (told, opened) = {

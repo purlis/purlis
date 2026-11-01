@@ -1079,7 +1079,7 @@ fn an_evals_files_are_staged_and_what_its_chat_left_reaches_its_judge_alone() {
         !judge.piece.join("outcome/CLAUDE.md").exists(),
         "what it left as instructions never reaches its judge"
     );
-    assert!(!read("files.txt").contains("CLAUDE.md"));
+    assert!(read("files.txt").contains("withheld: CLAUDE.md"));
     assert!(
         read("files.txt")
             .lines()

@@ -3091,9 +3091,6 @@ impl Planes {
             Arc::new(move |output| {
                 if let Some(held) = held.upgrade() {
                     // A grade watching the chat hears what its turn ended saying (SK-55).
-                    if output.turn_output == purlis_core::hookwire::Output::ReadPast {
-                        held.hooks.skill_runs().read_past(output.chat);
-                    }
                     if let purlis_core::hookwire::Output::Final { text } = &output.turn_output {
                         held.hooks.skill_runs().said(output.chat, text.clone());
                     }

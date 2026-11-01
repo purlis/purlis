@@ -1115,20 +1115,26 @@ fn estimate_of(
         (_, 0) => None,
         (now, then) => Some(spent / then as f64 * f64::from(now)),
     };
-    let split = |all: f64, evals: f64| {
+    // Where it ran evals and does not say what they spent, neither kind's share is known.
+    let split = |all: f64, evals: Option<f64>| {
+        let evals = match evals {
+            Some(evals) => evals,
+            None if of_evals == 0 => 0.0,
+            None => return None,
+        };
         Some(
             share((all - evals).max(0.0), of_tests, tests_now)?
                 + share(evals, of_evals, outcome_chats)?,
         )
     };
     estimate.tokens = row.spent.tokens.and_then(|all| {
-        let evals = row.report.outcome_tokens.unwrap_or(0) as f64;
+        let evals = row.report.outcome_tokens.map(|tokens| tokens as f64);
         split(all as f64, evals).map(|tokens| tokens.ceil() as u64)
     });
     estimate.cost_usd = row
         .spent
         .cost_usd
-        .and_then(|all| split(all, row.report.outcome_usd.unwrap_or(0.0)));
+        .and_then(|all| split(all, row.report.outcome_usd));
     Some(estimate)
 }
 

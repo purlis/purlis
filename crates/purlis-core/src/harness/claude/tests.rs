@@ -1425,3 +1425,50 @@ fn an_outcome_chats_writes_are_allowed_by_its_guard_alone() {
         })
     }));
 }
+
+/// SK-55: an outcome eval's chat has no shell in v1: every shell call asks, and an ask ends the run.
+#[test]
+fn an_outcome_chat_has_no_shell() {
+    let armed = |no_shell: bool, enabled: bool| {
+        let sandbox = crate::sandbox::claude::Settings {
+            sandbox: serde_json::json!({"enabled": enabled}),
+            deny: Vec::new(),
+            made_empty: Vec::new(),
+        };
+        let text = settings(
+            std::path::Path::new("/bin/purlis"),
+            None,
+            false,
+            &crate::harness_plugin::Chosen::new(),
+            Some(&sandbox),
+            &[],
+            None,
+            true,
+            no_shell,
+            &(None, None),
+        );
+        serde_json::from_str::<serde_json::Value>(&text).expect("JSON")
+    };
+    let shell_rules = |settings: &serde_json::Value| {
+        settings["permissions"]["allow"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|rule| rule.as_str().is_some_and(|rule| rule.starts_with("Bash")))
+            .count()
+    };
+    for enabled in [true, false] {
+        let settings = armed(true, enabled);
+        assert_eq!(shell_rules(&settings), 0, "{settings}");
+        assert_eq!(settings["sandbox"]["autoAllowBashIfSandboxed"], false);
+        assert!(
+            settings["permissions"]["ask"]
+                .as_array()
+                .is_some_and(|rules| rules.contains(&serde_json::json!("Bash"))),
+            "{settings}"
+        );
+    }
+    let other = armed(false, true);
+    assert!(shell_rules(&other) > 0);
+    assert!(other["sandbox"].get("autoAllowBashIfSandboxed").is_none());
+}

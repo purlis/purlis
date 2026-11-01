@@ -5862,21 +5862,14 @@ mod core_word_tests;
 #[path = "main/tests/serve.rs"]
 mod serve_tests;
 
-/// **What a turn's end tells the app it said**, from its `Stop` hook's `payload`: its last message;
-/// for a judge of a grade, its answer whole where it read only what it may, that it read past
-/// that, or nothing where that is not known (SK-55).
+/// **What a turn's end tells the app it said**, from its `Stop` hook's `payload`: its last message,
+/// and for a judge of a grade its answer, which has to come back whole (SK-55).
 fn turn_output_of(payload: &str) -> Option<hookwire::Output> {
-    use purlis_core::toolhooks::{JUDGE_FOLDER_ENV, JudgeTurn, judge_turn};
-    let env = &purlis_core::envvar::var;
-    if env(JUDGE_FOLDER_ENV).is_none() {
+    if purlis_core::envvar::var(purlis_core::toolhooks::JUDGE_FOLDER_ENV).is_none() {
         return hookwire::Output::of_stop(payload);
     }
-    match judge_turn(payload, env) {
-        JudgeTurn::Held => hookwire::Output::of_stop_within(
-            payload,
-            purlis_core::skills::grade::outcomes::MOST_ANSWER_BYTES,
-        ),
-        JudgeTurn::ReadPast => Some(hookwire::Output::ReadPast),
-        JudgeTurn::NotKnown => None,
-    }
+    hookwire::Output::of_stop_within(
+        payload,
+        purlis_core::skills::grade::outcomes::MOST_ANSWER_BYTES,
+    )
 }

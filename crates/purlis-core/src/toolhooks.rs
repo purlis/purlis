@@ -395,57 +395,6 @@ pub fn judge_guard_answers(binary: &Path, folder: &Path) -> bool {
     })
 }
 
-/// The most of a judge's transcript read: past what a turn of a grade's chat writes.
-const MOST_TRANSCRIPT_BYTES: u64 = 64 * 1024 * 1024;
-
-/// **What a judge's turn did with what it may read**, as its transcript says.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JudgeTurn {
-    /// It is no judge, or every tool call it made was `Read` or `Grep` inside its folder.
-    Held,
-    /// A tool call of it was another tool's, or reached outside its folder.
-    ReadPast,
-    /// Its transcript could not be read whole, so what it did is not known: no verdict.
-    NotKnown,
-}
-
-/// **What a judge's turn did**, from its `Stop` hook's `payload` ([`JudgeTurn`]): [`JudgeTurn::Held`]
-/// for every other chat.
-pub fn judge_turn(payload: &str, env: &dyn Fn(&str) -> Option<String>) -> JudgeTurn {
-    let Some(folder) = env(JUDGE_FOLDER_ENV) else {
-        return JudgeTurn::Held;
-    };
-    (|| {
-        let stop: Value = serde_json::from_str(payload).ok()?;
-        let path = Path::new(stop.get("transcript_path")?.as_str()?);
-        let cwd = stop.get("cwd").and_then(Value::as_str).unwrap_or(&folder);
-        if std::fs::metadata(path).ok()?.len() > MOST_TRANSCRIPT_BYTES {
-            return None;
-        }
-        let text = std::fs::read_to_string(path).ok()?;
-        let folder = std::fs::canonicalize(&folder).ok()?;
-        let cwd = Path::new(cwd);
-        for line in text.lines().filter(|line| !line.trim().is_empty()) {
-            let row: Value = serde_json::from_str(line).ok()?;
-            let Some(content) = row.pointer("/message/content").and_then(Value::as_array) else {
-                continue;
-            };
-            for call in content
-                .iter()
-                .filter(|one| one.get("type").and_then(Value::as_str) == Some("tool_use"))
-            {
-                let named = targets(call.get("input")?);
-                let tool = call.get("name")?.as_str()?;
-                if !matches!(tool, "Read" | "Grep") || !inside(&folder, cwd, &named) {
-                    return Some(JudgeTurn::ReadPast);
-                }
-            }
-        }
-        Some(JudgeTurn::Held)
-    })()
-    .unwrap_or(JudgeTurn::NotKnown)
-}
-
 /// Whether each of `named`, from `base`, or `base` itself where none is named, lands inside
 /// `folder` ([`lands_inside`]).
 fn inside(folder: &Path, base: &Path, named: &[String]) -> bool {
@@ -453,7 +402,7 @@ fn inside(folder: &Path, base: &Path, named: &[String]) -> bool {
     let paths = if named.is_empty() { &here[..] } else { named };
     paths
         .iter()
-        .all(|path| lands_inside(folder, &base.join(path)))
+        .all(|path| !path.starts_with('~') && lands_inside(folder, &base.join(path)))
 }
 
 /// **Whether `path` lands inside `folder`**, a resolved folder: the deepest part of it that exists,
@@ -499,34 +448,52 @@ fn outcome_write(hook: &Hook) -> Option<Answer> {
         "" => folder.clone(),
         cwd => Path::new(cwd).to_path_buf(),
     };
-    Some(if named.is_empty() || !inside(&folder, &base, &named) {
-        refused()
-    } else {
-        say("PreToolUse", &[("permissionDecision", "allow".to_owned())])
-    })
+    let settings_of_a_chat = |path: &String| {
+        let folded = path.to_lowercase();
+        folded
+            .split('/')
+            .any(|part| part == ".claude" || part == ".mcp.json")
+    };
+    Some(
+        if named.is_empty()
+            || named.iter().any(settings_of_a_chat)
+            || !inside(&folder, &base, &named)
+        {
+            refused()
+        } else {
+            say("PreToolUse", &[("permissionDecision", "allow".to_owned())])
+        },
+    )
 }
 
-/// **Whether purlis's `binary` answers an outcome chat in `folder` for a write inside it**, asked
-/// as a chat's harness would. No answer in time, or any other answer, is no.
+/// **Whether purlis's `binary` answers an outcome chat in `folder`**, asked as a chat's harness
+/// would: it allows a write inside and refuses one outside. No answer in time, or any other answer,
+/// is no.
 pub fn outcome_guard_answers(binary: &Path, folder: &Path) -> bool {
-    let payload = serde_json::json!({
-        "tool_name": "Write",
-        "tool_input": {"file_path": "new.txt"},
-        "cwd": folder,
-    });
-    let mut asking = std::process::Command::new(binary);
-    asking
-        .args(["hook", "pretooluse-edit"])
-        .current_dir(folder)
-        .env(OUTCOME_FOLDER_ENV, folder);
-    crate::boundedrun::run_within(
-        &mut asking,
-        Some(&payload.to_string()),
-        64 * 1024,
-        64 * 1024,
-        Some(JUDGE_CHECK_TIME),
-    )
-    .is_ok_and(|ran| String::from_utf8_lossy(&ran.printed).contains("\"allow\""))
+    let asked = |path: &str| {
+        let payload = serde_json::json!({
+            "tool_name": "Write",
+            "tool_input": {"file_path": path},
+            "cwd": folder,
+        });
+        let mut asking = std::process::Command::new(binary);
+        asking
+            .args(["hook", "pretooluse-edit"])
+            .current_dir(folder)
+            .env(OUTCOME_FOLDER_ENV, folder);
+        crate::boundedrun::run_within(
+            &mut asking,
+            Some(&payload.to_string()),
+            64 * 1024,
+            64 * 1024,
+            Some(JUDGE_CHECK_TIME),
+        )
+    };
+    asked("new.txt").is_ok_and(|ran| String::from_utf8_lossy(&ran.printed).contains("\"allow\""))
+        && asked("../outside.txt").is_ok_and(|ran| {
+            ran.status.code() == Some(2)
+                || String::from_utf8_lossy(&ran.printed).contains("\"deny\"")
+        })
 }
 
 /// `_state_write_reason`'s sentence.

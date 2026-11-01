@@ -763,14 +763,17 @@ pub fn lay_out_judge(
             usize::MAX,
         )
         .map_err(|why| super::not_written("the grade's record of its folder", why))?;
-        let outcome: Vec<&(String, String)> = outcome
-            .iter()
-            .filter(|(path, _)| !instruction_file(path))
-            .collect();
-        let listed: String = outcome
+        let (withheld, outcome): (Vec<&(String, String)>, Vec<&(String, String)>) =
+            outcome.iter().partition(|(path, _)| instruction_file(path));
+        let mut listed: String = outcome
             .iter()
             .map(|(path, _)| format!("{JUDGE_OUTCOME_DIR}/{path}\n"))
             .collect();
+        for (path, _) in withheld {
+            listed.push_str(&format!(
+                "withheld: {path}, a chat's instructions file, which purlis does not copy\n"
+            ));
+        }
         let mut files: Vec<(String, &str)> = vec![
             (JUDGE_TASK_FILE.to_owned(), task),
             (JUDGE_FILES_FILE.to_owned(), &listed),

@@ -22,7 +22,8 @@ the task it grades (`task`). The run-chat result says what the chat's turn ended
 of 2026-10-31 and 2026-11-01, adding to §3), still under the sandbox. Outcome chats' writes are held
 to their piece by a guard, and a write goes ahead only on its answer. A run whose guard did not
 answer fails, with the reason in the record, and so does one whose chat asks for anything else.
-No other chat of a grade gains this.
+Outcome chats have no shell in v1: a shell call asks, and so fails the run (#4476). No other chat of a
+grade gains this.
 
 **An outcome eval's chat runs its whole turn** (§3), in a throwaway piece laid out as the arm's
 is, with the eval's input files staged into it at the paths the eval names. Each file is read as
@@ -30,7 +31,7 @@ text, at most 1 MiB and through no link, in the same read as the skill's copy, s
 covers it; an eval's files must be its own inputs under `evals/`: one that names a file of the skill (it
 would hand the arm without it the skill), a fixture file in any case, a chat's instruction file, or
 a file that does not read is left out and named, as is one whose expectations a judge's answer
-could not repeat within the 16 KiB a hook hands back. Its first message is its prompt, with one sentence
+could not repeat within the 48 KiB it is read to. Its first message is its prompt, with one sentence
 naming its files where it has any, as skill-creator's executor is told them.
 
 **A harness hands back a chat's final answer by its `Stop` hook** (the open choice of the ticket):
@@ -41,7 +42,7 @@ judged on its folder alone, and its judge is told there is no answer.
 
 **A judge reads only what the chat it judges left, and changes nothing.** Before that chat closes
 and its piece goes, purlis reads its plain text files as it ended (at most 32, 8 folders deep, no
-dot-name, each read pinned) and keeps them, with its answer, for its judge alone. The judge's
+dot-name, each read pinned; a chat's instructions file is withheld, and listed as withheld) and keeps them, with its answer, for its judge alone. The judge's
 piece is a grade's arm with no skill, marked as a judge's in this machine's state, which no chat
 writes, holding `task.json` (the eval's prompt, what success looks like and its expectations),
 `answer.md`, `outcome/` and `files.txt`, which lists it, and nothing else. A judge's chat is a grade's chat, held to every
@@ -63,7 +64,7 @@ fails.
 taken off) and taken key by key through an allow-list: every expectation it was asked about, in
 order, each `text` the one asked about, each `passed` true or false, each `evidence` text, kept at
 most 512 bytes with every control character a space; every other key is left out, and an answer
-past 64 KiB is not read. An answer that is not whole and a judge that asks the person something
+past 48 KiB is not read. An answer that is not whole and a judge that asks the person something
 **fail that run of the eval** (none of its expectations
 passed), with a sentence saying why. A judge that reached past what it may read **fails that run too, with the reason in the record**
 (the operator's ruling of 2026-11-01). A judge that never ran (not started, stopped, or ended at a

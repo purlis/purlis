@@ -2806,8 +2806,6 @@ pub enum Output {
         /// The message, cut to [`Output::MOST_BYTES`] by the hook.
         text: String,
     },
-    /// A judge of a grade reached past what it may read, as its turn's end found (SK-55).
-    ReadPast,
     /// A shell command the turn ran, as its tool's hook heard it come back (#1981): what
     /// `purlis dispatch read` lists of a task.
     Ran {
@@ -2885,13 +2883,28 @@ impl Output {
     /// The last message `text` of a turn, cut on a character to [`Self::MOST_BYTES`], or none
     /// for one with nothing in it.
     pub fn last_message(text: &str) -> Option<Self> {
+        Self::last_message_within(text, Self::MOST_BYTES)
+    }
+
+    /// [`Self::last_message`], cut to `most` bytes, and so that its line as JSON writes it is one
+    /// the app reads: a text of what JSON escapes is longer on the line (SK-55).
+    pub fn last_message_within(text: &str, most: usize) -> Option<Self> {
         let text = text.trim();
         if text.is_empty() {
             return None;
         }
-        let mut end = text.len().min(Self::MOST_BYTES);
-        while !text.is_char_boundary(end) {
-            end -= 1;
+        let most_written = A_LINE_IS_AT_MOST as usize - LINE_BESIDES_ITS_MESSAGE;
+        let (mut end, mut written) = (0, 0);
+        for (at, ch) in text.char_indices() {
+            written += match ch {
+                '"' | '\\' | '\n' | '\r' | '\t' | '\u{8}' | '\u{c}' => 2,
+                ch if u32::from(ch) < 0x20 => 6,
+                ch => ch.len_utf8(),
+            };
+            if at + ch.len_utf8() > most || written > most_written {
+                break;
+            }
+            end = at + ch.len_utf8();
         }
         Some(Self::Final {
             text: text[..end].to_owned(),
@@ -2907,19 +2920,12 @@ impl Output {
     /// [`Self::of_stop`], cut to `most` bytes: a judge's answer has to come back whole (SK-55).
     pub fn of_stop_within(payload: &str, most: usize) -> Option<Self> {
         let read = serde_json::from_str::<serde_json::Value>(payload).ok()?;
-        let text = read.get("last_assistant_message")?.as_str()?.trim();
-        if text.is_empty() {
-            return None;
-        }
-        let mut end = text.len().min(most);
-        while !text.is_char_boundary(end) {
-            end -= 1;
-        }
-        Some(Self::Final {
-            text: text[..end].to_owned(),
-        })
+        Self::last_message_within(read.get("last_assistant_message")?.as_str()?, most)
     }
 }
+
+/// What a turn's output line holds beside its message: its keys, its chat and who said it.
+const LINE_BESIDES_ITS_MESSAGE: usize = 1024;
 
 /// The status in a Claude Code `PostToolUseFailure` error: "Exit code N" at its start.
 fn exit_code_in(error: &str) -> Option<i32> {

@@ -131,6 +131,7 @@ impl HarnessAdapter for ClaudeCode {
                         &denied_tools(kit),
                         screened.as_ref(),
                         kit.graded,
+                        kit.writes_its_piece,
                         &own_of(kit, cwd),
                     ),
                 ]),
@@ -611,6 +612,7 @@ fn settings(
     denied_tools: &[String],
     screened: Option<&project::Screened>,
     graded: bool,
+    no_shell: bool,
     own: &(Option<String>, Option<String>),
 ) -> String {
     let mut settings = serde_json::Map::new();
@@ -755,6 +757,11 @@ fn settings(
     if sandbox.is_some_and(crate::sandbox::claude::Settings::is_off) {
         allow.push("Bash".to_owned());
     }
+    // **An outcome eval's chat has no shell in v1** (SK-55, #4476): no rule allows one, and below
+    // every call asks, which ends the run.
+    if no_shell {
+        allow.retain(|rule| !rule.starts_with("Bash"));
+    }
     let mut permissions = serde_json::json!({ "allow": allow });
     // **The sandbox, where the plane turned it on** (ADR 0067), and the deny rules that keep
     // Claude Code's own Read and Edit tools out of what its sandbox denies a command
@@ -762,7 +769,11 @@ fn settings(
     // things. Absent otherwise, never `enabled: false`: an unsandboxed chat is left to the
     // operator's own settings, as it was.
     if let Some(sandbox) = sandbox {
-        settings.insert("sandbox".to_owned(), sandbox.sandbox.clone());
+        let mut object = sandbox.sandbox.clone();
+        if no_shell {
+            object["autoAllowBashIfSandboxed"] = false.into();
+        }
+        settings.insert("sandbox".to_owned(), object);
         permissions["deny"] = serde_json::json!(sandbox.deny);
     }
     // **The tools the chat's persona denies it** (#1451, D-1451-18): its `disallowed-tools:`,
@@ -813,6 +824,15 @@ fn settings(
         rules.extend(twins.into_iter().map(serde_json::Value::String));
         permissions[bucket] = serde_json::Value::Array(rules);
     }
+    if no_shell {
+        let mut had: Vec<serde_json::Value> = permissions
+            .get("ask")
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        had.push("Bash".into());
+        permissions["ask"] = serde_json::Value::Array(had);
+    }
     // **A grade's chat keeps its permission prompts** (SK-16): its mode is the default one
     // whatever the person's own settings set, as a session's settings outrank theirs.
     if graded {
@@ -834,6 +854,7 @@ pub(super) fn armed_settings_for_tests(sandbox: &crate::sandbox::claude::Setting
         Some(sandbox),
         &[],
         None,
+        false,
         false,
         &(None, None),
     )

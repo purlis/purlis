@@ -1290,19 +1290,27 @@ fn another_chat_s_theme_draft_is_never_spoken_of() {
 /// and a path that does not resolve are refused; another chat is not held so.
 #[test]
 fn a_judge_reads_only_the_folder_laid_out_for_it() {
-    let plane = Plane::new();
-    let folder = plane.root.join("judge");
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let folder = root.join("judge");
     std::fs::create_dir_all(folder.join("outcome")).unwrap();
     std::fs::write(folder.join("outcome/out.md"), "done").unwrap();
-    std::fs::write(plane.root.join("secret.md"), "no").unwrap();
+    std::fs::write(root.join("secret.md"), "no").unwrap();
     #[cfg(unix)]
-    std::os::unix::fs::symlink(plane.root.join("secret.md"), folder.join("link.md")).unwrap();
-    let judge = plane.with_env(JUDGE_FOLDER_ENV, folder.to_str().unwrap());
+    std::os::unix::fs::symlink(root.join("secret.md"), folder.join("link.md")).unwrap();
+    let cwd = folder.to_str().unwrap().to_owned();
     let read = |tool: &str, input: Value| {
-        judge.ask(
-            serde_json::json!({"tool_name": tool, "tool_input": input, "cwd": folder.to_str().unwrap()}),
-            pretooluse_read,
-        )
+        let lookup = |name: &str| (name == JUDGE_FOLDER_ENV).then(|| cwd.clone());
+        let payload = serde_json::json!({"tool_name": tool, "tool_input": input, "cwd": cwd});
+        pretooluse_read(&Hook {
+            root: &root,
+            in_plane: false,
+            payload: &payload,
+            env: &lookup,
+            cwd: &root,
+            now: now(),
+            host: "box",
+        })
     };
     assert!(matches!(
         read("Read", serde_json::json!({"file_path": "outcome/out.md"})),
@@ -1320,6 +1328,7 @@ fn a_judge_reads_only_the_folder_laid_out_for_it() {
         "a file that is not there is inside, and only says so"
     );
     for outside in [
+        "~/secret.md",
         "../secret.md",
         "../missing.md",
         "gone/../../secret.md",
@@ -1342,45 +1351,6 @@ fn a_judge_reads_only_the_folder_laid_out_for_it() {
         read("Read", serde_json::json!({"file_path": "link.md"})),
         Answer::Deny(_)
     ));
-}
-
-/// SK-55: a judge's answer is taken only where all it did was read its own folder.
-#[test]
-fn a_judges_answer_is_taken_only_from_a_turn_that_read_its_folder_alone() {
-    let plane = Plane::new();
-    let folder = plane.root.join("judge");
-    std::fs::create_dir_all(&folder).unwrap();
-    std::fs::write(folder.join("task.json"), "{}").unwrap();
-    let cwd = folder.to_str().unwrap().to_owned();
-    let lookup = |name: &str| (name == JUDGE_FOLDER_ENV).then(|| cwd.clone());
-    let transcript = plane.root.join("t.jsonl");
-    let stop = serde_json::json!({"transcript_path": transcript, "cwd": cwd}).to_string();
-    let call = |name: &str, input: Value| {
-        serde_json::json!({"type": "assistant", "message": {"content": [
-            {"type": "text", "text": "x"},
-            {"type": "tool_use", "name": name, "input": input},
-        ]}})
-        .to_string()
-    };
-    assert_eq!(
-        judge_turn(&stop, &lookup),
-        JudgeTurn::NotKnown,
-        "no transcript"
-    );
-    let wrote = |text: String| std::fs::write(&transcript, text).unwrap();
-    wrote(call("Read", serde_json::json!({"file_path": "task.json"})));
-    assert_eq!(judge_turn(&stop, &lookup), JudgeTurn::Held);
-    wrote(call("Read", serde_json::json!({"file_path": "../t.jsonl"})));
-    assert_eq!(judge_turn(&stop, &lookup), JudgeTurn::ReadPast);
-    wrote(call("Bash", serde_json::json!({"command": "ls"})));
-    assert_eq!(judge_turn(&stop, &lookup), JudgeTurn::ReadPast);
-    wrote("not json".to_owned());
-    assert_eq!(judge_turn(&stop, &lookup), JudgeTurn::NotKnown);
-    assert_eq!(
-        judge_turn("nothing", &|_| None),
-        JudgeTurn::Held,
-        "any other chat"
-    );
 }
 
 /// SK-55: an outcome chat's writes land in its own piece: a new file below it, never a link out of
@@ -1420,7 +1390,18 @@ fn an_outcome_chats_writes_land_in_its_own_piece() {
         };
         assert!(said.contains("\"allow\""), "{said}");
     }
-    let mut outside = vec!["../new.md".to_owned(), "/etc/x".to_owned()];
+    let mut outside: Vec<String> = [
+        "~/new.md",
+        "../new.md",
+        "/etc/x",
+        ".claude/settings.json",
+        ".claude/settings.local.json",
+        ".CLAUDE/settings.json",
+        "deep/.claude/settings.json",
+        ".mcp.json",
+    ]
+    .map(str::to_owned)
+    .to_vec();
     if cfg!(unix) {
         outside.extend(["out/new.md", "file.md", "dangling"].map(str::to_owned));
     }

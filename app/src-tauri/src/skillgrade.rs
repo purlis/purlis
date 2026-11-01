@@ -1950,7 +1950,14 @@ impl Chats for InChats<'_> {
         if ran.end == ChatEnd::Asked {
             self.asked += 1;
         }
-        if matches!(ran.end, ChatEnd::Turn | ChatEnd::TimedOut | ChatEnd::Asked) {
+        if matches!(
+            ran.end,
+            ChatEnd::Turn
+                | ChatEnd::TimedOut
+                | ChatEnd::Asked
+                | ChatEnd::ClosedEarly { .. }
+                | ChatEnd::ReadPast
+        ) {
             (self.tell)(self.spent, self.asked);
         }
         ran
@@ -2152,6 +2159,7 @@ impl InChats<'_> {
         let mut skills: Vec<String> = Vec::new();
         let mut answer: Option<String> = None;
         let mut read_past = false;
+        let judge = matches!(chat.kind, ChatKind::Judge { .. });
         let mut end = match &told {
             None => ChatEnd::TimedOut,
             Some((_, heard)) => loop {
@@ -2181,7 +2189,9 @@ impl InChats<'_> {
                         }
                     }
                     Ok(Watched::Said(text)) => answer = Some(text),
-                    Ok(Watched::ReadPast) => read_past = true,
+                    // A judge is ended at once: nothing more of its turn is needed to fail it.
+                    Ok(Watched::ReadPast) if judge => break ChatEnd::ReadPast,
+                    Ok(Watched::ReadPast) => {}
                     Ok(Watched::TurnEnded) => break ChatEnd::Turn,
                     // A grade's chat waits on nobody: ended at its first ask, with that end.
                     Ok(Watched::Asked) => break ChatEnd::Asked,
@@ -2224,8 +2234,16 @@ impl InChats<'_> {
                 }
             }
         }
-        if read_past && matches!(chat.kind, ChatKind::Judge { .. }) {
-            end = ChatEnd::ReadPast;
+        // A refusal heard behind its turn's end still fails it; a Stop or a limit stays what ended it.
+        if judge && matches!(end, ChatEnd::Turn | ChatEnd::TimedOut) {
+            if let Some((_, heard)) = &told {
+                read_past |= heard.try_iter().any(|one| one == Watched::ReadPast);
+            }
+            if read_past {
+                end = ChatEnd::ReadPast;
+            }
+        }
+        if end == ChatEnd::ReadPast {
             answer = None;
         }
         // What an outcome eval's chat left, kept for its judge, read before its close takes

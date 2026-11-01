@@ -25,11 +25,13 @@ use super::{Arm, OutcomeEval};
 pub const JUDGE_TASK_FILE: &str = "task.json";
 pub const JUDGE_ANSWER_FILE: &str = "answer.md";
 pub const JUDGE_OUTCOME_DIR: &str = "outcome";
-/// The list of what `outcome/` holds: a judge has no tool that lists a folder.
+/// The list of what `outcome/` holds, and what was left out of it by name: a judge has no tool that
+/// lists a folder.
 pub const JUDGE_FILES_FILE: &str = "files.txt";
 
 /// The most bytes of a judge's answer read: past skill-creator's largest `grading.json` for 32
-/// expectations with their evidence, and what a judge's hook hands the app whole on one line.
+/// expectations with their evidence. Its hook cuts it so its line as JSON writes it is one the app
+/// reads.
 pub const MOST_ANSWER_BYTES: usize = 48 * 1024;
 
 /// The most bytes of one expectation's evidence kept in the record: what the scorecard shows, cut
@@ -208,8 +210,8 @@ pub struct OutcomeRun {
     /// it asked the person something, or it gave no answer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failed: Option<String>,
-    /// **Its chat asked the person something and was ended there** (ADR 0105 §3): no run, never
-    /// judged, and said in the grade, as a trigger test's `asked` is.
+    /// **Its chat asked the person something and was ended there** (ADR 0105 §3): that fails the
+    /// run, and [`GradeReport::asked`](super::GradeReport::asked) counts it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub asked: bool,
 }
