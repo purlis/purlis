@@ -1223,7 +1223,10 @@ fn a_name_kept_for_agent_identity_is_written_and_deleted_by_that_flow_alone() {
     assert!(set_value(&plane.ctx, &v, key, "planted").is_err());
     assert!(set_value(&plane.ctx, &v, &key.to_uppercase(), "planted").is_err());
     assert!(rename(&plane.ctx, &v, "other", key).is_err());
-    assert_eq!(get_value(&plane.ctx, &v, "other").unwrap(), "other-value-5d1a");
+    assert_eq!(
+        get_value(&plane.ctx, &v, "other").unwrap(),
+        "other-value-5d1a"
+    );
     assert!(!keys(&plane.ctx, &v).unwrap().iter().any(|one| one == key));
 
     set_reserved(&plane.ctx, &v, key, "kept").unwrap();
