@@ -1,0 +1,147 @@
+[
+  {
+    "name": "✋ equals what waits on the person, in every state",
+    "pass": true,
+    "said": "47 states"
+  },
+  {
+    "name": "Nothing stranded: each item that waits has its one Inbox card, in every state",
+    "pass": true,
+    "said": "47 states"
+  },
+  {
+    "name": "In progress: no ✋, no quiz, no Inbox card, a word on the task's row",
+    "pass": true,
+    "said": "asking steward 4 · 2m"
+  },
+  {
+    "name": "In progress, the task's own tab can answer at once, and ✋ stays 0",
+    "pass": true,
+    "said": "drawn, ✋ 0"
+  },
+  {
+    "name": "The same words in the quiz and the Inbox card",
+    "pass": true,
+    "said": "2 surfaces"
+  },
+  {
+    "name": "The same words in the strip and the Inbox card",
+    "pass": true,
+    "said": "2 surfaces"
+  },
+  {
+    "name": "A quiz arriving never takes focus, and typing carries on (band)",
+    "pass": true,
+    "said": "value \"pnpm test\""
+  },
+  {
+    "name": "The input line stays where it was as a quiz arrives (band)",
+    "pass": true,
+    "said": "moved 0px; terminal gave up 170px"
+  },
+  {
+    "name": "A quiz arriving never takes focus, and typing carries on (foot)",
+    "pass": true,
+    "said": "value \"pnpm test\""
+  },
+  {
+    "name": "The input line stays where it was as a quiz arrives (foot)",
+    "pass": false,
+    "said": "moved -170px; terminal gave up 170px"
+  },
+  {
+    "name": "F6 goes to the quiz, Esc goes back to the terminal",
+    "pass": true,
+    "said": "terminal-input"
+  },
+  {
+    "name": "One quiz at a time, the oldest, with a count",
+    "pass": true,
+    "said": "2 more\n2 more questions wait after this"
+  },
+  {
+    "name": "A second click during the pause lands on nothing",
+    "pass": true,
+    "said": "✋ 2"
+  },
+  {
+    "name": "The pause lasts about a second, then the next quiz comes",
+    "pass": true,
+    "said": "1296ms"
+  },
+  {
+    "name": "The pause keeps the quiz's height, so nothing jumps",
+    "pass": true,
+    "said": "quiz 162px, pause 164px"
+  },
+  {
+    "name": "One answer in the Inbox clears the quiz, ✋, the card, the row and the tab's count",
+    "pass": true,
+    "said": "all gone"
+  },
+  {
+    "name": "An agent answering closes the quiz quietly: one line, no ✋, no Update",
+    "pass": true,
+    "said": "steward 4 told developer 7: \"Per project. The code is what customers are billed by.\""
+  },
+  {
+    "name": "What you typed survives an agent's answer",
+    "pass": true,
+    "said": "Say when it closed, and keep it to one line"
+  },
+  {
+    "name": "A background turn leaves the strip and ✋ alone",
+    "pass": true,
+    "said": "strip kept"
+  },
+  {
+    "name": "Setting from each session moves open questions at once, and no count changes",
+    "pass": true,
+    "said": "✋ 3"
+  },
+  {
+    "name": "From each session, the quiz waits in the task's tab",
+    "pass": true,
+    "said": "drawn"
+  },
+  {
+    "name": "From the top, the task's own tab can answer too",
+    "pass": true,
+    "said": "drawn"
+  },
+  {
+    "name": "With the top tab showing something else, nothing switches and the count holds",
+    "pass": true,
+    "said": "stays on Settings"
+  },
+  {
+    "name": "A collapsed task still shows its state",
+    "pass": true,
+    "said": "architect 2 needs you needs you · now 1 asking"
+  },
+  {
+    "name": "A failed redirect falls back to the pane and the Inbox, with no top-tab quiz, and is said once",
+    "pass": true,
+    "said": "one card, one Update"
+  },
+  {
+    "name": "A failed redirect can be answered in the task's pane",
+    "pass": true,
+    "said": "drawn"
+  },
+  {
+    "name": "Every quiz says why it reached you",
+    "pass": true,
+    "said": "all"
+  },
+  {
+    "name": "No state scrolls the window sideways",
+    "pass": true,
+    "said": "none"
+  },
+  {
+    "name": "No script error in any state",
+    "pass": true,
+    "said": "none"
+  }
+]

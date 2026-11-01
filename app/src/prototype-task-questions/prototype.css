@@ -1,0 +1,284 @@
+/* PROTOTYPE, throwaway (spec #4551, #4561). Theme tokens only, so light, dark and themes follow. */
+
+.tq-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding-block-end: 48px;
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-base);
+}
+.tq-root[data-bare] { padding-block-end: 0; }
+.tq-root p { margin: 0; }
+
+.tq-title {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  block-size: 36px;
+  padding-inline: var(--space-5);
+  border-block-end: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
+}
+.tq-title-end { display: inline-flex; gap: var(--space-2); align-items: center; }
+
+.tq-body { flex: 1; min-block-size: 0; display: flex; }
+.tq-side {
+  flex: none;
+  inline-size: 300px;
+  padding: var(--space-3) var(--space-2);
+  overflow: auto;
+  background: var(--panel-fill);
+  border-inline-end: 1px solid var(--border-subtle);
+}
+.tq-side ul { list-style: none; margin: 0; padding: 0; }
+.tq-side-head { margin: 0; padding: var(--space-2) var(--space-3); font-size: var(--font-size-sm); font-weight: var(--font-weight-regular); }
+.tq-side li { display: flex; }
+.tq-row-trail { display: inline-flex; gap: var(--space-2); align-items: center; flex: none; }
+.tq-row-word { white-space: nowrap; color: var(--text-secondary); }
+
+.tq-main { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; }
+
+/* A stand-in for the real tab strip. */
+.tq-tabs {
+  flex: none;
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3) 0;
+  background: var(--surface-sunken);
+}
+.tq-tab {
+  all: unset;
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  cursor: default;
+}
+.tq-tab svg { inline-size: 14px; block-size: 14px; }
+.tq-tab[aria-selected="true"] { color: var(--text-primary); background: var(--terminal-background); }
+.tq-tab:focus-visible { outline: 2px solid var(--accent-base); outline-offset: -2px; }
+
+/* The pane: band, head, terminal; as paneFrame.css has it. */
+.tq-pane {
+  flex: 1;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--terminal-background);
+}
+.tq-pane-head {
+  flex: none;
+  padding: var(--space-2) var(--space-5);
+  color: var(--text-muted);
+}
+.tq-terminal {
+  flex: 1;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+  padding: var(--space-2) var(--space-5) var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.tq-terminal-lines { min-block-size: 0; overflow: hidden; white-space: pre-wrap; display: flex; flex-direction: column; justify-content: flex-end; }
+.tq-prompt { flex: none; display: flex; gap: var(--space-3); margin-block-start: var(--space-3); color: var(--text-primary); }
+.tq-prompt textarea {
+  all: unset;
+  flex: 1;
+  caret-color: var(--text-primary);
+}
+
+/* The asks' place: the pane's band, or its foot. Never over the terminal. */
+.tq-asks {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-block-size: 60%;
+  overflow: auto;
+  padding: var(--space-3) var(--space-5) var(--space-1);
+}
+.tq-asks[data-place="foot"] { padding-block: var(--space-1) var(--space-3); }
+
+/* The strip: one line, in the waiting colour's edge, the question's own words. */
+.tq-strip {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-inline-size: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-overlay);
+  box-shadow: inset 2px 0 0 var(--state-waiting);
+}
+.tq-strip[data-open] { align-items: flex-start; }
+.tq-strip-mark { flex: none; display: inline-flex; color: var(--state-waiting); }
+.tq-strip-mark svg { inline-size: 16px; block-size: 16px; }
+.tq-strip-words { flex: 1; min-inline-size: 0; display: flex; gap: var(--space-3); align-items: baseline; }
+.tq-strip[data-open] .tq-strip-words { flex-direction: column; gap: var(--space-1); }
+.tq-strip-label { flex: none; color: var(--text-muted); white-space: nowrap; }
+.tq-strip-says {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+.tq-strip[data-open] .tq-strip-says { white-space: normal; overflow: auto; max-block-size: 10em; }
+.tq-strip-ways { flex: none; display: inline-flex; gap: var(--space-1); align-items: center; }
+
+.tq-permission {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-overlay);
+}
+
+/* The quiz wears the Inbox's card, so it reads as the same item. */
+.tq-quiz.inbox-ask, .tq-pause.inbox-ask { padding: var(--space-3) var(--space-4); margin: 0; }
+.tq-top-end { flex: none; display: inline-flex; gap: var(--space-3); align-items: center; }
+.tq-why { font-size: var(--font-size-sm); }
+.tq-note {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--border-strong);
+  font-size: var(--font-size-sm);
+}
+.tq-note-who { flex: none; display: inline-flex; gap: var(--space-1); align-items: center; color: var(--text-muted); }
+.tq-note-who .persona-mark { inline-size: 14px; block-size: 14px; font-size: 8px; }
+.tq-options { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.tq-answer { display: flex; gap: var(--space-2); align-items: flex-end; }
+.tq-box { flex: 1; min-inline-size: 0; }
+.tq-foot { display: flex; gap: var(--space-3); align-items: center; justify-content: space-between; color: var(--text-muted); }
+.tq-pause { display: flex; flex-direction: column; gap: var(--space-1); justify-content: center; min-block-size: 164px; }
+
+/* A quiet line: no card, no edge. */
+.tq-line, .tq-first {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.tq-line > p, .tq-first > p { flex: 1; min-inline-size: 0; }
+.tq-line { border-radius: var(--radius-md); background: var(--surface-overlay); }
+.tq-closing-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  border-radius: var(--radius-md);
+  background: var(--surface-overlay);
+}
+
+.tq-panel {
+  flex: none;
+  inline-size: 400px;
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  border-inline-start: 1px solid var(--border-subtle);
+  background: var(--panel-fill);
+}
+.tq-panel-head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: var(--space-2) var(--space-4); }
+.tq-inbox { flex: 1; min-block-size: 0; overflow: auto; padding: 0 var(--space-4) var(--space-4); }
+.tq-inbox li { list-style: none; }
+.tq-empty { padding: var(--space-5) 0; }
+.tq-update { display: flex; gap: var(--space-2); align-items: flex-start; padding: var(--space-2) 0; }
+.tq-update > p { flex: 1; }
+
+.tq-activity { display: flex; flex-direction: column; gap: var(--space-3); padding: 0 var(--space-4) var(--space-4); overflow: auto; }
+.tq-trail { display: flex; flex-direction: column; gap: var(--space-2); }
+.tq-trail ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--font-size-sm); }
+.tq-trail li { display: flex; gap: var(--space-3); align-items: baseline; }
+.tq-trail time { flex: none; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+.tq-settings { flex: 1; padding: var(--space-6) var(--space-8, 32px); overflow: auto; background: var(--terminal-background); display: flex; flex-direction: column; gap: var(--space-4); }
+.tq-settings h2 { margin: 0; }
+.tq-setting { display: flex; flex-direction: column; gap: var(--space-2); max-inline-size: 36rem; }
+
+.tq-words { flex: 1; overflow: auto; columns: 3 20rem; column-gap: var(--space-6); padding: var(--space-5); }
+.tq-words section { break-inside: avoid; margin-block-end: var(--space-5); }
+.tq-words h2 { margin: 0 0 var(--space-2); }
+.tq-words ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--font-size-sm); color: var(--text-secondary); }
+
+/* The prototype's own bar: not the design. */
+.tq-bar {
+  position: fixed;
+  inset-inline: 0;
+  inset-block-end: 0;
+  z-index: 50;
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  block-size: 48px;
+  padding-inline: var(--space-3);
+  background: var(--surface-deep);
+  border-block-start: 2px dashed var(--border-strong);
+}
+.tq-bar-name {
+  all: unset;
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-inline-size: 0;
+  max-inline-size: 42%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--font-size-sm);
+  cursor: default;
+}
+.tq-bar-name > span { overflow: hidden; text-overflow: ellipsis; }
+.tq-bar-name svg { flex: none; inline-size: 14px; block-size: 14px; }
+.tq-bar-name small { color: var(--text-muted); }
+.tq-bar-end { margin-inline-start: auto; display: inline-flex; gap: var(--space-2); }
+
+.tq-list {
+  position: fixed;
+  inset-inline: var(--space-5);
+  inset-block-end: 56px;
+  z-index: 51;
+  max-block-size: 70vh;
+  overflow: auto;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-strong);
+}
+.tq-list-head { display: flex; gap: var(--space-3); align-items: center; font-size: var(--font-size-sm); color: var(--text-muted); }
+.tq-list-head strong { color: var(--text-primary); }
+.tq-list-head button { margin-inline-start: auto; }
+.tq-list-groups { columns: 3 16rem; column-gap: var(--space-5); margin-block-start: var(--space-3); }
+.tq-list-groups section { break-inside: avoid; margin-block-end: var(--space-4); }
+.tq-list-groups h3 { margin: 0 0 var(--space-1); font-size: var(--font-size-sm); color: var(--text-muted); font-weight: var(--font-weight-regular); }
+.tq-list-groups button {
+  all: unset;
+  display: block;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-sm);
+  border-radius: var(--radius-sm);
+  cursor: default;
+}
+.tq-list-groups button:hover, .tq-list-groups button[data-here] { background: var(--surface-hover); }

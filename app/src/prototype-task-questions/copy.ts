@@ -1,0 +1,258 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * PROTOTYPE, throwaway (spec #4551, #4561): every word the question surfaces say, in one place, so
+ * the person can judge them together. The page's last state ("Every word") lists this file.
+ * Written to `docs/ui-copy.md`: sentence case, no stock phrases, an act named as its button reads.
+ */
+
+export const COPY = {
+  strip: {
+    waitingOn: "Waiting on you",
+    showAll: "Show all",
+    showLess: "Show less",
+    lastMessage: "Its last message",
+    earlier: (n: number) => (n === 1 ? "1 earlier message" : `${n} earlier messages`),
+    earlierAt: (at: number, of: number) => `Message ${at} of ${of} before the last`,
+    previous: "Earlier message",
+    next: "Later message",
+    backToLast: "Back to the last",
+    permissionAside: "Answer it in the notice",
+  },
+  quiz: {
+    asks: (task: string) => `${task} asks`,
+    more: (n: number) => `${n} more`,
+    moreSaid: (n: number) => `${n} more ${n === 1 ? "question waits" : "questions wait"} after this`,
+    passedOn: (chat: string) => `${chat} passed this on.`,
+    noReply: (chat: string) => `${chat} did not reply in 100 seconds.`,
+    gone: (chat: string) => `${chat} has closed, so this came to you.`,
+    crashed: (chat: string) => `${chat} stopped working, so this came to you.`,
+    lost: (chat: string) => `purlis lost its connection to ${chat}, so this came to you.`,
+    nobody: "No chat stands between this task and you.",
+    withChat: (chat: string) => `${chat} has this. You can answer first.`,
+    redirect: (chat: string) => `purlis could not hand this to ${chat}.`,
+    askedByYou: "You asked for this task, so this came to you.",
+    noteBy: (chat: string) => `${chat}'s note`,
+    taskWords: "In the task's words",
+    answerBox: "Your answer",
+    send: "Send",
+    openTask: "Open task",
+    keyHint: "F6 to answer, Esc to go back",
+    toldYours: (task: string) => `${task} is told this is your answer.`,
+    sent: (task: string) => `Sent to ${task}.`,
+    nextSoon: "The next question comes in a moment.",
+    cannotDraw: (task: string) => `${task} asks something this tab cannot draw.`,
+    cannotDrawWay: "Answer it in the task's pane.",
+    cannotDrawHere: "Answer it in the terminal below.",
+    typedKept: (chat: string, said: string) =>
+      `${chat} answered first: "${said}" What you typed is still in the box.`,
+    sendAnyway: "Send as your word",
+  },
+  closing: {
+    answered: (chat: string, task: string, said: string) => `${chat} told ${task}: "${said}"`,
+    goToTask: "Go to task",
+    sayOtherwise: "Say otherwise…",
+    otherwiseBox: "What you want instead",
+    otherwiseHow: (task: string, chat: string) => `${task} is told this replaces ${chat}'s answer.`,
+    sendOtherwise: "Send",
+    cancel: "Cancel",
+    dismiss: "Dismiss",
+    overridden: (task: string, chat: string) =>
+      `${task} was told your word replaces ${chat}'s answer.`,
+  },
+  row: {
+    asking: (chat: string) => `asking ${chat}`,
+    needsYou: "needs you",
+    ownPane: "asks in its own pane",
+    ownPaneTip: (harness: string) =>
+      `${harness} cannot send its questions through purlis yet. They stay in this task's pane and the Inbox.`,
+    foldedAsking: (n: number) => `${n} asking`,
+    total: (n: number) => `${n} ${n === 1 ? "thing waits" : "things wait"} on you under this chat`,
+  },
+  first: {
+    line: "Questions from tasks come to this tab, so you answer them in one place.",
+    each: "Answer from each session",
+    keep: "Keep this",
+    moved: "Questions now wait in each task's tab. Settings › Chats changes it back.",
+    close: "Dismiss",
+  },
+  settings: {
+    group: "Chats",
+    label: "Where you answer",
+    help: "Moves where you see a task's question, never who is asked first. You can open any task and answer there either way.",
+    top: "From the top",
+    topHelp: "One question at a time, in the session's tab.",
+    each: "From each session",
+    eachHelp: "Each question waits in its task's own tab.",
+  },
+  trail: {
+    open: "What happened",
+    title: "What happened to this question",
+    words: "The trail holds who did what and when, never the question's words.",
+    asked: (task: string) => `${task} asked`,
+    handed: (chat: string) => `Handed to ${chat}`,
+    passed: (chat: string) => `${chat} passed it on`,
+    passedNote: (chat: string) => `${chat} passed it on, with a note`,
+    noReply: (chat: string) => `${chat} did not reply in 100 seconds`,
+    gone: (chat: string) => `${chat} closed`,
+    lost: (chat: string) => `purlis lost its connection to ${chat}`,
+    reached: "Reached you",
+    moved: "Where you answer changed",
+    restart: "purlis restarted, and the question was kept",
+    chatAnswered: (chat: string) => `${chat} answered`,
+    youAnswered: "You answered",
+    youOverrode: (chat: string) => `You replaced ${chat}'s answer`,
+    taskEnded: "The task ended, unanswered",
+    redirectFailed: "purlis could not hand it on",
+    activity: (task: string) => `${task}'s questions`,
+    none: "No questions from this chat yet.",
+  },
+  inbox: {
+    title: "Inbox",
+    question: "A question from a task",
+    reply: "Waiting on your reply",
+    permission: "Asks to run something",
+    browser: "The browser needs you",
+    updates: "Updates",
+    closedUnanswered: (task: string) =>
+      `${task}'s question closed unanswered, because the task ended.`,
+    failed: (task: string, chat: string) =>
+      `purlis could not hand ${task}'s question to ${chat}. It is in the task's pane and here.`,
+    goToChat: "Go to chat",
+    nothing: "Nothing needs you here.",
+  },
+  needs: {
+    count: (n: number) => `${n} ${n === 1 ? "thing waits" : "things wait"} on you`,
+  },
+} as const;
+
+/** What the "Every word" state lists: a surface, and each line of it with stand-in names. */
+export function everyWord(): { surface: string; lines: string[] }[] {
+  const t = "developer 7";
+  const c = "steward 4";
+  const said = "Per project. The code is what customers are billed by.";
+  return [
+    {
+      surface: "Waiting strip",
+      lines: [
+        COPY.strip.waitingOn,
+        COPY.strip.showAll,
+        COPY.strip.showLess,
+        COPY.strip.lastMessage,
+        COPY.strip.earlier(3),
+        COPY.strip.earlierAt(1, 3),
+        COPY.strip.backToLast,
+        COPY.strip.permissionAside,
+      ],
+    },
+    {
+      surface: "Top-tab quiz",
+      lines: [
+        COPY.quiz.asks(t),
+        COPY.quiz.more(2),
+        COPY.quiz.moreSaid(2),
+        COPY.quiz.passedOn(c),
+        COPY.quiz.noReply(c),
+        COPY.quiz.gone(c),
+        COPY.quiz.crashed(c),
+        COPY.quiz.lost(c),
+        COPY.quiz.nobody,
+        COPY.quiz.askedByYou,
+        COPY.quiz.noteBy(c),
+        COPY.quiz.taskWords,
+        COPY.quiz.answerBox,
+        COPY.quiz.send,
+        COPY.quiz.openTask,
+        COPY.quiz.keyHint,
+        COPY.quiz.toldYours(t),
+        COPY.quiz.sent(t),
+        COPY.quiz.nextSoon,
+        COPY.quiz.cannotDraw(t),
+        COPY.quiz.cannotDrawWay,
+        COPY.quiz.cannotDrawHere,
+        COPY.quiz.redirect(c),
+        COPY.quiz.withChat(c),
+        COPY.quiz.typedKept(c, said),
+        COPY.quiz.sendAnyway,
+      ],
+    },
+    {
+      surface: "Quiz closing line",
+      lines: [
+        COPY.closing.answered(c, t, said),
+        COPY.closing.goToTask,
+        COPY.closing.sayOtherwise,
+        COPY.closing.otherwiseBox,
+        COPY.closing.otherwiseHow(t, c),
+        COPY.closing.overridden(t, c),
+      ],
+    },
+    {
+      surface: "Task row",
+      lines: [
+        `${COPY.row.asking(c)} · 2m`,
+        `${COPY.row.needsYou} · 12m`,
+        COPY.row.ownPane,
+        COPY.row.ownPaneTip("Codex"),
+        COPY.row.foldedAsking(2),
+        COPY.row.total(3),
+      ],
+    },
+    {
+      surface: "First-time line",
+      lines: [
+        COPY.first.line,
+        COPY.first.each,
+        COPY.first.keep,
+        COPY.first.moved,
+      ],
+    },
+    {
+      surface: "Settings",
+      lines: [
+        COPY.settings.label,
+        COPY.settings.help,
+        COPY.settings.top,
+        COPY.settings.topHelp,
+        COPY.settings.each,
+        COPY.settings.eachHelp,
+      ],
+    },
+    {
+      surface: "Question trail",
+      lines: [
+        COPY.trail.open,
+        COPY.trail.title,
+        COPY.trail.words,
+        COPY.trail.asked(t),
+        COPY.trail.handed(c),
+        COPY.trail.passed(c),
+        COPY.trail.passedNote(c),
+        COPY.trail.noReply(c),
+        COPY.trail.gone(c),
+        COPY.trail.lost(c),
+        COPY.trail.reached,
+        COPY.trail.moved,
+        COPY.trail.restart,
+        COPY.trail.chatAnswered(c),
+        COPY.trail.youAnswered,
+        COPY.trail.youOverrode(c),
+        COPY.trail.taskEnded,
+        COPY.trail.redirectFailed,
+      ],
+    },
+    {
+      surface: "Inbox",
+      lines: [
+        COPY.inbox.question,
+        COPY.inbox.reply,
+        COPY.inbox.permission,
+        COPY.inbox.browser,
+        COPY.inbox.closedUnanswered(t),
+        COPY.inbox.failed(t, c),
+        COPY.needs.count(3),
+      ],
+    },
+  ];
+}
