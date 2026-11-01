@@ -620,7 +620,7 @@ mod limit {
 
         let one = proposals.every().remove(0);
         let change = one.limit.clone().unwrap();
-        let Now::Made { before: was, after } = limit_now(config.path(), &change) else {
+        let Now::Made { before: was, after } = limit_now(&change) else {
             panic!("it is shown");
         };
         assert!(was.contains("15 minutes (purlis's default)"), "{was}");
@@ -633,7 +633,7 @@ mod limit {
             Ok(())
         };
         let lock = Mutex::new(());
-        apply_limit(config.path(), &one, &change, None, &audit, &lock).unwrap();
+        apply_limit(&one, &change, None, &audit, &lock).unwrap();
         assert_eq!(set(config.path()), Some(30));
         assert_eq!(
             *outcomes.lock().unwrap(),
@@ -689,7 +689,7 @@ mod limit {
         let proposals = Proposals::default();
         limit_asked_in(project.path(), config.path(), &proposals, &asks(None), 1).unwrap();
         let change = proposals.every().remove(0).limit.unwrap();
-        let Now::Made { before, .. } = limit_now(config.path(), &change) else {
+        let Now::Made { before, .. } = limit_now(&change) else {
             panic!("it is shown");
         };
         assert!(before.contains("can't be used"), "{before}");
@@ -713,11 +713,11 @@ mod limit {
         runners::set_pool_limit(config.path(), "builds", SignInWait, Some(45)).unwrap();
         let one = proposals.every().remove(0);
         let change = one.limit.clone().unwrap();
-        assert_eq!(limit_now(config.path(), &change), Now::Stale);
+        assert_eq!(limit_now(&change), Now::Stale);
         let audit = |_: &proposed::Applied<'_>| Ok(());
         let lock = Mutex::new(());
         assert_eq!(
-            apply_limit(config.path(), &one, &change, None, &audit, &lock),
+            apply_limit(&one, &change, None, &audit, &lock),
             Err(Refusal::Stale)
         );
         assert_eq!(set(config.path()), Some(45));

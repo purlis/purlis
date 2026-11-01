@@ -72,6 +72,8 @@ pub struct Proposal {
 /// [`purlis_core::runners::set_pool_limit`], and no part of the file travels.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LimitChange {
+    /// This machine's config home, as the app holds it, where the pool is kept.
+    pub config: PathBuf,
     pub pool: String,
     pub id: LimitId,
     pub value: Option<u64>,
@@ -316,12 +318,12 @@ pub fn asked_limit(held: &Held, ask: &ProposeLimitAsk) -> Answer {
     if let Err(why) = held.brokered().allow(ask.chat, std::time::Instant::now()) {
         return no(why);
     }
-    let Some(config) = purlis_core::machine::config_root() else {
+    let Some(config) = held.config() else {
         return no("There is no config home on this machine to keep a pool in.".to_owned());
     };
     match limit_asked_in(
         held.root(),
-        &config,
+        config,
         held.proposals(),
         ask,
         crate::sandboxing::now_secs(),
@@ -371,6 +373,7 @@ pub fn limit_asked_in(
             ask.chat,
             &path,
             LimitChange {
+                config: config.to_path_buf(),
                 pool: ask.pool.clone(),
                 id: limit.id,
                 value: ask.value,
@@ -398,9 +401,14 @@ fn limit_line(change: &LimitChange, value: Option<u64>) -> String {
     format!("{}: {said}\n", limit.plain)
 }
 
-/// [`Now`] of a limit's proposal, as the machine at `config` holds the pool: judged again.
-pub fn limit_now(config: &Path, change: &LimitChange) -> Now {
-    match purlis_core::runners::limit_may_be_set(config, &change.pool, change.id, change.value) {
+/// [`Now`] of a limit's proposal, as its machine holds the pool: judged again.
+pub fn limit_now(change: &LimitChange) -> Now {
+    match purlis_core::runners::limit_may_be_set(
+        &change.config,
+        &change.pool,
+        change.id,
+        change.value,
+    ) {
         Ok(held) if held.chosen.get(change.id) != change.was => Now::Stale,
         Ok(_) if change.file_refused => Now::Made {
             before: format!(
@@ -435,8 +443,7 @@ pub fn now_of(root: &Path, one: &Proposal) -> Now {
         return Now::Stale;
     }
     if let Some(change) = &one.limit {
-        return purlis_core::machine::config_root()
-            .map_or(Now::Unprepared, |config| limit_now(&config, change));
+        return limit_now(change);
     }
     match proposed::prepare(
         root,
@@ -696,9 +703,7 @@ pub fn apply_in(
         return Err(Refusal::Not(why));
     }
     if let Some(change) = &one.limit {
-        let config = purlis_core::machine::config_root()
-            .ok_or_else(|| Refusal::Not(proposed::UNPREPARED.to_owned()))?;
-        return apply_limit(&config, one, change, persona, audit, lock);
+        return apply_limit(one, change, persona, audit, lock);
     }
     let judged = if one.session == BY_PURLIS {
         proposed::proposable_by_purlis
@@ -775,10 +780,9 @@ pub fn apply_in(
     }
 }
 
-/// **Saves a limit's proposal**, on the machine at `config`: judged again, audited and saved
+/// **Saves a limit's proposal**: judged again, audited and saved
 /// through [`purlis_core::runners::set_pool_limit`], so only that value changes.
 pub(crate) fn apply_limit(
-    config: &Path,
     one: &Proposal,
     change: &LimitChange,
     persona: Option<&str>,
@@ -786,7 +790,7 @@ pub(crate) fn apply_limit(
     lock: &Mutex<()>,
 ) -> Result<String, Refusal> {
     let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
-    let after = match limit_now(config, change) {
+    let after = match limit_now(change) {
         Now::Made { after, .. } => after,
         Now::Stale => return Err(Refusal::Stale),
         Now::Unprepared => return Err(Refusal::Not(proposed::UNPREPARED.to_owned())),
@@ -804,7 +808,7 @@ pub(crate) fn apply_limit(
     record(proposed::Outcome::Intent, None).map_err(Refusal::Not)?;
     // Compared again under the file's lock: the file is the machine's, `lock` the project's.
     let saved = purlis_core::runners::set_pool_limit_if(
-        config,
+        &change.config,
         &change.pool,
         change.id,
         change.value,
