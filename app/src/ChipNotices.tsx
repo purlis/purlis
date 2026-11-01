@@ -401,8 +401,9 @@ export function ChipCard({
   useLayoutEffect(() => {
     handed.current = { takesKeyboard, onKeyboardTaken };
   });
-  // Once React Aria has placed it (it is drawn hidden until then), a frame or a few later; and
-  // never taken back to the card's edge once the keyboard is in it already (#3896): Tab in
+  // At once where it can take it, as a window's frames can stall for seconds on a busy machine
+  // (#4026); else once React Aria has placed it (it is drawn hidden until then), a frame or a few
+  // later. Never taken back to the card's edge once the keyboard is in it already (#3896): Tab in
   // those frames goes on into it, as it would a moment later.
   useEffect(() => {
     if (!takesKeyboard) return;
@@ -410,25 +411,15 @@ export function ChipCard({
     let asked = 0;
     const land = () => {
       const at = region.current;
-      (window as unknown as {__trail?: string[]}).__trail?.push(`land#${frames} t=${Math.round(performance.now())} at=${at !== null} active=${document.activeElement?.tagName}`);
       if (at !== null && !at.contains(document.activeElement)) at.focus({ preventScroll: true });
-      if (at !== null && !at.contains(document.activeElement) && frames >= 10) {
-        const c = at.closest<HTMLElement>('[data-part="root"]');
-        const cs = c === null ? undefined : getComputedStyle(c);
-        (window as unknown as Record<string, unknown>).__landGaveUp = `gave up after ${frames + 1} frames, active=${document.activeElement?.tagName}, connected=${at.isConnected}, visibility=${cs?.visibility}, opacity=${cs?.opacity}, display=${cs?.display}, rect=${JSON.stringify(at.getBoundingClientRect())}`;
-      }
       if ((at !== null && at.contains(document.activeElement)) || ++frames > 10) {
         handed.current.onKeyboardTaken?.();
         return;
       }
       asked = requestAnimationFrame(land);
     };
-    asked = requestAnimationFrame(land);
-    (window as unknown as {__trail?: string[]}).__trail?.push(`land asked t=${Math.round(performance.now())}`);
-    return () => {
-      (window as unknown as {__trail?: string[]}).__trail?.push(`land cleanup t=${Math.round(performance.now())}`);
-      cancelAnimationFrame(asked);
-    };
+    land();
+    return () => cancelAnimationFrame(asked);
   }, [takesKeyboard]);
   // **The keyboard back on the chip** (#3648's review, WCAG 2.4.3): a card the keyboard was in
   // that goes (its last notice dismissed) hands it to the chip it hung from, which is still

@@ -17,6 +17,9 @@ jobs:
           - { file: src/ChipNotices.stories.tsx, load: 8, leg: a }
           - { file: src/ChipNotices.stories.tsx, load: 8, leg: b }
           - { file: src/ChipNotices.stories.tsx, load: 8, leg: c }
+          - { file: src/ChipNotices.stories.tsx, load: 0, leg: a }
+          - { file: src/ui/panel/PanelView.stories.tsx, load: 0, leg: a }
+          - { file: src/ui/panel/PanelView.stories.tsx, load: 8, leg: a }
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
       options: --init --ipc=host
@@ -51,7 +54,7 @@ jobs:
             busy+=("$!")
           done
           start=$SECONDS
-          for i in $(seq 1 2); do
+          for i in $(seq 1 40); do
             [ $((SECONDS - start)) -lt 2100 ] || break
             PURLIS_STORY_REPORT="$RUNNER_TEMP/r/$i.json" npx vitest run --project "stories * (webkit)" \
               --reporter=dot --reporter=../tools/story-failures.mjs "$FILE" > /dev/null 2>&1 || true
