@@ -27,7 +27,7 @@
 //! nothing.
 
 use std::io::{self, Read, Write};
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -345,12 +345,13 @@ fn deliver_on(kept_in: &Path, port: u16, target: &str) -> Result<(), String> {
         return Err("that is not a sign-in's redirect, so it was not passed on".to_owned());
     }
     // Before any connection: no other login, or what else listens here, hears of it.
-    if !state_in(target).is_some_and(|state| waiting::take(kept_in, state)) {
+    let Some(waiting) = state_in(target).and_then(|state| waiting::take(kept_in, state)) else {
         return Err(NO_LOGIN_WAITING.to_owned());
-    }
-    match asked(port, target)? {
+    };
+    let at = addresses(waiting.at);
+    match asked(&at, port, target)? {
         Answered::Took => Ok(()),
-        Answered::Next => match asked(port, NEXT_PATH)? {
+        Answered::Next => match asked(&at, port, NEXT_PATH)? {
             Answered::Took => Ok(()),
             _ => Err("the sign-in on the runner did not finish".to_owned()),
         },
@@ -369,15 +370,32 @@ enum Answered {
     Refused(u16),
 }
 
-/// Asks the login on `port` for `target`, on one connection of its own.
-fn asked(port: u16, target: &str) -> Result<Answered, String> {
-    let mut login = [
-        SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
-        SocketAddr::from((Ipv6Addr::LOCALHOST, port)),
-    ]
-    .iter()
-    .find_map(|at| TcpStream::connect_timeout(at, REACHED_WITHIN).ok())
-    .ok_or_else(|| NO_LOGIN_WAITING.to_owned())?;
+/// The loopback's addresses, in the order a login is looked for there.
+const LOOPBACK: [IpAddr; 2] = [
+    IpAddr::V4(Ipv4Addr::LOCALHOST),
+    IpAddr::V6(Ipv6Addr::LOCALHOST),
+];
+
+/// **The loopback address a login is listening on at `port`**, looked for as its page is printed:
+/// `None` where it is not listening yet.
+pub(super) fn listening_on(port: u16) -> Option<IpAddr> {
+    LOOPBACK
+        .into_iter()
+        .find(|at| TcpStream::connect_timeout(&SocketAddr::new(*at, port), REACHED_WITHIN).is_ok())
+}
+
+/// Where a login's answer goes: the one address it was found listening on, else either.
+fn addresses(found: Option<IpAddr>) -> Vec<IpAddr> {
+    found.map_or_else(|| LOOPBACK.to_vec(), |at| vec![at])
+}
+
+/// Asks the login on `port`, at the first of `addresses` it answers on, for `target`, on one
+/// connection of its own.
+fn asked(addresses: &[IpAddr], port: u16, target: &str) -> Result<Answered, String> {
+    let mut login = addresses
+        .iter()
+        .find_map(|at| TcpStream::connect_timeout(&SocketAddr::new(*at, port), REACHED_WITHIN).ok())
+        .ok_or_else(|| NO_LOGIN_WAITING.to_owned())?;
     let cut_off = |_| "the sign-in on the runner stopped answering".to_owned();
     login
         .set_write_timeout(Some(REACHED_WITHIN))

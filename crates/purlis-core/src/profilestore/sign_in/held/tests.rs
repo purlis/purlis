@@ -238,7 +238,7 @@ fn a_login_waits_with_its_pages_state_only_while_it_runs() {
     drop(input);
     assert_eq!(ran.join().expect("ended"), Ok(None));
     assert!(
-        !crate::profilestore::sign_in::waiting::take(&kept_in, STATE),
+        crate::profilestore::sign_in::waiting::take(&kept_in, STATE).is_none(),
         "not waiting once it ended"
     );
 }

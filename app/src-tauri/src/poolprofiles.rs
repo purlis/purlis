@@ -1526,6 +1526,7 @@ pub async fn pool_sign_in_start(
     tauri::async_runtime::spawn_blocking(move || {
         let config = config_root()?;
         let yours = yours(&config, &pool)?;
+        may_sign_in_on(&config, &pool)?;
         let record = record_named(&config, &name)?;
         profilestore::sign_in::plan_named(&record.harness, provider.as_deref())?;
         let kept = onrunner::Kept::of(&record)?;
@@ -1697,12 +1698,21 @@ pub async fn pool_sign_in_paste(flow: u32, code: String) -> Result<(), String> {
         .map_err(|why| format!("the code was not passed on: {why}"))?
 }
 
+/// Pool `pool`'s runner may be signed in on, or why not: no chat ran there without the sandbox,
+/// on a pool of either kind.
+fn may_sign_in_on(config: &Path, pool: &str) -> Result<(), String> {
+    if purlis_core::runnertaint::pool_ran_unsandboxed(config, pool) {
+        return Err(purlis_core::runnertaint::signs_nothing_in_on(pool));
+    }
+    Ok(())
+}
+
 /// **What drives sign-in `flow`, where what it was opened on still holds** (#3819): on a
-/// cluster pool, the runner the gate judged, still marked and run without the sandbox by no
-/// chat ([`still_yours`]); else the sign-in is stopped, saying why (#4277), and nothing goes to
+/// cluster pool, the runner the gate judged, still marked ([`still_yours`]); on either kind, run
+/// without the sandbox by no chat ([`may_sign_in_on`]); else the sign-in is stopped, saying why (#4277), and nothing goes to
 /// it. A sign-in no longer held is refused.
 fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
-    let (driving, judged) = SIGN_INS
+    let (driving, pool, judged) = SIGN_INS
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .iter()
@@ -1710,22 +1720,26 @@ fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
         .map(|one| {
             (
                 Arc::clone(&one.driving),
-                one.judged.clone().map(|judged| (one.pool.clone(), judged)),
+                one.pool.clone(),
+                one.judged.clone(),
             )
         })
         .ok_or_else(|| "that sign-in is over".to_owned())?;
-    if let Some((pool, judged)) = judged {
-        let held = config_root().and_then(|config| still_yours(&config, &pool, &judged));
-        if held.is_err() {
-            // Not the start's words: by now something of it may have reached the runner.
-            let why = format!(
-                "the sign-in was stopped, as pool {pool} or its runner changed. Try again."
-            );
-            for one in let_go(|one| one.flow == flow) {
-                one.driving.stop(&why);
-            }
-            return Err(why);
+    let held = config_root().and_then(|config| {
+        may_sign_in_on(&config, &pool)?;
+        match &judged {
+            Some(judged) => still_yours(&config, &pool, judged).map(|_| ()),
+            None => Ok(()),
         }
+    });
+    if held.is_err() {
+        // Not the start's words: by now something of it may have reached the runner.
+        let why =
+            format!("the sign-in was stopped, as pool {pool} or its runner changed. Try again.");
+        for one in let_go(|one| one.flow == flow) {
+            one.driving.stop(&why);
+        }
+        return Err(why);
     }
     Ok(driving)
 }

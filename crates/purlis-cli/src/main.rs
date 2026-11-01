@@ -4415,6 +4415,9 @@ fn pool_sign_in(
     use purlis_core::profilestore::{self, sign_in};
     use purlis_core::runners;
     let config = store.config_root();
+    if purlis_core::runnertaint::pool_ran_unsandboxed(config, pool) {
+        return Err(purlis_core::runnertaint::signs_nothing_in_on(pool));
+    }
     let record = profilestore::list(config)?
         .into_iter()
         .find(|p| p.name == name)
