@@ -164,6 +164,14 @@ export function harnessSetupView(cwd: string): ViewRef {
   return { from: null, view: "harness-setup", key: cwd };
 }
 
+/**
+ * **Pool setup** (spec #4469): one guided tab from nothing to a working chat on a pool. One tab per
+ * project for now; a pool of its own has one with its Open setup (#4491).
+ */
+export const POOL_SETUP_VIEW: ViewRef = { from: null, view: "pool-setup", key: "" };
+/** What the Pool setup tab is called. */
+export const POOL_SETUP_TITLE = "Pool setup";
+
 /** What the harness setup tab is called. */
 export function harnessSetupTitle(workspace: string): string {
   return `Set up a harness · ${workspace}`;

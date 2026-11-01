@@ -488,3 +488,44 @@ fn a_skip_does_not_hide_what_needs_attention() {
     assert_eq!(states(&setup)[2], Attention);
     assert_eq!(next(&setup, StepId::Signins), ActionId::RemovePool);
 }
+
+#[test]
+fn coming_back_finds_the_name_given_before_the_pool_is_made() {
+    let config = tempfile::tempdir().unwrap();
+    let here = Here {
+        config: config.path(),
+        plane: None,
+        docker: None,
+        engine: Err("none".into()),
+    };
+    let (setup, name) = resumed(&here).unwrap();
+    assert_eq!((setup.pool, name), (None, None));
+
+    choose_name(config.path(), Some("dev-box")).unwrap();
+    let (setup, name) = resumed(&here).unwrap();
+    assert_eq!(setup.pool, None, "not made yet");
+    assert_eq!(name.as_deref(), Some("dev-box"));
+}
+
+#[test]
+fn forgetting_the_pool_being_set_up_forgets_its_name() {
+    let config = tempfile::tempdir().unwrap();
+    choose_name(config.path(), Some("dev-box")).unwrap();
+    let locked = runners::lock(config.path());
+    runners::forget_pool_locked(config.path(), "dev-box", &locked).unwrap();
+    drop(locked);
+    assert_eq!(read_choices(config.path()).unwrap().name, None);
+}
+
+#[test]
+fn without_docker_the_next_action_names_the_official_page() {
+    let setup = answer(&facts(Engine::Missing));
+    let next = setup.step(StepId::Where).unwrap().next.as_ref().unwrap();
+    assert!(
+        next.url
+            .as_deref()
+            .unwrap()
+            .starts_with("https://docs.docker.com/"),
+        "{next:?}"
+    );
+}

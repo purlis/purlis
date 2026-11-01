@@ -1,0 +1,145 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* The steps family's default look (`Steps.tsx`): tokens only, so light, dark and themes follow. */
+
+[data-scope="steps"][data-part="root"] {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  color: var(--text-primary);
+}
+
+[data-scope="steps"][data-part="count"] {
+  margin: 0 0 var(--space-4) var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+[data-scope="steps"][data-part="list"] {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-scope="steps"][data-part="item"] {
+  position: relative;
+}
+
+/* The line that joins a step's mark to the next one's. */
+[data-scope="steps"][data-part="item"]:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  inset-block: 38px -6px;
+  inset-inline-start: 24px;
+  width: 1px;
+  background: var(--border-subtle);
+}
+
+[data-scope="steps"][data-part="press"] {
+  display: flex;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+[data-scope="steps"][data-part="press"][data-disabled] {
+  cursor: default;
+}
+
+[data-scope="steps"][data-part="press"][data-hovered]:not([data-disabled]) {
+  background: var(--surface-hover);
+}
+
+[data-scope="steps"][data-part="press"][data-focus-visible] {
+  outline: 2px solid var(--accent-base);
+  outline-offset: -2px;
+}
+
+[data-scope="steps"][data-part="item"][data-here] [data-part="press"] {
+  background: var(--accent-wash);
+}
+
+[data-scope="steps"][data-part="mark"] {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--surface-base);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+}
+
+[data-scope="steps"][data-variant="done"] [data-part="mark"] {
+  border-color: var(--state-success);
+  color: var(--state-success);
+}
+
+[data-scope="steps"][data-variant="current"] [data-part="mark"] {
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
+  color: var(--accent-fill-text);
+}
+
+[data-scope="steps"][data-variant="attention"] [data-part="mark"] {
+  border-color: var(--attention-text);
+  color: var(--attention-text);
+}
+
+[data-scope="steps"][data-variant="waiting"] [data-part="mark"] {
+  border-color: var(--state-waiting);
+  color: var(--state-waiting);
+}
+
+[data-scope="steps"][data-variant="skipped"] [data-part="mark"] {
+  border-style: dashed;
+}
+
+[data-scope="steps"][data-part="words"] {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+[data-scope="steps"][data-part="name"] {
+  font-size: var(--font-size-base);
+}
+
+[data-scope="steps"][data-part="item"][data-here] [data-part="name"] {
+  font-weight: var(--font-weight-strong);
+}
+
+[data-scope="steps"][data-variant="later"] [data-part="name"] {
+  color: var(--text-muted);
+}
+
+[data-scope="steps"][data-part="line"] {
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+[data-scope="steps"][data-variant="attention"] [data-part="line"] {
+  color: var(--attention-text);
+}
+
+[data-scope="steps"][data-variant="waiting"] [data-part="line"] {
+  color: var(--text-secondary);
+}

@@ -15,9 +15,7 @@ pub fn answered(name: Option<&str>, json: bool) -> Result<(), String> {
     let plane = std::env::current_dir()
         .ok()
         .and_then(|cwd| purlis_core::plane::find_root(&cwd).ok());
-    let path = purlis_core::envvar::var("PATH");
-    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
-    let docker = Docker::on_this_machine(path.as_deref(), home.as_deref()).ok();
+    let docker = poolsetup::docker_here();
     let here = Here {
         config: &config,
         plane: plane.as_deref(),

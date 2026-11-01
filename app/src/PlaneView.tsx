@@ -272,6 +272,8 @@ import {
   followRename,
   renamedViewKey,
   SAVING_TITLE,
+  POOL_SETUP_TITLE,
+  POOL_SETUP_VIEW,
   SAVING_VIEW,
   LICENCES_VIEW,
   SETTINGS_TAB_TITLE,
@@ -726,6 +728,7 @@ export const PlaneView = memo(function PlaneView({
   commands: surveyedCommands = NONE,
   settingsAsked,
   savingAsked,
+  poolSetupAsked,
   licencesAsked,
   focusMode = false,
   settingsTabAsked,
@@ -789,6 +792,8 @@ export const PlaneView = memo(function PlaneView({
   settingsAsked?: number;
   /** The same, for THIS project's Saving tab (`WindowDoing.openSaving`, charter-app#294). */
   savingAsked?: number;
+  /** The same, for the Pool setup tab (spec #4469). */
+  poolSetupAsked?: number;
   /** The same, for the Licences tab About opens in the project in front (#1719). */
   licencesAsked?: number;
   /** Focus mode is on (#2921): its palette row says it brings the window's parts back. */
@@ -4150,6 +4155,14 @@ export const PlaneView = memo(function PlaneView({
     savingHandled.current = savingAsked;
     showView(SAVING_VIEW, SAVING_TITLE);
   }, [savingAsked, showView]);
+
+  /** The Pool setup tab (spec #4469), opened from the palette for now. */
+  const poolSetupHandled = useRef(poolSetupAsked);
+  useEffect(() => {
+    if (poolSetupAsked === undefined || poolSetupHandled.current === poolSetupAsked) return;
+    poolSetupHandled.current = poolSetupAsked;
+    showView(POOL_SETUP_VIEW, POOL_SETUP_TITLE);
+  }, [poolSetupAsked, showView]);
 
   /** The Licences tab, asked from About (#1719) while this project is in front, as Saving is. */
   const licencesHandled = useRef(licencesAsked);

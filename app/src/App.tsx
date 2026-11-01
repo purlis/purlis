@@ -330,6 +330,7 @@ function App() {
   useJumpAsks(jumped);
   /** The last ask for a project's Saving tab (charter-app#294), the same shape as `settingsAsk`. */
   const [savingAsk, setSavingAsk] = useState<{ plane: PlaneId; at: number }>();
+  const [poolSetupAsk, setPoolSetupAsk] = useState<{ plane: PlaneId; at: number }>();
   /** The last ask for the Licences tab from About (#1719): the project in front when it was
    *  asked, which opens it, as Saving's ask is. */
   const [licencesAsk, setLicencesAsk] = useState<{ plane: PlaneId; at: number }>();
@@ -1076,6 +1077,10 @@ function App() {
         setShowing({ at: "plane", plane });
         setSavingAsk((was) => ({ plane, at: (was?.at ?? 0) + 1 }));
       },
+      openPoolSetup: (plane: string) => {
+        setShowing({ at: "plane", plane });
+        setPoolSetupAsk((was) => ({ plane, at: (was?.at ?? 0) + 1 }));
+      },
       openSettingsTab: () => {
         const plane = inFrontNow.current;
         if (plane === undefined) showSettingsAlone(setSettingsAlone);
@@ -1139,6 +1144,7 @@ function App() {
       openSettings: openSettingsAt,
       openProject: (path: string) => void openInto(path, true),
       openSaving: windowDoes.openSaving,
+      openPoolSetup: windowDoes.openPoolSetup,
       reread: rereadAlerts,
       openInboxOf: (plane: PlaneId) => {
         setShowing({ at: "plane", plane });
@@ -1799,6 +1805,7 @@ function App() {
       moveProject: windowDoes.moveProject,
       openSettings: windowDoes.openSettings,
       openSaving: windowDoes.openSaving,
+      openPoolSetup: windowDoes.openPoolSetup,
       // A workspace is a project's, and there is no project here to have one.
       openWorkspaceSettings: () => undefined,
       switchLive: () => undefined,
@@ -2693,6 +2700,7 @@ function App() {
               commands={extensionCommands}
               settingsAsked={settingsAsk?.plane === plane ? settingsAsk.at : undefined}
               savingAsked={savingAsk?.plane === plane ? savingAsk.at : undefined}
+              poolSetupAsked={poolSetupAsk?.plane === plane ? poolSetupAsk.at : undefined}
               licencesAsked={licencesAsk?.plane === plane ? licencesAsk.at : undefined}
               focusMode={focusMode.on}
               settingsTabAsked={settingsTabAsk?.plane === plane ? settingsTabAsk.at : undefined}
