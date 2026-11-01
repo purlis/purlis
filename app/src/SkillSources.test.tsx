@@ -740,6 +740,55 @@ describe("the install review", () => {
     ]);
   });
 
+  it("has nothing to install once the one skill named is skipped, whatever it brought (#4530)", async () => {
+    const clash = { held_by: "held", offered: "example-deploy", taken: ["deploy"] };
+    core({
+      answers: {
+        skill_install_review: () => ({
+          ...REVIEW,
+          skills: [{ ...REVIEW.skills[0], clash }, REVIEW.skills[1]],
+        }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
+    const review = await screen.findByTestId("install-review");
+    await within(review).findByTestId("clash-deploy");
+    await user.click(within(review).getByRole("radio", { name: "Skip it" }));
+    expect(within(review).getByRole("button", { name: "Install" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
+  it("refuses as typed the name it had, a built-in's, a sibling's and a long one (#4530)", async () => {
+    const clash = { held_by: "held", offered: "example-deploy", taken: ["deploy", "secrets"] };
+    core({
+      answers: {
+        skill_install_review: () => ({
+          ...REVIEW,
+          skills: [{ ...REVIEW.skills[0], clash }, REVIEW.skills[1]],
+        }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
+    const review = await screen.findByTestId("install-review");
+    await within(review).findByTestId("clash-deploy");
+    await user.click(within(review).getByRole("radio", { name: "Install it under a new name" }));
+    const named = within(review).getByRole("textbox", { name: "New name for deploy" });
+    const install = within(review).getByRole("button", { name: "Install" });
+    for (const bad of ["deploy", "secrets", "notify", "a".repeat(65)]) {
+      await user.clear(named);
+      await user.type(named, bad);
+      expect(install).toHaveAttribute("aria-disabled", "true");
+    }
+  });
+
   it("offers the grant at the project level and says what it widens before Install (#4185)", async () => {
     const OPS = { at: "workspace", name: "ops", local: false };
     let widened: (answer: unknown) => void = () => undefined;

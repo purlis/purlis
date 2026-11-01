@@ -258,7 +258,7 @@ export function branchFolderRowsOf(skills: readonly StudioSkill[]): ListedSkill[
 function rowOfChat(skill: ChatSkill): StudioSkill {
   return {
     name: skill.name,
-    source_label: null,
+    source_label: skill.source_label,
     level: skill.level,
     label: skill.label,
     local: false,

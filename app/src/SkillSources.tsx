@@ -1144,11 +1144,20 @@ function newName(skill: ReviewSkill, settling: Settling | undefined): string {
   return settling?.name ?? skill.clash?.offered ?? "";
 }
 
-/** Why `skill`'s new name cannot be used, as it is typed. The core checks again at Install. */
-function newNameProblem(skill: ReviewSkill, settling: Settling | undefined): string | undefined {
+/** The longest name a skill may have, as the core's `name_problem` holds it. */
+const MOST_NAME = 64;
+
+/** Why `skill`'s new name cannot be used, as it is typed: `others` are the rest of the review's
+ *  names. The core checks again at Install. */
+function newNameProblem(
+  skill: ReviewSkill,
+  settling: Settling | undefined,
+  others: readonly string[],
+): string | undefined {
   const wanted = newName(skill, settling).trim();
   if (wanted === "") return "Give it a name.";
-  return nameProblem(wanted, skill.name, [skill.name, ...(skill.clash?.taken ?? [])], []);
+  if (wanted.length > MOST_NAME) return `Use at most ${MOST_NAME} characters.`;
+  return nameProblem(wanted, "", [skill.name, ...(skill.clash?.taken ?? []), ...others], []);
 }
 
 /**
@@ -1159,9 +1168,16 @@ function useClashes(skills: readonly ReviewSkill[], onSkip?: (name: string) => v
   const [settled, setSettled] = useState<Readonly<Record<string, Settling>>>({});
   const clashing = skills.filter((skill) => skill.clash !== null);
   const skipped = clashing.filter((skill) => settled[skill.name]?.how === "skip");
+  // What a skipped skill alone brings along is not installed, so naming none leaves nothing.
+  const named = skills.filter((skill) => skill.brought_by === null);
+  const nothing = named.length > 0 && named.every((skill) => skipped.includes(skill));
+  const others = (skill: ReviewSkill) =>
+    skills.filter((one) => one !== skill).map((one) => one.name);
   const renaming = clashing.filter((skill) => settled[skill.name]?.how === "rename");
   const open = clashing.filter((skill) => settled[skill.name]?.how === undefined);
-  const bad = renaming.some((skill) => newNameProblem(skill, settled[skill.name]) !== undefined);
+  const bad = renaming.some(
+    (skill) => newNameProblem(skill, settled[skill.name], others(skill)) !== undefined,
+  );
   const wanted = renaming.map((skill) => newName(skill, settled[skill.name]).trim());
   const twice = wanted.some((name, at) => wanted.indexOf(name) !== at);
   const settle = (name: string, change: Settling) =>
@@ -1180,18 +1196,21 @@ function useClashes(skills: readonly ReviewSkill[], onSkip?: (name: string) => v
           ? "Fix the new name."
           : twice
             ? "Two skills cannot have the same name."
-            : skipped.length === skills.length && skills.length > 0
-              ? "Every skill is skipped, so there is nothing to install."
+            : nothing
+              ? "It is skipped, so there is nothing to install."
               : undefined,
     choice: (skill: ReviewSkill, busy: boolean) =>
       skill.clash === null ? undefined : (
         <ClashChoice
           skill={skill}
           settling={settled[skill.name]}
+          others={others(skill)}
           busy={busy}
           onSettle={(change) => {
-            settle(skill.name, change);
-            if (change.how === "skip") onSkip?.(skill.name);
+            // A skip that takes it out of the review settles nothing to remember: ticked again,
+            // it asks again.
+            if (change.how === "skip" && onSkip !== undefined) onSkip(skill.name);
+            else settle(skill.name, change);
           }}
         />
       ),
@@ -1202,15 +1221,17 @@ function useClashes(skills: readonly ReviewSkill[], onSkip?: (name: string) => v
 function ClashChoice({
   skill,
   settling,
+  others,
   busy,
   onSettle,
 }: {
   skill: ReviewSkill;
   settling: Settling | undefined;
+  others: readonly string[];
   busy: boolean;
   onSettle: (change: Settling) => void;
 }) {
-  const problem = settling?.how === "rename" ? newNameProblem(skill, settling) : undefined;
+  const problem = settling?.how === "rename" ? newNameProblem(skill, settling, others) : undefined;
   return (
     <div className="skill-clash" data-testid={`clash-${skill.name}`}>
       <SettingRow

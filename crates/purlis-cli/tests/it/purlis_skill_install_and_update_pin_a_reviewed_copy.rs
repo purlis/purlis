@@ -372,6 +372,33 @@ fn a_taken_name_stops_the_install_until_it_is_skipped_or_renamed() {
 }
 
 #[test]
+fn skipping_a_skill_keeps_a_skill_all_offers_that_it_refers_to() {
+    let project = Project::new();
+    let root = project.root();
+    let url = project.url();
+    std::fs::create_dir_all(root.join("skills/deploy")).unwrap();
+    std::fs::write(
+        root.join("skills/deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Made here.\n---\n",
+    )
+    .unwrap();
+
+    let out = project.run(
+        &[
+            "skill", "install", &url, "--all", "--folder", "skills", "--skip", "deploy", "--yes",
+        ],
+        "",
+    );
+
+    assert!(out.status.success(), "{}", text(&out));
+    assert!(
+        root.join("skills/notify/SKILL.md").exists(),
+        "{}",
+        text(&out)
+    );
+}
+
+#[test]
 fn a_skipped_name_is_left_as_it_is_and_the_rest_install() {
     let project = Project::new();
     let root = project.root();

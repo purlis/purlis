@@ -2880,3 +2880,90 @@ fn the_review_warns_of_a_skill_it_refers_to_that_is_another_sources_here() {
         reviewed.skills[0].notes
     );
 }
+
+#[test]
+fn the_warning_stands_where_the_skill_it_refers_to_is_being_renamed_in_the_same_install() {
+    let theirs = clash_remote();
+    let tmp = plane();
+    let root = tmp.path();
+    let level = Level::project();
+    let accepted = review(root, None, &theirs.source(), &grilling(), &level)
+        .unwrap()
+        .accepted();
+    on(root, |cx| {
+        install(cx, &theirs.source(), &level, &accepted, None)
+    })
+    .0
+    .unwrap();
+
+    let ours = Upstream::new();
+    let release = b"---\nname: release\ndescription: Ships.\n---\n\nUse skills:grilling.\n";
+    let own = b"---\nname: grilling\ndescription: Ours.\n---\n";
+    let tree = ours.tree(&[
+        ("skills/release/SKILL.md", "100644", release),
+        ("skills/grilling/SKILL.md", "100644", own),
+    ]);
+    ours.commit(&tree, None);
+    let named = ["release".to_owned(), "grilling".to_owned()];
+    let (set, _) = whole_and_there(review_set(root, None, &ours.source(), &named, &level).unwrap());
+    let release = set.skills.iter().find(|s| s.name == "release").unwrap();
+    assert!(
+        release
+            .notes
+            .iter()
+            .any(|line| line.starts_with("It refers to grilling, which is ")),
+        "{:?}",
+        release.notes
+    );
+}
+
+#[test]
+fn a_clash_lists_the_built_in_names_a_new_name_cannot_take() {
+    let remote = clash_remote();
+    let tmp = plane();
+    made_here(tmp.path(), "grilling");
+    let reviewed = review(
+        tmp.path(),
+        None,
+        &remote.source(),
+        &grilling(),
+        &Level::project(),
+    )
+    .unwrap();
+    let clash = reviewed.skills[0].clash.as_ref().unwrap();
+    assert!(clash.taken.iter().any(|name| name == "grilling"));
+    assert!(
+        clash.taken.iter().any(|name| name == "secrets"),
+        "{:?}",
+        clash.taken
+    );
+}
+
+#[test]
+fn a_persona_skill_from_a_source_carries_its_label_in_the_personas_rows() {
+    let remote = clash_remote();
+    let tmp = plane();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("personas/ada/skills")).unwrap();
+    std::fs::write(
+        root.join("personas/ada/persona.md"),
+        "---\nrole: Ada\n---\n",
+    )
+    .unwrap();
+    let level = Level::persona("ada");
+    let source = remote.source();
+    let accepted = review(root, None, &source, &grilling(), &level)
+        .unwrap()
+        .accepted();
+    on(root, |cx| install(cx, &source, &level, &accepted, None))
+        .0
+        .unwrap();
+
+    let personas = crate::skills::persona_rows(None, root);
+    let row = personas
+        .iter()
+        .flat_map(|one| &one.rows)
+        .find(|row| row.name == "grilling")
+        .unwrap();
+    assert_eq!(row.source_label, Some(source.remote.label()));
+}
