@@ -908,6 +908,24 @@ A task the person asked for themselves from that chat's tab is a task of that se
 nothing of it, and is told the person asked.
 _Avoid_: dispatcher, caller, parent (a parent run is a harness's child run's)
 
+**Task question**:
+Something a **task** needs answered to carry on. It goes to the task's **asking chat** first,
+which answers it or **passes it on**; with no asking chat to answer, it goes to the person. It is
+one kind of **ask**: a permission, a secret or a browser takeover is not a task question and
+stays the person's. An asking chat's answer is never the person's word (ADR 0107).
+_Avoid_: escalation, quiz (a quiz is how a question is drawn)
+
+**Passes on**:
+What an asking chat does with a **task question** only the person should answer: it reaches the
+person in the task's own words, with at most a short note marked as the asking chat's.
+_Avoid_: escalate, forward
+
+**Where you answer**:
+The person's one remembered setting for where a **task question** that has reached them appears:
+**from the top**, in the tab of the nearest chat above that has one, or **from each session**, in
+the task's own tab. It changes what is shown and never who is asked, and any task can still be
+opened and answered.
+
 **Persona chat**:
 The chat a dispatch starts, running as one persona for its whole life. It is told who asked,
 and it works under its own persona's charter and guards. One a task started is shown as a
