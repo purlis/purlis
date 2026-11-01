@@ -1033,3 +1033,149 @@ fn a_sandboxed_chats_finished_branch_folder_is_removed_by_the_app_when_nothing_w
     assert!(asked.recv_timeout(Duration::from_millis(200)).is_err());
     assert!(pieces.join("dirty/README.md").is_file());
 }
+
+#[test]
+#[cfg(unix)]
+fn a_chat_commits_with_the_command_with_and_without_the_sandbox() {
+    /// The test's libtest path, as [`CREATING`].
+    const COMMITTING: &str =
+        "brokered_git::a_chat_commits_with_the_command_with_and_without_the_sandbox";
+    // #4534: a chat with no sandbox commits by itself, with the repository's hooks, and pushes
+    // through the app; a sandboxed one commits through the app, with none; and the project's
+    // setting brings back the refusal of the first alone.
+    purlis_core::unsteered!();
+    let Some(base) = std::env::var_os(IN_THE_CHILD) else {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = std::fs::canonicalize(tmp.path()).unwrap().join("home");
+        purlis_core::testrun::rerun(
+            &[COMMITTING],
+            &[
+                (IN_THE_CHILD, tmp.path().as_os_str()),
+                ("HOME", home.as_os_str()),
+            ],
+        );
+        return;
+    };
+    let world = World::at(Path::new(&base));
+    world.widget();
+    let root = world.plane("committing", "[\"forge\"]");
+    for args in [
+        &["clone", "widget", "-w", "alpha"][..],
+        &["worktree", "add", "widget", "p1", "-w", "alpha"][..],
+    ] {
+        let made = world.purlis(&root, args, &[]);
+        assert!(made.status.success(), "{args:?}: {}", err(&made));
+    }
+    let piece = root.join("workspaces/alpha/.worktrees/widget/p1");
+    // A hook of the repository's own: a linked worktree runs its clone's.
+    let hook_ran = world.base.join("hook-ran");
+    let hook = root.join("workspaces/alpha/widget/.git/hooks/pre-commit");
+    std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    std::fs::write(
+        &hook,
+        format!("#!/bin/sh\ntouch '{}'\n", hook_ran.display()),
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let git_asks = the_broker_at(root.clone(), piece.clone(), &world.forge);
+    let (at_root, at_piece) = (root.clone(), piece.clone());
+    let (_reading, token, socket, asked) = an_app(&world.base, move |ask| match ask {
+        Ask::Commit(commit) => gitbroker::commit::answer(
+            &at_root,
+            &Asker {
+                chat: 3,
+                cwd: Some(at_piece.clone()),
+                persona: Some("steward".to_owned()),
+                harnessed: true,
+                unsandboxed: false,
+                config: None,
+                id: None,
+                live: None,
+            },
+            &commit,
+            &git::Isolated::identity(Some("Tester"), Some("t@e.invalid")),
+        ),
+        other => git_asks(other),
+    });
+    let run = |args: &[&str], sandboxed: bool| {
+        let mut command = support::purlis();
+        command
+            .args(args)
+            .current_dir(&piece)
+            .env_clear()
+            .env("CHARTER_ROOT", &root)
+            .env("HOME", &world.home)
+            .env("PATH", "/usr/bin:/bin")
+            .env("USER", "tester")
+            .envs(IDENTITY)
+            .envs(chat_3(&socket, &token));
+        if sandboxed {
+            command.env(SANDBOXED_ENV, "1");
+        }
+        command.output().expect("the binary runs")
+    };
+    let head = || git_said(&piece, &["rev-parse", "HEAD"]);
+    let write = |name: &str| std::fs::write(piece.join(name), "new\n").unwrap();
+    let was_committed = |name: &str| {
+        git_said(&piece, &["show", "--format=", "--name-only", "HEAD"])
+            .lines()
+            .any(|file| file == name)
+    };
+
+    // With no sandbox: its own git, the hook, and no commit asked of the app.
+    write("a.txt");
+    let ran = run(&["worktree", "commit", "-m", "plain", "a.txt"], false);
+    assert!(ran.status.success(), "{}", err(&ran));
+    assert!(was_committed("a.txt"));
+    assert!(hook_ran.is_file(), "the repository's hook did not run");
+    std::fs::remove_file(&hook_ran).unwrap();
+    while let Ok(ask) = asked.try_recv() {
+        assert!(!matches!(ask, Ask::Commit(_)), "{ask:?}");
+    }
+
+    // Nothing named differs: said, and no commit.
+    let before = head();
+    let ran = run(&["worktree", "commit", "-m", "again", "a.txt"], false);
+    assert_eq!(ran.status.code(), Some(1), "{}", err(&ran));
+    assert!(err(&ran).contains("nothing to commit"), "{}", err(&ran));
+    assert_eq!(head(), before);
+
+    // Its push is the app's, in a chat with no sandbox too.
+    let ran = run(&["worktree", "push"], false);
+    assert!(ran.status.success(), "{}", err(&ran));
+    assert_eq!(
+        git_said(
+            &world.forge.join("acme/widget.git"),
+            &["rev-parse", "refs/heads/p1"]
+        ),
+        head()
+    );
+
+    // Sandboxed: through the app, with no hook.
+    write("b.txt");
+    let ran = run(&["worktree", "commit", "-m", "brokered", "b.txt"], true);
+    assert!(ran.status.success(), "{}", err(&ran));
+    assert!(was_committed("b.txt"));
+    assert!(!hook_ran.exists(), "a brokered commit ran a hook");
+
+    // The setting: no sandbox is refused and nothing is made; sandboxed goes on as before.
+    let manifest = root.join("charter.toml");
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        format!("{text}\n[plane]\nrefuse_unsandboxed_commit = true\n"),
+    )
+    .unwrap();
+    write("c.txt");
+    let before = head();
+    let ran = run(&["worktree", "commit", "-m", "refused", "c.txt"], false);
+    assert_eq!(ran.status.code(), Some(1), "{}", err(&ran));
+    assert!(err(&ran).contains("refuse_unsandboxed_commit"), "{}", err(&ran));
+    assert_eq!(head(), before);
+    let ran = run(&["worktree", "commit", "-m", "still", "c.txt"], true);
+    assert!(ran.status.success(), "{}", err(&ran));
+    assert!(was_committed("c.txt"));
+}

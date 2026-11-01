@@ -37,10 +37,12 @@ pub enum WorktreeCommand {
         #[arg(short = 'w', long = "workspace")]
         workspace: Option<String>,
     },
-    /// Commit in the branch folder you are standing in, from a sandboxed chat: the app that
-    /// started the chat stages what you name and commits it on that folder's branch. It only
-    /// commits: it never amends, resets, rebases, merges or pushes, and the repository's own
-    /// hooks are not run. A chat that is not sandboxed uses `git commit`.
+    /// Commit in the branch folder you are standing in. From a sandboxed chat, the app that
+    /// started it stages what you name and commits it on that folder's branch, and the
+    /// repository's own hooks are not run. From a chat with no sandbox or a terminal, your own
+    /// git does the same, with its hooks and signing; `[plane] refuse_unsandboxed_commit`
+    /// refuses that instead. It only commits: it never amends, resets, rebases, merges or
+    /// pushes.
     Commit {
         /// The commit message. One that starts with `-` is the message too (#3927).
         #[arg(
