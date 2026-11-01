@@ -231,8 +231,9 @@ fn with_parts(tokens: &Value, parts: &Value, recipe: &[&str]) -> ResolvedTheme {
         .unwrap()
 }
 
-/// Halfway across the widest gap between two named hues, teal's and blue's.
-const FAR_FROM_A_NAME: f64 = 222.0;
+/// In the widest gap between two named hues, teal's and blue's, and as far as a hue gets from a
+/// coarse reading.
+const FAR_FROM_A_NAME: f64 = 225.0;
 
 /// `token` as a recipe that turns it draws it at [`FAR_FROM_A_NAME`], given `written`.
 fn drawn_far_from_a_name(token: &str, written: &str, recipe: &[&str]) -> String {
@@ -385,17 +386,29 @@ fn card_step_at(theme: &ResolvedTheme, drawn: &ResolvedTheme) -> f64 {
     card_step(drawn, parts::card_on_side(theme).unwrap()).0
 }
 
+/// Each panel's nearest card that clears [`CARD_STEP`] as written.
+fn cards_a_hair_over_the_floor() -> Vec<(u8, u8, ResolvedTheme)> {
+    (0x20..=0x50_u8)
+        .step_by(3)
+        .map(|panel| {
+            let card = (panel..=0xff)
+                .find(|card| {
+                    let theme = card_on(panel, *card);
+                    card_step_at(&theme, &theme) >= CARD_STEP
+                })
+                .unwrap();
+            (panel, card, card_on(panel, card))
+        })
+        .collect()
+}
+
 #[test]
 fn a_card_row_s_step_can_fall_only_between_the_named_tints_and_is_said_when_it_does() {
     // The tint keeps a shade's luminance, so all that moves the step is the rounding of a turned
     // shade: a card a hair over the floor. Each panel's nearest such card is read against what the
     // check says, and at least one of them falls.
     let mut fell = 0;
-    for panel in (0x20..=0x50_u8).step_by(3) {
-        let card = (panel..=0xff)
-            .find(|card| card_step_at(&card_on(panel, *card), &card_on(panel, *card)) >= CARD_STEP)
-            .unwrap();
-        let theme = card_on(panel, card);
+    for (panel, card, theme) in cards_a_hair_over_the_floor() {
         let named = theme
             .tint
             .hues
@@ -443,14 +456,24 @@ fn a_card_row_on_its_panel_as_written_is_said_as_it_was_and_not_again_between_th
 
 #[test]
 fn what_stands_apart_has_a_coarse_reading_within_its_margin_of_the_lowest_at_any_degree() {
-    // What lets the sweep leave one at its coarse reading, on the widest recipe and a vivid card.
-    let vivid = with_parts(
-        &json!({ "surface.overlay": VIVID, "control.base": "#40c040", "text.primary": "#40c040" }),
-        &json!({}),
+    // What lets the sweep leave one at its coarse reading: the widest recipe, and each kind with a
+    // reading on its floor at the hue farthest from a coarse one.
+    let selected = selected_beside(&drawn_far_from_a_name(
+        "list.selected",
+        ROW,
+        &["list.selected"],
+    ));
+    let way = way_beside(&drawn_far_from_a_name(
+        "surface.overlay",
+        VIVID,
         &["surface.overlay"],
-    );
+    ));
+    let near_floors = cards_a_hair_over_the_floor()
+        .into_iter()
+        .map(|(_, _, theme)| theme)
+        .chain([selected, way]);
     let (mut steps, mut oklab): (f64, f64) = (0.0, 0.0);
-    for theme in widest().into_iter().chain([vivid]) {
+    for theme in widest().into_iter().chain(near_floors) {
         let card = parts::card_on_side(&theme);
         let ways = parts::notice_ways(&theme);
         let reads: Vec<_> = (0..360)
