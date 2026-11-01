@@ -3744,13 +3744,22 @@ async fn the_operators_metrics_count_a_claim_its_suspension_and_its_deletion_onc
 
 /// A Claim's `Idle` as a runner's word and a pass would leave it, written by hand: no runner here
 /// is paired, and a paired one goes through this in the desktop's kind test (#3980).
-async fn say_idle(claims: &Api<Claim>, name: &str) {
+async fn say_idle(claims: &Api<Claim>, namespace: &str, name: &str) {
     let at = k8s_openapi::jiff::Timestamp::now().to_string();
     let idle = serde_json::json!({ "status": { "conditions": [{
         "type": "Idle", "status": "True", "reason": "Idle", "message": "by the test",
         "lastTransitionTime": at,
     }] } });
-    claims
+    // As the operator: the cluster lets nobody else write a Claim's status.
+    let refused = claims
+        .patch_status(name, &PatchParams::default(), &Patch::Merge(idle.clone()))
+        .await;
+    assert!(
+        matches!(&refused, Err(kube::Error::Api(status)) if status.code == 403),
+        "{refused:?}"
+    );
+    let as_operator = acting_as(SERVICE_ACCOUNT).await;
+    Api::<Claim>::namespaced(as_operator, namespace)
         .patch_status(name, &PatchParams::default(), &Patch::Merge(idle))
         .await
         .expect("the claim said idle");
@@ -3815,7 +3824,7 @@ async fn a_long_suspended_kept_claim_is_deleted_with_its_volume_after_a_notice()
         "{refused:?}"
     );
 
-    say_idle(&claims, "retain-1").await;
+    say_idle(&claims, &scratch.name, "retain-1").await;
     let volumes = Api::<k8s_openapi::api::core::v1::PersistentVolumeClaim>::namespaced(
         client.clone(),
         &runners(),
@@ -3878,7 +3887,7 @@ async fn an_idle_kept_runner_takes_its_pools_image_and_keeps_its_volume() {
     let (repository, _) = image_now.split_once('@').expect("an image by digest");
     let another = format!("{repository}@sha256:{}", "2".repeat(64));
 
-    say_idle(&claims, "renew-1").await;
+    say_idle(&claims, &scratch.name, "renew-1").await;
     says_idle_and_suspended(&claims, "renew-1").await;
     pools
         .patch(
@@ -3981,7 +3990,9 @@ async fn a_claim_whose_runner_never_becomes_ready_says_it_is_stuck() {
 #[tokio::test]
 #[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
 async fn what_a_claim_left_behind_is_removed() {
-    use purlis_cluster_operator::upstream::SandboxClaim;
+    use purlis_cluster_operator::upstream::{
+        SandboxClaim, SandboxTemplate, SandboxWarmPool, name_for,
+    };
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-orphan").await;
     let pools = small_pool(&client, "e2e-orphan").await;
@@ -4010,6 +4021,19 @@ async fn what_a_claim_left_behind_is_removed() {
         held.is_none_or(|left| left.metadata.deletion_timestamp.is_some())
             .then_some(())
     })
+    .await;
+    let object = name_for("e2e-orphan");
+    let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &runners());
+    let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &runners());
+    eventually(
+        "its pool's objects go",
+        Duration::from_secs(180),
+        || async {
+            (templates.get_opt(&object).await.ok()?.is_none()
+                && warm_pools.get_opt(&object).await.ok()?.is_none())
+            .then_some(())
+        },
+    )
     .await;
     let _ = pools.delete("e2e-orphan", &DeleteParams::default()).await;
     scratch.end().await;

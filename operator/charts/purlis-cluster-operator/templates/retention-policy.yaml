@@ -44,3 +44,40 @@ metadata:
 spec:
   policyName: purlis-operator-deletes-only-a-retained-claim
   validationActions: [Deny]
+---
+# What the operator acts on is what a Claim's status says of it, so only the operator writes it,
+# whatever else a role grants (#3981).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-only-the-operator-writes-a-claims-status
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [runners.purlis.dev]
+        apiVersions: ["*"]
+        operations: [UPDATE]
+        resources: [claims/status]
+  validations:
+    - expression: >-
+        request.userInfo.username ==
+        'system:serviceaccount:{{ .Release.Namespace }}:purlis-cluster-operator'
+      message: Only purlis's cluster operator writes a Claim's status.
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-only-the-operator-writes-a-claims-status
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: purlis-only-the-operator-writes-a-claims-status
+  validationActions: [Deny]

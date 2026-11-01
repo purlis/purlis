@@ -9,14 +9,16 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::{Condition, Time};
 use k8s_openapi::jiff::{SignedDuration, Timestamp};
 use kube::api::ObjectMeta;
 use purlis_cluster_operator::lifecycle::{
-    DELETION_NOTICE, Retention, STUCK, pool_object_is_orphaned, retention, saying_stuck,
-    status_of_an_idle_runner, upstream_claim_is_orphaned, with_image,
+    DELETION_NOTICE, Retention, STUCK, idle_condition, pausing_idle, pool_object_is_orphaned,
+    retention, saying_stuck, status_of_an_idle_runner, upstream_claim_is_orphaned, with_image,
 };
 use purlis_cluster_operator::person::CLAIM_UID_ANNOTATION;
 use purlis_cluster_operator::upstream::{
     SUSPENDED, Sandbox, SandboxSpec, SandboxStatus, Suspension,
 };
-use purlis_cluster_operator::{Claim, ClaimSpec, ClaimStatus, Pool, PoolSpec};
+use purlis_cluster_operator::{
+    Claim, ClaimSpec, ClaimStatus, Pool, PoolSpec, status_of_a_stopped_claim,
+};
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
@@ -45,6 +47,15 @@ fn claim(kept: bool) -> Claim {
     claim.metadata.uid = Some("c1".into());
     claim.status = Some(status_of_an_idle_runner(Suspension::Suspended));
     claim
+}
+
+/// `claim(true)`, its `Idle` from `at`.
+fn idle_from(at: Timestamp) -> Claim {
+    let mut held = claim(true);
+    for one in &mut held.status.as_mut().unwrap().conditions {
+        one.last_transition_time = Time(at);
+    }
+    held
 }
 
 fn suspended_at(at: Timestamp) -> Sandbox {
@@ -77,7 +88,7 @@ fn a_kept_claim_is_noticed_then_deleted_and_never_sooner() {
     let sandbox = suspended_at(start);
     let at =
         |claim: &Claim, after: i64| retention(claim, &pool(), Some(&sandbox), start + hours(after));
-    let held = claim(true);
+    let held = idle_from(start);
     assert_eq!(at(&held, 89), Retention::Keep, "before the notice");
     assert!(
         matches!(at(&held, 90), Retention::Notice { at } if at == start + hours(100)),
@@ -88,7 +99,7 @@ fn a_kept_claim_is_noticed_then_deleted_and_never_sooner() {
         matches!(at(&held, 150), Retention::Notice { at } if at == start + hours(160)),
         "an operator that looks late still gives the whole notice"
     );
-    let mut noticed = claim(true);
+    let mut noticed = idle_from(start);
     let status: &mut ClaimStatus = noticed.status.as_mut().unwrap();
     let mut told = status.conditions[0].clone();
     told.type_ = DELETION_NOTICE.into();
@@ -97,6 +108,28 @@ fn a_kept_claim_is_noticed_then_deleted_and_never_sooner() {
     status.conditions.push(told);
     assert!(matches!(at(&noticed, 99), Retention::Notice { .. }));
     assert!(matches!(at(&noticed, 100), Retention::Delete { .. }));
+}
+
+#[test]
+fn stopped_time_never_counts_toward_retention() {
+    let start = Timestamp::now();
+    let sandbox = suspended_at(start);
+    // Idle again 200 hours on, as the stop ended: the runner's own suspension is far older.
+    let held = idle_from(start + hours(200));
+    let at = |after| retention(&held, &pool(), Some(&sandbox), start + hours(after));
+    assert_eq!(at(200), Retention::Keep);
+    assert_eq!(at(289), Retention::Keep);
+    assert!(matches!(at(290), Retention::Notice { .. }));
+    // While stopped it stays idle, says Unknown, and is not retained.
+    let mut paused = status_of_a_stopped_claim(&held, None, Suspension::Suspended);
+    pausing_idle(&mut paused, held.status.as_ref());
+    let mut stopped = held.clone();
+    stopped.status = Some(paused);
+    assert!(idle_condition(&stopped).is_some());
+    assert_eq!(
+        retention(&stopped, &pool(), Some(&sandbox), start + hours(1000)),
+        Retention::Keep
+    );
 }
 
 #[test]
@@ -155,17 +188,41 @@ fn only_the_images_of_a_sandboxs_pod_change() {
 #[test]
 fn a_runner_not_ready_for_long_is_said_to_be_stuck_and_nothing_more() {
     let now = Timestamp::now();
-    let says = |ready: &str, ago: i64| {
+    let says = |ready: &str, reason: &str, ago: i64, pod_age: Option<i64>| {
         let mut previous = purlis_cluster_operator::status_of(None);
         previous.conditions[0].status = ready.into();
+        previous.conditions[0].reason = reason.into();
         previous.conditions[0].last_transition_time = Time(now - hours(ago));
         let mut next = purlis_cluster_operator::status_of(None);
-        saying_stuck(&mut next, Some(&previous), Duration::from_secs(1800), now);
+        let pod = pod_age.map(|age| k8s_openapi::api::core::v1::Pod {
+            metadata: ObjectMeta {
+                creation_timestamp: Some(Time(now - hours(age))),
+                ..ObjectMeta::default()
+            },
+            ..Default::default()
+        });
+        saying_stuck(
+            &mut next,
+            Some(&previous),
+            pod.as_ref(),
+            Duration::from_secs(1800),
+            now,
+        );
         next.conditions.iter().any(|one| one.type_ == STUCK)
     };
-    assert!(says("False", 1));
-    assert!(!says("False", 0), "not for long yet");
-    assert!(!says("True", 1), "it was ready until now");
+    assert!(says("False", "Pulling", 1, Some(1)));
+    assert!(says("False", "Pulling", 1, None), "no pod ever came");
+    assert!(!says("False", "Pulling", 0, Some(1)), "not for long yet");
+    assert!(!says("True", "Ready", 1, Some(1)), "it was ready until now");
+    assert!(!says("False", "Pulling", 1, Some(0)), "its pod is new");
+    assert!(
+        !says("False", "Idle", 1, None),
+        "it was suspended until now"
+    );
+    assert!(
+        !says("False", "Stopped", 1, None),
+        "it was stopped until now"
+    );
 }
 
 fn object(name: &str, namespace: &str, age: i64, uid: Option<&str>) -> ObjectMeta {

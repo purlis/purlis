@@ -188,7 +188,7 @@ kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6
 
 # 2. The policies: the one that admits a Claim only for someone who may use its Pool, the
 #    one on runner namespaces, and the one that narrows what the operator may change of
-#    upstream's sandboxes (below); then purlis's definitions, Pool and Claim. The policies go
+#    upstream's sandboxes, its deletions and a Claim's status (below); then purlis's definitions, Pool and Claim. The policies go
 #    first, so no Claim is admitted before they hold.
 kubectl apply --server-side -f operator/deploy/policy.yaml
 kubectl apply --server-side -f operator/deploy/crds.yaml
@@ -286,29 +286,33 @@ spec:
   - `deleteSuspendedAfter` (720h, 30 days): how long a kept Claim stays suspended for being idle
     before it is deleted, with its volume, counted from upstream's `Suspended` condition (#3981).
     A runner that runs again starts the count over. **A Claim or Pool that is `stopped` is never
-    deleted, and stopped time ends a notice given.** A fresh Claim is not deleted: it holds no
+    deleted, stopped time does not count, and the count and any notice start over when the stop
+    ends.** A fresh Claim is not deleted: it holds no
     volume.
   - `noticeBeforeDelete` (168h, 7 days, shorter than `deleteSuspendedAfter`): how long before
     that deletion its Claim's `DeletionNotice` condition says when, which its desktop makes an
-    Update of. The whole notice is always given: a deletion waits for it, however late the
-    operator looked. The `RetentionEnded` condition comes just before the deletion, and the
+    Update of. The whole notice is always given, however late the operator looked, and
+    the time it names holds: a Pool's times changed later can only move it later. The `RetentionEnded` condition comes just before the deletion, and the
     cluster's policy lets the operator delete no Claim without it.
   - `maxAge` (336h, 14 days): how old a runner may be (#3982). **A chat is never ended for it.**
-    Past it, the Claim's `PastMaxAge` condition says the runner waits, and it starts on the pool's
-    current image the next time it is idle, as every idle runner does: while a kept runner is
-    suspended its sandbox's image is brought to the pool's, its volume and pairing kept, and a
-    fresh Claim's upstream claim goes, so the next is made from the pool as it is then. A runner
+    Past it, the Claim's `PastMaxAge` condition says the runner waits. The next time it is idle it
+    takes the pool's current image, as every idle runner does, and runs on it when its desktop
+    runs it again, not before, so it costs nothing meanwhile: while a kept runner is suspended
+    its sandbox's image is brought to the pool's, its volume and pairing kept, and a fresh
+    Claim's upstream claim goes, so the next is made from the pool as it is then. A runner
     never idle (a chat for ever, or an image older than this) stays on the image it has.
 
   The cluster refuses any other spelling, a time too long to read, a notice that is not shorter
   than the deletion, and a warm count below 0 or above 20.
 - **A Claim stuck, and what Claims leave behind** (#3739). A runner not ready for 30 minutes gets
   the condition `Stuck`, with what its `Ready` says. It only says so, as a Deployment's progress
-  deadline does: a pod waiting for a node may yet start, so nothing is suspended or deleted, and
-  deleting the Claim gives it up. Every 10 minutes the operator also removes, by uid, an upstream
-  claim, template or warm pool it made in a runner namespace whose Claim has gone, as when a
-  finalizer was taken off by hand; a kept volume goes with its upstream claim, by upstream's
-  owner. The cluster cannot say whether a person still exists: a person who has gone stops
+  deadline does: a pod waiting for a node may yet start, so nothing is suspended or deleted.
+  Deleting the Claim gives it up; for a kept one on an image that never pulls, put the Pool's
+  image right and set the Claim `stopped` and back, which brings it to that image. Every 10
+  minutes the operator also looks for an upstream claim, template or warm pool it made in a
+  runner namespace whose Claim has gone, as when a finalizer was taken off by hand, and removes
+  by uid what two looks in a row find so. **It never removes an upstream claim holding a kept
+  volume**: it says so in its log, for an admin to delete. The cluster cannot say whether a person still exists: a person who has gone stops
   linking, so their kept runner goes idle, then its retention ends.
 - **A Claim is kept or fresh** (#2057), and its `kept` never changes after it is made: the other
   kind is another Claim.
@@ -721,13 +725,18 @@ capability dropped.
 **Its `patch` on sandboxes is narrowed by the cluster** (#2058). RBAC cannot limit a right to
 one field or to some owners: as a role, `patch` on `sandboxes` is every field of every Sandbox
 in the cluster, those other users of agent-sandbox made without any SandboxClaim included. The
-operator needs only one: to suspend a stopped Claim's runner and run it again, it applies
-`spec.operatingMode` and nothing else, to the sandbox its Claim's upstream claim controls, with
+operator needs its mode: to suspend a stopped Claim's runner and run it again, it applies
+`spec.operatingMode` alone, to the sandbox its Claim's upstream claim controls, with
 that sandbox's uid as a precondition. Another admission policy in `policy.yaml`,
 `purlis-operator-changes-only-a-sandboxs-mode`, makes that the cluster's rule: an update by the
 operator's service account to a Sandbox is refused unless a SandboxClaim controls it (any
 SandboxClaim's, purlis's or not), and unless every field of its spec but `operatingMode`, and
-its labels, annotations, owners and finalizers, are as they were. The operator holds no right
+its labels, annotations, owners and finalizers, are as they were; its `spec.podTemplate` alone
+may also change, only on a Sandbox already `Suspended` in a `purlis-runners-*` namespace, so a
+kept runner takes its pool's image (#3982). **Its `delete` on Claims is narrowed the same way**
+(#3981): `purlis-operator-deletes-only-a-retained-claim` refuses it any Claim but a kept one, not
+stopped, with its own `RetentionEnded` condition. **Only the operator writes a Claim's status**
+(`purlis-only-the-operator-writes-a-claims-status`), since what it does rests on it. The operator holds no right
 on admission policies or their bindings but reading the bindings of the policies on Claims and
 on runner namespaces, so it cannot lift it. The spec fields it holds as they were are the
 pinned upstream's (v1.0.6, and a test holds the list to the vendored definitions): a cluster

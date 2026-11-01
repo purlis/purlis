@@ -64,8 +64,8 @@ pub struct PoolSpec {
     #[schemars(regex(pattern = r"^[1-9][0-9]*[smh]$"), length(max = 12))]
     pub notice_before_delete: String,
     /// A Claim's maximum age (#3737): past it, a kept Claim's runner starts again on the pool's
-    /// current image, and a fresh Claim's is made again, the next time nothing runs on it: a chat is
-    /// never ended for it. A whole number of `s`, `m` or `h`. 336h (14 days) unless the pool says
+    /// current image when next it runs, and a fresh Claim's is made again, once nothing runs on it: a
+    /// chat is never ended for it. A whole number of `s`, `m` or `h`. 336h (14 days) unless the pool says
     /// otherwise.
     #[serde(default = "fourteen_days")]
     #[schemars(regex(pattern = r"^[1-9][0-9]*[smh]$"), length(max = 12))]

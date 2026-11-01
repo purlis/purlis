@@ -506,7 +506,8 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
                 if upstream::is_stopped(&claim, None) {
                     let (suspension, again) =
                         suspension_seen(context, &claim, upstream::suspension_of(sandbox.as_ref()));
-                    let status = status_of_a_stopped_claim(&claim, None, suspension);
+                    let mut status = status_of_a_stopped_claim(&claim, None, suspension);
+                    lifecycle::pausing_idle(&mut status, claim.status.as_ref());
                     write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
                     return Ok(Action::requeue(again));
                 }
@@ -638,13 +639,18 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     if stopped && claim_found == Found::Nothing {
         write_ours(&templates, template, template_found).await?;
         write_ours(&warm_pools, warm, warm_found).await?;
-        let status = status_of_a_stopped_claim(&claim, Some(&pool), Suspension::NotMade);
+        let mut status = status_of_a_stopped_claim(&claim, Some(&pool), Suspension::NotMade);
+        lifecycle::pausing_idle(&mut status, claim.status.as_ref());
         write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
         return Ok(Action::await_change());
     }
     // An idle fresh claim's upstream claim went with its runner: made again only once its desktop
     // asks (#3982).
-    if !stopped && claim_found == Found::Nothing && lifecycle::idle_condition(&claim).is_some() {
+    if !stopped
+        && !claim.spec.kept
+        && claim_found == Found::Nothing
+        && lifecycle::idle_condition(&claim).is_some()
+    {
         write_ours(&templates, template, template_found).await?;
         write_ours(&warm_pools, warm, warm_found).await?;
         let status = if lifecycle::asked_to_run_again(&claim) {
@@ -750,7 +756,16 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     if stopped {
         let (suspension, again) =
             suspension_seen(context, &claim, upstream::suspension_of(sandbox.as_ref()));
-        let status = status_of_a_stopped_claim(&claim, Some(&pool), suspension);
+        // A stop also brings a kept runner to its pool's image, so an image put right reaches a
+        // runner that never started on the last one.
+        if claim.spec.kept
+            && suspension == Suspension::Suspended
+            && let Some(sandbox) = sandbox.as_ref()
+        {
+            renew_image(client, sandbox, &pool).await?;
+        }
+        let mut status = status_of_a_stopped_claim(&claim, Some(&pool), suspension);
+        lifecycle::pausing_idle(&mut status, claim.status.as_ref());
         write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
         return Ok(Action::requeue(again));
     }
@@ -815,7 +830,13 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     // A runner not ready yet says its stage (#2057).
     let mut status = stage::staged(status_of(Some(&applied)), pod.as_ref());
     let now = k8s_openapi::jiff::Timestamp::now();
-    lifecycle::saying_stuck(&mut status, claim.status.as_ref(), context.stuck_after, now);
+    lifecycle::saying_stuck(
+        &mut status,
+        claim.status.as_ref(),
+        pod.as_ref(),
+        context.stuck_after,
+        now,
+    );
     if pod
         .as_ref()
         .is_some_and(|pod| lifecycle::past_max_age(pod, &pool, now))
@@ -1021,12 +1042,23 @@ async fn renew_image(client: &Client, sandbox: &Sandbox, pool: &Pool) -> Result<
 /// **A Claim whose retention has ended deleted** (#3981), by its uid. Its finalizer then removes
 /// its runner and its volume.
 async fn delete_retained(client: &Client, claim: &Claim, namespace: &str) -> Result<Action, Error> {
-    if let Some(uid) = claim.metadata.uid.clone() {
-        tracing::info!(claim = %claim.name_any(), %namespace, "its retention has ended");
-        let claims = Api::<Claim>::namespaced(client.clone(), namespace);
-        delete_by_uid(&claims, &claim.name_any(), uid).await?;
+    // Only the Claim as read: a word to run it again written since is a conflict, and it stays.
+    let params = DeleteParams {
+        preconditions: Some(Preconditions {
+            uid: claim.metadata.uid.clone(),
+            resource_version: claim.metadata.resource_version.clone(),
+        }),
+        ..DeleteParams::background()
+    };
+    tracing::info!(claim = %claim.name_any(), %namespace, "its retention has ended");
+    match Api::<Claim>::namespaced(client.clone(), namespace)
+        .delete(&claim.name_any(), &params)
+        .await
+    {
+        Ok(_) => Ok(Action::await_change()),
+        Err(kube::Error::Api(status)) if status.code == 404 => Ok(Action::await_change()),
+        Err(error) => Err(error.into()),
     }
-    Ok(Action::await_change())
 }
 
 /// **What Claims left behind, removed** (#3739): each look, what the finalizer did not get to, as
@@ -1040,48 +1072,95 @@ async fn sweep_orphans(client: Client, claims: Store<Claim>, every: Duration) {
     }
     let mut ticks = tokio::time::interval(every);
     ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // Not at the operator's start, when what it holds is newest.
+    ticks.tick().await;
+    // What the last look found without its Claim: only a second look removes it.
+    let mut seen = std::collections::HashSet::<String>::new();
     loop {
         ticks.tick().await;
-        let listed: Result<(), Error> = async {
+        let mut found = std::collections::HashSet::<String>::new();
+        let looked: Result<(), Error> = async {
             let held = claims.state();
             let now = k8s_openapi::jiff::Timestamp::now();
+            let params = kube::api::ListParams::default();
             let upstream_claims = Api::<SandboxClaim>::all(client.clone())
-                .list_metadata(&kube::api::ListParams::default())
+                .list_metadata(&params)
                 .await?
                 .items;
             for object in upstream_claims {
                 let object = object.metadata;
-                if upstream_claim_is_orphaned(&object, &held, every, now) {
+                if upstream_claim_is_orphaned(&object, &held, every, now)
+                    && second_look(&mut found, &seen, &object)
+                    && !keeps_a_volume(&client, &object).await?
+                {
                     remove_orphan::<SandboxClaim>(&client, &object).await?;
                 }
             }
             let templates = Api::<SandboxTemplate>::all(client.clone())
-                .list_metadata(&kube::api::ListParams::default())
+                .list_metadata(&params)
                 .await?
                 .items;
             for object in templates {
                 let object = object.metadata;
-                if pool_object_is_orphaned(&object, &held, every, now) {
+                if pool_object_is_orphaned(&object, &held, every, now)
+                    && second_look(&mut found, &seen, &object)
+                {
                     remove_orphan::<SandboxTemplate>(&client, &object).await?;
                 }
             }
             let warm_pools = Api::<SandboxWarmPool>::all(client.clone())
-                .list_metadata(&kube::api::ListParams::default())
+                .list_metadata(&params)
                 .await?
                 .items;
             for object in warm_pools {
                 let object = object.metadata;
-                if pool_object_is_orphaned(&object, &held, every, now) {
+                if pool_object_is_orphaned(&object, &held, every, now)
+                    && second_look(&mut found, &seen, &object)
+                {
                     remove_orphan::<SandboxWarmPool>(&client, &object).await?;
                 }
             }
             Ok(())
         }
         .await;
-        if let Err(error) = listed {
-            tracing::warn!(%error, "what claims left behind could not be looked for");
+        match looked {
+            Ok(()) => seen = found,
+            Err(error) => {
+                tracing::warn!(%error, "what claims left behind could not be looked for");
+            }
         }
     }
+}
+
+/// `object` noted as found without its Claim, and whether the last look found it so too.
+fn second_look(
+    found: &mut std::collections::HashSet<String>,
+    seen: &std::collections::HashSet<String>,
+    object: &ObjectMeta,
+) -> bool {
+    let Some(uid) = object.uid.clone() else {
+        return false;
+    };
+    let again = seen.contains(&uid);
+    found.insert(uid);
+    again
+}
+
+/// Whether the upstream claim `object` holds a kept volume: someone's home is never removed on
+/// the operator's own reading that its Claim has gone. It says so in its log, for an admin.
+async fn keeps_a_volume(client: &Client, object: &ObjectMeta) -> Result<bool, Error> {
+    let (Some(name), Some(namespace)) = (object.name.as_deref(), object.namespace.as_deref())
+    else {
+        return Ok(true);
+    };
+    let held = Api::<SandboxClaim>::namespaced(client.clone(), namespace)
+        .get_opt(name)
+        .await?;
+    let keeps = held.is_none_or(|held| held.spec.volume_claim_templates.is_some());
+    if keeps {
+        tracing::warn!(%name, %namespace, "its claim has gone, and it holds a kept volume: left for an admin");
+    }
+    Ok(keeps)
 }
 
 /// `object` removed, where the operator made it: held by a runner namespace that is the one it made.

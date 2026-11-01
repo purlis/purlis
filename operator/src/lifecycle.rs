@@ -40,14 +40,15 @@ pub const IDLE_MESSAGE: &str = "purlis-runner-idle";
 /// serves again, so a runner is never suspended under a link that came after the wait.
 pub const IDLE_WORD_HOLDS: SignedDuration = SignedDuration::from_secs(4 * 60);
 
-/// The condition saying `claim`'s runner is suspended for being idle, where it does.
+/// The condition saying `claim`'s runner is suspended for being idle, where it does: `True`, or
+/// `Unknown` while it is also stopped ([`pausing_idle`]).
 pub fn idle_condition(claim: &Claim) -> Option<&Condition> {
     claim
         .status
         .as_ref()?
         .conditions
         .iter()
-        .find(|condition| condition.type_ == IDLE && condition.status == "True")
+        .find(|condition| condition.type_ == IDLE && condition.status != "False")
 }
 
 /// Whether `claim`'s desktop asked to run this suspension's runner again.
@@ -95,7 +96,7 @@ pub fn keeping_idle(previous: Option<&ClaimStatus>, mut next: ClaimStatus) -> Cl
         status
             .conditions
             .iter()
-            .find(|condition| condition.type_ == IDLE && condition.status == "True")
+            .find(|condition| condition.type_ == IDLE && condition.status != "False")
     });
     if let Some(held) = held
         && !next.conditions.iter().any(|one| one.type_ == IDLE)
@@ -105,6 +106,24 @@ pub fn keeping_idle(previous: Option<&ClaimStatus>, mut next: ClaimStatus) -> Cl
     next
 }
 
+/// `status`, of a stopped Claim, with the `Idle` of `previous` as `Unknown`: it stays idle, so its
+/// runner does not run when the stop ends, and when the condition is `True` again its time has
+/// moved, so stopped time never counts toward its retention (ruled 2026-11-01).
+pub fn pausing_idle(status: &mut ClaimStatus, previous: Option<&ClaimStatus>) {
+    let held = previous.and_then(|status| {
+        status
+            .conditions
+            .iter()
+            .find(|condition| condition.type_ == IDLE && condition.status != "False")
+    });
+    if let Some(held) = held {
+        let mut paused = held.clone();
+        paused.status = "Unknown".to_owned();
+        paused.reason = "Stopped".to_owned();
+        status.conditions.push(paused);
+    }
+}
+
 /// A Claim's status as its idle runner is asked to run again: no `Idle`, written before its mode
 /// is changed, so a pass that fails after it does not suspend the runner again.
 pub fn status_woken() -> ClaimStatus {
@@ -112,8 +131,9 @@ pub fn status_woken() -> ClaimStatus {
         link_key: None,
         mint: None,
         conditions: vec![
+            // Not `False`, so the time of a `False` to come is not the suspension's.
             condition(
-                "False",
+                "Unknown",
                 "Starting",
                 "Its desktop asked for this idle runner to run again.".to_owned(),
             ),
@@ -164,8 +184,8 @@ pub enum Retention {
     Keep,
     /// Its requester is told it is deleted at this time.
     Notice { at: Timestamp },
-    /// Its time has come, with the notice its pool asks for already given.
-    Delete { noticed: Timestamp },
+    /// Its time, `at`, has come, with the notice its pool asks for already given.
+    Delete { at: Timestamp },
 }
 
 fn since(duration: Duration) -> SignedDuration {
@@ -183,12 +203,12 @@ pub fn retention(
     sandbox: Option<&Sandbox>,
     now: Timestamp,
 ) -> Retention {
-    if !claim.spec.kept
-        || upstream::is_stopped(claim, Some(pool))
-        || idle_condition(claim).is_none()
-    {
+    if !claim.spec.kept || upstream::is_stopped(claim, Some(pool)) {
         return Retention::Keep;
     }
+    let Some(idle) = idle_condition(claim).filter(|idle| idle.status == "True") else {
+        return Retention::Keep;
+    };
     let Some(suspended) = sandbox
         .and_then(|sandbox| sandbox.status.as_ref())
         .and_then(|status| {
@@ -200,9 +220,11 @@ pub fn retention(
     else {
         return Retention::Keep;
     };
+    // Whichever is later: the runner's suspension, or the end of a stop.
     let Ok(at) = suspended
         .last_transition_time
         .0
+        .max(idle.last_transition_time.0)
         .checked_add(since(pool.spec.delete_suspended_after()))
     else {
         return Retention::Keep;
@@ -222,10 +244,19 @@ pub fn retention(
             _ => Retention::Keep,
         };
     };
-    let given = noticed.last_transition_time.0;
-    let due = given.checked_add(notice).map_or(at, |given| given.max(at));
+    // The time it told its requester holds: a Pool's times changed since can only move it later.
+    let Some(promised) = noticed
+        .message
+        .split_whitespace()
+        .find_map(|word| word.trim_end_matches(',').parse::<Timestamp>().ok())
+    else {
+        return Retention::Notice {
+            at: now.checked_add(notice).map_or(at, |given| given.max(at)),
+        };
+    };
+    let due = promised.max(at);
     if now >= due {
-        Retention::Delete { noticed: given }
+        Retention::Delete { at: due }
     } else {
         Retention::Notice { at: due }
     }
@@ -247,8 +278,8 @@ pub fn saying_retention(status: &mut ClaimStatus, retention: Retention) {
     match retention {
         Retention::Keep => {}
         Retention::Notice { at } => status.conditions.push(notice(at.to_string())),
-        Retention::Delete { noticed } => {
-            status.conditions.push(notice(noticed.to_string()));
+        Retention::Delete { at } => {
+            status.conditions.push(notice(at.to_string()));
             status.conditions.push(condition_of(
                 RETENTION_ENDED,
                 "True",
@@ -281,14 +312,14 @@ pub fn past_max_age(pod: &Pod, pool: &Pool, now: Timestamp) -> bool {
 }
 
 /// `status`, saying its running runner is past its pool's `maxAge`: it never ends a chat for it
-/// (D-3982-1), so it starts again on the pool's image the next time nothing runs on it.
+/// (D-3982-1), so it takes the pool's image the next time nothing runs on it.
 pub fn saying_past_max_age(status: &mut ClaimStatus) {
     status.conditions.push(condition_of(
         PAST_MAX_AGE,
         "True",
         "WaitsForIdle",
-        "This runner is past its pool's maxAge. A chat is never ended for that: it starts again \
-         on the pool's current image the next time it is idle."
+        "This runner is past its pool's maxAge. A chat is never ended for that: once it is next \
+         idle, it is on the pool's current image when its desktop runs it again."
             .to_owned(),
     ));
 }
@@ -323,11 +354,13 @@ pub const STUCK_AFTER: Duration = Duration::from_secs(30 * 60);
 pub const ORPHANS_EVERY: Duration = Duration::from_secs(10 * 60);
 
 /// `status` as written next, saying its runner is stuck where its `Ready` has been `False` for
-/// `after` in `previous`. It only says so, as a Deployment's progress deadline does: a pod waiting
+/// `after` in `previous`, and its pod, where it has one, is that old: a `Ready` that was `False`
+/// while it was stopped or idle keeps its time, and is no word on a runner just started. It only says so, as a Deployment's progress deadline does: a pod waiting
 /// for a node may yet start, and the person decides. Its quota and volume stay held.
 pub fn saying_stuck(
     status: &mut ClaimStatus,
     previous: Option<&ClaimStatus>,
+    pod: Option<&Pod>,
     after: Duration,
     now: Timestamp,
 ) {
@@ -341,8 +374,13 @@ pub fn saying_stuck(
     let (Some(ready), Some(held)) = (ready_of(status), previous.and_then(ready_of)) else {
         return;
     };
+    let pod_is_new = pod
+        .and_then(|pod| pod.metadata.creation_timestamp.as_ref())
+        .is_some_and(|made| now.duration_since(made.0) < since(after));
     if ready.status == "True"
-        || held.status == "True"
+        || held.status != "False"
+        || matches!(held.reason.as_str(), "Stopped" | IDLE_REASON)
+        || pod_is_new
         || now.duration_since(held.last_transition_time.0) < since(after)
     {
         return;
@@ -352,8 +390,9 @@ pub fn saying_stuck(
         "True",
         &ready.reason,
         format!(
-            "This claim's runner has not been ready for {} minutes: {} Delete the claim to give \
-             it up; nothing is deleted for you.",
+            "This claim's runner has not been ready for {} minutes: {} Nothing is deleted for you. \
+             Set a kept claim stopped and back to take its pool's image, or delete the claim to \
+             give it up, its volume with it.",
             after.as_secs() / 60,
             ready.message
         ),

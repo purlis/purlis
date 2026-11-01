@@ -14,5 +14,7 @@ operator the deletion #3739 asked to be ruled.
    `purlis-operator-deletes-only-a-retained-claim`** to a kept Claim, not stopped, carrying the
    operator's own `RetentionEnded` condition. Retention counts only idle suspension, so `stopped`
    still never destroys.
-3. **A chat is never ended for a maximum age** (*decided in implementation, D-3982-1*): §9's
+3. **Only the operator writes a Claim's status** (*decided in implementation, D-3981-3*), by the
+   policy `purlis-only-the-operator-writes-a-claims-status`, since a deletion rests on what it says.
+4. **A chat is never ended for a maximum age** (*decided in implementation, D-3982-1*): §9's
    overnight work stands. A runner past it waits until it is next idle, and its Claim says so.

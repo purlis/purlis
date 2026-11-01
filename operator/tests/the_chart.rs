@@ -194,6 +194,9 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 #
 # The fifth policy, purlis-operator-deletes-only-a-retained-claim (#3981): the operator deletes
 # only a kept Claim, not stopped, that carries its own RetentionEnded condition.
+#
+# The sixth policy, purlis-only-the-operator-writes-a-claims-status (#3981): what the operator acts
+# on is what a Claim's status says, so no one else writes it.
 ";
 
 /// The plain manifests the chart's default render makes: `operator.yaml` and `policy.yaml`.
