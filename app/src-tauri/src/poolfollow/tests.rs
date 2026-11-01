@@ -307,6 +307,25 @@ fn a_suspended_draining_runner_is_removed_without_being_asked() {
     assert!(!log.contains("start "), "{log}");
 }
 
+/// **A stopped runner is not an empty one**: found stopped with nothing to say it stopped before
+/// its drain began, it may have run chats until then, so it stays with its home, and is not
+/// woken to be asked.
+#[test]
+fn a_draining_runner_found_stopped_keeps_its_home() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine_whose_runners_are_suspended(config.path());
+    a_pool_draining(&machine);
+
+    let said = follow_and_drain(&machine, None, &|_| {
+        panic!("a stopped runner is not asked")
+    });
+
+    assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
+    let log = std::fs::read_to_string(config.path().join("log")).unwrap();
+    assert!(!log.contains("rm "), "{log}");
+    assert!(!log.contains("start "), "{log}");
+}
+
 /// A runner that answered its unpairing cannot be asked, and takes no chat (#4146): the next
 /// look removes what is left without asking it.
 #[test]
