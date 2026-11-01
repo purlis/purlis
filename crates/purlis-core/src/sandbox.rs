@@ -1804,6 +1804,34 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         deny(Class::Vaults, op, Access::ReadWrite);
         deny(Class::Vaults, home.join(".op"), Access::ReadWrite);
         deny(Class::Vaults, home.join(".vault-token"), Access::ReadWrite);
+        // A runner's forge programs (#4354): what they keep is no chat's, to read or to leave
+        // for a later one. A declared tool's run has a home of its own.
+        if machine.is_a_runner() {
+            let config = machine
+                .env
+                .get("XDG_CONFIG_HOME")
+                .map(PathBuf::from)
+                .filter(|dir| dir.is_absolute())
+                .unwrap_or_else(|| home.join(".config"));
+            for kept in [
+                config.join("gh"),
+                config.join("glab-cli"),
+                home.join(".config/gh"),
+                home.join(".config/glab-cli"),
+                home.join(".local/share/gh"),
+            ]
+            .into_iter()
+            .chain(
+                // Where the runner's own environment moves them.
+                ["GH_CONFIG_DIR", "GLAB_CONFIG_DIR"]
+                    .iter()
+                    .filter_map(|var| machine.env.get(var))
+                    .map(PathBuf::from)
+                    .filter(|dir| dir.is_absolute()),
+            ) {
+                deny(Class::Vaults, kept, Access::ReadWrite);
+            }
+        }
     }
     // The registry that names the vaults: readable, never rewritten.
     deny(Class::Vaults, ctx.shared_registry(), Access::Write);

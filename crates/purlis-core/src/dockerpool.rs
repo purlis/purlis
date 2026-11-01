@@ -540,6 +540,15 @@ impl Runner {
         if let Some(desktop) = desktop {
             pair("--label", format!("{DESKTOP_LABEL}={desktop}"));
         }
+        // Said back to the person if a declared tool's program is not in the image (#4354).
+        pair(
+            "--env",
+            format!(
+                "{}={}",
+                crate::sandbox::tools::POOL_IMAGE_VAR,
+                self.image.as_str()
+            ),
+        );
         pair("--user", self.user.spelled());
         pair("--cap-drop", "ALL".into());
         pair("--security-opt", "no-new-privileges".into());

@@ -3276,3 +3276,14 @@ fn a_standing_is_not_held_to_its_input() {
         Ok(crate::profilestore::sign_in::Standing::SignedOut)
     );
 }
+
+#[test]
+fn a_runner_is_told_the_image_it_runs() {
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
+    let told = format!(
+        "{}={}",
+        crate::sandbox::tools::POOL_IMAGE_VAR,
+        image().as_str()
+    );
+    assert!(has_pair(&args, "--env", &told), "{args:?}");
+}

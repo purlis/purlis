@@ -130,6 +130,7 @@ pub const NOT_INHERITED: &[&str] = &[
     crate::sandboxblock::CHAT_DIR_ENV,
     CHAT_ID_ENV,
     PROMPT_KEY_ENV,
+    crate::sandbox::tools::POOL_IMAGE_VAR,
 ];
 
 /// Which conversation a report is of, and how well that is known.

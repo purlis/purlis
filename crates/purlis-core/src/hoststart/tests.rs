@@ -355,3 +355,20 @@ fn a_runner_told_of_a_mint_port_starts_nothing_outside_the_sandbox_but_a_shell()
     assert_eq!(no_sandbox_refused(ProgramKind::Harness, Ok(false)), Ok(()));
     assert_eq!(no_sandbox_refused(ProgramKind::Shell, Ok(true)), Ok(()));
 }
+
+#[test]
+fn a_chats_forge_programs_keep_their_settings_in_its_own_temporary_folder() {
+    let wrapped = [("TMPDIR".to_owned(), "/chat/tmp".to_owned())];
+    assert_eq!(
+        forge_programs_settings_in(&wrapped),
+        [
+            ("GH_CONFIG_DIR".to_owned(), "/chat/tmp/forge/gh".to_owned()),
+            (
+                "GLAB_CONFIG_DIR".to_owned(),
+                "/chat/tmp/forge/glab".to_owned()
+            ),
+        ]
+    );
+    assert!(!crate::sandbox::tools::a_run_starts_from("GH_CONFIG_DIR"));
+    assert!(!crate::sandbox::tools::a_run_starts_from("GLAB_CONFIG_DIR"));
+}
