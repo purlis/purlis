@@ -458,6 +458,12 @@ const SIGNER_IN_REPO: &str = "this repo's own git config names a signing program
     run programs a repo's config names. Set the signer in your global git config (use includeIf \
     for a per-folder signer) and purlis will use it.";
 
+/// What a `worktree add` is answered where its checkout may read a config the runner's listing
+/// did not ([`checkout_reads_another_config`]).
+const ANOTHER_CONFIG: &str = "this repository's git config has an include whose answer depends on \
+    where git runs, so purlis cannot tell what a new branch folder's checkout would read, and git \
+    was not run there. Remove that include, or run git yourself";
+
 /// The verbs that make a commit, and so sign it when `commit.gpgSign` or `-S` says to.
 const COMMIT_VERBS: [&str; 8] = [
     "commit",
@@ -733,6 +739,35 @@ fn repo_names_a_recent_objects_hook(listing: &str) -> bool {
     listed_entries(listing).any(|(scope, key, _)| {
         !matches!(scope, "global" | "system" | "unknown" | "command")
             && key.eq_ignore_ascii_case("gc.recentobjectshook")
+    })
+}
+
+/// Whether the call whose verb starts `from` is a `worktree add` whose checkout may read a config
+/// that `listing`, read in the folder the call is run in, did not (#4401).
+///
+/// The checkout runs in the new branch folder, on the new branch, with a git directory of its own.
+/// A conditional include in the repository's own config can hold there and not here (`onbranch:`
+/// and `gitdir:`, measured on git 2.50.1), and a listing here shows the include and none of what
+/// it would read: a filter there would run, unheld. A path in a worktree config is read from where
+/// the new folder's copy of it is. So where the repository's own scopes hold either, the runner
+/// cannot tell, and the call is refused. What it can tell is left alone: a plain include in the
+/// repository's config is the same file wherever git runs, a worktree config is copied to the new
+/// folder, and what your global and system files include is yours, held or not. The same goes for
+/// any verb that stays in its folder: a `switch` reads its config before it moves.
+fn checkout_reads_another_config(from: &[&str], listing: &str) -> bool {
+    let adds = match from.split_first() {
+        Some((&"worktree", rest)) => {
+            rest.iter().find(|word| !word.starts_with('-')) == Some(&"add")
+        }
+        _ => false,
+    };
+    adds && listed_entries(listing).any(|(scope, key, _)| {
+        let key = key.to_ascii_lowercase();
+        match scope {
+            "local" => key.starts_with("includeif."),
+            "worktree" => key.starts_with("includeif.") || key.starts_with("include."),
+            _ => false,
+        }
     })
 }
 
@@ -1013,6 +1048,9 @@ fn programs_held(
     }
     if collects_garbage_with_a_hook(&args[at..], &said) {
         return Ok(Err(refused_raw(UNHELD_PROGRAM)));
+    }
+    if checkout_reads_another_config(&args[at..], &said) {
+        return Ok(Err(refused_raw(ANOTHER_CONFIG)));
     }
     match held_programs(reaches_a_remote(&args[at..]), &listed) {
         Some(settings) => {

@@ -1135,7 +1135,7 @@ fn a_worktree_add_is_refused_where_its_checkout_reads_a_config_the_listing_did_n
             .expect("git runs");
 
         assert!(!cut.ok(), "{condition}: {cut:?}");
-        assert!(cut.err.contains("include"), "{condition}: {cut:?}");
+        assert!(cut.err.contains(ANOTHER_CONFIG), "{condition}: {cut:?}");
         assert!(!mark.exists(), "{condition}: the filter ran");
         assert!(!folder.exists(), "{condition}: git was run");
 
@@ -1166,6 +1166,38 @@ fn a_worktree_add_is_refused_where_a_worktree_config_includes_a_file() {
 
     assert!(!cut.ok(), "{cut:?}");
     assert!(!mark.exists());
+}
+
+#[test]
+fn only_a_worktree_add_and_only_the_repositorys_own_includes_count_as_another_config() {
+    let add = ["worktree", "add", "-q", "-b", "lane", "/a/folder"];
+    let says = |entry: (&str, &str, &str)| {
+        let named = listing(&[entry]);
+        String::from_utf8_lossy(&named).into_owned()
+    };
+    let conditional = "includeif.onbranch:lane.path";
+    for (scope, key, reads_another) in [
+        ("local", conditional, true),
+        ("worktree", conditional, true),
+        ("worktree", "include.path", true),
+        ("local", "IncludeIf.gitdir:x.path", true),
+        // The same file wherever git runs.
+        ("local", "include.path", false),
+        // The person's own: what it includes is theirs, held or not.
+        ("global", conditional, false),
+        ("system", conditional, false),
+        ("command", conditional, false),
+        ("local", "core.bare", false),
+    ] {
+        let said = says((scope, key, "/a/file"));
+        assert_eq!(
+            checkout_reads_another_config(&add, &said),
+            reads_another,
+            "{scope} {key}"
+        );
+        assert!(!checkout_reads_another_config(&["status"], &said));
+        assert!(!checkout_reads_another_config(&["worktree", "list"], &said));
+    }
 }
 
 #[test]
