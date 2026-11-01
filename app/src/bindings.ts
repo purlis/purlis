@@ -4472,9 +4472,10 @@ export const CLOSE_HANDED = "theme-drafts-close-handed" as const;
 export const ENGINE_DOWNLOAD = "engine-download" as const;
 
 export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
-export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
 
 export const PERSONA_SCOPE_KEY = "persona/" as const;
+
+export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
 
 export const ROUTER_GRADE = "router-grade" as const;
 
