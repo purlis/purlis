@@ -3334,6 +3334,7 @@ impl Widened {
             listens: Vec::new(),
             listen_only: Vec::new(),
             unserved: Vec::new(),
+            lifted: Vec::new(),
         }
     }
 
