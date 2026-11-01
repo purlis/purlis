@@ -8,7 +8,7 @@ import { commands, type PlaneId, type SettingsEdit, type SettingsWhich } from ".
 import { NewPersona } from "../NewPersona";
 import { NewWorkspace } from "../NewWorkspace";
 import { settled } from "../PlaneEdits";
-import { cloneRepos } from "../repoClones";
+import { cloneRepos, forgetEndedClones } from "../repoClones";
 import { DEFAULT_THEME, inForce } from "../theme/theme";
 import { atCreation } from "../windowprefs";
 import {
@@ -262,6 +262,7 @@ function ProjectLevelTab({ plane, ...switcher }: Switcher & { plane: PlaneId }) 
             ).then((made) => {
               if (!made) return;
               making.then(name);
+              forgetEndedClones(plane, name);
               // The repos land after it, each on its own, as they do from the sidebar.
               if (repos.length > 0) void cloneRepos(plane, name, repos);
             })

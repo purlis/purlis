@@ -110,7 +110,16 @@ import { NewBranch } from "./NewBranch";
 import { LinkWorkItem } from "./LinkWorkItem";
 import { RenameWorkspace } from "./RenameWorkspace";
 import { AddVision } from "./AddVision";
-import { cloneRepos, settleRepoClones, stopRepoClones, useRepoClones } from "./repoClones";
+import { failedNotNamed } from "./NotCloned";
+import {
+  cloneRepos,
+  forgetEndedClones,
+  forgetFailedClone,
+  forgetLandedClones,
+  settleRepoClones,
+  stopRepoClones,
+  useRepoClones,
+} from "./repoClones";
 import { StartChat } from "./StartChat";
 import {
   handedSaid,
@@ -192,6 +201,7 @@ import { heldFor as blockHeldFor, useSandboxBlocks } from "./sandboxBlocks";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
 import {
+  clonesRefused,
   reposCloned,
   reposCloning,
   reposNotCloned,
@@ -4833,19 +4843,16 @@ export const PlaneView = memo(function PlaneView({
           },
           (_, moved) => setReport(reposCloning(name, repos, done, track, { moved, onCancel })),
         );
-        // Only the ones that did not land, on the same notice.
-        const retry = () => void run(failed.map((one) => one.repo));
+        // Only the ones that did not land, on the same notice. Those the person stopped go again
+        // with the refused ones that are left (#4394).
         const refused = failed.filter((one) => one.stopped !== true);
+        const stopped = failed.filter((one) => one.stopped === true).map((one) => one.repo);
+        const retry = (still: string[]) => void run([...still, ...stopped]);
         setReport(
           failed.length === 0
             ? reposCloned(name, repos, track)
             : refused.length === 0
-              ? reposStopped(
-                  name,
-                  failed.map((one) => one.repo),
-                  retry,
-                  track,
-                )
+              ? reposStopped(name, stopped, () => retry([]), track)
               : reposNotCloned(name, refused, retry, track),
         );
         setReplan((asked) => asked + 1);
@@ -4876,6 +4883,7 @@ export const PlaneView = memo(function PlaneView({
       }
       setMakingWorkspace(false);
       setWorkspaceTrouble(undefined);
+      forgetEndedClones(plane, name);
       // **Made here, so pinned** (ADR 0054): the operator made it in order to work in it, and
       // the workspace strip draws what is pinned. A pin the store refused leaves the
       // workspace made and says why, beside what charter said about making it.
@@ -6843,13 +6851,7 @@ export const PlaneView = memo(function PlaneView({
       const ended = await cloneRepos(plane, workspace, repos, rereadPanels);
       // A clone the person stopped is what they asked for: no failure to report.
       const failed = ended.filter((one) => one.stopped !== true);
-      if (failed.length > 0)
-        return {
-          ok: false,
-          refused:
-            `Could not clone ${failed.map((f) => f.repo).join(", ")} into ${workspace} — ` +
-            failed.map((f) => f.said).join(" "),
-        };
+      if (failed.length > 0) return clonesRefused(workspace, failed);
       return ended.length === 0
         ? { ok: true, said: `Cloned ${repos.join(", ")} into ${workspace}.` }
         : { ok: true };
@@ -6947,6 +6949,8 @@ export const PlaneView = memo(function PlaneView({
       newBranch,
       cloneMissing,
       askDropMembership: (workspace: string, repo: string) => setMembershipAsk({ workspace, repo }),
+      forgetFailedClone: (workspace: string, repo: string) =>
+        forgetFailedClone(plane, workspace, repo),
       newChatIn: newTabIn,
       sendKey,
       openProject: windowDoes.openProject,
@@ -7654,10 +7658,19 @@ export const PlaneView = memo(function PlaneView({
     () => [...cloning].filter(([, one]) => one.state !== "failed").map(([repo]) => repo),
     [cloning],
   );
+  const failedHere = useMemo(
+    () => failedNotNamed(absentHere, cloneNames, cloning),
+    [absentHere, cloneNames, cloning],
+  );
   useEffect(() => {
     if (ofWorkspace !== undefined && cloneNames !== undefined)
       settleRepoClones(plane, ofWorkspace, cloneNames);
   }, [plane, ofWorkspace, cloneNames, cloning]);
+  // One that landed while another workspace was focused was never going to be settled: the panels
+  // this focus asks for are later than it, and may never list it (#4466).
+  useEffect(() => {
+    if (ofWorkspace !== undefined) forgetLandedClones(plane, ofWorkspace);
+  }, [plane, ofWorkspace]);
 
   /** The repo whose clone the chat being picked would start in, if it would: what the picker's
    *  branch box names (GL-1). The same directory `startOn` sends, compared with the path the
@@ -7746,6 +7759,7 @@ export const PlaneView = memo(function PlaneView({
             pieces,
             clones,
             absent: absentHere,
+            failedNotNamed: failedHere,
             cloning: cloningNow,
             startsIn: spot?.path,
             personas,
@@ -7824,6 +7838,7 @@ export const PlaneView = memo(function PlaneView({
       clones,
       cloningNow,
       absentHere,
+      failedHere,
       curations,
       focused,
       inFront,
