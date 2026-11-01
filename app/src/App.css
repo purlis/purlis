@@ -8101,17 +8101,11 @@ nav.piece-files-head {
   margin: 0;
 }
 
-.skill-draft-figures,
-.skill-draft-grade-running {
+.skill-draft-figures {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4);
-  color: var(--text-default);
-}
-
-.skill-draft-grade-running [role="progressbar"] {
-  flex: 1 1 8rem;
 }
 
 .skill-draft-figure b {

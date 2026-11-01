@@ -12,7 +12,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { SkillDraft } from "./bindings";
+import type { GradeRow, SkillDraft, SkillDraftGrade, SkillGradeStep } from "./bindings";
 import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.testkit";
 import { AT_THE_ROOT } from "./skillStudio";
 import { studio } from "./skillsListing.testkit";
@@ -75,6 +75,45 @@ const DRAFTS: SkillDraft[] = [
   },
 ];
 
+/** A change to deploy, the prototype's draft, which nothing has made out of date. */
+const CHANGE: SkillDraft = {
+  ...DRAFTS[1],
+  id: "d3",
+  name: "deploy",
+  stale: false,
+  files: [{ ...DRAFTS[1].files[0], stale: false }],
+};
+
+const ROW: GradeRow = {
+  grade: "g1",
+  graded: "today 21:40",
+  version: "uncommitted",
+  ran_on: "claude",
+  ended: "Finished",
+  outcome: "graded",
+  arms: { with: 92, without: 33, previous: 75 },
+  spent: { chats: 54, tokens: null, cost_usd: 1.2, limit_usd: 15 },
+  after_edit: false,
+};
+
+const UNGRADED: SkillDraftGrade = {
+  only_evals: false,
+  tests: 3,
+  evals: 0,
+  tests_refused: null,
+  latest: null,
+  asked: 0,
+  changed: false,
+  running: null,
+};
+
+const gradedAs = (row: Partial<GradeRow>, more: Partial<SkillDraftGrade> = {}) => ({
+  ...UNGRADED,
+  latest: { ...ROW, ...row },
+  asked: 54,
+  ...more,
+});
+
 /** The studio tab as a view tab draws it, `width` by 560 px, on Drafts at `item`. */
 function Tab({
   width,
@@ -85,6 +124,8 @@ function Tab({
   drafts: SkillDraft[];
   /** The draft chosen, by its id. */
   item?: string;
+  /** What its page says of its grade (#2780). */
+  grade?: SkillDraftGrade;
 }) {
   return <StudioInPanel width={width} height={560} narrow={narrow} />;
 }
@@ -111,6 +152,7 @@ const meta = {
           ],
         });
       if (cmd === "skill_drafts") return args.drafts;
+      if (cmd === "skill_draft_grade") return args.grade ?? UNGRADED;
       if (cmd === "start_options") return { profiles: [{ name: "claude" }, { name: "codex" }] };
       if (cmd === "skill_updates") return { offers: [], unconfirmed: [], unasked: [] };
       if (cmd === "skill_deletes_cut_short") return { settled: [], unsettled: [] };
@@ -191,5 +233,69 @@ export const Empty: Story = {
     const ask = within(none).getByRole("button", { name: "Ask a chat to draft a skill" });
     await tabInto(() => ask);
     expectFocusInSight();
+  },
+};
+
+/**
+ * **The draft's grade beside Accept** (#2780; `prototype/skill-draft-grade`, layout A): each of its
+ * nine states. Accept is pressed by the keyboard in every one, as no grade ever blocks it.
+ */
+function gradeStory(grade: SkillDraftGrade, says: string | RegExp): Story {
+  return {
+    args: { drafts: [CHANGE], item: "d3", grade },
+    play: async ({ canvas }) => {
+      const page = await canvas.findByTestId("skill-studio-draft");
+      await waitFor(() =>
+        expect(within(page).getByTestId("skill-draft-grade")).toHaveTextContent(says),
+      );
+      const accept = within(page).getByRole("button", { name: "Accept deploy" });
+      await expect(accept).toBeEnabled();
+      await tabInto(() => accept);
+      expectFocusInSight();
+    },
+  };
+}
+
+export const GradeNotGraded = gradeStory(UNGRADED, "Not graded yet");
+export const GradeRunning = gradeStory(
+  { ...UNGRADED, running: { ran: 21, of: 54, grade: "g2" } as SkillGradeStep },
+  "Grading: 21 of 54 chats",
+);
+export const GradeBetter = gradeStory(gradedAs({}), "+17 points");
+export const GradeWorse = gradeStory(
+  gradedAs({ arms: { with: 58, without: 33, previous: 75 } }),
+  "-17 points",
+);
+export const GradeNoDifference = gradeStory(
+  gradedAs({ arms: { with: 75, without: 33, previous: 75 } }),
+  "No difference",
+);
+export const GradeStoppedEarly = gradeStory(
+  gradedAs({
+    outcome: "stopped",
+    arms: { with: 80, without: 33, previous: 70 },
+    spent: { ...ROW.spent, chats: 18 },
+  }),
+  "Stopped after 18 of 54 chats",
+);
+export const GradeDraftChanged = gradeStory(
+  gradedAs({}, { changed: true }),
+  "The draft changed after this grade.",
+);
+export const GradeOnlyEvals = gradeStory(
+  { ...UNGRADED, only_evals: true },
+  "changes only the skill's tests",
+);
+export const GradeNoTests = gradeStory({ ...UNGRADED, tests: 0 }, "has no trigger tests yet");
+
+/** **Narrow**: the grade's line and its ways on stay in the bar, over the answers. */
+export const GradeNarrow: Story = {
+  args: { width: 460, narrow: true, drafts: [CHANGE], item: "d3", grade: gradedAs({}) },
+  play: async ({ canvas, canvasElement }) => {
+    const page = await canvas.findByTestId("skill-studio-draft");
+    await within(page).findByRole("button", { name: "Grade again…" });
+    const root = canvasElement.querySelector<HTMLElement>('[data-part="root"][data-narrow]');
+    if (root === null) throw new Error("the frame is not narrow");
+    await expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth + 1);
   },
 };

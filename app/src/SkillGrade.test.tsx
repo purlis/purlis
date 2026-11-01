@@ -29,6 +29,7 @@ afterEach(() => {
 
 function plan(over: Partial<SkillGradePlan> = {}): SkillGradePlan {
   return {
+    draft: false,
     tests: [
       { query: "ship it to production", should_trigger: true, hides: false },
       { query: "what is prod⟦U+202E⟧", should_trigger: false, hides: true },
@@ -79,7 +80,7 @@ const unavailable = (button: HTMLElement) =>
   button.hasAttribute("disabled") || button.getAttribute("aria-disabled") === "true";
 
 /** The plan page of deploy, and what it told the studio. */
-function renderPlan(over: { afterEdit?: boolean; changed?: number } = {}) {
+function renderPlan(over: { afterEdit?: boolean; changed?: number; draft?: string } = {}) {
   const told = {
     started: vi.fn<(grade: string) => void>(),
     afterEdit: vi.fn(),
@@ -93,6 +94,7 @@ function renderPlan(over: { afterEdit?: boolean; changed?: number } = {}) {
       level={LEVEL}
       changed={changed}
       afterEdit={over.afterEdit}
+      draft={over.draft}
       onStarted={told.started}
       onAfterEdit={told.afterEdit}
       onRunning={told.running}
@@ -118,6 +120,7 @@ const step = (over: Record<string, unknown> = {}) => ({
   asked: 0,
   ended: null,
   said: null,
+  draft: null,
   ...over,
 });
 
@@ -132,6 +135,31 @@ const grades = (running: ReturnType<typeof step> | null) => ({
 });
 
 describe("Grade, cost first", () => {
+  it("plans and starts a draft's grade by the draft, against the current version (#2780)", async () => {
+    const asked: Array<{ cmd: string; args: Record<string, unknown> }> = [];
+    mockIPC(
+      (cmd, args) => {
+        asked.push({ cmd, args: args as Record<string, unknown> });
+        if (cmd === "skill_draft_grade_plan")
+          return plan({ draft: true, previous: { commit: "", subject: "" } });
+        if (cmd === "start_options") return { profiles: [] };
+        if (cmd === "skill_draft_grade_start") return "01GRADE";
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    const told = renderPlan({ draft: "d1" });
+    const cost = await screen.findByTestId("skill-grade-cost");
+    expect(cost.textContent).toContain(
+      "3 times with the draft and 3 times without it, and 3 times with the current version, which it is compared with",
+    );
+    screen.getByRole("heading", { name: "Grade the draft of deploy" });
+    fireEvent.click(start());
+    await waitFor(() => expect(told.started).toHaveBeenCalledWith("01GRADE"));
+    expect(asked.map((one) => one.cmd)).not.toContain("skill_grade_plan");
+    expect(asked.find((one) => one.cmd === "skill_draft_grade_start")?.args.draft).toBe("d1");
+  });
+
   it("shows what a grade runs and who pays before anything runs, then starts it on the press", async () => {
     const asked: Array<{ cmd: string; args: unknown }> = [];
     mockIPC(
@@ -433,6 +461,7 @@ describe("Grade, cost first", () => {
       asked: 2,
       ended: "whole" as const,
       said: null,
+      draft: null,
     };
     expect(endedSaid(step)).toBe(
       "Graded in 10 chats. Its scorecard says how each test went. 2 chats asked you something, and purlis ended them there without counting them: the grade's scorecard opens each.",
@@ -653,6 +682,7 @@ describe("Grade, cost first", () => {
         asked: 0,
         ended: "chats-did-not-start",
         said: "The default profile is signed out.",
+        draft: null,
       }),
     ).toBe("The grade stopped: its chats did not start. The default profile is signed out.");
   });
@@ -713,6 +743,7 @@ describe("a grade's token cap", () => {
         asked: 0,
         ended: "over-cap",
         said: null,
+        draft: null,
       }),
     ).toBe(
       "Stopped at its cap of 200,000 tokens after 9 chats, having spent 201,345 tokens. What ran is scored.",
@@ -754,6 +785,7 @@ describe("a grade's dollar limit (#3469)", () => {
         asked: 0,
         ended: "over-limit",
         said: null,
+        draft: null,
       }),
     ).toBe(
       "Stopped at its dollar limit after 3 chats, having spent 30,000 tokens. What ran is scored.",
@@ -793,6 +825,7 @@ describe("a grade a fault ended", () => {
         asked: 0,
         ended: "failed",
         said: "A fault in purlis ended the grade before it was scored.",
+        draft: null,
       }),
     ).toBe("A fault in purlis ended the grade before it was scored.");
   });

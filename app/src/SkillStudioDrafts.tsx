@@ -13,7 +13,12 @@ import { ViewPageHeader } from "./ui/panel/ViewFrame";
 import { ReviewPage } from "./ui/review-page/ReviewPage";
 import { Select } from "./ui/select/Select";
 import { Notice } from "./Notice";
-import { DraftGradeActions, DraftGradeLine, draftGradeState, useDraftGrade } from "./SkillDraftGrade";
+import {
+  DraftGradeActions,
+  DraftGradeLine,
+  draftGradeState,
+  useDraftGrade,
+} from "./SkillDraftGrade";
 import type { GradingGo } from "./SkillGrades";
 import { askSkillChat } from "./skillDraftAsks";
 

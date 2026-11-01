@@ -88,16 +88,9 @@ export function DraftGradeLine({ name, state }: { name: string; state: DraftGrad
     case "not-graded":
       return <p>Not graded yet. A grade shows its cost before it runs.</p>;
     case "running": {
-      const chats = `Grading: ${state.step.ran} of ${counted(state.step.of, "chat", "chats")}`;
+      const label = `Grading: ${state.step.ran} of ${counted(state.step.of, "chat", "chats")}`;
       return (
-        <div className="skill-draft-grade-running">
-          <span>{chats}</span>
-          <ProgressBar
-            aria-label={`How far the grade of ${name}'s draft is`}
-            value={state.step.ran}
-            maxValue={Math.max(state.step.of, 1)}
-          />
-        </div>
+        <ProgressBar label={label} value={state.step.ran} maxValue={Math.max(state.step.of, 1)} />
       );
     }
     case "nothing-compared":
@@ -122,9 +115,7 @@ export function DraftGradeLine({ name, state }: { name: string; state: DraftGrad
             <Figure label="Draft" points={arms.with} />
             {arms.previous !== null && <Figure label="Current" points={arms.previous} />}
             <Figure label="No skill" points={arms.without} />
-            <Badge
-              variant={difference.up === null ? undefined : difference.up ? "ok" : "waiting"}
-            >
+            <Badge variant={difference.up === null ? undefined : difference.up ? "ok" : "waiting"}>
               {difference.said}
             </Badge>
           </div>
@@ -191,12 +182,7 @@ export function DraftGradeActions({
       return (
         <>
           {!state.changed && (
-            <Button
-              size="sm"
-              variant="ghost"
-              inline
-              onPress={() => onScorecard(state.row.grade)}
-            >
+            <Button size="sm" variant="ghost" inline onPress={() => onScorecard(state.row.grade)}>
               Scorecard
             </Button>
           )}
@@ -232,6 +218,7 @@ export function useDraftGrade(
     }).catch(() => undefined);
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
   }, [plane, id]);
-  if (data === undefined) return undefined;
+  // Anything that is no grade is no grade: the page, and Accept on it, stands without one.
+  if (typeof data !== "object" || data === null || !("only_evals" in data)) return undefined;
   return step === undefined ? data : { ...data, running: step };
 }

@@ -20,6 +20,28 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("ways on beside the answers", () => {
+  it("stand between the summary and the answers, and the main action is not described by them", () => {
+    render(
+      <ReviewPage
+        label="The draft of deploy"
+        summary="Accept writes its 1 file."
+        onCancel={() => {}}
+        cancel={false}
+        main={{ children: "Accept" }}
+        actions={<button type="button">Grade again…</button>}
+      >
+        <p>What it writes.</p>
+      </ReviewPage>,
+    );
+    const grade = screen.getByRole("button", { name: "Grade again…" });
+    const accept = screen.getByRole("button", { name: "Accept" });
+    expect(grade.compareDocumentPosition(accept) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(accept).toHaveAccessibleDescription("Accept writes its 1 file.");
+    expect(grade.closest('[data-part="summary"]')).toBeNull();
+  });
+});
+
 function Plan({ main, alternative }: { main: DialogAction; alternative?: DialogAction }) {
   const [limit, setLimit] = useState("3.00");
   return (

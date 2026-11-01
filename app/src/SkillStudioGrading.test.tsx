@@ -43,6 +43,7 @@ const OPS_DEPLOY = skill("deploy", {
 /** The scorecard of grade `01G` of the copy at `level`. */
 function card(level: SkillLevel): GradeScorecard {
   return {
+    draft: false,
     grade: "01G",
     skill: "deploy",
     level,
@@ -100,6 +101,7 @@ function core(root: StudioSkill[], ops: StudioSkill[], level: SkillLevel) {
               asked: 0,
               ended: null,
               said: null,
+              draft: null,
             },
           };
         case "skill_grade_after_edit":

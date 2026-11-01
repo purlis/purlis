@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GradeRow, SkillDraftGrade, SkillGradeStep } from "./bindings";
 import { DraftGradeActions, DraftGradeLine, draftGradeState } from "./SkillDraftGrade";
 
@@ -56,6 +56,8 @@ function drawn(grade: SkillDraftGrade, isNew = false) {
   return go;
 }
 
+afterEach(cleanup);
+
 describe("a draft's grade beside Accept", () => {
   it("says it is not graded, and offers the grade against the current version", () => {
     const go = drawn(NOTHING);
@@ -71,7 +73,7 @@ describe("a draft's grade beside Accept", () => {
 
   it("says how far a running grade is, and shows it", () => {
     const go = drawn({ ...NOTHING, running: STEP });
-    screen.getByText("Grading: 21 of 54 chats");
+    screen.getByRole("progressbar", { name: "Grading: 21 of 54 chats" });
     screen.getByRole("button", { name: "Show it" }).click();
     expect(go.onShow).toHaveBeenCalledWith("g2");
     expect(screen.queryByRole("button", { name: /Grade/ })).toBeNull();
@@ -83,9 +85,9 @@ describe("a draft's grade beside Accept", () => {
     ["no different", 75, "No difference"],
   ])("draws a draft that is %s against the current version", (_, draft, difference) => {
     const go = drawn(graded({ arms: { with: draft, without: 33, previous: 75 } }));
-    screen.getByText(`${draft}%`);
-    screen.getByText("75%");
-    screen.getByText("33%");
+    expect(screen.getByTestId("skill-draft-figures").textContent).toContain(
+      `Draft ${draft}%Current 75%No skill 33%`,
+    );
     screen.getByText(difference);
     screen.getByRole("button", { name: "Scorecard" }).click();
     expect(go.onScorecard).toHaveBeenCalledWith("g1");

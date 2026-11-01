@@ -59,13 +59,10 @@ function points(delta: number): string {
  *  no skill. */
 export function differenceSaid(card: GradeScorecard): string {
   if (card.delta === null) return ".";
-  if (card.draft) {
-    const without =
-      card.delta_without === null ? "" : `, and ${points(card.delta_without)} against no skill`;
+  if (card.draft)
     return card.delta_without === null
       ? `, the draft made a difference of ${points(card.delta)} points.`
-      : `, the draft made a difference of ${points(card.delta)} points against the current version${without}.`;
-  }
+      : `, the draft made a difference of ${points(card.delta)} points against the current version, and ${points(card.delta_without)} against no skill.`;
   if (card.against === null)
     return `, the skill made a difference of ${points(card.delta)} points.`;
   const without =
