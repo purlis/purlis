@@ -519,6 +519,7 @@ export function forgetExtensionThemes() {
   adopted.clear();
   surveyAgain = false;
   following = false;
+  landed = undefined;
   unfollowSystem?.();
   unfollowSystem = undefined;
   unfollowContrast?.();
@@ -646,8 +647,11 @@ function handedFor(pick: string | null): { theme: Theme; mine: readonly string[]
   // once Settings changed them, the core is asked (#2925).
   if (personLook() !== lookHanded) return undefined;
   const has = (table: object, key: string) => Object.prototype.hasOwnProperty.call(table, key);
+  // Handed before its parts were measured, the person's own theme is the core's to answer until
+  // it has answered once (#4337).
   if (pick === null) {
-    const theirs = where === null ? undefined : theirThemeOnce();
+    if (where === null) return undefined;
+    const theirs = atCreation().theme.parts_later ? theirsWithPartsLanded() : theirThemeOnce();
     return theirs === undefined ? undefined : { theme: theirs, mine: theirMine() };
   }
   // Purlis Classic's pick may name an appearance the core reads with it, and Purlis's dark is
@@ -655,6 +659,20 @@ function handedFor(pick: string | null): { theme: Theme; mine: readonly string[]
   if (pick === CLASSIC || moreContrastAsked()) return undefined;
   const id = has(THEME_ALIASES, pick) ? THEME_ALIASES[pick] : pick;
   return has(BUILT_IN, id) ? { theme: BUILT_IN[id], mine: builtInMine(id) } : undefined;
+}
+
+/** What the core answered for the person's own theme handed with no parts (#4337). */
+let landed: Theme | undefined;
+
+/** `handed`, the person's own theme, with the parts of `theme`: what it says once they land. */
+const withPartsOf = (handed: Theme, theme: Theme): Theme => ({ ...handed, parts: theme.parts });
+
+/** The person's own theme with its parts, once the core has answered with it for what is handed
+ *  now: more contrast may since have asked for another of its appearances. */
+function theirsWithPartsLanded(): Theme | undefined {
+  const handed = theirThemeOnce();
+  if (landed === undefined || handed === undefined) return undefined;
+  return sameTheme(landed, withPartsOf(handed, landed)) ? landed : undefined;
 }
 
 /** The person's look the window was handed its themes in: what {@link handedFor} draws. */
@@ -758,7 +776,11 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
     // The person's own theme file, drawn (no level chose): its way out is Use built-in.
     const mine = theirThemeOnce();
     const path = atCreation().theme.path;
-    const theirs = mine !== undefined && sameTheme(theme, mine) && path ? path : undefined;
+    // What was handed may hold no parts yet (#4337), which says nothing of whose theme this is.
+    const partsLater = atCreation().theme.parts_later;
+    const handedMine = mine !== undefined && partsLater ? withPartsOf(mine, theme) : mine;
+    const isMine = handedMine !== undefined && sameTheme(theme, handedMine);
+    const theirs = isMine && path ? path : undefined;
     sayTheFloors(typeof given.floors === "string" ? given.floors : null, { theirs });
     draw(theme);
   }
