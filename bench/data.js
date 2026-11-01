@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793496968436,
+  "lastUpdate": 1793503040161,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34566,6 +34566,48 @@ window.BENCHMARK_DATA = {
             "value": 102.26242500000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.982, 102.035, 102.262, 103.038, 103.258 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c8ae62d1125e09c6fbbe3a1ea572759c6197f8e9",
+          "message": "Runners: a cluster pool retains, renews and cleans its claims (#4389)\n\n* Runners: retention, maximum age, stuck and orphaned claims (#3981, #3982, #3739)\n\nA kept Claim suspended for being idle is noticed, then deleted with its volume, under a new policy. A suspended kept runner takes its pool's image, and a fresh one's upstream claim goes, so a runner past maxAge renews the next time it is idle, never under a chat. A runner long not ready says Stuck, and what deleted Claims left is removed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X5G9C64ZAV1MYNDAPE4WK\nPurlis-Persona: steward\n\n* Runners: format the manifests test\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X5G9C64ZAV1MYNDAPE4WK\nPurlis-Persona: steward\n\n* Runners: the retention test's notice is a true condition\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X5G9C64ZAV1MYNDAPE4WK\nPurlis-Persona: steward\n\n* Runners: review fixes for retention, age and the sweep\n\nStopped time never counts toward retention. A notice's time holds against a Pool changed later. A retained Claim is deleted only as it was read. Only the operator writes a Claim's status. A stop brings a kept runner to its pool's image. The sweep removes only what two looks find, and never a kept volume. Stuck is not said of a runner just started.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X5G9C64ZAV1MYNDAPE4WK\nPurlis-Persona: steward\n\n* Runners: the retention test's notice names its time\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X5G9C64ZAV1MYNDAPE4WK\nPurlis-Persona: steward\n\n* Runners: the sweep says what it looks at\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X5G9C64ZAV1MYNDAPE4WK\nPurlis-Persona: steward\n\n* Runners: a failed kind run shows what the sweep said\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X5G9C64ZAV1MYNDAPE4WK\nPurlis-Persona: steward\n\n* Runners: the sweep checks its watch at each look\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X5G9C64ZAV1MYNDAPE4WK\nPurlis-Persona: steward\n\n* Runners: a stop's end starts Stuck's clock over, and a failed image renewal hides no status\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X5G9C64ZAV1MYNDAPE4WK\nPurlis-Persona: steward\n\n* Runners: collapse the stop's image renewal, and test Stuck's clock after a stop\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X5G9C64ZAV1MYNDAPE4WK\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T02:52:33Z",
+          "tree_id": "faabcd230a4ca757d55d57f7ee82a3d4771478d0",
+          "url": "https://github.com/purlis/purlis/commit/c8ae62d1125e09c6fbbe3a1ea572759c6197f8e9"
+        },
+        "date": 1793503033536,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6855435,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.671, 0.685, 0.686, 0.695, 0.699 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5814905,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.438, 16.514, 16.581, 16.678, 16.806 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8456675,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.572, 101.758, 101.846, 101.898, 102.952 ms"
           }
         ]
       }
