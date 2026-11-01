@@ -455,3 +455,26 @@ fn the_persons_own_skill_md_larger_than_purlis_reads_is_listed_unread() {
          checked here. A chat still loads it."
     );
 }
+
+#[test]
+fn a_move_is_a_repo_skills_inside_a_folder_a_harness_reads_or_above_one_and_nowhere_else() {
+    for moved in [
+        ".claude/skills/deploy/SKILL.md",
+        ".claude/skills/deploy",
+        ".claude/skills",
+        // A rename of a folder above says only that folder's name.
+        ".claude",
+        // Everything moved: the branch's own folder.
+        "",
+    ] {
+        assert!(moves_a_repo_skill(Path::new(moved)), "{moved}");
+    }
+    for moved in [
+        "src/main.rs",
+        ".claude/settings.json",
+        ".claude/skillset/x",
+        "docs/.claude/skills/deploy/SKILL.md",
+    ] {
+        assert!(!moves_a_repo_skill(Path::new(moved)), "{moved}");
+    }
+}

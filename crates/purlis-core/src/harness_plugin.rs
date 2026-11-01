@@ -983,7 +983,7 @@ pub fn switch_in_the_studio(
 }
 
 mod outside;
-pub use outside::{harness_skills, repo_skills};
+pub use outside::{harness_skills, moves_a_repo_skill, repo_skills};
 
 pub mod old;
 

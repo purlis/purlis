@@ -14,6 +14,11 @@ multi-ecosystem-groups:
   tauri:
     target-branch: main
     schedule: { interval: weekly }
+  # The Playwright the stories draw in comes as a pair too: the npm packages, and the image of that
+  # version, which `tools/story-image.mjs` holds to the lockfile. One PR moves the two (#2956).
+  # `vitest` and its browser packages come along, as a single bump of one of them fails (#3016).
+  playwright:
+    schedule: { interval: weekly }
 
 updates:
   - package-ecosystem: cargo
@@ -56,6 +61,11 @@ updates:
     ignore:
       # Moved only by the `tauri` multi-ecosystem group, together with its crate half.
       - dependency-name: "@tauri-apps/*"
+      # Moved only by the `playwright` multi-ecosystem group, together with the stories' image.
+      - dependency-name: playwright
+      - dependency-name: "@playwright/*"
+      - dependency-name: vitest
+      - dependency-name: "@vitest/*"
       # typescript-eslint 8 declares typescript <7 as its peer range; move both together.
       - dependency-name: typescript
         update-types: ["version-update:semver-major"]
@@ -93,6 +103,19 @@ updates:
     directory: /app
     multi-ecosystem-group: tauri
     patterns: ["@tauri-apps/*"]
+
+  # The Playwright pair, one PR across both ecosystems (see the note at the top). A third block for
+  # `/app` needs a spelling of its own, as `target-branch` only tells two apart. The image's
+  # file is `tools/story-image.mjs`'s pin, which nothing builds; its digest also moves here when
+  # the same tag is pushed again.
+  - package-ecosystem: npm
+    directory: /app/.
+    multi-ecosystem-group: playwright
+    patterns: ["playwright", "@playwright/*", "vitest", "@vitest/*"]
+  - package-ecosystem: docker
+    directory: /app/.storybook/playwright-image
+    multi-ecosystem-group: playwright
+    patterns: ["*"]
 
   # The Rust toolchain `rust-toolchain.toml` pins (#888, ruling V84b). Every CI job installs
   # that version through `.github/actions/rust-toolchain`, so this one PR moves CI and local

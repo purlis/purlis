@@ -647,6 +647,7 @@ impl purlis_host::Channel for HookChannel {
         // not where the chat has started again under this number since.
         if self.tokens.program_ended(number, pid) {
             crate::forge::apptoken::chat_ended(&self.root, number);
+            self.relaying.chat_went(number);
         }
     }
 
@@ -655,6 +656,7 @@ impl purlis_host::Channel for HookChannel {
         crate::hostedchats::forget(&self.root, number);
         // And where its window closed it before it ended.
         crate::forge::apptoken::chat_ended(&self.root, number);
+        self.relaying.chat_went(number);
         // What it spooled is recorded and its keys dropped, off the host's runtime: a drain
         // makes each line durable (V99i, #2003).
         let (socket, root, log) = (self.socket.clone(), self.root.clone(), self.log.clone());

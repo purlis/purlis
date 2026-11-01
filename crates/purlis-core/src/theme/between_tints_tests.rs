@@ -7,12 +7,14 @@
 
 use serde_json::{Value, json};
 
-use super::super::parts::{COARSE_DEGREES, NEAR_A_FLOOR};
+use super::super::parts::{self, COARSE_DEGREES, NEAR_A_FLOOR};
 use super::super::vocabulary::TINTABLE;
 use super::super::{
     ResolvedTheme, Theme, built_ins, check, check_every, load, tint, warnings_said,
 };
-use super::{Finding, PAIRS, Pair, floors, ratio};
+use super::{
+    CARD_STEP, Finding, NEAR_A_STEP, NEAR_IN_OKLAB, PAIRS, Pair, card_step, floors, ratio, standing,
+};
 
 /// The count's digits on the amber wash, over the title bar.
 fn count() -> &'static Pair {
@@ -194,8 +196,314 @@ fn no_built_in_falls_between_its_named_tints() {
         let between: Vec<Finding> = check(theme)
             .findings
             .into_iter()
-            .filter(|one| matches!(one, Finding::ContrastBetweenTints { .. }))
+            .filter(|one| {
+                matches!(
+                    one,
+                    Finding::ContrastBetweenTints { .. }
+                        | Finding::SelectedBetweenTints { .. }
+                        | Finding::CardBetweenTints { .. }
+                        | Finding::NoticeWayBetweenTints { .. }
+                )
+            })
             .collect();
         assert!(between.is_empty(), "{} {between:?}", theme.id);
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// What must stand apart and is not a pair (#4406)
+// ---------------------------------------------------------------------------------------
+
+/// `tokens` and `parts` on Purlis Classic's dark, tinted by `recipe`.
+fn with_parts(tokens: &Value, parts: &Value, recipe: &[&str]) -> ResolvedTheme {
+    let loaded = load(&json!({
+        "name": "Between", "extends": "purlis-classic",
+        "appearances": [{ "id": "dark", "tokens": tokens }],
+        "parts": parts,
+        "tint": { "tokens": recipe },
+    }));
+    assert!(!loaded.refused, "{:?}", loaded.complaints);
+    loaded
+        .theme
+        .appearances
+        .into_iter()
+        .find(|one| one.id == "dark")
+        .unwrap()
+}
+
+/// In the widest gap between two named hues, teal's and blue's, and as far as a hue gets from a
+/// coarse reading.
+const FAR_FROM_A_NAME: f64 = 225.0;
+
+/// `token` as a recipe that turns it draws it at [`FAR_FROM_A_NAME`], given `written`.
+fn drawn_far_from_a_name(token: &str, written: &str, recipe: &[&str]) -> String {
+    let theme = with_parts(&json!({ token: written }), &json!({}), recipe);
+    tint::tinted_at(&theme, FAR_FROM_A_NAME)
+        .value(token)
+        .to_owned()
+}
+
+const ROW: &str = "#2a2a2a";
+
+/// The selected row in [`ROW`], turned by the recipe, with `surface.hover` written as given.
+fn selected_beside(hover: &str) -> ResolvedTheme {
+    with_parts(
+        &json!({ "list.selected": ROW, "surface.hover": hover }),
+        &json!({}),
+        &["list.selected"],
+    )
+}
+
+/// What the check says of the row and the pointer's: (found as written or named, degree between).
+fn selected_said(theme: &ResolvedTheme) -> (bool, Option<u16>) {
+    let findings = check(theme).findings;
+    let named = findings.iter().any(
+        |one| matches!(one, Finding::SelectedNotApart { other, .. } if *other == "surface.hover"),
+    );
+    let between = findings.iter().find_map(|one| match one {
+        Finding::SelectedBetweenTints { degree, other } if *other == "surface.hover" => {
+            Some(*degree)
+        }
+        _ => None,
+    });
+    (named, between)
+}
+
+#[test]
+fn a_selected_row_can_meet_the_pointer_s_only_between_the_named_tints() {
+    let hover = drawn_far_from_a_name("list.selected", ROW, &["list.selected"]);
+    let theme = selected_beside(&hover);
+    let (named, between) = selected_said(&theme);
+    assert!(!named, "{hover}");
+    let degree = between.unwrap_or_else(|| panic!("not said, at {hover}"));
+    assert!(
+        f64::from(degree).max(FAR_FROM_A_NAME) - f64::from(degree).min(FAR_FROM_A_NAME) <= 5.0,
+        "{degree}"
+    );
+
+    let loaded = load(&json!({
+        "name": "Between", "extends": "purlis-classic",
+        "appearances": [{ "id": "dark", "tokens": { "list.selected": ROW, "surface.hover": hover } }],
+        "tint": { "tokens": ["list.selected"] },
+    }));
+    let said = warnings_said(&loaded.theme, &check_every(&loaded.theme));
+    assert!(
+        said.iter().any(|line| line.contains(
+            "list.selected is drawn exactly as surface.hover, in a workspace's own colour at"
+        )),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn a_selected_row_equal_as_written_is_said_as_it_was_and_not_again_between_the_tints() {
+    // The control: it falls as written, so a sweep that read nothing cannot pass the case above's
+    // negatives. The tints turn the row away from it, so only the theme as written says it.
+    assert_eq!(selected_said(&selected_beside(ROW)), (true, None));
+}
+
+#[test]
+fn a_selected_row_far_from_the_pointer_s_is_not_said() {
+    assert_eq!(selected_said(&selected_beside("#ff0000")), (false, None));
+}
+
+/// A vivid news card whose ground the recipe turns. It keeps its chroma, so a person sees it move
+/// between the named hues.
+const VIVID: &str = "#c04040";
+
+/// A theme whose news card draws its own mix of the button's fill and the words, both `fill`, so
+/// the way is that colour exactly, on the [`VIVID`] card the recipe turns.
+fn way_beside(fill: &str) -> ResolvedTheme {
+    with_parts(
+        &json!({ "surface.overlay": VIVID, "control.base": fill, "text.primary": fill }),
+        &json!({}),
+        &["surface.overlay"],
+    )
+}
+
+/// What the check says of a news card's way at rest: (found as written or named, between).
+fn way_said(theme: &ResolvedTheme) -> (bool, Option<(u16, f64)>) {
+    let findings = check(theme).findings;
+    let named = findings.iter().any(|one| {
+        matches!(
+            one,
+            Finding::NoticeWayNotApart {
+                variant: "news",
+                pointed: false,
+                ..
+            }
+        )
+    });
+    let between = findings.iter().find_map(|one| match one {
+        Finding::NoticeWayBetweenTints {
+            variant: "news",
+            pointed: false,
+            degree,
+            distance,
+            ..
+        } => Some((*degree, *distance)),
+        _ => None,
+    });
+    (named, between)
+}
+
+#[test]
+fn a_notice_way_can_meet_its_card_only_between_the_named_tints() {
+    let fill = drawn_far_from_a_name("surface.overlay", VIVID, &["surface.overlay"]);
+    let (named, between) = way_said(&way_beside(&fill));
+    assert!(!named, "{fill}");
+    let (degree, distance) = between.unwrap_or_else(|| panic!("not said, at {fill}"));
+    assert!(
+        f64::from(degree).max(FAR_FROM_A_NAME) - f64::from(degree).min(FAR_FROM_A_NAME) <= 5.0,
+        "{degree}"
+    );
+    assert!(distance < parts::SEEN, "{distance}");
+}
+
+#[test]
+fn a_notice_way_on_its_card_as_written_is_said_as_it_was_and_not_again_between_the_tints() {
+    // The control: a way that falls as written.
+    assert_eq!(way_said(&way_beside(VIVID)).1, None);
+    assert!(way_said(&way_beside(VIVID)).0);
+}
+
+#[test]
+fn a_notice_way_far_from_its_card_is_not_said() {
+    assert_eq!(way_said(&way_beside("#10e0e0")), (false, None));
+}
+
+/// A card row in grey `card`, turned by the recipe, on a panel in grey `panel`.
+fn card_on(panel: u8, card: u8) -> ResolvedTheme {
+    let grey = |one: u8| format!("#{one:02x}{one:02x}{one:02x}");
+    with_parts(
+        &json!({ "surface.raised": grey(card), "surface.sunken": grey(panel) }),
+        &json!({ "list.root.card.fill": "surface.raised", "panel.root.fill": "surface.sunken" }),
+        &["surface.raised"],
+    )
+}
+
+fn card_step_at(theme: &ResolvedTheme, drawn: &ResolvedTheme) -> f64 {
+    card_step(drawn, parts::card_on_side(theme).unwrap()).0
+}
+
+/// Each panel's nearest card that clears [`CARD_STEP`] as written.
+fn cards_a_hair_over_the_floor() -> Vec<(u8, u8, ResolvedTheme)> {
+    (0x20..=0x50_u8)
+        .step_by(3)
+        .map(|panel| {
+            let card = (panel..=0xff)
+                .find(|card| {
+                    let theme = card_on(panel, *card);
+                    card_step_at(&theme, &theme) >= CARD_STEP
+                })
+                .unwrap();
+            (panel, card, card_on(panel, card))
+        })
+        .collect()
+}
+
+#[test]
+fn a_card_row_s_step_can_fall_only_between_the_named_tints_and_is_said_when_it_does() {
+    // The tint keeps a shade's luminance, so all that moves the step is the rounding of a turned
+    // shade: a card a hair over the floor. Each panel's nearest such card is read against what the
+    // check says, and at least one of them falls.
+    let mut fell = 0;
+    for (panel, card, theme) in cards_a_hair_over_the_floor() {
+        let named = theme
+            .tint
+            .hues
+            .iter()
+            .map(|one| card_step_at(&theme, &tint::tinted(&theme, one.name)))
+            .fold(f64::INFINITY, f64::min);
+        let lowest = (0..360)
+            .map(|degree| card_step_at(&theme, &tint::tinted_at(&theme, f64::from(degree))))
+            .fold(f64::INFINITY, f64::min);
+        let said = check(&theme)
+            .findings
+            .into_iter()
+            .find_map(|one| match one {
+                Finding::CardBetweenTints { ratio, .. } => Some(ratio),
+                _ => None,
+            });
+        let falls_between = named >= CARD_STEP && lowest < CARD_STEP;
+        assert_eq!(
+            said,
+            falls_between.then_some(lowest),
+            "panel {panel:x} card {card:x}: named {named}, lowest {lowest}"
+        );
+        fell += usize::from(falls_between);
+    }
+    assert!(fell > 0, "no card row fell between the named tints");
+}
+
+#[test]
+fn a_card_row_on_its_panel_as_written_is_said_as_it_was_and_not_again_between_the_tints() {
+    // The control: a step that falls as written.
+    let found = check(&card_on(0x30, 0x30)).findings;
+    assert!(
+        found
+            .iter()
+            .any(|one| matches!(one, Finding::CardNotApart { tint: None, .. })),
+        "{found:?}"
+    );
+    assert!(
+        !found
+            .iter()
+            .any(|one| matches!(one, Finding::CardBetweenTints { .. })),
+        "{found:?}"
+    );
+}
+
+#[test]
+fn what_stands_apart_has_a_coarse_reading_within_its_margin_of_the_lowest_at_any_degree() {
+    // What lets the sweep leave one at its coarse reading: the widest recipe, and each kind with a
+    // reading on its floor at the hue farthest from a coarse one.
+    let selected = selected_beside(&drawn_far_from_a_name(
+        "list.selected",
+        ROW,
+        &["list.selected"],
+    ));
+    let way = way_beside(&drawn_far_from_a_name(
+        "surface.overlay",
+        VIVID,
+        &["surface.overlay"],
+    ));
+    let near_floors = cards_a_hair_over_the_floor()
+        .into_iter()
+        .map(|(_, _, theme)| theme)
+        .chain([selected, way]);
+    let (mut steps, mut oklab): (f64, f64) = (0.0, 0.0);
+    let mut card_moved = false;
+    for theme in widest().into_iter().chain(near_floors) {
+        let card = parts::card_on_side(&theme);
+        let ways = parts::notice_ways(&theme);
+        let reads: Vec<_> = (0..360)
+            .map(|degree| standing(&tint::tinted_at(&theme, f64::from(degree)), card, ways))
+            .collect();
+        for at in 0..reads[0].len() {
+            let lowest = |step: usize| {
+                reads
+                    .iter()
+                    .step_by(step)
+                    .map(|one| one[at].value)
+                    .fold(f64::INFINITY, f64::min)
+            };
+            let gap = lowest(COARSE_DEGREES) - lowest(1);
+            if format!("{:?}", reads[0][at].what).starts_with("Card") {
+                steps = steps.max(gap);
+                let highest = reads
+                    .iter()
+                    .map(|one| one[at].value)
+                    .fold(f64::NEG_INFINITY, f64::max);
+                card_moved |= highest > lowest(1);
+            } else {
+                oklab = oklab.max(gap);
+            }
+        }
+    }
+    // A step is read to two places, so its coarse reading can find its lowest exactly. What keeps
+    // this from passing on nothing is that a card's step does move with the hue.
+    assert!(card_moved && oklab > 0.0, "{card_moved} {oklab}");
+    assert!(steps < NEAR_A_STEP, "{steps}");
+    assert!(oklab < NEAR_IN_OKLAB, "{oklab}");
 }

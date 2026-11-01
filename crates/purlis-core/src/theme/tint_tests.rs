@@ -355,6 +355,9 @@ fn tints_found(report: &Report) -> Vec<Option<&'static str>> {
             | Finding::ScrimTooThin { tint, .. } => *tint,
             // Said of the theme as written, never of a tint.
             Finding::ContrastBetweenTints { .. }
+            | Finding::SelectedBetweenTints { .. }
+            | Finding::CardBetweenTints { .. }
+            | Finding::NoticeWayBetweenTints { .. }
             | Finding::SelectionTextAlone
             | Finding::LineDoesNotFit { .. }
             | Finding::StyleWithoutAFace { .. }

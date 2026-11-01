@@ -3,8 +3,9 @@
 # The operator's `patch` on upstream's sandboxes, narrowed by the cluster (#2058): RBAC cannot
 # name a field or an owner, so this policy refuses any change the operator's service account
 # makes to a Sandbox but its spec.operatingMode, and any change at all to a Sandbox no
-# SandboxClaim controls. Its spec.podTemplate may change only on a Sandbox already Suspended in a
-# runner namespace (#3982, ruled 2026-11-01): a kept runner next starts on its pool's image. The operator may not change policies or their bindings, so it cannot
+# SandboxClaim controls. Its containers' images and plain resources may change only on a Sandbox
+# already Suspended in a runner namespace (#3982, ruled 2026-11-01): a kept runner next starts on
+# its pool's image. The operator may not change policies or their bindings, so it cannot
 # lift this. Kept when the release is uninstalled, as the policy on Claims is.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
@@ -27,6 +28,32 @@ spec:
       expression: >-
         request.userInfo.username ==
         'system:serviceaccount:{{ .Release.Namespace }}:purlis-cluster-operator'
+  variables:
+    # A suspended runner's renewal: each container's image and plain resources may differ, and
+    # nothing else of the pod (operator/tests/the_install_manifests.rs holds the lists).
+    - name: renewed
+      expression: >-
+        has(object.spec.podTemplate.metadata) == has(oldObject.spec.podTemplate.metadata) &&
+        (!has(object.spec.podTemplate.metadata) || object.spec.podTemplate.metadata == oldObject.spec.podTemplate.metadata) &&
+        {{- range concat (splitList " " (include "purlis-cluster-operator.pod-fields" .)) (list "automountServiceAccountToken" "enableServiceLinks" "securityContext" "serviceAccount" "serviceAccountName" "volumes") }}
+        has(object.spec.podTemplate.spec.{{ . }}) == has(oldObject.spec.podTemplate.spec.{{ . }}) &&
+        (!has(object.spec.podTemplate.spec.{{ . }}) || object.spec.podTemplate.spec.{{ . }} == oldObject.spec.podTemplate.spec.{{ . }}) &&
+        {{- end }}
+        {{- $root := . }}
+        {{- range list "containers" "initContainers" }}
+        has(object.spec.podTemplate.spec.{{ . }}) == has(oldObject.spec.podTemplate.spec.{{ . }}) &&
+        (!has(object.spec.podTemplate.spec.{{ . }}) ||
+        (size(object.spec.podTemplate.spec.{{ . }}) == size(oldObject.spec.podTemplate.spec.{{ . }}) &&
+        object.spec.podTemplate.spec.{{ . }}.all(c, oldObject.spec.podTemplate.spec.{{ . }}.exists(o, o.name == c.name &&
+        {{- range concat (splitList " " (include "purlis-cluster-operator.container-fields" $root)) (list "args" "env" "securityContext" "terminationMessagePath" "terminationMessagePolicy" "volumeMounts") }}
+        has(c.{{ . }}) == has(o.{{ . }}) && (!has(c.{{ . }}) || c.{{ . }} == o.{{ . }}) &&
+        {{- end }}
+        (!has(c.resources) || (!has(c.resources.claims) &&
+        (!has(c.resources.requests) || c.resources.requests.all(k, k in ['cpu', 'memory', 'ephemeral-storage'])) &&
+        (!has(c.resources.limits) || c.resources.limits.all(k, k in ['cpu', 'memory', 'ephemeral-storage']))))))))
+        &&
+        {{- end }}
+        true
   validations:
     - expression: >-
         has(oldObject.metadata.ownerReferences) &&
@@ -40,7 +67,7 @@ spec:
         has(object.spec.podTemplate) == has(oldObject.spec.podTemplate) &&
         (!has(object.spec.podTemplate) || object.spec.podTemplate == oldObject.spec.podTemplate ||
         (request.namespace.startsWith('purlis-runners-') && has(oldObject.spec.operatingMode) &&
-        oldObject.spec.operatingMode == 'Suspended')) &&
+        oldObject.spec.operatingMode == 'Suspended' && variables.renewed)) &&
         has(object.spec.service) == has(oldObject.spec.service) &&
         (!has(object.spec.service) || object.spec.service == oldObject.spec.service) &&
         has(object.spec.shutdownPolicy) == has(oldObject.spec.shutdownPolicy) &&
@@ -51,7 +78,7 @@ spec:
         (!has(object.spec.volumeClaimTemplates) || object.spec.volumeClaimTemplates == oldObject.spec.volumeClaimTemplates)
       message: >-
         purlis's cluster operator changes only a Sandbox's spec.operatingMode, and its
-        spec.podTemplate only while it is Suspended in a runner namespace.
+        spec.podTemplate's images and resources only while it is Suspended in a runner namespace.
       reason: Forbidden
     - expression: >-
         has(object.metadata.labels) == has(oldObject.metadata.labels) &&

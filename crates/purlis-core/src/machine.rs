@@ -2100,7 +2100,11 @@ const LOCK: &str = "machine.json.lock";
 /// including on a process that was killed, so there is no holder that outlives a couple of
 /// syscalls and nothing here can wedge on a stale lock.
 ///
-/// [`Lock::named`] takes the same kind of lock on another file beside the store, for another
+/// **Its file is in the session host's folder** ([`charterd`]), which no chat's sandbox opens, so
+/// what holds it and what waits on it are purlis's own. A lock left beside the store by an older
+/// purlis is a file nothing takes.
+///
+/// [`Lock::named`] takes the same kind of lock on another file there, for another
 /// read-modify-write of a file in this directory (`windowprefs`' layout, NO-2).
 pub(crate) struct Lock(Option<std::fs::File>);
 
@@ -2109,16 +2113,22 @@ impl Lock {
         Self::named(config_root, LOCK)
     }
 
-    /// Takes the lock whose file is `name`, beside the store.
+    /// Takes the lock whose file is `name`, in the session host's folder.
     pub(crate) fn named(config_root: &Path, name: &str) -> Self {
         // A platform charter keeps no store on gets no directory made for one either.
         if supported().is_err() {
             return Self(None);
         }
-        let Ok(dir) = private_dir(config_root) else {
+        let Ok(dir) = locks_dir(config_root) else {
             return Self(None);
         };
         Self::at(&dir.join(name))
+    }
+
+    /// Whether the lock is held: false where it could not be had.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    pub(crate) fn held(&self) -> bool {
+        self.0.is_some()
     }
 
     /// Takes the lock whose file is `path`, in a directory the caller has made: for a
@@ -2183,6 +2193,14 @@ pub fn write(config_root: &Path, store: &Store) -> io::Result<()> {
 /// the extension record, the window's layout — goes through here.
 pub(crate) fn write_beside(config_root: &Path, target: &Path, bytes: &[u8]) -> io::Result<()> {
     crate::rewrite::replace(config_root, target, bytes, crate::rewrite::Mode::Private)
+}
+
+/// The folder locks are kept in ([`Lock`]), made private as the store's is.
+pub(crate) fn locks_dir(config_root: &Path) -> io::Result<PathBuf> {
+    private_dir(config_root)?;
+    let folder = charterd(config_root);
+    crate::profiletrust::private_dir(&folder)?;
+    Ok(folder)
 }
 
 /// charter's directory under `config_root`, private to the operator.

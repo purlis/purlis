@@ -1545,6 +1545,8 @@ export const commands = {
 	clusterPoolKey: __WINDOW_ONLY_RESULT,
 	addClusterPool: __WINDOW_ONLY_RESULT,
 	setClusterPoolOwned: __WINDOW_ONLY_RESULT,
+	poolsMintingWithoutAsking: __WINDOW_ONLY_RESULT,
+	putAwayPoolMintingNotice: __WINDOW_ONLY_RESULT,
 	poolProfiles: __WINDOW_ONLY_RESULT,
 	poolProfileAdd: __WINDOW_ONLY_RESULT,
 	poolLimitOffer: __WINDOW_ONLY,
@@ -2214,6 +2216,8 @@ export const ENGINE_DOWNLOAD = "engine-download" as const;
 export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 
 export const PERSONA_SCOPE_KEY = "persona/" as const;
+
+export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
 
 export const ROUTER_GRADE = "router-grade" as const;
 
