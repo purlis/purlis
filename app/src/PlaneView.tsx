@@ -7659,7 +7659,7 @@ export const PlaneView = memo(function PlaneView({
     [cloning],
   );
   const failedHere = useMemo(
-    () => failedNotNamed(absentHere ?? [], cloneNames ?? [], cloning),
+    () => failedNotNamed(absentHere, cloneNames, cloning),
     [absentHere, cloneNames, cloning],
   );
   useEffect(() => {

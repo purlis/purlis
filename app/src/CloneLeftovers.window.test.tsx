@@ -125,6 +125,11 @@ function core(
         made.push(String(a.name));
         return [`✓ Workspace '${String(a.name)}' ready (LOCAL) → workspaces/${String(a.name)}/`];
       }
+      if (cmd === "drop_repo_membership") {
+        const { missing } = of(a.workspace);
+        missing.splice(missing.indexOf(String(a.repo)), 1);
+        return [`Removed '${String(a.repo)}' from workspace '${String(a.workspace)}'.`];
+      }
       if (cmd === "cancel_clone_repo") {
         held.get(String(a.repo))?.stop();
         return null;
@@ -321,6 +326,26 @@ describe("a new workspace's repo whose clone failed", () => {
   });
 });
 
+describe("a named repo whose clone failed", () => {
+  it("leaves no row once it is removed from the workspace", async () => {
+    core({ named: { alpha: ["charter"] }, fails: { charter: { said: "no", times: 1 } } });
+    render(<App />);
+    await focus("alpha");
+    const row = await screen.findByTestId("absent-charter");
+    await userEvent.click(await within(row).findByRole("button", { name: "Clone charter" }));
+    await within(row).findByRole("alert");
+
+    await userEvent.click(
+      await within(row).findByRole("button", { name: "Remove charter from workspace…" }),
+    );
+    const asking = await screen.findByRole("alertdialog");
+    await userEvent.click(within(asking).getByRole("button", { name: "Remove from workspace" }));
+
+    await waitFor(() => expect(screen.queryByTestId("absent-charter")).toBeNull());
+    expect(await screen.findAllByText("No repos in this workspace")).not.toEqual([]);
+  });
+});
+
 describe("a new workspace's repo the person stopped", () => {
   it("leaves no row, and the chip keeps its Retry", async () => {
     const { clones } = core({ holds: ["api"] });
@@ -403,6 +428,7 @@ describe("a failed clone's notice, once the repo lands", () => {
 
     await findResult("Cloned charter into alpha.");
     await waitFor(() => expect(says("Could not clone charter, web")).toBe(false));
+    expect(says(`Could not clone web into alpha — ${noAccess("web")}`)).toBe(true);
     await userEvent.click(
       await within(await absentList()).findByRole("button", { name: "Retry web" }),
     );
@@ -420,7 +446,10 @@ describe("a failed clone's notice, once the repo lands", () => {
     await userEvent.click(await within(row).findByRole("button", { name: "Retry api" }));
 
     expect(await screen.findByTestId("clone-api")).toBeInTheDocument();
-    await waitFor(() => expect(says("Could not clone api")).toBe(false));
+    // The card still has the workspace's ready line: it is read, not just found gone.
+    await theCardIsBack("gamma");
+    const card = await screen.findByRole("region", { name: "Notices for gamma" });
+    await waitFor(() => expect(card).not.toHaveTextContent("Could not clone api"));
   });
 
   it("names on the chip's card, and retries, only the repo still not cloned", async () => {

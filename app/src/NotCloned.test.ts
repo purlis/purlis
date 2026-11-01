@@ -39,6 +39,11 @@ describe("the repos drawn as not cloned here", () => {
     expect(notClonedRows([], ["coming"], cloning({ state: "failed", said: "no" }))).toEqual([]);
   });
 
+  it("wait for the panels before drawing a failed clone, which may be named or landed", () => {
+    expect(notClonedRows(undefined, [], cloning({ state: "failed", said: "no" }))).toEqual([]);
+    expect(notClonedRows(undefined, [], cloning({ state: "waiting" }))).toEqual(["coming"]);
+  });
+
   it("leave out a clone the person stopped", () => {
     expect(notClonedRows([], [], cloning({ state: "stopped" }))).toEqual([]);
   });

@@ -28,24 +28,28 @@ const NOTHING_CLONING: Cloning = new Map();
  * workspace's repos would otherwise have no row, and its Repos view would say it has none, for
  * as long as their clones run.
  *
- * One that failed keeps its row, with the failure and a Retry, for the same reason (#4395). One the
- * person stopped does not: stopping it was their answer, and nothing of it is left to show.
+ * One that failed keeps its row, with the failure and a Retry, for the same reason (#4395), once
+ * the panels have said what the workspace names. One the person stopped does not: stopping it was
+ * their answer, and nothing of it is left to show.
  */
 export function notClonedRows(
-  absent: readonly string[],
+  absent: readonly string[] | undefined,
   here: readonly string[],
   cloning: Cloning = NOTHING_CLONING,
 ): readonly string[] {
+  const named = absent ?? [];
   const coming = [...cloning]
     .filter(
       ([repo, state]) =>
         // Cloned stays until the panels read it among the clones: no gap between the two.
-        (underWay(state) || state.state === "cloned" || state.state === "failed") &&
-        !absent.includes(repo) &&
+        (underWay(state) ||
+          state.state === "cloned" ||
+          (state.state === "failed" && absent !== undefined)) &&
+        !named.includes(repo) &&
         !here.includes(repo),
     )
     .map(([repo]) => repo);
-  return coming.length === 0 ? absent : [...absent, ...coming];
+  return coming.length === 0 ? named : [...named, ...coming];
 }
 
 /**
@@ -54,10 +58,11 @@ export function notClonedRows(
  * what clears it is Dismiss rather than Remove….
  */
 export function failedNotNamed(
-  absent: readonly string[],
-  here: readonly string[],
+  absent: readonly string[] | undefined,
+  here: readonly string[] | undefined,
   cloning: Cloning,
 ): readonly string[] {
+  if (absent === undefined || here === undefined) return [];
   return [...cloning]
     .filter(
       ([repo, state]) => state.state === "failed" && !absent.includes(repo) && !here.includes(repo),

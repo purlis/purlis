@@ -114,6 +114,7 @@ const REPOS: Record<string, Served & { files: number }> = {
   "stopped-on-its-row": { way: "slowly", seconds: SLOWLY, files: 200 },
   "stopped-on-its-card": { way: "slowly", seconds: SLOWLY, files: 200 },
   "gone-silent": { way: "silently", files: 3 },
+  "silent-in-a-new-workspace": { way: "silently", files: 3 },
 };
 
 /** A project's GitLab listing of the forge's repos, in the shape the core's recording has. */
@@ -663,7 +664,7 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
   it("a new workspace's clone that fails keeps its row, with Retry and Dismiss and no Remove", async () => {
     writeFileSync(THE_RUNS_CLONE_STALL, SHORT_STALL);
     try {
-      const repo = "gone-silent";
+      const repo = "silent-in-a-new-workspace";
       await aNewWorkspaceCloning("silent-new", [repo]);
       await $(`${rowOf(repo)} .trouble`).waitForExist({
         timeout: 120_000,

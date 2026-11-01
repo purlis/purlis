@@ -1441,7 +1441,7 @@ function ReposSection({
 }) {
   const { panels, pieces, piecesRefused } = state;
   const clones = panels?.repos ?? [];
-  const absent = notClonedRows(panels?.absent ?? [], clones, cloning);
+  const absent = notClonedRows(panels?.absent, clones, cloning);
   const open = (repo: string) => !folded.has(foldKey(workspace, repo));
   return (
     <Section
