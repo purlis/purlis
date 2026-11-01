@@ -4350,6 +4350,8 @@ pub fn run() {
                 // Each line of a dispatch as the app records it: an open Activity tab adds
                 // it without reading the records again (#1495). To the window holding the
                 // project only: a line carries what a chat said.
+                // A task's question closed or off its route, in the Inbox (#4556, #4557).
+                .telling_question_updates(std::sync::Arc::new(dispatched::keep_update))
                 // A task gone quiet, on its tab (#1981).
                 .telling_task_quiet({
                     let window = app.handle().clone();

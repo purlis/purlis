@@ -715,7 +715,7 @@ fn a_dispatch_is_pre_allowed_by_each_spelling_it_has_and_by_no_wildcard_over_the
             assert!(
                 [
                     "report", "wait", "list", "read", "cancel", "tell", "note", "ask", "answer",
-                    "close",
+                    "pass-on", "close",
                 ]
                 .contains(&first),
                 "{first}"

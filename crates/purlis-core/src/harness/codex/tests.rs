@@ -200,7 +200,7 @@ fn a_codex_chat_runs_each_dispatch_tool_without_codex_s_own_prompt() {
             .map(|tool| (tool.to_owned(), "approve".to_owned()))
             .collect();
     assert_eq!(modes(&server), wanted);
-    assert_eq!(wanted.len(), 11);
+    assert_eq!(wanted.len(), 12);
     // Each by name, never the server as a whole: a tool added later still asks.
     assert!(server.get("default_tools_approval_mode").is_none());
 
@@ -245,7 +245,7 @@ fn an_operator_s_own_approval_on_purlis_s_server_is_kept() {
     assert_eq!(kept["dispatch_cancel"], "writes");
     assert_eq!(kept["todo_add"], "prompt");
     assert_eq!(kept["dispatch_tell"], "approve", "another server's rule");
-    assert_eq!(kept.len(), 12, "{kept:?}");
+    assert_eq!(kept.len(), 13, "{kept:?}");
 
     // A default for the whole server is the operator's word for every tool of it.
     std::fs::write(

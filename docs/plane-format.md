@@ -7103,8 +7103,8 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   `spool/`.
 
 ### `app/spool/messages/records.json`
-- **Tier:** Machine, device-bound; beside the queues in `app/spool/messages/<n>/` and under their
-  denial, so a chat reads none of it.
+- **Tier:** Machine, device-bound — beside the queues in `app/spool/messages/<n>/` and under
+  their denial, so a chat reads none of it.
 - **Format:** JSON, `{"v": 2, "records": {...}, "instructions": {...}, "recorded": {...},
   "questions": {...}, "asked": <n>}`, written whole with mode 0600 by
   `purlis_core::dispatchtalk::Talk`. Keyed by each chat's id, which a restart keeps: what became

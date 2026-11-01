@@ -1884,20 +1884,28 @@ fn question_closed(held: &Held, closed: dispatchtalk::ClosedUnanswered) {
 
 /// Keeps one Update about task `task`. A key kept already is left as it is, so it is said once.
 fn noted(held: &Held, key: String, kind: purlis_core::inboxupdates::Kind, task: u32, says: String) {
-    use purlis_core::inboxupdates::{Store, Update};
-    let now = now_secs(SystemTime::now());
-    let update = Update {
+    held.tell_question_update(purlis_core::inboxupdates::Update {
         key,
         kind,
-        at: now,
+        at: now_secs(SystemTime::now()),
         session: Some(task),
         chain: held.chats().shown_name(task).into_iter().collect(),
         says,
         read: false,
         dismissed: false,
-    };
-    if let Some(store) = Store::here()
-        && let Err(why) = store.note(held.root(), vec![update], now)
+    });
+}
+
+/// Told each Update a task's question makes (#4556, #4557), with its project's root: the app
+/// keeps it ([`keep_update`]).
+pub type UpdateTeller =
+    Arc<dyn Fn(&std::path::Path, purlis_core::inboxupdates::Update) + Send + Sync>;
+
+/// Keeps `update` for the project at `root`, in this machine's Inbox.
+pub fn keep_update(root: &std::path::Path, update: purlis_core::inboxupdates::Update) {
+    let now = update.at;
+    if let Some(store) = purlis_core::inboxupdates::Store::here()
+        && let Err(why) = store.note(root, vec![update], now)
     {
         tracing::warn!("purlis: a question's Update was not kept ({why})");
     }
