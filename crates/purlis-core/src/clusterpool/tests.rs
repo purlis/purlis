@@ -1419,4 +1419,18 @@ fn a_start_waits_only_for_a_runner_suspended_for_being_idle() {
         !suspended_for_being_idle(&claim(json!([ready("Starting")]))),
         "a restart"
     );
+
+/// **The runs of one check share one time**: past it, a run is ended at once, whatever each is
+/// given.
+#[cfg(unix)]
+#[test]
+fn a_check_of_several_runs_answers_within_one_time() {
+    let kubectl = Kubectl::at("/bin/sleep")
+        .within(std::time::Duration::from_secs(10))
+        .all_within(std::time::Duration::from_millis(200));
+    let started = std::time::Instant::now();
+    for _ in 0..3 {
+        assert!(kubectl.run(&["30".to_owned()], None, 1024).is_err());
+    }
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
 }

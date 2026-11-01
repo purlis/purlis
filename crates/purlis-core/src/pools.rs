@@ -1297,6 +1297,10 @@ pub fn add_repos_to_claim(
 /// How long each kubectl run of the check before a value is sent waits (#4071).
 pub const VOUCHED_NOW_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// How long all the runs of one such check wait together: a login waited for is checked up to
+/// three times, and is answered within [`crate::hookwire::relay::A_WAITED_LOGIN_IS_ANSWERED_WITHIN`].
+pub const ALL_VOUCHED_NOW_WITHIN: std::time::Duration = std::time::Duration::from_secs(18);
+
 /// **This machine's `kubectl`, by its absolute path** (#3292,
 /// [`crate::clusterpool::Kubectl::on_this_machine`]): where its installers put it, else an
 /// absolute folder of the process's `PATH`; its caches kept in a folder of purlis's under
@@ -1318,7 +1322,8 @@ pub fn kubectl_here(config_root: &Path) -> Result<crate::clusterpool::Kubectl, S
 pub fn vouched_now(config_root: &Path, name: &str) -> Result<String, crate::clusterpool::Refused> {
     let kubectl = kubectl_here(config_root)
         .map_err(crate::clusterpool::Refused::Other)?
-        .within(VOUCHED_NOW_WITHIN);
+        .within(VOUCHED_NOW_WITHIN)
+        .all_within(ALL_VOUCHED_NOW_WITHIN);
     vouched_now_with(config_root, &kubectl, name, runners::now())
 }
 
