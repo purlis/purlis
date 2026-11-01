@@ -799,7 +799,10 @@ operator's own namespace and any other an admin has. A template's pod must use t
 account with no token mounted, hold only the volumes `purlis-link` and `purlis-kept` as folders of
 its own, and keep the confinement [above](#what-it-makes) on each container, which reads a variable
 from no Secret; of the pinned upstream's other pod and container fields it may set none. A claim
-adds nothing to its pod, and a kept volume is a new one written to by one node. It does not hold
+adds nothing to its pod, and a kept volume is a new one written to by one node. Of a claim's labels
+and annotations the operator adds only its own mark, and changes nothing else there. A claim on a
+purlis pool's warm pool carries no `agents.x-k8s.io/created-by` label, whoever writes it, so a claim
+that holds one is refused its next write until the label is removed. It does not hold
 which image a template names or which storage class a claim's volume is in: the Pool says those. An
 admin editing a policy in place, with its binding left alone, does not move its time in force.
 

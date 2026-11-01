@@ -805,18 +805,25 @@ spec:
         (!has(c.volumeMounts) || c.volumeMounts.all(m, m.name in ['purlis-link', 'purlis-kept']))))
       message: purlis's cluster operator's template confines each container as purlis's runner is.
       reason: Forbidden
-    # A claim's own labels and annotations: the operator writes its mark of the Claim, and leaves
-    # what upstream has written as it is.
+    # A claim's own labels and annotations: the operator adds its mark of the Claim once, and
+    # leaves everything else as it is, neither adding, changing nor removing any of it.
     - expression: >-
         request.resource.resource != 'sandboxclaims' ||
+        (request.operation == 'UPDATE' ?
         ((!has(object.metadata.labels) || object.metadata.labels.all(k,
-        request.operation == 'UPDATE' && has(oldObject.metadata.labels) &&
-        k in oldObject.metadata.labels && oldObject.metadata.labels[k] == object.metadata.labels[k])) &&
+        has(oldObject.metadata.labels) && k in oldObject.metadata.labels &&
+        oldObject.metadata.labels[k] == object.metadata.labels[k])) &&
+        (!has(oldObject.metadata.labels) || oldObject.metadata.labels.all(k,
+        has(object.metadata.labels) && k in object.metadata.labels)) &&
         (!has(object.metadata.annotations) || object.metadata.annotations.all(k,
-        k == 'runners.purlis.dev/claim-uid' ||
-        (request.operation == 'UPDATE' && has(oldObject.metadata.annotations) &&
-        k in oldObject.metadata.annotations &&
-        oldObject.metadata.annotations[k] == object.metadata.annotations[k]))))
+        has(oldObject.metadata.annotations) && k in oldObject.metadata.annotations ?
+        oldObject.metadata.annotations[k] == object.metadata.annotations[k] :
+        k == 'runners.purlis.dev/claim-uid')) &&
+        (!has(oldObject.metadata.annotations) || oldObject.metadata.annotations.all(k,
+        has(object.metadata.annotations) && k in object.metadata.annotations))) :
+        (!has(object.metadata.labels) &&
+        (!has(object.metadata.annotations) || object.metadata.annotations.all(k,
+        k == 'runners.purlis.dev/claim-uid'))))
       message: purlis's cluster operator writes only its own mark on a claim.
       reason: Forbidden
 ---

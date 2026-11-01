@@ -2127,6 +2127,21 @@ async fn an_adopted_claim_holds_its_shape(client: &Client, name: &str) {
             serde_json::json!({ "metadata": { "annotations": { "agents.x-k8s.io/sandbox-name": "another" } } }),
             marks,
         ),
+        (
+            "the upstream annotation removed",
+            serde_json::json!({ "metadata": { "annotations": { "agents.x-k8s.io/sandbox-name": null } } }),
+            marks,
+        ),
+        (
+            "its mark changed",
+            serde_json::json!({ "metadata": { "annotations": { "runners.purlis.dev/claim-uid": "another" } } }),
+            marks,
+        ),
+        (
+            "its mark removed",
+            serde_json::json!({ "metadata": { "annotations": { "runners.purlis.dev/claim-uid": null } } }),
+            marks,
+        ),
     ] {
         let refused = operators.patch(name, &dry, &Patch::Merge(&change)).await;
         assert!(refused_saying(&refused, words), "{what}: {refused:?}");
@@ -2158,6 +2173,49 @@ async fn an_adopted_claim_holds_its_shape(client: &Client, name: &str) {
         )
         .await
         .expect("its own mark, as it is");
+}
+
+/// A write of the operator's that changes nothing passes on the kept claim `kept`, its volume
+/// judged too, and is refused on `other` once another writer has put it out of shape: the
+/// claim is judged whole, not by what the write changed. `other` is ended by the caller.
+async fn a_held_claim_is_judged_whole_on_each_write(client: &Client, kept: &str, other: &str) {
+    use kube::api::{ApiResource, DynamicObject};
+    use purlis_cluster_operator::upstream::SandboxClaim;
+    const MARK: &str = "runners.purlis.dev/claim-uid";
+    let resource = ApiResource::erase::<SandboxClaim>(&());
+    let admins = Api::<DynamicObject>::namespaced_with(client.clone(), &runners(), &resource);
+    let as_operator = acting_as(SERVICE_ACCOUNT).await;
+    let operators = Api::<DynamicObject>::namespaced_with(as_operator, &runners(), &resource);
+    let dry = PatchParams {
+        dry_run: true,
+        ..PatchParams::default()
+    };
+    let unchanged = |held: &DynamicObject| {
+        let marks = held.metadata.annotations.as_ref().expect("its marks");
+        serde_json::json!({ "metadata": { "annotations": { MARK: marks[MARK] } } })
+    };
+    let held = admins.get(kept).await.expect("the kept upstream claim");
+    operators
+        .patch(kept, &dry, &Patch::Merge(unchanged(&held)))
+        .await
+        .expect("a kept claim as it is");
+    let held = admins
+        .patch(
+            other,
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({
+                "spec": { "additionalPodMetadata": { "annotations": { "e2e": "x" } } }
+            })),
+        )
+        .await
+        .expect("another writer puts it out of shape");
+    let refused = operators
+        .patch(other, &dry, &Patch::Merge(unchanged(&held)))
+        .await;
+    assert!(
+        refused_saying(&refused, "nothing added to the pod"),
+        "{refused:?}"
+    );
 }
 
 /// A client acting as `user`, through the admin's right to impersonate.
@@ -3142,6 +3200,8 @@ async fn a_fresh_claim_takes_a_warm_runner_and_a_kept_one_starts_cold_saying_its
         )
         .await;
     assert!(refused.is_err(), "{refused:?}");
+
+    a_held_claim_is_judged_whole_on_each_write(&client, "ada-kept", "ada-first").await;
 
     for name in ["ada-first", "ada-fresh", "ada-kept", "ada-later"] {
         let _ = claims.delete(name, &DeleteParams::foreground()).await;

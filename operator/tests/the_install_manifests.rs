@@ -862,28 +862,48 @@ fn what_the_operator_writes_of_upstreams_is_held_to_a_runners_shape() {
     // A claim is judged whole on every write: nothing lets an update through for leaving its spec
     // as it was, and of additionalPodMetadata only the empty form upstream writes passes.
     let claim_rule: String = validations[1].split_whitespace().collect();
-    assert!(!claim_rule.contains("oldObject"), "{claim_rule}");
-    assert!(
-        claim_rule.contains(
-            "(!has(object.spec.additionalPodMetadata)||\
-             (!has(object.spec.additionalPodMetadata.labels)&&\
-             !has(object.spec.additionalPodMetadata.annotations)))"
-        ),
-        "{claim_rule}"
+    assert_eq!(
+        claim_rule,
+        "request.resource.resource!='sandboxclaims'||\
+         (object.spec.warmPoolRef.name.startsWith('purlis-pool-')&&\
+         !has(object.spec.env)&&\
+         (!has(object.spec.additionalPodMetadata)||\
+         (!has(object.spec.additionalPodMetadata.labels)&&\
+         !has(object.spec.additionalPodMetadata.annotations)))&&\
+         !has(object.spec.lifecycle)&&\
+         (!has(object.spec.volumeClaimTemplates)||\
+         (size(object.spec.volumeClaimTemplates)==1&&\
+         object.spec.volumeClaimTemplates[0].metadata.name=='purlis-kept'&&\
+         object.spec.volumeClaimTemplates[0].spec.accessModes==['ReadWriteOnce']&&\
+         !has(object.spec.volumeClaimTemplates[0].spec.volumeName)&&\
+         !has(object.spec.volumeClaimTemplates[0].spec.dataSource)&&\
+         !has(object.spec.volumeClaimTemplates[0].spec.dataSourceRef)&&\
+         !has(object.spec.volumeClaimTemplates[0].spec.selector)&&\
+         !has(object.spec.volumeClaimTemplates[0].metadata.labels)&&\
+         !has(object.spec.volumeClaimTemplates[0].metadata.annotations)&&\
+         !has(object.spec.volumeClaimTemplates[0].spec.volumeAttributesClassName)&&\
+         !has(object.spec.volumeClaimTemplates[0].spec.volumeMode))))"
     );
-    // Its own mark on a claim, and what is already there unchanged.
+    // Its own mark on a claim, added once; all else there neither added, changed nor removed.
     let marks: String = validations[7].split_whitespace().collect();
     assert_eq!(
         marks,
         "request.resource.resource!='sandboxclaims'||\
+         (request.operation=='UPDATE'?\
          ((!has(object.metadata.labels)||object.metadata.labels.all(k,\
-         request.operation=='UPDATE'&&has(oldObject.metadata.labels)&&\
-         kinoldObject.metadata.labels&&oldObject.metadata.labels[k]==object.metadata.labels[k]))&&\
+         has(oldObject.metadata.labels)&&kinoldObject.metadata.labels&&\
+         oldObject.metadata.labels[k]==object.metadata.labels[k]))&&\
+         (!has(oldObject.metadata.labels)||oldObject.metadata.labels.all(k,\
+         has(object.metadata.labels)&&kinobject.metadata.labels))&&\
          (!has(object.metadata.annotations)||object.metadata.annotations.all(k,\
-         k=='runners.purlis.dev/claim-uid'||\
-         (request.operation=='UPDATE'&&has(oldObject.metadata.annotations)&&\
-         kinoldObject.metadata.annotations&&\
-         oldObject.metadata.annotations[k]==object.metadata.annotations[k]))))"
+         has(oldObject.metadata.annotations)&&kinoldObject.metadata.annotations?\
+         oldObject.metadata.annotations[k]==object.metadata.annotations[k]:\
+         k=='runners.purlis.dev/claim-uid'))&&\
+         (!has(oldObject.metadata.annotations)||oldObject.metadata.annotations.all(k,\
+         has(object.metadata.annotations)&&kinobject.metadata.annotations))):\
+         (!has(object.metadata.labels)&&\
+         (!has(object.metadata.annotations)||object.metadata.annotations.all(k,\
+         k=='runners.purlis.dev/claim-uid'))))"
     );
     // The fixed label, from any writer, on a purlis pool's claim.
     let claims_policy = policy_named(&documents, purlis_cluster_operator::POLICY);
