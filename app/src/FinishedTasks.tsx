@@ -377,7 +377,7 @@ function FinishedRow({
       )}
       {/* The last Reopen started a chat that ended at once: the core's sentence, kept on the
           row until the next try. */}
-      {task.not_reopened !== null && (
+      {task.reopens && task.not_reopened !== null && (
         <p className="finished-note ui-text-secondary">{task.not_reopened}</p>
       )}
       {shown && (

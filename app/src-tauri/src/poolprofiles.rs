@@ -1426,12 +1426,10 @@ pub fn sign_out_line(pool: &str, name: &str) -> Result<String, String> {
     let runner = this_desktops_runner(&config, pool)?;
     let line = crate::runnerlinks::docker()?.sign_out_line(&runner.made, &engine, name)?;
     // A sign-in open on it would say signed in over this sign-out, so it ends first.
-    for one in let_go(|one| one.pool == pool && one.name == name) {
-        stop(
-            &one,
-            "the sign-in was stopped, as a sign-out of this profile started.",
-        );
-    }
+    stop_those(
+        |one| one.pool == pool && one.name == name,
+        "the sign-in was stopped, as a sign-out of this profile started.",
+    );
     // The running runner too: a follow while the line waits makes it one that drains.
     purlis_core::runners::hold_every_runner_from_carrying(&config, pool, name)
         .map_err(|why| why.to_string())?;
@@ -1842,9 +1840,7 @@ fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
         // Not the start's words: by now something of it may have reached the runner.
         let why =
             format!("the sign-in was stopped, as pool {pool} or its runner changed. Try again.");
-        for one in let_go(|one| one.flow == flow) {
-            stop(&one, &why);
-        }
+        stop_those(|one| one.flow == flow, &why);
         return Err(why);
     }
     Ok(driving)
@@ -1853,21 +1849,40 @@ fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
 /// **Cancels every sign-in running on pool `pool`** (#3819): its mark was taken back.
 pub fn cancel_sign_ins_on(pool: &str) {
     let why = format!("the sign-in was stopped, as pool {pool} is no longer marked yours.");
-    for one in let_go(|one| one.pool == pool) {
-        stop(&one, &why);
+    stop_those(|one| one.pool == pool, &why);
+}
+
+/// **Lets go of and ends the sign-ins `which` picks**, why kept under the same hold, so an ask
+/// finds it held or finds why.
+fn stop_those(which: impl Fn(&SignIn) -> bool, why: &str) {
+    let gone: Vec<SignIn> = {
+        let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
+        let (gone, kept) = std::mem::take(&mut *held).into_iter().partition(which);
+        *held = kept;
+        for one in &gone {
+            keep_why(one.flow, why);
+        }
+        gone
+    };
+    for one in gone {
+        one.driving.stop(why);
     }
 }
 
 /// **Ends `one`, let go of already, because it had to stop**: its strip reads why, however its
 /// next ask falls (#4367).
 fn stop(one: &SignIn, why: &str) {
+    keep_why(one.flow, why);
+    one.driving.stop(why);
+}
+
+/// Sign-in `flow` stopped, for `why`.
+fn keep_why(flow: u32, why: &str) {
     let mut stopped = STOPPED.lock().unwrap_or_else(PoisonError::into_inner);
     if stopped.len() >= MOST_STOPPED_KEPT {
         stopped.remove(0);
     }
-    stopped.push((one.flow, why.to_owned()));
-    drop(stopped);
-    one.driving.stop(why);
+    stopped.push((flow, why.to_owned()));
 }
 
 /// Why sign-in `flow`, no longer held, is over: its stop's reason, where one stopped it.

@@ -2358,7 +2358,10 @@ fn a_task_that_ended_with_a_gone_runner_names_it_and_refuses_reopen() {
     purlis_core::dispatchrecord::ended_in(held.root(), &ended.id, "a-conversation").unwrap();
     assert_eq!(
         ended.report.as_ref().map(|report| report.text.as_str()),
-        Some(purlis_core::handback::ENDED_WITH_ITS_RUNNER),
+        Some(
+            "ended without a report because its pool's runner is gone, and its conversation went \
+             with it"
+        ),
         "{ended:?}"
     );
     let row = crate::finished::listed(&held)

@@ -960,7 +960,7 @@ fn a_gone_runner_tells_only_the_chats_lost_on_it_and_only_once() {
             lock(&told).push(id);
         }));
     }
-    for (id, on) in [(1, "builds/old"), (2, "builds/new")] {
+    for (id, on) in [(1, "old"), (2, "new")] {
         lock(&chats.lost).insert(
             id,
             LostChat {
@@ -970,10 +970,19 @@ fn a_gone_runner_tells_only_the_chats_lost_on_it_and_only_once() {
         );
     }
 
-    pool.runner_went(&|on| on == Some("builds/old"));
-    pool.runner_went(&|on| on == Some("builds/old"));
+    pool.runner_went(&|on| on == Some("old"));
+    pool.runner_went(&|on| on == Some("old"));
 
-    assert_eq!(*lock(&told), vec![1]);
+    let told_now = |many: usize| {
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while lock(&told).len() < many && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        // A second telling would have had its chance by now.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        lock(&told).clone()
+    };
+    assert_eq!(told_now(1), vec![1]);
     assert!(chats.lost_with_its_runner(1));
     assert!(!chats.lost_with_its_runner(2));
 

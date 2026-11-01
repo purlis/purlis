@@ -1416,6 +1416,18 @@ fn an_unallowed_tool_absent_from_the_image_refuses_in_a_sentence() {
         "{resolved:?}"
     );
     assert_eq!(started(None), None, "not on a runner");
+
+    // Another chat of the persona shares the folder: its shim stays.
+    let purlis = outside_temp("unallowed-purlis");
+    let bin = resolved.folder.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::write(bin.join("kubectl"), "another chat's shim").unwrap();
+    resolved.write(&purlis).expect("written");
+    assert!(bin.join("gh").exists(), "it says the sentence");
+    assert!(
+        bin.join("kubectl").exists(),
+        "another chat's Allow is not its to sweep"
+    );
     let _ = std::fs::remove_dir_all(root);
     let _ = std::fs::remove_dir_all(system);
 }

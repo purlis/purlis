@@ -255,7 +255,8 @@ pub const FOR_THE_PERSON: &str = "the person";
 pub const UNREPORTED: &str = "ended without a report";
 
 /// [`UNREPORTED`], for a task whose program ended with a pool's runner gone for good (#4420): the
-/// chat that asked reads why, and that nothing can bring its conversation back.
+/// chat that asked reads why, and that nothing can bring its conversation back. **Records keep
+/// these words and Reopen reads them** (`docs/plane-format.md`), so they do not change.
 pub const ENDED_WITH_ITS_RUNNER: &str =
     "ended without a report because its pool's runner is gone, and its conversation went with it";
 

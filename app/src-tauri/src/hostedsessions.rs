@@ -429,7 +429,7 @@ pub type Dial = Arc<
 struct LostChat {
     /// That host was a runner gone for good, then or since (#4350, #4421).
     with_the_runner: bool,
-    /// The runner it ended on, as `<pool>/<runner>`, where its host said (1.48, #3417).
+    /// The runner it ended on, as [`HostLink::reached_runner`] names it, where its host said.
     on: Option<String>,
 }
 
@@ -539,12 +539,20 @@ impl Connection {
                 })
                 .collect();
             let tell = lock(&ended).clone();
-            if let Some(tell) = tell {
-                for id in marked {
-                    tell(
-                        id,
-                        purlis_core::session::Exit::Signal(ITS_RUNNER_WENT.to_owned()),
-                    );
+            if let Some(tell) = tell.filter(|_| !marked.is_empty()) {
+                // Off the caller's thread: each tell writes files and types into the asking chat.
+                let told = std::thread::Builder::new()
+                    .name("purlis-runner-went".into())
+                    .spawn(move || {
+                        for id in marked {
+                            tell(
+                                id,
+                                purlis_core::session::Exit::Signal(ITS_RUNNER_WENT.to_owned()),
+                            );
+                        }
+                    });
+                if let Err(why) = told {
+                    tracing::warn!("purlis: chats on a gone runner were not told: {why}");
                 }
             }
         }

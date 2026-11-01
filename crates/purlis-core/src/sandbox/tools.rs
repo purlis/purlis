@@ -53,7 +53,8 @@
 //! (D-PE-ruling-2, [`declared`]). So a committed tool is what lets a vault's value reach a
 //! program on a chat's say, and a teammate can change it: a persona's tools reach no chat on a
 //! machine until the person there allows them, with its hosts, on the same Notice
-//! ([`super::persona::digest_of`]). Until then, and after any change, no shim is written and the
+//! ([`super::persona::digest_of`]). Until then, and after any change, no shim that runs anything is
+//! written (on a runner, a tool whose program is absent has one that only says so, #4373) and the
 //! broker runs nothing. The person's own terminal, and anything run outside a chat's sandbox, is
 //! not held to any of this.
 //!
@@ -1115,6 +1116,9 @@ pub struct Resolved {
     pub absent: Vec<String>,
     /// On a runner, each tool of [`Resolved::absent`] and what its name says in the chat (#4354).
     pub refusing: Vec<(String, String)>,
+    /// Nothing is allowed this chat, and it only says what is absent (#4373): another chat of the
+    /// persona shares the folder, so the shims of its Allow stay.
+    pub only_refuses: bool,
 }
 
 /// **The variable a pool's runner is made with, naming the image it runs** (#4354):
@@ -1284,6 +1288,7 @@ pub(crate) fn for_chat_on(
         .unwrap_or_default();
     if let Some(unallowed) =
         resolve_beside(root, persona, &unallowed, locks, search, writable, temps)
+            .filter(|unallowed| !unallowed.absent.is_empty())
     {
         resolved
             .get_or_insert_with(|| Resolved {
@@ -1293,6 +1298,7 @@ pub(crate) fn for_chat_on(
                 left: Vec::new(),
                 absent: Vec::new(),
                 refusing: Vec::new(),
+                only_refuses: true,
             })
             .absent
             .extend(unallowed.absent);
@@ -1375,6 +1381,7 @@ pub(crate) fn resolve_beside(
         left,
         absent,
         refusing: Vec::new(),
+        only_refuses: false,
     })
 }
 
@@ -1965,17 +1972,19 @@ impl Resolved {
             .create(&bin)
             .map_err(refused(&bin))?;
         // Every shim an earlier start wrote that is not one now.
-        for entry in std::fs::read_dir(&bin).map_err(refused(&bin))? {
-            let entry = entry.map_err(refused(&bin))?;
-            let name = entry.file_name();
-            let current = self
-                .ready
-                .iter()
-                .map(|one| &one.tool.name)
-                .chain(self.refusing.iter().map(|(tool, _)| tool))
-                .any(|tool| std::ffi::OsStr::new(tool) == name);
-            if !current {
-                std::fs::remove_file(entry.path()).map_err(refused(&entry.path()))?;
+        if !self.only_refuses {
+            for entry in std::fs::read_dir(&bin).map_err(refused(&bin))? {
+                let entry = entry.map_err(refused(&bin))?;
+                let name = entry.file_name();
+                let current = self
+                    .ready
+                    .iter()
+                    .map(|one| &one.tool.name)
+                    .chain(self.refusing.iter().map(|(tool, _)| tool))
+                    .any(|tool| std::ffi::OsStr::new(tool) == name);
+                if !current {
+                    std::fs::remove_file(entry.path()).map_err(refused(&entry.path()))?;
+                }
             }
         }
         if self.ready.is_empty() && self.refusing.is_empty() {

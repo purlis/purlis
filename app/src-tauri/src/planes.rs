@@ -4255,8 +4255,13 @@ impl Planes {
                     // **Its runner went, after its program had ended with its host** (#4421):
                     // nothing ended now, so only this is new. No Resume now, and a task that
                     // waited to be resumed reports, whatever stopped it reporting as it ended.
+                    // Only where the window itself marked it: a host's own end says any signal.
                     if matches!(&exit, purlis_core::session::Exit::Signal(said)
                         if said == crate::hostedsessions::ITS_RUNNER_WENT)
+                        && me
+                            .get()
+                            .and_then(std::sync::Weak::upgrade)
+                            .is_some_and(|held| held.chats.sessions().lost_with_its_runner(session))
                     {
                         if let Some(was) = lost.of(session) {
                             let now = crate::hostlost::LostRun {
