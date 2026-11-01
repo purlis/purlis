@@ -815,20 +815,24 @@ fn pushing(
     u8::from(failed > 0)
 }
 
+/// What git is handed to push.
+fn refspec_of(p: &Plan) -> String {
+    format!("refs/heads/{0}:refs/heads/{0}", p.branch)
+}
+
 /// Push one member's branch to its own name on its origin, and nothing else. `false` with
 /// git's own words said when the remote refused it.
 fn pushed(p: &Plan, say: &mut dyn FnMut(Say)) -> bool {
-    let refspec = format!("refs/heads/{0}:refs/heads/{0}", p.branch);
+    let refspec = refspec_of(p);
     let helper = forge::helper_for(&p.on.forge);
     let mut args: Vec<&str> = PUSH_ONLY_THE_BRANCH.to_vec();
     args.extend(["push", p.to.as_str(), refspec.as_str()]);
     // Its Git LFS objects first: a hook would have sent them, and purlis's git runs none (#4399).
-    let tip = format!("refs/heads/{}", p.branch);
     if let Err(why) = crate::lfsupload::before_push(&crate::lfsupload::Push {
         dir: &p.clone,
         helper: Some(&helper),
         args: &args,
-        tip: &tip,
+        tip: &p.head,
         remote: "origin",
     }) {
         say(Say::Fail(

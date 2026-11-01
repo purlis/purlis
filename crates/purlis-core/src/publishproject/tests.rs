@@ -862,3 +862,5 @@ fn a_project_whose_files_each_have_one_name_is_published() {
     let files = in_the_remote(&bare, &["ls-tree", "-r", "--name-only", BRANCH]);
     assert_eq!(files.lines().collect::<Vec<_>>(), ["notes.md", "staged.md"]);
 }
+
+mod real_lfs;

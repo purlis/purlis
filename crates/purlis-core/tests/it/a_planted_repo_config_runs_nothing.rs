@@ -26,8 +26,9 @@
 //! the runner never gives it, and never takes an alias under a verb of its own. They are planted
 //! so that a runner that one day did either is caught.
 //!
-//! **Real LFS keeps working**: a repository set up by `git lfs install --local` is checked out
-//! with its content and reads as clean through the runner.
+//! **Real LFS keeps working**: a repository set up by `git lfs install --local` reads as clean
+//! through the runner, and a file the runner's git checks out is its pointer, as `git lfs pull`
+//! makes it its content (#4400).
 //!
 //! Two layouts, because the runner reads them differently: a clone, whose `.git` is a folder,
 //! and a work tree whose git directory is kept beside it (`--separate-git-dir`), which the
@@ -814,11 +815,12 @@ fn lfs_is_here() -> bool {
     here
 }
 
-/// What the runner holds is the repository's own drivers, not LFS: a repository set up the
-/// standard way (`git lfs install --local`) is checked out with its content, and a file whose
-/// time moved still reads as unchanged, which only the clean filter can tell.
+/// What the runner holds is the repository's own drivers, not LFS: in a repository set up the
+/// standard way (`git lfs install --local`) a file whose time moved still reads as unchanged,
+/// which only the clean filter can tell. The filter never downloads for the runner's git, wired
+/// clone or not (#4400), so a checkout leaves the pointer, even of an object that is here.
 #[test]
-fn a_repository_with_real_lfs_is_checked_out_with_its_content_and_reads_clean() {
+fn a_repository_with_real_lfs_is_checked_out_as_its_pointer_and_reads_clean() {
     purlis_core::unsteered!();
     // A machine without git-lfs checks nothing here, and says so.
     if !lfs_is_here() {
@@ -856,9 +858,9 @@ fn a_repository_with_real_lfs_is_checked_out_with_its_content_and_reads_clean() 
     .expect("git starts");
     assert!(added.ok(), "worktree add: {added:?}");
     assert_eq!(
-        std::fs::read_to_string(piece.join("big.bin")).unwrap(),
-        content,
-        "the checkout holds the pointer, not the content"
+        std::fs::read(piece.join("big.bin")).unwrap(),
+        stored.stdout,
+        "the filter was not left to the pointer"
     );
 
     let past = std::time::SystemTime::now() - std::time::Duration::from_secs(600);

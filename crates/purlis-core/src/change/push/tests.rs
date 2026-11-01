@@ -32,6 +32,8 @@ struct World {
     top: PathBuf,
     /// The host of every forge request the last push sent, in order.
     asked_hosts: std::cell::RefCell<Vec<String>>,
+    /// A loose ref the next plan spoils, once it has read the commit the ref was at.
+    spoiled_by_the_plan: std::cell::RefCell<Option<PathBuf>>,
 }
 
 /// The recorded transport, noting the host of every request sent through it.
@@ -68,6 +70,7 @@ impl World {
             plane,
             top,
             asked_hosts: std::cell::RefCell::default(),
+            spoiled_by_the_plan: std::cell::RefCell::default(),
         }
     }
 
@@ -119,6 +122,10 @@ impl World {
     /// The bare remote a printed `https://<host>/<namespace>/<repo>.git` stands for, as a
     /// `file://` URL: every host's repos share one tree here, by namespace.
     fn route(&self, https: &str) -> String {
+        // The plan asks here, past reading where the branch is.
+        if let Some(loose) = self.spoiled_by_the_plan.borrow_mut().take() {
+            std::fs::write(loose, "garbage\n").unwrap();
+        }
         let (_, path) = https
             .strip_prefix("https://")
             .and_then(|rest| rest.split_once('/'))
@@ -433,11 +440,14 @@ fn every_git_call_is_recorded_and_the_push_is_one_refspec_with_no_force() {
     let widget = world.clone("widget");
     world.clone("gadget");
     world.change(&[("widget", &[]), ("gadget", &["widget"])]);
+    let head = run(&widget, &["rev-parse", BRANCH]);
+    let head = head.trim();
     let before = crate::worktree::git::tally::asked(&widget).len();
     let (code, said, _) = first_push(&world);
     assert_eq!(code, 0, "{said}");
     let asked = crate::worktree::git::tally::asked(&widget)[before..].to_vec();
-    let refspec = format!("refs/heads/{BRANCH}:refs/heads/{BRANCH}");
+    let refspec = format!("{head}:refs/heads/{BRANCH}");
+    let commit = format!("{head}^{{commit}}");
     let to = world.route("https://github.com/acme/widget.git");
     assert_eq!(
         asked,
@@ -448,7 +458,7 @@ fn every_git_call_is_recorded_and_the_push_is_one_refspec_with_no_force() {
                 "rev-parse",
                 "--verify",
                 "--quiet",
-                "refs/heads/change/api-2"
+                "refs/heads/change/api-2^{commit}"
             ],
             vec![
                 "config",
@@ -478,6 +488,7 @@ fn every_git_call_is_recorded_and_the_push_is_one_refspec_with_no_force() {
                 "--quiet",
                 "refs/heads/change/api-2^{commit}"
             ],
+            vec!["rev-parse", "--verify", "--quiet", commit.as_str()],
             vec![
                 "for-each-ref",
                 "--format=^%(objectname)",
@@ -493,7 +504,7 @@ fn every_git_call_is_recorded_and_the_push_is_one_refspec_with_no_force() {
                 "--filter=blob:limit=1025",
                 "--ignore-missing",
                 "--stdin",
-                "refs/heads/change/api-2"
+                head
             ],
             vec![
                 "-c",
@@ -526,11 +537,7 @@ fn every_git_call_is_recorded_and_the_push_is_one_refspec_with_no_force() {
                 "--get-regexp",
                 r"^url\..*\.(push)?insteadof$"
             ],
-            vec![
-                "update-ref",
-                "refs/remotes/origin/change/api-2",
-                "refs/heads/change/api-2"
-            ],
+            vec!["update-ref", "refs/remotes/origin/change/api-2", head],
         ]
         .map(|argv| argv.iter().map(|a| a.to_string()).collect::<Vec<_>>()),
         "{said}"
@@ -888,6 +895,80 @@ fn the_descriptions_line_endings_and_trailing_newline_are_kept_outside_the_block
 }
 
 mod gitlab;
+mod real_lfs;
+
+/// The ref of `BRANCH` in `clone`, as git keeps it until it packs its refs.
+fn loose_ref(clone: &Path) -> PathBuf {
+    clone.join(".git/refs/heads").join(BRANCH)
+}
+
+/// `world`'s `widget`, its branch pushed: its clone, and the commit its remote branch is at.
+fn with_the_branch_on_its_remote(world: &World) -> (PathBuf, String) {
+    let widget = world.clone("widget");
+    world.change(&[("widget", &[])]);
+    let (code, said, _) = lone_member(world);
+    assert_eq!(code, 0, "{said}");
+    let there = world.remote_has("widget", BRANCH).expect("it was pushed");
+    (widget, there)
+}
+
+/// #4515: git takes a ref that holds garbage for a ref that is not there, and a push of that name
+/// for a push of nothing, which deletes the remote branch and exits 0.
+#[test]
+fn a_branch_gone_bad_past_the_plan_fails_the_push_and_leaves_the_remote_branch() {
+    let world = World::new("schema = 1\n");
+    let (widget, there) = with_the_branch_on_its_remote(&world);
+    *world.spoiled_by_the_plan.borrow_mut() = Some(loose_ref(&widget));
+
+    let (code, said, recorded) = world.push(json!([]));
+
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("not pushed"), "{said}");
+    assert_eq!(
+        world.remote_has("widget", BRANCH),
+        Some(there),
+        "the remote branch went: {said}"
+    );
+    assert_eq!(recorded.unspent(), Vec::new(), "{said}");
+}
+
+/// #4515, the last gap: a ref spoiled after purlis last looked, as git starts. What git is handed
+/// is the commit planned, so there is no name left for it to take for nothing.
+#[test]
+fn a_branch_gone_bad_at_the_last_moment_cannot_delete_the_remote_branch() {
+    let world = World::new("schema = 1\n");
+    let (widget, there) = with_the_branch_on_its_remote(&world);
+    let Ok(member) = plan(
+        &world.plane,
+        "alpha",
+        SLUG,
+        "widget",
+        BRANCH,
+        &|https| world.route(https),
+        &mut |_| {},
+    ) else {
+        panic!("a plan");
+    };
+    std::fs::write(loose_ref(&widget), "garbage\n").unwrap();
+
+    let refspec = refspec_of(&member);
+    let sent = git::run_network(&widget, None, &["push", &member.to, &refspec]).unwrap();
+
+    assert_eq!(world.remote_has("widget", BRANCH), Some(there), "{sent:?}");
+}
+
+#[test]
+fn a_branch_that_names_no_commit_is_no_branch_to_push() {
+    let world = World::new("schema = 1\n");
+    let (widget, there) = with_the_branch_on_its_remote(&world);
+    std::fs::write(loose_ref(&widget), format!("{}\n", "1".repeat(40))).unwrap();
+
+    let (code, said, _) = world.push(json!([]));
+
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("no branch"), "{said}");
+    assert_eq!(world.remote_has("widget", BRANCH), Some(there), "{said}");
+}
 
 /// What `destinations` names for `repo` of `world`: its branch at the commit its clone holds.
 fn destination(world: &World, repo: &str) -> Destination {

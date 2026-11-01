@@ -5,16 +5,23 @@
 //! bare repository as the forge and an upload server on a loopback port. Only the address and the
 //! helper a forge would give stand in ([`crate::lfsupload::StandIn`]): a remote on this machine
 //! has neither.
+//!
+//! **And from a wired clone, end to end** (#4516): a clone the git policy wired, whose `origin` is
+//! the forge's own HTTPS address, on a [`ThisMachine`]. Only the LFS address stands in. The helper
+//! is the one the product finds, the fake `gh` first on that machine's `PATH`, which writes down
+//! that it ran.
 
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use crate::lfsupload::testserver::{HELPER, Taking, Uploads, Watching, marker_in};
+use crate::lfsupload::testserver::{
+    HELPER, Taking, ThisMachine, Uploads, Watching, marker_in, named, on_a_machine,
+};
 use crate::lfsupload::{STAND_IN, StandIn};
 use crate::pieces::Who;
 use crate::pieceupdate::{self, Piece, Reach};
 
-use super::{Object, Say, real_git_lfs};
+use super::{Object, Say, assert_wired, real_git_lfs};
 
 fn plain_git(dest: &Path, args: &[&str]) -> String {
     let mut command = std::process::Command::new("git");
@@ -150,12 +157,34 @@ impl Place {
             .success()
     }
 
+    /// The clone as the git policy leaves one: `origin` the forge's HTTPS address, which a
+    /// rewrite in its config lands on the bare repository, and the helper it writes.
+    fn wired(self) -> Self {
+        let url = "https://github.com/acme/widget.git";
+        plain_git(&self.clone, &["remote", "set-url", "origin", url]);
+        let rewrite = format!("url.file://{}.insteadOf", self.forge.display());
+        plain_git(&self.clone, &["config", &rewrite, url]);
+        crate::gitpolicy::apply(&self.clone, &self.plane);
+        assert_wired(&self.clone);
+        self
+    }
+
     /// `purlis worktree push`, with `server` where the forge's LFS address would be.
     fn push(&self, server: &Uploads, stall: Duration) -> (u8, String) {
+        self.push_signed_by(Some(HELPER), server, stall)
+    }
+
+    /// [`Place::push`], the upload given `helper`, or where that is `None` the push's own.
+    fn push_signed_by(
+        &self,
+        helper: Option<&str>,
+        server: &Uploads,
+        stall: Duration,
+    ) -> (u8, String) {
         STAND_IN.with(|held| {
             *held.borrow_mut() = Some(StandIn {
                 endpoint: server.endpoint(),
-                helper: Some(HELPER.to_owned()),
+                helper: helper.map(str::to_owned),
                 stall,
             });
         });
@@ -173,6 +202,71 @@ impl Place {
 }
 
 const NO_STALL: Duration = Duration::from_secs(60);
+
+/// What every end-to-end push proves: the object reached the server, whole, before the ref
+/// moved, the ref moved, and only the forge's CLI was asked.
+fn landed_signed_by_gh(
+    machine: &ThisMachine,
+    server: &Uploads,
+    object: &Object,
+    moved_after: bool,
+    said: &str,
+) {
+    let (bytes, moved) = server.holds(&object.oid).expect("the object arrived");
+    assert!(
+        bytes == object.bytes,
+        "the object's bytes changed on the way"
+    );
+    assert!(!moved, "the ref had moved before the object arrived");
+    assert!(moved_after, "the ref never moved: {said}");
+    machine.only_gh_signed(server, said);
+}
+
+#[test]
+#[ignore = "needs a real git-lfs: the CI job `real git-lfs` runs it"]
+fn real_git_lfs_a_push_from_a_wired_clone_uploads_first_signed_by_the_forges_own_cli() {
+    on_a_machine(
+        &named(
+            module_path!(),
+            "real_git_lfs_a_push_from_a_wired_clone_uploads_first_signed_by_the_forges_own_cli",
+        ),
+        |machine| {
+            let place = place().wired();
+            let object = Object::of(4, 31);
+            place.commit_large("large.bin", &object);
+            let server = Uploads::serving(Taking::Everything, place.watching());
+
+            let (code, said) = place.push_signed_by(None, &server, NO_STALL);
+
+            assert_eq!(code, 0, "{said}");
+            landed_signed_by_gh(machine, &server, &object, place.ref_moved(), &said);
+        },
+    );
+}
+
+#[test]
+#[ignore = "needs a real git-lfs: the CI job `real git-lfs` runs it"]
+fn real_git_lfs_a_refused_upload_from_a_wired_clone_leaves_the_ref_and_the_cli_was_asked() {
+    on_a_machine(
+        &named(
+            module_path!(),
+            "real_git_lfs_a_refused_upload_from_a_wired_clone_leaves_the_ref_and_the_cli_was_asked",
+        ),
+        |machine| {
+            let place = place().wired();
+            let object = Object::of(1, 32);
+            place.commit_large("large.bin", &object);
+            let server = Uploads::serving(Taking::Nothing, None);
+
+            let (code, said) = place.push_signed_by(None, &server, NO_STALL);
+
+            assert_eq!(code, 1, "{said}");
+            assert!(!place.ref_moved(), "{said}");
+            assert!(server.holds(&object.oid).is_none(), "{said}");
+            machine.only_gh_signed(&server, &said);
+        },
+    );
+}
 
 #[test]
 #[ignore = "needs a real git-lfs: the CI job `real git-lfs` runs it"]
@@ -471,10 +565,20 @@ fn saving_place() -> (
 }
 
 fn save(plane: &Path, clone: &Path, server: &Uploads) -> (u8, String) {
+    save_signed_by(Some(HELPER), plane, clone, server)
+}
+
+/// [`save`], the upload given `helper`, or where that is `None` the push's own.
+fn save_signed_by(
+    helper: Option<&str>,
+    plane: &Path,
+    clone: &Path,
+    server: &Uploads,
+) -> (u8, String) {
     STAND_IN.with(|held| {
         *held.borrow_mut() = Some(StandIn {
             endpoint: server.endpoint(),
-            helper: Some(HELPER.to_owned()),
+            helper: helper.map(str::to_owned),
             stall: NO_STALL,
         });
     });
@@ -548,4 +652,48 @@ fn real_git_lfs_a_save_uploads_each_object_before_the_ref_moves_or_stays_committ
     );
     assert!(!moved, "the ref had moved before the object arrived");
     assert!(has_ref(), "{said}");
+}
+
+#[test]
+#[ignore = "needs a real git-lfs: the CI job `real git-lfs` runs it"]
+fn real_git_lfs_a_save_from_a_wired_clone_uploads_first_signed_by_the_forges_own_cli() {
+    on_a_machine(
+        &named(
+            module_path!(),
+            "real_git_lfs_a_save_from_a_wired_clone_uploads_first_signed_by_the_forges_own_cli",
+        ),
+        |machine| {
+            let (_dir, plane, clone, bare) = saving_place();
+            crate::gitpolicy::apply(&clone, &plane);
+            assert_wired(&clone);
+            let reference = "refs/heads/feature/x";
+            let object = Object::of(2, 33);
+            std::fs::write(
+                clone.join(".gitattributes"),
+                "*.bin filter=lfs diff=lfs merge=lfs -text\n",
+            )
+            .unwrap();
+            std::fs::write(clone.join("large.bin"), &object.bytes).unwrap();
+            let server = Uploads::serving(
+                Taking::Everything,
+                Some(Watching {
+                    forge: bare.clone(),
+                    reference: reference.to_owned(),
+                }),
+            );
+
+            let (code, said) = save_signed_by(None, &plane, &clone, &server);
+
+            assert_eq!(code, 0, "{said}");
+            let mut command = std::process::Command::new("git");
+            command
+                .args(["rev-parse", "--verify", "--quiet", reference])
+                .current_dir(&bare);
+            let moved = crate::forklock::output(&mut command)
+                .unwrap()
+                .status
+                .success();
+            landed_signed_by_gh(machine, &server, &object, moved, &said);
+        },
+    );
 }
