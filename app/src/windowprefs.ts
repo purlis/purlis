@@ -52,6 +52,8 @@ export type TheirReading = {
   complaints: Complaint[];
   /** The Notice that names the consent floors it breaks, when it breaks one. */
   floors: string | null;
+  /** Which of the person's colours it left out (#3023). */
+  mine: readonly string[];
   /** Whether it is a format 1 file in force, offered once a move into a theme folder (#2323). */
   format_1: boolean;
   /** What is drawn in its place while the system asks for more contrast (#2328): its
@@ -59,12 +61,13 @@ export type TheirReading = {
   more: TheirDrawn | null;
 };
 
-/** One appearance of the person's theme, as the engine drew it, and its floors' Notice. */
-export type TheirDrawn = { theme: Theme; floors: string | null };
+/** One appearance of the person's theme, as the engine drew it, its floors' Notice, and which of
+ *  the person's colours it left out (#3023). */
+export type TheirDrawn = { theme: Theme; floors: string | null; mine: readonly string[] };
 
 /** One frame of {@link FirstFrame}: for a light system (when the theme follows it) and for more
  *  contrast, or not. */
-export type Frame = { light: boolean; more: boolean; theme: Theme; floors: string | null };
+export type Frame = TheirDrawn & { light: boolean; more: boolean };
 
 /**
  * **What the first frame draws** (#2602): the theme the levels choose for the project and the
@@ -89,6 +92,7 @@ const NO_THEME: TheirReading = {
   theme: null,
   complaints: [],
   floors: null,
+  mine: [],
   format_1: false,
   more: null,
 };
@@ -141,7 +145,18 @@ function theirDrawn(raw: unknown): TheirDrawn | null {
   const from = raw as Record<string, unknown>;
   const theme = aTheme(from.theme);
   if (theme === null) return null;
-  return { theme, floors: typeof from.floors === "string" ? from.floors : null };
+  return {
+    theme,
+    floors: typeof from.floors === "string" ? from.floors : null,
+    mine: lines(from.mine),
+  };
+}
+
+/** `raw` as the sentences the core wrote, or none. */
+function lines(raw: unknown): readonly string[] {
+  return Array.isArray(raw)
+    ? (raw as unknown[]).filter((one): one is string => typeof one === "string")
+    : [];
 }
 
 function theirReading(raw: unknown): TheirReading {
@@ -158,6 +173,7 @@ function theirReading(raw: unknown): TheirReading {
         one !== null && typeof one === "object" && typeof (one as Complaint).said === "string",
     ),
     floors: typeof from.floors === "string" ? from.floors : null,
+    mine: lines(from.mine),
     format_1: from.format_1 === true,
     more: theirDrawn(from.more),
   };
@@ -260,7 +276,8 @@ let first: Frame | undefined;
 /**
  * **The frame the window's first frame draws** (#2602): of what the core handed, the one for the
  * system's appearance (while the theme follows it) and its contrast: the contrast the core read
- * where it read one, else `prefers-contrast`. `undefined` when nothing was handed.
+ * where it read one, else `prefers-contrast`. `undefined` when nothing was handed. Which of the
+ * person's colours it left out is said as it is read, so the Notice is up with the frame (#3023).
  */
 export function firstFrameOnce(): Frame | undefined {
   if (first !== undefined) return first;
@@ -273,6 +290,7 @@ export function firstFrameOnce(): Frame | undefined {
     handed.frames.find((frame) => fits(frame) && frame.more === more) ??
     handed.frames.find(fits) ??
     handed.frames[0];
+  sayYourColours(first.mine);
   return first;
 }
 
@@ -285,6 +303,40 @@ export function firstFollowsSystem(): boolean {
  *  contrast, its appearance tagged high contrast's, when it has one. */
 export function theirFloors(reading: TheirReading = atCreation().theme): string | null {
   return moreContrastAsked() && reading.more !== null ? reading.more.floors : reading.floors;
+}
+
+/** Which of the person's colours their own theme left out as it is drawn now (#3023), as
+ *  {@link theirFloors} says its floors. */
+export function theirMine(reading: TheirReading = atCreation().theme): readonly string[] {
+  return moreContrastAsked() && reading.more !== null ? reading.more.mine : reading.mine;
+}
+
+/** Which of the person's colours the built-in the window was handed for `pick` left out (#3023);
+ *  the core leaves a pick out of the table where it left nothing out. */
+export function builtInMine(pick: string): readonly string[] {
+  const given = (globalThis as Record<string, unknown>)[GLOBAL] as
+    { built_in_mine?: unknown } | undefined;
+  const table = given?.built_in_mine;
+  if (table === null || typeof table !== "object") return [];
+  return Object.prototype.hasOwnProperty.call(table, pick)
+    ? lines((table as Record<string, unknown>)[pick])
+    : [];
+}
+
+/** Says, or takes back, which of the person's colours the theme in force leaves out, and why
+ *  (#2925): each would put a pair under its floor in this theme. */
+export function sayYourColours(mine: readonly string[] | undefined) {
+  sayAboutThisMachine(
+    "your colours",
+    mine !== undefined && mine.length > 0
+      ? {
+          severity: "warn",
+          detail: mine.join("; "),
+          remedy: "pick another colour in Settings, or clear it to draw the theme's",
+          settings: "you.colours",
+        }
+      : undefined,
+  );
 }
 
 /** For tests: read the handed theme again. */
