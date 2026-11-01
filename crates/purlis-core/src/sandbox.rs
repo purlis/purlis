@@ -1804,6 +1804,34 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         deny(Class::Vaults, op, Access::ReadWrite);
         deny(Class::Vaults, home.join(".op"), Access::ReadWrite);
         deny(Class::Vaults, home.join(".vault-token"), Access::ReadWrite);
+        // A runner's forge programs (#4354): what they keep is no chat's, to read or to leave
+        // for a later one. A declared tool's run has a home of its own.
+        if machine.is_a_runner() {
+            let config = machine
+                .env
+                .get("XDG_CONFIG_HOME")
+                .map(PathBuf::from)
+                .filter(|dir| dir.is_absolute())
+                .unwrap_or_else(|| home.join(".config"));
+            for kept in [
+                config.join("gh"),
+                config.join("glab-cli"),
+                home.join(".config/gh"),
+                home.join(".config/glab-cli"),
+                home.join(".local/share/gh"),
+            ]
+            .into_iter()
+            .chain(
+                // Where the runner's own environment moves them.
+                ["GH_CONFIG_DIR", "GLAB_CONFIG_DIR"]
+                    .iter()
+                    .filter_map(|var| machine.env.get(var))
+                    .map(PathBuf::from)
+                    .filter(|dir| dir.is_absolute()),
+            ) {
+                deny(Class::Vaults, kept, Access::ReadWrite);
+            }
+        }
     }
     // The registry that names the vaults: readable, never rewritten.
     deny(Class::Vaults, ctx.shared_registry(), Access::Write);
@@ -4117,6 +4145,24 @@ impl Applied {
         if let Form::ClaudeWrapped(wrap) = &mut *self.form {
             wrap.on_profile(folders);
         }
+        // On a profile of its own, a wrapped Claude Code keeps out of Claude Code's default folder,
+        // whose sign-in a pool's next runner may be given.
+        if let (Form::ClaudeWrapped(wrap), Some(default), Some(config)) =
+            (&mut *self.form, &folders.default_config, &folders.config)
+            && default != config
+        {
+            let denial = Denial {
+                class: Class::HumanPowers,
+                path: default.clone(),
+                access: Access::ReadWrite,
+                named: None,
+                reach: Reach::AndBelow,
+                any_case: false,
+            };
+            wrap.denying(vec![denial.clone()]);
+            self.confines.denied.push(denial.clone());
+            self.denied.push(denial);
+        }
         if !matches!(*self.form, Form::ClaudeCode(_) | Form::ClaudeWrapped(_)) {
             return;
         }
@@ -6426,6 +6472,30 @@ pub(crate) fn applied_of(
         &pinned
     } else {
         compiled
+    };
+    // Every other harness's default sign-in, on every harness: its folder, or its files alone
+    // where this chat works inside that folder.
+    let mut denied_here = compiled.denied.clone();
+    let chat_ground = ground(root, machine.home.as_deref());
+    let denying = |path: PathBuf| Denial {
+        class: Class::HumanPowers,
+        path,
+        access: Access::ReadWrite,
+        named: None,
+        reach: Reach::AndBelow,
+        any_case: machine.os == Os::MacOs,
+    };
+    for (folder, files) in signin::other_harnesses_defaults(harness, machine) {
+        let whole = [denying(folder)];
+        if covering(&whole, &chat_ground).is_none() {
+            denied_here.paths.extend(whole);
+        } else {
+            denied_here.paths.extend(files.into_iter().map(denying));
+        }
+    }
+    let compiled = &Compiled {
+        denied: denied_here,
+        ..compiled.clone()
     };
     let (form, denied) = compile_checked(compile, compiled, root, machine)?;
     let mut held = denied.clone();

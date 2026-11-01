@@ -47,25 +47,26 @@ pub struct PoolSpec {
     /// How long a runner of the pool is idle before it is suspended (#3737): no running chat, no
     /// open stream, no forwarded request and no build (ADR 0089 §9); a runner a live chat owns,
     /// or whose browser holds an Ask, is never idle. A whole number of `s`, `m` or `h`, a minute
-    /// at least. 30m unless the pool says otherwise. Not acted on yet (#3980).
+    /// at least. 30m unless the pool says otherwise. A runner takes a change to it when it next starts.
     #[serde(default = "thirty_minutes")]
     #[schemars(regex(pattern = r"^[1-9][0-9]*[smh]$"), length(max = 12))]
     pub idle_after: String,
-    /// How long a kept Claim stays suspended before it is deleted, with its volume (#3737). A
-    /// whole number of `s`, `m` or `h`. 720h (30 days) unless the pool says otherwise. Not
-    /// acted on yet (#3981).
+    /// How long a kept Claim stays suspended for being idle before it is deleted, with its volume
+    /// (#3737). A whole number of `s`, `m` or `h`. 720h (30 days) unless the pool says otherwise.
+    /// A stopped Claim is never deleted.
     #[serde(default = "thirty_days")]
     #[schemars(regex(pattern = r"^[1-9][0-9]*[smh]$"), length(max = 12))]
     pub delete_suspended_after: String,
     /// How long before that deletion its requester is sent an Update (#3737). A whole number of
     /// `s`, `m` or `h`, shorter than `deleteSuspendedAfter`. 168h (7 days) unless the pool says
-    /// otherwise. Not acted on yet (#3981).
+    /// otherwise.
     #[serde(default = "seven_days")]
     #[schemars(regex(pattern = r"^[1-9][0-9]*[smh]$"), length(max = 12))]
     pub notice_before_delete: String,
     /// A Claim's maximum age (#3737): past it, a kept Claim's runner starts again on the pool's
-    /// current image, and a fresh Claim's is made again. A whole number of `s`, `m` or `h`. 336h
-    /// (14 days) unless the pool says otherwise. Not acted on yet (#3982).
+    /// current image when next it runs, and a fresh Claim's is made again, once nothing runs on it: a
+    /// chat is never ended for it. A whole number of `s`, `m` or `h`. 336h (14 days) unless the pool says
+    /// otherwise.
     #[serde(default = "fourteen_days")]
     #[schemars(regex(pattern = r"^[1-9][0-9]*[smh]$"), length(max = 12))]
     pub max_age: String,

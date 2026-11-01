@@ -365,6 +365,26 @@ pub fn follow_and_drain(
         }
     }
     for kept in purlis_core::runners::draining(&machine.config).unwrap_or_default() {
+        // Its drain began and only its home is left, so nothing is left to ask: only its removal
+        // is tried again (#4298). Its home listed here says this is its engine: with no engine
+        // kept, a Docker reaching another one lists no such volume, and the row stays (#4149).
+        if (kept.carried || kept.carry_failed)
+            && matches!(
+                machine.docker.gone(&kept.made),
+                Ok(Some(purlis_core::dockerpool::Gone { home_kept: true }))
+            )
+        {
+            lock_waiting().remove(&(
+                machine.config.clone(),
+                kept.pool().to_owned(),
+                kept.name().to_owned(),
+            ));
+            said.push(said_of_a_drain(
+                kept.name(),
+                purlis_core::pools::drain(&machine.config, &machine.docker, kept.name(), None),
+            ));
+            continue;
+        }
         // Removed on the word of the engine that made it (#4168), it holds no chat and cannot be
         // asked. A runner kept before its engine was has no such word: it stays as below.
         if kept.engine.is_some()
@@ -443,27 +463,27 @@ pub fn follow_and_drain(
             }
         }
         let unpair = |_: &purlis_core::runners::Kept| crate::runnerlinks::unpair(&to);
-        said.push(
-            match purlis_core::pools::drain(
-                &machine.config,
-                &machine.docker,
-                kept.name(),
-                Some(&unpair),
-            ) {
-                Ok(removed) => match removed.left() {
-                    None => format!(
-                        "draining runner {} had no chat left and is removed",
-                        kept.name()
-                    ),
-                    Some(left) => {
-                        format!("draining runner {} is not all removed: {left}", kept.name())
-                    }
-                },
-                Err(why) => format!("draining runner {} was not removed: {why}", kept.name()),
-            },
-        );
+        said.push(said_of_a_drain(
+            kept.name(),
+            purlis_core::pools::drain(&machine.config, &machine.docker, kept.name(), Some(&unpair)),
+        ));
     }
     said
+}
+
+/// The line a look says of removing the draining runner `name`.
+#[cfg(unix)]
+fn said_of_a_drain(
+    name: &str,
+    removed: Result<purlis_core::runners::Removed, purlis_core::runners::Refused>,
+) -> String {
+    match removed {
+        Ok(removed) => match removed.left() {
+            None => format!("draining runner {name} had no chat left and is removed"),
+            Some(left) => format!("draining runner {name} is not all removed: {left}"),
+        },
+        Err(why) => format!("draining runner {name} was not removed: {why}"),
+    }
 }
 
 #[cfg(all(test, unix))]

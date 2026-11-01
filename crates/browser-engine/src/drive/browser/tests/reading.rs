@@ -171,20 +171,31 @@ fn a_call_that_acts_leaves_no_earlier_read_for_the_next_call() {
 
 #[test]
 fn a_wait_whose_page_was_read_once_answers_what_that_read_showed() {
-    let (browser, _engine) = a_large_page(
-        Duration::from_millis(200),
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(1),
         Duration::from_millis(500),
         Duration::from_secs(30),
     );
+    snapshot(&browser, 1);
+    let one_read = tree_reads(&engine);
+    // The wait's first read comes. Its next takes past the wait's end, however slow the machine.
+    engine.on(move |sent, engine| {
+        if sent.method == "Accessibility.getFullAXTree"
+            && engine.sent("Accessibility.getFullAXTree").len() > 2 * one_read
+        {
+            super::super::lock(&engine.model).ax_takes = Some(Duration::from_secs(5));
+        }
+        None
+    });
 
     let waited = browser
         .call(
-            &id(1),
+            &id(2),
             Call::WaitForText {
                 page: None,
                 text: "Nowhere on the page".into(),
                 gone: false,
-                within: Duration::from_millis(600),
+                within: Duration::from_millis(1500),
             },
         )
         .unwrap();
@@ -301,23 +312,24 @@ fn a_wait_uses_no_read_that_began_before_it() {
 #[test]
 fn a_read_still_under_way_long_after_it_began_is_not_used() {
     // A read under way is used for as long as a call waits for one and a read is kept for after
-    // it: here 600 ms and 400 ms. This one takes 1.6 s.
+    // it: here 1.2 s and 800 ms. This one takes 3 s, over two frames: it ends well after the
+    // second call and well before the third gives up, on a slow machine too.
     let (browser, engine) = a_large_page_kept_for(
+        Duration::from_millis(1500),
+        Duration::from_millis(1200),
         Duration::from_millis(800),
-        Duration::from_millis(600),
-        Duration::from_millis(400),
     );
     assert_eq!(
         browser.call(&id(1), snapshot_call()),
         Err(Refusal::PageReadTooLong)
     );
-    // Still under way, begun 600 ms ago: used.
+    // Still under way, begun 1.2 s ago: used.
     assert_eq!(
         browser.call(&id(2), snapshot_call()),
         Err(Refusal::PageReadTooLong)
     );
 
-    // Still under way, begun 1.2 s ago: past what a read is used for.
+    // Still under way, begun 2.4 s ago: past what a read is used for.
     let next = browser.call(&id(3), snapshot_call());
 
     assert_eq!(next, Err(Refusal::PageReadTooLong));
@@ -337,13 +349,13 @@ fn a_read_left_by_a_call_is_not_joined_by_another_while_it_runs() {
     );
     let text = snapshot(&browser, 1);
     let pay = ref_of(&text, "- button \"Pay now\"");
-    super::super::lock(&engine.model).ax_takes = Some(Duration::from_millis(600));
+    // Long enough that the read is still running when the last call below ends, on a slow machine.
+    super::super::lock(&engine.model).ax_takes = Some(Duration::from_secs(5));
     assert_eq!(
         browser.call(&id(2), snapshot_call()),
         Err(Refusal::PageReadTooLong)
     );
     // The click leaves that read for no later call; the engine still reads it.
-    super::super::lock(&engine.model).ax_takes = None;
     browser.call(&id(3), Call::Click { target: pay }).unwrap();
     let clicked = tree_reads(&engine);
 

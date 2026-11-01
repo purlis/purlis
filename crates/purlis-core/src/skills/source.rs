@@ -13,6 +13,7 @@
 //!   object store, never checked out, within fixed limits.
 //! - [`review`]: the install review, summary first, and Browse.
 //! - [`install`] and [`update`]: the copy, the pin, and each newer commit's review.
+//! - [`outgoing`]: what an export or a publish sends, and the export; [`publish`]: the request.
 //! - [`lock`]: the lockfiles; [`write`]: every write, through handles that follow no link.
 //! - [`checked`]: when each source was last checked, and how many skills it offered then.
 //!
@@ -31,6 +32,8 @@ pub mod fetch;
 pub mod install;
 pub mod listed;
 pub mod lock;
+pub mod outgoing;
+pub mod publish;
 pub mod review;
 pub mod update;
 pub mod widen;
@@ -40,6 +43,7 @@ pub use fetch::{Fetched, Found, MOST_SKILL_BYTES, NotASkill, SourceFile, fetch, 
 pub use install::install;
 pub use listed::{Listed, TABLE, add, confirm, remove, sources};
 pub use lock::{Kept, Locked, Lockfile};
+pub use outgoing::{Outgoing, Purpose, Stop, export_folder, export_zip, gather};
 pub use review::{
     Accepted, AcceptedSkill, Browse, Offered, Review, ReviewFile, SetReview, SkillReview, TooMuch,
     browse, review, review_all, review_set,

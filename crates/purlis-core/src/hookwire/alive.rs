@@ -15,6 +15,9 @@
 //! - **Held per thread**, as git's isolation is ([`crate::worktree::git::within`]): a command
 //!   that runs the work on threads of its own carries the pulse to them ([`held`], [`within`]).
 //! - **Ended before the answer** ([`Pulse::end`]), so no line follows it on the connection.
+//! - **Carried over the relay** (#4161): where the session host hears the line and the window
+//!   runs the clone, the window holds a pulse that replies [`super::relay::Replied::Alive`]
+//!   ([`Pulse::saying`]), and the host beats the pulse on the asker's connection for each.
 
 use std::io::Write;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -35,17 +38,31 @@ pub struct Pulse {
 }
 
 struct Beating {
-    /// `None` once ended, or once a line could not be written.
-    stream: Option<Box<dyn Write + Send>>,
+    /// What says it, which answers whether it could. `None` once ended, or once it could not.
+    say: Option<Box<dyn FnMut() -> bool + Send>>,
     last: Option<Instant>,
 }
 
 impl Pulse {
     /// A pulse that writes its lines to `stream`.
-    pub fn to(stream: impl Write + Send + 'static) -> Arc<Self> {
+    pub fn to(mut stream: impl Write + Send + 'static) -> Arc<Self> {
+        Self::saying(move || {
+            let Ok(mut line) = serde_json::to_vec(&super::Answer::Alive {}) else {
+                return false;
+            };
+            line.push(b'\n');
+            stream
+                .write_all(&line)
+                .and_then(|()| stream.flush())
+                .is_ok()
+        })
+    }
+
+    /// A pulse that says it by `say`, which answers whether it could.
+    pub fn saying(say: impl FnMut() -> bool + Send + 'static) -> Arc<Self> {
         Arc::new(Self {
             to: Mutex::new(Beating {
-                stream: Some(Box::new(stream)),
+                say: Some(Box::new(say)),
                 last: None,
             }),
         })
@@ -57,30 +74,19 @@ impl Pulse {
         if beating.last.is_some_and(|last| last.elapsed() < EVERY) {
             return;
         }
-        let Some(stream) = beating.stream.as_mut() else {
+        let Some(say) = beating.say.as_mut() else {
             return;
         };
-        let Ok(mut line) = serde_json::to_vec(&super::Answer::Alive {}) else {
-            return;
-        };
-        line.push(b'\n');
-        if stream
-            .write_all(&line)
-            .and_then(|()| stream.flush())
-            .is_err()
-        {
-            beating.stream = None;
-            return;
+        if say() {
+            beating.last = Some(Instant::now());
+        } else {
+            beating.say = None;
         }
-        beating.last = Some(Instant::now());
     }
 
     /// No more lines: the answer comes next.
     pub fn end(&self) {
-        self.to
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .stream = None;
+        self.to.lock().unwrap_or_else(PoisonError::into_inner).say = None;
     }
 }
 

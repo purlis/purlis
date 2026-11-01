@@ -26,6 +26,12 @@
 //! refuses, hands the line on as above, **so what the window sends still takes the window's gate and
 //! the person's Ask**: a refusal never becomes a token without them.
 //!
+//! **A chat's refused mints are paced** (#4332, [`paced`]): a chat that runs its tool again and again
+//! while the port refuses it asks the operator less and less often, and meanwhile goes straight to
+//! the window. Once the window has refused such a run too, the next ones are refused here for a
+//! while, so a loop does not keep asking the person. Runs the window's values answered are never
+//! held back: they clear the pace, and a host told of no port is not paced at all.
+//!
 //! **An asker that hangs up is told to the window** while the window decides
 //! ([`Heard::InputEnded`] for the line, which for such a run carries no input), so the window lets
 //! go of the person's Ask and reads no vault for it. The asker writes nothing before its run has
@@ -39,6 +45,9 @@ use std::time::{Duration, Instant};
 
 use super::{A_HANDED_LINE_WAITS_AT_MOST, Heard, Lines, Relaying, Replied, waits_at_most_said};
 use crate::secrets::brokered::{self, Asker};
+
+mod paced;
+pub(super) use paced::Paced;
 
 /// What runs a `secret exec` on the values the window sent ([`brokered::serve_handed`]).
 pub type RunsHanded = Arc<
@@ -96,6 +105,27 @@ pub fn in_cluster(
     _tool: &str,
 ) -> Option<Result<(String, zeroize::Zeroizing<String>), String>> {
     None
+}
+
+/// What the asker of `tool` is told where the window refused a run the cluster refused too, moments
+/// ago.
+fn asked_too_soon_said(tool: &str, left: Duration) -> String {
+    format!(
+        "the person's desktop did not let {tool} run moments ago, and the cluster minted it no \
+         token, so purlis does not ask again for {} seconds: run it again after that",
+        left.as_secs().max(1)
+    )
+}
+
+/// Whether what the window wrote ends its run in a refusal: not its note that the person is being
+/// asked, which comes first.
+fn is_a_refusal(text: &str) -> bool {
+    text.lines().any(|line| {
+        matches!(
+            serde_json::from_str::<brokered::Frame>(line),
+            Ok(brokered::Frame::Refused { .. })
+        )
+    })
 }
 
 /// What the asker of `tool` is told where the cluster refused it a token.
@@ -259,7 +289,25 @@ impl Relaying {
         let Some(input) = Input::read(reader) else {
             return brokered::not_answered(writer);
         };
-        match (self.in_cluster)(&asker, &tool) {
+        // Chat's own pace, for this tool: what it costs the operator and the person (#4332).
+        let paced = (asker.root.clone(), ask.chat, tool.clone());
+        let in_cluster = match self.port_paced.waits(&paced) {
+            Some(waiting) => Some(Err(waiting.words)),
+            None => {
+                let asked = (self.in_cluster)(&asker, &tool);
+                match &asked {
+                    Some(Ok(_)) => {
+                        self.port_paced.cleared(&paced);
+                        self.asks_paced.cleared(&paced);
+                    }
+                    Some(Err(why)) => self.port_paced.refused(&paced, why),
+                    None => {}
+                }
+                asked
+            }
+        };
+        let cluster_refused = matches!(in_cluster, Some(Err(_)));
+        match in_cluster {
             Some(Ok((key, token))) => {
                 if input.gone() {
                     return;
@@ -276,10 +324,14 @@ impl Relaying {
                     crate::forge::apptoken::chat_ended(&asker.root, ask.chat);
                     return brokered::refused(writer, chat_gone_said(&tool));
                 };
-                let handed = brokered::Handed::of(ask.chat, &tool, &run, [(key, token)]);
+                let handed =
+                    brokered::Handed::from_the_cluster(ask.chat, &tool, &run, [(key, token)]);
                 return self.runs_on(&now, ask.secret_exec, handed, input, writer);
             }
             Some(Err(why)) => {
+                if let Some(waiting) = self.asks_paced.waits(&paced) {
+                    return brokered::refused(writer, asked_too_soon_said(&tool, waiting.left));
+                }
                 tracing::info!(
                     "purlisd: chat {}'s run of {tool} was refused a token in the cluster",
                     ask.chat
@@ -339,6 +391,10 @@ impl Relaying {
                         );
                         return brokered::refused(writer, not_for_this_run_said(&tool));
                     }
+                    if cluster_refused {
+                        self.port_paced.cleared(&paced);
+                        self.asks_paced.cleared(&paced);
+                    }
                     if input.gone() {
                         return;
                     }
@@ -358,6 +414,9 @@ impl Relaying {
                 }
                 // The window's own words: a refusal, said as it said it.
                 Replied::Wrote { text } => {
+                    if cluster_refused && is_a_refusal(&text) {
+                        self.asks_paced.refused(&paced, &text);
+                    }
                     if writer
                         .write_all(text.as_bytes())
                         .and_then(|()| writer.flush())

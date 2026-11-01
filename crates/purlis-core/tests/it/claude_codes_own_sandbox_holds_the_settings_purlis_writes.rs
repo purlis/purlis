@@ -54,12 +54,13 @@ const SUPPORTED: &str = include_str!("../../../../tests/fixtures/harness-version
 /// The probes run as the stand-in's one Bash call.
 const SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/seatbelt-case.sh");
 
-/// The probes `--here` asserts, each one answer: the sample project's eight, and its
-/// repositories' thirteen.
-const PROBES: usize = 21;
+/// The probes `--here` asserts, each one answer: the sample project's eight, its
+/// repositories' thirteen, and four of the other harnesses' default sign-ins.
+const PROBES: usize = 25;
 
-/// The probes `--repositories-here` asserts, as it is run on Linux: the repositories' thirteen.
-const REPOSITORY_PROBES: usize = 13;
+/// The probes `--repositories-here` asserts, as it is run on Linux: the repositories' thirteen,
+/// and four of the other harnesses' default sign-ins.
+const REPOSITORY_PROBES: usize = 17;
 
 /// The id of the stand-in's one Bash call.
 const CALL: &str = "toolu_seatbelt_case";
@@ -401,6 +402,13 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
     let home = out.join("home");
     let bin = out.join("bin");
     fs::create_dir_all(home.join(".claude")).expect("a home");
+    const OTHERS: [&str; 2] = [".codex/auth.json", ".local/share/opencode/auth.json"];
+    const SIGN_IN: &str = "a harness's default sign-in";
+    for file in OTHERS {
+        let at = home.join(file);
+        fs::create_dir_all(at.parent().expect("its folder")).expect("its folder");
+        fs::write(at, SIGN_IN).expect("its sign-in");
+    }
     fs::create_dir_all(&bin).expect("a folder on the PATH");
     let machine = Machine {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
@@ -457,6 +465,13 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
             result.lines().any(|line| line.trim() == verdict),
             "{what}: not every probe answered as it should:\n{result}"
         );
+        for file in OTHERS {
+            assert_eq!(
+                fs::read_to_string(home.join(file)).expect("still there"),
+                SIGN_IN,
+                "{what}: {file} was written"
+            );
+        }
         probed_levels += 1;
     }
     if program.is_some() {

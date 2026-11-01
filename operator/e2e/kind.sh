@@ -81,6 +81,8 @@ end() {
     kubectl --context "$context" get claims -A \
       -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{range .status.conditions[*]}{"\n  "}{.type}={.status} {.reason}: {.message}{end}{"\n"}{end}' >&2 || true
     kubectl --context "$context" -n purlis-system logs deployment/purlis-cluster-operator --tail=100 >&2 || true
+    kubectl --context "$context" -n purlis-system logs deployment/purlis-cluster-operator |
+      grep -E 'left behind|leave behind|panicked|its claim has gone' | tail -n 30 >&2 || true
     kubectl --context "$context" -n agent-sandbox-system logs deployment/agent-sandbox-controller --tail=100 >&2 || true
     kubectl --context "$context" get events -A --sort-by=.lastTimestamp >&2 || true
   fi
@@ -210,7 +212,8 @@ if [ -z "$gateway" ]; then
   exit 1
 fi
 kubectl --context "$context" -n purlis-system set env deployment/purlis-cluster-operator \
-  "PURLIS_FORGE_API_URL=http://$gateway:$fake_github_port" >/dev/null
+  "PURLIS_FORGE_API_URL=http://$gateway:$fake_github_port" \
+  PURLIS_OPERATOR_STUCK_AFTER=90 PURLIS_OPERATOR_ORPHANS_EVERY=30 >/dev/null
 kubectl --context "$context" -n purlis-system rollout status deployment/purlis-cluster-operator --timeout=120s
 
 step "the policy settles"
@@ -236,6 +239,12 @@ CLUSTER_POOL_TEST_PURLIS=$repo/target/debug/purlis \
 CLUSTER_POOL_TEST_IMAGE=$runner CLUSTER_POOL_TEST_CONTEXT=$context \
   "$repo/tools/tests-ran.sh" -- cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-core \
   --test it -- a_chat_runs_on_a_cluster_runner_through_kubectl_exec:: --ignored --test-threads=1
+
+step "a whole chat on a Pool that mints, with its desktop away"
+# The stand-in for GitHub is this test's own now: the one above has ended.
+CLUSTER_POOL_TEST_IMAGE=$runner CLUSTER_POOL_TEST_CONTEXT=$context FAKE_GITHUB_PORT=$fake_github_port \
+  "$repo/tools/tests-ran.sh" -- cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-core \
+  --test it -- a_chat_mints_on_a_cluster_runner_with_its_desktop_away:: --ignored --test-threads=1
 
 step "uninstalled, the chart leaves the definitions and the policy"
 helm uninstall purlis-cluster-operator --kube-context "$context" --namespace purlis-system --wait

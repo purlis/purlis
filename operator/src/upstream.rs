@@ -99,6 +99,15 @@ pub const CLAIM_VAR: &str = "PURLIS_CLAIM_UID";
 /// read that it has held since its first moment; nothing a runner says could tell it that.
 pub const MINTING_MARK: &str = "PURLIS_MINTING_POOL";
 
+/// What a runner's host is told its pool's `idleAfter` in (#3980): an environment variable, which
+/// a runner image from before it ignores, where a word on its command line would end it. The same
+/// name as `crates/purlis-core/src/clusterpool/idle.rs`.
+pub const IDLE_AFTER_VAR: &str = "PURLIS_IDLE_AFTER";
+
+/// **The variable naming the image a runner runs** (`purlis_core::sandbox::tools::POOL_IMAGE_VAR`,
+/// #4354): said back to the person if a declared tool's program is not in the image.
+pub const POOL_IMAGE_VAR: &str = "PURLIS_POOL_IMAGE";
+
 /// What [`KEY_STEP`] runs, after the image's own entrypoint (`purlis`).
 pub fn key_step_args() -> Vec<String> {
     [
@@ -231,6 +240,11 @@ pub fn operating_mode_for(
     // stays so, since nothing is left to set the pool running again (#2058).
     pool?;
     (mode == SUSPENDED && suspended_by_the_operator(&sandbox.metadata)).then_some(RUNNING)
+}
+
+/// The mode the operator puts an idle runner's `sandbox` in, if it changes it (#3980).
+pub fn operating_mode_while_idle(sandbox: &Sandbox) -> Option<&'static str> {
+    (sandbox.spec.operating_mode.as_deref() != Some(SUSPENDED)).then_some(SUSPENDED)
 }
 
 /// Whether the operator's own server-side apply owns `sandbox`'s operating mode.
@@ -482,6 +496,16 @@ pub fn template_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -
                 value: Some(RUNNER_HOME.to_owned()),
                 ..EnvVar::default()
             })
+            .chain(std::iter::once(EnvVar {
+                name: IDLE_AFTER_VAR.to_owned(),
+                value: Some(pool.spec.idle_after.clone()),
+                ..EnvVar::default()
+            }))
+            .chain(std::iter::once(EnvVar {
+                name: POOL_IMAGE_VAR.to_owned(),
+                value: Some(pool.spec.image.clone()),
+                ..EnvVar::default()
+            }))
             .chain(pool.spec.forge.is_some().then(|| EnvVar {
                 name: MINTING_MARK.to_owned(),
                 value: Some("1".to_owned()),

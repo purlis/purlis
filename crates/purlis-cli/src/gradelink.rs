@@ -53,7 +53,7 @@ const NO_HOST: &str = "No purlis session host is running, so nothing was run. Op
 
 /// Whether this runs inside a chat, as every write of `purlis skill` asks: its number, its hook
 /// socket, or its sandbox.
-fn in_a_chat(env: &dyn Fn(&str) -> Option<String>) -> bool {
+pub(crate) fn in_a_chat(env: &dyn Fn(&str) -> Option<String>) -> bool {
     let set = |name: &str| env(name).is_some_and(|value| !value.is_empty());
     set(purlis_core::hookwire::CHAT_ENV)
         || set(SOCKET_ENV)

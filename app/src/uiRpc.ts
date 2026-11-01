@@ -1536,6 +1536,9 @@ export const commands = {
 	poolProfiles: __WINDOW_ONLY_RESULT,
 	poolProfileAdd: __WINDOW_ONLY_RESULT,
 	poolLimitOffer: __WINDOW_ONLY,
+	poolLimitOfferForMove: __WINDOW_ONLY,
+	poolLimits: __WINDOW_ONLY_RESULT,
+	poolLimitCheck: __WINDOW_ONLY_RESULT,
 	poolLimitSet: __WINDOW_ONLY_RESULT,
 	poolProfileRemove: __WINDOW_ONLY_RESULT,
 	poolSignInStart: __WINDOW_ONLY_RESULT,
@@ -3829,6 +3832,11 @@ export type ClusterPoolAdding = {
 	pool: string,
 	/**  The cluster operator key Check its key showed, spelled as it showed it. */
 	key: string,
+	/**
+	 *  The longest wait for its runner to be vouched for, in minutes, where the person raised it
+	 *  after an add that ran out (spec #4275): saved to the pool. None is purlis's default.
+	 */
+	vouch_wait: number | null,
 };
 
 /**  What Check its key read of a cluster's Pool. */
@@ -8209,6 +8217,15 @@ export type PoolDisk = {
 	not_listed: number,
 };
 
+/**  **A group of a pool's limits**: what they affect, and the limits that aren't under Advanced. */
+export type PoolLimitGroup = {
+	label: string,
+	help: string,
+	/**  When a change applies, where that's the same for all of its limits. */
+	applies: string | null,
+	limits: PoolLimitRow[],
+};
+
 /**  **A limit a start was refused on**, as Start a chat offers to raise it (spec #4275). */
 export type PoolLimitHitRow = {
 	/**  The limit's key: what [`pool_limit_set`] takes. */
@@ -8227,6 +8244,33 @@ export type PoolLimitHitRow = {
 export type PoolLimitOffer = {
 	pool: string,
 	hits: PoolLimitHitRow[],
+};
+
+/**  **One of a pool's limits, as its page draws it** (#4285). */
+export type PoolLimitRow = {
+	/**  Its key: what [`pool_limit_set`] and [`pool_limit_check`] take. */
+	key: string,
+	/**  Its name in plain words. */
+	plain: string,
+	/**  The word beside a number of it. */
+	unit: string,
+	/**  purlis's default. */
+	default: number,
+	/**  The default in words: `128 MiB`. */
+	default_said: string,
+	/**  What the person set; `null` where it follows purlis's default. */
+	set: number | null,
+	/**  When a change applies, where its group doesn't say it for all of its limits. */
+	applies: string | null,
+};
+
+/**
+ *  **A pool's limits, as its page draws them** (#4285): whatever the core's list holds, by group,
+ *  and those under Advanced. A group with no limit isn't listed.
+ */
+export type PoolLimitsPage = {
+	groups: PoolLimitGroup[],
+	advanced: PoolLimitRow[],
 };
 
 /**

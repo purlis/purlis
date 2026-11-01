@@ -168,6 +168,7 @@ fn a_runner(address: &str, keys: &[String]) -> (tempfile::TempDir, LinkKey) {
             cluster: roll_fixture("cluster.txt"),
             address: address.to_owned(),
             keys: keys.to_vec(),
+            left: Vec::new(),
         },
     )
     .unwrap();
@@ -272,6 +273,7 @@ fn what_a_runner_is_told_is_read_whole_or_refused() {
         cluster: roll_fixture("cluster.txt"),
         address: "10.96.0.5:8443".into(),
         keys: vec![roll_fixture("operator-key.txt")],
+        left: Vec::new(),
     };
     assert!(good.clone().checked().is_ok());
     let bad = [
@@ -304,6 +306,10 @@ fn what_a_runner_is_told_is_read_whole_or_refused() {
             keys: vec![good.keys[0].clone(); 3],
             ..good.clone()
         },
+        Told {
+            left: vec!["sha256:abc".into()],
+            ..good.clone()
+        },
     ];
     for told in bad {
         assert!(told.clone().checked().is_err(), "{told:?}");
@@ -317,6 +323,7 @@ fn told_for_a_roll() -> Told {
         cluster: roll_fixture("cluster.txt"),
         address: "10.96.0.5:8443".into(),
         keys: vec![roll_fixture("operator-key.txt")],
+        left: Vec::new(),
     }
 }
 
@@ -346,9 +353,9 @@ fn a_runner_follows_a_word_the_key_it_holds_signed_and_keeps_both_till_the_port_
         .expect("it moves");
     assert_eq!(moved.keys, [shown.clone(), next.clone()]);
     // Still on the old key: both stay. On the next: the old key goes.
-    assert_eq!(settled_on(moved.clone(), &shown), None);
+    assert_eq!(settled_on(&moved, &shown), None);
     assert_eq!(
-        settled_on(moved, &next).expect("settled").keys,
+        settled_on(&moved, &next).expect("settled").keys,
         std::slice::from_ref(&next)
     );
 }
@@ -409,4 +416,174 @@ fn a_refusal_is_said_in_the_operators_words_on_one_line() {
 #[test]
 fn the_mark_a_runner_is_made_with_is_the_operators() {
     assert_eq!(MARK_VAR, proof_fixture("mark-variable.txt").trim());
+}
+
+/// What a runner holds now, from its own file.
+fn held_now(home: &tempfile::TempDir) -> Told {
+    told(home.path()).unwrap().unwrap()
+}
+
+/// A port nobody listens on: bound, then let go.
+fn nobody_at() -> String {
+    let free = TcpListener::bind("127.0.0.1:0").unwrap();
+    free.local_addr().unwrap().to_string()
+}
+
+/// What a desktop says, its pin `key`, of the port at `address`.
+fn a_desktops_word(address: &str, key: &str) -> Told {
+    Told {
+        namespace: "team".into(),
+        claim: "ada-1".into(),
+        cluster: roll_fixture("cluster.txt"),
+        address: address.to_owned(),
+        keys: vec![key.to_owned()],
+        left: Vec::new(),
+    }
+}
+
+#[test]
+fn a_runner_told_nothing_yet_takes_what_it_is_told_again() {
+    let home = tempfile::tempdir().unwrap();
+    let word = a_desktops_word(&nobody_at(), &roll_fixture("operator-key.txt"));
+    assert!(tell_again(home.path(), word.clone()).unwrap());
+    assert_eq!(held_now(&home), word);
+}
+
+#[test]
+fn a_runner_keeps_both_keys_of_a_roll_when_told_one_of_them_and_takes_the_address() {
+    let (old, next) = (
+        roll_fixture("operator-key.txt"),
+        roll_fixture("next-operator-key.txt"),
+    );
+    let (home, _) = a_runner(&nobody_at(), &[old.clone(), next.clone()]);
+    let moved = nobody_at();
+    tell_again(home.path(), a_desktops_word(&moved, &old)).unwrap();
+    let held = held_now(&home);
+    assert_eq!(held.keys, [old, next], "nothing it followed is undone");
+    assert_eq!(held.address, moved);
+}
+
+/// A desktop behind its runner: the runner followed a roll by itself, and the port shows that key.
+#[test]
+fn a_desktop_behind_its_runner_does_not_undo_the_key_it_followed() {
+    let (address, _) = a_port("test-only-next-signing-key.pkcs8.hex", |_, _| {
+        "{}".to_owned()
+    });
+    let next = roll_fixture("next-operator-key.txt");
+    let (home, _) = a_runner(&address, std::slice::from_ref(&next));
+    tell_again(
+        home.path(),
+        a_desktops_word(&address, &roll_fixture("operator-key.txt")),
+    )
+    .unwrap();
+    assert_eq!(held_now(&home).keys, [next]);
+}
+
+/// A runner stopped through a whole roll: the port no longer shows what it holds, and shows the key
+/// its desktop followed.
+#[test]
+fn a_runner_that_missed_a_whole_roll_takes_its_desktops_key_once_the_port_shows_it() {
+    let (address, _) = a_port("test-only-next-signing-key.pkcs8.hex", |_, _| {
+        "{}".to_owned()
+    });
+    let next = roll_fixture("next-operator-key.txt");
+    let (home, _) = a_runner(&address, &[roll_fixture("operator-key.txt")]);
+    tell_again(home.path(), a_desktops_word(&address, &next)).unwrap();
+    assert_eq!(held_now(&home).keys, [next]);
+}
+
+/// Nothing there proves the desktop's key, so nothing it holds is moved.
+#[test]
+fn a_port_showing_neither_key_moves_no_key() {
+    let old = roll_fixture("operator-key.txt");
+    let (home, _) = a_runner(&nobody_at(), std::slice::from_ref(&old));
+    let settled = tell_again(
+        home.path(),
+        a_desktops_word(&nobody_at(), &roll_fixture("next-operator-key.txt")),
+    )
+    .unwrap();
+    assert!(!settled, "its desktop tells it again at its next link");
+    assert_eq!(held_now(&home).keys, [old]);
+}
+
+/// A key this runner moved on from is never taken back, even from a port showing it alone.
+#[test]
+fn a_key_it_moved_on_from_is_not_taken_back_whatever_the_port_shows() {
+    let (address, _) = a_port("test-only-signing-key.pkcs8.hex", |_, _| "{}".to_owned());
+    let (old, next) = (
+        roll_fixture("operator-key.txt"),
+        roll_fixture("next-operator-key.txt"),
+    );
+    let (home, _) = a_runner(&nobody_at(), &[old.clone(), next.clone()]);
+    let settled = settled_on(&held_now(&home), &next).expect("it settles on the next");
+    assert_eq!(settled.left, std::slice::from_ref(&old));
+    tell(home.path(), settled).unwrap();
+    assert!(tell_again(home.path(), a_desktops_word(&address, &old)).unwrap());
+    let held = held_now(&home);
+    assert_eq!(held.keys, [next]);
+    assert_eq!(held.left, [old]);
+}
+
+/// What a host wrote while a desktop's word was decided stands: the word decides again.
+#[test]
+fn a_write_over_what_moved_meanwhile_writes_nothing() {
+    let (old, next) = (
+        roll_fixture("operator-key.txt"),
+        roll_fixture("next-operator-key.txt"),
+    );
+    let (home, _) = a_runner(&nobody_at(), std::slice::from_ref(&old));
+    let seen = held_now(&home);
+    let moved = Told {
+        keys: vec![old.clone(), next],
+        ..seen.clone()
+    };
+    tell(home.path(), moved.clone()).unwrap();
+    assert!(!replaced_if_still(home.path(), Some(&seen), seen.clone()).unwrap());
+    assert_eq!(held_now(&home), moved);
+}
+
+#[test]
+fn a_word_for_another_claim_or_cluster_is_refused_and_moves_nothing() {
+    let old = roll_fixture("operator-key.txt");
+    let (home, _) = a_runner(&nobody_at(), std::slice::from_ref(&old));
+    let before = held_now(&home);
+    let another = Told {
+        claim: "ada-2".into(),
+        ..a_desktops_word(&nobody_at(), &old)
+    };
+    assert!(tell_again(home.path(), another).is_err());
+    assert_eq!(held_now(&home), before);
+}
+
+/// Woken past one roll into the next, what it held before is still a key it moved on from.
+#[test]
+fn a_key_let_go_of_while_following_the_next_roll_is_kept_as_left() {
+    let earlier = format!("ed25519:{}", "11".repeat(32));
+    let mut told = told_for_a_roll();
+    let shown = told.keys[0].clone();
+    told.keys.insert(0, earlier.clone());
+    let moved = following(&told, &shown, the_word(), while_it_holds())
+        .unwrap()
+        .expect("it moves");
+    assert_eq!(moved.left, [earlier]);
+    assert!(!moved.keys.contains(&moved.left[0]));
+}
+
+/// A word naming a key moved on from takes nothing of it back, beside another or not.
+#[test]
+fn a_word_naming_a_key_moved_on_from_beside_another_moves_nothing() {
+    let (address, _) = a_port("test-only-signing-key.pkcs8.hex", |_, _| "{}".to_owned());
+    let (old, next) = (
+        roll_fixture("operator-key.txt"),
+        roll_fixture("next-operator-key.txt"),
+    );
+    let (home, _) = a_runner(&nobody_at(), std::slice::from_ref(&next));
+    let mut held = held_now(&home);
+    held.left = vec![old.clone()];
+    tell(home.path(), held).unwrap();
+    let another = format!("ed25519:{}", "22".repeat(32));
+    let mut word = a_desktops_word(&address, &old);
+    word.keys.push(another);
+    tell_again(home.path(), word).unwrap();
+    assert_eq!(held_now(&home).keys, [next]);
 }

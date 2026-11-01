@@ -714,7 +714,7 @@ fn a_login_is_driven_end_to_end() {
         "printf '%s' \"$PRINTED\"; read code; [ \"$code\" = 'abc#recorded' ] || exit 3; \
          echo 'Login successful.'",
     );
-    let driving = drive_with(&login, "claude", None, None, || Standing::SignedIn).unwrap();
+    let driving = drive_with(&login, "claude", None, None, LONGEST, || Standing::SignedIn).unwrap();
 
     assert_eq!(
         next(&driving),
@@ -740,9 +740,14 @@ fn a_copilot_login_is_driven_end_to_end() {
          echo 'Login successful'",
     );
     login.env.clear();
-    let driving = drive_with(&login, "opencode", Some("github-copilot"), None, || {
-        Standing::SignedIn
-    })
+    let driving = drive_with(
+        &login,
+        "opencode",
+        Some("github-copilot"),
+        None,
+        LONGEST,
+        || Standing::SignedIn,
+    )
     .unwrap();
 
     assert_eq!(next(&driving), device_code());
@@ -755,7 +760,7 @@ fn a_copilot_login_is_driven_end_to_end() {
 #[test]
 fn a_login_that_ended_is_not_waited_on_past_what_it_left_running() {
     let login = stand_in("printf '%s' \"$PRINTED\"; sleep 20 & exit 0");
-    let driving = drive_with(&login, "claude", None, None, || Standing::SignedIn).unwrap();
+    let driving = drive_with(&login, "claude", None, None, LONGEST, || Standing::SignedIn).unwrap();
 
     assert!(matches!(next(&driving), Event::Open { .. }));
     assert_eq!(next(&driving), Event::AskCode);
@@ -768,13 +773,33 @@ fn a_login_that_ended_is_not_waited_on_past_what_it_left_running() {
 #[test]
 fn a_cancelled_sign_in_ends_its_login() {
     let login = stand_in("printf '%s' \"$PRINTED\"; exec sleep 600");
-    let driving = drive_with(&login, "claude", None, None, || Standing::SignedIn).unwrap();
+    let driving = drive_with(&login, "claude", None, None, LONGEST, || Standing::SignedIn).unwrap();
     assert!(matches!(next(&driving), Event::Open { .. }));
     assert_eq!(next(&driving), Event::AskCode);
 
     driving.cancel();
 
     assert_eq!(next(&driving), Event::Cancelled);
+}
+
+/// **A sign-in that had to stop says why, as a failure** (#4277): the person cancelled nothing.
+#[cfg(unix)]
+#[test]
+fn a_sign_in_that_had_to_stop_fails_with_its_reason() {
+    let login = stand_in("printf '%s' \"$PRINTED\"; exec sleep 600");
+    let driving = drive_with(&login, "claude", None, None, LONGEST, || Standing::SignedIn).unwrap();
+    assert!(matches!(next(&driving), Event::Open { .. }));
+    assert_eq!(next(&driving), Event::AskCode);
+
+    driving.stop("its pool changed");
+
+    assert!(driving.paste("a code").is_err(), "it takes no more input");
+    assert_eq!(
+        next(&driving),
+        Event::Failed {
+            why: "its pool changed".to_owned()
+        }
+    );
 }
 
 /// **What the person's terminal shows is passed on as it is printed** (#4043): escapes and all,
@@ -837,7 +862,7 @@ fn what_is_typed_reaches_a_login_in_a_terminal_alone() {
         "read line; printf '%s' \"$line\" > {}",
         file.display()
     ));
-    let driving = in_a_terminal(&login, || Standing::SignedIn).expect("runs");
+    let driving = in_a_terminal(&login, LONGEST, || Standing::SignedIn).expect("runs");
 
     driving.typed("yes\r\n").expect("typed");
 
@@ -848,7 +873,7 @@ fn what_is_typed_reaches_a_login_in_a_terminal_alone() {
         "yes"
     );
 
-    let piped = drive_with(&stand_in("sleep 30"), "claude", None, None, || {
+    let piped = drive_with(&stand_in("sleep 30"), "claude", None, None, LONGEST, || {
         Standing::SignedIn
     })
     .expect("runs");
@@ -896,7 +921,10 @@ fn driving_on(port: u16, login: &Login, carry: Carry) -> Driving {
         listen_on: Some(port),
         forward: Mutex::new(Forwarded::Not),
     });
-    run(login, codex(), Some(forwarding), || Standing::SignedIn).unwrap()
+    run(login, codex(), Some(forwarding), LONGEST, || {
+        Standing::SignedIn
+    })
+    .unwrap()
 }
 
 /// **A login approved in the browser, end to end**: the page is told once this device listens,
@@ -996,7 +1024,7 @@ fn a_login_that_waits_for_the_browser_needs_a_way_to_carry_its_answer() {
         cleared: Vec::new(),
     };
 
-    assert!(drive_with(&login, "codex", None, None, || Standing::SignedIn).is_err());
+    assert!(drive_with(&login, "codex", None, None, LONGEST, || Standing::SignedIn).is_err());
 }
 
 /// **A login at its device code, or in the window's terminal, takes the person's time** (#4160):
@@ -1021,6 +1049,34 @@ fn a_login_the_person_is_at_is_not_ended_by_the_page_or_next_step_limits() {
     );
     assert_eq!(device.waited(Instant::now() + long_past), None);
     assert!(!device.is_over());
+}
+
+/// **A sign-in is held to the wait it is given** (spec #4275): a pool's limit, not only the
+/// default, ends it, in the words the window adds the limit to.
+#[cfg(unix)]
+#[test]
+fn a_sign_in_ends_at_the_longest_wait_it_was_given() {
+    let driving = in_a_terminal(&stand_in("sleep 30"), Duration::from_millis(300), || {
+        Standing::SignedIn
+    })
+    .expect("runs");
+    let until = Instant::now() + Duration::from_secs(20);
+    let mut last = None;
+    while Instant::now() < until {
+        if let Some(event) = driving.next(Duration::from_millis(200)) {
+            let over = event.is_last();
+            last = Some(event);
+            if over {
+                break;
+            }
+        }
+    }
+    assert_eq!(
+        last,
+        Some(Event::Failed {
+            why: TOOK_TOO_LONG.to_owned()
+        })
+    );
 }
 
 #[cfg(unix)]

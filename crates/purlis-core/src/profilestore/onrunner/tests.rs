@@ -1239,6 +1239,14 @@ fn the_typed_refusal_is_had_by_the_words_of_the_start_refused() {
     assert_eq!(over.hits[0].needed, 151);
     assert_eq!(over.hits[0].suggested, Some(192));
     assert_eq!(over_limit("typed-refusal", "some other refusal"), None);
+
+    // A move's line knows its pool and not its profile (#4313).
+    assert_eq!(
+        over_limit_on("builds", &said).map(|o| o.profile),
+        Some("typed-refusal".to_owned())
+    );
+    assert_eq!(over_limit_on("another", &said), None);
+    assert_eq!(over_limit_on("builds", "some other refusal"), None);
 }
 
 /// **Raised past what a runner tells its desktop, a profile is told as nothing** (spec #4275), so
@@ -1884,10 +1892,11 @@ fn a_runner_keeping_a_profile_again_takes_in_a_sign_in_carried_since() {
     assert!(!carried.exists());
 }
 
-/// **The desktop's adopted folder takes in nothing carried for now**: what is there under the
-/// harness's name is removed, and its default folder gains no sign-in.
+/// **The desktop's adopted folder takes in the sign-in carried to it too** (#4055): kept as
+/// Claude Code's default folder in the runner's home, it takes the default folder's file the
+/// drained runner carried under the harness's name; one of another harness's is left out.
 #[test]
-fn the_desktops_adopted_folder_takes_in_nothing_carried() {
+fn the_desktops_adopted_folder_takes_in_the_sign_in_carried_to_it() {
     let dir = tempfile::tempdir().unwrap();
     let runner = homes(dir.path(), "runner");
     let adopted = the_desktops_adopted_folder(dir.path());
@@ -1908,7 +1917,10 @@ fn the_desktops_adopted_folder_takes_in_nothing_carried() {
     .expect("kept");
 
     assert_eq!(kept.folders.config, runner_home(dir.path()).join(".claude"));
-    assert!(!kept.folders.config.join(".credentials.json").exists());
+    assert_eq!(
+        fs::read_to_string(kept.folders.config.join(".credentials.json")).unwrap(),
+        "the old runner's"
+    );
     assert!(!kept.folders.config.join("auth.json").exists());
     assert!(!carried.exists());
 }

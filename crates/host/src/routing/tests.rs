@@ -419,6 +419,41 @@ async fn a_link_that_ends_while_it_is_relayed_lets_go_of_its_name() {
         .expect("the name the ended link gave is free");
 }
 
+/// **A suspended runner is asked to run again by the window's steps towards a chat, and by nothing
+/// else** (#3980): a redial or a check is not a command of the window's, and a list is not a step.
+#[tokio::test]
+async fn the_windows_steps_towards_a_chat_ask_a_runner_to_run_again() {
+    let (a, _b) = a_desktop(Kept::pinned);
+    let asked = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let a = a.running_again_with({
+        let asked = Arc::clone(&asked);
+        Arc::new(move |name: &str| asked.lock().unwrap().push(name.to_owned()))
+    });
+    let window = routed(Scope::LocalUi, a).await;
+    tokio::time::timeout(PATIENCE, window.relay_to("builds"))
+        .await
+        .unwrap()
+        .expect("relayed");
+    assert_eq!(asked.lock().unwrap().len(), 1, "relaying the link asks");
+    window.list().await.expect("its chats are listed");
+    assert_eq!(asked.lock().unwrap().len(), 1, "a list does not");
+    let _ = window.hold_project("01J9PRJCT00000000000000000", "").await;
+    assert_eq!(asked.lock().unwrap().len(), 2, "a hold does, up or down");
+    let start =
+        session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell);
+    let _ = window.start_program(start).await;
+    assert_eq!(asked.lock().unwrap().len(), 3, "a start does");
+    // Named as the link reached it, `<pool>/<runner>`, as a draining runner is.
+    assert!(
+        asked
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|name| name.starts_with("builds")),
+        "{asked:?}"
+    );
+}
+
 /// **A link relayed to a draining runner keeps its chats and starts no new one** (#2865): the
 /// window answers and watches what runs there, and a start is refused in words that say where
 /// new chats start. Asked at each start: a link relayed by its pool's name before the runner was

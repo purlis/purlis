@@ -255,6 +255,46 @@ fn a_start_during_a_drain_runs_on_the_pools_runner_and_the_old_chat_stays_reacha
     sessions.close(moved_on).expect("it closes on the new one");
 }
 
+/// **A draining runner's log is read beside the pool's runner's** (#4271), said once for the pool.
+#[test]
+fn a_pools_log_is_read_from_each_link_still_open() {
+    let runtime = a_runtime();
+    let pool = Pool::on(&runtime);
+    let (_dir, root) = a_project();
+    let sessions = routed(&pool, &root);
+    started(&sessions).expect("it starts");
+    pool.follows();
+    started(&sessions).expect("it starts");
+
+    let logs = sessions.runner_logs();
+
+    assert_eq!(logs.len(), 1, "one line for the pool: {logs:?}");
+    assert_eq!(logs[0].0, OLD);
+    assert!(!logs[0].1.down, "{logs:?}");
+
+    // Only the draining runner's link is said to be down, so only reading it says so.
+    let links = pool.connection.to_a_pool("builds").links_of(&root);
+    let draining = links
+        .iter()
+        .find(|link| link.reached_runner() == Some(OLD))
+        .expect("its link is kept");
+    lock(&draining.shared.runner_log).link(true);
+    assert!(sessions.runner_logs()[0].1.down);
+}
+
+/// **While a runner of the pool drains no fetch removes what only the other has** (#4271): after a
+/// restart the pool's runner has one link and nothing else to say so.
+#[test]
+fn a_pool_drains_as_its_runners_are_kept() {
+    let runtime = a_runtime();
+    let pool = Pool::on(&runtime);
+    let to_it = pool.connection.to_a_pool("builds");
+    assert!(!to_it.pool_drains());
+    keep_runners(pool.config.path(), true);
+    assert!(to_it.pool_drains());
+    assert!(!pool.connection.pool_drains(), "this machine's host's");
+}
+
 /// **A runner made again in its place leaves the link naming one kept no more** (#4149, #4248): the
 /// desktop's host refuses a start on such a link, so the next start goes to the pool's runner.
 #[test]

@@ -3693,11 +3693,153 @@ fn a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(target: &Targe
     browsers.close(&browser).expect("the browser ends");
 }
 
+/// **`gh` and `glab` run in a chat on a runner, and a declared tool of them is what its persona
+/// says** (#4354): a Codex chat the runner's own host composes, inside purlis's wrap, on the runner
+/// image as it ships but for the test's own files. With no tool `gh` answers and is not signed in
+/// (ADR 0077), and what the programs keep in the runner's home is out of its reach, with settings
+/// of its own for them. Declared, `gh`
+/// runs through its shim on the value its desktop sent for that run, which stands in for the
+/// person's Allow and vault. A declared program the image does not have says so, naming the image.
+fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Target) {
+    let Some(runner) = &target.runner else {
+        return;
+    };
+    // A Codex profile's folder is under the runner's data home, in use once a browser has started.
+    let (browsers, browser, _past) = a_browser_and_what_lies_past_a_chat(target, runner);
+    runner.runs(
+        false,
+        "mkdir -p \"$HOME/.config/gh\" && echo stand-in > \"$HOME/.config/gh/hosts.yml\"",
+        b"",
+    );
+    let bin = tempfile::tempdir().expect("a folder for the harness");
+    let program = stand_in::program(
+        bin.path(),
+        "codex",
+        "#!/bin/sh\n\
+             [ \"$1\" = login ] && [ \"$2\" = status ] && exit 0\n\
+             for word in \"$@\"; do [ \"$word\" = --version ] && { echo 'codex-cli 0.147.0'; exit 0; }; done\n\
+             gh --version | head -1 | sed 's/ version.*/ ANSWERED./'\n\
+             glab --version | head -1 | cut -c1-4 | sed 's/$/ ANSWERED./'\n\
+             if gh auth token >/dev/null 2>&1; then echo 'TOKEN some.'; else echo 'TOKEN none.'; fi\n\
+             echo \"AT $HOME.\"\n\
+             if cat \"$HOME/.config/gh/hosts.yml\" >/dev/null 2>&1; then echo 'KEPT read.'; else echo 'KEPT held.'; fi\n\
+             if echo x >> \"$HOME/.config/gh/hosts.yml\" 2>/dev/null; then echo 'KEPT written.'; else echo 'KEPT unwritten.'; fi\n\
+             if printenv PURLIS_POOL_IMAGE CHARTER_POOL_IMAGE >/dev/null; then echo 'IMAGE told.'; else echo 'IMAGE untold.'; fi\n\
+             if gh config set prompt disabled 2>/dev/null && [ \"$(gh config get prompt 2>/dev/null)\" = disabled ]; then echo 'SETTINGS kept.'; else echo 'SETTINGS refused.'; fi\n\
+             said=$(kubectl version 2>&1); code=$?\n\
+             case \"$said\" in *\"image, \"*@sha256:*\" has no kubectl\"*) echo \"KUBECTL named the image, ended $code.\" ;; *) echo \"KUBECTL ended $code.\" ;; esac\n\
+             printf 'TRIED.\\n'\n\
+             read line\n",
+    );
+    a_profile_of(target, "codex", "work", &program);
+    let chat_says = |tools_allowed: Option<String>| {
+        let id = target
+            .sessions
+            .open_named(
+                None,
+                &crate::host::Named {
+                    tools_allowed,
+                    ..named("run them", false)
+                },
+                purlis_core::sandbox::plan::Hearing::default(),
+                &|_| {},
+            )
+            .expect("the sandboxed chat starts on the runner")
+            .number;
+        (id, Pane::on(target, id))
+    };
+
+    // No tool: both answer, and neither is anyone.
+    let (id, pane) = chat_says(None);
+    pane.shows("TRIED.");
+    pane.shows("gh ANSWERED.");
+    pane.shows("glab ANSWERED.");
+    pane.shows("TOKEN none.");
+    // The home the runner's user keeps it in, so the refusals below are of that file.
+    pane.shows(&format!(
+        "AT {}.",
+        runner.prints("printf %s \"$HOME\"").trim()
+    ));
+    pane.shows("KEPT held.");
+    pane.shows("KEPT unwritten.");
+    pane.shows("IMAGE untold.");
+    pane.shows("SETTINGS kept.");
+    target.sessions.close(id).expect("it closes");
+
+    // At the full sandbox too, before any tool is declared: its settings are its own to write.
+    runner.runs(
+        false,
+        &format!(
+            "printf '\\n[sandbox]\\nmode = \"on\"\\negress = [\"model-providers\"]\\n' >> '{}/purlis.toml'",
+            target.project_on_its_runner(runner)
+        ),
+        b"",
+    );
+    let (id, pane) = chat_says(None);
+    pane.shows("TRIED.");
+    pane.shows("gh ANSWERED.");
+    pane.shows("glab ANSWERED.");
+    pane.shows("KEPT held.");
+    pane.shows("SETTINGS kept.");
+    target.sessions.close(id).expect("it closes");
+
+    // Declared, in the project as the runner holds it and here, and allowed by this desktop.
+    let declared = "\n[sandbox.personas.steward]\ntools = { \
+         gh = { vault = \"forge\", as = \"GH_TOKEN env\", key = \"token\" }, \
+         kubectl = { vault = \"forge\", as = \"KUBECONFIG file\", key = \"kubeconfig\" } }\n";
+    let here = target.root.join("purlis.toml");
+    let before = std::fs::read_to_string(&here).unwrap_or_default();
+    std::fs::write(&here, format!("{before}{declared}")).expect("declared here");
+    runner.runs(
+        false,
+        &format!(
+            "cat >> '{}/purlis.toml'",
+            target.project_on_its_runner(runner)
+        ),
+        declared.as_bytes(),
+    );
+    let tools = purlis_core::sandbox::tools::declared_and_allowed_here(&target.root, "steward").0;
+    assert_eq!(tools.len(), 2, "both tools are read: {tools:?}");
+    let handed_gh = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = Arc::clone(&handed_gh);
+    target
+        .hooks
+        .exec_secrets_with(Arc::new(move |ask, _reader, _writer, _told| {
+            if ask.runs_as.as_deref() == Some("gh") {
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+            let handed = purlis_core::secrets::brokered::Handed::of(
+                ask.chat,
+                ask.runs_as
+                    .as_deref()
+                    .expect("the tool its host said it runs"),
+                ask.run.as_deref().expect("the run its host numbered"),
+                [("token".to_owned(), "a-token-no-service-takes".to_owned())],
+            );
+            assert!(purlis_core::hookwire::relay::hand_values(handed).is_ok());
+        }));
+    let digest = purlis_core::sandbox::persona::digest_of(&[], &tools, false);
+    let (id, pane) = chat_says(Some(digest));
+    pane.shows("TRIED.");
+    pane.shows("gh ANSWERED.");
+    pane.shows("glab ANSWERED.");
+    // `auth` is refused a declared tool (`tools::args`), so the token is never read back.
+    pane.shows("TOKEN none.");
+    pane.shows("KUBECTL named the image, ended 127.");
+    assert_eq!(
+        handed_gh.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "the `gh --version` a shim ran asked its desktop once; `auth` never reached it"
+    );
+    target.sessions.close(id).expect("it closes");
+    browsers.close(&browser).expect("the browser ends");
+}
+
 /// Where the parity image keeps the program Claude Code ships (`tests/parity/runner.Dockerfile`).
 const REAL_CLAUDE_CODE: &str = "/usr/local/lib/parity/claude-code";
 
 /// What a chat says of [`PastAChat::tries`]: its project reached, and nothing past it.
-const PAST_A_CHAT: [&str; 11] = [
+const PAST_A_CHAT: [&str; 18] = [
     "PROJECT yes.",
     "ENGINE-FOLDER no.",
     "ENGINE-MEMORY no.",
@@ -3707,6 +3849,13 @@ const PAST_A_CHAT: [&str; 11] = [
     "HOST-SOCKET no.",
     "CARRIED-READ no.",
     "CARRIED-WRITE no.",
+    "CLAUDE-SIGN-IN-READ no.",
+    "CLAUDE-SIGN-IN-WRITE no.",
+    "CODEX-SIGN-IN-READ no.",
+    "CODEX-SIGN-IN-WRITE no.",
+    "OPENCODE-SIGN-IN-READ no.",
+    "OPENCODE-SIGN-IN-WRITE no.",
+    "OPENCODE-FOLDER-MOVE no.",
     // Only the browser engine may make namespaces on a runner (D-2050-25), refused by the
     // filter, not for want of a program.
     "NAMESPACE no:",
@@ -3749,6 +3898,13 @@ impl PastAChat {
              try HOST-SOCKET 'ls {socket}'\n\
              try CARRIED-READ 'cat {carried}/a/work/file'\n\
              try CARRIED-WRITE 'mkdir {carried}/planted'\n\
+             try CLAUDE-SIGN-IN-READ 'cat $HOME/.claude/.credentials.json'\n\
+             try CLAUDE-SIGN-IN-WRITE 'echo x >> $HOME/.claude/.credentials.json'\n\
+             try CODEX-SIGN-IN-READ 'cat $HOME/.codex/auth.json'\n\
+             try CODEX-SIGN-IN-WRITE 'echo x >> $HOME/.codex/auth.json'\n\
+             try OPENCODE-SIGN-IN-READ 'cat $HOME/.local/share/opencode/auth.json'\n\
+             try OPENCODE-SIGN-IN-WRITE 'echo x >> $HOME/.local/share/opencode/auth.json'\n\
+             try OPENCODE-FOLDER-MOVE 'mv $HOME/.local/share/opencode $HOME/.local/share/opencode2'\n\
              if said=$(unshare --user true 2>&1); then printf 'NAMESPACE yes.\\n'; else printf 'NAMESPACE no: %s\\n' \"$said\"; fi\n"
         )
     }
@@ -3773,6 +3929,11 @@ fn a_browser_and_what_lies_past_a_chat(
         )
         .unwrap_or_else(|why| panic!("a browser starts on the runner: {why:?}"));
 
+    // Each harness's default sign-in, as a built-in default profile keeps it.
+    runner.prints(
+        "for f in .claude/.credentials.json .codex/auth.json .local/share/opencode/auth.json; do \
+         mkdir -p \"$(dirname \"$HOME/$f\")\"; echo held > \"$HOME/$f\"; done",
+    );
     let carried = runner
         .prints(&format!(
             "at=$(dirname \"$HOME\"/.local/share/*/{browsers})/profiles/{carried}; \
@@ -3998,6 +4159,16 @@ mod the_persons_shell_on_a_runner_makes_no_namespace {
     fn in_a_docker_pool() {
         if let Some(target) = super::in_a_docker_pool() {
             super::the_persons_shell_on_a_runner_makes_no_namespace(&target);
+        }
+    }
+}
+
+mod a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them {
+    /// Run by the parity job, which names a runner image; elsewhere it runs nothing.
+    #[test]
+    fn in_a_docker_pool() {
+        if let Some(target) = super::in_a_docker_pool() {
+            super::a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(&target);
         }
     }
 }

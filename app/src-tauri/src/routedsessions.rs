@@ -816,15 +816,18 @@ impl SessionHost for RoutedSessions {
 
     /// Each pool's runner log this project's chats read (#3393).
     fn runner_logs(&self) -> Vec<(String, crate::runnerlog::RunnerLogNow)> {
-        // Each pool's runner now: a draining runner's log waits (#4271).
-        let pools: Vec<(String, Arc<dyn SessionHost>)> = lock(&self.shared.pools)
-            .iter()
-            .map(|(pool, host)| (pool.clone(), Arc::clone(host)))
-            .collect();
-        pools
-            .into_iter()
-            .filter_map(|(pool, host)| host.runner_log().map(|log| (pool, log)))
-            .collect()
+        // Each link still open for the project, a draining runner's beside its pool's (#4271).
+        let mut logs = BTreeMap::<String, crate::runnerlog::RunnerLogNow>::new();
+        for (pool, host) in self.named_pools() {
+            if let Some(log) = host.runner_log() {
+                let joined = match logs.remove(&pool) {
+                    Some(held) => held.beside(log),
+                    None => log,
+                };
+                logs.insert(pool, joined);
+            }
+        }
+        logs.into_iter().collect()
     }
 
     /// Asked of this machine's host, then of each pool a workspace of the project runs its

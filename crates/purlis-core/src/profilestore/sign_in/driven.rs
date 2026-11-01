@@ -51,8 +51,12 @@ use super::{Login, Standing};
 /// for a runner to fetch the harness first (#4007).
 pub const PAGE_WITHIN: Duration = Duration::from_secs(180);
 
-/// The longest a sign-in runs before it is ended.
+/// The longest a sign-in runs before it is ended, where its pool's limit says nothing else
+/// (`poollimits`, spec #4275).
 pub const LONGEST: Duration = Duration::from_secs(15 * 60);
+
+/// What a sign-in ended at its longest says, which the window's side adds the limit to.
+pub const TOOK_TOO_LONG: &str = "the sign-in took too long, so purlis ended it";
 
 /// How long a sign-in runs with no one asking for its next step before it is ended: a window
 /// that went away. Its driver asks again at least this often.
@@ -872,6 +876,8 @@ pub struct Driving {
     input: Input,
     driven: Arc<Mutex<Driven>>,
     cancelled: Arc<AtomicBool>,
+    /// Why it had to stop, where the person did not cancel it ([`Self::stop`]).
+    stopped: Arc<Mutex<Option<String>>>,
     /// When its next step was last asked for.
     asked: Arc<Mutex<Instant>>,
 }
@@ -947,6 +953,7 @@ pub fn drive_with(
     kind: &str,
     plan: Option<&str>,
     carry: Option<Carry>,
+    longest: Duration,
     check: impl FnOnce() -> Standing + Send + 'static,
 ) -> Result<Driving, String> {
     let driven = Driven::of_plan(kind, plan, Instant::now())
@@ -964,7 +971,7 @@ pub fn drive_with(
             forward: Mutex::new(Forwarded::Not),
         })
     });
-    run(login, driven, forwarding, check)
+    run(login, driven, forwarding, longest, check)
 }
 
 /// **Runs `login` in the runner's terminal it sets up itself, for the person to drive**
@@ -972,15 +979,23 @@ pub fn drive_with(
 /// ([`Driving::typed`]), and `check` is asked once it ends, however it ended.
 pub fn in_a_terminal(
     login: &Login,
+    longest: Duration,
     check: impl FnOnce() -> Standing + Send + 'static,
 ) -> Result<Driving, String> {
-    run(login, Driven::in_a_terminal(Instant::now()), None, check)
+    run(
+        login,
+        Driven::in_a_terminal(Instant::now()),
+        None,
+        longest,
+        check,
+    )
 }
 
 fn run(
     login: &Login,
     driven: Driven,
     forwarding: Option<Arc<Forwarding>>,
+    longest: Duration,
     check: impl FnOnce() -> Standing + Send + 'static,
 ) -> Result<Driving, String> {
     let mut command = Command::new(&login.program);
@@ -1031,17 +1046,21 @@ fn run(
     })
     .collect();
     let cancelled = Arc::new(AtomicBool::new(false));
+    let stopped = Arc::new(Mutex::new(None));
     let asked = Arc::new(Mutex::new(Instant::now()));
     {
-        let (driven, cancelled, asked) = (
+        let (driven, cancelled, stopped, asked) = (
             Arc::clone(&driven),
             Arc::clone(&cancelled),
+            Arc::clone(&stopped),
             Arc::clone(&asked),
         );
         std::thread::spawn(move || {
             let outside = Outside {
                 cancelled: &cancelled,
+                stopped: &stopped,
                 asked: &asked,
+                longest,
             };
             watching(
                 child,
@@ -1059,6 +1078,7 @@ fn run(
         input,
         driven,
         cancelled,
+        stopped,
         asked,
     })
 }
@@ -1143,11 +1163,13 @@ fn reading(
     })
 }
 
-/// **What ends a login from outside it**: Cancel, or no one asking for its next step for
-/// [`UNDRIVEN_AFTER`], as of a window that went away.
+/// **What ends a login from outside it**: Cancel, purlis having to stop it, or no one asking for
+/// its next step for [`UNDRIVEN_AFTER`], as of a window that went away.
 struct Outside<'a> {
     cancelled: &'a AtomicBool,
+    stopped: &'a Mutex<Option<String>>,
     asked: &'a Mutex<Instant>,
+    longest: Duration,
 }
 
 impl Outside<'_> {
@@ -1160,6 +1182,20 @@ impl Outside<'_> {
                 .unwrap_or_else(PoisonError::into_inner)
                 .elapsed()
                 > UNDRIVEN_AFTER
+    }
+
+    /// What is said of a login this ended: a failure with its reason where purlis had to stop
+    /// it, since the person cancelled nothing.
+    fn ended(&self) -> Event {
+        match self
+            .stopped
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            Some(why) => Event::Failed { why },
+            None => Event::Cancelled,
+        }
     }
 }
 
@@ -1185,7 +1221,7 @@ fn watching(
         if outside.ends_it() {
             end(&mut child);
             close();
-            tell.say_last(Event::Cancelled);
+            tell.say_last(outside.ended());
             return;
         }
         match child.try_wait() {
@@ -1213,11 +1249,11 @@ fn watching(
             close();
             return;
         }
-        if started.elapsed() > LONGEST {
+        if started.elapsed() > outside.longest {
             end(&mut child);
             close();
             tell.say_last(Event::Failed {
-                why: "the sign-in took too long, so purlis ended it".to_owned(),
+                why: TOOK_TOO_LONG.to_owned(),
             });
             return;
         }
@@ -1273,6 +1309,7 @@ impl Driving {
 
     /// **Passes the person's code to the login** ([`Driven::paste`]).
     pub fn paste(&self, code: &str) -> Result<(), String> {
+        self.takes_input()?;
         let line = self
             .driven
             .lock()
@@ -1290,6 +1327,7 @@ impl Driving {
 
     /// **Passes what the person typed to a login in a terminal**, as it is.
     pub fn typed(&self, text: &str) -> Result<(), String> {
+        self.takes_input()?;
         let takes = self
             .driven
             .lock()
@@ -1316,6 +1354,23 @@ impl Driving {
     /// `docker exec` does, the login ends with its input, on the runner ([`super::held`]).
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
+    }
+
+    /// Refused once it was cancelled or stopped, so nothing more is passed on while the login
+    /// ends. Its input stays open until then: a login that read the end of it would go on, not
+    /// stop.
+    fn takes_input(&self) -> Result<(), String> {
+        if self.cancelled.load(Ordering::SeqCst) {
+            return Err("the sign-in takes no more input".to_owned());
+        }
+        Ok(())
+    }
+
+    /// **Ends the login because it had to stop, not because the person asked** (#4277): as
+    /// [`Self::cancel`], but [`Event::Failed`] with `why` follows.
+    pub fn stop(&self, why: &str) {
+        *self.stopped.lock().unwrap_or_else(PoisonError::into_inner) = Some(why.to_owned());
+        self.cancel();
     }
 }
 

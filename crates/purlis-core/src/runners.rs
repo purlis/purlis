@@ -318,6 +318,8 @@ pub struct Kept {
     pub draining: bool,
     /// Its sign-ins were carried to its pool's runner (#4146): it is not carried from again.
     pub carried: bool,
+    /// Docker failed its carry (#4298): the next look tries once more, then it is `carried`.
+    pub carry_failed: bool,
     /// It answered that this desktop is out of its peers (#4146): it cannot be linked to, so it
     /// is not asked how many chats it has, nor unpaired again.
     pub unpaired: bool,
@@ -727,9 +729,19 @@ pub fn chosen_limits_of(
         .unwrap_or_default())
 }
 
+/// **How long a sign-in on pool `name` may wait**: its limit as it stands (spec #4275), or
+/// purlis's default. Only the wait: every check around a sign-in stands.
+#[must_use]
+pub fn longest_login_of(config_root: &Path, name: &str) -> std::time::Duration {
+    chosen_limits_of(config_root, name)
+        .unwrap_or_default()
+        .wait(crate::poollimits::LimitId::SignInWait)
+        .unwrap_or(crate::profilestore::sign_in::driven::LONGEST)
+}
+
 /// **Sets pool `name`'s limit `id` to `value`**, or, `None`, back to purlis's default (spec
-/// #4275), of either kind, under the file's lock. It applies from the next attempt, and defines
-/// no new runner. A value [`crate::poollimits::Limit::check`] refuses, or no such pool, is
+/// #4275), of either kind, under the file's lock. It applies as the limit says
+/// ([`crate::poollimits::TakesEffect`]). A value [`crate::poollimits::Limit::check`] refuses, or no such pool, is
 /// refused, and what is kept stays.
 pub fn set_pool_limit(
     config_root: &Path,
@@ -743,6 +755,12 @@ pub fn set_pool_limit(
     let _locked = lock(config_root);
     let mut held = load(config_root)?;
     if let Some(pool) = held.pools.iter_mut().find(|pool| pool.name == name) {
+        if id.limit().clusters_only {
+            return Err(Refused::Other(format!(
+                "{} is a cluster pool's, and {name} is a Docker pool",
+                id.limit().plain
+            )));
+        }
         pool.set.chosen = pool.set.chosen.with(id, value);
     } else if let Some(pool) = held.clusters.iter_mut().find(|pool| pool.name == name) {
         *pool.chosen = pool.chosen.with(id, value);
@@ -916,6 +934,7 @@ fn keep_in(
         of: of.filter(|pool| *pool != name).map(str::to_owned),
         draining: false,
         carried: false,
+        carry_failed: false,
         unpaired: false,
         signed_out: Vec::new(),
         engine: None,
@@ -1144,6 +1163,9 @@ fn to_row(kept: &Kept) -> serde_json::Value {
     if kept.carried {
         row["carried"] = true.into();
     }
+    if kept.carry_failed {
+        row["carry_failed"] = true.into();
+    }
     if kept.unpaired {
         row["unpaired"] = true.into();
     }
@@ -1182,6 +1204,7 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         "of",
         "draining",
         "carried",
+        "carry_failed",
         "unpaired",
         "signed_out",
         "engine",
@@ -1206,6 +1229,11 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         Some(_) => return None,
     };
     let carried = match fields.get("carried") {
+        None => false,
+        Some(serde_json::Value::Bool(true)) => true,
+        Some(_) => return None,
+    };
+    let carry_failed = match fields.get("carry_failed") {
         None => false,
         Some(serde_json::Value::Bool(true)) => true,
         Some(_) => return None,
@@ -1264,6 +1292,7 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         of,
         draining,
         carried,
+        carry_failed,
         unpaired,
         signed_out,
         engine,
@@ -1460,7 +1489,14 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         },
         frames: count(fields.get("frames"))?,
         width: count(fields.get("width"))?,
-        chosen: crate::poollimits::Chosen::from_row(fields).ok()?,
+        // The same checks as the command's: a limit only a cluster pool has is no Docker pool's.
+        chosen: crate::poollimits::Chosen::from_row(fields)
+            .ok()
+            .filter(|chosen| {
+                !crate::poollimits::all()
+                    .iter()
+                    .any(|limit| limit.clusters_only && chosen.get(limit.id).is_some())
+            })?,
     };
     Pool::new(text("name")?, Image::pinned(text("image")?).ok()?, set).ok()
 }
@@ -1508,6 +1544,13 @@ pub struct ClusterPool {
 }
 
 impl ClusterPool {
+    /// This pool with its limit `id` set to `value`: what its add was retried with (spec #4275).
+    #[must_use]
+    pub fn with_limit(mut self, id: crate::poollimits::LimitId, value: u64) -> ClusterPool {
+        *self.chosen = self.chosen.with(id, Some(value));
+        self
+    }
+
     /// A cluster pool called `name` (as a Docker pool is named), its kubeconfig an absolute
     /// path, its context a name kubectl knows, its cluster `pool` and `namespace` named as
     /// Kubernetes names them, pinning `pin`.
@@ -2003,6 +2046,22 @@ pub fn keep_cluster_pin(config_root: &Path, name: &str, pin: &PoolPin) -> Result
         return Ok(());
     }
     held.clusters[at] = held.clusters[at].repinned(pin);
+    write(config_root, &held)
+}
+
+/// **Keeps whether the cluster pool `name`'s Pool opts in to minting now** (#4330): a Pool may opt in
+/// after it was added. Read only to say whether a chat's repos are sent to the Claim, so it decides
+/// nothing the cluster's own policy and operator do not.
+pub fn keep_cluster_minting(config_root: &Path, name: &str, opted_in: bool) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(at) = held.clusters.iter().position(|pool| pool.name() == name) else {
+        return Ok(());
+    };
+    if held.clusters[at].mints_in_cluster() == opted_in {
+        return Ok(());
+    }
+    held.clusters[at] = held.clusters[at].clone().minting_in_cluster(opted_in);
     write(config_root, &held)
 }
 

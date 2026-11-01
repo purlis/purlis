@@ -47,6 +47,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use purlis_core::dockerpool::Typed;
+use purlis_core::poollimits::LimitId;
 use purlis_core::profilestore::sign_in::{Standing, callback, driven};
 use purlis_core::profilestore::{self, onrunner};
 
@@ -692,6 +693,15 @@ fn keep_on_as(
         .next()
         .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
         .map(|kept| Some(onrunner::standing_on_the_wire(kept.standing)))
+        .map_err(|why| {
+            if why == crate::runnerlinks::ANSWER_LATE {
+                let secs = kept.limits.in_force(LimitId::AnswerWait);
+                let hit = LimitId::AnswerWait.limit().waited(secs, None);
+                format!("{why}: {}", purlis_core::poollimits::hit_on(pool, hit))
+            } else {
+                why
+            }
+        })
 }
 
 /// **A limit a start was refused on**, as Start a chat offers to raise it (spec #4275).
@@ -743,30 +753,175 @@ fn offer_of(over: onrunner::OverLimit) -> Option<PoolLimitOffer> {
 /// Start a chat offers beside that refusal. Asked of the core, never read from the words.
 #[tauri::command]
 #[specta::specta]
-pub async fn pool_limit_offer(profile: String, refused: String) -> Option<PoolLimitOffer> {
-    onrunner::over_limit(&profile, &refused).and_then(offer_of)
+pub async fn pool_limit_offer(
+    profile: String,
+    refused: String,
+    root: Option<String>,
+    cwd: Option<String>,
+) -> Option<PoolLimitOffer> {
+    onrunner::over_limit(&profile, &refused)
+        .and_then(offer_of)
+        .or_else(|| {
+            // The pool this start runs on, by this machine's store: nothing a runner said.
+            let root = PathBuf::from(root?);
+            let workspace =
+                crate::chats::workspace_at_start(Some(&root), cwd.as_deref().map(Path::new));
+            let pool =
+                purlis_core::pools::runs_on(&config_root().ok()?, &root, workspace.as_deref())
+                    .ok()??;
+            offer_of_hits(pool, &refused)
+        })
 }
 
-/// **Saves `value` as pool `pool`'s limit `key`** (spec #4275), the person's own press in their
-/// window: a chat has no way to it, and can only propose through the edit ask (Q6). It applies
-/// from the next attempt, with nothing restarted.
+/// The offer of the limits of `pool` that purlis measured and said in the words `refused`.
+fn offer_of_hits(pool: String, refused: &str) -> Option<PoolLimitOffer> {
+    let hits = purlis_core::poollimits::hits_said_in(&pool, refused);
+    if hits.is_empty() {
+        return None;
+    }
+    offer_of(onrunner::OverLimit {
+        profile: String::new(),
+        pool: Some(pool),
+        hits,
+        said: refused.to_owned(),
+    })
+}
+
+/// **The limits that refused a move to pool `pool` in the words `refused`** (#4313): what the
+/// move's line offers beside that refusal, as [`pool_limit_offer`] does for a start.
 #[tauri::command]
 #[specta::specta]
-pub async fn pool_limit_set(pool: String, key: String, value: u32) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let limit = purlis_core::poollimits::of_key(&key).ok_or_else(|| {
-            format!(
-                "a pool has no limit named {}",
-                purlis_core::shown::short(&key)
-            )
-        })?;
-        purlis_core::runners::set_pool_limit(
-            &config_root()?,
-            &pool,
-            limit.id,
-            Some(u64::from(value)),
+pub async fn pool_limit_offer_for_move(pool: String, refused: String) -> Option<PoolLimitOffer> {
+    onrunner::over_limit_on(&pool, &refused)
+        .and_then(offer_of)
+        .or_else(|| offer_of_hits(pool, &refused))
+}
+
+/// **One of a pool's limits, as its page draws it** (#4285).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolLimitRow {
+    /// Its key: what [`pool_limit_set`] and [`pool_limit_check`] take.
+    pub key: String,
+    /// Its name in plain words.
+    pub plain: String,
+    /// The word beside a number of it.
+    pub unit: String,
+    /// purlis's default.
+    pub default: u32,
+    /// The default in words: `128 MiB`.
+    pub default_said: String,
+    /// What the person set; `null` where it follows purlis's default.
+    pub set: Option<u32>,
+    /// When a change applies, where its group doesn't say it for all of its limits.
+    pub applies: Option<String>,
+}
+
+/// **A group of a pool's limits**: what they affect, and the limits that aren't under Advanced.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolLimitGroup {
+    pub label: String,
+    pub help: String,
+    /// When a change applies, where that's the same for all of its limits.
+    pub applies: Option<String>,
+    pub limits: Vec<PoolLimitRow>,
+}
+
+/// **A pool's limits, as its page draws them** (#4285): whatever the core's list holds, by group,
+/// and those under Advanced. A group with no limit isn't listed.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolLimitsPage {
+    pub groups: Vec<PoolLimitGroup>,
+    pub advanced: Vec<PoolLimitRow>,
+}
+
+/// What the page draws of the values `chosen`.
+fn limits_shown(chosen: &purlis_core::poollimits::Chosen) -> PoolLimitsPage {
+    use purlis_core::poollimits::{Group, Limit, all};
+    let number = |value: u64| u32::try_from(value).unwrap_or(u32::MAX);
+    let row = |limit: &Limit, says: bool| PoolLimitRow {
+        key: limit.key.to_owned(),
+        plain: limit.plain.to_owned(),
+        unit: limit.unit.word().to_owned(),
+        default: number(limit.default),
+        default_said: limit.unit.said(limit.default),
+        set: chosen.get(limit.id).map(number),
+        applies: says.then(|| limit.takes_effect.said().to_owned()),
+    };
+    let groups = Group::ALL
+        .into_iter()
+        .filter_map(|group| {
+            let held: Vec<&Limit> = all()
+                .iter()
+                // The vouch wait is the add's alone: no later attempt waits on it, so a value
+                // here would change nothing.
+                .filter(|limit| limit.group == group && !limit.advanced && !limit.clusters_only)
+                .collect();
+            let first = held.first()?;
+            let same = held
+                .iter()
+                .all(|limit| limit.takes_effect == first.takes_effect);
+            Some(PoolLimitGroup {
+                label: group.plain().to_owned(),
+                help: group.help().to_owned(),
+                applies: same.then(|| first.takes_effect.said().to_owned()),
+                limits: held.iter().map(|limit| row(limit, !same)).collect(),
+            })
+        })
+        .collect();
+    PoolLimitsPage {
+        groups,
+        advanced: all()
+            .iter()
+            .filter(|limit| limit.advanced)
+            .map(|limit| row(limit, true))
+            .collect(),
+    }
+}
+
+/// The limit named `key`, or why there is none.
+fn limit_named(key: &str) -> Result<&'static purlis_core::poollimits::Limit, String> {
+    purlis_core::poollimits::of_key(key).ok_or_else(|| {
+        format!(
+            "a pool has no limit named {}",
+            purlis_core::shown::short(key)
         )
-        .map_err(|why| why.to_string())
+    })
+}
+
+/// **Pool `pool`'s limits** (#4285), as its page draws them.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_limits(pool: String) -> Result<PoolLimitsPage, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let chosen = purlis_core::runners::chosen_limits_of(&config_root()?, &pool)
+            .map_err(|why| why.to_string())?;
+        Ok(limits_shown(&chosen))
+    })
+    .await
+    .map_err(|why| format!("the limits were not read: {why}"))?
+}
+
+/// **The value in the words `typed` for limit `key`, or why they aren't one it can be** (#4285):
+/// the file's and the command's check, asked as the person types.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_limit_check(key: String, typed: String) -> Result<u32, String> {
+    let limit = limit_named(&key)?;
+    let value = limit.check_typed(&typed, None)?;
+    u32::try_from(value).map_err(|_| format!("{} is too large a number here", limit.plain))
+}
+
+/// **Saves `value` as pool `pool`'s limit `key`, or, `null`, returns it to following purlis's
+/// default** (spec #4275), the person's own press in their window: a chat has no way to it, and
+/// can only propose through the edit ask (Q6). It applies as the limit says, with nothing
+/// restarted.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_limit_set(pool: String, key: String, value: Option<u32>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let limit = limit_named(&key)?;
+        purlis_core::runners::set_pool_limit(&config_root()?, &pool, limit.id, value.map(u64::from))
+            .map_err(|why| why.to_string())
     })
     .await
     .map_err(|why| format!("the limit was not saved: {why}"))?
@@ -1256,6 +1411,8 @@ struct SignIn {
     flow: u32,
     pool: String,
     name: String,
+    /// The pool's limit it was started under, in minutes (spec #4275).
+    wait: u64,
     driving: Arc<driven::Driving>,
     /// On a cluster pool, the runner the gate judged (#3819): each code passed on checks it
     /// is still so.
@@ -1264,6 +1421,9 @@ struct SignIn {
 
 static SIGN_INS: Mutex<Vec<SignIn>> = Mutex::new(Vec::new());
 static NEXT_SIGN_IN: AtomicU32 = AtomicU32::new(1);
+
+/// Why a sign-in ended, where another of the same profile on the same pool replaced it.
+const REPLACED: &str = "a later sign-in of this profile took its place";
 
 /// How long one ask for a sign-in's next step waits before it answers there is none yet.
 const STEP_WITHIN: Duration = Duration::from_secs(20);
@@ -1282,7 +1442,7 @@ pub struct PoolSignInTerminal {
 /// 0095). A login that waits for the browser is answered through this machine's port, for as
 /// long as it runs: the redirect, and only that, is carried to the runner over a link of its own
 /// (`sign_in_redirect`, #4044). A sign-in of the same profile on the same pool already running is
-/// cancelled. Answers the sign-in's number. With `terminal`, where purlis could not follow the
+/// stopped. Answers the sign-in's number. With `terminal`, where purlis could not follow the
 /// login or the person asked for a device code (#4106), it runs in a terminal the runner makes, for the person to drive in the strip (#4043):
 /// what it prints is [`PoolSignInStep::Printed`], and what is typed goes back by
 /// [`pool_sign_in_type`]. A login that waits for the browser runs there by its harness's
@@ -1335,6 +1495,9 @@ pub async fn pool_sign_in_start(
             ),
             Yours::Cluster(_) => None,
         };
+        // The pool's limit as it stands: only the wait changes, and every check above stands.
+        let longest = purlis_core::runners::longest_login_of(&config, &pool);
+        let wait = longest.as_secs() / 60;
         let login = login_on(&yours, &config, &pool, &name, provider.as_deref(), typed)?;
         let carry: callback::Carry = {
             let (config, pool, yours) = (config.clone(), pool.clone(), yours.clone());
@@ -1357,12 +1520,13 @@ pub async fn pool_sign_in_start(
             }
         };
         let driving = Arc::new(match terminal {
-            Some(_) => driven::in_a_terminal(&login, check)?,
+            Some(_) => driven::in_a_terminal(&login, longest, check)?,
             None => driven::drive_with(
                 &login,
                 &record.harness,
                 provider.as_deref(),
                 Some(carry),
+                longest,
                 check,
             )?,
         });
@@ -1380,6 +1544,7 @@ pub async fn pool_sign_in_start(
                     flow,
                     pool,
                     name,
+                    wait,
                     driving,
                     judged,
                 });
@@ -1389,13 +1554,13 @@ pub async fn pool_sign_in_start(
                 drop(held);
                 driving.cancel();
                 for one in before {
-                    one.driving.cancel();
+                    one.driving.stop(REPLACED);
                 }
-                return Err("a later sign-in of this profile took its place".to_owned());
+                return Err(REPLACED.to_owned());
             }
         };
         for one in before {
-            one.driving.cancel();
+            one.driving.stop(REPLACED);
         }
         Ok(flow)
     })
@@ -1417,6 +1582,7 @@ pub async fn pool_sign_in_next(
     })
     .await
     .map_err(|why| format!("the sign-in did not answer: {why}"))??;
+    let mut said_over = None;
     if let Some(event) = event.as_ref().filter(|event| event.is_last()) {
         let over = {
             let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -1424,20 +1590,39 @@ pub async fn pool_sign_in_next(
                 .position(|one| one.flow == flow)
                 .map(|at| held.remove(at))
         };
-        if let Some(over) = over
+        if let Some(over) = over.as_ref()
             && *event == driven::Event::SignedIn
         {
             // Told with no lock held; every project whose wait went has an Ask to stop drawing.
             let went = onrunner::let_go(None, &over.pool, &over.name);
             crate::machineprofiles::tell_asks_at(&app, &went);
         }
+        if let Some(over) = over
+            && matches!(event, driven::Event::Failed { why } if why == driven::TOOK_TOO_LONG)
+        {
+            said_over = Some(sign_in_ran_out(&over.pool, over.wait));
+        }
     }
-    Ok(event.map(PoolSignInStep::from))
+    Ok(event.map(|event| match said_over {
+        Some(why) => PoolSignInStep::from(driven::Event::Failed { why }),
+        None => PoolSignInStep::from(event),
+    }))
+}
+
+/// A sign-in on `pool` ended at the pool's limit of `wait` minutes, in words the window can ask
+/// of for what to raise it to (spec #4275).
+fn sign_in_ran_out(pool: &str, wait: u64) -> String {
+    let hit = LimitId::SignInWait.limit().waited(wait, None);
+    format!(
+        "{}: {}",
+        driven::TOOK_TOO_LONG,
+        purlis_core::poollimits::hit_on(pool, hit)
+    )
 }
 
 /// **Passes the code the person pasted to sign-in `flow`**, as one line: on a cluster pool, only
 /// while its runner is still as the gate judged it ([`still_driving`]); else the sign-in is
-/// cancelled and the code goes nowhere.
+/// stopped and the code goes nowhere.
 #[tauri::command]
 #[specta::specta]
 pub async fn pool_sign_in_paste(flow: u32, code: String) -> Result<(), String> {
@@ -1448,8 +1633,8 @@ pub async fn pool_sign_in_paste(flow: u32, code: String) -> Result<(), String> {
 
 /// **What drives sign-in `flow`, where what it was opened on still holds** (#3819): on a
 /// cluster pool, the runner the gate judged, still marked and run without the sandbox by no
-/// chat ([`still_yours`]); else the sign-in is cancelled and nothing goes to it. A sign-in no
-/// longer held is refused.
+/// chat ([`still_yours`]); else the sign-in is stopped, saying why (#4277), and nothing goes to
+/// it. A sign-in no longer held is refused.
 fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
     let (driving, judged) = SIGN_INS
         .lock()
@@ -1466,11 +1651,14 @@ fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
     if let Some((pool, judged)) = judged {
         let held = config_root().and_then(|config| still_yours(&config, &pool, &judged));
         if held.is_err() {
-            pool_sign_in_cancel(flow);
             // Not the start's words: by now something of it may have reached the runner.
-            return Err(format!(
+            let why = format!(
                 "the sign-in was stopped, as pool {pool} or its runner changed. Try again."
-            ));
+            );
+            for one in let_go(|one| one.flow == flow) {
+                one.driving.stop(&why);
+            }
+            return Err(why);
         }
     }
     Ok(driving)
@@ -1478,17 +1666,18 @@ fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
 
 /// **Cancels every sign-in running on pool `pool`** (#3819): its mark was taken back.
 pub fn cancel_sign_ins_on(pool: &str) {
-    let gone: Vec<SignIn> = {
-        let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
-        let (gone, kept) = std::mem::take(&mut *held)
-            .into_iter()
-            .partition(|one| one.pool == pool);
-        *held = kept;
-        gone
-    };
-    for one in gone {
-        one.driving.cancel();
+    let why = format!("the sign-in was stopped, as pool {pool} is no longer marked yours.");
+    for one in let_go(|one| one.pool == pool) {
+        one.driving.stop(&why);
     }
+}
+
+/// **The sign-ins `which` picks, no longer held**, for the caller to end with no lock held.
+fn let_go(which: impl Fn(&SignIn) -> bool) -> Vec<SignIn> {
+    let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
+    let (gone, kept) = std::mem::take(&mut *held).into_iter().partition(which);
+    *held = kept;
+    gone
 }
 
 /// **Passes what the person typed in the strip's terminal to sign-in `flow`**, as it is: on a
@@ -1517,21 +1706,20 @@ pub async fn pool_sign_out(pool: String, name: String) -> Result<Option<String>,
             Yours::Docker(_) => {
                 let docker = crate::runnerlinks::docker()?;
                 // First, so that no drain carries it even if the rest stops short.
-                draining = purlis_core::pools::sign_out_draining(&config, &docker, &pool, &name)
-                    .map_err(|why| why.to_string())?;
+                draining =
+                    purlis_core::pools::sign_out_draining(&config, &docker, &pool, &name, &[])
+                        .map_err(|why| why.to_string())?;
                 let runner = this_desktops_runner(&config, &pool)
                     .map_err(|why| with_draining_said(why, &name, &draining))?;
                 docker
                     .sign_out(&runner.made, &name)
                     .map_err(|why| with_draining_said(why, &name, &draining))?;
                 // A follow since the first look leaves a runner draining that was not reached.
-                for late in purlis_core::pools::sign_out_draining(&config, &docker, &pool, &name)
-                    .map_err(|why| with_draining_said(why.to_string(), &name, &draining))?
-                {
-                    if !draining.iter().any(|(runner, _)| *runner == late.0) {
-                        draining.push(late);
-                    }
-                }
+                let late = purlis_core::pools::sign_out_draining(
+                    &config, &docker, &pool, &name, &draining,
+                )
+                .map_err(|why| with_draining_said(why.to_string(), &name, &draining))?;
+                draining.extend(late);
             }
             // Over this machine's kubectl, to the runner the gate judged, still so (#3819). A
             // cluster pool's one runner never drains.
@@ -1683,15 +1871,7 @@ fn this_desktops_runner(config: &Path, pool: &str) -> Result<purlis_core::runner
 #[tauri::command]
 #[specta::specta]
 pub fn pool_sign_in_cancel(flow: u32) {
-    let gone: Vec<SignIn> = {
-        let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
-        let (gone, kept) = std::mem::take(&mut *held)
-            .into_iter()
-            .partition(|one| one.flow == flow);
-        *held = kept;
-        gone
-    };
-    for one in gone {
+    for one in let_go(|one| one.flow == flow) {
         one.driving.cancel();
     }
 }

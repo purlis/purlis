@@ -116,14 +116,14 @@ pub use recording::{Ended, ReadsLog, Record, RecordsNothing, Stopped};
 #[cfg(unix)]
 pub use relay::{Dial, Keep, Relay};
 #[cfg(unix)]
-pub use routing::{DrainsTo, RelaysTo, Routed};
+pub use routing::{DrainsTo, RelaysTo, Routed, RunsAgain};
 #[cfg(unix)]
 pub use serving::{
     Answering, DeletingOwnFolders, Delivering, Forgetting, Holding, HostError, Keeping, LOCK,
     Listing, Pairing, Place, Unpairing, Window, serve, serve_answering,
 };
 #[cfg(unix)]
-pub use unattended::UNLINKED_FOR;
+pub use unattended::{Idles, UNLINKED_FOR};
 
 /// The argument that starts the window's binary as its session host. Its word is the window's
 /// own business: the binary is the window's, and only the window starts it so.
@@ -184,17 +184,20 @@ pub fn serve_alone(place: &Place, hosting: impl FnOnce(&Place) -> Hosting) -> i3
 /// with ([`Pairing`]) on its link socket ([`Place::link`]), which the bridge a connector runs
 /// opens (ADR 0078 §2). **Paired, it suspends itself after `suspends` with no link from its
 /// desktop** (#2051, [`UNLINKED_FOR`] by default), where it is given one: it stops serving, and
-/// every program it runs ends as at a quit.
+/// every program it runs ends as at a quit. **Paired, it also stops once it has been idle**
+/// ([`Idles`], #3980), where it is told to.
 #[cfg(unix)]
 pub fn serve_alone_answering(
     place: &Place,
     hosting: impl FnOnce(&Place) -> Hosting,
     pairing: Pairing,
     suspends: Option<std::time::Duration>,
+    idles: Option<Idles>,
 ) -> i32 {
     let hosting = hosting(place);
     let answering = std::sync::Arc::clone(&pairing.answering);
-    let suspended = {
+    let answering_too = std::sync::Arc::clone(&answering);
+    let unlinked = {
         let hosting = hosting.clone();
         async move {
             match suspends {
@@ -205,6 +208,26 @@ pub fn serve_alone_answering(
                 }
                 None => std::future::pending().await,
             }
+        }
+    };
+    let idle = {
+        let hosting = hosting.clone();
+        async move {
+            match idles {
+                Some(Idles { after, said }) => {
+                    hosting
+                        .until_idle_for(after, move || matches!(answering_too(), Ok(Some(_))))
+                        .await;
+                    said();
+                }
+                None => std::future::pending().await,
+            }
+        }
+    };
+    let suspended = async move {
+        tokio::select! {
+            () = unlinked => {}
+            () = idle => {}
         }
     };
     run(place, None, hosting, Some(pairing), suspended)

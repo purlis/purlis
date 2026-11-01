@@ -497,6 +497,13 @@ pub fn normalised(spec: &PodSpec) -> serde_json::Value {
     for list in ["initContainers", "containers"] {
         if let Some(Value::Array(containers)) = pod.get_mut(list) {
             for container in containers.iter_mut().filter_map(Value::as_object_mut) {
+                // A runner's idle time says only when it stops itself: a runner made before the
+                // pool's time changed, or before there was one, is still its template's (#3980).
+                if let Some(Value::Array(env)) = container.get_mut("env") {
+                    env.retain(|one| {
+                        one.get("name") != Some(&json!(crate::upstream::IDLE_AFTER_VAR))
+                    });
+                }
                 container.remove("imagePullPolicy");
                 if container.get("resources").is_some_and(plain_resources) {
                     container.remove("resources");

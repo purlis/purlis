@@ -149,6 +149,30 @@ const LINK_WITHIN: Duration = Duration::from_secs(30);
 /// How long a command waits for the host's answer.
 pub(crate) const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 
+/// What a command no host answered in time says.
+const NOT_IN_TIME: &str = "the session host did not answer in time";
+
+/// **What one send of code is held to** (spec #4275): the most bytes, the longest time, what the
+/// host is told of them, and the limit a send that ran out of time hit.
+struct SendHeld {
+    most: u64,
+    within: Duration,
+    given: Option<session::CodeHeld>,
+    late: Option<purlis_core::poollimits::LimitHit>,
+}
+
+impl SendHeld {
+    /// A host's own bounds, which no limit moves: a moving chat's conversation.
+    fn fixed(most: u64) -> SendHeld {
+        SendHeld {
+            most,
+            within: purlis_host::TRANSFER_WITHIN,
+            given: None,
+            late: None,
+        }
+    }
+}
+
 /// **How often a chat's start looks whether the person cancelled it** (#4264). A start has no limit
 /// of its own: a busy host is still coming up, so it waits until the host answers, its link ends,
 /// which is the host having failed, or the person cancels.
@@ -523,6 +547,16 @@ impl Connection {
         self.to_a_pool.as_ref().map(|(_, pool)| pool.as_str())
     }
 
+    /// Whether a runner of this connection's pool drains now: neither runner's fetch removes what
+    /// only the other has (#4248), after a window's restart too, with one link open (#4271).
+    fn pool_drains(&self) -> bool {
+        let (Some(pool), Some(config)) = (self.pool(), self.runners_config()) else {
+            return false;
+        };
+        purlis_core::runners::draining(&config)
+            .is_ok_and(|draining| draining.iter().any(|kept| kept.pool() == pool))
+    }
+
     /// `end` ends the browsers the window started on a pool once a chat ran there, or may have
     /// run there, without the sandbox (D-2050-28).
     pub fn ending_browsers_with(&self, end: EndingBrowsers) {
@@ -611,12 +645,14 @@ impl Connection {
                 let relayed = lock(&window.relayed).clone().ok_or_else(|| {
                     no_host("there is no way to reach a pool's runner through it")
                 })?;
-                relayed(within, naming, pool).map_err(|why| {
-                    format!(
-                        "This workspace's chats run on pool {pool}, and its runner was not \
-                         reached, so nothing was sent: {why}"
-                    )
-                })?
+                relayed(within, naming, pool)
+                    .map_err(|why| {
+                        format!(
+                            "This workspace's chats run on pool {pool}, and its runner was not \
+                             reached, so nothing was sent: {why}"
+                        )
+                    })?
+                    .with_pools_in(self.runners_config())
             }
             None => {
                 let dial = lock(&self.dial)
@@ -1025,8 +1061,15 @@ pub struct HostLink {
     /// Why the host did not take the window's name on it, where it was named and did not
     /// (#2623): said by whoever opened it, never with the name.
     unnamed: Option<String>,
-    /// The most bytes one bundle it moves may carry, either way (1.34, #2046).
+    /// The most bytes one bundle a host writes back may carry (1.34, #2046): fixed, whatever a
+    /// pool's limits on sends say, so raising them widens nothing a runner can make this machine
+    /// take.
     most_bundle_bytes: u64,
+    /// The pool whose runner this link reaches, whose limits it follows (spec #4275).
+    pool: Option<String>,
+    /// Where this machine keeps that pool ([`Connection::runners_config`]): none reads purlis's
+    /// defaults, as a test's host does.
+    pools_in: Option<PathBuf>,
     /// The runner this link reached, as `<pool>/<runner>`, as its host said it (1.48, #3417).
     reached: Option<String>,
 }
@@ -1272,6 +1315,8 @@ impl HostLink {
             ended: std::sync::atomic::AtomicBool::new(false),
             unnamed,
             most_bundle_bytes: purlis_session_protocol::code::MOST_BUNDLE_BYTES,
+            pool: relaying.map(str::to_owned),
+            pools_in: None,
             reached,
         })
     }
@@ -1291,9 +1336,50 @@ impl HostLink {
         self.client.end_link();
     }
 
-    /// Send `command` and wait for the host's answer, from any thread.
+    /// This link, reading its pool's limits from `config`.
+    fn with_pools_in(mut self, config: Option<PathBuf>) -> HostLink {
+        self.pools_in = config;
+        self
+    }
+
+    /// **This link's pool's limits, as they stand now** (spec #4275): read at each attempt, so a
+    /// changed value applies with nothing restarted. Purlis's defaults on a link to no pool, or
+    /// where they can't be read.
+    fn limits(&self) -> purlis_core::poollimits::Chosen {
+        self.pool
+            .as_deref()
+            .zip(self.pools_in.as_deref())
+            .and_then(|(pool, config)| purlis_core::runners::chosen_limits_of(config, pool).ok())
+            .unwrap_or_default()
+    }
+
+    /// `hit` in words, kept for the window to ask of where this link is a pool's.
+    fn limit_said(&self, hit: purlis_core::poollimits::LimitHit) -> String {
+        match &self.pool {
+            Some(pool) => purlis_core::poollimits::hit_on(pool, hit),
+            None => hit.said(),
+        }
+    }
+
+    /// Send `command` and wait for the host's answer, from any thread: on a link to a pool's
+    /// runner, for as long as the pool's limit says (spec #4275). Only the wait changes.
     pub(crate) fn call(&self, command: Command) -> Result<Answer, String> {
-        self.call_within(command, ANSWER_WITHIN)
+        use purlis_core::poollimits::LimitId::AnswerWait;
+        if self.pool.is_none() {
+            return self.call_within(command, ANSWER_WITHIN);
+        }
+        let secs = self.limits().in_force(AnswerWait);
+        // Only this machine's own clock says the wait ran out: no words of a runner can.
+        match self.call_timed(command, Duration::from_secs(secs)) {
+            Some(answered) => answered.map_err(|refused| refused.why),
+            None => {
+                let hit = AnswerWait.limit().waited(secs, None);
+                Err(format!(
+                    "the runner did not answer in time: {}",
+                    self.limit_said(hit)
+                ))
+            }
+        }
     }
 
     /// [`Self::call`], waiting at most `within`.
@@ -1309,6 +1395,20 @@ impl HostLink {
         command: Command,
         within: Duration,
     ) -> Result<Answer, purlis_session_protocol::session::Refusal> {
+        self.call_timed(command, within).unwrap_or_else(|| {
+            Err(purlis_session_protocol::session::Refusal {
+                code: String::new(),
+                why: NOT_IN_TIME.to_owned(),
+            })
+        })
+    }
+
+    /// The host's answer to `command`, or `None` where `within` ran out first.
+    fn call_timed(
+        &self,
+        command: Command,
+        within: Duration,
+    ) -> Option<Result<Answer, purlis_session_protocol::session::Refusal>> {
         let (answered, answer) = std::sync::mpsc::channel();
         let client = Arc::clone(&self.client);
         self.runtime.spawn(async move {
@@ -1319,14 +1419,15 @@ impl HostLink {
             why,
         };
         match answer.recv_timeout(within) {
-            Ok(Ok(answer)) => Ok(answer),
-            Ok(Err(why)) => Err(why
-                .refusal()
-                .cloned()
-                .unwrap_or_else(|| unanswered(why.to_string()))),
-            Err(_) => Err(unanswered(
-                "the session host did not answer in time".to_owned(),
-            )),
+            Ok(answered) => Some(answered.map_err(|why| {
+                why.refusal()
+                    .cloned()
+                    .unwrap_or_else(|| unanswered(why.to_string()))
+            })),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                Some(Err(unanswered("the session host's link ended".to_owned())))
+            }
         }
     }
 
@@ -1337,7 +1438,8 @@ impl HostLink {
     /// commands wait on, so it keeps a quick command's limit.
     fn call_of_a_start(&self, command: Command) -> Result<Answer, String> {
         if !can_be_cancelled() {
-            return self.call(command);
+            // It may run under a lock window commands wait on: never a pool's raised wait.
+            return self.call_within(command, ANSWER_WITHIN);
         }
         let (answered, answer) = std::sync::mpsc::channel();
         let client = Arc::clone(&self.client);
@@ -1451,10 +1553,12 @@ impl HostLink {
             return Err(moves_no_code());
         }
         let (project, repo) = (project.to_owned(), repo.to_owned());
-        self.write_on_a_stream(bundle, move |client, transfer| {
+        let held = self.held_for_a_send(bundle)?;
+        let given = held.given;
+        self.write_on_a_stream(bundle, held, move |client, transfer| {
             Box::pin(async move {
                 client
-                    .take_code(&project, &repo, transfer, refs, checkout)
+                    .take_code_held(&project, &repo, transfer, refs, checkout, given)
                     .await
             })
         })
@@ -1473,10 +1577,12 @@ impl HostLink {
     ) -> Result<Vec<session::CodeRef>, String> {
         self.moves_chats()?;
         let (project, repo) = (project.to_owned(), repo.to_owned());
-        self.write_on_a_stream(bundle, move |client, transfer| {
+        let held = self.held_for_a_send(bundle)?;
+        let given = held.given;
+        self.write_on_a_stream(bundle, held, move |client, transfer| {
             Box::pin(async move {
                 client
-                    .take_work(&project, &repo, transfer, refs, checkout)
+                    .take_work_held(&project, &repo, transfer, refs, checkout, given)
                     .await
             })
         })
@@ -1491,7 +1597,8 @@ impl HostLink {
     ) -> Result<(), String> {
         self.moves_chats()?;
         let (project, carried) = (project.to_owned(), carried.clone());
-        self.write_on_a_stream(Some(file), move |client, transfer| {
+        let held = SendHeld::fixed(self.most_bundle_bytes);
+        self.write_on_a_stream(Some(file), held, move |client, transfer| {
             Box::pin(async move {
                 client
                     .take_conversation(
@@ -1615,19 +1722,60 @@ impl HostLink {
         Ok(())
     }
 
+    /// **What a send of the bundle at `bundle` is held to**, by the pool's limits as they stand
+    /// (spec #4275), or the limit it is already over: measured here, never a number a runner
+    /// said, so nothing has gone yet. A runner before 1.65 holds a send to its own bounds
+    /// whatever it is told, so they are the highest it can be there.
+    fn held_for_a_send(&self, bundle: Option<&Path>) -> Result<SendHeld, String> {
+        use purlis_core::poollimits::LimitId::{CodeSendTime, CodeSize};
+        use purlis_session_protocol::code::MOST_BUNDLE_BYTES;
+        const MIB: u64 = 1 << 20;
+        let limits = self.limits();
+        let older = self.version() < session::KNOWS_CODE_HELD;
+        let size_highest = older.then_some(MOST_BUNDLE_BYTES / MIB);
+        let time_highest = older.then_some(purlis_host::TRANSFER_WITHIN.as_secs() / 60);
+        let held_to =
+            |value: u64, highest: Option<u64>| highest.map_or(value, |top| top.min(value));
+        let mib = held_to(limits.in_force(CodeSize), size_highest);
+        let minutes = held_to(limits.in_force(CodeSendTime), time_highest);
+        let most = mib.saturating_mul(MIB);
+        let size = bundle
+            .and_then(|bundle| std::fs::metadata(bundle).ok())
+            .map_or(0, |file| file.len());
+        if size > most {
+            let hit = CodeSize.limit().hit(mib, size.div_ceil(MIB), size_highest);
+            return Err(self.limit_said(hit));
+        }
+        let within = Duration::from_secs(minutes.saturating_mul(60));
+        Ok(SendHeld {
+            most,
+            within,
+            given: (!older).then_some(session::CodeHeld {
+                most_bytes: most,
+                within_secs: within.as_secs(),
+            }),
+            late: Some(CodeSendTime.limit().waited(minutes, time_highest)),
+        })
+    }
+
     /// One transfer the client writes: `ask` names it, and `file`'s bytes, where there is one,
-    /// go on the code stream the host opens for it, at most the link's bound.
+    /// go on the code stream the host opens for it, at most what `held` says. Run out of its
+    /// time, by this machine's own clock, it says the limit it hit, whatever a runner said.
     fn write_on_a_stream<T: Send + 'static>(
         &self,
         file: Option<&Path>,
+        held: SendHeld,
         ask: impl FnOnce(Arc<Client>, u64) -> Transferred<T>,
     ) -> Result<T, String> {
         let transfer = self.next_transfer();
         let stream = self.stream_for(transfer);
-        let most = self.most_bundle_bytes;
+        let SendHeld {
+            most, within, late, ..
+        } = held;
+        let started = std::time::Instant::now();
         let asked = ask(Arc::clone(&self.client), transfer);
         let file = file.map(Path::to_path_buf);
-        self.transfer(transfer, async move {
+        let sent = self.transfer(transfer, within, async move {
             let writing = async move {
                 let mut stream = stream.await.map_err(|_| no_code_stream())?;
                 if let Some(file) = file {
@@ -1656,6 +1804,10 @@ impl HostLink {
                     asked.await.map_err(code_refused)
                 }
             }
+        });
+        sent.map_err(|why| match late {
+            Some(hit) if started.elapsed() >= within => self.limit_said(hit),
+            _ => why,
         })
     }
 
@@ -1672,7 +1824,7 @@ impl HostLink {
         let most = self.most_bundle_bytes;
         let asked = ask(Arc::clone(&self.client), transfer);
         let into = into.to_path_buf();
-        self.transfer(transfer, async move {
+        self.transfer(transfer, purlis_host::TRANSFER_WITHIN, async move {
             let reading = async move {
                 let mut stream = stream.await.map_err(|_| no_code_stream())?;
                 let mut file = tokio::fs::File::create(&into)
@@ -1719,11 +1871,13 @@ impl HostLink {
         stream
     }
 
-    /// Run one transfer on the link's runtime and wait for it, at most the host's own bound
-    /// on a transfer; the stream it waited for is let go of whatever the outcome.
+    /// Run one transfer on the link's runtime and wait for it, at most `within`, the host's
+    /// bound on it, and the time to hear its answer; the stream it waited for is let go of
+    /// whatever the outcome.
     fn transfer<T: Send + 'static>(
         &self,
         transfer: u64,
+        within: Duration,
         moving: impl std::future::Future<Output = Result<T, String>> + Send + 'static,
     ) -> Result<T, String> {
         let (moved, outcome) = std::sync::mpsc::channel();
@@ -1731,7 +1885,7 @@ impl HostLink {
             let _ = moved.send(moving.await);
         });
         let outcome = outcome
-            .recv_timeout(purlis_host::TRANSFER_WITHIN + ANSWER_WITHIN)
+            .recv_timeout(within + ANSWER_WITHIN)
             .unwrap_or_else(|_| Err("the host did not finish moving the code in time".into()));
         lock(&self.shared.transfers).remove(&transfer);
         outcome
@@ -4001,7 +4155,8 @@ impl SessionHost for HostedSessions {
         match self.link() {
             Ok((link, project)) => {
                 let beside = self.connection.links_of(&self.root).len() > 1
-                    || lock(&self.stays_on).is_some();
+                    || lock(&self.stays_on).is_some()
+                    || self.connection.pool_drains();
                 crate::runnercode::fetch_workspace(
                     &link, &project, &self.root, workspace, pool, beside,
                 )

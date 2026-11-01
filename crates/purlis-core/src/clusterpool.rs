@@ -963,6 +963,14 @@ impl Kubectl {
         args
     }
 
+    /// The words that tell a paired runner again at a link (#4330). A runner from before them
+    /// refuses the word, so it keeps what it followed.
+    pub fn tell_mint_port_again_args(&self, namespace: &str, pod: &str) -> Vec<String> {
+        let mut args = self.tell_mint_port_args(namespace, pod);
+        args.push("--again".to_owned());
+        args
+    }
+
     /// Runs kubectl with `args`, handing it `input`, and answers what it printed, up to `most`
     /// bytes. What it says on standard error is only shown, never read to decide anything.
     pub fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
@@ -1407,6 +1415,54 @@ impl Kubectl {
         .map(|_| ())
     }
 
+    /// **Asks the operator to run the Claim `namespace`/`name`'s idle runner again** (#3980), where
+    /// its `Idle` condition says it is suspended: the condition's own time is the word, so this
+    /// says nothing of any later suspension. Nothing is written otherwise.
+    pub fn run_again_if_idle(&self, namespace: &str, name: &str) -> Result<(), Refused> {
+        let Some(held) = self.claim_json(namespace, name)? else {
+            return Ok(());
+        };
+        let Some(since) = idle_since(&held) else {
+            return Ok(());
+        };
+        if held
+            .pointer("/metadata/annotations")
+            .and_then(|marks| marks.get(RUN_AGAIN_ANNOTATION))
+            .and_then(serde_json::Value::as_str)
+            == Some(since)
+        {
+            return Ok(());
+        }
+        let patch = serde_json::json!({
+            "metadata": { "annotations": { RUN_AGAIN_ANNOTATION: since } },
+        })
+        .to_string();
+        self.run(
+            &self.args(&[
+                "patch",
+                "claims.runners.purlis.dev",
+                name,
+                "--namespace",
+                namespace,
+                "--type=merge",
+                "--patch",
+                &patch,
+            ]),
+            None,
+            MOST_PRINTED,
+        )
+        .map(|_| ())
+    }
+
+    /// **What the Claim `namespace`/`name` says of its deletion** (#3981), where its operator gave
+    /// notice: when, in its words. Data, never read to decide.
+    pub fn deletion_notice(&self, namespace: &str, name: &str) -> Result<Option<String>, Refused> {
+        Ok(self
+            .claim_json(namespace, name)?
+            .as_ref()
+            .and_then(deletion_notice_of))
+    }
+
     /// The Claim `namespace`/`name` as the cluster has it, where it does.
     fn claim_json(
         &self,
@@ -1727,6 +1783,7 @@ pub fn told_of_the_port(
         cluster: pin.cluster.clone(),
         address,
         keys: vec![pin.key.spelled()],
+        left: Vec::new(),
     }
 }
 
@@ -1770,6 +1827,43 @@ pub fn tell_the_mint_port(
             crate::runnerlink::MOST_LINE,
         )
         .map(|_| ())
+}
+
+/// **What to tell the runner of `claimed` at a link** (#4330), from one read of its Pool and Claim:
+/// `None` where the Pool does not opt in or the status is yet to say, so the next link asks again.
+pub fn to_tell_at_a_link(
+    seen: &PoolSeen,
+    kubectl: &Kubectl,
+    pin: &PoolPin,
+    claimed: &Claimed,
+) -> Result<Option<crate::forge::mintport::Told>, Refused> {
+    if !seen.mints_in_cluster {
+        return Ok(None);
+    }
+    Ok(kubectl
+        .claim_mint(&claimed.namespace, &claimed.name)?
+        .map(|(address, _says_of_its_key)| told_of_the_port(claimed, pin, address)))
+}
+
+/// What a runner prints once a word at a link settled it (#4330).
+pub const TOLD_SETTLED: &str = "settled";
+
+/// **Tells the runner in `pod` again** (#4330, [`crate::forge::mintport::tell_again`]): true where it
+/// says that settled it, so this desktop need not say it again.
+pub fn tell_again(
+    kubectl: &Kubectl,
+    runner_namespace: &str,
+    pod: &str,
+    told: &crate::forge::mintport::Told,
+) -> Result<bool, Refused> {
+    let line = serde_json::to_string(told).map_err(|why| Refused::Other(why.to_string()))?;
+    kubectl
+        .run(
+            &kubectl.tell_mint_port_again_args(runner_namespace, pod),
+            Some(&format!("{line}\n")),
+            crate::runnerlink::MOST_LINE,
+        )
+        .map(|said| said.trim() == TOLD_SETTLED)
 }
 
 /// **Before every link**: the operator still vouches for the pod and key `paired` was paired
@@ -1951,6 +2045,41 @@ fn vouched_within(
         std::thread::sleep(every);
     }
 }
+
+/// What a desktop writes on a Claim to run its idle runner again (#3980):
+/// `operator/src/lifecycle.rs` reads it.
+pub const RUN_AGAIN_ANNOTATION: &str = "runners.purlis.dev/run-again";
+
+/// When the Claim `held` says its runner was suspended for being idle, where it says so.
+pub fn idle_since(held: &serde_json::Value) -> Option<&str> {
+    held.pointer("/status/conditions")?
+        .as_array()?
+        .iter()
+        .find(|one| {
+            one.get("type").and_then(serde_json::Value::as_str) == Some("Idle")
+                && one.get("status").and_then(serde_json::Value::as_str) == Some("True")
+        })?
+        .get("lastTransitionTime")?
+        .as_str()
+}
+
+/// What the Claim `held`'s `DeletionNotice` condition says, where it is `True` (#3981).
+pub fn deletion_notice_of(held: &serde_json::Value) -> Option<String> {
+    let notice = held
+        .pointer("/status/conditions")?
+        .as_array()?
+        .iter()
+        .find(|one| {
+            one.get("type").and_then(serde_json::Value::as_str) == Some("DeletionNotice")
+                && one.get("status").and_then(serde_json::Value::as_str) == Some("True")
+        })?;
+    notice
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .map(crate::shown::short)
+}
+
+pub mod idle;
 
 #[cfg(test)]
 pub(crate) mod tests;

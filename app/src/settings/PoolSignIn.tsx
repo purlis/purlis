@@ -3,7 +3,13 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { commands, type PoolSignInStep, type PoolSignInTerminal } from "../bindings";
+import {
+  commands,
+  type PoolLimitOffer,
+  type PoolSignInStep,
+  type PoolSignInTerminal,
+} from "../bindings";
+import { RaiseLimit } from "../RaiseLimit";
 import { Badge } from "../ui/badge/Badge";
 import { Button } from "../ui/button/Button";
 import { Card } from "../ui/card/Card";
@@ -134,6 +140,8 @@ export function PoolSignIn({
   const [code, setCode] = useState("");
   const [pasteRefused, setPasteRefused] = useState<string>();
   const [attempt, setAttempt] = useState(0);
+  /** What to raise the pool's limit to, where the last try ran out of it (spec #4275). */
+  const [limitOffer, setLimitOffer] = useState<PoolLimitOffer>();
   // Why this try runs in the strip's terminal, where it does: purlis could not follow the one
   // before, or the person asked for a device code (#4106).
   const [terminalFor, setTerminalFor] = useState<"lost" | "device">();
@@ -193,6 +201,15 @@ export function PoolSignIn({
           return;
         }
         if (now.at === "signed-in") signedIn.current?.();
+        if (now.at === "failed") {
+          const why = now.why;
+          void commands
+            .poolLimitOfferForMove(pool, why)
+            .catch(() => null)
+            .then((offer) => {
+              if (!left) setLimitOffer(offer ?? undefined);
+            });
+        }
         if (["signed-in", "port-taken", "failed", "cancelled"].includes(now.at)) {
           flow.current = undefined;
           return;
@@ -251,7 +268,23 @@ export function PoolSignIn({
     setCode("");
     setPasteRefused(undefined);
     printing.current.held = [];
+    setLimitOffer(undefined);
     setAttempt((n) => n + 1);
+  };
+
+  const raiseAndTryAgain = (values: ReadonlyArray<readonly [string, number]>) => {
+    void Promise.all(
+      values.map(([key, value]) =>
+        commands.poolLimitSet(pool, key, value).catch((err: unknown) => ({
+          status: "error" as const,
+          error: String(err),
+        })),
+      ),
+    ).then((saved) => {
+      const refused = saved.find((one) => one.status === "error");
+      if (refused?.status === "error") setPasteRefused(refused.error);
+      else tryAgain();
+    });
   };
 
   // The port-taken login is over: the core starts the harness's device flow in a terminal.
@@ -303,6 +336,8 @@ export function PoolSignIn({
       onPaste={paste}
       page={page}
       onTryAgain={tryAgain}
+      limitOffer={limitOffer}
+      onRaiseLimit={raiseAndTryAgain}
       onEnd={onEnd}
       onTerminal={onTerminal}
       terminal={inTerminal ? { printer, onType: type, attempt } : undefined}
@@ -351,6 +386,9 @@ export type SignInStripProps = {
   /** The page the login opened, to open again. */
   page: string | undefined;
   onTryAgain: () => void;
+  /** What to raise the pool's limit to, where the last try ran out of it (spec #4275). */
+  limitOffer?: PoolLimitOffer;
+  onRaiseLimit?: (values: ReadonlyArray<readonly [string, number]>) => void;
   onEnd: (signedIn: boolean) => void;
   onTerminal?: () => void;
   /** The strip's terminal, while a login runs in it or just ended there. */
@@ -478,6 +516,14 @@ function Body(props: SignInStripProps & { who: string }) {
         <p className="trouble said-in-full" role="alert">
           {trouble}
         </p>
+      )}
+      {props.limitOffer !== undefined && props.onRaiseLimit !== undefined && (
+        <RaiseLimit
+          offer={props.limitOffer}
+          action="Save to the pool and try again"
+          refused={props.pasteRefused}
+          onApply={props.onRaiseLimit}
+        />
       )}
       <StepBody {...props} />
       {props.terminal !== undefined && props.step.at !== "not-started" && (

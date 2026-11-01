@@ -514,7 +514,7 @@ import {
   useChatMoves,
   useChatMovesHeard,
 } from "./chatMoves";
-import { usePools } from "./pools";
+import { saveLimits, usePools } from "./pools";
 import { useSignOutTerminals } from "./settings/signOutTerminals";
 import { fitting, LEAST, LEAST_CHIP, leastAt, useRoom } from "./fits";
 import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
@@ -956,7 +956,11 @@ export const PlaneView = memo(function PlaneView({
   const [pickerSignIn, setPickerSignIn] = useState<{ profile: string; refused: string }>();
   /** The pool's limit a start was refused on (spec #4275), with that refusal: the picker offers
    *  to raise it beside it, and beside no other. */
-  const [pickerLimit, setPickerLimit] = useState<{ offer: PoolLimitOffer; refused: string }>();
+  const [pickerLimit, setPickerLimit] = useState<{
+    offer: PoolLimitOffer;
+    refused: string;
+    profile: string;
+  }>();
   /** Whether the picker's fix (NO-8: its `local-ignore`) is running. */
   const [pickerFixing, setPickerFixing] = useState(false);
   /** The chat tab whose name is open for editing on the strip, if one is (charter-app#254). */
@@ -3557,11 +3561,19 @@ export const PlaneView = memo(function PlaneView({
       if (refused !== undefined) {
         // In the picker, not behind it: the operator is still choosing, and a refusal they
         // cannot see beside the rows is one they cannot act on.
+        // Over a pool's limit, what to raise it to: asked of the core, as the sign-in below is.
+        // Said together, so a form on screen isn't taken down and drawn again between them.
+        const offer = await commands
+          .poolLimitOffer(
+            profile,
+            refused,
+            root ?? null,
+            ("in" in picking.where ? picking.where.in : undefined) ?? startIn ?? null,
+          )
+          .catch(() => null);
         setPickerTrouble(refused);
         setPickerSignIn(undefined);
-        // Over a pool's limit, what to raise it to: asked of the core, as the sign-in below is.
-        const offer = await commands.poolLimitOffer(profile, refused).catch(() => null);
-        setPickerLimit(offer === null ? undefined : { offer, refused });
+        setPickerLimit(offer === null ? undefined : { offer, refused, profile });
         // The refusal left an Ask to sign the profile in (#2035): the Inbox reads it now.
         asksMoved(plane);
         // A profile of this machine's its harness says is not signed in here points to that
@@ -3583,7 +3595,7 @@ export const PlaneView = memo(function PlaneView({
       setPickerTrouble(undefined);
       setPickerSignIn(undefined);
     },
-    [picking, plane, startOn],
+    [picking, plane, root, startIn, startOn],
   );
 
   /** The approval IS this click. After it, the whole chain of checks runs again from the
@@ -4359,10 +4371,12 @@ export const PlaneView = memo(function PlaneView({
             offerBeside();
             return;
           }
-          setPickerTrouble(refused);
           // Over a pool's limit, the picker that comes up offers to raise it (spec #4275).
-          const offer = await commands.poolLimitOffer(only.name, refused).catch(() => null);
-          setPickerLimit(offer === null ? undefined : { offer, refused });
+          const offer = await commands
+            .poolLimitOffer(only.name, refused, root ?? null, where.in ?? startIn ?? null)
+            .catch(() => null);
+          setPickerTrouble(refused);
+          setPickerLimit(offer === null ? undefined : { offer, refused, profile: only.name });
         } else setPickerTrouble(undefined);
         offerBeside();
         setPicking({ options: options.data, where });
@@ -10464,24 +10478,16 @@ export const PlaneView = memo(function PlaneView({
                     ? pickerLimit.offer
                     : undefined
                 }
+                limitProfile={pickerLimit?.profile}
                 onRaiseLimit={async (values) => {
                   const pool = pickerLimit?.offer.pool;
                   if (pool === undefined) return false;
-                  for (const [key, value] of values) {
-                    const saved = await commands
-                      .poolLimitSet(pool, key, value)
-                      .catch((err: unknown) => ({
-                        status: "error" as const,
-                        error: String(err),
-                      }));
-                    if (saved.status === "error") {
-                      // The offer stays beside the words that replaced the refusal.
-                      setPickerTrouble(saved.error);
-                      setPickerLimit((was) => was && { ...was, refused: saved.error });
-                      return false;
-                    }
-                  }
-                  return true;
+                  const refused = await saveLimits(pool, values);
+                  if (refused === undefined) return true;
+                  // The offer stays beside the words that replaced the refusal.
+                  setPickerTrouble(refused);
+                  setPickerLimit((was) => was && { ...was, refused });
+                  return false;
                 }}
                 onStart={(profile, persona, footer, label, newBranch, withoutSandbox) =>
                   void startPicked(profile, persona, footer, label, newBranch, withoutSandbox)

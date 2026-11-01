@@ -861,3 +861,31 @@ async fn a_runner_before_1_61_is_sent_them_all_and_asked_nothing_new() {
     );
     assert_eq!(keeps_in(&asked), [(false, 1)]);
 }
+
+/// **A keep's whole wait follows what the profile may send** (#4314): today's ten minutes up to
+/// what they hold, and time for any value of the limit past that.
+#[test]
+fn keeping_a_profile_has_the_time_its_limit_could_take() {
+    use purlis_core::poollimits::{Chosen, LimitId::ProfileSize};
+    use purlis_core::profilestore::onrunner::Kept;
+    let kept = |mib: Option<u64>| Kept {
+        name: "work".into(),
+        harness: "claude".into(),
+        sandbox_only: true,
+        pinned: None,
+        settings_in: None,
+        limits: Chosen::default().with(ProfileSize, mib),
+        highest: Chosen::default(),
+    };
+    let ten_minutes = std::time::Duration::from_secs(600);
+    assert_eq!(all_kept_within(&[kept(None)]), ten_minutes);
+    assert_eq!(all_kept_within(&[]), ten_minutes);
+    assert_eq!(
+        all_kept_within(&[kept(Some(1024))]),
+        std::time::Duration::from_secs(2048)
+    );
+    assert_eq!(
+        all_kept_within(&[kept(Some(1024)), kept(Some(1024))]),
+        std::time::Duration::from_secs(4096)
+    );
+}

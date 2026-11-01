@@ -545,6 +545,8 @@ struct Inner {
     most_bundle: OnceLock<u64>,
     /// Which runner it relays to drains (#2865): the binary's, or nothing.
     drains: OnceLock<crate::routing::DrainsTo>,
+    /// What asks for a suspended runner it relays to to run again, as a chat starts there (#3980).
+    runs_again: OnceLock<crate::routing::RunsAgain>,
     /// The runners this machine keeps, which the kill switch reaches (#2051).
     runners: Arc<crate::reach::Runners>,
     /// The desktop's links to this host, which a runner's suspends itself without (#2051).
@@ -1136,6 +1138,7 @@ impl Hosting {
                 projects: OnceLock::new(),
                 most_bundle: OnceLock::new(),
                 drains: OnceLock::new(),
+                runs_again: OnceLock::new(),
                 runners,
                 unattended: crate::unattended::Links::default(),
                 seen_elsewhere: Mutex::new(None),
@@ -1350,6 +1353,18 @@ impl Hosting {
     pub fn draining_with(self, drains: crate::routing::DrainsTo) -> Hosting {
         let _ = self.inner.drains.set(drains);
         self
+    }
+
+    /// This host, asking `runs_again` to run a suspended runner again as a chat starts on a link
+    /// relayed to it (#3980).
+    pub fn running_again_with(self, runs_again: crate::routing::RunsAgain) -> Hosting {
+        let _ = self.inner.runs_again.set(runs_again);
+        self
+    }
+
+    /// What asks for a suspended runner to run again, where it is told.
+    pub(crate) fn runs_again(&self) -> Option<crate::routing::RunsAgain> {
+        self.inner.runs_again.get().cloned()
     }
 
     /// Which runner it relays to drains, where it is told.
@@ -3658,11 +3673,13 @@ impl session::Host for Hosting {
                 refs,
                 checkout,
                 moving,
+                held,
             } => {
                 let way = crate::code::Way::In {
                     refs,
                     checkout,
                     moving,
+                    held,
                 };
                 self.move_code(&project, repo, transfer, way, peer).await
             }
@@ -4268,6 +4285,19 @@ impl Hosting {
         if state.windows.is_empty() && state.windowless_since.is_none() {
             state.windowless_since = Some(Instant::now());
         }
+    }
+
+    /// **Whether nothing keeps this runner's host from being idle** (ADR 0089 §9, as amended on
+    /// 2026-10-27; #3980): no program that has not ended, a chat waiting on the person between
+    /// turns and any browser, one holding an Ask among them, no start or saving under way, and no
+    /// link holding a project.
+    pub(crate) fn nothing_running(&self) -> bool {
+        let state = self.state();
+        state.programs.values().all(|hosted| hosted.ended)
+            && state.starting.is_empty()
+            && state.browsers_starting == 0
+            && state.saving.is_empty()
+            && state.projects.values().all(|held| held.links.is_empty())
     }
 
     /// Whether this host has nothing more to wait for at `now`: no window is linked since one

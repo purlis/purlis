@@ -587,7 +587,7 @@ fn signing_out_of_a_pool_reaches_its_draining_runners_and_nothing_is_carried_for
         r#"[{"Name":"purlis-runner-first-home","Driver":"local","Options":null,"Labels":null}]"#,
     );
 
-    let said = sign_out_draining(config.path(), &fake.docker(), "first", "work").unwrap();
+    let said = sign_out_draining(config.path(), &fake.docker(), "first", "work", &[]).unwrap();
 
     assert_eq!(said.len(), 1, "only the draining runner: {said:?}");
     assert_eq!(said[0].0, "first");
@@ -614,11 +614,125 @@ fn a_draining_runner_a_sign_out_did_not_reach_carries_nothing_for_it() {
     // Its container no longer answers as it was made, so its sign-out is refused.
     fake.set("inspect", "[]");
 
-    let said = sign_out_draining(config.path(), &fake.docker(), "first", "work").unwrap();
+    let said = sign_out_draining(config.path(), &fake.docker(), "first", "work", &[]).unwrap();
 
     assert!(said[0].1.is_err(), "{said:?}");
     let kept = runners::named(config.path(), "first").unwrap().unwrap();
     assert_eq!(kept.signed_out, ["work"]);
+}
+
+/// **A second look of one sign-out runs the harness's on no runner the first answered for**
+/// (#4298), and one that began to drain since is still reached.
+#[test]
+fn a_sign_out_runs_once_on_each_draining_runner() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    fake.set("inspect", &inspected().to_string());
+    fake.set(
+        "volume",
+        r#"[{"Name":"purlis-runner-first-home","Driver":"local","Options":null,"Labels":null}]"#,
+    );
+    let first = sign_out_draining(config.path(), &fake.docker(), "first", "work", &[]).unwrap();
+    assert_eq!(first.len(), 1);
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    let second = sign_out_draining(config.path(), &fake.docker(), "first", "work", &first).unwrap();
+
+    assert!(second.is_empty(), "{second:?}");
+    let log = fake.file("log");
+    assert!(!log.contains("profile sign-out"), "{log}");
+
+    let unseen = [("another".to_owned(), Ok(()))];
+    let reached = sign_out_draining(config.path(), &fake.docker(), "first", "work", &unseen);
+    assert_eq!(reached.unwrap().len(), 1);
+    assert!(fake.file("log").contains("profile sign-out work"));
+}
+
+/// A pool with one runner draining whose home its row knows, and whose carry and volume removal
+/// both fail on Docker's error.
+fn a_drain_docker_failed(config: &std::path::Path, fake: &FakeDocker) {
+    fake.set("engine", "engine-a\n");
+    home_prints(fake, HOME_CREATED);
+    a_pool_draining(config, fake);
+    // The fake has one volume, and making the successor printed over it.
+    home_prints(fake, HOME_CREATED);
+    fake.set("copy-fails", "");
+    fake.set("rm-fails-volume", "1");
+    fake.set("volumes", "purlis-runner-first-home\n");
+    let first = drain(config, &fake.docker(), "first", None).unwrap();
+    assert!(!first.forgotten, "{first:?}");
+    let kept = runners::named(config, "first").unwrap().unwrap();
+    assert!(kept.carry_failed && !kept.carried, "kept across a read");
+    std::fs::remove_file(fake.docker().program().with_file_name("copy-fails")).unwrap();
+    std::fs::write(fake.file_path("log"), "").unwrap();
+}
+
+/// **A carry that failed on Docker's error is tried again at the next look** (#4298), where the
+/// removal failed too and the runner is still there, and then not again.
+#[test]
+fn a_carry_docker_failed_is_tried_once_more_at_the_next_look() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_drain_docker_failed(config.path(), &fake);
+
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+
+    assert!(fake.file("log").contains("-copy "), "{}", fake.file("log"));
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(kept.carried && !kept.carry_failed, "{kept:?}");
+
+    std::fs::write(fake.file_path("log"), "").unwrap();
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+    assert!(!fake.file("log").contains("-copy "), "{}", fake.file("log"));
+}
+
+/// A second failure of Docker's ends the tries: a carry can hold the runners' lock for minutes.
+#[test]
+fn a_carry_docker_failed_twice_is_not_tried_again() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_drain_docker_failed(config.path(), &fake);
+    fake.set("copy-fails", "");
+
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+
+    assert!(fake.file("log").contains("-copy "), "{}", fake.file("log"));
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(kept.carried && !kept.carry_failed, "{kept:?}");
+}
+
+/// **A second try takes only the runner's own home** (#4298): its container may be gone by then,
+/// and a volume of that name made since is not its.
+#[test]
+fn a_second_try_of_a_carry_takes_nothing_from_a_home_made_since() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_drain_docker_failed(config.path(), &fake);
+    home_prints(&fake, "2026-01-01T00:00:00Z");
+
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+
+    assert!(!fake.file("log").contains("-copy "), "{}", fake.file("log"));
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(kept.carried && !kept.carry_failed, "{kept:?}");
+}
+
+/// **A carry stopped by a rule is not Docker's failure**, and is not tried again (#4298).
+#[test]
+fn a_carry_a_rule_stopped_is_not_tried_again() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    crate::runnertaint::mark(config.path(), &kept.made.container).unwrap();
+    fake.set("rm-fails-volume", "1");
+    fake.set("volumes", "purlis-runner-first-home\n");
+
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(kept.carried && !kept.carry_failed, "{kept:?}");
 }
 
 /// **A sign-in that cannot be carried never holds the drain back** (#4055): the draining runner
@@ -1089,6 +1203,61 @@ mod cluster {
                 other => panic!("{other:?}"),
             }
         }
+    }
+
+    /// A Pool may opt in after it was added, and the opt-in reaches this machine at a link (#4330).
+    #[test]
+    fn a_pool_that_opts_in_later_is_kept_so_and_nothing_else_of_it_moves() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let claim = claim_name(OURS, "team");
+        cluster.vouch("ada", &claim, &claim, cluster.runner.key);
+        add_cluster(
+            config.path(),
+            &cluster.kubectl(),
+            &team(&cluster),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+        let before = file(config.path());
+        runners::keep_cluster_minting(config.path(), "team", true).unwrap();
+        let mut after = file(config.path());
+        assert_eq!(after["pools"][0]["mintInCluster"], true);
+        after["pools"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("mintInCluster");
+        assert_eq!(after, before);
+        runners::keep_cluster_minting(config.path(), "no-such-pool", true).unwrap();
+    }
+
+    /// A chat's start waits for its repos, and past its time goes on, the work finishing by itself
+    /// (#4331).
+    #[test]
+    fn work_is_waited_for_at_most_its_time_and_goes_on_past_it() {
+        let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let done = std::sync::Arc::clone(&finished);
+        assert!(
+            waited_at_most(Duration::from_secs(30), move || {
+                done.store(true, std::sync::atomic::Ordering::SeqCst);
+            })
+            .unwrap()
+        );
+        assert!(finished.load(std::sync::atomic::Ordering::SeqCst));
+
+        let (go, held) = std::sync::mpsc::channel::<()>();
+        let (came, ended) = std::sync::mpsc::channel::<()>();
+        assert!(
+            !waited_at_most(Duration::from_millis(10), move || {
+                let _ = held.recv();
+                let _ = came.send(());
+            })
+            .unwrap()
+        );
+        go.send(()).unwrap();
+        ended
+            .recv_timeout(Duration::from_secs(30))
+            .expect("it goes on past its time");
     }
 
     #[test]

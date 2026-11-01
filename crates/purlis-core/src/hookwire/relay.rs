@@ -27,7 +27,8 @@
 //! the window has taken them and the host has recorded them durably, or not, within a hook's
 //! wait ([`A_RELAYED_LINE_IS_TAKEN_WITHIN`]);
 //! an ask waits for its answer as long as the window takes, and the window is told when its
-//! asker hangs up ([`Heard::AskerGone`]); a permission ask is held in the window until it is
+//! asker hangs up ([`Heard::AskerGone`]), and, where its asker reads such lines, tells the host
+//! each time the work shows life ([`Replied::Alive`], #4161); a permission ask is held in the window until it is
 //! answered there, its hook goes away or its deadline passes; a brokered `secret exec` runs in
 //! the window, its asker's input handed one way and its frames the other. A line nobody is there
 //! to hear, because no window holds the project, is answered as an app with nothing to answer
@@ -67,7 +68,14 @@ pub enum Heard {
     /// A [`Report`]: replied [`Replied::Taken`] once the window has recorded it.
     Report(Report),
     /// An [`Ask`], on the hook connection numbered `connection`: replied [`Replied::Answer`].
-    Ask { connection: u64, ask: Ask },
+    Ask {
+        connection: u64,
+        ask: Ask,
+        /// Whether the host reads [`Replied::Alive`] for it: its asker holds a pulse (#4161). An
+        /// older host never says so, so an older host is never sent a reply it cannot read.
+        #[serde(default)]
+        alive: bool,
+    },
     /// A [`StartedByHand`]. Nothing is replied.
     StartedByHand(StartedByHand),
     /// A [`SessionSaved`]. Nothing is replied.
@@ -162,6 +170,9 @@ pub enum Replied {
     NotTaken { why: String },
     /// An ask's answer.
     Answer(Answer),
+    /// The ask is still being worked on, and shows life: sent only for an ask handed on saying
+    /// its host reads this ([`Heard::Ask`]'s `alive`), before its [`Replied::Answer`] (#4161).
+    Alive,
     /// A permission ask is held, for at most `until_ms`.
     Held { until_ms: u64 },
     /// A permission ask is not held: the harness's own prompt decides.
@@ -369,6 +380,10 @@ pub struct Relaying {
     runs_handed: hosted::RunsHanded,
     /// What a minting tool's run asks of the cluster first (#4207).
     in_cluster: hosted::InCluster,
+    /// How soon each chat's tool asks the cluster again, once refused (#4332).
+    port_paced: hosted::Paced,
+    /// How soon each chat's tool asks the window again, once both have refused it (#4332).
+    asks_paced: hosted::Paced,
     /// The window's socket each slot a chat's server dials in is handed on over (#3316), where
     /// it was told one; none, and every slot is refused.
     slots_to: Mutex<Option<std::path::PathBuf>>,
@@ -422,6 +437,8 @@ impl Relaying {
             waiting_lines: Mutex::default(),
             runs_handed: Arc::new(brokered::serve_handed),
             in_cluster: Arc::new(hosted::in_cluster),
+            port_paced: hosted::Paced::default(),
+            asks_paced: hosted::Paced::default(),
             slots_to: Mutex::default(),
         })
     }
@@ -605,7 +622,13 @@ impl Relaying {
             Ask::Browse(browse) => Some((**browse).clone()),
             _ => None,
         };
-        let Some((id, replied)) = self.exchange(&Heard::Ask { connection, ask }) else {
+        // The asker holds a pulse only if it reads what the pulse says (#4080).
+        let alive = super::alive::held().is_some();
+        let Some((id, replied)) = self.exchange(&Heard::Ask {
+            connection,
+            ask,
+            alive,
+        }) else {
             return match browsing {
                 Some(browse) => self.wait_for_the_window(connection, browse),
                 None => nobody(),
@@ -632,6 +655,7 @@ impl Relaying {
         let answer = loop {
             match replied.recv_timeout(AN_ASKER_IS_LOOKED_AT_EVERY) {
                 Ok(Replied::Answer(answer)) => break answer,
+                Ok(Replied::Alive) => super::alive::beat(),
                 Ok(other) => {
                     break Answer::No {
                         why: format!("the window replied {other:?} to an ask"),
@@ -765,7 +789,11 @@ impl Relaying {
         };
         browse.waited = true;
         let ask = Ask::Browse(Box::new(browse.clone()));
-        let Some((id, replied)) = self.exchange(&Heard::Ask { connection, ask }) else {
+        let Some((id, replied)) = self.exchange(&Heard::Ask {
+            connection,
+            ask,
+            alive: false,
+        }) else {
             browse.waited = false;
             let chat = browse.chat;
             if !self.waits(connection, browse, since) {
@@ -1422,8 +1450,24 @@ impl Heeding {
         };
         match heard {
             Heard::Report(report) => reply(taken(carrying(|| (self.hearing.each)(report)))),
-            Heard::Ask { connection, ask } => {
-                let answer = (self.hearing.answer)(connection, ask);
+            Heard::Ask {
+                connection,
+                ask,
+                alive,
+            } => {
+                // Whatever runs the ask beats this as it would the asker's own (#4161).
+                let pulse = alive.then(|| {
+                    let reply = Arc::clone(&reply);
+                    super::alive::Pulse::saying(move || {
+                        reply(Replied::Alive);
+                        true
+                    })
+                });
+                let answer =
+                    super::alive::within(pulse.as_ref(), || (self.hearing.answer)(connection, ask));
+                if let Some(pulse) = &pulse {
+                    pulse.end();
+                }
                 lock(&self.gone).remove(&connection);
                 reply(Replied::Answer(answer));
             }
@@ -1712,6 +1756,49 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 mod hosted;
 
 pub use hosted::exec_waits_said;
+
+/// A host's hearing whose asks are answered by `answer` in a window, on a thread of the window's
+/// own, what crosses going as JSON: for a test of an ask that runs there (#4161).
+#[cfg(test)]
+pub(crate) fn to_a_window_answering(tokens: Arc<ChatTokens>, answer: super::Answerer) -> Hearing {
+    let heeding = Arc::new(Heeding::new(Hearing {
+        each: Box::new(|_| Ok(())),
+        answer,
+        noticed: Box::new(|_| {}),
+        saved: Box::new(|_| {}),
+        refused: Box::new(|_| Ok(())),
+        tool: Box::new(|_| Ok(())),
+        permission: Box::new(|_| None),
+        blocked: Box::new(|_| {}),
+        doing: Box::new(|_| {}),
+        output: Box::new(|_| {}),
+        touching: Box::new(|_| {}),
+        secret_exec: Box::new(|_, _, writer| brokered::not_answered(writer)),
+        serve: super::serve::refusing(),
+    }));
+    heeding.linked(1);
+    let host: Arc<Mutex<Option<Arc<Relaying>>>> = Arc::default();
+    let relaying = Relaying::new({
+        let host = Arc::clone(&host);
+        Box::new(move |id, heard| {
+            let heard: Heard =
+                serde_json::from_str(&serde_json::to_string(heard).expect("said")).expect("read");
+            let host = Arc::clone(&host);
+            let reply: Reply = Arc::new(move |replied: Replied| {
+                let replied: Replied =
+                    serde_json::from_str(&serde_json::to_string(&replied).expect("said"))
+                        .expect("read");
+                let relaying = host.lock().expect("the host").clone().expect("a host");
+                relaying.replied(id, replied);
+            });
+            let heeding = Arc::clone(&heeding);
+            std::thread::spawn(move || heeding.hear(1, id, heard, reply));
+            true
+        })
+    });
+    *host.lock().expect("the host") = Some(Arc::clone(&relaying));
+    relaying.hearing(tokens)
+}
 
 #[cfg(test)]
 mod tests;

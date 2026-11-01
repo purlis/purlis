@@ -53,12 +53,13 @@ mod scene;
 use scene::{MERGE, SAVE, SHA, Scene};
 
 /// Every case, by the seam method it covers. The parity test compares this with the traits.
-const CASES: [&str; 27] = [
+const CASES: [&str; 28] = [
     "owned",
     "about",
     "reachable",
     "top_level",
     "open_or_update",
+    "open_draft",
     "state",
     "body",
     "set_body",
@@ -86,7 +87,11 @@ const CASES: [&str; 27] = [
 /// The cases the live run does not run, each with why and the ticket that will run it. Each one
 /// would merge or queue the fixture's one open request, which the read cases need open; running
 /// them needs a request opened afresh for each run.
-const NOT_LIVE: [(&str, &str); 12] = [
+const NOT_LIVE: [(&str, &str); 13] = [
+    (
+        "open_draft",
+        "each run would leave one more draft on the fixture; it needs a request opened per run (#712)",
+    ),
     (
         "request_auto_merge",
         "auto-merge would land the fixture's open request; it needs a request opened per run (#712)",
@@ -387,6 +392,26 @@ mod cases {
                 ours: true
             }
         );
+        spent(&over);
+    }
+
+    pub fn open_draft(kind: &str, how: How) {
+        let Some(over) = over(kind, "open_draft", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        let opened = over
+            .backend
+            .open_draft(
+                &over.caller,
+                &scene.path("api"),
+                &scene.opened_from,
+                "main",
+                "Save",
+                "<!-- charter-save -->",
+            )
+            .unwrap();
+        assert_eq!(opened.number, 12);
         spent(&over);
     }
 
@@ -1089,6 +1114,12 @@ macro_rules! contract {
             fn open_or_update_opens_one_request_when_none_is_open() {
                 purlis_core::unsteered!();
                 super::cases::open_or_update(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn open_draft_opens_a_draft_request_and_looks_for_none() {
+                purlis_core::unsteered!();
+                super::cases::open_draft(stringify!($forge), super::How::$how);
             }
             #[test]
             $(#[$attr])?
@@ -2100,12 +2131,12 @@ mod network_log {
             // read the checks and merge: thirty-three on GitHub, forty-nine on GitLab (qw371:
             // a scene per answer of purlis's own gate). Making a repo asks who the account is,
             // its owners, the create, and the delete (GitHub reads the repo first; #1819). A
-            // search is one call (#806). What a failed check found is one call (qw378). Browser
+            // search is one call (#806). A draft is one call (#2781). What a failed check found is one call (qw378). Browser
             // proof (#2026): GitHub keeps two pictures in eight calls on a branch that is there
             // and six on a first proof, and reads three or two of one it refuses, GitLab in two uploads, and a comment is one call on each.
             let expected = match kind {
-                "github" => 79,
-                _ => 95,
+                "github" => 80,
+                _ => 96,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {

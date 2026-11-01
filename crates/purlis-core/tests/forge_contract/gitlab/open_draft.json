@@ -1,0 +1,46 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), merge_requests.md: Create a merge request, and draft merge requests by a title that starts Draft:",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "projects/acme%2Fapi/merge_requests"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "source_branch",
+              "charter/save"
+            ]
+          },
+          {
+            "text": [
+              "target_branch",
+              "main"
+            ]
+          },
+          {
+            "text": [
+              "title",
+              "Draft: Save"
+            ]
+          },
+          {
+            "text": [
+              "description",
+              "<!-- charter-save -->"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 90, \"iid\": 12, \"web_url\": \"https://gitlab.com/acme/api/-/merge_requests/12\", \"state\": \"opened\"}",
+        "err": ""
+      }
+    }
+  ]
+}

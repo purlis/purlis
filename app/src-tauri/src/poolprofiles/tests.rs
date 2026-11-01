@@ -597,6 +597,7 @@ fn a_runner_in(container: char, device: &str) -> purlis_core::runners::Kept {
         of: None,
         draining: false,
         carried: false,
+        carry_failed: false,
         unpaired: false,
         signed_out: Vec::new(),
         engine: None,
@@ -771,4 +772,66 @@ fn a_removed_profile_leaves_a_cluster_pool_only_where_its_runner_forgot_it() {
         purlis_core::runners::profiles_of(config.path(), "team").unwrap(),
         Some(Vec::new())
     );
+}
+
+/// The page draws whatever the core's list holds, so a limit added there reaches it (#4285).
+#[test]
+fn a_pools_page_lists_every_limit_once_with_what_the_person_set() {
+    use purlis_core::poollimits::{Chosen, LimitId, all};
+    let chosen = Chosen::default().with(LimitId::ProfileFiles, Some(9000));
+    let shown = limits_shown(&chosen);
+    let rows: Vec<&PoolLimitRow> = shown
+        .groups
+        .iter()
+        .flat_map(|group| &group.limits)
+        .chain(&shown.advanced)
+        .collect();
+    // All but what an add alone waits on, which would change nothing here.
+    let listed: Vec<_> = all().iter().filter(|limit| !limit.clusters_only).collect();
+    assert_eq!(rows.len(), listed.len());
+    for limit in listed {
+        let row = rows.iter().find(|row| row.key == limit.key).unwrap();
+        assert_eq!(row.plain, limit.plain);
+        assert_eq!(u64::from(row.default), limit.default);
+        assert_eq!(row.default_said, limit.unit.said(limit.default));
+        assert_eq!(row.set.map(u64::from), chosen.get(limit.id));
+    }
+    for group in &shown.groups {
+        assert!(!group.limits.is_empty(), "{} is empty", group.label);
+        // Said once for the group, or on each of its rows.
+        for row in &group.limits {
+            assert_ne!(
+                group.applies.is_some(),
+                row.applies.is_some(),
+                "{}",
+                row.key
+            );
+        }
+    }
+    assert!(shown.advanced.iter().all(|row| row.applies.is_some()));
+}
+
+/// **A sign-in out of its wait offers double it, on its pool** (spec #4275), and the page never
+/// lists a value that would change nothing.
+#[test]
+fn a_sign_in_that_ran_out_offers_double_and_the_page_leaves_out_the_vouch_wait() {
+    use purlis_core::poollimits::{Chosen, LimitId, hits_said_in};
+    let said = sign_in_ran_out("ran-out-signing-in", 15);
+    assert!(said.starts_with(driven::TOOK_TOO_LONG), "{said}");
+    assert!(said.contains("raise it to 30 minutes"), "{said}");
+    let hits = hits_said_in("ran-out-signing-in", &said);
+    assert_eq!(hits[0].limit, LimitId::SignInWait);
+
+    let page = limits_shown(&Chosen::default());
+    let keys: Vec<&str> = page
+        .groups
+        .iter()
+        .flat_map(|group| &group.limits)
+        .chain(&page.advanced)
+        .map(|row| row.key.as_str())
+        .collect();
+    assert!(keys.contains(&"signInWait"), "{keys:?}");
+    assert!(keys.contains(&"answerWait"), "{keys:?}");
+    assert!(!keys.contains(&"vouchWait"), "{keys:?}");
+    assert_eq!(page.advanced.len(), 1);
 }

@@ -204,6 +204,32 @@ describe("a move waiting on its profile's sign-in", () => {
     expect(calls("put_away_chat_move")).toEqual([]);
   });
 
+  it("keeps the keyboard in the notice after Choose another plan, on the first plan (#4278)", async () => {
+    await notice(opencode());
+    const first = screen.getByRole("button", { name: "Sign in to ChatGPT" });
+    expect(first, "a notice that appears takes no keyboard").not.toHaveFocus();
+    await userEvent.click(first);
+    await screen.findByRole("group", { name: "Signing work in on builds" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Choose another plan" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Sign in to ChatGPT" })).toHaveFocus(),
+    );
+  });
+
+  it("does not take the keyboard for a strip closed another way after a plan was left (#4278)", async () => {
+    await notice(opencode());
+    await userEvent.click(screen.getByRole("button", { name: "Sign in to ChatGPT" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Choose another plan" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Sign in to ChatGPT" }));
+    const strip = await screen.findByRole("group", { name: "Signing work in on builds" });
+
+    await userEvent.click(within(strip).getByRole("button", { name: "Open in terminal" }));
+
+    expect(await screen.findByRole("button", { name: "Sign in to ChatGPT" })).not.toHaveFocus();
+  });
+
   it("a refused Try the move reads the core's moves back, never inventing a failure", async () => {
     mockIPC((cmd, args) => {
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
@@ -333,5 +359,115 @@ describe("a move waiting on its profile's sign-in", () => {
     });
     render(<MoveNotice plane={PLANE} session={8} />);
     expect(screen.queryByText(/^Moved to/)).toBeNull();
+  });
+});
+
+describe("a move refused by a pool's limit (#4313)", () => {
+  const WHY = "it needs 150 MiB, over this pool's limit of 128 MiB";
+  const refusedMove: ChatMove = {
+    session: 3,
+    from: null,
+    to: "builds",
+    stage: "failed",
+    why: WHY,
+    with: [],
+    sign_in: null,
+  };
+  const OFFER = {
+    pool: "builds",
+    hits: [
+      {
+        key: "profileSize",
+        plain: "Most a profile may send: size",
+        unit: "MiB",
+        in_force: 128,
+        needed: 150,
+        suggested: 192,
+      },
+    ],
+  };
+  beforeEach(() => {
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      if (cmd === "pool_limit_offer_for_move") return OFFER;
+      if (cmd === "pool_limits") return { groups: [], advanced: [] };
+      return null;
+    });
+    act(() => heardMove(PLANE, refusedMove));
+  });
+
+  it("offers the suggestion, saves it to the pool and asks for the move again", async () => {
+    const user = userEvent.setup();
+    render(<MoveNotice plane={PLANE} session={3} />);
+    const box = await screen.findByRole("textbox", { name: /Most a profile may send: size/ });
+    expect((box as HTMLInputElement).value).toBe("192");
+    await user.click(screen.getByRole("button", { name: "Save to the pool and move" }));
+    await waitFor(() => expect(asked.some((one) => one.cmd === "move_chat")).toBe(true));
+    const names = asked.map((one) => one.cmd);
+    expect(names.indexOf("pool_limit_set")).toBeLessThan(names.indexOf("move_chat"));
+    expect(asked.find((one) => one.cmd === "pool_limit_set")?.args).toEqual({
+      pool: "builds",
+      key: "profileSize",
+      value: 192,
+    });
+    expect(asked.find((one) => one.cmd === "move_chat")?.args).toMatchObject({
+      session: 3,
+      to: "builds",
+    });
+  });
+
+  it("keeps the form and doesn't move where the save was refused", async () => {
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      if (cmd === "pool_limit_offer_for_move") return OFFER;
+      if (cmd === "pool_limit_set") throw "there is no pool named builds on this machine";
+      if (cmd === "pool_limits") return { groups: [], advanced: [] };
+      return null;
+    });
+    const user = userEvent.setup();
+    render(<MoveNotice plane={PLANE} session={3} />);
+    await user.click(await screen.findByRole("button", { name: "Save to the pool and move" }));
+    expect(await screen.findByText(/there is no pool named builds/)).toBeTruthy();
+    expect(asked.some((one) => one.cmd === "move_chat")).toBe(false);
+    expect(screen.getByRole("button", { name: "Save to the pool and move" })).toBeTruthy();
+  });
+
+  it("doesn't move when dismissed while the limit saves", async () => {
+    let saved: (() => void) | undefined;
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      if (cmd === "pool_limit_offer_for_move") return OFFER;
+      if (cmd === "pool_limit_set")
+        return new Promise<null>((done) => {
+          saved = () => done(null);
+        });
+      if (cmd === "pool_limits") return { groups: [], advanced: [] };
+      return null;
+    });
+    const user = userEvent.setup();
+    render(<MoveNotice plane={PLANE} session={3} />);
+    await user.click(await screen.findByRole("button", { name: "Save to the pool and move" }));
+    await waitFor(() => expect(saved).toBeDefined());
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    saved?.();
+    await new Promise((done) => setTimeout(done, 20));
+    expect(asked.some((one) => one.cmd === "move_chat")).toBe(false);
+  });
+
+  it("offers nothing on any other refusal, and on a move here", async () => {
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      return null;
+    });
+    render(<MoveNotice plane={PLANE} session={3} />);
+    await waitFor(() =>
+      expect(asked.some((one) => one.cmd === "pool_limit_offer_for_move")).toBe(true),
+    );
+    expect(screen.queryByRole("textbox")).toBeNull();
+    cleanup();
+    asked.length = 0;
+    act(() => heardMove(PLANE, { ...refusedMove, to: null, from: "builds" }));
+    render(<MoveNotice plane={PLANE} session={3} />);
+    expect(asked.some((one) => one.cmd === "pool_limit_offer_for_move")).toBe(false);
   });
 });

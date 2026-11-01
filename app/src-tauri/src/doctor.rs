@@ -393,6 +393,13 @@ fn report_in(
         ]
         .into_iter()
         .chain(config_root.and_then(|config_root| local_project(root, config_root)))
+        .chain(
+            config_root
+                .map(purlis_core::pools::cluster_deletion_notices)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(pool, said)| runner_to_be_deleted(&pool, said)),
+        )
         .collect(),
         full,
         path: std::env::var_os("PATH").map(|p| p.to_string_lossy().into_owned()),
@@ -658,9 +665,32 @@ fn local_project(root: &std::path::Path, config_root: &std::path::Path) -> Optio
     })
 }
 
+/// **A cluster pool's kept runner its operator will delete** (#3981): a finding, so the Inbox has
+/// an Update of it, kept by this row's own name. Starting a chat on it starts the count over.
+fn runner_to_be_deleted(pool: &str, said: String) -> DoctorRow {
+    DoctorRow {
+        name: format!("cluster pool {pool}"),
+        status: DoctorStatus::Warn,
+        detail: said,
+        hint: "start a chat on this pool to keep its runner and what it holds".to_owned(),
+        checked: true,
+        settings: None,
+        fix: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_runner_to_be_deleted_is_a_finding_the_inbox_makes_an_update_of() {
+        let row = runner_to_be_deleted("team", "it is deleted at noon".to_owned());
+        assert_eq!(row.name, "cluster pool team");
+        assert_eq!(row.status, DoctorStatus::Warn);
+        assert!(row.checked, "the Inbox notes only a check this build runs");
+        assert_eq!(row.detail, "it is deleted at noon");
+    }
 
     /// [`super::report`] reading no machine store: the real one reaches the operator's own
     /// config directory, which the plane fence refuses a test. Shadows the glob import.

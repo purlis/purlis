@@ -3127,16 +3127,32 @@ export const commands = {
 	 *  **The limits a start on `profile` was refused on, in the words `refused`** (spec #4275): what
 	 *  Start a chat offers beside that refusal. Asked of the core, never read from the words.
 	 */
-	poolLimitOffer: (profile: string, refused: string) => __TAURI_INVOKE<{
+	poolLimitOffer: (profile: string, refused: string, root: string | null, cwd: string | null) => __TAURI_INVOKE<{
 	pool: string,
 	hits: PoolLimitHitRow[],
-} | null>("pool_limit_offer", { profile, refused }),
+} | null>("pool_limit_offer", { profile, refused, root, cwd }),
 	/**
-	 *  **Saves `value` as pool `pool`'s limit `key`** (spec #4275), the person's own press in their
-	 *  window: a chat has no way to it, and can only propose through the edit ask (Q6). It applies
-	 *  from the next attempt, with nothing restarted.
+	 *  **The limits that refused a move to pool `pool` in the words `refused`** (#4313): what the
+	 *  move's line offers beside that refusal, as [`pool_limit_offer`] does for a start.
 	 */
-	poolLimitSet: (pool: string, key: string, value: number) => typedError<null, string>(__TAURI_INVOKE("pool_limit_set", { pool, key, value })),
+	poolLimitOfferForMove: (pool: string, refused: string) => __TAURI_INVOKE<{
+	pool: string,
+	hits: PoolLimitHitRow[],
+} | null>("pool_limit_offer_for_move", { pool, refused }),
+	/**  **Pool `pool`'s limits** (#4285), as its page draws them. */
+	poolLimits: (pool: string) => typedError<PoolLimitsPage, string>(__TAURI_INVOKE("pool_limits", { pool })),
+	/**
+	 *  **The value in the words `typed` for limit `key`, or why they aren't one it can be** (#4285):
+	 *  the file's and the command's check, asked as the person types.
+	 */
+	poolLimitCheck: (key: string, typed: string) => typedError<number, string>(__TAURI_INVOKE("pool_limit_check", { key, typed })),
+	/**
+	 *  **Saves `value` as pool `pool`'s limit `key`, or, `null`, returns it to following purlis's
+	 *  default** (spec #4275), the person's own press in their window: a chat has no way to it, and
+	 *  can only propose through the edit ask (Q6). It applies as the limit says, with nothing
+	 *  restarted.
+	 */
+	poolLimitSet: (pool: string, key: string, value: number | null) => typedError<null, string>(__TAURI_INVOKE("pool_limit_set", { pool, key, value })),
 	/**
 	 *  **Takes profile `name` off pool `pool`** (#4047): its runner forgets it first, its folder
 	 *  and its sign-in there with it, then the pool's record leaves it out, starting from the
@@ -3154,7 +3170,7 @@ export const commands = {
 	 *  0095). A login that waits for the browser is answered through this machine's port, for as
 	 *  long as it runs: the redirect, and only that, is carried to the runner over a link of its own
 	 *  (`sign_in_redirect`, #4044). A sign-in of the same profile on the same pool already running is
-	 *  cancelled. Answers the sign-in's number. With `terminal`, where purlis could not follow the
+	 *  stopped. Answers the sign-in's number. With `terminal`, where purlis could not follow the
 	 *  login or the person asked for a device code (#4106), it runs in a terminal the runner makes, for the person to drive in the strip (#4043):
 	 *  what it prints is [`PoolSignInStep::Printed`], and what is typed goes back by
 	 *  [`pool_sign_in_type`]. A login that waits for the browser runs there by its harness's
@@ -3202,7 +3218,7 @@ export const commands = {
 	/**
 	 *  **Passes the code the person pasted to sign-in `flow`**, as one line: on a cluster pool, only
 	 *  while its runner is still as the gate judged it ([`still_driving`]); else the sign-in is
-	 *  cancelled and the code goes nowhere.
+	 *  stopped and the code goes nowhere.
 	 */
 	poolSignInPaste: (flow: number, code: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_paste", { flow, code })),
 	/**
@@ -6063,6 +6079,11 @@ export type ClusterPoolAdding = {
 	pool: string,
 	/**  The cluster operator key Check its key showed, spelled as it showed it. */
 	key: string,
+	/**
+	 *  The longest wait for its runner to be vouched for, in minutes, where the person raised it
+	 *  after an add that ran out (spec #4275): saved to the pool. None is purlis's default.
+	 */
+	vouch_wait: number | null,
 };
 
 /**  What Check its key read of a cluster's Pool. */
@@ -10443,6 +10464,15 @@ export type PoolDisk = {
 	not_listed: number,
 };
 
+/**  **A group of a pool's limits**: what they affect, and the limits that aren't under Advanced. */
+export type PoolLimitGroup = {
+	label: string,
+	help: string,
+	/**  When a change applies, where that's the same for all of its limits. */
+	applies: string | null,
+	limits: PoolLimitRow[],
+};
+
 /**  **A limit a start was refused on**, as Start a chat offers to raise it (spec #4275). */
 export type PoolLimitHitRow = {
 	/**  The limit's key: what [`pool_limit_set`] takes. */
@@ -10461,6 +10491,33 @@ export type PoolLimitHitRow = {
 export type PoolLimitOffer = {
 	pool: string,
 	hits: PoolLimitHitRow[],
+};
+
+/**  **One of a pool's limits, as its page draws it** (#4285). */
+export type PoolLimitRow = {
+	/**  Its key: what [`pool_limit_set`] and [`pool_limit_check`] take. */
+	key: string,
+	/**  Its name in plain words. */
+	plain: string,
+	/**  The word beside a number of it. */
+	unit: string,
+	/**  purlis's default. */
+	default: number,
+	/**  The default in words: `128 MiB`. */
+	default_said: string,
+	/**  What the person set; `null` where it follows purlis's default. */
+	set: number | null,
+	/**  When a change applies, where its group doesn't say it for all of its limits. */
+	applies: string | null,
+};
+
+/**
+ *  **A pool's limits, as its page draws them** (#4285): whatever the core's list holds, by group,
+ *  and those under Advanced. A group with no limit isn't listed.
+ */
+export type PoolLimitsPage = {
+	groups: PoolLimitGroup[],
+	advanced: PoolLimitRow[],
 };
 
 /**

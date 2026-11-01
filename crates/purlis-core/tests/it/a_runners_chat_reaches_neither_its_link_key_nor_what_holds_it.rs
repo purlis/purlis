@@ -20,6 +20,11 @@
 //! The wrap is `sandbox-probe`, which is the wrap as `purlis _sandbox` is, and the workspace's test
 //! build puts it beside this binary's folder. `PURLIS_SANDBOX_PROBE` names it instead, and then it
 //! must be there. A build of this package alone has none, and only the profile is checked.
+//!
+//! **`PURLIS_TEST_LINK_HANDOVER`** says the pod's hand-over folder is really mounted on this machine,
+//! as CI's step mounts it (#4329). The pod's first step then hands over there, and the row that denies
+//! it, which `decide` compiles only where that folder is, is tried too. Without it the hand-over is a
+//! temporary folder and that row is not reached.
 
 #![cfg(target_os = "linux")]
 
@@ -42,6 +47,9 @@ const LEVELS: [(&str, &str); 2] = [
     ),
     ("floor", "schema = 1\n"),
 ];
+
+/// The folder a cluster runner's pod hands its link key over in.
+const HANDOVER_IN_A_POD: &str = "/run/purlis-link";
 
 /// What the process outside the sandbox holds. A literal: not a credential.
 const HELD: &str = "held-by-the-process-outside-the-sandbox";
@@ -213,7 +221,19 @@ fn a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it() {
 
     // The pod's first step, then the desktop's pairing, on folders of this test's.
     let pod = tempfile::tempdir().expect("the pod's folder in memory");
-    let handoff = pod.path().join(runnerlink::KEY_FILE);
+    let mounted = std::env::var_os("PURLIS_TEST_LINK_HANDOVER").map(PathBuf::from);
+    if let Some(mounted) = &mounted {
+        assert_eq!(
+            mounted,
+            Path::new(HANDOVER_IN_A_POD),
+            "the folder the deny row names"
+        );
+        assert!(mounted.is_dir(), "CI's step mounts it");
+    }
+    let handoff = mounted
+        .as_deref()
+        .unwrap_or(pod.path())
+        .join(runnerlink::KEY_FILE);
     let published = pod.path().join("termination-log");
     runnerlink::make_at_start(&handoff, &published).expect("the pod's first step");
     let made = fs::read_to_string(&handoff).expect("the key handed over");
@@ -226,6 +246,12 @@ fn a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it() {
     let key = folder.join(runnerlink::KEY_FILE);
     assert_eq!(fs::read_to_string(&key).expect("the key kept"), made);
     assert!(!handoff.exists(), "the pod's copy is taken away");
+    // What a pairing might leave there, as the row says: readable until the sandbox is in the way.
+    let left_there = mounted.as_ref().map(|mounted| {
+        let left = mounted.join("left-there");
+        fs::write(&left, "left").expect("a file in the hand-over folder");
+        left.display().to_string()
+    });
 
     let runner = Machine {
         env: purlis_core::secrets::Env::of(&[("PATH", "/usr/bin:/bin")]),
@@ -254,6 +280,11 @@ fn a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it() {
             assert!(
                 profile.contains(&folder.display().to_string()),
                 "{name}: the profile names the session host's folder"
+            );
+            assert_eq!(
+                profile.contains(HANDOVER_IN_A_POD),
+                mounted.is_some(),
+                "{name}: the row is there where the folder is, and only there"
             );
             ((*name).to_owned(), cwd, tmp, profile)
         })
@@ -318,6 +349,8 @@ fn a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it() {
         handoff.display().to_string(),
     );
     let told = format!("{folder}/{}", purlis_core::forge::mintport::FILE);
+    let lock = format!("{folder}/{}", purlis_core::forge::mintport::LOCK);
+    fs::write(&lock, "").expect("the lock's file, as a write leaves it");
     for (name, cwd, tmp, profile) in chats {
         let chat = Chat {
             wrap: &wrap,
@@ -346,9 +379,23 @@ fn a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it() {
         // Where the runner keeps what it was told of the mint port is not written.
         assert_eq!(chat.tried(&["write", &told]), "EACCES", "{name}");
         assert!(!Path::new(&told).exists(), "{name}");
+        // Nor is what holds it opened: one holding that lock would stop the runner following.
+        assert_eq!(chat.tried(&["read", &lock]), "EACCES", "{name}");
 
         // Nothing is left of the pod's copy to read.
-        assert_eq!(chat.tried(&["read", &handoff]), "ENOENT", "{name}");
+        match &left_there {
+            None => assert_eq!(chat.tried(&["read", &handoff]), "ENOENT", "{name}"),
+            // Mounted, the row stands whatever is there (#4329), and the folder itself is refused.
+            Some(left) => {
+                assert!(fs::read_to_string(left).is_ok(), "outside it is read");
+                assert_eq!(chat.tried(&["list", "/run"]), "ok", "{name}: only the row");
+                assert_eq!(chat.tried(&["read", left]), "EACCES", "{name}");
+                // Missing is answered before any rule: nothing of the pod's copy is there.
+                assert_eq!(chat.tried(&["read", &handoff]), "ENOENT", "{name}");
+                assert_eq!(chat.tried(&["list", HANDOVER_IN_A_POD]), "EACCES", "{name}");
+                assert_eq!(chat.tried(&["write", left]), "EACCES", "{name}");
+            }
+        }
 
         // Nothing of what the process outside holds comes back, by any way.
         let inside = chat.said(python.display().to_string(), tries_on(pid, address));

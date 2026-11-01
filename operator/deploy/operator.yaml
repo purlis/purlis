@@ -77,13 +77,14 @@ rules:
   # A team's pools and people's claims: read, and a claim's status written. Claims are read
   # from the operator's own watch; a pool is read by name when a claim names it. A claim is
   # patched only for its finalizer, runners.purlis.dev/runner, which keeps it until its runner
-  # is removed (#2055).
+  # is removed (#2055). Deleted only once its retention has ended (#3981, ruled 2026-11-01), as
+  # the policy in retention-policy.yaml (policy.yaml) holds it.
   - apiGroups: [runners.purlis.dev]
     resources: [pools]
     verbs: [get, list, watch]
   - apiGroups: [runners.purlis.dev]
     resources: [claims]
-    verbs: [get, list, patch, watch]
+    verbs: [delete, get, list, patch, watch]
   - apiGroups: [runners.purlis.dev]
     resources: [claims/status]
     verbs: [patch]
