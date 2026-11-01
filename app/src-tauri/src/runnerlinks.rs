@@ -720,13 +720,19 @@ async fn sent_what_differs(
     kept: &purlis_core::profilestore::onrunner::Kept,
 ) -> Result<ProfileKept, String> {
     let held = held_by(client, version, kept).await?;
-    let sending = if held.is_empty() {
-        for_a_runner_of(version, kept)?
-    } else {
-        purlis_core::profilestore::onrunner::in_batches_beside(
-            &as_its_runner_holds(version, kept),
-            &held,
-        )?
+    let sending = {
+        let kept = kept.clone();
+        read_off_the_link(move || {
+            if held.is_empty() {
+                for_a_runner_of(version, &kept)
+            } else {
+                purlis_core::profilestore::onrunner::in_batches_beside(
+                    &as_its_runner_holds(version, &kept),
+                    &held,
+                )
+            }
+        })
+        .await?
     };
     let only_changed = sending.profile.settings_changed.is_some();
     let wait = answer_wait(kept);
@@ -734,7 +740,11 @@ async fn sent_what_differs(
     match answer {
         Err(why) if only_changed && !stopped_answering(&why) => {
             tracing::info!("purlis: a runner's keep of what changed was refused: {why}");
-            keep_one(client, for_a_runner_of(version, kept)?, wait).await
+            let sending = {
+                let kept = kept.clone();
+                read_off_the_link(move || for_a_runner_of(version, &kept)).await?
+            };
+            keep_one(client, sending, wait).await
         }
         answer => answer,
     }
@@ -982,6 +992,16 @@ pub fn listed(
 
 /// How long one link to a runner waits for it to answer.
 const ANSWER_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// **`read`, off the thread the link's liveness runs on** (#4314): reading a profile near the top
+/// of its limit takes longer than the far end waits on a silent link, which it then closes.
+async fn read_off_the_link<T: Send + 'static>(
+    read: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(read)
+        .await
+        .map_err(|why| format!("the profile's settings could not be read: {why}"))?
+}
 
 /// What a call a runner did not answer in time says, where the wait is purlis's own.
 const LATE: &str = "the runner did not answer in time";
