@@ -553,7 +553,7 @@ fn a_held_folder_refuses_past_the_wait() {
         .err()
         .expect("busy");
     assert_eq!(refused.kind(), io::ErrorKind::WouldBlock);
-    assert!(refused.to_string().contains("Try again"), "{refused}");
+    assert!(refused.to_string().contains("try"), "{refused}");
     drop(held);
     assert!(Lock::waiting(dir.path(), std::time::Duration::ZERO).is_ok());
 }

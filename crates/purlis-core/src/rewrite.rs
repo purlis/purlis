@@ -41,6 +41,18 @@ pub const MOST_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
 /// How often a wait looks again.
 const LOOKED_EVERY: std::time::Duration = std::time::Duration::from_millis(25);
 
+/// What a writer is told of a folder held past the wait.
+fn busy(dir: &Path) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::WouldBlock,
+        format!(
+            "{} is busy, so nothing was written. A chat in this project may be holding it: try \
+             again, and if it stays busy, close that chat.",
+            dir.display()
+        ),
+    )
+}
+
 /// Held for one read-modify-write of a file in `dir`.
 pub struct Lock(Option<std::fs::File>);
 
@@ -81,23 +93,36 @@ impl Lock {
         Self::waiting(dir, MOST_WAIT)
     }
 
-    /// [`Self::bounded`], waiting `most`.
+    /// [`Self::bounded`], waiting `most`. On the one folder it opened, as [`Self::on`] blocks on
+    /// it: one swapped at the path during the wait is not locked in its place.
     fn waiting(dir: &Path, most: std::time::Duration) -> io::Result<Self> {
-        let until = std::time::Instant::now() + most;
-        loop {
-            if let Some(held) = Self::try_on(dir) {
-                return Ok(held);
+        #[cfg(unix)]
+        {
+            let Ok(file) =
+                crate::contain::nofollow(std::fs::OpenOptions::new().read(true)).open(dir)
+            else {
+                return Ok(Self(None));
+            };
+            let until = std::time::Instant::now() + most;
+            loop {
+                match rustix::fs::flock(&file, rustix::fs::FlockOperation::NonBlockingLockExclusive)
+                {
+                    Ok(()) => return Ok(Self(Some(file))),
+                    Err(rustix::io::Errno::INTR) => {}
+                    Err(rustix::io::Errno::WOULDBLOCK) => {
+                        if std::time::Instant::now() >= until {
+                            return Err(busy(dir));
+                        }
+                        std::thread::sleep(LOOKED_EVERY);
+                    }
+                    Err(_) => return Ok(Self(None)),
+                }
             }
-            if std::time::Instant::now() >= until {
-                return Err(io::Error::new(
-                    io::ErrorKind::WouldBlock,
-                    format!(
-                        "{} is busy, so nothing was written. Try again.",
-                        dir.display()
-                    ),
-                ));
-            }
-            std::thread::sleep(LOOKED_EVERY);
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (dir, most, LOOKED_EVERY, busy);
+            Ok(Self(None))
         }
     }
 

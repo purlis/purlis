@@ -1656,8 +1656,12 @@ pub fn session_recorded(root: &Path, chat: &ChatRef, path: &str) -> usize {
     let dir = dir(root);
     // A folder held past the wait: the record's links stay as they are, and nothing is written
     // unlocked.
-    let Ok(_held) = crate::rewrite::Lock::bounded(&dir) else {
-        return 0;
+    let _held = match crate::rewrite::Lock::bounded(&dir) {
+        Ok(held) => held,
+        Err(why) => {
+            tracing::warn!("purlis: a session record was not linked to its dispatches ({why})");
+            return 0;
+        }
     };
     let path = cut(path, MOST_PATH_BYTES);
     let mut changed = 0;

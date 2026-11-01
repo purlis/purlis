@@ -43,8 +43,8 @@ pub(crate) enum StoreLock {
 
 /// Take `dir`'s lock as every writer of a store takes it. A workspace's store is locked through
 /// the store held by descriptor, and a lock another process keeps for longer than the bound is
-/// refused in a sentence rather than waited on for ever (`WouldBlock`); any other store waits,
-/// as [`crate::rewrite::Lock::on`] does.
+/// refused in a sentence rather than waited on for ever (`WouldBlock`); any other store as
+/// [`crate::rewrite::Lock::bounded`] does.
 pub(crate) fn lock_store(
     root: &std::path::Path,
     dir: &std::path::Path,

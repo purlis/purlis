@@ -255,7 +255,7 @@ enum Forwarded {
 }
 
 /// How long the app may take to write a record and answer: a file, an index and a pointer.
-const A_RECORD_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_secs(10);
+const A_RECORD_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// What becomes of the tab when nobody started a smart close for the chat: the sentence the
 /// skill relays to the operator.
