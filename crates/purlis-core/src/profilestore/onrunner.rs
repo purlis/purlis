@@ -191,7 +191,8 @@ pub fn to_send(kept: &Kept) -> Result<purlis_session_protocol::session::ProfileT
             let mut sent = Vec::with_capacity(read.len());
             let mut size = 0;
             for (path, bytes) in read {
-                let bytes = super::sent::sent_without_credentials(&kept.harness, &path, &bytes)?;
+                let bytes =
+                    super::sent::sent_without_credentials(&kept.harness, &path, &bytes)?.bytes;
                 size += bytes.len() + path.len() + FRAMING_BYTES;
                 sent.push(purlis_session_protocol::session::SettingsFile { path, bytes });
             }
@@ -275,6 +276,52 @@ pub fn over_limit_on(pool: &str, refused: &str) -> Option<OverLimit> {
         .values()
         .find(|over| over.pool.as_deref() == Some(pool) && refused.contains(&over.said))
         .cloned()
+}
+
+/// What a profile's settings left out on their way to a runner, as they were last read (#3848).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct LeftOut {
+    /// Each thing left out, by where it was and why, never by its value.
+    what: Vec<String>,
+    /// The variables among it that only choose an endpoint or a provider (#3867).
+    variables: Vec<String>,
+}
+
+static LEFT_OUT: Mutex<BTreeMap<String, LeftOut>> = Mutex::new(BTreeMap::new());
+
+/// The most things of a profile's settings [`left_out_said`] names, before it counts the rest.
+const MOST_NAMED: usize = 12;
+
+/// **What a chat's tab says of what the profile `profile`'s settings left out on their way to its
+/// runner**, once for each chat that starts there (#3848, #3867): each thing and why, and each
+/// variable that only chooses an endpoint or a provider, with how to give it. `None` where nothing
+/// was left out, or nothing was sent.
+#[must_use]
+pub fn left_out_said(profile: &str) -> Option<String> {
+    let all = LEFT_OUT.lock().unwrap_or_else(PoisonError::into_inner);
+    let left = all.get(profile)?;
+    if left.what.is_empty() {
+        return None;
+    }
+    let named = left.what[..left.what.len().min(MOST_NAMED)].join("; ");
+    let more = left.what.len().saturating_sub(MOST_NAMED);
+    let mut said = format!(
+        "The runner was sent the profile '{}' without some of its settings, so no sign-in reaches \
+         it: {named}",
+        crate::shown::short(profile)
+    );
+    if more > 0 {
+        said.push_str(&format!("; and {more} more"));
+    }
+    said.push('.');
+    if !left.variables.is_empty() {
+        said.push_str(&format!(
+            " {} set an endpoint or a provider, so this chat may use another than a chat on this \
+             machine. To give it one, put it in a vault its persona declares.",
+            left.variables.join(", ")
+        ));
+    }
+    Some(said)
 }
 
 /// The hits of a profile of `bytes` in `files`, against what `kept` is held to.
@@ -378,13 +425,33 @@ pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKe
         return Err(refused_over_limit(kept, limits_hit(kept, bytes, files)));
     }
     let mut sent = Vec::with_capacity(read.files.len());
+    let mut left_out = LeftOut {
+        what: read.skipped,
+        variables: Vec::new(),
+    };
     for (path, bytes) in read.files {
         if let Some(why) = too_large(&path, bytes.len()) {
             return Err(why);
         }
-        let bytes = super::sent::sent_without_credentials(&kept.harness, &path, &bytes)?;
-        sent.push(wire::SettingsFile { path, bytes });
+        let file = super::sent::sent_without_credentials(&kept.harness, &path, &bytes)?;
+        let short = crate::shown::short(&path);
+        left_out
+            .what
+            .extend(file.removed.iter().map(|what| format!("{short}: {what}")));
+        for variable in file.variables {
+            if !left_out.variables.contains(&variable) {
+                left_out.variables.push(variable);
+            }
+        }
+        sent.push(wire::SettingsFile {
+            path,
+            bytes: file.bytes,
+        });
     }
+    LEFT_OUT
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(kept.name.clone(), left_out);
     let sent = match only_what_changed(&kept.harness, sent, held) {
         Ok((changed, sent)) => {
             profile.settings_changed = Some(changed);

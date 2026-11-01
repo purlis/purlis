@@ -89,9 +89,9 @@ pub fn without_credentials(kind: &str, path: &str, bytes: &[u8]) -> Result<Vec<u
     filtered(kind, path, bytes).map(|file| file.bytes)
 }
 
-/// [`filtered`]'s bytes, with what was removed said in the log, as what an import leaves out is:
-/// what a desktop sends.
-pub fn sent_without_credentials(kind: &str, path: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
+/// [`filtered`], with what was removed said in the log, as what an import leaves out is: what a
+/// desktop sends.
+pub fn sent_without_credentials(kind: &str, path: &str, bytes: &[u8]) -> Result<Filtered, String> {
     let file = filtered(kind, path, bytes)?;
     for what in &file.removed {
         tracing::info!(
@@ -99,7 +99,7 @@ pub fn sent_without_credentials(kind: &str, path: &str, bytes: &[u8]) -> Result<
             crate::shown::short(path)
         );
     }
-    Ok(file.bytes)
+    Ok(file)
 }
 
 /// A settings file as it is sent, and what was removed from it.
@@ -108,6 +108,26 @@ pub struct Filtered {
     pub bytes: Vec<u8>,
     /// What went, by where it was and never by its value, each once.
     pub removed: Vec<String>,
+    /// The variables among what went that only choose an endpoint or a provider
+    /// ([`chooses_an_endpoint`]), by name, so a runner chat can say it may use another (#3867).
+    pub variables: Vec<String>,
+}
+
+/// Whether the variable `name` only chooses where a harness's requests go or who serves them.
+fn chooses_an_endpoint(name: &str) -> bool {
+    name.ends_with("_BASE_URL")
+        || name.ends_with("_ENDPOINT")
+        || matches!(
+            name,
+            "CLAUDE_CODE_USE_BEDROCK"
+                | "CLAUDE_CODE_USE_VERTEX"
+                | "CLAUDE_CODE_USE_FOUNDRY"
+                | "ANTHROPIC_MODEL"
+                | "ANTHROPIC_VERTEX_PROJECT_ID"
+                | "CLOUD_ML_REGION"
+                | "AWS_REGION"
+                | "AWS_PROFILE"
+        )
 }
 
 /// **`bytes`, the settings file `path` of a `kind` profile, as it is sent to a runner**: a
@@ -123,6 +143,7 @@ pub fn filtered(kind: &str, path: &str, bytes: &[u8]) -> Result<Filtered, String
     Ok(Filtered {
         bytes,
         removed: said.items,
+        variables: said.variables,
     })
 }
 
@@ -186,12 +207,23 @@ const MOST_SAID: usize = 256;
 struct Said {
     items: Vec<String>,
     seen: std::collections::HashSet<String>,
+    variables: Vec<String>,
 }
 
 impl Said {
     fn push(&mut self, what: String) {
         if self.items.len() < MOST_SAID && self.seen.insert(what.clone()) {
             self.items.push(what);
+        }
+    }
+
+    /// Notes each of the `names` a removed environment block set that chooses an endpoint.
+    fn variables<'a>(&mut self, names: impl Iterator<Item = &'a str>) {
+        for name in names {
+            let new = !self.variables.iter().any(|one| one == name);
+            if chooses_an_endpoint(name) && new && self.variables.len() < MOST_SAID {
+                self.variables.push(name.to_owned());
+            }
         }
     }
 }
@@ -572,6 +604,9 @@ fn clean_json(value: &mut serde_json::Value, names: &[&str], at: &str, said: &mu
             }
             map.retain(|key, inner| {
                 if names.contains(&key.as_str()) || crate::secretshape::token_kind(key).is_some() {
+                    if let Value::Object(block) = &*inner {
+                        said.variables(block.keys().map(String::as_str));
+                    }
                     said.push(further(at, key));
                     return false;
                 }
@@ -808,8 +843,11 @@ fn codex_without(text: &str, said: &mut Said) -> Option<Vec<u8>> {
     if let Some(policy) = doc
         .get_mut("shell_environment_policy")
         .and_then(|p| p.as_table_like_mut())
-        && policy.remove("set").is_some()
+        && let Some(set) = policy.remove("set")
     {
+        if let Some(block) = set.as_table_like() {
+            said.variables(block.iter().map(|(name, _)| name));
+        }
         said.push("settings.shell_environment_policy.set".to_owned());
     }
     // Written again through plain values, so no comment travels: a commented-out key is a key
@@ -823,7 +861,10 @@ fn drop_toml(table: &mut dyn toml_edit::TableLike, names: &[&str], at: &str, sai
     let keys: Vec<String> = table.iter().map(|(k, _)| k.to_owned()).collect();
     for key in keys {
         if names.contains(&key.as_str()) {
-            table.remove(&key);
+            let gone = table.remove(&key);
+            if let Some(block) = gone.as_ref().and_then(toml_edit::Item::as_table_like) {
+                said.variables(block.iter().map(|(name, _)| name));
+            }
             said.push(further(at, &key));
             continue;
         }

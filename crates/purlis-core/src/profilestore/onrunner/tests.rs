@@ -2355,3 +2355,43 @@ fn forgetting_what_was_carried_leaves_other_profiles_batches() {
     assert!(!batch.join("gone").exists());
     assert!(batch.join("kept").exists());
 }
+
+/// **What a profile's settings left out on the way to a runner is said** (#3848, #3867): each thing
+/// by where it was, each variable that only chooses an endpoint with how to give it, and no value.
+#[test]
+fn a_chat_is_told_what_its_settings_left_out_on_the_way_to_its_runner() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    fs::write(
+        desktop.folders.config.join("settings.json"),
+        r#"{"env":{"ANTHROPIC_BASE_URL":"https://of-the-desktop","OTHER":"of-the-desktop"}}"#,
+    )
+    .unwrap();
+    let mut kept = Kept::of(&desktop).unwrap().with_settings_of(&desktop);
+    kept.name = "says-what-it-left-out".to_owned();
+
+    in_batches(&kept).unwrap();
+
+    let said = left_out_said("says-what-it-left-out").expect("something was left out");
+    assert!(said.contains("settings.json: settings.env"), "{said}");
+    assert!(said.contains("agents/credentials.json"), "{said}");
+    assert!(said.contains("ANTHROPIC_BASE_URL"), "{said}");
+    assert!(said.contains("a vault"), "{said}");
+    assert!(!said.contains("of-the-desktop"), "{said}");
+    assert!(!said.contains("OTHER"), "{said}");
+}
+
+/// A profile with nothing left out has nothing to say.
+#[test]
+fn a_profile_with_nothing_left_out_says_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    fs::write(desktop.folders.config.join("settings.json"), "{}").unwrap();
+    fs::remove_file(desktop.folders.config.join("agents/credentials.json")).unwrap();
+    let mut kept = Kept::of(&desktop).unwrap().with_settings_of(&desktop);
+    kept.name = "has-nothing-left-out".to_owned();
+
+    in_batches(&kept).unwrap();
+
+    assert_eq!(left_out_said("has-nothing-left-out"), None);
+}

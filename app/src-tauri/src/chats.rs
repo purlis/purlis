@@ -3684,6 +3684,12 @@ impl Chats {
         {
             on_pools.ready(&self.project, &pool, profile)?;
         }
+        // What its settings left out on their way there, said once on its tab (#3848, #3867).
+        let left_out = chat
+            .profile
+            .as_deref()
+            .filter(|_| on_the_runner)
+            .and_then(purlis_core::profilestore::onrunner::left_out_said);
         // The services of this machine the person allowed it alone, which the runner is told
         // of: it leaves out those its own sandbox does not give, and asks about each (#2590).
         // Never a port given for a grant to serve on alone: a runner opens no door (#2019).
@@ -3791,7 +3797,7 @@ impl Chats {
                 why == Why::New,
             )
         };
-        let mut late: Vec<String> = Vec::new();
+        let mut late: Vec<String> = left_out.into_iter().collect();
         // An older Claude Code keeps its own proxy, and its first chat says so (#1665), marked
         // said once its tab shows it (#1699).
         let older = sandbox

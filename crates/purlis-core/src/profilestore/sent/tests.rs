@@ -679,3 +679,27 @@ fn a_token_shaped_name_goes_and_a_link_beside_an_address_stays() {
         link
     );
 }
+
+/// **A variable that only chooses an endpoint or a provider is named** (#3867), and another's
+/// name is not, in either harness's settings.
+#[test]
+fn a_removed_endpoint_variable_is_named() {
+    let sent = filtered(
+        "claude",
+        "settings.json",
+        br#"{"env":{"ANTHROPIC_BASE_URL":"https://h","CLAUDE_CODE_USE_BEDROCK":"1","OTHER":"x"}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        sent.variables,
+        ["ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK"]
+    );
+
+    let sent = filtered(
+        "codex",
+        "config.toml",
+        b"[shell_environment_policy.set]\nOPENAI_BASE_URL = \"https://h\"\nOTHER = \"x\"\n",
+    )
+    .unwrap();
+    assert_eq!(sent.variables, ["OPENAI_BASE_URL"]);
+}
