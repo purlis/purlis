@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # What the operator's service account writes of upstream's objects, held by the cluster (#3754):
 # only in runner namespaces, and a template's pod only in purlis's runner shape, so a mistake in
-# the operator, or its token used as it is, can write nothing else. It says nothing of what
+# the operator, or its token used as it is, can write nothing else of these. What it may change
+# of a Sandbox is the policy in sandbox-policy.yaml's. It says nothing of what
 # others write. The operator may not change policies or their bindings, so it cannot lift this.
 # Kept when the release is uninstalled, as the policy on Claims is.
 apiVersion: admissionregistration.k8s.io/v1
@@ -47,14 +48,21 @@ spec:
         !has(object.spec.lifecycle) &&
         (!has(object.spec.volumeClaimTemplates) ||
         (size(object.spec.volumeClaimTemplates) == 1 &&
-        object.spec.volumeClaimTemplates[0].metadata.name == 'purlis-kept')))
+        object.spec.volumeClaimTemplates[0].metadata.name == 'purlis-kept' &&
+        object.spec.volumeClaimTemplates[0].spec.accessModes == ['ReadWriteOnce'] &&
+        !has(object.spec.volumeClaimTemplates[0].spec.volumeName) &&
+        !has(object.spec.volumeClaimTemplates[0].spec.dataSource) &&
+        !has(object.spec.volumeClaimTemplates[0].spec.dataSourceRef) &&
+        !has(object.spec.volumeClaimTemplates[0].spec.selector) &&
+        !has(object.spec.volumeClaimTemplates[0].spec.volumeMode))))
       message: >-
         purlis's cluster operator claims a purlis pool's warm pool, with a kept volume at most and
         nothing added to the pod.
       reason: Forbidden
     - expression: >-
         request.resource.resource != 'sandboxwarmpools' ||
-        (object.spec.sandboxTemplateRef.name.startsWith('purlis-pool-') && object.spec.replicas <= 20)
+        (object.spec.sandboxTemplateRef.name.startsWith('purlis-pool-') && object.spec.replicas <= 20 &&
+        object.spec.updateStrategy.type == 'Recreate')
       message: purlis's cluster operator keeps a purlis pool's template warm, at most 20 of them.
       reason: Forbidden
     # Every field of the pinned upstream's template spec but the pod
@@ -68,7 +76,8 @@ spec:
         object.spec.volumeClaimTemplatesPolicy == 'Allowed')
       message: purlis's cluster operator's template sets nothing of upstream's but its pod.
       reason: Forbidden
-    # The default service account, no token mounted, nothing of the node's.
+    # The default service account, no token mounted, nothing of the node's: of every field of the
+    # pinned upstream's pod spec, only what its template sets.
     - expression: >-
         !variables.template ||
         ((!has(object.spec.podTemplate.metadata) ||
@@ -77,13 +86,14 @@ spec:
         (!has(variables.pod.serviceAccount) || variables.pod.serviceAccount == 'default') &&
         variables.pod.automountServiceAccountToken == false &&
         variables.pod.enableServiceLinks == false &&
-        !has(variables.pod.hostNetwork) && !has(variables.pod.hostPID) && !has(variables.pod.hostIPC) &&
-        !has(variables.pod.hostUsers) && !has(variables.pod.shareProcessNamespace) &&
-        !has(variables.pod.nodeName) && !has(variables.pod.runtimeClassName) &&
-        !has(variables.pod.ephemeralContainers) && !has(variables.pod.resourceClaims) &&
-        !has(variables.pod.securityContext.runAsUser) && !has(variables.pod.securityContext.sysctls) &&
-        !has(variables.pod.securityContext.seccompProfile) &&
-        !has(variables.pod.securityContext.supplementalGroups))
+        {{- range splitList " " (include "purlis-cluster-operator.pod-fields" .) }}
+        !has(variables.pod.{{ . }}) &&
+        {{- end }}
+        {{- range list "appArmorProfile" "runAsGroup" "runAsNonRoot" "runAsUser" "seLinuxChangePolicy" "seLinuxOptions" "seccompProfile" "supplementalGroups" "supplementalGroupsPolicy" "sysctls" "windowsOptions" }}
+        !has(variables.pod.securityContext.{{ . }}) &&
+        {{- end }}
+        variables.pod.securityContext.fsGroup == 10001 &&
+        variables.pod.securityContext.fsGroupChangePolicy == 'OnRootMismatch')
       message: >-
         purlis's cluster operator's template runs as the default service account, with no token
         mounted and nothing of the node's.
@@ -95,7 +105,8 @@ spec:
         v.name in ['purlis-link', 'purlis-kept'] && has(v.emptyDir)))
       message: purlis's cluster operator's template holds only purlis's own volumes.
       reason: Forbidden
-    # The confinement the operator's template sets, on each container.
+    # The confinement the operator's template sets, on each container: of every field of the
+    # pinned upstream's container, only what its template sets.
     - expression: >-
         !variables.template ||
         (size(variables.pod.containers) == 1 && variables.pod.containers[0].name == 'runner' &&
@@ -104,9 +115,13 @@ spec:
         c.securityContext.allowPrivilegeEscalation == false &&
         c.securityContext.capabilities.drop == ['ALL'] && !has(c.securityContext.capabilities.add) &&
         c.securityContext.seccompProfile.type == 'RuntimeDefault' &&
-        !has(c.securityContext.privileged) && !has(c.securityContext.runAsUser) &&
-        !has(c.securityContext.procMount) &&
-        !has(c.command) && !has(c.ports) && !has(c.volumeDevices) && !has(c.envFrom) &&
+        {{- range list "appArmorProfile" "privileged" "procMount" "readOnlyRootFilesystem" "runAsGroup" "runAsUser" "seLinuxOptions" "windowsOptions" }}
+        !has(c.securityContext.{{ . }}) &&
+        {{- end }}
+        {{- range splitList " " (include "purlis-cluster-operator.container-fields" .) }}
+        !has(c.{{ . }}) &&
+        {{- end }}
+        (!has(c.resources) || !has(c.resources.claims)) &&
         (!has(c.env) || c.env.all(e, !has(e.valueFrom) || has(e.valueFrom.fieldRef))) &&
         (!has(c.volumeMounts) || c.volumeMounts.all(m, m.name in ['purlis-link', 'purlis-kept']))))
       message: purlis's cluster operator's template confines each container as purlis's runner is.

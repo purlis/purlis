@@ -304,3 +304,7 @@ spec:
             - name: signing-key
               mountPath: /var/run/purlis-cluster-operator/signing-key
               readOnly: true
+---
+# Source: purlis-cluster-operator/templates/forge-key-reader.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0

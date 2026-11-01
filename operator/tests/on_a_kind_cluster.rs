@@ -3925,6 +3925,22 @@ async fn an_idle_kept_runner_takes_its_pools_image_and_keeps_its_volume() {
         volume,
         "the same volume"
     );
+    // A renewal changes images and resources alone: the operator's token changes nothing else.
+    let as_operator = Api::<DynamicObject>::namespaced_with(
+        acting_as(SERVICE_ACCOUNT).await,
+        &runners(),
+        &ApiResource::erase::<Sandbox>(&()),
+    );
+    let changed = as_operator
+        .patch(
+            "renew-1",
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({ "spec": { "podTemplate": { "spec": {
+                "serviceAccountName": "another",
+            } } } })),
+        )
+        .await;
+    assert!(refused_by_policy(&changed), "{changed:?}");
     let _ = claims.delete("renew-1", &DeleteParams::foreground()).await;
     let _ = pools.delete("e2e-renew", &DeleteParams::default()).await;
     scratch.end().await;
@@ -4182,6 +4198,33 @@ async fn the_operators_token_writes_upstreams_objects_only_in_a_runners_shape() 
             .await;
         assert!(refused_saying(&made, words), "{what}: {made:?}");
     }
+    // A pre-made volume is no kept volume of its own.
+    let mut volume = Api::<SandboxClaim>::namespaced(client.clone(), &runners())
+        .get("shape-1")
+        .await
+        .expect("the operator's upstream claim");
+    volume.metadata = ObjectMeta {
+        name: Some("e2e-shape-volume".to_owned()),
+        namespace: Some(runners()),
+        ..ObjectMeta::default()
+    };
+    volume.status = None;
+    let mut value = serde_json::to_value(&volume).expect("JSON");
+    value["spec"]["volumeClaimTemplates"] = serde_json::json!([{
+        "metadata": { "name": "purlis-kept" },
+        "spec": {
+            "accessModes": ["ReadWriteOnce"],
+            "volumeName": "someone-elses",
+            "resources": { "requests": { "storage": "1Gi" } },
+        },
+    }]);
+    let made = Api::<SandboxClaim>::namespaced(as_operator.clone(), &runners())
+        .create(&dry, &serde_json::from_value(value).expect("a claim"))
+        .await;
+    assert!(
+        refused_saying(&made, "with a kept volume at most"),
+        "{made:?}"
+    );
     // Its own, under another name, is admitted.
     templates
         .create(&dry, &with(&|_| {}, &runners()))

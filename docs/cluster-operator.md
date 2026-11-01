@@ -748,9 +748,9 @@ that sandbox's uid as a precondition. Another admission policy in `policy.yaml`,
 `purlis-operator-changes-only-a-sandboxs-mode`, makes that the cluster's rule: an update by the
 operator's service account to a Sandbox is refused unless a SandboxClaim controls it (any
 SandboxClaim's, purlis's or not), and unless every field of its spec but `operatingMode`, and
-its labels, annotations, owners and finalizers, are as they were; its `spec.podTemplate` alone
-may also change, only on a Sandbox already `Suspended` in a `purlis-runners-*` namespace, so a
-kept runner takes its pool's image (#3982). **Its `delete` on Claims is narrowed the same way**
+its labels, annotations, owners and finalizers, are as they were; its containers' images and plain
+resources alone may also change, only on a Sandbox already `Suspended` in a `purlis-runners-*`
+namespace, so a kept runner takes its pool's image (#3982). **Its `delete` on Claims is narrowed the same way**
 (#3981): `purlis-operator-deletes-only-a-retained-claim` refuses it any Claim but a kept one, not
 stopped, with its own `RetentionEnded` condition. **Only the operator writes a Claim's status**
 (`purlis-only-the-operator-writes-a-claims-status`), since what it does rests on it. The operator holds no right
@@ -765,10 +765,12 @@ reason to run the version `doctor` checks for.
 operator's service account a `SandboxTemplate`, `SandboxClaim` or `SandboxWarmPool` anywhere but
 in a `purlis-runners-*` namespace, which keeps out `kube-system`, `agent-sandbox-system`, the
 operator's own namespace and any other an admin has. A template's pod must use the default service
-account with no token mounted and nothing of the node's, hold only the volumes `purlis-link` and
-`purlis-kept` as folders of its own, and keep the confinement [above](#what-it-makes) on each
-container, which reads a variable from no Secret. A claim adds nothing to its pod. It does not hold
-which image a template names: the Pool says that.
+account with no token mounted, hold only the volumes `purlis-link` and `purlis-kept` as folders of
+its own, and keep the confinement [above](#what-it-makes) on each container, which reads a variable
+from no Secret; of the pinned upstream's other pod and container fields it may set none. A claim
+adds nothing to its pod, and a kept volume is a new one written to by one node. It does not hold
+which image a template names or which storage class a claim's volume is in: the Pool says those. An
+admin editing a policy in place, with its binding left alone, does not move its time in force.
 
 Upstream's controller holds its own ClusterRoles, in the vendored manifest: it makes and
 removes the runners' pods, services, volume claims and network policies. It holds no Secret

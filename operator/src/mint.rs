@@ -370,7 +370,7 @@ pub struct Grant {
 pub struct Held<'a> {
     pub claim: &'a Claim,
     pub pool: &'a Pool,
-    /// The binding of the policy on Claims.
+    /// When the policy on Claims is in force from ([`in_force_since`]).
     pub claims_since: Option<k8s_openapi::jiff::Timestamp>,
     /// When the policy on App keys is in force from ([`in_force_since`]).
     pub forge_since: Option<Timestamp>,

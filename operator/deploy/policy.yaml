@@ -375,8 +375,9 @@ spec:
 # The operator's `patch` on upstream's sandboxes, narrowed by the cluster (#2058): RBAC cannot
 # name a field or an owner, so this policy refuses any change the operator's service account
 # makes to a Sandbox but its spec.operatingMode, and any change at all to a Sandbox no
-# SandboxClaim controls. Its spec.podTemplate may change only on a Sandbox already Suspended in a
-# runner namespace (#3982, ruled 2026-11-01): a kept runner next starts on its pool's image. The operator may not change policies or their bindings, so it cannot
+# SandboxClaim controls. Its containers' images and plain resources may change only on a Sandbox
+# already Suspended in a runner namespace (#3982, ruled 2026-11-01): a kept runner next starts on
+# its pool's image. The operator may not change policies or their bindings, so it cannot
 # lift this. Kept when the release is uninstalled, as the policy on Claims is.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
@@ -400,6 +401,156 @@ spec:
       expression: >-
         request.userInfo.username ==
         'system:serviceaccount:purlis-system:purlis-cluster-operator'
+  variables:
+    # A suspended runner's renewal: each container's image and plain resources may differ, and
+    # nothing else of the pod (operator/tests/the_install_manifests.rs holds the lists).
+    - name: renewed
+      expression: >-
+        has(object.spec.podTemplate.metadata) == has(oldObject.spec.podTemplate.metadata) &&
+        (!has(object.spec.podTemplate.metadata) || object.spec.podTemplate.metadata == oldObject.spec.podTemplate.metadata) &&
+        has(object.spec.podTemplate.spec.activeDeadlineSeconds) == has(oldObject.spec.podTemplate.spec.activeDeadlineSeconds) &&
+        (!has(object.spec.podTemplate.spec.activeDeadlineSeconds) || object.spec.podTemplate.spec.activeDeadlineSeconds == oldObject.spec.podTemplate.spec.activeDeadlineSeconds) &&
+        has(object.spec.podTemplate.spec.affinity) == has(oldObject.spec.podTemplate.spec.affinity) &&
+        (!has(object.spec.podTemplate.spec.affinity) || object.spec.podTemplate.spec.affinity == oldObject.spec.podTemplate.spec.affinity) &&
+        has(object.spec.podTemplate.spec.dnsConfig) == has(oldObject.spec.podTemplate.spec.dnsConfig) &&
+        (!has(object.spec.podTemplate.spec.dnsConfig) || object.spec.podTemplate.spec.dnsConfig == oldObject.spec.podTemplate.spec.dnsConfig) &&
+        has(object.spec.podTemplate.spec.dnsPolicy) == has(oldObject.spec.podTemplate.spec.dnsPolicy) &&
+        (!has(object.spec.podTemplate.spec.dnsPolicy) || object.spec.podTemplate.spec.dnsPolicy == oldObject.spec.podTemplate.spec.dnsPolicy) &&
+        has(object.spec.podTemplate.spec.ephemeralContainers) == has(oldObject.spec.podTemplate.spec.ephemeralContainers) &&
+        (!has(object.spec.podTemplate.spec.ephemeralContainers) || object.spec.podTemplate.spec.ephemeralContainers == oldObject.spec.podTemplate.spec.ephemeralContainers) &&
+        has(object.spec.podTemplate.spec.evictionResponders) == has(oldObject.spec.podTemplate.spec.evictionResponders) &&
+        (!has(object.spec.podTemplate.spec.evictionResponders) || object.spec.podTemplate.spec.evictionResponders == oldObject.spec.podTemplate.spec.evictionResponders) &&
+        has(object.spec.podTemplate.spec.hostAliases) == has(oldObject.spec.podTemplate.spec.hostAliases) &&
+        (!has(object.spec.podTemplate.spec.hostAliases) || object.spec.podTemplate.spec.hostAliases == oldObject.spec.podTemplate.spec.hostAliases) &&
+        has(object.spec.podTemplate.spec.hostIPC) == has(oldObject.spec.podTemplate.spec.hostIPC) &&
+        (!has(object.spec.podTemplate.spec.hostIPC) || object.spec.podTemplate.spec.hostIPC == oldObject.spec.podTemplate.spec.hostIPC) &&
+        has(object.spec.podTemplate.spec.hostNetwork) == has(oldObject.spec.podTemplate.spec.hostNetwork) &&
+        (!has(object.spec.podTemplate.spec.hostNetwork) || object.spec.podTemplate.spec.hostNetwork == oldObject.spec.podTemplate.spec.hostNetwork) &&
+        has(object.spec.podTemplate.spec.hostPID) == has(oldObject.spec.podTemplate.spec.hostPID) &&
+        (!has(object.spec.podTemplate.spec.hostPID) || object.spec.podTemplate.spec.hostPID == oldObject.spec.podTemplate.spec.hostPID) &&
+        has(object.spec.podTemplate.spec.hostUsers) == has(oldObject.spec.podTemplate.spec.hostUsers) &&
+        (!has(object.spec.podTemplate.spec.hostUsers) || object.spec.podTemplate.spec.hostUsers == oldObject.spec.podTemplate.spec.hostUsers) &&
+        has(object.spec.podTemplate.spec.hostname) == has(oldObject.spec.podTemplate.spec.hostname) &&
+        (!has(object.spec.podTemplate.spec.hostname) || object.spec.podTemplate.spec.hostname == oldObject.spec.podTemplate.spec.hostname) &&
+        has(object.spec.podTemplate.spec.hostnameOverride) == has(oldObject.spec.podTemplate.spec.hostnameOverride) &&
+        (!has(object.spec.podTemplate.spec.hostnameOverride) || object.spec.podTemplate.spec.hostnameOverride == oldObject.spec.podTemplate.spec.hostnameOverride) &&
+        has(object.spec.podTemplate.spec.imagePullSecrets) == has(oldObject.spec.podTemplate.spec.imagePullSecrets) &&
+        (!has(object.spec.podTemplate.spec.imagePullSecrets) || object.spec.podTemplate.spec.imagePullSecrets == oldObject.spec.podTemplate.spec.imagePullSecrets) &&
+        has(object.spec.podTemplate.spec.nodeName) == has(oldObject.spec.podTemplate.spec.nodeName) &&
+        (!has(object.spec.podTemplate.spec.nodeName) || object.spec.podTemplate.spec.nodeName == oldObject.spec.podTemplate.spec.nodeName) &&
+        has(object.spec.podTemplate.spec.nodeSelector) == has(oldObject.spec.podTemplate.spec.nodeSelector) &&
+        (!has(object.spec.podTemplate.spec.nodeSelector) || object.spec.podTemplate.spec.nodeSelector == oldObject.spec.podTemplate.spec.nodeSelector) &&
+        has(object.spec.podTemplate.spec.os) == has(oldObject.spec.podTemplate.spec.os) &&
+        (!has(object.spec.podTemplate.spec.os) || object.spec.podTemplate.spec.os == oldObject.spec.podTemplate.spec.os) &&
+        has(object.spec.podTemplate.spec.overhead) == has(oldObject.spec.podTemplate.spec.overhead) &&
+        (!has(object.spec.podTemplate.spec.overhead) || object.spec.podTemplate.spec.overhead == oldObject.spec.podTemplate.spec.overhead) &&
+        has(object.spec.podTemplate.spec.preemptionPolicy) == has(oldObject.spec.podTemplate.spec.preemptionPolicy) &&
+        (!has(object.spec.podTemplate.spec.preemptionPolicy) || object.spec.podTemplate.spec.preemptionPolicy == oldObject.spec.podTemplate.spec.preemptionPolicy) &&
+        has(object.spec.podTemplate.spec.priority) == has(oldObject.spec.podTemplate.spec.priority) &&
+        (!has(object.spec.podTemplate.spec.priority) || object.spec.podTemplate.spec.priority == oldObject.spec.podTemplate.spec.priority) &&
+        has(object.spec.podTemplate.spec.priorityClassName) == has(oldObject.spec.podTemplate.spec.priorityClassName) &&
+        (!has(object.spec.podTemplate.spec.priorityClassName) || object.spec.podTemplate.spec.priorityClassName == oldObject.spec.podTemplate.spec.priorityClassName) &&
+        has(object.spec.podTemplate.spec.readinessGates) == has(oldObject.spec.podTemplate.spec.readinessGates) &&
+        (!has(object.spec.podTemplate.spec.readinessGates) || object.spec.podTemplate.spec.readinessGates == oldObject.spec.podTemplate.spec.readinessGates) &&
+        has(object.spec.podTemplate.spec.resourceClaims) == has(oldObject.spec.podTemplate.spec.resourceClaims) &&
+        (!has(object.spec.podTemplate.spec.resourceClaims) || object.spec.podTemplate.spec.resourceClaims == oldObject.spec.podTemplate.spec.resourceClaims) &&
+        has(object.spec.podTemplate.spec.resources) == has(oldObject.spec.podTemplate.spec.resources) &&
+        (!has(object.spec.podTemplate.spec.resources) || object.spec.podTemplate.spec.resources == oldObject.spec.podTemplate.spec.resources) &&
+        has(object.spec.podTemplate.spec.restartPolicy) == has(oldObject.spec.podTemplate.spec.restartPolicy) &&
+        (!has(object.spec.podTemplate.spec.restartPolicy) || object.spec.podTemplate.spec.restartPolicy == oldObject.spec.podTemplate.spec.restartPolicy) &&
+        has(object.spec.podTemplate.spec.runtimeClassName) == has(oldObject.spec.podTemplate.spec.runtimeClassName) &&
+        (!has(object.spec.podTemplate.spec.runtimeClassName) || object.spec.podTemplate.spec.runtimeClassName == oldObject.spec.podTemplate.spec.runtimeClassName) &&
+        has(object.spec.podTemplate.spec.schedulerName) == has(oldObject.spec.podTemplate.spec.schedulerName) &&
+        (!has(object.spec.podTemplate.spec.schedulerName) || object.spec.podTemplate.spec.schedulerName == oldObject.spec.podTemplate.spec.schedulerName) &&
+        has(object.spec.podTemplate.spec.schedulingGates) == has(oldObject.spec.podTemplate.spec.schedulingGates) &&
+        (!has(object.spec.podTemplate.spec.schedulingGates) || object.spec.podTemplate.spec.schedulingGates == oldObject.spec.podTemplate.spec.schedulingGates) &&
+        has(object.spec.podTemplate.spec.schedulingGroup) == has(oldObject.spec.podTemplate.spec.schedulingGroup) &&
+        (!has(object.spec.podTemplate.spec.schedulingGroup) || object.spec.podTemplate.spec.schedulingGroup == oldObject.spec.podTemplate.spec.schedulingGroup) &&
+        has(object.spec.podTemplate.spec.setHostnameAsFQDN) == has(oldObject.spec.podTemplate.spec.setHostnameAsFQDN) &&
+        (!has(object.spec.podTemplate.spec.setHostnameAsFQDN) || object.spec.podTemplate.spec.setHostnameAsFQDN == oldObject.spec.podTemplate.spec.setHostnameAsFQDN) &&
+        has(object.spec.podTemplate.spec.shareProcessNamespace) == has(oldObject.spec.podTemplate.spec.shareProcessNamespace) &&
+        (!has(object.spec.podTemplate.spec.shareProcessNamespace) || object.spec.podTemplate.spec.shareProcessNamespace == oldObject.spec.podTemplate.spec.shareProcessNamespace) &&
+        has(object.spec.podTemplate.spec.subdomain) == has(oldObject.spec.podTemplate.spec.subdomain) &&
+        (!has(object.spec.podTemplate.spec.subdomain) || object.spec.podTemplate.spec.subdomain == oldObject.spec.podTemplate.spec.subdomain) &&
+        has(object.spec.podTemplate.spec.terminationGracePeriodSeconds) == has(oldObject.spec.podTemplate.spec.terminationGracePeriodSeconds) &&
+        (!has(object.spec.podTemplate.spec.terminationGracePeriodSeconds) || object.spec.podTemplate.spec.terminationGracePeriodSeconds == oldObject.spec.podTemplate.spec.terminationGracePeriodSeconds) &&
+        has(object.spec.podTemplate.spec.tolerations) == has(oldObject.spec.podTemplate.spec.tolerations) &&
+        (!has(object.spec.podTemplate.spec.tolerations) || object.spec.podTemplate.spec.tolerations == oldObject.spec.podTemplate.spec.tolerations) &&
+        has(object.spec.podTemplate.spec.topologySpreadConstraints) == has(oldObject.spec.podTemplate.spec.topologySpreadConstraints) &&
+        (!has(object.spec.podTemplate.spec.topologySpreadConstraints) || object.spec.podTemplate.spec.topologySpreadConstraints == oldObject.spec.podTemplate.spec.topologySpreadConstraints) &&
+        has(object.spec.podTemplate.spec.automountServiceAccountToken) == has(oldObject.spec.podTemplate.spec.automountServiceAccountToken) &&
+        (!has(object.spec.podTemplate.spec.automountServiceAccountToken) || object.spec.podTemplate.spec.automountServiceAccountToken == oldObject.spec.podTemplate.spec.automountServiceAccountToken) &&
+        has(object.spec.podTemplate.spec.enableServiceLinks) == has(oldObject.spec.podTemplate.spec.enableServiceLinks) &&
+        (!has(object.spec.podTemplate.spec.enableServiceLinks) || object.spec.podTemplate.spec.enableServiceLinks == oldObject.spec.podTemplate.spec.enableServiceLinks) &&
+        has(object.spec.podTemplate.spec.securityContext) == has(oldObject.spec.podTemplate.spec.securityContext) &&
+        (!has(object.spec.podTemplate.spec.securityContext) || object.spec.podTemplate.spec.securityContext == oldObject.spec.podTemplate.spec.securityContext) &&
+        has(object.spec.podTemplate.spec.serviceAccount) == has(oldObject.spec.podTemplate.spec.serviceAccount) &&
+        (!has(object.spec.podTemplate.spec.serviceAccount) || object.spec.podTemplate.spec.serviceAccount == oldObject.spec.podTemplate.spec.serviceAccount) &&
+        has(object.spec.podTemplate.spec.serviceAccountName) == has(oldObject.spec.podTemplate.spec.serviceAccountName) &&
+        (!has(object.spec.podTemplate.spec.serviceAccountName) || object.spec.podTemplate.spec.serviceAccountName == oldObject.spec.podTemplate.spec.serviceAccountName) &&
+        has(object.spec.podTemplate.spec.volumes) == has(oldObject.spec.podTemplate.spec.volumes) &&
+        (!has(object.spec.podTemplate.spec.volumes) || object.spec.podTemplate.spec.volumes == oldObject.spec.podTemplate.spec.volumes) &&
+        has(object.spec.podTemplate.spec.containers) == has(oldObject.spec.podTemplate.spec.containers) &&
+        (!has(object.spec.podTemplate.spec.containers) ||
+        (size(object.spec.podTemplate.spec.containers) == size(oldObject.spec.podTemplate.spec.containers) &&
+        object.spec.podTemplate.spec.containers.all(c, oldObject.spec.podTemplate.spec.containers.exists(o, o.name == c.name &&
+        has(c.command) == has(o.command) && (!has(c.command) || c.command == o.command) &&
+        has(c.envFrom) == has(o.envFrom) && (!has(c.envFrom) || c.envFrom == o.envFrom) &&
+        has(c.imagePullPolicy) == has(o.imagePullPolicy) && (!has(c.imagePullPolicy) || c.imagePullPolicy == o.imagePullPolicy) &&
+        has(c.lifecycle) == has(o.lifecycle) && (!has(c.lifecycle) || c.lifecycle == o.lifecycle) &&
+        has(c.livenessProbe) == has(o.livenessProbe) && (!has(c.livenessProbe) || c.livenessProbe == o.livenessProbe) &&
+        has(c.ports) == has(o.ports) && (!has(c.ports) || c.ports == o.ports) &&
+        has(c.readinessProbe) == has(o.readinessProbe) && (!has(c.readinessProbe) || c.readinessProbe == o.readinessProbe) &&
+        has(c.resizePolicy) == has(o.resizePolicy) && (!has(c.resizePolicy) || c.resizePolicy == o.resizePolicy) &&
+        has(c.restartPolicy) == has(o.restartPolicy) && (!has(c.restartPolicy) || c.restartPolicy == o.restartPolicy) &&
+        has(c.restartPolicyRules) == has(o.restartPolicyRules) && (!has(c.restartPolicyRules) || c.restartPolicyRules == o.restartPolicyRules) &&
+        has(c.startupProbe) == has(o.startupProbe) && (!has(c.startupProbe) || c.startupProbe == o.startupProbe) &&
+        has(c.stdin) == has(o.stdin) && (!has(c.stdin) || c.stdin == o.stdin) &&
+        has(c.stdinOnce) == has(o.stdinOnce) && (!has(c.stdinOnce) || c.stdinOnce == o.stdinOnce) &&
+        has(c.tty) == has(o.tty) && (!has(c.tty) || c.tty == o.tty) &&
+        has(c.volumeDevices) == has(o.volumeDevices) && (!has(c.volumeDevices) || c.volumeDevices == o.volumeDevices) &&
+        has(c.workingDir) == has(o.workingDir) && (!has(c.workingDir) || c.workingDir == o.workingDir) &&
+        has(c.args) == has(o.args) && (!has(c.args) || c.args == o.args) &&
+        has(c.env) == has(o.env) && (!has(c.env) || c.env == o.env) &&
+        has(c.securityContext) == has(o.securityContext) && (!has(c.securityContext) || c.securityContext == o.securityContext) &&
+        has(c.terminationMessagePath) == has(o.terminationMessagePath) && (!has(c.terminationMessagePath) || c.terminationMessagePath == o.terminationMessagePath) &&
+        has(c.terminationMessagePolicy) == has(o.terminationMessagePolicy) && (!has(c.terminationMessagePolicy) || c.terminationMessagePolicy == o.terminationMessagePolicy) &&
+        has(c.volumeMounts) == has(o.volumeMounts) && (!has(c.volumeMounts) || c.volumeMounts == o.volumeMounts) &&
+        (!has(c.resources) || (!has(c.resources.claims) &&
+        (!has(c.resources.requests) || c.resources.requests.all(k, k in ['cpu', 'memory', 'ephemeral-storage'])) &&
+        (!has(c.resources.limits) || c.resources.limits.all(k, k in ['cpu', 'memory', 'ephemeral-storage']))))))))
+        &&
+        has(object.spec.podTemplate.spec.initContainers) == has(oldObject.spec.podTemplate.spec.initContainers) &&
+        (!has(object.spec.podTemplate.spec.initContainers) ||
+        (size(object.spec.podTemplate.spec.initContainers) == size(oldObject.spec.podTemplate.spec.initContainers) &&
+        object.spec.podTemplate.spec.initContainers.all(c, oldObject.spec.podTemplate.spec.initContainers.exists(o, o.name == c.name &&
+        has(c.command) == has(o.command) && (!has(c.command) || c.command == o.command) &&
+        has(c.envFrom) == has(o.envFrom) && (!has(c.envFrom) || c.envFrom == o.envFrom) &&
+        has(c.imagePullPolicy) == has(o.imagePullPolicy) && (!has(c.imagePullPolicy) || c.imagePullPolicy == o.imagePullPolicy) &&
+        has(c.lifecycle) == has(o.lifecycle) && (!has(c.lifecycle) || c.lifecycle == o.lifecycle) &&
+        has(c.livenessProbe) == has(o.livenessProbe) && (!has(c.livenessProbe) || c.livenessProbe == o.livenessProbe) &&
+        has(c.ports) == has(o.ports) && (!has(c.ports) || c.ports == o.ports) &&
+        has(c.readinessProbe) == has(o.readinessProbe) && (!has(c.readinessProbe) || c.readinessProbe == o.readinessProbe) &&
+        has(c.resizePolicy) == has(o.resizePolicy) && (!has(c.resizePolicy) || c.resizePolicy == o.resizePolicy) &&
+        has(c.restartPolicy) == has(o.restartPolicy) && (!has(c.restartPolicy) || c.restartPolicy == o.restartPolicy) &&
+        has(c.restartPolicyRules) == has(o.restartPolicyRules) && (!has(c.restartPolicyRules) || c.restartPolicyRules == o.restartPolicyRules) &&
+        has(c.startupProbe) == has(o.startupProbe) && (!has(c.startupProbe) || c.startupProbe == o.startupProbe) &&
+        has(c.stdin) == has(o.stdin) && (!has(c.stdin) || c.stdin == o.stdin) &&
+        has(c.stdinOnce) == has(o.stdinOnce) && (!has(c.stdinOnce) || c.stdinOnce == o.stdinOnce) &&
+        has(c.tty) == has(o.tty) && (!has(c.tty) || c.tty == o.tty) &&
+        has(c.volumeDevices) == has(o.volumeDevices) && (!has(c.volumeDevices) || c.volumeDevices == o.volumeDevices) &&
+        has(c.workingDir) == has(o.workingDir) && (!has(c.workingDir) || c.workingDir == o.workingDir) &&
+        has(c.args) == has(o.args) && (!has(c.args) || c.args == o.args) &&
+        has(c.env) == has(o.env) && (!has(c.env) || c.env == o.env) &&
+        has(c.securityContext) == has(o.securityContext) && (!has(c.securityContext) || c.securityContext == o.securityContext) &&
+        has(c.terminationMessagePath) == has(o.terminationMessagePath) && (!has(c.terminationMessagePath) || c.terminationMessagePath == o.terminationMessagePath) &&
+        has(c.terminationMessagePolicy) == has(o.terminationMessagePolicy) && (!has(c.terminationMessagePolicy) || c.terminationMessagePolicy == o.terminationMessagePolicy) &&
+        has(c.volumeMounts) == has(o.volumeMounts) && (!has(c.volumeMounts) || c.volumeMounts == o.volumeMounts) &&
+        (!has(c.resources) || (!has(c.resources.claims) &&
+        (!has(c.resources.requests) || c.resources.requests.all(k, k in ['cpu', 'memory', 'ephemeral-storage'])) &&
+        (!has(c.resources.limits) || c.resources.limits.all(k, k in ['cpu', 'memory', 'ephemeral-storage']))))))))
+        &&
+        true
   validations:
     - expression: >-
         has(oldObject.metadata.ownerReferences) &&
@@ -413,7 +564,7 @@ spec:
         has(object.spec.podTemplate) == has(oldObject.spec.podTemplate) &&
         (!has(object.spec.podTemplate) || object.spec.podTemplate == oldObject.spec.podTemplate ||
         (request.namespace.startsWith('purlis-runners-') && has(oldObject.spec.operatingMode) &&
-        oldObject.spec.operatingMode == 'Suspended')) &&
+        oldObject.spec.operatingMode == 'Suspended' && variables.renewed)) &&
         has(object.spec.service) == has(oldObject.spec.service) &&
         (!has(object.spec.service) || object.spec.service == oldObject.spec.service) &&
         has(object.spec.shutdownPolicy) == has(oldObject.spec.shutdownPolicy) &&
@@ -424,7 +575,7 @@ spec:
         (!has(object.spec.volumeClaimTemplates) || object.spec.volumeClaimTemplates == oldObject.spec.volumeClaimTemplates)
       message: >-
         purlis's cluster operator changes only a Sandbox's spec.operatingMode, and its
-        spec.podTemplate only while it is Suspended in a runner namespace.
+        spec.podTemplate's images and resources only while it is Suspended in a runner namespace.
       reason: Forbidden
     - expression: >-
         has(object.metadata.labels) == has(oldObject.metadata.labels) &&
@@ -443,7 +594,8 @@ spec:
 # SPDX-License-Identifier: Apache-2.0
 # What the operator's service account writes of upstream's objects, held by the cluster (#3754):
 # only in runner namespaces, and a template's pod only in purlis's runner shape, so a mistake in
-# the operator, or its token used as it is, can write nothing else. It says nothing of what
+# the operator, or its token used as it is, can write nothing else of these. What it may change
+# of a Sandbox is the policy in sandbox-policy.yaml's. It says nothing of what
 # others write. The operator may not change policies or their bindings, so it cannot lift this.
 # Kept when the release is uninstalled, as the policy on Claims is.
 apiVersion: admissionregistration.k8s.io/v1
@@ -489,14 +641,21 @@ spec:
         !has(object.spec.lifecycle) &&
         (!has(object.spec.volumeClaimTemplates) ||
         (size(object.spec.volumeClaimTemplates) == 1 &&
-        object.spec.volumeClaimTemplates[0].metadata.name == 'purlis-kept')))
+        object.spec.volumeClaimTemplates[0].metadata.name == 'purlis-kept' &&
+        object.spec.volumeClaimTemplates[0].spec.accessModes == ['ReadWriteOnce'] &&
+        !has(object.spec.volumeClaimTemplates[0].spec.volumeName) &&
+        !has(object.spec.volumeClaimTemplates[0].spec.dataSource) &&
+        !has(object.spec.volumeClaimTemplates[0].spec.dataSourceRef) &&
+        !has(object.spec.volumeClaimTemplates[0].spec.selector) &&
+        !has(object.spec.volumeClaimTemplates[0].spec.volumeMode))))
       message: >-
         purlis's cluster operator claims a purlis pool's warm pool, with a kept volume at most and
         nothing added to the pod.
       reason: Forbidden
     - expression: >-
         request.resource.resource != 'sandboxwarmpools' ||
-        (object.spec.sandboxTemplateRef.name.startsWith('purlis-pool-') && object.spec.replicas <= 20)
+        (object.spec.sandboxTemplateRef.name.startsWith('purlis-pool-') && object.spec.replicas <= 20 &&
+        object.spec.updateStrategy.type == 'Recreate')
       message: purlis's cluster operator keeps a purlis pool's template warm, at most 20 of them.
       reason: Forbidden
     # Every field of the pinned upstream's template spec but the pod
@@ -510,7 +669,8 @@ spec:
         object.spec.volumeClaimTemplatesPolicy == 'Allowed')
       message: purlis's cluster operator's template sets nothing of upstream's but its pod.
       reason: Forbidden
-    # The default service account, no token mounted, nothing of the node's.
+    # The default service account, no token mounted, nothing of the node's: of every field of the
+    # pinned upstream's pod spec, only what its template sets.
     - expression: >-
         !variables.template ||
         ((!has(object.spec.podTemplate.metadata) ||
@@ -519,13 +679,54 @@ spec:
         (!has(variables.pod.serviceAccount) || variables.pod.serviceAccount == 'default') &&
         variables.pod.automountServiceAccountToken == false &&
         variables.pod.enableServiceLinks == false &&
-        !has(variables.pod.hostNetwork) && !has(variables.pod.hostPID) && !has(variables.pod.hostIPC) &&
-        !has(variables.pod.hostUsers) && !has(variables.pod.shareProcessNamespace) &&
-        !has(variables.pod.nodeName) && !has(variables.pod.runtimeClassName) &&
-        !has(variables.pod.ephemeralContainers) && !has(variables.pod.resourceClaims) &&
-        !has(variables.pod.securityContext.runAsUser) && !has(variables.pod.securityContext.sysctls) &&
+        !has(variables.pod.activeDeadlineSeconds) &&
+        !has(variables.pod.affinity) &&
+        !has(variables.pod.dnsConfig) &&
+        !has(variables.pod.dnsPolicy) &&
+        !has(variables.pod.ephemeralContainers) &&
+        !has(variables.pod.evictionResponders) &&
+        !has(variables.pod.hostAliases) &&
+        !has(variables.pod.hostIPC) &&
+        !has(variables.pod.hostNetwork) &&
+        !has(variables.pod.hostPID) &&
+        !has(variables.pod.hostUsers) &&
+        !has(variables.pod.hostname) &&
+        !has(variables.pod.hostnameOverride) &&
+        !has(variables.pod.imagePullSecrets) &&
+        !has(variables.pod.nodeName) &&
+        !has(variables.pod.nodeSelector) &&
+        !has(variables.pod.os) &&
+        !has(variables.pod.overhead) &&
+        !has(variables.pod.preemptionPolicy) &&
+        !has(variables.pod.priority) &&
+        !has(variables.pod.priorityClassName) &&
+        !has(variables.pod.readinessGates) &&
+        !has(variables.pod.resourceClaims) &&
+        !has(variables.pod.resources) &&
+        !has(variables.pod.restartPolicy) &&
+        !has(variables.pod.runtimeClassName) &&
+        !has(variables.pod.schedulerName) &&
+        !has(variables.pod.schedulingGates) &&
+        !has(variables.pod.schedulingGroup) &&
+        !has(variables.pod.setHostnameAsFQDN) &&
+        !has(variables.pod.shareProcessNamespace) &&
+        !has(variables.pod.subdomain) &&
+        !has(variables.pod.terminationGracePeriodSeconds) &&
+        !has(variables.pod.tolerations) &&
+        !has(variables.pod.topologySpreadConstraints) &&
+        !has(variables.pod.securityContext.appArmorProfile) &&
+        !has(variables.pod.securityContext.runAsGroup) &&
+        !has(variables.pod.securityContext.runAsNonRoot) &&
+        !has(variables.pod.securityContext.runAsUser) &&
+        !has(variables.pod.securityContext.seLinuxChangePolicy) &&
+        !has(variables.pod.securityContext.seLinuxOptions) &&
         !has(variables.pod.securityContext.seccompProfile) &&
-        !has(variables.pod.securityContext.supplementalGroups))
+        !has(variables.pod.securityContext.supplementalGroups) &&
+        !has(variables.pod.securityContext.supplementalGroupsPolicy) &&
+        !has(variables.pod.securityContext.sysctls) &&
+        !has(variables.pod.securityContext.windowsOptions) &&
+        variables.pod.securityContext.fsGroup == 10001 &&
+        variables.pod.securityContext.fsGroupChangePolicy == 'OnRootMismatch')
       message: >-
         purlis's cluster operator's template runs as the default service account, with no token
         mounted and nothing of the node's.
@@ -537,7 +738,8 @@ spec:
         v.name in ['purlis-link', 'purlis-kept'] && has(v.emptyDir)))
       message: purlis's cluster operator's template holds only purlis's own volumes.
       reason: Forbidden
-    # The confinement the operator's template sets, on each container.
+    # The confinement the operator's template sets, on each container: of every field of the
+    # pinned upstream's container, only what its template sets.
     - expression: >-
         !variables.template ||
         (size(variables.pod.containers) == 1 && variables.pod.containers[0].name == 'runner' &&
@@ -546,9 +748,31 @@ spec:
         c.securityContext.allowPrivilegeEscalation == false &&
         c.securityContext.capabilities.drop == ['ALL'] && !has(c.securityContext.capabilities.add) &&
         c.securityContext.seccompProfile.type == 'RuntimeDefault' &&
-        !has(c.securityContext.privileged) && !has(c.securityContext.runAsUser) &&
+        !has(c.securityContext.appArmorProfile) &&
+        !has(c.securityContext.privileged) &&
         !has(c.securityContext.procMount) &&
-        !has(c.command) && !has(c.ports) && !has(c.volumeDevices) && !has(c.envFrom) &&
+        !has(c.securityContext.readOnlyRootFilesystem) &&
+        !has(c.securityContext.runAsGroup) &&
+        !has(c.securityContext.runAsUser) &&
+        !has(c.securityContext.seLinuxOptions) &&
+        !has(c.securityContext.windowsOptions) &&
+        !has(c.command) &&
+        !has(c.envFrom) &&
+        !has(c.imagePullPolicy) &&
+        !has(c.lifecycle) &&
+        !has(c.livenessProbe) &&
+        !has(c.ports) &&
+        !has(c.readinessProbe) &&
+        !has(c.resizePolicy) &&
+        !has(c.restartPolicy) &&
+        !has(c.restartPolicyRules) &&
+        !has(c.startupProbe) &&
+        !has(c.stdin) &&
+        !has(c.stdinOnce) &&
+        !has(c.tty) &&
+        !has(c.volumeDevices) &&
+        !has(c.workingDir) &&
+        (!has(c.resources) || !has(c.resources.claims)) &&
         (!has(c.env) || c.env.all(e, !has(e.valueFrom) || has(e.valueFrom.fieldRef))) &&
         (!has(c.volumeMounts) || c.volumeMounts.all(m, m.name in ['purlis-link', 'purlis-kept']))))
       message: purlis's cluster operator's template confines each container as purlis's runner is.
