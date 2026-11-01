@@ -3050,6 +3050,7 @@ fn a_shape_change_is_refused_as_a_new_pool_would_be_and_a_reset_is_a_change_back
             .unwrap()
             .is_empty()
     );
+}
 
 #[test]
 fn a_project_pool_this_machine_does_not_keep_starts_nothing_and_never_runs_here() {
