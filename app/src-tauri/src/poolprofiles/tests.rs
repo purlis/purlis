@@ -952,7 +952,11 @@ fn a_pools_page_lists_every_limit_once_with_what_the_person_set() {
 #[test]
 fn a_sign_in_that_ran_out_offers_double_and_the_page_leaves_out_the_vouch_wait() {
     use purlis_core::poollimits::{Chosen, LimitId, hits_said_in};
-    let said = sign_in_ran_out("ran-out-signing-in", 15);
+    let said = sign_in_ran_out(
+        "ran-out-signing-in",
+        15,
+        &purlis_core::poollimits::Chosen::default(),
+    );
     assert!(said.starts_with(driven::TOOK_TOO_LONG), "{said}");
     assert!(said.contains("raise it to 30 minutes"), "{said}");
     let hits = hits_said_in("ran-out-signing-in", &said);
