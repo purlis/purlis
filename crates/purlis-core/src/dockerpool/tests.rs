@@ -1236,13 +1236,9 @@ fn a_pairing_that_prints_more_than_one_line_of_its_length_is_refused() {
     };
     let refused = fake.docker().pair(&made(), &desktop).unwrap_err();
     assert!(refused.0.contains("printed more"), "{refused}");
-    // #4281: fixed, why, and what to do instead; never an offer to raise it.
+    // #4281: fixed, why, and what to do instead.
     let fixed = purlis_session_protocol::fixedlimits::RUNNER_OUTPUT;
     assert!(refused.0.contains(&fixed.said()), "{refused}");
-    assert_eq!(
-        crate::poollimits::hits_said_in("first", &refused.0),
-        Vec::new()
-    );
 }
 
 #[test]

@@ -34,8 +34,8 @@ impl FixedLimit {
 pub const STOP_WAIT: FixedLimit = FixedLimit {
     key: "stopWait",
     plain: "Longest wait for a stop to reach a runner",
-    why: "one runner that doesn't answer must not hold up stopping the others",
-    instead: "check that runner is up and its link works, or remove it from its pool",
+    why: "one runner that doesn't answer must not hold up the others",
+    instead: "check that runner is up and its link works: purlis keeps trying",
 };
 
 /// The most purlis reads of what a runner, or the tool reaching it, prints.
@@ -43,7 +43,7 @@ pub const RUNNER_OUTPUT: FixedLimit = FixedLimit {
     key: "runnerOutput",
     plain: "Most purlis reads of a runner's output",
     why: "what a runner prints can't be trusted to be small, and this machine reads it into memory",
-    instead: "look at why it printed so much, for example by running the same command yourself",
+    instead: "check that this machine's tools and the runner's image are the ones you expect",
 };
 
 /// **Every limit that can't change.**

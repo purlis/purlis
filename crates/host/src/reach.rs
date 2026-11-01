@@ -450,13 +450,25 @@ impl StopFirst {
     }
 }
 
-/// Why a runner was not reached when the wait for it ran out: a limit that can't change (#4281).
+/// How a runner's reason opens where the wait for it ran out: a limit that can't change (#4281).
+const WAIT_RAN_OUT: &str = "it did not answer within ";
+
+/// Why a runner was not reached when the wait for it ran out.
 fn wait_ran_out(within: Duration) -> String {
-    format!(
-        "it did not answer within {} seconds. {}",
-        within.as_secs(),
-        purlis_session_protocol::fixedlimits::STOP_WAIT.said()
-    )
+    format!("{WAIT_RAN_OUT}{} seconds", within.as_secs())
+}
+
+/// **What is added once, after naming runners, where any wait ran out**: that the wait is fixed,
+/// why, and what to do instead. Empty where none did.
+pub(crate) fn fixed_wait_said<'a>(mut why: impl Iterator<Item = &'a str>) -> String {
+    if why.any(|why| why.starts_with(WAIT_RAN_OUT)) {
+        format!(
+            " {}",
+            purlis_session_protocol::fixedlimits::STOP_WAIT.said()
+        )
+    } else {
+        String::new()
+    }
 }
 
 /// What this host says of the runners its stop has not reached, in a sentence, where any.
@@ -475,8 +487,9 @@ pub(crate) fn not_reached_said(owed: &BTreeMap<String, String>) -> Option<String
     };
     Some(format!(
         "The stop did not reach {runner} {}. {keeps} running until it does, and purlis keeps \
-         trying.",
-        named.join(", ")
+         trying.{}",
+        named.join(", "),
+        fixed_wait_said(owed.values().map(String::as_str))
     ))
 }
 

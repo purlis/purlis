@@ -306,6 +306,7 @@ async fn a_stop_that_runs_out_of_its_fixed_wait_says_it_is_fixed_and_what_to_do_
     assert!(said.contains("did not answer within 1 seconds"), "{said}");
     let fixed = purlis_session_protocol::fixedlimits::STOP_WAIT.said();
     assert!(said.contains(&fixed), "{said}");
+    assert_eq!(said.matches(&fixed).count(), 1, "said once: {said}");
 }
 
 #[tokio::test]
