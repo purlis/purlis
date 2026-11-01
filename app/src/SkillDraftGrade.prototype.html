@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Draft grade prototype</title>
+<style>
+/* PROTOTYPE for #2780 (SK-17): a draft's page with "Grade against the current version…" and the
+   Draft / Current / No skill line. Throwaway, fake data, never merged. Colours are written here
+   only because this file is not the app. */
+:root{
+  --bg:#f4f5f7;--panel:#fff;--panel2:#eef0f3;--line:#dde1e7;--fg:#1d2330;--muted:#5d6676;
+  --accent:#5b4fd6;--accent-soft:#e9e6fb;--warn:#a15c00;--warn-soft:#fbefdc;--bad:#b4232c;
+  --ok:#21724a;--ok-soft:#e2f3ea;--tag:#e7eaf0;--add:#e3f4e8;--del:#fbe8e8;
+  --sans:-apple-system,"Segoe UI",system-ui,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#17191f;--panel:#1e2129;--panel2:#252933;--line:#323744;--fg:#e4e7ee;--muted:#98a0b0;
+  --accent:#a69cff;--accent-soft:#2e2a52;--warn:#f0b25c;--warn-soft:#3a2d17;--bad:#ff8a90;
+  --ok:#6fd19c;--ok-soft:#173326;--tag:#2b303b;--add:#16301f;--del:#3a1c1f;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#17191f;--panel:#1e2129;--panel2:#252933;--line:#323744;--fg:#e4e7ee;--muted:#98a0b0;
+  --accent:#a69cff;--accent-soft:#2e2a52;--warn:#f0b25c;--warn-soft:#3a2d17;--bad:#ff8a90;
+  --ok:#6fd19c;--ok-soft:#173326;--tag:#2b303b;--add:#16301f;--del:#3a1c1f;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--bg);color:var(--fg);font:13px/1.45 var(--sans);padding:16px 16px 120px}
+button,select{font:inherit;color:inherit}
+button{cursor:pointer}
+button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.win{max-width:1000px;margin:0 auto;border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden;display:flex;flex-direction:column;min-height:620px}
+.crumb{padding:8px 14px;border-bottom:1px solid var(--line);color:var(--muted)}
+.crumb b{color:var(--fg);font-weight:500}
+.pg{padding:16px 20px;display:grid;gap:14px;flex:1;align-content:start}
+h1{margin:0;font-size:18px;font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+h2{margin:0 0 6px;font-size:13px;font-weight:600}
+p{margin:0}
+.lead,.quiet{color:var(--muted)}
+.mark{font-size:11px;font-weight:400;padding:0 7px;border-radius:9px;background:var(--tag);color:var(--muted)}
+.mark.accent{background:var(--accent-soft);color:var(--accent)}
+.mark.waiting{background:var(--warn-soft);color:var(--warn)}
+.mark.ok{background:var(--ok-soft);color:var(--ok)}
+.btn{border:1px solid var(--line);border-radius:6px;padding:4px 10px;background:var(--panel);white-space:nowrap}
+.btn:hover{background:var(--panel2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+.btn.link{border:0;padding:0;background:none;color:var(--accent);text-decoration:underline}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.file{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.file>div:first-child{display:flex;justify-content:space-between;padding:6px 10px;background:var(--panel2);font-family:var(--mono);font-size:12px}
+.diff{font:12px/1.6 var(--mono);padding:6px 10px}
+.diff .d{background:var(--del)}.diff .a{background:var(--add)}.diff div{white-space:pre-wrap}
+.foot{border-top:1px solid var(--line);padding:10px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--panel)}
+.foot .sum{flex:1;min-width:220px;color:var(--muted)}
+.gradeline{display:flex;gap:18px;align-items:baseline;flex-wrap:wrap}
+.fig b{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.fig span{color:var(--muted);margin-right:5px}
+.fig.draft b{color:var(--accent)}
+.up{color:var(--ok)}.down{color:var(--bad)}
+.box{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:8px}
+.box.old{border-color:var(--warn)}
+table{border-collapse:collapse;width:100%;max-width:460px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:3px 10px 3px 0;border-bottom:1px solid var(--line);font-weight:400}
+th{color:var(--muted);font-size:12px}td.n,th.n{text-align:right}
+tr.me td{font-weight:600}
+.bar{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden;flex:1;min-width:120px}
+.bar i{display:block;height:100%;background:var(--accent)}
+.proto{position:fixed;left:16px;right:16px;bottom:12px;max-width:1000px;margin:0 auto;background:var(--fg);color:var(--bg);border-radius:10px;padding:8px 12px;display:grid;gap:6px;font-size:12px}
+.proto .row button{background:transparent;border:1px solid currentColor;border-radius:5px;padding:1px 7px;opacity:.7}
+.proto .row button[aria-pressed=true]{opacity:1;font-weight:600;text-decoration:underline}
+.proto .row b{min-width:48px}
+@media (max-width:640px){.pg{padding:12px}.foot{padding:10px 12px}}
+</style>
+</head>
+<body>
+<div class="win">
+  <div class="crumb">Skill studio › Drafts › <b>deploy</b></div>
+  <div class="pg" id="page"></div>
+  <div class="foot" id="foot"></div>
+</div>
+<div class="proto" id="proto"></div>
+<script>
+const VARIANTS={
+  A:"A: the line sits in the fixed footer, beside Accept",
+  B:"B: its own section above what it writes",
+  C:"C: a small table in that section, one row per arm",
+};
+const STATES={
+  none:"Not graded",
+  running:"Grade running",
+  better:"Draft better",
+  worse:"Draft worse",
+  tie:"Draft no different",
+  stopped:"Stopped early",
+  old:"Draft changed since",
+  evalsonly:"Only changes evals",
+  notests:"No trigger tests",
+};
+const q=new URLSearchParams(location.search);
+let v=VARIANTS[q.get("v")]?q.get("v"):"A", s=STATES[q.get("s")]?q.get("s"):"none";
+const G={
+  better:{d:92,c:75,n:33,when:"today 21:40"},
+  worse:{d:58,c:75,n:33,when:"today 21:40"},
+  tie:{d:75,c:75,n:33,when:"today 21:40"},
+  stopped:{d:80,c:70,n:33,when:"today 21:40",partial:"Stopped after 18 of 54 chats, so this compares what ran."},
+  old:{d:92,c:75,n:33,when:"today 21:40",old:true},
+};
+const dif=g=>{const x=g.d-g.c;return x>0?`<span class="up">+${x} points</span>`:x<0?`<span class="down">${x} points</span>`:"<span>No difference</span>"};
+const figs=g=>`<span class="fig draft"><span>Draft</span><b>${g.d}%</b></span><span class="fig"><span>Current</span><b>${g.c}%</b></span><span class="fig"><span>No skill</span><b>${g.n}%</b></span><span>${dif(g)}</span>`;
+const scorecard=`<button class="btn link">Scorecard</button>`;
+const gradeBtn=(p)=>`<button class="btn${p?" primary":""}" onclick="to('running')">Grade against the current version…</button>`;
+const again=`<button class="btn" onclick="to('running')">Grade again…</button>`;
+function about(){
+  const g=G[s];
+  if(s==="none")return{line:"Not graded yet. A grade shows its cost before it runs.",act:gradeBtn(false)};
+  if(s==="running")return{line:`<span class="row"><span>Grading: 21 of 54 chats</span><span class="bar"><i style="width:39%"></i></span></span>`,act:`<button class="btn" onclick="to('better')">Show it</button>`};
+  if(s==="evalsonly")return{line:"This draft changes only the skill's tests, so there is nothing to grade against the current version.",act:""};
+  if(s==="notests")return{line:"deploy has no trigger tests yet, so a grade has nothing to run.",act:`<button class="btn">Ask a chat to write them</button>`};
+  return{g,act:g.old?again:`${scorecard}${again}`};
+}
+function section(){
+  const a=about();
+  if(v==="A")return"";
+  let inner;
+  if(a.g&&v==="B")inner=`<div class="gradeline">${figs(a.g)}</div>`;
+  else if(a.g)inner=`<table><tr><th>Trigger tests</th><th class="n">Passed</th></tr>
+    <tr class="me"><td>Draft</td><td class="n">${a.g.d}%</td></tr>
+    <tr><td>Current version</td><td class="n">${a.g.c}%</td></tr>
+    <tr><td>No skill</td><td class="n">${a.g.n}%</td></tr></table><div>${dif(a.g)}</div>`;
+  else inner=`<div>${a.line}</div>`;
+  return `<section class="box ${a.g&&a.g.old?"old":""}"><h2>Against the current version</h2>${inner}
+    ${a.g&&a.g.old?`<p class="quiet">The draft changed after this grade, so it may not hold.</p>`:""}
+    ${a.g&&a.g.partial?`<p class="quiet">${a.g.partial}</p>`:""}
+    ${a.g?`<p class="quiet">Graded ${a.g.when}, on this machine only.</p>`:""}
+    <div class="row">${a.act}</div></section>`;
+}
+function page(){
+  const onlyEvals=s==="evalsonly";
+  return `<div><h1>deploy <span class="mark">Project</span><span class="mark accent">A change to it</span></h1>
+    <p class="lead">A change to it, drafted by chat 12. A draft stays on this machine until you accept it.</p></div>
+    ${section()}
+    <section><div class="file"><div><span>${onlyEvals?"evals/triggers.json":"SKILL.md"}</span><span class="mark">Changed</span></div>
+    <div class="diff">${onlyEvals?`<div class="a">+ {"query": "ship the staging build", "should_trigger": true},</div>`:`<div class="d">- description: Ships it.</div><div class="a">+ description: Deploys a build to staging or production. Use when asked to ship or release.</div>`}</div></div></section>
+    <div class="row"><span>Try it on</span><select aria-label="Try it on"><option>Where it was drafted</option><option>claude</option></select><button class="btn">Try it</button></div>`;
+}
+function foot(){
+  let left=`<span class="sum">Accept writes its 1 file into the Project skills, in one commit.</span>`;
+  if(v==="A"){
+    const a=about();
+    const said=a.g?`<div class="gradeline">${figs(a.g)}</div>${a.g.old?`<div class="quiet"><span class="mark waiting">Out of date</span> The draft changed after this grade.</div>`:""}${a.g.partial?`<div class="quiet">${a.g.partial}</div>`:""}`:`<div>${a.line}</div>`;
+    left=`<div class="sum" style="color:inherit;display:grid;gap:4px">${said}<div class="quiet">Accept writes its 1 file into the Project skills, in one commit.</div></div><span class="row">${a.act}</span>`;
+  }
+  return `${left}<button class="btn danger">Discard</button><button class="btn primary">Accept</button>`;
+}
+function proto(){
+  const bar=(label,all,now,key)=>`<div class="row"><b>${label}</b>${Object.entries(all).map(([k,t])=>`<button aria-pressed="${k===now}" onclick="${key}('${k}')">${t}</button>`).join("")}</div>`;
+  return bar("Layout",VARIANTS,v,"lay")+bar("State",STATES,s,"to")+`<div>PROTOTYPE, fake data. Accept is never blocked, in every state. The plan page, running page and scorecard are today's, so they are not drawn. State now: variant=${v} state=${s}</div>`;
+}
+function draw(){
+  document.getElementById("page").innerHTML=page();
+  document.getElementById("foot").innerHTML=foot();
+  document.getElementById("proto").innerHTML=proto();
+  history.replaceState(null,"",`?v=${v}&s=${s}`);
+}
+window.to=k=>{s=k;draw()};
+window.lay=k=>{v=k;draw()};
+draw();
+</script>
+</body>
+</html>
