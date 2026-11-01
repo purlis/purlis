@@ -4132,7 +4132,8 @@ async fn the_operators_token_writes_upstreams_objects_only_in_a_runners_shape() 
         change(&mut value);
         serde_json::from_value(value).expect("a template")
     };
-    let cases: [(&str, &str, Box<dyn Fn(&mut serde_json::Value)>); 5] = [
+    type Change = Box<dyn Fn(&mut serde_json::Value)>;
+    let cases: [(&str, &str, Change); 5] = [
         (
             "a service account",
             "runs as the default service account",
