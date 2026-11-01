@@ -2690,6 +2690,38 @@ fn opening_a_page_takes_a_web_address_and_makes_the_page_current() {
 }
 
 #[test]
+fn a_page_the_engine_made_and_has_not_told_of_is_not_called_missing() {
+    // Each answers its own way on a loaded machine (#4472): the page exists, and only its event
+    // is late.
+    let (browser, engine) = browser_with(Limits {
+        settle_within: Duration::from_millis(200),
+        ..limits()
+    });
+    engine.on(|sent, _| {
+        (sent.method == "Target.createTarget").then(|| Ok(json!({ "targetId": "PAGE-LATE" })))
+    });
+    let address = WebAddress::parse("http://fixture.test/long.html").unwrap();
+    assert_eq!(
+        browser.call(&id(1), Call::Open { address }).unwrap_err(),
+        Refusal::PageUntold
+    );
+}
+
+#[test]
+fn no_frame_or_worker_is_held_at_its_start() {
+    // Held frames are what make Chrome end itself on a page whose frame reloads quickly (#4472).
+    let (_browser, engine) = browser();
+    let start = std::time::Instant::now();
+    while engine.sent("Target.setAutoAttach").is_empty() {
+        assert!(start.elapsed() < Duration::from_secs(5), "never set up");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    for sent in engine.sent("Target.setAutoAttach") {
+        assert_eq!(sent.params["waitForDebuggerOnStart"], false, "{sent:?}");
+    }
+}
+
+#[test]
 fn a_wait_for_text_sees_text_that_shows_later() {
     let (browser, engine) = browser();
     let later = engine.clone();

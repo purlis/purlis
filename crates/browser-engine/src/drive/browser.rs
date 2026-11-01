@@ -1904,6 +1904,10 @@ impl Browser {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .0;
         }
+        // The page was made: its event is late, so it is not missing (#4472).
+        if state.page(&target).is_none() && !state.ended && !self.cut() {
+            return Err(Refusal::PageUntold);
+        }
         drop(state);
         let session = self.page_session(&target)?;
         lock(&self.inner.state).current = Some(target.clone());
@@ -4328,9 +4332,12 @@ impl Inner {
                     );
                 }
                 let _ = devtools.call("Network.enable", json!({}), on);
+                // Nothing is held at its start: Chrome ends itself when a frame held so is swapped
+                // away, as one that reloads quickly is (#4472). Requests are judged browser-wide
+                // and what a frame already did is read back below, so holding it gains neither.
                 let _ = devtools.call(
                     "Target.setAutoAttach",
-                    json!({ "autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true }),
+                    json!({ "autoAttach": true, "waitForDebuggerOnStart": false, "flatten": true }),
                     on,
                 );
                 if let Ok(tree) = devtools.call("Page.getFrameTree", json!({}), on) {
