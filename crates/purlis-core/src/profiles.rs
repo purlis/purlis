@@ -1270,13 +1270,6 @@ const TRACKED_STATUS: &str = " MTADRCU";
 /// git runs through the hardened runner ([`crate::worktree::git::run`], #1415): a constructed
 /// environment, no program a config names, a bare repository only where it is named.
 pub fn ignore_check(root: &Path) -> IgnoreCheck {
-    let t0 = std::time::Instant::now();
-    let out = ignore_check_4351(root);
-    crate::skills::probe_4351("    ignore_check", t0);
-    out
-}
-
-fn ignore_check_4351(root: &Path) -> IgnoreCheck {
     checked_within(root, None, GIT_TIMEOUT)
 }
 

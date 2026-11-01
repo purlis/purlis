@@ -151,61 +151,13 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
         const holder = globalThis as { __openedInMs?: number };
         holder.__openedInMs = undefined;
         const started = performance.now();
-        // DEBUG-4351
-        const probe = globalThis as unknown as Record<string, any>;
-        const calls: string[] = [];
-        probe.__calls = calls;
-        const internals = probe.__TAURI_INTERNALS__;
-        if (internals.__was === undefined) {
-          internals.__was = internals.invoke;
-          internals.invoke = (cmd: string, ...rest: unknown[]) => {
-            const at = performance.now();
-            const answer = internals.__was(cmd, ...rest);
-            void Promise.resolve(answer).finally(() => {
-              probe.__calls?.push(
-                `${cmd} @${Math.round(at - probe.__t0)}+${Math.round(performance.now() - at)}`,
-              );
-            });
-            return answer;
-          };
-        }
-        probe.__t0 = started;
-        let last = started;
-        const beat = () => {
-          const now = performance.now();
-          if (now - last > 30) calls.push(`GAP ${Math.round(last - started)}..${Math.round(now - started)}`);
-          last = now;
-          if (performance.now() - started < 2500) requestAnimationFrame(beat);
-        };
-        requestAnimationFrame(beat);
-        let added = 0;
-        const seen = new MutationObserver((list) => {
-          let here = 0;
-          for (const one of list) for (const node of one.addedNodes) if (node instanceof Element) here += 1 + node.querySelectorAll("*").length;
-          added += here;
-          if (here > 50) calls.push(`ADDED ${here} @${Math.round(performance.now() - started)}`);
-        });
-        seen.observe(document.body, { childList: true, subtree: true });
-        calls.push(`DOM ${document.querySelectorAll("*").length}`);
-        setTimeout(() => {
-          seen.disconnect();
-          calls.push(`DOM ${document.querySelectorAll("*").length} added ${added}`);
-        }, 2400);
         row.click();
-        calls.push(`clicked +${Math.round(performance.now() - started)}`);
-        let tab = false;
         const look = () => {
-          if (!tab && document.querySelector('[data-testid="skill-studio"]') !== null) {
-            tab = true;
-            calls.push(`tab drawn +${Math.round(performance.now() - started)}`);
-          }
           if (document.querySelector(css) === null) requestAnimationFrame(look);
-          else {
-            calls.push(`row drawn +${Math.round(performance.now() - started)}`);
+          else
             requestAnimationFrame(() => {
               holder.__openedInMs = performance.now() - started;
             });
-          }
         };
         requestAnimationFrame(look);
         return true;
@@ -223,11 +175,6 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
       { timeout: 30_000, interval: 100, timeoutMsg: "the studio's Library drew no row in 30 s" },
     );
     samples.push(took as number);
-    await browser.pause(2600);
-    console.log(
-      `DEBUG-4351 ${harness.kind} #${n} ${Math.round(took as number)} ms: ` +
-        (await browser.execute(() => (globalThis as any).__calls.join(" | "))),
-    );
   }
   return samples;
 }
@@ -439,8 +386,6 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
         characters: 0,
       });
       await $(`[data-testid="skill-${crowd(0)}"]`).waitForExist({ timeout: 30_000 });
-      // The Library draws its first screen, then the rest in the frames after it (#4351).
-      await $(`[data-testid="skill-${rowOf(UNSUPPORTED)}"]`).waitForExist({ timeout: 10_000 });
       const problems: string[] = [];
       for (const state of STATES) {
         const row = await $(`[data-testid="skill-${rowOf(state)}"]`);
