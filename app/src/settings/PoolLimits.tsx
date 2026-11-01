@@ -4,14 +4,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { PoolLimitGroup, PoolLimitRow } from "../bindings";
 import { Notice } from "../Notice";
-import {
-  askLimits,
-  checkLimit,
-  replaceRunner,
-  rereadPools,
-  saveLimits,
-  usePools,
-} from "../pools";
+import { askLimits, checkLimit, replaceRunner, rereadPools, saveLimits, usePools } from "../pools";
 import { Badge } from "../ui/badge/Badge";
 import { Button } from "../ui/button/Button";
 import { AlertDialog } from "../ui/dialog/Dialog";

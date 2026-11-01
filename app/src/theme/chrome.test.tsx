@@ -977,7 +977,8 @@ const DIALOGS: Opened[] = [
   {
     name: "replacing a pool's runner",
     file: "settings/PoolLimits.tsx",
-    open: async () => render(<ReplaceRunner pool="builds" onCancel={nothing} onReplace={nothing} />),
+    open: async () =>
+      render(<ReplaceRunner pool="builds" onCancel={nothing} onReplace={nothing} />),
   },
   {
     name: "removing a Docker pool",
