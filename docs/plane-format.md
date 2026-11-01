@@ -1358,7 +1358,7 @@ key refuses.
 
 An older project may still carry `.claude/skills/playwright-cli/`, `.playwright/`, `.playwright-cli/`
 and an ``added by `purlis browser install` `` block in its `.gitignore`. They are Playwright's files;
-purlis neither writes nor reads them (#2575). The `browser` skill's terminal flow points Playwright's output at a private folder
+purlis neither writes nor reads them (#2575). The `purlis-browser` skill's terminal flow points Playwright's output at a private folder
 outside the project and removes it when the flow ends, so it adds none of them (#2686).
 
 - **Tier:** None — Playwright's files, not purlis's.
@@ -1432,9 +1432,10 @@ outside the project and removes it when the flow ends, so it adds none of them (
   workspace". A workspace that turns a granted skill off (`settings.skills.off` in its
   [`workspace.json`](#workspaceswsworkspacejson--the-committed-manifest)) is told "turned off in this workspace". A
   grant that cannot be read is read as `"root"`, and a workspace's chat is told why. A folder whose `SKILL.md` is missing or names no `name` or `description` is left
-  out with that reason. A plane skill whose `name` is a built-in skill's is left out with "a
-  built-in skill has this name", and one named `skill-index` with "purlis's index skill has this
-  name" (SK-15). **A chat's set is routed** where it is armed (SK-15, #2778,
+  out with that reason. A plane skill whose `name` starts with `purlis-`, which is reserved for purlis's own skills, is
+  left out, and never deleted, with "a name starting with purlis- is purlis's own, so this skill
+  never loads: rename it" (ADR 0099 as amended 2026-11-01). A plane skill may have any other name,
+  `handoff` and `skill-index` among them. **A chat's set is routed** where it is armed (SK-15, #2778,
   [ADR 0102](adr/0102-a-skill-router-decides-what-a-chat-sees-and-nothing-it-hides-is-out-of-reach.md)
   and its amendment of 2026-10-25): past the chat's skill budget, every plane skill that is not
   pinned (`settings.skills.pinned` in its workspace's `workspace.json`, `pinned-skills:` in its
@@ -1815,7 +1816,7 @@ Two rules hold for the whole area and are not repeated per file:
     every time a record is written (`sessionrecord::point`): `<N> session record(s) — the
     latest is [<title>](sessions/<file>) (<YYYY-MM-DD HH:MM>); all of them, newest first, in
     [sessions/index.md](sessions/index.md).` A file without the section gets it appended. The
-    other sections are the operator's and the smart-close skill's. The unset vision body is
+    other sections are the operator's and the purlis-smart-close skill's. The unset vision body is
     the placeholder at `charter/workspace.py:4290` (`_Not set yet — …`).
   - Section replacement: `_replace_md_section` (`charter/workspace.py:4326`) keeps the
     `## <header>` line, replaces everything to the next line starting `"## "` or EOF with
